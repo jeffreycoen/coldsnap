@@ -155,6 +155,10 @@ function spawnSquad(world, field, s) {
     const u = addBody(world, { kind: "unit", team: 2, group: s.tag, mass: 82, hx: 0.26, hy: s.utype === "gren" ? 0.92 : 0.86, hz: 0.26, x, z, y: groundY(field, x, z, s.utype === "gren" ? 0.92 : 0.86), hp: s.utype === "gren" ? 45 : 30, friction: 0.55 });
     if (s.utype) u.utype = s.utype;
     if (s.brave) u.brave = true;
+    // campaign dress: "android" | "human". Drives the renderer's palette and
+    // the kill smear style; specs without it (demo parity, sandbox) spawn
+    // exactly as before. Not part of worldHash — visual-only, physics blind.
+    if (s.dress) { u.dress = s.dress; u.smearStyle = s.dress; }
   }
 }
 

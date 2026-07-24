@@ -275,6 +275,41 @@ try {
   ok("filed report returns to the order book", true);
   ok("AC-02 unseals after AC-01", book.includes("BATTERY REDUCTION"));
   ok("completed AC-01 stays replayable", await page.evaluate(() => !document.querySelector('[data-camp="ac01"]').disabled));
+
+  // --- AC-02: deploys, no tutorial annex, completes under return fire,
+  // kill smears land, AC-03 unseals
+  await page.evaluate(() => document.querySelector('[data-camp="ac02"]').click());
+  await page.waitForSelector("canvas");
+  await page.waitForFunction(() => !!window.__COLDSNAP__ && document.body.innerText.includes("AC-02"));
+  await page.mouse.click(480, 300); // deploy overlay
+  await page.waitForFunction(() => !!document.querySelector("[data-brief]"));
+  await page.waitForFunction(() => document.body.innerText.includes("provided for in the schedule"), { timeout: 15000, polling: 500 });
+  ok("AC-02 brief carries the directive", true);
+  await sleep(800);
+  await page.evaluate(() => document.querySelector("[data-brief-ack]").click());
+  ok("no firing-procedure annex on AC-02", !(await text()).includes("ANNEX A"));
+  ok("battery crews staged in android dress", await page.evaluate(() => {
+    const w = window.__COLDSNAP__._world();
+    return w.bodies.filter((b) => b.group === "battery" && b.kind === "unit" && b.dress === "android").length === 9;
+  }));
+  await page.evaluate(() => {
+    const api = window.__COLDSNAP__;
+    window.__campFire = setInterval(() => {
+      const w = api._world();
+      const tg = w.bodies.find((b) => b.group === "battery" && b.kind === "unit" && b.alive);
+      if (tg && api._S.actions) api._S.actions.fireAt(tg.pos.x, tg.pos.z);
+    }, 700);
+  });
+  await page.waitForFunction(() => document.body.innerText.includes("All tubes silent"), { timeout: 180000, polling: 1000 });
+  ok("AC-02 completes under return fire", true);
+  await page.evaluate(() => clearInterval(window.__campFire));
+  ok("android kills leave smears on the ground", await page.evaluate(() => window.__COLDSNAP__._R._splat.smears > 0));
+  await page.waitForFunction(() => !!document.querySelector("[data-aar]"), { timeout: 20000, polling: 500 });
+  await page.evaluate(() => document.querySelector("[data-aar-file]").click());
+  await page.waitForFunction(() => document.body.innerText.includes("ORDER BOOK"), { timeout: 20000, polling: 500 });
+  book = await text();
+  ok("AC-03 unseals after AC-02", book.includes("CONVOY INTERDICTION"));
+  ok("completed AC-02 stays replayable", await page.evaluate(() => !document.querySelector('[data-camp="ac02"]').disabled));
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => document.body.innerText.includes("PROVING GROUNDS"));
 

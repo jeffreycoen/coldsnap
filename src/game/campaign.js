@@ -4,10 +4,11 @@
 // redaction bars, WO number visible. Missions are built one at a time —
 // adding one means authoring its scenario JSON and setting `scenario` here.
 import AC01 from "./scenarios/ac-01-plate.json";
+import AC02 from "./scenarios/ac-02-battery.json";
 
 export const CAMPAIGN = [
   { id: "ac01", wo: "AC-01", title: "ARMOR PLATE ACCEPTANCE", scenario: AC01 },
-  { id: "ac02", wo: "AC-02", title: "BATTERY REDUCTION", scenario: null },
+  { id: "ac02", wo: "AC-02", title: "BATTERY REDUCTION", scenario: AC02 },
   { id: "ac03", wo: "AC-03", title: "CONVOY INTERDICTION", scenario: null },
   { id: "ac04", wo: "AC-04", title: "CROSSING DENIAL", scenario: null },
   { id: "ac05", wo: "AC-05", title: "OUTBUILDING, OCCUPIED", scenario: null },

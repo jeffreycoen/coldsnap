@@ -142,7 +142,7 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
       // rebuilt from data (hash-parity-gated), with sheltering enabled —
       // panicking infantry runs indoors, which the demo's world never did
       world = buildScenario(spec, { worldSeed: spec.terrain.worldSeed || 1234, shelters: true });
-      R = makeRenderer(canvas, world);
+      R = makeRenderer(canvas, world, { town: false }); // no proving-grounds ground art on mission maps
       R.setGfx({ scale: gfxUi.scale, outline: gfxUi.outline, dither: gfxUi.dither, palette: gfxUi.palette });
     } catch (err) {
       console.error("COLDSNAP boot failed", err);
@@ -331,7 +331,8 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
     const onKill = (e) => {
       if (S.trialLog) S.trialLog.events.push({ ...e });
       S.tally[e.cause] = (S.tally[e.cause] || 0) + 1;
-      const who = e.kind === "unit" ? "conscript" : e.kind === "vehicle" ? "scout" : e.kind;
+      const ub = e.kind === "unit" ? S.world.byId.get(e.id) : null;
+      const who = e.kind === "unit" ? (ub && ub.utype === "gren" ? "grenadier" : "conscript") : e.kind === "vehicle" ? "scout" : e.kind;
       const SHORTC = { PROJECTILE: "round", BLAST: "blast", CRUSH: "treads", TOSS: "thrown", COLLAPSE: "collapse", DROWN: "drowned", FLIP: "flipped", IMPACT: "impact" };
       S.feed.unshift(`${who} \u00b7 ${SHORTC[e.cause] || e.cause.toLowerCase()}${e.attacker === "player" ? "" : " \u00b7 world"}`);
       if (S.feed.length > 4) S.feed.length = 4;
@@ -1132,7 +1133,7 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
                 ))}
               </>
             ) : (
-              <span>ANNEX A \u00b7 \u25a1 {next.label} \u00b7 {done}/{total}</span>
+              <span>{`ANNEX A \u00b7 \u25a1 ${next.label} \u00b7 ${done}/${total}`}</span>
             )}
           </div>
         );

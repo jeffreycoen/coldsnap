@@ -13,7 +13,7 @@ function makeGradientMap() {
   t.generateMipmaps = false; t.needsUpdate = true;
   return t;
 }
-function makeSplat() {
+function makeSplat(town) {
   const cv = document.createElement("canvas");
   cv.width = 1024; cv.height = 1024; // DIVERGENCE from the demo (512): block-scale grid needs the resolution
   const cx = cv.getContext("2d");
@@ -43,6 +43,9 @@ function makeSplat() {
         cx.fillRect(0, gp, 1024, 1);
       }
     }
+    // the town lanes/plaza/pond shore are proving-grounds furniture — campaign
+    // maps opt out (a pond outline on a dry map reads as an artifact)
+    if (!town) return;
     if (!cx.beginPath || !cx.stroke || !cx.arc || !cx.strokeRect) return;
     const W2U = 1024 / 188.7, U0 = 94.35; // world meters -> canvas px
     const uu = (x2) => (x2 + U0) * W2U, vv2 = (z2) => (z2 + U0) * W2U;
@@ -82,6 +85,39 @@ function makeSplat() {
       cx.beginPath(); cx.arc(u, v, rPx, 0, Math.PI * 2); cx.fill();
       tex.needsUpdate = true;
     },
+    // DIVERGENCE from the demo: kill smears. A campaign body tagged with
+    // smearStyle leaves a permanent mark where it died — humans a bright
+    // scarlet streak, androids a dark spill flecked with silver. fillRect
+    // only (the jsdom e2e canvas stub has no paths), shape derived from the
+    // world position so identical runs paint identical ground.
+    smears: 0,
+    smear(u, v, style, wx, wz) {
+      let s = (Math.imul(Math.round(wx * 8) | 0, 374761393) ^ Math.imul(Math.round(wz * 8) | 0, 668265263)) | 0;
+      const rnd = () => { s = Math.imul(s ^ (s >>> 15), 2246822519) | 0; return ((s >>> 8) & 0xffff) / 0x10000; };
+      const ang = rnd() * Math.PI * 2, len = 10 + rnd() * 7;
+      const dx = Math.cos(ang), dy = Math.sin(ang);
+      cx.globalAlpha = 1;
+      cx.fillStyle = style === "human" ? "rgba(206,22,16,0.9)" : "rgba(22,24,28,0.85)";
+      for (let i = 0; i < len; i++) {
+        const w = Math.max(1, Math.round(3.6 * (1 - i / len) + rnd()));
+        cx.fillRect(Math.round(u + dx * i - w / 2), Math.round(v + dy * i - w / 2), w, w);
+      }
+      if (style === "human") {
+        cx.fillStyle = "rgba(228,48,30,0.85)"; // spray droplets past the streak
+        for (let i = 0; i < 5; i++) cx.fillRect(Math.round(u + (rnd() - 0.5) * len * 1.7), Math.round(v + (rnd() - 0.5) * len * 1.7), 1, 1);
+      } else {
+        // silver has to READ against scorch marks: bright dashes down the
+        // streak, not lone pixels — spilled machinery, unmistakably not soot
+        cx.fillStyle = "rgba(216,224,234,0.95)";
+        for (let i = 0; i < 9; i++) {
+          const t = rnd() * len;
+          cx.fillRect(Math.round(u + dx * t + (rnd() - 0.5) * 3), Math.round(v + dy * t + (rnd() - 0.5) * 3), 2, 2);
+        }
+        for (let i = 0; i < 4; i++) cx.fillRect(Math.round(u + dx * rnd() * len * 1.4 + (rnd() - 0.5) * 5), Math.round(v + dy * rnd() * len * 1.4 + (rnd() - 0.5) * 5), 1, 1);
+      }
+      this.smears++;
+      tex.needsUpdate = true;
+    },
   };
 }
 const POST_VERT = "varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }";
@@ -109,7 +145,7 @@ void main(){
   c = mix(c, c * 0.2, edge);
   gl_FragColor = vec4(c, 1.0);
 }`;
-export function makeRenderer(canvas, world0) {
+export function makeRenderer(canvas, world0, opts = {}) {
   let world = world0;
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance" });
   renderer.shadowMap.enabled = true;
@@ -148,7 +184,7 @@ export function makeRenderer(canvas, world0) {
   const Wd = (F.n - 1) * F.cs;
   const terraGeo = new THREE.PlaneGeometry(Wd, Wd, F.n - 1, F.n - 1);
   terraGeo.rotateX(-Math.PI / 2);
-  const splat = makeSplat();
+  const splat = makeSplat(opts.town !== false); // default keeps the demo/sandbox ground art
   const terraMat = toon(0xffffff); terraMat.map = splat.tex;
   const terra = new THREE.Mesh(terraGeo, terraMat);
   terra.receiveShadow = true;
@@ -331,6 +367,14 @@ export function makeRenderer(canvas, world0) {
   const grenPools = buildInfPools(INFANTRY.gren, 24, INFANTRY.pal.gren);
   const INF_LIVE = { con: {}, gren: {} }, INF_DEAD = { con: {}, gren: {} };
   for (const t of ["con", "gren"]) for (const k in INFANTRY.pal[t]) { INF_LIVE[t][k] = new THREE.Color(INFANTRY.pal[t][k]); INF_DEAD[t][k] = new THREE.Color(INFANTRY.dead[t][k]); }
+  // DIVERGENCE from the demo: android dress. A campaign unit tagged
+  // b.dress === "android" wears whitish silver over the same part table —
+  // porcelain face, pale shell, dark steel weapon. Dead androids drop to
+  // spent gunmetal instead of the winter-kill browns. Untagged units
+  // (demo parity, sandbox) keep the con/gren palettes exactly.
+  const mkPal = (o) => { const p = {}; for (const k in o) p[k] = new THREE.Color(o[k]); return p; };
+  const AND_LIVE = mkPal({ dom: 0xdde3ea, sec: 0x9aa6b2, acc: 0xc0cbd6, skin: 0xeef2f6, gun: 0x2a2e34 });
+  const AND_DEAD = mkPal({ dom: 0x6d747c, sec: 0x474d54, acc: 0x596069, skin: 0x8b929a, gun: 0x14171a });
   const _swq = new THREE.Quaternion(), _bq = new THREE.Quaternion(), _AXX = new THREE.Vector3(1, 0, 0);
   const chunkGeo = new THREE.BoxGeometry(1.2, 1.2, 1.2);
   const chunkMesh = pool(chunkGeo, toon(0xa6b2c0), 1000, true); // 865 stones live now (keep 84 + walls 240 + hangar 115 + warehouse 146 + houses 280)
@@ -451,8 +495,13 @@ export function makeRenderer(canvas, world0) {
         spawnBoom(e.x, e.y, e.z, e.r);
         shake = Math.min(2.4, shake + 0.5 + e.r * 0.18);
       } else if (e.type === "splat") {
-        const u = ((e.x + F.half) / Wd) * 512, v = ((e.z + F.half) / Wd) * 512;
-        splat.scorch(u, v, (e.r / Wd) * 512);
+        // 1024: the canvas doubled for the block grid; the demo's 512 factors
+        // here were painting craters (and treads below) at half position
+        const u = ((e.x + F.half) / Wd) * 1024, v = ((e.z + F.half) / Wd) * 1024;
+        splat.scorch(u, v, (e.r / Wd) * 1024);
+      } else if (e.type === "kill") {
+        const kb = world.byId.get(e.id);
+        if (kb && kb.smearStyle) splat.smear(((e.x + F.half) / Wd) * 1024, ((e.z + F.half) / Wd) * 1024, kb.smearStyle, e.x, e.z);
       } else if (e.type === "muzzle") {
         fire.push({ x: e.x, y: e.y, z: e.z, s: 1.1, life: 0.12, age: 0 });
         shake = Math.min(2.4, shake + 0.25);
@@ -518,7 +567,8 @@ export function makeRenderer(canvas, world0) {
           q = _bq;
         }
         writeInst(pools[pi], idx, px, py, pz, q, 1, 1, 1);
-        if (pools[pi].setColorAt) pools[pi].setColorAt(idx, (b.alive ? INF_LIVE : INF_DEAD)[isG ? "gren" : "con"][p.role]);
+        const pal = b.dress === "android" ? (b.alive ? AND_LIVE : AND_DEAD) : (b.alive ? INF_LIVE : INF_DEAD)[isG ? "gren" : "con"];
+        if (pools[pi].setColorAt) pools[pi].setColorAt(idx, pal[p.role]);
       }
       if (isG) gi++; else ci++;
     }
@@ -653,7 +703,7 @@ export function makeRenderer(canvas, world0) {
           const sxr = bb.R[0], szr = bb.R[2];
           for (const sgn of [-1, 1]) {
             const px = bb.pos.x + sxr * 1.78 * sgn, pz = bb.pos.z + szr * 1.78 * sgn;
-            splat.tread(((px + F.half) / Wd) * 512, ((pz + F.half) / Wd) * 512);
+            splat.tread(((px + F.half) / Wd) * 1024, ((pz + F.half) / Wd) * 1024);
           }
         }
       }
