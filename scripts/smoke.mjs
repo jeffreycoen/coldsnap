@@ -250,6 +250,11 @@ try {
   ok("mission brief carries the directive", (await text()).includes("receiving racks"));
   await sleep(800);
   await page.evaluate(() => document.querySelector("[data-brief-ack]").click());
+  ok("firing procedure annex is posted", (await text()).includes("FIRING PROCEDURE"));
+  await page.keyboard.press("t");
+  await sleep(250);
+  ok("T switches the fire control to the MG", (await page.evaluate(() => window.__COLDSNAP__._S.weapon)) === "mg");
+  await page.keyboard.press("t");
   await page.evaluate(() => {
     const api = window.__COLDSNAP__;
     window.__campFire = setInterval(() => {

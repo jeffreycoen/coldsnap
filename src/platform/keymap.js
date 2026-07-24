@@ -14,7 +14,8 @@ export const ACTIONS = [
   { id: "left", label: "STEER LEFT", def: "d", bind: "a" },
   { id: "right", label: "STEER RIGHT", def: "a", bind: "d" },
   { id: "brake", label: "BRAKE", def: " " },
-  { id: "mg", label: "COAX MG (HOLD)", def: "g" },
+  { id: "mg", label: "MG (HOLD)", def: "g" },
+  { id: "weapon", label: "SWITCH WEAPON", def: "t" }, // campaign fire-control toggle; inert in the frozen demo
   { id: "volley", label: "ROCKET VOLLEY", def: "v" },
   { id: "recover", label: "RECOVER (FLIPPED)", def: "r" },
   { id: "mute", label: "SOUND ON/OFF", def: "m" },

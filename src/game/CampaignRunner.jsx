@@ -8,6 +8,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   CAUSE, POOL, STATIONS, addBody, thawPool, freezePool, stepWorld,
   snapAim, recoverBison, fireVolley, bisonFire, bisonMg, worldHash, makeAch, heading,
+  aimSolve,
 } from "../engine/core.js";
 import { buildScenario } from "./scenario.js";
 import { disperseState } from "./altcheck.js";
@@ -77,7 +78,7 @@ const makeTrials = (spec) => {
   return [{
     id: c.wo, title: `${c.wo} · ${c.title}`, hint: c.directive, commendation: c.commendation,
     need: c.need, par: c.par, subjects: c.subjects,
-    focus: () => ({ x: 0, z: 0, r: 8 }),
+    focus: () => c.focus || { x: 0, z: 0, r: 8 }, // the survey marker: the flagged work site
     setup: () => {},
     ...(c.volleyMode ? { volley: true } : { match: (e) => matchKill(c.predicate, e) }),
     ...(c.alt ? { alt: c.alt } : {}),
@@ -89,7 +90,7 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
   const wrapRef = useRef(null);
   const canvasRef = useRef(null);
   const stateRef = useRef(null);
-  const [hud, setHud] = useState({ fps: 0, bodies: 0, tally: {}, feed: [], achUnlocked: [], toasts: [], total: 0, cds: { fire: 0, volley: 0 }, flipped: false, iceOn: false, medals: {}, trial: { idx: 0, prog: 0, flashT: 0, free: false, el: 0 } });
+  const [hud, setHud] = useState({ fps: 0, bodies: 0, tally: {}, feed: [], achUnlocked: [], toasts: [], total: 0, cds: { fire: 0, volley: 0 }, flipped: false, iceOn: false, weapon: "main", medals: {}, trial: { idx: 0, prog: 0, flashT: 0, free: false, el: 0 } });
   const [fatal, setFatal] = useState(null);
   const [started, setStarted] = useState(false);
   const [achOpen, setAchOpen] = useState(false);
@@ -142,6 +143,7 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
       cds: { fire: 0, volley: 0, recover: 0, mg: 0 }, zoom: 1,
       isTouch, touch: { joyId: null, jx: 0, jy: 0, drive: { t: 0, s: 0 }, aimId: null, ax: 0, ay: 0, moved: 0, downT: 0, pts: new Map() },
       trial: { idx: 0, prog: 0, flashT: 0, t0: 0, volleyCounts: new Map() },
+      weapon: "main",
       medals: {}, labels: [], audio: makeAudio(),
     };
     stateRef.current = S;
@@ -331,8 +333,8 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
       // ordnance is counted here at the action layer, not from muzzle events —
       // grenadier mortars also route through fireProjectile and would pollute it
       fireAt: (x, z) => { if (S.cds.fire > 0) return false; S.cds.fire = 0.45; bisonFire(S.world, { x, z }); if (S.trialLog) S.trialLog.ordnance.shell++; return true; },
-      volleyAt: (x, z) => { if (S.cds.volley > 0) return false; S.cds.volley = 5; fireVolley(S.world, x, z, 6, "player"); if (S.trialLog) S.trialLog.ordnance.volley++; return true; },
-      mgAt: (x, z) => { if (S.cds.mg > 0) return false; S.cds.mg = 0.11; bisonMg(S.world, { x, z }); if (S.trialLog) S.trialLog.ordnance.mg++; return true; },
+      volleyAt: (x, z) => { if (S.cds.volley > 0) return false; S.cds.volley = 10; fireVolley(S.world, x, z, 6, "player"); if (S.trialLog) S.trialLog.ordnance.volley++; return true; },
+      mgAt: (x, z) => { if (S.cds.mg > 0) return false; S.cds.mg = 0.11; const p = bisonMg(S.world, { x, z }); if (S.trialLog) { if (p && S.trialLog.ordnance.mg % 4 === 0) p.tracer = true; S.trialLog.ordnance.mg++; } return true; }, // every 4th round is a tracer — tag only, physics untouched
       squads: () => S.world.pg.respawnSquads(),
       scouts: () => S.world.pg.respawnScouts(),
       repair: () => S.world.pg.repairGarrison(),
@@ -345,9 +347,7 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
       S.keys[k] = down;
       if (!down) return;
       if (k === "v") actions.volleyAt(S.aim.x, S.aim.z);
-      if (k === "1") actions.squads();
-      if (k === "2") actions.scouts();
-      if (k === "3") actions.repair();
+      if (k === "t") S.weapon = S.weapon === "mg" ? "main" : "mg"; // switch weapon
       if (k === "0") actions.reset();
     };
     const kd = (e) => { S.audio.ensure(); if (e.key === "m" || e.key === "M") S.audio.setMuted(!S.audio.muted); if ((e.key === "r" || e.key === "R") && window.__COLDSNAP__) window.__COLDSNAP__.recover(); onKey(e, true); };
@@ -528,10 +528,13 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
       }
       S.aim = groundPoint(S.ndc.x, S.ndc.y);
       w.threat = { x: S.aim.x, z: S.aim.z, t: w.t };
-      if (S.fireHeld && S.cds.fire <= 0 && S.actions) {
+      // one FIRE control, routed through the selected weapon (T / toggle);
+      // holding G still streams the MG directly regardless of selection
+      if (S.fireHeld && S.actions) {
         const g = S.isTouch ? snapAim(S.world, S.aim.x, S.aim.z, 1.5) : { x: S.aim.x, z: S.aim.z, hit: false };
         S.lastFire = g;
-        S.actions.fireAt(g.x, g.z);
+        if (S.weapon === "mg") { if (S.cds.mg <= 0) S.actions.mgAt(g.x, g.z); }
+        else if (S.cds.fire <= 0) S.actions.fireAt(g.x, g.z);
       }
       if ((S.mgHeld || S.keys["g"]) && S.cds.mg <= 0 && S.actions) {
         const gm = S.isTouch ? snapAim(S.world, S.aim.x, S.aim.z, 1.5) : { x: S.aim.x, z: S.aim.z, hit: false };
@@ -563,7 +566,7 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
         // nothing left to kill. The bureau reissues the detail instead.
         if (td && td.subjects && S.trial.prog < td.need) {
           let pool = 0;
-          for (const b of w.bodies) if (b.kind === "unit" && b.group === td.subjects && b.alive) { pool = 1; break; }
+          for (const b of w.bodies) if ((b.kind === "unit" || b.kind === "vehicle") && b.group === td.subjects && b.alive) { pool = 1; break; } // subjects can be staged hulls (AC-01), not just men
           if (pool) S.trial.poolGoneT = 0;
           else {
             S.trial.poolGoneT = (S.trial.poolGoneT || 0) + dt;
@@ -573,6 +576,26 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
               if (S.trialLog) S.trialLog.restocks = (S.trialLog.restocks || 0) + 1;
               S.toasts.push({ id: S.toastSeq++, title: "REPLACEMENT DETAIL ISSUED", desc: "Subject pool exhausted. The order stands.", t: 3.6 });
             }
+          }
+        }
+      }
+      // FIRING PROCEDURE annex: advisory demonstrations, stamped live off the
+      // ordnance counters and the drive check. Labels use the control names.
+      if (spec.contract.procedure && S.trialLog) {
+        if (!S.proc) S.proc = {};
+        const bb3 = w.byId.get(w.bisonId);
+        const o = S.trialLog.ordnance;
+        const f = TRIALS[0].focus();
+        for (const st of spec.contract.procedure) {
+          if (S.proc[st.id]) continue;
+          const done =
+            st.id === "drive" ? (bb3 && Math.hypot(bb3.pos.x - f.x, bb3.pos.z - f.z) < (f.r || 10)) :
+            st.id === "fire" ? o.shell >= 1 :
+            st.id === "mg" ? o.mg >= 5 :
+            st.id === "volley" ? o.volley >= 1 : false;
+          if (done) {
+            S.proc[st.id] = true;
+            S.toasts.push({ id: S.toastSeq++, title: "DEMONSTRATED", desc: st.label, t: 2.6 });
           }
         }
       }
@@ -633,6 +656,49 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
         const bodyYaw = Math.atan2(bison.R[6], bison.R[8]);
         ty = Math.atan2(S.aim.x - bison.pos.x, S.aim.z - bison.pos.z) - bodyYaw;
       }
+      // trajectory preview: mirror bisonFire's ballistics (speed 62, muzzle at
+      // barrel tip) and hand the sampled arc to the renderer; first obstruction
+      // (terrain or a coarse world-axis AABB of masonry/hulls) gets flagged.
+      {
+        const bb = w.byId.get(w.bisonId);
+        if (bb && S.aim) {
+          const az = Math.atan2(S.aim.x - bb.pos.x, S.aim.z - bb.pos.z);
+          const tdist = Math.hypot(S.aim.x - bb.pos.x, S.aim.z - bb.pos.z);
+          const reach = Math.min(4.2, Math.max(1.0, tdist - 0.5));
+          const mx = bb.pos.x + Math.sin(az) * reach, my = bb.pos.y + 1.47, mz = bb.pos.z + Math.cos(az) * reach;
+          const dx = S.aim.x - mx, dz = S.aim.z - mz;
+          const dd = Math.max(2, Math.hypot(dx, dz));
+          const dy = w.field.heightAt(S.aim.x, S.aim.z) - my;
+          const speed = 62;
+          let pitch = aimSolve(speed, dd, dy);
+          if (pitch == null) pitch = 0.72;
+          const vx = (dx / dd) * Math.cos(pitch) * speed, vy = Math.sin(pitch) * speed, vz = (dz / dd) * Math.cos(pitch) * speed;
+          const T = (dd / (Math.cos(pitch) * speed)) * 1.12;
+          const pts = []; let hitIdx = null;
+          const cand = [];
+          const x0 = Math.min(mx, S.aim.x) - 4, x1 = Math.max(mx, S.aim.x) + 4;
+          const z0 = Math.min(mz, S.aim.z) - 4, z1 = Math.max(mz, S.aim.z) + 4;
+          for (const ob of w.bodies) {
+            if (ob.id === w.bisonId || ob.kind === "unit" || !ob.alive && ob.kind !== "wreck") continue;
+            if (ob.pos.x < x0 || ob.pos.x > x1 || ob.pos.z < z0 || ob.pos.z > z1) continue;
+            cand.push(ob);
+          }
+          for (let i = 0; i < 48; i++) {
+            const t = (T * i) / 47;
+            const px = mx + vx * t, py = my + vy * t - 4.9 * t * t, pz = mz + vz * t;
+            pts.push({ x: px, y: py, z: pz });
+            if (hitIdx == null && i > 3) {
+              if (py <= w.field.heightAt(px, pz) + 0.05) hitIdx = i;
+              else for (const ob of cand) {
+                if (Math.abs(px - ob.pos.x) < ob.hx + 0.25 && Math.abs(py - ob.pos.y) < ob.hy + 0.25 && Math.abs(pz - ob.pos.z) < ob.hz + 0.25) { hitIdx = i; break; }
+              }
+            }
+          }
+          // an arc that ends at the reticle is not "obstructed" by the ground it aims at
+          if (hitIdx != null && hitIdx >= 45) hitIdx = null;
+          if (R.setTraj) R.setTraj(pts, hitIdx);
+        } else if (R.setTraj) R.setTraj(null);
+      }
       try { R.render(dt, S.focus, S.aim, ty); } catch (err) {
         console.error("COLDSNAP render failed", err);
         S.running = false;
@@ -646,7 +712,9 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
           fps: S.fps, bodies: w.bodies.length, tally: { ...S.tally }, feed: [...S.feed],
           achUnlocked: [...w.ach.unlocked], toasts: [...S.toasts], total: w.ach.total,
           cds: { fire: S.cds.fire, volley: S.cds.volley },
-          flipped: (() => { const bb2 = w.byId.get(w.bisonId); return bb2 ? bb2.R[4] < 0.45 : false; })(), // matches the engine's recover gate (0.5) minus margin — the demo's 0.3 left a stuck band with no visible RECOVER
+          flipped: (() => { const bb2 = w.byId.get(w.bisonId); return bb2 ? bb2.R[4] < 0.45 : false; })(),
+          weapon: S.weapon,
+          proc: S.proc ? { ...S.proc } : null, // matches the engine's recover gate (0.5) minus margin — the demo's 0.3 left a stuck band with no visible RECOVER
           iceOn: !!w.ice,
           trial: { idx: S.trial.idx, prog: S.trial.prog, flashT: S.trial.flashT, free: S.trial.idx >= TRIALS.length, el: Math.max(0, w.t - S.trial.t0) },
           medals: { ...S.medals },
@@ -742,7 +810,12 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
     setGfxUi(next); gfxRef.current = next;
     if (S && S.R) S.R.setGfx({ scale: next.scale, outline: next.outline, dither: next.dither, palette: next.palette });
   };
-  const act = (name) => { const S = stateRef.current; if (S && S.actions) S.actions[name](); };
+  // campaign missions have no self-serve range services: the respawn/repair
+  // debug actions stay dead even if their keys are pressed. RESTART stands.
+  const act = (name) => {
+    if (name === "squads" || name === "scouts" || name === "repair") return;
+    const S = stateRef.current; if (S && S.actions) S.actions[name]();
+  };
   const P = {
     wrap: { position: "relative", width: "100%", height: "100vh", minHeight: 520, background: "#0e1014", overflow: "hidden", fontFamily: "'Courier New', ui-monospace, monospace", userSelect: "none", WebkitUserSelect: "none", touchAction: "none", WebkitTouchCallout: "none", overscrollBehavior: "none" },
     cv: { position: "absolute", inset: 0, width: "100%", height: "100%", display: "block", cursor: "crosshair", touchAction: "none" },
@@ -819,7 +892,7 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
           <div style={{ ...P.panel, position: "static", borderColor: "#d8433a", textAlign: "center", padding: "16px 26px" }}>
             <div style={{ fontSize: 22, color: "#ff6b5e", letterSpacing: 4 }}>COLDSNAP</div>
             <div style={{ opacity: 0.8, marginBottom: 10 }}>CONTRACT DIVISION</div>
-            <div style={{ color: "#ffd27a", marginBottom: 8, fontSize: 13 }}>Seven work orders. The bureau is watching the clock.<br />Follow the gold ring. The far ridge shoots back.</div>
+            <div style={{ color: "#ffd27a", marginBottom: 8, fontSize: 13 }}>Eight work orders. The territory is being re-let.<br />The survey marker flags the work site.</div>
             {isTouch ? (
               <div style={{ textAlign: "left", fontSize: 13, lineHeight: 1.8 }}>
                 <div><b>LEFT STICK</b> — the tank goes where you point it</div>
@@ -900,26 +973,14 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
             onPointerCancel={() => { const S = stateRef.current; if (S) S.fireHeld = false; }}
             onPointerLeave={() => { const S = stateRef.current; if (S) S.fireHeld = false; }}
             style={{ ...P.btn, width: 92, height: 92, borderRadius: "50%", alignSelf: "center", fontSize: 15, letterSpacing: 2, touchAction: "none", background: (hud.cds.fire || 0) > 0 ? "#3a2320" : "#5c211b", borderColor: "#ff6b5e", opacity: (hud.cds.fire || 0) > 0 ? 0.6 : 1 }}
-          >FIRE</button>
+          >{hud.weapon === "mg" ? "FIRE·MG" : "FIRE"}</button>
           <button
-            data-mg
-            onContextMenu={(e) => e.preventDefault()}
-            onPointerDown={(e) => {
-              e.preventDefault();
-              const r = e.currentTarget.getBoundingClientRect(), w2 = r.width / 2;
-              if (w2 > 4) { const dx = e.clientX - (r.left + w2), dy = e.clientY - (r.top + r.height / 2); if (dx * dx + dy * dy > w2 * w2) return; }
-              const S = stateRef.current; if (S) S.mgHeld = true;
-            }}
-            onPointerUp={() => { const S = stateRef.current; if (S) S.mgHeld = false; }}
-            onPointerCancel={() => { const S = stateRef.current; if (S) S.mgHeld = false; }}
-            onPointerLeave={() => { const S = stateRef.current; if (S) S.mgHeld = false; }}
-            style={{ ...P.btn, width: 72, height: 72, borderRadius: "50%", alignSelf: "center", fontSize: 12, letterSpacing: 2, touchAction: "none", background: "#23303a", borderColor: "#7fb2d8" }}
-          >MG</button>
+            data-weapon-toggle
+            onClick={() => { const S = stateRef.current; if (S) S.weapon = S.weapon === "mg" ? "main" : "mg"; }}
+            style={{ ...P.btn, width: 72, height: 72, borderRadius: "50%", alignSelf: "center", fontSize: 11, letterSpacing: 1, touchAction: "manipulation", background: "#23303a", borderColor: "#7fb2d8" }}
+          >{hud.weapon === "mg" ? "\u21c4 MAIN" : "\u21c4 MG"}</button>
           <button style={{ ...P.btn, opacity: hud.cds.volley > 0 ? 0.45 : 1, minWidth: 108 }} onClick={() => { const S = stateRef.current; if (S) S.actions.volleyAt(S.aim.x, S.aim.z); }}>
             {hud.cds.volley > 0 ? `VOLLEY ${hud.cds.volley.toFixed(0)}` : "VOLLEY"}
-          </button>
-          <button style={{ ...P.btn, borderColor: "#bfe3f5", minWidth: 108 }} onClick={() => { const api = window.__COLDSNAP__; if (api) (hud.iceOn ? api.thawPool() : api.freezePool()); }}>
-            {hud.iceOn ? "☀ THAW" : "❄ FREEZE"}
           </button>
           <button style={P.btn} onClick={() => setMenuOpen(!menuOpen)}>☰</button>
         </div>
@@ -928,26 +989,15 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
         <div style={{ ...P.panel, right: 10, bottom: 170, display: "flex", flexDirection: "column", gap: 8, zIndex: 4 }}>
           <button style={P.btn} onClick={() => { setAchOpen(!achOpen); setGfxOpen(false); setMenuOpen(false); }}>★ SERVICE RECORD</button>
           <button style={P.btn} onClick={() => { setGfxOpen(!gfxOpen); setAchOpen(false); setMenuOpen(false); }}>GRAPHICS</button>
-          <button style={P.btn} onClick={() => { act("squads"); setMenuOpen(false); }}>RESPAWN SQUADS</button>
-          <button style={P.btn} onClick={() => { act("scouts"); setMenuOpen(false); }}>RESPAWN SCOUTS</button>
-          <button style={P.btn} onClick={() => { act("repair"); setMenuOpen(false); }}>REPAIR TOWER</button>
-          <button style={P.btn} onClick={() => { act("reset"); setMenuOpen(false); }}>RESET RANGE</button>
+          <button style={P.btn} onClick={() => { act("reset"); setMenuOpen(false); }}>RESTART ORDER</button>
           <button style={P.btn} onClick={() => { const S = stateRef.current; if (S) S.audio.setMuted(!S.audio.muted); setMenuOpen(false); }}>SOUND ON/OFF</button>
-          <button style={P.btn} onClick={() => { const api = window.__COLDSNAP__; if (api) (hud.iceOn ? api.thawPool() : api.freezePool()); setMenuOpen(false); }}>{hud.iceOn ? "THAW POOL" : "FREEZE POOL"}</button>
-          <button style={P.btn} onClick={() => { const api = window.__COLDSNAP__; if (api) api.spawnWingman(); setMenuOpen(false); }}>SPAWN WINGMAN (DEBUG)</button>
         </div>
       )}
       <div style={{ position: "absolute", bottom: 10, left: "50%", transform: "translateX(-50%)", display: isTouch ? "none" : "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", maxWidth: "96%", zIndex: 3 }}>
         <button style={{ ...P.btn, opacity: hud.cds.volley > 0 ? 0.45 : 1 }} onClick={() => { const S = stateRef.current; if (S) S.actions.volleyAt(S.aim.x, S.aim.z); }}>
           {hud.cds.volley > 0 ? `VOLLEY ${hud.cds.volley.toFixed(0)}s` : isTouch ? "VOLLEY" : "ROCKET VOLLEY [V]"}
         </button>
-        <button style={{ ...P.btn, borderColor: "#bfe3f5" }} onClick={() => { const api = window.__COLDSNAP__; if (api) (hud.iceOn ? api.thawPool() : api.freezePool()); }}>
-          {hud.iceOn ? "☀ THAW POOL" : "❄ FREEZE POOL"}
-        </button>
-        <button style={P.btn} onClick={() => act("squads")}>{isTouch ? "SQUADS" : "SQUADS [1]"}</button>
-        <button style={P.btn} onClick={() => act("scouts")}>{isTouch ? "SCOUTS" : "SCOUTS [2]"}</button>
-        <button style={P.btn} onClick={() => act("repair")}>{isTouch ? "REPAIR" : "REPAIR [3]"}</button>
-        <button style={P.btn} onClick={() => act("reset")}>{isTouch ? "RESET" : "RESET [0]"}</button>
+        <button style={P.btn} onClick={() => act("reset")}>{isTouch ? "RESTART" : "RESTART ORDER [0]"}</button>
       </div>
       {started && hud.aar && (() => {
         const stampCol = hud.aar.medal === "GOLD" ? "#ffd27a" : hud.aar.medal === "SILVER" ? "#cfd6de" : hud.aar.medal === "BRONZE" ? "#b0764a" : "#ff6b5e";
@@ -1013,6 +1063,16 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
         );
       })()}
       <div style={{ position: "absolute", top: isTouch ? 94 : 60, left: "50%", transform: "translateX(-50%)", display: "flex", flexDirection: "column", gap: 6, alignItems: "center", zIndex: 3, maxWidth: "94vw" }}>
+        {started && spec.contract.procedure && !hud.aar && (
+          <div data-procedure style={{ ...P.panel, position: "static", padding: "8px 12px", marginBottom: 6, fontSize: isTouch ? 12 : 11 }}>
+            <div style={{ letterSpacing: 2, color: "#8b93a0", fontSize: isTouch ? 10 : 9, marginBottom: 5 }}>FIRING PROCEDURE — ANNEX A</div>
+            {spec.contract.procedure.map((st) => (
+              <div key={st.id} style={{ margin: "2px 0", color: hud.proc && hud.proc[st.id] ? "#7fd7a0" : "#c3cbd6" }}>
+                {hud.proc && hud.proc[st.id] ? "\u25a0" : "\u25a1"} DEMONSTRATE: {st.label}{hud.proc && hud.proc[st.id] ? " \u2014 DEMONSTRATED" : ""}
+              </div>
+            ))}
+          </div>
+        )}
         {hud.toasts.map((t) => (
           <div key={t.id} style={{ ...P.panel, position: "static", borderColor: "#d8433a", textAlign: "center" }}>
             <div style={{ color: "#ff6b5e" }}>★ {t.title}</div>

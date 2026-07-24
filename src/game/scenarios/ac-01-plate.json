@@ -246,6 +246,29 @@
    "Plate stock received: 8. Defeated by direct fire per order. Residual returned to inventory.",
    "Hull interiors swept prior to staging. Nil findings. Sweep logged.",
    "Dock detail present throughout. No interaction logged."
+  ],
+  "focus": {
+   "x": 0,
+   "z": -8,
+   "r": 12
+  },
+  "procedure": [
+   {
+    "id": "drive",
+    "label": "DRIVE TO THE SURVEY MARKER"
+   },
+   {
+    "id": "fire",
+    "label": "FIRE, ONE ROUND"
+   },
+   {
+    "id": "mg",
+    "label": "MG, ONE BURST"
+   },
+   {
+    "id": "volley",
+    "label": "VOLLEY, ONE RACK"
+   }
   ]
  }
 }

@@ -25,6 +25,20 @@ const plates = (w) => w.bodies.filter((b) => b.group === "plate" && b.kind === "
   const w2 = buildScenario(spec, { shelters: true });
   ok("AC-01: double-load deterministic", worldHash(w1) === worldHash(w2));
 
+  // the runner's exhaustion check must see a live pool from frame one — a
+  // kind-blind count (the unit-only bug) restock-spammed an untouched map
+  {
+    const wIdle = buildScenario(spec, { shelters: true });
+    let everEmpty = false;
+    for (let i = 0; i < 1200 && !everEmpty; i++) {
+      stepWorld(wIdle);
+      let alive = 0;
+      for (const b of wIdle.bodies) if ((b.kind === "unit" || b.kind === "vehicle") && b.group === spec.contract.subjects && b.alive) { alive = 1; break; }
+      if (!alive) everEmpty = true;
+    }
+    ok("AC-01: subject pool visible to the runner through 10 idle seconds", !everEmpty);
+  }
+
   // completability: aimed shells, one per plate, until 6 PROJECTILE credits
   const run = (w) => {
     let prog = 0, nextFire = 0, t0 = w.t;
