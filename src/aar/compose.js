@@ -7,6 +7,9 @@
 import { mulberry32 } from "../engine/core.js";
 
 export const ATTR = { player: "operator", world: "unattributed", gren: "counter-fire" };
+// ledger vocabulary: one plain word per cause (jargon rule — the long enum
+// names made phone reports a wall of text)
+export const CAUSE_WORD = { PROJECTILE: "round", BLAST: "blast", CRUSH: "treads", TOSS: "thrown", COLLAPSE: "collapse", DROWN: "drowned", FLIP: "flipped", IMPACT: "impact" };
 
 export const REMARKS = {
   PROJECTILE: ["Direct fire within acceptance band.", "One round, one line item."],
@@ -33,12 +36,14 @@ export function composeAAR({ contract, events, ordnance = { shell: 0, mg: 0, vol
   // salvo indices in first-seen order, so reports read stably
   const salvo = new Map();
   for (const e of kills) if (e.volley && !salvo.has(e.volley)) salvo.set(e.volley, salvo.size + 1);
+  // one compact ledger line per subject; operator attribution is the default
+  // and goes unwritten — only exceptions (unattributed, counter-fire) print
   kills.forEach((e, i) => {
-    const bits = [`SUBJECT ${pad2(i + 1)} — ${e.cause}`];
+    const bits = [`${pad2(i + 1)} · ${CAUSE_WORD[e.cause] || e.cause.toLowerCase()}`];
     if (e.buildingId) bits.push(`struct ${String(e.buildingId).toUpperCase()}`);
     if (e.volley) bits.push(`salvo ${salvo.get(e.volley)}`);
-    bits.push(`t+${(e.t - t0).toFixed(1)}s`);
-    bits.push(`attributed: ${ATTR[e.attacker] || e.attacker}`);
+    bits.push(`${Math.round(e.t - t0)}s`);
+    if (e.attacker !== "player") bits.push(ATTR[e.attacker] || e.attacker);
     lines.push("  " + bits.join(" · "));
   });
   lines.push(`EXPENDITURE: ${ordnance.shell} SHELL · ${ordnance.mg} MG · ${ordnance.volley} SALVO`);

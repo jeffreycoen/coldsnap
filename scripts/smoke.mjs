@@ -155,7 +155,7 @@ try {
   await page.waitForFunction(() => !!document.querySelector("[data-aar]"));
   const aarText = await page.evaluate(() => document.querySelector("[data-aar]").innerText);
   ok("AAR renders the bureau form header", aarText.includes("WORK ORDER WO-01") && aarText.includes("FIELD ACCEPTANCE DIVISION"));
-  ok("AAR itemizes subjects with salvo + attribution", /SUBJECT 01 — /.test(aarText) && aarText.includes("salvo 1") && aarText.includes("attributed: operator"));
+  ok("AAR itemizes subjects compactly", /01 · /.test(aarText) && aarText.includes("salvo 1"));
   ok("AAR accounts for the expended salvo", aarText.includes("EXPENDITURE: 0 SHELL · 0 MG · 1 SALVO"));
   ok("AAR closes with a remark and a stamp", aarText.includes("REMARK:") && aarText.includes("FULFILLED"));
   await page.evaluate(() => document.querySelector("[data-aar-file]").click());

@@ -1057,12 +1057,16 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
         const file = () => { const S = stateRef.current; if (S) S.aar = null; };
         return (
           <div onClick={file} style={{ position: "absolute", inset: 0, background: "rgba(10,12,16,0.55)", zIndex: 6, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
-            <div data-aar onClick={(e) => e.stopPropagation()} style={{ ...P.panel, position: "relative", width: "min(470px, 94vw)", maxHeight: "76vh", overflowY: "auto", padding: "12px 16px" }}>
+            <style>{`
+              @keyframes csPrintout { from { clip-path: inset(0 0 100% 0); } to { clip-path: inset(0 0 0% 0); } }
+              @keyframes csStamp { 0% { opacity: 0; transform: rotate(-7deg) scale(2.4); } 70% { opacity: 1; transform: rotate(-7deg) scale(0.92); } 100% { opacity: 0.9; transform: rotate(-7deg) scale(1); } }
+            `}</style>
+            <div data-aar onClick={(e) => e.stopPropagation()} style={{ ...P.panel, position: "relative", width: "min(470px, 94vw)", maxHeight: "76vh", overflowY: "auto", padding: "12px 16px", animation: "csPrintout 1.5s steps(22) both" }}>
               <div style={{ borderBottom: "1px dashed #3a414b", paddingBottom: 6, marginBottom: 9, display: "flex", justifyContent: "space-between", gap: 10, fontSize: isTouch ? 10 : 9, letterSpacing: 1.5, color: "#8b93a0", whiteSpace: "nowrap" }}>
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>PROCUREMENT BUREAU · FIELD ACCEPTANCE DIVISION</span>
                 <span>FORM AA-7 · CARBON 2/3</span>
               </div>
-              <div style={{ position: "absolute", top: 34, right: 16, transform: "rotate(-7deg)", border: `3px double ${stampCol}`, color: stampCol, padding: "3px 10px", fontSize: 13, letterSpacing: 3, opacity: 0.9, textAlign: "center", pointerEvents: "none" }}>
+              <div style={{ position: "absolute", top: 34, right: 16, transform: "rotate(-7deg)", border: `3px double ${stampCol}`, color: stampCol, padding: "3px 10px", fontSize: 13, letterSpacing: 3, opacity: 0.9, textAlign: "center", pointerEvents: "none", animation: "csStamp 0.35s 1.6s both" }}>
                 {hud.aar.outcome.split(" — ")[0]}
                 {hud.aar.medal ? (
                   <div style={{ fontSize: 10, letterSpacing: 2 }}>★ {hud.aar.medal}</div>

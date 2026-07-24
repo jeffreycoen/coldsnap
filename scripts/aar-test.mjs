@@ -22,7 +22,7 @@ const kill = (o) => ({ type: "kill", cause: "BLAST", attacker: "player", group: 
   ok("header carries the work order", r[0] === "WORK ORDER WO-03 — AREA SATURATION");
   ok("status carries outcome, time, commendation", r[1] === "STATUS: FULFILLED · 5.0s · COMMENDATION: GOLD");
   ok("subjects counted", r[2] === "SUBJECTS: 2 PROCESSED");
-  ok("subject line grammar", r[3] === "  SUBJECT 01 — BLAST · t+1.1s · attributed: operator");
+  ok("subject line grammar", r[3] === "  01 · blast · 1s");
   ok("expenditure line", r[5] === "EXPENDITURE: 2 SHELL · 0 MG · 0 SALVO");
 }
 
@@ -37,7 +37,7 @@ const kill = (o) => ({ type: "kill", cause: "BLAST", attacker: "player", group: 
 {
   const events = [kill({ attacker: "world" }), kill({ attacker: "gren" })];
   const r = composeAAR({ contract: CONTRACT, events, t0: 10, elapsed: 4, seed: 1 });
-  ok("world reads unattributed, gren reads counter-fire", r[3].includes("attributed: unattributed") && r[4].includes("attributed: counter-fire"));
+  ok("world reads unattributed, gren reads counter-fire", r[3].includes("unattributed") && r[4].includes("counter-fire"));
 }
 
 // zero-kill deviation shape + dispersed suffix + NONE remark
@@ -75,7 +75,7 @@ const kill = (o) => ({ type: "kill", cause: "BLAST", attacker: "player", group: 
   ok("real volley produces kills to report", killEvents.length >= 3);
   ok("every real kill gets a subject line", r.length === 3 + killEvents.length + 2);
   ok("real kills carry salvo annotation", r[3].includes("salvo 1"));
-  ok("real kills attribute to operator", r[3].includes("attributed: operator"));
+  ok("real kills leave default attribution unwritten", !r[3].includes("operator"));
 }
 
 if (fails.length) {
