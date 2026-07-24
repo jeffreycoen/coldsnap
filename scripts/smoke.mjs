@@ -274,6 +274,7 @@ try {
   book = await text();
   ok("filed report returns to the order book", true);
   ok("AC-02 unseals after AC-01", book.includes("BATTERY REDUCTION"));
+  ok("completed AC-01 stays replayable", await page.evaluate(() => !document.querySelector('[data-camp="ac01"]').disabled));
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => document.body.innerText.includes("PROVING GROUNDS"));
 

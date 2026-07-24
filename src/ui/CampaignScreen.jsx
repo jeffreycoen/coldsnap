@@ -21,7 +21,7 @@ export default function CampaignScreen({ progress, record, onPlay, onBack }) {
           const done = i < progress;
           const current = i === progress;
           const sealed = i > progress;
-          const playable = current && !!m.scenario;
+          const playable = !!m.scenario && i <= progress; // completed orders stay replayable
           const row = record[m.id];
           const marks = row ? `${row.fulfilled ? "★" : ""}${row.deviated ? "☆" : ""}` : "";
           return (
@@ -46,7 +46,7 @@ export default function CampaignScreen({ progress, record, onPlay, onBack }) {
                 {sealed ? redact(m.title) : m.title}
               </span>
               <span style={{ fontSize: 12, flexShrink: 0, color: row && row.deviated && !row.fulfilled ? "#9aa7b4" : "#c9a04e" }}>
-                {done ? (marks || "★") : current ? (playable ? "▶ DEPLOY" : "AWAITING ISSUE") : "SEALED"}
+                {done ? `${marks || "★"} · REPLAY` : current ? (playable ? "▶ DEPLOY" : "AWAITING ISSUE") : "SEALED"}
               </span>
             </button>
           );
