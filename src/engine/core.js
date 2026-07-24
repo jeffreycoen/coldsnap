@@ -512,7 +512,13 @@ export function explode(world, x, y, z, spec) {
     V.norm(dir, dir);
     const occ = occOf(b, dist);
     const temper = Math.min(1, Math.sqrt(220 / Math.max(80, b.mass)));
-    const dv = spec.kv * f * temper * (0.4 + 0.6 * occ);
+    // DIVERGENCE from the frozen demo: above a 600kg knee the linear kick is
+    // momentum-consistent (~1/m) instead of sqrt-tempered — the sqrt curve
+    // gave the 3800kg hull a 6.8 m/s shove from one mortar near-miss (and the
+    // coax ~50x real momentum). Continuous at the knee; masonry (100kg) and
+    // infantry (82kg) keep the demo's toss feel exactly.
+    const dvTemper = b.mass <= 600 ? temper : Math.sqrt(220 / 600) * (600 / b.mass);
+    const dv = spec.kv * f * dvTemper * (0.4 + 0.6 * occ);
     V.addScaled(b.v, b.v, dir, dv);
     // torque for tumble
     const j = v3((world.rng() - 0.5), (world.rng() - 0.5), (world.rng() - 0.5));
@@ -524,8 +530,16 @@ export function explode(world, x, y, z, spec) {
     if (b.kind === "vehicle" && spec.vroll) {
       const hd = Math.hypot(d.x, d.z) || 1;
       const axis = v3(-d.z / hd, 0, d.x / hd); // horizontal, perpendicular to blast direction
-      V.addScaled(b.w, b.w, axis, spec.vroll * f * (0.4 + 0.6 * occ));
-      b.v.y += (spec.vlift || spec.vroll) * f * (0.4 + 0.6 * occ);
+      // DIVERGENCE from the frozen demo: near-misses mass-temper the roll
+      // kick (raw, one mortar burst beside the hull rolled 4.0 rad/s into a
+      // 2.7 rad/s tip threshold and inverted the tank), but the temper
+      // blends back out as f approaches point-blank — a burst right under
+      // the hull can still flip it. Drama stays, the constant flipping goes.
+      const rollTemper0 = Math.min(1, Math.sqrt(600 / Math.max(80, b.mass)));
+      const pb = Math.max(0, (f - 0.55) / 0.45);
+      const rollTemper = rollTemper0 + (1 - rollTemper0) * pb * pb;
+      V.addScaled(b.w, b.w, axis, spec.vroll * f * (0.4 + 0.6 * occ) * rollTemper);
+      b.v.y += (spec.vlift || spec.vroll) * f * (0.4 + 0.6 * occ) * rollTemper;
     }
     if (b.kind === "chunk" || b.kind === "ice") {
       const jmag = b.mass * (b.kind === "ice" ? spec.kv * f : dv) * 0.7; // ice: brittle shock, untempered
@@ -1111,9 +1125,39 @@ export function recoverBison(world) {
   const b = world.byId.get(world.bisonId);
   if (!b || b.R[4] > 0.5) return false;
   wake(b);
-  const roll = b.R[1] >= 0 ? -6.2 : 6.2; // roll the short way
-  b.w.x = b.R[6] * roll; b.w.y = 0; b.w.z = b.R[8] * roll;
-  b.v.y = Math.max(b.v.y, 3.8);
+  // DIVERGENCE from the frozen demo (fixed 6.2 rad/s about hull-forward):
+  // - the roll runs about the TRUE righting axis (hull-up x world-up), so a
+  //   nose-vertical wedge — where the forward axis has no horizontal part
+  //   and the old press was a silent no-op — still gets a real roll;
+  // - magnitude scales with the remaining angle so a press from a partial
+  //   tilt can't overshoot back past inverted;
+  // - a submerged hull gets a taller hop (the pool's vertical drag eats
+  //   airtime the roll needs);
+  // - presses that aren't improving the pose escalate: taller hop plus a
+  //   lateral shove walks the hull out from under rubble pinning it.
+  const need = Math.acos(Math.max(-1, Math.min(1, b.R[4])));
+  let ax = -b.R[5], az = b.R[3]; // up x worldUp
+  const al = Math.hypot(ax, az);
+  if (al > 0.2) { ax /= al; az /= al; }
+  else { // flat turtle: axis degenerate, fall back to horizontal forward
+    const fl = Math.hypot(b.R[6], b.R[8]) || 1;
+    ax = b.R[6] / fl; az = b.R[8] / fl;
+  }
+  const stuck = b.recoverT != null && world.t - b.recoverT < 5 && b.R[4] < (b.recoverR4 != null ? b.recoverR4 : -2) + 0.15;
+  b.recoverN = stuck ? Math.min(3, (b.recoverN || 0) + 1) : 0;
+  const esc = b.recoverN;
+  const mag = (0.4 + 1.24 * need) * (1 + 0.18 * esc);
+  b.w.x = ax * mag; b.w.y = 0; b.w.z = az * mag;
+  const wz = world.water;
+  const wet = wz && b.pos.x > wz.x0 && b.pos.x < wz.x1 && b.pos.z > wz.z0 && b.pos.z < wz.z1 && b.pos.y - b.hy < wz.level;
+  b.v.y = Math.max(b.v.y, (wet ? 5.2 : 3.8) + esc * 0.8);
+  if (esc) {
+    const ll = Math.hypot(b.R[3], b.R[5]);
+    const lx = ll > 0.2 ? b.R[3] / ll : b.R[6], lz = ll > 0.2 ? b.R[5] / ll : b.R[8];
+    b.v.x += lx * 0.9 * esc; b.v.z += lz * 0.9 * esc;
+  }
+  b.recoverR4 = b.R[4];
+  b.recoverT = world.t; // opens the suspension servo's recover window
   return true;
 }
 
@@ -1499,13 +1543,25 @@ function stepStatus(world) {
     // while the lean is recoverable; a true capsize still needs RECOVER.
     if (b.id === world.bisonId && b.grounded) {
       const blastFresh = b.lastImp && b.lastImp.src === "blast" && world.t - b.lastImp.t < 1.2;
-      if (!blastFresh) {
+      // DIVERGENCE from the frozen demo: RECOVER opens a 1.2s window where
+      // the servo must not brake the righting roll and the restoring torque
+      // works from any tilt. Without it the 6/s damping parks a capsized
+      // hull on its side forever — the servo's terminal 0.37 rad/s can't
+      // climb the ~0.72 rad/s corner barrier, and every press died on
+      // touchdown. recoverT is only ever set by an explicit player press.
+      const recFresh = b.recoverT != null && world.t - b.recoverT < 1.2;
+      if (!blastFresh && !recFresh) {
         b.w.x *= 1 - Math.min(1, 6 * dt);
         b.w.z *= 1 - Math.min(1, 6 * dt);
-        if (b.R[4] > 0.35 && b.R[4] < 0.995) {
-          const tqx = b.R[5], tqz = -b.R[3]; // up x worldUp
-          b.w.x += tqx * 2.2 * dt; b.w.z += tqz * 2.2 * dt;
-        }
+      }
+      if ((!blastFresh || recFresh) && b.R[4] > (recFresh ? -0.9 : 0.35) && b.R[4] < 0.995) {
+        // DIVERGENCE from the frozen demo, which had this axis SIGN-INVERTED
+        // (worldUp x up): the demo's "gentle self-righting" actively rolled
+        // the hull AWAY from upright, walking moderate leans down to R4~0.5
+        // where RECOVER refuses — one of the "impossible to right" states.
+        const tqx = -b.R[5], tqz = b.R[3]; // up x worldUp
+        const gain = recFresh ? 3.2 : 2.2;
+        b.w.x += tqx * gain * dt; b.w.z += tqz * gain * dt;
       }
     }
     if (b.kind === "unit" && b.alive) {

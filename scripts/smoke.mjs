@@ -138,7 +138,7 @@ try {
   await page.mouse.click(480, 300); // dismiss deploy overlay
   await page.waitForFunction(() => !!document.querySelector("[data-brief]"));
   body = await text();
-  ok("work-order brief card presents WO-01", body.includes("WORK ORDER") && body.includes("Three subjects at the gunnery pad"));
+  ok("work-order brief card presents WO-01", body.includes("WORK ORDER") && body.includes("The pad detail is staged"));
   await sleep(800); // the brief ack arms after 500ms so a trailing deploy-tap click can't dismiss it
   await page.evaluate(() => document.querySelector("[data-brief-ack]").click());
   await page.waitForFunction(() => !document.querySelector("[data-brief]"));
@@ -208,6 +208,33 @@ try {
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => !document.querySelector("canvas"));
 
+  // --- subject restock: exhaust WO-01's pool the WRONG way (falls, not
+  // direct fire) and the bureau must reissue the detail instead of stranding
+  await page.evaluate(() => localStorage.setItem("coldsnap-cs-trial", "0"));
+  await clickMenu("contracts");
+  await page.waitForFunction(() => !!window.__COLDSNAP__);
+  await page.waitForFunction(() => document.body.innerText.includes("WO-01"));
+  await page.mouse.click(480, 300); // dismiss the deploy overlay
+  await page.evaluate(() => {
+    const w = window.__COLDSNAP__._world();
+    for (const b of w.bodies) if (b.group === "gunnery" && b.kind === "unit" && b.alive) {
+      b.pos.y += 35; // long fall onto the pad: IMPACT kills, which never match direct-fire
+      b.v.x = 0; b.v.y = 0; b.v.z = 0;
+      b.sleeping = false;
+    }
+  });
+  await page.waitForFunction(() => document.body.innerText.includes("REPLACEMENT DETAIL ISSUED"), { timeout: 90000, polling: 1000 });
+  ok("exhausted subject pool reissues the detail", true);
+  await page.waitForFunction(() => {
+    const w = window.__COLDSNAP__._world();
+    let n = 0;
+    for (const b of w.bodies) if (b.group === "gunnery" && b.kind === "unit" && b.alive) n++;
+    return n >= 12;
+  }, { timeout: 20000, polling: 1000 });
+  ok("fresh detail is on the pad, order still stands", await page.evaluate(() => window.__COLDSNAP__._S.trial.idx === 0));
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => !document.querySelector("canvas"));
+
   // --- phone layout: the order must be readable on a small touch screen
   const phone = await browser.newPage();
   phone.on("pageerror", (e) => pageErrors.push(String(e)));
@@ -225,7 +252,7 @@ try {
   await phone.touchscreen.tap(195, 600); // dismiss deploy overlay
   await phone.waitForFunction(() => !!document.querySelector("[data-brief]"));
   const phoneBody = await phone.evaluate(() => document.body.innerText);
-  ok("phone: brief card carries the full directive", phoneBody.includes("Three subjects at the gunnery pad"));
+  ok("phone: brief card carries the full directive", phoneBody.includes("The pad detail is staged"));
   const skipRight = await phone.evaluate(() => {
     const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === "SKIP");
     return b ? b.getBoundingClientRect().right : 1e9;

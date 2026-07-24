@@ -5,7 +5,7 @@
 export const CONTRACTS = {
   gunnery: {
     wo: "WO-01", title: "DIRECT-FIRE ACCEPTANCE",
-    directive: "Three subjects at the gunnery pad. Main gun or coax. Reticle discipline is assumed.",
+    directive: "The pad detail is staged. Three kills by main gun or coax — direct fire only. Reticle discipline is assumed.",
     commendation: "Direct-fire lethality within acceptance band.",
   },
   roadkill: {
@@ -15,7 +15,7 @@ export const CONTRACTS = {
   },
   saturation: {
     wo: "WO-03", title: "AREA SATURATION",
-    directive: "One salvo. Three subjects. Density is the deliverable.",
+    directive: "One salvo. Three kills inside its footprint. Density is the deliverable.",
     commendation: "Coverage per round meets projection.",
   },
   demolition: {

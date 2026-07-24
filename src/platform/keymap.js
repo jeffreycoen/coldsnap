@@ -8,8 +8,11 @@
 export const ACTIONS = [
   { id: "forward", label: "DRIVE FORWARD", def: "w" },
   { id: "back", label: "DRIVE BACK", def: "s" },
-  { id: "left", label: "STEER LEFT", def: "a" },
-  { id: "right", label: "STEER RIGHT", def: "d" },
+  // def = the canonical key the frozen demo listens for; bind = the default
+  // physical key. Steering ships crossed (Jeff's call: stock A/D read
+  // backwards): pressing A synthesizes the demo's 'd', D synthesizes 'a'.
+  { id: "left", label: "STEER LEFT", def: "d", bind: "a" },
+  { id: "right", label: "STEER RIGHT", def: "a", bind: "d" },
   { id: "brake", label: "BRAKE", def: " " },
   { id: "mg", label: "COAX MG (HOLD)", def: "g" },
   { id: "volley", label: "ROCKET VOLLEY", def: "v" },
@@ -21,7 +24,7 @@ export const ACTIONS = [
   { id: "reset", label: "RESET RANGE", def: "0" },
 ];
 
-export const DEFAULTS = Object.fromEntries(ACTIONS.map((a) => [a.id, a.def]));
+export const DEFAULTS = Object.fromEntries(ACTIONS.map((a) => [a.id, a.bind || a.def]));
 
 // Held-style modifiers wait for the real key of a chord; the others either
 // never deliver a paired keyup (Meta opens the OS menu, CapsLock latches on

@@ -71,13 +71,13 @@ function makeAudio() {
   };
 }
 const TRIALS = [
-  { id: "gunnery", title: "GUNNERY", need: 3, par: [10, 18], hint: "Reticle on them — hold FIRE", focus: () => ({ x: STATIONS.gunnery.x, z: STATIONS.gunnery.z, r: 5 }), setup: (w) => w.pg.respawnSquad("gunnery"), match: (e) => matchKill(CONTRACT_PREDICATES.gunnery, e) },
-  { id: "roadkill", title: "ROADKILL", need: 2, par: [9, 16], hint: "Drive through the line with the stick", focus: () => ({ x: STATIONS.roadlane.x, z: STATIONS.roadlane.z, r: 7 }), setup: (w) => w.pg.respawnSquad("roadlane"), match: (e) => matchKill(CONTRACT_PREDICATES.roadkill, e) },
-  { id: "saturation", title: "SATURATION FIRE", need: 3, par: [10, 20], hint: "ONE volley, 3 kills — aim, press VOLLEY", focus: () => ({ x: STATIONS.gunnery.x, z: STATIONS.gunnery.z, r: 5 }), setup: (w) => w.pg.respawnSquad("gunnery"), volley: true },
-  { id: "demolition", title: "DEMOLITION MAN", need: 1, par: [12, 22], hint: "Breach the keep — bury the garrison inside", focus: () => ({ x: STATIONS.garrison.x, z: STATIONS.garrison.z, r: 5 }), setup: (w) => { w.pg.repairGarrison(); w.pg.respawnSquad("demo"); }, match: (e) => matchKill(CONTRACT_PREDICATES.demolition, e) },
-  { id: "deep_end", title: "THE DEEP END", need: 1, par: [15, 28], hint: "Plow them into the pool — ease off, brake at the lip", focus: () => ({ x: STATIONS.poolside.x, z: STATIONS.poolside.z, r: 5 }), setup: (w) => { thawPool(w); w.pg.respawnSquad("poolside"); }, match: (e) => matchKill(CONTRACT_PREDICATES.deep_end, e) },
-  { id: "counter_battery", title: "COUNTER-BATTERY", need: 3, par: [16, 30], hint: "Mortars on the ridge — they shoot back. Silence all three.", focus: () => ({ x: STATIONS.pit.x, z: STATIONS.pit.z, r: 6 }), setup: (w) => w.pg.respawnSquad("pit"), match: (e) => matchKill(CONTRACT_PREDICATES.counter_battery, e) },
-  { id: "thin_ice", title: "THIN ICE", need: 3, par: [12, 24], hint: "The pond is frozen and the drill squad is on it. Clear them off — any way that works.", focus: () => ({ x: 0, z: 28, r: 7 }), setup: (w) => {
+  { id: "gunnery", title: "GUNNERY", need: 3, par: [10, 18], hint: "Reticle on them — hold FIRE", subjects: "gunnery", focus: () => ({ x: STATIONS.gunnery.x, z: STATIONS.gunnery.z, r: 5 }), setup: (w) => w.pg.respawnSquad("gunnery"), match: (e) => matchKill(CONTRACT_PREDICATES.gunnery, e) },
+  { id: "roadkill", title: "ROADKILL", need: 2, par: [9, 16], hint: "Drive through the line with the stick", subjects: "roadlane", focus: () => ({ x: STATIONS.roadlane.x, z: STATIONS.roadlane.z, r: 7 }), setup: (w) => w.pg.respawnSquad("roadlane"), match: (e) => matchKill(CONTRACT_PREDICATES.roadkill, e) },
+  { id: "saturation", title: "SATURATION FIRE", need: 3, par: [10, 20], hint: "ONE volley, 3 kills — aim, press VOLLEY", subjects: "gunnery", focus: () => ({ x: STATIONS.gunnery.x, z: STATIONS.gunnery.z, r: 5 }), setup: (w) => w.pg.respawnSquad("gunnery"), volley: true },
+  { id: "demolition", title: "DEMOLITION MAN", need: 1, par: [12, 22], hint: "Breach the keep — bury the garrison inside", subjects: "demo", focus: () => ({ x: STATIONS.garrison.x, z: STATIONS.garrison.z, r: 5 }), setup: (w) => { w.pg.repairGarrison(); w.pg.respawnSquad("demo"); }, match: (e) => matchKill(CONTRACT_PREDICATES.demolition, e) },
+  { id: "deep_end", title: "THE DEEP END", need: 1, par: [15, 28], hint: "Plow them into the pool — ease off, brake at the lip", subjects: "poolside", focus: () => ({ x: STATIONS.poolside.x, z: STATIONS.poolside.z, r: 5 }), setup: (w) => { thawPool(w); w.pg.respawnSquad("poolside"); }, match: (e) => matchKill(CONTRACT_PREDICATES.deep_end, e) },
+  { id: "counter_battery", title: "COUNTER-BATTERY", need: 3, par: [16, 30], hint: "Mortars on the ridge — they shoot back. Silence all three.", subjects: "pit", focus: () => ({ x: STATIONS.pit.x, z: STATIONS.pit.z, r: 6 }), setup: (w) => w.pg.respawnSquad("pit"), match: (e) => matchKill(CONTRACT_PREDICATES.counter_battery, e) },
+  { id: "thin_ice", title: "THIN ICE", need: 3, par: [12, 24], hint: "The pond is frozen and the drill squad is on it. Clear them off — any way that works.", subjects: "ponddrill", focus: () => ({ x: 0, z: 28, r: 7 }), setup: (w) => {
     for (let i = w.bodies.length - 1; i >= 0; i--) if (w.bodies[i].group === "ponddrill") { w.byId.delete(w.bodies[i].id); w.bodies.splice(i, 1); }
     freezePool(w);
     for (let i = 0; i < 6; i++) {
@@ -558,6 +558,24 @@ export default function ColdsnapContractSandbox({ onExit }) {
           S.trial.altT = st === "CLEAR" ? (S.trial.altT || 0) + dt : 0;
           if (S.trial.altT >= td.alt.holdS) advanceDeviation(td);
         }
+        // subject restock: a cause-restricted order can exhaust its pool —
+        // every subject dead the wrong way (blast-through on the garrison,
+        // crushing the poolside detail) leaves the acceptance stranded with
+        // nothing left to kill. The bureau reissues the detail instead.
+        if (td && td.subjects && S.trial.prog < td.need) {
+          let pool = 0;
+          for (const b of w.bodies) if (b.kind === "unit" && b.group === td.subjects && b.alive) { pool = 1; break; }
+          if (pool) S.trial.poolGoneT = 0;
+          else {
+            S.trial.poolGoneT = (S.trial.poolGoneT || 0) + dt;
+            if (S.trial.poolGoneT >= 2) {
+              S.trial.poolGoneT = 0;
+              td.setup(w);
+              if (S.trialLog) S.trialLog.restocks = (S.trialLog.restocks || 0) + 1;
+              S.toasts.push({ id: S.toastSeq++, title: "REPLACEMENT DETAIL ISSUED", desc: "Subject pool exhausted. The order stands.", t: 3.6 });
+            }
+          }
+        }
       }
       const rNow = canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : null;
       const hNow = rNow && rNow.height > 4 ? rNow.height : 0;
@@ -629,7 +647,7 @@ export default function ColdsnapContractSandbox({ onExit }) {
           fps: S.fps, bodies: w.bodies.length, tally: { ...S.tally }, feed: [...S.feed],
           achUnlocked: [...w.ach.unlocked], toasts: [...S.toasts], total: w.ach.total,
           cds: { fire: S.cds.fire, volley: S.cds.volley },
-          flipped: (() => { const bb2 = w.byId.get(w.bisonId); return bb2 ? bb2.R[4] < 0.3 : false; })(),
+          flipped: (() => { const bb2 = w.byId.get(w.bisonId); return bb2 ? bb2.R[4] < 0.45 : false; })(), // matches the engine's recover gate (0.5) minus margin — the demo's 0.3 left a stuck band with no visible RECOVER
           iceOn: !!w.ice,
           trial: { idx: S.trial.idx, prog: S.trial.prog, flashT: S.trial.flashT, free: S.trial.idx >= TRIALS.length, el: Math.max(0, w.t - S.trial.t0) },
           medals: { ...S.medals },
