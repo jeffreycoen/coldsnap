@@ -153,6 +153,9 @@ export default function ColdsnapContractSandbox() {
       const t = TRIALS[idx];
       if (t) { try { t.setup(S.world); } catch (e) {} S.world.trialFocus = t.focus(); }
       else S.world.trialFocus = null;
+      // the bureau hands you the document: a brief card presented at each new
+      // order (the top bar truncates on phones — this is the readable copy)
+      S.brief = t ? { title: t.title, directive: t.hint } : null;
     };
     const MEDAL = (t, el) => (el <= t.par[0] ? "GOLD" : el <= t.par[1] ? "SILVER" : "BRONZE");
     const advanceTrial = (skipped) => {
@@ -551,6 +554,7 @@ export default function ColdsnapContractSandbox() {
           iceOn: !!w.ice,
           trial: { idx: S.trial.idx, prog: S.trial.prog, flashT: S.trial.flashT, free: S.trial.idx >= TRIALS.length, el: Math.max(0, w.t - S.trial.t0) },
           medals: { ...S.medals },
+          brief: S.brief,
         });
       }
     };
@@ -639,12 +643,16 @@ export default function ColdsnapContractSandbox() {
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, background: hud.trial.flashT > 0 ? "rgba(216,67,58,0.92)" : "rgba(16,19,24,0.92)", borderBottom: "2px solid #3a414b", color: "#e6ebf1", padding: "8px 10px", fontSize: isTouch ? 12 : 13, display: "flex", alignItems: "center", gap: 10, zIndex: 3 }}>
         {trialDef ? (
           <>
-            <span style={{ color: "#ffd27a", whiteSpace: "nowrap" }}>ORDER {hud.trial.idx + 1}/{TRIALS.length}</span>
-            <span style={{ color: "#ff6b5e", whiteSpace: "nowrap" }}>{trialDef.title}</span>
-            <span style={{ opacity: 0.85, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{trialDef.hint}</span>
-            <span style={{ whiteSpace: "nowrap", opacity: 0.75 }}>{hud.trial.el.toFixed(0)}s</span>
-            <span style={{ whiteSpace: "nowrap" }}>{hud.trial.prog}/{trialDef.need}</span>
-            <button style={{ ...P.btn, padding: "3px 8px", fontSize: 11 }} onClick={() => { const S = stateRef.current; if (S) window.__COLDSNAP__ && window.__COLDSNAP__.skipTrial(); }}>SKIP</button>
+            <span style={{ color: "#ffd27a", whiteSpace: "nowrap", flexShrink: 0 }}>ORDER {hud.trial.idx + 1}/{TRIALS.length}</span>
+            <span
+              title="re-read the work order"
+              onClick={() => { const S = stateRef.current; if (S) S.brief = { title: trialDef.title, directive: trialDef.hint }; }}
+              style={{ color: "#ff6b5e", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, flexShrink: 1, cursor: "pointer" }}
+            >{trialDef.title}</span>
+            {!isTouch && <span style={{ opacity: 0.85, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{trialDef.hint}</span>}
+            <span style={{ whiteSpace: "nowrap", opacity: 0.75, flexShrink: 0, marginLeft: "auto" }}>{hud.trial.el.toFixed(0)}s</span>
+            <span style={{ whiteSpace: "nowrap", flexShrink: 0 }}>{hud.trial.prog}/{trialDef.need}</span>
+            <button style={{ ...P.btn, padding: "3px 8px", fontSize: 11, flexShrink: 0 }} onClick={() => { const S = stateRef.current; if (S) window.__COLDSNAP__ && window.__COLDSNAP__.skipTrial(); }}>SKIP</button>
           </>
         ) : (
           <>
@@ -791,7 +799,15 @@ export default function ColdsnapContractSandbox() {
         <button style={P.btn} onClick={() => act("repair")}>{isTouch ? "REPAIR" : "REPAIR [3]"}</button>
         <button style={P.btn} onClick={() => act("reset")}>{isTouch ? "RESET" : "RESET [0]"}</button>
       </div>
-      <div style={{ position: "absolute", top: 60, left: "50%", transform: "translateX(-50%)", display: "flex", flexDirection: "column", gap: 6, alignItems: "center" }}>
+      <div style={{ position: "absolute", top: 60, left: "50%", transform: "translateX(-50%)", display: "flex", flexDirection: "column", gap: 6, alignItems: "center", zIndex: 3, maxWidth: "94vw" }}>
+        {started && hud.brief && (
+          <div data-brief style={{ ...P.panel, position: "static", borderColor: "#ffd27a", maxWidth: "min(430px, 92vw)" }}>
+            <div style={{ fontSize: 10, letterSpacing: 2, opacity: 0.7 }}>WORK ORDER</div>
+            <div style={{ color: "#ffd27a", letterSpacing: 1, marginTop: 2 }}>{hud.brief.title}</div>
+            <div style={{ fontSize: isTouch ? 11 : 12, opacity: 0.92, marginTop: 5 }}>{hud.brief.directive}</div>
+            <button data-brief-ack style={{ ...P.btn, marginTop: 9, padding: "6px 12px", fontSize: 11, borderColor: "#8a5a1c" }} onClick={() => { const S = stateRef.current; if (S) S.brief = null; }}>ACKNOWLEDGE</button>
+          </div>
+        )}
         {hud.toasts.map((t) => (
           <div key={t.id} style={{ ...P.panel, position: "static", borderColor: "#d8433a", textAlign: "center" }}>
             <div style={{ color: "#ff6b5e" }}>★ {t.title}</div>

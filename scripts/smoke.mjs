@@ -120,6 +120,12 @@ try {
   ok("sandbox world builds fully (1030 bodies)", csState.bodies === 1030);
   // play it: a volley on the gunnery pad should fulfil WO-01 outright
   await page.mouse.click(480, 300); // dismiss deploy overlay
+  await page.waitForFunction(() => !!document.querySelector("[data-brief]"));
+  body = await text();
+  ok("work-order brief card presents WO-01", body.includes("WORK ORDER") && body.includes("Three subjects at the gunnery pad"));
+  await page.evaluate(() => document.querySelector("[data-brief-ack]").click());
+  await page.waitForFunction(() => !document.querySelector("[data-brief]"));
+  ok("brief acknowledges away", true);
   await page.evaluate(() => window.__COLDSNAP__.volleyAt(0, -30));
   await page.waitForFunction(() => window.__COLDSNAP__.getState().trial.idx >= 1, { timeout: 20000 });
   ok("volley on the gunnery pad fulfils WO-01 (order advances)", true);
@@ -128,9 +134,36 @@ try {
   await page.waitForFunction(() => document.body.innerText.includes("COMMENDATION — WO-01"), { timeout: 10000 });
   body = await text();
   ok("completion toast reads as a commendation", body.includes("COMMENDATION — WO-01") && body.includes("Direct-fire lethality"));
+  await page.waitForFunction(() => { const b = document.querySelector("[data-brief]"); return b && b.innerText.includes("WO-02"); });
+  ok("the next order's brief is presented (WO-02)", true);
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => !document.querySelector("canvas"));
   ok("ESC returns from the sandbox", true);
+
+  // --- phone layout: the order must be readable on a small touch screen
+  const phone = await browser.newPage();
+  phone.on("pageerror", (e) => pageErrors.push(String(e)));
+  await phone.emulate({
+    viewport: { width: 390, height: 844, isMobile: true, hasTouch: true, deviceScaleFactor: 2 },
+    userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+  });
+  await phone.goto(URL, { waitUntil: "networkidle0" });
+  // storage is shared with the desktop page, which already completed WO-01 —
+  // reset order progress so this section starts at the first work order
+  await phone.evaluate(() => localStorage.removeItem("coldsnap-cs-trial"));
+  await phone.evaluate(() => document.querySelector("[data-menu=contracts]").click());
+  await phone.waitForSelector("canvas");
+  await phone.waitForFunction(() => !!window.__COLDSNAP__);
+  await phone.touchscreen.tap(195, 600); // dismiss deploy overlay
+  await phone.waitForFunction(() => !!document.querySelector("[data-brief]"));
+  const phoneBody = await phone.evaluate(() => document.body.innerText);
+  ok("phone: brief card carries the full directive", phoneBody.includes("Three subjects at the gunnery pad"));
+  const skipRight = await phone.evaluate(() => {
+    const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === "SKIP");
+    return b ? b.getBoundingClientRect().right : 1e9;
+  });
+  ok("phone: SKIP button fits on screen", skipRight <= 391);
+  await phone.close();
 
   // --- corrupt/hostile stored keymap resets to defaults (escape unbindable)
   await page.evaluate(() => localStorage.setItem("coldsnap-keymap", JSON.stringify({ ...JSON.parse(localStorage.getItem("coldsnap-keymap")), forward: "escape" })));
