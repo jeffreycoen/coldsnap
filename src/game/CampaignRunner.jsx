@@ -963,12 +963,7 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
           </div>
         </div>
       )}
-      {isTouch ? (
-        <div style={{ ...P.panel, top: 52, left: 10, padding: "4px 9px" }}>
-          <span style={{ color: "#ff6b5e", letterSpacing: 1.5, fontSize: 13 }}>COLDSNAP</span>
-          <span style={{ opacity: 0.6, marginLeft: 8, fontSize: 12 }}>{hud.fps} fps</span>
-        </div>
-      ) : (
+      {isTouch ? null : (
         <div style={{ ...P.panel, top: 44, left: 10 }}>
           <div style={{ fontSize: 14, color: "#ff6b5e", letterSpacing: 2 }}>COLDSNAP</div>
           <div style={{ opacity: 0.75 }}>{hud.fps} fps · {hud.bodies} bodies</div>
@@ -1126,7 +1121,7 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
         const next = spec.contract.procedure.find((st) => !(hud.proc && hud.proc[st.id]));
         return (
           <div data-procedure onClick={() => setProcOpen(!procOpen)}
-            style={{ position: "absolute", top: isTouch ? 96 : 58, left: 10, zIndex: 4, background: "rgba(16,21,27,0.82)", border: "1px solid #3a414b", padding: procOpen ? "8px 12px" : "5px 10px", fontSize: isTouch ? 12 : 11, color: "#c3cbd6", maxWidth: "64vw", cursor: "pointer", touchAction: "manipulation" }}>
+            style={{ position: "absolute", top: isTouch ? 52 : 58, left: 10, zIndex: 4, background: "rgba(16,21,27,0.82)", border: "1px solid #3a414b", padding: procOpen ? "8px 12px" : "5px 10px", fontSize: isTouch ? 12 : 11, color: "#c3cbd6", maxWidth: "64vw", cursor: "pointer", touchAction: "manipulation" }}>
             {procOpen ? (
               <>
                 <div style={{ letterSpacing: 2, color: "#8b93a0", fontSize: isTouch ? 10 : 9, marginBottom: 5 }}>FIRING PROCEDURE \u2014 ANNEX A</div>
