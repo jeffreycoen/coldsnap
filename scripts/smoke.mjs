@@ -172,6 +172,39 @@ try {
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => !document.querySelector("canvas"));
 
+  // --- the deviation: clear the drill squad off the sheet without a kill.
+  // Teleport-assisted herd (the detector is what's under test, not the drive).
+  await page.evaluate(() => localStorage.setItem("coldsnap-cs-trial", "6"));
+  await clickMenu("contracts");
+  await page.waitForFunction(() => !!window.__COLDSNAP__);
+  await page.waitForFunction(() => document.body.innerText.includes("WO-07"));
+  ok("final order is SURFACE LOAD RATING", (await text()).includes("SURFACE LOAD RATING"));
+  await page.mouse.click(480, 300); // dismiss the deploy overlay so documents can render
+  await page.evaluate(() => {
+    const w = window.__COLDSNAP__._world();
+    for (const b of w.bodies) if (b.group === "ponddrill") {
+      b.pos.x += 40;
+      b.pos.y = w.field.heightAt(b.pos.x, b.pos.z) + 0.88; // on the ground, not inside it
+      b.v.x = 0; b.v.y = 0; b.v.z = 0;
+      b.sleeping = false;
+    }
+  });
+  // the 4s hold runs on game-loop dt, which lags real time badly under
+  // software WebGL (~5fps on the Pi) — allow a wide margin. Poll a cheap
+  // field on an interval: getState() computes worldHash over 1030 bodies,
+  // and raf-polling it starves the very game loop it is waiting on.
+  await page.waitForFunction(() => window.__COLDSNAP__._S.trial.idx >= 7, { timeout: 90000, polling: 1000 });
+  ok("silent no-kill completion advances past the order", true);
+  await page.waitForFunction(() => !!document.querySelector("[data-aar]"), { timeout: 20000, polling: 500 });
+  const devAar = await page.evaluate(() => document.querySelector("[data-aar]").innerText);
+  ok("deviation AAR: UNFULFILLED — DEVIATION, no commendation", devAar.includes("UNFULFILLED — DEVIATION") && !devAar.includes("COMMENDATION:"));
+  ok("deviation AAR counts the dispersed", devAar.includes("0 PROCESSED · 6 DISPERSED"));
+  await page.evaluate(() => document.querySelector("[data-aar-file]").click());
+  await page.waitForFunction(() => document.body.innerText.includes("FREE PLAY"));
+  ok("deviation stands in the record as a hollow star", (await text()).includes("☆"));
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => !document.querySelector("canvas"));
+
   // --- phone layout: the order must be readable on a small touch screen
   const phone = await browser.newPage();
   phone.on("pageerror", (e) => pageErrors.push(String(e)));

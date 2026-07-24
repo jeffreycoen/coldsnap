@@ -6,9 +6,10 @@
 // keys so sandbox progress never touches the demo's records.
 import React, { useEffect, useRef, useState } from "react";
 import {
-  CAUSE, STATIONS, addBody, thawPool, freezePool, buildProvingGrounds, stepWorld,
+  CAUSE, POOL, STATIONS, addBody, thawPool, freezePool, buildProvingGrounds, stepWorld,
   snapAim, recoverBison, fireVolley, bisonFire, bisonMg, worldHash, makeAch, heading,
 } from "../engine/core.js";
+import { disperseState } from "./altcheck.js";
 import { makeRenderer } from "../render/renderer.js";
 import { CONTRACTS } from "./contracts.js";
 import { composeAAR } from "../aar/compose.js";
@@ -82,7 +83,7 @@ const TRIALS = [
     }
     // any-kill experiment (was DROWN-only precision-by-design): every drown
   // still counts as before, plus any player-attributed kill — dead is dead.
-  }, match: (e) => e.group === "ponddrill" }, // any-kill: shards, drowning, blast — the hint promises "any way that works", and the drill squad is provably inert unprovoked
+  }, match: (e) => e.group === "ponddrill", alt: { group: "ponddrill", holdS: 4 } }, // any-kill: shards, drowning, blast — the hint promises "any way that works", and the drill squad is provably inert unprovoked. alt: the silent no-kill completion the bureau didn't ask for.
 ];
 // Phase 1 voice pass: overlay the bureau work-order fiction onto the trials.
 // Text only — ids, predicates, pars and setups are untouched.
@@ -166,6 +167,7 @@ export default function ColdsnapContractSandbox() {
       S.brief = t ? { title: t.title, directive: t.hint } : null;
       // fresh kill-event log + ordnance counters for this order's AAR
       S.trialLog = { events: [], ordnance: { shell: 0, mg: 0, volley: 0 } };
+      S.trial.altT = 0;
     };
     const MEDAL = (t, el) => (el <= t.par[0] ? "GOLD" : el <= t.par[1] ? "SILVER" : "BRONZE");
     const advanceTrial = (skipped) => {
@@ -199,6 +201,30 @@ export default function ColdsnapContractSandbox() {
         }
         S.toasts.push({ id: S.toastSeq++, title, desc, t: 4 });
       }
+      S.trial.flashT = 1.6;
+      enterTrial(S.trial.idx + 1);
+      try { window.storage.set("coldsnap-cs-trial", String(S.trial.idx)); } catch (e) {}
+    };
+    // the silent completion the bureau didn't ask for: subjects cleared off
+    // the sheet, all alive. Logged UNFULFILLED — DEVIATION, no commendation.
+    const advanceDeviation = (t) => {
+      S.audio.trial();
+      const el = Math.max(0.1, S.world.t - S.trial.t0);
+      const dispersed = S.world.bodies.filter((b) => b.group === t.alt.group && b.alive).length;
+      const desc = TRIALS[S.trial.idx + 1] ? "Next: " + TRIALS[S.trial.idx + 1].title : "FREE PLAY unlocked";
+      S.medals[t.id] = { time: +el.toFixed(1), medal: null, deviation: true };
+      try { window.storage.set("coldsnap-cs-medals", JSON.stringify(S.medals)); } catch (e) {}
+      try {
+        const report = composeAAR({
+          contract: CONTRACTS[t.id] || { wo: "WO-??", title: t.title },
+          events: S.trialLog ? S.trialLog.events : [],
+          ordnance: S.trialLog ? S.trialLog.ordnance : { shell: 0, mg: 0, volley: 0 },
+          t0: S.trial.t0, elapsed: el, medal: null, outcome: "UNFULFILLED — DEVIATION", dispersed, seed: 1234 + S.trial.idx,
+        });
+        S.aar = { id: t.id, lines: report, medal: null, outcome: "UNFULFILLED — DEVIATION" };
+        window.storage.set("coldsnap-cs-aar-" + t.id, JSON.stringify(report));
+      } catch (e) {}
+      S.toasts.push({ id: S.toastSeq++, title: `DEVIATION NOTED — ${t.title} · ${el.toFixed(1)}s`, desc: `${dispersed} subjects dispersed, none processed · ${desc}`, t: 4 });
       S.trial.flashT = 1.6;
       enterTrial(S.trial.idx + 1);
       try { window.storage.set("coldsnap-cs-trial", String(S.trial.idx)); } catch (e) {}
@@ -516,6 +542,16 @@ export default function ColdsnapContractSandbox() {
         S.acc -= w.dt;
       }
       if (S.acc > w.dt * 3) S.acc = w.dt * 3;
+      // deviation watch: a matched kill (prog > 0) voids the silent path for
+      // the attempt; the detector VOIDs from its side on any subject death
+      {
+        const td = TRIALS[S.trial.idx];
+        if (td && td.alt && S.trial.prog === 0) {
+          const st = disperseState(w.bodies, POOL, td.alt.group);
+          S.trial.altT = st === "CLEAR" ? (S.trial.altT || 0) + dt : 0;
+          if (S.trial.altT >= td.alt.holdS) advanceDeviation(td);
+        }
+      }
       const rNow = canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : null;
       const hNow = rNow && rNow.height > 4 ? rNow.height : 0;
       if (hNow !== S.lastJoyH) { S.lastJoyH = hNow; if (S.joyPlace) S.joyPlace(); }
@@ -721,7 +757,8 @@ export default function ColdsnapContractSandbox() {
             <span style={{ color: "#ffd27a" }}>FREE PLAY</span>
             {TRIALS.map((t) => {
               const m = hud.medals[t.id];
-              const col = m ? (m.medal === "GOLD" ? "#ffd27a" : m.medal === "SILVER" ? "#cfd6de" : "#b0764a") : "#4a5361";
+              // deviations stand in the record as a hollow grey star
+              const col = !m ? "#4a5361" : m.deviation ? "#8b93a0" : m.medal === "GOLD" ? "#ffd27a" : m.medal === "SILVER" ? "#cfd6de" : "#b0764a";
               return (
                 <span
                   key={t.id}
@@ -732,11 +769,11 @@ export default function ColdsnapContractSandbox() {
                     try {
                       const r = await window.storage.get("coldsnap-cs-aar-" + t.id);
                       const lines = JSON.parse(r.value);
-                      if (Array.isArray(lines)) S.aar = { id: t.id, lines, medal: m.medal, outcome: "FULFILLED" };
+                      if (Array.isArray(lines)) S.aar = { id: t.id, lines, medal: m.medal || null, outcome: m.deviation ? "UNFULFILLED — DEVIATION" : "FULFILLED" };
                     } catch (e) {}
                   }}
                   style={{ color: col, cursor: m ? "pointer" : "default" }}
-                >★</span>
+                >{m && m.deviation ? "☆" : "★"}</span>
               );
             })}
             <span style={{ opacity: 0.8, fontSize: 11 }}>reports on file — tap a star</span>
@@ -887,8 +924,12 @@ export default function ColdsnapContractSandbox() {
                 <span>FORM AA-7 · CARBON 2/3</span>
               </div>
               <div style={{ position: "absolute", top: 34, right: 16, transform: "rotate(-7deg)", border: `3px double ${stampCol}`, color: stampCol, padding: "3px 10px", fontSize: 13, letterSpacing: 3, opacity: 0.9, textAlign: "center", pointerEvents: "none" }}>
-                {hud.aar.outcome}
-                {hud.aar.medal && <div style={{ fontSize: 10, letterSpacing: 2 }}>★ {hud.aar.medal}</div>}
+                {hud.aar.outcome.split(" — ")[0]}
+                {hud.aar.medal ? (
+                  <div style={{ fontSize: 10, letterSpacing: 2 }}>★ {hud.aar.medal}</div>
+                ) : hud.aar.outcome.includes(" — ") ? (
+                  <div style={{ fontSize: 10, letterSpacing: 2 }}>{hud.aar.outcome.split(" — ")[1]}</div>
+                ) : null}
               </div>
               <div style={{ fontSize: 11.5, lineHeight: 1.65, whiteSpace: "pre-wrap" }}>
                 {hud.aar.lines.map((ln, i) => {

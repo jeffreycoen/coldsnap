@@ -6,7 +6,7 @@ import { COLORS, FONT, btn, detectTouch } from "./theme.js";
 const TRIAL_IDS = ["gunnery", "roadkill", "saturation", "demolition", "deep_end", "counter_battery", "thin_ice"];
 
 const medalColor = (m) =>
-  m ? (m.medal === "GOLD" ? COLORS.gold : m.medal === "SILVER" ? COLORS.text : "#b0764a") : COLORS.btnBorder;
+  !m ? COLORS.btnBorder : m.deviation ? COLORS.dim : m.medal === "GOLD" ? COLORS.gold : m.medal === "SILVER" ? COLORS.text : "#b0764a";
 
 export default function StartScreen({ onPlay, onSandbox, onControls }) {
   const [medals, setMedals] = useState(null);
@@ -30,7 +30,7 @@ export default function StartScreen({ onPlay, onSandbox, onControls }) {
   const starRow = (m, hook) => m && (
     <div style={{ marginTop: 6, fontSize: 13 }}>
       {TRIAL_IDS.map((id) => (
-        <span key={id} style={{ color: medalColor(m[id]), marginRight: 4 }}>★</span>
+        <span key={id} style={{ color: medalColor(m[id]), marginRight: 4 }}>{m[id] && m[id].deviation ? "☆" : "★"}</span>
       ))}
       <span style={{ fontSize: 11, opacity: 0.7, marginLeft: 4 }}>{hook}</span>
     </div>

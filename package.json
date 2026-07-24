@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "smoke": "node scripts/smoke.mjs",
     "golden": "node scripts/golden.mjs",
-    "test:aar": "node scripts/aar-test.mjs"
+    "test:aar": "node scripts/aar-test.mjs",
+    "test:deviation": "node scripts/deviation-test.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",
