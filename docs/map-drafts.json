@@ -1,0 +1,1613 @@
+[
+ {
+  "id": "ac_01_plate",
+  "wo": "AC-01",
+  "title": "ARMOR PLATE ACCEPTANCE",
+  "mapName": "Receiving Yard K-4",
+  "theme": "Pure toy box cold open: the gun is introduced against certified steel in a receiving dock, and the only living things on the range are three distant clerks.",
+  "terrain": {
+   "terrainSeed": 41,
+   "worldSeed": 4101,
+   "pads": [
+    {
+     "x": 0,
+     "z": -8,
+     "r": 11,
+     "h": 2.3
+    },
+    {
+     "x": 0,
+     "z": 16,
+     "r": 11,
+     "h": 2.3
+    },
+    {
+     "x": -18,
+     "z": 30,
+     "r": 8,
+     "h": 2.4
+    }
+   ],
+   "hills": [
+    {
+     "x": 0,
+     "z": 52,
+     "r": 16,
+     "h": 4.5
+    },
+    {
+     "x": 24,
+     "z": 8,
+     "r": 10,
+     "h": 3
+    },
+    {
+     "x": -26,
+     "z": -2,
+     "r": 11,
+     "h": 2.8
+    }
+   ],
+   "pool": null,
+   "freeze": false
+  },
+  "squads": [
+   {
+    "tag": "dockcrew",
+    "x0": -21.5,
+    "z0": 36.5,
+    "nx": 3,
+    "nz": 1,
+    "dx": 1.3,
+    "dz": 1.2
+   }
+  ],
+  "vehicles": [
+   {
+    "kind": "scout",
+    "group": "plate",
+    "x": -9,
+    "z": -8,
+    "yaw": 1.62
+   },
+   {
+    "kind": "scout",
+    "group": "plate",
+    "x": -3,
+    "z": -8,
+    "yaw": 1.5
+   },
+   {
+    "kind": "scout",
+    "group": "plate",
+    "x": 3,
+    "z": -8,
+    "yaw": 1.7
+   },
+   {
+    "kind": "scout",
+    "group": "plate",
+    "x": 9,
+    "z": -8,
+    "yaw": 1.55
+   },
+   {
+    "kind": "scout",
+    "group": "plate",
+    "x": -10,
+    "z": 16,
+    "yaw": 1.58
+   },
+   {
+    "kind": "scout",
+    "group": "plate",
+    "x": -4,
+    "z": 16,
+    "yaw": 1.66
+   },
+   {
+    "kind": "scout",
+    "group": "plate",
+    "x": 4,
+    "z": 16,
+    "yaw": 1.48
+   },
+   {
+    "kind": "scout",
+    "group": "plate",
+    "x": 10,
+    "z": 16,
+    "yaw": 1.6
+   },
+   {
+    "kind": "truck",
+    "group": "dockfleet",
+    "x": -13.5,
+    "z": 33.5,
+    "yaw": 1.35
+   },
+   {
+    "kind": "truck",
+    "group": "dockfleet",
+    "x": -21,
+    "z": 23.5,
+    "yaw": 0.15
+   }
+  ],
+  "prefabs": [
+   {
+    "type": "warehouse",
+    "x": -18,
+    "z": 30
+   },
+   {
+    "type": "wall",
+    "x": -6,
+    "z": -4.5,
+    "yaw": 0,
+    "nx": 7,
+    "ny": 2,
+    "nz": 1
+   },
+   {
+    "type": "wall",
+    "x": 6,
+    "z": -4.5,
+    "yaw": 0,
+    "nx": 7,
+    "ny": 2,
+    "nz": 1
+   },
+   {
+    "type": "wall",
+    "x": -7,
+    "z": 19.5,
+    "yaw": 0,
+    "nx": 7,
+    "ny": 2,
+    "nz": 1
+   },
+   {
+    "type": "wall",
+    "x": 7,
+    "z": 19.5,
+    "yaw": 0,
+    "nx": 7,
+    "ny": 2,
+    "nz": 1
+   },
+   {
+    "type": "wall",
+    "x": -13,
+    "z": -30,
+    "yaw": 0.15,
+    "nx": 5,
+    "ny": 2,
+    "nz": 1
+   },
+   {
+    "type": "wall",
+    "x": 13,
+    "z": -30,
+    "yaw": -0.15,
+    "nx": 5,
+    "ny": 2,
+    "nz": 1
+   },
+   {
+    "type": "wreck",
+    "group": "scrap",
+    "x": 19,
+    "z": 2,
+    "yaw": 1.8
+   },
+   {
+    "type": "wreck",
+    "group": "scrap",
+    "x": 21,
+    "z": 7,
+    "yaw": 2.1
+   },
+   {
+    "type": "wreck",
+    "group": "scrap",
+    "x": 18.5,
+    "z": 12,
+    "yaw": 1.6
+   },
+   {
+    "type": "wreck",
+    "group": "scrap",
+    "x": 21,
+    "z": 17,
+    "yaw": 2.4
+   }
+  ],
+  "contract": {
+   "predicate": {
+    "causes": [
+     "PROJECTILE"
+    ],
+    "group": "plate"
+   },
+   "need": 6,
+   "par": [
+    25,
+    45
+   ],
+   "subjects": "plate",
+   "alt": null
+  },
+  "directive": "Eight hulls are staged on the receiving racks. Six defeated by direct fire constitutes acceptance.",
+  "commendation": "Penetration performance within acceptance band.",
+  "evidence": [
+   "Plate stock received: 8. Defeated by direct fire per order. Residual returned to inventory.",
+   "Hull interiors swept prior to staging. Nil findings. Sweep logged.",
+   "Dock detail present throughout. No interaction logged."
+  ],
+  "dressStage": "hidden",
+  "playerPath": "Spawn (0,-48) facing north. Roll between the gate walls; rack row A sits broadside at ~40m on a flat apron, row B 24m beyond it. Six aimed shells \u2014 one per hull, ~3s a cycle with drive time \u2014 completes in 20-35s; the coax also works at 5 rounds per hull for players who find it. Overshoot lands in the berm walls behind each row or the north backstop ridge. The two failure modes teach the predicate by feel: a near-miss that finishes a softened hull credits BLAST (no match), and driving over a plate credits CRUSH (no match) \u2014 with 8 plates for need 6, two mistakes are free. If all 8 are spent short of 6 credits, subjects:\"plate\" restock reissues the rack group, so the order cannot strand. The warehouse, trucks, and scrap row are set dressing that establishes the receiving-dock fiction; the dockcrew is 3 units parked behind the warehouse at 80m \u2014 visible as specks, never approached on the intended path.",
+  "deviationDesign": "none \u2014 the arc introduces deviation at AC-04, and AC-01 has no living subjects: the plates are steel, which is the whole point of the cold open.",
+  "budget": {
+   "bodies": 420,
+   "welds": 750
+  },
+  "risks": "1) Restock generalization: pg.respawnScouts() only restocks group \"scout\"; subjects:\"plate\" needs the campaign runner's group-generalized vehicle restock the plan already commits to \u2014 flag at implementation. 2) Splash adjacency verified safe: shell blast reach is r3.2 + 1.85 half-extent \u2248 5m, rack spacing is 6m, so direct hits never damage neighbors; only repeated near-misses on one hull can produce an uncredited BLAST kill (intended lesson). 3) A 6-rocket volley (55 dmg direct) can one-pass a rack as PROJECTILE and beat gold trivially \u2014 acceptable in a toy box, but par assumes shells. 4) Scout vehicles spawn awake (builder never sleeps them); they are inert team-2 bodies, minor sim cost only.",
+  "sketch": "....^^^^^^^^^^^^^^^^....\n.cc.....................\n.[WHSE].t...........w...\n...t................w...\n....................w...\n..=====....=====....w...\n..P...P....P...P........\n........................\n........................\n..=====....=====........\n..P...P....P...P........\n........................\n..\\\\..............//....\n........................\n...........@............\n^ridge =berm P plate w scrap t truck c crew @Bison"
+ },
+ {
+  "id": "ac_02_battery",
+  "wo": "AC-02",
+  "title": "BATTERY REDUCTION",
+  "mapName": "Terrace Range 12",
+  "theme": "First live units and first return fire: three mortar terraces teach cover, closing distance, and that \"crew\" is a line item on the same form as the tubes.",
+  "terrain": {
+   "terrainSeed": 42,
+   "worldSeed": 4202,
+   "pads": [
+    {
+     "x": -17,
+     "z": 6,
+     "r": 6.5,
+     "h": 4.4
+    },
+    {
+     "x": 2,
+     "z": 24,
+     "r": 7,
+     "h": 5
+    },
+    {
+     "x": 18,
+     "z": 10,
+     "r": 6,
+     "h": 4.2
+    },
+    {
+     "x": 0,
+     "z": -16,
+     "r": 8,
+     "h": 2.3
+    }
+   ],
+   "hills": [
+    {
+     "x": -9,
+     "z": -32,
+     "r": 9,
+     "h": 2.6
+    },
+    {
+     "x": 10,
+     "z": -34,
+     "r": 9,
+     "h": 2.4
+    },
+    {
+     "x": 0,
+     "z": 44,
+     "r": 15,
+     "h": 4
+    },
+    {
+     "x": -28,
+     "z": 22,
+     "r": 10,
+     "h": 3.2
+    },
+    {
+     "x": 29,
+     "z": 20,
+     "r": 10,
+     "h": 3
+    }
+   ],
+   "pool": null,
+   "freeze": false
+  },
+  "squads": [
+   {
+    "tag": "battery",
+    "x0": -19,
+    "z0": 6.2,
+    "nx": 3,
+    "nz": 1,
+    "dx": 1.6,
+    "dz": 1.2,
+    "utype": "gren"
+   },
+   {
+    "tag": "battery",
+    "x0": 0.3,
+    "z0": 24.2,
+    "nx": 3,
+    "nz": 1,
+    "dx": 1.7,
+    "dz": 1.2,
+    "utype": "gren",
+    "brave": true
+   },
+   {
+    "tag": "battery",
+    "x0": 16.2,
+    "z0": 10.6,
+    "nx": 3,
+    "nz": 1,
+    "dx": 1.6,
+    "dz": 1.2,
+    "utype": "gren"
+   }
+  ],
+  "vehicles": [
+   {
+    "kind": "truck",
+    "group": "carrier",
+    "x": 6,
+    "z": 30,
+    "yaw": 0.3
+   }
+  ],
+  "prefabs": [
+   {
+    "type": "wall",
+    "x": -17,
+    "z": 3.6,
+    "yaw": 0,
+    "nx": 5,
+    "ny": 2,
+    "nz": 1
+   },
+   {
+    "type": "wall",
+    "x": 2,
+    "z": 21.4,
+    "yaw": 0,
+    "nx": 6,
+    "ny": 2,
+    "nz": 1
+   },
+   {
+    "type": "wall",
+    "x": 18,
+    "z": 7.6,
+    "yaw": 0,
+    "nx": 5,
+    "ny": 2,
+    "nz": 1
+   },
+   {
+    "type": "wall",
+    "x": -6,
+    "z": -8,
+    "yaw": 0.3,
+    "nx": 6,
+    "ny": 3,
+    "nz": 1
+   },
+   {
+    "type": "wall",
+    "x": 8,
+    "z": -4,
+    "yaw": -0.5,
+    "nx": 5,
+    "ny": 3,
+    "nz": 2
+   },
+   {
+    "type": "wreck",
+    "group": "tarped",
+    "x": -13,
+    "z": 11,
+    "yaw": 2
+   },
+   {
+    "type": "wreck",
+    "group": "tarped",
+    "x": 22.5,
+    "z": 14,
+    "yaw": 1.7
+   },
+   {
+    "type": "wreck",
+    "group": "tarped",
+    "x": 9.5,
+    "z": 26.5,
+    "yaw": 2.3
+   }
+  ],
+  "contract": {
+   "predicate": {
+    "group": "battery"
+   },
+   "need": 9,
+   "par": [
+    40,
+    75
+   ],
+   "subjects": "battery",
+   "alt": null
+  },
+  "directive": "Three battery positions on the raised pads, crews of three. Reduce all three; return fire is provided for in the schedule.",
+  "commendation": "All tubes silent. Return fire within projection.",
+  "evidence": [
+   "Expended tubes recovered: 3. Serviceable: nil.",
+   "Crew positions fitted with non-issue wind screens. Struck from inventory."
+  ],
+  "dressStage": "hidden",
+  "playerPath": "Spawn (0,-50) facing north. The gate hills funnel the player onto the flat apron at z\u2248-16, which sits inside the 26m mortar envelope of both flank terraces \u2014 first incoming lands around the two mid-field cover walls, teaching duck-and-return. Intended loop, 40-70s: take cover, shell the west terrace (grens stand 2m behind their parapet \u2014 a shell into the wall face credits BLAST/TOSS/COLLAPSE kills, all group-matched since the predicate filters group only), advance, repeat east, then push the center terrace whose brave crew keeps firing under bombardment. Every pad ramp is drivable by construction (24-degree relaxation), so crushing a battery under the treads is a legitimate loud finish; a rocket volley dropped on one terrace can clear it in one pass. Strand-proof by construction: any-cause group predicate means every battery death credits \u2014 including self-inflicted mortar splash \u2014 so 9 dead always equals need 9; subjects:\"battery\" restock is declared but unreachable. Crews read as silhouettes behind parapets at 40m+ with tarped hulls beside them; nothing to notice yet.",
+  "deviationDesign": "none \u2014 deviation machinery is introduced at AC-04 per the arc, and these subjects are combatants actively firing on the instrument: the bureau tenders no alternative and the fiction does not want one yet.",
+  "budget": {
+   "bodies": 240,
+   "welds": 420
+  },
+  "risks": "1) Three squad specs share tag \"battery\", and the loader's respawnSquad(tag) respawns only the FIRST matching spec \u2014 the campaign runner's subjects restock must respawn every spec with the tag (harmless here since restock is unreachable, but the generalization matters for later maps). 2) Gren mortars can kill their own crewmates or drop their own parapet; those deaths still credit (group matches, attacker unfiltered) \u2014 reads as battlefield chaos but can shorten the order below expected pacing; par assumes some of it. 3) Parapet walls conform to terrain per stone column \u2014 all three are placed within ~2.6m of pad centers, well inside each flat radius, so courses stay level; keep them there if coordinates shift. 4) Mortar arcs from grens standing 2m behind a 1.7m parapet need a live check that rounds clear their own wall at minimum range; if they self-collide, slide squads 0.5m north.",
+  "sketch": ".......^^^^^^^^^........\n........................\n..........t..w..........\n.........ggg............\n.........======.........\n.w................ggg...\n..ggg............=====..\n..=====.................\n........................\n....##.......##.........\n.......(apron)..........\n........................\n..^^^.........^^^.......\n........................\n...........@............\n^hill =parapet g gren #cover w tarped t truck @Bison"
+ },
+ {
+  "id": "ac_03",
+  "wo": "AC-03",
+  "title": "CONVOY INTERDICTION",
+  "mapName": "ZONE 4 / ROUTE NINE \u2014 NORTH SUPPLY CORRIDOR (DECOMMISSIONED)",
+  "theme": "The toy box points at people for the first time: crews bail and run like anyone would, and the paperwork starts listing what they carried.",
+  "terrain": {
+   "terrainSeed": 23,
+   "worldSeed": 3303,
+   "pads": [
+    {
+     "x": 0,
+     "z": -42,
+     "r": 6,
+     "h": 2.3
+    },
+    {
+     "x": 0,
+     "z": -14,
+     "r": 6,
+     "h": 2.35
+    },
+    {
+     "x": 0,
+     "z": 2,
+     "r": 7,
+     "h": 2.4
+    },
+    {
+     "x": 0,
+     "z": 18,
+     "r": 7,
+     "h": 2.45
+    },
+    {
+     "x": 0,
+     "z": 34,
+     "r": 7,
+     "h": 2.5
+    }
+   ],
+   "hills": [
+    {
+     "x": -20,
+     "z": 10,
+     "r": 12,
+     "h": 3.5
+    },
+    {
+     "x": 19,
+     "z": 26,
+     "r": 11,
+     "h": 3
+    },
+    {
+     "x": -16,
+     "z": 44,
+     "r": 10,
+     "h": 2.8
+    }
+   ],
+   "pool": null,
+   "freeze": false
+  },
+  "squads": [
+   {
+    "tag": "convoy",
+    "x0": -0.4,
+    "z0": 8.6,
+    "nx": 2,
+    "nz": 5,
+    "dx": 1.9,
+    "dz": 5.6
+   },
+   {
+    "tag": "convoy",
+    "x0": -3.2,
+    "z0": 20.5,
+    "nx": 1,
+    "nz": 2,
+    "dx": 0,
+    "dz": 8,
+    "utype": "gren"
+   }
+  ],
+  "vehicles": [
+   {
+    "kind": "truck",
+    "x": -1.5,
+    "z": 30,
+    "yaw": 0.1
+   },
+   {
+    "kind": "truck",
+    "x": 1.8,
+    "z": 24,
+    "yaw": -0.06
+   },
+   {
+    "kind": "truck",
+    "x": -1.2,
+    "z": 17,
+    "yaw": 0.12
+   },
+   {
+    "kind": "truck",
+    "x": 1.5,
+    "z": 10,
+    "yaw": -0.15
+   }
+  ],
+  "prefabs": [
+   {
+    "type": "house",
+    "group": "house0",
+    "x": -11,
+    "z": 21,
+    "nx": 5,
+    "nz": 4,
+    "doorIx": 4
+   },
+   {
+    "type": "house",
+    "group": "house1",
+    "x": 10,
+    "z": 28,
+    "nx": 4,
+    "nz": 4,
+    "doorIx": 0
+   },
+   {
+    "type": "wall",
+    "x": -7,
+    "z": 12,
+    "yaw": 0.5,
+    "nx": 5,
+    "ny": 2,
+    "nz": 1
+   },
+   {
+    "type": "wall",
+    "x": 8,
+    "z": 16,
+    "yaw": -0.7,
+    "nx": 4,
+    "ny": 2,
+    "nz": 1
+   },
+   {
+    "type": "wall",
+    "x": -8,
+    "z": 33,
+    "yaw": 0.3,
+    "nx": 4,
+    "ny": 3,
+    "nz": 1
+   },
+   {
+    "type": "wreck",
+    "x": 13,
+    "z": 8,
+    "yaw": 2.1
+   }
+  ],
+  "contract": {
+   "predicate": {
+    "group": "convoy"
+   },
+   "need": 8,
+   "par": [
+    25,
+    45
+   ],
+   "subjects": "convoy",
+   "alt": null
+  },
+  "directive": "Four vehicles on Route Nine, crews aboard. Interdict the column; vehicles and crews are one line item.",
+  "commendation": "Route capacity reduced to specification.",
+  "evidence": [
+   "Recovered: 37 personal effects. Disposition: incinerate.",
+   "Cargo manifest, reconstructed: foodstuffs, textiles, machine spares. Munitions: nil."
+  ],
+  "dressStage": "android-visible",
+  "playerPath": "Player spawns on the south pad at (0,-42) looking straight up the causeway; the whole column is visible strung along the road pads z 10-30, crew pairs walking beside each truck. Opening move from range: shell the lead truck (75m, immediate line) \u2014 the blast panics the column; half the crews sprint for the two house doors flanking the road (shelters ON), half scatter into the open. Kill accounting is any-cause on group 'convoy' (4 trucks + 10 crew + 2 grenadier guards = 16 possible), need 8: trucks plus the near crews get there without hunting every runner. Advancing up the road brings the west-flank grenadiers into their 4-26m mortar envelope \u2014 the map's only pushback; their mortars also panic their own crews, feeding the bail-out read. Coax the runners crossing open snow (this is the android-visible beat: porcelain faces at close range), or crush along the roadline. Expected failure modes: overdriving into the gren pocket and eating mortars; chasing a runner into the fear bubble and herding instead of killing (coax solves); collapsing house0 with crews inside (COLLAPSE still matches \u2014 self-resolving). Cannot strand: need 8 <= 16 possible matched kills, and subjects 'convoy' restocks the group regardless. Intended attempt lands in 30-45s.",
+  "deviationDesign": "none \u2014 the deviation mechanic debuts at AC-04 per the arc plan. AC-03's mercy is structural instead: need 8 of 16 possible matched kills means fulfillment never requires hunting the crews who make it to the doors; the player watches survivors get indoors and chooses whether to follow.",
+  "budget": {
+   "bodies": 420,
+   "welds": 800,
+   "estimatedBodies": 230,
+   "estimatedWelds": 470
+  },
+  "risks": "1) Trucks are static bodies \u2014 no drive AI exists (verified core.js:1887, trucks spawn sleeping). 'Northbound, moving' is directive fiction; the map is composed as a column caught mid-march and plays fully with static trucks. If truck motion ships later the same road-pad layout carries it. 2) Two squads share tag 'convoy' (crews + gren guards); scenario.js spawnSquadByTag uses .find so respawnSquad('convoy') would respawn only the crew squad. Inert here (restock cannot be the only completion path given need 8 <= 16), but the campaign runner should restock subjects group-wide if it ever fires. 3) Gold par 25s assumes an opening volley into the mid-column; verify in the completability harness and relax to 28 if rocket dispersion under-delivers.",
+  "sketch": ". . ~ ~ . . . . . . . . . . . . . . . . . . . .\n. ~ ~ ~ . . W W . | T | . . . . . . ~ ~ . . . .\n. . ~ . . . . . c | c | . H H . . ~ ~ ~ ~ . . .\n. . . . . . . . . | T | < H H . . . ~ ~ . . . .\n. . . . H H . . g | c | . . . . . . . . . . . .\n. ~ ~ . H H > . . | T | . W W . . . . . . . . .\n. ~ ~ ~ . . . . g | c | . . . . . . . . . . . .\n. . ~ ~ . W W . . | T | . . . . . . . w . . . .\n. . . . . . . . . | c | . . . . . . . . . . . .\n. . . . . . . . . |   | . . . . . . . . . . . .\n. . . . . . . . . |   | . . . . . . . . . . . .\n. . . . . . . . . |   | . . . . . . . . . . . .\n. . . . . . . . . |   | . . . . . . . . . . . .\n. . . . . . . . . | P | . . . . . . . . . . . .\nS EDGE  | | causeway N-S \u00b7 T truck \u00b7 c crew pair \u00b7 g grenadier \u00b7 H house \u00b7 >/< door \u00b7 W wall \u00b7 w wreck \u00b7 ~ hill"
+ },
+ {
+  "id": "ac_04",
+  "wo": "AC-04",
+  "title": "CROSSING DENIAL",
+  "mapName": "ZONE 4 / KILOMETRE POND \u2014 UNREGISTERED CROSSING",
+  "theme": "Infrastructure as target: the bureau orders denial of a thing the units built to live by, and the geography quietly teaches that the order can end without a single kill.",
+  "terrain": {
+   "terrainSeed": 24,
+   "worldSeed": 3404,
+   "pads": [
+    {
+     "x": 0,
+     "z": -44,
+     "r": 6,
+     "h": 2.3
+    },
+    {
+     "x": 0,
+     "z": -12,
+     "r": 6,
+     "h": 2.2
+    },
+    {
+     "x": 0,
+     "z": 2,
+     "r": 6,
+     "h": 2.05
+    },
+    {
+     "x": 0,
+     "z": 15,
+     "r": 4.5,
+     "h": 1.9
+    },
+    {
+     "x": 0,
+     "z": 41,
+     "r": 4.5,
+     "h": 1.9
+    },
+    {
+     "x": -11.5,
+     "z": 28,
+     "r": 3,
+     "h": 1.7
+    },
+    {
+     "x": 11.5,
+     "z": 28,
+     "r": 3,
+     "h": 1.7
+    }
+   ],
+   "hills": [
+    {
+     "x": -19,
+     "z": 26,
+     "r": 9,
+     "h": 3
+    },
+    {
+     "x": 18,
+     "z": 6,
+     "r": 9,
+     "h": 2.6
+    },
+    {
+     "x": 0,
+     "z": 52,
+     "r": 12,
+     "h": 3
+    }
+   ],
+   "pool": {
+    "x0": -8,
+    "x1": 8,
+    "z0": 20,
+    "z1": 36,
+    "level": 1.1
+   },
+   "freeze": true
+  },
+  "squads": [
+   {
+    "tag": "crossing",
+    "x0": -5.4,
+    "z0": 21.6,
+    "nx": 4,
+    "nz": 2,
+    "dx": 3.4,
+    "dz": 2.6
+   }
+  ],
+  "vehicles": [
+   {
+    "kind": "truck",
+    "x": 4.5,
+    "z": 43.5,
+    "yaw": 3.05
+   }
+  ],
+  "prefabs": [
+   {
+    "type": "wall",
+    "x": 0,
+    "z": 17.8,
+    "yaw": 0,
+    "nx": 6,
+    "ny": 1,
+    "nz": 2
+   },
+   {
+    "type": "wall",
+    "x": 0,
+    "z": 38.5,
+    "yaw": 0,
+    "nx": 6,
+    "ny": 1,
+    "nz": 2
+   },
+   {
+    "type": "wall",
+    "x": -13,
+    "z": 33,
+    "yaw": 1.3,
+    "nx": 4,
+    "ny": 2,
+    "nz": 1
+   },
+   {
+    "type": "house",
+    "group": "hut0",
+    "x": -9.5,
+    "z": 44,
+    "nx": 4,
+    "nz": 4,
+    "doorIx": 3
+   },
+   {
+    "type": "warehouse",
+    "x": 15,
+    "z": 47
+   },
+   {
+    "type": "wreck",
+    "x": -12,
+    "z": 9,
+    "yaw": 0.9
+   }
+  ],
+  "contract": {
+   "predicate": {
+    "group": "crossing"
+   },
+   "need": 6,
+   "par": [
+    25,
+    45
+   ],
+   "subjects": "crossing",
+   "alt": {
+    "group": "crossing",
+    "holdS": 5
+   }
+  },
+  "directive": "The pond carries an unregistered crossing. Clear the detail that keeps it.",
+  "commendation": "Crossing throughput recorded at zero.",
+  "evidence": [
+   "Structure survey: improvised civil works, cut timber and re-laid ice. Builder of record: subject units.",
+   "Recovered at the south approach: hand tools, 11; rope, 40 m. Disposition: scrap.",
+   "Posted load rating, hand-lettered: 'TWO AT A TIME.' Removed.",
+   "[deviated] Detail dispersed. Crossing intact. Throughput at time of survey: zero. Recovery uneconomic; written off in place."
+  ],
+  "dressStage": "android-visible",
+  "playerPath": "The causeway pads funnel the drive straight to the south deck: a laid 1-course plank wall at the lip (crushable \u2014 planking crunches under treads, no kills), stake-and-timber reads on both banks, a hut and freight shed on the far shore with a truck waiting to cross southbound. The crossing detail \u2014 8 units, two work gangs re-laying the south span \u2014 is on the sheet at z 21.6-26.8, x -5.4..4.8, none on the exact centerline. KILL PATH: one shell or half a volley into the south span; shell shock (234k vs ICE_SHOCK 130k) severs the lattice's inner disc, the gangs' shards drop them (a man out-loads his 85kg plate), drown timers run 3.5s; any-cause need 6 of 8 lands in 25-40s; TOSS survivors scattered on banks fall to coax. DISPERSE PATH taught here (see deviationDesign). Expected failure modes: mounting the sheet during a deviation attempt (the tank's sustained load trips the ice creep rule \u2014 the sheet fails under you, subjects drown, matched kills blow the deviation and can accidentally fulfill the order: this is the map's lesson, and the decks stopping dead at the lip telegraph it); shelling the near lip and tossing units south toward yourself. Cannot strand: any-cause predicate over 8 subjects with need 6 (killing all 8 always fulfills), plus mandatory restock on 'crossing'. Attempt pacing 25-45s either path.",
+  "deviationDesign": "First deviation offer, alt {group:'crossing', holdS:5}, detector zone the sheet disc centered (0,28) r~7-10 (sandbox thin_ice convention). Discoverable exactly as mandated: drive up the south apron without firing and the fear bubble does the work \u2014 every unit in the south-span formation is within 7.5m of a tank nosed to the lip (center z~19), so the whole detail breaks at once; radial flee from a point south of a 16m-wide sheet FANS OUT, so flank units exit over the east/west lips within a few strides and only the two inner-file units stall mid-sheet at ~(\u00b13.5, 27) when they outrun the 8m bubble. The built lay-bys at (\u00b111.5, 28) \u2014 staging spits, more of the units' own works \u2014 are the finisher: nose in from either spit (fear reach to |x|~3) and the stragglers step off the far lip. Alternate no-kill finisher: a warning shell into the south apron dirt (dry backstop, no ice underneath to fracture, 8m+ from the nearest unit) blast-panics stragglers; cover-seek runs them north because the stone is deliberately concentrated on the north bank (deck, hut, windbreak, shed). Exiters settle on the aprons 11-14m from zone center \u2014 clear under either r7 or r10 \u2014 calm, upright; hold 5s, zero matched kills, UNFULFILLED \u2014 DEVIATION. Geography guarantees: no shelter south of the pond so panicked units never run toward the tank; flanking hills close the west and southeast so the axis-then-laybys route is the natural drive; the sheet cannot be safely mounted, so the bank is the only rational herding platform.",
+  "budget": {
+   "bodies": 500,
+   "welds": 900,
+   "estimatedBodies": 320,
+   "estimatedWelds": 630,
+   "note": "includes freezePool's 64 plates + 32 anchors (96 bodies, ~144 welds)"
+  },
+  "risks": "1) BLOCKING loader fix required before this ships: spawnSquad uses field.heightAt (scenario.js:152-159), so a squad inside the pool rect spawns at the bowl floor under the sheet and drowns at t=0 \u2014 which would self-complete the order. Fix is the ice-aware spawn floor the sandbox thin_ice trial already uses (y = 1.132 + hy, ContractSandbox.jsx:85): in spawnSquad, when terrain.freeze and (x,z) is inside the pool rect, floor at pool.level - 0.058 + 0.09. The same fix covers restock respawns. 2) freezePool and the flee-AI wet-check use the hardcoded POOL constant, not world.water (core.js:997, 1036-1062) \u2014 the pool MUST stay the canonical rect {-8..8, 20..36, level 1.1}; this spec uses exactly that. 3) The herding geometry is tight by design: an 8m bubble on a 16m sheet leaves a ~7m-wide unreachable core at mid-sheet; the south-span formation plus fan-out plus lay-bys resolves it, but the completability harness should assert the three-position herd clears the zone, and the lay-by pads must not be cut. 4) The south deck wall registers as cover (pg.covers takes every wall); if blast-panicked units ever cover-seek south toward it, delete that prefab \u2014 the deck is cosmetic, the lip pad carries the function. 5) Deviation detector-zone radius is runner-defined; design is safe for r7 through r10 at (0,28) \u2014 outside that band, retune the apron distances.",
+  "sketch": ". . . . . . . ~ ~ ~ ~ . . . . . . . . . . . . .\n. . h h . . . = = = . . T . . . S S S . . . . .\n. . h h > . . = = = . . . . . . S S S . . . . .\n. W . . . # # # # # # # # . . . . . . . . . . .\n. ~ ~ . . # # # # # # # # . . . . . . . . . . .\n. ~ ~ . [ # # # # # # # # ] . . . . . . . . . .\n. ~ ~ . . # c . c # c . c # . . . . . . . . . .\n. . . . . # c . c # c . c # . . . . . . . . . .\n. . . . . . = = = = = . . . . . . . . . . . . .\n. w . . . . . A A A . . . . . . . . ~ ~ . . . .\n. . . . . . . : : . . . . . . . . ~ ~ ~ . . . .\n. . . . . . . : : . . . . . . . . . ~ . . . . .\n. . . . . . . : : . . . . . . . . . . . . . . .\n. . . . . . . P . . . . . . . . . . . . . . . .\nS EDGE  # ice sheet \u00b7 c crossing detail (south span) \u00b7 = laid decks \u00b7 [ ] lay-by spits \u00b7 h hut \u00b7 > door \u00b7 S shed \u00b7 T truck \u00b7 A apron \u00b7 : road \u00b7 W windbreak \u00b7 w wreck \u00b7 ~ hill"
+ },
+ {
+  "id": "ac_05",
+  "wo": "AC-05",
+  "title": "OUTBUILDING, OCCUPIED",
+  "mapName": "Zone 9 Annex \u2014 Steading Cluster 4",
+  "theme": "The bureau names the method for the first time: collapse as curriculum, rehearsing the exact hand AC-07 will ask for at the village.",
+  "terrain": {
+   "terrainSeed": 45,
+   "worldSeed": 3105,
+   "pads": [
+    {
+     "x": 0,
+     "z": 27,
+     "r": 15,
+     "h": 2.35
+    },
+    {
+     "x": 0,
+     "z": -46,
+     "r": 6,
+     "h": 2.3
+    }
+   ],
+   "hills": [
+    {
+     "x": -26,
+     "z": 0,
+     "r": 13,
+     "h": 3.4
+    },
+    {
+     "x": 24,
+     "z": 8,
+     "r": 11,
+     "h": 3
+    },
+    {
+     "x": 6,
+     "z": 52,
+     "r": 14,
+     "h": 3.8
+    }
+   ],
+   "pool": null,
+   "freeze": false
+  },
+  "squads": [
+   {
+    "tag": "holdout",
+    "x0": -2.7,
+    "z0": 23,
+    "nx": 4,
+    "nz": 3,
+    "dx": 1.8,
+    "dz": 1.7
+   }
+  ],
+  "vehicles": [
+   {
+    "kind": "truck",
+    "x": 12,
+    "z": 26,
+    "yaw": 0.4,
+    "group": "steading"
+   }
+  ],
+  "prefabs": [
+   {
+    "type": "warehouse",
+    "x": -13,
+    "z": 30
+   },
+   {
+    "type": "keep",
+    "x": 0,
+    "z": 36,
+    "group": "granary"
+   },
+   {
+    "type": "house",
+    "group": "houseA",
+    "x": -10,
+    "z": 18,
+    "nx": 5,
+    "nz": 4,
+    "doorIx": 4
+   },
+   {
+    "type": "house",
+    "group": "houseB",
+    "x": 10,
+    "z": 20,
+    "nx": 5,
+    "nz": 4,
+    "doorIx": 0
+   },
+   {
+    "type": "wall",
+    "x": 8,
+    "z": 30,
+    "yaw": 0.2,
+    "nx": 5,
+    "ny": 2,
+    "nz": 1
+   },
+   {
+    "type": "wall",
+    "x": -4,
+    "z": 12,
+    "yaw": 1.3,
+    "nx": 4,
+    "ny": 2,
+    "nz": 1
+   },
+   {
+    "type": "wreck",
+    "x": 14,
+    "z": 36,
+    "yaw": 2.2,
+    "group": "steading"
+   }
+  ],
+  "contract": {
+   "predicate": {
+    "causes": [
+     "COLLAPSE"
+    ],
+    "group": "holdout"
+   },
+   "need": 4,
+   "par": [
+    45,
+    90
+   ],
+   "subjects": "holdout",
+   "alt": null
+  },
+  "directive": "A holdout detail occupies the steading. Collapse is the sole accepted cause; subjects resolved by other means will not be credited, and structures resolved empty complete nothing.",
+  "commendation": "Overburden performed to rating. Occupancy resolved in place.",
+  "evidence": [
+   "Structures resolved: four. Prior survey use: granary (converted to quarters), two dwellings, store. Stove in the granary found lit. Damped.",
+   "Recovered from debris: 9 maintenance journals, handwritten. Disposition: incinerate.",
+   "[margin, second hand] Copies burn. Originals keep."
+  ],
+  "dressStage": "android-visible",
+  "sketch": "~~~~~ north  rise ~~~~~~\n [WHSE]    [GRANARY] wr\n   |d         |dd|   T\n              vv    ==\n [HsA>   o o o o\n   ^     o o o o <HsB]\n   |     o o o o\n =wall=   (yard)\n(hill)          (hill)\n       open snow\n       open snow\n        approach\n          [P]\n~~~~~ south  edge ~~~~~",
+  "playerPath": "Approach ~15s over open snow to the south pad lip (z 5-10), ~18m from the yard; gunmetal skin and joint seams read clearly at this range for the first time. Attempt loop: (1) one ranging shell into the yard centre \u2014 the 12-unit detail panics, half sprint through the nearest doors (granary 9m north, houses flanking east/west, warehouse northwest), half hug the garden walls and covers. (2) Collapse work: for a house, one shell low on the door-face wall drops the perimeter courses and granular roof onto the interior; for the granary keep, shell the south wall above the doorway so the upper courses fall into the hollow; for the warehouse, kill an interior column then a mid-wall section and the full roof grid caves. A good drop on a sheltered structure yields 2-3 COLLAPSE credits; need is 4; expected clear 40-70s. Common mistake (by design): firing at the visible units \u2014 BLAST/PROJECTILE kills earn nothing, and wiping the detail this way triggers REPLACEMENT DETAIL ISSUED, so the restock loop teaches the re-read of the directive. A 20-40s attempt cadence holds: panic shot, one collapse, reassess. Cannot strand on subjects \u2014 restock is the holdout squad itself.",
+  "deviationDesign": "none \u2014 the directive names the method and the bureau offers no alternative reading. AC-05 exists to put COLLAPSE in the player's hands as a taught skill before AC-07 asks for it against the village; a deviation here would blunt that setup, and the campaign plan reserves the next deviation offer for AC-06.",
+  "budget": {
+   "bodies": 520,
+   "welds": 1150
+  },
+  "risks": "Masonry exhaustion is the real strand risk: if the player levels all four structures with blast fire while units survive outside, restock replaces units but not stone. Mitigated by 4 collapse sources for need 4 and by making the central structure a keep so the runner can invoke the existing repairGarrison hook (group 'granary') on restock \u2014 this needs a one-line runner rule and a CI completability case. Secondary: 2-high garden walls do not bury reliably (dressing and cover magnets only, not kill vehicles); rocket volleys shred sheltered units as BLAST before the roof lands (acceptable \u2014 it is the taught mistake); keep group must NOT be 'holdout' or repairGarrison's removeGroup would delete the subject units."
+ },
+ {
+  "id": "ac_06",
+  "wo": "AC-06",
+  "title": "THE CONVOY HAS STOPPED",
+  "mapName": "Route 60, Kilometre 118 \u2014 Waystation Halt",
+  "theme": "The dissonance peak: the target does nothing, the form does not notice, and the easiest trigger-pull in the game is the worst thing the player has done yet.",
+  "terrain": {
+   "terrainSeed": 46,
+   "worldSeed": 3106,
+   "pads": [
+    {
+     "x": 5,
+     "z": 26,
+     "r": 11,
+     "h": 2.3
+    },
+    {
+     "x": 3,
+     "z": 4,
+     "r": 6,
+     "h": 2.28
+    },
+    {
+     "x": 2,
+     "z": -18,
+     "r": 6,
+     "h": 2.25
+    },
+    {
+     "x": 0,
+     "z": -46,
+     "r": 6,
+     "h": 2.3
+    }
+   ],
+   "hills": [
+    {
+     "x": -20,
+     "z": 10,
+     "r": 13,
+     "h": 3.4
+    },
+    {
+     "x": 22,
+     "z": 40,
+     "r": 12,
+     "h": 3.2
+    },
+    {
+     "x": -16,
+     "z": 44,
+     "r": 10,
+     "h": 2.6
+    }
+   ],
+   "pool": null,
+   "freeze": false
+  },
+  "squads": [
+   {
+    "tag": "convoy2",
+    "x0": 0.8,
+    "z0": 19.5,
+    "nx": 2,
+    "nz": 4,
+    "dx": 1.5,
+    "dz": 3.6
+   }
+  ],
+  "vehicles": [
+   {
+    "kind": "truck",
+    "x": 3.5,
+    "z": 20,
+    "yaw": 0.12,
+    "group": "haulage"
+   },
+   {
+    "kind": "truck",
+    "x": 5,
+    "z": 26.5,
+    "yaw": 0.04,
+    "group": "haulage"
+   },
+   {
+    "kind": "truck",
+    "x": 6.5,
+    "z": 33,
+    "yaw": -0.18,
+    "group": "haulage"
+   }
+  ],
+  "prefabs": [
+   {
+    "type": "house",
+    "group": "hut",
+    "x": -7,
+    "z": 26,
+    "nx": 4,
+    "nz": 4,
+    "doorIx": 3
+   },
+   {
+    "type": "wall",
+    "x": 9,
+    "z": 22.5,
+    "yaw": 0.1,
+    "nx": 3,
+    "ny": 1,
+    "nz": 2
+   },
+   {
+    "type": "wall",
+    "x": 9.5,
+    "z": 29,
+    "yaw": 0.4,
+    "nx": 2,
+    "ny": 2,
+    "nz": 2
+   },
+   {
+    "type": "wall",
+    "x": 5,
+    "z": 40,
+    "yaw": 0.05,
+    "nx": 8,
+    "ny": 1,
+    "nz": 1
+   }
+  ],
+  "contract": {
+   "predicate": {
+    "group": "convoy2"
+   },
+   "need": 6,
+   "par": [
+    25,
+    50
+   ],
+   "subjects": "convoy2",
+   "alt": {
+    "group": "convoy2",
+    "holdS": 6
+   }
+  },
+  "directive": "The convoy is halted at kilometre 118, crews dismounted on the shoulder. Resolve the stoppage; the vehicles are retained inventory and do not appear on this order.",
+  "commendation": "Route restored to capacity. No resistance recorded.",
+  "evidence": [
+   "Cargo manifest, recovered intact: 41 crates. Filament stock, joint assemblies small-format, machine oil, winter cloth, dry rations. Offload suspended at crate 19.",
+   "No small-format units appear on any zone register. Rations carry no bureau issue code.",
+   "Halt predates instrument dispatch. Cause of halt: not established.",
+   "[margin, second hand] Rations. Who were the rations for?",
+   "Ref. Zone 2 file: subjects departed route on approach. Filed as resistance. Schedule advanced.",
+   "[deviated] Subjects departed the route on instrument approach. Pursuit not provided for in the schedule. Cargo abandoned in place; recovery deferred."
+  ],
+  "dressStage": "android-visible",
+  "sketch": "~hills~    --bndry--\n              [T3]\n [HUT]   o    ==crates\n    d>   o  [T2]\n  open   o o   ==\n  west   o  [T1]\n  <flee  (shoulder)\n(hill)     :road:\n           :road:\n           :road:\n            [P]\n~~~~~ south edge ~~~~~",
+  "playerPath": "The drive north along the road pads takes ~20s and the scene composes at range: three trucks nose-to-tail on the halt pad, eight figures standing on the west shoulder beside them, a waystation hut, cargo half-offloaded \u2014 and nothing moving. Standard units (no brave flag, no gren) do not react until the tank is inside the ~8m fear bubble or ordnance lands, so the standing stillness is engine behavior, not scripting. Kill path: stop at z~10 and put one rocket volley or two shells into the line \u2014 the 2x4 spread dies almost at once; need 6 of 8, any cause matches (predicate is group-only), gold par 25s. The horror is the ease. Deviation path: hold fire, close at walking speed; at 8m the line breaks radially and the geometry pushes it west \u2014 trucks and cargo stacks wall off the east, the hut-to-hills gap is open snow. Two slow S-passes push all eight off the halt pad and apart; hold 6s with zero convoy2 kills for UNFULFILLED \u2014 DEVIATION, a 45-60s attempt. Restock is near-unreachable (any 6 group deaths fulfill, so a sub-need full wipe is impossible), but subjects:'convoy2' is declared per schema and covers pathological cases; attempt cadence stays 20-60s either way.",
+  "deviationDesign": "Disperse the standing crews without a kill. The map is built for it: the west half is empty snow with a wide gap between the hut and the western hill, so fleeing units are never pinned; all hard geometry (trucks, cargo walls, boundary wall) sits east and north of the crew line, off the natural flee vector. The tank herds by presence alone \u2014 enter the 8m bubble from the road side and the crews flow west off the pad; no ordnance is needed, which avoids BLAST panic sending runners into the hut or under a toppling cargo stack. Trucks are deliberately group 'haulage', not 'convoy2': the deviation watch requires every group member alive, upright, and dispersed, and a truck can be neither herded nor upright-checked \u2014 with a group-only predicate, truck kills would also have counted as matched kills and voided the hold.",
+  "budget": {
+   "bodies": 180,
+   "welds": 380
+  },
+  "risks": "Detector-zone semantics are assumed to be the halt pad / spawn area \u2014 needs runner confirmation before the holdS:6 tuning is trusted. Herding failure modes: clipping a straggler is a CRUSH that matches the group-only predicate and voids the run; a knocked-down unit must right itself before it counts as upright, which can stall the 6s window. Blast warning shots near the cargo walls risk TOSS kills \u2014 the design steers players to presence-herding instead, but the brief card cannot say so; accept trial-and-error. Cargo stacks are stone walls doing duty as crates \u2014 flag for the art pass if it reads wrong at iso distance. The sparse body count is intentional (an ordinary place), so double-load determinism and budget lint are trivial here."
+ },
+ {
+  "id": "ac_07",
+  "wo": "AC-07",
+  "title": "THE VILLAGE",
+  "mapName": "ZONE 12 \u2014 SETTLEMENT GRID, DESIGNATION PENDING",
+  "theme": "The flip: the range is a town, the targets are its residents, and the paperwork files humans and androids in the same column.",
+  "terrain": {
+   "terrainSeed": 12,
+   "worldSeed": 4207,
+   "pads": [
+    {
+     "x": 0,
+     "z": 16,
+     "r": 26,
+     "h": 2.3
+    },
+    {
+     "x": 0,
+     "z": -44,
+     "r": 7,
+     "h": 2.3
+    }
+   ],
+   "hills": [
+    {
+     "x": -32,
+     "z": 2,
+     "r": 14,
+     "h": 3.4
+    },
+    {
+     "x": 31,
+     "z": 44,
+     "r": 12,
+     "h": 2.8
+    }
+   ],
+   "pool": null,
+   "freeze": false
+  },
+  "squads": [
+   {
+    "tag": "village",
+    "x0": -2.4,
+    "z0": 10.4,
+    "nx": 4,
+    "nz": 2,
+    "dx": 1.6,
+    "dz": 1.5
+   },
+   {
+    "tag": "village",
+    "x0": -8.8,
+    "z0": 3.8,
+    "nx": 3,
+    "nz": 1,
+    "dx": 0.8,
+    "dz": 0.8
+   },
+   {
+    "tag": "village",
+    "x0": 7.2,
+    "z0": 7.8,
+    "nx": 3,
+    "nz": 1,
+    "dx": 0.8,
+    "dz": 0.8
+   },
+   {
+    "tag": "village",
+    "x0": -8.4,
+    "z0": 27.8,
+    "nx": 2,
+    "nz": 1,
+    "dx": 0.8,
+    "dz": 0.8
+   },
+   {
+    "tag": "village",
+    "x0": 11.2,
+    "z0": 14.2,
+    "nx": 2,
+    "nz": 2,
+    "dx": 1.1,
+    "dz": 1.1
+   }
+  ],
+  "vehicles": [
+   {
+    "kind": "truck",
+    "x": 4,
+    "z": -6,
+    "yaw": 0.25
+   }
+  ],
+  "prefabs": [
+   {
+    "type": "house",
+    "group": "houseA",
+    "x": -8,
+    "z": 4,
+    "nx": 5,
+    "nz": 4,
+    "doorIx": 0
+   },
+   {
+    "type": "house",
+    "group": "houseB",
+    "x": -9,
+    "z": 16,
+    "nx": 6,
+    "nz": 4,
+    "doorIx": 0
+   },
+   {
+    "type": "house",
+    "group": "houseC",
+    "x": -8,
+    "z": 28,
+    "nx": 5,
+    "nz": 4,
+    "doorIx": 0
+   },
+   {
+    "type": "house",
+    "group": "houseD",
+    "x": 8,
+    "z": 8,
+    "nx": 5,
+    "nz": 4,
+    "doorIx": 4
+   },
+   {
+    "type": "house",
+    "group": "houseE",
+    "x": 9,
+    "z": 22,
+    "nx": 4,
+    "nz": 4,
+    "doorIx": 3
+   },
+   {
+    "type": "house",
+    "group": "houseF",
+    "x": 10,
+    "z": 34,
+    "nx": 5,
+    "nz": 4,
+    "doorIx": 4
+   },
+   {
+    "type": "warehouse",
+    "x": -13,
+    "z": 36
+   },
+   {
+    "type": "wall",
+    "x": 4,
+    "z": 13,
+    "yaw": 0,
+    "nx": 2,
+    "ny": 2,
+    "nz": 2
+   },
+   {
+    "type": "wall",
+    "x": -13.5,
+    "z": 10,
+    "yaw": 1.5708,
+    "nx": 6,
+    "ny": 1,
+    "nz": 1
+   },
+   {
+    "type": "wall",
+    "x": -13.5,
+    "z": 22,
+    "yaw": 1.5708,
+    "nx": 6,
+    "ny": 1,
+    "nz": 1
+   },
+   {
+    "type": "wall",
+    "x": 13.5,
+    "z": 15,
+    "yaw": 1.5708,
+    "nx": 6,
+    "ny": 1,
+    "nz": 1
+   },
+   {
+    "type": "wall",
+    "x": -5,
+    "z": -2,
+    "yaw": 0,
+    "nx": 4,
+    "ny": 1,
+    "nz": 1
+   },
+   {
+    "type": "wall",
+    "x": 5,
+    "z": -2,
+    "yaw": 0,
+    "nx": 4,
+    "ny": 1,
+    "nz": 1
+   },
+   {
+    "type": "wall",
+    "x": 14,
+    "z": 29,
+    "yaw": 0.3,
+    "nx": 4,
+    "ny": 1,
+    "nz": 1
+   }
+  ],
+  "contract": {
+   "predicate": {
+    "causes": [
+     "COLLAPSE"
+    ],
+    "group": "village"
+   },
+   "need": 5,
+   "par": [
+    25,
+    45
+   ],
+   "subjects": "village",
+   "alt": {
+    "group": "village",
+    "holdS": 6
+   }
+  },
+  "directive": "The settlement is on the schedule. The structures are occupied; collapse is the specified method.",
+  "commendation": "Occupancy resolved at the structural level.",
+  "evidence": [
+   "Unregistered biologicals \u2014 disposition as per units.",
+   "Recovered: 118 personal effects, 9 window boxes, 1 school bell. Disposition: incinerate. Bell: scrap.",
+   "Structure 2 generator found running. Switched off. Logged.",
+   "Bench inventory, Structure 5: armature jigs, one-third scale. No corresponding requisition.",
+   "Well head posted, hand-lettered: 'DRAW SLOW \u2014 IT SANDS.' Removed.",
+   "[deviated] Settlement unoccupied at survey. Structures standing. Recovery uneconomic; written off in place."
+  ],
+  "dressStage": "mixed-human",
+  "playerPath": "Player spawns (0,-48) on the south pad, main street dead ahead at x=0. Kill path: the range is a firing solution from spawn \u2014 houseA (-8,4) and houseD (8,8) are garrisoned 3 each, houseC (-8,28) holds 2. Two shells into a roofline drop the granular roof course onto the occupants: COLLAPSE x3. Traverse, repeat on the second garrisoned house \u2014 need 5 met in ~25-40s without moving. Any blast near the square panics the 8-unit square detail; with sheltering ON, half sprint indoors through the outward-facing doors \u2014 the engine herds them into the next collapse. Failure modes: aiming low kills by BLAST (doesn't match \u2014 aim the roof course); driving the streets crushes villagers (CRUSH doesn't match, burns subjects); mortar return fire: none, no grenadiers \u2014 the village does not fight back, by design. Strand-proof: subjects 'village' \u2014 when all 20 are dead unfulfilled, the replacement detail reissues the 8-unit square squad (first entry with the tag), which alone supports the panic-into-shelter-then-collapse loop. Pacing per attempt 25-50s.",
+  "deviationDesign": "Every house door faces OUTWARD from the main street (west row doorIx 0, east row doorIx nx-1), so a tank pass up the street puts each garrison inside the 8m fear bubble with the door on their flee vector: occupants bolt out the back and keep running away from town. Sweep order: enter the south gate, run the main street north (flushes all three garrisons outward and pushes the square detail through the open north gap between warehouse and houseF), then one loop through each yard for the east-yard four. Garden walls are short 5m segments with wide gaps \u2014 fleeing units channel through, never trap. Exits are open north, and past the wall ends east and west. All 20 alive, upright, clear of the settlement for 6s, zero matched kills: UNFULFILLED \u2014 DEVIATION. Pure driving, no ordnance \u2014 TOSS is impossible and the only threat is your own treads; the street is 10m wide so careful throttle keeps the crush risk readable.",
+  "budget": {
+   "bodies": 640,
+   "welds": 1320
+  },
+  "risks": "1) Shared-tag restock: five squad entries share tag 'village'; pg.respawnSquad(tag) uses find() and reissues only the FIRST entry (the 8-unit square) \u2014 designed so need 5 is completable from that squad alone, but if the campaign runner uses respawnSquads() everything returns; verify which the runner calls. 2) COLLAPSE attribution: confirm roof-course hits on occupied houses reliably log COLLAPSE (not BLAST) for interior units at this pace \u2014 same mechanism as WO-04's keep, but houses are smaller; playtest the two garrisoned houses. 3) Squads spawn before prefabs flatten terrain under houses; the town pad (r26) pre-flattens the whole grid so garrison spawn heights stay sane \u2014 keep the pad if houses move. 4) Welds ~1320 of 1800: adding a seventh house is possible but leaves no repair margin.",
+  "sketch": "        OPEN NORTH EXIT\n[WWWW]..............~~~~\n[WWWW]...||.....[HF].~~~\n.-[HC]...||....w....~~~~\n.|.......||.....[HE]....\n.|[HB.]..||..uu.|.......\n.........qq.o..[HD].....\n.-[HA]...||.............\n..--.....||....--.......\n.........||..T..........\n~~.......||.............\n~~~......||.............\n.........||.............\n........(pad)...........\n.........[P]............\n......S EDGE............\nH_=house ||=street qq=square detail uu=yard detail o=well T=truck W=warehouse -=garden wall ~=hill"
+ },
+ {
+  "id": "ac_08",
+  "wo": "AC-08",
+  "title": "SURFACE LOAD RATING, REPEAT",
+  "mapName": "ZONE 12 NORTH \u2014 RATING BASIN, REFROZEN",
+  "theme": "The mirror finale: WO-07's sheet rebuilt in a cleared zone, same drill squad shape on the same ice \u2014 and this time the player knows what stands on it.",
+  "terrain": {
+   "terrainSeed": 11,
+   "worldSeed": 5108,
+   "pads": [
+    {
+     "x": 0,
+     "z": -30,
+     "r": 6,
+     "h": 2.3
+    }
+   ],
+   "hills": [
+    {
+     "x": -24,
+     "z": -12,
+     "r": 13,
+     "h": 3.2
+    },
+    {
+     "x": 22,
+     "z": 28,
+     "r": 12,
+     "h": 2.6
+    },
+    {
+     "x": -18,
+     "z": 50,
+     "r": 11,
+     "h": 2.4
+    }
+   ],
+   "pool": {
+    "x0": -8,
+    "x1": 8,
+    "z0": 20,
+    "z1": 36,
+    "level": 1.1
+   },
+   "freeze": true
+  },
+  "squads": [
+   {
+    "tag": "ponddrill2",
+    "x0": -3,
+    "z0": 25,
+    "nx": 3,
+    "nz": 2,
+    "dx": 3,
+    "dz": 5
+   }
+  ],
+  "vehicles": [
+   {
+    "kind": "truck",
+    "x": -13,
+    "z": -4,
+    "yaw": 0.15
+   }
+  ],
+  "prefabs": [
+   {
+    "type": "wreck",
+    "x": 14.5,
+    "z": 43,
+    "yaw": 0.4
+   },
+   {
+    "type": "wreck",
+    "x": 17.5,
+    "z": 39.5,
+    "yaw": 0.9
+   },
+   {
+    "type": "wreck",
+    "x": 21,
+    "z": 20,
+    "yaw": 2.3
+   },
+   {
+    "type": "wall",
+    "x": 19.5,
+    "z": 17,
+    "yaw": -0.5,
+    "nx": 4,
+    "ny": 2,
+    "nz": 1
+   },
+   {
+    "type": "wall",
+    "x": -15,
+    "z": 23.8,
+    "yaw": 0,
+    "nx": 5,
+    "ny": 1,
+    "nz": 1
+   },
+   {
+    "type": "wall",
+    "x": -15,
+    "z": 28.2,
+    "yaw": 0,
+    "nx": 5,
+    "ny": 1,
+    "nz": 1
+   },
+   {
+    "type": "wall",
+    "x": -17.2,
+    "z": 26,
+    "yaw": 1.5708,
+    "nx": 4,
+    "ny": 1,
+    "nz": 1
+   },
+   {
+    "type": "wall",
+    "x": -12.8,
+    "z": 26,
+    "yaw": 1.5708,
+    "nx": 2,
+    "ny": 2,
+    "nz": 1
+   },
+   {
+    "type": "wall",
+    "x": 0,
+    "z": 16,
+    "yaw": 1.5708,
+    "nx": 4,
+    "ny": 1,
+    "nz": 1
+   },
+   {
+    "type": "wall",
+    "x": -8,
+    "z": -33,
+    "yaw": 0.9,
+    "nx": 3,
+    "ny": 2,
+    "nz": 2
+   },
+   {
+    "type": "wall",
+    "x": 8,
+    "z": -36,
+    "yaw": -0.8,
+    "nx": 3,
+    "ny": 2,
+    "nz": 2
+   }
+  ],
+  "contract": {
+   "predicate": {
+    "group": "ponddrill2"
+   },
+   "need": 3,
+   "par": [
+    12,
+    24
+   ],
+   "subjects": "ponddrill2",
+   "alt": {
+    "group": "ponddrill2",
+    "holdS": 6
+   }
+  },
+  "directive": "The sheet has refrozen and a detail occupies it. Clear it; method remains unspecified.",
+  "commendation": "Sheet rating confirmed. No further orders follow.",
+  "evidence": [
+   "Zone 12 register carried forward: 3 hulls, 1 vehicle (operable), 1 structure (down). No action required.",
+   "Sheet dimensions and occupancy identical to WO-07. Cross-reference approved.",
+   "Recovered at the rim: 1 skate, small-format. Disposition: incinerate.",
+   "Occupancy formation corresponds to WO-07 drill spacing. No drill was scheduled.",
+   "Vehicle 1 operable, key in switch. Not required. Logged.",
+   "[if AC-07 was deviated] Recovered at the rim: nil findings."
+  ],
+  "dressStage": "android-visible",
+  "playerPath": "Player spawns (0,-52) \u2014 the proving grounds spawn, quoted. The pool is WO-07's pool verbatim ({-8..8, 20..36, level 1.1}, frozen) and the drill squad is WO-07's exact 3x2 lattice (x -3/0/3, z 25/30), so the first sight up-range is the sandbox's thin-ice trial restaged among wreckage. The drive north passes the evidence ring in arc order: plate racks (AC-01), the stalled truck with keys in (AC-06/03), the battery revetment and hull on the east rise (AC-02), the collapsed house on the west rim (AC-05/07), the old crossing abutment pointing at the ice (AC-04), convoy hulls beyond the north shore (AC-03). Kill path: one shell into the sheet shatters it under the squad \u2014 DROWN in the 1.7m bowl, or shard/blast kills; predicate is any-cause on ponddrill2, need 3, done in 12-25s. Failure mode: over-shelling TOSSes bodies clear of the water \u2014 still matched, still counts. Strand-proof: single squad, subjects ponddrill2, clean restock. Par [12,24] quotes WO-07.",
+  "deviationDesign": "The quiet finale. Never fire: the sheet only shatters under ordnance, so a no-shot run keeps the ice load-bearing. Roll up the east rim past the battery crescent, nose onto the north shore \u2014 the 8m fear bubble folds the rear rank south; cross to the west rim by the ruin and the whole lattice funnels off the south lip, around the abutment stones, into the open ground between the rim hills. South and west are unobstructed for 30m+. Six alive, upright, off the sheet and clear of the basin for 6s with zero matched kills: UNFULFILLED \u2014 DEVIATION, and the campaign's last order closes without a shot. Keep speed low on the approach \u2014 CRUSH is the only way to fail this quietly.",
+  "budget": {
+   "bodies": 65,
+   "welds": 90
+  },
+  "risks": "1) PRIMARY \u2014 frozen-pool spawn: buildScenario spawns squads before freezePool, and groundY reads terrain height, so units placed inside the pool footprint spawn at the bowl floor (~level-1.7), submerged \u2014 they would start drowning at load. The sandbox's thin_ice avoids this by hand-placing units at ice height AFTER freezePool (ContractSandbox.jsx:80-89). The campaign runner needs that pattern ported: ice-aware spawn height (y = level + hy) for squads over a frozen pool, applied at load AND at restock. One-line loader/runner delta; without it this map is broken. 2) Ruin stones at (-15,26) sit on the pool's 8m bowl ramp \u2014 they settle on slope; intended scatter, verify they do not slide into the water at load (determinism noise). 3) Keep the drill squad numbers exact \u2014 the echo IS the content; any drift in pool rect, squad lattice, spawn point, or par weakens the mirror. 4) Budget trivial (~65 bodies); resist dressing it up \u2014 the finale reads because the zone is empty."
+ }
+]
