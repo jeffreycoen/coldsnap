@@ -310,6 +310,58 @@ try {
   book = await text();
   ok("AC-03 unseals after AC-02", book.includes("CONVOY INTERDICTION"));
   ok("completed AC-02 stays replayable", await page.evaluate(() => !document.querySelector('[data-camp="ac02"]').disabled));
+
+  // --- AC-03: volley discipline (danger close + line of sight), completes,
+  // evidence attachments on the report, AC-04 unseals
+  await page.evaluate(() => document.querySelector('[data-camp="ac03"]').click());
+  await page.waitForSelector("canvas");
+  await page.waitForFunction(() => !!window.__COLDSNAP__ && document.body.innerText.includes("AC-03"));
+  await page.mouse.click(480, 300);
+  await page.waitForFunction(() => !!document.querySelector("[data-brief]"));
+  await page.waitForFunction(() => document.body.innerText.includes("one line item"), { timeout: 15000, polling: 500 });
+  await sleep(800);
+  await page.evaluate(() => document.querySelector("[data-brief-ack]").click());
+  const dc = await page.evaluate(() => {
+    const api = window.__COLDSNAP__, w = api._world(), b = w.byId.get(w.bisonId);
+    const r = api._S.actions.volleyAt(b.pos.x + 3, b.pos.z);
+    return { r, cd: api._S.cds.volley };
+  });
+  ok("volley refuses danger close, no cooldown burned", dc.r === false && dc.cd === 0);
+  await page.waitForFunction(() => document.body.innerText.includes("RACK HELD"), { timeout: 5000, polling: 250 });
+  ok("rack-held toast posted", true);
+  await sleep(1400); // refusal toast throttle
+  const los = await page.evaluate(() => {
+    const api = window.__COLDSNAP__;
+    const r = api._S.actions.volleyAt(-11, 26); // behind house0's south wall from spawn
+    return { r, cd: api._S.cds.volley };
+  });
+  ok("volley refuses without line of sight", los.r === false && los.cd === 0);
+  const clear = await page.evaluate(() => {
+    const api = window.__COLDSNAP__;
+    const r = api._S.actions.volleyAt(0, -30); // open road, clear sightline
+    return { r, cd: api._S.cds.volley };
+  });
+  ok("volley fires with a clear sightline", clear.r === true && clear.cd > 0);
+  await page.evaluate(() => {
+    const api = window.__COLDSNAP__, w = api._world();
+    const b = w.byId.get(w.bisonId);
+    b.pos.x = 0; b.pos.z = -2; b.pos.y = w.field.heightAt(0, -2) + 0.97; // close like the gate's advancing bot — spawn-range fire misses runners for minutes under swiftshader
+    window.__campFire = setInterval(() => {
+      const w2 = api._world();
+      const tg = w2.bodies.find((b2) => b2.group === "convoy" && (b2.kind === "unit" || b2.kind === "truck") && b2.alive);
+      if (tg && api._S.actions) api._S.actions.fireAt(tg.pos.x, tg.pos.z);
+    }, 700);
+  });
+  await page.waitForFunction(() => document.body.innerText.includes("Route capacity reduced"), { timeout: 180000, polling: 1000 });
+  ok("AC-03 completes", true);
+  await page.evaluate(() => clearInterval(window.__campFire));
+  await page.waitForFunction(() => !!document.querySelector("[data-aar]"), { timeout: 20000, polling: 500 });
+  await page.waitForFunction(() => document.body.innerText.includes("ATTACHMENT A"), { timeout: 10000, polling: 500 });
+  ok("evidence attachments filed on the report", (await text()).includes("personal effects"));
+  await page.evaluate(() => document.querySelector("[data-aar-file]").click());
+  await page.waitForFunction(() => document.body.innerText.includes("ORDER BOOK"), { timeout: 20000, polling: 500 });
+  book = await text();
+  ok("AC-04 unseals after AC-03", book.includes("CROSSING DENIAL"));
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => document.body.innerText.includes("PROVING GROUNDS"));
 

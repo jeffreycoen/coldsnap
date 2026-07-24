@@ -58,5 +58,11 @@ export function composeAAR({ contract, events, ordnance = { shell: 0, mg: 0, vol
   }
   const pool = REMARKS[key] || REMARKS.MIXED;
   lines.push(`REMARK: ${pool[Math.floor(rng() * pool.length) % pool.length]}`);
+  // evidence attachments: campaign contracts author these in their JSON —
+  // the bureau's recovery paperwork, filed under the report. Sandbox
+  // contracts carry none, so sandbox reports are byte-identical to before.
+  (contract.evidence || []).forEach((ev, i) => {
+    lines.push(`ATTACHMENT ${String.fromCharCode(65 + i)} · ${ev}`);
+  });
   return lines;
 }

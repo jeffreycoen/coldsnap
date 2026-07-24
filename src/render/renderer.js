@@ -551,7 +551,11 @@ export function makeRenderer(canvas, world0, opts = {}) {
     if (F.dirty) syncTerrain();
     // vehicles sync
     for (const b of world.bodies) {
-      if (b.kind !== "vehicle" && b.kind !== "wreck") continue;
+      // DIVERGENCE from the demo: kind "truck" joins the loop. The demo's
+      // filter (vehicle|wreck) never rendered trucks at all — its own
+      // dead-truck tint branch below was unreachable code. Latent there
+      // (demo trucks are distant dressing); fatal for AC-03's column.
+      if (b.kind !== "vehicle" && b.kind !== "wreck" && b.kind !== "truck") continue;
       let g = vehMap.get(b.id);
       if (!g) {
         g = b.id === world.bisonId ? buildBison() : (b.vtype === "truck" ? buildTruck() : buildScout());

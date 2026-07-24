@@ -5,7 +5,7 @@
 // put a >600kg body inside a blast — so THIS file is the behavior lock for
 // the diverged paths. If a change breaks these asserts, it changes how the
 // tank rights or takes hits, and that is a design decision, not noise.
-import { buildProvingGrounds, stepWorld, thawPool, recoverBison, explode, worldHash } from "../src/engine/core.js";
+import { buildProvingGrounds, stepWorld, thawPool, recoverBison, explode, worldHash, bisonFire } from "../src/engine/core.js";
 
 const fails = [];
 const ok = (name, cond, detail = "") => {
@@ -95,6 +95,30 @@ const RAMP = { x: 0, z: 17.5 };
   const h1 = (() => { const r = rightingRun(POOLC, Math.PI, 3, { thaw: true }); return worldHash(r.world); })();
   const h2 = (() => { const r = rightingRun(POOLC, Math.PI, 3, { thaw: true }); return worldHash(r.world); })();
   ok("recover sequence is deterministic (replay hash-identical)", h1 === h2, `${h1} vs ${h2}`);
+}
+
+// --- trucks take fire damage (divergence #5: the demo's damage gates read
+// unit|vehicle, leaving trucks immune to every shell and round — latent
+// there because demo trucks only die by CRUSH and DROWN)
+{
+  const world = buildProvingGrounds(1234);
+  const truck = world.bodies.find((b) => b.kind === "truck" && b.alive);
+  const b = world.byId.get(world.bisonId);
+  b.pos.x = truck.pos.x; b.pos.z = truck.pos.z - 20;
+  b.pos.y = world.field.heightAt(b.pos.x, b.pos.z) + 1.0;
+  const hp0 = truck.hp;
+  let died = null;
+  for (let s = 0; s < 4 && truck.alive; s++) {
+    bisonFire(world, { x: truck.pos.x, z: truck.pos.z });
+    for (let i = 0; i < 180; i++) {
+      world.events.length = 0;
+      stepWorld(world);
+      for (const e of world.events) if (e.type === "kill" && e.id === truck.id) died = e;
+      if (!truck.alive) break;
+    }
+  }
+  ok("shells damage trucks", truck.hp < hp0, `hp ${hp0} -> ${truck.hp}`);
+  ok("a truck dies to sustained shellfire with a kill event", !truck.alive && !!died, died ? `cause=${died.cause}` : "no kill event");
 }
 
 if (fails.length) {

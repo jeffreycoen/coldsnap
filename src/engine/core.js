@@ -572,7 +572,9 @@ export function explode(world, x, y, z, spec) {
     b.lastImp = { src: "blast", attacker: spec.attacker || "world", t: world.t, volley: spec.volley || 0 };
     if ((spec.attacker || "") === "player") b.lastPlayerTouch = world.t;
     const dmg = spec.dmg * f * (0.12 + 0.88 * occ) + (dist < 1.0 && spec.kind !== "mg" ? 55 : 0); // point-blank bonus is for real munitions at your feet — a coax round bursting ON its target is just the bullet
-    if (b.alive && (b.kind === "unit" || b.kind === "vehicle")) {
+    // DIVERGENCE from the frozen demo: trucks in the blast-damage gate too
+    // (see the projectile gate in stepProjectiles for the full note)
+    if (b.alive && (b.kind === "unit" || b.kind === "vehicle" || b.kind === "truck")) {
       applyDamage(world, b, dmg, { cause: CAUSE.BLAST, attacker: spec.attacker || "world", volley: spec.volley || 0 });
     }
   }
@@ -620,7 +622,11 @@ function stepProjectiles(world) {
     if (hitBody || hitT >= 0) {
       const hx = p0.x + (p.pos.x - p0.x) * bestT, hy = p0.y + (p.pos.y - p0.y) * bestT, hz = p0.z + (p.pos.z - p0.z) * bestT;
       if (p.spec.kind !== "shell" && p.spec.kind !== "mg" && p.life < 0.45) { list.splice(i, 1); continue; } // mortar arming: muzzle-clipped rounds are duds, not pit-clearers. The coax (120 m/s) covers 54m inside the arming window — it carries no fuse to arm.
-      if (hitBody && hitBody.alive && (hitBody.kind === "unit" || hitBody.kind === "vehicle")) {
+      // DIVERGENCE from the frozen demo: trucks take fire damage. The demo's
+      // gate read unit|vehicle only, leaving trucks immune to every shell and
+      // round — unnoticed there because its trucks die by CRUSH and DROWN
+      // alone. Locked by scripts/righting-test.mjs.
+      if (hitBody && hitBody.alive && (hitBody.kind === "unit" || hitBody.kind === "vehicle" || hitBody.kind === "truck")) {
         applyDamage(world, hitBody, p.spec.kind === "shell" ? 90 : p.spec.kind === "mg" ? 11 : 55, { cause: CAUSE.PROJECTILE, attacker: p.spec.attacker || "world", volley: p.spec.volley || 0 });
       }
       explode(world, hx, hy, hz, p.spec);
