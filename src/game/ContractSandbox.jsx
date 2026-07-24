@@ -954,7 +954,7 @@ export default function ColdsnapContractSandbox({ onExit }) {
         const stampCol = hud.aar.medal === "GOLD" ? "#ffd27a" : hud.aar.medal === "SILVER" ? "#cfd6de" : hud.aar.medal === "BRONZE" ? "#b0764a" : "#ff6b5e";
         const file = () => { const S = stateRef.current; if (S) S.aar = null; };
         return (
-          <div onClick={file} style={{ position: "absolute", inset: 0, background: "rgba(10,12,16,0.55)", zIndex: 6, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+          <div style={{ position: "absolute", inset: 0, background: "rgba(10,12,16,0.55)", zIndex: 6, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
             <div data-aar onClick={(e) => e.stopPropagation()} style={{ ...P.panel, position: "relative", width: "min(470px, 94vw)", maxHeight: "76vh", overflowY: "auto", padding: "12px 16px" }}>
               <div style={{ borderBottom: "1px dashed #3a414b", paddingBottom: 6, marginBottom: 9, display: "flex", justifyContent: "space-between", gap: 10, fontSize: isTouch ? 10 : 9, letterSpacing: 1.5, color: "#8b93a0", whiteSpace: "nowrap" }}>
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>PROCUREMENT BUREAU · FIELD ACCEPTANCE DIVISION</span>

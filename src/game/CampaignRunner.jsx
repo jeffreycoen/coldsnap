@@ -1052,7 +1052,9 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
         const stampCol = hud.aar.medal === "GOLD" ? "#ffd27a" : hud.aar.medal === "SILVER" ? "#cfd6de" : hud.aar.medal === "BRONZE" ? "#b0764a" : "#ff6b5e";
         const file = () => { const S = stateRef.current; if (S) S.aar = null; };
         return (
-          <div onClick={file} style={{ position: "absolute", inset: 0, background: "rgba(10,12,16,0.55)", zIndex: 6, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+          // the scrim is inert on purpose: a report leaves the desk only via
+          // FILE REPORT — a stray tap must not dismiss it unread
+          <div style={{ position: "absolute", inset: 0, background: "rgba(10,12,16,0.55)", zIndex: 6, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
             <style>{`
               @keyframes csPrintout { from { clip-path: inset(0 0 100% 0); } to { clip-path: inset(0 0 0% 0); } }
               @keyframes csStamp { 0% { opacity: 0; transform: rotate(-7deg) scale(2.4); } 70% { opacity: 1; transform: rotate(-7deg) scale(0.92); } 100% { opacity: 0.9; transform: rotate(-7deg) scale(1); } }

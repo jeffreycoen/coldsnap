@@ -38,7 +38,7 @@ function makeSplat(town) {
       const W2Ug = 1024 / 188.7, U0g = 94.35, BLK = 0.83;
       for (let k = Math.ceil(-92 / BLK); k * BLK <= 92; k++) {
         const gp = Math.round((k * BLK + U0g) * W2Ug);
-        cx.fillStyle = k % 4 === 0 ? "rgba(96,110,128,0.38)" : "rgba(139,152,168,0.16)";
+        cx.fillStyle = k % 4 === 0 ? "rgba(78,92,110,0.62)" : "rgba(116,130,148,0.34)"; // opaque enough to read on open snow
         cx.fillRect(gp, 0, 1, 1024);
         cx.fillRect(0, gp, 1024, 1);
       }
@@ -234,32 +234,44 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // from muzzle to reticle, fed by the game layer via setTraj(points, hitIdx).
   // Segments past the first obstruction dim; the obstruction gets a marker.
   const TRAJ_N = 48;
-  const trajGeo = new THREE.BufferGeometry();
-  trajGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(TRAJ_N * 3), 3));
-  const trajLine = new THREE.Line(trajGeo, new THREE.LineDashedMaterial({ color: 0xffd27a, transparent: true, opacity: 0.75, depthWrite: false, dashSize: 0.7, gapSize: 0.45 }));
-  trajLine.layers.set(1); trajLine.visible = false; trajLine.frustumCulled = false;
-  scene.add(trajLine);
-  const trajDim = new THREE.Line(
-    (() => { const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(TRAJ_N * 3), 3)); return g; })(),
-    new THREE.LineDashedMaterial({ color: 0x8b93a0, transparent: true, opacity: 0.3, depthWrite: false, dashSize: 0.4, gapSize: 0.6 }));
-  trajDim.layers.set(1); trajDim.visible = false; trajDim.frustumCulled = false;
-  scene.add(trajDim);
+  // The arc draws as instanced pips, not a THREE.Line: WebGL lines rasterize
+  // one pixel wide and the dither/quantize post pass swallows them on snow.
+  // Pips are sized in world meters like every other sprite — amber to the
+  // obstruction, smaller grey past it, red ring on the hit.
+  const trajMesh = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(0.26, 0.26, 0.26),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false }),
+    TRAJ_N);
+  trajMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  trajMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(TRAJ_N * 3).fill(1), 3);
+  trajMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+  trajMesh.count = 0; trajMesh.layers.set(1); trajMesh.frustumCulled = false;
+  scene.add(trajMesh);
+  const TRAJ_AMBER = new THREE.Color(0xd98a2b), TRAJ_GREY = new THREE.Color(0x707a86);
+  const _trajO = new THREE.Object3D();
   const trajHit = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.85, 16), new THREE.MeshBasicMaterial({ color: 0xff6b5e, transparent: true, opacity: 0.9, depthWrite: false }));
   trajHit.layers.set(1); trajHit.visible = false;
   scene.add(trajHit);
   function setTraj(points, hitIdx) {
-    if (!points || points.length < 2) { trajLine.visible = trajDim.visible = trajHit.visible = false; return; }
-    const cut = hitIdx == null ? points.length : Math.min(points.length, hitIdx + 1);
-    const pa = trajGeo.attributes.position;
-    for (let i = 0; i < TRAJ_N; i++) { const p = points[Math.min(i, cut - 1)]; pa.setXYZ(i, p.x, p.y, p.z); }
-    pa.needsUpdate = true; trajGeo.computeBoundingSphere(); trajLine.computeLineDistances(); trajLine.visible = true;
+    if (!points || points.length < 2) { trajMesh.count = 0; trajHit.visible = false; return; }
+    let n = 0;
+    for (let i = 0; i < points.length && n < TRAJ_N; i += 2) {
+      const p = points[i];
+      const past = hitIdx != null && i > hitIdx;
+      _trajO.position.set(p.x, p.y, p.z);
+      _trajO.scale.setScalar(past ? 0.55 : 1);
+      _trajO.updateMatrix();
+      trajMesh.setMatrixAt(n, _trajO.matrix);
+      if (trajMesh.setColorAt) trajMesh.setColorAt(n, past ? TRAJ_GREY : TRAJ_AMBER);
+      n++;
+    }
+    trajMesh.count = n;
+    trajMesh.instanceMatrix.needsUpdate = true;
+    if (trajMesh.instanceColor) trajMesh.instanceColor.needsUpdate = true;
     if (hitIdx != null && hitIdx < points.length) {
-      const da = trajDim.geometry.attributes.position;
-      for (let i = 0; i < TRAJ_N; i++) { const p = points[Math.min(points.length - 1, Math.max(hitIdx, Math.min(hitIdx + i, points.length - 1)))]; da.setXYZ(i, p.x, p.y, p.z); }
-      da.needsUpdate = true; trajDim.geometry.computeBoundingSphere(); trajDim.computeLineDistances(); trajDim.visible = true;
       const h = points[hitIdx];
       trajHit.position.set(h.x, h.y + 0.15, h.z); trajHit.rotation.x = -Math.PI / 2; trajHit.visible = true;
-    } else { trajDim.visible = false; trajHit.visible = false; }
+    } else trajHit.visible = false;
   }
   // volley strike marker: pulses at the painted point while the rockets fall
   const strikeRing = new THREE.Mesh(new THREE.RingGeometry(1.6, 2.1, 24), new THREE.MeshBasicMaterial({ color: 0xffa24a, transparent: true, opacity: 0, depthWrite: false }));
@@ -392,6 +404,12 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const fireMesh = pool(new THREE.PlaneGeometry(1, 1), fireMat, 96, false); fireMesh.layers.set(1);
   const tracerMat = new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
   const tracerMesh = pool(new THREE.BoxGeometry(0.09, 0.09, 1), tracerMat, 64, false); tracerMesh.layers.set(1);
+  // DIVERGENCE from the demo: rockets get their own pool with NORMAL blending
+  // (additive washes to white over snow) — orange on the climb, red on the
+  // dive, so a volley reads as six burning things coming down
+  const rocketMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.98, depthWrite: false });
+  const rocketMesh = pool(new THREE.BoxGeometry(0.09, 0.09, 1), rocketMat, 16, false); rocketMesh.layers.set(1);
+  const RKT_ORANGE = new THREE.Color(0xff8a2e), RKT_RED = new THREE.Color(0xff3b26);
   const blobMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.34, depthWrite: false });
   const blobMesh = pool(new THREE.CircleGeometry(1, 12), blobMat, 96, false); blobMesh.layers.set(1);
 
@@ -644,9 +662,9 @@ export function makeRenderer(canvas, world0, opts = {}) {
     }
     fireMesh.count = fi; fireMesh.instanceMatrix.needsUpdate = true;
     // tracers from live projectiles
-    let ti = 0;
+    let ti = 0, ri = 0;
     for (const p of world.projectiles) {
-      if (ti >= 64 || (p.spec.delay && p.spec.delay > 0)) continue;
+      if (p.spec.delay && p.spec.delay > 0) continue;
       const L = Math.hypot(p.v.x, p.v.y, p.v.z) || 1;
       dummy.position.set(p.pos.x, p.pos.y, p.pos.z);
       dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(p.v.x / L, p.v.y / L, p.v.z / L));
@@ -655,13 +673,24 @@ export function makeRenderer(canvas, world0, opts = {}) {
       // things; untagged MG rounds draw short and thin so the stream has
       // rhythm instead of noise. p.tracer is set by the campaign action layer.
       const kind = p.spec.kind;
-      const hot = kind === "rocket" || p.tracer;
-      const th = hot ? 2.2 : kind === "mg" ? 0.7 : 1;
-      dummy.scale.set(th, th, kind === "rocket" ? 4.2 : p.tracer ? 3.2 : kind === "mg" ? 1.1 : 1.8);
+      if (kind === "rocket") {
+        if (ri >= 16) continue;
+        dummy.scale.set(2.6, 2.6, 4.2);
+        dummy.updateMatrix();
+        rocketMesh.setMatrixAt(ri, dummy.matrix);
+        if (rocketMesh.setColorAt) rocketMesh.setColorAt(ri, p.v.y > 0 ? RKT_ORANGE : RKT_RED);
+        ri++;
+        continue;
+      }
+      if (ti >= 64) continue;
+      const th = p.tracer ? 2.2 : kind === "mg" ? 0.7 : 1;
+      dummy.scale.set(th, th, p.tracer ? 3.2 : kind === "mg" ? 1.1 : 1.8);
       dummy.updateMatrix();
       tracerMesh.setMatrixAt(ti++, dummy.matrix);
     }
     tracerMesh.count = ti; tracerMesh.instanceMatrix.needsUpdate = true;
+    rocketMesh.count = ri; rocketMesh.instanceMatrix.needsUpdate = true;
+    if (rocketMesh.instanceColor) rocketMesh.instanceColor.needsUpdate = true;
     // blob shadows for airborne bodies
     let bi = 0;
     for (const b of world.bodies) {
