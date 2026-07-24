@@ -107,6 +107,31 @@ try {
   body = await text();
   ok("ESC returns to the start screen", body.includes("PROVING GROUNDS"));
 
+  // --- contract sandbox: boots, wears the bureau voice, ESC returns
+  await clickMenu("contracts");
+  await page.waitForSelector("canvas");
+  await page.waitForFunction(() => !!window.__COLDSNAP__);
+  await page.waitForFunction(() => document.body.innerText.includes("WO-01"));
+  body = await text();
+  ok("sandbox boots with work-order titles (WO-01)", body.includes("WO-01 · DIRECT-FIRE ACCEPTANCE"));
+  ok("sandbox trial bar reads ORDER", body.includes("ORDER 1/7"));
+  ok("sandbox deploy overlay wears the bureau voice", body.includes("CONTRACT DIVISION") && body.includes("The bureau is watching the clock"));
+  const csState = await page.evaluate(() => window.__COLDSNAP__.getState());
+  ok("sandbox world builds fully (1030 bodies)", csState.bodies === 1030);
+  // play it: a volley on the gunnery pad should fulfil WO-01 outright
+  await page.mouse.click(480, 300); // dismiss deploy overlay
+  await page.evaluate(() => window.__COLDSNAP__.volleyAt(0, -30));
+  await page.waitForFunction(() => window.__COLDSNAP__.getState().trial.idx >= 1, { timeout: 20000 });
+  ok("volley on the gunnery pad fulfils WO-01 (order advances)", true);
+  // the HUD flushes toasts on a game-time cadence that lags real time under
+  // heavy load — poll for the toast instead of sleeping a fixed interval
+  await page.waitForFunction(() => document.body.innerText.includes("COMMENDATION — WO-01"), { timeout: 10000 });
+  body = await text();
+  ok("completion toast reads as a commendation", body.includes("COMMENDATION — WO-01") && body.includes("Direct-fire lethality"));
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => !document.querySelector("canvas"));
+  ok("ESC returns from the sandbox", true);
+
   // --- corrupt/hostile stored keymap resets to defaults (escape unbindable)
   await page.evaluate(() => localStorage.setItem("coldsnap-keymap", JSON.stringify({ ...JSON.parse(localStorage.getItem("coldsnap-keymap")), forward: "escape" })));
   await page.reload({ waitUntil: "networkidle0" });

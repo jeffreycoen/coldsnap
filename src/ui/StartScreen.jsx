@@ -8,21 +8,33 @@ const TRIAL_IDS = ["gunnery", "roadkill", "saturation", "demolition", "deep_end"
 const medalColor = (m) =>
   m ? (m.medal === "GOLD" ? COLORS.gold : m.medal === "SILVER" ? COLORS.text : "#b0764a") : COLORS.btnBorder;
 
-export default function StartScreen({ onPlay, onControls }) {
+export default function StartScreen({ onPlay, onSandbox, onControls }) {
   const [medals, setMedals] = useState(null);
+  const [csMedals, setCsMedals] = useState(null);
   const [isTouch] = useState(detectTouch);
 
   useEffect(() => {
     let live = true;
-    (async () => {
+    const load = async (key, set) => {
       try {
-        const r = await window.storage.get("coldsnap-medals");
+        const r = await window.storage.get(key);
         const m = JSON.parse(r.value);
-        if (live && m && typeof m === "object") setMedals(m);
+        if (live && m && typeof m === "object") set(m);
       } catch (e) {}
-    })();
+    };
+    load("coldsnap-medals", setMedals);
+    load("coldsnap-cs-medals", setCsMedals);
     return () => { live = false; };
   }, []);
+
+  const starRow = (m, hook) => m && (
+    <div style={{ marginTop: 6, fontSize: 13 }}>
+      {TRIAL_IDS.map((id) => (
+        <span key={id} style={{ color: medalColor(m[id]), marginRight: 4 }}>★</span>
+      ))}
+      <span style={{ fontSize: 11, opacity: 0.7, marginLeft: 4 }}>{hook}</span>
+    </div>
+  );
 
   const option = (extra) => ({
     ...btn,
@@ -42,22 +54,16 @@ export default function StartScreen({ onPlay, onControls }) {
           <div style={{ opacity: 0.7, letterSpacing: 3, fontSize: 12 }}>WINTER RANGE COMMAND</div>
         </div>
 
+        <button data-menu="contracts" style={option({ borderColor: "#8a5a1c" })} onClick={onSandbox}>
+          <div style={{ color: COLORS.gold, fontSize: 15, letterSpacing: 2 }}>▶ CONTRACT SANDBOX</div>
+          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>Seven work orders from the bureau. The clock is part of the record.</div>
+          {starRow(csMedals, "commendations on file")}
+        </button>
+
         <button data-menu="demo" style={option({ borderColor: COLORS.borderHot })} onClick={onPlay}>
           <div style={{ color: COLORS.red, fontSize: 15, letterSpacing: 2 }}>▶ PROVING GROUNDS</div>
           <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>The original demo — seven field trials across the winter range.</div>
-          {medals && (
-            <div style={{ marginTop: 6, fontSize: 13 }}>
-              {TRIAL_IDS.map((id) => (
-                <span key={id} style={{ color: medalColor(medals[id]), marginRight: 4 }}>★</span>
-              ))}
-              <span style={{ fontSize: 11, opacity: 0.7, marginLeft: 4 }}>best times on record</span>
-            </div>
-          )}
-        </button>
-
-        <button data-menu="contracts" style={option({ opacity: 0.45, cursor: "default" })} disabled>
-          <div style={{ color: COLORS.gold, fontSize: 15, letterSpacing: 2 }}>CONTRACT SANDBOX</div>
-          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>The bureau is drafting work orders — coming soon.</div>
+          {starRow(medals, "best times on record")}
         </button>
 
         <button data-menu="controls" style={option()} onClick={onControls}>

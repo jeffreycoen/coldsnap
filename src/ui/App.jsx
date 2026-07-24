@@ -1,12 +1,15 @@
 import React, { useEffect, useRef, useState } from "react";
 import ColdsnapProvingGrounds from "../demo/coldsnap-proving-grounds.jsx";
+import ColdsnapContractSandbox from "../game/ContractSandbox.jsx";
 import StartScreen from "./StartScreen.jsx";
 import Controls from "./Controls.jsx";
 import { DEFAULTS, loadKeymap, saveKeymap, installKeyRemap } from "../platform/keymap.js";
 import { COLORS, FONT } from "./theme.js";
 
+const GAME_SCREENS = new Set(["demo", "sandbox"]);
+
 export default function App() {
-  const [screen, setScreen] = useState("menu"); // menu | controls | demo
+  const [screen, setScreen] = useState("menu"); // menu | controls | demo | sandbox
   const [keymap, setKeymap] = useState(DEFAULTS);
   const mapRef = useRef(DEFAULTS);
   const remapRef = useRef(null);
@@ -22,13 +25,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (remapRef.current) remapRef.current.setSuspended(screen !== "demo");
+    if (remapRef.current) remapRef.current.setSuspended(!GAME_SCREENS.has(screen));
   }, [screen]);
 
-  // ESC leaves the demo for the menu. Registered in bubble phase so the
+  // ESC leaves a game for the menu. Registered in bubble phase so the
   // remapper (capture) runs first — Escape is unbindable, so it always lands.
   useEffect(() => {
-    if (screen !== "demo") return;
+    if (!GAME_SCREENS.has(screen)) return;
     const onEsc = (e) => { if (e.key === "Escape") setScreen("menu"); };
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
@@ -39,10 +42,11 @@ export default function App() {
   if (screen === "controls") {
     return <Controls keymap={keymap} onChange={applyKeymap} onBack={() => setScreen("menu")} />;
   }
-  if (screen === "demo") {
+  if (GAME_SCREENS.has(screen)) {
+    const Game = screen === "sandbox" ? ColdsnapContractSandbox : ColdsnapProvingGrounds;
     return (
       <div style={{ position: "relative", width: "100%", height: "100%" }}>
-        <ColdsnapProvingGrounds />
+        <Game />
         <button
           data-menu="exit"
           onClick={() => setScreen("menu")}
@@ -51,5 +55,5 @@ export default function App() {
       </div>
     );
   }
-  return <StartScreen onPlay={() => setScreen("demo")} onControls={() => setScreen("controls")} />;
+  return <StartScreen onPlay={() => setScreen("demo")} onSandbox={() => setScreen("sandbox")} onControls={() => setScreen("controls")} />;
 }
