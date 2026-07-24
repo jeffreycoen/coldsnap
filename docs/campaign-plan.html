@@ -164,7 +164,7 @@
     <tr><td>AC-08<br><span class="beat dark">MIRROR</span></td><td>The sheet, again</td>
       <td>"Surface load rating, repeat. Method remains unspecified." The final order quotes WO-07 verbatim — same pool, same six-unit lattice, same par times.</td>
       <td>The proving grounds restaged in a cleared zone, ringed by the campaign's own wreckage in arc order. The player has done this exact thing before, back when it was fun. Never firing keeps the ice load-bearing; the fear bubble folds the drill squad off the sheet, and the campaign can end without a shot.</td>
-      <td>"Recovered at the rim: 1 skate, child-size. Disposition: incinerate." The last evidence line in the game. Then FORM AA-9.</td></tr>
+      <td>"Recovered at the rim: 1 skate, small-format. Disposition: incinerate." — the bureau's own euphemism, collapsing a person into a parts size, closes the thread. The last evidence line in the game. Then FORM AA-9.</td></tr>
   </table></div>
 
   <h3>2.7 · The Documents — how the story is physically told</h3>
@@ -186,13 +186,70 @@
   a later kill-run can never erase the fact of a deviation).</p>
   <div class="tablewrap"><table>
     <tr><th>Record</th><th>AA-9 reads</th></tr>
-    <tr><td>0 deviations</td><td>"The instrument performed. Procurement approved." Full gold, dead voice. A receipt for a territory.</td></tr>
-    <tr><td>Some</td><td>"Deviations noted. The instrument has opinions. Procurement approved." The bureau does not care — which is its own indictment.</td></tr>
-    <tr><td>All four offered, low collateral</td><td>The quiet ending. Half the form redacted; the second hand writes the only clear line: <span class="marg">"The originals are safe. So are they."</span> Four hollow stars, kept promises.</td></tr>
+    <tr><td>0 deviations</td><td>"The instrument performed. The territory lets clean. Procurement approved." Full gold, dead voice. A receipt for a territory. One extra line leaks the second path to the full-gold player: "Deviation watch: armed on four orders. Deviations recorded: nil."</td></tr>
+    <tr><td>Some</td><td>"Deviations noted. The instrument exhibits discretion. Procurement approved." — mercy filed as a measured material property, no wink. "Procurement approved." is identical across tiers; the unchanged stamp is the indictment. (Alternative on the table: "The instrument has opinions." — memorable, but it's the bureau being wry, and wryness is awareness.)</td></tr>
+    <tr><td>All four offered, low collateral</td><td>The quiet ending. Half the form redacted; the second hand writes the only clear line: <span class="marg">"The originals are safe. So are they."</span> The bureau fragment above it reads "The instrument &#9608;&#9608;&#9608;&#9608;&#9608;&#9608;. Procurement approved." — the verb itself redacted. Four hollow stars, kept promises.</td></tr>
   </table></div>
   <div class="decide"><b>DECIDE</b> — Collateral gate on the quiet ending (rec: yes — deviating AC-08 after leveling the
   village shouldn't read as mercy; proposal: fewer than 10 non-subject kills across the campaign). Also: exact tier count
   (rec: the three above).</div>
+
+
+  <h3>2.9 · The Grade — color as the record</h3>
+  <p>The world's palette is the campaign's moral meter. Computed at each level's start from the
+  run's record — kills pull toward <b>grayscale with scarlet</b> (selective desaturation that preserves the red axis:
+  the coats and the stamps are already scarlet), deviations pull toward <b>alive winter</b>: dawn warmth on the snow,
+  aurora greens and violets, and pigment accents appearing in the world (window boxes, laundry, the hand-lettered
+  signs). Colors the base palette does not contain get introduced on the quiet path — you are clearing the color out
+  of the territory, or keeping it alive. Optional subtle live drift within a level: each kill nudges saturation down
+  in real time, capped so it stays subliminal. The paperwork never changes at either extreme — the bureau's certainty
+  is colorfast. The two finales photograph the arc: kill-path AC-08 in gray and scarlet, quiet-path AC-08 under an
+  aurora. Implementation is pure post-processing in the extracted renderer (no physics, no determinism risk),
+  campaign-only, composing before the retro palette-quantization setting.</p>
+  <div class="decide"><b>DECIDE</b> — Grade knobs: live in-level drift on/off (rec: on, subtle); per-map baseline so
+  late maps start colder regardless (rec: yes); demo/sandbox stay untouched (rec: yes, campaign-only).</div>
+
+  <h3>2.10 · Fold-in from the specialist audits (applied)</h3>
+  <ul>
+    <li><b>The quiet ending is now load-bearing.</b> Deviated orders close with write-off economics — <span class="ev">"Recovery
+    uneconomic. Written off in place."</span> — the same arithmetic that stranded the units in 2.1. Dispersal is a real
+    loophole the archivist exploits, not a stay of execution.</li>
+    <li><b>Mercy has paperwork.</b> Every deviation map carries a deviated-outcome evidence set (see the appendix sheets) —
+    the text a quiet-run player actually reads. Sample, AC-04: <span class="ev">"Detail dispersed. Crossing intact.
+    Throughput at time of survey: zero."</span> — the technically-true zero is pure bureau.</li>
+    <li><b>The units' native culture is posting-and-rating.</b> Maintainers speak in specifications, exactly like the bureau —
+    except their specs preserve ("TWO AT A TIME"; at the village well: <span class="ev">"DRAW SLOW — IT SANDS"</span>).
+    Two registers of specification, one disposing and one keeping. Domestic objects (bell, window boxes) belong to the
+    humans in residence; small-format stays strictly industrial on paper — the deliberate separation from
+    NieR's machines-imitating-humanity: these units don't mimic, they maintain, and the humans are really there.</li>
+    <li><b>The redaction rule.</b> Late-arc bars only ever cover grid references, headcounts, and directions of dispersal —
+    everything that would let copy 1 find survivors. The bars are the archivist's mercy, discoverable wordlessly.</li>
+    <li><b>World-consistency lines added</b> (appendix): vacant-zones survey (why eight maps clear a territory), the recall
+    notice ("Lot 7 self-delivered to railhead… Freight: nil." — why the zones stopped answering), the Zone 2 prior file
+    (why the AC-06 convoy stands), the WO-07 drill-spacing note at AC-08, revaluation ("Maintenance cause: none
+    recorded." — their diligence caused the clearance; re-letting requires vacant possession).</li>
+    <li><b>The world forks once.</b> AC-08's rim line reads the record: village deviated &rarr; <span class="ev">"Recovered at
+    the rim: nil findings."</span> They took their things.</li>
+    <li><b>Deviation discoverability.</b> Every brief card gains a disposition field; on the four deviation contracts it
+    reads <span class="ev">DISPOSITION OF SUBJECTS: RESOLVED / <s>DISPERSED — NOT ACCEPTED</s></span> — the bureau
+    striking out the alternative is how the player learns one exists. The order counter dual-modes during a clean hold
+    ("ON SITE: 3"), deviations get their own par times and a second slot on the record row, and contract-select unlocks
+    after first completion.</li>
+    <li><b>Register enforcement in the shipped game</b> (campaign build items): arcade achievements suppressed in campaign
+    mode; the AAR's one editorializing remark line replaced ("The structure performed as rated. Nil residual
+    occupancy."); freeze/wingman toasts recast in bureau voice; restock toast text per-scenario (inhabited zones use
+    census correction: <span class="ev">"Occupancy figure revised upward on resurvey. Prior count in error."</span> — the
+    proving-grounds line stays bland-and-horrifying elsewhere, and at AC-05 it restates the accepted cause);
+    "sympathizer" never appears in bureau text — only "unregistered biologicals."</li>
+    <li><b>The marginalia ring, five notes:</b> <span class="marg">"Copies burn. Originals keep."</span> (AC-05) &rarr;
+    <span class="marg">"Rations. Who were the rations for?"</span> (AC-06, the game's only question) &rarr; AC-07: see
+    decision below &rarr; <span class="marg">"The ministry copy is shorter."</span> (AC-08 — the practice, confirming
+    nothing) &rarr; <span class="marg">"The originals are safe. So are they."</span> (AA-9, quiet only).</li>
+  </ul>
+  <div class="decide"><b>DECIDE</b> — The AC-07 marginal note, the answer beat of the ring. Option A:
+  <span class="marg">"So that's who."</span> — three words, the warmest line in the game. Option B: no words — the second
+  hand's ink underlining <span class="ev">"1 school bell"</span>, the unspeakable getting a mark instead of a sentence.
+  Recommendation: A speaks, B devastates; lean B, but this is a taste call.</div>
 
   <h2><span class="no">CP-3</span>THE PROVING GROUNDS, RE-GROUNDED</h2>
   <p>Your note stands: the current sandbox contracts read as arbitrary. The story fixes them retroactively with a text-only
@@ -202,7 +259,7 @@
   the campaign's finale rehearsed on the same ice. Examples of the pass:</p>
   <div class="doc">
     <div class="wo">WO-01 · DIRECT-FIRE ACCEPTANCE — REVISED</div>
-    <p class="dtext">"Decommissioned units, lot 7, staged at the gunnery pad. Three kills by main gun or coax — direct fire only. The instrument is under evaluation, not the crew."</p>
+    <p class="dtext">"Decommissioned units, lot 7, staged at the gunnery pad. Three subjects resolved by direct fire — main gun or coax. The instrument is under evaluation, not the crew." <span class="small">(the pass also scrubs "kills" from the shipped directives — the register never says the word; provenance line added: "Lot 7 self-delivered to railhead per recall notice. Freight: nil.")</span></p>
     <div class="label">WO-05 · IMMERSION TOLERANCE — REVISED</div>
     <p class="dtext">"Displace the poolside lot into open water. Sustained immersion concludes the test. Units are write-offs; the reading is the deliverable."</p>
   </div>
@@ -215,7 +272,7 @@
     <tr><td>1</td><td>Revise the map drafts against the settled story; lock AC-01/02</td><td>Range-card review (visual pass on the locked maps)</td></tr>
     <tr><td>2</td><td>Runner + AC-01/AC-02 playable behind the new option; camp storage; per-map CI completability gates</td><td>Both maps finish headlessly and on the phone</td></tr>
     <tr><td>3</td><td>AC-03..05 + evidence machinery (lines from JSON, android dress stage, marginalia) + sandbox re-grounding pass</td><td>Evidence lands in AARs; androids read at arm's length</td></tr>
-    <tr><td>4</td><td>AC-06..08 + durable record + AA-9 endings + redactions</td><td>All three endings reachable; every deviation completable</td></tr>
+    <tr><td>4</td><td>AC-06..08 + durable record (current-run tiers; ledger reads the append-only history) + AA-9 endings + redaction rule + The Grade + audit fold-in mechanics (disposition field, dual-mode counter, deviation pars, achievement suppression, AC-07 structure-repair-on-restock, contract select)</td><td>All three endings reachable; every deviation completable</td></tr>
     <tr><td>5</td><td>Polish: campaign star rows, smoke, mobile, stranger playtest</td><td>Completion cliff at AC-05/06 → re-pace</td></tr>
   </table></div>
 
@@ -224,7 +281,7 @@
   three flagged runner items (vehicle-group restock, frozen-pool spawn height, keep-repair on restock). Each sheet:
   contract spec, bureau text, how it plays, the deviation path, budget, risks. Revise freely once CP-2 is settled — the
   story owns these, not the reverse.</p>
-  
+
   <h3>AC-01 · ARMOR PLATE ACCEPTANCE</h3>
   <p class="mapname">Receiving Yard K-4 · dress: hidden</p>
   <p><i>Pure toy box cold open: the gun is introduced against certified steel in a receiving dock, and the only living things on the range are three distant clerks.</i></p>
@@ -235,12 +292,13 @@ terrain    seed 41 / world 4101 · pads 3 · hills 3
 forces     squads 1 · vehicles 10 · prefabs 11 · ~420 bodies / 750 welds</div>
   <div class="doc">
     <div class="wo">AC-01 · DIRECTIVE</div>
-    <p class="dtext">Eight hulls are staged on the receiving racks. Six defeated by direct gunfire constitutes acceptance.</p>
+    <p class="dtext">Eight hulls are staged on the receiving racks. Six defeated by direct fire constitutes acceptance.</p>
     <div class="label">COMMENDATION</div>
     <p class="dtext">Penetration performance within acceptance band.</p>
     <div class="label">EVIDENCE LINES (AA-7 REMARKS)</div>
     <div class="ev">— Plate stock received: 8. Defeated by direct fire per order. Residual returned to inventory.</div>
 <div class="ev">— Hull interiors swept prior to staging. Nil findings. Sweep logged.</div>
+<div class="ev">— Dock detail present throughout. No interaction logged.</div>
   </div>
   <h4>HOW IT PLAYS</h4>
   <p>Spawn (0,-48) facing north. Roll between the gate walls; rack row A sits broadside at ~40m on a flat apron, row B 24m beyond it. Six aimed shells — one per hull, ~3s a cycle with drive time — completes in 20-35s; the coax also works at 5 rounds per hull for players who find it. Overshoot lands in the berm walls behind each row or the north backstop ridge. The two failure modes teach the predicate by feel: a near-miss that finishes a softened hull credits BLAST (no match), and driving over a plate credits CRUSH (no match) — with 8 plates for need 6, two mistakes are free. If all 8 are spent short of 6 credits, subjects:&quot;plate&quot; restock reissues the rack group, so the order cannot strand. The warehouse, trucks, and scrap row are set dressing that establishes the receiving-dock fiction; the dockcrew is 3 units parked behind the warehouse at 80m — visible as specks, never approached on the intended path.</p>
@@ -275,7 +333,7 @@ terrain    seed 42 / world 4202 · pads 4 · hills 5
 forces     squads 3 · vehicles 1 · prefabs 8 · ~240 bodies / 420 welds</div>
   <div class="doc">
     <div class="wo">AC-02 · DIRECTIVE</div>
-    <p class="dtext">Three battery positions on the raised pads, crewed and provisioned. Return fire is provided for in the schedule.</p>
+    <p class="dtext">Three battery positions on the raised pads, crews of three. Reduce all three; return fire is provided for in the schedule.</p>
     <div class="label">COMMENDATION</div>
     <p class="dtext">All tubes silent. Return fire within projection.</p>
     <div class="label">EVIDENCE LINES (AA-7 REMARKS)</div>
@@ -315,7 +373,7 @@ terrain    seed 23 / world 3303 · pads 5 · hills 3
 forces     squads 2 · vehicles 4 · prefabs 6 · ~420 bodies / 800 welds</div>
   <div class="doc">
     <div class="wo">AC-03 · DIRECTIVE</div>
-    <p class="dtext">Four vehicles northbound on Route Nine, crews aboard. Vehicles and crews are one line item.</p>
+    <p class="dtext">Four vehicles on Route Nine, crews aboard. Interdict the column; vehicles and crews are one line item.</p>
     <div class="label">COMMENDATION</div>
     <p class="dtext">Route capacity reduced to specification.</p>
     <div class="label">EVIDENCE LINES (AA-7 REMARKS)</div>
@@ -362,6 +420,7 @@ forces     squads 1 · vehicles 1 · prefabs 6 · ~500 bodies / 900 welds</div>
     <div class="ev">— Structure survey: improvised civil works, cut timber and re-laid ice. Builder of record: subject units.</div>
 <div class="ev">— Recovered at the south approach: hand tools, 11; rope, 40 m. Disposition: scrap.</div>
 <div class="ev">— Posted load rating, hand-lettered: &#x27;TWO AT A TIME.&#x27; Removed.</div>
+<div class="ev">— <span class="small">DEVIATED OUTCOME — </span>Detail dispersed. Crossing intact. Throughput at time of survey: zero. Recovery uneconomic; written off in place.</div>
   </div>
   <h4>HOW IT PLAYS</h4>
   <p>The causeway pads funnel the drive straight to the south deck: a laid 1-course plank wall at the lip (crushable — planking crunches under treads, no kills), stake-and-timber reads on both banks, a hut and freight shed on the far shore with a truck waiting to cross southbound. The crossing detail — 8 units, two work gangs re-laying the south span — is on the sheet at z 21.6-26.8, x -5.4..4.8, none on the exact centerline. KILL PATH: one shell or half a volley into the south span; shell shock (234k vs ICE_SHOCK 130k) severs the lattice&#x27;s inner disc, the gangs&#x27; shards drop them (a man out-loads his 85kg plate), drown timers run 3.5s; any-cause need 6 of 8 lands in 25-40s; TOSS survivors scattered on banks fall to coax. DISPERSE PATH taught here (see deviationDesign). Expected failure modes: mounting the sheet during a deviation attempt (the tank&#x27;s sustained load trips the ice creep rule — the sheet fails under you, subjects drown, matched kills blow the deviation and can accidentally fulfill the order: this is the map&#x27;s lesson, and the decks stopping dead at the lip telegraph it); shelling the near lip and tossing units south toward yourself. Cannot strand: any-cause predicate over 8 subjects with need 6 (killing all 8 always fulfills), plus mandatory restock on &#x27;crossing&#x27;. Attempt pacing 25-45s either path.</p>
@@ -395,11 +454,11 @@ terrain    seed 45 / world 3105 · pads 2 · hills 3
 forces     squads 1 · vehicles 1 · prefabs 7 · ~520 bodies / 1150 welds</div>
   <div class="doc">
     <div class="wo">AC-05 · DIRECTIVE</div>
-    <p class="dtext">A holdout detail occupies the steading. Collapse is the accepted cause; the structures complete the work order.</p>
+    <p class="dtext">A holdout detail occupies the steading. Collapse is the sole accepted cause; subjects resolved by other means will not be credited, and structures resolved empty complete nothing.</p>
     <div class="label">COMMENDATION</div>
     <p class="dtext">Overburden performed to rating. Occupancy resolved in place.</p>
     <div class="label">EVIDENCE LINES (AA-7 REMARKS)</div>
-    <div class="ev">— Structures resolved: four. Prior survey use: granary (converted to quarters), two dwellings, store. Stove in the granary found lit.</div>
+    <div class="ev">— Structures resolved: four. Prior survey use: granary (converted to quarters), two dwellings, store. Stove in the granary found lit. Damped.</div>
 <div class="ev">— Recovered from debris: 9 maintenance journals, handwritten. Disposition: incinerate.</div>
 <div class="ev">— <span class="marg">Copies burn. Originals keep.</span> <span class="small">(margin, second hand)</span></div>
   </div>
@@ -435,13 +494,16 @@ terrain    seed 46 / world 3106 · pads 4 · hills 3
 forces     squads 1 · vehicles 3 · prefabs 4 · ~180 bodies / 380 welds</div>
   <div class="doc">
     <div class="wo">AC-06 · DIRECTIVE</div>
-    <p class="dtext">The convoy is halted at kilometre 118, crews dismounted. Resolve the stoppage.</p>
+    <p class="dtext">The convoy is halted at kilometre 118, crews dismounted on the shoulder. Resolve the stoppage; the vehicles are retained inventory and do not appear on this order.</p>
     <div class="label">COMMENDATION</div>
     <p class="dtext">Route restored to capacity. No resistance recorded.</p>
     <div class="label">EVIDENCE LINES (AA-7 REMARKS)</div>
     <div class="ev">— Cargo manifest, recovered intact: 41 crates. Filament stock, joint assemblies small-format, machine oil, winter cloth, dry rations. Offload suspended at crate 19.</div>
 <div class="ev">— No small-format units appear on any zone register. Rations carry no bureau issue code.</div>
+<div class="ev">— Halt predates instrument dispatch. Cause of halt: not established.</div>
 <div class="ev">— <span class="marg">Rations. Who were the rations for?</span> <span class="small">(margin, second hand)</span></div>
+<div class="ev">— Ref. Zone 2 file: subjects departed route on approach. Filed as resistance. Schedule advanced.</div>
+<div class="ev">— <span class="small">DEVIATED OUTCOME — </span>Subjects departed the route on instrument approach. Pursuit not provided for in the schedule. Cargo abandoned in place; recovery deferred.</div>
   </div>
   <h4>HOW IT PLAYS</h4>
   <p>The drive north along the road pads takes ~20s and the scene composes at range: three trucks nose-to-tail on the halt pad, eight figures standing on the west shoulder beside them, a waystation hut, cargo half-offloaded — and nothing moving. Standard units (no brave flag, no gren) do not react until the tank is inside the ~8m fear bubble or ordnance lands, so the standing stillness is engine behavior, not scripting. Kill path: stop at z~10 and put one rocket volley or two shells into the line — the 2x4 spread dies almost at once; need 6 of 8, any cause matches (predicate is group-only), gold par 25s. The horror is the ease. Deviation path: hold fire, close at walking speed; at 8m the line breaks radially and the geometry pushes it west — trucks and cargo stacks wall off the east, the hut-to-hills gap is open snow. Two slow S-passes push all eight off the halt pad and apart; hold 6s with zero convoy2 kills for UNFULFILLED — DEVIATION, a 45-60s attempt. Restock is near-unreachable (any 6 group deaths fulfill, so a sub-need full wipe is impossible), but subjects:&#x27;convoy2&#x27; is declared per schema and covers pathological cases; attempt cadence stays 20-60s either way.</p>
@@ -478,8 +540,11 @@ forces     squads 5 · vehicles 1 · prefabs 14 · ~640 bodies / 1320 welds</div
     <p class="dtext">Occupancy resolved at the structural level.</p>
     <div class="label">EVIDENCE LINES (AA-7 REMARKS)</div>
     <div class="ev">— Unregistered biologicals — disposition as per units.</div>
-<div class="ev">— Recovered: 118 personal effects, 9 window boxes, 1 school bell. Disposition: incinerate.</div>
+<div class="ev">— Recovered: 118 personal effects, 9 window boxes, 1 school bell. Disposition: incinerate. Bell: scrap.</div>
 <div class="ev">— Structure 2 generator found running. Switched off. Logged.</div>
+<div class="ev">— Bench inventory, Structure 5: armature jigs, one-third scale. No corresponding requisition.</div>
+<div class="ev">— Well head posted, hand-lettered: &#x27;DRAW SLOW — IT SANDS.&#x27; Removed.</div>
+<div class="ev">— <span class="small">DEVIATED OUTCOME — </span>Settlement unoccupied at survey. Structures standing. Recovery uneconomic; written off in place.</div>
   </div>
   <h4>HOW IT PLAYS</h4>
   <p>Player spawns (0,-48) on the south pad, main street dead ahead at x=0. Kill path: the range is a firing solution from spawn — houseA (-8,4) and houseD (8,8) are garrisoned 3 each, houseC (-8,28) holds 2. Two shells into a roofline drop the granular roof course onto the occupants: COLLAPSE x3. Traverse, repeat on the second garrisoned house — need 5 met in ~25-40s without moving. Any blast near the square panics the 8-unit square detail; with sheltering ON, half sprint indoors through the outward-facing doors — the engine herds them into the next collapse. Failure modes: aiming low kills by BLAST (doesn&#x27;t match — aim the roof course); driving the streets crushes villagers (CRUSH doesn&#x27;t match, burns subjects); mortar return fire: none, no grenadiers — the village does not fight back, by design. Strand-proof: subjects &#x27;village&#x27; — when all 20 are dead unfulfilled, the replacement detail reissues the 8-unit square squad (first entry with the tag), which alone supports the panic-into-shelter-then-collapse loop. Pacing per attempt 25-50s.</p>
@@ -520,9 +585,12 @@ forces     squads 1 · vehicles 1 · prefabs 11 · ~65 bodies / 90 welds</div>
     <div class="label">COMMENDATION</div>
     <p class="dtext">Sheet rating confirmed. No further orders follow.</p>
     <div class="label">EVIDENCE LINES (AA-7 REMARKS)</div>
-    <div class="ev">— Zone register carried forward: 3 hulls, 1 vehicle (operable), 1 structure (down). No action required.</div>
+    <div class="ev">— Zone 12 register carried forward: 3 hulls, 1 vehicle (operable), 1 structure (down). No action required.</div>
 <div class="ev">— Sheet dimensions and occupancy identical to WO-07. Cross-reference approved.</div>
-<div class="ev">— Recovered at the rim: 1 skate, child-size. Disposition: incinerate.</div>
+<div class="ev">— Recovered at the rim: 1 skate, small-format. Disposition: incinerate.</div>
+<div class="ev">— Occupancy formation corresponds to WO-07 drill spacing. No drill was scheduled.</div>
+<div class="ev">— Vehicle 1 operable, key in switch. Not required. Logged.</div>
+<div class="ev">— <span class="small">IF AC-07 WAS DEVIATED — </span>Recovered at the rim: nil findings.</div>
   </div>
   <h4>HOW IT PLAYS</h4>
   <p>Player spawns (0,-52) — the proving grounds spawn, quoted. The pool is WO-07&#x27;s pool verbatim ({-8..8, 20..36, level 1.1}, frozen) and the drill squad is WO-07&#x27;s exact 3x2 lattice (x -3/0/3, z 25/30), so the first sight up-range is the sandbox&#x27;s thin-ice trial restaged among wreckage. The drive north passes the evidence ring in arc order: plate racks (AC-01), the stalled truck with keys in (AC-06/03), the battery revetment and hull on the east rise (AC-02), the collapsed house on the west rim (AC-05/07), the old crossing abutment pointing at the ice (AC-04), convoy hulls beyond the north shore (AC-03). Kill path: one shell into the sheet shatters it under the squad — DROWN in the 1.7m bowl, or shard/blast kills; predicate is any-cause on ponddrill2, need 3, done in 12-25s. Failure mode: over-shelling TOSSes bodies clear of the water — still matched, still counts. Strand-proof: single squad, subjects ponddrill2, clean restock. Par [12,24] quotes WO-07.</p>
@@ -534,12 +602,15 @@ forces     squads 1 · vehicles 1 · prefabs 11 · ~65 bodies / 90 welds</div>
 
   <h2><span class="no">CP-6</span>OPEN DECISIONS, CONSOLIDATED</h2>
   <ul>
-    <li>Sign off CP-2 (the story) — or mark up what reads wrong</li>
+    <li>Sign off CP-2 (the story, incl. the 2.10 fold-in) — or mark up what reads wrong</li>
     <li>Start-screen name (rec: CLEARANCE PROGRAM)</li>
     <li>Eight vs seven contracts (rec: eight — AC-01 is the cold open the pacing needs)</li>
-    <li>The two braided threads — keep both rations and small-format, or thin one (rec: keep both; each surfaces exactly twice)</li>
-    <li>Sandbox re-grounding pass (rec: yes, ship with step 3)</li>
-    <li>Collateral gating the quiet ending (rec: yes, &lt;10 non-subject kills)</li>
+    <li>The two braided threads — keep both rations and small-format (rec: yes; never stated is the discipline that matters)</li>
+    <li>Sandbox re-grounding pass, now incl. scrubbing "kills" from shipped directives (rec: yes, ship with step 3)</li>
+    <li>Quiet-ending gate: current run only, collateral = non-subject kills &lt;10, subject kills excluded (rec: as stated)</li>
+    <li>AC-07 marginal note: "So that's who." vs the wordless underline (see 2.10)</li>
+    <li>AA-9 middle tier: "exhibits discretion" vs "has opinions" (see 2.8)</li>
+    <li>The Grade knobs: live drift, per-map baseline, campaign-only (see 2.9)</li>
     <li>Map drafts: revise after story sign-off; per-map risks flagged in the sheets</li>
   </ul>
 
