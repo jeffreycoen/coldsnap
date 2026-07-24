@@ -119,6 +119,8 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
   const [gfxUi, setGfxUi] = useState(() => ({ preset: "retro", scale: 1, outline: 1, dither: 1, palette: 1 })); // 1x everywhere: crisp at phone DPI, retro treatment kept. This state is the REAL default — it overwrites the renderer seed on mount.
   const gfxRef = useRef({ preset: "retro", scale: 1, outline: 1, dither: 1, palette: 1 }); // mirror of gfxUi the game loop can read for autosave
   const joyBaseRef = useRef(null);
+  const aimBaseRef = useRef(null);
+  const aimKnobRef = useRef(null);
   const joyKnobRef = useRef(null);
   const labelLayerRef = useRef(null);
   const briefArmRef = useRef({ brief: null, at: 0 });
@@ -153,7 +155,7 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
       hitstop: 0, tally: {}, feed: [], toasts: [], toastSeq: 1,
       frames: 0, fpsT: 0, fps: 0, hudT: 0, resets: 0, savedCount: -1, running: true,
       cds: { fire: 0, volley: 0, recover: 0, mg: 0 }, zoom: 1,
-      isTouch, touch: { joyId: null, jx: 0, jy: 0, drive: { t: 0, s: 0 }, aimId: null, ax: 0, ay: 0, moved: 0, downT: 0, pts: new Map() },
+      isTouch, touch: { joyId: null, jx: 0, jy: 0, drive: { t: 0, s: 0 }, aimId: null, aimJoyId: null, aimV: { x: 0, y: 0 }, ax: 0, ay: 0, moved: 0, downT: 0, pts: new Map() },
       trial: { idx: 0, prog: 0, flashT: 0, t0: 0, volleyCounts: new Map() },
       weapon: "main",
       medals: {}, labels: [], audio: makeAudio(),
@@ -377,6 +379,7 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
     const setZoomClamped = (z) => { S.zoom = Math.max(0.7, Math.min(2, z)); R.setZoom(S.zoom); };
     const JOY_R = 56;
     const joyCenter = () => { const r = rect(); return { x: 92, y: r.height - 128 }; };
+    const aimCenter = () => { const r = rect(); return { x: r.width * 0.6, y: r.height - 118 }; };
     const joyPlace = () => {
       const b = joyBaseRef.current, k = joyKnobRef.current;
       if (!b || !k || !S.isTouch) return;
@@ -385,6 +388,14 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
       b.style.left = c.x - JOY_R + "px"; b.style.top = c.y - JOY_R + "px";
       if (S.touch.joyId == null) { k.style.left = c.x - 22 + "px"; k.style.top = c.y - 22 + "px"; }
       b.style.opacity = k.style.opacity = S.touch.joyId == null ? "0.55" : "1";
+      const ab = aimBaseRef.current, ak = aimKnobRef.current;
+      if (ab && ak) {
+        const c2 = aimCenter();
+        ab.style.display = "block"; ak.style.display = "block";
+        ab.style.left = c2.x - JOY_R + "px"; ab.style.top = c2.y - JOY_R + "px";
+        if (S.touch.aimJoyId == null) { ak.style.left = c2.x - 22 + "px"; ak.style.top = c2.y - 22 + "px"; }
+        ab.style.opacity = ak.style.opacity = S.touch.aimJoyId == null ? "0.4" : "1";
+      }
     };
     const joyKnob = (x, y) => { const k = joyKnobRef.current; if (k) { k.style.left = x - 22 + "px"; k.style.top = y - 22 + "px"; } };
     const joyRelease = () => {
@@ -394,6 +405,10 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
     const nearJoy = (cx, cy) => {
       const r = rect(), c = joyCenter();
       return Math.hypot(cx - r.left - c.x, cy - r.top - c.y) < 130;
+    };
+    const nearAimJoy = (cx, cy) => {
+      const r = rect(), c = aimCenter();
+      return Math.hypot(cx - r.left - c.x, cy - r.top - c.y) < 105;
     };
     const pinchDist = () => {
       const pts = [...S.touch.pts.values()];
@@ -416,6 +431,10 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
         S.touch.joyId = e.pointerId;
         joyPlace();
         onPointerMove(e); // apply the grab position immediately
+      } else if (nearAimJoy(e.clientX, e.clientY) && S.touch.aimJoyId == null) {
+        S.touch.aimJoyId = e.pointerId;
+        joyPlace();
+        onPointerMove(e);
       } else if (S.touch.aimId == null) {
         S.touch.aimId = e.pointerId; S.touch.ax = e.clientX; S.touch.ay = e.clientY;
         S.touch.moved = 0; S.touch.downT = performance.now();
@@ -448,6 +467,16 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
         const dz = (v) => (Math.abs(v) < 0.15 ? 0 : (v - Math.sign(v) * 0.15) / 0.85);
         S.touch.drive.t = dz(-dy / JOY_R);
         S.touch.drive.s = dz(dx / JOY_R);
+      } else if (e.pointerId === S.touch.aimJoyId) {
+        const r = rect(), c = aimCenter();
+        let dx = e.clientX - r.left - c.x, dy = e.clientY - r.top - c.y;
+        const L = Math.hypot(dx, dy);
+        if (L > JOY_R) { dx *= JOY_R / L; dy *= JOY_R / L; }
+        const ak = aimKnobRef.current;
+        if (ak) { ak.style.left = c.x + dx - 22 + "px"; ak.style.top = c.y + dy - 22 + "px"; }
+        const dz2 = (v) => (Math.abs(v) < 0.14 ? 0 : (v - Math.sign(v) * 0.14) / 0.86);
+        S.touch.aimV.x = dz2(dx / JOY_R);
+        S.touch.aimV.y = dz2(dy / JOY_R);
       } else if (e.pointerId === S.touch.aimId) {
         S.touch.moved += Math.hypot(e.clientX - S.touch.ax, e.clientY - S.touch.ay);
         S.touch.ax = e.clientX; S.touch.ay = e.clientY;
@@ -459,7 +488,7 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
       if (e.pointerType === "mouse") {
         if (S.mouseDown && e.target === canvas) {
           const moved = Math.hypot(e.clientX - S.mouseDown.x, e.clientY - S.mouseDown.y);
-          if (moved < 8) { const g = groundPoint(...Object.values(toNdc(e.clientX, e.clientY))); actions.fireAt(g.x, g.z); }
+          if (moved < 8) { const g = groundPoint(...Object.values(toNdc(e.clientX, e.clientY))); if (S.weapon === "mg") actions.mgAt(g.x, g.z); else actions.fireAt(g.x, g.z); }
         }
         S.mouseDown = null;
         return;
@@ -467,6 +496,7 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
       const had = S.touch.pts.delete(e.pointerId);
       if (S.touch.pts.size < 2) S.touch.pinch0 = 0;
       if (e.pointerId === S.touch.joyId) joyRelease();
+      else if (e.pointerId === S.touch.aimJoyId) { S.touch.aimJoyId = null; S.touch.aimV.x = 0; S.touch.aimV.y = 0; joyPlace(); }
       else if (had && e.pointerId === S.touch.aimId) {
         const quick = performance.now() - S.touch.downT < 350;
         if (quick && S.touch.moved < 14) {
@@ -539,6 +569,10 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
         w.control.throttle = (S.keys["w"] ? 1 : 0) + (S.keys["s"] ? -1 : 0);
         w.control.steer = (S.keys["d"] ? 1 : 0) + (S.keys["a"] ? -1 : 0);
         w.control.brake = S.keys[" "] ? 1 : 0;
+      }
+      if (S.isTouch && (S.touch.aimV.x || S.touch.aimV.y)) {
+        S.ndc.x = Math.max(-1, Math.min(1, S.ndc.x + S.touch.aimV.x * dt * 1.5));
+        S.ndc.y = Math.max(-1, Math.min(1, S.ndc.y - S.touch.aimV.y * dt * 1.5));
       }
       S.aim = groundPoint(S.ndc.x, S.ndc.y);
       w.threat = { x: S.aim.x, z: S.aim.z, t: w.t };
@@ -849,6 +883,8 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
       <div ref={labelLayerRef} data-coldsnap="labels" style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 2, overflow: "hidden" }} />
       <div ref={joyBaseRef} style={P.joyBase} />
       <div ref={joyKnobRef} style={P.joyKnob} />
+      <div ref={aimBaseRef} style={{ ...P.joyBase, borderColor: "rgba(127,178,216,0.5)" }} />
+      <div ref={aimKnobRef} style={{ ...P.joyKnob, background: "rgba(127,178,216,0.55)" }} />
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, background: hud.trial.flashT > 0 ? "rgba(216,67,58,0.92)" : "rgba(16,19,24,0.92)", borderBottom: "2px solid #3a414b", color: "#e6ebf1", padding: "8px 10px", fontSize: isTouch ? 14 : 13, display: "flex", alignItems: "center", gap: 10, zIndex: 3 }}>
         {onExit && <button data-menu="exit" style={{ ...P.btn, padding: isTouch ? "6px 10px" : "3px 8px", fontSize: isTouch ? 14 : 11, flexShrink: 0 }} onClick={onExit}>⏏</button>}
         {trialDef ? (

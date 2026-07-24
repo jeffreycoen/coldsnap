@@ -77,7 +77,7 @@ export default function StartScreen({ onPlay, onSandbox, onCampaign, onControls 
         </button>
 
         <div style={{ textAlign: "center", marginTop: 18, fontSize: 11, opacity: 0.55 }}>
-          {isTouch ? "twin-stick touch controls · the ⏏ MENU button returns here" : "ESC in-game returns to this menu"}
+          {isTouch ? "left stick drives · right stick or tap aims · ⏏ MENU returns here" : "ESC in-game returns to this menu"}
         </div>
       </div>
     </div>
