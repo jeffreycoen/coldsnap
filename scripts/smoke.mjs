@@ -235,6 +235,41 @@ try {
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => !document.querySelector("canvas"));
 
+  // --- clearance program: order book gating, AC-01 completes, AC-02 unseals
+  await clickMenu("campaign");
+  await page.waitForFunction(() => document.body.innerText.includes("ORDER BOOK"));
+  let book = await text();
+  ok("order book lists all eight orders", book.includes("AC-01") && book.includes("AC-08"));
+  ok("first order deployable, title in clear", book.includes("DEPLOY") && book.includes("ARMOR PLATE ACCEPTANCE"));
+  ok("sealed orders are dimmed redactions", book.includes("\u2588") && !book.includes("THE VILLAGE"));
+  await page.evaluate(() => document.querySelector('[data-camp="ac01"]').click());
+  await page.waitForSelector("canvas");
+  await page.waitForFunction(() => !!window.__COLDSNAP__ && document.body.innerText.includes("AC-01"));
+  await page.mouse.click(480, 300); // deploy overlay
+  await page.waitForFunction(() => !!document.querySelector("[data-brief]"));
+  ok("mission brief carries the directive", (await text()).includes("receiving racks"));
+  await sleep(800);
+  await page.evaluate(() => document.querySelector("[data-brief-ack]").click());
+  await page.evaluate(() => {
+    const api = window.__COLDSNAP__;
+    window.__campFire = setInterval(() => {
+      const w = api._world();
+      const tg = w.bodies.find((b) => b.group === "plate" && b.kind === "vehicle" && b.alive);
+      if (tg && api._S.actions) api._S.actions.fireAt(tg.pos.x, tg.pos.z);
+    }, 700);
+  });
+  await page.waitForFunction(() => document.body.innerText.includes("Penetration performance"), { timeout: 120000, polling: 1000 });
+  ok("AC-01 completes by direct fire", true);
+  await page.evaluate(() => clearInterval(window.__campFire));
+  await page.waitForFunction(() => !!document.querySelector("[data-aar]"), { timeout: 20000, polling: 500 });
+  await page.evaluate(() => document.querySelector("[data-aar-file]").click());
+  await page.waitForFunction(() => document.body.innerText.includes("ORDER BOOK"), { timeout: 20000, polling: 500 });
+  book = await text();
+  ok("filed report returns to the order book", true);
+  ok("AC-02 unseals after AC-01", book.includes("BATTERY REDUCTION"));
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => document.body.innerText.includes("PROVING GROUNDS"));
+
   // --- phone layout: the order must be readable on a small touch screen
   const phone = await browser.newPage();
   phone.on("pageerror", (e) => pageErrors.push(String(e)));

@@ -2,15 +2,22 @@ import React, { useEffect, useRef, useState } from "react";
 import ColdsnapProvingGrounds from "../demo/coldsnap-proving-grounds.jsx";
 import ColdsnapContractSandbox from "../game/ContractSandbox.jsx";
 import StartScreen from "./StartScreen.jsx";
+import CampaignScreen from "./CampaignScreen.jsx";
+import CampaignRunner from "../game/CampaignRunner.jsx";
+import { CAMPAIGN, loadProgress, saveProgress, loadRecord, recordOutcome } from "../game/campaign.js";
 import Controls from "./Controls.jsx";
 import { DEFAULTS, loadKeymap, saveKeymap, installKeyRemap } from "../platform/keymap.js";
 import { attachExternalAutosave } from "../platform/autosave.js";
 import { COLORS, FONT } from "./theme.js";
 
-const GAME_SCREENS = new Set(["demo", "sandbox"]);
+const GAME_SCREENS = new Set(["demo", "sandbox", "mission"]); // remap + ESC live here
+const RESUME_SCREENS = new Set(["demo", "sandbox", "campaign"]); // what a reload returns to (a mission resumes to the order book)
 
 export default function App() {
-  const [screen, setScreen] = useState("menu"); // menu | controls | demo | sandbox
+  const [screen, setScreen] = useState("menu"); // menu | controls | demo | sandbox | campaign | mission
+  const [mission, setMission] = useState(null);
+  const [campProgress, setCampProgress] = useState(0);
+  const [campRecord, setCampRecord] = useState({});
   const [keymap, setKeymap] = useState(DEFAULTS);
   const mapRef = useRef(DEFAULTS);
   const remapRef = useRef(null);
@@ -23,7 +30,7 @@ export default function App() {
     (async () => {
       try {
         const r = await window.storage.get("coldsnap-screen");
-        if (live && GAME_SCREENS.has(r.value)) setScreen(r.value);
+        if (live && RESUME_SCREENS.has(r.value)) setScreen(r.value);
       } catch (e) {}
       screenLoadedRef.current = true;
     })();
@@ -32,7 +39,8 @@ export default function App() {
 
   useEffect(() => {
     if (!screenLoadedRef.current) return;
-    try { window.storage.set("coldsnap-screen", GAME_SCREENS.has(screen) ? screen : "menu"); } catch (e) {}
+    const persist = screen === "mission" ? "campaign" : screen;
+    try { window.storage.set("coldsnap-screen", RESUME_SCREENS.has(persist) ? persist : "menu"); } catch (e) {}
   }, [screen]);
 
   // the frozen demo autosaves settings/tally from outside via its debug api;
@@ -58,14 +66,39 @@ export default function App() {
   // ESC leaves a game for the menu. Registered in bubble phase so the
   // remapper (capture) runs first — Escape is unbindable, so it always lands.
   useEffect(() => {
-    if (!GAME_SCREENS.has(screen)) return;
-    const onEsc = (e) => { if (e.key === "Escape") setScreen("menu"); };
+    if (!GAME_SCREENS.has(screen) && screen !== "campaign") return; // the order book exits on ESC too
+    const onEsc = (e) => { if (e.key === "Escape") setScreen(screen === "mission" ? "campaign" : "menu"); };
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
   }, [screen]);
 
   const applyKeymap = (m) => { dirtyRef.current = true; mapRef.current = m; setKeymap(m); saveKeymap(m); };
 
+  useEffect(() => {
+    let live = true;
+    loadProgress().then((n) => { if (live) setCampProgress(n); });
+    loadRecord().then((r) => { if (live) setCampRecord(r); });
+    return () => { live = false; };
+  }, []);
+
+  const onMissionComplete = ({ outcome, elapsed }) => {
+    if (!mission) return;
+    const idx = CAMPAIGN.findIndex((c) => c.id === mission.id);
+    if (outcome === "fulfilled" || outcome === "deviated") {
+      setCampRecord((r) => ({ ...recordOutcome({ ...r }, mission.id, outcome, elapsed) }));
+    }
+    setCampProgress((p) => { const n = Math.max(p, idx + 1); saveProgress(n); return n; });
+  };
+
+  if (screen === "campaign" || (screen === "mission" && !mission)) {
+    return <CampaignScreen progress={campProgress} record={campRecord}
+      onPlay={(m) => { setMission(m); setScreen("mission"); }}
+      onBack={() => setScreen("menu")} />;
+  }
+  if (screen === "mission") {
+    return <CampaignRunner key={mission.id} entry={mission}
+      onExit={() => setScreen("campaign")} onComplete={onMissionComplete} />;
+  }
   if (screen === "controls") {
     return <Controls keymap={keymap} onChange={applyKeymap} onBack={() => setScreen("menu")} />;
   }
@@ -84,5 +117,5 @@ export default function App() {
       </div>
     );
   }
-  return <StartScreen onPlay={() => setScreen("demo")} onSandbox={() => setScreen("sandbox")} onControls={() => setScreen("controls")} />;
+  return <StartScreen onPlay={() => setScreen("demo")} onSandbox={() => setScreen("sandbox")} onCampaign={() => setScreen("campaign")} onControls={() => setScreen("controls")} />;
 }

@@ -255,6 +255,14 @@ export function buildScenario(spec, opts = {}) {
       for (const v of spec.vehicles || []) if (v.kind === "truck") VEHICLES.truck(world, field, v);
     },
     respawnSquad(tag) { removeGroup((b) => b.kind === "unit" && b.group === tag); spawnSquadByTag(tag); },
+    // campaign restock: reissue EVERYTHING the spec spawned under a tag —
+    // squads and vehicles alike (AC-01's subjects are staged hulls, not men).
+    // Wrecked vehicles keep their group, so the sweep clears them too.
+    respawnGroup(tag) {
+      removeGroup((b) => b.group === tag && (b.kind === "unit" || b.kind === "vehicle" || b.kind === "truck" || b.kind === "wreck"));
+      for (const s of spec.squads || []) if (s.tag === tag) spawnSquad(world, field, s);
+      for (const v of spec.vehicles || []) if ((v.group || (v.kind === "truck" ? "convoy" : "scout")) === tag) VEHICLES[v.kind](world, field, v);
+    },
     respawnScouts() {
       removeGroup((b) => b.group === "scout" && b.kind === "vehicle");
       for (const v of spec.vehicles || []) if (v.kind === "scout") VEHICLES.scout(world, field, v);

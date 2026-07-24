@@ -8,7 +8,7 @@ const TRIAL_IDS = ["gunnery", "roadkill", "saturation", "demolition", "deep_end"
 const medalColor = (m) =>
   !m ? COLORS.btnBorder : m.deviation ? COLORS.dim : m.medal === "GOLD" ? COLORS.gold : m.medal === "SILVER" ? COLORS.text : "#b0764a";
 
-export default function StartScreen({ onPlay, onSandbox, onControls }) {
+export default function StartScreen({ onPlay, onSandbox, onCampaign, onControls }) {
   const [medals, setMedals] = useState(null);
   const [csMedals, setCsMedals] = useState(null);
   const [isTouch] = useState(detectTouch);
@@ -53,6 +53,11 @@ export default function StartScreen({ onPlay, onSandbox, onControls }) {
           <div style={{ fontSize: 34, color: COLORS.red, letterSpacing: 8 }}>COLDSNAP</div>
           <div style={{ opacity: 0.7, letterSpacing: 3, fontSize: 12 }}>WINTER RANGE COMMAND</div>
         </div>
+
+        <button data-menu="campaign" style={option({ borderColor: "#c9a04e" })} onClick={onCampaign}>
+          <div style={{ color: COLORS.gold, fontSize: 15, letterSpacing: 2 }}>▶ CLEARANCE PROGRAM</div>
+          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>Eight work orders. The territory is being re-let.</div>
+        </button>
 
         <button data-menu="contracts" style={option({ borderColor: "#8a5a1c" })} onClick={onSandbox}>
           <div style={{ color: COLORS.gold, fontSize: 15, letterSpacing: 2 }}>▶ CONTRACT SANDBOX</div>
