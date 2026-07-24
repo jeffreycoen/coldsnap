@@ -148,6 +148,16 @@ try {
   await page.waitForFunction(() => document.body.innerText.includes("COMMENDATION — WO-01"), { timeout: 10000 });
   body = await text();
   ok("completion toast reads as a commendation", body.includes("COMMENDATION — WO-01") && body.includes("Direct-fire lethality"));
+  // the after-action report presents for review before the next order
+  await page.waitForFunction(() => !!document.querySelector("[data-aar]"));
+  const aarText = await page.evaluate(() => document.querySelector("[data-aar]").innerText);
+  ok("AAR renders the bureau form header", aarText.includes("WORK ORDER WO-01") && aarText.includes("FIELD ACCEPTANCE DIVISION"));
+  ok("AAR itemizes subjects with salvo + attribution", /SUBJECT 01 — /.test(aarText) && aarText.includes("salvo 1") && aarText.includes("attributed: operator"));
+  ok("AAR accounts for the expended salvo", aarText.includes("EXPENDITURE: 0 SHELL · 0 MG · 1 SALVO"));
+  ok("AAR closes with a remark and a stamp", aarText.includes("REMARK:") && aarText.includes("FULFILLED"));
+  await page.evaluate(() => document.querySelector("[data-aar-file]").click());
+  await page.waitForFunction(() => !document.querySelector("[data-aar]"));
+  ok("report files away", true);
   await page.waitForFunction(() => { const b = document.querySelector("[data-brief]"); return b && b.innerText.includes("WO-02"); });
   ok("the next order's brief is presented (WO-02)", true);
   await page.keyboard.press("Escape");

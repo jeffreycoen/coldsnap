@@ -11,6 +11,7 @@ import {
 } from "../engine/core.js";
 import { makeRenderer } from "../render/renderer.js";
 import { CONTRACTS } from "./contracts.js";
+import { composeAAR } from "../aar/compose.js";
 import { loadSettings, saveSettings, loadTally, sanitizeGfx } from "../platform/autosave.js";
 
 // ================================================================= component
@@ -163,6 +164,8 @@ export default function ColdsnapContractSandbox() {
       // the bureau hands you the document: a brief card presented at each new
       // order (the top bar truncates on phones — this is the readable copy)
       S.brief = t ? { title: t.title, directive: t.hint } : null;
+      // fresh kill-event log + ordnance counters for this order's AAR
+      S.trialLog = { events: [], ordnance: { shell: 0, mg: 0, volley: 0 } };
     };
     const MEDAL = (t, el) => (el <= t.par[0] ? "GOLD" : el <= t.par[1] ? "SILVER" : "BRONZE");
     const advanceTrial = (skipped) => {
@@ -182,6 +185,17 @@ export default function ColdsnapContractSandbox() {
             S.medals[t.id] = { time: +el.toFixed(1), medal: m };
             try { window.storage.set("coldsnap-cs-medals", JSON.stringify(S.medals)); } catch (e) {}
           }
+          // the report is composed from the order's real kill-event stream
+          try {
+            const report = composeAAR({
+              contract: c || { wo: "WO-??", title: t.title },
+              events: S.trialLog ? S.trialLog.events : [],
+              ordnance: S.trialLog ? S.trialLog.ordnance : { shell: 0, mg: 0, volley: 0 },
+              t0: S.trial.t0, elapsed: el, medal: m, seed: 1234 + S.trial.idx,
+            });
+            S.aar = { id: t.id, lines: report, medal: m, outcome: "FULFILLED" };
+            window.storage.set("coldsnap-cs-aar-" + t.id, JSON.stringify(report));
+          } catch (e) {}
         }
         S.toasts.push({ id: S.toastSeq++, title, desc, t: 4 });
       }
@@ -267,6 +281,7 @@ export default function ColdsnapContractSandbox() {
       enterTrial(S.trial.idx);
     };
     const onKill = (e) => {
+      if (S.trialLog) S.trialLog.events.push({ ...e });
       S.tally[e.cause] = (S.tally[e.cause] || 0) + 1;
       const who = e.kind === "unit" ? "conscript" : e.kind === "vehicle" ? "scout" : e.kind;
       S.feed.unshift(`${e.cause} — ${who}${e.attacker === "player" ? "" : " (world)"}`);
@@ -281,9 +296,11 @@ export default function ColdsnapContractSandbox() {
     };
     const onAch = (e) => { S.toasts.push({ id: S.toastSeq++, title: e.name, desc: e.desc, t: 3.6 }); };
     const actions = {
-      fireAt: (x, z) => { if (S.cds.fire > 0) return false; S.cds.fire = 0.45; bisonFire(S.world, { x, z }); return true; },
-      volleyAt: (x, z) => { if (S.cds.volley > 0) return false; S.cds.volley = 5; fireVolley(S.world, x, z, 6, "player"); return true; },
-      mgAt: (x, z) => { if (S.cds.mg > 0) return false; S.cds.mg = 0.11; bisonMg(S.world, { x, z }); return true; },
+      // ordnance is counted here at the action layer, not from muzzle events —
+      // grenadier mortars also route through fireProjectile and would pollute it
+      fireAt: (x, z) => { if (S.cds.fire > 0) return false; S.cds.fire = 0.45; bisonFire(S.world, { x, z }); if (S.trialLog) S.trialLog.ordnance.shell++; return true; },
+      volleyAt: (x, z) => { if (S.cds.volley > 0) return false; S.cds.volley = 5; fireVolley(S.world, x, z, 6, "player"); if (S.trialLog) S.trialLog.ordnance.volley++; return true; },
+      mgAt: (x, z) => { if (S.cds.mg > 0) return false; S.cds.mg = 0.11; bisonMg(S.world, { x, z }); if (S.trialLog) S.trialLog.ordnance.mg++; return true; },
       squads: () => S.world.pg.respawnSquads(),
       scouts: () => S.world.pg.respawnScouts(),
       repair: () => S.world.pg.repairGarrison(),
@@ -574,6 +591,7 @@ export default function ColdsnapContractSandbox() {
           trial: { idx: S.trial.idx, prog: S.trial.prog, flashT: S.trial.flashT, free: S.trial.idx >= TRIALS.length, el: Math.max(0, w.t - S.trial.t0) },
           medals: { ...S.medals },
           brief: S.brief,
+          aar: S.aar || null,
         });
       }
     };
@@ -704,9 +722,24 @@ export default function ColdsnapContractSandbox() {
             {TRIALS.map((t) => {
               const m = hud.medals[t.id];
               const col = m ? (m.medal === "GOLD" ? "#ffd27a" : m.medal === "SILVER" ? "#cfd6de" : "#b0764a") : "#4a5361";
-              return <span key={t.id} title={t.title + (m ? ` ${m.time}s` : "")} style={{ color: col }}>★</span>;
+              return (
+                <span
+                  key={t.id}
+                  title={t.title + (m ? ` ${m.time}s — open the filed report` : "")}
+                  onClick={async () => {
+                    const S = stateRef.current;
+                    if (!S || !m) return;
+                    try {
+                      const r = await window.storage.get("coldsnap-cs-aar-" + t.id);
+                      const lines = JSON.parse(r.value);
+                      if (Array.isArray(lines)) S.aar = { id: t.id, lines, medal: m.medal, outcome: "FULFILLED" };
+                    } catch (e) {}
+                  }}
+                  style={{ color: col, cursor: m ? "pointer" : "default" }}
+                >★</span>
+              );
             })}
-            <span style={{ opacity: 0.8, fontSize: 11 }}>best times stand — beat them</span>
+            <span style={{ opacity: 0.8, fontSize: 11 }}>reports on file — tap a star</span>
           </>
         )}
       </div>
@@ -843,8 +876,45 @@ export default function ColdsnapContractSandbox() {
         <button style={P.btn} onClick={() => act("repair")}>{isTouch ? "REPAIR" : "REPAIR [3]"}</button>
         <button style={P.btn} onClick={() => act("reset")}>{isTouch ? "RESET" : "RESET [0]"}</button>
       </div>
+      {started && hud.aar && (() => {
+        const stampCol = hud.aar.medal === "GOLD" ? "#ffd27a" : hud.aar.medal === "SILVER" ? "#cfd6de" : hud.aar.medal === "BRONZE" ? "#b0764a" : "#ff6b5e";
+        const file = () => { const S = stateRef.current; if (S) S.aar = null; };
+        return (
+          <div onClick={file} style={{ position: "absolute", inset: 0, background: "rgba(10,12,16,0.55)", zIndex: 6, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+            <div data-aar onClick={(e) => e.stopPropagation()} style={{ ...P.panel, position: "relative", width: "min(470px, 94vw)", maxHeight: "76vh", overflowY: "auto", padding: "12px 16px" }}>
+              <div style={{ borderBottom: "1px dashed #3a414b", paddingBottom: 6, marginBottom: 9, display: "flex", justifyContent: "space-between", gap: 10, fontSize: 9, letterSpacing: 1.5, color: "#8b93a0", whiteSpace: "nowrap" }}>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>PROCUREMENT BUREAU · FIELD ACCEPTANCE DIVISION</span>
+                <span>FORM AA-7 · CARBON 2/3</span>
+              </div>
+              <div style={{ position: "absolute", top: 34, right: 16, transform: "rotate(-7deg)", border: `3px double ${stampCol}`, color: stampCol, padding: "3px 10px", fontSize: 13, letterSpacing: 3, opacity: 0.9, textAlign: "center", pointerEvents: "none" }}>
+                {hud.aar.outcome}
+                {hud.aar.medal && <div style={{ fontSize: 10, letterSpacing: 2 }}>★ {hud.aar.medal}</div>}
+              </div>
+              <div style={{ fontSize: 11.5, lineHeight: 1.65, whiteSpace: "pre-wrap" }}>
+                {hud.aar.lines.map((ln, i) => {
+                  const sub = ln.startsWith("  SUBJECT");
+                  const remark = ln.startsWith("REMARK:");
+                  const exp = ln.startsWith("EXPENDITURE:");
+                  return (
+                    <div key={i} style={{
+                      color: i === 0 || remark ? "#ffd27a" : sub ? "#a9b3bf" : "#cfd6de",
+                      fontSize: i === 0 ? 13 : remark ? 12 : 11.5,
+                      paddingRight: i <= 1 ? 98 : 0, // the title and status wrap clear of the stamp
+                      letterSpacing: i === 0 ? 1 : 0,
+                      fontStyle: remark ? "italic" : "normal",
+                      borderTop: exp ? "1px solid #3a414b" : "none",
+                      marginTop: exp ? 7 : 0, paddingTop: exp ? 7 : 0,
+                    }}>{ln}</div>
+                  );
+                })}
+              </div>
+              <button data-aar-file onClick={file} style={{ ...P.btn, marginTop: 10, width: "100%", borderColor: "#8a5a1c", letterSpacing: 2 }}>FILE REPORT</button>
+            </div>
+          </div>
+        );
+      })()}
       <div style={{ position: "absolute", top: 60, left: "50%", transform: "translateX(-50%)", display: "flex", flexDirection: "column", gap: 6, alignItems: "center", zIndex: 3, maxWidth: "94vw" }}>
-        {started && hud.brief && (
+        {started && !hud.aar && hud.brief && (
           <div data-brief style={{ ...P.panel, position: "static", borderColor: "#ffd27a", maxWidth: "min(430px, 92vw)" }}>
             <div style={{ fontSize: 10, letterSpacing: 2, opacity: 0.7 }}>WORK ORDER</div>
             <div style={{ color: "#ffd27a", letterSpacing: 1, marginTop: 2 }}>{hud.brief.title}</div>

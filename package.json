@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "smoke": "node scripts/smoke.mjs",
-    "golden": "node scripts/golden.mjs"
+    "golden": "node scripts/golden.mjs",
+    "test:aar": "node scripts/aar-test.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",
