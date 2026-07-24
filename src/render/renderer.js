@@ -38,7 +38,7 @@ function makeSplat(town) {
       const W2Ug = 1024 / 188.7, U0g = 94.35, BLK = 0.83;
       for (let k = Math.ceil(-92 / BLK); k * BLK <= 92; k++) {
         const gp = Math.round((k * BLK + U0g) * W2Ug);
-        cx.fillStyle = k % 4 === 0 ? "rgba(78,92,110,0.62)" : "rgba(116,130,148,0.34)"; // opaque enough to read on open snow
+        cx.fillStyle = k % 4 === 0 ? "rgba(78,92,110,0.7)" : "rgba(116,130,148,0.7)"; // opaque enough to read on open snow
         cx.fillRect(gp, 0, 1, 1024);
         cx.fillRect(0, gp, 1024, 1);
       }
