@@ -239,8 +239,8 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // Pips are sized in world meters like every other sprite — amber to the
   // obstruction, smaller grey past it, red ring on the hit.
   const trajMesh = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(0.26, 0.26, 0.26),
-    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false }),
+    new THREE.BoxGeometry(0.2, 0.2, 0.2),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false }),
     TRAJ_N);
   trajMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   trajMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(TRAJ_N * 3).fill(1), 3);
@@ -412,6 +412,15 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const RKT_ORANGE = new THREE.Color(0xff8a2e), RKT_RED = new THREE.Color(0xff3b26);
   const blobMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.34, depthWrite: false });
   const blobMesh = pool(new THREE.CircleGeometry(1, 12), blobMat, 96, false); blobMesh.layers.set(1);
+  // survey stakes: the flagged work site. world.trialFocus was set by both
+  // runners but nothing ever drew it (the demo's "pulsing gold ring" comment
+  // is an orphan) — six timber stakes with gold pennants now ring the
+  // acceptance radius. Drawn only when the focus declares a radius, so the
+  // sandbox's point-focus trials are untouched.
+  const stakeMesh = pool(new THREE.BoxGeometry(0.09, 1.4, 0.09), toon(0x4a4038), 8, true);
+  const pennantGeo = new THREE.BoxGeometry(0.64, 0.28, 0.05); pennantGeo.translate(0.36, 0, 0);
+  const pennantMesh = pool(pennantGeo, toon(0xffc95c), 8, false); // bright gold — the outline pass eats duller inks at pennant size
+  const _stakeUp = new THREE.Vector3(0, 1, 0);
 
   // snowfall: instanced flakes drifting in a box around the camera focus
   const flakeMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false });
@@ -704,6 +713,30 @@ export function makeRenderer(canvas, world0, opts = {}) {
       blobMesh.setMatrixAt(bi++, dummy.matrix);
     }
     blobMesh.count = bi; blobMesh.instanceMatrix.needsUpdate = true;
+    // survey stakes ring the flagged work site; pennants hold one wind
+    // direction with a slow deterministic flutter off world time
+    {
+      const f = world.trialFocus;
+      let si = 0;
+      if (f && typeof f.r === "number") {
+        const rr = f.r * 0.92;
+        for (; si < 6; si++) {
+          const a = si * (Math.PI / 3);
+          const sx = f.x + Math.cos(a) * rr, sz = f.z + Math.sin(a) * rr;
+          const gy = F.heightAt(sx, sz);
+          dummy.position.set(sx, gy + 0.7, sz);
+          dummy.quaternion.setFromAxisAngle(_stakeUp, 0.7 + Math.sin(world.t * 2.6 + si * 1.7) * 0.24);
+          dummy.scale.set(1, 1, 1);
+          dummy.updateMatrix();
+          stakeMesh.setMatrixAt(si, dummy.matrix);
+          dummy.position.y = gy + 1.26;
+          dummy.updateMatrix();
+          pennantMesh.setMatrixAt(si, dummy.matrix);
+        }
+      }
+      stakeMesh.count = si; stakeMesh.instanceMatrix.needsUpdate = true;
+      pennantMesh.count = si; pennantMesh.instanceMatrix.needsUpdate = true;
+    }
     // snowfall drifts around the focus, wrapping in a 64x34x64 box
     for (let i = 0; i < flakes.length; i++) {
       const fk = flakes[i];
