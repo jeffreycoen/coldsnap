@@ -50,6 +50,10 @@ const BUILDERS = {
   // hollow keep: one-stone walls, roof course, south doorway
   keep(world, field, pg, s) {
     const cx = s.x, cz = s.z, grp = s.group || "garrison";
+    // the keep is enterable through its doorway — panicked infantry may
+    // shelter inside like a house (the demo collected no keep shelters;
+    // this rides the same sheltering opt-in the sandbox already made)
+    pg.shelters.push({ door: { x: cx, z: cz - 1.5 * PITCH - 0.9 }, inside: { x: cx, z: cz } });
     const grid = [];
     for (let ix = 0; ix < 6; ix++) for (let iy = 0; iy < 5; iy++) for (let iz = 0; iz < 4; iz++) {
       if (ix >= 1 && ix <= 4 && iz >= 1 && iz <= 2 && iy <= 3) continue;

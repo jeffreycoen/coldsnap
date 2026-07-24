@@ -678,6 +678,10 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
             if (S.trial.poolGoneT >= 2) {
               S.trial.poolGoneT = 0;
               if (w.pg.respawnGroup) w.pg.respawnGroup(td.subjects); else td.setup(w);
+              // masonry exhaustion guard: on a collapse-cause map the stone is
+              // the kill vehicle — a restock that reissues men into a leveled
+              // steading strands the order, so keep prefabs are re-laid too
+              if (spec.contract.predicate && (spec.contract.predicate.causes || []).includes("COLLAPSE") && (spec.prefabs || []).some((p) => p.type === "keep") && w.pg.repairGarrison) w.pg.repairGarrison();
               if (S.trialLog) S.trialLog.restocks = (S.trialLog.restocks || 0) + 1;
               S.toasts.push({ id: S.toastSeq++, title: "REPLACEMENT DETAIL ISSUED", desc: "Subject pool exhausted. The order stands.", t: 3.6 });
             }

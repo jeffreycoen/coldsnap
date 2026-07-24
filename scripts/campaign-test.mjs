@@ -385,6 +385,76 @@ const plates = (w) => w.bodies.filter((b) => b.group === "plate" && b.kind === "
   ok("AC-04: deviation report files only the write-off", dev.length === 1 && dev[0] === "ATTACHMENT A · Detail dispersed. Crossing intact. Throughput at time of survey: zero. Recovery uneconomic; written off in place.");
 }
 
+// --- AC-05 OUTBUILDING, OCCUPIED
+{
+  const spec = loadSpec("../src/game/scenarios/ac-05-steading.json");
+  const crew = (w) => w.bodies.filter((b) => b.group === "holdout" && b.kind === "unit" && b.alive);
+  const w1 = buildScenario(spec, { shelters: true });
+  ok("AC-05: loads, in budget", lintScenario(spec, w1).length === 0, `${w1.bodies.length} bodies, ${w1.welds.length} welds`);
+  ok("AC-05: twelve holdouts staged in android dress", crew(w1).length === 12 && crew(w1).every((u) => u.dress === "android"));
+  ok("AC-05: three shelters (two houses + the granary)", w1.pg.shelters.length === 3);
+  ok("AC-05: keep group is not the subjects tag", (spec.prefabs.find((p) => p.type === "keep") || {}).group !== spec.contract.subjects);
+  const w2 = buildScenario(spec, { shelters: true });
+  ok("AC-05: double-load deterministic", worldHash(w1) === worldHash(w2));
+
+  {
+    const wIdle = buildScenario(spec, { shelters: true });
+    let everDead = false;
+    for (let i = 0; i < 1200 && !everDead; i++) {
+      wIdle.events.length = 0;
+      stepWorld(wIdle);
+      if (crew(wIdle).length < 12) everDead = true;
+    }
+    ok("AC-05: detail stands through 10 idle seconds", !everDead);
+  }
+
+  // the taught mistake: direct fire earns nothing — every wrong-cause kill
+  // fails the predicate, and the runner's restock (which also re-lays the
+  // granary via repairGarrison) keeps the order alive
+  ok("AC-05: blast kills earn no credit", !matchKill(spec.contract.predicate, { cause: "BLAST", group: "holdout" }) && !matchKill(spec.contract.predicate, { cause: "PROJECTILE", group: "holdout" }));
+  {
+    const w = buildScenario(spec, { shelters: true });
+    const stones = () => w.bodies.filter((b) => b.kind === "chunk" && b.group === "granary").length;
+    const n0 = stones();
+    for (let i = 0; i < 8; i++) explode(w, 0, 3 + i * 0.4, 34.4, { r: 3.5, kv: 26, dmg: 80, crater: 0 });
+    for (let s = 0; s < 240; s++) { w.events.length = 0; stepWorld(w); }
+    w.pg.respawnGroup("holdout");
+    w.pg.repairGarrison();
+    ok("AC-05: restock re-lays the granary", stones() === n0, `${stones()} vs ${n0} stones`);
+    ok("AC-05: restock reissues the detail", crew(w).length === 12);
+  }
+
+  // completability — the taught technique: a ranging shell panics the detail
+  // indoors (the granary doorway topple credits on the way in), then the
+  // rack dropped SHORT of an occupied face heaves the wall onto the men
+  // behind it. Probe-derived, deterministic.
+  {
+    const w = buildScenario(spec, { shelters: true });
+    const b = w.byId.get(w.bisonId);
+    b.pos.x = 0; b.pos.z = 5; b.pos.y = w.field.heightAt(0, 5) + 0.97;
+    let prog = 0;
+    const t0 = w.t;
+    const stepN = (n) => {
+      for (let i = 0; i < n; i++) {
+        w.events.length = 0;
+        stepWorld(w);
+        for (const e of w.events) if (e.type === "kill" && matchKill(spec.contract.predicate, e)) prog++;
+      }
+    };
+    bisonFire(w, { x: 0, z: 30 });
+    stepN(1200);
+    if (prog < spec.contract.need) { fireVolley(w, -10.3, 14.3, 6, "player"); stepN(1440); }
+    if (prog < spec.contract.need) { fireVolley(w, 9.5, 16.3, 6, "player"); stepN(1440); }
+    if (prog < spec.contract.need) { bisonFire(w, { x: 0, z: 30 }); stepN(1200); fireVolley(w, 0.2, 32.2, 6, "player"); stepN(1440); }
+    const el = w.t - t0;
+    ok("AC-05: completable by panic + volley-short overburden", prog >= spec.contract.need, `${prog}/${spec.contract.need} in ${el.toFixed(1)}s`);
+    ok("AC-05: inside silver par", el <= spec.contract.par[1], `${el.toFixed(1)}s vs ${spec.contract.par[1]}s`);
+  }
+
+  const ful = composeAAR({ contract: spec.contract, events: [{ type: "kill", cause: "COLLAPSE", attacker: "player", group: "holdout", t: 5 }], elapsed: 40, seed: 3 }).filter((l) => l.startsWith("ATTACHMENT "));
+  ok("AC-05: evidence attachments filed", ful.length === 2 && ful[0].includes("Stove in the granary"));
+}
+
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S)`);
   process.exit(1);

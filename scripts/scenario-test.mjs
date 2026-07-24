@@ -43,7 +43,7 @@ const run = (w, { volley = null, steps = 1200, collect = null } = {}) => {
 
   // the shelters opt-in: exposed, deterministic, and actually live
   const s1 = buildScenario(spec, { shelters: true });
-  ok("shelters opt-in exposes the four house shelters", Array.isArray(s1.pg.shelters) && s1.pg.shelters.length === 4);
+  ok("shelters opt-in exposes the shelters (4 houses + the keep)", Array.isArray(s1.pg.shelters) && s1.pg.shelters.length === 5);
   ok("respawn api present (squads, keep repair, freeze)", typeof s1.pg.respawnSquad === "function" && typeof s1.pg.repairGarrison === "function" && typeof s1.pg.freeze === "function");
   const hs1 = run(s1, { volley: [0, -30] });
   const hs2 = run(buildScenario(spec, { shelters: true }), { volley: [0, -30] });

@@ -7,13 +7,14 @@ import AC01 from "./scenarios/ac-01-plate.json";
 import AC02 from "./scenarios/ac-02-battery.json";
 import AC03 from "./scenarios/ac-03-route.json";
 import AC04 from "./scenarios/ac-04-crossing.json";
+import AC05 from "./scenarios/ac-05-steading.json";
 
 export const CAMPAIGN = [
   { id: "ac01", wo: "AC-01", title: "ARMOR PLATE ACCEPTANCE", scenario: AC01 },
   { id: "ac02", wo: "AC-02", title: "BATTERY REDUCTION", scenario: AC02 },
   { id: "ac03", wo: "AC-03", title: "CONVOY INTERDICTION", scenario: AC03 },
   { id: "ac04", wo: "AC-04", title: "CROSSING DENIAL", scenario: AC04 },
-  { id: "ac05", wo: "AC-05", title: "OUTBUILDING, OCCUPIED", scenario: null },
+  { id: "ac05", wo: "AC-05", title: "OUTBUILDING, OCCUPIED", scenario: AC05 },
   { id: "ac06", wo: "AC-06", title: "THE CONVOY HAS STOPPED", scenario: null },
   { id: "ac07", wo: "AC-07", title: "THE VILLAGE", scenario: null },
   { id: "ac08", wo: "AC-08", title: "SURFACE LOAD RATING, REPEAT", scenario: null },

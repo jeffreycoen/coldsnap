@@ -15,6 +15,7 @@ const ok = (name, cond) => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const browser = await puppeteer.launch({
+  protocolTimeout: 600000, // debris-heavy missions under swiftshader can stall single evaluates past the 180s default
   executablePath: CHROME,
   headless: true,
   args: ["--no-sandbox", "--disable-gpu", "--enable-unsafe-swiftshader", "--window-size=960,600"],
@@ -133,7 +134,7 @@ try {
   const csState = await page.evaluate(() => window.__COLDSNAP__.getState());
   ok("sandbox world builds fully (1030 bodies)", csState.bodies === 1030);
   const shelters = await page.evaluate(() => (window.__COLDSNAP__._world().pg.shelters || []).length);
-  ok("sandbox runs the scenario pipeline with sheltering on", shelters === 4);
+  ok("sandbox runs the scenario pipeline with sheltering on", shelters === 5); // 4 houses + the keep (enterable since AC-05)
   // play it: a volley on the gunnery pad should fulfil WO-01 outright
   await page.mouse.click(480, 300); // dismiss deploy overlay
   await page.waitForFunction(() => !!document.querySelector("[data-brief]"));
@@ -289,7 +290,9 @@ try {
     await page.evaluate((i) => document.querySelector(`[data-camp="${i}"]`).click(), id);
     await page.waitForSelector("canvas");
     await page.waitForFunction((w2) => !!window.__COLDSNAP__ && document.body.innerText.includes(w2), {}, wo);
-    await page.mouse.click(480, 300); // deploy overlay
+    // the deploy card only shows on a player's first-ever mission — a blind
+    // click with no card up would fire a stray shell into the world
+    if (await page.evaluate(() => document.body.innerText.includes("TO DEPLOY"))) await page.mouse.click(480, 300);
     await page.waitForFunction(() => !!document.querySelector("[data-brief]"));
   };
 
@@ -332,37 +335,52 @@ try {
   });
   ok("volley fires with a clear sightline", clear.r === true && clear.cd > 0);
 
-  // --- AC-04 (full): struck procedure line, kill path completes, evidence
-  // attachments, kill smears, AC-05 awaits issue
+  // --- AC-04 (fast): deploys, struck procedure line
   await seedMission(3, "ac04", "AC-04");
   await page.waitForFunction(() => document.body.innerText.includes("Clear the detail"), { timeout: 15000, polling: 500 });
   ok("AC-04 brief carries the struck line", await page.evaluate(() => {
     const s = document.querySelector("[data-struck]");
     return !!s && s.innerText.includes("APPROACH WITHOUT DISCHARGE");
   }));
-  await sleep(800);
+  await sleep(400);
+  await page.evaluate(() => document.querySelector("[data-brief-ack]").click());
+
+  // --- AC-05 (full): the collapse curriculum — panic shot, rack short of
+  // the occupied face, COLLAPSE credits only; smears; evidence; AC-06 seal
+  await seedMission(4, "ac05", "AC-05");
+  await page.waitForFunction(() => document.body.innerText.includes("Collapse is the sole accepted cause"), { timeout: 15000, polling: 500 });
+  ok("AC-05 brief carries the directive", true);
+  await sleep(400);
   await page.evaluate(() => document.querySelector("[data-brief-ack]").click());
   await page.evaluate(() => {
     const api = window.__COLDSNAP__, w = api._world();
+    api.setGfx({ scale: 4, outline: 0, dither: 0 }); // quarter-res: masonry debris drowns swiftshader at full scale
     const b = w.byId.get(w.bisonId);
-    b.pos.x = 0; b.pos.z = 0; b.pos.y = w.field.heightAt(0, 0) + 0.97;
-    window.__campFire = setInterval(() => {
-      const w2 = api._world();
-      const tg = w2.bodies.find((b2) => b2.group === "crossing" && b2.kind === "unit" && b2.alive);
-      if (tg && api._S.actions) api._S.actions.fireAt(tg.pos.x, tg.pos.z);
-    }, 700);
+    b.pos.x = 0; b.pos.z = 5; b.pos.y = w.field.heightAt(0, 5) + 0.97;
+    api._S.actions.fireAt(0, 30); // ranging shell: the detail breaks for the buildings (and the granary doorway topples on a runner)
   });
-  await page.waitForFunction(() => document.body.innerText.includes("Crossing throughput recorded"), { timeout: 180000, polling: 1000 });
-  ok("AC-04 completes by the kill path", true);
-  await page.evaluate(() => clearInterval(window.__campFire));
+  // wait for ~10 game-seconds of panic + sheltering (the game runs ~3x slow here)
+  await page.waitForFunction(() => window.__COLDSNAP__._world().t > 10, { timeout: 90000, polling: 1000 });
+  // the taught technique, exactly two racks dropped SHORT of the occupied
+  // faces — an interval bot levels the steading and the debris grinds the
+  // software renderer into protocol timeouts
+  const rack = async (x, z) => {
+    if (await page.evaluate(() => document.body.innerText.includes("Overburden performed"))) return;
+    await page.waitForFunction(() => window.__COLDSNAP__._S.cds.volley <= 0, { timeout: 120000, polling: 1000 });
+    await page.evaluate(([vx, vz]) => window.__COLDSNAP__._S.actions.volleyAt(vx, vz), [x, z]);
+    await page.waitForFunction(() => window.__COLDSNAP__._S.cds.volley > 5 || document.body.innerText.includes("Overburden performed"), { timeout: 60000, polling: 1000 });
+  };
+  await rack(9.5, 16.3); // houseB is the double-credit drop; more racks just bury swiftshader in debris
+  await page.waitForFunction(() => document.body.innerText.includes("Overburden performed"), { timeout: 420000, polling: 2000 });
+  ok("AC-05 completes by collapse", true);
   ok("android kills leave smears on the ground", await page.evaluate(() => window.__COLDSNAP__._R._splat.smears > 0));
   await page.waitForFunction(() => !!document.querySelector("[data-aar]"), { timeout: 20000, polling: 500 });
   await page.waitForFunction(() => document.body.innerText.includes("ATTACHMENT A"), { timeout: 10000, polling: 500 });
-  ok("fulfilled report files the survey attachments", (await text()).includes("Structure survey"));
+  ok("evidence attachments filed on the report", (await text()).includes("Stove in the granary"));
   await page.evaluate(() => document.querySelector("[data-aar-file]").click());
   await page.waitForFunction(() => document.body.innerText.includes("ORDER BOOK"), { timeout: 20000, polling: 500 });
   book = await text();
-  ok("AC-05 awaits issue after AC-04", book.includes("OUTBUILDING, OCCUPIED") && book.includes("AWAITING ISSUE"));
+  ok("AC-06 awaits issue after AC-05", book.includes("THE CONVOY HAS STOPPED") && book.includes("AWAITING ISSUE"));
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => document.body.innerText.includes("PROVING GROUNDS"));
 
