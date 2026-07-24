@@ -94,7 +94,7 @@ for (const t of TRIALS) {
   const c = CONTRACTS[t.id];
   if (c) { t.title = `${c.wo} · ${c.title}`; t.hint = c.directive; }
 }
-export default function ColdsnapContractSandbox() {
+export default function ColdsnapContractSandbox({ onExit }) {
   const wrapRef = useRef(null);
   const canvasRef = useRef(null);
   const stateRef = useRef(null);
@@ -109,6 +109,7 @@ export default function ColdsnapContractSandbox() {
   const joyBaseRef = useRef(null);
   const joyKnobRef = useRef(null);
   const labelLayerRef = useRef(null);
+  const briefArmRef = useRef({ brief: null, at: 0 });
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -728,8 +729,8 @@ export default function ColdsnapContractSandbox() {
   const P = {
     wrap: { position: "relative", width: "100%", height: "100vh", minHeight: 520, background: "#0e1014", overflow: "hidden", fontFamily: "'Courier New', ui-monospace, monospace", userSelect: "none", WebkitUserSelect: "none", touchAction: "none", WebkitTouchCallout: "none", overscrollBehavior: "none" },
     cv: { position: "absolute", inset: 0, width: "100%", height: "100%", display: "block", cursor: "crosshair", touchAction: "none" },
-    panel: { position: "absolute", background: "rgba(16,19,24,0.92)", border: "2px solid #3a414b", color: "#cfd6de", padding: "6px 10px", fontSize: isTouch ? 11 : 12, lineHeight: 1.45 },
-    btn: { background: "#1c2129", border: "2px solid #4a5361", color: "#e6ebf1", padding: isTouch ? "11px 12px" : "7px 10px", fontSize: isTouch ? 13 : 12, fontFamily: "inherit", cursor: "pointer", letterSpacing: 0.5, touchAction: "manipulation" },
+    panel: { position: "absolute", background: "rgba(16,19,24,0.92)", border: "2px solid #3a414b", color: "#cfd6de", padding: "6px 10px", fontSize: isTouch ? 13 : 12, lineHeight: 1.5 },
+    btn: { background: "#1c2129", border: "2px solid #4a5361", color: "#e6ebf1", padding: isTouch ? "12px 14px" : "7px 10px", fontSize: isTouch ? 14 : 12, fontFamily: "inherit", cursor: "pointer", letterSpacing: 0.5, touchAction: "manipulation" },
     joyBase: { position: "absolute", width: 112, height: 112, borderRadius: "50%", border: "2px solid rgba(216,67,58,0.55)", background: "rgba(20,24,30,0.35)", display: "none", pointerEvents: "none", zIndex: 4 },
     joyKnob: { position: "absolute", width: 44, height: 44, borderRadius: "50%", background: "rgba(216,67,58,0.75)", border: "2px solid #ff6b5e", display: "none", pointerEvents: "none", zIndex: 4 },
     red: { color: "#ff6b5e" },
@@ -744,7 +745,8 @@ export default function ColdsnapContractSandbox() {
       <div ref={labelLayerRef} data-coldsnap="labels" style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 2, overflow: "hidden" }} />
       <div ref={joyBaseRef} style={P.joyBase} />
       <div ref={joyKnobRef} style={P.joyKnob} />
-      <div style={{ position: "absolute", top: 0, left: 0, right: 0, background: hud.trial.flashT > 0 ? "rgba(216,67,58,0.92)" : "rgba(16,19,24,0.92)", borderBottom: "2px solid #3a414b", color: "#e6ebf1", padding: "8px 10px", fontSize: isTouch ? 12 : 13, display: "flex", alignItems: "center", gap: 10, zIndex: 3 }}>
+      <div style={{ position: "absolute", top: 0, left: 0, right: 0, background: hud.trial.flashT > 0 ? "rgba(216,67,58,0.92)" : "rgba(16,19,24,0.92)", borderBottom: "2px solid #3a414b", color: "#e6ebf1", padding: "8px 10px", fontSize: isTouch ? 14 : 13, display: "flex", alignItems: "center", gap: 10, zIndex: 3 }}>
+        {onExit && <button data-menu="exit" style={{ ...P.btn, padding: isTouch ? "6px 10px" : "3px 8px", fontSize: isTouch ? 14 : 11, flexShrink: 0 }} onClick={onExit}>⏏</button>}
         {trialDef ? (
           <>
             <span style={{ color: "#ffd27a", whiteSpace: "nowrap", flexShrink: 0 }}>ORDER {hud.trial.idx + 1}/{TRIALS.length}</span>
@@ -756,7 +758,7 @@ export default function ColdsnapContractSandbox() {
             {!isTouch && <span style={{ opacity: 0.85, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{trialDef.hint}</span>}
             <span style={{ whiteSpace: "nowrap", opacity: 0.75, flexShrink: 0, marginLeft: "auto" }}>{hud.trial.el.toFixed(0)}s</span>
             <span style={{ whiteSpace: "nowrap", flexShrink: 0 }}>{hud.trial.prog}/{trialDef.need}</span>
-            <button style={{ ...P.btn, padding: "3px 8px", fontSize: 11, flexShrink: 0 }} onClick={() => { const S = stateRef.current; if (S) window.__COLDSNAP__ && window.__COLDSNAP__.skipTrial(); }}>SKIP</button>
+            <button style={{ ...P.btn, padding: isTouch ? "6px 10px" : "3px 8px", fontSize: isTouch ? 13 : 11, flexShrink: 0 }} onClick={() => { const S = stateRef.current; if (S) window.__COLDSNAP__ && window.__COLDSNAP__.skipTrial(); }}>SKIP</button>
           </>
         ) : (
           <>
@@ -821,21 +823,30 @@ export default function ColdsnapContractSandbox() {
           </div>
         </div>
       )}
-      <div style={{ ...P.panel, top: 44, left: 10 }}>
-        <div style={{ fontSize: 14, color: "#ff6b5e", letterSpacing: 2 }}>COLDSNAP</div>
-        <div style={{ opacity: 0.75 }}>{hud.fps} fps · {hud.bodies} bodies</div>
-        {!isTouch && <div style={{ opacity: 0.75 }}>WASD drive · click fire · V volley · wheel zoom</div>}
-      </div>
-      <div style={{ ...P.panel, top: 44, right: 12, display: "flex", gap: 10, padding: 8 }}>
-        <button style={P.btn} onClick={() => { const S = stateRef.current; if (S && S.zoomBy) S.zoomBy(1.18); }}>+</button>
-        <button style={P.btn} onClick={() => { const S = stateRef.current; if (S && S.zoomBy) S.zoomBy(0.85); }}>−</button>
-        <button style={P.btn} onClick={() => { setAchOpen(!achOpen); setGfxOpen(false); }}>★ {hud.achUnlocked.length}/{achDefs.length}</button>
-        <button style={P.btn} onClick={() => { setGfxOpen(!gfxOpen); setAchOpen(false); }}>GFX</button>
-      </div>
       {isTouch ? (
-        <div style={{ ...P.panel, bottom: 12, left: 10, padding: "5px 9px" }}>
-          <span style={{ color: "#ff6b5e" }}>☠ {hud.total}</span>
-          {hud.feed[0] && <span style={{ opacity: 0.75, marginLeft: 8, fontSize: 10 }}>{hud.feed[0]}</span>}
+        <div style={{ ...P.panel, top: 52, left: 10, padding: "4px 9px" }}>
+          <span style={{ color: "#ff6b5e", letterSpacing: 1.5, fontSize: 13 }}>COLDSNAP</span>
+          <span style={{ opacity: 0.6, marginLeft: 8, fontSize: 12 }}>{hud.fps} fps</span>
+        </div>
+      ) : (
+        <div style={{ ...P.panel, top: 44, left: 10 }}>
+          <div style={{ fontSize: 14, color: "#ff6b5e", letterSpacing: 2 }}>COLDSNAP</div>
+          <div style={{ opacity: 0.75 }}>{hud.fps} fps · {hud.bodies} bodies</div>
+          <div style={{ opacity: 0.75 }}>WASD drive · click fire · V volley · wheel zoom</div>
+        </div>
+      )}
+      {!isTouch && (
+        <div style={{ ...P.panel, top: 44, right: 12, display: "flex", gap: 10, padding: 8 }}>
+          <button style={P.btn} onClick={() => { const S = stateRef.current; if (S && S.zoomBy) S.zoomBy(1.18); }}>+</button>
+          <button style={P.btn} onClick={() => { const S = stateRef.current; if (S && S.zoomBy) S.zoomBy(0.85); }}>−</button>
+          <button style={P.btn} onClick={() => { setAchOpen(!achOpen); setGfxOpen(false); }}>★ {hud.achUnlocked.length}/{achDefs.length}</button>
+          <button style={P.btn} onClick={() => { setGfxOpen(!gfxOpen); setAchOpen(false); }}>GFX</button>
+        </div>
+      )}
+      {isTouch ? (
+        <div style={{ ...P.panel, bottom: 12, left: 10, padding: "6px 10px" }}>
+          <span style={{ color: "#ff6b5e", fontSize: 14 }}>☠ {hud.total}</span>
+          {hud.feed[0] && <span style={{ opacity: 0.75, marginLeft: 8, fontSize: 12 }}>{hud.feed[0]}</span>}
         </div>
       ) : (
         <div style={{ ...P.panel, bottom: 64, left: 10, minWidth: 130, maxWidth: 190 }}>
@@ -898,6 +909,8 @@ export default function ColdsnapContractSandbox() {
       )}
       {isTouch && menuOpen && (
         <div style={{ ...P.panel, right: 10, bottom: 170, display: "flex", flexDirection: "column", gap: 8, zIndex: 4 }}>
+          <button style={P.btn} onClick={() => { setAchOpen(!achOpen); setGfxOpen(false); setMenuOpen(false); }}>★ SERVICE RECORD</button>
+          <button style={P.btn} onClick={() => { setGfxOpen(!gfxOpen); setAchOpen(false); setMenuOpen(false); }}>GRAPHICS</button>
           <button style={P.btn} onClick={() => { act("squads"); setMenuOpen(false); }}>RESPAWN SQUADS</button>
           <button style={P.btn} onClick={() => { act("scouts"); setMenuOpen(false); }}>RESPAWN SCOUTS</button>
           <button style={P.btn} onClick={() => { act("repair"); setMenuOpen(false); }}>REPAIR TOWER</button>
@@ -925,7 +938,7 @@ export default function ColdsnapContractSandbox() {
         return (
           <div onClick={file} style={{ position: "absolute", inset: 0, background: "rgba(10,12,16,0.55)", zIndex: 6, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
             <div data-aar onClick={(e) => e.stopPropagation()} style={{ ...P.panel, position: "relative", width: "min(470px, 94vw)", maxHeight: "76vh", overflowY: "auto", padding: "12px 16px" }}>
-              <div style={{ borderBottom: "1px dashed #3a414b", paddingBottom: 6, marginBottom: 9, display: "flex", justifyContent: "space-between", gap: 10, fontSize: 9, letterSpacing: 1.5, color: "#8b93a0", whiteSpace: "nowrap" }}>
+              <div style={{ borderBottom: "1px dashed #3a414b", paddingBottom: 6, marginBottom: 9, display: "flex", justifyContent: "space-between", gap: 10, fontSize: isTouch ? 10 : 9, letterSpacing: 1.5, color: "#8b93a0", whiteSpace: "nowrap" }}>
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>PROCUREMENT BUREAU · FIELD ACCEPTANCE DIVISION</span>
                 <span>FORM AA-7 · CARBON 2/3</span>
               </div>
@@ -937,7 +950,7 @@ export default function ColdsnapContractSandbox() {
                   <div style={{ fontSize: 10, letterSpacing: 2 }}>{hud.aar.outcome.split(" — ")[1]}</div>
                 ) : null}
               </div>
-              <div style={{ fontSize: 11.5, lineHeight: 1.65, whiteSpace: "pre-wrap" }}>
+              <div style={{ fontSize: isTouch ? 13 : 11.5, lineHeight: 1.65, whiteSpace: "pre-wrap" }}>
                 {hud.aar.lines.map((ln, i) => {
                   const sub = ln.startsWith("  SUBJECT");
                   const remark = ln.startsWith("REMARK:");
@@ -945,7 +958,7 @@ export default function ColdsnapContractSandbox() {
                   return (
                     <div key={i} style={{
                       color: i === 0 || remark ? "#ffd27a" : sub ? "#a9b3bf" : "#cfd6de",
-                      fontSize: i === 0 ? 13 : remark ? 12 : 11.5,
+                      fontSize: i === 0 ? (isTouch ? 15 : 13) : remark ? (isTouch ? 13.5 : 12) : (isTouch ? 13 : 11.5),
                       paddingRight: i <= 1 ? 98 : 0, // the title and status wrap clear of the stamp
                       letterSpacing: i === 0 ? 1 : 0,
                       fontStyle: remark ? "italic" : "normal",
@@ -960,15 +973,29 @@ export default function ColdsnapContractSandbox() {
           </div>
         );
       })()}
-      <div style={{ position: "absolute", top: 60, left: "50%", transform: "translateX(-50%)", display: "flex", flexDirection: "column", gap: 6, alignItems: "center", zIndex: 3, maxWidth: "94vw" }}>
-        {started && !hud.aar && hud.brief && (
-          <div data-brief style={{ ...P.panel, position: "static", borderColor: "#ffd27a", maxWidth: "min(430px, 92vw)" }}>
-            <div style={{ fontSize: 10, letterSpacing: 2, opacity: 0.7 }}>WORK ORDER</div>
-            <div style={{ color: "#ffd27a", letterSpacing: 1, marginTop: 2 }}>{hud.brief.title}</div>
-            <div style={{ fontSize: isTouch ? 11 : 12, opacity: 0.92, marginTop: 5 }}>{hud.brief.directive}</div>
-            <button data-brief-ack style={{ ...P.btn, marginTop: 9, padding: "6px 12px", fontSize: 11, borderColor: "#8a5a1c" }} onClick={() => { const S = stateRef.current; if (S) S.brief = null; }}>ACKNOWLEDGE</button>
+      {started && !hud.aar && hud.brief && (() => {
+        // the tap that dismisses the deploy overlay starts the game on
+        // pointerdown, and its trailing click lands on whatever mounts in the
+        // same flush — this modal. On touch, only the button dismisses, and
+        // the ack is armed after a beat so that stray click can't file the
+        // order unread.
+        if (briefArmRef.current.brief !== hud.brief) briefArmRef.current = { brief: hud.brief, at: performance.now() };
+        const ack = () => {
+          if (performance.now() - briefArmRef.current.at < 500) return;
+          const S = stateRef.current; if (S) S.brief = null;
+        };
+        return (
+          <div onClick={isTouch ? undefined : ack} style={{ position: "absolute", inset: 0, background: "rgba(10,12,16,0.5)", zIndex: 6, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+            <div data-brief onClick={(e) => e.stopPropagation()} style={{ ...P.panel, position: "relative", width: "min(430px, 92vw)", borderColor: "#ffd27a", padding: isTouch ? "16px 18px" : "12px 16px" }}>
+              <div style={{ fontSize: isTouch ? 11 : 10, letterSpacing: 2, opacity: 0.7 }}>WORK ORDER</div>
+              <div style={{ color: "#ffd27a", letterSpacing: 1, marginTop: 3, fontSize: isTouch ? 16 : 13 }}>{hud.brief.title}</div>
+              <div style={{ fontSize: isTouch ? 14 : 12, opacity: 0.92, marginTop: 7, lineHeight: 1.55 }}>{hud.brief.directive}</div>
+              <button data-brief-ack style={{ ...P.btn, marginTop: 12, width: "100%", borderColor: "#8a5a1c", letterSpacing: 2 }} onClick={ack}>ACKNOWLEDGE</button>
+            </div>
           </div>
-        )}
+        );
+      })()}
+      <div style={{ position: "absolute", top: isTouch ? 94 : 60, left: "50%", transform: "translateX(-50%)", display: "flex", flexDirection: "column", gap: 6, alignItems: "center", zIndex: 3, maxWidth: "94vw" }}>
         {hud.toasts.map((t) => (
           <div key={t.id} style={{ ...P.panel, position: "static", borderColor: "#d8433a", textAlign: "center" }}>
             <div style={{ color: "#ff6b5e" }}>★ {t.title}</div>

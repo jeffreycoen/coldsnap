@@ -139,6 +139,7 @@ try {
   await page.waitForFunction(() => !!document.querySelector("[data-brief]"));
   body = await text();
   ok("work-order brief card presents WO-01", body.includes("WORK ORDER") && body.includes("Three subjects at the gunnery pad"));
+  await sleep(800); // the brief ack arms after 500ms so a trailing deploy-tap click can't dismiss it
   await page.evaluate(() => document.querySelector("[data-brief-ack]").click());
   await page.waitForFunction(() => !document.querySelector("[data-brief]"));
   ok("brief acknowledges away", true);

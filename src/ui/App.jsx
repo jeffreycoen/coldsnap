@@ -70,10 +70,12 @@ export default function App() {
     return <Controls keymap={keymap} onChange={applyKeymap} onBack={() => setScreen("menu")} />;
   }
   if (GAME_SCREENS.has(screen)) {
-    const Game = screen === "sandbox" ? ColdsnapContractSandbox : ColdsnapProvingGrounds;
+    // the sandbox carries its own ⏏ in the order bar; the frozen demo can't,
+    // so it keeps the overlay button
+    if (screen === "sandbox") return <ColdsnapContractSandbox onExit={() => setScreen("menu")} />;
     return (
       <div style={{ position: "relative", width: "100%", height: "100%" }}>
-        <Game />
+        <ColdsnapProvingGrounds />
         <button
           data-menu="exit"
           onClick={() => setScreen("menu")}
