@@ -1,0 +1,74 @@
+import React, { useEffect, useState } from "react";
+import { COLORS, FONT, btn, detectTouch } from "./theme.js";
+
+// Display-only mirror of the demo's trial order for the medal star row; the
+// demo file is frozen and does not export TRIALS.
+const TRIAL_IDS = ["gunnery", "roadkill", "saturation", "demolition", "deep_end", "counter_battery", "thin_ice"];
+
+const medalColor = (m) =>
+  m ? (m.medal === "GOLD" ? COLORS.gold : m.medal === "SILVER" ? COLORS.text : "#b0764a") : COLORS.btnBorder;
+
+export default function StartScreen({ onPlay, onControls }) {
+  const [medals, setMedals] = useState(null);
+  const [isTouch] = useState(detectTouch);
+
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const r = await window.storage.get("coldsnap-medals");
+        const m = JSON.parse(r.value);
+        if (live && m && typeof m === "object") setMedals(m);
+      } catch (e) {}
+    })();
+    return () => { live = false; };
+  }, []);
+
+  const option = (extra) => ({
+    ...btn,
+    display: "block",
+    width: "100%",
+    textAlign: "left",
+    padding: "14px 16px",
+    marginTop: 12,
+    ...extra,
+  });
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: COLORS.bg, fontFamily: FONT, color: COLORS.text, display: "flex", overflow: "auto", userSelect: "none", WebkitUserSelect: "none" }}>
+      <div style={{ width: "min(420px, 92vw)", padding: "24px 0", margin: "auto" }}>
+        <div style={{ textAlign: "center", marginBottom: 8 }}>
+          <div style={{ fontSize: 34, color: COLORS.red, letterSpacing: 8 }}>COLDSNAP</div>
+          <div style={{ opacity: 0.7, letterSpacing: 3, fontSize: 12 }}>WINTER RANGE COMMAND</div>
+        </div>
+
+        <button data-menu="demo" style={option({ borderColor: COLORS.borderHot })} onClick={onPlay}>
+          <div style={{ color: COLORS.red, fontSize: 15, letterSpacing: 2 }}>▶ PROVING GROUNDS</div>
+          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>The original demo — seven field trials across the winter range.</div>
+          {medals && (
+            <div style={{ marginTop: 6, fontSize: 13 }}>
+              {TRIAL_IDS.map((id) => (
+                <span key={id} style={{ color: medalColor(medals[id]), marginRight: 4 }}>★</span>
+              ))}
+              <span style={{ fontSize: 11, opacity: 0.7, marginLeft: 4 }}>best times on record</span>
+            </div>
+          )}
+        </button>
+
+        <button data-menu="contracts" style={option({ opacity: 0.45, cursor: "default" })} disabled>
+          <div style={{ color: COLORS.gold, fontSize: 15, letterSpacing: 2 }}>CONTRACT SANDBOX</div>
+          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>The bureau is drafting work orders — coming soon.</div>
+        </button>
+
+        <button data-menu="controls" style={option()} onClick={onControls}>
+          <div style={{ color: COLORS.bright, fontSize: 15, letterSpacing: 2 }}>⌨ CONTROLS</div>
+          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>Remap the keyboard bindings{isTouch ? " (hardware keyboards)" : ""}.</div>
+        </button>
+
+        <div style={{ textAlign: "center", marginTop: 18, fontSize: 11, opacity: 0.55 }}>
+          {isTouch ? "twin-stick touch controls · the ⏏ MENU button returns here" : "ESC in-game returns to this menu"}
+        </div>
+      </div>
+    </div>
+  );
+}
