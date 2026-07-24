@@ -276,13 +276,25 @@ try {
   ok("AC-02 unseals after AC-01", book.includes("BATTERY REDUCTION"));
   ok("completed AC-01 stays replayable", await page.evaluate(() => !document.querySelector('[data-camp="ac01"]').disabled));
 
-  // --- AC-02: deploys, no tutorial annex, completes under return fire,
-  // kill smears land, AC-03 unseals
-  await page.evaluate(() => document.querySelector('[data-camp="ac02"]').click());
-  await page.waitForSelector("canvas");
-  await page.waitForFunction(() => !!window.__COLDSNAP__ && document.body.innerText.includes("AC-02"));
-  await page.mouse.click(480, 300); // deploy overlay
-  await page.waitForFunction(() => !!document.querySelector("[data-brief]"));
+  // From here the ladder is proven (AC-01 completed for real, AC-02 unsealed).
+  // Older missions get fast deploy checks; only the NEWEST mission runs its
+  // full completion in the browser — the headless campaign gate carries
+  // completability for the rest. Progress is seeded per section so the
+  // suite stops growing by minutes with every mission.
+  const seedMission = async (n, id, wo) => {
+    await page.evaluate((p) => { localStorage.setItem("coldsnap-camp-progress", String(p)); localStorage.removeItem("coldsnap-screen"); }, n);
+    await page.reload({ waitUntil: "networkidle0" });
+    await page.evaluate(() => document.querySelector("[data-menu=campaign]").click());
+    await page.waitForFunction(() => document.body.innerText.includes("ORDER BOOK"));
+    await page.evaluate((i) => document.querySelector(`[data-camp="${i}"]`).click(), id);
+    await page.waitForSelector("canvas");
+    await page.waitForFunction((w2) => !!window.__COLDSNAP__ && document.body.innerText.includes(w2), {}, wo);
+    await page.mouse.click(480, 300); // deploy overlay
+    await page.waitForFunction(() => !!document.querySelector("[data-brief]"));
+  };
+
+  // --- AC-02 (fast): deploys, no tutorial annex, android dress staged
+  await seedMission(1, "ac02", "AC-02");
   await page.waitForFunction(() => document.body.innerText.includes("provided for in the schedule"), { timeout: 15000, polling: 500 });
   ok("AC-02 brief carries the directive", true);
   await sleep(800);
@@ -292,32 +304,9 @@ try {
     const w = window.__COLDSNAP__._world();
     return w.bodies.filter((b) => b.group === "battery" && b.kind === "unit" && b.dress === "android").length === 9;
   }));
-  await page.evaluate(() => {
-    const api = window.__COLDSNAP__;
-    window.__campFire = setInterval(() => {
-      const w = api._world();
-      const tg = w.bodies.find((b) => b.group === "battery" && b.kind === "unit" && b.alive);
-      if (tg && api._S.actions) api._S.actions.fireAt(tg.pos.x, tg.pos.z);
-    }, 700);
-  });
-  await page.waitForFunction(() => document.body.innerText.includes("All tubes silent"), { timeout: 180000, polling: 1000 });
-  ok("AC-02 completes under return fire", true);
-  await page.evaluate(() => clearInterval(window.__campFire));
-  ok("android kills leave smears on the ground", await page.evaluate(() => window.__COLDSNAP__._R._splat.smears > 0));
-  await page.waitForFunction(() => !!document.querySelector("[data-aar]"), { timeout: 20000, polling: 500 });
-  await page.evaluate(() => document.querySelector("[data-aar-file]").click());
-  await page.waitForFunction(() => document.body.innerText.includes("ORDER BOOK"), { timeout: 20000, polling: 500 });
-  book = await text();
-  ok("AC-03 unseals after AC-02", book.includes("CONVOY INTERDICTION"));
-  ok("completed AC-02 stays replayable", await page.evaluate(() => !document.querySelector('[data-camp="ac02"]').disabled));
 
-  // --- AC-03: volley discipline (danger close + line of sight), completes,
-  // evidence attachments on the report, AC-04 unseals
-  await page.evaluate(() => document.querySelector('[data-camp="ac03"]').click());
-  await page.waitForSelector("canvas");
-  await page.waitForFunction(() => !!window.__COLDSNAP__ && document.body.innerText.includes("AC-03"));
-  await page.mouse.click(480, 300);
-  await page.waitForFunction(() => !!document.querySelector("[data-brief]"));
+  // --- AC-03 (fast): deploys, volley discipline (danger close + LOS)
+  await seedMission(2, "ac03", "AC-03");
   await page.waitForFunction(() => document.body.innerText.includes("one line item"), { timeout: 15000, polling: 500 });
   await sleep(800);
   await page.evaluate(() => document.querySelector("[data-brief-ack]").click());
@@ -342,26 +331,38 @@ try {
     return { r, cd: api._S.cds.volley };
   });
   ok("volley fires with a clear sightline", clear.r === true && clear.cd > 0);
+
+  // --- AC-04 (full): struck procedure line, kill path completes, evidence
+  // attachments, kill smears, AC-05 awaits issue
+  await seedMission(3, "ac04", "AC-04");
+  await page.waitForFunction(() => document.body.innerText.includes("Clear the detail"), { timeout: 15000, polling: 500 });
+  ok("AC-04 brief carries the struck line", await page.evaluate(() => {
+    const s = document.querySelector("[data-struck]");
+    return !!s && s.innerText.includes("APPROACH WITHOUT DISCHARGE");
+  }));
+  await sleep(800);
+  await page.evaluate(() => document.querySelector("[data-brief-ack]").click());
   await page.evaluate(() => {
     const api = window.__COLDSNAP__, w = api._world();
     const b = w.byId.get(w.bisonId);
-    b.pos.x = 0; b.pos.z = -2; b.pos.y = w.field.heightAt(0, -2) + 0.97; // close like the gate's advancing bot — spawn-range fire misses runners for minutes under swiftshader
+    b.pos.x = 0; b.pos.z = 0; b.pos.y = w.field.heightAt(0, 0) + 0.97;
     window.__campFire = setInterval(() => {
       const w2 = api._world();
-      const tg = w2.bodies.find((b2) => b2.group === "convoy" && (b2.kind === "unit" || b2.kind === "truck") && b2.alive);
+      const tg = w2.bodies.find((b2) => b2.group === "crossing" && b2.kind === "unit" && b2.alive);
       if (tg && api._S.actions) api._S.actions.fireAt(tg.pos.x, tg.pos.z);
     }, 700);
   });
-  await page.waitForFunction(() => document.body.innerText.includes("Route capacity reduced"), { timeout: 180000, polling: 1000 });
-  ok("AC-03 completes", true);
+  await page.waitForFunction(() => document.body.innerText.includes("Crossing throughput recorded"), { timeout: 180000, polling: 1000 });
+  ok("AC-04 completes by the kill path", true);
   await page.evaluate(() => clearInterval(window.__campFire));
+  ok("android kills leave smears on the ground", await page.evaluate(() => window.__COLDSNAP__._R._splat.smears > 0));
   await page.waitForFunction(() => !!document.querySelector("[data-aar]"), { timeout: 20000, polling: 500 });
   await page.waitForFunction(() => document.body.innerText.includes("ATTACHMENT A"), { timeout: 10000, polling: 500 });
-  ok("evidence attachments filed on the report", (await text()).includes("personal effects"));
+  ok("fulfilled report files the survey attachments", (await text()).includes("Structure survey"));
   await page.evaluate(() => document.querySelector("[data-aar-file]").click());
   await page.waitForFunction(() => document.body.innerText.includes("ORDER BOOK"), { timeout: 20000, polling: 500 });
   book = await text();
-  ok("AC-04 unseals after AC-03", book.includes("CROSSING DENIAL"));
+  ok("AC-05 awaits issue after AC-04", book.includes("OUTBUILDING, OCCUPIED") && book.includes("AWAITING ISSUE"));
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => document.body.innerText.includes("PROVING GROUNDS"));
 

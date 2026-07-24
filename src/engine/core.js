@@ -1009,8 +1009,14 @@ export function stepUnits(world) {
         // onto; a man already in the water is past advice.
         const hazard = (dx3, dz3) => {
           if (h0 - world.field.heightAt(u.pos.x + dx3, u.pos.z + dz3) > 1.15) return true; // true ledge
-          if (world.ice || wetHere) return false;
-          return wetAt(u.pos.x + dx3 * 2.5, u.pos.z + dz3 * 2.5) || wetAt(u.pos.x + dx3 * 5, u.pos.z + dz3 * 5) || wetAt(u.pos.x + dx3 * 8, u.pos.z + dz3 * 8);
+          if (wetHere) return false; // already in the water: past advice
+          // DIVERGENCE from the frozen demo (#6b): a frozen sheet is walkable
+          // but the bowl's wet ring BEYOND the sheet still drowns — the demo
+          // switched the whole scan off under world.ice, marching panicked
+          // crews straight off the lip. Points inside the pool rect count as
+          // sheet; the ring outside it stays flagged.
+          const wetOff = (px2, pz2) => (world.ice && px2 > POOL.x0 && px2 < POOL.x1 && pz2 > POOL.z0 && pz2 < POOL.z1) ? false : wetAt(px2, pz2);
+          return wetOff(u.pos.x + dx3 * 2.5, u.pos.z + dz3 * 2.5) || wetOff(u.pos.x + dx3 * 5, u.pos.z + dz3 * 5) || wetOff(u.pos.x + dx3 * 8, u.pos.z + dz3 * 8);
         };
         if (hazard(ax, az)) {
           const keep = fx * -az + fz * ax >= 0 ? 1 : -1;
@@ -1223,6 +1229,13 @@ function collectContacts(world) {
       for (let k = 0; k < n; k++) {
         const c = _scratchOut[k];
         contacts.push({ a, b, p: c.p, n: c.n, depth: c.depth, fid: c.fid, pn: 0, pt1: 0, pt2: 0 });
+        // DIVERGENCE from the frozen demo (#6a): standing ON another body
+        // grounds you. The demo set grounded from terrain contact only, so
+        // units could never walk on the ice sheet (or any bridge) — they
+        // stood on plates flagged airborne, deaf to every panic impulse.
+        // A vertical-normal contact grounds the upper body; the flag
+        // self-clears at the grounded commit. Locked by righting-test.
+        if (c.n.y > 0.4 || c.n.y < -0.4) (a.pos.y > b.pos.y ? a : b).bodyGroundedNow = true;
       }
       if (n > 0) {
         // parked wrecks ignore infantry brushes: only the blade (vehicle mass) or a
@@ -1491,7 +1504,12 @@ function classifyImpacts(world) {
       const att = other.driver === "player" ? "player" : world.t - other.lastPlayerTouch < 3.5 ? "player" : "world";
       dmg = dv * 18;
       info = { cause: CAUSE.CRUSH, attacker: att, killerId: other.id };
-    } else if (dv > 8) {
+    } else if (dv > (other && other.kind === "ice" ? 24 : 8)) {
+      // DIVERGENCE from the frozen demo (#6d): a live sheet bucking underfoot
+      // is not a lethal slam — the welded lattice seesaws under walkers (a
+      // motion that could not exist before #6a) and levered plates spiked
+      // standing crews dead at their spawn marks. Ice lethality stays where
+      // it was designed: severed shards and the water (DROWN).
       dmg = (dv - 8) * 10;
       info = { cause: CAUSE.IMPACT, attacker: "world" };
     }
@@ -1577,7 +1595,9 @@ function stepStatus(world) {
       b.buriedNow = false;
       if (b.buryT > 1.1) applyDamage(world, b, 1e6, { cause: CAUSE.COLLAPSE, attacker: b.lastImp && world.t - b.lastImp.t < 6 ? b.lastImp.attacker : "world", buildingId: b.buriedBy || "" });
     }
-    if (b.groundedNow) { b.airT = 0; b.grounded = true; } else { b.airT += dt; b.grounded = false; }
+    if (b.groundedNow || b.bodyGroundedNow) { b.airT = 0; b.grounded = true; } else { b.airT += dt; b.grounded = false; }
+    b.bodyGroundedLast = b.bodyGroundedNow; // #6c reads this: standing-on-a-body units skip sleep
+    b.bodyGroundedNow = false; // DIVERGENCE #6a: pair-contact grounding, consumed per step
     // water
     if (world.water && b.kind === "ice") {
       const wz = world.water;
@@ -1648,7 +1668,13 @@ function stepSleep(world) {
     if (b.kind === "unit" && b.alive && b.R[4] <= 0.9) { b.sleepT = 0; continue; }
     if (V.len2(b.v) < 0.06 && V.len2(b.w) < 0.09) {
       b.sleepT += dt;
-      if (b.sleepT > 0.55) { b.sleeping = true; V.set(b.v, 0, 0, 0); V.set(b.w, 0, 0, 0); }
+      // DIVERGENCE from the frozen demo (#6c): a unit standing on a live
+      // sheet never sleeps. A sleeping man on a sleeping plate generates no
+      // contact, and the island's next wake resolves the stale pair with an
+      // impulse spike the impact classifier reads as a lethal slam — the
+      // recurring phantom deaths on the AC-04 crossing. Units on terrain
+      // sleep exactly as before.
+      if (b.sleepT > 0.55 && !(b.kind === "unit" && b.alive && world.ice && b.bodyGroundedLast)) { b.sleeping = true; V.set(b.v, 0, 0, 0); V.set(b.w, 0, 0, 0); }
     } else b.sleepT = 0;
   }
   for (const wd of world.welds) {

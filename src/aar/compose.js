@@ -61,8 +61,13 @@ export function composeAAR({ contract, events, ordnance = { shell: 0, mg: 0, vol
   // evidence attachments: campaign contracts author these in their JSON —
   // the bureau's recovery paperwork, filed under the report. Sandbox
   // contracts carry none, so sandbox reports are byte-identical to before.
-  (contract.evidence || []).forEach((ev, i) => {
-    lines.push(`ATTACHMENT ${String.fromCharCode(65 + i)} · ${ev}`);
-  });
+  // A "[deviated] " prefix marks a line that files only on a deviation
+  // report; unprefixed lines file only on a fulfilled one.
+  const dev = outcome.includes("DEVIATION");
+  (contract.evidence || [])
+    .filter((ev) => ev.startsWith("[deviated] ") === dev)
+    .forEach((ev, i) => {
+      lines.push(`ATTACHMENT ${String.fromCharCode(65 + i)} · ${dev ? ev.slice(11) : ev}`);
+    });
   return lines;
 }

@@ -7,6 +7,7 @@ import { stepWorld, bisonFire, fireVolley, explode, worldHash } from "../src/eng
 import { buildScenario, lintScenario } from "../src/game/scenario.js";
 import { matchKill } from "../src/game/predicate.js";
 import { composeAAR } from "../src/aar/compose.js";
+import { disperseState } from "../src/game/altcheck.js";
 
 const fails = [];
 const ok = (name, cond, detail = "") => {
@@ -266,6 +267,122 @@ const plates = (w) => w.bodies.filter((b) => b.group === "plate" && b.kind === "
   ok("AC-03: evidence attachments filed on the report", attLines.length === 2 && attLines[0] === `ATTACHMENT A · ${spec.contract.evidence[0]}` && attLines[1] === `ATTACHMENT B · ${spec.contract.evidence[1]}`);
   const noEv = composeAAR({ contract: { wo: "AC-03", title: "X" }, events: mkKills, elapsed: 30, seed: 7 });
   ok("AC-03: evidence-free contracts compose unchanged", !noEv.some((l) => l.startsWith("ATTACHMENT ")));
+}
+
+// --- AC-04 CROSSING DENIAL
+{
+  const spec = loadSpec("../src/game/scenarios/ac-04-crossing.json");
+  const crew = (w) => w.bodies.filter((b) => b.group === "crossing" && b.kind === "unit" && b.alive);
+  const park = (w, x, z) => {
+    const b = w.byId.get(w.bisonId);
+    b.pos.x = x; b.pos.z = z; b.pos.y = w.field.heightAt(x, z) + 0.97;
+    b.v.x = b.v.y = b.v.z = 0; b.w.x = b.w.y = b.w.z = 0;
+  };
+  const stepN = (w, n) => { for (let i = 0; i < n; i++) { w.events.length = 0; stepWorld(w); } };
+  const w1 = buildScenario(spec, { shelters: true });
+  ok("AC-04: loads, in budget", lintScenario(spec, w1).length === 0, `${w1.bodies.length} bodies, ${w1.welds.length} welds`);
+  ok("AC-04: pool frozen, hut shelter exposed", w1.bodies.some((b) => b.kind === "ice") && w1.pg.shelters.length === 1);
+  ok("AC-04: eight crossing crew staged in android dress", crew(w1).length === 8 && crew(w1).every((u) => u.dress === "android"));
+  ok("AC-04: detail stands ON the sheet, not the bowl floor", crew(w1).every((u) => u.pos.y > 1.6), crew(w1).map((u) => u.pos.y.toFixed(2)).join(","));
+  const w2 = buildScenario(spec, { shelters: true });
+  ok("AC-04: double-load deterministic", worldHash(w1) === worldHash(w2));
+
+  // the blocking bug this map found: without the ice-aware spawn floor the
+  // detail drowned at t=0 and self-completed the order
+  {
+    const w = buildScenario(spec, { shelters: true });
+    let everDead = false;
+    for (let i = 0; i < 1200 && !everDead; i++) {
+      w.events.length = 0;
+      stepWorld(w);
+      if (crew(w).length < 8) everDead = true;
+    }
+    ok("AC-04: nobody drowns through 10 idle seconds", !everDead, `${crew(w).length}/8 after idle`);
+  }
+
+  // kill path: shells into the south span crack the lattice, the gangs go in
+  const runKill = (w) => {
+    park(w, 0, 0);
+    let prog = 0, nextFire = 0, t0 = w.t;
+    while (w.t - t0 < 60 && prog < spec.contract.need) {
+      if (w.t >= nextFire) {
+        const tg = crew(w)[0];
+        if (tg) { bisonFire(w, { x: tg.pos.x, z: tg.pos.z }); nextFire = w.t + 1.2; }
+      }
+      w.events.length = 0;
+      stepWorld(w);
+      for (const e of w.events) if (e.type === "kill" && matchKill(spec.contract.predicate, e)) prog++;
+    }
+    return { prog, t: w.t - t0 };
+  };
+  const rk = runKill(buildScenario(spec, { shelters: true }));
+  ok("AC-04: kill path completes", rk.prog >= spec.contract.need, `${rk.prog}/${spec.contract.need} in ${rk.t.toFixed(1)}s`);
+  ok("AC-04: kill path inside silver par", rk.t <= spec.contract.par[1], `${rk.t.toFixed(1)}s vs ${spec.contract.par[1]}s`);
+
+  // deviation path: the staged drive from the map draft — nose up the south
+  // apron (fear bubble breaks the detail), then each lay-by spit clears the
+  // stragglers off the far lips. Runner semantics: disperseState over the
+  // pool rect, altT accumulates while CLEAR, holdS 5, any death VOIDs.
+  {
+    const w = buildScenario(spec, { shelters: true });
+    const pool = spec.terrain.pool;
+    const b = w.byId.get(w.bisonId);
+    let altT = 0, best = 0, voided = false;
+    const watch = () => {
+      for (const e of w.events) if (e.type === "kill" && e.group === "crossing") voided = true;
+      const st = disperseState(w.bodies, pool, "crossing");
+      altT = st === "CLEAR" ? altT + w.dt : 0;
+      if (altT > best) best = altT;
+    };
+    // the proven bloodless choreography (probe-verified, deterministic):
+    // one warning shell on the dry south apron breaks the main body — the
+    // crews walk the sheet (divergence #6) and exit over the fords — then
+    // an east-bank drive parks SHORT of the spit so the fear bubble alone
+    // walks the east column out. No hull ever touches the sheet or a crew.
+    const driveTo = (tx, tz, thr, tol) => {
+      for (let i = 0; i < 3600; i++) {
+        const dx = tx - b.pos.x, dz = tz - b.pos.z, d = Math.hypot(dx, dz);
+        if (d < tol) return;
+        const yaw = Math.atan2(b.R[6], b.R[8]);
+        let err = Math.atan2(dx, dz) - yaw;
+        while (err > Math.PI) err -= 2 * Math.PI;
+        while (err < -Math.PI) err += 2 * Math.PI;
+        w.control.steer = Math.max(-1, Math.min(1, err * 2));
+        w.control.throttle = Math.abs(err) > 1.2 ? 0.25 : thr;
+        w.control.brake = false;
+        w.events.length = 0; stepWorld(w); watch();
+      }
+    };
+    const holdS = (sec) => {
+      w.control.throttle = 0; w.control.steer = 0; w.control.brake = true;
+      for (let i = 0; i < sec * 120; i++) { w.events.length = 0; stepWorld(w); watch(); if (best >= spec.contract.alt.holdS) return; }
+    };
+    park(w, 0, 2);
+    bisonFire(w, { x: -5, z: 14 }); // warning shell into the apron dirt, 7m+ from every crew
+    holdS(12);
+    driveTo(10, 8, 0.5, 2);         // east-bank lane, never near the sheet
+    driveTo(13, 17, 0.3, 1.2);      // park short of the spit
+    holdS(14);
+    driveTo(12.5, 21, 0.2, 1.0);    // creep north for the far straggler
+    holdS(45);
+    ok("AC-04: the herd disperses the detail without a kill", !voided && best >= spec.contract.alt.holdS, `hold ${best.toFixed(1)}s, ${crew(w).length}/8 alive${voided ? ", VOIDED" : ""}`);
+  }
+
+  // restock restages the detail on the sheet (fresh world: the ice-aware
+  // floor must apply to respawns too)
+  {
+    const w = buildScenario(spec, { shelters: true });
+    w.pg.respawnGroup("crossing");
+    ok("AC-04: restock restages the detail on the sheet", crew(w).length === 8 && crew(w).every((u) => u.pos.y > 1.6));
+  }
+
+  // outcome-split evidence: fulfilled files the survey lines, deviation files
+  // only the written-off-in-place line
+  const mkKills = [{ type: "kill", cause: "DROWN", attacker: "player", group: "crossing", t: 5 }];
+  const ful = composeAAR({ contract: spec.contract, events: mkKills, elapsed: 30, seed: 7 }).filter((l) => l.startsWith("ATTACHMENT "));
+  const dev = composeAAR({ contract: spec.contract, events: [], elapsed: 30, seed: 7, outcome: "UNFULFILLED — DEVIATION" }).filter((l) => l.startsWith("ATTACHMENT "));
+  ok("AC-04: fulfilled report files the survey attachments", ful.length === 3 && ful.every((l) => !l.includes("written off")));
+  ok("AC-04: deviation report files only the write-off", dev.length === 1 && dev[0] === "ATTACHMENT A · Detail dispersed. Crossing intact. Throughput at time of survey: zero. Recovery uneconomic; written off in place.");
 }
 
 if (fails.length) {

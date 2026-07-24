@@ -5,7 +5,7 @@
 // put a >600kg body inside a blast — so THIS file is the behavior lock for
 // the diverged paths. If a change breaks these asserts, it changes how the
 // tank rights or takes hits, and that is a design decision, not noise.
-import { buildProvingGrounds, stepWorld, thawPool, recoverBison, explode, worldHash, bisonFire } from "../src/engine/core.js";
+import { buildProvingGrounds, stepWorld, thawPool, recoverBison, explode, worldHash, bisonFire, freezePool } from "../src/engine/core.js";
 
 const fails = [];
 const ok = (name, cond, detail = "") => {
@@ -119,6 +119,34 @@ const RAMP = { x: 0, z: 17.5 };
   }
   ok("shells damage trucks", truck.hp < hp0, `hp ${hp0} -> ${truck.hp}`);
   ok("a truck dies to sustained shellfire with a kill event", !truck.alive && !!died, died ? `cause=${died.cause}` : "no kill event");
+}
+
+// --- units walk on ice (divergence #6a-d: body-standing grounds; the demo
+// grounded terrain contact only, so a man on the frozen sheet was flagged
+// airborne forever and deaf to every panic impulse)
+{
+  const world = buildProvingGrounds(1234);
+  freezePool(world);
+  const u = (() => {
+    // stand a conscript mid-sheet the way the thin_ice trial does
+    for (const b of world.bodies) if (b.kind === "unit" && b.alive) {
+      b.pos.x = 1; b.pos.z = 27; b.pos.y = 1.132 + b.hy;
+      b.v.x = b.v.y = b.v.z = 0;
+      return b;
+    }
+  })();
+  for (let i = 0; i < 240; i++) stepWorld(world); // settle on the plates
+  const x0 = u.pos.x, z0 = u.pos.z;
+  world.scare = { x: 1, z: 20, t: world.t }; // panic from the south lip
+  let moved = 0;
+  for (let i = 0; i < 360; i++) {
+    stepWorld(world);
+    if (world.t - world.scare.t < 1.4) world.scare.t = world.t - 0.1; // sustained scare
+    const d = Math.hypot(u.pos.x - x0, u.pos.z - z0);
+    if (d > moved) moved = d;
+  }
+  ok("a scared man on the frozen sheet actually runs", moved > 2, `moved ${moved.toFixed(1)}m`);
+  ok("and survives his own footing", u.alive);
 }
 
 if (fails.length) {

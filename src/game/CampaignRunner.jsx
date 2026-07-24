@@ -1160,6 +1160,13 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
               <div style={{ fontSize: isTouch ? 11 : 10, letterSpacing: 2, opacity: 0.7 }}>WORK ORDER</div>
               <div style={{ color: "#ffd27a", letterSpacing: 1, marginTop: 3, fontSize: isTouch ? 16 : 13 }}>{hud.brief.title}</div>
               <div style={{ fontSize: isTouch ? 14 : 12, opacity: 0.92, marginTop: 7, lineHeight: 1.55, minHeight: "3.1em" }}><Typed text={hud.brief.directive} /></div>
+              {spec.contract.struck && (
+                // a procedure line the bureau printed and then struck out —
+                // the strike is the message; who struck it goes unsaid
+                <div data-struck style={{ fontSize: isTouch ? 12 : 10.5, marginTop: 8, color: "#8b93a0", letterSpacing: 1 }}>
+                  <span style={{ textDecoration: "line-through", textDecorationColor: "#a63c3c", textDecorationThickness: "2px" }}>{spec.contract.struck}</span>
+                </div>
+              )}
               <button data-brief-ack style={{ ...P.btn, marginTop: 12, width: "100%", borderColor: "#8a5a1c", letterSpacing: 2 }} onClick={ack}>ACKNOWLEDGE</button>
             </div>
           </div>

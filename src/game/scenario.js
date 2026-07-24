@@ -149,10 +149,19 @@ const BUILDERS = {
   },
 };
 
-function spawnSquad(world, field, s) {
+function spawnSquad(world, field, s, ice) {
   for (let i = 0; i < s.nx; i++) for (let j = 0; j < s.nz; j++) {
     const x = s.x0 + i * s.dx, z = s.z0 + j * s.dz;
-    const u = addBody(world, { kind: "unit", team: 2, group: s.tag, mass: 82, hx: 0.26, hy: s.utype === "gren" ? 0.92 : 0.86, hz: 0.26, x, z, y: groundY(field, x, z, s.utype === "gren" ? 0.92 : 0.86), hp: s.utype === "gren" ? 45 : 30, friction: 0.55 });
+    const hy = s.utype === "gren" ? 0.92 : 0.86;
+    // frozen pool: a squad staged inside the pool rect stands ON the sheet
+    // (the thin_ice spawn floor), not at the bowl floor where field.heightAt
+    // puts it — without this the crossing detail drowns at t=0 and
+    // self-completes the order
+    const onIce = ice && x > ice.x0 && x < ice.x1 && z > ice.z0 && z < ice.z1;
+    // max(): a causeway pad may raise dry ground above the sheet plane
+    // inside the rect — stand on whichever is higher
+    const y = onIce ? Math.max(ice.level - 0.058 + 0.09 + hy, groundY(field, x, z, hy)) : groundY(field, x, z, hy);
+    const u = addBody(world, { kind: "unit", team: 2, group: s.tag, mass: 82, hx: 0.26, hy, hz: 0.26, x, z, y, hp: s.utype === "gren" ? 45 : 30, friction: 0.55 });
     if (s.utype) u.utype = s.utype;
     if (s.brave) u.brave = true;
     // campaign dress: "android" | "human". Drives the renderer's palette and
@@ -229,10 +238,11 @@ export function buildScenario(spec, opts = {}) {
   else buildTerrainSpec(field, spec.terrain);
   const world = makeWorld({ field, seed, water: spec.terrain.pool || null });
   const pg = { covers: [], shelters: [], wallIndex: 0 };
+  const ice = spec.terrain.freeze && spec.terrain.pool ? spec.terrain.pool : null;
   const p = spec.player;
   const bison = addBody(world, { kind: "vehicle", team: 1, driver: "player", mass: 3800, hx: 2.2, hy: 0.95, hz: 3.3, x: p.x, z: p.z, y: groundY(field, p.x, p.z, 0.95), hp: 1e9, friction: 0.85, q: heading(null, p.yaw || 0) });
   world.bisonId = bison.id;
-  for (const s of spec.squads || []) spawnSquad(world, field, s);
+  for (const s of spec.squads || []) spawnSquad(world, field, s, ice);
   for (const v of spec.vehicles || []) VEHICLES[v.kind](world, field, v);
   for (const pf of spec.prefabs || []) BUILDERS[pf.type](world, field, pg, pf);
   const removeGroup = (pred) => {
@@ -243,7 +253,7 @@ export function buildScenario(spec, opts = {}) {
   };
   const spawnSquadByTag = (tag) => {
     const s = (spec.squads || []).find((q) => q.tag === tag);
-    if (s) spawnSquad(world, field, s);
+    if (s) spawnSquad(world, field, s, ice);
   };
   // PARITY FINDING: the demo collects shelter metadata but never exposes it —
   // world.pg carries no `shelters` key, so the engine's house-shelter seek is
@@ -255,7 +265,7 @@ export function buildScenario(spec, opts = {}) {
     ...(opts.shelters ? { shelters: pg.shelters } : {}),
     respawnSquads() {
       removeGroup((b) => b.kind === "unit" || b.kind === "truck");
-      for (const s of spec.squads || []) spawnSquad(world, field, s);
+      for (const s of spec.squads || []) spawnSquad(world, field, s, ice);
       for (const v of spec.vehicles || []) if (v.kind === "truck") VEHICLES.truck(world, field, v);
     },
     respawnSquad(tag) { removeGroup((b) => b.kind === "unit" && b.group === tag); spawnSquadByTag(tag); },
@@ -264,7 +274,7 @@ export function buildScenario(spec, opts = {}) {
     // Wrecked vehicles keep their group, so the sweep clears them too.
     respawnGroup(tag) {
       removeGroup((b) => b.group === tag && (b.kind === "unit" || b.kind === "vehicle" || b.kind === "truck" || b.kind === "wreck"));
-      for (const s of spec.squads || []) if (s.tag === tag) spawnSquad(world, field, s);
+      for (const s of spec.squads || []) if (s.tag === tag) spawnSquad(world, field, s, ice);
       for (const v of spec.vehicles || []) if ((v.group || (v.kind === "truck" ? "convoy" : "scout")) === tag) VEHICLES[v.kind](world, field, v);
     },
     respawnScouts() {
