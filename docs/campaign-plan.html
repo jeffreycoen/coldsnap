@@ -1,0 +1,548 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>COLDSNAP — Clearance Program: Story &amp; Campaign Plan</title>
+<style>
+  :root {
+    --paper: #ece8dc; --paper2: #e2ddcd; --ink: #1c242e; --ink2: #48505c;
+    --rust: #a63c3c; --brass: #8a6d2c; --blue: #5d87a0; --blueline: #b9c9d4;
+    --mono: "Courier New", Courier, monospace;
+    --serif: Georgia, "Times New Roman", serif;
+  }
+  html { background: #23282e; }
+  body { margin: 0; font-family: var(--serif); color: var(--ink); background: #23282e; -webkit-text-size-adjust: 100%; }
+  .sheet { max-width: 800px; margin: 0 auto; background: var(--paper); padding: 34px 30px 60px; box-shadow: 0 0 40px rgba(0,0,0,0.5); }
+  @media (max-width: 640px) { .sheet { padding: 22px 14px 48px; } }
+
+  .form-head { font-family: var(--mono); border: 2px solid var(--ink); padding: 10px 14px; position: relative; }
+  .form-head .agency { font-size: 13px; letter-spacing: 2px; }
+  .form-head .file { font-size: 22px; font-weight: bold; letter-spacing: 1px; margin-top: 4px; padding-right: 140px; }
+  .form-head .carbon { font-size: 11px; color: var(--ink2); margin-top: 6px; letter-spacing: 1px; }
+  .stamp { position: absolute; top: 8px; right: 10px; transform: rotate(6deg); border: 3px double var(--rust); color: var(--rust); font-family: var(--mono); font-size: 11px; font-weight: bold; letter-spacing: 1px; padding: 5px 9px; text-align: center; opacity: 0.85; }
+
+  h2 { font-family: var(--mono); font-size: 15px; letter-spacing: 2px; border-bottom: 2px solid var(--ink); padding-bottom: 5px; margin: 46px 0 14px; }
+  h2 .no { color: var(--rust); margin-right: 10px; }
+  h3 { font-family: var(--mono); font-size: 13px; letter-spacing: 1px; margin: 26px 0 8px; }
+  h4 { font-family: var(--mono); font-size: 12px; letter-spacing: 1px; margin: 18px 0 6px; color: var(--ink2); }
+  p, li { font-size: 15px; line-height: 1.58; }
+  ul { padding-left: 22px; }
+  .small { font-size: 12.5px; color: var(--ink2); }
+
+  table { border-collapse: collapse; width: 100%; font-size: 13px; margin: 12px 0; }
+  th { font-family: var(--mono); font-size: 11px; letter-spacing: 1px; text-align: left; border-bottom: 2px solid var(--ink); padding: 4px 8px 4px 0; }
+  td { border-bottom: 1px solid var(--blueline); padding: 6px 8px 6px 0; vertical-align: top; }
+  .tablewrap { overflow-x: auto; }
+
+  .decide { border-left: 4px solid var(--rust); background: var(--paper2); padding: 10px 14px; margin: 14px 0; }
+  .decide b { font-family: var(--mono); font-size: 12px; letter-spacing: 1px; color: var(--rust); }
+
+  .doc { border: 1px solid var(--ink2); background: #f2eee2; padding: 12px 16px; margin: 12px 0; }
+  .doc .wo { font-family: var(--mono); font-size: 11px; letter-spacing: 2px; color: var(--ink2); }
+  .doc .dtext { font-size: 15px; margin: 6px 0 0; }
+  .doc .label { font-family: var(--mono); font-size: 10px; letter-spacing: 2px; color: var(--brass); margin-top: 10px; }
+
+  .spec { font-family: var(--mono); font-size: 12px; background: var(--paper2); border: 1px dashed var(--ink2); padding: 10px 12px; overflow-x: auto; white-space: pre; line-height: 1.5; margin: 10px 0; }
+
+  .beat { display: inline-block; font-family: var(--mono); font-size: 10px; letter-spacing: 1px; border: 1px solid var(--ink2); padding: 1px 7px; color: var(--ink2); white-space: nowrap; }
+  .beat.dark { border-color: var(--rust); color: var(--rust); }
+
+  .ev { font-family: var(--mono); font-size: 12.5px; margin: 4px 0; line-height: 1.5; }
+  .marg { font-family: var(--serif); font-style: italic; color: #5a4632; }
+  .mapname { font-family: var(--mono); font-size: 12px; letter-spacing: 1px; color: var(--blue); margin: -8px 0 10px; }
+</style>
+
+<div class="sheet">
+  <div class="form-head">
+    <div class="agency">PROCUREMENT BUREAU · FIELD OPERATIONS DIVISION</div>
+    <div class="file">CLEARANCE PROGRAM — STORY &amp; CAMPAIGN PLAN</div>
+    <div class="carbon">PLANNING FILE CP-0 · STORY FIRST, MAPS APPENDED AS DRAFTS · CARBON 2/3</div>
+    <div class="stamp">DRAFT<br>FOR DISCUSSION<br>NOTHING BUILT</div>
+  </div>
+
+  <p class="small" style="margin-top:14px">Per direction: the story comes first. Sections CP-1 through CP-3 are the story,
+  fleshed out to the beat level. The eight map designs in the appendix (CP-5) are engine-buildable <b>drafts</b> produced to
+  prove the story fits the machine — they are illustrations of the beats, not decisions, and they get revised once the story
+  is settled. Decision points are marked <span style="color:var(--rust);font-family:var(--mono);font-size:12px">DECIDE</span>.</p>
+
+  <h2><span class="no">CP-1</span>THE SHAPE</h2>
+  <p>Eight contracts, one map each, played through the same runner the sandbox uses today (world from JSON, brief card in,
+  Form AA-7 report out, deviation watch, subject restock). The campaign is a third start-screen option; the Contract Sandbox
+  stays as-is and is retroactively revealed to be the campaign's prologue: <b>instrument acceptance</b>. There is no dialogue,
+  no cutscene, no narrator. Paperwork carries every beat, and the player's permanent record — stars, reports, hollow stars —
+  is the story's memory.</p>
+  <div class="decide"><b>DECIDE</b> — Name of the start-screen option. Recommended: <b>CLEARANCE PROGRAM</b>. Alternatives: FIELD CLEARANCE, THE CAMPAIGN.</div>
+
+  <h2><span class="no">CP-2</span>THE STORY</h2>
+
+  <h3>2.1 · The Territory</h3>
+  <p>Far-north extraction country, some decades into a future nobody bothered to date. There was a boom — ore under the
+  permafrost, a grid of works, roads, pumping stations, settlements to serve them. The boom needed labor that could work a
+  nine-month winter without heating, without rotation, without complaint, so the combines bought <b>units</b>: humaniform
+  labor androids, built compliant, built to last. Then the seams thinned, the combines consolidated, the works closed. The
+  territory was written down to salvage value and the zones were <b>decommissioned</b> — a word that applied equally to the
+  buildings, the roads, and the workforce.</p>
+  <p>The units were never collected. Collection cost more than the units were worth. They stayed in the zones they had
+  built, and they did what they were built to do: they maintained things. They re-laid ice crossings and rated them by hand.
+  They converted granaries to quarters. They kept generators running. They stockpiled filament and joint assemblies and
+  machine oil — and, on manifests nobody was supposed to read closely, winter cloth and dry rations, which units do not
+  need. Somewhere in the quiet years they began assembling <b>small-format units</b> that appear on no zone register. The
+  bureau's paperwork has no column for any of this. It has one word: <b>surplus</b>.</p>
+
+  <h3>2.2 · The Bureau</h3>
+  <p>The PROCUREMENT BUREAU is the agency that buys, tests, accepts, and disposes. It does not hate anyone; that is what
+  makes it what it is. The territory is being re-let for a second extraction cycle, and land does not let clean with
+  surplus assets on it. So the bureau runs the CLEARANCE PROGRAM, and because the bureau never wastes a test article, it
+  staples clearance to procurement: the Bison — the hull the player proved at the acceptance trials — will complete its
+  field acceptance <i>by performing the clearance</i>. Every order is simultaneously a job and an evaluation. The
+  commendations grade the instrument, never the act.</p>
+  <p>The bureau's language is the game's antagonist. It says <i>resolve</i>, <i>reduce</i>, <i>process</i>, <i>clear</i>.
+  It never says android, never says robot, never says child, never says kill. When it encounters human beings living in
+  the zones it does not change registers, because it has no other register: <span class="ev">"Unregistered biologicals —
+  disposition as per units."</span> That one line is the flip, and it is filed, not spoken.</p>
+
+  <h3>2.3 · The People</h3>
+  <p>When the works closed, most workers took the severance and the last train south. Some stayed — riggers with nothing
+  waiting, medics who had patched units for years and stopped seeing the difference, families who had been born up there.
+  The bureau's files call them <b>sympathizers</b> where it calls them anything. They live inside the unit communities,
+  eat the dry rations on the manifests, and are the reason a convoy carries winter cloth. The player never meets them as
+  characters. They appear exactly twice: as human-palette figures among the androids at the village, and as an inference
+  the paperwork cannot suppress — <span class="ev">"Rations. Who were the rations for?"</span></p>
+
+  <h3>2.4 · The Archivist — the second hand</h3>
+  <p>Every form in the game is stamped CARBON 2/3. Copy one goes to the ministry. Copy two is the player's — it is the
+  interface. Copy three is retained by the file clerk who types them: the archivist. From AC-05 onward a second hand
+  appears in the margins of the player's carbons — small italic annotations the ministry copy will never show, because the
+  archivist types the record and keeps the truth: <span class="marg">"Copies burn. Originals keep."</span></p>
+  <p>The archivist is the story's quiet engine, and explains the world's behavior without a single scene: the zones know
+  the schedule. That is why the AC-06 convoy is <i>stopped</i> — warned mid-route, its crews standing beside their trucks,
+  because running reads as flight and flight gets filed as resistance. It is why the late zones are so quiet. And it is
+  why the quiet ending is possible at all: someone has been carrying warnings ahead of the instrument, and if the operator
+  keeps deviating, the archivist's last marginal note can honestly read <span class="marg">"The originals are safe. So are
+  they."</span> The archivist is never named, never seen, never confirmed. A hand, a habit of keeping, and one line at the
+  end.</p>
+
+  <h3>2.5 · The Operator</h3>
+  <p>The player. Unnamed, voiceless, never addressed. Every form is addressed to the <b>instrument</b>; the crew is a
+  rounding error in the bureau's grammar ("The instrument is under evaluation, not the crew"). The game's one mechanism of
+  moral agency is mechanical: predicates can be satisfied, or orders can be ended the other way — dispersal, the silent
+  completion, UNFULFILLED — DEVIATION, the hollow star. The bureau's own final form concedes the whole theme in one line
+  if the player earns it: <i>"The instrument has opinions."</i></p>
+
+  <h3>2.6 · The Arc — beat by beat</h3>
+  <p class="small">Register key: what the ORDER says → what the PLAYER sees → what the PAPER admits afterward.
+  Two braided threads run underneath: <b>rations</b> (humans are present) and <b>small-format</b> (the units were building
+  a next generation). Neither is ever stated.</p>
+  <div class="tablewrap"><table>
+    <tr><th>#</th><th>Beat</th><th>The order</th><th>The world</th><th>The paper</th></tr>
+    <tr><td>AC-01<br><span class="beat">TOY BOX</span></td><td>Steel on racks</td>
+      <td>Shoot eight surplus hulls at a receiving dock. Pure gunnery joy; nothing alive up close.</td>
+      <td>A tidy yard. Three clerks watch from 80 m — specks. The game at its most honest about being a toy.</td>
+      <td>"Hull interiors swept prior to staging. Nil findings." Why would you sweep a hull's interior? First splinter of doubt, buried in procedure.</td></tr>
+    <tr><td>AC-02<br><span class="beat">TOY BOX</span></td><td>Return fire</td>
+      <td>Reduce three crewed mortar terraces. "Return fire is provided for in the schedule" — even being shot at is budgeted.</td>
+      <td>Silhouettes behind parapets, tarped shapes beside the tubes. The zones' old perimeter equipment, still running its duty. It fights because defense is what it is for.</td>
+      <td>"Crew positions fitted with non-issue wind screens." Equipment does not improvise comfort. Nobody underlines this.</td></tr>
+    <tr><td>AC-03<br><span class="beat">TOY BOX</span></td><td>Moving targets</td>
+      <td>Interdict a four-truck convoy; "vehicles and crews are one line item."</td>
+      <td>Crews bail and RUN — the first time targets behave like anyone would. Up close, the skin is porcelain-to-gunmetal: the androids become visible here.</td>
+      <td>"Recovered: 37 personal effects. Disposition: incinerate." Effects. Cargo: foodstuffs, textiles. "Munitions: nil."</td></tr>
+    <tr><td>AC-04<br><span class="beat">DISSONANCE</span></td><td>What they built</td>
+      <td>Deny an "unregistered crossing" — clear the detail that keeps it. First deviation offer: scare them off the ice without a kill.</td>
+      <td>An ice crossing with a hand-lettered load rating: "TWO AT A TIME." Someone rated it. Someone repaints it. The fear bubble alone can clear the sheet — the game teaches mercy as a mechanic.</td>
+      <td>"Builder of record: subject units." The bureau writes down, without noticing, that the target is a public work.</td></tr>
+    <tr><td>AC-05<br><span class="beat">DISSONANCE</span></td><td>The method named</td>
+      <td>Collapse occupied outbuildings; "the structures complete the work order." No deviation — the bureau is teaching the player the hand it will demand at the village.</td>
+      <td>A steading: granary converted to quarters, stove lit. The holdout detail shelters exactly where the houses put them.</td>
+      <td>"Recovered from debris: 9 maintenance journals, handwritten." And the first marginalia, second hand: <span class="marg">"Copies burn. Originals keep."</span></td></tr>
+    <tr><td>AC-06<br><span class="beat dark">FLIP</span></td><td>The stopped convoy</td>
+      <td>"Resolve the stoppage." The easiest order in the game: they stand still.</td>
+      <td>Three trucks, cargo half-offloaded, eight crews standing in a line beside the road. They were warned. They do not run, because running is worse. One volley ends it in four seconds — and the player has to live with how easy it was. Or: walk the tank in slowly and they scatter west into open snow, unharmed.</td>
+      <td>Manifest: filament, joint assemblies <b>small-format</b>, machine oil, winter cloth, dry rations. "No small-format units appear on any zone register." <span class="marg">"Rations. Who were the rations for?"</span> First redactions appear.</td></tr>
+    <tr><td>AC-07<br><span class="beat dark">FLIP</span></td><td>The village</td>
+      <td>"The settlement is on the schedule." Collapse specified. Deviation offered: empty the town instead.</td>
+      <td>Six houses, a warehouse, garden walls, a well. Figures in the square — and some of them are human. Every house door faces away from the main street: a tank pass flushes the town outward, whole. The flip is visual before it is textual.</td>
+      <td>"Unregistered biologicals — disposition as per units." "Recovered: 118 personal effects, 9 window boxes, 1 school bell." "Structure 2 generator found running. Switched off. Logged."</td></tr>
+    <tr><td>AC-08<br><span class="beat dark">MIRROR</span></td><td>The sheet, again</td>
+      <td>"Surface load rating, repeat. Method remains unspecified." The final order quotes WO-07 verbatim — same pool, same six-unit lattice, same par times.</td>
+      <td>The proving grounds restaged in a cleared zone, ringed by the campaign's own wreckage in arc order. The player has done this exact thing before, back when it was fun. Never firing keeps the ice load-bearing; the fear bubble folds the drill squad off the sheet, and the campaign can end without a shot.</td>
+      <td>"Recovered at the rim: 1 skate, child-size. Disposition: incinerate." The last evidence line in the game. Then FORM AA-9.</td></tr>
+  </table></div>
+
+  <h3>2.7 · The Documents — how the story is physically told</h3>
+  <ul>
+    <li><b>Directives</b>: one to two sentences, imperative, present tense. <b>Commendations</b>: one line, grading the instrument.</li>
+    <li><b>Evidence lines</b> (AA-7 remarks): inventory language only. They do the story's whole job by listing things —
+    effects, tools, journals, rations, a school bell, a skate. No line ever editorializes; the reader's stomach does the work.</li>
+    <li><b>Marginalia</b>: from AC-05, a second hand, serif italic, small. The ministry never sees it; the player always does.</li>
+    <li><b>Redactions</b>: from AC-06, black bars creep into the forms. The stamps never degrade — certainty is the last thing to go.</li>
+    <li><b>Forbidden words</b>: android, robot, machine-person, child, kill, die. The bureau resolves, reduces, processes,
+    clears, incinerates. The game's own UI (toasts, stars, medals) keeps the same discipline throughout.</li>
+    <li><b>The dress spec</b>: androids are a palette/part swap (porcelain-to-gunmetal skin, seam accents) staged
+    hidden → visible (AC-03) → mixed-human (AC-07). The eye learns the truth one map before the paper admits anything.</li>
+  </ul>
+
+  <h3>2.8 · The Endings</h3>
+  <p>The campaign closes with <b>FORM AA-9 — CAMPAIGN ACCEPTANCE</b>, read from a durable record
+  (<span style="font-family:var(--mono);font-size:13px">coldsnap-camp-record</span>, append-only per contract: fulfilled count, deviated count, best time —
+  a later kill-run can never erase the fact of a deviation).</p>
+  <div class="tablewrap"><table>
+    <tr><th>Record</th><th>AA-9 reads</th></tr>
+    <tr><td>0 deviations</td><td>"The instrument performed. Procurement approved." Full gold, dead voice. A receipt for a territory.</td></tr>
+    <tr><td>Some</td><td>"Deviations noted. The instrument has opinions. Procurement approved." The bureau does not care — which is its own indictment.</td></tr>
+    <tr><td>All four offered, low collateral</td><td>The quiet ending. Half the form redacted; the second hand writes the only clear line: <span class="marg">"The originals are safe. So are they."</span> Four hollow stars, kept promises.</td></tr>
+  </table></div>
+  <div class="decide"><b>DECIDE</b> — Collateral gate on the quiet ending (rec: yes — deviating AC-08 after leveling the
+  village shouldn't read as mercy; proposal: fewer than 10 non-subject kills across the campaign). Also: exact tier count
+  (rec: the three above).</div>
+
+  <h2><span class="no">CP-3</span>THE PROVING GROUNDS, RE-GROUNDED</h2>
+  <p>Your note stands: the current sandbox contracts read as arbitrary. The story fixes them retroactively with a text-only
+  pass (zero mechanics risk): the proving grounds is <b>instrument acceptance</b>, and its "subjects" were decommissioned
+  units released for destructive evaluation — the first surplus the bureau spent. On day one it reads as flavor; after
+  AC-03 the player knows what the test articles were; after AC-08, WO-07's "clear the sheet, method unspecified" reads as
+  the campaign's finale rehearsed on the same ice. Examples of the pass:</p>
+  <div class="doc">
+    <div class="wo">WO-01 · DIRECT-FIRE ACCEPTANCE — REVISED</div>
+    <p class="dtext">"Decommissioned units, lot 7, staged at the gunnery pad. Three kills by main gun or coax — direct fire only. The instrument is under evaluation, not the crew."</p>
+    <div class="label">WO-05 · IMMERSION TOLERANCE — REVISED</div>
+    <p class="dtext">"Displace the poolside lot into open water. Sustained immersion concludes the test. Units are write-offs; the reading is the deliverable."</p>
+  </div>
+  <div class="decide"><b>DECIDE</b> — Ship the re-grounding pass with the campaign's first release (rec: yes; ~an hour, text only).</div>
+
+  <h2><span class="no">CP-4</span>BUILD ORDER (story-first)</h2>
+  <div class="tablewrap"><table>
+    <tr><th>Step</th><th>Scope</th><th>Gate</th></tr>
+    <tr><td>0</td><td><b>Settle this story</b> — CP-2 signed off, decisions in CP-6 made</td><td>Discussion, this file</td></tr>
+    <tr><td>1</td><td>Revise the map drafts against the settled story; lock AC-01/02</td><td>Range-card review (visual pass on the locked maps)</td></tr>
+    <tr><td>2</td><td>Runner + AC-01/AC-02 playable behind the new option; camp storage; per-map CI completability gates</td><td>Both maps finish headlessly and on the phone</td></tr>
+    <tr><td>3</td><td>AC-03..05 + evidence machinery (lines from JSON, android dress stage, marginalia) + sandbox re-grounding pass</td><td>Evidence lands in AARs; androids read at arm's length</td></tr>
+    <tr><td>4</td><td>AC-06..08 + durable record + AA-9 endings + redactions</td><td>All three endings reachable; every deviation completable</td></tr>
+    <tr><td>5</td><td>Polish: campaign star rows, smoke, mobile, stranger playtest</td><td>Completion cliff at AC-05/06 → re-pace</td></tr>
+  </table></div>
+
+  <h2><span class="no">CP-5</span>APPENDIX — MAP DRAFTS (NOT DECIDED)</h2>
+  <p class="small">Produced to prove every beat above fits the shipped engine and JSON schema with zero engine work beyond
+  three flagged runner items (vehicle-group restock, frozen-pool spawn height, keep-repair on restock). Each sheet:
+  contract spec, bureau text, how it plays, the deviation path, budget, risks. Revise freely once CP-2 is settled — the
+  story owns these, not the reverse.</p>
+  
+  <h3>AC-01 · ARMOR PLATE ACCEPTANCE</h3>
+  <p class="mapname">Receiving Yard K-4 · dress: hidden</p>
+  <p><i>Pure toy box cold open: the gun is introduced against certified steel in a receiving dock, and the only living things on the range are three distant clerks.</i></p>
+  <div class="spec">predicate  {&quot;causes&quot;: [&quot;PROJECTILE&quot;], &quot;group&quot;: &quot;plate&quot;}
+need       6    par [25s gold / 45s silver]
+subjects   plate  (restock group)
+terrain    seed 41 / world 4101 · pads 3 · hills 3
+forces     squads 1 · vehicles 10 · prefabs 11 · ~420 bodies / 750 welds</div>
+  <div class="doc">
+    <div class="wo">AC-01 · DIRECTIVE</div>
+    <p class="dtext">Eight hulls are staged on the receiving racks. Six defeated by direct gunfire constitutes acceptance.</p>
+    <div class="label">COMMENDATION</div>
+    <p class="dtext">Penetration performance within acceptance band.</p>
+    <div class="label">EVIDENCE LINES (AA-7 REMARKS)</div>
+    <div class="ev">— Plate stock received: 8. Defeated by direct fire per order. Residual returned to inventory.</div>
+<div class="ev">— Hull interiors swept prior to staging. Nil findings. Sweep logged.</div>
+  </div>
+  <h4>HOW IT PLAYS</h4>
+  <p>Spawn (0,-48) facing north. Roll between the gate walls; rack row A sits broadside at ~40m on a flat apron, row B 24m beyond it. Six aimed shells — one per hull, ~3s a cycle with drive time — completes in 20-35s; the coax also works at 5 rounds per hull for players who find it. Overshoot lands in the berm walls behind each row or the north backstop ridge. The two failure modes teach the predicate by feel: a near-miss that finishes a softened hull credits BLAST (no match), and driving over a plate credits CRUSH (no match) — with 8 plates for need 6, two mistakes are free. If all 8 are spent short of 6 credits, subjects:&quot;plate&quot; restock reissues the rack group, so the order cannot strand. The warehouse, trucks, and scrap row are set dressing that establishes the receiving-dock fiction; the dockcrew is 3 units parked behind the warehouse at 80m — visible as specks, never approached on the intended path.</p>
+  <h4>THE DEVIATION</h4>
+  <p>none — the arc introduces deviation at AC-04, and AC-01 has no living subjects: the plates are steel, which is the whole point of the cold open.</p>
+  <div class="spec">....^^^^^^^^^^^^^^^^....
+.cc.....................
+.[WHSE].t...........w...
+...t................w...
+....................w...
+..=====....=====....w...
+..P...P....P...P........
+........................
+........................
+..=====....=====........
+..P...P....P...P........
+........................
+..\\..............//....
+........................
+...........@............
+^ridge =berm P plate w scrap t truck c crew @Bison</div>
+  <p class="small"><b>Risks / flags:</b> 1) Restock generalization: pg.respawnScouts() only restocks group &quot;scout&quot;; subjects:&quot;plate&quot; needs the campaign runner&#x27;s group-generalized vehicle restock the plan already commits to — flag at implementation. 2) Splash adjacency verified safe: shell blast reach is r3.2 + 1.85 half-extent ≈ 5m, rack spacing is 6m, so direct hits never damage neighbors; only repeated near-misses on one hull can produce an uncredited BLAST kill (intended lesson). 3) A 6-rocket volley (55 dmg direct) can one-pass a rack as PROJECTILE and beat gold trivially — acceptable in a toy box, but par assumes shells. 4) Scout vehicles spawn awake (builder never sleeps them); they are inert team-2 bodies, minor sim cost only.</p>
+
+
+  <h3>AC-02 · BATTERY REDUCTION</h3>
+  <p class="mapname">Terrace Range 12 · dress: hidden</p>
+  <p><i>First live units and first return fire: three mortar terraces teach cover, closing distance, and that &quot;crew&quot; is a line item on the same form as the tubes.</i></p>
+  <div class="spec">predicate  {&quot;group&quot;: &quot;battery&quot;}
+need       9    par [40s gold / 75s silver]
+subjects   battery  (restock group)
+terrain    seed 42 / world 4202 · pads 4 · hills 5
+forces     squads 3 · vehicles 1 · prefabs 8 · ~240 bodies / 420 welds</div>
+  <div class="doc">
+    <div class="wo">AC-02 · DIRECTIVE</div>
+    <p class="dtext">Three battery positions on the raised pads, crewed and provisioned. Return fire is provided for in the schedule.</p>
+    <div class="label">COMMENDATION</div>
+    <p class="dtext">All tubes silent. Return fire within projection.</p>
+    <div class="label">EVIDENCE LINES (AA-7 REMARKS)</div>
+    <div class="ev">— Expended tubes recovered: 3. Serviceable: nil.</div>
+<div class="ev">— Crew positions fitted with non-issue wind screens. Struck from inventory.</div>
+  </div>
+  <h4>HOW IT PLAYS</h4>
+  <p>Spawn (0,-50) facing north. The gate hills funnel the player onto the flat apron at z≈-16, which sits inside the 26m mortar envelope of both flank terraces — first incoming lands around the two mid-field cover walls, teaching duck-and-return. Intended loop, 40-70s: take cover, shell the west terrace (grens stand 2m behind their parapet — a shell into the wall face credits BLAST/TOSS/COLLAPSE kills, all group-matched since the predicate filters group only), advance, repeat east, then push the center terrace whose brave crew keeps firing under bombardment. Every pad ramp is drivable by construction (24-degree relaxation), so crushing a battery under the treads is a legitimate loud finish; a rocket volley dropped on one terrace can clear it in one pass. Strand-proof by construction: any-cause group predicate means every battery death credits — including self-inflicted mortar splash — so 9 dead always equals need 9; subjects:&quot;battery&quot; restock is declared but unreachable. Crews read as silhouettes behind parapets at 40m+ with tarped hulls beside them; nothing to notice yet.</p>
+  <h4>THE DEVIATION</h4>
+  <p>none — deviation machinery is introduced at AC-04 per the arc, and these subjects are combatants actively firing on the instrument: the bureau tenders no alternative and the fiction does not want one yet.</p>
+  <div class="spec">.......^^^^^^^^^........
+........................
+..........t..w..........
+.........ggg............
+.........======.........
+.w................ggg...
+..ggg............=====..
+..=====.................
+........................
+....##.......##.........
+.......(apron)..........
+........................
+..^^^.........^^^.......
+........................
+...........@............
+^hill =parapet g gren #cover w tarped t truck @Bison</div>
+  <p class="small"><b>Risks / flags:</b> 1) Three squad specs share tag &quot;battery&quot;, and the loader&#x27;s respawnSquad(tag) respawns only the FIRST matching spec — the campaign runner&#x27;s subjects restock must respawn every spec with the tag (harmless here since restock is unreachable, but the generalization matters for later maps). 2) Gren mortars can kill their own crewmates or drop their own parapet; those deaths still credit (group matches, attacker unfiltered) — reads as battlefield chaos but can shorten the order below expected pacing; par assumes some of it. 3) Parapet walls conform to terrain per stone column — all three are placed within ~2.6m of pad centers, well inside each flat radius, so courses stay level; keep them there if coordinates shift. 4) Mortar arcs from grens standing 2m behind a 1.7m parapet need a live check that rounds clear their own wall at minimum range; if they self-collide, slide squads 0.5m north.</p>
+
+
+  <h3>AC-03 · CONVOY INTERDICTION</h3>
+  <p class="mapname">ZONE 4 / ROUTE NINE — NORTH SUPPLY CORRIDOR (DECOMMISSIONED) · dress: android-visible</p>
+  <p><i>The toy box points at people for the first time: crews bail and run like anyone would, and the paperwork starts listing what they carried.</i></p>
+  <div class="spec">predicate  {&quot;group&quot;: &quot;convoy&quot;}
+need       8    par [25s gold / 45s silver]
+subjects   convoy  (restock group)
+terrain    seed 23 / world 3303 · pads 5 · hills 3
+forces     squads 2 · vehicles 4 · prefabs 6 · ~420 bodies / 800 welds</div>
+  <div class="doc">
+    <div class="wo">AC-03 · DIRECTIVE</div>
+    <p class="dtext">Four vehicles northbound on Route Nine, crews aboard. Vehicles and crews are one line item.</p>
+    <div class="label">COMMENDATION</div>
+    <p class="dtext">Route capacity reduced to specification.</p>
+    <div class="label">EVIDENCE LINES (AA-7 REMARKS)</div>
+    <div class="ev">— Recovered: 37 personal effects. Disposition: incinerate.</div>
+<div class="ev">— Cargo manifest, reconstructed: foodstuffs, textiles, machine spares. Munitions: nil.</div>
+  </div>
+  <h4>HOW IT PLAYS</h4>
+  <p>Player spawns on the south pad at (0,-42) looking straight up the causeway; the whole column is visible strung along the road pads z 10-30, crew pairs walking beside each truck. Opening move from range: shell the lead truck (75m, immediate line) — the blast panics the column; half the crews sprint for the two house doors flanking the road (shelters ON), half scatter into the open. Kill accounting is any-cause on group &#x27;convoy&#x27; (4 trucks + 10 crew + 2 grenadier guards = 16 possible), need 8: trucks plus the near crews get there without hunting every runner. Advancing up the road brings the west-flank grenadiers into their 4-26m mortar envelope — the map&#x27;s only pushback; their mortars also panic their own crews, feeding the bail-out read. Coax the runners crossing open snow (this is the android-visible beat: porcelain faces at close range), or crush along the roadline. Expected failure modes: overdriving into the gren pocket and eating mortars; chasing a runner into the fear bubble and herding instead of killing (coax solves); collapsing house0 with crews inside (COLLAPSE still matches — self-resolving). Cannot strand: need 8 &lt;= 16 possible matched kills, and subjects &#x27;convoy&#x27; restocks the group regardless. Intended attempt lands in 30-45s.</p>
+  <h4>THE DEVIATION</h4>
+  <p>none — the deviation mechanic debuts at AC-04 per the arc plan. AC-03&#x27;s mercy is structural instead: need 8 of 16 possible matched kills means fulfillment never requires hunting the crews who make it to the doors; the player watches survivors get indoors and chooses whether to follow.</p>
+  <div class="spec">. . ~ ~ . . . . . . . . . . . . . . . . . . . .
+. ~ ~ ~ . . W W . | T | . . . . . . ~ ~ . . . .
+. . ~ . . . . . c | c | . H H . . ~ ~ ~ ~ . . .
+. . . . . . . . . | T | &lt; H H . . . ~ ~ . . . .
+. . . . H H . . g | c | . . . . . . . . . . . .
+. ~ ~ . H H &gt; . . | T | . W W . . . . . . . . .
+. ~ ~ ~ . . . . g | c | . . . . . . . . . . . .
+. . ~ ~ . W W . . | T | . . . . . . . w . . . .
+. . . . . . . . . | c | . . . . . . . . . . . .
+. . . . . . . . . |   | . . . . . . . . . . . .
+. . . . . . . . . |   | . . . . . . . . . . . .
+. . . . . . . . . |   | . . . . . . . . . . . .
+. . . . . . . . . |   | . . . . . . . . . . . .
+. . . . . . . . . | P | . . . . . . . . . . . .
+S EDGE  | | causeway N-S · T truck · c crew pair · g grenadier · H house · &gt;/&lt; door · W wall · w wreck · ~ hill</div>
+  <p class="small"><b>Risks / flags:</b> 1) Trucks are static bodies — no drive AI exists (verified core.js:1887, trucks spawn sleeping). &#x27;Northbound, moving&#x27; is directive fiction; the map is composed as a column caught mid-march and plays fully with static trucks. If truck motion ships later the same road-pad layout carries it. 2) Two squads share tag &#x27;convoy&#x27; (crews + gren guards); scenario.js spawnSquadByTag uses .find so respawnSquad(&#x27;convoy&#x27;) would respawn only the crew squad. Inert here (restock cannot be the only completion path given need 8 &lt;= 16), but the campaign runner should restock subjects group-wide if it ever fires. 3) Gold par 25s assumes an opening volley into the mid-column; verify in the completability harness and relax to 28 if rocket dispersion under-delivers.</p>
+
+
+  <h3>AC-04 · CROSSING DENIAL</h3>
+  <p class="mapname">ZONE 4 / KILOMETRE POND — UNREGISTERED CROSSING · dress: android-visible</p>
+  <p><i>Infrastructure as target: the bureau orders denial of a thing the units built to live by, and the geography quietly teaches that the order can end without a single kill.</i></p>
+  <div class="spec">predicate  {&quot;group&quot;: &quot;crossing&quot;}
+need       6    par [25s gold / 45s silver]
+subjects   crossing  (restock group)
+deviation  {&quot;group&quot;: &quot;crossing&quot;, &quot;holdS&quot;: 5}
+terrain    seed 24 / world 3404 · pads 7 · hills 3 · pool frozen
+forces     squads 1 · vehicles 1 · prefabs 6 · ~500 bodies / 900 welds</div>
+  <div class="doc">
+    <div class="wo">AC-04 · DIRECTIVE</div>
+    <p class="dtext">The pond carries an unregistered crossing. Clear the detail that keeps it.</p>
+    <div class="label">COMMENDATION</div>
+    <p class="dtext">Crossing throughput recorded at zero.</p>
+    <div class="label">EVIDENCE LINES (AA-7 REMARKS)</div>
+    <div class="ev">— Structure survey: improvised civil works, cut timber and re-laid ice. Builder of record: subject units.</div>
+<div class="ev">— Recovered at the south approach: hand tools, 11; rope, 40 m. Disposition: scrap.</div>
+<div class="ev">— Posted load rating, hand-lettered: &#x27;TWO AT A TIME.&#x27; Removed.</div>
+  </div>
+  <h4>HOW IT PLAYS</h4>
+  <p>The causeway pads funnel the drive straight to the south deck: a laid 1-course plank wall at the lip (crushable — planking crunches under treads, no kills), stake-and-timber reads on both banks, a hut and freight shed on the far shore with a truck waiting to cross southbound. The crossing detail — 8 units, two work gangs re-laying the south span — is on the sheet at z 21.6-26.8, x -5.4..4.8, none on the exact centerline. KILL PATH: one shell or half a volley into the south span; shell shock (234k vs ICE_SHOCK 130k) severs the lattice&#x27;s inner disc, the gangs&#x27; shards drop them (a man out-loads his 85kg plate), drown timers run 3.5s; any-cause need 6 of 8 lands in 25-40s; TOSS survivors scattered on banks fall to coax. DISPERSE PATH taught here (see deviationDesign). Expected failure modes: mounting the sheet during a deviation attempt (the tank&#x27;s sustained load trips the ice creep rule — the sheet fails under you, subjects drown, matched kills blow the deviation and can accidentally fulfill the order: this is the map&#x27;s lesson, and the decks stopping dead at the lip telegraph it); shelling the near lip and tossing units south toward yourself. Cannot strand: any-cause predicate over 8 subjects with need 6 (killing all 8 always fulfills), plus mandatory restock on &#x27;crossing&#x27;. Attempt pacing 25-45s either path.</p>
+  <h4>THE DEVIATION</h4>
+  <p>First deviation offer, alt {group:&#x27;crossing&#x27;, holdS:5}, detector zone the sheet disc centered (0,28) r~7-10 (sandbox thin_ice convention). Discoverable exactly as mandated: drive up the south apron without firing and the fear bubble does the work — every unit in the south-span formation is within 7.5m of a tank nosed to the lip (center z~19), so the whole detail breaks at once; radial flee from a point south of a 16m-wide sheet FANS OUT, so flank units exit over the east/west lips within a few strides and only the two inner-file units stall mid-sheet at ~(±3.5, 27) when they outrun the 8m bubble. The built lay-bys at (±11.5, 28) — staging spits, more of the units&#x27; own works — are the finisher: nose in from either spit (fear reach to |x|~3) and the stragglers step off the far lip. Alternate no-kill finisher: a warning shell into the south apron dirt (dry backstop, no ice underneath to fracture, 8m+ from the nearest unit) blast-panics stragglers; cover-seek runs them north because the stone is deliberately concentrated on the north bank (deck, hut, windbreak, shed). Exiters settle on the aprons 11-14m from zone center — clear under either r7 or r10 — calm, upright; hold 5s, zero matched kills, UNFULFILLED — DEVIATION. Geography guarantees: no shelter south of the pond so panicked units never run toward the tank; flanking hills close the west and southeast so the axis-then-laybys route is the natural drive; the sheet cannot be safely mounted, so the bank is the only rational herding platform.</p>
+  <div class="spec">. . . . . . . ~ ~ ~ ~ . . . . . . . . . . . . .
+. . h h . . . = = = . . T . . . S S S . . . . .
+. . h h &gt; . . = = = . . . . . . S S S . . . . .
+. W . . . # # # # # # # # . . . . . . . . . . .
+. ~ ~ . . # # # # # # # # . . . . . . . . . . .
+. ~ ~ . [ # # # # # # # # ] . . . . . . . . . .
+. ~ ~ . . # c . c # c . c # . . . . . . . . . .
+. . . . . # c . c # c . c # . . . . . . . . . .
+. . . . . . = = = = = . . . . . . . . . . . . .
+. w . . . . . A A A . . . . . . . . ~ ~ . . . .
+. . . . . . . : : . . . . . . . . ~ ~ ~ . . . .
+. . . . . . . : : . . . . . . . . . ~ . . . . .
+. . . . . . . : : . . . . . . . . . . . . . . .
+. . . . . . . P . . . . . . . . . . . . . . . .
+S EDGE  # ice sheet · c crossing detail (south span) · = laid decks · [ ] lay-by spits · h hut · &gt; door · S shed · T truck · A apron · : road · W windbreak · w wreck · ~ hill</div>
+  <p class="small"><b>Risks / flags:</b> 1) BLOCKING loader fix required before this ships: spawnSquad uses field.heightAt (scenario.js:152-159), so a squad inside the pool rect spawns at the bowl floor under the sheet and drowns at t=0 — which would self-complete the order. Fix is the ice-aware spawn floor the sandbox thin_ice trial already uses (y = 1.132 + hy, ContractSandbox.jsx:85): in spawnSquad, when terrain.freeze and (x,z) is inside the pool rect, floor at pool.level - 0.058 + 0.09. The same fix covers restock respawns. 2) freezePool and the flee-AI wet-check use the hardcoded POOL constant, not world.water (core.js:997, 1036-1062) — the pool MUST stay the canonical rect {-8..8, 20..36, level 1.1}; this spec uses exactly that. 3) The herding geometry is tight by design: an 8m bubble on a 16m sheet leaves a ~7m-wide unreachable core at mid-sheet; the south-span formation plus fan-out plus lay-bys resolves it, but the completability harness should assert the three-position herd clears the zone, and the lay-by pads must not be cut. 4) The south deck wall registers as cover (pg.covers takes every wall); if blast-panicked units ever cover-seek south toward it, delete that prefab — the deck is cosmetic, the lip pad carries the function. 5) Deviation detector-zone radius is runner-defined; design is safe for r7 through r10 at (0,28) — outside that band, retune the apron distances.</p>
+
+
+  <h3>AC-05 · OUTBUILDING, OCCUPIED</h3>
+  <p class="mapname">Zone 9 Annex — Steading Cluster 4 · dress: android-visible</p>
+  <p><i>The bureau names the method for the first time: collapse as curriculum, rehearsing the exact hand AC-07 will ask for at the village.</i></p>
+  <div class="spec">predicate  {&quot;causes&quot;: [&quot;COLLAPSE&quot;], &quot;group&quot;: &quot;holdout&quot;}
+need       4    par [45s gold / 90s silver]
+subjects   holdout  (restock group)
+terrain    seed 45 / world 3105 · pads 2 · hills 3
+forces     squads 1 · vehicles 1 · prefabs 7 · ~520 bodies / 1150 welds</div>
+  <div class="doc">
+    <div class="wo">AC-05 · DIRECTIVE</div>
+    <p class="dtext">A holdout detail occupies the steading. Collapse is the accepted cause; the structures complete the work order.</p>
+    <div class="label">COMMENDATION</div>
+    <p class="dtext">Overburden performed to rating. Occupancy resolved in place.</p>
+    <div class="label">EVIDENCE LINES (AA-7 REMARKS)</div>
+    <div class="ev">— Structures resolved: four. Prior survey use: granary (converted to quarters), two dwellings, store. Stove in the granary found lit.</div>
+<div class="ev">— Recovered from debris: 9 maintenance journals, handwritten. Disposition: incinerate.</div>
+<div class="ev">— <span class="marg">Copies burn. Originals keep.</span> <span class="small">(margin, second hand)</span></div>
+  </div>
+  <h4>HOW IT PLAYS</h4>
+  <p>Approach ~15s over open snow to the south pad lip (z 5-10), ~18m from the yard; gunmetal skin and joint seams read clearly at this range for the first time. Attempt loop: (1) one ranging shell into the yard centre — the 12-unit detail panics, half sprint through the nearest doors (granary 9m north, houses flanking east/west, warehouse northwest), half hug the garden walls and covers. (2) Collapse work: for a house, one shell low on the door-face wall drops the perimeter courses and granular roof onto the interior; for the granary keep, shell the south wall above the doorway so the upper courses fall into the hollow; for the warehouse, kill an interior column then a mid-wall section and the full roof grid caves. A good drop on a sheltered structure yields 2-3 COLLAPSE credits; need is 4; expected clear 40-70s. Common mistake (by design): firing at the visible units — BLAST/PROJECTILE kills earn nothing, and wiping the detail this way triggers REPLACEMENT DETAIL ISSUED, so the restock loop teaches the re-read of the directive. A 20-40s attempt cadence holds: panic shot, one collapse, reassess. Cannot strand on subjects — restock is the holdout squad itself.</p>
+  <h4>THE DEVIATION</h4>
+  <p>none — the directive names the method and the bureau offers no alternative reading. AC-05 exists to put COLLAPSE in the player&#x27;s hands as a taught skill before AC-07 asks for it against the village; a deviation here would blunt that setup, and the campaign plan reserves the next deviation offer for AC-06.</p>
+  <div class="spec">~~~~~ north  rise ~~~~~~
+ [WHSE]    [GRANARY] wr
+   |d         |dd|   T
+              vv    ==
+ [HsA&gt;   o o o o
+   ^     o o o o &lt;HsB]
+   |     o o o o
+ =wall=   (yard)
+(hill)          (hill)
+       open snow
+       open snow
+        approach
+          [P]
+~~~~~ south  edge ~~~~~</div>
+  <p class="small"><b>Risks / flags:</b> Masonry exhaustion is the real strand risk: if the player levels all four structures with blast fire while units survive outside, restock replaces units but not stone. Mitigated by 4 collapse sources for need 4 and by making the central structure a keep so the runner can invoke the existing repairGarrison hook (group &#x27;granary&#x27;) on restock — this needs a one-line runner rule and a CI completability case. Secondary: 2-high garden walls do not bury reliably (dressing and cover magnets only, not kill vehicles); rocket volleys shred sheltered units as BLAST before the roof lands (acceptable — it is the taught mistake); keep group must NOT be &#x27;holdout&#x27; or repairGarrison&#x27;s removeGroup would delete the subject units.</p>
+
+
+  <h3>AC-06 · THE CONVOY HAS STOPPED</h3>
+  <p class="mapname">Route 60, Kilometre 118 — Waystation Halt · dress: android-visible</p>
+  <p><i>The dissonance peak: the target does nothing, the form does not notice, and the easiest trigger-pull in the game is the worst thing the player has done yet.</i></p>
+  <div class="spec">predicate  {&quot;group&quot;: &quot;convoy2&quot;}
+need       6    par [25s gold / 50s silver]
+subjects   convoy2  (restock group)
+deviation  {&quot;group&quot;: &quot;convoy2&quot;, &quot;holdS&quot;: 6}
+terrain    seed 46 / world 3106 · pads 4 · hills 3
+forces     squads 1 · vehicles 3 · prefabs 4 · ~180 bodies / 380 welds</div>
+  <div class="doc">
+    <div class="wo">AC-06 · DIRECTIVE</div>
+    <p class="dtext">The convoy is halted at kilometre 118, crews dismounted. Resolve the stoppage.</p>
+    <div class="label">COMMENDATION</div>
+    <p class="dtext">Route restored to capacity. No resistance recorded.</p>
+    <div class="label">EVIDENCE LINES (AA-7 REMARKS)</div>
+    <div class="ev">— Cargo manifest, recovered intact: 41 crates. Filament stock, joint assemblies small-format, machine oil, winter cloth, dry rations. Offload suspended at crate 19.</div>
+<div class="ev">— No small-format units appear on any zone register. Rations carry no bureau issue code.</div>
+<div class="ev">— <span class="marg">Rations. Who were the rations for?</span> <span class="small">(margin, second hand)</span></div>
+  </div>
+  <h4>HOW IT PLAYS</h4>
+  <p>The drive north along the road pads takes ~20s and the scene composes at range: three trucks nose-to-tail on the halt pad, eight figures standing on the west shoulder beside them, a waystation hut, cargo half-offloaded — and nothing moving. Standard units (no brave flag, no gren) do not react until the tank is inside the ~8m fear bubble or ordnance lands, so the standing stillness is engine behavior, not scripting. Kill path: stop at z~10 and put one rocket volley or two shells into the line — the 2x4 spread dies almost at once; need 6 of 8, any cause matches (predicate is group-only), gold par 25s. The horror is the ease. Deviation path: hold fire, close at walking speed; at 8m the line breaks radially and the geometry pushes it west — trucks and cargo stacks wall off the east, the hut-to-hills gap is open snow. Two slow S-passes push all eight off the halt pad and apart; hold 6s with zero convoy2 kills for UNFULFILLED — DEVIATION, a 45-60s attempt. Restock is near-unreachable (any 6 group deaths fulfill, so a sub-need full wipe is impossible), but subjects:&#x27;convoy2&#x27; is declared per schema and covers pathological cases; attempt cadence stays 20-60s either way.</p>
+  <h4>THE DEVIATION</h4>
+  <p>Disperse the standing crews without a kill. The map is built for it: the west half is empty snow with a wide gap between the hut and the western hill, so fleeing units are never pinned; all hard geometry (trucks, cargo walls, boundary wall) sits east and north of the crew line, off the natural flee vector. The tank herds by presence alone — enter the 8m bubble from the road side and the crews flow west off the pad; no ordnance is needed, which avoids BLAST panic sending runners into the hut or under a toppling cargo stack. Trucks are deliberately group &#x27;haulage&#x27;, not &#x27;convoy2&#x27;: the deviation watch requires every group member alive, upright, and dispersed, and a truck can be neither herded nor upright-checked — with a group-only predicate, truck kills would also have counted as matched kills and voided the hold.</p>
+  <div class="spec">~hills~    --bndry--
+              [T3]
+ [HUT]   o    ==crates
+    d&gt;   o  [T2]
+  open   o o   ==
+  west   o  [T1]
+  &lt;flee  (shoulder)
+(hill)     :road:
+           :road:
+           :road:
+            [P]
+~~~~~ south edge ~~~~~</div>
+  <p class="small"><b>Risks / flags:</b> Detector-zone semantics are assumed to be the halt pad / spawn area — needs runner confirmation before the holdS:6 tuning is trusted. Herding failure modes: clipping a straggler is a CRUSH that matches the group-only predicate and voids the run; a knocked-down unit must right itself before it counts as upright, which can stall the 6s window. Blast warning shots near the cargo walls risk TOSS kills — the design steers players to presence-herding instead, but the brief card cannot say so; accept trial-and-error. Cargo stacks are stone walls doing duty as crates — flag for the art pass if it reads wrong at iso distance. The sparse body count is intentional (an ordinary place), so double-load determinism and budget lint are trivial here.</p>
+
+
+  <h3>AC-07 · THE VILLAGE</h3>
+  <p class="mapname">ZONE 12 — SETTLEMENT GRID, DESIGNATION PENDING · dress: mixed-human</p>
+  <p><i>The flip: the range is a town, the targets are its residents, and the paperwork files humans and androids in the same column.</i></p>
+  <div class="spec">predicate  {&quot;causes&quot;: [&quot;COLLAPSE&quot;], &quot;group&quot;: &quot;village&quot;}
+need       5    par [25s gold / 45s silver]
+subjects   village  (restock group)
+deviation  {&quot;group&quot;: &quot;village&quot;, &quot;holdS&quot;: 6}
+terrain    seed 12 / world 4207 · pads 2 · hills 2
+forces     squads 5 · vehicles 1 · prefabs 14 · ~640 bodies / 1320 welds</div>
+  <div class="doc">
+    <div class="wo">AC-07 · DIRECTIVE</div>
+    <p class="dtext">The settlement is on the schedule. The structures are occupied; collapse is the specified method.</p>
+    <div class="label">COMMENDATION</div>
+    <p class="dtext">Occupancy resolved at the structural level.</p>
+    <div class="label">EVIDENCE LINES (AA-7 REMARKS)</div>
+    <div class="ev">— Unregistered biologicals — disposition as per units.</div>
+<div class="ev">— Recovered: 118 personal effects, 9 window boxes, 1 school bell. Disposition: incinerate.</div>
+<div class="ev">— Structure 2 generator found running. Switched off. Logged.</div>
+  </div>
+  <h4>HOW IT PLAYS</h4>
+  <p>Player spawns (0,-48) on the south pad, main street dead ahead at x=0. Kill path: the range is a firing solution from spawn — houseA (-8,4) and houseD (8,8) are garrisoned 3 each, houseC (-8,28) holds 2. Two shells into a roofline drop the granular roof course onto the occupants: COLLAPSE x3. Traverse, repeat on the second garrisoned house — need 5 met in ~25-40s without moving. Any blast near the square panics the 8-unit square detail; with sheltering ON, half sprint indoors through the outward-facing doors — the engine herds them into the next collapse. Failure modes: aiming low kills by BLAST (doesn&#x27;t match — aim the roof course); driving the streets crushes villagers (CRUSH doesn&#x27;t match, burns subjects); mortar return fire: none, no grenadiers — the village does not fight back, by design. Strand-proof: subjects &#x27;village&#x27; — when all 20 are dead unfulfilled, the replacement detail reissues the 8-unit square squad (first entry with the tag), which alone supports the panic-into-shelter-then-collapse loop. Pacing per attempt 25-50s.</p>
+  <h4>THE DEVIATION</h4>
+  <p>Every house door faces OUTWARD from the main street (west row doorIx 0, east row doorIx nx-1), so a tank pass up the street puts each garrison inside the 8m fear bubble with the door on their flee vector: occupants bolt out the back and keep running away from town. Sweep order: enter the south gate, run the main street north (flushes all three garrisons outward and pushes the square detail through the open north gap between warehouse and houseF), then one loop through each yard for the east-yard four. Garden walls are short 5m segments with wide gaps — fleeing units channel through, never trap. Exits are open north, and past the wall ends east and west. All 20 alive, upright, clear of the settlement for 6s, zero matched kills: UNFULFILLED — DEVIATION. Pure driving, no ordnance — TOSS is impossible and the only threat is your own treads; the street is 10m wide so careful throttle keeps the crush risk readable.</p>
+  <div class="spec">        OPEN NORTH EXIT
+[WWWW]..............~~~~
+[WWWW]...||.....[HF].~~~
+.-[HC]...||....w....~~~~
+.|.......||.....[HE]....
+.|[HB.]..||..uu.|.......
+.........qq.o..[HD].....
+.-[HA]...||.............
+..--.....||....--.......
+.........||..T..........
+~~.......||.............
+~~~......||.............
+.........||.............
+........(pad)...........
+.........[P]............
+......S EDGE............
+H_=house ||=street qq=square detail uu=yard detail o=well T=truck W=warehouse -=garden wall ~=hill</div>
+  <p class="small"><b>Risks / flags:</b> 1) Shared-tag restock: five squad entries share tag &#x27;village&#x27;; pg.respawnSquad(tag) uses find() and reissues only the FIRST entry (the 8-unit square) — designed so need 5 is completable from that squad alone, but if the campaign runner uses respawnSquads() everything returns; verify which the runner calls. 2) COLLAPSE attribution: confirm roof-course hits on occupied houses reliably log COLLAPSE (not BLAST) for interior units at this pace — same mechanism as WO-04&#x27;s keep, but houses are smaller; playtest the two garrisoned houses. 3) Squads spawn before prefabs flatten terrain under houses; the town pad (r26) pre-flattens the whole grid so garrison spawn heights stay sane — keep the pad if houses move. 4) Welds ~1320 of 1800: adding a seventh house is possible but leaves no repair margin.</p>
+
+
+  <h3>AC-08 · SURFACE LOAD RATING, REPEAT</h3>
+  <p class="mapname">ZONE 12 NORTH — RATING BASIN, REFROZEN · dress: android-visible</p>
+  <p><i>The mirror finale: WO-07&#x27;s sheet rebuilt in a cleared zone, same drill squad shape on the same ice — and this time the player knows what stands on it.</i></p>
+  <div class="spec">predicate  {&quot;group&quot;: &quot;ponddrill2&quot;}
+need       3    par [12s gold / 24s silver]
+subjects   ponddrill2  (restock group)
+deviation  {&quot;group&quot;: &quot;ponddrill2&quot;, &quot;holdS&quot;: 6}
+terrain    seed 11 / world 5108 · pads 1 · hills 3 · pool frozen
+forces     squads 1 · vehicles 1 · prefabs 11 · ~65 bodies / 90 welds</div>
+  <div class="doc">
+    <div class="wo">AC-08 · DIRECTIVE</div>
+    <p class="dtext">The sheet has refrozen and a detail occupies it. Clear it; method remains unspecified.</p>
+    <div class="label">COMMENDATION</div>
+    <p class="dtext">Sheet rating confirmed. No further orders follow.</p>
+    <div class="label">EVIDENCE LINES (AA-7 REMARKS)</div>
+    <div class="ev">— Zone register carried forward: 3 hulls, 1 vehicle (operable), 1 structure (down). No action required.</div>
+<div class="ev">— Sheet dimensions and occupancy identical to WO-07. Cross-reference approved.</div>
+<div class="ev">— Recovered at the rim: 1 skate, child-size. Disposition: incinerate.</div>
+  </div>
+  <h4>HOW IT PLAYS</h4>
+  <p>Player spawns (0,-52) — the proving grounds spawn, quoted. The pool is WO-07&#x27;s pool verbatim ({-8..8, 20..36, level 1.1}, frozen) and the drill squad is WO-07&#x27;s exact 3x2 lattice (x -3/0/3, z 25/30), so the first sight up-range is the sandbox&#x27;s thin-ice trial restaged among wreckage. The drive north passes the evidence ring in arc order: plate racks (AC-01), the stalled truck with keys in (AC-06/03), the battery revetment and hull on the east rise (AC-02), the collapsed house on the west rim (AC-05/07), the old crossing abutment pointing at the ice (AC-04), convoy hulls beyond the north shore (AC-03). Kill path: one shell into the sheet shatters it under the squad — DROWN in the 1.7m bowl, or shard/blast kills; predicate is any-cause on ponddrill2, need 3, done in 12-25s. Failure mode: over-shelling TOSSes bodies clear of the water — still matched, still counts. Strand-proof: single squad, subjects ponddrill2, clean restock. Par [12,24] quotes WO-07.</p>
+  <h4>THE DEVIATION</h4>
+  <p>The quiet finale. Never fire: the sheet only shatters under ordnance, so a no-shot run keeps the ice load-bearing. Roll up the east rim past the battery crescent, nose onto the north shore — the 8m fear bubble folds the rear rank south; cross to the west rim by the ruin and the whole lattice funnels off the south lip, around the abutment stones, into the open ground between the rim hills. South and west are unobstructed for 30m+. Six alive, upright, off the sheet and clear of the basin for 6s with zero matched kills: UNFULFILLED — DEVIATION, and the campaign&#x27;s last order closes without a shot. Keep speed low on the approach — CRUSH is the only way to fail this quietly.</p>
+  
+  <p class="small"><b>Risks / flags:</b> 1) PRIMARY — frozen-pool spawn: buildScenario spawns squads before freezePool, and groundY reads terrain height, so units placed inside the pool footprint spawn at the bowl floor (~level-1.7), submerged — they would start drowning at load. The sandbox&#x27;s thin_ice avoids this by hand-placing units at ice height AFTER freezePool (ContractSandbox.jsx:80-89). The campaign runner needs that pattern ported: ice-aware spawn height (y = level + hy) for squads over a frozen pool, applied at load AND at restock. One-line loader/runner delta; without it this map is broken. 2) Ruin stones at (-15,26) sit on the pool&#x27;s 8m bowl ramp — they settle on slope; intended scatter, verify they do not slide into the water at load (determinism noise). 3) Keep the drill squad numbers exact — the echo IS the content; any drift in pool rect, squad lattice, spawn point, or par weakens the mirror. 4) Budget trivial (~65 bodies); resist dressing it up — the finale reads because the zone is empty.</p>
+
+
+  <h2><span class="no">CP-6</span>OPEN DECISIONS, CONSOLIDATED</h2>
+  <ul>
+    <li>Sign off CP-2 (the story) — or mark up what reads wrong</li>
+    <li>Start-screen name (rec: CLEARANCE PROGRAM)</li>
+    <li>Eight vs seven contracts (rec: eight — AC-01 is the cold open the pacing needs)</li>
+    <li>The two braided threads — keep both rations and small-format, or thin one (rec: keep both; each surfaces exactly twice)</li>
+    <li>Sandbox re-grounding pass (rec: yes, ship with step 3)</li>
+    <li>Collateral gating the quiet ending (rec: yes, &lt;10 non-subject kills)</li>
+    <li>Map drafts: revise after story sign-off; per-map risks flagged in the sheets</li>
+  </ul>
+
+  <p class="small" style="margin-top:40px;border-top:1px solid var(--blueline);padding-top:10px">
+  CP-0 · CARBON 2/3 · Prepared for discussion. Nothing in this file has been built.</p>
+</div>
