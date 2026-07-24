@@ -103,7 +103,16 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
   const stateRef = useRef(null);
   const [hud, setHud] = useState({ fps: 0, bodies: 0, tally: {}, feed: [], achUnlocked: [], toasts: [], total: 0, cds: { fire: 0, volley: 0 }, flipped: false, iceOn: false, weapon: "main", medals: {}, trial: { idx: 0, prog: 0, flashT: 0, free: false, el: 0 } });
   const [fatal, setFatal] = useState(null);
-  const [started, setStarted] = useState(false);
+  // the deploy/controls card shows once per player, not once per mission —
+  // after the first deployment the flag skips straight to the brief (whose
+  // ACKNOWLEDGE tap still provides the audio-unlock gesture)
+  const [started, setStarted] = useState(() => { try { return window.localStorage.getItem("coldsnap-camp-deployed") === "1"; } catch (e) { return false; } });
+  useEffect(() => {
+    let live = true;
+    (async () => { try { const r = await window.storage.get("coldsnap-camp-deployed"); if (live && r && r.value === "1") setStarted(true); } catch (e) {} })();
+    return () => { live = false; };
+  }, []);
+  const deploy = () => { setStarted(true); try { window.storage.set("coldsnap-camp-deployed", "1"); } catch (e) {} };
   const [achOpen, setAchOpen] = useState(false);
   const [gfxOpen, setGfxOpen] = useState(false);
   const [procOpen, setProcOpen] = useState(false);
@@ -464,7 +473,7 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
       return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
     };
     const onPointerDown = (e) => {
-      setStarted(true);
+      deploy();
       S.audio.ensure();
       if (e.target !== canvas) return;
       if (e.cancelable) e.preventDefault();
@@ -984,7 +993,7 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
       )}
       {!started && !fatal && (
         <div
-          onClick={() => setStarted(true)}
+          onClick={deploy}
           style={{ position: "absolute", inset: 0, background: "rgba(10,12,16,0.72)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", zIndex: 5 }}
         >
           <div style={{ ...P.panel, position: "static", borderColor: "#d8433a", textAlign: "center", padding: "16px 26px" }}>
@@ -1001,10 +1010,10 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
             ) : (
               <div style={{ textAlign: "left", fontSize: 12, lineHeight: 1.7 }}>
                 <div><b>W A S D</b> — drive the Bison</div>
-                <div><b>MOUSE</b> — aim · <b>CLICK</b> — main gun</div>
-                <div><b>V</b> — rocket volley</div>
+                <div><b>MOUSE</b> — aim · <b>CLICK</b> — fire · <b>T</b> — switch weapon</div>
+                <div><b>G</b> — MG (hold) · <b>V</b> — rocket volley</div>
                 <div><b>SPACE</b> — brake · <b>WHEEL</b> — zoom</div>
-                <div><b>1/2/3</b> — respawn squads / scouts / repair · <b>0</b> — reset</div>
+                <div><b>0</b> — restart the order</div>
               </div>
             )}
             <div style={{ marginTop: 12, color: "#ffd27a" }}>{isTouch ? "TAP TO DEPLOY" : "CLICK TO DEPLOY"}</div>
