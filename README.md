@@ -20,6 +20,13 @@ the seven field trials. Masonry collapses, ice fractures, the pond drowns.
   work-order table from the buildout plan's Phase 1) and `ContractSandbox.jsx`
   (the demo component over the extracted modules, with the voice-pass overlay;
   saves under `coldsnap-cs-*` keys so it never touches demo records).
+- `src/game/predicate.js`, `scenario.js`, `scenarios/*.json` — the Phase 4
+  content pipeline: contracts as declarative predicates (parity-gated against
+  the demo's closures across the full kill grid) and worlds as JSON scenarios.
+  `scenarios/proving-grounds.json` rebuilds the demo's world worldHash-
+  identically from data; `ac-01-interdiction.json` is a contract authored
+  purely in JSON with zero engine edits. Both gated in CI
+  (`test:predicate`, `test:scenario`).
 - `src/ui/` — the shell: start screen, controls screen, and the app frame that
   mounts the demo (ESC or the ⏏ MENU button returns to the menu).
 - `src/platform/keymap.js` — keyboard remapping. A capture-phase interceptor

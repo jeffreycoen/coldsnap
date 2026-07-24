@@ -27,6 +27,8 @@ jobs:
       - run: npm run golden
       - run: npm run test:aar
       - run: npm run test:deviation
+      - run: npm run test:predicate
+      - run: npm run test:scenario
       - run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

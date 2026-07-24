@@ -10,6 +10,7 @@ import {
   snapAim, recoverBison, fireVolley, bisonFire, bisonMg, worldHash, makeAch, heading,
 } from "../engine/core.js";
 import { disperseState } from "./altcheck.js";
+import { matchKill, CONTRACT_PREDICATES } from "./predicate.js";
 import { makeRenderer } from "../render/renderer.js";
 import { CONTRACTS } from "./contracts.js";
 import { composeAAR } from "../aar/compose.js";
@@ -68,12 +69,12 @@ function makeAudio() {
   };
 }
 const TRIALS = [
-  { id: "gunnery", title: "GUNNERY", need: 3, par: [10, 18], hint: "Reticle on them — hold FIRE", focus: () => ({ x: STATIONS.gunnery.x, z: STATIONS.gunnery.z, r: 5 }), setup: (w) => w.pg.respawnSquad("gunnery"), match: (e) => e.attacker === "player" && (e.cause === CAUSE.BLAST || e.cause === CAUSE.PROJECTILE) && e.group === "gunnery" },
-  { id: "roadkill", title: "ROADKILL", need: 2, par: [9, 16], hint: "Drive through the line with the stick", focus: () => ({ x: STATIONS.roadlane.x, z: STATIONS.roadlane.z, r: 7 }), setup: (w) => w.pg.respawnSquad("roadlane"), match: (e) => e.cause === CAUSE.CRUSH && e.attacker === "player" },
+  { id: "gunnery", title: "GUNNERY", need: 3, par: [10, 18], hint: "Reticle on them — hold FIRE", focus: () => ({ x: STATIONS.gunnery.x, z: STATIONS.gunnery.z, r: 5 }), setup: (w) => w.pg.respawnSquad("gunnery"), match: (e) => matchKill(CONTRACT_PREDICATES.gunnery, e) },
+  { id: "roadkill", title: "ROADKILL", need: 2, par: [9, 16], hint: "Drive through the line with the stick", focus: () => ({ x: STATIONS.roadlane.x, z: STATIONS.roadlane.z, r: 7 }), setup: (w) => w.pg.respawnSquad("roadlane"), match: (e) => matchKill(CONTRACT_PREDICATES.roadkill, e) },
   { id: "saturation", title: "SATURATION FIRE", need: 3, par: [10, 20], hint: "ONE volley, 3 kills — aim, press VOLLEY", focus: () => ({ x: STATIONS.gunnery.x, z: STATIONS.gunnery.z, r: 5 }), setup: (w) => w.pg.respawnSquad("gunnery"), volley: true },
-  { id: "demolition", title: "DEMOLITION MAN", need: 1, par: [12, 22], hint: "Breach the keep — bury the garrison inside", focus: () => ({ x: STATIONS.garrison.x, z: STATIONS.garrison.z, r: 5 }), setup: (w) => { w.pg.repairGarrison(); w.pg.respawnSquad("demo"); }, match: (e) => e.cause === CAUSE.COLLAPSE },
-  { id: "deep_end", title: "THE DEEP END", need: 1, par: [15, 28], hint: "Plow them into the pool — ease off, brake at the lip", focus: () => ({ x: STATIONS.poolside.x, z: STATIONS.poolside.z, r: 5 }), setup: (w) => { thawPool(w); w.pg.respawnSquad("poolside"); }, match: (e) => e.cause === CAUSE.DROWN },
-  { id: "counter_battery", title: "COUNTER-BATTERY", need: 3, par: [16, 30], hint: "Mortars on the ridge — they shoot back. Silence all three.", focus: () => ({ x: STATIONS.pit.x, z: STATIONS.pit.z, r: 6 }), setup: (w) => w.pg.respawnSquad("pit"), match: (e) => e.group === "pit" },
+  { id: "demolition", title: "DEMOLITION MAN", need: 1, par: [12, 22], hint: "Breach the keep — bury the garrison inside", focus: () => ({ x: STATIONS.garrison.x, z: STATIONS.garrison.z, r: 5 }), setup: (w) => { w.pg.repairGarrison(); w.pg.respawnSquad("demo"); }, match: (e) => matchKill(CONTRACT_PREDICATES.demolition, e) },
+  { id: "deep_end", title: "THE DEEP END", need: 1, par: [15, 28], hint: "Plow them into the pool — ease off, brake at the lip", focus: () => ({ x: STATIONS.poolside.x, z: STATIONS.poolside.z, r: 5 }), setup: (w) => { thawPool(w); w.pg.respawnSquad("poolside"); }, match: (e) => matchKill(CONTRACT_PREDICATES.deep_end, e) },
+  { id: "counter_battery", title: "COUNTER-BATTERY", need: 3, par: [16, 30], hint: "Mortars on the ridge — they shoot back. Silence all three.", focus: () => ({ x: STATIONS.pit.x, z: STATIONS.pit.z, r: 6 }), setup: (w) => w.pg.respawnSquad("pit"), match: (e) => matchKill(CONTRACT_PREDICATES.counter_battery, e) },
   { id: "thin_ice", title: "THIN ICE", need: 3, par: [12, 24], hint: "The pond is frozen and the drill squad is on it. Clear them off — any way that works.", focus: () => ({ x: 0, z: 28, r: 7 }), setup: (w) => {
     for (let i = w.bodies.length - 1; i >= 0; i--) if (w.bodies[i].group === "ponddrill") { w.byId.delete(w.bodies[i].id); w.bodies.splice(i, 1); }
     freezePool(w);
@@ -83,7 +84,7 @@ const TRIALS = [
     }
     // any-kill experiment (was DROWN-only precision-by-design): every drown
   // still counts as before, plus any player-attributed kill — dead is dead.
-  }, match: (e) => e.group === "ponddrill", alt: { group: "ponddrill", holdS: 4 } }, // any-kill: shards, drowning, blast — the hint promises "any way that works", and the drill squad is provably inert unprovoked. alt: the silent no-kill completion the bureau didn't ask for.
+  }, match: (e) => matchKill(CONTRACT_PREDICATES.thin_ice, e), alt: { group: "ponddrill", holdS: 4 } }, // any-kill: shards, drowning, blast — the hint promises "any way that works", and the drill squad is provably inert unprovoked. alt: the silent no-kill completion the bureau didn't ask for.
 ];
 // Phase 1 voice pass: overlay the bureau work-order fiction onto the trials.
 // Text only — ids, predicates, pars and setups are untouched.
