@@ -4,6 +4,7 @@ import ColdsnapContractSandbox from "../game/ContractSandbox.jsx";
 import StartScreen from "./StartScreen.jsx";
 import Controls from "./Controls.jsx";
 import { DEFAULTS, loadKeymap, saveKeymap, installKeyRemap } from "../platform/keymap.js";
+import { attachExternalAutosave } from "../platform/autosave.js";
 import { COLORS, FONT } from "./theme.js";
 
 const GAME_SCREENS = new Set(["demo", "sandbox"]);
@@ -14,6 +15,32 @@ export default function App() {
   const mapRef = useRef(DEFAULTS);
   const remapRef = useRef(null);
   const dirtyRef = useRef(false); // a user rebind outranks the async load
+  const screenLoadedRef = useRef(false); // don't persist "menu" before the resume load lands
+
+  // resume where the player left off (menu is the default; controls never resumes)
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const r = await window.storage.get("coldsnap-screen");
+        if (live && GAME_SCREENS.has(r.value)) setScreen(r.value);
+      } catch (e) {}
+      screenLoadedRef.current = true;
+    })();
+    return () => { live = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!screenLoadedRef.current) return;
+    try { window.storage.set("coldsnap-screen", GAME_SCREENS.has(screen) ? screen : "menu"); } catch (e) {}
+  }, [screen]);
+
+  // the frozen demo autosaves settings/tally from outside via its debug api;
+  // the sandbox persists the same keys natively
+  useEffect(() => {
+    if (screen !== "demo") return;
+    return attachExternalAutosave("coldsnap-tally");
+  }, [screen]);
 
   useEffect(() => {
     let live = true;

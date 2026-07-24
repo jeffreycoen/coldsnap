@@ -11,6 +11,7 @@ import {
 } from "../engine/core.js";
 import { makeRenderer } from "../render/renderer.js";
 import { CONTRACTS } from "./contracts.js";
+import { loadSettings, saveSettings, loadTally, sanitizeGfx } from "../platform/autosave.js";
 
 // ================================================================= component
 const PHYS_CAUSES = new Set([CAUSE.CRUSH, CAUSE.TOSS, CAUSE.COLLAPSE, CAUSE.FLIP, CAUSE.DROWN]);
@@ -99,6 +100,7 @@ export default function ColdsnapContractSandbox() {
   const [gfxOpen, setGfxOpen] = useState(false);
   const [isTouch] = useState(detectTouch);
   const [gfxUi, setGfxUi] = useState(() => ({ preset: "retro", scale: 1, outline: 1, dither: 1, palette: 1 })); // 1x everywhere: crisp at phone DPI, retro treatment kept. This state is the REAL default — it overwrites the renderer seed on mount.
+  const gfxRef = useRef({ preset: "retro", scale: 1, outline: 1, dither: 1, palette: 1 }); // mirror of gfxUi the game loop can read for autosave
   const joyBaseRef = useRef(null);
   const joyKnobRef = useRef(null);
   const labelLayerRef = useRef(null);
@@ -147,6 +149,11 @@ export default function ColdsnapContractSandbox() {
       } catch (e) { S.savedCount = S.world.ach.unlocked.size; }
     };
     persistLoad();
+    // tally restores by MERGE so a slow async load never clobbers fresh kills
+    (async () => {
+      const t = await loadTally("coldsnap-cs-tally");
+      if (t && S.running) Object.assign(S.tally, t);
+    })();
     const enterTrial = (idx) => {
       S.trial.idx = idx; S.trial.prog = 0; S.trial.volleyCounts = new Map();
       S.trial.t0 = S.world.t;
@@ -214,6 +221,17 @@ export default function ColdsnapContractSandbox() {
       if (a.unlocked.size === S.savedCount) return;
       S.savedCount = a.unlocked.size;
       try { window.storage.set("coldsnap-cs-ach", JSON.stringify({ unlocked: [...a.unlocked], total: a.total })); } catch (e) {}
+    };
+    // settings + tally autosave: change-gated, and held until the restore
+    // pass has landed so defaults can't clobber a saved state
+    const stateSave = () => {
+      if (!S.settingsReady) return;
+      const cur = { settings: { gfx: gfxRef.current, zoom: S.zoom, muted: S.audio.muted }, tally: S.tally };
+      const j = JSON.stringify(cur);
+      if (j === S._stateJ) return;
+      S._stateJ = j;
+      saveSettings(cur.settings);
+      try { window.storage.set("coldsnap-cs-tally", JSON.stringify(cur.tally)); } catch (e) {}
     };
     const groundPoint = (nx, ny) => {
       const cb = R.camBasis;
@@ -498,6 +516,7 @@ export default function ColdsnapContractSandbox() {
       }
       R.consume(evs);
       persistSave();
+      stateSave();
       for (let i = S.toasts.length - 1; i >= 0; i--) { S.toasts[i].t -= dt; if (S.toasts[i].t <= 0) S.toasts.splice(i, 1); }
       if (S.trial.flashT > 0) S.trial.flashT -= dt;
       const layer = labelLayerRef.current;
@@ -604,20 +623,45 @@ export default function ColdsnapContractSandbox() {
     };
   }, []);
 
+  // autosave restore: raw gfx values (never preset names — preset restore
+  // would change the mounted 1x look), then zoom and sound. The loop's
+  // stateSave stays gated until this pass lands.
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      const s = await loadSettings();
+      const S = stateRef.current;
+      if (!live || !S) return;
+      try {
+        const g = sanitizeGfx(s && s.gfx);
+        if (g) {
+          setGfxUi(g); gfxRef.current = g;
+          if (S.R) S.R.setGfx({ scale: g.scale, outline: g.outline, dither: g.dither, palette: g.palette });
+        }
+        if (s && typeof s.zoom === "number" && S.zoomBy && S.zoom) S.zoomBy(Math.max(0.7, Math.min(2, s.zoom)) / S.zoom);
+        if (s && typeof s.muted === "boolean") S.audio.setMuted(s.muted);
+      } catch (e) {}
+      S.settingsReady = true;
+    })();
+    return () => { live = false; };
+  }, []);
+
   const applyGfx = (patch) => {
     const S = stateRef.current;
     if (patch.preset === "retro") {
-      setGfxUi({ preset: "retro", scale: 3, outline: 1, dither: 1, palette: 1 });
+      const g = { preset: "retro", scale: 3, outline: 1, dither: 1, palette: 1 };
+      setGfxUi(g); gfxRef.current = g;
       if (S && S.R) S.R.setGfx({ preset: "retro" });
       return;
     }
     if (patch.preset === "clean") {
-      setGfxUi({ preset: "clean", scale: 2, outline: 1, dither: 0, palette: 1 });
+      const g = { preset: "clean", scale: 2, outline: 1, dither: 0, palette: 1 };
+      setGfxUi(g); gfxRef.current = g;
       if (S && S.R) S.R.setGfx({ preset: "clean" });
       return;
     }
     const next = { ...gfxUi, ...patch, preset: "custom" };
-    setGfxUi(next);
+    setGfxUi(next); gfxRef.current = next;
     if (S && S.R) S.R.setGfx({ scale: next.scale, outline: next.outline, dither: next.dither, palette: next.palette });
   };
   const act = (name) => { const S = stateRef.current; if (S && S.actions) S.actions[name](); };

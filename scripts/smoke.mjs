@@ -101,6 +101,20 @@ try {
   ok("window blur releases the held drive key", throttleAfterBlur === 0);
   await page.keyboard.up("w");
 
+  // --- autosave: zoom/sound changes survive a reload, which resumes the game
+  await page.evaluate(() => { window.__COLDSNAP__._S.zoomBy(1.5); window.__COLDSNAP__._S.audio.setMuted(false); });
+  await sleep(1600); // external autosaver polls at 1s
+  // auto-resume mounts the game during page load, which delays network-idle
+  // lifecycle events under software WebGL — wait on the canvas instead
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForSelector("canvas", { timeout: 30000 });
+  ok("reload auto-resumes into the last game", true);
+  await page.waitForFunction(
+    () => window.__COLDSNAP__ && Math.abs(window.__COLDSNAP__._S.zoom - 1.5) < 0.05 && window.__COLDSNAP__._S.audio.muted === false,
+    { timeout: 10000 }
+  );
+  ok("zoom and sound settings restore after reload", true);
+
   // --- ESC returns to the menu, demo unmounts
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => !document.querySelector("canvas"));
@@ -140,6 +154,14 @@ try {
   await page.waitForFunction(() => !document.querySelector("canvas"));
   ok("ESC returns from the sandbox", true);
 
+  // --- kill tally survives leaving and re-entering the sandbox
+  await clickMenu("contracts");
+  await page.waitForFunction(() => !!window.__COLDSNAP__);
+  await page.waitForFunction(() => (window.__COLDSNAP__._S.tally.BLAST || 0) >= 3, { timeout: 10000 });
+  ok("kill tally restores on re-entry", true);
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => !document.querySelector("canvas"));
+
   // --- phone layout: the order must be readable on a small touch screen
   const phone = await browser.newPage();
   phone.on("pageerror", (e) => pageErrors.push(String(e)));
@@ -166,6 +188,9 @@ try {
   await phone.close();
 
   // --- corrupt/hostile stored keymap resets to defaults (escape unbindable)
+  // (also reset the resume screen: the phone section stored "sandbox" in the
+  // shared profile, and this section expects to land on the menu)
+  await page.evaluate(() => localStorage.setItem("coldsnap-screen", "menu"));
   await page.evaluate(() => localStorage.setItem("coldsnap-keymap", JSON.stringify({ ...JSON.parse(localStorage.getItem("coldsnap-keymap")), forward: "escape" })));
   await page.reload({ waitUntil: "networkidle0" });
   await clickMenu("controls");
