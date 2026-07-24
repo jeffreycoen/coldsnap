@@ -84,6 +84,17 @@ const makeTrials = (spec) => {
     ...(c.alt ? { alt: c.alt } : {}),
   }];
 };
+// bureau transmissions arrive over the wire: text types out. Filed
+// documents (the AAR) stay static — carbon paper does not animate.
+function Typed({ text, cps = 45, style }) {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    setN(0);
+    const iv = setInterval(() => setN((v) => (v >= text.length ? v : v + 1)), 1000 / cps);
+    return () => clearInterval(iv);
+  }, [text, cps]);
+  return <span style={style}>{text.slice(0, n)}{n < text.length ? <span style={{ opacity: 0.6 }}>\u258c</span> : null}</span>;
+}
 export default function CampaignRunner({ entry, onExit, onComplete }) {
   const spec = entry.scenario;
   const TRIALS = useMemo(() => makeTrials(spec), [spec]);
@@ -95,6 +106,7 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
   const [started, setStarted] = useState(false);
   const [achOpen, setAchOpen] = useState(false);
   const [gfxOpen, setGfxOpen] = useState(false);
+  const [procOpen, setProcOpen] = useState(false);
   const [isTouch] = useState(detectTouch);
   // one order per deployment: once it resolves and the report is filed
   // (or dismissed), hand control back to the order book
@@ -318,7 +330,9 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
       if (S.trialLog) S.trialLog.events.push({ ...e });
       S.tally[e.cause] = (S.tally[e.cause] || 0) + 1;
       const who = e.kind === "unit" ? "conscript" : e.kind === "vehicle" ? "scout" : e.kind;
-      S.feed.unshift(`${e.cause} — ${who}${e.attacker === "player" ? "" : " (world)"}`);
+      const SHORTC = { PROJECTILE: "round", BLAST: "blast", CRUSH: "treads", TOSS: "thrown", COLLAPSE: "collapse", DROWN: "drowned", FLIP: "flipped", IMPACT: "impact" };
+      S.feed.unshift(`${who} \u00b7 ${SHORTC[e.cause] || e.cause.toLowerCase()}${e.attacker === "player" ? "" : " \u00b7 world"}`);
+      if (S.feed.length > 4) S.feed.length = 4;
       if (S.feed.length > 5) S.feed.pop();
       if (PHYS_CAUSES.has(e.cause)) S.hitstop = Math.max(S.hitstop, 0.26);
       S.labels.push({ x: e.x, y: (e.y || 2) + 1.4, z: e.z, text: e.cause, t: 1.15, color: LABEL_COLORS[e.cause] || "#fff" });
@@ -994,6 +1008,9 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
         </div>
       )}
       <div style={{ position: "absolute", bottom: 10, left: "50%", transform: "translateX(-50%)", display: isTouch ? "none" : "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", maxWidth: "96%", zIndex: 3 }}>
+        <button data-weapon-toggle-desk style={{ ...P.btn, borderColor: "#7fb2d8" }} onClick={() => { const S = stateRef.current; if (S) S.weapon = S.weapon === "mg" ? "main" : "mg"; }}>
+          {hud.weapon === "mg" ? "\u21c4 MAIN GUN [T]" : "\u21c4 MG [T]"}
+        </button>
         <button style={{ ...P.btn, opacity: hud.cds.volley > 0 ? 0.45 : 1 }} onClick={() => { const S = stateRef.current; if (S) S.actions.volleyAt(S.aim.x, S.aim.z); }}>
           {hud.cds.volley > 0 ? `VOLLEY ${hud.cds.volley.toFixed(0)}s` : isTouch ? "VOLLEY" : "ROCKET VOLLEY [V]"}
         </button>
@@ -1056,27 +1073,40 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
             <div data-brief onClick={(e) => e.stopPropagation()} style={{ ...P.panel, position: "relative", width: "min(430px, 92vw)", borderColor: "#ffd27a", padding: isTouch ? "16px 18px" : "12px 16px" }}>
               <div style={{ fontSize: isTouch ? 11 : 10, letterSpacing: 2, opacity: 0.7 }}>WORK ORDER</div>
               <div style={{ color: "#ffd27a", letterSpacing: 1, marginTop: 3, fontSize: isTouch ? 16 : 13 }}>{hud.brief.title}</div>
-              <div style={{ fontSize: isTouch ? 14 : 12, opacity: 0.92, marginTop: 7, lineHeight: 1.55 }}>{hud.brief.directive}</div>
+              <div style={{ fontSize: isTouch ? 14 : 12, opacity: 0.92, marginTop: 7, lineHeight: 1.55, minHeight: "3.1em" }}><Typed text={hud.brief.directive} /></div>
               <button data-brief-ack style={{ ...P.btn, marginTop: 12, width: "100%", borderColor: "#8a5a1c", letterSpacing: 2 }} onClick={ack}>ACKNOWLEDGE</button>
             </div>
           </div>
         );
       })()}
-      <div style={{ position: "absolute", top: isTouch ? 94 : 60, left: "50%", transform: "translateX(-50%)", display: "flex", flexDirection: "column", gap: 6, alignItems: "center", zIndex: 3, maxWidth: "94vw" }}>
-        {started && spec.contract.procedure && !hud.aar && (
-          <div data-procedure style={{ ...P.panel, position: "static", padding: "8px 12px", marginBottom: 6, fontSize: isTouch ? 12 : 11 }}>
-            <div style={{ letterSpacing: 2, color: "#8b93a0", fontSize: isTouch ? 10 : 9, marginBottom: 5 }}>FIRING PROCEDURE — ANNEX A</div>
-            {spec.contract.procedure.map((st) => (
-              <div key={st.id} style={{ margin: "2px 0", color: hud.proc && hud.proc[st.id] ? "#7fd7a0" : "#c3cbd6" }}>
-                {hud.proc && hud.proc[st.id] ? "\u25a0" : "\u25a1"} DEMONSTRATE: {st.label}{hud.proc && hud.proc[st.id] ? " \u2014 DEMONSTRATED" : ""}
-              </div>
-            ))}
+      {started && spec.contract.procedure && !hud.aar && (() => {
+        const total = spec.contract.procedure.length;
+        const done = spec.contract.procedure.filter((st) => hud.proc && hud.proc[st.id]).length;
+        if (done >= total) return null; // annex complete — off the glass
+        const next = spec.contract.procedure.find((st) => !(hud.proc && hud.proc[st.id]));
+        return (
+          <div data-procedure onClick={() => setProcOpen(!procOpen)}
+            style={{ position: "absolute", top: isTouch ? 96 : 58, left: 10, zIndex: 4, background: "rgba(16,21,27,0.82)", border: "1px solid #3a414b", padding: procOpen ? "8px 12px" : "5px 10px", fontSize: isTouch ? 12 : 11, color: "#c3cbd6", maxWidth: "64vw", cursor: "pointer", touchAction: "manipulation" }}>
+            {procOpen ? (
+              <>
+                <div style={{ letterSpacing: 2, color: "#8b93a0", fontSize: isTouch ? 10 : 9, marginBottom: 5 }}>FIRING PROCEDURE \u2014 ANNEX A</div>
+                {spec.contract.procedure.map((st) => (
+                  <div key={st.id} style={{ margin: "2px 0", color: hud.proc && hud.proc[st.id] ? "#7fd7a0" : "#c3cbd6" }}>
+                    {hud.proc && hud.proc[st.id] ? "\u25a0" : "\u25a1"} {st.label}
+                  </div>
+                ))}
+              </>
+            ) : (
+              <span>ANNEX A \u00b7 \u25a1 {next.label} \u00b7 {done}/{total}</span>
+            )}
           </div>
-        )}
+        );
+      })()}
+      <div style={{ position: "absolute", top: isTouch ? 94 : 60, left: "50%", transform: "translateX(-50%)", display: "flex", flexDirection: "column", gap: 6, alignItems: "center", zIndex: 3, maxWidth: "94vw" }}>
         {hud.toasts.map((t) => (
           <div key={t.id} style={{ ...P.panel, position: "static", borderColor: "#d8433a", textAlign: "center" }}>
-            <div style={{ color: "#ff6b5e" }}>★ {t.title}</div>
-            <div style={{ fontSize: 11, opacity: 0.8 }}>{t.desc}</div>
+            <div style={{ color: "#ff6b5e" }}>★ <Typed text={t.title} cps={60} /></div>
+            <div style={{ fontSize: 11, opacity: 0.8 }}><Typed text={t.desc} cps={60} /></div>
           </div>
         ))}
       </div>

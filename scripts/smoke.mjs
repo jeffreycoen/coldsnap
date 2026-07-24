@@ -247,10 +247,12 @@ try {
   await page.waitForFunction(() => !!window.__COLDSNAP__ && document.body.innerText.includes("AC-01"));
   await page.mouse.click(480, 300); // deploy overlay
   await page.waitForFunction(() => !!document.querySelector("[data-brief]"));
-  ok("mission brief carries the directive", (await text()).includes("receiving racks"));
+  // the directive teletypes in — wait for the text to finish arriving
+  await page.waitForFunction(() => document.body.innerText.includes("receiving racks"), { timeout: 15000, polling: 500 });
+  ok("mission brief carries the directive", true);
   await sleep(800);
   await page.evaluate(() => document.querySelector("[data-brief-ack]").click());
-  ok("firing procedure annex is posted", (await text()).includes("FIRING PROCEDURE"));
+  ok("firing procedure ticker is posted", (await text()).includes("ANNEX A"));
   await page.keyboard.press("t");
   await sleep(250);
   ok("T switches the fire control to the MG", (await page.evaluate(() => window.__COLDSNAP__._S.weapon)) === "mg");
