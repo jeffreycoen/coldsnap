@@ -9,7 +9,7 @@
 //   2. Per-builder WELD order is preserved exactly (walls use their own
 //      double-loop z/y/x neighbor order; grids use x/y/z) — weld order feeds
 //      the solver's iteration order, which feeds the dynamics.
-import { mulberry32, makeField, makeWorld, addBody, addWeld, buildTerrain, freezePool, heading } from "../engine/core.js";
+import { mulberry32, makeField, makeWorld, addBody, addWeld, buildTerrain, freezePool, thawPool, heading } from "../engine/core.js";
 
 const HCS = 0.40, PITCH = 0.83, BREAK_F = 8.0e4;
 const groundY = (field, x, z, hy) => field.heightAt(x, z) + hy + 0.02;
@@ -149,6 +149,15 @@ const BUILDERS = {
   },
 };
 
+function spawnSquad(world, field, s) {
+  for (let i = 0; i < s.nx; i++) for (let j = 0; j < s.nz; j++) {
+    const x = s.x0 + i * s.dx, z = s.z0 + j * s.dz;
+    const u = addBody(world, { kind: "unit", team: 2, group: s.tag, mass: 82, hx: 0.26, hy: s.utype === "gren" ? 0.92 : 0.86, hz: 0.26, x, z, y: groundY(field, x, z, s.utype === "gren" ? 0.92 : 0.86), hp: s.utype === "gren" ? 45 : 30, friction: 0.55 });
+    if (s.utype) u.utype = s.utype;
+    if (s.brave) u.brave = true;
+  }
+}
+
 const VEHICLES = {
   truck(world, field, v) {
     const t = addBody(world, { kind: "truck", team: 2, group: v.group || "convoy", vtype: "truck", mass: 1400, hx: 1.15, hy: 1.05, hz: 2.6, x: v.x, z: v.z, y: groundY(field, v.x, v.z, 1.05), hp: 120, friction: 0.6, q: heading(null, v.yaw) });
@@ -219,23 +228,49 @@ export function buildScenario(spec, opts = {}) {
   const p = spec.player;
   const bison = addBody(world, { kind: "vehicle", team: 1, driver: "player", mass: 3800, hx: 2.2, hy: 0.95, hz: 3.3, x: p.x, z: p.z, y: groundY(field, p.x, p.z, 0.95), hp: 1e9, friction: 0.85, q: heading(null, p.yaw || 0) });
   world.bisonId = bison.id;
-  for (const s of spec.squads || []) {
-    for (let i = 0; i < s.nx; i++) for (let j = 0; j < s.nz; j++) {
-      const x = s.x0 + i * s.dx, z = s.z0 + j * s.dz;
-      const u = addBody(world, { kind: "unit", team: 2, group: s.tag, mass: 82, hx: 0.26, hy: s.utype === "gren" ? 0.92 : 0.86, hz: 0.26, x, z, y: groundY(field, x, z, s.utype === "gren" ? 0.92 : 0.86), hp: s.utype === "gren" ? 45 : 30, friction: 0.55 });
-      if (s.utype) u.utype = s.utype;
-      if (s.brave) u.brave = true;
-    }
-  }
+  for (const s of spec.squads || []) spawnSquad(world, field, s);
   for (const v of spec.vehicles || []) VEHICLES[v.kind](world, field, v);
   for (const pf of spec.prefabs || []) BUILDERS[pf.type](world, field, pg, pf);
+  const removeGroup = (pred) => {
+    for (let i = world.bodies.length - 1; i >= 0; i--) {
+      const b = world.bodies[i];
+      if (pred(b)) { world.byId.delete(b.id); world.bodies.splice(i, 1); }
+    }
+  };
+  const spawnSquadByTag = (tag) => {
+    const s = (spec.squads || []).find((q) => q.tag === tag);
+    if (s) spawnSquad(world, field, s);
+  };
   // PARITY FINDING: the demo collects shelter metadata but never exposes it —
   // world.pg carries no `shelters` key, so the engine's house-shelter seek is
-  // dead code at runtime. Wiring it up here changed the panic AI and broke
-  // hash parity with the hand-built world. Shelters stay collected but
-  // unexposed; enabling them is a deliberate future content decision.
-  world.pg = { covers: pg.covers };
-  world.pgShelters = pg.shelters;
+  // dead code at runtime. Reproducing the hand-built world exactly means
+  // shelters stay off by default; opts.shelters is the deliberate opt-in
+  // (the sandbox uses it — panicking infantry runs indoors).
+  world.pg = {
+    covers: pg.covers,
+    ...(opts.shelters ? { shelters: pg.shelters } : {}),
+    respawnSquads() {
+      removeGroup((b) => b.kind === "unit" || b.kind === "truck");
+      for (const s of spec.squads || []) spawnSquad(world, field, s);
+      for (const v of spec.vehicles || []) if (v.kind === "truck") VEHICLES.truck(world, field, v);
+    },
+    respawnSquad(tag) { removeGroup((b) => b.kind === "unit" && b.group === tag); spawnSquadByTag(tag); },
+    respawnScouts() {
+      removeGroup((b) => b.group === "scout" && b.kind === "vehicle");
+      for (const v of spec.vehicles || []) if (v.kind === "scout") VEHICLES.scout(world, field, v);
+    },
+    repairGarrison() {
+      for (const pf of spec.prefabs || []) {
+        if (pf.type !== "keep") continue;
+        const grp = pf.group || "garrison";
+        removeGroup((b) => b.group === grp);
+        world.welds = world.welds.filter((w) => w.a.group !== grp && w.b.group !== grp);
+        BUILDERS.keep(world, field, pg, pf);
+      }
+    },
+    freeze() { freezePool(world); },
+    thaw() { thawPool(world); },
+  };
   if (spec.terrain.freeze) freezePool(world);
   return world;
 }

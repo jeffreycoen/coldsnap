@@ -6,9 +6,11 @@
 // keys so sandbox progress never touches the demo's records.
 import React, { useEffect, useRef, useState } from "react";
 import {
-  CAUSE, POOL, STATIONS, addBody, thawPool, freezePool, buildProvingGrounds, stepWorld,
+  CAUSE, POOL, STATIONS, addBody, thawPool, freezePool, stepWorld,
   snapAim, recoverBison, fireVolley, bisonFire, bisonMg, worldHash, makeAch, heading,
 } from "../engine/core.js";
+import { buildScenario } from "./scenario.js";
+import PROVING_SPEC from "./scenarios/proving-grounds.json";
 import { disperseState } from "./altcheck.js";
 import { matchKill, CONTRACT_PREDICATES } from "./predicate.js";
 import { makeRenderer } from "../render/renderer.js";
@@ -121,7 +123,10 @@ export default function ColdsnapContractSandbox() {
     } catch (e) {}
     let world, R;
     try {
-      world = buildProvingGrounds(1234);
+      // the sandbox runs on the scenario pipeline: same proving grounds,
+      // rebuilt from data (hash-parity-gated), with sheltering enabled —
+      // panicking infantry runs indoors, which the demo's world never did
+      world = buildScenario(PROVING_SPEC, { worldSeed: 1234, shelters: true });
       R = makeRenderer(canvas, world);
       R.setGfx({ scale: gfxUi.scale, outline: gfxUi.outline, dither: gfxUi.dither, palette: gfxUi.palette });
     } catch (err) {
@@ -301,7 +306,7 @@ export default function ColdsnapContractSandbox() {
     const doReset = () => {
       S.resets++;
       const keep = S.world.ach;
-      S.world = buildProvingGrounds(1234 + S.resets);
+      S.world = buildScenario(PROVING_SPEC, { worldSeed: 1234 + S.resets, shelters: true });
       S.world.ach.unlocked = keep.unlocked; S.world.ach.total = keep.total;
       R.setWorld(S.world);
       S.tally = {}; S.feed = [];

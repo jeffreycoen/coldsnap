@@ -40,6 +40,20 @@ const run = (w, { volley = null, steps = 1200, collect = null } = {}) => {
   // double-load determinism
   const d1 = buildScenario(spec), d2 = buildScenario(spec);
   ok("scenario #0: double-load deterministic at t=0", worldHash(d1) === worldHash(d2));
+
+  // the shelters opt-in: exposed, deterministic, and actually live
+  const s1 = buildScenario(spec, { shelters: true });
+  ok("shelters opt-in exposes the four house shelters", Array.isArray(s1.pg.shelters) && s1.pg.shelters.length === 4);
+  ok("respawn api present (squads, keep repair, freeze)", typeof s1.pg.respawnSquad === "function" && typeof s1.pg.repairGarrison === "function" && typeof s1.pg.freeze === "function");
+  const hs1 = run(s1, { volley: [0, -30] });
+  const hs2 = run(buildScenario(spec, { shelters: true }), { volley: [0, -30] });
+  ok("shelters-on world is deterministic", hs1 === hs2);
+  ok("sheltering changes panic behavior (diverges from parity world)", hs1 !== h2);
+  // repair round-trip: same keep body count after demolition + repair
+  const s3 = buildScenario(spec, { shelters: true });
+  const keepCount = s3.bodies.filter((b) => b.group === "garrison").length;
+  s3.pg.repairGarrison();
+  ok("keep repair rebuilds the same masonry", s3.bodies.filter((b) => b.group === "garrison").length === keepCount);
 }
 
 // --- the phase gate: a NEW contract authored purely in JSON

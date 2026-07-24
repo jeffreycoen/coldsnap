@@ -132,6 +132,8 @@ try {
   ok("sandbox deploy overlay wears the bureau voice", body.includes("CONTRACT DIVISION") && body.includes("The bureau is watching the clock"));
   const csState = await page.evaluate(() => window.__COLDSNAP__.getState());
   ok("sandbox world builds fully (1030 bodies)", csState.bodies === 1030);
+  const shelters = await page.evaluate(() => (window.__COLDSNAP__._world().pg.shelters || []).length);
+  ok("sandbox runs the scenario pipeline with sheltering on", shelters === 4);
   // play it: a volley on the gunnery pad should fulfil WO-01 outright
   await page.mouse.click(480, 300); // dismiss deploy overlay
   await page.waitForFunction(() => !!document.querySelector("[data-brief]"));
