@@ -138,8 +138,10 @@ try {
   // play it: a volley on the gunnery pad should fulfil WO-01 outright
   await page.mouse.click(480, 300); // dismiss deploy overlay
   await page.waitForFunction(() => !!document.querySelector("[data-brief]"));
+  // the directive teletypes — wait for the lot line to finish typing
+  await page.waitForFunction(() => document.body.innerText.includes("Decommissioned units, lot 7"), { timeout: 15000, polling: 500 });
   body = await text();
-  ok("work-order brief card presents WO-01", body.includes("WORK ORDER") && body.includes("Decommissioned units, lot 7"));
+  ok("work-order brief card presents WO-01", body.includes("WORK ORDER"));
   await sleep(800); // the brief ack arms after 500ms so a trailing deploy-tap click can't dismiss it
   await page.evaluate(() => document.querySelector("[data-brief-ack]").click());
   await page.waitForFunction(() => !document.querySelector("[data-brief]"));
@@ -475,8 +477,9 @@ try {
   await phone.waitForFunction(() => !!window.__COLDSNAP__);
   await phone.touchscreen.tap(195, 600); // dismiss deploy overlay
   await phone.waitForFunction(() => !!document.querySelector("[data-brief]"));
-  const phoneBody = await phone.evaluate(() => document.body.innerText);
-  ok("phone: brief card carries the full directive", phoneBody.includes("Decommissioned units, lot 7"));
+  // teletype: wait for the lot line to finish typing before reading
+  await phone.waitForFunction(() => document.body.innerText.includes("Decommissioned units, lot 7"), { timeout: 15000, polling: 500 });
+  ok("phone: brief card carries the full directive", true);
   const skipRight = await phone.evaluate(() => {
     const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === "SKIP");
     return b ? b.getBoundingClientRect().right : 1e9;
