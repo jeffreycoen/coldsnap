@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { stepWorld, bisonFire, fireVolley, explode, worldHash } from "../src/engine/core.js";
 import { buildScenario, lintScenario } from "../src/game/scenario.js";
 import { matchKill } from "../src/game/predicate.js";
-import { composeAAR } from "../src/aar/compose.js";
+import { composeAAR, resolveEvidence } from "../src/aar/compose.js";
 import { disperseState } from "../src/game/altcheck.js";
 
 const fails = [];
@@ -802,6 +802,188 @@ const plates = (w) => w.bodies.filter((b) => b.group === "plate" && b.kind === "
   const dev = composeAAR({ contract: spec.contract, events: [], elapsed: 40, seed: 7, outcome: "UNFULFILLED — DEVIATION" }).filter((l) => l.startsWith("ATTACHMENT "));
   ok("AC-07: fulfilled report files the settlement survey", ful.length === 5 && ful[1].includes("school bell") && ful[3].includes("armature jigs"));
   ok("AC-07: deviation report files only the write-off", dev.length === 1 && dev[0].includes("Settlement unoccupied at survey"));
+}
+
+// --- AC-08 SURFACE LOAD RATING, REPEAT (the mirror finale: WO-07's sheet,
+// restaged among the campaign's wreckage. Restock is untestable by design —
+// the predicate is any-cause on the drill squad, so three deaths of any kind
+// complete the order before the pool can exhaust.)
+{
+  const spec = loadSpec("../src/game/scenarios/ac-08-sheet.json");
+  const POOL8 = spec.terrain.pool;
+  const drill = (w) => w.bodies.filter((b) => b.group === "ponddrill2" && b.kind === "unit");
+  const alive = (w) => drill(w).filter((u) => u.alive);
+  const park = (w, x, z) => {
+    const b = w.byId.get(w.bisonId);
+    b.pos.x = x; b.pos.z = z; b.pos.y = w.field.heightAt(x, z) + 0.97;
+    b.v.x = b.v.y = b.v.z = 0; b.w.x = b.w.y = b.w.z = 0;
+    return b;
+  };
+  const w1 = buildScenario(spec, { shelters: true });
+  ok("AC-08: loads, in budget", lintScenario(spec, w1).length === 0, `${w1.bodies.length} bodies, ${w1.welds.length} welds`);
+  ok("AC-08: WO-07's drill lattice restaged — six androids on the sheet", drill(w1).length === 6 && drill(w1).every((u) => u.dress === "android" && u.pos.y - u.hy > POOL8.level && u.pos.x > POOL8.x0 && u.pos.x < POOL8.x1 && u.pos.z > POOL8.z0 && u.pos.z < POOL8.z1));
+  ok("AC-08: the sheet is frozen under them", w1.ice && w1.ice.plates.length === 64);
+  ok("AC-08: the evidence ring stands — three hulls, the operable truck", w1.bodies.filter((b) => b.kind === "wreck").length === 3 && w1.bodies.some((b) => b.group === "relic" && b.alive));
+  ok("AC-08: the sheet reads OCCUPIED at composition", disperseState(w1.bodies, POOL8, "ponddrill2") === "OCCUPIED");
+  const w2 = buildScenario(spec, { shelters: true });
+  ok("AC-08: double-load deterministic", worldHash(w1) === worldHash(w2));
+
+  {
+    const w = buildScenario(spec, { shelters: true });
+    for (let i = 0; i < 1200; i++) { w.events.length = 0; stepWorld(w); }
+    const slid = w.bodies.filter((b) => b.kind === "chunk" && b.group !== "ice" && b.pos.x > POOL8.x0 && b.pos.x < POOL8.x1 && b.pos.z > POOL8.z0 && b.pos.z < POOL8.z1).length;
+    ok("AC-08: the detail stands the ice through 10 idle seconds", alive(w).length === 6 && disperseState(w.bodies, POOL8, "ponddrill2") === "OCCUPIED");
+    ok("AC-08: the rim ruin holds its slope — no stone in the water", slid === 0);
+  }
+
+  // the draft's headline mechanic: one round into the sheet shatters it
+  // locally and the pond takes whoever stood on the broken plates
+  {
+    const w = buildScenario(spec, { shelters: true });
+    park(w, 0, 8);
+    bisonFire(w, { x: 0, z: 26 });
+    let drowned = 0, matched = 0;
+    for (let i = 0; i < 3600; i++) {
+      w.events.length = 0; stepWorld(w);
+      for (const e of w.events) if (e.type === "kill" && e.group === "ponddrill2") {
+        if (e.cause === "DROWN") drowned++;
+        if (matchKill(spec.contract.predicate, e)) matched++;
+      }
+    }
+    ok("AC-08: one round opens the sheet and the pond accepts delivery", drowned >= 1, `${drowned} drowned`);
+    ok("AC-08: any-cause predicate matches the drownings", matched >= drowned && drowned >= 1);
+  }
+
+  // completion: shells walked onto the survivors — the abutment screens the
+  // pad axis (probed), so the firing position is the south bank, close in
+  {
+    const w = buildScenario(spec, { shelters: true });
+    const b = park(w, 0, 12);
+    const t0 = w.t;
+    let prog = 0, nextT = 0;
+    for (let i = 0; i < 4800 && prog < spec.contract.need; i++) {
+      if (w.t - t0 >= nextT) {
+        let tgt = null, td = 1e9;
+        for (const u of alive(w)) { const d = Math.hypot(u.pos.x - b.pos.x, u.pos.z - b.pos.z); if (d < td) { td = d; tgt = u; } }
+        if (tgt) bisonFire(w, { x: tgt.pos.x, z: tgt.pos.z });
+        nextT += 2.5;
+      }
+      w.events.length = 0; stepWorld(w);
+      for (const e of w.events) if (e.type === "kill" && matchKill(spec.contract.predicate, e)) prog++;
+    }
+    const el = w.t - t0;
+    ok("AC-08: completable by fire on the sheet", prog >= spec.contract.need, `${prog}/${spec.contract.need} in ${el.toFixed(1)}s`);
+    ok("AC-08: inside gold par — the mirror quotes WO-07's times", el <= spec.contract.par[0], `${el.toFixed(1)}s vs ${spec.contract.par[0]}s`);
+  }
+
+  // deviation: the quiet finale. Transit wide up the east rim, sweep the
+  // north shore (the fear bubble folds the outer ranks south), park far to
+  // the south-west, then the trained gun walks the stragglers off the sheet
+  // one at a time. Push THROUGH the lip — a man released on it just stands
+  // there; the far park keeps shoves from stacking into a prone slide-in
+  // (a man knocked flat on the sheet reads as swimming and the cold clock
+  // runs — probed, fatal).
+  {
+    const HOLD = spec.contract.alt.holdS;
+    const w = buildScenario(spec, { shelters: true });
+    const b = park(w, 0, -12);
+    let altT = 0, best = 0, voided = false, shepherd = false;
+    const t0 = w.t;
+    const inRect = (u) => u.pos.x > POOL8.x0 - 1 && u.pos.x < POOL8.x1 + 1 && u.pos.z > POOL8.z0 - 1 && u.pos.z < POOL8.z1 + 1;
+    const edgeDist = (u) => Math.min(u.pos.x - POOL8.x0, POOL8.x1 - u.pos.x, u.pos.z - POOL8.z0, POOL8.z1 - u.pos.z);
+    const watch = () => {
+      if (shepherd) {
+        const S2 = w.__shep || (w.__shep = { tgt: null, dir: null, lastP: null, lastT: 0, block: new Map(), benchN: new Map() });
+        if (S2.tgt && (!S2.tgt.alive || !inRect(S2.tgt))) S2.tgt = null;
+        if (S2.tgt && w.t - S2.lastT > 3.5) {
+          if (Math.hypot(S2.tgt.pos.x - S2.lastP.x, S2.tgt.pos.z - S2.lastP.z) < 0.5) {
+            S2.block.set(S2.tgt.id, w.t + 12);
+            S2.benchN.set(S2.tgt.id, (S2.benchN.get(S2.tgt.id) || 0) + 1);
+            S2.tgt = null;
+          } else { S2.lastP = { x: S2.tgt.pos.x, z: S2.tgt.pos.z }; S2.lastT = w.t; }
+        }
+        if (!S2.tgt) {
+          let td = 1e9;
+          for (const u of drill(w)) {
+            if (!u.alive || !inRect(u)) continue;
+            if ((S2.block.get(u.id) || 0) > w.t) continue;
+            const d = edgeDist(u);
+            if (d < td) { td = d; S2.tgt = u; }
+          }
+          if (S2.tgt) {
+            const tp = S2.tgt.pos;
+            const dW = tp.x - POOL8.x0, dE = POOL8.x1 - tp.x, dS = tp.z - POOL8.z0, dN = POOL8.z1 - tp.z;
+            const m = Math.min(dW, dE, dS, dN);
+            S2.dir = m === dW ? [-1, 0] : m === dE ? [1, 0] : m === dS ? [0, -1] : [0, 1];
+            S2.lastP = { x: tp.x, z: tp.z }; S2.lastT = w.t;
+          }
+        }
+        const tgt = S2.tgt;
+        if (tgt) {
+          let [dx, dz] = S2.dir;
+          const SEQ = [0, 1, -1, 2, -2, 1, -1];
+          const rot = SEQ[Math.min(S2.benchN.get(tgt.id) || 0, 6)] * Math.PI / 4;
+          if (rot) {
+            const c = Math.cos(rot), s = Math.sin(rot);
+            const rx = dx * c - dz * s, rz = dx * s + dz * c;
+            dx = rx; dz = rz;
+          }
+          w.threat = { x: tgt.pos.x - dx * 1.5, z: tgt.pos.z - dz * 1.5, t: w.t };
+        }
+      }
+      for (const e of w.events) if (e.type === "kill" && e.group === "ponddrill2") voided = true;
+      const st = disperseState(w.bodies, POOL8, "ponddrill2");
+      altT = st === "CLEAR" ? altT + w.dt : 0;
+      if (altT > best) best = altT;
+    };
+    const driveTo = (tx, tz, thr, tol, cap = 45) => {
+      for (let i = 0; i < cap * 120; i++) {
+        const dx = tx - b.pos.x, dz = tz - b.pos.z, d = Math.hypot(dx, dz);
+        if (d < tol || best >= HOLD) return;
+        const yaw = Math.atan2(b.R[6], b.R[8]);
+        let err = Math.atan2(dx, dz) - yaw;
+        while (err > Math.PI) err -= 2 * Math.PI;
+        while (err < -Math.PI) err += 2 * Math.PI;
+        w.control.steer = Math.max(-1, Math.min(1, err * 2));
+        w.control.throttle = Math.abs(err) > 1.2 ? 0.25 : thr;
+        w.control.brake = false;
+        w.events.length = 0; stepWorld(w); watch();
+      }
+    };
+    const holdN = (sec) => {
+      w.control.throttle = 0; w.control.steer = 0; w.control.brake = true;
+      for (let i = 0; i < sec * 120; i++) { w.events.length = 0; stepWorld(w); watch(); if (best >= HOLD) return; }
+    };
+    driveTo(17, 4, 0.6, 2.5);
+    driveTo(16, 18, 0.4, 2);
+    driveTo(14, 32, 0.35, 2); holdN(3);
+    driveTo(10, 40, 0.3, 1.5); holdN(3);
+    driveTo(0, 42, 0.3, 1.5); holdN(3);
+    driveTo(-10, 40, 0.3, 1.5); holdN(3);
+    driveTo(-14, 30, 0.3, 1.5);
+    driveTo(-15, 18, 0.35, 1.5);
+    driveTo(-14, 10, 0.35, 1.5);
+    shepherd = true;
+    holdN(280);
+    ok("AC-08: the campaign's last order closes without a shot", !voided && best >= HOLD, `hold ${best.toFixed(1)}s in ${(w.t - t0).toFixed(0)}s, ${alive(w).length}/6 alive${voided ? ", VOIDED" : ""}`);
+    ok("AC-08: the sheet survives the quiet path", w.ice && w.ice.plates.length === 64);
+  }
+
+  // evidence: the world forks once. The rim line reads AC-07's outcome from
+  // the record — fulfilled files the skate, deviated files nil findings.
+  const kills8 = [{ type: "kill", cause: "DROWN", attacker: "world", group: "ponddrill2", t: 5 }];
+  const cFul = resolveEvidence(spec.contract, { ac07: { lastOutcome: "fulfilled" } });
+  const cDev = resolveEvidence(spec.contract, { ac07: { lastOutcome: "deviated" } });
+  const cNone = resolveEvidence(spec.contract, {});
+  const att = (c) => composeAAR({ contract: c, events: kills8, elapsed: 14, seed: 7 }).filter((l) => l.startsWith("ATTACHMENT "));
+  const aFul = att(cFul), aDev = att(cDev), aNone = att(cNone);
+  ok("AC-08: village processed — the skate files at the rim, last line in the game", aFul.length === 5 && aFul[4].includes("1 skate, small-format") && !aFul.some((l) => l.includes("nil findings")));
+  ok("AC-08: village deviated — they took their things", aDev.length === 5 && aDev[4].includes("nil findings") && !aDev.some((l) => l.includes("skate")));
+  ok("AC-08: a missing record row reads as fulfilled", aNone.length === 5 && aNone[4].includes("1 skate"));
+  const ful8 = composeAAR({ contract: cFul, events: kills8, elapsed: 14, seed: 7 });
+  ok("AC-08: the second hand closes the ring on the filed report", ful8.some((l) => l === "[margin] The ministry copy is shorter."));
+  const dev8 = composeAAR({ contract: cFul, events: [], elapsed: 80, seed: 7, outcome: "UNFULFILLED — DEVIATION", dispersed: 6 });
+  ok("AC-08: the deviation report attaches nothing — nil findings all the way down", !dev8.some((l) => l.startsWith("ATTACHMENT ") || l.startsWith("[margin] ")));
 }
 
 if (fails.length) {

@@ -26,6 +26,25 @@ export const REMARKS = {
 
 const pad2 = (n) => String(n).padStart(2, "0");
 
+// The world forks once: an "[if <order> fulfilled|deviated] " prefix files a
+// line only when the campaign record agrees — AC-08's rim line reads AC-07's
+// outcome (village deviated: they took their things). A missing record row
+// reads as fulfilled; orders unseal in sequence, so the row exists in any
+// real campaign. Pure over (contract, record) — the caller passes the loaded
+// coldsnap-camp-record object.
+export function resolveEvidence(contract, record) {
+  if (!contract || !contract.evidence) return contract;
+  const out = [];
+  for (const ev of contract.evidence) {
+    const m = /^\[if (\w+) (fulfilled|deviated)\] /.exec(ev);
+    if (!m) { out.push(ev); continue; }
+    const row = record && record[m[1]];
+    const devd = !!(row && row.lastOutcome === "deviated");
+    if ((m[2] === "deviated") === devd) out.push(ev.slice(m[0].length));
+  }
+  return { ...contract, evidence: out };
+}
+
 export function composeAAR({ contract, events, ordnance = { shell: 0, mg: 0, volley: 0 }, t0 = 0, elapsed, medal = null, outcome = "FULFILLED", dispersed = 0, seed = 1 }) {
   const rng = mulberry32(seed);
   const kills = events.filter((e) => e.type === "kill");

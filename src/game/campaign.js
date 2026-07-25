@@ -10,6 +10,7 @@ import AC04 from "./scenarios/ac-04-crossing.json";
 import AC05 from "./scenarios/ac-05-steading.json";
 import AC06 from "./scenarios/ac-06-halt.json";
 import AC07 from "./scenarios/ac-07-village.json";
+import AC08 from "./scenarios/ac-08-sheet.json";
 
 export const CAMPAIGN = [
   { id: "ac01", wo: "AC-01", title: "ARMOR PLATE ACCEPTANCE", scenario: AC01 },
@@ -19,7 +20,7 @@ export const CAMPAIGN = [
   { id: "ac05", wo: "AC-05", title: "OUTBUILDING, OCCUPIED", scenario: AC05 },
   { id: "ac06", wo: "AC-06", title: "THE CONVOY HAS STOPPED", scenario: AC06 },
   { id: "ac07", wo: "AC-07", title: "THE VILLAGE", scenario: AC07 },
-  { id: "ac08", wo: "AC-08", title: "SURFACE LOAD RATING, REPEAT", scenario: null },
+  { id: "ac08", wo: "AC-08", title: "SURFACE LOAD RATING, REPEAT", scenario: AC08 },
 ];
 
 // a sealed title renders as redaction bars sized to the real title

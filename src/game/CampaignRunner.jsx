@@ -15,7 +15,7 @@ import { disperseState } from "./altcheck.js";
 import { matchKill, CONTRACT_PREDICATES } from "./predicate.js";
 import { makeRenderer } from "../render/renderer.js";
 import { CONTRACTS } from "./contracts.js";
-import { composeAAR } from "../aar/compose.js";
+import { composeAAR, resolveEvidence } from "../aar/compose.js";
 import { loadSettings, saveSettings, loadTally, sanitizeGfx } from "../platform/autosave.js";
 
 // ================================================================= component
@@ -96,7 +96,7 @@ function Typed({ text, cps = 45, style }) {
   }, [text, cps]);
   return <span style={style}>{text.slice(0, n)}{n < text.length ? <span style={{ opacity: 0.6 }}>{"\u258c"}</span> : null}</span>;
 }
-export default function CampaignRunner({ entry, onExit, onComplete }) {
+export default function CampaignRunner({ entry, onExit, onComplete, record }) {
   const spec = entry.scenario;
   const TRIALS = useMemo(() => makeTrials(spec), [spec]);
   const wrapRef = useRef(null);
@@ -210,6 +210,10 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
       const subj = spec.contract && spec.contract.subjects;
       return subj ? S.trialLog.events.filter((e) => e.type !== "kill" || e.group === subj) : S.trialLog.events;
     };
+    // conditional evidence resolves against the record as it stood at
+    // deployment (the [] effect deps freeze the prop — a mid-mission record
+    // write can't reshuffle a report being read)
+    const contractR = resolveEvidence(spec.contract, record);
     const advanceTrial = (skipped) => {
       S.audio.trial();
       const t = TRIALS[S.trial.idx];
@@ -232,7 +236,7 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
             const report = composeAAR({
               // the FULL authored contract — the reduced toast object `c` has
               // no evidence field, and the attachments ride on the contract
-              contract: spec.contract || c || { wo: "WO-??", title: t.title },
+              contract: contractR || c || { wo: "WO-??", title: t.title },
               events: ledgerEvents(),
               ordnance: S.trialLog ? S.trialLog.ordnance : { shell: 0, mg: 0, volley: 0 },
               t0: S.trial.t0, elapsed: el, medal: m, seed: spec.terrain.worldSeed || 1234,
@@ -259,7 +263,7 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
       try { window.storage.set("coldsnap-camp-medals", JSON.stringify(S.medals)); } catch (e) {}
       try {
         const report = composeAAR({
-          contract: spec.contract || CONTRACTS[t.id] || { wo: "WO-??", title: t.title },
+          contract: contractR || CONTRACTS[t.id] || { wo: "WO-??", title: t.title },
           events: ledgerEvents(),
           ordnance: S.trialLog ? S.trialLog.ordnance : { shell: 0, mg: 0, volley: 0 },
           t0: S.trial.t0, elapsed: el, medal: null, outcome: "UNFULFILLED — DEVIATION", dispersed, seed: spec.terrain.worldSeed || 1234,

@@ -368,8 +368,7 @@ try {
       w.bodies.filter((b) => b.group === "haulage" && b.kind === "truck").length === 3;
   }));
 
-  // --- AC-07 (full): the flip — three fabrication halls brought to grade,
-  // the crushed floors a by-product; mixed smears; the AC-08 seal
+  // --- AC-07 (fast): deploys, the settlement composes, mixed dress
   await seedMission(6, "ac07", "AC-07");
   await page.waitForFunction(() => document.body.innerText.includes("Bring them to grade"), { timeout: 15000, polling: 500 });
   ok("AC-07 brief carries the directive", true);
@@ -381,46 +380,58 @@ try {
     return v.length === 20 && v.filter((u) => u.dress === "human").length === 5 &&
       w.bodies.filter((b) => b.roofSlab).length === 3 && w.pg.shelters.length === 4;
   }));
+
+  // --- AC-08 (full): the mirror finale — WO-07's sheet restaged among the
+  // campaign's wreckage. The record is seeded AC-07-fulfilled so the AAR
+  // must file the skate (the fork's other branch is gate-covered).
+  await page.evaluate(() => localStorage.setItem("coldsnap-camp-record", JSON.stringify({ ac07: { fulfilled: 1, deviated: 0, bestTime: 33.3, lastOutcome: "fulfilled" } })));
+  await seedMission(7, "ac08", "AC-08");
+  await page.waitForFunction(() => document.body.innerText.includes("The sheet has refrozen"), { timeout: 15000, polling: 500 });
+  ok("AC-08 brief carries the directive", true);
+  await sleep(400);
+  await page.evaluate(() => document.querySelector("[data-brief-ack]").click());
+  ok("the sheet composes: six on the ice, the evidence ring around it", await page.evaluate(() => {
+    const w = window.__COLDSNAP__._world();
+    const d = w.bodies.filter((b) => b.group === "ponddrill2" && b.kind === "unit" && b.alive);
+    return d.length === 6 && d.every((u) => u.dress === "android") && w.ice && w.ice.plates.length === 64 &&
+      w.bodies.filter((b) => b.kind === "wreck").length === 3 && w.bodies.some((b) => b.group === "relic" && b.alive);
+  }));
   await page.evaluate(() => window.__COLDSNAP__.setGfx({ scale: 4, outline: 0, dither: 0 })); // quarter-res keeps swiftshader ahead of the debris
-  await page.mouse.move(480, 610); // the live aim is a threat — park it on the road behind the tank
-  const done7 = () => document.body.innerText.includes("Occupancy resolved");
-  // walk shells along the west face of whichever hall still stands —
-  // revisit until all three are down (fixed per-hall budgets strand the
-  // run when one wall ring is stubborn)
-  const deadline7 = Date.now() + 12 * 60 * 1000;
-  let walk7 = 0;
-  while (Date.now() < deadline7) {
-    if (await page.evaluate(done7)) break;
-    const st = await page.evaluate((s) => {
+  await page.mouse.move(480, 610); // the live aim is a threat — park it behind the tank, off the sheet
+  // the abutment screens the pad axis (probed) — fire from the south bank,
+  // shells walked onto whoever still stands; revisit until the order closes
+  const done8 = () => document.body.innerText.includes("Sheet rating confirmed");
+  const deadline8 = Date.now() + 10 * 60 * 1000;
+  while (Date.now() < deadline8) {
+    if (await page.evaluate(done8)) break;
+    const st = await page.evaluate(() => {
       const api = window.__COLDSNAP__, w = api._world();
-      const HALLS = [["fac1", 2], ["fac2", 16], ["fac3", 30]];
-      let tgt = null;
-      for (const [g, z] of HALLS) {
-        const slab = w.bodies.find((b) => b.roofSlab && b.group === g);
-        if (slab.pos.y < w.field.heightAt(slab.pos.x, slab.pos.z) + 1.6 || slab.R[4] < 0.8) continue;
-        tgt = z;
-        break;
-      }
-      if (tgt == null) return "all-down";
+      const alive = w.bodies.filter((b2) => b2.group === "ponddrill2" && b2.kind === "unit" && b2.alive);
+      if (!alive.length) return "none";
       const b = w.byId.get(w.bisonId);
-      b.pos.x = 3; b.pos.z = tgt; b.pos.y = w.field.heightAt(3, tgt) + 0.97;
+      b.pos.x = 0; b.pos.z = 12; b.pos.y = w.field.heightAt(0, 12) + 0.97;
       b.v.x = b.v.y = b.v.z = 0;
-      if (api._S.cds.fire <= 0) { api._S.actions.fireAt(7.7, tgt - 4 + (s % 5) * 2); return "fired"; }
+      let tgt = null, td = 1e9;
+      for (const u of alive) { const d = Math.hypot(u.pos.x - b.pos.x, u.pos.z - b.pos.z); if (d < td) { td = d; tgt = u; } }
+      if (api._S.cds.fire <= 0) { api._S.actions.fireAt(tgt.pos.x, tgt.pos.z); return "fired"; }
       return "cd";
-    }, walk7);
-    if (st === "fired") walk7++;
-    await sleep(st === "all-down" ? 2000 : 1500);
+    });
+    await sleep(st === "none" ? 2000 : 1500);
   }
-  await page.waitForFunction(() => document.body.innerText.includes("Occupancy resolved"), { timeout: 240000, polling: 2000 });
-  ok("AC-07 completes: three structures at grade", true);
+  await page.waitForFunction(() => document.body.innerText.includes("Sheet rating confirmed"), { timeout: 240000, polling: 2000 });
+  ok("AC-08 completes: sheet rating confirmed", true);
   ok("kills leave smears on the ground", await page.evaluate(() => window.__COLDSNAP__._R._splat.smears > 0));
   await page.waitForFunction(() => !!document.querySelector("[data-aar]"), { timeout: 20000, polling: 500 });
   await page.waitForFunction(() => document.body.innerText.includes("ATTACHMENT A"), { timeout: 10000, polling: 500 });
-  ok("settlement survey filed on the report", (await text()).includes("school bell") && (await text()).includes("armature jigs"));
+  ok("the skate files at the rim — the record fork read AC-07 fulfilled", (await text()).includes("1 skate, small-format") && !(await text()).includes("nil findings"));
+  ok("the second hand closes the ring on the filed report", await page.evaluate(() => {
+    const m = document.querySelector("[data-margin]");
+    return !!m && m.innerText.includes("The ministry copy is shorter.");
+  }));
   await page.evaluate(() => document.querySelector("[data-aar-file]").click());
   await page.waitForFunction(() => document.body.innerText.includes("ORDER BOOK"), { timeout: 20000, polling: 500 });
   book = await text();
-  ok("AC-08 awaits issue after AC-07", book.includes("SURFACE LOAD RATING, REPEAT") && book.includes("AWAITING ISSUE"));
+  ok("the order book closes with all eight titles in clear", book.includes("SURFACE LOAD RATING, REPEAT") && !book.includes("AWAITING ISSUE") && book.includes("★"));
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => document.body.innerText.includes("PROVING GROUNDS"));
 

@@ -96,7 +96,7 @@ export default function App() {
       onBack={() => setScreen("menu")} />;
   }
   if (screen === "mission") {
-    return <CampaignRunner key={mission.id} entry={mission}
+    return <CampaignRunner key={mission.id} entry={mission} record={campRecord}
       onExit={() => setScreen("campaign")} onComplete={onMissionComplete} />;
   }
   if (screen === "controls") {
