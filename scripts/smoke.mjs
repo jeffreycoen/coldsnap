@@ -384,25 +384,32 @@ try {
   await page.evaluate(() => window.__COLDSNAP__.setGfx({ scale: 4, outline: 0, dither: 0 })); // quarter-res keeps swiftshader ahead of the debris
   await page.mouse.move(480, 610); // the live aim is a threat — park it on the road behind the tank
   const done7 = () => document.body.innerText.includes("Occupancy resolved");
-  // walk shells along each hall's west face until its slab comes down —
-  // shells carry no discipline gate, so park close and pound
-  for (const [g, z] of [["fac1", 2], ["fac2", 16], ["fac3", 30]]) {
-    let rounds = 0;
-    while (rounds < 40 && !(await page.evaluate(done7))) {
-      const st = await page.evaluate(([gg, zz, s]) => {
-        const api = window.__COLDSNAP__, w = api._world();
-        const slab = w.bodies.find((b) => b.roofSlab && b.group === gg);
-        if (slab.pos.y < w.field.heightAt(slab.pos.x, slab.pos.z) + 1.6 || slab.R[4] < 0.8) return "down";
-        const b = w.byId.get(w.bisonId);
-        b.pos.x = 3; b.pos.z = zz; b.pos.y = w.field.heightAt(3, zz) + 0.97;
-        b.v.x = b.v.y = b.v.z = 0;
-        if (api._S.cds.fire <= 0) { api._S.actions.fireAt(7.7, zz - 4 + (s % 5) * 2); return "fired"; }
-        return "cd";
-      }, [g, z, rounds]);
-      if (st === "down") break;
-      if (st === "fired") rounds++;
-      await sleep(1500);
-    }
+  // walk shells along the west face of whichever hall still stands —
+  // revisit until all three are down (fixed per-hall budgets strand the
+  // run when one wall ring is stubborn)
+  const deadline7 = Date.now() + 12 * 60 * 1000;
+  let walk7 = 0;
+  while (Date.now() < deadline7) {
+    if (await page.evaluate(done7)) break;
+    const st = await page.evaluate((s) => {
+      const api = window.__COLDSNAP__, w = api._world();
+      const HALLS = [["fac1", 2], ["fac2", 16], ["fac3", 30]];
+      let tgt = null;
+      for (const [g, z] of HALLS) {
+        const slab = w.bodies.find((b) => b.roofSlab && b.group === g);
+        if (slab.pos.y < w.field.heightAt(slab.pos.x, slab.pos.z) + 1.6 || slab.R[4] < 0.8) continue;
+        tgt = z;
+        break;
+      }
+      if (tgt == null) return "all-down";
+      const b = w.byId.get(w.bisonId);
+      b.pos.x = 3; b.pos.z = tgt; b.pos.y = w.field.heightAt(3, tgt) + 0.97;
+      b.v.x = b.v.y = b.v.z = 0;
+      if (api._S.cds.fire <= 0) { api._S.actions.fireAt(7.7, tgt - 4 + (s % 5) * 2); return "fired"; }
+      return "cd";
+    }, walk7);
+    if (st === "fired") walk7++;
+    await sleep(st === "all-down" ? 2000 : 1500);
   }
   await page.waitForFunction(() => document.body.innerText.includes("Occupancy resolved"), { timeout: 240000, polling: 2000 });
   ok("AC-07 completes: three structures at grade", true);
