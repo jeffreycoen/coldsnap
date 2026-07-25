@@ -685,11 +685,15 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
             S.trial.poolGoneT = (S.trial.poolGoneT || 0) + dt;
             if (S.trial.poolGoneT >= 2) {
               S.trial.poolGoneT = 0;
-              if (w.pg.respawnGroup) w.pg.respawnGroup(td.subjects); else td.setup(w);
               // masonry exhaustion guard: on a collapse-cause map the stone is
               // the kill vehicle — a restock that reissues men into a leveled
-              // steading strands the order, so keep prefabs are re-laid too
-              if (spec.contract.predicate && (spec.contract.predicate.causes || []).includes("COLLAPSE") && (spec.prefabs || []).some((p) => p.type === "keep") && w.pg.repairGarrison) w.pg.repairGarrison();
+              // settlement strands the order, so keeps AND houses are re-laid
+              // FIRST (garrisons must reissue indoors, not beside rubble)
+              if (spec.contract.predicate && (spec.contract.predicate.causes || []).includes("COLLAPSE")) {
+                if ((spec.prefabs || []).some((p) => p.type === "keep") && w.pg.repairGarrison) w.pg.repairGarrison();
+                if ((spec.prefabs || []).some((p) => p.type === "house") && w.pg.repairHouses) w.pg.repairHouses();
+              }
+              if (w.pg.respawnGroup) w.pg.respawnGroup(td.subjects); else td.setup(w);
               if (S.trialLog) S.trialLog.restocks = (S.trialLog.restocks || 0) + 1;
               S.toasts.push({ id: S.toastSeq++, title: "REPLACEMENT DETAIL ISSUED", desc: "Subject pool exhausted. The order stands.", t: 3.6 });
             }

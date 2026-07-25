@@ -356,8 +356,7 @@ try {
     return w.bodies.some((b) => b.group === "granary" && b.kind === "chunk") && w.pg.shelters.length === 3;
   }));
 
-  // --- AC-06 (full): the dissonance peak — the halt stands dead still until
-  // one rack resolves it; manifest evidence files; the AC-07 seal
+  // --- AC-06 (fast): deploys, the halt composes, trucks retained
   await seedMission(5, "ac06", "AC-06");
   await page.waitForFunction(() => document.body.innerText.includes("retained inventory"), { timeout: 15000, polling: 500 });
   ok("AC-06 brief carries the directive", true);
@@ -368,49 +367,84 @@ try {
     return w.bodies.filter((b) => b.group === "convoy2" && b.kind === "unit" && b.alive).length === 8 &&
       w.bodies.filter((b) => b.group === "haulage" && b.kind === "truck").length === 3;
   }));
+
+  // --- AC-07 (full): the flip — a settlement of twenty, humans filed in
+  // the same column; roof-burst racks; mixed smears; the AC-08 seal
+  await seedMission(6, "ac07", "AC-07");
+  await page.waitForFunction(() => document.body.innerText.includes("collapse is the specified method"), { timeout: 15000, polling: 500 });
+  ok("AC-07 brief carries the directive", true);
+  await sleep(400);
+  await page.evaluate(() => document.querySelector("[data-brief-ack]").click());
+  ok("the settlement composes: twenty villagers, humans among them", await page.evaluate(() => {
+    const w = window.__COLDSNAP__._world();
+    const v = w.bodies.filter((b) => b.group === "village" && b.kind === "unit" && b.alive);
+    return v.length === 20 && v.filter((u) => u.dress === "human").length === 5 && w.pg.shelters.length === 6;
+  }));
   await page.evaluate(() => {
     const api = window.__COLDSNAP__, w = api._world();
     api.setGfx({ scale: 4, outline: 0, dither: 0 }); // quarter-res keeps swiftshader ahead of the debris
     const b = w.byId.get(w.bisonId);
-    b.pos.x = 1.5; b.pos.z = 8; b.pos.y = w.field.heightAt(1.5, 8) + 0.97;
+    b.pos.x = 0; b.pos.z = -12; b.pos.y = w.field.heightAt(0, -12) + 0.97;
   });
-  const done6 = () => document.body.innerText.includes("Route restored to capacity");
-  await page.waitForFunction(() => window.__COLDSNAP__._S.cds.volley <= 0, { timeout: 120000, polling: 1000 });
-  await page.evaluate(() => window.__COLDSNAP__._S.actions.volleyAt(1.5, 24));
-  await page.waitForFunction(() => window.__COLDSNAP__._S.cds.volley > 5 || document.body.innerText.includes("Route restored to capacity"), { timeout: 60000, polling: 1000 });
-  // the live aim point is itself a threat (w.threat) — the line can scatter
-  // under the incoming rack, so any survivors get aimed shells at their
-  // live positions until the sixth credit lands
-  for (let i = 0; i < 40; i++) {
-    if (await page.evaluate(done6)) break;
+  await page.mouse.move(480, 610); // the live aim is a threat — park it on the road behind the tank
+  const done7 = () => document.body.innerText.includes("Occupancy resolved");
+  // frame-time step drops shift the rng stream, so pre-tuned scatter aims
+  // don't transfer to the browser — play it like a player instead. Each
+  // cycle: rack the most occupied house from its verified park (rubble can
+  // decay a sightline, so a refusal falls through to attrition); with
+  // nobody under a roof, shell the densest clump from beyond it. Wrong-
+  // cause kills exhaust the pool, the restock re-lays the settlement with
+  // the garrisons indoors, and the racks resume — progress only rises.
+  const HOUSE_AIMS = [
+    [-8, 4, 0, -12, -12.3, 2.5], [-9, 16, 0, 6, -12.5, 15], [-8, 28, 0, -12, -8, 25.2],
+    [8, 8, 18, -2, 10, 6.5], [9, 22, 2, 34, 12.5, 22],
+  ];
+  for (let i = 0; i < 90; i++) {
+    if (await page.evaluate(done7)) break;
+    await page.waitForFunction(() => window.__COLDSNAP__._S.cds.volley <= 0, { timeout: 120000, polling: 1000 });
+    const racked = await page.evaluate((HA) => {
+      const api = window.__COLDSNAP__, w = api._world();
+      const v = w.bodies.filter((b) => b.group === "village" && b.kind === "unit" && b.alive);
+      let best = null, bn = 1;
+      for (const h of HA) {
+        const n = v.filter((u) => Math.abs(u.pos.x - h[0]) < 2.4 && Math.abs(u.pos.z - h[1]) < 2.1).length;
+        if (n > bn) { bn = n; best = h; }
+      }
+      if (!best) return false;
+      const b = w.byId.get(w.bisonId);
+      b.pos.x = best[2]; b.pos.z = best[3]; b.pos.y = w.field.heightAt(best[2], best[3]) + 0.97;
+      b.v.x = b.v.y = b.v.z = 0;
+      return api._S.actions.volleyAt(best[4], best[5]);
+    }, HOUSE_AIMS);
+    if (racked) { await sleep(14000); continue; }
     await page.evaluate(() => {
       const api = window.__COLDSNAP__, w = api._world();
-      if (api._S.cds.fire > 0) return;
-      const b = w.byId.get(w.bisonId);
-      let tg = null, td = 1e9;
-      for (const u of w.bodies) {
-        if (u.group !== "convoy2" || u.kind !== "unit" || !u.alive) continue;
-        const d = Math.hypot(u.pos.x - b.pos.x, u.pos.z - b.pos.z);
-        if (d < td) { td = d; tg = u; }
+      const v = w.bodies.filter((b) => b.group === "village" && b.kind === "unit" && b.alive);
+      if (!v.length) return;
+      let tg = v[0], bn = -1;
+      for (const u of v) {
+        const n = v.filter((o) => Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) < 3).length;
+        if (n > bn) { bn = n; tg = u; }
       }
-      if (tg) api._S.actions.fireAt(tg.pos.x + tg.v.x * 0.4, tg.pos.z + tg.v.z * 0.4);
+      const dx = tg.pos.x, dz = tg.pos.z - 16, dd = Math.hypot(dx, dz) || 1;
+      const b = w.byId.get(w.bisonId);
+      b.pos.x = tg.pos.x + (dx / dd) * 9; b.pos.z = tg.pos.z + (dz / dd) * 9;
+      b.pos.y = w.field.heightAt(b.pos.x, b.pos.z) + 0.97;
+      b.v.x = b.v.y = b.v.z = 0;
+      if (api._S.cds.fire <= 0) api._S.actions.fireAt(tg.pos.x + tg.v.x * 0.3, tg.pos.z + tg.v.z * 0.3);
     });
-    await sleep(1500);
+    await sleep(1400);
   }
-  await page.waitForFunction(() => document.body.innerText.includes("Route restored to capacity"), { timeout: 240000, polling: 2000 });
-  ok("AC-06 completes by one rack into the standing line", true);
-  ok("android kills leave smears on the ground", await page.evaluate(() => window.__COLDSNAP__._R._splat.smears > 0));
+  await page.waitForFunction(() => document.body.innerText.includes("Occupancy resolved"), { timeout: 300000, polling: 2000 });
+  ok("AC-07 completes by collapse", true);
+  ok("kills leave smears on the ground", await page.evaluate(() => window.__COLDSNAP__._R._splat.smears > 0));
   await page.waitForFunction(() => !!document.querySelector("[data-aar]"), { timeout: 20000, polling: 500 });
   await page.waitForFunction(() => document.body.innerText.includes("ATTACHMENT A"), { timeout: 10000, polling: 500 });
-  ok("manifest evidence filed on the report", (await text()).includes("41 crates") && (await text()).includes("Zone 2"));
-  ok("the second hand has touched the file", await page.evaluate(() => {
-    const m = document.querySelector("[data-margin]");
-    return !!m && m.innerText.includes("Who were the rations for?");
-  }));
+  ok("settlement survey filed on the report", (await text()).includes("school bell") && (await text()).includes("armature jigs"));
   await page.evaluate(() => document.querySelector("[data-aar-file]").click());
   await page.waitForFunction(() => document.body.innerText.includes("ORDER BOOK"), { timeout: 20000, polling: 500 });
   book = await text();
-  ok("AC-07 awaits issue after AC-06", book.includes("THE VILLAGE") && book.includes("AWAITING ISSUE"));
+  ok("AC-08 awaits issue after AC-07", book.includes("SURFACE LOAD RATING, REPEAT") && book.includes("AWAITING ISSUE"));
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => document.body.innerText.includes("PROVING GROUNDS"));
 

@@ -154,8 +154,30 @@ const BUILDERS = {
 };
 
 function spawnSquad(world, field, s, ice) {
+  // rubble clearance for reissued details: a spawn cell fouled by collapsed
+  // masonry crushes the unit and files a COLLAPSE nobody fired (AC-07 found
+  // this). The replacement stages beside the ruin — deterministic ring
+  // search for clear ground, nearest first. Initial builds are untouched:
+  // squads spawn before prefabs, so no chunk exists yet and parity holds.
+  const fouled = (px, pz) => {
+    for (const o of world.bodies) {
+      if (o.kind !== "chunk") continue;
+      // overhead masonry (an intact roof) doesn't foul the floor beneath it
+      if (o.pos.y - o.hy > field.heightAt(px, pz) + 2.0) continue;
+      if (Math.abs(o.pos.x - px) < o.hx + 0.45 && Math.abs(o.pos.z - pz) < o.hz + 0.45) return true;
+    }
+    return false;
+  };
+  const RING = [[0, -1], [-1, 0], [1, 0], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]];
   for (let i = 0; i < s.nx; i++) for (let j = 0; j < s.nz; j++) {
-    const x = s.x0 + i * s.dx, z = s.z0 + j * s.dz;
+    let x = s.x0 + i * s.dx, z = s.z0 + j * s.dz;
+    if (fouled(x, z)) {
+      outer: for (const r of [1.8, 3.2, 4.6, 6.0]) {
+        for (const [ox, oz] of RING) {
+          if (!fouled(x + ox * r, z + oz * r)) { x = x + ox * r; z = z + oz * r; break outer; }
+        }
+      }
+    }
     const hy = s.utype === "gren" ? 0.92 : 0.86;
     // frozen pool: a squad staged inside the pool rect stands ON the sheet
     // (the thin_ice spawn floor), not at the bowl floor where field.heightAt
@@ -164,7 +186,16 @@ function spawnSquad(world, field, s, ice) {
     const onIce = ice && x > ice.x0 && x < ice.x1 && z > ice.z0 && z < ice.z1;
     // max(): a causeway pad may raise dry ground above the sheet plane
     // inside the rect — stand on whichever is higher
-    const y = onIce ? Math.max(ice.level - 0.058 + 0.09 + hy, groundY(field, x, z, hy)) : groundY(field, x, z, hy);
+    let y = onIce ? Math.max(ice.level - 0.058 + 0.09 + hy, groundY(field, x, z, hy)) : groundY(field, x, z, hy);
+    // last resort when the whole area is fouled: stand ON the ruin (pair-
+    // contact grounding carries walkers on debris)
+    for (const o of world.bodies) {
+      if (o.kind !== "chunk") continue;
+      if (Math.abs(o.pos.x - x) < o.hx + 0.3 && Math.abs(o.pos.z - z) < o.hz + 0.3) {
+        const t = o.pos.y + o.hy + hy + 0.04;
+        if (t > y) y = t;
+      }
+    }
     const u = addBody(world, { kind: "unit", team: 2, group: s.tag, mass: 82, hx: 0.26, hy, hz: 0.26, x, z, y, hp: s.utype === "gren" ? 45 : 30, friction: 0.55 });
     if (s.utype) u.utype = s.utype;
     if (s.brave) u.brave = true;
@@ -292,6 +323,20 @@ export function buildScenario(spec, opts = {}) {
         removeGroup((b) => b.group === grp);
         world.welds = world.welds.filter((w) => w.a.group !== grp && w.b.group !== grp);
         BUILDERS.keep(world, field, pg, pf);
+      }
+    },
+    // collapse-cause maps where houses are the kill vehicle (AC-07): the
+    // restock re-lays the settlement so reissued garrisons stage indoors
+    // again. Covers/shelters the builder re-pushes are truncated — the
+    // originals already point at the same geometry.
+    repairHouses() {
+      for (const pf of spec.prefabs || []) {
+        if (pf.type !== "house" || !pf.group) continue;
+        removeGroup((b) => b.group === pf.group);
+        world.welds = world.welds.filter((w) => w.a.group !== pf.group && w.b.group !== pf.group);
+        const c0 = pg.covers.length, s0 = pg.shelters.length;
+        BUILDERS.house(world, field, pg, pf);
+        pg.covers.length = c0; pg.shelters.length = s0;
       }
     },
     freeze() { freezePool(world); },

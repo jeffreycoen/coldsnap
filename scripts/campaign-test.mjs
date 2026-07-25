@@ -584,6 +584,193 @@ const plates = (w) => w.bodies.filter((b) => b.group === "plate" && b.kind === "
   ok("AC-06: the margin note consumes no attachment letter", !fulAll.some((l) => l.startsWith("ATTACHMENT E")));
 }
 
+// --- AC-07 THE VILLAGE
+{
+  const spec = loadSpec("../src/game/scenarios/ac-07-village.json");
+  const vill = (w) => w.bodies.filter((b) => b.group === "village" && b.kind === "unit");
+  const alive = (w) => vill(w).filter((u) => u.alive);
+  const park = (w, x, z) => {
+    const b = w.byId.get(w.bisonId);
+    b.pos.x = x; b.pos.z = z; b.pos.y = w.field.heightAt(x, z) + 0.97;
+    b.v.x = b.v.y = b.v.z = 0; b.w.x = b.w.y = b.w.z = 0;
+    return b;
+  };
+  const w1 = buildScenario(spec, { shelters: true });
+  ok("AC-07: loads, in budget", lintScenario(spec, w1).length === 0, `${w1.bodies.length} bodies, ${w1.welds.length} welds`);
+  ok("AC-07: twenty villagers, humans and androids in the same column", alive(w1).length === 20 && vill(w1).filter((u) => u.dress === "human").length === 5 && vill(w1).filter((u) => u.dress === "android").length === 15);
+  ok("AC-07: six house shelters, garrisons staged indoors", w1.pg.shelters.length === 6 && alive(w1).filter((u) => u.pos.x < -6.5 && u.pos.z < 6).length === 3);
+  ok("AC-07: the settlement reads OCCUPIED at composition", disperseState(w1.bodies, spec.contract.alt.rect, "village") === "OCCUPIED");
+  const w2 = buildScenario(spec, { shelters: true });
+  ok("AC-07: double-load deterministic", worldHash(w1) === worldHash(w2));
+
+  {
+    const w = buildScenario(spec, { shelters: true });
+    for (let i = 0; i < 1200; i++) { w.events.length = 0; stepWorld(w); }
+    ok("AC-07: the village stands through 10 idle seconds", alive(w).length === 20);
+  }
+
+  // kill path: racks placed so one rocket of each deterministic scatter
+  // pattern bursts on the roof square directly over a garrison — the roof
+  // course drops on the occupants, COLLAPSE only, clean hands on paper
+  {
+    const w = buildScenario(spec, { shelters: true });
+    park(w, 0, -12);
+    let prog = 0, wrong = 0;
+    const t0 = w.t;
+    const stepN = (n) => {
+      for (let i = 0; i < n; i++) {
+        w.events.length = 0;
+        stepWorld(w);
+        for (const e of w.events) if (e.type === "kill" && e.group === "village") {
+          if (matchKill(spec.contract.predicate, e)) prog++; else wrong++;
+        }
+      }
+    };
+    fireVolley(w, -12.3, 2.5, 6, "player"); stepN(1200);
+    if (prog < spec.contract.need) { fireVolley(w, 7.5, 6.2, 6, "player"); stepN(1200); }
+    if (prog < spec.contract.need) { fireVolley(w, -9.2, 26.8, 6, "player"); stepN(1680); }
+    const el = w.t - t0;
+    ok("AC-07: completable by roof-burst racks", prog >= spec.contract.need, `${prog}/${spec.contract.need} in ${el.toFixed(1)}s`);
+    ok("AC-07: inside silver par with no wrong-cause kills", el <= spec.contract.par[1] && wrong === 0, `${el.toFixed(1)}s vs ${spec.contract.par[1]}s, ${wrong} wrong`);
+  }
+
+  // deviation path: transit wide around the east, enter the north gap,
+  // weave the street (west row south, east row north — x -0.5 clears the
+  // well), then the trained gun walks each villager out: door-first for
+  // anyone indoors, straight at their nearest survey line otherwise, with
+  // a bench-and-retry for anyone wedged. All 20 out, alive, 6s: DEVIATION.
+  {
+    const spec7 = spec;
+    const RECT = spec7.contract.alt.rect;
+    const HOLD = spec7.contract.alt.holdS;
+    const w = buildScenario(spec7, { shelters: true });
+    const houses = spec7.prefabs.filter((p) => p.type === "house");
+    w.pg.shelters.forEach((sh, i) => {
+      const h = houses[i];
+      if (h) { sh.innerHx = ((h.nx - 1) / 2) * 0.83 - 0.55; sh.innerHz = ((h.nz - 1) / 2) * 0.83 - 0.55; }
+    });
+    const b = park(w, 0, -12);
+    let altT = 0, best = 0, voided = false;
+    const t0 = w.t;
+    let shepherd = false;
+    const inRect = (u) => u.pos.x > RECT.x0 - 1 && u.pos.x < RECT.x1 + 1 && u.pos.z > RECT.z0 - 1 && u.pos.z < RECT.z1 + 1;
+    const edgeDist = (u) => Math.min(u.pos.x - RECT.x0, RECT.x1 - u.pos.x, u.pos.z - RECT.z0, RECT.z1 - u.pos.z);
+    const watch = () => {
+      if (shepherd) {
+        const S2 = w.__shep || (w.__shep = { tgt: null, dir: null, lastP: null, lastT: 0, block: new Map() });
+        if (S2.tgt && (!S2.tgt.alive || !inRect(S2.tgt))) S2.tgt = null;
+        if (S2.tgt && w.t - S2.lastT > 5) {
+          if (Math.hypot(S2.tgt.pos.x - S2.lastP.x, S2.tgt.pos.z - S2.lastP.z) < 0.5) { S2.block.set(S2.tgt.id, w.t + 15); S2.tgt = null; }
+          else { S2.lastP = { x: S2.tgt.pos.x, z: S2.tgt.pos.z }; S2.lastT = w.t; }
+        }
+        if (!S2.tgt) {
+          let td = 1e9;
+          for (const u of vill(w)) {
+            if (!u.alive || !inRect(u)) continue;
+            if ((S2.block.get(u.id) || 0) > w.t) continue;
+            const d = edgeDist(u);
+            if (d < td) { td = d; S2.tgt = u; }
+          }
+          if (S2.tgt) {
+            const tp = S2.tgt.pos;
+            const dW = tp.x - RECT.x0, dE = RECT.x1 - tp.x, dS = tp.z - RECT.z0, dN = RECT.z1 - tp.z;
+            const m = Math.min(dW, dE, dS, dN);
+            S2.dir = m === dW ? [-1, 0] : m === dE ? [1, 0] : m === dS ? [0, -1] : [0, 1];
+            S2.lastP = { x: tp.x, z: tp.z }; S2.lastT = w.t;
+          }
+        }
+        const tgt = S2.tgt;
+        if (tgt) {
+          let door = null;
+          for (const sh of w.pg.shelters) {
+            if (Math.abs(tgt.pos.x - sh.inside.x) < sh.innerHx && Math.abs(tgt.pos.z - sh.inside.z) < sh.innerHz) { door = sh.door; break; }
+          }
+          let dx, dz;
+          if (door) { const ddx = door.x - tgt.pos.x, ddz = door.z - tgt.pos.z, dd = Math.hypot(ddx, ddz) || 1; dx = ddx / dd; dz = ddz / dd; }
+          else { dx = S2.dir[0]; dz = S2.dir[1]; }
+          w.threat = { x: tgt.pos.x - dx * 1.5, z: tgt.pos.z - dz * 1.5, t: w.t };
+        }
+      }
+      for (const e of w.events) if (e.type === "kill" && e.group === "village") voided = true;
+      const st = disperseState(w.bodies, RECT, "village");
+      altT = st === "CLEAR" ? altT + w.dt : 0;
+      if (altT > best) best = altT;
+    };
+    const driveTo = (tx, tz, thr, tol, cap = 45) => {
+      for (let i = 0; i < cap * 120; i++) {
+        const dx = tx - b.pos.x, dz = tz - b.pos.z, d = Math.hypot(dx, dz);
+        if (d < tol || best >= HOLD) return;
+        const yaw = Math.atan2(b.R[6], b.R[8]);
+        let err = Math.atan2(dx, dz) - yaw;
+        while (err > Math.PI) err -= 2 * Math.PI;
+        while (err < -Math.PI) err += 2 * Math.PI;
+        w.control.steer = Math.max(-1, Math.min(1, err * 2));
+        w.control.throttle = Math.abs(err) > 1.2 ? 0.25 : thr;
+        w.control.brake = false;
+        w.events.length = 0; stepWorld(w); watch();
+      }
+    };
+    const holdN = (sec) => {
+      w.control.throttle = 0; w.control.steer = 0; w.control.brake = true;
+      for (let i = 0; i < sec * 120; i++) { w.events.length = 0; stepWorld(w); watch(); if (best >= HOLD) return; }
+    };
+    driveTo(14, -12, 0.7, 2.5);
+    driveTo(26, 2, 0.7, 2.5);
+    driveTo(26, 28, 0.7, 2.5);
+    driveTo(18, 46, 0.7, 2.5);
+    driveTo(2, 42, 0.55, 2);
+    shepherd = true;
+    driveTo(-2.5, 32, 0.25, 1.5); holdN(3);
+    driveTo(-2.5, 24, 0.2, 1.2); holdN(3);
+    driveTo(-2.5, 16, 0.2, 1.2); holdN(3);
+    driveTo(-2.5, 8, 0.2, 1.2); holdN(3);
+    driveTo(-1, 2, 0.2, 1.2); holdN(4);
+    driveTo(-0.5, 8, 0.2, 0.8); holdN(3);
+    driveTo(-0.5, 14, 0.2, 0.8); holdN(3);
+    driveTo(-0.5, 20, 0.2, 0.8); holdN(4);
+    driveTo(0, 4, 0.25, 1.5);
+    holdN(150);
+    ok("AC-07: the survey empties the settlement without a kill", !voided && best >= HOLD, `hold ${best.toFixed(1)}s in ${(w.t - t0).toFixed(0)}s, ${alive(w).length}/20 alive${voided ? ", VOIDED" : ""}`);
+  }
+
+  // restock: on this map the houses are the kill vehicle — the runner
+  // re-lays the settlement FIRST, then reissues the detail indoors. A
+  // reissue must never file a COLLAPSE nobody fired (the rubble-spawn bug).
+  {
+    const w = buildScenario(spec, { shelters: true });
+    park(w, 0, -12);
+    const stepN = (n) => {
+      let p = 0;
+      for (let i = 0; i < n; i++) {
+        w.events.length = 0;
+        stepWorld(w);
+        for (const e of w.events) if (e.type === "kill" && matchKill(spec.contract.predicate, e)) p++;
+      }
+      return p;
+    };
+    const stonesA = () => w.bodies.filter((c) => c.kind === "chunk" && c.group === "houseA").length;
+    const n0 = stonesA();
+    fireVolley(w, -12.3, 2.5, 6, "player"); stepN(1200);
+    fireVolley(w, 7.5, 6.2, 6, "player"); stepN(1200);
+    for (const u of [...alive(w)]) explode(w, u.pos.x + u.hx + 1.1, u.pos.y + 0.5, u.pos.z, { r: 3.5, kv: 26, dmg: 300, crater: 0 });
+    stepN(120);
+    ok("AC-07: blast wipe empties the settlement", alive(w).length === 0);
+    w.pg.repairHouses();
+    w.pg.respawnGroup("village");
+    const falseCredits = stepN(600);
+    ok("AC-07: settlement re-laid, detail reissued indoors", stonesA() === n0 && alive(w).length === 20 && alive(w).filter((u) => u.pos.x < -6.5 && u.pos.z < 6).length === 3, `${stonesA()} vs ${n0} stones`);
+    ok("AC-07: the reissue files no collapse nobody fired", falseCredits === 0);
+  }
+
+  // evidence: five survey attachments on the fulfilled report (the bell,
+  // the jigs), one write-off on the deviation
+  const mkKills = [{ type: "kill", cause: "COLLAPSE", attacker: "player", group: "village", t: 5 }];
+  const ful = composeAAR({ contract: spec.contract, events: mkKills, elapsed: 30, seed: 7 }).filter((l) => l.startsWith("ATTACHMENT "));
+  const dev = composeAAR({ contract: spec.contract, events: [], elapsed: 40, seed: 7, outcome: "UNFULFILLED — DEVIATION" }).filter((l) => l.startsWith("ATTACHMENT "));
+  ok("AC-07: fulfilled report files the settlement survey", ful.length === 5 && ful[1].includes("school bell") && ful[3].includes("armature jigs"));
+  ok("AC-07: deviation report files only the write-off", dev.length === 1 && dev[0].includes("Settlement unoccupied at survey"));
+}
+
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S)`);
   process.exit(1);
