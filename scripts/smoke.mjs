@@ -403,6 +403,10 @@ try {
   await page.waitForFunction(() => !!document.querySelector("[data-aar]"), { timeout: 20000, polling: 500 });
   await page.waitForFunction(() => document.body.innerText.includes("ATTACHMENT A"), { timeout: 10000, polling: 500 });
   ok("manifest evidence filed on the report", (await text()).includes("41 crates") && (await text()).includes("Zone 2"));
+  ok("the second hand has touched the file", await page.evaluate(() => {
+    const m = document.querySelector("[data-margin]");
+    return !!m && m.innerText.includes("Who were the rations for?");
+  }));
   await page.evaluate(() => document.querySelector("[data-aar-file]").click());
   await page.waitForFunction(() => document.body.innerText.includes("ORDER BOOK"), { timeout: 20000, polling: 500 });
   book = await text();

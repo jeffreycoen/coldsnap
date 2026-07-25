@@ -63,11 +63,19 @@ export function composeAAR({ contract, events, ordnance = { shell: 0, mg: 0, vol
   // contracts carry none, so sandbox reports are byte-identical to before.
   // A "[deviated] " prefix marks a line that files only on a deviation
   // report; unprefixed lines file only on a fulfilled one.
+  // "[margin, second hand] " lines are the archivist's pencil ON the filed
+  // report, not attachments — they keep their place in the evidence order,
+  // consume no attachment letter, and emit as "[margin] " for the panel's
+  // handwriting treatment
   const dev = outcome.includes("DEVIATION");
-  (contract.evidence || [])
-    .filter((ev) => ev.startsWith("[deviated] ") === dev)
-    .forEach((ev, i) => {
-      lines.push(`ATTACHMENT ${String.fromCharCode(65 + i)} · ${dev ? ev.slice(11) : ev}`);
-    });
+  const MARGIN = "[margin, second hand] ";
+  let li = 0;
+  for (const ev of contract.evidence || []) {
+    const isDev = ev.startsWith("[deviated] ");
+    if (isDev !== dev) continue;
+    const body = isDev ? ev.slice(11) : ev;
+    if (body.startsWith(MARGIN)) lines.push(`[margin] ${body.slice(MARGIN.length)}`);
+    else lines.push(`ATTACHMENT ${String.fromCharCode(65 + li++)} · ${body}`);
+  }
   return lines;
 }

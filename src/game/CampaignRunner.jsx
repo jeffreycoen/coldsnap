@@ -1126,6 +1126,7 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
             <style>{`
               @keyframes csPrintout { from { clip-path: inset(0 0 100% 0); } to { clip-path: inset(0 0 0% 0); } }
               @keyframes csStamp { 0% { opacity: 0; transform: rotate(-7deg) scale(2.4); } 70% { opacity: 1; transform: rotate(-7deg) scale(0.92); } 100% { opacity: 0.9; transform: rotate(-7deg) scale(1); } }
+              @keyframes csScrawl { from { opacity: 0; } to { opacity: 0.92; } }
             `}</style>
             <div data-aar onClick={(e) => e.stopPropagation()} style={{ ...P.panel, position: "relative", width: "min(470px, 94vw)", maxHeight: "76vh", overflowY: "auto", padding: "12px 16px", animation: "csPrintout 1.5s steps(22) both" }}>
               <div style={{ borderBottom: "1px dashed #3a414b", paddingBottom: 6, marginBottom: 9, display: "flex", justifyContent: "space-between", gap: 10, fontSize: isTouch ? 10 : 9, letterSpacing: 1.5, color: "#8b93a0", whiteSpace: "nowrap" }}>
@@ -1146,6 +1147,20 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
                   const remark = ln.startsWith("REMARK:");
                   const exp = ln.startsWith("EXPENDITURE:");
                   const att = ln.startsWith("ATTACHMENT ");
+                  // the second hand: pencil on the carbon, written after the
+                  // stamp — a different script, off the form's grid
+                  if (ln.startsWith("[margin] ")) return (
+                    <div key={i} data-margin style={{
+                      color: "#b0a68f",
+                      fontFamily: '"Segoe Script","Bradley Hand","Comic Sans MS",cursive',
+                      fontStyle: "italic",
+                      fontSize: isTouch ? 14 : 12.5,
+                      transform: "rotate(-1.6deg)",
+                      padding: "3px 0 2px 26px",
+                      letterSpacing: 0.4,
+                      animation: "csScrawl 0.7s 2.3s both",
+                    }}>{ln.slice(9)}</div>
+                  );
                   return (
                     <div key={i} style={{
                       color: i === 0 || remark ? "#ffd27a" : sub || att ? "#a9b3bf" : "#cfd6de",

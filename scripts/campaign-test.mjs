@@ -451,8 +451,10 @@ const plates = (w) => w.bodies.filter((b) => b.group === "plate" && b.kind === "
     ok("AC-05: inside silver par", el <= spec.contract.par[1], `${el.toFixed(1)}s vs ${spec.contract.par[1]}s`);
   }
 
-  const ful = composeAAR({ contract: spec.contract, events: [{ type: "kill", cause: "COLLAPSE", attacker: "player", group: "holdout", t: 5 }], elapsed: 40, seed: 3 }).filter((l) => l.startsWith("ATTACHMENT "));
+  const fulAll = composeAAR({ contract: spec.contract, events: [{ type: "kill", cause: "COLLAPSE", attacker: "player", group: "holdout", t: 5 }], elapsed: 40, seed: 3 });
+  const ful = fulAll.filter((l) => l.startsWith("ATTACHMENT "));
   ok("AC-05: evidence attachments filed", ful.length === 2 && ful[0].includes("Stove in the granary"));
+  ok("AC-05: the second hand notes the journals", fulAll.includes("[margin] Copies burn. Originals keep."));
 }
 
 // --- AC-06 THE CONVOY HAS STOPPED
@@ -568,12 +570,18 @@ const plates = (w) => w.bodies.filter((b) => b.group === "plate" && b.kind === "
   }
 
   // outcome-split evidence: the fulfilled report files the manifest survey
-  // (four attachments), the deviation report files only the abandonment
+  // (four attachments), the deviation report files only the abandonment.
+  // The margin note is the second hand's pencil: fulfilled-only, in evidence
+  // order, and it consumes no attachment letter.
   const mkKills = [{ type: "kill", cause: "BLAST", attacker: "player", group: "convoy2", t: 5 }];
-  const ful = composeAAR({ contract: spec.contract, events: mkKills, elapsed: 30, seed: 7 }).filter((l) => l.startsWith("ATTACHMENT "));
-  const dev = composeAAR({ contract: spec.contract, events: [], elapsed: 40, seed: 7, outcome: "UNFULFILLED — DEVIATION" }).filter((l) => l.startsWith("ATTACHMENT "));
+  const fulAll = composeAAR({ contract: spec.contract, events: mkKills, elapsed: 30, seed: 7 });
+  const devAll = composeAAR({ contract: spec.contract, events: [], elapsed: 40, seed: 7, outcome: "UNFULFILLED — DEVIATION" });
+  const ful = fulAll.filter((l) => l.startsWith("ATTACHMENT "));
+  const dev = devAll.filter((l) => l.startsWith("ATTACHMENT "));
   ok("AC-06: fulfilled report files the manifest survey", ful.length === 4 && ful[0].includes("41 crates") && ful[3].includes("Zone 2"));
   ok("AC-06: deviation report files only the abandonment", dev.length === 1 && dev[0].includes("Cargo abandoned in place"));
+  ok("AC-06: the second hand writes on the fulfilled report only", fulAll.includes("[margin] Rations. Who were the rations for?") && !devAll.some((l) => l.startsWith("[margin] ")));
+  ok("AC-06: the margin note consumes no attachment letter", !fulAll.some((l) => l.startsWith("ATTACHMENT E")));
 }
 
 if (fails.length) {
