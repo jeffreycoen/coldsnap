@@ -37,7 +37,7 @@ export function gradeBaseline(rec, missionIndex) {
 // across tiers — the unchanged stamp is the indictment.
 export function composeAA9(rec) {
   const c = closeOut(rec);
-  const lines = ["CLEARANCE PROGRAM — CLOSE-OUT", "ORDERS ISSUED: 8 · ORDERS CLOSED: 8"];
+  const lines = ["CLEARANCE CAMPAIGN — CLOSE-OUT", "ORDERS ISSUED: 8 · ORDERS CLOSED: 8"];
   if (c.tier === "clean") {
     lines.push("Deviation watch: armed on four orders. Deviations recorded: nil.");
     lines.push("The instrument performed. The territory lets clean.");

@@ -488,6 +488,21 @@ try {
     return !!p && p.innerText.includes("The instrument ██████.") && p.innerText.includes("The originals are safe. So are they.") && !p.innerText.includes("exhibits discretion");
   }));
   ok("four hollow stars stand in the record", (await text()).split("☆").length - 1 >= 4);
+  // a new campaign: arm, confirm, and the dossier is fresh — first order
+  // deployable, everything else sealed, the close-out and the stars gone
+  await page.evaluate(() => document.querySelector("[data-camp-reset]").click());
+  await page.waitForFunction(() => document.body.innerText.includes("THE RECORD BURNS — CONFIRM"), { timeout: 5000, polling: 250 });
+  ok("NEW CAMPAIGN arms before it burns anything", true);
+  await page.evaluate(() => document.querySelector("[data-camp-reset]").click());
+  await page.waitForFunction(() => {
+    const b = document.body.innerText;
+    return b.includes("▶ DEPLOY") && !b.includes("FORM AA-9") && !b.includes("☆");
+  }, { timeout: 10000, polling: 250 });
+  ok("the confirmed reset opens a fresh dossier", (await text()).split("SEALED").length - 1 >= 7);
+  await page.waitForFunction(() =>
+    localStorage.getItem("coldsnap-camp-progress") === null && localStorage.getItem("coldsnap-camp-record") === null && localStorage.getItem("coldsnap-camp-medals") === null,
+  { timeout: 10000, polling: 250 });
+  ok("the campaign record is wiped from storage", true);
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => document.body.innerText.includes("PROVING GROUNDS"));
 

@@ -55,7 +55,7 @@ export default function StartScreen({ onPlay, onSandbox, onCampaign, onControls 
         </div>
 
         <button data-menu="campaign" style={option({ borderColor: "#c9a04e" })} onClick={onCampaign}>
-          <div style={{ color: COLORS.gold, fontSize: 15, letterSpacing: 2 }}>▶ CLEARANCE PROGRAM</div>
+          <div style={{ color: COLORS.gold, fontSize: 15, letterSpacing: 2 }}>▶ CLEARANCE CAMPAIGN</div>
           <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>Eight work orders. The territory is being re-let.</div>
         </button>
 

@@ -1,4 +1,4 @@
-// campaign.js — the Clearance Program's order book and its permanent record.
+// campaign.js — the Clearance Campaign's order book and its permanent record.
 // All eight orders are listed from day one; orders without a built scenario
 // (or above the player's progress) render sealed: dimmed row, title as
 // redaction bars, WO number visible. Missions are built one at a time —
@@ -25,6 +25,24 @@ export const CAMPAIGN = [
 
 // a sealed title renders as redaction bars sized to the real title
 export const redact = (title) => title.replace(/[^ ,]/g, "█");
+
+// A new campaign: the dossier closes and a fresh one opens. Wipes every
+// campaign key — progress, the append-only record, medals, filed reports,
+// the lifetime tally, and the deploy-card flag (a fresh instrument gets the
+// briefing again). Sandbox and demo records are untouched. Both stores are
+// cleared: window.storage (artifact runtime) and localStorage (Pages shim
+// plus the runner's synchronous deploy-flag read).
+export async function resetCampaign() {
+  const keys = [
+    PROG_KEY, REC_KEY, "coldsnap-camp-medals", "coldsnap-camp-tally",
+    "coldsnap-camp-ach", "coldsnap-camp-deployed",
+    ...CAMPAIGN.map((c) => "coldsnap-camp-aar-" + c.wo),
+  ];
+  for (const k of keys) {
+    try { if (window.storage && window.storage.delete) await window.storage.delete(k); } catch (e) {}
+    try { window.localStorage.removeItem(k); } catch (e) {}
+  }
+}
 
 const PROG_KEY = "coldsnap-camp-progress";
 const REC_KEY = "coldsnap-camp-record";

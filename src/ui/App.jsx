@@ -4,7 +4,7 @@ import ColdsnapContractSandbox from "../game/ContractSandbox.jsx";
 import StartScreen from "./StartScreen.jsx";
 import CampaignScreen from "./CampaignScreen.jsx";
 import CampaignRunner from "../game/CampaignRunner.jsx";
-import { CAMPAIGN, loadProgress, saveProgress, loadRecord, recordOutcome } from "../game/campaign.js";
+import { CAMPAIGN, loadProgress, saveProgress, loadRecord, recordOutcome, resetCampaign } from "../game/campaign.js";
 import Controls from "./Controls.jsx";
 import { DEFAULTS, loadKeymap, saveKeymap, installKeyRemap } from "../platform/keymap.js";
 import { attachExternalAutosave } from "../platform/autosave.js";
@@ -93,6 +93,7 @@ export default function App() {
   if (screen === "campaign" || (screen === "mission" && !mission)) {
     return <CampaignScreen progress={campProgress} record={campRecord}
       onPlay={(m) => { setMission(m); setScreen("mission"); }}
+      onReset={() => { resetCampaign(); setCampProgress(0); setCampRecord({}); }}
       onBack={() => setScreen("menu")} />;
   }
   if (screen === "mission") {

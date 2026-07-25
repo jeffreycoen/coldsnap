@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { CAMPAIGN, redact } from "../game/campaign.js";
 import { composeAA9 } from "../game/closeout.js";
 import { COLORS, FONT } from "./theme.js";
@@ -8,13 +8,21 @@ import { COLORS, FONT } from "./theme.js";
 // as redaction bars, WO number left visible. The current order is the only
 // clickable row. An order reached by progress but not yet authored shows
 // AWAITING ISSUE (title revealed, row disabled).
-export default function CampaignScreen({ progress, record, onPlay, onBack }) {
+export default function CampaignScreen({ progress, record, onPlay, onBack, onReset }) {
+  // NEW CAMPAIGN is destructive (the record burns) — it arms on the first
+  // tap and disarms itself after five seconds if the second never comes
+  const [resetArmed, setResetArmed] = useState(false);
+  useEffect(() => {
+    if (!resetArmed) return;
+    const t = setTimeout(() => setResetArmed(false), 5000);
+    return () => clearTimeout(t);
+  }, [resetArmed]);
   return (
     <div style={{ position: "fixed", inset: 0, background: "#10151b", color: COLORS.bright, fontFamily: FONT, display: "flex", flexDirection: "column", alignItems: "center", overflowY: "auto", padding: "28px 12px" }}>
       <div style={{ width: "100%", maxWidth: 560 }}>
         <div style={{ border: `2px solid ${COLORS.bright}`, padding: "10px 14px", marginBottom: 18 }}>
           <div style={{ fontSize: 11, letterSpacing: 2, opacity: 0.7 }}>PROCUREMENT BUREAU · FIELD OPERATIONS DIVISION</div>
-          <div style={{ fontSize: 20, letterSpacing: 1, marginTop: 4 }}>CLEARANCE PROGRAM — ORDER BOOK</div>
+          <div style={{ fontSize: 20, letterSpacing: 1, marginTop: 4 }}>CLEARANCE CAMPAIGN — ORDER BOOK</div>
           <div style={{ fontSize: 10, letterSpacing: 1, opacity: 0.55, marginTop: 4 }}>EIGHT WORK ORDERS · THE TERRITORY IS BEING RE-LET · CARBON 2/3</div>
         </div>
 
@@ -91,10 +99,16 @@ export default function CampaignScreen({ progress, record, onPlay, onBack }) {
           );
         })()}
 
-        <button data-camp="back" onClick={onBack}
-          style={{ marginTop: 14, background: "rgba(28,33,41,0.85)", border: `2px solid ${COLORS.btnBorder}`, color: COLORS.bright, fontFamily: FONT, fontSize: 12, letterSpacing: 1, padding: "8px 14px", cursor: "pointer", touchAction: "manipulation" }}>
-          ⏏ MENU
-        </button>
+        <div style={{ display: "flex", gap: 10, marginTop: 14, alignItems: "center" }}>
+          <button data-camp="back" onClick={onBack}
+            style={{ background: "rgba(28,33,41,0.85)", border: `2px solid ${COLORS.btnBorder}`, color: COLORS.bright, fontFamily: FONT, fontSize: 12, letterSpacing: 1, padding: "8px 14px", cursor: "pointer", touchAction: "manipulation" }}>
+            ⏏ MENU
+          </button>
+          <button data-camp-reset onClick={() => { if (resetArmed) { setResetArmed(false); if (onReset) onReset(); } else setResetArmed(true); }}
+            style={{ background: resetArmed ? "rgba(92,33,27,0.85)" : "rgba(28,33,41,0.85)", border: `2px solid ${resetArmed ? "#a63c3c" : COLORS.btnBorder}`, color: resetArmed ? "#ff6b5e" : COLORS.bright, fontFamily: FONT, fontSize: 12, letterSpacing: 1, padding: "8px 14px", cursor: "pointer", touchAction: "manipulation" }}>
+            {resetArmed ? "THE RECORD BURNS — CONFIRM" : "⟲ NEW CAMPAIGN"}
+          </button>
+        </div>
       </div>
     </div>
   );
