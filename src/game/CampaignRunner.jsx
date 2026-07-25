@@ -201,6 +201,14 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
       S.trial.altT = 0;
     };
     const MEDAL = (t, el) => (el <= t.par[0] ? "GOLD" : el <= t.par[1] ? "SILVER" : "BRONZE");
+    // the ledger lists SUBJECTS — a contract that declares a subjects tag
+    // keeps foreign groups off its report (AC-06's trucks are retained
+    // inventory: wrecking one is recorded nowhere, exactly as the order says)
+    const ledgerEvents = () => {
+      if (!S.trialLog) return [];
+      const subj = spec.contract && spec.contract.subjects;
+      return subj ? S.trialLog.events.filter((e) => e.type !== "kill" || e.group === subj) : S.trialLog.events;
+    };
     const advanceTrial = (skipped) => {
       S.audio.trial();
       const t = TRIALS[S.trial.idx];
@@ -224,7 +232,7 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
               // the FULL authored contract — the reduced toast object `c` has
               // no evidence field, and the attachments ride on the contract
               contract: spec.contract || c || { wo: "WO-??", title: t.title },
-              events: S.trialLog ? S.trialLog.events : [],
+              events: ledgerEvents(),
               ordnance: S.trialLog ? S.trialLog.ordnance : { shell: 0, mg: 0, volley: 0 },
               t0: S.trial.t0, elapsed: el, medal: m, seed: spec.terrain.worldSeed || 1234,
             });
@@ -251,7 +259,7 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
       try {
         const report = composeAAR({
           contract: spec.contract || CONTRACTS[t.id] || { wo: "WO-??", title: t.title },
-          events: S.trialLog ? S.trialLog.events : [],
+          events: ledgerEvents(),
           ordnance: S.trialLog ? S.trialLog.ordnance : { shell: 0, mg: 0, volley: 0 },
           t0: S.trial.t0, elapsed: el, medal: null, outcome: "UNFULFILLED — DEVIATION", dispersed, seed: spec.terrain.worldSeed || 1234,
         });
@@ -661,7 +669,7 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
       {
         const td = TRIALS[S.trial.idx];
         if (td && td.alt && S.trial.prog === 0) {
-          const st = disperseState(w.bodies, spec.terrain.pool || POOL, td.alt.group);
+          const st = disperseState(w.bodies, td.alt.rect || spec.terrain.pool || POOL, td.alt.group); // alt.rect: dry maps declare the detector zone themselves (AC-06's halt pad)
           S.trial.altT = st === "CLEAR" ? (S.trial.altT || 0) + dt : 0;
           if (S.trial.altT >= td.alt.holdS) advanceDeviation(td);
         }

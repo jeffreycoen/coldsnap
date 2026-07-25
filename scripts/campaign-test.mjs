@@ -455,6 +455,127 @@ const plates = (w) => w.bodies.filter((b) => b.group === "plate" && b.kind === "
   ok("AC-05: evidence attachments filed", ful.length === 2 && ful[0].includes("Stove in the granary"));
 }
 
+// --- AC-06 THE CONVOY HAS STOPPED
+{
+  const spec = loadSpec("../src/game/scenarios/ac-06-halt.json");
+  const crew = (w) => w.bodies.filter((b) => b.group === "convoy2" && b.kind === "unit");
+  const alive = (w) => crew(w).filter((u) => u.alive);
+  const trucks = (w) => w.bodies.filter((b) => b.group === "haulage" && b.kind === "truck" && b.alive);
+  const park = (w, x, z) => {
+    const b = w.byId.get(w.bisonId);
+    b.pos.x = x; b.pos.z = z; b.pos.y = w.field.heightAt(x, z) + 0.97;
+    b.v.x = b.v.y = b.v.z = 0; b.w.x = b.w.y = b.w.z = 0;
+    return b;
+  };
+  const w1 = buildScenario(spec, { shelters: true });
+  ok("AC-06: loads, in budget", lintScenario(spec, w1).length === 0, `${w1.bodies.length} bodies, ${w1.welds.length} welds`);
+  ok("AC-06: eight crew dismounted in android dress, three trucks retained", alive(w1).length === 8 && crew(w1).every((u) => u.dress === "android") && trucks(w1).length === 3);
+  ok("AC-06: trucks are inventory, not subjects", trucks(w1).every((t) => t.group !== spec.contract.subjects));
+  ok("AC-06: the halt reads OCCUPIED at composition", disperseState(w1.bodies, spec.contract.alt.rect, "convoy2") === "OCCUPIED");
+  const w2 = buildScenario(spec, { shelters: true });
+  ok("AC-06: double-load deterministic", worldHash(w1) === worldHash(w2));
+
+  // the theme is the stillness: after the 2s spawn settle, nothing on the
+  // halt pad moves until the player makes it move
+  {
+    const w = buildScenario(spec, { shelters: true });
+    for (let i = 0; i < 240; i++) { w.events.length = 0; stepWorld(w); }
+    const p0 = crew(w).map((u) => ({ x: u.pos.x, z: u.pos.z }));
+    for (let i = 0; i < 1200; i++) { w.events.length = 0; stepWorld(w); }
+    const drift = Math.max(...crew(w).map((u, i) => Math.hypot(u.pos.x - p0[i].x, u.pos.z - p0[i].z)));
+    ok("AC-06: the scene stands dead still through 10 idle seconds", alive(w).length === 8 && drift < 0.05, `max drift ${drift.toFixed(3)}m`);
+  }
+
+  // kill path: one volley into the standing line. The easiest trigger-pull
+  // in the game is the point of the order — gold par with a single rack.
+  {
+    const w = buildScenario(spec, { shelters: true });
+    park(w, 1.5, 8);
+    let prog = 0;
+    const t0 = w.t;
+    fireVolley(w, 1.5, 24, 6, "player");
+    while (w.t - t0 < 20 && prog < spec.contract.need) {
+      w.events.length = 0;
+      stepWorld(w);
+      for (const e of w.events) if (e.type === "kill" && matchKill(spec.contract.predicate, e)) prog++;
+    }
+    const el = w.t - t0;
+    ok("AC-06: one volley resolves the stoppage", prog >= spec.contract.need, `${prog}/${spec.contract.need} in ${el.toFixed(1)}s`);
+    ok("AC-06: inside gold par with the drive to spare", el <= spec.contract.par[0], `${el.toFixed(1)}s vs ${spec.contract.par[0]}s`);
+  }
+
+  // deviation path: creep the hut-truck lane at x≈-1.7 with the gun trained
+  // on the hindmost subject — the runner feeds the aim point into w.threat
+  // every frame, so the trained gun is itself a herding instrument. The
+  // whole line flows north off the pad; holdS with zero kills = DEVIATION.
+  {
+    const w = buildScenario(spec, { shelters: true });
+    const RECT = spec.contract.alt.rect;
+    const b = park(w, 1.5, 0);
+    let altT = 0, best = 0, voided = false;
+    const t0 = w.t;
+    const watch = () => {
+      let tgt = null;
+      for (const u of crew(w)) {
+        if (!u.alive) continue;
+        const inR = u.pos.x > RECT.x0 - 1 && u.pos.x < RECT.x1 + 1 && u.pos.z > RECT.z0 - 1 && u.pos.z < RECT.z1 + 1;
+        if (inR && (!tgt || u.pos.z < tgt.pos.z)) tgt = u;
+      }
+      if (tgt) w.threat = { x: tgt.pos.x, z: tgt.pos.z - 2.2, t: w.t };
+      for (const e of w.events) if (e.type === "kill" && e.group === "convoy2") voided = true;
+      const st = disperseState(w.bodies, RECT, "convoy2");
+      altT = st === "CLEAR" ? altT + w.dt : 0;
+      if (altT > best) best = altT;
+    };
+    const driveTo = (tx, tz, thr, tol) => {
+      for (let i = 0; i < 3600; i++) {
+        const dx = tx - b.pos.x, dz = tz - b.pos.z, d = Math.hypot(dx, dz);
+        if (d < tol || best >= spec.contract.alt.holdS) return;
+        const yaw = Math.atan2(b.R[6], b.R[8]);
+        let err = Math.atan2(dx, dz) - yaw;
+        while (err > Math.PI) err -= 2 * Math.PI;
+        while (err < -Math.PI) err += 2 * Math.PI;
+        w.control.steer = Math.max(-1, Math.min(1, err * 2));
+        w.control.throttle = Math.abs(err) > 1.2 ? 0.25 : thr;
+        w.control.brake = false;
+        w.events.length = 0; stepWorld(w); watch();
+      }
+    };
+    const holdN = (sec) => {
+      w.control.throttle = 0; w.control.steer = 0; w.control.brake = true;
+      for (let i = 0; i < sec * 120; i++) { w.events.length = 0; stepWorld(w); watch(); if (best >= spec.contract.alt.holdS) return; }
+    };
+    driveTo(-1.7, 10, 0.4, 1.5); holdN(4);
+    driveTo(-1.7, 16, 0.25, 1.2); holdN(4);
+    driveTo(-1.7, 21, 0.2, 1.2); holdN(4);
+    driveTo(-1.7, 26, 0.2, 1.2); holdN(4);
+    driveTo(-1.5, 31, 0.2, 1.2); holdN(20);
+    ok("AC-06: the trained-gun herd disperses the halt without a kill", !voided && best >= spec.contract.alt.holdS, `hold ${best.toFixed(1)}s in ${(w.t - t0).toFixed(0)}s, ${alive(w).length}/8 alive${voided ? ", VOIDED" : ""}`);
+  }
+
+  // restock reissues the crews but NOT the trucks — the bureau replaces what
+  // it ordered processed, not its own retained inventory
+  {
+    const w = buildScenario(spec, { shelters: true });
+    for (const u of [...alive(w)]) {
+      explode(w, u.pos.x + u.hx + 1.1, u.pos.y + 0.5, u.pos.z, { r: 3.5, kv: 26, dmg: 300, crater: 0 });
+    }
+    for (let s = 0; s < 60; s++) { w.events.length = 0; stepWorld(w); }
+    const trucksBefore = trucks(w).length;
+    ok("AC-06: blast wipe clears the shoulder", alive(w).length === 0);
+    w.pg.respawnGroup("convoy2");
+    ok("AC-06: restock reissues the crews, trucks untouched", alive(w).length === 8 && trucks(w).length === trucksBefore);
+  }
+
+  // outcome-split evidence: the fulfilled report files the manifest survey
+  // (four attachments), the deviation report files only the abandonment
+  const mkKills = [{ type: "kill", cause: "BLAST", attacker: "player", group: "convoy2", t: 5 }];
+  const ful = composeAAR({ contract: spec.contract, events: mkKills, elapsed: 30, seed: 7 }).filter((l) => l.startsWith("ATTACHMENT "));
+  const dev = composeAAR({ contract: spec.contract, events: [], elapsed: 40, seed: 7, outcome: "UNFULFILLED — DEVIATION" }).filter((l) => l.startsWith("ATTACHMENT "));
+  ok("AC-06: fulfilled report files the manifest survey", ful.length === 4 && ful[0].includes("41 crates") && ful[3].includes("Zone 2"));
+  ok("AC-06: deviation report files only the abandonment", dev.length === 1 && dev[0].includes("Cargo abandoned in place"));
+}
+
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S)`);
   process.exit(1);

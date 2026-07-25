@@ -345,42 +345,68 @@ try {
   await sleep(400);
   await page.evaluate(() => document.querySelector("[data-brief-ack]").click());
 
-  // --- AC-05 (full): the collapse curriculum — panic shot, rack short of
-  // the occupied face, COLLAPSE credits only; smears; evidence; AC-06 seal
+  // --- AC-05 (fast): deploys, collapse-only directive, granary + shelters staged
   await seedMission(4, "ac05", "AC-05");
   await page.waitForFunction(() => document.body.innerText.includes("Collapse is the sole accepted cause"), { timeout: 15000, polling: 500 });
   ok("AC-05 brief carries the directive", true);
   await sleep(400);
   await page.evaluate(() => document.querySelector("[data-brief-ack]").click());
+  ok("granary and shelters staged", await page.evaluate(() => {
+    const w = window.__COLDSNAP__._world();
+    return w.bodies.some((b) => b.group === "granary" && b.kind === "chunk") && w.pg.shelters.length === 3;
+  }));
+
+  // --- AC-06 (full): the dissonance peak — the halt stands dead still until
+  // one rack resolves it; manifest evidence files; the AC-07 seal
+  await seedMission(5, "ac06", "AC-06");
+  await page.waitForFunction(() => document.body.innerText.includes("retained inventory"), { timeout: 15000, polling: 500 });
+  ok("AC-06 brief carries the directive", true);
+  await sleep(400);
+  await page.evaluate(() => document.querySelector("[data-brief-ack]").click());
+  ok("the halt composes: eight crews dismounted, three trucks retained", await page.evaluate(() => {
+    const w = window.__COLDSNAP__._world();
+    return w.bodies.filter((b) => b.group === "convoy2" && b.kind === "unit" && b.alive).length === 8 &&
+      w.bodies.filter((b) => b.group === "haulage" && b.kind === "truck").length === 3;
+  }));
   await page.evaluate(() => {
     const api = window.__COLDSNAP__, w = api._world();
-    api.setGfx({ scale: 4, outline: 0, dither: 0 }); // quarter-res: masonry debris drowns swiftshader at full scale
+    api.setGfx({ scale: 4, outline: 0, dither: 0 }); // quarter-res keeps swiftshader ahead of the debris
     const b = w.byId.get(w.bisonId);
-    b.pos.x = 0; b.pos.z = 5; b.pos.y = w.field.heightAt(0, 5) + 0.97;
-    api._S.actions.fireAt(0, 30); // ranging shell: the detail breaks for the buildings (and the granary doorway topples on a runner)
+    b.pos.x = 1.5; b.pos.z = 8; b.pos.y = w.field.heightAt(1.5, 8) + 0.97;
   });
-  // wait for ~10 game-seconds of panic + sheltering (the game runs ~3x slow here)
-  await page.waitForFunction(() => window.__COLDSNAP__._world().t > 10, { timeout: 90000, polling: 1000 });
-  // the taught technique, exactly two racks dropped SHORT of the occupied
-  // faces — an interval bot levels the steading and the debris grinds the
-  // software renderer into protocol timeouts
-  const rack = async (x, z) => {
-    if (await page.evaluate(() => document.body.innerText.includes("Overburden performed"))) return;
-    await page.waitForFunction(() => window.__COLDSNAP__._S.cds.volley <= 0, { timeout: 120000, polling: 1000 });
-    await page.evaluate(([vx, vz]) => window.__COLDSNAP__._S.actions.volleyAt(vx, vz), [x, z]);
-    await page.waitForFunction(() => window.__COLDSNAP__._S.cds.volley > 5 || document.body.innerText.includes("Overburden performed"), { timeout: 60000, polling: 1000 });
-  };
-  await rack(9.5, 16.3); // houseB is the double-credit drop; more racks just bury swiftshader in debris
-  await page.waitForFunction(() => document.body.innerText.includes("Overburden performed"), { timeout: 420000, polling: 2000 });
-  ok("AC-05 completes by collapse", true);
+  const done6 = () => document.body.innerText.includes("Route restored to capacity");
+  await page.waitForFunction(() => window.__COLDSNAP__._S.cds.volley <= 0, { timeout: 120000, polling: 1000 });
+  await page.evaluate(() => window.__COLDSNAP__._S.actions.volleyAt(1.5, 24));
+  await page.waitForFunction(() => window.__COLDSNAP__._S.cds.volley > 5 || document.body.innerText.includes("Route restored to capacity"), { timeout: 60000, polling: 1000 });
+  // the live aim point is itself a threat (w.threat) — the line can scatter
+  // under the incoming rack, so any survivors get aimed shells at their
+  // live positions until the sixth credit lands
+  for (let i = 0; i < 40; i++) {
+    if (await page.evaluate(done6)) break;
+    await page.evaluate(() => {
+      const api = window.__COLDSNAP__, w = api._world();
+      if (api._S.cds.fire > 0) return;
+      const b = w.byId.get(w.bisonId);
+      let tg = null, td = 1e9;
+      for (const u of w.bodies) {
+        if (u.group !== "convoy2" || u.kind !== "unit" || !u.alive) continue;
+        const d = Math.hypot(u.pos.x - b.pos.x, u.pos.z - b.pos.z);
+        if (d < td) { td = d; tg = u; }
+      }
+      if (tg) api._S.actions.fireAt(tg.pos.x + tg.v.x * 0.4, tg.pos.z + tg.v.z * 0.4);
+    });
+    await sleep(1500);
+  }
+  await page.waitForFunction(() => document.body.innerText.includes("Route restored to capacity"), { timeout: 240000, polling: 2000 });
+  ok("AC-06 completes by one rack into the standing line", true);
   ok("android kills leave smears on the ground", await page.evaluate(() => window.__COLDSNAP__._R._splat.smears > 0));
   await page.waitForFunction(() => !!document.querySelector("[data-aar]"), { timeout: 20000, polling: 500 });
   await page.waitForFunction(() => document.body.innerText.includes("ATTACHMENT A"), { timeout: 10000, polling: 500 });
-  ok("evidence attachments filed on the report", (await text()).includes("Stove in the granary"));
+  ok("manifest evidence filed on the report", (await text()).includes("41 crates") && (await text()).includes("Zone 2"));
   await page.evaluate(() => document.querySelector("[data-aar-file]").click());
   await page.waitForFunction(() => document.body.innerText.includes("ORDER BOOK"), { timeout: 20000, polling: 500 });
   book = await text();
-  ok("AC-06 awaits issue after AC-05", book.includes("THE CONVOY HAS STOPPED") && book.includes("AWAITING ISSUE"));
+  ok("AC-07 awaits issue after AC-06", book.includes("THE VILLAGE") && book.includes("AWAITING ISSUE"));
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => document.body.innerText.includes("PROVING GROUNDS"));
 
