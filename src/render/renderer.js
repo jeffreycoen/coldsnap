@@ -124,6 +124,7 @@ const POST_VERT = "varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(p
 const POST_FRAG = `
 uniform sampler2D tCol; uniform sampler2D tNor; uniform sampler2D tDep; uniform sampler2D tBayer;
 uniform vec2 uRes; uniform vec2 uShift; uniform float uOutline; uniform float uDither; uniform float uPalette; uniform float uLevels;
+uniform float uGrade; uniform float uT;
 varying vec2 vUv;
 void main(){
   vec2 px = 1.0 / uRes;
@@ -138,6 +139,24 @@ void main(){
   float en = step(0.42, distance(n0, nx) + distance(n0, ny));
   float ed = step(0.0022, abs(d0 - dx) + abs(d0 - dy));
   float edge = max(en, ed) * uOutline;
+  // THE GRADE — the record as palette, composed BEFORE the retro
+  // quantization so the treatment survives it. uGrade 0 = the shipped look
+  // (demo and sandbox never set it). Negative: selective desaturation that
+  // preserves the red axis — the coats and the stamps are already scarlet.
+  // Positive: dawn warmth on the snow plus a slow aurora wash up the frame.
+  if (uGrade < 0.0) {
+    float g = -uGrade;
+    float luma = dot(c, vec3(0.299, 0.587, 0.114));
+    float redness = clamp((c.r - max(c.g, c.b)) * 3.2, 0.0, 1.0);
+    c = mix(c, mix(vec3(luma), c, redness), g * 0.85);
+  } else if (uGrade > 0.0) {
+    float g = uGrade;
+    c = mix(c, c * vec3(1.07, 1.0, 0.93) + vec3(0.030, 0.012, 0.0), g * 0.45);
+    float band = smoothstep(0.45, 1.0, vUv.y);
+    vec3 aur = vec3(0.06, 0.16, 0.10) * (0.5 + 0.5 * sin(vUv.x * 8.0 + uT * 0.20))
+             + vec3(0.08, 0.03, 0.14) * (0.5 + 0.5 * sin(vUv.x * 4.6 - uT * 0.12 + 1.7));
+    c += aur * band * g * 0.55;
+  }
   float bay = texture2D(tBayer, fract(uv * uRes / 4.0)).r - 0.5;
   vec3 q = floor(c * uLevels + bay * uDither + 0.5) / uLevels;
   c = mix(c, q, step(0.5, uPalette));
@@ -464,6 +483,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
       tCol: { value: null }, tNor: { value: null }, tDep: { value: null }, tBayer: { value: bayerTex },
       uRes: { value: new THREE.Vector2(320, 200) }, uShift: { value: new THREE.Vector2(0, 0) },
       uOutline: { value: 1 }, uDither: { value: 1 }, uPalette: { value: 1 }, uLevels: { value: 7 },
+      uGrade: { value: 0 }, uT: { value: 0 },
     },
     depthTest: false, depthWrite: false,
   });
@@ -794,6 +814,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
     cam.quaternion.copy(camQ);
     const shx = (Math.random() - 0.5) * shake * 2.2, shy = (Math.random() - 0.5) * shake * 2.2;
     postMat.uniforms.uShift.value.set(-sr.errX + shx, -sr.errY + shy);
+    postMat.uniforms.uT.value = world.t; // aurora clock (inert at uGrade 0)
     // sun rig follows focus
     sun.position.set(focus.x + 38, focus.y + 52, focus.z + 22);
     sun.target.position.set(focus.x, focus.y, focus.z);
@@ -822,6 +843,9 @@ export function makeRenderer(canvas, world0, opts = {}) {
     syncTerrain();
   }
   resize(); rebuildRTs();
+  // THE GRADE (campaign-only): the runner sets [-1, 1]; everyone else
+  // never calls this and keeps the shipped look exactly
+  function setGrade(g) { postMat.uniforms.uGrade.value = Math.max(-1, Math.min(1, g || 0)); }
   const project = (x, y, z) => { const v = new THREE.Vector3(x, y, z); v.project(cam); return { x: v.x, y: v.y }; };
-  return { render, consume, setGfx, setZoom, setWorld, setTraj, gfx, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
+  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
 }

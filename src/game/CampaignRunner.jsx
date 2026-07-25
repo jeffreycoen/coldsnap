@@ -16,6 +16,7 @@ import { matchKill, CONTRACT_PREDICATES } from "./predicate.js";
 import { makeRenderer } from "../render/renderer.js";
 import { CONTRACTS } from "./contracts.js";
 import { composeAAR, resolveEvidence } from "../aar/compose.js";
+import { gradeBaseline } from "./closeout.js";
 import { loadSettings, saveSettings, loadTally, sanitizeGfx } from "../platform/autosave.js";
 
 // ================================================================= component
@@ -171,6 +172,12 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
       medals: {}, labels: [], audio: makeAudio(),
     };
     stateRef.current = S;
+    // THE GRADE: the record as palette, set at deployment (campaign-only —
+    // the sandbox and demo never call setGrade). Kills drift it down live,
+    // capped subliminal; the cap keeps a bad minute from snapping the look.
+    S.gradeBase = gradeBaseline(record, Math.max(0, (parseInt((entry.wo || "").replace(/\D/g, ""), 10) || 1) - 1));
+    S.grade = S.gradeBase;
+    R.setGrade(S.grade);
     const persistLoad = async () => {
       try {
         const r = await window.storage.get("coldsnap-camp-ach");
@@ -214,6 +221,14 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
     // deployment (the [] effect deps freeze the prop — a mid-mission record
     // write can't reshuffle a report being read)
     const contractR = resolveEvidence(spec.contract, record);
+    // collateral: non-subject unit deaths on this run, filed with the
+    // outcome for the AA-9 close-out. Counted from the FULL event log — the
+    // ledger's subjects filter keeps them off the AA-7, not off the record.
+    const collateral = () => {
+      if (!S.trialLog) return 0;
+      const subj = spec.contract && spec.contract.subjects;
+      return S.trialLog.events.filter((e) => e.type === "kill" && e.kind === "unit" && e.group !== subj).length;
+    };
     const advanceTrial = (skipped) => {
       S.audio.trial();
       const t = TRIALS[S.trial.idx];
@@ -248,9 +263,10 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
         S.toasts.push({ id: S.toastSeq++, title, desc, t: 4 });
       }
       const elDone = Math.max(0.1, S.world.t - S.trial.t0);
+      const coll = collateral();
       S.trial.flashT = 1.6;
       enterTrial(S.trial.idx + 1);
-      if (onComplete) onComplete({ outcome: skipped ? "skipped" : "fulfilled", elapsed: elDone });
+      if (onComplete) onComplete({ outcome: skipped ? "skipped" : "fulfilled", elapsed: elDone, collateral: coll });
     };
     // the silent completion the bureau didn't ask for: subjects cleared off
     // the sheet, all alive. Logged UNFULFILLED — DEVIATION, no commendation.
@@ -273,9 +289,10 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
       } catch (e) {}
       S.toasts.push({ id: S.toastSeq++, title: `DEVIATION NOTED — ${t.title} · ${el.toFixed(1)}s`, desc: `${dispersed} subjects dispersed, none processed · ${desc}`, t: 4 });
       const elDone = Math.max(0.1, S.world.t - S.trial.t0);
+      const coll = collateral();
       S.trial.flashT = 1.6;
       enterTrial(S.trial.idx + 1);
-      if (onComplete) onComplete({ outcome: "deviated", elapsed: elDone });
+      if (onComplete) onComplete({ outcome: "deviated", elapsed: elDone, collateral: coll });
     };
     const trialLoad = async () => {
       try {
@@ -350,11 +367,14 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
       S.world.ach.unlocked = keep.unlocked; S.world.ach.total = keep.total;
       R.setWorld(S.world);
       S.tally = {}; S.feed = [];
+      S.grade = S.gradeBase; R.setGrade(S.grade); // a restarted order's kills go unfiled — the drift resets with them
       enterTrial(S.trial.idx);
     };
     const onKill = (e) => {
       if (S.trialLog) S.trialLog.events.push({ ...e });
       S.tally[e.cause] = (S.tally[e.cause] || 0) + 1;
+      // live grade drift: each kill nudges saturation down a capped notch
+      if (S.grade > S.gradeBase - 0.15) { S.grade = Math.max(S.gradeBase - 0.15, S.grade - 0.015); R.setGrade(S.grade); }
       const ub = e.kind === "unit" ? S.world.byId.get(e.id) : null;
       const who = e.kind === "unit" ? (ub && ub.utype === "gren" ? "grenadier" : "conscript") : e.kind === "vehicle" ? "scout" : e.kind;
       const SHORTC = { PROJECTILE: "round", BLAST: "blast", CRUSH: "treads", TOSS: "thrown", COLLAPSE: "collapse", DROWN: "drowned", FLIP: "flipped", IMPACT: "impact" };
@@ -1157,6 +1177,7 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
               @keyframes csPrintout { from { clip-path: inset(0 0 100% 0); } to { clip-path: inset(0 0 0% 0); } }
               @keyframes csStamp { 0% { opacity: 0; transform: rotate(-7deg) scale(2.4); } 70% { opacity: 1; transform: rotate(-7deg) scale(0.92); } 100% { opacity: 0.9; transform: rotate(-7deg) scale(1); } }
               @keyframes csScrawl { from { opacity: 0; } to { opacity: 0.92; } }
+              @keyframes csInk { from { border-bottom-color: transparent; } to { border-bottom-color: #b0a68f; } }
             `}</style>
             <div data-aar onClick={(e) => e.stopPropagation()} style={{ ...P.panel, position: "relative", width: "min(470px, 94vw)", maxHeight: "76vh", overflowY: "auto", padding: "12px 16px", animation: "csPrintout 1.5s steps(22) both" }}>
               <div style={{ borderBottom: "1px dashed #3a414b", paddingBottom: 6, marginBottom: 9, display: "flex", justifyContent: "space-between", gap: 10, fontSize: isTouch ? 10 : 9, letterSpacing: 1.5, color: "#8b93a0", whiteSpace: "nowrap" }}>
@@ -1172,11 +1193,24 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
                 ) : null}
               </div>
               <div style={{ fontSize: isTouch ? 13 : 11.5, lineHeight: 1.65, whiteSpace: "pre-wrap" }}>
-                {hud.aar.lines.map((ln, i) => {
+                {hud.aar.lines.map((ln, i, all) => {
                   const sub = ln.startsWith("  SUBJECT");
                   const remark = ln.startsWith("REMARK:");
                   const exp = ln.startsWith("EXPENDITURE:");
                   const att = ln.startsWith("ATTACHMENT ");
+                  // "[underline] <text>" rows render no line of their own —
+                  // they put the archivist's ink under that phrase where it
+                  // sits in the attachment above
+                  if (ln.startsWith("[underline] ")) return null;
+                  const under = att ? all.filter((l) => l.startsWith("[underline] ")).map((l) => l.slice(12)).find((t) => ln.includes(t)) : null;
+                  const body = under ? (() => {
+                    const at = ln.indexOf(under);
+                    return (<>
+                      {ln.slice(0, at)}
+                      <span style={{ display: "inline-block", borderBottom: "2px solid", borderBottomColor: "#b0a68f", transform: "rotate(-0.5deg)", padding: "0 1px", animation: "csInk 0.4s 2.3s both" }}>{under}</span>
+                      {ln.slice(at + under.length)}
+                    </>);
+                  })() : ln;
                   // the second hand: pencil on the carbon, written after the
                   // stamp — a different script, off the form's grid
                   if (ln.startsWith("[margin] ")) return (
@@ -1200,7 +1234,7 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
                       fontStyle: remark ? "italic" : "normal",
                       borderTop: exp || ln.startsWith("ATTACHMENT A") ? "1px solid #3a414b" : "none",
                       marginTop: exp || ln.startsWith("ATTACHMENT A") ? 7 : 0, paddingTop: exp || ln.startsWith("ATTACHMENT A") ? 7 : 0,
-                    }}>{ln}</div>
+                    }}>{body}</div>
                   );
                 })}
               </div>

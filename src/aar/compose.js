@@ -88,12 +88,18 @@ export function composeAAR({ contract, events, ordnance = { shell: 0, mg: 0, vol
   // handwriting treatment
   const dev = outcome.includes("DEVIATION");
   const MARGIN = "[margin, second hand] ";
+  // "[margin underline] <text>" — the second hand's ink UNDER a phrase in the
+  // attachment above it, not a written line. Emits "[underline] <text>": the
+  // panel draws crooked ink under the phrase where it already sits and
+  // renders no row of its own. Consumes no attachment letter.
+  const UNDER = "[margin underline] ";
   let li = 0;
   for (const ev of contract.evidence || []) {
     const isDev = ev.startsWith("[deviated] ");
     if (isDev !== dev) continue;
     const body = isDev ? ev.slice(11) : ev;
     if (body.startsWith(MARGIN)) lines.push(`[margin] ${body.slice(MARGIN.length)}`);
+    else if (body.startsWith(UNDER)) lines.push(`[underline] ${body.slice(UNDER.length)}`);
     else lines.push(`ATTACHMENT ${String.fromCharCode(65 + li++)} · ${body}`);
   }
   return lines;

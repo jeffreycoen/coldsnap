@@ -802,6 +802,10 @@ const plates = (w) => w.bodies.filter((b) => b.group === "plate" && b.kind === "
   const dev = composeAAR({ contract: spec.contract, events: [], elapsed: 40, seed: 7, outcome: "UNFULFILLED — DEVIATION" }).filter((l) => l.startsWith("ATTACHMENT "));
   ok("AC-07: fulfilled report files the settlement survey", ful.length === 5 && ful[1].includes("school bell") && ful[3].includes("armature jigs"));
   ok("AC-07: deviation report files only the write-off", dev.length === 1 && dev[0].includes("Settlement unoccupied at survey"));
+  // the answer beat of the ring: the second hand underlines the bell and
+  // writes the three words — neither consumes an attachment letter
+  const fulAll = composeAAR({ contract: spec.contract, events: mkKills, elapsed: 30, seed: 7 });
+  ok("AC-07: the second hand underlines the bell and answers", fulAll.includes("[underline] 1 school bell") && fulAll.includes("[margin] So that's who.") && fulAll.indexOf("[margin] So that's who.") === fulAll.indexOf("[underline] 1 school bell") + 1);
 }
 
 // --- AC-08 SURFACE LOAD RATING, REPEAT (the mirror finale: WO-07's sheet,
@@ -984,6 +988,27 @@ const plates = (w) => w.bodies.filter((b) => b.group === "plate" && b.kind === "
   ok("AC-08: the second hand closes the ring on the filed report", ful8.some((l) => l === "[margin] The ministry copy is shorter."));
   const dev8 = composeAAR({ contract: cFul, events: [], elapsed: 80, seed: 7, outcome: "UNFULFILLED — DEVIATION", dispersed: 6 });
   ok("AC-08: the deviation report attaches nothing — nil findings all the way down", !dev8.some((l) => l.startsWith("ATTACHMENT ") || l.startsWith("[margin] ")));
+}
+
+// --- FORM AA-9 (the program close-out) + THE GRADE baseline — pure over
+// the record; the tier decisions of 2026-07-25: three tiers, quiet requires
+// all four deviation-armed orders AND collateral under the gate.
+{
+  const { closeOut, composeAA9, gradeBaseline, DEVIATION_ARMED, COLLATERAL_GATE } = await import("../src/game/closeout.js");
+  const devRow = { fulfilled: 0, deviated: 1, bestTime: null, lastOutcome: "deviated" };
+  const fulRow = { fulfilled: 1, deviated: 0, bestTime: 20, lastOutcome: "fulfilled" };
+  const allDev = Object.fromEntries(DEVIATION_ARMED.map((id) => [id, devRow]));
+  ok("AA-9: four orders stand deviation watch", DEVIATION_ARMED.join(",") === "ac04,ac06,ac07,ac08");
+  ok("AA-9: a clean record files the dead voice", closeOut({ ac01: fulRow }).tier === "clean" && composeAA9({}).lines.some((l) => l.includes("Deviations recorded: nil")) && composeAA9({}).lines.some((l) => l.includes("The territory lets clean")));
+  ok("AA-9: partial mercy files as discretion", closeOut({ ac04: devRow }).tier === "some" && composeAA9({ ac04: devRow }).lines.some((l) => l.includes("exhibits discretion")));
+  const quiet = composeAA9(allDev);
+  ok("AA-9: all four deviations earn the quiet ending", quiet.tier === "quiet" && quiet.lines.includes("The instrument ██████.") && quiet.lines.includes("[margin] The originals are safe. So are they."));
+  ok("AA-9: the collateral gate holds the quiet ending", closeOut({ ...allDev, collateral: COLLATERAL_GATE }).tier === "some" && closeOut({ ...allDev, collateral: COLLATERAL_GATE - 1 }).tier === "quiet");
+  ok("AA-9: the stamp is identical across tiers", ["clean", "some", "quiet"].every((t, i) => [composeAA9({}), composeAA9({ ac04: devRow }), quiet][i].lines.includes("PROCUREMENT APPROVED.")));
+  const kills8r = Object.fromEntries(["ac01", "ac02", "ac03", "ac04", "ac05", "ac06", "ac07", "ac08"].map((id) => [id, fulRow]));
+  ok("GRADE: a pure kill path plays the finale in gray", gradeBaseline({ ...kills8r, collateral: 10 }, 7) <= -1);
+  ok("GRADE: the quiet path plays its finale under the aurora", gradeBaseline({ ac01: fulRow, ac02: fulRow, ac03: fulRow, ac05: fulRow, ...allDev }, 7) > 0.5);
+  ok("GRADE: a fresh record starts near the shipped look", Math.abs(gradeBaseline({}, 0)) < 0.05);
 }
 
 if (fails.length) {

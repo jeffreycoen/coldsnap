@@ -81,11 +81,11 @@ export default function App() {
     return () => { live = false; };
   }, []);
 
-  const onMissionComplete = ({ outcome, elapsed }) => {
+  const onMissionComplete = ({ outcome, elapsed, collateral }) => {
     if (!mission) return;
     const idx = CAMPAIGN.findIndex((c) => c.id === mission.id);
     if (outcome === "fulfilled" || outcome === "deviated") {
-      setCampRecord((r) => ({ ...recordOutcome({ ...r }, mission.id, outcome, elapsed) }));
+      setCampRecord((r) => ({ ...recordOutcome({ ...r }, mission.id, outcome, elapsed, collateral || 0) }));
     }
     setCampProgress((p) => { const n = Math.max(p, idx + 1); saveProgress(n); return n; });
   };

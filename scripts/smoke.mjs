@@ -397,6 +397,10 @@ try {
       w.bodies.filter((b) => b.kind === "wreck").length === 3 && w.bodies.some((b) => b.group === "relic" && b.alive);
   }));
   await page.evaluate(() => window.__COLDSNAP__.setGfx({ scale: 4, outline: 0, dither: 0 })); // quarter-res keeps swiftshader ahead of the debris
+  ok("the grade reads the record at deployment", await page.evaluate(() => {
+    const api = window.__COLDSNAP__;
+    return typeof api._R.setGrade === "function" && api._S.grade < 0; // fulfilled-heavy seed on the last map: colder than shipped
+  }));
   await page.mouse.move(480, 610); // the live aim is a threat — park it behind the tank, off the sheet
   // the abutment screens the pad axis (probed) — fire from the south bank,
   // shells walked onto whoever still stands; revisit until the order closes
@@ -432,6 +436,26 @@ try {
   await page.waitForFunction(() => document.body.innerText.includes("ORDER BOOK"), { timeout: 20000, polling: 500 });
   book = await text();
   ok("the order book closes with all eight titles in clear", book.includes("SURFACE LOAD RATING, REPEAT") && !book.includes("AWAITING ISSUE") && book.includes("★"));
+  // FORM AA-9 files under the book once the last order closes — this run's
+  // record is kill-path clean (zero deviations): the dead voice
+  ok("AA-9 files the clean close-out under the book", book.includes("FORM AA-9") && book.includes("Deviations recorded: nil.") && book.includes("The territory lets clean.") && book.includes("PROCUREMENT APPROVED."));
+  // the quiet ending, statically: all four deviation-armed orders deviated,
+  // collateral under the gate — half the form redacted, the second hand
+  // writes the only clear line
+  await page.evaluate(() => {
+    const dev = { fulfilled: 0, deviated: 1, bestTime: null, lastOutcome: "deviated" };
+    localStorage.setItem("coldsnap-camp-record", JSON.stringify({ ac04: dev, ac06: dev, ac07: dev, ac08: dev }));
+    localStorage.setItem("coldsnap-camp-progress", "8");
+    localStorage.removeItem("coldsnap-screen");
+  });
+  await page.reload({ waitUntil: "networkidle0" });
+  await page.evaluate(() => document.querySelector("[data-menu=campaign]").click());
+  await page.waitForFunction(() => document.body.innerText.includes("ORDER BOOK"));
+  ok("the quiet ending redacts the verb and keeps the promise", await page.evaluate(() => {
+    const p = document.querySelector('[data-aa9="quiet"]');
+    return !!p && p.innerText.includes("The instrument ██████.") && p.innerText.includes("The originals are safe. So are they.") && !p.innerText.includes("exhibits discretion");
+  }));
+  ok("four hollow stars stand in the record", (await text()).split("☆").length - 1 >= 4);
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => document.body.innerText.includes("PROVING GROUNDS"));
 

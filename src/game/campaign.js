@@ -50,7 +50,7 @@ export async function loadRecord() {
   } catch (e) {}
   return {};
 }
-export function recordOutcome(rec, id, outcome, elapsed) {
+export function recordOutcome(rec, id, outcome, elapsed, collateral = 0) {
   const row = rec[id] || (rec[id] = { fulfilled: 0, deviated: 0, bestTime: null, lastOutcome: null });
   if (outcome === "deviated") row.deviated++;
   else {
@@ -58,6 +58,10 @@ export function recordOutcome(rec, id, outcome, elapsed) {
     if (row.bestTime == null || elapsed < row.bestTime) row.bestTime = elapsed;
   }
   row.lastOutcome = outcome;
+  // collateral: non-subject unit deaths on filed runs, accumulated for the
+  // program close-out (FORM AA-9's quiet-ending gate). Append-only like the
+  // deviations — spilled is spilled.
+  if (collateral > 0) rec.collateral = (rec.collateral || 0) + collateral;
   try { window.storage.set(REC_KEY, JSON.stringify(rec)); } catch (e) {}
   return rec;
 }
