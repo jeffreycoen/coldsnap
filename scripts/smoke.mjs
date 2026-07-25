@@ -139,7 +139,7 @@ try {
   await page.mouse.click(480, 300); // dismiss deploy overlay
   await page.waitForFunction(() => !!document.querySelector("[data-brief]"));
   body = await text();
-  ok("work-order brief card presents WO-01", body.includes("WORK ORDER") && body.includes("The pad detail is staged"));
+  ok("work-order brief card presents WO-01", body.includes("WORK ORDER") && body.includes("Decommissioned units, lot 7"));
   await sleep(800); // the brief ack arms after 500ms so a trailing deploy-tap click can't dismiss it
   await page.evaluate(() => document.querySelector("[data-brief-ack]").click());
   await page.waitForFunction(() => !document.querySelector("[data-brief]"));
@@ -476,7 +476,7 @@ try {
   await phone.touchscreen.tap(195, 600); // dismiss deploy overlay
   await phone.waitForFunction(() => !!document.querySelector("[data-brief]"));
   const phoneBody = await phone.evaluate(() => document.body.innerText);
-  ok("phone: brief card carries the full directive", phoneBody.includes("The pad detail is staged"));
+  ok("phone: brief card carries the full directive", phoneBody.includes("Decommissioned units, lot 7"));
   const skipRight = await phone.evaluate(() => {
     const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === "SKIP");
     return b ? b.getBoundingClientRect().right : 1e9;

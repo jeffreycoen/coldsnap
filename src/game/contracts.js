@@ -1,11 +1,15 @@
 // contracts.js — Phase 1 voice pass. Bureau work-order fiction over the
 // existing TRIALS. Text only; no mechanics change. Keyed by trial id.
-// Verbatim from the buildout plan (T1-verified: all seven trial ids covered).
+// CP-3 re-grounding pass (2026-07-25): the proving grounds is instrument
+// acceptance — the subjects were decommissioned units released for
+// destructive evaluation, the first surplus the bureau spent. On day one it
+// reads as flavor; after AC-03 the player knows what the test articles
+// were. The register never says "kills."
 
 export const CONTRACTS = {
   gunnery: {
     wo: "WO-01", title: "DIRECT-FIRE ACCEPTANCE",
-    directive: "The pad detail is staged. Three kills by main gun or coax — direct fire only. Reticle discipline is assumed.",
+    directive: "Decommissioned units, lot 7, staged at the gunnery pad. Three subjects resolved by direct fire — main gun or coax. The instrument is under evaluation, not the crew. Lot 7 self-delivered to railhead per recall notice. Freight: nil.",
     commendation: "Direct-fire lethality within acceptance band.",
   },
   roadkill: {
@@ -15,7 +19,7 @@ export const CONTRACTS = {
   },
   saturation: {
     wo: "WO-03", title: "AREA SATURATION",
-    directive: "One salvo. Three kills inside its footprint. Density is the deliverable.",
+    directive: "One salvo. Three subjects resolved inside its footprint. Density is the deliverable.",
     commendation: "Coverage per round meets projection.",
   },
   demolition: {
@@ -25,7 +29,7 @@ export const CONTRACTS = {
   },
   deep_end: {
     wo: "WO-05", title: "IMMERSION TOLERANCE",
-    directive: "Displace the poolside detail into open water. Sustained immersion concludes the test.",
+    directive: "Displace the poolside lot into open water. Sustained immersion concludes the test. Units are write-offs; the reading is the deliverable.",
     commendation: "Tolerance recorded at zero.",
   },
   counter_battery: {
