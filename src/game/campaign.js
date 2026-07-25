@@ -52,8 +52,11 @@ export async function loadRecord() {
 }
 export function recordOutcome(rec, id, outcome, elapsed, collateral = 0) {
   const row = rec[id] || (rec[id] = { fulfilled: 0, deviated: 0, bestTime: null, lastOutcome: null });
-  if (outcome === "deviated") row.deviated++;
-  else {
+  if (outcome === "deviated") {
+    row.deviated++;
+    // the second slot on the record row: deviations keep their own best
+    if (row.bestDevTime == null || elapsed < row.bestDevTime) row.bestDevTime = elapsed;
+  } else {
     row.fulfilled++;
     if (row.bestTime == null || elapsed < row.bestTime) row.bestTime = elapsed;
   }

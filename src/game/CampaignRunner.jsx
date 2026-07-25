@@ -7,12 +7,16 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   CAUSE, POOL, STATIONS, addBody, thawPool, freezePool, stepWorld,
-  snapAim, recoverBison, fireVolley, bisonFire, bisonMg, worldHash, makeAch, heading,
+  snapAim, recoverBison, worldHash, heading,
   aimSolve,
 } from "../engine/core.js";
+import { makeAudio } from "./runner/audio.js";
+import { Typed } from "./runner/Typed.jsx";
+import { PHYS_CAUSES, LABEL_COLORS, detectTouch, makeTrials } from "./runner/trials.js";
+import { makeActions } from "./runner/actions.js";
+import { AarPanel } from "./runner/AarPanel.jsx";
 import { buildScenario } from "./scenario.js";
 import { disperseState } from "./altcheck.js";
-import { matchKill, CONTRACT_PREDICATES } from "./predicate.js";
 import { makeRenderer } from "../render/renderer.js";
 import { CONTRACTS } from "./contracts.js";
 import { composeAAR, resolveEvidence } from "../aar/compose.js";
@@ -20,83 +24,6 @@ import { gradeBaseline } from "./closeout.js";
 import { loadSettings, saveSettings, loadTally, sanitizeGfx } from "../platform/autosave.js";
 
 // ================================================================= component
-const PHYS_CAUSES = new Set([CAUSE.CRUSH, CAUSE.TOSS, CAUSE.COLLAPSE, CAUSE.FLIP, CAUSE.DROWN]);
-function detectTouch() {
-  if (typeof window === "undefined") return false;
-  try { if (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) return true; } catch (e) {}
-  const fine = (() => { try { return window.matchMedia && window.matchMedia("(pointer: fine)").matches; } catch (e) { return false; } })();
-  return (navigator.maxTouchPoints || 0) > 0 && !fine;
-}
-const LABEL_COLORS = { PROJECTILE: "#ffb45e", BLAST: "#ff6b5e", CRUSH: "#ffd27a", TOSS: "#c9f06c", COLLAPSE: "#e0e6ee", FLIP: "#b48cff", DROWN: "#7fd7ff", IMPACT: "#ff9e9e" };
-function makeAudio() {
-  let ctx = null, muted = true;
-  const ensure = () => {
-    try {
-      if (!ctx) { const AC = window.AudioContext || window.webkitAudioContext; if (AC) ctx = new AC(); }
-      if (ctx && ctx.state === "suspended") ctx.resume().catch(() => {});
-    } catch (e) {}
-  };
-  const blip = (f0, f1, dur, type, gain) => {
-    if (muted || !ctx) return;
-    try {
-      const t = ctx.currentTime;
-      const o = ctx.createOscillator(), g = ctx.createGain();
-      o.type = type; o.frequency.setValueAtTime(f0, t);
-      o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
-      g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      o.connect(g).connect(ctx.destination); o.start(t); o.stop(t + dur);
-    } catch (e) {}
-  };
-  const thud = (dur, gain, fc) => {
-    if (muted || !ctx) return;
-    try {
-      const t = ctx.currentTime, n = Math.floor(ctx.sampleRate * dur);
-      const buf = ctx.createBuffer(1, n, ctx.sampleRate), d = buf.getChannelData(0);
-      for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
-      const src = ctx.createBufferSource(); src.buffer = buf;
-      const f = ctx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = fc;
-      const g = ctx.createGain(); g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      src.connect(f).connect(g).connect(ctx.destination); src.start(t);
-    } catch (e) {}
-  };
-  return {
-    ensure,
-    setMuted(m) { muted = m; }, get muted() { return muted; },
-    fire() { blip(150, 55, 0.12, "square", 0.22); thud(0.09, 0.18, 900); },
-    boom() { thud(0.32, 0.42, 320); blip(85, 28, 0.28, "sine", 0.32); },
-    splash() { thud(0.22, 0.26, 1500); blip(560, 190, 0.16, "sine", 0.12); },
-    kill() { blip(760, 1180, 0.06, "square", 0.09); },
-    crack() { blip(1500, 300, 0.05, "square", 0.1); thud(0.05, 0.12, 2500); },
-    trial() { blip(523, 784, 0.14, "square", 0.16); setTimeout(() => blip(784, 1046, 0.2, "square", 0.16), 130); },
-    hook() { blip(200, 900, 0.4, "sawtooth", 0.14); },
-  };
-}
-// One contract per scenario: the trial table is read from spec.contract.
-// setup is a no-op (the world is freshly built per mission); restock goes
-// through pg.respawnGroup so vehicle subjects reissue too.
-const makeTrials = (spec) => {
-  const c = spec.contract;
-  return [{
-    id: c.wo, title: `${c.wo} · ${c.title}`, hint: c.directive, commendation: c.commendation,
-    need: c.need, par: c.par, subjects: c.subjects,
-    focus: () => c.focus || { x: 0, z: 0, r: 8 }, // the survey marker: the flagged work site
-    setup: () => {},
-    // demolition orders: progress is structural — kills never advance it
-    ...(c.volleyMode ? { volley: true } : c.objective ? { objective: c.objective, match: () => false } : { match: (e) => matchKill(c.predicate, e) }),
-    ...(c.alt ? { alt: c.alt } : {}),
-  }];
-};
-// bureau transmissions arrive over the wire: text types out. Filed
-// documents (the AAR) stay static — carbon paper does not animate.
-function Typed({ text, cps = 45, style }) {
-  const [n, setN] = useState(0);
-  useEffect(() => {
-    setN(0);
-    const iv = setInterval(() => setN((v) => (v >= text.length ? v : v + 1)), 1000 / cps);
-    return () => clearInterval(iv);
-  }, [text, cps]);
-  return <span style={style}>{text.slice(0, n)}{n < text.length ? <span style={{ opacity: 0.6 }}>{"\u258c"}</span> : null}</span>;
-}
 export default function CampaignRunner({ entry, onExit, onComplete, record }) {
   const spec = entry.scenario;
   const TRIALS = useMemo(() => makeTrials(spec), [spec]);
@@ -196,7 +123,7 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
       if (t && S.running) Object.assign(S.tally, t);
     })();
     const enterTrial = (idx) => {
-      S.trial.idx = idx; S.trial.prog = 0; S.trial.volleyCounts = new Map();
+      S.trial.idx = idx; S.trial.prog = 0; S.trial.onSite = null; S.trial.volleyCounts = new Map();
       S.trial.t0 = S.world.t;
       const t = TRIALS[idx];
       if (t) { try { t.setup(S.world); } catch (e) {} S.world.trialFocus = t.focus(); }
@@ -275,7 +202,11 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
       const el = Math.max(0.1, S.world.t - S.trial.t0);
       const dispersed = S.world.bodies.filter((b) => b.group === t.alt.group && b.alive).length;
       const desc = TRIALS[S.trial.idx + 1] ? "Next: " + TRIALS[S.trial.idx + 1].title : "Order complete. Returning to the order book.";
-      S.medals[t.id] = { time: +el.toFixed(1), medal: null, deviation: true };
+      // deviations grade against their own pars — a hollow-star medal on the
+      // record row, never a commendation on the report (the bureau does not
+      // praise what it did not accept)
+      const dm = t.alt.par ? MEDAL({ par: t.alt.par }, el) : null;
+      S.medals[t.id] = { time: +el.toFixed(1), medal: dm, deviation: true };
       try { window.storage.set("coldsnap-camp-medals", JSON.stringify(S.medals)); } catch (e) {}
       try {
         const report = composeAAR({
@@ -287,7 +218,7 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
         S.aar = { id: t.id, lines: report, medal: null, outcome: "UNFULFILLED — DEVIATION" };
         window.storage.set("coldsnap-camp-aar-" + t.id, JSON.stringify(report));
       } catch (e) {}
-      S.toasts.push({ id: S.toastSeq++, title: `DEVIATION NOTED — ${t.title} · ${el.toFixed(1)}s`, desc: `${dispersed} subjects dispersed, none processed · ${desc}`, t: 4 });
+      S.toasts.push({ id: S.toastSeq++, title: `DEVIATION NOTED — ${t.title} · ${el.toFixed(1)}s${dm ? ` ☆${dm}` : ""}`, desc: `${dispersed} subjects dispersed, none processed · ${desc}`, t: 4 });
       const elDone = Math.max(0.1, S.world.t - S.trial.t0);
       const coll = collateral();
       S.trial.flashT = 1.6;
@@ -389,63 +320,11 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
       if (e.cause === CAUSE.DROWN) S.audio.splash();
       onTrialKill(e);
     };
-    const onAch = (e) => { S.toasts.push({ id: S.toastSeq++, title: e.name, desc: e.desc, t: 3.6 }); };
-    const actions = {
-      // ordnance is counted here at the action layer, not from muzzle events —
-      // grenadier mortars also route through fireProjectile and would pollute it
-      fireAt: (x, z) => { if (S.cds.fire > 0) return false; S.cds.fire = 0.45; bisonFire(S.world, { x, z }); if (S.trialLog) S.trialLog.ordnance.shell++; return true; },
-      // the rack is a direct-observation weapon (Jeff's rule): it refuses
-      // inside 10m (danger close) and without line of sight to the strike
-      // point. Refusals don't start the cooldown.
-      volleyAt: (x, z) => {
-        if (S.cds.volley > 0) return false;
-        const w = S.world, b = w.byId.get(w.bisonId);
-        if (b) {
-          const refuse = (why, how) => {
-            // throttle per reason: a DANGER CLOSE refusal must not swallow a
-            // NO LINE OF SIGHT toast half a second later
-            if (!S.lastRefuse) S.lastRefuse = {};
-            if (S.lastRefuse[why] && performance.now() - S.lastRefuse[why] < 1200) return false;
-            S.lastRefuse[why] = performance.now();
-            S.toasts.push({ id: S.toastSeq++, title: `RACK HELD · ${why}`, desc: how, t: 2.6 });
-            return false;
-          };
-          const dist = Math.hypot(x - b.pos.x, z - b.pos.z);
-          if (dist < 10) return refuse("DANGER CLOSE", "Minimum safe distance 10 meters.");
-          const y0 = b.pos.y + 1.6, y1 = w.field.heightAt(x, z) + 1.0;
-          const x0 = b.pos.x, z0 = b.pos.z;
-          const bx0 = Math.min(x0, x) - 3, bx1 = Math.max(x0, x) + 3, bz0 = Math.min(z0, z) - 3, bz1 = Math.max(z0, z) + 3;
-          const cand = [];
-          for (const ob of w.bodies) {
-            if (ob.id === w.bisonId || ob.kind === "unit" || (!ob.alive && ob.kind !== "wreck")) continue;
-            if (ob.pos.x < bx0 || ob.pos.x > bx1 || ob.pos.z < bz0 || ob.pos.z > bz1) continue;
-            // the body AT the strike point is the thing being aimed at, not an
-            // obstruction — without this, the ray's terminal samples land
-            // inside the target's own hull and every aimed volley refuses
-            if (Math.abs(x - ob.pos.x) < ob.hx + 0.3 && Math.abs(z - ob.pos.z) < ob.hz + 0.3) continue;
-            cand.push(ob);
-          }
-          const steps = Math.max(8, Math.ceil(dist * 2)); // 0.5m sampling — 1m stepped clean through single-stone walls
-          for (let i = 1; i < steps; i++) {
-            const t = i / steps;
-            const px = x0 + (x - x0) * t, py = y0 + (y1 - y0) * t, pz = z0 + (z - z0) * t;
-            if (py <= w.field.heightAt(px, pz) + 0.05) return refuse("NO LINE OF SIGHT", "The launcher needs eyes on the strike point.");
-            for (const ob of cand) {
-              if (Math.abs(px - ob.pos.x) < ob.hx && Math.abs(py - ob.pos.y) < ob.hy && Math.abs(pz - ob.pos.z) < ob.hz) return refuse("NO LINE OF SIGHT", "The launcher needs eyes on the strike point.");
-            }
-          }
-        }
-        S.cds.volley = 10;
-        fireVolley(S.world, x, z, 6, "player");
-        if (S.trialLog) S.trialLog.ordnance.volley++;
-        return true;
-      },
-      mgAt: (x, z) => { if (S.cds.mg > 0) return false; S.cds.mg = 0.11; const p = bisonMg(S.world, { x, z }); if (S.trialLog) { if (p && S.trialLog.ordnance.mg % 4 === 0) p.tracer = true; S.trialLog.ordnance.mg++; } return true; }, // every 4th round is a tracer — tag only, physics untouched
-      squads: () => S.world.pg.respawnSquads(),
-      scouts: () => S.world.pg.respawnScouts(),
-      repair: () => S.world.pg.repairGarrison(),
-      reset: doReset,
-    };
+    // arcade achievements are suppressed on campaign deployments — the
+    // bureau does not award trophies mid-clearance. Unlocks still persist
+    // silently (the engine keeps firing them); only the fanfare is gone.
+    const onAch = () => {};
+    const actions = makeActions(S, doReset);
     S.actions = actions;
     const onKey = (ev, down) => {
       const k = ev.key.toLowerCase();
@@ -716,7 +595,17 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
           }
         }
         if (td && td.alt && S.trial.prog === 0) {
-          const st = disperseState(w.bodies, td.alt.rect || spec.terrain.pool || POOL, td.alt.group); // alt.rect: dry maps declare the detector zone themselves (AC-06's halt pad)
+          const rect = td.alt.rect || spec.terrain.pool || POOL; // alt.rect: dry maps declare the detector zone themselves (AC-06's halt pad)
+          const st = disperseState(w.bodies, rect, td.alt.group);
+          // the counter dual-modes during a clean hold: once the first
+          // subject leaves the site, the quiet path gets its own needle
+          let on = 0, tot = 0;
+          for (const b2 of w.bodies) {
+            if (b2.group !== td.alt.group || b2.kind !== "unit" || !b2.alive) continue;
+            tot++;
+            if (b2.pos.x > rect.x0 - 1 && b2.pos.x < rect.x1 + 1 && b2.pos.z > rect.z0 - 1 && b2.pos.z < rect.z1 + 1) on++;
+          }
+          S.trial.onSite = tot > 0 && on < tot ? on : null;
           S.trial.altT = st === "CLEAR" ? (S.trial.altT || 0) + dt : 0;
           if (S.trial.altT >= td.alt.holdS) advanceDeviation(td);
         }
@@ -884,7 +773,7 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
           weapon: S.weapon,
           proc: S.proc ? { ...S.proc } : null, // matches the engine's recover gate (0.5) minus margin — the demo's 0.3 left a stuck band with no visible RECOVER
           iceOn: !!w.ice,
-          trial: { idx: S.trial.idx, prog: S.trial.prog, flashT: S.trial.flashT, free: S.trial.idx >= TRIALS.length, el: Math.max(0, w.t - S.trial.t0) },
+          trial: { idx: S.trial.idx, prog: S.trial.prog, flashT: S.trial.flashT, free: S.trial.idx >= TRIALS.length, el: Math.max(0, w.t - S.trial.t0), onSite: S.trial.onSite != null ? S.trial.onSite : null },
           medals: { ...S.medals },
           brief: S.brief,
           aar: S.aar || null,
@@ -996,7 +885,6 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const causeOrder = ["PROJECTILE", "BLAST", "CRUSH", "TOSS", "COLLAPSE", "FLIP", "DROWN", "IMPACT"];
   const trialDef = TRIALS[hud.trial.idx];
-  const achDefs = makeAch().defs;
   return (
     <div ref={wrapRef} style={P.wrap}>
       <canvas ref={canvasRef} style={P.cv} />
@@ -1017,15 +905,18 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
             >{trialDef.title}</span>
             {!isTouch && <span style={{ opacity: 0.85, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{trialDef.hint}</span>}
             <span style={{ whiteSpace: "nowrap", opacity: 0.75, flexShrink: 0, marginLeft: "auto" }}>{hud.trial.el.toFixed(0)}s</span>
-            <span style={{ whiteSpace: "nowrap", flexShrink: 0 }}>{hud.trial.prog}/{trialDef.need}</span>
+            {/* the quiet path's needle: subjects still on site, none processed */}
+            <span data-counter style={{ whiteSpace: "nowrap", flexShrink: 0 }}>{hud.trial.onSite != null && hud.trial.prog === 0 ? `ON SITE: ${hud.trial.onSite}` : `${hud.trial.prog}/${trialDef.need}`}</span>
           </>
         ) : (
           <>
             <span style={{ color: "#ffd27a" }}>FREE PLAY</span>
             {TRIALS.map((t) => {
               const m = hud.medals[t.id];
-              // deviations stand in the record as a hollow grey star
-              const col = !m ? "#4a5361" : m.deviation ? "#8b93a0" : m.medal === "GOLD" ? "#ffd27a" : m.medal === "SILVER" ? "#cfd6de" : "#b0764a";
+              // deviations stand in the record as a hollow star — graded
+              // against their own pars, tinted like any medal; ungraded
+              // (pre-par records) stay archive grey
+              const col = !m ? "#4a5361" : m.medal === "GOLD" ? "#ffd27a" : m.medal === "SILVER" ? "#cfd6de" : m.medal === "BRONZE" ? "#b0764a" : "#8b93a0";
               return (
                 <span
                   key={t.id}
@@ -1093,7 +984,6 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
         <div style={{ ...P.panel, top: 44, right: 12, display: "flex", gap: 10, padding: 8 }}>
           <button style={P.btn} onClick={() => { const S = stateRef.current; if (S && S.zoomBy) S.zoomBy(1.18); }}>+</button>
           <button style={P.btn} onClick={() => { const S = stateRef.current; if (S && S.zoomBy) S.zoomBy(0.85); }}>−</button>
-          <button style={P.btn} onClick={() => { setAchOpen(!achOpen); setGfxOpen(false); }}>★ {hud.achUnlocked.length}/{achDefs.length}</button>
           <button style={P.btn} onClick={() => { setGfxOpen(!gfxOpen); setAchOpen(false); }}>GFX</button>
         </div>
       )}
@@ -1151,7 +1041,6 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
       )}
       {isTouch && menuOpen && (
         <div style={{ ...P.panel, right: 10, bottom: 170, display: "flex", flexDirection: "column", gap: 8, zIndex: 4 }}>
-          <button style={P.btn} onClick={() => { setAchOpen(!achOpen); setGfxOpen(false); setMenuOpen(false); }}>★ SERVICE RECORD</button>
           <button style={P.btn} onClick={() => { setGfxOpen(!gfxOpen); setAchOpen(false); setMenuOpen(false); }}>GRAPHICS</button>
           <button style={P.btn} onClick={() => { act("reset"); setMenuOpen(false); }}>RESTART ORDER</button>
           <button style={P.btn} onClick={() => { const S = stateRef.current; if (S) S.audio.setMuted(!S.audio.muted); setMenuOpen(false); }}>SOUND ON/OFF</button>
@@ -1166,83 +1055,10 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
         </button>
         <button style={P.btn} onClick={() => act("reset")}>{isTouch ? "RESTART" : "RESTART ORDER [0]"}</button>
       </div>
-      {started && hud.aar && (() => {
-        const stampCol = hud.aar.medal === "GOLD" ? "#ffd27a" : hud.aar.medal === "SILVER" ? "#cfd6de" : hud.aar.medal === "BRONZE" ? "#b0764a" : "#ff6b5e";
-        const file = () => { const S = stateRef.current; if (S) S.aar = null; };
-        return (
-          // the scrim is inert on purpose: a report leaves the desk only via
-          // FILE REPORT — a stray tap must not dismiss it unread
-          <div style={{ position: "absolute", inset: 0, background: "rgba(10,12,16,0.55)", zIndex: 6, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
-            <style>{`
-              @keyframes csPrintout { from { clip-path: inset(0 0 100% 0); } to { clip-path: inset(0 0 0% 0); } }
-              @keyframes csStamp { 0% { opacity: 0; transform: rotate(-7deg) scale(2.4); } 70% { opacity: 1; transform: rotate(-7deg) scale(0.92); } 100% { opacity: 0.9; transform: rotate(-7deg) scale(1); } }
-              @keyframes csScrawl { from { opacity: 0; } to { opacity: 0.92; } }
-              @keyframes csInk { from { border-bottom-color: transparent; } to { border-bottom-color: #b0a68f; } }
-            `}</style>
-            <div data-aar onClick={(e) => e.stopPropagation()} style={{ ...P.panel, position: "relative", width: "min(470px, 94vw)", maxHeight: "76vh", overflowY: "auto", padding: "12px 16px", animation: "csPrintout 1.5s steps(22) both" }}>
-              <div style={{ borderBottom: "1px dashed #3a414b", paddingBottom: 6, marginBottom: 9, display: "flex", justifyContent: "space-between", gap: 10, fontSize: isTouch ? 10 : 9, letterSpacing: 1.5, color: "#8b93a0", whiteSpace: "nowrap" }}>
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>PROCUREMENT BUREAU · FIELD ACCEPTANCE DIVISION</span>
-                <span>FORM AA-7 · CARBON 2/3</span>
-              </div>
-              <div style={{ position: "absolute", top: 34, right: 16, transform: "rotate(-7deg)", border: `3px double ${stampCol}`, color: stampCol, padding: "3px 10px", fontSize: 13, letterSpacing: 3, opacity: 0.9, textAlign: "center", pointerEvents: "none", animation: "csStamp 0.35s 1.6s both" }}>
-                {hud.aar.outcome.split(" — ")[0]}
-                {hud.aar.medal ? (
-                  <div style={{ fontSize: 10, letterSpacing: 2 }}>★ {hud.aar.medal}</div>
-                ) : hud.aar.outcome.includes(" — ") ? (
-                  <div style={{ fontSize: 10, letterSpacing: 2 }}>{hud.aar.outcome.split(" — ")[1]}</div>
-                ) : null}
-              </div>
-              <div style={{ fontSize: isTouch ? 13 : 11.5, lineHeight: 1.65, whiteSpace: "pre-wrap" }}>
-                {hud.aar.lines.map((ln, i, all) => {
-                  const sub = ln.startsWith("  SUBJECT");
-                  const remark = ln.startsWith("REMARK:");
-                  const exp = ln.startsWith("EXPENDITURE:");
-                  const att = ln.startsWith("ATTACHMENT ");
-                  // "[underline] <text>" rows render no line of their own —
-                  // they put the archivist's ink under that phrase where it
-                  // sits in the attachment above
-                  if (ln.startsWith("[underline] ")) return null;
-                  const under = att ? all.filter((l) => l.startsWith("[underline] ")).map((l) => l.slice(12)).find((t) => ln.includes(t)) : null;
-                  const body = under ? (() => {
-                    const at = ln.indexOf(under);
-                    return (<>
-                      {ln.slice(0, at)}
-                      <span style={{ display: "inline-block", borderBottom: "2px solid", borderBottomColor: "#b0a68f", transform: "rotate(-0.5deg)", padding: "0 1px", animation: "csInk 0.4s 2.3s both" }}>{under}</span>
-                      {ln.slice(at + under.length)}
-                    </>);
-                  })() : ln;
-                  // the second hand: pencil on the carbon, written after the
-                  // stamp — a different script, off the form's grid
-                  if (ln.startsWith("[margin] ")) return (
-                    <div key={i} data-margin style={{
-                      color: "#b0a68f",
-                      fontFamily: '"Segoe Script","Bradley Hand","Comic Sans MS",cursive',
-                      fontStyle: "italic",
-                      fontSize: isTouch ? 14 : 12.5,
-                      transform: "rotate(-1.6deg)",
-                      padding: "3px 0 2px 26px",
-                      letterSpacing: 0.4,
-                      animation: "csScrawl 0.7s 2.3s both",
-                    }}>{ln.slice(9)}</div>
-                  );
-                  return (
-                    <div key={i} style={{
-                      color: i === 0 || remark ? "#ffd27a" : sub || att ? "#a9b3bf" : "#cfd6de",
-                      fontSize: i === 0 ? (isTouch ? 15 : 13) : remark ? (isTouch ? 13.5 : 12) : att ? (isTouch ? 12 : 10.5) : (isTouch ? 13 : 11.5),
-                      paddingRight: i <= 1 ? 98 : 0, // the title and status wrap clear of the stamp
-                      letterSpacing: i === 0 ? 1 : 0,
-                      fontStyle: remark ? "italic" : "normal",
-                      borderTop: exp || ln.startsWith("ATTACHMENT A") ? "1px solid #3a414b" : "none",
-                      marginTop: exp || ln.startsWith("ATTACHMENT A") ? 7 : 0, paddingTop: exp || ln.startsWith("ATTACHMENT A") ? 7 : 0,
-                    }}>{body}</div>
-                  );
-                })}
-              </div>
-              <button data-aar-file onClick={file} style={{ ...P.btn, marginTop: 10, width: "100%", borderColor: "#8a5a1c", letterSpacing: 2 }}>FILE REPORT</button>
-            </div>
-          </div>
-        );
-      })()}
+      {started && hud.aar && (
+        <AarPanel aar={hud.aar} isTouch={isTouch} P={P}
+          onFile={() => { const S = stateRef.current; if (S) S.aar = null; }} />
+      )}
       {started && !hud.aar && hud.brief && (() => {
         // the tap that dismisses the deploy overlay starts the game on
         // pointerdown, and its trailing click lands on whatever mounts in the
@@ -1260,6 +1076,14 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
               <div style={{ fontSize: isTouch ? 11 : 10, letterSpacing: 2, opacity: 0.7 }}>WORK ORDER</div>
               <div style={{ color: "#ffd27a", letterSpacing: 1, marginTop: 3, fontSize: isTouch ? 16 : 13 }}>{hud.brief.title}</div>
               <div style={{ fontSize: isTouch ? 14 : 12, opacity: 0.92, marginTop: 7, lineHeight: 1.55, minHeight: "3.1em" }}><Typed text={hud.brief.directive} /></div>
+              {/* every order carries a disposition field; on deviation
+                  contracts the bureau prints the alternative and strikes it
+                  out — the strike is how the player learns one exists */}
+              <div data-disposition style={{ fontSize: isTouch ? 12 : 10.5, marginTop: 8, color: "#8b93a0", letterSpacing: 1 }}>
+                DISPOSITION OF SUBJECTS: RESOLVED{spec.contract.alt && (
+                  <> / <span style={{ textDecoration: "line-through", textDecorationColor: "#a63c3c", textDecorationThickness: "2px" }}>DISPERSED — NOT ACCEPTED</span></>
+                )}
+              </div>
               {spec.contract.struck && (
                 // a procedure line the bureau printed and then struck out —
                 // the strike is the message; who struck it goes unsaid
@@ -1303,20 +1127,6 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
           </div>
         ))}
       </div>
-      {achOpen && (
-        <div style={{ ...P.panel, top: 92, right: 10, width: 250, maxHeight: 300, overflowY: "auto", zIndex: 4 }}>
-          <div style={{ color: "#ff6b5e", marginBottom: 4 }}>SERVICE RECORD</div>
-          {achDefs.map(([id, name, desc]) => {
-            const on = hud.achUnlocked.includes(id);
-            return (
-              <div key={id} style={{ marginBottom: 6, opacity: on ? 1 : 0.45 }}>
-                <div style={{ color: on ? "#ffd27a" : "#8b93a0" }}>{on ? "★" : "☆"} {name}</div>
-                <div style={{ fontSize: 11 }}>{desc}</div>
-              </div>
-            );
-          })}
-        </div>
-      )}
       {gfxOpen && (
         <div style={{ ...P.panel, top: 92, right: 10, width: 230, zIndex: 4 }}>
           <div style={{ color: "#ff6b5e", marginBottom: 4 }}>GRAPHICS LAB</div>

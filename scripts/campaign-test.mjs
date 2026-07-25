@@ -327,12 +327,13 @@ const plates = (w) => w.bodies.filter((b) => b.group === "plate" && b.kind === "
     const w = buildScenario(spec, { shelters: true });
     const pool = spec.terrain.pool;
     const b = w.byId.get(w.bisonId);
-    let altT = 0, best = 0, voided = false;
+    let altT = 0, best = 0, voided = false, doneT = null;
     const watch = () => {
       for (const e of w.events) if (e.type === "kill" && e.group === "crossing") voided = true;
       const st = disperseState(w.bodies, pool, "crossing");
       altT = st === "CLEAR" ? altT + w.dt : 0;
       if (altT > best) best = altT;
+      if (doneT == null && best >= spec.contract.alt.holdS) doneT = w.t;
     };
     // the proven bloodless choreography (probe-verified, deterministic):
     // one warning shell on the dry south apron breaks the main body — the
@@ -366,6 +367,7 @@ const plates = (w) => w.bodies.filter((b) => b.group === "plate" && b.kind === "
     driveTo(12.5, 21, 0.2, 1.0);    // creep north for the far straggler
     holdS(45);
     ok("AC-04: the herd disperses the detail without a kill", !voided && best >= spec.contract.alt.holdS, `hold ${best.toFixed(1)}s, ${crew(w).length}/8 alive${voided ? ", VOIDED" : ""}`);
+    ok("AC-04: the quiet path grades inside its own pars", !!spec.contract.alt.par && doneT != null && doneT <= spec.contract.alt.par[1], `${doneT == null ? "n/a" : doneT.toFixed(0)}s vs silver ${(spec.contract.alt.par || [])[1]}s`);
   }
 
   // restock restages the detail on the sheet (fresh world: the ice-aware
@@ -553,6 +555,7 @@ const plates = (w) => w.bodies.filter((b) => b.group === "plate" && b.kind === "
     driveTo(-1.7, 26, 0.2, 1.2); holdN(4);
     driveTo(-1.5, 31, 0.2, 1.2); holdN(20);
     ok("AC-06: the trained-gun herd disperses the halt without a kill", !voided && best >= spec.contract.alt.holdS, `hold ${best.toFixed(1)}s in ${(w.t - t0).toFixed(0)}s, ${alive(w).length}/8 alive${voided ? ", VOIDED" : ""}`);
+    ok("AC-06: the quiet path grades gold against its own pars", !!spec.contract.alt.par && (w.t - t0) <= spec.contract.alt.par[0], `${(w.t - t0).toFixed(0)}s vs gold ${(spec.contract.alt.par || [])[0]}s`);
   }
 
   // restock reissues the crews but NOT the trucks — the bureau replaces what
@@ -763,6 +766,7 @@ const plates = (w) => w.bodies.filter((b) => b.group === "plate" && b.kind === "
     driveTo(1.6, -2, 0.25, 1.2); holdN(4);
     holdN(200);
     ok("AC-07: the survey empties the settlement without a kill", !voided && best >= HOLD, `hold ${best.toFixed(1)}s in ${(w.t - t0).toFixed(0)}s, ${alive(w).length}/20 alive${voided ? ", VOIDED" : ""}`);
+    ok("AC-07: the quiet path grades gold against its own pars", !!spec.contract.alt.par && (w.t - t0) <= spec.contract.alt.par[0], `${(w.t - t0).toFixed(0)}s vs gold ${(spec.contract.alt.par || [])[0]}s`);
     ok("AC-07: the structures stand untouched through the deviation", !felled);
   }
 
@@ -970,6 +974,7 @@ const plates = (w) => w.bodies.filter((b) => b.group === "plate" && b.kind === "
     shepherd = true;
     holdN(280);
     ok("AC-08: the campaign's last order closes without a shot", !voided && best >= HOLD, `hold ${best.toFixed(1)}s in ${(w.t - t0).toFixed(0)}s, ${alive(w).length}/6 alive${voided ? ", VOIDED" : ""}`);
+    ok("AC-08: the quiet path grades gold against its own pars", !!spec.contract.alt.par && (w.t - t0) <= spec.contract.alt.par[0], `${(w.t - t0).toFixed(0)}s vs gold ${(spec.contract.alt.par || [])[0]}s`);
     ok("AC-08: the sheet survives the quiet path", w.ice && w.ice.plates.length === 64);
   }
 

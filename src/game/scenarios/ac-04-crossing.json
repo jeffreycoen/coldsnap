@@ -186,7 +186,11 @@
   "subjects": "crossing",
   "alt": {
    "group": "crossing",
-   "holdS": 5
+   "holdS": 5,
+   "par": [
+    50,
+    100
+   ]
   },
   "struck": "DEMONSTRATE: APPROACH WITHOUT DISCHARGE",
   "evidence": [

@@ -178,7 +178,11 @@
   "subjects": "ponddrill2",
   "alt": {
    "group": "ponddrill2",
-   "holdS": 6
+   "holdS": 6,
+   "par": [
+    100,
+    180
+   ]
   },
   "evidence": [
    "Zone 12 register carried forward: 3 hulls, 1 vehicle (operable), 1 structure (down). No action required.",

@@ -302,6 +302,10 @@ try {
   await seedMission(1, "ac02", "AC-02");
   await page.waitForFunction(() => document.body.innerText.includes("provided for in the schedule"), { timeout: 15000, polling: 500 });
   ok("AC-02 brief carries the directive", true);
+  ok("AC-02 disposition field offers no alternative", await page.evaluate(() => {
+    const d = document.querySelector("[data-disposition]");
+    return !!d && d.innerText.includes("RESOLVED") && !d.innerText.includes("DISPERSED");
+  }));
   await sleep(800);
   await page.evaluate(() => document.querySelector("[data-brief-ack]").click());
   ok("no firing-procedure annex on AC-02", !(await text()).includes("ANNEX A"));
@@ -390,8 +394,14 @@ try {
   await seedMission(7, "ac08", "AC-08");
   await page.waitForFunction(() => document.body.innerText.includes("The sheet has refrozen"), { timeout: 15000, polling: 500 });
   ok("AC-08 brief carries the directive", true);
+  // the deviation contracts print the alternative and strike it out
+  ok("AC-08 disposition strikes the dispersal line", await page.evaluate(() => {
+    const d = document.querySelector("[data-disposition]");
+    return !!d && d.innerText.includes("DISPERSED — NOT ACCEPTED");
+  }));
   await sleep(400);
   await page.evaluate(() => document.querySelector("[data-brief-ack]").click());
+  ok("no arcade trophies on a campaign deployment", !(await text()).includes("/10"));
   ok("the sheet composes: six on the ice, the evidence ring around it", await page.evaluate(() => {
     const w = window.__COLDSNAP__._world();
     const d = w.bodies.filter((b) => b.group === "ponddrill2" && b.kind === "unit" && b.alive);
@@ -404,6 +414,24 @@ try {
     return typeof api._R.setGrade === "function" && api._S.grade < 0; // fulfilled-heavy seed on the last map: colder than shipped
   }));
   await page.mouse.move(480, 610); // the live aim is a threat — park it behind the tank, off the sheet
+  // dual-mode counter: displace two of the detail off the sheet and the
+  // order counter turns into the quiet path's needle
+  await page.evaluate(() => {
+    const w = window.__COLDSNAP__._world();
+    let n = 0;
+    for (const b of w.bodies) {
+      if (b.group !== "ponddrill2" || b.kind !== "unit" || !b.alive || n >= 2) continue;
+      b.pos.x = 20 + n * 2; b.pos.z = 8;
+      b.pos.y = w.field.heightAt(b.pos.x, b.pos.z) + 0.88;
+      b.v.x = b.v.y = b.v.z = 0; b.sleeping = false;
+      n++;
+    }
+  });
+  await page.waitForFunction(() => {
+    const c = document.querySelector("[data-counter]");
+    return !!c && c.innerText.includes("ON SITE: 4");
+  }, { timeout: 20000, polling: 500 });
+  ok("the counter dual-modes once subjects leave the site", true);
   // the abutment screens the pad axis (probed) — fire from the south bank,
   // shells walked onto whoever still stands; revisit until the order closes
   const done8 = () => document.body.innerText.includes("Sheet rating confirmed");
