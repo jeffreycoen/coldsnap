@@ -80,7 +80,8 @@ const makeTrials = (spec) => {
     need: c.need, par: c.par, subjects: c.subjects,
     focus: () => c.focus || { x: 0, z: 0, r: 8 }, // the survey marker: the flagged work site
     setup: () => {},
-    ...(c.volleyMode ? { volley: true } : { match: (e) => matchKill(c.predicate, e) }),
+    // demolition orders: progress is structural — kills never advance it
+    ...(c.volleyMode ? { volley: true } : c.objective ? { objective: c.objective, match: () => false } : { match: (e) => matchKill(c.predicate, e) }),
     ...(c.alt ? { alt: c.alt } : {}),
   }];
 };
@@ -668,6 +669,28 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
       // the attempt; the detector VOIDs from its side on any subject death
       {
         const td = TRIALS[S.trial.idx];
+        // demolition watch: a named group's roof slab brought below its drop
+        // line counts once — the order is about structures, and the form
+        // never asks what was under them
+        if (td && td.objective && td.objective.type === "demolish" && S.trial.prog < td.need) {
+          if (!S.trial.felled) S.trial.felled = {};
+          for (const g of td.objective.groups) {
+            if (S.trial.felled[g]) continue;
+            for (const b2 of w.bodies) {
+              if (!b2.roofSlab || b2.group !== g) continue;
+              // at grade OR keeled past ~37° — a slab leaning into its own
+              // wreck is no longer a roof, wherever its center rests
+              if (b2.pos.y < w.field.heightAt(b2.pos.x, b2.pos.z) + td.objective.drop || b2.R[4] < 0.8) {
+                S.trial.felled[g] = true;
+                S.trial.prog++;
+                S.audio.crack();
+                S.toasts.push({ id: S.toastSeq++, title: `STRUCTURE AT GRADE · ${S.trial.prog}/${td.need}`, desc: "Roof rating confirmed: zero.", t: 3.4 });
+                if (S.trial.prog >= td.need) advanceTrial();
+              }
+              break;
+            }
+          }
+        }
         if (td && td.alt && S.trial.prog === 0) {
           const st = disperseState(w.bodies, td.alt.rect || spec.terrain.pool || POOL, td.alt.group); // alt.rect: dry maps declare the detector zone themselves (AC-06's halt pad)
           S.trial.altT = st === "CLEAR" ? (S.trial.altT || 0) + dt : 0;
@@ -971,7 +994,6 @@ export default function CampaignRunner({ entry, onExit, onComplete }) {
             {!isTouch && <span style={{ opacity: 0.85, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{trialDef.hint}</span>}
             <span style={{ whiteSpace: "nowrap", opacity: 0.75, flexShrink: 0, marginLeft: "auto" }}>{hud.trial.el.toFixed(0)}s</span>
             <span style={{ whiteSpace: "nowrap", flexShrink: 0 }}>{hud.trial.prog}/{trialDef.need}</span>
-            <button style={{ ...P.btn, padding: isTouch ? "6px 10px" : "3px 8px", fontSize: isTouch ? 13 : 11, flexShrink: 0 }} onClick={() => { const S = stateRef.current; if (S) window.__COLDSNAP__ && window.__COLDSNAP__.skipTrial(); }}>SKIP</button>
           </>
         ) : (
           <>

@@ -103,6 +103,7 @@ const BUILDERS = {
     weldGrid(world, grid);
     const slab = addBody(world, { kind: "chunk", group: grp, mass: 800, hx: 2.90, hy: 0.2, hz: 3.32, x: cx, y: base + 4 * PITCH + 0.2, z: cz, friction: 0.65, restitution: 0.02 });
     slab.sleeping = true; slab.gpos = [4, 4, 4];
+    slab.roofSlab = true; // demolition objectives watch this body (prop only — not hashed)
     for (const c of grid) if (c.gpos[1] >= 3) addWeld(world, slab, c, BREAK_F);
     pg.covers.push({ x: cx - 3.32, z: cz, ux: 0, uz: 1, hl: (NZ * PITCH) / 2, hw: HCS, hh: NY * PITCH });
     pg.covers.push({ x: cx + 3.32, z: cz, ux: 0, uz: 1, hl: (NZ * PITCH) / 2, hw: HCS, hh: NY * PITCH });
@@ -159,12 +160,12 @@ function spawnSquad(world, field, s, ice) {
   // this). The replacement stages beside the ruin — deterministic ring
   // search for clear ground, nearest first. Initial builds are untouched:
   // squads spawn before prefabs, so no chunk exists yet and parity holds.
-  const fouled = (px, pz) => {
+  const fouled = (px, pz, m = 0.45) => {
     for (const o of world.bodies) {
       if (o.kind !== "chunk") continue;
       // overhead masonry (an intact roof) doesn't foul the floor beneath it
       if (o.pos.y - o.hy > field.heightAt(px, pz) + 2.0) continue;
-      if (Math.abs(o.pos.x - px) < o.hx + 0.45 && Math.abs(o.pos.z - pz) < o.hz + 0.45) return true;
+      if (Math.abs(o.pos.x - px) < o.hx + m && Math.abs(o.pos.z - pz) < o.hz + m) return true;
     }
     return false;
   };
@@ -172,9 +173,11 @@ function spawnSquad(world, field, s, ice) {
   for (let i = 0; i < s.nx; i++) for (let j = 0; j < s.nz; j++) {
     let x = s.x0 + i * s.dx, z = s.z0 + j * s.dz;
     if (fouled(x, z)) {
+      // relocation candidates demand REAL clearance (0.7) — a gap between
+      // rubble stones reads clear at spawn margin but squeezes the man
       outer: for (const r of [1.8, 3.2, 4.6, 6.0]) {
         for (const [ox, oz] of RING) {
-          if (!fouled(x + ox * r, z + oz * r)) { x = x + ox * r; z = z + oz * r; break outer; }
+          if (!fouled(x + ox * r, z + oz * r, 0.7)) { x = x + ox * r; z = z + oz * r; break outer; }
         }
       }
     }

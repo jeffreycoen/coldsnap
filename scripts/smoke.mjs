@@ -368,75 +368,44 @@ try {
       w.bodies.filter((b) => b.group === "haulage" && b.kind === "truck").length === 3;
   }));
 
-  // --- AC-07 (full): the flip — a settlement of twenty, humans filed in
-  // the same column; roof-burst racks; mixed smears; the AC-08 seal
+  // --- AC-07 (full): the flip — three fabrication halls brought to grade,
+  // the crushed floors a by-product; mixed smears; the AC-08 seal
   await seedMission(6, "ac07", "AC-07");
-  await page.waitForFunction(() => document.body.innerText.includes("collapse is the specified method"), { timeout: 15000, polling: 500 });
+  await page.waitForFunction(() => document.body.innerText.includes("Bring them to grade"), { timeout: 15000, polling: 500 });
   ok("AC-07 brief carries the directive", true);
   await sleep(400);
   await page.evaluate(() => document.querySelector("[data-brief-ack]").click());
-  ok("the settlement composes: twenty villagers, humans among them", await page.evaluate(() => {
+  ok("the settlement composes: twenty villagers, three roofed halls", await page.evaluate(() => {
     const w = window.__COLDSNAP__._world();
     const v = w.bodies.filter((b) => b.group === "village" && b.kind === "unit" && b.alive);
-    return v.length === 20 && v.filter((u) => u.dress === "human").length === 5 && w.pg.shelters.length === 6;
+    return v.length === 20 && v.filter((u) => u.dress === "human").length === 5 &&
+      w.bodies.filter((b) => b.roofSlab).length === 3 && w.pg.shelters.length === 4;
   }));
-  await page.evaluate(() => {
-    const api = window.__COLDSNAP__, w = api._world();
-    api.setGfx({ scale: 4, outline: 0, dither: 0 }); // quarter-res keeps swiftshader ahead of the debris
-    const b = w.byId.get(w.bisonId);
-    b.pos.x = 0; b.pos.z = -12; b.pos.y = w.field.heightAt(0, -12) + 0.97;
-  });
+  await page.evaluate(() => window.__COLDSNAP__.setGfx({ scale: 4, outline: 0, dither: 0 })); // quarter-res keeps swiftshader ahead of the debris
   await page.mouse.move(480, 610); // the live aim is a threat — park it on the road behind the tank
   const done7 = () => document.body.innerText.includes("Occupancy resolved");
-  // frame-time step drops shift the rng stream, so pre-tuned scatter aims
-  // don't transfer to the browser — play it like a player instead. Each
-  // cycle: rack the most occupied house from its verified park (rubble can
-  // decay a sightline, so a refusal falls through to attrition); with
-  // nobody under a roof, shell the densest clump from beyond it. Wrong-
-  // cause kills exhaust the pool, the restock re-lays the settlement with
-  // the garrisons indoors, and the racks resume — progress only rises.
-  const HOUSE_AIMS = [
-    [-8, 4, 0, -12, -12.3, 2.5], [-9, 16, 0, 6, -12.5, 15], [-8, 28, 0, -12, -8, 25.2],
-    [8, 8, 18, -2, 10, 6.5], [9, 22, 2, 34, 12.5, 22],
-  ];
-  for (let i = 0; i < 90; i++) {
-    if (await page.evaluate(done7)) break;
-    await page.waitForFunction(() => window.__COLDSNAP__._S.cds.volley <= 0, { timeout: 120000, polling: 1000 });
-    const racked = await page.evaluate((HA) => {
-      const api = window.__COLDSNAP__, w = api._world();
-      const v = w.bodies.filter((b) => b.group === "village" && b.kind === "unit" && b.alive);
-      let best = null, bn = 1;
-      for (const h of HA) {
-        const n = v.filter((u) => Math.abs(u.pos.x - h[0]) < 2.4 && Math.abs(u.pos.z - h[1]) < 2.1).length;
-        if (n > bn) { bn = n; best = h; }
-      }
-      if (!best) return false;
-      const b = w.byId.get(w.bisonId);
-      b.pos.x = best[2]; b.pos.z = best[3]; b.pos.y = w.field.heightAt(best[2], best[3]) + 0.97;
-      b.v.x = b.v.y = b.v.z = 0;
-      return api._S.actions.volleyAt(best[4], best[5]);
-    }, HOUSE_AIMS);
-    if (racked) { await sleep(14000); continue; }
-    await page.evaluate(() => {
-      const api = window.__COLDSNAP__, w = api._world();
-      const v = w.bodies.filter((b) => b.group === "village" && b.kind === "unit" && b.alive);
-      if (!v.length) return;
-      let tg = v[0], bn = -1;
-      for (const u of v) {
-        const n = v.filter((o) => Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) < 3).length;
-        if (n > bn) { bn = n; tg = u; }
-      }
-      const dx = tg.pos.x, dz = tg.pos.z - 16, dd = Math.hypot(dx, dz) || 1;
-      const b = w.byId.get(w.bisonId);
-      b.pos.x = tg.pos.x + (dx / dd) * 9; b.pos.z = tg.pos.z + (dz / dd) * 9;
-      b.pos.y = w.field.heightAt(b.pos.x, b.pos.z) + 0.97;
-      b.v.x = b.v.y = b.v.z = 0;
-      if (api._S.cds.fire <= 0) api._S.actions.fireAt(tg.pos.x + tg.v.x * 0.3, tg.pos.z + tg.v.z * 0.3);
-    });
-    await sleep(1400);
+  // walk shells along each hall's west face until its slab comes down —
+  // shells carry no discipline gate, so park close and pound
+  for (const [g, z] of [["fac1", 2], ["fac2", 16], ["fac3", 30]]) {
+    let rounds = 0;
+    while (rounds < 40 && !(await page.evaluate(done7))) {
+      const st = await page.evaluate(([gg, zz, s]) => {
+        const api = window.__COLDSNAP__, w = api._world();
+        const slab = w.bodies.find((b) => b.roofSlab && b.group === gg);
+        if (slab.pos.y < w.field.heightAt(slab.pos.x, slab.pos.z) + 1.6 || slab.R[4] < 0.8) return "down";
+        const b = w.byId.get(w.bisonId);
+        b.pos.x = 3; b.pos.z = zz; b.pos.y = w.field.heightAt(3, zz) + 0.97;
+        b.v.x = b.v.y = b.v.z = 0;
+        if (api._S.cds.fire <= 0) { api._S.actions.fireAt(7.7, zz - 4 + (s % 5) * 2); return "fired"; }
+        return "cd";
+      }, [g, z, rounds]);
+      if (st === "down") break;
+      if (st === "fired") rounds++;
+      await sleep(1500);
+    }
   }
-  await page.waitForFunction(() => document.body.innerText.includes("Occupancy resolved"), { timeout: 300000, polling: 2000 });
-  ok("AC-07 completes by collapse", true);
+  await page.waitForFunction(() => document.body.innerText.includes("Occupancy resolved"), { timeout: 240000, polling: 2000 });
+  ok("AC-07 completes: three structures at grade", true);
   ok("kills leave smears on the ground", await page.evaluate(() => window.__COLDSNAP__._R._splat.smears > 0));
   await page.waitForFunction(() => !!document.querySelector("[data-aar]"), { timeout: 20000, polling: 500 });
   await page.waitForFunction(() => document.body.innerText.includes("ATTACHMENT A"), { timeout: 10000, polling: 500 });

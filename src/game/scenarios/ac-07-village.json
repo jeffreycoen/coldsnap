@@ -40,70 +40,98 @@
  "squads": [
   {
    "tag": "village",
-   "x0": -2.4,
-   "z0": 10.4,
-   "nx": 4,
-   "nz": 2,
-   "dx": 1.6,
-   "dz": 1.5,
+   "x0": 10.1,
+   "z0": 2,
+   "nx": 3,
+   "nz": 1,
+   "dx": 0.9,
+   "dz": 0.9,
    "dress": "android"
   },
   {
    "tag": "village",
-   "x0": -8.8,
-   "z0": 3.8,
+   "x0": 10.1,
+   "z0": 16,
+   "nx": 3,
+   "nz": 1,
+   "dx": 0.9,
+   "dz": 0.9,
+   "dress": "android"
+  },
+  {
+   "tag": "village",
+   "x0": 10.1,
+   "z0": 30,
+   "nx": 3,
+   "nz": 1,
+   "dx": 0.9,
+   "dz": 0.9,
+   "dress": "android"
+  },
+  {
+   "tag": "village",
+   "x0": -1.5,
+   "z0": 12,
+   "nx": 2,
+   "nz": 3,
+   "dx": 1.5,
+   "dz": 2,
+   "dress": "android"
+  },
+  {
+   "tag": "village",
+   "x0": -9.8,
+   "z0": 9.8,
    "nx": 3,
    "nz": 1,
    "dx": 0.8,
    "dz": 0.8,
    "dress": "human"
-  },
-  {
-   "tag": "village",
-   "x0": 7.2,
-   "z0": 7.8,
-   "nx": 3,
-   "nz": 1,
-   "dx": 0.8,
-   "dz": 0.8,
-   "dress": "android"
   },
   {
    "tag": "village",
    "x0": -8.4,
-   "z0": 27.8,
+   "z0": 20.2,
    "nx": 2,
    "nz": 1,
    "dx": 0.8,
    "dz": 0.8,
    "dress": "human"
-  },
-  {
-   "tag": "village",
-   "x0": 11.2,
-   "z0": 14.2,
-   "nx": 2,
-   "nz": 2,
-   "dx": 1.1,
-   "dz": 1.1,
-   "dress": "android"
   }
  ],
  "vehicles": [
   {
    "kind": "truck",
    "group": "haulage",
-   "x": 4,
-   "z": -6,
-   "yaw": 0.25
+   "x": -4,
+   "z": -9,
+   "yaw": 0.3
   }
  ],
  "prefabs": [
   {
+   "type": "hangar",
+   "group": "fac1",
+   "x": 11,
+   "z": 2
+  },
+  {
+   "type": "hangar",
+   "group": "fac2",
+   "x": 11,
+   "z": 16
+  },
+  {
+   "type": "hangar",
+   "group": "fac3",
+   "x": 11,
+   "z": 30
+  },
+  {
    "type": "house",
    "group": "houseA",
    "x": -8,
-   "z": 4,
+   "z": 0,
    "nx": 5,
    "nz": 4,
    "doorIx": 0
@@ -112,8 +140,8 @@
    "type": "house",
    "group": "houseB",
    "x": -9,
-   "z": 16,
-   "nx": 6,
+   "z": 10,
+   "nx": 5,
    "nz": 4,
    "doorIx": 0
   },
@@ -121,7 +149,7 @@
    "type": "house",
    "group": "houseC",
    "x": -8,
-   "z": 28,
+   "z": 20,
    "nx": 5,
    "nz": 4,
    "doorIx": 0
@@ -129,39 +157,16 @@
   {
    "type": "house",
    "group": "houseD",
-   "x": 8,
-   "z": 8,
+   "x": -9,
+   "z": 30,
    "nx": 5,
    "nz": 4,
-   "doorIx": 4
-  },
-  {
-   "type": "house",
-   "group": "houseE",
-   "x": 9,
-   "z": 22,
-   "nx": 4,
-   "nz": 4,
-   "doorIx": 3
-  },
-  {
-   "type": "house",
-   "group": "houseF",
-   "x": 10,
-   "z": 34,
-   "nx": 5,
-   "nz": 4,
-   "doorIx": 4
-  },
-  {
-   "type": "warehouse",
-   "x": -13,
-   "z": 36
+   "doorIx": 0
   },
   {
    "type": "wall",
-   "x": 4,
-   "z": 13,
+   "x": 5.5,
+   "z": 9,
    "yaw": 0,
    "nx": 2,
    "ny": 2,
@@ -170,7 +175,7 @@
   {
    "type": "wall",
    "x": -13.5,
-   "z": 10,
+   "z": 5,
    "yaw": 1.5708,
    "nx": 6,
    "ny": 1,
@@ -179,7 +184,7 @@
   {
    "type": "wall",
    "x": -13.5,
-   "z": 22,
+   "z": 25,
    "yaw": 1.5708,
    "nx": 6,
    "ny": 1,
@@ -187,17 +192,8 @@
   },
   {
    "type": "wall",
-   "x": 13.5,
-   "z": 15,
-   "yaw": 1.5708,
-   "nx": 6,
-   "ny": 1,
-   "nz": 1
-  },
-  {
-   "type": "wall",
-   "x": -5,
-   "z": -2,
+   "x": -6,
+   "z": -4,
    "yaw": 0,
    "nx": 4,
    "ny": 1,
@@ -205,59 +201,53 @@
   },
   {
    "type": "wall",
-   "x": 5,
-   "z": -2,
+   "x": 6,
+   "z": -4,
    "yaw": 0,
-   "nx": 4,
-   "ny": 1,
-   "nz": 1
-  },
-  {
-   "type": "wall",
-   "x": 14,
-   "z": 29,
-   "yaw": 0.3,
    "nx": 4,
    "ny": 1,
    "nz": 1
   }
  ],
  "budget": {
-  "bodies": 640,
-  "welds": 1320
+  "bodies": 760,
+  "welds": 1900
  },
  "contract": {
   "wo": "AC-07",
   "title": "THE VILLAGE",
-  "directive": "The settlement is on the schedule. The structures are occupied; collapse is the specified method.",
+  "directive": "The settlement is on the schedule: three fabrication halls, roofs rated for removal. Bring them to grade. Occupancy is not a line item on this order.",
   "commendation": "Occupancy resolved at the structural level.",
-  "predicate": {
-   "causes": [
-    "COLLAPSE"
+  "objective": {
+   "type": "demolish",
+   "groups": [
+    "fac1",
+    "fac2",
+    "fac3"
    ],
-   "group": "village"
+   "drop": 1.6
   },
-  "need": 5,
+  "need": 3,
   "par": [
-   25,
-   45
+   60,
+   110
   ],
   "subjects": "village",
   "alt": {
    "group": "village",
    "holdS": 6,
    "rect": {
-    "x0": -15.5,
-    "x1": 15.5,
-    "z0": 0.5,
-    "z1": 38
+    "x0": -15,
+    "x1": 16.5,
+    "z0": -3,
+    "z1": 36
    }
   },
   "evidence": [
    "Unregistered biologicals — disposition as per units.",
    "Recovered: 118 personal effects, 9 window boxes, 1 school bell. Disposition: incinerate. Bell: scrap.",
    "Structure 2 generator found running. Switched off. Logged.",
-   "Bench inventory, Structure 5: armature jigs, one-third scale. No corresponding requisition.",
+   "Bench inventory, Structure 3: armature jigs, one-third scale. No corresponding requisition.",
    "Well head posted, hand-lettered: 'DRAW SLOW — IT SANDS.' Removed.",
    "[deviated] Settlement unoccupied at survey. Structures standing. Recovery uneconomic; written off in place."
   ],
