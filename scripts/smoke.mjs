@@ -302,10 +302,11 @@ try {
   await seedMission(1, "ac02", "AC-02");
   await page.waitForFunction(() => document.body.innerText.includes("provided for in the schedule"), { timeout: 15000, polling: 500 });
   ok("AC-02 brief carries the directive", true);
-  ok("AC-02 disposition field offers no alternative", await page.evaluate(() => {
+  await page.waitForFunction(() => {
     const d = document.querySelector("[data-disposition]");
     return !!d && d.innerText.includes("RESOLVED") && !d.innerText.includes("DISPERSED");
-  }));
+  }, { timeout: 15000, polling: 500 });
+  ok("AC-02 disposition field offers no alternative", true);
   await sleep(800);
   await page.evaluate(() => document.querySelector("[data-brief-ack]").click());
   ok("no firing-procedure annex on AC-02", !(await text()).includes("ANNEX A"));
@@ -395,10 +396,11 @@ try {
   await page.waitForFunction(() => document.body.innerText.includes("The sheet has refrozen"), { timeout: 15000, polling: 500 });
   ok("AC-08 brief carries the directive", true);
   // the deviation contracts print the alternative and strike it out
-  ok("AC-08 disposition strikes the dispersal line", await page.evaluate(() => {
+  await page.waitForFunction(() => {
     const d = document.querySelector("[data-disposition]");
     return !!d && d.innerText.includes("DISPERSED — NOT ACCEPTED");
-  }));
+  }, { timeout: 15000, polling: 500 });
+  ok("AC-08 disposition strikes the dispersal line", true);
   await sleep(400);
   await page.evaluate(() => document.querySelector("[data-brief-ack]").click());
   ok("no arcade trophies on a campaign deployment", !(await text()).includes("/10"));
