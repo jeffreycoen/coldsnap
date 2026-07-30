@@ -513,9 +513,12 @@ export function buildMech(world, opts = {}) {
   mech.geom = { L, L1: R.L1 * s, L2: R.L2 * s, ankleH: R.ankleH * s, hipX: R.hipX * s, hipY: R.hipY * s, footFwd: R.foot.fwdOff * s, standHip: R.ankleH * s + 0.93 * L, comH };
   mech.k = deriveGait(L, comH, R.hipX * s, { halfLen: R.foot.hz * s, halfWid: R.foot.hx * s, ankleOffX: R.foot.fwdOff * s }, world.gravity);
   mech.groundC = (0.01 * L) / (M * world.gravity); // spec §4, m/N
-  // rig override: the spec's 0.085L crouch puts the knee where its gravity
-  // lever blows up under single support on THIS rig — walk shallower
-  mech.k.pelvisDrop = 0.045 * L;
+  // rig override history: 0.045L was set when knee ceilings were low; the
+  // ceilings went up (levers 1.35+) and the SHALLOW crouch turned out worse
+  // — no bend reserve means no torque lever for the force feedforward and
+  // no swing clearance once the hull runs a little low (measured: dragging
+  // swings recording garbage prints). 0.075L keeps both.
+  mech.k.pelvisDrop = 0.075 * L;
   // controller state
   mech.state = {
     mode: "STAND", phase: "DS", t: 0, swing: null, lastSwing: "R", ramp: 1,
@@ -651,7 +654,17 @@ function controller(world, mech) {
   // attitude check: up.y or pelvis crash = fall (spec §3: fall = limp)
   const hull = mech.hull;
   const legL = mech.legs.L, legR = mech.legs.R;
-  const groundRef = Math.min(soleY(legL), soleY(legR));
+  // ground reference from LOADED soles only — an airborne machine's min-sole
+  // "ground" rises with its own feet, the IK chases the phantom floor, and
+  // the legs never reach down to the real one (measured post-hop free fall).
+  // Terrain-height fallback while airborne.
+  let groundRef;
+  const ldL0 = legL.load > 0.04 * mech.mass * world.gravity, ldR0 = legR.load > 0.04 * mech.mass * world.gravity;
+  if (ldL0 && ldR0) groundRef = Math.min(soleY(legL), soleY(legR));
+  else if (ldL0) groundRef = soleY(legL);
+  else if (ldR0) groundRef = soleY(legR);
+  else groundRef = st._lastGround != null ? st._lastGround : world.field.heightAt(hull.pos.x, hull.pos.z);
+  st._lastGround = groundRef;
   const hipYnow = hull.pos.y + g.hipY; // hull local hip offset is -|hipY|... hipY negative of hull? hipY = R.hipY*s is negative
   if (hull.R[4] < 0.6 || (hipYnow - groundRef) < 0.62 * g.standHip) { onFallMech(mech); return; }
   // command slew (spec: every channel slewed)
@@ -669,6 +682,20 @@ function controller(world, mech) {
   const om = Math.sqrt(world.gravity / comRel.y);
   const feetMid = { x: (st.prints.L.x + st.prints.R.x) / 2, z: (st.prints.L.z + st.prints.R.z) / 2 };
   st.settleT = (st.settleT || 0) + dt;
+  // hull yaw is the one unactuated DOF (no yaw joints by design). Split
+  // frames by role: STANCE legs solve IK in the COMMANDED heading — through
+  // planted feet the yaw-locked leg chains actively wind the hull back
+  // (measured-yaw stance IK was positive feedback: -9 to -50 deg runaway).
+  // The SWING leg solves in MEASURED yaw so it lands on its world target
+  // regardless of hull spin (commanded-frame swing swept the foot 2.6m).
+  const yawMeas = Math.atan2(hull.R[6], hull.R[8]);
+  // stabilizer gyro: yaw is unactuated and the hip attitude torques react as
+  // horizontal force couples at laterally-offset feet — a structural yaw
+  // pump that out-torques foot friction (measured: planted feet skating,
+  // 58 deg runaway). House style: the bison's suspension servo damps its
+  // hull the same way (core stepStatus); a walker's gyro does yaw.
+  hull.w.y -= Math.min(1, 6 * dt) * hull.w.y;
+  hull.w.y += clamp(wrapPi(st.heading - yawMeas) * 2.0, -1.2, 1.2) * dt * 10;
   const walkH = groundRef + g.standHip - (st.mode === "WALK" ? k.pelvisDrop : 0);
   const hipYRef = walkH;
   // gait-frame axes for catch decisions
@@ -737,11 +764,16 @@ function controller(world, mech) {
       // lift when xi has ARRIVED near the plan's SS-start point and the foot
       // is unloaded (grace: 1.5 extra tDS, then go anyway)
       const nsw = mech.legs[nextSwing];
-      const arrived = Math.abs(xiLm - tgtL) < 0.35 * k.halfStance && Math.abs(xiFm - tgtF) < 0.6 * k.strideCap;
+      const arrived = Math.abs(xiLm - tgtL) < 0.35 * k.halfStance && Math.abs(xiFm - tgtF) < 0.6 * k.strideCap
+        && Math.abs(hull.v.y) < 0.35; // don't lift off mid-bounce — height-recovery momentum becomes a jump
       // emergency: xi beyond the ankle envelope means no CoP can catch it —
       // step NOW (stepping must be available in every state; no cooldown)
       const emergency = Math.abs(xiFm - stF) > 1.2 * k.copLimitX;
-      if ((st.t >= tDS && ((arrived && nsw.load < 0.5 * totalW * 0.5) || st.t >= tDS + 1.5 * k.tDS)) || emergency) {
+      // an emergency step with the lift candidate still fully loaded is a
+      // self-inflicted free fall (measured: fired one tick after touchdown,
+      // yanked the only loaded foot) — give the transfer a beat first
+      const emergencyOK = emergency && st.t >= 0.3 * tDS && nsw.load < 0.5 * totalW;
+      if ((st.t >= tDS && ((arrived && nsw.load < 0.5 * totalW * 0.5) || st.t >= tDS + 1.5 * k.tDS)) || emergencyOK) {
         st.swing = nextSwing;
         st.phase = "SS"; st.t = 0; st.hold = {};
         st.lastSwingY = null;
@@ -830,6 +862,21 @@ function controller(world, mech) {
     const latC = sideSign * clamp(sideSign * lat, k.minFootSep, k.splayMax * 2 * k.halfStance);
     dx = fwd * axes.fwd.x + latC * axes.left.x;
     dz = fwd * axes.fwd.z + latC * axes.left.z;
+    // REACH CLAMP: never command a landing at full leg extension — a
+    // straight knee has no torque lever, so the landed leg cannot deliver
+    // the force feedforward and the machine sinks on it (measured: 1.45W
+    // commanded, free-fall anyway). Cap horizontal reach for ext <= 0.95.
+    {
+      const sx = st.swing === "L" ? 1 : -1;
+      const hcs = Math.cos(st.heading), hsn = Math.sin(st.heading);
+      const hipGx = st.pelvis.x + sx * g.hipX * hcs;
+      const hipGz = st.pelvis.z - sx * g.hipX * hsn;
+      const hipH = Math.max(0.5, hipYRef - groundRef - g.ankleH);
+      const dMax = Math.sqrt(Math.max(0.04, (0.95 * g.L) * (0.95 * g.L) - hipH * hipH));
+      const ddx = stanceP.x + dx - hipGx, ddz = stanceP.z + dz - hipGz;
+      const dd = Math.hypot(ddx, ddz);
+      if (dd > dMax) { dx -= ddx * (1 - dMax / dd); dz -= ddz * (1 - dMax / dd); }
+    }
     // final descent rate-limited: land probing at ~0.35 m/s, not at whatever
     // the sin^2 tail plus a dropping hull adds up to (measured 341 kN slams
     // bounced the machine airborne)
@@ -851,7 +898,7 @@ function controller(world, mech) {
       // lunge, ref-height IK over-extends the leg (clamped at 0.995) and the
       // "lifted" foot planes along the ground
       const hipActual = hull.pos.y + g.hipY;
-      setLegTargets(mech, side, pelvisRef, Math.min(hipYRef, hipActual + 0.05), st.heading, st.swingTgt);
+      setLegTargets(mech, side, pelvisRef, Math.min(hipYRef, hipActual + 0.05), yawMeas, st.swingTgt);
     } else {
       const p = st.prints[side];
       // DS weight transfer is LEG-LENGTH asymmetry: extend the push-off leg
@@ -892,7 +939,7 @@ function controller(world, mech) {
     return V.add(out, j.b.pos, out);
   };
   const heightErr = (hull.pos.y + g.hipY) - hipYRef;
-  const Fz = clamp(totalW * (0.95 - 2.5 * heightErr - 0.9 * _comV.y), 0.25 * totalW, 1.2 * totalW);
+  const Fz = clamp(totalW * (0.95 - 2.5 * heightErr - 0.9 * _comV.y), 0.25 * totalW, 1.45 * totalW);
   mech._attPf = (mech._attPf || 0) + 0.12 * (mech._attP - (mech._attPf || 0));
   mech._attRf = (mech._attRf || 0) + 0.12 * (mech._attR - (mech._attRf || 0));
   for (const side of ["L", "R"]) {
@@ -938,7 +985,10 @@ function controller(world, mech) {
       const xLl = legL.foot.pos.x * axes.left.x + legL.foot.pos.z * axes.left.z;
       const xRl = legR.foot.pos.x * axes.left.x + legR.foot.pos.z * axes.left.z;
       const fracL = clamp((pLat - xRl) / Math.max(0.2, xLl - xRl), 0, 1);
-      F = totalW * (side === "L" ? fracL : 1 - fracL);
+      // split the HEIGHT-LOOP force, not raw weight: fractions of exactly
+      // totalW have zero net vertical authority, and the deficit born in the
+      // first DS was never repaid (measured: enters walking 0.3m low)
+      F = Fz * (side === "L" ? fracL : 1 - fracL);
     }
     // hull attitude spring+damper through the loaded hips during ALL of
     // WALK: single support obviously, but DS too — the leg-length weight
