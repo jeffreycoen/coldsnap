@@ -802,8 +802,16 @@ function controller(world, mech) {
   // CoM wobble -> ref wobble -> stiff servos amplify (measured 3-5 Hz rock).
   {
     const p1 = st.mode === "WALK" && st.plan ? st.plan.prints[1] : null;
-    const tx = st.mode === "WALK" && p1 ? (stanceRef.x + p1.x) / 2 : feetMid.x;
-    const tz = st.mode === "WALK" && p1 ? (stanceRef.z + p1.z) / 2 : feetMid.z;
+    let tx = st.mode === "WALK" && p1 ? (stanceRef.x + p1.x) / 2 : feetMid.x;
+    let tz = st.mode === "WALK" && p1 ? (stanceRef.z + p1.z) / 2 : feetMid.z;
+    // lateral pelvis SWAY toward the plan's xi target during DS: without it
+    // the force transfer "shifts weight" by rolling the hull 18 deg (which
+    // moves the CoM a meter sideways on its own and overshoots everything) —
+    // the body must translate over the new support, not tip over it
+    if (st.mode === "WALK" && st.phase === "DS" && st.plan) {
+      tx = tx * 0.3 + st.plan.xiStart.x * 0.7;
+      tz = tz * 0.3 + st.plan.xiStart.z * 0.7;
+    }
     st.pelvis.x += clamp(tx - st.pelvis.x, -1.2 * dt, 1.2 * dt);
     st.pelvis.z += clamp(tz - st.pelvis.z, -1.2 * dt, 1.2 * dt);
   }
@@ -846,7 +854,17 @@ function controller(world, mech) {
       setLegTargets(mech, side, pelvisRef, Math.min(hipYRef, hipActual + 0.05), st.heading, st.swingTgt);
     } else {
       const p = st.prints[side];
-      setLegTargets(mech, side, pelvisRef, hipYRef, st.heading, { x: p.x, y: groundRef, z: p.z });
+      // DS weight transfer is LEG-LENGTH asymmetry: extend the push-off leg
+      // (press down), shorten the other. Ankle-roll edge-pressing alone is
+      // self-defeating — pressing a foot's outboard edge rolls the machine
+      // OFF that foot, its load dies, and the net CoP lands on the wrong
+      // side (measured: xi driven backward through every DS).
+      let pressY = 0;
+      if (st.mode === "WALK" && st.phase === "DS" && st.shift) {
+        const sLat = clamp(((st.shift.x - feetMid.x) * axes.left.x + (st.shift.z - feetMid.z) * axes.left.z) / k.halfStance, -1, 1);
+        pressY = -0.06 * sLat * leg.sx;
+      }
+      setLegTargets(mech, side, pelvisRef, hipYRef, st.heading, { x: p.x, y: groundRef + pressY, z: p.z });
     }
   }
   // target rates for the motors' tracking feedforward (clamped: lift-off
@@ -909,11 +927,25 @@ function controller(world, mech) {
     // F*lever torques press the ground, which raises next tick's measured F
     // — loop gain > 1 through the big SS levers, the machine launches itself
     // (measured: stance load 217k then airborne).
-    const F = inSS ? Fz : leg.load;
-    // hull attitude spring+damper ONLY where physics demands it: the stance
-    // hip during single support. Double support is passively pitch-stable
-    // through the two-foot base.
-    const walkGain = inSS ? 1 : 0;
+    let F = inSS ? Fz : leg.load;
+    // DS weight transfer, exact: the desired CoP fixes the per-foot load
+    // fraction, F_L/W = (p - x_R)/(x_L - x_R). Position-level pressing was
+    // 3x too weak; a fixed force gain overshot and stumbled the machine
+    // sideways. The closed-form p re-solves from measured xi every tick, so
+    // this fraction self-regulates.
+    if (st.mode === "WALK" && st.phase === "DS" && st.shift) {
+      const pLat = st.shift.x * axes.left.x + st.shift.z * axes.left.z;
+      const xLl = legL.foot.pos.x * axes.left.x + legL.foot.pos.z * axes.left.z;
+      const xRl = legR.foot.pos.x * axes.left.x + legR.foot.pos.z * axes.left.z;
+      const fracL = clamp((pLat - xRl) / Math.max(0.2, xLl - xRl), 0, 1);
+      F = totalW * (side === "L" ? fracL : 1 - fracL);
+    }
+    // hull attitude spring+damper through the loaded hips during ALL of
+    // WALK: single support obviously, but DS too — the leg-length weight
+    // shift deliberately un-balances the machine and something must keep
+    // the hull level while it happens (measured: 0.25 rad of unrighted roll
+    // through one DS). STAND stays clean (proven without it).
+    const walkGain = st.mode === "WALK" ? 1 : 0;
     const share = clamp(F / totalW, 0, 1);
     const pitchRate = hull.w.x * axes.left.x + hull.w.z * axes.left.z;
     const rollRate = hull.w.x * axes.fwd.x + hull.w.z * axes.fwd.z;
