@@ -1219,6 +1219,7 @@ function collectContacts(world) {
       const pk = a.id * 100000 + b.id;
       if (seen.has(pk)) continue; seen.add(pk);
       if (weldPairs.has(pk)) continue;
+      if (world._mechPairs && world._mechPairs.has(pk)) continue; // DIVERGENCE from the frozen demo: hinge-jointed mech links don't self-collide (set empty without mechs; see src/engine/mech.js)
       if (a.kind === "unit" && !a.alive && b.kind === "unit" && !b.alive) continue;
       // AABB reject
       const ra = Math.sqrt(a.hx * a.hx + a.hy * a.hy + a.hz * a.hz);
@@ -1265,6 +1266,7 @@ function prepContacts(world) {
   const dt = world.dt;
   for (const c of world.contacts) {
     const a = c.a, b = c.b;
+    if (world.mechs) c.mech = (a.mechRef || (b && b.mechRef)) ? 1 : 0; // DIVERGENCE: mech-owned contacts solve in the fixed-iteration island, not the LOD-tiered pass
     c.rA = v3(); V.sub(c.rA, c.p, a.pos);
     if (b) { c.rB = v3(); V.sub(c.rB, c.p, b.pos); }
     const n = c.n;
@@ -1339,6 +1341,7 @@ function applyImpulse(c, J) {
 }
 function solveContacts(world) {
   for (const c of world.contacts) {
+    if (c.mech) continue; // DIVERGENCE: solved in the mech island (never set without mechs)
     if (c.a.sleeping && (!c.b || c.b.sleeping)) continue;
     const n = c.n;
     let vRel = relVelAt(c);
@@ -1565,7 +1568,7 @@ function stepStatus(world) {
     // suspension keeps the hull flat against crowd-plowing chaos: only real
     // ordnance (a fresh blast impulse) may roll the bison. Gentle self-righting
     // while the lean is recoverable; a true capsize still needs RECOVER.
-    if (b.id === world.bisonId && b.grounded) {
+    if (b.id === world.bisonId && b.grounded && !b.mechRef) { // DIVERGENCE: a mech hull carrying bisonId (player fear/attribution) must not get the tank's flat-keeper servo — the gait controller owns attitude
       const blastFresh = b.lastImp && b.lastImp.src === "blast" && world.t - b.lastImp.t < 1.2;
       // DIVERGENCE from the frozen demo: RECOVER opens a 1.2s window where
       // the servo must not brake the righting roll and the restoring torque
@@ -1723,6 +1726,10 @@ export function stepWorld(world) {
   const solverLoad = activeWelds.length + world.contacts.length;
   const itn = solverLoad > 900 ? 4 : solverLoad > 450 ? 7 : 12;
   for (let it = 0; it < itn; it++) { solveWelds(world, activeWelds); solveContacts(world); }
+  // DIVERGENCE: mech joints + this mech's contacts solve in their own island at
+  // FIXED iterations — the LOD tier above must never starve a walking servo
+  // (spec §6 landmine #1). Hook is undefined without mechs.
+  if (world.mechStep) world.mechStep(world);
   weldBreakPass(world);
   // store warm impulses
   world.warm.clear();
@@ -2191,3 +2198,7 @@ export function bisonMg(world, target) {
 
 // internals the game layer needs that the demo kept module-private
 export { heading };
+
+// DIVERGENCE from the frozen demo: internal math handed to the mech module
+// (src/engine/mech.js). Additive export only — nothing on the demo path reads it.
+export const __mech__ = { V, v3, qIdent, qNorm, qFromAxis, qMul, qToR, rMulVec, rTMulVec, invInertiaWorld, iMulVec, wake };

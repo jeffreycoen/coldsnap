@@ -14,7 +14,8 @@
     "test:predicate": "node scripts/predicate-test.mjs",
     "test:scenario": "node scripts/scenario-test.mjs",
     "test:righting": "node scripts/righting-test.mjs",
-    "test:campaign": "node scripts/campaign-test.mjs"
+    "test:campaign": "node scripts/campaign-test.mjs",
+    "test:mech": "node scripts/mech-test.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",
