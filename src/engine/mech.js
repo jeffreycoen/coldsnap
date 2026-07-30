@@ -483,12 +483,20 @@ export function buildMech(world, opts = {}) {
     const REFY = v3(0, 1, 0);
     const leg = {
       side, sx, hipB, thigh, shin, ankB, foot,
+      distal: null, // filled after joints exist
       hipRoll: addHinge(mech, hull, hipB, hipPt, AXZ, REFY, gHipR, R.limits.hipRoll[0], R.limits.hipRoll[1], side + "hipRoll"),
       hipPitch: addHinge(mech, hipB, thigh, hipPt, AXX, REFY, gHipP, R.limits.hipPitch[0], R.limits.hipPitch[1], side + "hipPitch"),
       knee: addHinge(mech, thigh, shin, kneePt, AXX, REFY, gKnee, R.limits.knee[0], R.limits.knee[1], side + "knee"),
       anklePitch: addHinge(mech, shin, ankB, anklePt, AXX, REFY, gAnkP, R.limits.anklePitch[0], R.limits.anklePitch[1], side + "anklePitch"),
       ankleRoll: addHinge(mech, ankB, foot, anklePt, AXZ, REFY, gAnkR, R.limits.ankleRoll[0], R.limits.ankleRoll[1], side + "ankleRoll"),
       load: 0,
+    };
+    leg.distal = {
+      hipRoll: [hipB, thigh, shin, ankB, foot],
+      hipPitch: [thigh, shin, ankB, foot],
+      knee: [shin, ankB, foot],
+      anklePitch: [ankB, foot],
+      ankleRoll: [foot],
     };
     mech.legs[side] = leg;
   }
@@ -898,7 +906,11 @@ function controller(world, mech) {
       // lunge, ref-height IK over-extends the leg (clamped at 0.995) and the
       // "lifted" foot planes along the ground
       const hipActual = hull.pos.y + g.hipY;
-      setLegTargets(mech, side, pelvisRef, Math.min(hipYRef, hipActual + 0.05), yawMeas, st.swingTgt);
+      // swing IK from the MEASURED hull position (x/z too, not just yaw):
+      // the hull leans ~0.3m toward the stance side, and reference-pelvis
+      // IK puts the real hip that far inboard of where it thinks — the
+      // "droop" no gain or gravity comp could fix
+      setLegTargets(mech, side, { x: hull.pos.x, z: hull.pos.z }, Math.min(hipYRef, hipActual + 0.05), yawMeas, st.swingTgt);
     } else {
       const p = st.prints[side];
       // DS weight transfer is LEG-LENGTH asymmetry: extend the push-off leg
@@ -949,11 +961,25 @@ function controller(world, mech) {
     // touchdown (a hard gain step mid-swing kicked the leg — measured)
     const sNow = st.mode === "WALK" && st.phase === "SS" ? st.t / (k.tSS * st.ramp) : 0;
     const ease = smoothstep((sNow - 0.68) / 0.2);
-    const swingMul = isSwing ? 4 - 2.5 * ease : 1;
-    const swingKd = isSwing ? 2 - 0.8 * ease : 1;
+    // swing tracking at 4x still meandered +-0.35m around the target
+    // (execution error, planner verified sane) — 8x, eased before touchdown
+    const swingMul = isSwing ? 8 - 6 * ease : 1;
+    const swingKd = isSwing ? 2.8 - 1.5 * ease : 1;
     for (const j of [leg.hipRoll, leg.hipPitch, leg.knee, leg.anklePitch, leg.ankleRoll]) { j.kpMul = swingMul; j.kdMul = swingKd; }
     if (isSwing || leg.load < 0.02 * totalW) {
-      for (const j of [leg.hipRoll, leg.hipPitch, leg.knee, leg.anklePitch, leg.ankleRoll]) j.tauFF = 0;
+      // swing/unloaded: gravity comp for the leg's OWN hanging weight —
+      // without it the 2.4t leg droops 0.4m inboard of its target no matter
+      // the tracking gain (measured; the meandering was droop, not noise)
+      for (const [j, kind, name] of [[leg.hipPitch, "p", "hipPitch"], [leg.knee, "p", "knee"], [leg.anklePitch, "p", "anklePitch"], [leg.hipRoll, "r", "hipRoll"], [leg.ankleRoll, "r", "ankleRoll"]]) {
+        jointWorld(j, _h6);
+        let md = 0, cx = 0, cz = 0;
+        for (const b of leg.distal[name]) { md += b.mass; cx += b.mass * b.pos.x; cz += b.mass * b.pos.z; }
+        cx /= md; cz /= md;
+        const Fw = -md * world.gravity;
+        const dFwd = (cx - _h6.x) * axes.fwd.x + (cz - _h6.z) * axes.fwd.z;
+        const dLeft = (cx - _h6.x) * axes.left.x + (cz - _h6.z) * axes.left.z;
+        j.tauFF = clamp(kind === "p" ? Fw * dFwd : -Fw * dLeft, -0.5 * j.tauMax, 0.5 * j.tauMax);
+      }
       continue;
     }
     const inSS = st.mode === "WALK" && st.phase === "SS";
