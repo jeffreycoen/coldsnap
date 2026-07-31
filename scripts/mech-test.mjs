@@ -135,7 +135,9 @@ const run = (w, secs) => { const n = Math.round(secs / w.dt); for (let i = 0; i 
   for (let i = 0; i < mA.joints.length; i++) {
     if (mA.joints[i].kp === 0) continue; // Den Hartog dampers (arms): gravity is the spring
     const ga = mA.joints[i].kd / (mA.joints[i].kp * w1.dt);
-    const gb = mB.joints[i].kd / (mB.joints[i].kp * w2.dt * Math.sqrt(1.6));
+    // reference kd law: kd = kp*gamma*h with h the FIXED engine tick — gamma
+    // is scale-free by construction, no sqrt(s) factor (mech_model assemble.js)
+    const gb = mB.joints[i].kd / (mB.joints[i].kp * w2.dt);
     const rel = Math.abs(ga - gb) / ga;
     if (rel > worst) worst = rel;
     if (rel > 1e-6) gammaOk = false;

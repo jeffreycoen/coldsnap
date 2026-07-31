@@ -7,6 +7,7 @@ import { makeWorld, makeField, stepWorld } from "../engine/core.js";
 import { buildMech, mechCommand, respawnMech, mechFallen } from "../engine/mech.js";
 import { makeRenderer } from "../render/renderer.js";
 import { detectTouch } from "./runner/trials.js";
+import { BUILDERS } from "./scenario.js";
 import { COLORS, FONT } from "../ui/theme.js";
 
 export default function MechRange({ onExit }) {
@@ -19,6 +20,14 @@ export default function MechRange({ onExit }) {
     field.h.fill(0);
     const world = makeWorld({ field, seed: 5 });
     const mech = buildMech(world, { x: 0, z: 0 });
+    // sandbox buildings on the pad — something to walk toward (and, once the
+    // march lands, through)
+    const pg = { covers: [], shelters: [], wallIndex: 0 };
+    BUILDERS.house(world, field, pg, { x: -14, z: 18, nx: 5, nz: 4, doorIx: 0, group: "rangeA" });
+    BUILDERS.house(world, field, pg, { x: 13, z: 24, nx: 4, nz: 5, doorIx: 1, group: "rangeB" });
+    BUILDERS.house(world, field, pg, { x: -2, z: 34, nx: 6, nz: 4, doorIx: 0, group: "rangeC" });
+    BUILDERS.hangar(world, field, pg, { x: 18, z: -14, group: "rangeH" });
+    for (const b of world.bodies) if (b.kind === "chunk") { b.sleeping = true; b.sleepT = 1; }
     const R = makeRenderer(canvasRef.current, world, { town: false });
 
     const S = { acc: 0, last: performance.now(), keys: {}, yawT: 0, raf: 0, hudT: 0, dead: false, joyId: null, jx: 0, jy: 0 };

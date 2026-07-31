@@ -358,3 +358,6 @@ export function lintScenario(spec, world) {
   if (spec.terrain.freeze && !spec.terrain.pool) problems.push("freeze requires a pool");
   return problems;
 }
+
+// additive export: the mech range borrows the sandbox prefabs (no parity risk — builders only run when called)
+export { BUILDERS };

@@ -562,9 +562,9 @@ try {
   ok("mech range: HUD mounts", true);
   await page.waitForFunction(() => {
     const m = window.__MECHRANGE__;
-    return m && m.world.bodies.length === 15 && m.mech.hull.R[4] > 0.9;
+    return m && m.world.bodies.filter((b) => b.mechRef).length === 15 && m.mech.hull.R[4] > 0.9;
   }, { timeout: 20000, polling: 1000 });
-  ok("mech range: frame standing (15 bodies, hull upright)", true);
+  ok("mech range: frame standing (15 mech links, hull upright)", true);
   await page.waitForFunction(() => /STAND|WALK/.test(document.querySelector("[data-mech-status]")?.textContent || ""), { timeout: 10000, polling: 500 });
   ok("mech range: status line live", true);
   await page.keyboard.press("KeyR");

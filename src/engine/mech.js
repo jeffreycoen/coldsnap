@@ -414,10 +414,12 @@ export const RIG = {
   // tauMax >= M*g*lever (spec §4). kp is tuned to a separate bandwidth ref.
   // knee/hipPitch sized past the naive single-support lever: the walk crouch
   // lever grows with knee bend and the measured demand pegged a 0.9 budget
-  // proximal ceilings: single-support vault peaks ~1.5x static on the deep
-  // crouch; §5e's forgiveness rule (gameplay = engineering x4) is canon —
-  // the knee ceiling-saturated at 1.35 and buckled mid-vault (measured)
-  levers: { hipRoll: 1.4, hipPitch: 2.2, knee: 2.2, anklePitch: 0.65, ankleRoll: 0.5 },
+  // reference servo regime (mech_model rig/mech.js + assemble.js): tauMax
+  // as fractions of W*L (either leg holds the machine, doubled), kp sized
+  // so the SINGLE-leg torque saturates at kpDeg of error — gravity-stiff.
+  // (Rejected here twice before — both tests ran on the sign-flipped ground.)
+  wlFrac: { hipRoll: 0.567, hipPitch: 0.567, knee: 0.769 },
+  kpDeg: { hipRoll: 6, hipPitch: 6, knee: 7.5, anklePitch: 6, ankleRoll: 6 },
   limits: { hipRoll: [-0.55, 0.55], hipPitch: [-1.25, 0.95], knee: [-0.02, 2.25], anklePitch: [-0.95, 0.95], ankleRoll: [-0.65, 0.65] },
   // servo bandwidth (x omega) and damping ratio. BW is sized so kp*e at
   // typical errors (~0.3 rad) commands accelerations INSIDE the physical
@@ -492,11 +494,11 @@ export function buildMech(world, opts = {}) {
       return { kp, kd, kv: 0.02 * kd, tauMax: 0, Ichain: I, lever };
     };
     const AXX = v3(1, 0, 0), AXZ = v3(0, 0, 1);
-    const gHipR = mkGain([hipB, thigh, shin, ankB, foot], hipPt, AXZ, R.levers.hipRoll);
-    const gHipP = mkGain([thigh, shin, ankB, foot], hipPt, AXX, R.levers.hipPitch);
-    const gKnee = mkGain([shin, ankB, foot], kneePt, AXX, R.levers.knee);
-    const gAnkP = mkGain([ankB, foot], anklePt, AXX, R.levers.anklePitch);
-    const gAnkR = mkGain([foot], anklePt, AXZ, R.levers.ankleRoll);
+    const gHipR = mkGain([hipB, thigh, shin, ankB, foot], hipPt, AXZ, 0);
+    const gHipP = mkGain([thigh, shin, ankB, foot], hipPt, AXX, 0);
+    const gKnee = mkGain([shin, ankB, foot], kneePt, AXX, 0);
+    const gAnkP = mkGain([ankB, foot], anklePt, AXX, 0);
+    const gAnkR = mkGain([foot], anklePt, AXZ, 0);
     gains[side] = { gHipR, gHipP, gKnee, gAnkP, gAnkR };
     const REFY = v3(0, 1, 0);
     const leg = {
@@ -561,9 +563,17 @@ export function buildMech(world, opts = {}) {
     // and the ankle ceiling are ONE rule at two sites)
     const copX0 = 0.80 * (R.foot.hz * s - R.foot.fwdOff * s);
     const copZ0 = 0.65 * R.foot.hx * s;
+    const short = j.name.slice(1);
     if (j.name.includes("anklePitch")) j.tauMax = 1.40 * M * world.gravity * copX0;
     else if (j.name.includes("ankleRoll")) j.tauMax = 1.45 * M * world.gravity * copZ0;
-    else j.tauMax = M * world.gravity * R.levers[j.name.slice(1)];
+    else j.tauMax = M * world.gravity * L * R.wlFrac[short];
+    // reference gain law (mech_model assemble.js): kp = kpTau/(kpDeg rad),
+    // kpTau = the undoubled single-leg torque; kd = kp*gamma*h, gamma 6,
+    // our h = 1/120, capped at the explicit-damper bound
+    const kpTau = 0.5 * j.tauMax;
+    j.kp = kpTau / (R.kpDeg[short] * Math.PI / 180);
+    j.kd = Math.min(j.kp * 6 / 120, 0.9 * j.Ichain * 120);
+    j.kv = 0.02 * j.kd;
   }
   // gait constants from measured geometry
   let cy = 0;
@@ -1058,127 +1068,33 @@ function controller(world, mech) {
     mech.waist.target += clamp(wTgt - mech.waist.target, -1.74 * dt, 1.74 * dt);
     mech.arms.L.target = 0; mech.arms.R.target = 0;
   }
-  // target rates for the motors' tracking feedforward (clamped: lift-off
-  // target discontinuities must not become velocity spikes)
-  for (const j of mech.joints) {
-    const pt = j._pTgt != null ? j._pTgt : j.target;
-    j.tRate = clamp(wrapPi(j.target - pt) / dt, -3, 3);
-    j._pTgt = j.target;
-  }
-  // hull attitude compensation applied AFTER the rate pass (differentiating
-  // it once pumped pitch wobble into a standing hop); WALK only — the
-  // standing stack balances without it and extra loops fight
-  if (st.mode === "WALK") for (const side of ["L", "R"]) {
-    const leg = mech.legs[side];
-    leg.hipPitch.target = clamp(leg.hipPitch.target - (mech._attPf || 0), leg.hipPitch.lo, leg.hipPitch.hi);
-    leg.hipRoll.target = clamp(leg.hipRoll.target - (mech._attRf || 0), leg.hipRoll.lo, leg.hipRoll.hi);
-  }
-  // ---- feedforward stack: damped vertical impedance + CoP placement +
-  // hull attitude springs at the stance hips, with soft servos underneath.
+  // reference: no target-rate feedforward, no attitude trim in the legs —
+  // stiff kp tracks, kd damps absolute wRel, IK is attitude-blind in the
+  // commanded frame ("leg deflection IS the force")
+  for (const j of mech.joints) j.tRate = 0;
+  // ---- ankle CoP trim, the ONLY torque feedforward (reference balance.js):
+  // tauFF = -/+ kCop * Fff * err, Fff = min(measured force, 1.5W), roll only
+  // in single support (rolling a shared foot sheds contact area). Position
+  // servos alone hold the machine — "leg deflection IS the force."
   const copCmd = (st.mode === "WALK" && st.phase === "DS" && st.shift)
     ? st.shift
     : copCommand({ x: stanceRef.x, z: stanceRef.z }, xiErr, st.holdCop, k);
-  const jointWorld = (j, out) => {
-    rMulVec(j.b.R, j.rB, out);
-    return V.add(out, j.b.pos, out);
-  };
-  const heightErr = (hull.pos.y + g.hipY) - hipYRef;
-  const T = mech.tune;
-  const Fz = clamp(totalW * (T.fzBase - T.fzKp * heightErr - T.fzKd * _comV.y), 0.25 * totalW, T.fzCap * totalW);
-  mech._attPf = (mech._attPf || 0) + 0.12 * (mech._attP - (mech._attPf || 0));
-  mech._attRf = (mech._attRf || 0) + 0.12 * (mech._attR - (mech._attRf || 0));
+  const Fcap = 1.5 * totalW;
   for (const side of ["L", "R"]) {
     const leg = mech.legs[side];
     const isSwing = st.mode === "WALK" && st.phase === "SS" && st.swing === side;
-    // gain schedule: unloaded swing leg tracks stiffer, EASING off before
-    // touchdown (a hard gain step mid-swing kicked the leg — measured)
-    const sNow = st.mode === "WALK" && st.phase === "SS" ? st.t / (k.tSS * st.ramp) : 0;
-    const ease = smoothstep((sNow - 0.68) / 0.2);
-    // swing tracking at 4x still meandered +-0.35m around the target
-    // (execution error, planner verified sane) — 8x, eased before touchdown
-    const swingMul = isSwing ? 8 - 6 * ease : 1;
-    const swingKd = isSwing ? 2.8 - 1.5 * ease : 1;
-    for (const j of [leg.hipRoll, leg.hipPitch, leg.knee, leg.anklePitch, leg.ankleRoll]) { j.kpMul = swingMul; j.kdMul = swingKd; }
-    if (isSwing || leg.load < 0.02 * totalW) {
-      // swing/unloaded: gravity comp for the leg's OWN hanging weight —
-      // without it the 2.4t leg droops 0.4m inboard of its target no matter
-      // the tracking gain (measured; the meandering was droop, not noise)
-      for (const [j, kind, name] of [[leg.hipPitch, "p", "hipPitch"], [leg.knee, "p", "knee"], [leg.anklePitch, "p", "anklePitch"], [leg.hipRoll, "r", "hipRoll"], [leg.ankleRoll, "r", "ankleRoll"]]) {
-        jointWorld(j, _h6);
-        let md = 0, cx = 0, cz = 0;
-        for (const b of leg.distal[name]) { md += b.mass; cx += b.mass * b.pos.x; cz += b.mass * b.pos.z; }
-        cx /= md; cz /= md;
-        const Fw = -md * world.gravity;
-        const dFwd = (cx - _h6.x) * axes.fwd.x + (cz - _h6.z) * axes.fwd.z;
-        const dLeft = (cx - _h6.x) * axes.left.x + (cz - _h6.z) * axes.left.z;
-        j.tauFF = clamp(kind === "p" ? Fw * dFwd : -Fw * dLeft, -0.5 * j.tauMax, 0.5 * j.tauMax);
-      }
-      continue;
-    }
+    for (const j of [leg.hipRoll, leg.hipPitch, leg.knee, leg.anklePitch, leg.ankleRoll]) { j.tauFF = 0; j.kpMul = 1; j.kdMul = 1; }
+    if (isSwing || leg.load < 0.02 * totalW) continue;
     const inSS = st.mode === "WALK" && st.phase === "SS";
     const midX = inSS ? leg.foot.pos.x : (legL.foot.pos.x + legR.foot.pos.x) / 2;
     const midZ = inSS ? leg.foot.pos.z : (legL.foot.pos.z + legR.foot.pos.z) / 2;
     let eFwd = (copCmd.x - midX) * axes.fwd.x + (copCmd.z - midZ) * axes.fwd.z;
     let eLeft = (copCmd.x - midX) * axes.left.x + (copCmd.z - midZ) * axes.left.z;
-    // SS forward trim capped at half the box: a saturated toe-brake pitches
-    // the machine over its own toe (ankles trim, capture steps catch)
-    eFwd = clamp(eFwd, -k.copLimitX, inSS ? 0.5 * k.copLimitX : k.copLimitX);
+    eFwd = clamp(eFwd, -k.copLimitX, k.copLimitX);
     eLeft = clamp(eLeft, -k.copLimitZ, k.copLimitZ);
-    const copX = leg.foot.pos.x + eFwd * axes.fwd.x + eLeft * axes.left.x;
-    const copZ = leg.foot.pos.z + eFwd * axes.fwd.z + eLeft * axes.left.z;
-    // RAW instantaneous measured load, ALWAYS — walking is a perturbation
-    // of the (proven) standing stack, and the measured load self-adapts
-    // through weight transfer. Every walk-only force loop tried here (Fz
-    // height force, attitude springs) re-created the limit-cycle fights.
-    // measured load for double support (levers ~0, feedback-neutral, proven
-    // standing). Single support MUST use the height-referenced Fz instead:
-    // F*lever torques press the ground, which raises next tick's measured F
-    // — loop gain > 1 through the big SS levers, the machine launches itself
-    // (measured: stance load 217k then airborne).
-    let F = inSS ? Fz : leg.load;
-    // DS weight transfer, exact: the desired CoP fixes the per-foot load
-    // fraction, F_L/W = (p - x_R)/(x_L - x_R). Position-level pressing was
-    // 3x too weak; a fixed force gain overshot and stumbled the machine
-    // sideways. The closed-form p re-solves from measured xi every tick, so
-    // this fraction self-regulates.
-    if (st.mode === "WALK" && st.phase === "DS" && st.shift) {
-      const pLat = st.shift.x * axes.left.x + st.shift.z * axes.left.z;
-      const xLl = legL.foot.pos.x * axes.left.x + legL.foot.pos.z * axes.left.z;
-      const xRl = legR.foot.pos.x * axes.left.x + legR.foot.pos.z * axes.left.z;
-      const fracL = clamp((pLat - xRl) / Math.max(0.2, xLl - xRl), 0, 1);
-      // split the HEIGHT-LOOP force by the CoP fraction — but FLOOR at the
-      // measured load: the fraction shapes the push-off, it must not order
-      // the front foot slack while the vault physically arrives on it
-      // (measured: F_front ~0, machine falls THROUGH the fresh leg)
-      // floor on the LOW-PASSED load, capped at W: with §5e-strong knees a
-      // raw-spike floor is a >unity feedback loop (362k spike -> launch)
-      leg.loadLpf = (leg.loadLpf || 0) * 0.9 + leg.load * 0.1;
-      F = Math.min(Math.max(Fz * (side === "L" ? fracL : 1 - fracL), T.floorG * leg.loadLpf), totalW);
-    }
-    // hull attitude spring+damper through the loaded hips during ALL of
-    // WALK: single support obviously, but DS too — the leg-length weight
-    // shift deliberately un-balances the machine and something must keep
-    // the hull level while it happens (measured: 0.25 rad of unrighted roll
-    // through one DS). STAND stays clean (proven without it).
-    const walkGain = st.mode === "WALK" ? 1 : 0;
-    const share = clamp(F / totalW, 0, 1);
-    const pitchRate = hull.w.x * axes.left.x + hull.w.z * axes.left.z;
-    const rollRate = hull.w.x * axes.fwd.x + hull.w.z * axes.fwd.z;
-    const Katt = mech.hull.mass * world.gravity * T.katt;
-    // pitch spring at the stance hip stays (its yaw side-effect is small and
-    // the CMG's yaw channel absorbs it); ROLL spring stays dead — its couple
-    // at the laterally-offset foot was the dominant yaw pump
-    const attTauP = Katt * (mech._attPf + 0.3 * pitchRate) * share * walkGain;
-    const attTauR = 0;
-    for (const [j, kind] of [[leg.hipPitch, "p"], [leg.knee, "p"], [leg.anklePitch, "p"], [leg.hipRoll, "r"], [leg.ankleRoll, "r"]]) {
-      jointWorld(j, _h6);
-      const dFwd = (copX - _h6.x) * axes.fwd.x + (copZ - _h6.z) * axes.fwd.z;
-      const dLeft = (copX - _h6.x) * axes.left.x + (copZ - _h6.z) * axes.left.z;
-      let tau = kind === "p" ? F * dFwd : -F * dLeft;
-      if (j === leg.hipPitch) tau += attTauP;
-      if (j === leg.hipRoll) tau += attTauR;
-      j.tauFF = clamp(tau, -0.9 * j.tauMax, 0.9 * j.tauMax);
-    }
+    const Fff = Math.min(leg.load, Fcap);
+    leg.anklePitch.tauFF = clamp(k.kCop * Fff * eFwd, -0.9 * leg.anklePitch.tauMax, 0.9 * leg.anklePitch.tauMax);
+    leg.ankleRoll.tauFF = inSS ? clamp(-k.kCop * Fff * eLeft, -0.9 * leg.ankleRoll.tauMax, 0.9 * leg.ankleRoll.tauMax) : 0;
   }
 }
 
