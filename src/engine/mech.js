@@ -789,7 +789,11 @@ function controller(world, mech) {
   const trRate = k.travelRate * ((st.sinceRest || 0) < 2 && st.mode === "WALK" ? 0.5 : 1);
   st.cmd.f += clamp(st.cmdT.f - st.cmd.f, -trRate * dt, trRate * dt);
   st.cmd.l += clamp(st.cmdT.l - st.cmd.l, -trRate * dt, trRate * dt);
-  st.heading += clamp(wrapPi(st.headingT - st.heading), -k.turnRate * dt, k.turnRate * dt);
+  // heading advances CONTINUOUSLY only at STAND; during WALK it steps
+  // DISCRETELY at touchdowns (see the latch) — slewing the commanded frame
+  // under planted stance feet wound the leg chains mid-cycle and every
+  // sustained turn broke at ~80 deg of accumulated arc.
+  if (st.mode !== "WALK") st.heading += clamp(wrapPi(st.headingT - st.heading), -k.turnRate * dt, k.turnRate * dt);
   const cs = Math.cos(st.heading), sn = Math.sin(st.heading);
   const cmdW = { x: st.cmd.f * sn + st.cmd.l * cs, z: st.cmd.f * cs - st.cmd.l * sn };
   const cmdMag = Math.hypot(st.cmd.f, st.cmd.l), cmdTMag = Math.hypot(st.cmdT.f, st.cmdT.l);
@@ -1070,6 +1074,10 @@ function controller(world, mech) {
         st.holdCop = {};
         st.ramp = 1 + (st.ramp - 1) * 0.6;
         st.hRec = clamp(hipYRef - (hull.pos.y + g.hipY), 0, 0.5);
+        // discrete turn step: one cycle's worth of heading, applied with
+        // both feet fresh on the ground (max yaw authority), frame frozen
+        // for the coming cycle
+        st.heading += clamp(wrapPi(st.headingT - st.heading), -k.turnRate * k.stepPeriod, k.turnRate * k.stepPeriod);
         // path centre advances by half the commanded stride — commanded
         // laterally, so capture can't walk the centreline sideways
         if (st.centre) {
@@ -1109,12 +1117,19 @@ function controller(world, mech) {
       // foot = the loaded one; cooldown one step period.
       st._emerCd = Math.max(0, (st._emerCd || 0) - dt);
       const exL = (xi.x - xiRef.x) * axes.left.x + (xi.z - xiRef.z) * axes.left.z;
-      if (Math.abs(exL) > 0.6 && st._emerCd === 0) {
+      // turns rotate the gait out from under the world-anchored plan — that
+      // divergence is real but touchdown-fixable; catching on it caused a
+      // catch STORM (replan at every cooldown expiry, each aborting the
+      // swing before its landing — the machine pirouetted 1.5s on one leg).
+      // Wider threshold while turning; cooldown covers a FULL replanned
+      // cycle incl. its touchdown.
+      const turning = Math.abs(wrapPi(st.headingT - st.heading)) > 0.05;
+      if (Math.abs(exL) > (turning ? 1.0 : 0.6) && st._emerCd === 0) {
         st.lastSwing = legL.load >= legR.load ? "L" : "R";
         st.swing = null; st.hold = {}; st.holdCop = {};
         st.phases = planPhases(false, xi);
         st.pi = 0; st.pt = 0;
-        st._emerCd = k.stepPeriod;
+        st._emerCd = 1.7 * k.stepPeriod;
         mech.telem.catches++;
         ph = st.phases[0];
         const r2 = phaseRefs(ph, 0);
@@ -1191,6 +1206,16 @@ function controller(world, mech) {
       // brake until a step failed. That was the fixed 13-step horizon.
       const cF = (feetMid.x - st.centre.x) * axes.fwd.x + (feetMid.z - st.centre.z) * axes.fwd.z;
       st.centre.x += cF * axes.fwd.x; st.centre.z += cF * axes.fwd.z;
+      // lateral: ONLY while actively turning, ease toward the feet so the
+      // centreline follows the curve — a straight stale centreline fights
+      // every landing through a sustained turn (arc broke at ~80 deg). On
+      // straights the strict centreline stays (easing there cost 5s of
+      // survival — it erodes the lateral discipline it exists for).
+      if (Math.abs(wrapPi(st.headingT - st.heading)) > 0.05) {
+        const cL = (feetMid.x - st.centre.x) * axes.left.x + (feetMid.z - st.centre.z) * axes.left.z;
+        const cEase = cL * Math.min(1, dt / 1.5);
+        st.centre.x += cEase * axes.left.x; st.centre.z += cEase * axes.left.z;
+      }
       const anchorX = st.centre.x + sideSign * k.halfStance * axes.left.x;
       const anchorZ = st.centre.z + sideSign * k.halfStance * axes.left.z;
       dx += 0.18 * (anchorX - (stanceP.x + dx));
@@ -1248,7 +1273,11 @@ function controller(world, mech) {
   // waist ring (spec §5c): servo to aim - bodyYaw, slew-limited; aim
   // defaults to the commanded heading until the turret exists (M4)
   if (mech.waist) {
-    const aimYaw = mech.aimYaw != null ? mech.aimYaw : st.heading;
+    // no aim input -> torso FOLLOWS the frame (target ~0). Defaulting to
+    // st.heading led measured yaw by the whole turn lag (~1 rad) and
+    // cranked the 3100kg torso to its stop mid-march — falls at ~7s of
+    // sustained turn.
+    const aimYaw = mech.aimYaw != null ? mech.aimYaw : yawMeas;
     const wTgt = clamp(wrapPi(aimYaw - yawMeas), mech.waist.lo, mech.waist.hi);
     mech.waist.target += clamp(wTgt - mech.waist.target, -1.74 * dt, 1.74 * dt);
     mech.arms.L.target = 0; mech.arms.R.target = 0;

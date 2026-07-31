@@ -31,10 +31,10 @@ export default function MechRange({ onExit }) {
     for (const b of world.bodies) if (b.kind === "chunk") { b.sleeping = true; b.sleepT = 1; }
     const R = makeRenderer(canvasRef.current, world, { town: false });
 
-    const S = { acc: 0, last: performance.now(), keys: {}, yawT: 0, aimYaw: 0, raf: 0, hudT: 0, dead: false, joyId: null, jx: 0, jy: 0, aimId: null, ax: 0, ay: 0 };
+    const S = { acc: 0, last: performance.now(), keys: {}, yawT: 0, aimYaw: null, raf: 0, hudT: 0, dead: false, joyId: null, jx: 0, jy: 0, aimId: null, ax: 0, ay: 0 };
     window.__MECHRANGE__ = {
       world, mech,
-      reissue: () => { respawnMech(world, mech, 0, 0, 0); S.yawT = 0; S.aimYaw = 0; mech.aimYaw = 0; mechCommand(mech, { travel: 0, lateral: 0, heading: 0 }); },
+      reissue: () => { respawnMech(world, mech, 0, 0, 0); S.yawT = 0; S.aimYaw = null; mech.aimYaw = null; mechCommand(mech, { travel: 0, lateral: 0, heading: 0 }); },
       turn: (dir) => { S.yawT += dir * 0.14; },
     };
     const joyBase = () => ({ x: 86, y: window.innerHeight - 130 });
@@ -80,7 +80,7 @@ export default function MechRange({ onExit }) {
       S.keys[e.code] = true;
       if (e.code === "KeyR") {
         respawnMech(world, mech, 0, 0, 0);
-        S.yawT = 0; S.aimYaw = 0; mech.aimYaw = 0;
+        S.yawT = 0; S.aimYaw = null; mech.aimYaw = null;
         mechCommand(mech, { travel: 0, lateral: 0, heading: 0 });
       }
     };
