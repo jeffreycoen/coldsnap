@@ -13,7 +13,8 @@ import { COLORS, FONT } from "../ui/theme.js";
 export default function MechRange({ onExit }) {
   const canvasRef = useRef(null);
   const knobRef = useRef(null);
-  const aimKnobRef = useRef(null);
+  const rngThumbRef = useRef(null);
+  const rngLabelRef = useRef(null);
   const isTouch = detectTouch();
   const [hud, setHud] = useState({ mode: "STAND", steps: 0, falls: 0, kills: 0, shots: 0 });
   useEffect(() => {
@@ -37,24 +38,32 @@ export default function MechRange({ onExit }) {
     addBody(world, { kind: "truck", team: 2, group: "tgtTruck", vtype: "truck", mass: 1400, hx: 1.15, hy: 1.05, hz: 2.6, x: 5, y: 2.05, z: -7, hp: 120, friction: 0.6 });
     const R = makeRenderer(canvasRef.current, world, { town: false });
 
-    const S = { acc: 0, last: performance.now(), keys: {}, yawT: 0, aimYaw: null, raf: 0, hudT: 0, dead: false, joyId: null, jx: 0, jy: 0, aimId: null, ax: 0, ay: 0, fireHeld: false };
+    const S = { acc: 0, last: performance.now(), keys: {}, yawT: 0, aimYaw: null, aimRange: 26, raf: 0, hudT: 0, dead: false, joyId: null, jx: 0, jy: 0, rngId: null, turnHeld: 0, fireHeld: false };
     window.__MECHRANGE__ = {
       world, mech,
-      reissue: () => { respawnMech(world, mech, 0, 0, 0); S.yawT = 0; S.aimYaw = null; mech.aimYaw = null; mechCommand(mech, { travel: 0, lateral: 0, heading: 0 }); },
-      turn: (dir) => { S.yawT += dir * 0.14; },
+      reissue: () => { respawnMech(world, mech, 0, 0, 0); S.yawT = 0; S.aimYaw = null; mech.aimYaw = null; S.turnHeld = 0; mechCommand(mech, { travel: 0, lateral: 0, heading: 0 }); },
+      turn: (dir) => { S.turnHeld = dir; },
       fireHeld: (v) => { S.fireHeld = v; },
       fire: () => mechFire(world, mech),
       punt: () => mechPunt(world, mech),
     };
     const joyBase = () => ({ x: 86, y: window.innerHeight - 130 });
-    const aimBase = () => ({ x: window.innerWidth - 86, y: window.innerHeight - 130 });
     const onPD = (e) => {
       if (e.target.closest && e.target.closest("button")) return;
       if (e.pointerType === "mouse") { S.fireHeld = true; return; } // desktop: click = fire
-      const c = joyBase(), a = aimBase();
+      const c = joyBase();
       if (S.joyId == null && Math.hypot(e.clientX - c.x, e.clientY - c.y) < 110) S.joyId = e.pointerId;
-      else if (S.aimId == null && Math.hypot(e.clientX - a.x, e.clientY - a.y) < 110) S.aimId = e.pointerId;
     };
+    const sliderY = (clientY) => {
+      // vertical slider: 200px track, bottom = 6m, top = 80m
+      const top = window.innerHeight - 340, hgt = 200;
+      const t = Math.max(0, Math.min(1, (top + hgt - clientY) / hgt));
+      S.aimRange = 6 + t * 74;
+      if (rngThumbRef.current) rngThumbRef.current.style.top = top + hgt - t * hgt - 14 + "px";
+      if (rngLabelRef.current) rngLabelRef.current.textContent = Math.round(S.aimRange) + "m";
+    };
+    window.__MECHRANGE__.sliderY = sliderY;
+    window.__MECHRANGE__.grabRange = (id, y) => { S.rngId = id; sliderY(y); };
     const onPM = (e) => {
       if (e.pointerType === "mouse") {
         // camera yaw is fixed in the range: screen offset from centre maps
@@ -74,11 +83,8 @@ export default function MechRange({ onExit }) {
         S.jx = Math.max(-1, Math.min(1, (e.clientX - c.x) / 44));
         S.jy = Math.max(-1, Math.min(1, (e.clientY - c.y) / 44));
         if (knobRef.current) { knobRef.current.style.left = c.x - 20 + S.jx * 34 + "px"; knobRef.current.style.top = c.y - 20 + S.jy * 34 + "px"; }
-      } else if (e.pointerId === S.aimId) {
-        const a = aimBase();
-        S.ax = Math.max(-1, Math.min(1, (e.clientX - a.x) / 44));
-        S.ay = Math.max(-1, Math.min(1, (e.clientY - a.y) / 44));
-        if (aimKnobRef.current) { aimKnobRef.current.style.left = a.x - 20 + S.ax * 34 + "px"; aimKnobRef.current.style.top = a.y - 20 + S.ay * 34 + "px"; }
+      } else if (e.pointerId === S.rngId) {
+        sliderY(e.clientY);
       }
     };
     const onPU = (e) => {
@@ -87,11 +93,8 @@ export default function MechRange({ onExit }) {
         S.joyId = null; S.jx = 0; S.jy = 0;
         const c = joyBase();
         if (knobRef.current) { knobRef.current.style.left = c.x - 20 + "px"; knobRef.current.style.top = c.y - 20 + "px"; }
-      } else if (e.pointerId === S.aimId) {
-        // release => aim HOLDS (a gunner keeps aim) — spec §0b
-        S.aimId = null; S.ax = 0; S.ay = 0;
-        const a = aimBase();
-        if (aimKnobRef.current) { aimKnobRef.current.style.left = a.x - 20 + "px"; aimKnobRef.current.style.top = a.y - 20 + "px"; }
+      } else if (e.pointerId === S.rngId) {
+        S.rngId = null; // range HOLDS where you left it
       }
     };
     window.addEventListener("pointerdown", onPD);
@@ -130,6 +133,7 @@ export default function MechRange({ onExit }) {
       }
       if (S.keys.KeyA) S.yawT += 0.7 * dt;
       if (S.keys.KeyD) S.yawT -= 0.7 * dt;
+      if (S.turnHeld) S.yawT += S.turnHeld * 0.7 * dt;
       // steering lock: the heading COMMAND may lead the actual body by at
       // most 0.5 rad. Unbounded lead (chassis-follow wound to 3.7 rad for a
       // 1.6 rad aim) forced max-rate turning long after the stick released.
@@ -140,24 +144,11 @@ export default function MechRange({ onExit }) {
         while (lead < -Math.PI) lead += 2 * Math.PI;
         S.yawT = yawNow + Math.max(-0.5, Math.min(0.5, lead));
       }
-      // aim SLEWS toward the stick heading (2.2 rad/s) instead of snapping —
-      // an instant rear-flick whipped the 1800kg torso at full waist rate and
-      // the reaction rocked the frame over ('aiming too fast, falls easily')
-      if (S.aimId != null && Math.hypot(S.ax, S.ay) > 0.18) {
-        // stick deflection = shot range (light touch = close, full = far)
-        S.aimRange = 6 + Math.min(1, (Math.hypot(S.ax, S.ay) - 0.18) / 0.82) * 64;
-        const want = Math.atan2(-S.ax, -S.ay);
-        if (S.aimYaw == null) S.aimYaw = want;
-        else {
-          let d = want - S.aimYaw;
-          while (d > Math.PI) d -= 2 * Math.PI;
-          while (d < -Math.PI) d += 2 * Math.PI;
-          const cap = 2.2 * dt;
-          S.aimYaw += Math.max(-cap, Math.min(cap, d));
-        }
-      }
+      // touch: NO aim stick (design 2026-08-01) — the BODY aims. Turn with
+      // the arrows, set distance on the slider, fire. Torso follows the
+      // frame (aimYaw null). Desktop keeps mouse aim.
       mech.aimYaw = S.aimYaw;
-      if (S.aimRange != null) mech.aimRange = S.aimRange;
+      mech.aimRange = S.aimRange;
       // chassis-follow ONLY while moving: turning works well inside the
       // gait, but auto-dragging a PARKED mech through a sustained in-place
       // turn is its weakest maneuver — invisible to the player until it
@@ -229,7 +220,7 @@ export default function MechRange({ onExit }) {
       <div data-mech-hud style={{ position: "absolute", top: 10, left: 12, color: "#c7d0dc", pointerEvents: "none" }}>
         <p style={{ ...line, color: COLORS.gold, fontSize: 14, letterSpacing: 2 }}>MECH TEST RANGE</p>
         <p style={line}>BIPED FRAME MK1 — GAIT ACCEPTANCE PENDING</p>
-        <p style={line}>{isTouch ? "left moves · right aims · ◀ ▶ turn · FIRE fires" : "W/S walk · A/D turn · Q/E strafe · MOUSE aims · CLICK/SPACE fires · C punt · R reissue"}</p>
+        <p style={line}>{isTouch ? "left stick moves · ◀ ▶ turn · slider sets range · FIRE" : "W/S walk · A/D turn · Q/E strafe · MOUSE aims · CLICK/SPACE fires · C punt · R reissue"}</p>
         <p data-mech-status style={line}>
           {hud.mode === "FALLEN" ? "FRAME DOWN — R TO REISSUE" : hud.mode} · steps {hud.steps} · falls {hud.falls} · kills {hud.kills} · shots {hud.shots}
         </p>
@@ -238,14 +229,27 @@ export default function MechRange({ onExit }) {
         <>
           <div style={{ position: "absolute", left: 86 - 55, bottom: 130 - 55, width: 110, height: 110, borderRadius: 60, border: "1px solid #5f6e80", opacity: 0.55 }} />
           <div ref={knobRef} style={{ position: "absolute", left: 86 - 20, top: "calc(100% - 150px)", width: 40, height: 40, borderRadius: 22, background: "#5f6e80", opacity: 0.8 }} />
-          <div style={{ position: "absolute", right: 86 - 55, bottom: 130 - 55, width: 110, height: 110, borderRadius: 60, border: "1px solid #7a6a4e", opacity: 0.5 }} />
-          <div ref={aimKnobRef} style={{ position: "absolute", right: 86 - 20, top: "calc(100% - 150px)", width: 40, height: 40, borderRadius: 22, background: "#7a6a4e", opacity: 0.8 }} />
-          <button data-mech-turnl onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.turn(1); }}
-            style={{ position: "absolute", left: "calc(50% - 64px)", bottom: 40, padding: "10px 16px", fontFamily: FONT, fontSize: 14, color: "#c7d0dc", background: "#1a212b", border: "1px solid #444c58" }}>
+          <div data-mech-rangeslider
+            onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.grabRange(e.pointerId, e.clientY); }}
+            style={{ position: "absolute", right: 30, bottom: 140, width: 56, height: 200, borderRadius: 10, background: "rgba(28,33,41,0.7)", border: "1px solid #7a6a4e", touchAction: "none" }}>
+            <div style={{ position: "absolute", left: 26, top: 8, bottom: 8, width: 3, background: "#5f6e80" }} />
+          </div>
+          <div ref={rngThumbRef} style={{ position: "absolute", right: 30 + 28 - 22, top: "calc(100% - 340px + 146px)", width: 44, height: 28, borderRadius: 8, background: "#7a6a4e", opacity: 0.95, pointerEvents: "none" }} />
+          <div ref={rngLabelRef} style={{ position: "absolute", right: 30, bottom: 348, width: 56, textAlign: "center", color: "#e8d9b8", fontFamily: FONT, fontSize: 13 }}>26m</div>
+          <button data-mech-turnl
+            onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.turn(1); }}
+            onPointerUp={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.turn(0); }}
+            onPointerLeave={() => { const m = window.__MECHRANGE__; if (m) m.turn(0); }}
+            onPointerCancel={() => { const m = window.__MECHRANGE__; if (m) m.turn(0); }}
+            style={{ position: "absolute", left: "calc(50% - 84px)", bottom: 40, padding: "14px 22px", fontFamily: FONT, fontSize: 16, color: "#c7d0dc", background: "#1a212b", border: "1px solid #444c58", touchAction: "none" }}>
             ◀
           </button>
-          <button data-mech-turnr onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.turn(-1); }}
-            style={{ position: "absolute", left: "calc(50% + 16px)", bottom: 40, padding: "10px 16px", fontFamily: FONT, fontSize: 14, color: "#c7d0dc", background: "#1a212b", border: "1px solid #444c58" }}>
+          <button data-mech-turnr
+            onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.turn(-1); }}
+            onPointerUp={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.turn(0); }}
+            onPointerLeave={() => { const m = window.__MECHRANGE__; if (m) m.turn(0); }}
+            onPointerCancel={() => { const m = window.__MECHRANGE__; if (m) m.turn(0); }}
+            style={{ position: "absolute", left: "calc(50% + 20px)", bottom: 40, padding: "14px 22px", fontFamily: FONT, fontSize: 16, color: "#c7d0dc", background: "#1a212b", border: "1px solid #444c58", touchAction: "none" }}>
             ▶
           </button>
           <button data-mech-punt onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.punt(); }}
