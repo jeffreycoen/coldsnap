@@ -4,7 +4,7 @@
 // The machine stands, weight-shifts, steps — and still falls; R reissues it.
 import React, { useEffect, useRef, useState } from "react";
 import { makeWorld, makeField, stepWorld, addBody } from "../engine/core.js";
-import { buildMech, mechCommand, respawnMech, mechFallen, mechFire, mechPunt } from "../engine/mech.js";
+import { buildMech, mechCommand, respawnMech, mechFallen, mechFire, mechPunt, mechAimDir } from "../engine/mech.js";
 import { makeRenderer } from "../render/renderer.js";
 import { detectTouch } from "./runner/trials.js";
 import { BUILDERS } from "./scenario.js";
@@ -58,9 +58,15 @@ export default function MechRange({ onExit }) {
     const onPM = (e) => {
       if (e.pointerType === "mouse") {
         // camera yaw is fixed in the range: screen offset from centre maps
-        // straight to a world aim heading
+        // straight to a world aim heading, and DISTANCE from centre maps to
+        // shot range (near the mech = close shots, screen edge = far)
         const dx = e.clientX - window.innerWidth / 2, dy = e.clientY - window.innerHeight / 2;
-        if (Math.hypot(dx, dy) > 30) S.aimYaw = Math.atan2(dx, -dy);
+        const m = Math.hypot(dx, dy);
+        if (m > 30) {
+          S.aimYaw = Math.atan2(dx, -dy);
+          const span = Math.min(window.innerWidth, window.innerHeight) / 2;
+          S.aimRange = 6 + Math.min(1, m / span) * 74;
+        }
         return;
       }
       if (e.pointerId === S.joyId) {
@@ -124,8 +130,24 @@ export default function MechRange({ onExit }) {
       }
       if (S.keys.KeyA) S.yawT += 0.7 * dt;
       if (S.keys.KeyD) S.yawT -= 0.7 * dt;
-      if (S.aimId != null && Math.hypot(S.ax, S.ay) > 0.18) S.aimYaw = Math.atan2(-S.ax, -S.ay);
+      // aim SLEWS toward the stick heading (2.2 rad/s) instead of snapping —
+      // an instant rear-flick whipped the 1800kg torso at full waist rate and
+      // the reaction rocked the frame over ('aiming too fast, falls easily')
+      if (S.aimId != null && Math.hypot(S.ax, S.ay) > 0.18) {
+        // stick deflection = shot range (light touch = close, full = far)
+        S.aimRange = 6 + Math.min(1, (Math.hypot(S.ax, S.ay) - 0.18) / 0.82) * 64;
+        const want = Math.atan2(-S.ax, -S.ay);
+        if (S.aimYaw == null) S.aimYaw = want;
+        else {
+          let d = want - S.aimYaw;
+          while (d > Math.PI) d -= 2 * Math.PI;
+          while (d < -Math.PI) d += 2 * Math.PI;
+          const cap = 2.2 * dt;
+          S.aimYaw += Math.max(-cap, Math.min(cap, d));
+        }
+      }
       mech.aimYaw = S.aimYaw;
+      if (S.aimRange != null) mech.aimRange = S.aimRange;
       if (mech.waist && Math.abs(mech.waist.target) > 0.6 * 0.87) S.yawT += Math.sign(mech.waist.target) * 0.5 * dt;
       mechCommand(mech, { travel: tf, lateral: tl, heading: S.yawT });
       if (S.keys.Space || S.keys.KeyF || S.fireHeld) mechFire(world, mech); // rate-limited inside
@@ -148,18 +170,14 @@ export default function MechRange({ onExit }) {
       // targeting: the shell's actual ballistic arc from the muzzle, drawn
       // with the same setTraj machinery the bison uses
       try {
-        const torso = mech.waist ? mech.waist.b : mech.hull;
-        const ty2 = Math.atan2(torso.R[6], torso.R[8]);
-        const gY2 = world.field.heightAt(torso.pos.x, torso.pos.z);
-        let dy2 = -Math.max(0.03, (torso.pos.y - gY2) * 0.038);
-        const n2 = Math.hypot(1, dy2);
+        const { muzzle, dir } = mechAimDir(world, mech);
         const pts = [];
-        let px = torso.pos.x + Math.sin(ty2) * 2.6, py = torso.pos.y + 0.35, pz = torso.pos.z + Math.cos(ty2) * 2.6;
-        let vx = Math.sin(ty2) / n2 * 120, vy = dy2 / n2 * 120, vz = Math.cos(ty2) / n2 * 120;
+        let px = muzzle.x, py = muzzle.y, pz = muzzle.z;
+        let vx = dir.x * 120, vy = dir.y * 120, vz = dir.z * 120;
         let hitIdx = -1;
-        for (let k2 = 0; k2 < 16; k2++) {
+        const st2 = ((mech.aimRange || 26) / 120) / 14; // ~14 samples to the commanded range at any distance
+        for (let k2 = 0; k2 < 22; k2++) {
           pts.push({ x: px, y: py, z: pz });
-          const st2 = 0.024;
           vy -= 9.81 * st2;
           px += vx * st2; py += vy * st2; pz += vz * st2;
           if (py <= world.field.heightAt(px, pz)) { pts.push({ x: px, y: world.field.heightAt(px, pz), z: pz }); hitIdx = pts.length - 1; break; }

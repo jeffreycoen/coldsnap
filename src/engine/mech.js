@@ -1521,7 +1521,13 @@ function controller(world, mech) {
     // sustained turn.
     const aimYaw = mech.aimYaw != null ? mech.aimYaw : yawMeas;
     const wTgt = clamp(wrapPi(aimYaw - yawMeas), mech.waist.lo, mech.waist.hi);
-    mech.waist.target += clamp(wTgt - mech.waist.target, -1.74 * dt, 1.74 * dt);
+    // 1.1 rad/s (was 1.74), and gentler still in single support — swinging
+    // the torso hard while on one foot rocked the frame over
+    const inSSw = st.mode === "WALK" && st.swing != null;
+    // and FROZEN when single support is already strained — the return swing
+    // finishing off a stressed stance was the last rear-aim fall
+    const wRate = (inSSw ? (hull.R[4] < 0.97 ? 0 : 0.6) : 1.1) * dt;
+    mech.waist.target += clamp(wTgt - mech.waist.target, -wRate, wRate);
     mech.arms.L.target = 0; mech.arms.R.target = 0;
   }
   // reference: no target-rate feedforward, no attitude trim in the legs —
@@ -1609,20 +1615,32 @@ export function mechCommand(mech, { travel = null, lateral = null, heading = nul
   if (lateral != null) st.cmdT.l = lateral;
   if (heading != null) st.headingT = heading;
 }
+// autocannon aim solve: torso facing + BALLISTIC pitch for the commanded
+// range (mech.aimRange, metres; UI sets it from stick deflection / mouse
+// distance). Low-arc solution of the projectile equation with muzzle
+// height; shared by mechFire and the range's trajectory preview.
+export function mechAimDir(world, mech) {
+  const torso = mech.waist ? mech.waist.b : mech.hull;
+  const ty = Math.atan2(torso.R[6], torso.R[8]);
+  const gY = world.field.heightAt(torso.pos.x, torso.pos.z);
+  const h = Math.max(1, torso.pos.y + 0.35 - gY);
+  const d = clamp((mech.aimRange || 26) - 2.4, 4, 120); // muzzle sits 2.6m ahead of the torso the range is measured from
+  const s2 = 120 * 120, g = world.gravity;
+  const disc = s2 * s2 - g * (g * d * d - 2 * h * s2);
+  const tanTh = disc > 0 ? (s2 - Math.sqrt(disc)) / (g * d) : 0.0;
+  const pitch = Math.atan(tanTh); // negative = down for near targets (h above ground)
+  const cp = Math.cos(pitch);
+  const dir = v3(Math.sin(ty) * cp, Math.sin(pitch), Math.cos(ty) * cp);
+  const muzzle = v3(torso.pos.x + dir.x * 2.6, torso.pos.y + 0.35, torso.pos.z + dir.z * 2.6);
+  return { muzzle, dir, torso };
+}
 // autocannon (M4): torso-ring mounted, fires along the torso's ACTUAL
 // facing. Mass semantics per design: the shell carries pmass, so the frame
 // eats m*v of recoil through the waist ring — fire braced or stagger.
 export function mechFire(world, mech) {
   if (mech.state.mode === "FALLEN") return false;
   if (world.t - (mech._lastFire || -9) < 0.75) return false;
-  const torso = mech.waist ? mech.waist.b : mech.hull;
-  const ty = Math.atan2(torso.R[6], torso.R[8]);
-  // drop the muzzle so the round meets the ground at battle range (~26m)
-  // instead of sailing over everything below the shoulder line
-  const gY = world.field.heightAt(torso.pos.x, torso.pos.z);
-  const dir = v3(Math.sin(ty), -Math.max(0.03, (torso.pos.y - gY) * 0.038), Math.cos(ty));
-  V.norm(dir, dir);
-  const muzzle = v3(torso.pos.x + dir.x * 2.6, torso.pos.y + 0.35, torso.pos.z + dir.z * 2.6);
+  const { muzzle, dir, torso } = mechAimDir(world, mech);
   const PM = 40, SPD = 120;
   fireProjectile(world, muzzle, dir, SPD, { kind: "shell", pmass: PM, r: 2.4, kv: 16, dmg: 90, crater: 0.45, attacker: "player", ownerMech: mech });
   const J = PM * SPD;
