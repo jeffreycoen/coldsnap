@@ -604,7 +604,7 @@ export function buildMech(world, opts = {}) {
   // 0.05L uniform (stand = walk height, no transition): the full 0.085L
   // crouch shifts the CoM toe-ward and saturates the ankle position servos
   // at stand (0.3 rad sag, measured) on THIS rig's geometry
-  mech.k.pelvisDrop = 0.05 * L;
+  mech.k.pelvisDrop = 0.05 * L; // (0.07 broke the walk gates — the whole gait is swept at 0.05)
   // controller state
   mech.state = {
     mode: "STAND", phase: "DS", t: 0, swing: null, lastSwing: "R", ramp: 1,
@@ -968,6 +968,9 @@ function controller(world, mech) {
       // of each stand epoch (learn the launch trim), then hold. A frozen
       // constant cannot run away; the residual slow drift is recycled by
       // the stand catches.
+      // the classic integrator is BACK: its 26s 'runaway' was integrating
+      // the stale-print fiction (feet skate, frame didn't) — with prints
+      // tracking the measured feet the loop reference is honest.
       st.comOff.iF = clamp(st.comOff.iF + ef * 0.3 * dt, -0.5, 0.5);
       st.comOff.iL = clamp(st.comOff.iL + el * 0.15 * dt, -0.3, 0.3);
     }
@@ -1059,6 +1062,15 @@ function controller(world, mech) {
     return { zmp, xiR };
   };
   if (st.mode === "STAND") {
+    // prints TRACK the measured feet at stand: the soles skate backward at
+    // ~0.05 m/s (solver-level creep, open item) and the stale prints left
+    // every stand reference — pelvis target, catch frame, launch centre —
+    // anchored to where the feet USED to be, up to 0.8m of fiction. The
+    // machine balances against reality, not the latch.
+    st.prints.L.x = legL.foot.pos.x; st.prints.L.z = legL.foot.pos.z;
+    st.prints.R.x = legR.foot.pos.x; st.prints.R.z = legR.foot.pos.z;
+    feetMid.x = (st.prints.L.x + st.prints.R.x) / 2;
+    feetMid.z = (st.prints.L.z + st.prints.R.z) / 2;
     const eF = (xi.x - feetMid.x) * axes.fwd.x + (xi.z - feetMid.z) * axes.fwd.z;
     const eL = (xi.x - feetMid.x) * axes.left.x + (xi.z - feetMid.z) * axes.left.z;
     let catchSide = null;
@@ -1066,7 +1078,13 @@ function controller(world, mech) {
     // centred while the machine itself slowly leans (its runaway mode) —
     // the xi test alone never fires and the shipped build fell SILENTLY at
     // ~26s. The hull can't hide its attitude.
-    const tiltCatch = hull.R[4] < 0.965 && (st.standT || 0) > 3; // 0.982/earlier was WORSE (22s) — catches need real lean to work against
+    // SUSTAINED tilt only (0.6s): recoil kicks and mouse-aim torso swings
+    // dip R4 for a few ticks and were firing catches constantly in live
+    // combat — 'falling over more than ever'. The slow drift-lean HOLDS
+    // its tilt; transients don't. (0.982/earlier thresholds were worse —
+    // catches need real lean to work against.)
+    st.tiltT = hull.R[4] < 0.965 ? (st.tiltT || 0) + dt : 0;
+    const tiltCatch = st.tiltT > 0.6 && (st.standT || 0) > 3;
     if (Math.abs(eF) > k.copLimitX || Math.abs(eL) > k.copLimitZ + k.halfStance || tiltCatch)
       catchSide = eL > 0 ? "L" : "R";
     // launch gate: walk entry is chaotically sensitive to the residual
@@ -1531,6 +1549,8 @@ function controller(world, mech) {
     // (full box both axes — reference; earlier half-caps were mitigations
     // for the dead architecture)
     const Fff = Math.min(leg.load, Fcap);
+    // (the standing foot-skate was measured IDENTICAL with this trim zeroed
+    // — the creep is solver-level, not toe-press; trim stays reference-pure)
     leg.anklePitch.tauFF = clamp(k.kCop * Fff * eFwd, -0.9 * leg.anklePitch.tauMax, 0.9 * leg.anklePitch.tauMax);
     // roll trim: full gain in SS; HALF gain in DS — the reference gates it
     // off to protect contact area, but with no lateral actuator at all the
