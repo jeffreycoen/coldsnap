@@ -587,7 +587,7 @@ export function buildMech(world, opts = {}) {
   mech.k = deriveGait(L, comH, R.hipX * s, { halfLen: R.foot.hz * s, halfWid: R.foot.hx * s, ankleOffX: R.foot.fwdOff * s }, world.gravity);
   mech.groundC = (0.01 * L) / (M * world.gravity); // spec §4, m/N
   // loop gains, sweepable (defaults = shipped tune)
-  mech.tune = { fzBase: 0.95, fzKp: 2.0, fzKd: 1.6, fzCap: 1.15, floorG: 0.85, katt: 1.2, cmgKp: 2.2, cmgKd: 0.55, cmgSlew: 1.5, yawSS: 1.0, yawSSd: 1.4, turnDS: 0.35, kickLean: 0.5, kickDur: 0.85, kickReach: 2.2, kickH: 1.0 }; // sortie-swept: full SS yaw spring + heavy SS damping + slow DS turn = 4/6 clean vs 0/6
+  mech.tune = { fzBase: 0.95, fzKp: 2.0, fzKd: 1.6, fzCap: 1.15, floorG: 0.85, katt: 1.2, cmgKp: 2.2, cmgKd: 0.55, cmgSlew: 1.5, yawSS: 1.0, yawSSd: 1.4, turnDS: 0.35, kickLean: 0.5, kickDur: 1.15, kickReach: 2.2, kickH: 1.0 }; // sortie-swept: full SS yaw spring + heavy SS damping + slow DS turn = 4/6 clean vs 0/6
   // retune the arm dampers with FINAL mass + true gait omega (build-time
   // first pass used running totals — Den Hartog is sensitive to mu/wSway)
   if (mech.arms) for (const sd of ["L", "R"]) {
@@ -943,6 +943,7 @@ function controller(world, mech) {
   // outside ankle authority before the first lift-off. (The reference rig
   // is pelvis-heavy, com~pelvis, so it never needed the distinction.)
   if (!st.comOff) st.comOff = { f: 0, l: 0, iF: 0, iL: 0 };
+  st.standT = st.mode === "WALK" ? 0 : (st.standT || 0) + dt;
   {
     const df = (_com.x - hull.pos.x) * axes.fwd.x + (_com.z - hull.pos.z) * axes.fwd.z;
     const dl = (_com.x - hull.pos.x) * axes.left.x + (_com.z - hull.pos.z) * axes.left.z;
@@ -959,6 +960,14 @@ function controller(world, mech) {
     if (st.mode !== "WALK") {
       const ef = (xi.x - feetMid.x) * axes.fwd.x + (xi.z - feetMid.z) * axes.fwd.z;
       const el = (xi.x - feetMid.x) * axes.left.x + (xi.z - feetMid.z) * axes.left.z;
+      // EPOCH-LIMITED integration (2026-07-31): the trim is load-bearing
+      // for walk launches (removing it fails the 20m gate and half the
+      // ensemble) — but CONTINUOUS integration closes a slow positive loop
+      // with the ankle equilibrium and a bare stand leans itself over at
+      // 26-31s at every gain/leak tried. So: integrate only the FIRST 4s
+      // of each stand epoch (learn the launch trim), then hold. A frozen
+      // constant cannot run away; the residual slow drift is recycled by
+      // the stand catches.
       st.comOff.iF = clamp(st.comOff.iF + ef * 0.3 * dt, -0.5, 0.5);
       st.comOff.iL = clamp(st.comOff.iL + el * 0.15 * dt, -0.3, 0.3);
     }
@@ -1053,7 +1062,12 @@ function controller(world, mech) {
     const eF = (xi.x - feetMid.x) * axes.fwd.x + (xi.z - feetMid.z) * axes.fwd.z;
     const eL = (xi.x - feetMid.x) * axes.left.x + (xi.z - feetMid.z) * axes.left.z;
     let catchSide = null;
-    if (Math.abs(eF) > k.copLimitX || Math.abs(eL) > k.copLimitZ + k.halfStance)
+    // second trigger: HULL TILT. The standing trim integrator holds xi
+    // centred while the machine itself slowly leans (its runaway mode) —
+    // the xi test alone never fires and the shipped build fell SILENTLY at
+    // ~26s. The hull can't hide its attitude.
+    const tiltCatch = hull.R[4] < 0.965 && (st.standT || 0) > 3; // 0.982/earlier was WORSE (22s) — catches need real lean to work against
+    if (Math.abs(eF) > k.copLimitX || Math.abs(eL) > k.copLimitZ + k.halfStance || tiltCatch)
       catchSide = eL > 0 ? "L" : "R";
     // launch gate: walk entry is chaotically sensitive to the residual
     // spawn/crouch sway phase (measured: 7 ticks of settle difference
@@ -1073,7 +1087,12 @@ function controller(world, mech) {
       // slewed to full during the stand — step 1 launched at full stride.
       // Enter gently regardless of what the stick did while standing.
       st.cmd.f *= 0.5; st.cmd.l *= 0.5;
-      if (catchSide) { st.lastSwing = catchSide === "L" ? "R" : "L"; mech.telem.catches++; }
+
+      if (catchSide) {
+        st.lastSwing = catchSide === "L" ? "R" : "L"; mech.telem.catches++;
+        // bleed the wound trim — each catch resets the slow-runaway clock
+        st.comOff.iF *= 0.4; st.comOff.iL *= 0.4;
+      }
       st.phases = planPhases(true, xi);
       st.pi = 0; st.pt = 0; st.hold = {}; st.holdCop = {};
       st.comRef = { x: _com.x, z: _com.z };
@@ -1239,7 +1258,13 @@ function controller(world, mech) {
       st.pelvis.z = st.comRef.z - comOffW.z;
     }
   } else {
-    // STAND: pelvis eases to where the CoM lands on the feet midpoint,
+    // STAND: pelvis eases to where the CoM lands on the feet midpoint
+    // plus a FIXED forward bias — the support polygon extends forward of
+    // the ankle line (foot fwdOff) and the ballast rig's static
+    // equilibrium rests behind it. Any FEEDBACK trim on this axis is a
+    // slow-runaway loop (integrator: leaned over at 27-31s at every gain
+    // tried; none: backward catch-pacing off the pad). A constant can't
+    // run away.
     // leaning against lateral com velocity — the two-legged lateral rock
     // is otherwise nearly undamped (measured 0.35 m/s sway persisting 4s+
     // after a stop; it also poisons walk launches)
@@ -1272,9 +1297,10 @@ function controller(world, mech) {
     // FORWARD axis only — lateral com velocity is the gait's own sway, and
     // braking it wrecked the rhythm and yaw (drift -5 rad).
     {
+      const bCap = cmdMag < 0.05 ? 1.0 : 0.7; // uncommanded recovery: full braking — the catch cascade accelerated backward past the 0.7 cap
       const vf = clamp(
         ((_comV.x - cmdW.x) * axes.fwd.x + (_comV.z - cmdW.z) * axes.fwd.z) / om * 1.3,
-        -0.7 * k.strideCap, 0.7 * k.strideCap);
+        -bCap * k.strideCap, bCap * k.strideCap);
       t2.x += vf * axes.fwd.x * smoothstep(s2); t2.z += vf * axes.fwd.z * smoothstep(s2);
     }
     const stanceP = st.prints[ph2.stance];
@@ -1355,9 +1381,13 @@ function controller(world, mech) {
         };
       } else {
         const rf = smoothstep((st.kick.t - T_STRIKE) / (st.kick.dur - T_STRIKE));
+        // plant EARLY: the leg can't reverse 5.5 m/s without overshooting
+        // (measured 1.4m past home, latched, machine fell off its own
+        // print). Ground the foot by mid-return — friction eats the
+        // overshoot in the dirt instead of the air.
         st.swingTgt = {
           x: strike.x + (st.from.x - strike.x) * rf,
-          y: strike.y + (groundRef + 0.05 - strike.y) * rf,
+          y: strike.y + (groundRef + 0.02 - strike.y) * Math.min(1, rf * 2.2),
           z: strike.z + (st.from.z - strike.z) * rf,
         };
         kf = 1 - rf;
@@ -1368,25 +1398,20 @@ function controller(world, mech) {
       st.kickLean = mech.tune.kickLean * kf;
       st.lastSwingY = st.swingTgt.y;
       if (st.kick.t >= st.kick.dur) {
-        // foot is home, near the ground. Don't walk out of it — arm a
-        // direct drop to STAND the moment the foot loads (the stand-catch
-        // machinery is the one recovery that survives everything; every
-        // walk-out variant fell in some case of the punt suite).
-        st.kickLand = st.swing;
-        st.kick = null;
+        // the kick ends as a TOUCHDOWN — the one latch path every stable
+        // step already uses. The return phase has the foot home and low, so
+        // both prints are real: latch measured, replan from reality, and
+        // let LIVE capture walk the post-kick momentum to a stop.
+        const swf = mech.legs[st.swing].foot.pos;
+        st.prints[st.swing] = { x: swf.x, z: swf.z };
+        st.lastSwing = st.swing;
+        st.kick = null; st.swing = null; st.hold = {}; st.holdCop = {};
+        st.stopping = true;
+        st.phases = planPhases(false, xi);
+        st.pi = 0; st.pt = 0;
         st.recoverT = Math.max(st.recoverT, 1.2);
       }
     }
-  }
-  // armed by the kick's return: first loaded-and-level moment -> STAND
-  if (st.kickLand) {
-    const lg = mech.legs[st.kickLand];
-    if (lg && lg.load > 0.22 * totalW && hull.R[4] > 0.92) {
-      st.prints.L = { x: mech.legs.L.foot.pos.x, z: mech.legs.L.foot.pos.z };
-      st.prints.R = { x: mech.legs.R.foot.pos.x, z: mech.legs.R.foot.pos.z };
-      st.mode = "STAND"; st.stopping = false; st.swing = null; st.phases = null;
-      st.comRef = null; st.kickLand = null;
-    } else if (st.mode !== "WALK") st.kickLand = null;
   }
   // kick counter-lean applies while kicking and decays through recovery
   if (st.kickLean > 0) {
@@ -1422,10 +1447,10 @@ function controller(world, mech) {
         // flipped, wrong foot kicked, machine toppled backward).
         // The kick owns strike AND return (0.85s) — stretch its SS to fit,
         // and freeze capture (the deliberate counter-lean poisons xiErr).
-        if (st.phases[1]) st.phases[1].dur = Math.max(st.phases[1].dur, 1.0);
+        if (st.phases[1]) st.phases[1].dur = Math.max(st.phases[1].dur, mech.tune.kickDur + 0.35);
         st.pi = 0; st.pt = 0;
         st.swing = null; st.hold = { cap: { x: 0, z: 0 } };
-        st.kick = { t: 0, dur: mech.tune.kickDur };
+        st.kick = { t: 0, dur: mech.tune.kickDur }; // dur = strike 0.34 + return
       }
     }
   }
