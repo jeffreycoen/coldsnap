@@ -17,7 +17,7 @@ export function swingLift(s, h) { const p = Math.sin(Math.PI * s); return p * p 
 export function deriveGait(L, comH, halfStance, foot, g = 9.81) {
   const omega = Math.sqrt(g / comH);
   const AG = 0.7;
-  const tSS = 1.66 * AG / omega;
+  const tSS = 1.30 * AG / omega; // ensemble-swept: 1.66 was 0/8 over 40s, 1.30 is 8/8 (1.15: 6/8, 1.45: 5/8) — the long SS gave xi too much divergence time per step
   const tDS = 0.92 * AG / omega;
   return {
     omega, tSS, tDS,
@@ -1012,7 +1012,18 @@ function controller(world, mech) {
     let catchSide = null;
     if (Math.abs(eF) > k.copLimitX || Math.abs(eL) > k.copLimitZ + k.halfStance)
       catchSide = eL > 0 ? "L" : "R";
-    if (st.spawnDone && ((catchSide && st.settleT > 1.6) || cmdTMag > 0.03)) {
+    // launch gate: walk entry is chaotically sensitive to the residual
+    // spawn/crouch sway phase (measured: 7 ticks of settle difference
+    // flipped a 46s march into a 6s fall). Hold the launch until xi sits
+    // near the support centre, up to 1.6s — gait initiation picks its
+    // moment; a catch overrides immediately.
+    const quiet = Math.hypot(xi.x - feetMid.x, xi.z - feetMid.z) < 0.14 &&
+      Math.hypot(_comV.x, _comV.z) < 0.22; // xi can sit centred while com and velocity cancel — that launch still corrupts
+    if (cmdTMag > 0.03 && !quiet) st.launchWait = (st.launchWait || 0) + dt;
+    else if (cmdTMag <= 0.03) st.launchWait = 0;
+    const launchOk = quiet || (st.launchWait || 0) > 1.6;
+    if (st.spawnDone && ((catchSide && st.settleT > 1.6) || (cmdTMag > 0.03 && launchOk))) {
+      st.launchWait = 0;
       st.mode = "WALK"; st.ramp = 1.35; st.stopping = false;
       if (catchSide) { st.lastSwing = catchSide === "L" ? "R" : "L"; mech.telem.catches++; }
       st.phases = planPhases(true, xi);
@@ -1067,8 +1078,14 @@ function controller(world, mech) {
         }
         mech.telem.steps++;
         if (cmdTMag < 0.02 && cmdMag < 0.06) st.stopping = true;
-        if (st.stopping && Math.hypot(_comV.x, _comV.z) < 0.3) {
-          st.mode = "STAND"; st.stopping = false;
+        // forward axis only: at touchdown the lateral sway velocity is at
+        // its PEAK (com crossing onto the new stance) — a total-speed test
+        // could never fire and the machine marched in place forever. The
+        // stand absorbs moderate residual sway.
+        const vSF = Math.abs(_comV.x * axes.fwd.x + _comV.z * axes.fwd.z);
+        const vSL = Math.abs(_comV.x * axes.left.x + _comV.z * axes.left.z);
+        if (st.stopping && vSF < 0.22 && vSL < 0.6) {
+          st.mode = "STAND"; st.stopping = false; st.postStop = 4;
           break;
         }
         st.sinceRest = (st.sinceRest || 0) + 1;
@@ -1085,6 +1102,24 @@ function controller(world, mech) {
       const refs = phaseRefs(ph, st.pt);
       zmpRef = refs.zmp; xiRef = refs.xiR;
       st._dbgXiRefX = xiRef.x;
+      // WALK catch: a bounce event can throw xi laterally clear of the
+      // plan mid-phase. Riding the dead plan to its touchdown lets the
+      // error compound (measured: one 0/0 flight window, then x ran
+      // -0.9 -> -4.0 over three steps). Replan NOW from reality, planted
+      // foot = the loaded one; cooldown one step period.
+      st._emerCd = Math.max(0, (st._emerCd || 0) - dt);
+      const exL = (xi.x - xiRef.x) * axes.left.x + (xi.z - xiRef.z) * axes.left.z;
+      if (Math.abs(exL) > 0.6 && st._emerCd === 0) {
+        st.lastSwing = legL.load >= legR.load ? "L" : "R";
+        st.swing = null; st.hold = {}; st.holdCop = {};
+        st.phases = planPhases(false, xi);
+        st.pi = 0; st.pt = 0;
+        st._emerCd = k.stepPeriod;
+        mech.telem.catches++;
+        ph = st.phases[0];
+        const r2 = phaseRefs(ph, 0);
+        zmpRef = r2.zmp; xiRef = r2.xiR;
+      }
       // COM tracker: integrate the stable LIPM ODE toward xi — the pelvis
       // reference is dynamically consistent, not a slewed chase
       if (!st.comRef) st.comRef = { x: feetMid.x, z: feetMid.z };
@@ -1099,9 +1134,17 @@ function controller(world, mech) {
       st.pelvis.z = st.comRef.z - comOffW.z;
     }
   } else {
-    // STAND: pelvis eases to where the CoM lands on the feet midpoint
-    st.pelvis.x += clamp(feetMid.x - comOffW.x - st.pelvis.x, -1.2 * dt, 1.2 * dt);
-    st.pelvis.z += clamp(feetMid.z - comOffW.z - st.pelvis.z, -1.2 * dt, 1.2 * dt);
+    // STAND: pelvis eases to where the CoM lands on the feet midpoint,
+    // leaning against lateral com velocity — the two-legged lateral rock
+    // is otherwise nearly undamped (measured 0.35 m/s sway persisting 4s+
+    // after a stop; it also poisons walk launches)
+    // ONLY in the few seconds after a walk->stand stop: as a general stand
+    // behavior this lean toppled walk launches and spawn settles.
+    st.postStop = Math.max(0, (st.postStop || 0) - dt);
+    const vLat = _comV.x * axes.left.x + _comV.z * axes.left.z;
+    const skL = st.postStop > 0 ? clamp(-vLat * 0.3, -0.2, 0.2) : 0;
+    st.pelvis.x += clamp(feetMid.x - comOffW.x + skL * axes.left.x - st.pelvis.x, -1.2 * dt, 1.2 * dt);
+    st.pelvis.z += clamp(feetMid.z - comOffW.z + skL * axes.left.z - st.pelvis.z, -1.2 * dt, 1.2 * dt);
     st.comRef = null;
   }
   const xiErr = { x: xi.x - xiRef.x, z: xi.z - xiRef.z };
