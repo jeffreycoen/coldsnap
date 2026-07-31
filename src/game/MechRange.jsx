@@ -95,14 +95,16 @@ export default function MechRange({ onExit }) {
       // §0b: LEFT = travel vector (strafe, never rotates); turn is a RATE
       // command (Q/E, on-screen arrows); RIGHT stick = torso aim heading,
       // held on release, chassis follows past 60% waist travel
+      // keyboard follows the HOUSE convention (every mode steers on A/D);
+      // Q/E strafe. Touch sticks keep the spec §0b layout.
       let tf = S.keys.KeyW ? 0.3 : S.keys.KeyS ? -0.18 : 0;
-      let tl = S.keys.KeyA ? 0.22 : S.keys.KeyD ? -0.22 : 0;
+      let tl = S.keys.KeyQ ? 0.22 : S.keys.KeyE ? -0.22 : 0;
       if (S.joyId != null) {
         if (Math.abs(S.jy) > 0.12) tf = S.jy < 0 ? 0.3 * -S.jy : -0.18 * S.jy;
         if (Math.abs(S.jx) > 0.12) tl = -0.22 * S.jx;
       }
-      if (S.keys.KeyQ) S.yawT += 0.7 * dt;
-      if (S.keys.KeyE) S.yawT -= 0.7 * dt;
+      if (S.keys.KeyA) S.yawT += 0.7 * dt;
+      if (S.keys.KeyD) S.yawT -= 0.7 * dt;
       if (S.aimId != null && Math.hypot(S.ax, S.ay) > 0.18) S.aimYaw = Math.atan2(-S.ax, -S.ay);
       mech.aimYaw = S.aimYaw;
       if (mech.waist && Math.abs(mech.waist.target) > 0.6 * 0.87) S.yawT += Math.sign(mech.waist.target) * 0.5 * dt;
@@ -143,7 +145,7 @@ export default function MechRange({ onExit }) {
       <div data-mech-hud style={{ position: "absolute", top: 10, left: 12, color: "#c7d0dc", pointerEvents: "none" }}>
         <p style={{ ...line, color: COLORS.gold, fontSize: 14, letterSpacing: 2 }}>MECH TEST RANGE</p>
         <p style={line}>BIPED FRAME MK1 — GAIT ACCEPTANCE PENDING</p>
-        <p style={line}>{isTouch ? "left moves · right aims · ◀ ▶ turn" : "WASD moves (A/D strafe) · Q/E turn · R reissue · ESC menu"}</p>
+        <p style={line}>{isTouch ? "left moves · right aims · ◀ ▶ turn" : "W/S walk · A/D turn · Q/E strafe · R reissue · ESC menu"}</p>
         <p data-mech-status style={line}>
           {hud.mode === "FALLEN" ? "FRAME DOWN — R TO REISSUE" : hud.mode} · steps {hud.steps} · falls {hud.falls}
         </p>
