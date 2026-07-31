@@ -530,6 +530,17 @@ try {
     return b ? b.getBoundingClientRect().right : 1e9;
   });
   ok("phone: SKIP button fits on screen", skipRight <= 391);
+  // phone: mech range touch surface
+  await phone.evaluate(() => localStorage.setItem("coldsnap-screen", "menu"));
+  await phone.reload({ waitUntil: "networkidle0" });
+  await phone.waitForSelector('[data-menu="mech"]', { timeout: 15000 });
+  await phone.tap('[data-menu="mech"]');
+  await phone.waitForSelector("[data-mech-reissue]", { timeout: 20000 });
+  ok("phone: mech range shows touch controls", true);
+  await phone.waitForFunction(() => window.__MECHRANGE__ && window.__MECHRANGE__.mech.hull.R[4] > 0.9, { timeout: 20000, polling: 1000 });
+  await phone.tap("[data-mech-reissue]");
+  await phone.waitForFunction(() => window.__MECHRANGE__ && window.__MECHRANGE__.mech.state.mode !== "FALLEN" && window.__MECHRANGE__.mech.hull.R[4] > 0.95, { timeout: 15000, polling: 500 });
+  ok("phone: REISSUE button reissues the frame", true);
   await phone.close();
 
   // --- corrupt/hostile stored keymap resets to defaults (escape unbindable)
