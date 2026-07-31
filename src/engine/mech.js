@@ -1124,8 +1124,21 @@ function controller(world, mech) {
       // Wider threshold while turning; cooldown covers a FULL replanned
       // cycle incl. its touchdown.
       const turning = Math.abs(wrapPi(st.headingT - st.heading)) > 0.05;
+      st._catchSameT = Math.max(0, (st._catchSameT || 0) - dt);
       if (Math.abs(exL) > (turning ? 1.0 : 0.6) && st._emerCd === 0) {
-        st.lastSwing = legL.load >= legR.load ? "L" : "R";
+        let planted = legL.load >= legR.load ? "L" : "R";
+        // consecutive catches picking the same planted side is the
+        // one-legged-pirouette trap: the airborne foot's swing restarts
+        // from scratch every catch and NEVER lands (measured: hdg frozen
+        // 1.8s, machine spun to the ground on one leg). Flip — the plan's
+        // first DS then drives the airborne foot down: a step-down catch.
+        if (st._lastCatchSide === planted && st._catchSameT > 0) planted = planted === "L" ? "R" : "L";
+        st._lastCatchSide = planted; st._catchSameT = 2.2 * k.stepPeriod;
+        st.lastSwing = planted;
+        // a catch is a plan rebuild like any touchdown — heading steps here
+        // too, else it freezes through catch-heavy stretches and the
+        // pending turn piles up
+        st.heading += clamp(wrapPi(st.headingT - st.heading), -k.turnRate * k.stepPeriod, k.turnRate * k.stepPeriod);
         st.swing = null; st.hold = {}; st.holdCop = {};
         st.phases = planPhases(false, xi);
         st.pi = 0; st.pt = 0;
