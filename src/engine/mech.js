@@ -400,13 +400,16 @@ function solveContactOne(c, dt) {
 export const RIG = {
   // wide stance + wide feet: a 3.5m-CoM biped on a narrow base spent every
   // controller iteration fighting lateral margins it simply didn't have
-  L1: 1.55, L2: 1.40, ankleH: 0.36, hipX: 0.80, hipY: -1.15,
-  hull: { hx: 1.55, hy: 1.05, hz: 1.35, m: 10500 },
-  hipBlock: { h: 0.16, m: 260 },
-  thigh: { hx: 0.26, hy: 0.775, hz: 0.28, m: 950 },
-  shin: { hx: 0.22, hy: 0.70, hz: 0.24, m: 620 },
-  ankleBlock: { h: 0.14, m: 170 },
-  foot: { hx: 0.55, hy: 0.17, hz: 0.66, m: 430, fwdOff: 0.12 },
+  // proportions per the reference rig (MK1.44 Light Frame): LEGGY — long
+  // chunky legs under a low flat slab body. Visual bulk in the legs, MASS
+  // in the pelvis (spec §0 + §5b: their pelvis outweighs their torso 2.4:1)
+  L1: 1.90, L2: 1.70, ankleH: 0.42, hipX: 0.85, hipY: -0.72,
+  hull: { hx: 1.15, hy: 0.62, hz: 0.95, m: 9500 },
+  hipBlock: { h: 0.20, m: 280 },
+  thigh: { hx: 0.42, hy: 0.95, hz: 0.50, m: 1000 },
+  shin: { hx: 0.34, hy: 0.85, hz: 0.40, m: 700 },
+  ankleBlock: { h: 0.17, m: 180 },
+  foot: { hx: 0.60, hy: 0.20, hz: 0.78, m: 500, fwdOff: 0.14 },
   // torque ceilings: every leg joint holds the whole machine on one leg —
   // tauMax >= M*g*lever (spec §4). kp is tuned to a separate bandwidth ref.
   // knee/hipPitch sized past the naive single-support lever: the walk crouch
@@ -520,27 +523,28 @@ export function buildMech(world, opts = {}) {
   // under abuse — that's the damage model's flavor, §5e)
   {
     const s3b = s * s * s;
-    const torsoY = hullY + (R.hull.hy + 0.85) * s;
-    const torso = B({ kind: "mechlink", group: "mech", mass: 2600 * s3b, hx: 1.30 * s, hy: 0.85 * s, hz: 1.00 * s, x, y: torsoY, z, friction: 0.6, restitution: 0 });
+    const torsoY = hullY + (R.hull.hy + 0.58) * s;
+    // the WIDE FLAT slab of the reference silhouette
+    const torso = B({ kind: "mechlink", group: "mech", mass: 3100 * s3b, hx: 2.05 * s, hy: 0.58 * s, hz: 1.15 * s, x, y: torsoY, z, friction: 0.6, restitution: 0 });
     const om0b = Math.sqrt(world.gravity / ((hullY - groundY) * 0.85));
     const AXY = v3(0, 1, 0), REFZ = v3(0, 0, 1);
-    const Iw = chainInertia([torso], v3(x, hullY + R.hull.hy * s, z), AXY) + 2 * 340 * s3b * (1.48 * s) * (1.48 * s) + 180 * s3b * (0.0);
+    const Iw = chainInertia([torso], v3(x, hullY + R.hull.hy * s, z), AXY) + 2 * 340 * s3b * (2.25 * s) * (2.25 * s);
     const gW = { kp: Iw * (R.BW * om0b) * (R.BW * om0b), kd: 2 * R.zeta * Math.sqrt(Iw * (R.BW * om0b) * (R.BW * om0b) * Iw), kv: 0, tauMax: 0, Ichain: Iw };
     const waist = addHinge(mech, hull, torso, v3(x, hullY + R.hull.hy * s, z), AXY, REFZ, gW, -0.87, 0.87, "waist");
     mech.waist = waist;
-    const shoulderY = torsoY + 0.55 * s;
+    const shoulderY = torsoY + 0.30 * s;
     const arms = {};
     for (const sd of ["L", "R"]) {
       const sxA = sd === "L" ? 1 : -1;
-      const ax0 = x + sxA * 1.48 * s;
-      const arm = B({ kind: "mechlink", group: "mech", mass: 340 * s3b, hx: 0.16 * s, hy: 0.62 * s, hz: 0.20 * s, x: ax0, y: shoulderY - 0.62 * s, z, friction: 0.6, restitution: 0 });
+      const ax0 = x + sxA * 2.25 * s;
+      const arm = B({ kind: "mechlink", group: "mech", mass: 340 * s3b, hx: 0.17 * s, hy: 0.80 * s, hz: 0.22 * s, x: ax0, y: shoulderY - 0.80 * s, z, friction: 0.6, restitution: 0 });
       const Ia = chainInertia([arm], v3(ax0, shoulderY, z), v3(1, 0, 0));
       const dt0 = tuneDamper(340 * s3b / (mech.links.reduce((a, b) => a + b.mass, 0)), om0b, Ia, 340 * s3b, 0.62 * s, world.gravity, true);
       const gA = { kp: dt0.kp, kd: dt0.kd, kv: 0, tauMax: 3000 * s3b * s, Ichain: Ia };
       arms[sd] = addHinge(mech, torso, arm, v3(ax0, shoulderY, z), v3(1, 0, 0), v3(0, 1, 0), gA, -1.3, 1.3, sd + "armSwing");
     }
     mech.arms = arms;
-    const head = B({ kind: "mechlink", group: "mech", mass: 180 * s3b, hx: 0.30 * s, hy: 0.26 * s, hz: 0.30 * s, x, y: torsoY + (0.85 + 0.26) * s, z, friction: 0.6, restitution: 0 });
+    const head = B({ kind: "mechlink", group: "mech", mass: 200 * s3b, hx: 0.62 * s, hy: 0.30 * s, hz: 0.48 * s, x, y: torsoY + (0.58 + 0.30) * s, z, friction: 0.6, restitution: 0 });
     addWeld(world, torso, head, 8.0e4);
     mech.torso = torso; mech.head = head;
     mech.upper = [torso, arms.L.b, arms.R.b, head];
@@ -576,7 +580,7 @@ export function buildMech(world, opts = {}) {
   if (mech.arms) for (const sd of ["L", "R"]) {
     const j = mech.arms[sd];
     const mA = j.b.mass;
-    const dtn = tuneDamper(mA / (M - mA), mech.k.omega, j.Ichain, mA, 0.62 * s, world.gravity, true);
+    const dtn = tuneDamper(mA / (M - mA), mech.k.omega, j.Ichain, mA, 0.80 * s, world.gravity, true);
     j.kp = dtn.kp; j.kd = dtn.kd;
   }
   // rig override history: 0.045L was set when knee ceilings were low; the
