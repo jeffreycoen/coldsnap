@@ -410,6 +410,10 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const chunkGeo = new THREE.BoxGeometry(1.2, 1.2, 1.2);
   const chunkMesh = pool(chunkGeo, toon(0xa6b2c0), 1000, true); // 865 stones live now (keep 84 + walls 240 + hangar 115 + warehouse 146 + houses 280)
   chunkMesh.receiveShadow = true;
+  // mech walker links: plain instanced steel boxes (rig art comes later)
+  const mechMesh = pool(new THREE.BoxGeometry(1, 1, 1), toon(0xffffff), 24, true);
+  mechMesh.receiveShadow = true;
+  const MECH_HULL_C = new THREE.Color(0x5f6e80), MECH_LINK_C = new THREE.Color(0x434c58), MECH_FOOT_C = new THREE.Color(0x2f353d);
   const iceMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.66, depthWrite: true });
   const _iceC = new THREE.Color();
   const _iceR = new Float32Array(80); // display envelope: fast attack, slow decay
@@ -568,6 +572,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
   }
   function render(dt, focus, aim, turretYaw) {
     resize();
+    water.visible = world.water != null; // dry ranges have no pond to float
     if (F.dirty) syncTerrain();
     // vehicles sync
     for (const b of world.bodies) {
@@ -633,6 +638,16 @@ export function makeRenderer(canvas, world0, opts = {}) {
       ki++;
     }
     chunkMesh.count = ki; chunkMesh.instanceMatrix.needsUpdate = true;
+    // mech links (kind filter lesson: name EVERY kind explicitly)
+    let mi = 0;
+    for (const b of world.bodies) {
+      if ((b.kind !== "mech" && b.kind !== "mechlink" && b.kind !== "mechfoot") || mi >= 24) continue;
+      writeInst(mechMesh, mi, b.pos.x, b.pos.y, b.pos.z, b.q, b.hx * 2, b.hy * 2, b.hz * 2);
+      if (mechMesh.setColorAt) mechMesh.setColorAt(mi, b.kind === "mech" ? MECH_HULL_C : b.kind === "mechfoot" ? MECH_FOOT_C : MECH_LINK_C);
+      mi++;
+    }
+    mechMesh.count = mi; mechMesh.instanceMatrix.needsUpdate = true;
+    if (mechMesh.instanceColor) mechMesh.instanceColor.needsUpdate = true;
     // ice plates — tinted by how close their welds are to failing (shock or creep)
     let ip = 0;
     if (world.ice) {

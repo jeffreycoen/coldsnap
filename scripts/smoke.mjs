@@ -543,6 +543,29 @@ try {
   const fwdKey = await page.evaluate(() => document.querySelector('[data-bind="forward"]').textContent.trim());
   ok("stored 'escape' binding is rejected, defaults restored", fwdKey === "W");
 
+  // --- MECH TEST RANGE (WIP surface: stands + steps; the march gate is WIP)
+  await page.evaluate(() => localStorage.setItem("coldsnap-screen", "menu"));
+  await page.reload({ waitUntil: "networkidle0" });
+  await clickMenu("mech");
+  await page.waitForSelector("[data-mech-hud]", { timeout: 20000 });
+  ok("mech range: HUD mounts", true);
+  await page.waitForFunction(() => {
+    const m = window.__MECHRANGE__;
+    return m && m.world.bodies.length === 11 && m.mech.hull.R[4] > 0.9;
+  }, { timeout: 20000, polling: 1000 });
+  ok("mech range: frame standing (11 bodies, hull upright)", true);
+  await page.waitForFunction(() => /STAND|WALK/.test(document.querySelector("[data-mech-status]")?.textContent || ""), { timeout: 10000, polling: 500 });
+  ok("mech range: status line live", true);
+  await page.keyboard.press("KeyR");
+  await page.waitForFunction(() => {
+    const m = window.__MECHRANGE__;
+    return m && m.mech.state.mode !== "FALLEN" && m.mech.hull.R[4] > 0.95;
+  }, { timeout: 15000, polling: 500 });
+  ok("mech range: R reissues the frame", true);
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => document.querySelector('[data-menu="mech"]'), { timeout: 10000 });
+  ok("mech range: ESC returns to menu", true);
+
   ok("no page errors during the run", pageErrors.length === 0);
   if (pageErrors.length) console.log("page errors:", pageErrors);
 } finally {

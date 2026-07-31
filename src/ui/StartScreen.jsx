@@ -8,7 +8,7 @@ const TRIAL_IDS = ["gunnery", "roadkill", "saturation", "demolition", "deep_end"
 const medalColor = (m) =>
   !m ? COLORS.btnBorder : m.deviation ? COLORS.dim : m.medal === "GOLD" ? COLORS.gold : m.medal === "SILVER" ? COLORS.text : "#b0764a";
 
-export default function StartScreen({ onPlay, onSandbox, onCampaign, onControls }) {
+export default function StartScreen({ onPlay, onSandbox, onCampaign, onControls, onMech }) {
   const [medals, setMedals] = useState(null);
   const [csMedals, setCsMedals] = useState(null);
   const [isTouch] = useState(detectTouch);
@@ -69,6 +69,11 @@ export default function StartScreen({ onPlay, onSandbox, onCampaign, onControls 
           <div style={{ color: COLORS.red, fontSize: 15, letterSpacing: 2 }}>▶ PROVING GROUNDS</div>
           <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>The original demo — seven field trials across the winter range.</div>
           {starRow(medals, "best times on record")}
+        </button>
+
+        <button data-menu="mech" style={option({ borderColor: "#5f6e80" })} onClick={onMech}>
+          <div style={{ color: "#9fb4cc", fontSize: 15, letterSpacing: 2 }}>▶ MECH TEST RANGE</div>
+          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>Biped frame MK1 on the flat pad. Gait acceptance pending — it stands, it steps, it falls.</div>
         </button>
 
         <button data-menu="controls" style={option()} onClick={onControls}>
