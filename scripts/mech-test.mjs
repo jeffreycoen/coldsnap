@@ -249,11 +249,9 @@ const run = (w, secs) => { const n = Math.round(secs / w.dt); for (let i = 0; i 
   const w = flatWorld();
   const mech = buildMech(w, { x: 0, z: -20 });
   run(w, 2);
-  // 0.41: inside the supported band. Realized cruise saturates ~0.43 m/s
-  // (touchdown latch lands 22% short of plan each step) and the game's
-  // stick maps to 0.3 max — 0.5 tested a command the game never sends,
-  // inside a known resonance pocket (0.44-0.50 falls; TODO on the board).
-  mechCommand(mech, { travel: 0.41 });
+  // 0.5: back to the spec value — the ballast rig (hull 10800/torso 1800)
+  // walks the 0.47-0.53 band clean; the residual pocket sits at ~0.44.
+  mechCommand(mech, { travel: 0.5 });
   let minUp = 1;
   for (let sec = 0; sec < 62; sec++) { run(w, 1); if (mechUp(mech) < minUp) minUp = mechUp(mech); }
   const dist = mech.hull.pos.z + 20;

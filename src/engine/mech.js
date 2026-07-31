@@ -404,7 +404,7 @@ export const RIG = {
   // chunky legs under a low flat slab body. Visual bulk in the legs, MASS
   // in the pelvis (spec §0 + §5b: their pelvis outweighs their torso 2.4:1)
   L1: 1.90, L2: 1.70, ankleH: 0.42, hipX: 0.85, hipY: -0.72,
-  hull: { hx: 1.15, hy: 0.62, hz: 0.95, m: 9500 },
+  hull: { hx: 1.15, hy: 0.62, hz: 0.95, m: 10800 }, // BALLAST (Jeff, 2026-07-31): +1300 from the torso slab — the reference rig's stability IS its pelvis-heaviness; a lower CoM shrinks the pelvis->CoM offset and the toppling moment
   hipBlock: { h: 0.20, m: 280 },
   thigh: { hx: 0.42, hy: 0.95, hz: 0.50, m: 1000 },
   shin: { hx: 0.34, hy: 0.85, hz: 0.40, m: 700 },
@@ -527,7 +527,7 @@ export function buildMech(world, opts = {}) {
     const s3b = s * s * s;
     const torsoY = hullY + (R.hull.hy + 0.58) * s;
     // the WIDE FLAT slab of the reference silhouette
-    const torso = B({ kind: "mechlink", group: "mech", mass: 3100 * s3b, hx: 2.05 * s, hy: 0.58 * s, hz: 1.15 * s, x, y: torsoY, z, friction: 0.6, restitution: 0 });
+    const torso = B({ kind: "mechlink", group: "mech", mass: 1800 * s3b, hx: 2.05 * s, hy: 0.58 * s, hz: 1.15 * s, x, y: torsoY, z, friction: 0.6, restitution: 0 });
     const om0b = Math.sqrt(world.gravity / ((hullY - groundY) * 0.85));
     const AXY = v3(0, 1, 0), REFZ = v3(0, 0, 1);
     const Iw = chainInertia([torso], v3(x, hullY + R.hull.hy * s, z), AXY) + 2 * 340 * s3b * (2.25 * s) * (2.25 * s);
@@ -587,7 +587,7 @@ export function buildMech(world, opts = {}) {
   mech.k = deriveGait(L, comH, R.hipX * s, { halfLen: R.foot.hz * s, halfWid: R.foot.hx * s, ankleOffX: R.foot.fwdOff * s }, world.gravity);
   mech.groundC = (0.01 * L) / (M * world.gravity); // spec §4, m/N
   // loop gains, sweepable (defaults = shipped tune)
-  mech.tune = { fzBase: 0.95, fzKp: 2.0, fzKd: 1.6, fzCap: 1.15, floorG: 0.85, katt: 1.2, cmgKp: 2.2, cmgKd: 0.55, cmgSlew: 1.5, yawSS: 1.0, yawSSd: 1.8, turnDS: 0.35, kickLean: 0.5, kickDur: 0.85, kickReach: 2.2, kickH: 1.0 }; // sortie-swept: full SS yaw spring + heavy SS damping + slow DS turn = 4/6 clean vs 0/6
+  mech.tune = { fzBase: 0.95, fzKp: 2.0, fzKd: 1.6, fzCap: 1.15, floorG: 0.85, katt: 1.2, cmgKp: 2.2, cmgKd: 0.55, cmgSlew: 1.5, yawSS: 1.0, yawSSd: 1.4, turnDS: 0.35, kickLean: 0.5, kickDur: 0.85, kickReach: 2.2, kickH: 1.0 }; // sortie-swept: full SS yaw spring + heavy SS damping + slow DS turn = 4/6 clean vs 0/6
   // retune the arm dampers with FINAL mass + true gait omega (build-time
   // first pass used running totals — Den Hartog is sensitive to mu/wSway)
   if (mech.arms) for (const sd of ["L", "R"]) {

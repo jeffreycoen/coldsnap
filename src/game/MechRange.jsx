@@ -50,11 +50,19 @@ export default function MechRange({ onExit }) {
     const aimBase = () => ({ x: window.innerWidth - 86, y: window.innerHeight - 130 });
     const onPD = (e) => {
       if (e.target.closest && e.target.closest("button")) return;
+      if (e.pointerType === "mouse") { S.fireHeld = true; return; } // desktop: click = fire
       const c = joyBase(), a = aimBase();
       if (S.joyId == null && Math.hypot(e.clientX - c.x, e.clientY - c.y) < 110) S.joyId = e.pointerId;
       else if (S.aimId == null && Math.hypot(e.clientX - a.x, e.clientY - a.y) < 110) S.aimId = e.pointerId;
     };
     const onPM = (e) => {
+      if (e.pointerType === "mouse") {
+        // camera yaw is fixed in the range: screen offset from centre maps
+        // straight to a world aim heading
+        const dx = e.clientX - window.innerWidth / 2, dy = e.clientY - window.innerHeight / 2;
+        if (Math.hypot(dx, dy) > 30) S.aimYaw = Math.atan2(dx, -dy);
+        return;
+      }
       if (e.pointerId === S.joyId) {
         const c = joyBase();
         S.jx = Math.max(-1, Math.min(1, (e.clientX - c.x) / 44));
@@ -68,6 +76,7 @@ export default function MechRange({ onExit }) {
       }
     };
     const onPU = (e) => {
+      if (e.pointerType === "mouse") { S.fireHeld = false; return; }
       if (e.pointerId === S.joyId) {
         S.joyId = null; S.jx = 0; S.jy = 0;
         const c = joyBase();
@@ -122,11 +131,41 @@ export default function MechRange({ onExit }) {
       if (S.keys.Space || S.keys.KeyF || S.fireHeld) mechFire(world, mech); // rate-limited inside
       S.acc += dt;
       let guard = 0;
-      while (S.acc >= world.dt && guard++ < 6) { world.events.length = 0; stepWorld(world); S.acc -= world.dt; }
+      // accumulate events across substeps — clearing per-substep starved the
+      // renderer: muzzle flashes and explosions never drew in this mode
+      const evs = [];
+      while (S.acc >= world.dt && guard++ < 6) {
+        world.events.length = 0;
+        stepWorld(world);
+        for (const e of world.events) evs.push(e);
+        S.acc -= world.dt;
+      }
+      R.consume(evs);
       const h = mech.hull;
       focus.x += (h.pos.x - focus.x) * Math.min(1, 4 * dt);
       focus.y += (h.pos.y - 1.2 - focus.y) * Math.min(1, 4 * dt);
       focus.z += (h.pos.z - focus.z) * Math.min(1, 4 * dt);
+      // targeting: the shell's actual ballistic arc from the muzzle, drawn
+      // with the same setTraj machinery the bison uses
+      try {
+        const torso = mech.waist ? mech.waist.b : mech.hull;
+        const ty2 = Math.atan2(torso.R[6], torso.R[8]);
+        const gY2 = world.field.heightAt(torso.pos.x, torso.pos.z);
+        let dy2 = -Math.max(0.03, (torso.pos.y - gY2) * 0.038);
+        const n2 = Math.hypot(1, dy2);
+        const pts = [];
+        let px = torso.pos.x + Math.sin(ty2) * 2.6, py = torso.pos.y + 0.35, pz = torso.pos.z + Math.cos(ty2) * 2.6;
+        let vx = Math.sin(ty2) / n2 * 120, vy = dy2 / n2 * 120, vz = Math.cos(ty2) / n2 * 120;
+        let hitIdx = -1;
+        for (let k2 = 0; k2 < 16; k2++) {
+          pts.push({ x: px, y: py, z: pz });
+          const st2 = 0.024;
+          vy -= 9.81 * st2;
+          px += vx * st2; py += vy * st2; pz += vz * st2;
+          if (py <= world.field.heightAt(px, pz)) { pts.push({ x: px, y: world.field.heightAt(px, pz), z: pz }); hitIdx = pts.length - 1; break; }
+        }
+        R.setTraj(pts, hitIdx);
+      } catch (e) {}
       try { R.render(dt, focus, { x: h.pos.x, z: h.pos.z }, 0); } catch (e) {}
       S.hudT += dt;
       if (S.hudT > 0.25) {
@@ -156,7 +195,7 @@ export default function MechRange({ onExit }) {
       <div data-mech-hud style={{ position: "absolute", top: 10, left: 12, color: "#c7d0dc", pointerEvents: "none" }}>
         <p style={{ ...line, color: COLORS.gold, fontSize: 14, letterSpacing: 2 }}>MECH TEST RANGE</p>
         <p style={line}>BIPED FRAME MK1 — GAIT ACCEPTANCE PENDING</p>
-        <p style={line}>{isTouch ? "left moves · right aims · ◀ ▶ turn · FIRE fires" : "W/S walk · A/D turn · Q/E strafe · SPACE fire · C punt · R reissue · ESC menu"}</p>
+        <p style={line}>{isTouch ? "left moves · right aims · ◀ ▶ turn · FIRE fires" : "W/S walk · A/D turn · Q/E strafe · MOUSE aims · CLICK/SPACE fires · C punt · R reissue"}</p>
         <p data-mech-status style={line}>
           {hud.mode === "FALLEN" ? "FRAME DOWN — R TO REISSUE" : hud.mode} · steps {hud.steps} · falls {hud.falls} · kills {hud.kills} · shots {hud.shots}
         </p>
