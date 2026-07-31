@@ -267,6 +267,41 @@ const run = (w, secs) => { const n = Math.round(secs / w.dt); for (let i = 0; i 
   ok("stop: comes to rest standing", mech.state.mode === "STAND" && Math.hypot(vx / m, vz / m) < 0.15 && mechUp(mech) > 0.9, `mode=${mech.state.mode} v=${Math.hypot(vx / m, vz / m).toFixed(2)}`);
 }
 
+// ---------------------------------------------------------------- 5b. stick-abuse sorties (compound maneuvers)
+// six scripted sorties: turns mid-march, full stop + relaunch into a turn,
+// diagonal weave + reverse gear, S-curves at speed, speed churn, turning
+// strafe. The gait must survive ALL of them (bar set 2026-07-31; it took
+// the stumble reflex, DS-only yaw work, and gentle relaunch to reach 6/6).
+{
+  const SORTIES = [
+    [[0, .3, 0, 0], [8, .3, 0, .7], [11, .3, 0, 0], [18, 0, .22, 0], [24, .25, 0, -.7], [27, .25, 0, 0], [34, 0, 0, 0]],
+    [[0, .3, 0, 0], [6, .3, 0, -.7], [9, 0, 0, 0], [12, .3, 0, .7], [16, .3, 0, 0], [24, 0, 0, 0]],
+    [[0, .2, .2, 0], [6, .2, -.2, 0], [12, .3, 0, .7], [15, -.15, 0, 0], [20, .3, 0, 0], [28, 0, 0, 0]],
+    [[0, .35, 0, 0], [10, .35, 0, -.7], [14, .35, 0, .7], [18, .35, 0, 0], [30, 0, 0, 0]],
+    [[0, .1, 0, 0], [4, .3, 0, 0], [8, .1, 0, .7], [12, .3, 0, 0], [16, 0, .22, -.7], [20, .3, 0, 0], [28, 0, 0, 0]],
+    [[0, .3, 0, .35], [12, .3, 0, -.35], [24, .3, 0, 0], [32, 0, 0, 0]],
+  ];
+  let clean = 0;
+  const detail = [];
+  for (let si = 0; si < SORTIES.length; si++) {
+    const w = flatWorld();
+    const mech = buildMech(w, { x: 0, z: -20 });
+    run(w, 2.5 + si * 0.09);
+    const sc = SORTIES[si];
+    let heading = 0, ki = 0, fellAt = 0;
+    for (let i = 0; i < 4560; i++) {
+      const t = i / 120;
+      if (ki + 1 < sc.length && t >= sc[ki + 1][0]) ki++;
+      heading += sc[ki][3] / 120;
+      mechCommand(mech, { travel: sc[ki][1], lateral: sc[ki][2], heading });
+      w.events.length = 0; stepWorld(w);
+      if (mech.state.mode === "FALLEN") { fellAt = t; break; }
+    }
+    if (!fellAt) clean++; else detail.push(`s${si}@${fellAt.toFixed(1)}`);
+  }
+  ok("sorties: all six compound-maneuver runs survive", clean === SORTIES.length, detail.join(" ") || "6/6");
+}
+
 // ---------------------------------------------------------------- 6. mortar -> catch or fall -> limp -> respawn
 {
   const w = flatWorld();

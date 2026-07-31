@@ -1068,6 +1068,11 @@ function controller(world, mech) {
     if (st.spawnDone && ((catchSide && st.settleT > 1.6) || (cmdTMag > 0.03 && launchOk))) {
       st.launchWait = 0;
       st.mode = "WALK"; st.ramp = 1.35; st.stopping = false;
+      st.postStop = 0; // the post-stop lateral skyhook TOPPLES launches (own measurement) — a relaunch inside its 4s window was sortie1's death
+      // launchRate halves the SLEW for 2 steps, but the command already
+      // slewed to full during the stand — step 1 launched at full stride.
+      // Enter gently regardless of what the stick did while standing.
+      st.cmd.f *= 0.5; st.cmd.l *= 0.5;
       if (catchSide) { st.lastSwing = catchSide === "L" ? "R" : "L"; mech.telem.catches++; }
       st.phases = planPhases(true, xi);
       st.pi = 0; st.pt = 0; st.hold = {}; st.holdCop = {};
