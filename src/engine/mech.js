@@ -653,6 +653,11 @@ export function placeMech(world, mech, x, z, yaw) {
   };
   st.hold = {}; st.holdCop = {}; st.stopping = false; st.stopPlan = null;
   st.settleT = 0; st.settledT = 0; st.spawnDone = false;
+  // stale actuator state must not survive a reissue: a held CMG torque or
+  // fall-time load filter tips the fresh spawn
+  mech.cmgH = { x: 0, y: 0, z: 0 };
+  mech._cmgT = { x: 0, y: 0, z: 0 };
+  for (const sd of ["L", "R"]) { mech.legs[sd].load = 0; mech.legs[sd].loadLpf = 0; }
   for (const j of mech.joints) { j.target = 0; j.tauFF = 0; j.stopImp = 0; }
 }
 export function respawnMech(world, mech, x, z, yaw) { placeMech(world, mech, x, z, yaw || 0); }
