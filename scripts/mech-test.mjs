@@ -133,6 +133,7 @@ const run = (w, secs) => { const n = Math.round(secs / w.dt); for (let i = 0; i 
   // this asserts the gain derivation would scale correctly)
   let gammaOk = true, worst = 0;
   for (let i = 0; i < mA.joints.length; i++) {
+    if (mA.joints[i].kp === 0) continue; // Den Hartog dampers (arms): gravity is the spring
     const ga = mA.joints[i].kd / (mA.joints[i].kp * w1.dt);
     const gb = mB.joints[i].kd / (mB.joints[i].kp * w2.dt * Math.sqrt(1.6));
     const rel = Math.abs(ga - gb) / ga;
@@ -146,9 +147,11 @@ const run = (w, secs) => { const n = Math.round(secs / w.dt); for (let i = 0; i 
     if (!(c.kdCap < 1 && c.kpCap < 1 && c.kvCap < 2)) { capsOk = false; capMsg = `${c.name} kd=${c.kdCap.toFixed(2)} kp=${c.kpCap.toFixed(2)} kv=${c.kvCap.toFixed(2)}`; }
   }
   ok("rig: stability caps pass at both scales", capsOk, capMsg);
-  // mass layout (spec §0 design gate)
-  const hullFrac = mA.hull.mass / mA.mass;
-  ok("rig: hull >= 60% of mass", hullFrac >= 0.6, `frac=${hullFrac.toFixed(2)}`);
+  // mass layout (spec §0 design gate): the constraint is LEGS LIGHT — the
+  // point-mass planner's body is everything that isn't a leg
+  const legMass = ["L", "R"].reduce((a, sd) => { const l = mA.legs[sd]; return a + [l.hipB, l.thigh, l.shin, l.ankB, l.foot].reduce((x, b) => x + b.mass, 0); }, 0);
+  const bodyFrac = (mA.mass - legMass) / mA.mass;
+  ok("rig: non-leg (planner body) >= 60% of mass", bodyFrac >= 0.6, `frac=${bodyFrac.toFixed(2)}`);
   // swing profile touchdown slope ~ 0 (finite diff, vs mid-swing)
   const h = mA.k.stepHeight;
   const slopeEnd = Math.abs(swingLift(0.999, h) - swingLift(1, h)) / 0.001;
@@ -212,15 +215,14 @@ const run = (w, secs) => { const n = Math.round(secs / w.dt); for (let i = 0; i 
   const hipY = mech.hull.pos.y + mech.geom.hipY;
   ok("stand: height held", Math.abs(hipY - mech.geom.standHip) < 0.3, `hip=${hipY.toFixed(2)} want~${mech.geom.standHip.toFixed(2)}`);
   // quiet: average CoM speed over the last 2s
+  // quiet = the PELVIS (spec §5g ideal-IMU site) — full-body CoM includes
+  // the arm dampers, whose job is to move
   let acc = 0, n = 0;
-  const com = v3(), comV = v3();
   for (let i = 0; i < 240; i++) {
     w.events.length = 0; stepWorld(w);
-    let m = 0, vx = 0, vz = 0;
-    for (const b of mech.links) { m += b.mass; vx += b.mass * b.v.x; vz += b.mass * b.v.z; }
-    acc += Math.hypot(vx / m, vz / m); n++;
+    acc += Math.hypot(mech.hull.v.x, mech.hull.v.z); n++;
   }
-  ok("stand: quiet (avg CoM speed < 0.08)", acc / n < 0.08, `avg=${(acc / n).toFixed(3)}`);
+  ok("stand: quiet (avg hull speed < 0.08)", acc / n < 0.08, `avg=${(acc / n).toFixed(3)}`);
   ok("stand: no catch storm", mech.telem.catches <= 2, `catches=${mech.telem.catches}`);
   // determinism
   const w2 = flatWorld();

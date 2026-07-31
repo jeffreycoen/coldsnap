@@ -4,7 +4,7 @@
 // the world.mechStep hook, and core carries only guarded no-op edits (marked
 // DIVERGENCE) so golden parity holds. Determinism: no rng, no Date — all
 // controller state derives from world state.
-import { addBody, __mech__ } from "./core.js";
+import { addBody, addWeld, __mech__ } from "./core.js";
 const { V, v3, qFromAxis, qMul, qNorm, rMulVec, rTMulVec, iMulVec, wake } = __mech__;
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
@@ -109,6 +109,16 @@ function buildStepPlan(st, k, axes, cmdF, cmdL, p0, stanceSide, om) {
     xiEnd = xiStart;
   }
   return { prints, xiStart: xiStart1, xiEnd: xiEnd1 };
+}
+
+// Den Hartog damper tuning for hanging appendages (spec §5, verbatim)
+export function tuneDamper(mu, wSway, I_aboutHinge, m, leverToCoM, g, hangs) {
+  const wT = wSway / (1 + mu);
+  const zeta = Math.sqrt(3 * mu / (8 * Math.pow(1 + mu, 3)));
+  const kg = (hangs ? +1 : -1) * m * g * leverToCoM;
+  const kp = Math.max(0, wT * wT * I_aboutHinge - kg);
+  const wA = Math.sqrt(Math.max(1e-6, (kp + kg) / I_aboutHinge));
+  return { kp, kd: 2 * zeta * wA * I_aboutHinge };
 }
 
 // ---------------------------------------------------------------- hinge (spec §6)
@@ -446,7 +456,8 @@ export function buildMech(world, opts = {}) {
     mech.links.push(b);
     return b;
   };
-  const hull = B({ kind: "mech", team: 1, group: opts.group || "mech", mass: R.hull.m * s3, hx: R.hull.hx * s, hy: R.hull.hy * s, hz: R.hull.hz * s, x, y: hullY, z, hp: opts.hp != null ? opts.hp : 1e9, friction: 0.6, restitution: 0 });
+  // §5b: the CMG flywheel is REAL mass (~3% of machine), on the mount body
+  const hull = B({ kind: "mech", team: 1, group: opts.group || "mech", mass: (R.hull.m + 460) * s3, hx: R.hull.hx * s, hy: R.hull.hy * s, hz: R.hull.hz * s, x, y: hullY, z, hp: opts.hp != null ? opts.hp : 1e9, friction: 0.6, restitution: 0 });
   mech.hull = hull;
   const gains = {};
   for (const side of ["L", "R"]) {
@@ -501,18 +512,51 @@ export function buildMech(world, opts = {}) {
     };
     mech.legs[side] = leg;
   }
+  // ---- upper body (spec §5, §5c): torso on a waist YAW ring, hanging arms
+  // as Den Hartog dampers (the free stability), head welded (mounts break
+  // under abuse — that's the damage model's flavor, §5e)
+  {
+    const s3b = s * s * s;
+    const torsoY = hullY + (R.hull.hy + 0.85) * s;
+    const torso = B({ kind: "mechlink", group: "mech", mass: 2600 * s3b, hx: 1.30 * s, hy: 0.85 * s, hz: 1.00 * s, x, y: torsoY, z, friction: 0.6, restitution: 0 });
+    const om0b = Math.sqrt(world.gravity / ((hullY - groundY) * 0.85));
+    const AXY = v3(0, 1, 0), REFZ = v3(0, 0, 1);
+    const Iw = chainInertia([torso], v3(x, hullY + R.hull.hy * s, z), AXY) + 2 * 340 * s3b * (1.48 * s) * (1.48 * s) + 180 * s3b * (0.0);
+    const gW = { kp: Iw * (R.BW * om0b) * (R.BW * om0b), kd: 2 * R.zeta * Math.sqrt(Iw * (R.BW * om0b) * (R.BW * om0b) * Iw), kv: 0, tauMax: 0, Ichain: Iw };
+    const waist = addHinge(mech, hull, torso, v3(x, hullY + R.hull.hy * s, z), AXY, REFZ, gW, -0.87, 0.87, "waist");
+    mech.waist = waist;
+    const shoulderY = torsoY + 0.55 * s;
+    const arms = {};
+    for (const sd of ["L", "R"]) {
+      const sxA = sd === "L" ? 1 : -1;
+      const ax0 = x + sxA * 1.48 * s;
+      const arm = B({ kind: "mechlink", group: "mech", mass: 340 * s3b, hx: 0.16 * s, hy: 0.62 * s, hz: 0.20 * s, x: ax0, y: shoulderY - 0.62 * s, z, friction: 0.6, restitution: 0 });
+      const Ia = chainInertia([arm], v3(ax0, shoulderY, z), v3(1, 0, 0));
+      const dt0 = tuneDamper(340 * s3b / (mech.links.reduce((a, b) => a + b.mass, 0)), om0b, Ia, 340 * s3b, 0.62 * s, world.gravity, true);
+      const gA = { kp: dt0.kp, kd: dt0.kd, kv: 0, tauMax: 3000 * s3b * s, Ichain: Ia };
+      arms[sd] = addHinge(mech, torso, arm, v3(ax0, shoulderY, z), v3(1, 0, 0), v3(0, 1, 0), gA, -1.3, 1.3, sd + "armSwing");
+    }
+    mech.arms = arms;
+    const head = B({ kind: "mechlink", group: "mech", mass: 180 * s3b, hx: 0.30 * s, hy: 0.26 * s, hz: 0.30 * s, x, y: torsoY + (0.85 + 0.26) * s, z, friction: 0.6, restitution: 0 });
+    addWeld(world, torso, head, 8.0e4);
+    mech.torso = torso; mech.head = head;
+    mech.upper = [torso, arms.L.b, arms.R.b, head];
+  }
   // torque ceilings from total machine weight
   const M = mech.links.reduce((a, b) => a + b.mass, 0);
   mech.mass = M;
   for (const j of mech.joints) {
-    const lever = R.levers[j.name.slice(1)];
-    j.tauMax = M * world.gravity * lever;
-    // ankles are LOAD-stiff, not bandwidth-stiff: their chain inertia is
-    // just the foot, so BW-derived kp is ~7x weaker than the CoP loads and
-    // the feet fold onto their edges (0.3-0.74 rad ankle errors in every
-    // failed trace — broken contact geometry underneath everything else).
-    // Small inertia = they don't join the vertical bounce mode.
-
+    if (j.name === "waist" || j.name.includes("armSwing")) {
+      if (j.name === "waist") { j.tauMax = 0.35 * M * world.gravity; j.kv = 0.1 * j.kd; }
+      continue;
+    }
+    // ankle ceilings DERIVE from the CoP box (spec §5e: the balance zone
+    // and the ankle ceiling are ONE rule at two sites)
+    const copX0 = 0.80 * (R.foot.hz * s - R.foot.fwdOff * s);
+    const copZ0 = 0.65 * R.foot.hx * s;
+    if (j.name.includes("anklePitch")) j.tauMax = 1.40 * M * world.gravity * copX0;
+    else if (j.name.includes("ankleRoll")) j.tauMax = 1.45 * M * world.gravity * copZ0;
+    else j.tauMax = M * world.gravity * R.levers[j.name.slice(1)];
   }
   // gait constants from measured geometry
   let cy = 0;
@@ -522,12 +566,20 @@ export function buildMech(world, opts = {}) {
   mech.geom = { L, L1: R.L1 * s, L2: R.L2 * s, ankleH: R.ankleH * s, hipX: R.hipX * s, hipY: R.hipY * s, footFwd: R.foot.fwdOff * s, standHip: R.ankleH * s + 0.93 * L, comH };
   mech.k = deriveGait(L, comH, R.hipX * s, { halfLen: R.foot.hz * s, halfWid: R.foot.hx * s, ankleOffX: R.foot.fwdOff * s }, world.gravity);
   mech.groundC = (0.01 * L) / (M * world.gravity); // spec §4, m/N
+  // retune the arm dampers with FINAL mass + true gait omega (build-time
+  // first pass used running totals — Den Hartog is sensitive to mu/wSway)
+  if (mech.arms) for (const sd of ["L", "R"]) {
+    const j = mech.arms[sd];
+    const mA = j.b.mass;
+    const dtn = tuneDamper(mA / (M - mA), mech.k.omega, j.Ichain, mA, 0.62 * s, world.gravity, true);
+    j.kp = dtn.kp; j.kd = dtn.kd;
+  }
   // rig override history: 0.045L was set when knee ceilings were low; the
   // ceilings went up (levers 1.35+) and the SHALLOW crouch turned out worse
   // — no bend reserve means no torque lever for the force feedforward and
   // no swing clearance once the hull runs a little low (measured: dragging
   // swings recording garbage prints). 0.075L keeps both.
-  mech.k.pelvisDrop = 0.075 * L;
+  mech.k.pelvisDrop = 0.085 * L; // spec value (the low-ceiling era that forced shallower is over)
   // controller state
   mech.state = {
     mode: "STAND", phase: "DS", t: 0, swing: null, lastSwing: "R", ramp: 1,
@@ -553,6 +605,13 @@ export function buildMech(world, opts = {}) {
   // self-collision exclusion: every pair within hull+leg chain (L and R legs
   // still collide with EACH OTHER — minFootSep keeps them apart in health,
   // physicality is welcome in failure)
+  {
+    const up = [hull, mech.torso, mech.head, mech.arms.L.b, mech.arms.R.b];
+    for (let i = 0; i < up.length; i++) for (let k2 = i + 1; k2 < up.length; k2++) {
+      const a = up[i], b = up[k2];
+      world._mechPairs.add(a.id < b.id ? a.id * 100000 + b.id : b.id * 100000 + a.id);
+    }
+  }
   for (const side of ["L", "R"]) {
     const leg = mech.legs[side];
     const chain = [hull, leg.hipB, leg.thigh, leg.shin, leg.ankB, leg.foot];
@@ -651,7 +710,11 @@ function mechCom(mech, out, outV) {
 }
 function soleY(leg) { return leg.foot.pos.y - leg.foot.hy; }
 function onFallMech(mech) {
-  for (const j of mech.joints) { j.target = j.angle; j.tauFF = 0; }
+  for (const j of mech.joints) {
+    j.target = j.angle; j.tauFF = 0;
+    // spec §3: kp==0 dampers (arms) get a kd boost when down
+    if (j.kp === 0) j.kd = Math.min(j.kd * 8, 0.9 * j.Ichain * 120);
+  }
   mech.state.mode = "FALLEN";
   mech.telem.falls++;
 }
@@ -714,11 +777,15 @@ function controller(world, mech) {
     const eyT = wrapPi(st.heading - yawMeas);
     // deadband: ordinary gait sway must not drain the store (spec: reference
     // the plan or the gyro brakes every step as if it were a fall)
-    const db = (e) => Math.abs(e) < 0.06 ? 0 : e - Math.sign(e) * 0.06;
+    // tilt deadband TIGHT (0.02): a tolerated standing lean walks a tall
+    // top-heavy rig slowly away; yaw keeps the wide band (heading changes
+    // are cheap and gait sway must not drain the store)
+    const dbT = (e) => Math.abs(e) < 0.02 ? 0 : e - Math.sign(e) * 0.02;
+    const dbY = (e) => Math.abs(e) < 0.06 ? 0 : e - Math.sign(e) * 0.06;
     const kpA = tauCap * 2.2, kdA = tauCap * 0.55;
-    const txD = clamp(-kpA * db(-exT) - kdA * hull.w.x, -tauCap, tauCap);
-    const tyD = clamp(kpA * db(eyT) - kdA * hull.w.y, -tauCap, tauCap);
-    const tzD = clamp(-kpA * db(-ezT) - kdA * hull.w.z, -tauCap, tauCap);
+    const txD = clamp(-kpA * dbT(-exT) - kdA * hull.w.x, -tauCap, tauCap);
+    const tyD = clamp(kpA * dbY(eyT) - kdA * hull.w.y, -tauCap, tauCap);
+    const tzD = clamp(-kpA * dbT(-ezT) - kdA * hull.w.z, -tauCap, tauCap);
     // slew: the CMG is an OUTER loop, slower than the gait (spec §5b)
     if (!mech._cmgT) mech._cmgT = { x: 0, y: 0, z: 0 };
     const slewC = (tauCap / (k.stepPeriod / 1.5)) * dt;
@@ -968,6 +1035,14 @@ function controller(world, mech) {
       }
       setLegTargets(mech, side, pelvisRef, hipYRef, st.heading, { x: p.x, y: groundRef + pressY, z: p.z });
     }
+  }
+  // waist ring (spec §5c): servo to aim - bodyYaw, slew-limited; aim
+  // defaults to the commanded heading until the turret exists (M4)
+  if (mech.waist) {
+    const aimYaw = mech.aimYaw != null ? mech.aimYaw : st.heading;
+    const wTgt = clamp(wrapPi(aimYaw - yawMeas), mech.waist.lo, mech.waist.hi);
+    mech.waist.target += clamp(wTgt - mech.waist.target, -1.74 * dt, 1.74 * dt);
+    mech.arms.L.target = 0; mech.arms.R.target = 0;
   }
   // target rates for the motors' tracking feedforward (clamped: lift-off
   // target discontinuities must not become velocity spikes)
