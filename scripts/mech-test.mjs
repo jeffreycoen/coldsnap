@@ -134,6 +134,10 @@ const run = (w, secs) => { const n = Math.round(secs / w.dt); for (let i = 0; i 
   let gammaOk = true, worst = 0;
   for (let i = 0; i < mA.joints.length; i++) {
     if (mA.joints[i].kp === 0) continue; // Den Hartog dampers (arms): gravity is the spring
+    // cap-bound joints diverge by design (kd <= 0.9*I/h wins over kp*gamma*h;
+    // the reference's own gamma groups split the same way) — compare only
+    // where the derivation, not the cap, sets kd
+    if (mA.joints[i].kd >= 0.89 * mA.joints[i].Ichain * 120 || mB.joints[i].kd >= 0.89 * mB.joints[i].Ichain * 120) continue;
     const ga = mA.joints[i].kd / (mA.joints[i].kp * w1.dt);
     // reference kd law: kd = kp*gamma*h with h the FIXED engine tick — gamma
     // is scale-free by construction, no sqrt(s) factor (mech_model assemble.js)
