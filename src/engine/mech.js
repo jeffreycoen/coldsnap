@@ -587,7 +587,7 @@ export function buildMech(world, opts = {}) {
   mech.k = deriveGait(L, comH, R.hipX * s, { halfLen: R.foot.hz * s, halfWid: R.foot.hx * s, ankleOffX: R.foot.fwdOff * s }, world.gravity);
   mech.groundC = (0.01 * L) / (M * world.gravity); // spec §4, m/N
   // loop gains, sweepable (defaults = shipped tune)
-  mech.tune = { fzBase: 0.95, fzKp: 2.0, fzKd: 1.6, fzCap: 1.15, floorG: 0.85, katt: 1.2, cmgKp: 2.2, cmgKd: 0.55, cmgSlew: 1.5 };
+  mech.tune = { fzBase: 0.95, fzKp: 2.0, fzKd: 1.6, fzCap: 1.15, floorG: 0.85, katt: 1.2, cmgKp: 2.2, cmgKd: 0.55, cmgSlew: 1.5, yawSS: 1.0, yawSSd: 1.8, turnDS: 0.35 }; // sortie-swept: full SS yaw spring + heavy SS damping + slow DS turn = 4/6 clean vs 0/6
   // retune the arm dampers with FINAL mass + true gait omega (build-time
   // first pass used running totals — Den Hartog is sensitive to mu/wSway)
   if (mech.arms) for (const sd of ["L", "R"]) {
@@ -787,13 +787,36 @@ function controller(world, mech) {
   // command slew (spec: every channel slewed)
   // launchRate (reference chassis.js): half slew for the first 2 steps
   const trRate = k.travelRate * ((st.sinceRest || 0) < 2 && st.mode === "WALK" ? 0.5 : 1);
-  st.cmd.f += clamp(st.cmdT.f - st.cmd.f, -trRate * dt, trRate * dt);
-  st.cmd.l += clamp(st.cmdT.l - st.cmd.l, -trRate * dt, trRate * dt);
-  // heading advances CONTINUOUSLY only at STAND; during WALK it steps
-  // DISCRETELY at touchdowns (see the latch) — slewing the commanded frame
-  // under planted stance feet wound the leg chains mid-cycle and every
-  // sustained turn broke at ~80 deg of accumulated arc.
-  if (st.mode !== "WALK") st.heading += clamp(wrapPi(st.headingT - st.heading), -k.turnRate * dt, k.turnRate * dt);
+  // stumble reflex: while recovering, the stick is IGNORED and the gait
+  // stops itself (the stop machinery is proven); commands resume when the
+  // frame is back. Compound maneuvers (reversals, turning strafes) kept
+  // killing runs precisely because the sortie kept commanding full stride
+  // through the stumble.
+  st.recoverT = Math.max(0, (st.recoverT || 0) - dt);
+  if (st.recoverT > 0) {
+    st.cmd.f += clamp(0 - st.cmd.f, -k.travelRate * 2 * dt, k.travelRate * 2 * dt);
+    st.cmd.l += clamp(0 - st.cmd.l, -k.travelRate * 2 * dt, k.travelRate * 2 * dt);
+  } else {
+    st.cmd.f += clamp(st.cmdT.f - st.cmd.f, -trRate * dt, trRate * dt);
+    st.cmd.l += clamp(st.cmdT.l - st.cmd.l, -trRate * dt, trRate * dt);
+  }
+  // heading rotates continuously at STAND, and during WALK only through DS
+  // phases (both feet fresh on the ground). Continuous rotation through SS
+  // broke every turn at ~80 deg (winds the loaded stance chain); an 8-deg
+  // DISCRETE step at touchdown was worse — a step input into loaded servos
+  // that bounced the frame airborne (launch-into-turn fell at 6s). DS-only
+  // slew, scaled to keep the same per-cycle turn budget, is both.
+  // stumble trigger: healthy walking never drops below R4 ~0.96; under
+  // 0.93 the frame is in trouble — shed the commands and recover
+  if (st.mode === "WALK" && hull.R[4] < 0.93) st.recoverT = Math.max(st.recoverT, 0.9);
+  // (a second, height-based trigger lives after walkH is computed)
+  {
+    const inDS = st.mode === "WALK" && st.phases && st.phases[st.pi] && st.phases[st.pi].kind === "DS";
+    if ((st.mode !== "WALK" || inDS) && !(st.mode === "WALK" && st.recoverT > 0)) {
+      const rate = st.mode === "WALK" ? k.turnRate * (k.stepPeriod / Math.max(k.tDS, 0.2)) * mech.tune.turnDS : k.turnRate;
+      st.heading += clamp(wrapPi(st.headingT - st.heading), -rate * dt, rate * dt);
+    }
+  }
   const cs = Math.cos(st.heading), sn = Math.sin(st.heading);
   const cmdW = { x: st.cmd.f * sn + st.cmd.l * cs, z: st.cmd.f * cs - st.cmd.l * sn };
   const cmdMag = Math.hypot(st.cmd.f, st.cmd.l), cmdTMag = Math.hypot(st.cmdT.f, st.cmdT.l);
@@ -835,7 +858,19 @@ function controller(world, mech) {
     const dbY = (e) => Math.abs(e) < dbYw ? 0 : e - Math.sign(e) * dbYw;
     const kpA = tauCap * mech.tune.cmgKp, kdA = tauCap * mech.tune.cmgKd;
     const txD = clamp(-kpA * dbT(-exT) - kdA * hull.w.x, -tauCap, tauCap);
-    const tyD = clamp(kpA * dbY(eyT) - kdA * hull.w.y, -tauCap, tauCap);
+    // yaw AUTHORITY only in double support (like the heading slew): the
+    // yaw spring chasing heading through SS rotates the hull over the one
+    // planted foot until it edge-rolls (R4 collapse mid-SS, the sortie
+    // killer). In SS keep only the DAMPING term.
+    // (zeroing the SS spring outright lost the frame to gait yaw — it does
+    // double duty. 0.45 spring + 1.8x damping in SS keeps hold while
+    // cutting the active rotation rate over the planted foot.)
+    const inSSy = st.mode === "WALK" && st.phases && st.phases[st.pi] && st.phases[st.pi].kind === "SS";
+    // extra SS yaw damping ONLY while a turn is active/decaying — running
+    // it through straight marches broke the fast band (0.53 fell at 8s)
+    const tf = Math.min(1, (st.turnLpf || 0) / 0.1);
+    const yawSSe = 1 - (1 - mech.tune.yawSS) * tf, yawSSde = 1 + (mech.tune.yawSSd - 1) * tf;
+    const tyD = clamp(kpA * dbY(eyT) * (inSSy ? yawSSe : 1) - kdA * (inSSy ? yawSSde : 1) * hull.w.y, -tauCap, tauCap);
     const tzD = clamp(-kpA * dbT(-ezT) - kdA * hull.w.z, -tauCap, tauCap);
     // slew: the CMG is an OUTER loop, slower than the gait (spec §5b)
     if (!mech._cmgT) mech._cmgT = { x: 0, y: 0, z: 0 };
@@ -878,6 +913,10 @@ function controller(world, mech) {
   if (st.crouchCur == null) st.crouchCur = 0;
   st.crouchCur += clamp(dropTgt - st.crouchCur, -1.5 * k.pelvisDrop * dt, 1.5 * k.pelvisDrop * dt);
   const walkH = groundRef + g.standHip - st.crouchCur;
+  // still-low frame = still recovering: without this the reflex expired on
+  // its 0.9s timer while hy sat 0.3+ below ref, commands resumed, and the
+  // machine flapped between stumble and resume until it died
+  if (st.mode === "WALK" && walkH - hipYnow > 0.3) st.recoverT = Math.max(st.recoverT, 0.4);
   // touchdown height recovery: SS sinks the hull ~0.25m of servo deflection
   // (sized for full weight on one leg). If the height ref stays at walkH
   // through the load split, that deflection recoils as a catapult — measured
@@ -1074,10 +1113,6 @@ function controller(world, mech) {
         st.holdCop = {};
         st.ramp = 1 + (st.ramp - 1) * 0.6;
         st.hRec = clamp(hipYRef - (hull.pos.y + g.hipY), 0, 0.5);
-        // discrete turn step: one cycle's worth of heading, applied with
-        // both feet fresh on the ground (max yaw authority), frame frozen
-        // for the coming cycle
-        st.heading += clamp(wrapPi(st.headingT - st.heading), -k.turnRate * k.stepPeriod, k.turnRate * k.stepPeriod);
         // path centre advances by half the commanded stride — commanded
         // laterally, so capture can't walk the centreline sideways
         if (st.centre) {
@@ -1085,14 +1120,30 @@ function controller(world, mech) {
           st.centre.x += sF * axes.fwd.x; st.centre.z += sF * axes.fwd.z;
         }
         mech.telem.steps++;
-        if (cmdTMag < 0.02 && cmdMag < 0.06) st.stopping = true;
+        // a stumble stops properly: the reflex zeroing st.cmd is not enough
+        // — stopping never triggered (the PLAYER's stick is still forward)
+        // and the machine marched in place degraded (hy 3.8, R4 0.85-0.96
+        // hopping) until a pirouette killed it. Stop to STAND, let the
+        // launch gate relaunch clean.
+        if ((cmdTMag < 0.02 || st.recoverT > 0) && cmdMag < 0.06) st.stopping = true;
+        // GEAR CHANGE = stop first: commanding travel against the current
+        // motion (reverse at speed) asked the gait for a momentum reversal
+        // mid-stride and it died fighting it (sortie2, the instant the
+        // stick flipped). Stop, stand, relaunch through the launch gate in
+        // the new direction.
+        const vFsg = _comV.x * axes.fwd.x + _comV.z * axes.fwd.z;
+        if (st.cmdT.f * vFsg < -0.045 && Math.abs(vFsg) > 0.25) st.stopping = true;
         // forward axis only: at touchdown the lateral sway velocity is at
         // its PEAK (com crossing onto the new stance) — a total-speed test
         // could never fire and the machine marched in place forever. The
         // stand absorbs moderate residual sway.
         const vSF = Math.abs(_comV.x * axes.fwd.x + _comV.z * axes.fwd.z);
         const vSL = Math.abs(_comV.x * axes.left.x + _comV.z * axes.left.z);
-        if (st.stopping && vSF < 0.22 && vSL < 0.6) {
+        // stumble-stops accept a rougher entry — STAND has catches, and a
+        // degraded hopper never passes the strict quiet test (it died
+        // marching in place waiting to qualify)
+        const vFm = st.recoverT > 0 ? 0.3 : 0.22, vLm = st.recoverT > 0 ? 0.75 : 0.6;
+        if (st.stopping && vSF < vFm && vSL < vLm) {
           st.mode = "STAND"; st.stopping = false; st.postStop = 4;
           break;
         }
@@ -1104,6 +1155,19 @@ function controller(world, mech) {
         // the kinematic reference and the stiff legs lunge (measured 1.2m
         // pelvis jump -> airborne)
         ph = st.phases[0];
+      }
+    }
+    if (st.mode === "WALK") {
+      // mid-DS stop: a stumbling machine can die inside one cycle — waiting
+      // for the NEXT touchdown to check the stop condition was too late
+      // (sortie2 went airborne and fell 0.3s before its check). Both feet
+      // planted and quiet-enough is a stand, whenever it happens.
+      if (st.stopping && st.recoverT > 0 && ph.kind === "DS" && legL.load + legR.load > 0.5 * totalW) {
+        const vF2 = Math.abs(_comV.x * axes.fwd.x + _comV.z * axes.fwd.z);
+        const vL2 = Math.abs(_comV.x * axes.left.x + _comV.z * axes.left.z);
+        if (vF2 < 0.3 && vL2 < 0.75) {
+          st.mode = "STAND"; st.stopping = false; st.postStop = 4;
+        }
       }
     }
     if (st.mode === "WALK") {
@@ -1123,9 +1187,21 @@ function controller(world, mech) {
       // swing before its landing — the machine pirouetted 1.5s on one leg).
       // Wider threshold while turning; cooldown covers a FULL replanned
       // cycle incl. its touchdown.
-      const turning = Math.abs(wrapPi(st.headingT - st.heading)) > 0.05;
+      // turn state DECAYS (~2s) instead of flipping off: the instant the
+      // turn ended, the catch threshold cliffed 1.2 -> 0.6 and a tolerated
+      // turn-induced error became an immediate catch cascade — four
+      // different sorties all died within 1.3s of their turn segment ending.
+      const turnMag = Math.abs(wrapPi(st.headingT - st.heading));
+      st.turnLpf = Math.max(turnMag, (st.turnLpf || 0) * (1 - dt / 2));
+      const turning = st.turnLpf > 0.05;
+      const catchThr = 0.6 + 0.6 * Math.min(1, st.turnLpf / 0.15);
       st._catchSameT = Math.max(0, (st._catchSameT || 0) - dt);
-      if (Math.abs(exL) > (turning ? 1.0 : 0.6) && st._emerCd === 0) {
+      // never abort a LATE swing: past ~1/3 of SS the landing is imminent
+      // and will replan from reality anyway — catching there threw away a
+      // nearly-complete step and rode one leg through a fake DS (measured:
+      // healthy turn at R4 0.97, catch at pt 0.47, airborne 0.4s later)
+      const lateSwing = ph.kind === "SS" && st.pt / ph.dur > 0.35;
+      if (Math.abs(exL) > catchThr && st._emerCd === 0 && !lateSwing) {
         let planted = legL.load >= legR.load ? "L" : "R";
         // consecutive catches picking the same planted side is the
         // one-legged-pirouette trap: the airborne foot's swing restarts
@@ -1135,10 +1211,6 @@ function controller(world, mech) {
         if (st._lastCatchSide === planted && st._catchSameT > 0) planted = planted === "L" ? "R" : "L";
         st._lastCatchSide = planted; st._catchSameT = 2.2 * k.stepPeriod;
         st.lastSwing = planted;
-        // a catch is a plan rebuild like any touchdown — heading steps here
-        // too, else it freezes through catch-heavy stretches and the
-        // pending turn piles up
-        st.heading += clamp(wrapPi(st.headingT - st.heading), -k.turnRate * k.stepPeriod, k.turnRate * k.stepPeriod);
         st.swing = null; st.hold = {}; st.holdCop = {};
         st.phases = planPhases(false, xi);
         st.pi = 0; st.pt = 0;
@@ -1224,7 +1296,7 @@ function controller(world, mech) {
       // every landing through a sustained turn (arc broke at ~80 deg). On
       // straights the strict centreline stays (easing there cost 5s of
       // survival — it erodes the lateral discipline it exists for).
-      if (Math.abs(wrapPi(st.headingT - st.heading)) > 0.05) {
+      if (st.turnLpf > 0.03) {
         const cL = (feetMid.x - st.centre.x) * axes.left.x + (feetMid.z - st.centre.z) * axes.left.z;
         const cEase = cL * Math.min(1, dt / 1.5);
         st.centre.x += cEase * axes.left.x; st.centre.z += cEase * axes.left.z;
@@ -1235,10 +1307,16 @@ function controller(world, mech) {
       dz += 0.18 * (anchorZ - (stanceP.z + dz));
     }
     let ty = groundRef + swingLift(s2, k.stepHeight);
+    // EMERGENCY PLANT: if the hull attitude collapses mid-SS (stance foot
+    // edge-rolled — R4 0.98 -> 0.83 in 0.2s measured), the swing must slam
+    // down NOW: a second support point is the only thing that arrests the
+    // pitch, and the leisurely arc never arrives in time.
+    const emergPlant = hull.R[4] < 0.94;
+    if (emergPlant) ty = groundRef;
     // descent limit: slam guard near the ground only. A flat 0.35 m/s cap
     // couldn't get the foot down from apex inside the SS window — "touchdown"
     // latched with the foot 0.4m up and the DS ran on one real leg.
-    const dLim = ty < groundRef + 0.25 * k.stepHeight ? 0.6 : 2.5;
+    const dLim = emergPlant ? 3.5 : ty < groundRef + 0.25 * k.stepHeight ? 0.6 : 2.5;
     if (st.lastSwingY != null && ty < st.lastSwingY) ty = Math.max(ty, st.lastSwingY - dLim * dt);
     st.lastSwingY = ty;
     st.swingTgt = { x: stanceP.x + dx, y: ty, z: stanceP.z + dz };
