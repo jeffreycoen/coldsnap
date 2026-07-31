@@ -292,6 +292,13 @@ const run = (w, secs) => { const n = Math.round(secs / w.dt); for (let i = 0; i 
       const t = i / 120;
       if (ki + 1 < sc.length && t >= sc[ki + 1][0]) ki++;
       heading += sc[ki][3] / 120;
+      { // steering lock, as the game applies it: command leads actual yaw by <= 0.5 rad
+        const yawNow = Math.atan2(mech.hull.R[6], mech.hull.R[8]);
+        let lead = heading - yawNow;
+        while (lead > Math.PI) lead -= 2 * Math.PI;
+        while (lead < -Math.PI) lead += 2 * Math.PI;
+        heading = yawNow + Math.max(-0.5, Math.min(0.5, lead));
+      }
       mechCommand(mech, { travel: sc[ki][1], lateral: sc[ki][2], heading });
       w.events.length = 0; stepWorld(w);
       if (mech.state.mode === "FALLEN") { fellAt = t; break; }

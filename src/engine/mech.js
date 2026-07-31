@@ -812,7 +812,9 @@ function controller(world, mech) {
   // (a second, height-based trigger lives after walkH is computed)
   {
     const inDS = st.mode === "WALK" && st.phases && st.phases[st.pi] && st.phases[st.pi].kind === "DS";
-    if ((st.mode !== "WALK" || inDS) && !(st.mode === "WALK" && st.recoverT > 0)) {
+    const pend = Math.abs(wrapPi(st.headingT - st.heading));
+    const standOk = st.mode !== "WALK" && pend <= 0.3; // small trims only — big standing turns must STEP (see the walk-entry trigger)
+    if ((standOk || inDS) && !(st.mode === "WALK" && st.recoverT > 0)) {
       const rate = st.mode === "WALK" ? k.turnRate * (k.stepPeriod / Math.max(k.tDS, 0.2)) * mech.tune.turnDS : k.turnRate;
       st.heading += clamp(wrapPi(st.headingT - st.heading), -rate * dt, rate * dt);
     }
@@ -1094,10 +1096,16 @@ function controller(world, mech) {
     // moment; a catch overrides immediately.
     const quiet = Math.hypot(xi.x - feetMid.x, xi.z - feetMid.z) < 0.14 &&
       Math.hypot(_comV.x, _comV.z) < 0.22; // xi can sit centred while com and velocity cancel — that launch still corrupts
-    if (cmdTMag > 0.03 && !quiet) st.launchWait = (st.launchWait || 0) + dt;
-    else if (cmdTMag <= 0.03) st.launchWait = 0;
+    // a big pending turn is a WALK request: a standing frame cannot rotate
+    // far without stepping — grinding the commanded frame against planted
+    // feet is the leg-winding failure in its standing form (aim sideways
+    // while parked -> pirouette -> fall). Turn by marching in place.
+    const wantTurn = Math.abs(wrapPi(st.headingT - st.heading)) > 0.3;
+    const wantGo = cmdTMag > 0.03 || wantTurn;
+    if (wantGo && !quiet) st.launchWait = (st.launchWait || 0) + dt;
+    else if (!wantGo) st.launchWait = 0;
     const launchOk = quiet || (st.launchWait || 0) > 1.6;
-    if (st.spawnDone && ((catchSide && st.settleT > 1.6) || (cmdTMag > 0.03 && launchOk))) {
+    if (st.spawnDone && ((catchSide && st.settleT > 1.6) || (wantGo && launchOk))) {
       st.launchWait = 0;
       st.mode = "WALK"; st.ramp = 1.35; st.stopping = false;
       st.postStop = 0; // the post-stop lateral skyhook TOPPLES launches (own measurement) — a relaunch inside its 4s window was sortie1's death

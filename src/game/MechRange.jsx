@@ -130,6 +130,16 @@ export default function MechRange({ onExit }) {
       }
       if (S.keys.KeyA) S.yawT += 0.7 * dt;
       if (S.keys.KeyD) S.yawT -= 0.7 * dt;
+      // steering lock: the heading COMMAND may lead the actual body by at
+      // most 0.5 rad. Unbounded lead (chassis-follow wound to 3.7 rad for a
+      // 1.6 rad aim) forced max-rate turning long after the stick released.
+      {
+        const yawNow = Math.atan2(mech.hull.R[6], mech.hull.R[8]);
+        let lead = S.yawT - yawNow;
+        while (lead > Math.PI) lead -= 2 * Math.PI;
+        while (lead < -Math.PI) lead += 2 * Math.PI;
+        S.yawT = yawNow + Math.max(-0.5, Math.min(0.5, lead));
+      }
       // aim SLEWS toward the stick heading (2.2 rad/s) instead of snapping —
       // an instant rear-flick whipped the 1800kg torso at full waist rate and
       // the reaction rocked the frame over ('aiming too fast, falls easily')
@@ -148,7 +158,13 @@ export default function MechRange({ onExit }) {
       }
       mech.aimYaw = S.aimYaw;
       if (S.aimRange != null) mech.aimRange = S.aimRange;
-      if (mech.waist && Math.abs(mech.waist.target) > 0.6 * 0.87) S.yawT += Math.sign(mech.waist.target) * 0.5 * dt;
+      // chassis-follow ONLY while moving: turning works well inside the
+      // gait, but auto-dragging a PARKED mech through a sustained in-place
+      // turn is its weakest maneuver — invisible to the player until it
+      // fell. Stationary aim holds at the waist stop; turn with A/D or by
+      // walking. Rate = actual machine capability, not 5x it.
+      if (mech.waist && Math.abs(mech.waist.target) > 0.6 * 0.87 && Math.hypot(tf, tl) > 0.05)
+        S.yawT += Math.sign(mech.waist.target) * 0.12 * dt;
       mechCommand(mech, { travel: tf, lateral: tl, heading: S.yawT });
       if (S.keys.Space || S.keys.KeyF || S.fireHeld) mechFire(world, mech); // rate-limited inside
       S.acc += dt;
