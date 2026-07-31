@@ -411,7 +411,10 @@ export const RIG = {
   // tauMax >= M*g*lever (spec §4). kp is tuned to a separate bandwidth ref.
   // knee/hipPitch sized past the naive single-support lever: the walk crouch
   // lever grows with knee bend and the measured demand pegged a 0.9 budget
-  levers: { hipRoll: 1.1, hipPitch: 1.6, knee: 1.35, anklePitch: 0.65, ankleRoll: 0.5 },
+  // proximal ceilings: single-support vault peaks ~1.5x static on the deep
+  // crouch; §5e's forgiveness rule (gameplay = engineering x4) is canon —
+  // the knee ceiling-saturated at 1.35 and buckled mid-vault (measured)
+  levers: { hipRoll: 1.4, hipPitch: 2.2, knee: 2.2, anklePitch: 0.65, ankleRoll: 0.5 },
   limits: { hipRoll: [-0.55, 0.55], hipPitch: [-1.25, 0.95], knee: [-0.02, 2.25], anklePitch: [-0.95, 0.95], ankleRoll: [-0.65, 0.65] },
   // servo bandwidth (x omega) and damping ratio. BW is sized so kp*e at
   // typical errors (~0.3 rad) commands accelerations INSIDE the physical
@@ -566,6 +569,8 @@ export function buildMech(world, opts = {}) {
   mech.geom = { L, L1: R.L1 * s, L2: R.L2 * s, ankleH: R.ankleH * s, hipX: R.hipX * s, hipY: R.hipY * s, footFwd: R.foot.fwdOff * s, standHip: R.ankleH * s + 0.93 * L, comH };
   mech.k = deriveGait(L, comH, R.hipX * s, { halfLen: R.foot.hz * s, halfWid: R.foot.hx * s, ankleOffX: R.foot.fwdOff * s }, world.gravity);
   mech.groundC = (0.01 * L) / (M * world.gravity); // spec §4, m/N
+  // loop gains, sweepable (defaults = shipped tune)
+  mech.tune = { fzBase: 0.95, fzKp: 2.0, fzKd: 1.6, fzCap: 1.15, floorG: 0.85, katt: 1.2, cmgKp: 2.2, cmgKd: 0.55, cmgSlew: 1.5 };
   // retune the arm dampers with FINAL mass + true gait omega (build-time
   // first pass used running totals — Den Hartog is sensitive to mu/wSway)
   if (mech.arms) for (const sd of ["L", "R"]) {
@@ -782,13 +787,13 @@ function controller(world, mech) {
     // are cheap and gait sway must not drain the store)
     const dbT = (e) => Math.abs(e) < 0.02 ? 0 : e - Math.sign(e) * 0.02;
     const dbY = (e) => Math.abs(e) < 0.06 ? 0 : e - Math.sign(e) * 0.06;
-    const kpA = tauCap * 2.2, kdA = tauCap * 0.55;
+    const kpA = tauCap * mech.tune.cmgKp, kdA = tauCap * mech.tune.cmgKd;
     const txD = clamp(-kpA * dbT(-exT) - kdA * hull.w.x, -tauCap, tauCap);
     const tyD = clamp(kpA * dbY(eyT) - kdA * hull.w.y, -tauCap, tauCap);
     const tzD = clamp(-kpA * dbT(-ezT) - kdA * hull.w.z, -tauCap, tauCap);
     // slew: the CMG is an OUTER loop, slower than the gait (spec §5b)
     if (!mech._cmgT) mech._cmgT = { x: 0, y: 0, z: 0 };
-    const slewC = (tauCap / (k.stepPeriod / 1.5)) * dt;
+    const slewC = (tauCap / (k.stepPeriod / mech.tune.cmgSlew)) * dt;
     mech._cmgT.x += clamp(txD - mech._cmgT.x, -slewC, slewC);
     mech._cmgT.y += clamp(tyD - mech._cmgT.y, -slewC, slewC);
     mech._cmgT.z += clamp(tzD - mech._cmgT.z, -slewC, slewC);
@@ -1069,7 +1074,8 @@ function controller(world, mech) {
     return V.add(out, j.b.pos, out);
   };
   const heightErr = (hull.pos.y + g.hipY) - hipYRef;
-  const Fz = clamp(totalW * (0.95 - 2.5 * heightErr - 0.9 * _comV.y), 0.25 * totalW, 1.45 * totalW);
+  const T = mech.tune;
+  const Fz = clamp(totalW * (T.fzBase - T.fzKp * heightErr - T.fzKd * _comV.y), 0.25 * totalW, T.fzCap * totalW);
   mech._attPf = (mech._attPf || 0) + 0.12 * (mech._attP - (mech._attPf || 0));
   mech._attRf = (mech._attRf || 0) + 0.12 * (mech._attR - (mech._attRf || 0));
   for (const side of ["L", "R"]) {
@@ -1105,7 +1111,9 @@ function controller(world, mech) {
     const midZ = inSS ? leg.foot.pos.z : (legL.foot.pos.z + legR.foot.pos.z) / 2;
     let eFwd = (copCmd.x - midX) * axes.fwd.x + (copCmd.z - midZ) * axes.fwd.z;
     let eLeft = (copCmd.x - midX) * axes.left.x + (copCmd.z - midZ) * axes.left.z;
-    eFwd = clamp(eFwd, -k.copLimitX, k.copLimitX);
+    // SS forward trim capped at half the box: a saturated toe-brake pitches
+    // the machine over its own toe (ankles trim, capture steps catch)
+    eFwd = clamp(eFwd, -k.copLimitX, inSS ? 0.5 * k.copLimitX : k.copLimitX);
     eLeft = clamp(eLeft, -k.copLimitZ, k.copLimitZ);
     const copX = leg.foot.pos.x + eFwd * axes.fwd.x + eLeft * axes.left.x;
     const copZ = leg.foot.pos.z + eFwd * axes.fwd.z + eLeft * axes.left.z;
@@ -1133,7 +1141,10 @@ function controller(world, mech) {
       // measured load: the fraction shapes the push-off, it must not order
       // the front foot slack while the vault physically arrives on it
       // (measured: F_front ~0, machine falls THROUGH the fresh leg)
-      F = Math.max(Fz * (side === "L" ? fracL : 1 - fracL), 0.85 * leg.load);
+      // floor on the LOW-PASSED load, capped at W: with §5e-strong knees a
+      // raw-spike floor is a >unity feedback loop (362k spike -> launch)
+      leg.loadLpf = (leg.loadLpf || 0) * 0.9 + leg.load * 0.1;
+      F = Math.min(Math.max(Fz * (side === "L" ? fracL : 1 - fracL), T.floorG * leg.loadLpf), totalW);
     }
     // hull attitude spring+damper through the loaded hips during ALL of
     // WALK: single support obviously, but DS too — the leg-length weight
@@ -1144,7 +1155,7 @@ function controller(world, mech) {
     const share = clamp(F / totalW, 0, 1);
     const pitchRate = hull.w.x * axes.left.x + hull.w.z * axes.left.z;
     const rollRate = hull.w.x * axes.fwd.x + hull.w.z * axes.fwd.z;
-    const Katt = mech.hull.mass * world.gravity * 1.2;
+    const Katt = mech.hull.mass * world.gravity * T.katt;
     // pitch spring at the stance hip stays (its yaw side-effect is small and
     // the CMG's yaw channel absorbs it); ROLL spring stays dead — its couple
     // at the laterally-offset foot was the dominant yaw pump
