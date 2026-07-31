@@ -42,7 +42,7 @@ export function deriveGait(L, comH, halfStance, foot, g = 9.81) {
     // spec's 0.40 assumes a stiff ankle position servo behind it; with
     // torque-only stance ankles the CoP trim IS the anti-lean authority and
     // 0.40 saturated at 3 degrees of hull lean (measured slow topple)
-    kCop: 0.90,
+    kCop: 0.40, // reference value — 0.9 exceeds the heel-lift line and rolls the foot onto its toe
   };
 }
 export function capturePoint(com, comVel, g) {
@@ -419,8 +419,8 @@ export const RIG = {
   // so the SINGLE-leg torque saturates at kpDeg of error — gravity-stiff.
   // (Rejected here twice before — both tests ran on the sign-flipped ground.)
   wlFrac: { hipRoll: 0.567, hipPitch: 0.567, knee: 0.769 },
-  kpDeg: { hipRoll: 6, hipPitch: 6, knee: 7.5, anklePitch: 6, ankleRoll: 6 },
-  limits: { hipRoll: [-0.55, 0.55], hipPitch: [-1.25, 0.95], knee: [-0.02, 2.25], anklePitch: [-0.95, 0.95], ankleRoll: [-0.65, 0.65] },
+  kpDeg: { hipRoll: 6, hipPitch: 8, knee: 12, anklePitch: 6, ankleRoll: 6 },
+  limits: { hipRoll: [-0.55, 0.55], hipPitch: [-1.25, 0.95], knee: [-0.02, 2.4], anklePitch: [-1.45, 1.45], ankleRoll: [-0.9, 0.9] },
   // servo bandwidth (x omega) and damping ratio. BW is sized so kp*e at
   // typical errors (~0.3 rad) commands accelerations INSIDE the physical
   // torque ceiling — BW 9 commanded 4.7x tauMax and the loop bang-banged the
@@ -547,7 +547,10 @@ export function buildMech(world, opts = {}) {
     }
     mech.arms = arms;
     const head = B({ kind: "mechlink", group: "mech", mass: 200 * s3b, hx: 0.62 * s, hy: 0.30 * s, hz: 0.48 * s, x, y: torsoY + (0.58 + 0.30) * s, z, friction: 0.6, restitution: 0 });
-    addWeld(world, torso, head, 8.0e4);
+    // §5e forgiveness: ordinary driving and falls must never tear — the
+    // head popped on every faceplant at 8e4. Ordnance-scale damage (M4)
+    // gets its own budget.
+    mech.headWeld = addWeld(world, torso, head, 6.0e5);
     mech.torso = torso; mech.head = head;
     mech.upper = [torso, arms.L.b, arms.R.b, head];
   }
@@ -598,7 +601,10 @@ export function buildMech(world, opts = {}) {
   // — no bend reserve means no torque lever for the force feedforward and
   // no swing clearance once the hull runs a little low (measured: dragging
   // swings recording garbage prints). 0.075L keeps both.
-  mech.k.pelvisDrop = 0.085 * L; // spec value (the low-ceiling era that forced shallower is over)
+  // 0.05L uniform (stand = walk height, no transition): the full 0.085L
+  // crouch shifts the CoM toe-ward and saturates the ankle position servos
+  // at stand (0.3 rad sag, measured) on THIS rig's geometry
+  mech.k.pelvisDrop = 0.05 * L;
   // controller state
   mech.state = {
     mode: "STAND", phase: "DS", t: 0, swing: null, lastSwing: "R", ramp: 1,
@@ -658,6 +664,7 @@ export function placeMech(world, mech, x, z, yaw) {
   }
   const st = mech.state;
   st.mode = "STAND"; st.t = 0; st.swing = null; st.ramp = 1; st.phases = null; st.pi = 0; st.pt = 0; st.comRef = null;
+  st.comOff = null; st.hRec = 0; st.crouchCur = null;
   st.heading = yaw; st.headingT = yaw;
   st.cmd = { f: 0, l: 0 }; st.cmdT = { f: 0, l: 0 };
   st.pelvis = { x, z };
@@ -667,6 +674,7 @@ export function placeMech(world, mech, x, z, yaw) {
   };
   st.hold = {}; st.holdCop = {}; st.stopping = false; st.stopPlan = null;
   st.settleT = 0; st.settledT = 0; st.spawnDone = false;
+  if (mech.headWeld && mech.headWeld.broken) { mech.headWeld.broken = false; world._weldPairsDirty = true; }
   // stale actuator state must not survive a reissue: a held CMG torque or
   // fall-time load filter tips the fresh spawn
   mech.cmgH = { x: 0, y: 0, z: 0 };
@@ -777,8 +785,10 @@ function controller(world, mech) {
   const hipYnow = hull.pos.y + g.hipY; // hull local hip offset is -|hipY|... hipY negative of hull? hipY = R.hipY*s is negative
   if (hull.R[4] < 0.6 || (hipYnow - groundRef) < 0.62 * g.standHip) { onFallMech(mech); return; }
   // command slew (spec: every channel slewed)
-  st.cmd.f += clamp(st.cmdT.f - st.cmd.f, -k.travelRate * dt, k.travelRate * dt);
-  st.cmd.l += clamp(st.cmdT.l - st.cmd.l, -k.travelRate * dt, k.travelRate * dt);
+  // launchRate (reference chassis.js): half slew for the first 2 steps
+  const trRate = k.travelRate * ((st.sinceRest || 0) < 2 && st.mode === "WALK" ? 0.5 : 1);
+  st.cmd.f += clamp(st.cmdT.f - st.cmd.f, -trRate * dt, trRate * dt);
+  st.cmd.l += clamp(st.cmdT.l - st.cmd.l, -trRate * dt, trRate * dt);
   st.heading += clamp(wrapPi(st.headingT - st.heading), -k.turnRate * dt, k.turnRate * dt);
   const cs = Math.cos(st.heading), sn = Math.sin(st.heading);
   const cmdW = { x: st.cmd.f * sn + st.cmd.l * cs, z: st.cmd.f * cs - st.cmd.l * sn };
@@ -817,7 +827,8 @@ function controller(world, mech) {
     // top-heavy rig slowly away; yaw keeps the wide band (heading changes
     // are cheap and gait sway must not drain the store)
     const dbT = (e) => Math.abs(e) < 0.02 ? 0 : e - Math.sign(e) * 0.02;
-    const dbY = (e) => Math.abs(e) < 0.06 ? 0 : e - Math.sign(e) * 0.06;
+    const dbYw = mech.state.mode === "WALK" ? 0.015 : 0.06; // swing-leg reaction pumps yaw at step frequency inside a wide deadband (measured +-0.03 -> +-0.3 by step 10)
+    const dbY = (e) => Math.abs(e) < dbYw ? 0 : e - Math.sign(e) * dbYw;
     const kpA = tauCap * mech.tune.cmgKp, kdA = tauCap * mech.tune.cmgKd;
     const txD = clamp(-kpA * dbT(-exT) - kdA * hull.w.x, -tauCap, tauCap);
     const tyD = clamp(kpA * dbY(eyT) - kdA * hull.w.y, -tauCap, tauCap);
@@ -832,8 +843,10 @@ function controller(world, mech) {
     // momentum budget: torque only while the store holds; bleed against the
     // ground through the stance (time constant ~7s) while any foot is loaded
     const loaded = legL.load + legR.load > 0.1 * W;
-    const hMag = Math.hypot(mech.cmgH.x, mech.cmgH.y, mech.cmgH.z);
-    if (hMag >= hMax) { tx *= 0.05; ty *= 0.05; tz *= 0.05; }
+    // IDEAL cmg — no store limit (reference cmg.js: the momentum-budget
+    // version was their reverted experiment; ours drained hMax in ~0.5s of
+    // pitch fighting and the machine collapsed at step 2-3 every run).
+    // cmgH stays as telemetry of what an actual store would hold.
     mech.cmgH.x += tx * dt; mech.cmgH.y += ty * dt; mech.cmgH.z += tz * dt;
     if (loaded) { const bl = Math.min(1, dt / 7); mech.cmgH.x -= mech.cmgH.x * bl; mech.cmgH.y -= mech.cmgH.y * bl; mech.cmgH.z -= mech.cmgH.z * bl; }
     const Ih = { x: 1 / Math.max(1e-9, hull.invIw[0]), y: 1 / Math.max(1e-9, hull.invIw[4]), z: 1 / Math.max(1e-9, hull.invIw[8]) };
@@ -854,13 +867,63 @@ function controller(world, mech) {
   // crouch is RATE-LIMITED (reference chassis.walkHeight, 1.5*drop/s): a
   // step input through gravity-stiff servos free-falls the machine 0.2s
   // and the landing slam seeds the lateral rock (measured at WALK entry)
-  const dropTgt = st.mode === "WALK" ? k.pelvisDrop : 0;
+  // stand AT walk height (reference: the warmup crouch IS the walk crouch —
+  // "no transition to get wrong"; crouching during the first DS ended with
+  // an upward jerk right at the transfer)
+  const dropTgt = k.pelvisDrop;
   if (st.crouchCur == null) st.crouchCur = 0;
   st.crouchCur += clamp(dropTgt - st.crouchCur, -1.5 * k.pelvisDrop * dt, 1.5 * k.pelvisDrop * dt);
   const walkH = groundRef + g.standHip - st.crouchCur;
-  const hipYRef = walkH + (1 - crouch) * (0.995 - 0.93) * g.L;
+  // touchdown height recovery: SS sinks the hull ~0.25m of servo deflection
+  // (sized for full weight on one leg). If the height ref stays at walkH
+  // through the load split, that deflection recoils as a catapult — measured
+  // 570k landing spike then BOTH feet airborne, hy +0.4 hop. hRec drops the
+  // ref to the measured hip at touchdown and re-extends at 0.5 m/s.
+  if (st.hRec == null) st.hRec = 0;
+  st.hRec = Math.max(0, st.hRec - 0.5 * dt);
+  // skyhook on the vertical mode: hull mass on gravity-stiff leg springs is
+  // underdamped — measured stance load ringing 0 -> 476k -> 0 through SS
+  // (trampoline, ballistic windows, xi runaway). Shift the height ref
+  // against hull vertical velocity: falling -> deeper deflection -> harder
+  // catch; rising -> softer push.
+  // asymmetric: strong on the falling half-cycle, weak on the rising half —
+  // symmetric damping shortened the legs mid-rise and threw the feet off
+  // the ground (0/0 load windows at late SS)
+  const vDamp = clamp(-hull.v.y * (hull.v.y < 0 ? 0.3 : 0.08), -0.12, 0.3);
+  const hipYRef = walkH + (1 - crouch) * (0.995 - 0.93) * g.L - st.hRec + vDamp;
   // gait-frame axes for catch decisions
   const axes = { fwd: { x: sn, z: cs }, left: { x: cs, z: -sn } };
+  // pelvis->CoM offset (heading frame, low-passed): the plan is a COM/xi
+  // plan but IK places the PELVIS. This rig's torso slab/head/arms put the
+  // true CoM ~0.4-0.5m ahead of the hip line at crouch, so pelvis=comRef
+  // marched the real CoM that far ahead of every reference — xi started
+  // outside ankle authority before the first lift-off. (The reference rig
+  // is pelvis-heavy, com~pelvis, so it never needed the distinction.)
+  if (!st.comOff) st.comOff = { f: 0, l: 0, iF: 0, iL: 0 };
+  {
+    const df = (_com.x - hull.pos.x) * axes.fwd.x + (_com.z - hull.pos.z) * axes.fwd.z;
+    const dl = (_com.x - hull.pos.x) * axes.left.x + (_com.z - hull.pos.z) * axes.left.z;
+    const a = Math.min(1, dt / 0.8);
+    st.comOff.f += (df - st.comOff.f) * a;
+    st.comOff.l += (dl - st.comOff.l) * a;
+    // realized-error integrator on top: ankle sag + ground compliance lean
+    // hull AND com forward together, invisible to the geometric term. On XI
+    // (not com — the velocity lead damps the loop; integrating com error at
+    // 0.8/s hunted the stand over and toppled it at ~6s), and SLOW.
+    // integrate at STAND only — during WALK xi oscillates around comRef by
+    // design and any nonzero mean winds the trim (measured: hull walked
+    // ~1m behind its own prints by step 4)
+    if (st.mode !== "WALK") {
+      const ef = (xi.x - feetMid.x) * axes.fwd.x + (xi.z - feetMid.z) * axes.fwd.z;
+      const el = (xi.x - feetMid.x) * axes.left.x + (xi.z - feetMid.z) * axes.left.z;
+      st.comOff.iF = clamp(st.comOff.iF + ef * 0.3 * dt, -0.5, 0.5);
+      st.comOff.iL = clamp(st.comOff.iL + el * 0.15 * dt, -0.3, 0.3);
+    }
+  }
+  const comOffW = {
+    x: (st.comOff.f + st.comOff.iF) * axes.fwd.x + (st.comOff.l + st.comOff.iL) * axes.left.x,
+    z: (st.comOff.f + st.comOff.iF) * axes.fwd.z + (st.comOff.l + st.comOff.iL) * axes.left.z,
+  };
   const totalW = mech.mass * world.gravity;
   // hull attitude (frame-independent: local-axis world-y components).
   // + pitch = nose down, + roll = left side up.
@@ -871,7 +934,7 @@ function controller(world, mech) {
   // shift onto the new stance; SS: hold) and backward-recursed xi boundary
   // values. ALL transitions are clock events — lift-off is a non-event;
   // latching/replanning happens ONLY at touchdown, from measured feet.
-  const planPhases = (fromStand) => {
+  const planPhases = (fromStand, xi0) => {
     const stanceSide = st.lastSwing;              // the foot that stays planted first
     const tDSr = k.tDS * st.ramp, tSSr = k.tSS * st.ramp;
     const strideF = st.stopping ? 0 : clamp(st.cmd.f * k.stepPeriod, -k.strideCap, k.strideCap);
@@ -915,6 +978,21 @@ function controller(world, mech) {
       };
       xiEnd = ph.xiStart;
     }
+    // the plan starts from REALITY (reference rebuilds from measured COM):
+    // solve the first DS's zmp A so the MEASURED xi lands on the recursion's
+    // SS-start point, then clamp A into the realizable support span
+    if (xi0 && phases.length > 1) {
+      const ph0 = phases[0], tgt = phases[1].xiStart;
+      const E0 = Math.exp(om * ph0.dur);
+      const u = (1 - E0) / (om * ph0.dur);
+      const solve = (B, x0, xT) => (B * u + x0 * E0 - xT + B) / (u + E0);
+      const fL = mech.legs.L.foot.pos, fR = mech.legs.R.foot.pos;
+      ph0.zA = {
+        x: clamp(solve(ph0.zB.x, xi0.x, tgt.x), Math.min(fL.x, fR.x) - 0.3, Math.max(fL.x, fR.x) + 0.3),
+        z: clamp(solve(ph0.zB.z, xi0.z, tgt.z), Math.min(fL.z, fR.z) - 0.3, Math.max(fL.z, fR.z) + 0.3),
+      };
+      ph0.xiStart = { x: xi0.x, z: xi0.z };
+    }
     return phases;
   };
   const phaseRefs = (ph, tIn) => {
@@ -937,9 +1015,10 @@ function controller(world, mech) {
     if (st.spawnDone && ((catchSide && st.settleT > 1.6) || cmdTMag > 0.03)) {
       st.mode = "WALK"; st.ramp = 1.35; st.stopping = false;
       if (catchSide) { st.lastSwing = catchSide === "L" ? "R" : "L"; mech.telem.catches++; }
-      st.phases = planPhases(true);
+      st.phases = planPhases(true, xi);
       st.pi = 0; st.pt = 0; st.hold = {}; st.holdCop = {};
-      st.comRef = { x: feetMid.x, z: feetMid.z };
+      st.comRef = { x: _com.x, z: _com.z };
+      st.sinceRest = 0;
       st.centre = { x: feetMid.x, z: feetMid.z };
       st.swing = null;
     }
@@ -947,6 +1026,9 @@ function controller(world, mech) {
   let zmpRef = { x: feetMid.x, z: feetMid.z };
   let xiRef = { x: feetMid.x, z: feetMid.z };
   if (st.mode === "WALK") {
+    // (tried pausing this clock during flight windows — normal brief load
+    // dips trip it constantly and the timing jitter wrecks the lateral
+    // rhythm. The clock stays steady.)
     st.pt += dt;
     let ph = st.phases[st.pi];
     // clock-driven transitions; each crossing fires its event exactly once
@@ -976,6 +1058,7 @@ function controller(world, mech) {
         st.swing = null;
         st.holdCop = {};
         st.ramp = 1 + (st.ramp - 1) * 0.6;
+        st.hRec = clamp(hipYRef - (hull.pos.y + g.hipY), 0, 0.5);
         // path centre advances by half the commanded stride — commanded
         // laterally, so capture can't walk the centreline sideways
         if (st.centre) {
@@ -988,8 +1071,13 @@ function controller(world, mech) {
           st.mode = "STAND"; st.stopping = false;
           break;
         }
-        st.phases = planPhases(false);
+        st.sinceRest = (st.sinceRest || 0) + 1;
+        st.phases = planPhases(false, xi);
         st.pi = 0;
+        // tracker stays CONTINUOUS across rebuilds (reference COMTracker) —
+        // resetting it to measured CoM imports the physical divergence into
+        // the kinematic reference and the stiff legs lunge (measured 1.2m
+        // pelvis jump -> airborne)
         ph = st.phases[0];
       }
     }
@@ -1000,15 +1088,20 @@ function controller(world, mech) {
       // COM tracker: integrate the stable LIPM ODE toward xi — the pelvis
       // reference is dynamically consistent, not a slewed chase
       if (!st.comRef) st.comRef = { x: feetMid.x, z: feetMid.z };
-      st.comRef.x += om * (xiRef.x - st.comRef.x) * dt;
-      st.comRef.z += om * (xiRef.z - st.comRef.z) * dt;
-      st.pelvis.x = st.comRef.x;
-      st.pelvis.z = st.comRef.z;
+      // chase-speed cap: when the zA solve clamps, xiRef (seeded from
+      // measured xi) diverges with reality and the tracker would drag the
+      // pelvis into the lunge at 2.5 m/s. The excess belongs to the SWING
+      // (capture), not the pelvis.
+      const vCap = (0.45 + Math.abs(st.cmd.f) + Math.abs(st.cmd.l)) * dt;
+      st.comRef.x += clamp(om * (xiRef.x - st.comRef.x) * dt, -vCap, vCap);
+      st.comRef.z += clamp(om * (xiRef.z - st.comRef.z) * dt, -vCap, vCap);
+      st.pelvis.x = st.comRef.x - comOffW.x;
+      st.pelvis.z = st.comRef.z - comOffW.z;
     }
   } else {
-    // STAND: pelvis eases to the feet midpoint
-    st.pelvis.x += clamp(feetMid.x - st.pelvis.x, -1.2 * dt, 1.2 * dt);
-    st.pelvis.z += clamp(feetMid.z - st.pelvis.z, -1.2 * dt, 1.2 * dt);
+    // STAND: pelvis eases to where the CoM lands on the feet midpoint
+    st.pelvis.x += clamp(feetMid.x - comOffW.x - st.pelvis.x, -1.2 * dt, 1.2 * dt);
+    st.pelvis.z += clamp(feetMid.z - comOffW.z - st.pelvis.z, -1.2 * dt, 1.2 * dt);
     st.comRef = null;
   }
   const xiErr = { x: xi.x - xiRef.x, z: xi.z - xiRef.z };
@@ -1017,7 +1110,25 @@ function controller(world, mech) {
   if (st.mode === "WALK" && st.swing && st.phases[st.pi] && st.phases[st.pi].kind === "SS") {
     const ph2 = st.phases[st.pi];
     const s2 = clamp(st.pt / ph2.dur, 0, 1);
-    const t2 = swingTargetXZ(s2, st.from, st.nom, xiErr, st.hold, k);
+    // lateral capture damped to 0.65: full-gain lateral catches overshoot
+    // outboard and the touchdown latch bakes the overshoot into the next
+    // stance (period-2 sway growth).
+    const xef = xiErr.x * axes.fwd.x + xiErr.z * axes.fwd.z;
+    const xel = (xiErr.x * axes.left.x + xiErr.z * axes.left.z) * 0.65;
+    const xiErrD = { x: xef * axes.fwd.x + xel * axes.left.x, z: xef * axes.fwd.z + xel * axes.left.z };
+    const t2 = swingTargetXZ(s2, st.from, st.nom, xiErrD, st.hold, k);
+    // Raibert speed brake: each touchdown replan seeds xiRef from measured
+    // xi, so xiErr resets to ~0 and accumulated over-speed is invisible to
+    // capture — the march ratcheted 0.22 -> 0.7 m/s until a step missed.
+    // Velocity excess over the COMMAND survives every replan.
+    // FORWARD axis only — lateral com velocity is the gait's own sway, and
+    // braking it wrecked the rhythm and yaw (drift -5 rad).
+    {
+      const vf = clamp(
+        ((_comV.x - cmdW.x) * axes.fwd.x + (_comV.z - cmdW.z) * axes.fwd.z) / om * 1.3,
+        -0.7 * k.strideCap, 0.7 * k.strideCap);
+      t2.x += vf * axes.fwd.x * smoothstep(s2); t2.z += vf * axes.fwd.z * smoothstep(s2);
+    }
     const stanceP = st.prints[ph2.stance];
     let dx = t2.x - stanceP.x, dz = t2.z - stanceP.z;
     const lat = dx * axes.left.x + dz * axes.left.z;
@@ -1030,17 +1141,41 @@ function controller(world, mech) {
     // commanded path centre + nominal stance offset — capture feedback
     // narrowing the base was walking the prints inboard
     if (st.centre) {
+      // forward component slaves to the feet: the centre is LATERAL path
+      // discipline only. Advancing it by the commanded stride let the
+      // machine outrun it (walks 2-3x command) — after ~12 steps the 3m
+      // lag made centrePull drag every landing backward against the speed
+      // brake until a step failed. That was the fixed 13-step horizon.
+      const cF = (feetMid.x - st.centre.x) * axes.fwd.x + (feetMid.z - st.centre.z) * axes.fwd.z;
+      st.centre.x += cF * axes.fwd.x; st.centre.z += cF * axes.fwd.z;
       const anchorX = st.centre.x + sideSign * k.halfStance * axes.left.x;
       const anchorZ = st.centre.z + sideSign * k.halfStance * axes.left.z;
       dx += 0.18 * (anchorX - (stanceP.x + dx));
       dz += 0.18 * (anchorZ - (stanceP.z + dz));
     }
     let ty = groundRef + swingLift(s2, k.stepHeight);
-    if (st.lastSwingY != null && ty < st.lastSwingY) ty = Math.max(ty, st.lastSwingY - 0.35 * dt);
+    // descent limit: slam guard near the ground only. A flat 0.35 m/s cap
+    // couldn't get the foot down from apex inside the SS window — "touchdown"
+    // latched with the foot 0.4m up and the DS ran on one real leg.
+    const dLim = ty < groundRef + 0.25 * k.stepHeight ? 0.6 : 2.5;
+    if (st.lastSwingY != null && ty < st.lastSwingY) ty = Math.max(ty, st.lastSwingY - dLim * dt);
     st.lastSwingY = ty;
     st.swingTgt = { x: stanceP.x + dx, y: ty, z: stanceP.z + dz };
   }
   // ---- leg targets
+  // SS knee dip: the compass vault rides the pelvis up over the stiff
+  // stance leg mid-SS and drops it ~0.1m onto every landing — the impact
+  // spikes (339k..630k measured) bounced the machine ballistic and the
+  // lateral rhythm corrupted within ~3 steps. Flexing through mid-stance
+  // absorbs the ripple at the source.
+  let hipYEff = hipYRef;
+  if (st.mode === "WALK" && st.phases && st.phases[st.pi] && st.phases[st.pi].kind === "SS") {
+    const phN = st.phases[st.pi];
+    // monotonic: land BENT. The sin() version re-extended exactly at
+    // touchdown and fed the impact it was meant to absorb. hRec's rate
+    // limit re-extends through the following DS.
+    hipYEff = hipYRef; // dip experiment: 0.12 sin and monotonic both LOST distance (11 vs 13 steps) — the vault is not the binding constraint
+  }
   const pelvisRef = { x: st.pelvis.x, z: st.pelvis.z };
   for (const side of ["L", "R"]) {
     const leg = mech.legs[side];
@@ -1054,7 +1189,7 @@ function controller(world, mech) {
       // the hull leans ~0.3m toward the stance side, and reference-pelvis
       // IK puts the real hip that far inboard of where it thinks — the
       // "droop" no gain or gravity comp could fix
-      setLegTargets(mech, side, { x: hull.pos.x, z: hull.pos.z }, Math.min(hipYRef, hipActual + 0.05), yawMeas, st.swingTgt, true);
+      setLegTargets(mech, side, { x: hull.pos.x, z: hull.pos.z }, Math.min(hipYEff, hipActual + 0.05), yawMeas, st.swingTgt, true);
     } else {
       const p = st.prints[side];
       // DS weight transfer is LEG-LENGTH asymmetry: extend the push-off leg
@@ -1064,7 +1199,7 @@ function controller(world, mech) {
       // side (measured: xi driven backward through every DS).
       // no leg-length press: the plan's DS ZMP ramp through the ankle CoP is
       // the whole weight-shift mechanism (reference)
-      setLegTargets(mech, side, pelvisRef, hipYRef, st.heading, { x: p.x, y: groundRef, z: p.z });
+      setLegTargets(mech, side, pelvisRef, hipYEff, st.heading, { x: p.x, y: groundRef, z: p.z });
     }
   }
   // waist ring (spec §5c): servo to aim - bodyYaw, slew-limited; aim
@@ -1097,6 +1232,8 @@ function controller(world, mech) {
     let eLeft = (copCmd.x - midX) * axes.left.x + (copCmd.z - midZ) * axes.left.z;
     eFwd = clamp(eFwd, -k.copLimitX, k.copLimitX);
     eLeft = clamp(eLeft, -k.copLimitZ, k.copLimitZ);
+    // (full box both axes — reference; earlier half-caps were mitigations
+    // for the dead architecture)
     const Fff = Math.min(leg.load, Fcap);
     leg.anklePitch.tauFF = clamp(k.kCop * Fff * eFwd, -0.9 * leg.anklePitch.tauMax, 0.9 * leg.anklePitch.tauMax);
     // roll trim: full gain in SS; HALF gain in DS — the reference gates it

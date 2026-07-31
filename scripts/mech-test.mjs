@@ -220,7 +220,8 @@ const run = (w, secs) => { const n = Math.round(secs / w.dt); for (let i = 0; i 
   }
   ok("stand: upright for 10s", minUp > 0.9 && !mechFallen(mech), `minUp=${minUp.toFixed(3)}`);
   const hipY = mech.hull.pos.y + mech.geom.hipY;
-  ok("stand: height held", Math.abs(hipY - mech.geom.standHip) < 0.3, `hip=${hipY.toFixed(2)} want~${mech.geom.standHip.toFixed(2)}`);
+  const wantHip = mech.geom.standHip - mech.k.pelvisDrop; // stands at walk height (reference)
+  ok("stand: height held", Math.abs(hipY - wantHip) < 0.3, `hip=${hipY.toFixed(2)} want~${wantHip.toFixed(2)}`);
   // quiet: average CoM speed over the last 2s
   // quiet = the PELVIS (spec §5g ideal-IMU site) — full-body CoM includes
   // the arm dampers, whose job is to move
