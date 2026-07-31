@@ -182,7 +182,8 @@ function prepHinge(j, dt) {
   // inertia overestimates in bent poses; the iterate-and-remeasure loop
   // self-corrects that direction.
   const Ieff = j.Ichain;
-  const kpEff = j.kp * (j.kpMul || 1);
+  const auth = j._auth || 1;
+  const kpEff = j.kp * (j.kpMul || 1) * auth;
   const kdEff = j.kd * (j.kdMul || 1) + j.kv * Math.abs(wRel);
   const e = wrapPi(j.target - j.angle);
   // target-rate feedforward: damp (wRel - targetRate), not wRel — a position-
@@ -191,7 +192,7 @@ function prepHinge(j, dt) {
   const tr = j.tRate || 0;
   j._wTgt = tr + ((wRel - tr) + (kpEff * e + j.tauFF) * dt / Ieff) / (1 + kdEff * dt / Ieff);
   j._Ieff = Ieff;
-  j._mBudget = j.tauMax * dt;
+  j._mBudget = j.tauMax * dt * auth;
   j._sAcc = 0;
   // motor: SINGLE-SHOT per tick (spec: "compute once per tick ... apply").
   // Per-iteration re-application is wrong in BOTH inertia conventions here:
@@ -587,6 +588,7 @@ export function placeMech(world, mech, x, z, yaw) {
     R: { x: mech.legs.R.foot.pos.x, z: mech.legs.R.foot.pos.z },
   };
   st.hold = {}; st.holdCop = {}; st.stopping = false; st.stopPlan = null;
+  st.settleT = 0; st.settledT = 0; st.spawnDone = false;
   for (const j of mech.joints) { j.target = 0; j.tauFF = 0; j.stopImp = 0; }
 }
 export function respawnMech(world, mech, x, z, yaw) { placeMech(world, mech, x, z, yaw || 0); }
@@ -697,15 +699,57 @@ function controller(world, mech) {
   // The SWING leg solves in MEASURED yaw so it lands on its world target
   // regardless of hull spin (commanded-frame swing swept the foot 2.6m).
   const yawMeas = Math.atan2(hull.R[6], hull.R[8]);
-  // stabilizer gyro: yaw is unactuated and the hip attitude torques react as
-  // horizontal force couples at laterally-offset feet — a structural yaw
-  // pump that out-torques foot friction (measured: planted feet skating,
-  // 58 deg runaway). House style: the bison's suspension servo damps its
-  // hull the same way (core stepStatus); a walker's gyro does yaw.
-  hull.w.y -= Math.min(1, 6 * dt) * hull.w.y;
-  hull.w.y += clamp(wrapPi(st.heading - yawMeas) * 2.0, -1.2, 1.2) * dt * 10;
+  // CMG (spec §5b): the attitude battery, mounted to the hull (heaviest
+  // body). PD on tilt+yaw, torque budget 0.13*W*comH, momentum store with
+  // ground-bleed desaturation. This REPLACES hip attitude springs — their
+  // reaction couples at laterally-offset feet were the yaw pump.
+  {
+    const W = mech.mass * world.gravity;
+    const tauCap = 0.13 * W * mech.geom.comH;
+    const hMax = tauCap * 0.5;
+    if (mech.cmgH == null) mech.cmgH = { x: 0, y: 0, z: 0 };
+    // attitude errors: tilt from R (level target), yaw vs commanded heading
+    const exT = -Math.asin(clamp(-hull.R[7], -1, 1));  // pitch err (nose down = +R7 neg)
+    const ezT = -Math.asin(clamp(hull.R[1], -1, 1));   // roll err
+    const eyT = wrapPi(st.heading - yawMeas);
+    // deadband: ordinary gait sway must not drain the store (spec: reference
+    // the plan or the gyro brakes every step as if it were a fall)
+    const db = (e) => Math.abs(e) < 0.06 ? 0 : e - Math.sign(e) * 0.06;
+    const kpA = tauCap * 2.2, kdA = tauCap * 0.55;
+    const txD = clamp(-kpA * db(-exT) - kdA * hull.w.x, -tauCap, tauCap);
+    const tyD = clamp(kpA * db(eyT) - kdA * hull.w.y, -tauCap, tauCap);
+    const tzD = clamp(-kpA * db(-ezT) - kdA * hull.w.z, -tauCap, tauCap);
+    // slew: the CMG is an OUTER loop, slower than the gait (spec §5b)
+    if (!mech._cmgT) mech._cmgT = { x: 0, y: 0, z: 0 };
+    const slewC = (tauCap / (k.stepPeriod / 1.5)) * dt;
+    mech._cmgT.x += clamp(txD - mech._cmgT.x, -slewC, slewC);
+    mech._cmgT.y += clamp(tyD - mech._cmgT.y, -slewC, slewC);
+    mech._cmgT.z += clamp(tzD - mech._cmgT.z, -slewC, slewC);
+    let tx = mech._cmgT.x, ty = mech._cmgT.y, tz = mech._cmgT.z;
+    // momentum budget: torque only while the store holds; bleed against the
+    // ground through the stance (time constant ~7s) while any foot is loaded
+    const loaded = legL.load + legR.load > 0.1 * W;
+    const hMag = Math.hypot(mech.cmgH.x, mech.cmgH.y, mech.cmgH.z);
+    if (hMag >= hMax) { tx *= 0.05; ty *= 0.05; tz *= 0.05; }
+    mech.cmgH.x += tx * dt; mech.cmgH.y += ty * dt; mech.cmgH.z += tz * dt;
+    if (loaded) { const bl = Math.min(1, dt / 7); mech.cmgH.x -= mech.cmgH.x * bl; mech.cmgH.y -= mech.cmgH.y * bl; mech.cmgH.z -= mech.cmgH.z * bl; }
+    const Ih = { x: 1 / Math.max(1e-9, hull.invIw[0]), y: 1 / Math.max(1e-9, hull.invIw[4]), z: 1 / Math.max(1e-9, hull.invIw[8]) };
+    hull.w.x += tx * dt / Ih.x;
+    hull.w.y += ty * dt / Ih.y;
+    hull.w.z += tz * dt / Ih.z;
+  }
+  // SPAWN SEQUENCE (spec §5f): settle with both feet loaded (~0.4s) -> crouch
+  // ramp to walk height (~1.4s) -> only then command authority. Cold-starting
+  // servos at full gain on frame 1 jumps the machine.
+  if (!st.spawnDone) {
+    const settled = legL.load + legR.load > 0.5 * mech.mass * world.gravity;
+    st.settledT = (st.settledT || 0) + (settled && st.settleT > 0.4 ? dt : 0);
+    if (st.settledT > 1.4) st.spawnDone = true;
+  }
+  mech.auth = st.spawnDone ? 1 : clamp(0.35 + st.settleT / 0.8, 0.35, 1);
+  const crouch = st.spawnDone ? 1 : smoothstep(Math.min(1, (st.settledT || 0) / 1.4));
   const walkH = groundRef + g.standHip - (st.mode === "WALK" ? k.pelvisDrop : 0);
-  const hipYRef = walkH;
+  const hipYRef = walkH + (1 - crouch) * (0.995 - 0.93) * g.L;
   // gait-frame axes for catch decisions
   const axes = { fwd: { x: sn, z: cs }, left: { x: cs, z: -sn } };
   const totalW = mech.mass * world.gravity;
@@ -714,13 +758,14 @@ function controller(world, mech) {
   mech._attP = clamp(Math.atan2(-hull.R[7], Math.hypot(hull.R[6], hull.R[8])), -0.5, 0.5);
   mech._attR = clamp(Math.asin(clamp(hull.R[1], -1, 1)), -0.5, 0.5);
   // ---- mode logic (phase clock first, then the support reference)
+  for (const j of mech.joints) j._auth = mech.auth != null ? mech.auth : 1;
   if (st.mode === "STAND") {
     const eF = (xi.x - feetMid.x) * axes.fwd.x + (xi.z - feetMid.z) * axes.fwd.z;
     const eL = (xi.x - feetMid.x) * axes.left.x + (xi.z - feetMid.z) * axes.left.z;
     let catchSide = null;
     if (Math.abs(eF) > k.copLimitX || Math.abs(eL) > k.copLimitZ + k.halfStance)
       catchSide = eL > 0 ? "L" : "R";
-    if ((catchSide && st.settleT > 1.6) || cmdTMag > 0.03) {
+    if (st.spawnDone && ((catchSide && st.settleT > 1.6) || cmdTMag > 0.03)) {
       st.mode = "WALK"; st.phase = "DS"; st.t = 0; st.ramp = 1.35;
       st.stopping = false; st.stopPlan = null;
       if (catchSide) { st.lastSwing = catchSide === "L" ? "R" : "L"; mech.telem.catches++; }
@@ -739,12 +784,10 @@ function controller(world, mech) {
       // replan EVERY DS tick from the measured stance print (spec: replan at
       // every touchdown from the measured landing; per-tick also tracks the
       // slewing command and heading)
-      // overrunning? plan strides sized to ACTUAL speed (up to max stride) —
-      // stepping longer to catch up is the reflex; a plan that keeps striding
-      // for 0.4 m/s under a 1.2 m/s body just falls behind politely
-      const vF = _comV.x * axes.fwd.x + _comV.z * axes.fwd.z;
-      const vMax = k.strideCap / k.stepPeriod;
-      const cmdEffF = st.stopping ? 0 : Math.max(st.cmd.f, Math.min(vF, vMax));
+      // plan strides from the COMMAND, exactly: with the DCM drive re-solving
+      // each tick, an over-speed body meets a CoP planted AHEAD of xi and
+      // brakes. (The old sized-to-actual-speed catch-up reinforced runaways.)
+      const cmdEffF = st.stopping ? 0 : st.cmd.f;
       const cmdEffL = st.stopping ? 0 : st.cmd.l;
       st.plan = buildStepPlan(st, k, axes, cmdEffF, cmdEffL, st.prints[st.lastSwing], st.lastSwing, om);
       const nextSwing = st.lastSwing === "L" ? "R" : "L";
@@ -1011,10 +1054,11 @@ function controller(world, mech) {
       const xLl = legL.foot.pos.x * axes.left.x + legL.foot.pos.z * axes.left.z;
       const xRl = legR.foot.pos.x * axes.left.x + legR.foot.pos.z * axes.left.z;
       const fracL = clamp((pLat - xRl) / Math.max(0.2, xLl - xRl), 0, 1);
-      // split the HEIGHT-LOOP force, not raw weight: fractions of exactly
-      // totalW have zero net vertical authority, and the deficit born in the
-      // first DS was never repaid (measured: enters walking 0.3m low)
-      F = Fz * (side === "L" ? fracL : 1 - fracL);
+      // split the HEIGHT-LOOP force by the CoP fraction — but FLOOR at the
+      // measured load: the fraction shapes the push-off, it must not order
+      // the front foot slack while the vault physically arrives on it
+      // (measured: F_front ~0, machine falls THROUGH the fresh leg)
+      F = Math.max(Fz * (side === "L" ? fracL : 1 - fracL), 0.85 * leg.load);
     }
     // hull attitude spring+damper through the loaded hips during ALL of
     // WALK: single support obviously, but DS too — the leg-length weight
@@ -1026,8 +1070,11 @@ function controller(world, mech) {
     const pitchRate = hull.w.x * axes.left.x + hull.w.z * axes.left.z;
     const rollRate = hull.w.x * axes.fwd.x + hull.w.z * axes.fwd.z;
     const Katt = mech.hull.mass * world.gravity * 1.2;
+    // pitch spring at the stance hip stays (its yaw side-effect is small and
+    // the CMG's yaw channel absorbs it); ROLL spring stays dead — its couple
+    // at the laterally-offset foot was the dominant yaw pump
     const attTauP = Katt * (mech._attPf + 0.3 * pitchRate) * share * walkGain;
-    const attTauR = Katt * (mech._attRf + 0.3 * rollRate) * share * walkGain;
+    const attTauR = 0;
     for (const [j, kind] of [[leg.hipPitch, "p"], [leg.knee, "p"], [leg.anklePitch, "p"], [leg.hipRoll, "r"], [leg.ankleRoll, "r"]]) {
       jointWorld(j, _h6);
       const dFwd = (copX - _h6.x) * axes.fwd.x + (copZ - _h6.z) * axes.fwd.z;
