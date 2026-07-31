@@ -616,6 +616,9 @@ function stepProjectiles(world) {
       // barrel. 0.35s clears the hull at any speed; after that you can shell
       // yourself fair and square.
       if (p.spec.owner != null && b.id === p.spec.owner && p.life < 0.35) continue;
+      // DIVERGENCE (guarded): a mech is 15 bodies — one owner id can't cover
+      // a shoulder-launched round clearing its own arm. No mechRef in the demo.
+      if (p.spec.ownerMech && b.mechRef === p.spec.ownerMech && p.life < 0.35) continue;
       const t = segBoxHit(p0, p.pos, b);
       if (t >= 0 && t < bestT) { bestT = t; hitBody = b; }
     }
@@ -628,6 +631,18 @@ function stepProjectiles(world) {
       // alone. Locked by scripts/righting-test.mjs.
       if (hitBody && hitBody.alive && (hitBody.kind === "unit" || hitBody.kind === "vehicle" || hitBody.kind === "truck")) {
         applyDamage(world, hitBody, p.spec.kind === "shell" ? 90 : p.spec.kind === "mg" ? 11 : 55, { cause: CAUSE.PROJECTILE, attacker: p.spec.attacker || "world", volley: p.spec.volley || 0 });
+      }
+      // DIVERGENCE (guarded): shells with declared mass deliver their real
+      // momentum m*v to what they hit, on top of blast — no demo spec sets pmass.
+      if (p.spec.pmass && hitBody && hitBody.invM > 0) {
+        const sp = V.len(p.v);
+        if (sp > 1e-6) {
+          const J = p.spec.pmass * sp;
+          hitBody.v.x += p.v.x / sp * J * hitBody.invM;
+          hitBody.v.y += p.v.y / sp * J * hitBody.invM;
+          hitBody.v.z += p.v.z / sp * J * hitBody.invM;
+          wake(hitBody);
+        }
       }
       explode(world, hx, hy, hz, p.spec);
       list.splice(i, 1);
@@ -1478,9 +1493,10 @@ function classifyImpacts(world) {
     const dv = pn * victim.invM;
     if (victim.kind === "unit" && other && other.mass > 200 && dv > 1.2) victim.hitT = world.t; // staggered by vehicles/heavy debris; squadmate shoulder-checks don't floor you
     if (victim.kind === "unit" && other && other.kind === "chunk" && other.fallingSince > 0 && world.t - other.fallingSince < 6 && dv > 0.8) victim.hitT = world.t; // flying masonry floors you at any weight
-    if (victim.kind === "unit" && other && other.kind === "vehicle" && other.pos.y > victim.pos.y + 0.2 && pn > 60) {
+    if (victim.kind === "unit" && other && (other.kind === "vehicle" || other.kind === "mechfoot") && other.pos.y > victim.pos.y + 0.2 && pn > 60) {
       // a tank bearing down from above is not a wrestling match: instant CRUSH —
-      if (victim.alive) applyDamage(world, victim, 1e6, { cause: CAUSE.CRUSH, attacker: other.id === world.bisonId ? "player" : "world" });
+      // (a mech foot doubly so — DIVERGENCE, guarded: no mechfoot in the demo)
+      if (victim.alive) applyDamage(world, victim, 1e6, { cause: CAUSE.CRUSH, attacker: other.id === world.bisonId || other.kind === "mechfoot" ? "player" : "world" });
       // — and the hull grinds the body into the snow rather than beaching on it:
       // fast-forward the corpse's de-solidify clock so the tank settles in ~0.3s
       victim.deadT = Math.min(victim.deadT || world.t, world.t - 3.7);
@@ -1503,8 +1519,8 @@ function classifyImpacts(world) {
       // 340kg blocks did at the same drop, so the lethal line moves with them (3.2 -> 2.2)
       dmg = dv * 20;
       info = { cause: CAUSE.COLLAPSE, attacker: (other.lastImp && other.lastImp.attacker) || "world", killerId: other.id, buildingId: other.group };
-    } else if ((other.kind === "vehicle" || other.kind === "wreck") && V.len(other.v) > 2.0 && dv > 2.6 && victim.kind === "unit") {
-      const att = other.driver === "player" ? "player" : world.t - other.lastPlayerTouch < 3.5 ? "player" : "world";
+    } else if ((other.kind === "vehicle" || other.kind === "wreck" || other.mechRef) && V.len(other.v) > 2.0 && dv > 2.6 && victim.kind === "unit") {
+      const att = other.driver === "player" || other.mechRef ? "player" : world.t - other.lastPlayerTouch < 3.5 ? "player" : "world";
       dmg = dv * 18;
       info = { cause: CAUSE.CRUSH, attacker: att, killerId: other.id };
     } else if (dv > (other && other.kind === "ice" ? 24 : 8)) {

@@ -3,8 +3,8 @@
 // gait bring-up is WATCHABLE on the page while the march gate is WIP.
 // The machine stands, weight-shifts, steps — and still falls; R reissues it.
 import React, { useEffect, useRef, useState } from "react";
-import { makeWorld, makeField, stepWorld } from "../engine/core.js";
-import { buildMech, mechCommand, respawnMech, mechFallen } from "../engine/mech.js";
+import { makeWorld, makeField, stepWorld, addBody } from "../engine/core.js";
+import { buildMech, mechCommand, respawnMech, mechFallen, mechFire, mechPunt } from "../engine/mech.js";
 import { makeRenderer } from "../render/renderer.js";
 import { detectTouch } from "./runner/trials.js";
 import { BUILDERS } from "./scenario.js";
@@ -15,7 +15,7 @@ export default function MechRange({ onExit }) {
   const knobRef = useRef(null);
   const aimKnobRef = useRef(null);
   const isTouch = detectTouch();
-  const [hud, setHud] = useState({ mode: "STAND", steps: 0, falls: 0 });
+  const [hud, setHud] = useState({ mode: "STAND", steps: 0, falls: 0, kills: 0, shots: 0 });
   useEffect(() => {
     const field = makeField(64, 1.7, 5);
     field.h.fill(0);
@@ -29,13 +29,22 @@ export default function MechRange({ onExit }) {
     BUILDERS.house(world, field, pg, { x: -2, z: 34, nx: 6, nz: 4, doorIx: 0, group: "rangeC" });
     BUILDERS.hangar(world, field, pg, { x: 18, z: -14, group: "rangeH" });
     for (const b of world.bodies) if (b.kind === "chunk") { b.sleeping = true; b.sleepT = 1; }
+    // live targets: a rifle squad, two scouts, a truck — mass, hp, and the
+    // full damage pipeline (shell, blast, CRUSH underfoot all attribute)
+    for (let i = 0; i < 5; i++) addBody(world, { kind: "unit", team: 2, group: "tgtSquad", mass: 82, hx: 0.26, hy: 0.9, hz: 0.26, x: -6 + i * 2.1, y: 1.9, z: 9 + (i % 2) * 2, hp: 30, friction: 0.55 });
+    addBody(world, { kind: "vehicle", team: 2, group: "tgtScout", mass: 950, hx: 1.25, hy: 0.7, hz: 1.85, x: 7, y: 1.7, z: 14, hp: 55, friction: 0.7 });
+    addBody(world, { kind: "vehicle", team: 2, group: "tgtScout", mass: 950, hx: 1.25, hy: 0.7, hz: 1.85, x: -9, y: 1.7, z: 5, hp: 55, friction: 0.7 });
+    addBody(world, { kind: "truck", team: 2, group: "tgtTruck", vtype: "truck", mass: 1400, hx: 1.15, hy: 1.05, hz: 2.6, x: 5, y: 2.05, z: -7, hp: 120, friction: 0.6 });
     const R = makeRenderer(canvasRef.current, world, { town: false });
 
-    const S = { acc: 0, last: performance.now(), keys: {}, yawT: 0, aimYaw: null, raf: 0, hudT: 0, dead: false, joyId: null, jx: 0, jy: 0, aimId: null, ax: 0, ay: 0 };
+    const S = { acc: 0, last: performance.now(), keys: {}, yawT: 0, aimYaw: null, raf: 0, hudT: 0, dead: false, joyId: null, jx: 0, jy: 0, aimId: null, ax: 0, ay: 0, fireHeld: false };
     window.__MECHRANGE__ = {
       world, mech,
       reissue: () => { respawnMech(world, mech, 0, 0, 0); S.yawT = 0; S.aimYaw = null; mech.aimYaw = null; mechCommand(mech, { travel: 0, lateral: 0, heading: 0 }); },
       turn: (dir) => { S.yawT += dir * 0.14; },
+      fireHeld: (v) => { S.fireHeld = v; },
+      fire: () => mechFire(world, mech),
+      punt: () => mechPunt(world, mech),
     };
     const joyBase = () => ({ x: 86, y: window.innerHeight - 130 });
     const aimBase = () => ({ x: window.innerWidth - 86, y: window.innerHeight - 130 });
@@ -78,6 +87,7 @@ export default function MechRange({ onExit }) {
     const down = (e) => {
       if (e.repeat) return;
       S.keys[e.code] = true;
+      if (e.code === "KeyC") { mechPunt(world, mech); }
       if (e.code === "KeyR") {
         respawnMech(world, mech, 0, 0, 0);
         S.yawT = 0; S.aimYaw = null; mech.aimYaw = null;
@@ -109,6 +119,7 @@ export default function MechRange({ onExit }) {
       mech.aimYaw = S.aimYaw;
       if (mech.waist && Math.abs(mech.waist.target) > 0.6 * 0.87) S.yawT += Math.sign(mech.waist.target) * 0.5 * dt;
       mechCommand(mech, { travel: tf, lateral: tl, heading: S.yawT });
+      if (S.keys.Space || S.keys.KeyF || S.fireHeld) mechFire(world, mech); // rate-limited inside
       S.acc += dt;
       let guard = 0;
       while (S.acc >= world.dt && guard++ < 6) { world.events.length = 0; stepWorld(world); S.acc -= world.dt; }
@@ -120,7 +131,7 @@ export default function MechRange({ onExit }) {
       S.hudT += dt;
       if (S.hudT > 0.25) {
         S.hudT = 0;
-        setHud({ mode: mech.state.mode, steps: mech.telem.steps, falls: mech.telem.falls });
+        setHud({ mode: mech.state.mode, steps: mech.telem.steps, falls: mech.telem.falls, kills: world.killCount, shots: mech.telem.shots || 0 });
       }
       S.raf = requestAnimationFrame(loop);
     };
@@ -145,9 +156,9 @@ export default function MechRange({ onExit }) {
       <div data-mech-hud style={{ position: "absolute", top: 10, left: 12, color: "#c7d0dc", pointerEvents: "none" }}>
         <p style={{ ...line, color: COLORS.gold, fontSize: 14, letterSpacing: 2 }}>MECH TEST RANGE</p>
         <p style={line}>BIPED FRAME MK1 — GAIT ACCEPTANCE PENDING</p>
-        <p style={line}>{isTouch ? "left moves · right aims · ◀ ▶ turn" : "W/S walk · A/D turn · Q/E strafe · R reissue · ESC menu"}</p>
+        <p style={line}>{isTouch ? "left moves · right aims · ◀ ▶ turn · FIRE fires" : "W/S walk · A/D turn · Q/E strafe · SPACE fire · C punt · R reissue · ESC menu"}</p>
         <p data-mech-status style={line}>
-          {hud.mode === "FALLEN" ? "FRAME DOWN — R TO REISSUE" : hud.mode} · steps {hud.steps} · falls {hud.falls}
+          {hud.mode === "FALLEN" ? "FRAME DOWN — R TO REISSUE" : hud.mode} · steps {hud.steps} · falls {hud.falls} · kills {hud.kills} · shots {hud.shots}
         </p>
       </div>
       {isTouch && (
@@ -163,6 +174,17 @@ export default function MechRange({ onExit }) {
           <button data-mech-turnr onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.turn(-1); }}
             style={{ position: "absolute", left: "calc(50% + 16px)", bottom: 40, padding: "10px 16px", fontFamily: FONT, fontSize: 14, color: "#c7d0dc", background: "#1a212b", border: "1px solid #444c58" }}>
             ▶
+          </button>
+          <button data-mech-punt onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.punt(); }}
+            style={{ position: "absolute", right: 110, bottom: 210, padding: "16px 18px", fontFamily: FONT, fontSize: 14, letterSpacing: 1, color: "#c7d0dc", background: "#1d2531", border: "1px solid #5f6e80" }}>
+            🦵 PUNT
+          </button>
+          <button data-mech-fire
+            onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.fireHeld(true); }}
+            onPointerUp={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.fireHeld(false); }}
+            onPointerCancel={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.fireHeld(false); }}
+            style={{ position: "absolute", right: 14, bottom: 210, padding: "16px 20px", fontFamily: FONT, fontSize: 14, letterSpacing: 1, color: "#e8d9b8", background: "#2a1d15", border: "1px solid #7a6a4e" }}>
+            ▲ FIRE
           </button>
           <button data-mech-reissue onClick={() => window.__MECHRANGE__ && window.__MECHRANGE__.reissue()}
             style={{ position: "absolute", right: 14, top: 90, padding: "12px 16px", fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#c7d0dc", background: "#1a212b", border: "1px solid #5f6e80" }}>
