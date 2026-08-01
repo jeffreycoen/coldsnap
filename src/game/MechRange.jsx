@@ -3,7 +3,7 @@
 // gait bring-up is WATCHABLE on the page while the march gate is WIP.
 // The machine stands, weight-shifts, steps — and still falls; R reissues it.
 import React, { useEffect, useRef, useState } from "react";
-import { makeWorld, makeField, stepWorld, addBody } from "../engine/core.js";
+import { makeWorld, makeField, stepWorld, addBody, fireProjectile } from "../engine/core.js";
 import { buildMech, mechCommand, respawnMech, mechFallen, mechFire, mechPunt, mechAimDir } from "../engine/mech.js";
 import { makeRenderer } from "../render/renderer.js";
 import { detectTouch } from "./runner/trials.js";
@@ -36,9 +36,19 @@ export default function MechRange({ onExit }) {
     addBody(world, { kind: "vehicle", team: 2, group: "tgtScout", mass: 950, hx: 1.25, hy: 0.7, hz: 1.85, x: 7, y: 1.7, z: 14, hp: 55, friction: 0.7 });
     addBody(world, { kind: "vehicle", team: 2, group: "tgtScout", mass: 950, hx: 1.25, hy: 0.7, hz: 1.85, x: -9, y: 1.7, z: 5, hp: 55, friction: 0.7 });
     addBody(world, { kind: "truck", team: 2, group: "tgtTruck", vtype: "truck", mass: 1400, hx: 1.15, hy: 1.05, hz: 2.6, x: 5, y: 2.05, z: -7, hp: 120, friction: 0.6 });
+    // HOSTILE TANKS: real vehicles on the engine's tread physics + goal AI
+    // (stepDrive runs anything with .squad). The range feeds goals (standoff
+    // orbit around the mech) and gunnery; their shells carry mass and shove.
+    const tanks = [];
+    for (const [tx, tz] of [[-24, -10], [22, 32]]) {
+      const t = addBody(world, { kind: "vehicle", team: 2, group: "tankPlat", mass: 3400, hx: 1.5, hy: 0.8, hz: 2.4, x: tx, y: 1.8, z: tz, hp: 170, friction: 0.85 });
+      t.squad = "tankPlat";
+      t.driverSpec = { throttleHabit: 0.5 };
+      tanks.push(t);
+    }
     const R = makeRenderer(canvasRef.current, world, { town: false });
 
-    const S = { acc: 0, last: performance.now(), keys: {}, yawT: 0, aimYaw: null, aimRange: 26, raf: 0, hudT: 0, dead: false, joyId: null, jx: 0, jy: 0, rngId: null, turnHeld: 0, fireHeld: false };
+    const S = { acc: 0, last: performance.now(), keys: {}, yawT: 0, aimYaw: null, aimRange: 26, aiT: 0, orbit: 0, tankFire: [2.5, 5.2], raf: 0, hudT: 0, dead: false, joyId: null, jx: 0, jy: 0, rngId: null, turnHeld: 0, fireHeld: false };
     window.__MECHRANGE__ = {
       world, mech,
       reissue: () => { respawnMech(world, mech, 0, 0, 0); S.yawT = 0; S.aimYaw = null; mech.aimYaw = null; S.turnHeld = 0; mechCommand(mech, { travel: 0, lateral: 0, heading: 0 }); },
@@ -158,6 +168,40 @@ export default function MechRange({ onExit }) {
         S.yawT += Math.sign(mech.waist.target) * 0.12 * dt;
       mechCommand(mech, { travel: tf, lateral: tl, heading: S.yawT });
       if (S.keys.Space || S.keys.KeyF || S.fireHeld) mechFire(world, mech); // rate-limited inside
+      // tank platoon AI: standoff orbit + gunnery
+      const mh = mech.hull;
+      S.aiT += dt;
+      if (S.aiT > 0.3) {
+        S.aiT = 0;
+        S.orbit += 0.045;
+        for (let ti = 0; ti < tanks.length; ti++) {
+          const t = tanks[ti];
+          if (!t.alive) continue;
+          const dx = t.pos.x - mh.pos.x, dz = t.pos.z - mh.pos.z;
+          const d = Math.max(1, Math.hypot(dx, dz));
+          const ang = Math.atan2(dx, dz) + S.orbit * 0 + 0; // ring point on the tank's current bearing
+          const ring = 26;
+          const oa = ang + Math.sin(S.orbit + ti * 2.1) * 0.5; // weave along the ring
+          t.goal = { x: mh.pos.x + Math.sin(oa) * ring, z: mh.pos.z + Math.cos(oa) * ring };
+        }
+      }
+      for (let ti = 0; ti < tanks.length; ti++) {
+        const t = tanks[ti];
+        if (!t.alive) continue;
+        S.tankFire[ti] -= dt;
+        const dx = mh.pos.x - t.pos.x, dz = mh.pos.z - t.pos.z;
+        const d = Math.hypot(dx, dz);
+        if (S.tankFire[ti] <= 0 && d > 14 && d < 55 && t.R[4] > 0.7) {
+          S.tankFire[ti] = 4.6 + ti * 1.3;
+          const tf = d / 95; // flight time
+          const aim = { x: mh.pos.x + mh.v.x * tf - t.pos.x, y: mh.pos.y - (t.pos.y + 1.3) + 0.5 * 9.81 * tf * tf, z: mh.pos.z + mh.v.z * tf - t.pos.z };
+          const n = Math.hypot(aim.x, aim.y, aim.z);
+          const dir = { x: aim.x / n, y: aim.y / n, z: aim.z / n };
+          const muzzle = { x: t.pos.x + dir.x * 2.8, y: t.pos.y + 1.3, z: t.pos.z + dir.z * 2.8 };
+          fireProjectile(world, muzzle, dir, 95, { kind: "shell", pmass: 30, r: 2.0, kv: 14, dmg: 55, crater: 0.35, attacker: "world", owner: t.id });
+          t.v.x -= dir.x * (30 * 95) / t.mass; t.v.z -= dir.z * (30 * 95) / t.mass;
+        }
+      }
       S.acc += dt;
       let guard = 0;
       // accumulate events across substeps — clearing per-substep starved the
