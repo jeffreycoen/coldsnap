@@ -864,7 +864,25 @@ function controller(world, mech) {
     const dbYw = mech.state.mode === "WALK" ? 0.015 : 0.06; // swing-leg reaction pumps yaw at step frequency inside a wide deadband (measured +-0.03 -> +-0.3 by step 10)
     const dbY = (e) => Math.abs(e) < dbYw ? 0 : e - Math.sign(e) * dbYw;
     const kpA = tauCap * mech.tune.cmgKp, kdA = tauCap * mech.tune.cmgKd;
-    const txD = clamp(-kpA * dbT(-exT) - kdA * hull.w.x, -tauCap, tauCap);
+    // HIP-STRATEGY balance for the static one-leg hold: the CMG torques
+    // the hull against com drift (F ~ tau/comH — instant, no contact lag,
+    // no CoP box). The ankle alone can't catch the raise transients: its
+    // realized CoP lags through the soft contact and saturates at 44k.
+    let pbX = 0, pbZ = 0, leanX = 0, leanZ = 0;
+    if (st.poise && (st.poise.phase === "hold" || st.poise.phase === "lower")) {
+      const spB = st.prints[st.poise.raise === "L" ? "R" : "L"];
+      const exB = _com.x - spB.x + _comV.x * 0.4;
+      const ezB = _com.z - spB.z + _comV.z * 0.4;
+      // instant torque: transient catcher (post-slew)
+      pbZ = clamp(exB * 420000, -tauCap, tauCap);
+      pbX = clamp(-ezB * 420000, -tauCap, tauCap);
+      // lean SETPOINT: sustained authority. Torque alone cancels against
+      // the CMG's own leveler; biasing the level target leans the machine
+      // and gravity pushes the com — the real hip strategy.
+      leanZ = clamp(exB * 0.35, -0.1, 0.1);
+      leanX = clamp(-ezB * 0.35, -0.1, 0.1);
+    }
+    const txD = clamp(-kpA * dbT(-exT - leanX) - kdA * hull.w.x, -tauCap, tauCap);
     // yaw AUTHORITY only in double support (like the heading slew): the
     // yaw spring chasing heading through SS rotates the hull over the one
     // planted foot until it edge-rolls (R4 collapse mid-SS, the sortie
@@ -878,7 +896,7 @@ function controller(world, mech) {
     const tf = Math.min(1, (st.turnLpf || 0) / 0.1);
     const yawSSe = 1 - (1 - mech.tune.yawSS) * tf, yawSSde = 1 + (mech.tune.yawSSd - 1) * tf;
     const tyD = clamp(kpA * dbY(eyT) * (inSSy ? yawSSe : 1) - kdA * (inSSy ? yawSSde : 1) * hull.w.y, -tauCap, tauCap);
-    const tzD = clamp(-kpA * dbT(-ezT) - kdA * hull.w.z, -tauCap, tauCap);
+    const tzD = clamp(-kpA * dbT(-ezT - leanZ) - kdA * hull.w.z, -tauCap, tauCap);
     // slew: the CMG is an OUTER loop, slower than the gait (spec §5b)
     if (!mech._cmgT) mech._cmgT = { x: 0, y: 0, z: 0 };
     const slewC = (tauCap / (k.stepPeriod / mech.tune.cmgSlew)) * dt;
@@ -886,6 +904,12 @@ function controller(world, mech) {
     mech._cmgT.y += clamp(tyD - mech._cmgT.y, -slewC, slewC);
     mech._cmgT.z += clamp(tzD - mech._cmgT.z, -slewC, slewC);
     let tx = mech._cmgT.x, ty = mech._cmgT.y, tz = mech._cmgT.z;
+    // poise balance bypasses the slew: the CMG's outer-loop filter is right
+    // for gait attitude but starves the hip-strategy — the ankle loop is
+    // lag-limited (soft-contact CoP realization ~0.2s at w=1.6) and the
+    // hold NEEDS an instant actuator. pb terms are already tauCap-clamped.
+    tx = clamp(tx + pbX, -tauCap, tauCap);
+    tz = clamp(tz + pbZ, -tauCap, tauCap);
     // momentum budget: torque only while the store holds; bleed against the
     // ground through the stance (time constant ~7s) while any foot is loaded
     const loaded = legL.load + legR.load > 0.1 * W;
@@ -939,7 +963,14 @@ function controller(world, mech) {
   // asymmetric: strong on the falling half-cycle, weak on the rising half —
   // symmetric damping shortened the legs mid-rise and threw the feet off
   // the ground (0/0 load windows at late SS)
-  const vDamp = clamp(-hull.v.y * (hull.v.y < 0 ? 0.3 : 0.08), -0.12, 0.3);
+  const poiseHold = st.poise && (st.poise.phase === "hold" || st.poise.phase === "lower");
+  // poise hold: STRONG symmetric vertical damping — the one-leg load
+  // oscillation (300k<->30k) gates the ankle's CoP authority and the
+  // balance leaks a lurch inboard every light-load trough (bounce
+  // ratchet). No swing feet to throw here, so symmetric is safe.
+  const vDamp = poiseHold
+    ? clamp(-hull.v.y * 0.55, -0.3, 0.3)
+    : clamp(-hull.v.y * (hull.v.y < 0 ? 0.3 : 0.08), -0.12, 0.3);
   // poise needs ~0.17 extra crouch: with hips 1.7 apart, the stance leg
   // reaches its foot under the pelvis CENTRE only if the hip drops
   // (3.67m needed at full height vs 3.6 of leg)
@@ -1106,10 +1137,28 @@ function controller(world, mech) {
       // together -> finish the shift on the narrow stance -> raise. Raising
       // with xi outside the ankle box is textbook LIPM divergence
       // (measured 0.42 -> 0.9 in 0.5s, e^{wt} to the digit).
-      // gather EARLY (45% unloaded, no dwell): every 0.1s waited is xi
-      // divergence banked before the step
-      if (rLeg.load < 0.45 * totalW && po.t > 0.5) { po.phase = "gather"; po.unl = 0; }
-      else if (po.t > 5) po.phase = "recentre";
+      // RAISE DIRECTLY from a converged shift — measured: with the 0.18
+      // crouch, xi converges onto the stance foot at FULL stance width
+      // (exi +-0.05 by 1.7s; the inherited "tether" analysis was wrong at
+      // this crouch). The gather step that followed commanded a cross-body
+      // point unreachable from the raised leg's own hip (0.87m inboard)
+      // and threw the machine over from a converged state.
+      const exi3 = Math.hypot(xi.x - sp.x, xi.z - sp.z);
+      const vLat2 = Math.hypot(_comV.x, _comV.z);
+      po.unl = rLeg.load < 0.27 * totalW && exi3 < 0.3 && vLat2 < 0.15 ? (po.unl || 0) + dt : 0;
+      if (po.unl > 0.2) { // the sway's quiet window is ~0.25s — a longer dwell never catches it
+        po.phase = "hold";
+        // CRANE STANCE: tuck the raised foot toward the support line — held
+        // at its own hip line, the 1.5t leg's ~23 kN*m roll moment about
+        // the stance foot ate the entire roll authority and the hull
+        // yielded leftward at 0.5 m/s against a railed pelvis command.
+        // Raised, the leg HAS the lateral reach (2.1m at knee height —
+        // the gather only lacked reach at ground height).
+        po.tgt = { x: rLeg.foot.pos.x, y: groundRef + 0.85, z: rLeg.foot.pos.z };
+        // no tuck: with the roll sign fixed the static moment is inside
+        // the ankle budget (23 vs 44 kN*m), and the tuck's own reaction
+        // (1.5t at 1.4 m/s) out-ran the CoP chase and threw the hold
+      } else if (po.t > 5) po.phase = "recentre";
     } else if (po.phase === "gather") {
       // mini-step: lift, move inboard, place — dragging a grounded foot
       // wrestles its own friction (588k spike, fall)
@@ -1122,24 +1171,35 @@ function controller(world, mech) {
       po.t2 = (po.t2 || 0) + dt;
       const exi2 = Math.hypot(xi.x - sp.x, xi.z - sp.z);
       po.unl = rLeg.load < 0.25 * totalW && exi2 < 0.3 ? (po.unl || 0) + dt : 0;
-      if (po.unl > 0.35) {
+      if (po.unl > 0.2) { // the sway's quiet window is ~0.25s — a longer dwell never catches it
         po.phase = "hold";
         po.tgt = { x: rLeg.foot.pos.x, y: groundRef + 0.85, z: rLeg.foot.pos.z };
       } else if (po.t2 > 4) po.phase = "recentre";
     } else if (po.phase === "hold") {
-      // raise eases up to the held height; balance belongs to the stance
-      // ankle CoP trim + CMG
-      if (po.tgt.y < groundRef + 0.85) po.tgt.y = Math.min(groundRef + 0.85, po.tgt.y + 0.9 * dt);
-      if (hull.R[4] < 0.9 || Math.hypot(xi.x - sp.x, xi.z - sp.z) > 2.2 * k.copLimitZ + 0.15) po.phase = "lower";
+      // raise eases up to the held height, then the foot TUCKS toward the
+      // support line (crane stance) — mass over the foot, no roll moment
+      if (po.tgt.y < groundRef + 0.85) po.tgt.y = Math.min(groundRef + 0.85, po.tgt.y + 0.5 * dt);
+      if (hull.R[4] < 0.9 || Math.hypot(xi.x - sp.x, xi.z - sp.z) > 2.2 * k.copLimitZ + 0.15) po.phase = "lower"; // abort EARLY — late aborts handed recentre an unrecoverable state
       if (st.poiseDownReq) { po.phase = "lower"; st.poiseDownReq = null; }
     } else if (po.phase === "lower") {
-      if (po.tgt) po.tgt.y = Math.max(groundRef, po.tgt.y - 2.5 * dt);
+      if (po.tgt) {
+        po.tgt.y = Math.max(groundRef, po.tgt.y - 2.5 * dt);
+        // CAPTURE landing, not a blind put-back: the machine is usually
+        // escaping when lower fires — land the foot where the falling com
+        // needs it (com + velocity lead), clamped to the leg's reach.
+        const rHipX = st.pelvis.x + (po.raise === "L" ? 1 : -1) * g.hipX;
+        const capX = _com.x + _comV.x * 0.35, capZ = _com.z + _comV.z * 0.35;
+        po.tgt.x += clamp(clamp(capX, rHipX - 0.9, rHipX + 0.9) - po.tgt.x, -2.2 * dt, 2.2 * dt);
+        po.tgt.z += clamp(capZ - po.tgt.z, -2.2 * dt, 2.2 * dt);
+      }
       if (rLeg.load > 0.25 * totalW) { po.phase = "recentre"; po.tgt = null; }
     } else if (po.phase === "recentre") {
+      if (!po.rk) { po.rk = 1; st.postStop = 2.5; } // arm the post-stop lateral skyhook — recentre inherits real sway
       // ease the com back between the feet BEFORE re-arming the catches —
       // ending poise one-sided dumped straight into a catch-fall
-      if (Math.hypot(xi.x - feetMid.x, xi.z - feetMid.z) < 0.22 && rLeg.load > 0.2 * totalW) st.poise = null;
-      if ((po.rt = (po.rt || 0) + dt) > 3) st.poise = null; // don't wedge
+      const quiet2 = Math.hypot(_comV.x, _comV.z) < 0.3;
+      if (Math.hypot(xi.x - feetMid.x, xi.z - feetMid.z) < 0.25 && rLeg.load > 0.2 * totalW && quiet2) st.poise = null;
+      if ((po.rt = (po.rt || 0) + dt) > 6) st.poise = null; // don't wedge — but never hand a MOVING machine to the plain stand early
     }
   }
   if (st.mode === "STAND") {
@@ -1148,17 +1208,17 @@ function controller(world, mech) {
     // every stand reference — pelvis target, catch frame, launch centre —
     // anchored to where the feet USED to be, up to 0.8m of fiction. The
     // machine balances against reality, not the latch.
-    st.prints.L.x = legL.foot.pos.x; st.prints.L.z = legL.foot.pos.z;
-    st.prints.R.x = legR.foot.pos.x; st.prints.R.z = legR.foot.pos.z;
+    // ...but never track an AIRBORNE foot (poise raise): its print froze
+    // feetMid 0.4m off the stance foot and the CoP trim steered xi off
+    // the machine's own support
+    if (legL.load > 0.05 * totalW || !st.poise) { st.prints.L.x = legL.foot.pos.x; st.prints.L.z = legL.foot.pos.z; }
+    if (legR.load > 0.05 * totalW || !st.poise) { st.prints.R.x = legR.foot.pos.x; st.prints.R.z = legR.foot.pos.z; }
     feetMid.x = (st.prints.L.x + st.prints.R.x) / 2;
     feetMid.z = (st.prints.L.z + st.prints.R.z) / 2;
     const eF = (xi.x - feetMid.x) * axes.fwd.x + (xi.z - feetMid.z) * axes.fwd.z;
     const eL = (xi.x - feetMid.x) * axes.left.x + (xi.z - feetMid.z) * axes.left.z;
     let catchSide = null;
-    if (st.poise) {
-      // poise owns balance; catches would fight the deliberate one-leg
-      // stance. Its abort path lowers the foot instead.
-    }
+
     // second trigger: HULL TILT. The standing trim integrator holds xi
     // centred while the machine itself slowly leans (its runaway mode) —
     // the xi test alone never fires and the shipped build fell SILENTLY at
@@ -1219,6 +1279,13 @@ function controller(world, mech) {
   }
   let zmpRef = { x: feetMid.x, z: feetMid.z };
   let xiRef = { x: feetMid.x, z: feetMid.z };
+  if (st.poise && st.poise.phase !== "recentre") {
+    // poise: the balance reference IS the stance foot — feetMid averages
+    // in the raised foot and points the ankle CoP off the support
+    const spr = st.prints[st.poise.raise === "L" ? "R" : "L"];
+    zmpRef = { x: spr.x, z: spr.z };
+    xiRef = { x: spr.x, z: spr.z };
+  }
   if (st.mode === "WALK") {
     // (tried pausing this clock during flight windows — normal brief load
     // dips trip it constantly and the timing jitter wrecks the lateral
@@ -1391,7 +1458,11 @@ function controller(world, mech) {
     const vLat = _comV.x * axes.left.x + _comV.z * axes.left.z;
     const skL = st.postStop > 0 ? clamp(-vLat * 0.3, -0.2, 0.2) : 0;
     let pTgtX = feetMid.x, pTgtZ = feetMid.z;
-    if (st.poise && st.poise.phase !== "recentre") {
+    if (st.poise && (st.poise.phase === "hold" || st.poise.phase === "lower")) {
+      // hold: pelvis FROZEN. The xi-feedback is a second controller in the
+      // same loop as the ankle CoP chase — they fought and the com ran.
+      // One loop, one actuator: the ankle owns balance.
+    } else if (st.poise && st.poise.phase !== "recentre") {
       // FEEDBACK shift: move the pelvis to steer MEASURED xi onto the
       // stance foot. The blind fixed-target ease kept pushing after the
       // weight had arrived and tipped the machine over the outboard edge.
@@ -1633,8 +1704,11 @@ function controller(world, mech) {
   for (const side of ["L", "R"]) {
     const leg = mech.legs[side];
     if (st.poise && st.poise.tgt && side === st.poise.raise) {
-      const hipActual2 = hull.pos.y + g.hipY;
-      setLegTargets(mech, side, { x: hull.pos.x, z: hull.pos.z }, Math.min(hipYEff, hipActual2 + 0.05), yawMeas, st.poise.tgt, true);
+      // SAME frame as stance IK: switching to swing-style (measured frame,
+      // hull base, tiltComp) at the raise was a step input that yanked the
+      // 1.5t leg and kicked the hull +0.5 m/s in 0.1s — the transient that
+      // poisoned every hold before any balance controller could act.
+      setLegTargets(mech, side, pelvisRef, hipYEff, st.heading, st.poise.tgt);
       continue;
     }
     if (st.poise && side === st.poise.raise && st.poise.phase === "gather" && st.poise.gTgt) {
@@ -1687,6 +1761,16 @@ function controller(world, mech) {
     mech.waist.target += clamp(wTgt - mech.waist.target, -wRate, wRate);
     mech.arms.L.target = 0; mech.arms.R.target = 0;
   }
+  // POISE hold: the stance sole servos FLAT against the MEASURED hip-roll
+  // sag. The attitude-blind commanded-frame ankle target (gait doctrine)
+  // presses an edge whenever the hip sags — measured 0.084 rad of sole
+  // tilt = ~54 kN*m of steady edge-press that shoved the machine off its
+  // own support. Static single support needs a flat sole; balance then
+  // belongs to the CoP trim alone.
+  if (st.poise && (st.poise.phase === "hold" || st.poise.phase === "lower")) {
+    const stLeg = mech.legs[st.poise.raise === "L" ? "R" : "L"];
+    stLeg.ankleRoll.target = -stLeg.hipRoll.angle;
+  }
   // reference: no target-rate feedforward, no attitude trim in the legs —
   // stiff kp tracks, kd damps absolute wRel, IK is attitude-blind in the
   // commanded frame ("leg deflection IS the force")
@@ -1721,6 +1805,29 @@ function controller(world, mech) {
     // stance foot (measured: tracked to -0.68 then blew past to -1.4)
     const rollGain = inSS ? 1 : st.mode === "WALK" ? 0.5 : 0; // STAND stays reference-pure (quiet)
     leg.ankleRoll.tauFF = clamp(-k.kCop * rollGain * Fff * eLeft, -0.9 * leg.ankleRoll.tauMax, 0.9 * leg.ankleRoll.tauMax);
+    // TORQUE-CONTROLLED ankle for the static hold (micro-experiment: +tau
+    // moves the realized CoP OUTBOARD, linearly, ~11mm/kN*m): the position
+    // servo's sag torque kp*e (38-54k under the one-leg moment) drowns any
+    // CoP command. Cancel the measured spring torque in the FF and impose
+    // the CoP demand directly; kd remains for stability.
+    if (st.poise && (st.poise.phase === "hold" || st.poise.phase === "lower") && !isSwing && leg.load > 0.3 * totalW) {
+      const ar = leg.ankleRoll;
+      const sag = ar.kp * (ar.target - ar.angle);
+      // calm gain + lateral velocity damping: the railed bang-bang command
+      // held the balance but its sustained reaction slid the FOOT out from
+      // under a balanced machine (tangential-slip weakness). And when the
+      // foot IS sliding, back off and let friction re-grip (stick-slip).
+      const vLat3 = _comV.x * axes.left.x + _comV.z * axes.left.z;
+      // LIVE DCM law, bypassing copCommand's gait latch (it stairsteps
+      // behind a slowly drifting xi): place the CoP PAST xi (Kp>1) so the
+      // pendulum is pushed back, plus velocity damping and a slow trim tab.
+      const spH = st.prints[st.poise.raise === "L" ? "R" : "L"];
+      const eLive = ((xi.x - spH.x) * axes.left.x + (xi.z - spH.z) * axes.left.z) * 1.4;
+      st.poise.iTab = clamp((st.poise.iTab || 0) + vLat3 * 2.2 * dt, -0.6 * k.copLimitZ, 0.6 * k.copLimitZ);
+      const eHold = clamp(eLive + vLat3 * 0.35 + st.poise.iTab, -0.9 * k.copLimitZ, 0.9 * k.copLimitZ);
+      const slide = Math.hypot(leg.foot.v.x, leg.foot.v.z) > 0.12 ? 0.3 : 1;
+      ar.tauFF = clamp((-sag - 0.3 * Fff * eHold) * slide, -0.9 * ar.tauMax, 0.9 * ar.tauMax);
+    }
   }
 }
 
