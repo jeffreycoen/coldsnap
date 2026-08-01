@@ -287,7 +287,7 @@ function positionalPass(mech, iters = 2) {
   for (let it = 0; it < iters; it++) {
     for (const j of mech.joints) {
       const a = j.a, b = j.b;
-      // angular: align the axes (rotate B by -e·share, A by +e·share)
+
       rMulVec(a.R, j.axA, _h1);
       rMulVec(b.R, j.axB, _h2);
       V.cross(_h3, _h1, _h2); // e = a1A x a1B
@@ -304,6 +304,11 @@ function positionalPass(mech, iters = 2) {
         }
       }
       // linear: close the anchor gap (generalized inverse masses)
+      // (NOTE for the sole-skate item: ~95% of the standing skate is THIS
+      // pass positionally dragging the loaded foot — friction never sees
+      // position writes. Anchoring loaded feet at stand fixed the skate to
+      // 13mm/s but broke the punt suite 4/4 -> 2/4; reverted. A future fix
+      // must preserve the pass's role in the pre/post-kick stand.)
       rMulVec(a.R, j.rA, _h1);
       rMulVec(b.R, j.rB, _h2);
       const cx = b.pos.x + _h2.x - a.pos.x - _h1.x;
@@ -587,7 +592,7 @@ export function buildMech(world, opts = {}) {
   mech.k = deriveGait(L, comH, R.hipX * s, { halfLen: R.foot.hz * s, halfWid: R.foot.hx * s, ankleOffX: R.foot.fwdOff * s }, world.gravity);
   mech.groundC = (0.01 * L) / (M * world.gravity); // spec §4, m/N
   // loop gains, sweepable (defaults = shipped tune)
-  mech.tune = { fzBase: 0.95, fzKp: 2.0, fzKd: 1.6, fzCap: 1.15, floorG: 0.85, katt: 1.2, cmgKp: 2.2, cmgKd: 0.55, cmgSlew: 1.5, yawSS: 1.0, yawSSd: 1.4, turnDS: 0.35, kickLean: 0.5, kickDur: 1.15, kickReach: 2.2, kickH: 1.0 }; // sortie-swept: full SS yaw spring + heavy SS damping + slow DS turn = 4/6 clean vs 0/6
+  mech.tune = { fzBase: 0.95, fzKp: 2.0, fzKd: 1.6, fzCap: 1.15, floorG: 0.85, katt: 1.2, cmgKp: 2.2, cmgKd: 0.55, cmgSlew: 1.5, yawSS: 1.0, yawSSd: 1.0, turnDS: 0.35, kickLean: 0.5, kickDur: 1.15, kickReach: 1.2, kickH: 0.9 } // punt-suite 4/4 (advisor sweep 2026-08-01); // sortie-swept: full SS yaw spring + heavy SS damping + slow DS turn = 4/6 clean vs 0/6
   // retune the arm dampers with FINAL mass + true gait omega (build-time
   // first pass used running totals — Den Hartog is sensitive to mu/wSway)
   if (mech.arms) for (const sd of ["L", "R"]) {
@@ -1094,8 +1099,15 @@ function controller(world, mech) {
     // flipped a 46s march into a 6s fall). Hold the launch until xi sits
     // near the support centre, up to 1.6s — gait initiation picks its
     // moment; a catch overrides immediately.
+    // gait initiation waits for the RIGHT sway moment, not just a quiet
+    // one: the first DS transfers weight onto the stance side, so launch
+    // when the lateral sway is moving TOWARD it (or still). Launching
+    // against the sway was the fast-band killer (0.41-0.53 fell at ~5
+    // steps from a corrupted first transfer).
+    const stSgn = st.lastSwing === "L" ? 1 : -1;
+    const vTow = (_comV.x * axes.left.x + _comV.z * axes.left.z) * stSgn;
     const quiet = Math.hypot(xi.x - feetMid.x, xi.z - feetMid.z) < 0.14 &&
-      Math.hypot(_comV.x, _comV.z) < 0.22; // xi can sit centred while com and velocity cancel — that launch still corrupts
+      Math.hypot(_comV.x, _comV.z) < 0.22 && vTow > -0.03; // xi can sit centred while com and velocity cancel — that launch still corrupts
     // a big pending turn is a WALK request: a standing frame cannot rotate
     // far without stepping — grinding the commanded frame against planted
     // feet is the leg-winding failure in its standing form (aim sideways
@@ -1154,6 +1166,7 @@ function controller(world, mech) {
         const sw = mech.legs[st.swing || (ph.stance === "L" ? "R" : "L")];
         const plan = ph.land || { x: sw.foot.pos.x, z: sw.foot.pos.z };
         const landSide = st.swing || (ph.stance === "L" ? "R" : "L");
+        st.kick = null; // clock touchdown during a straggling kick: the latch here is equivalent (measured prints); never leave a stale kick
         st.prints[landSide] = {
           x: sw.foot.pos.x * 0.78 + plan.x * 0.22,
           z: sw.foot.pos.z * 0.78 + plan.z * 0.22,
@@ -1405,7 +1418,18 @@ function controller(world, mech) {
           y: groundRef + 0.25 + (strike.y - groundRef - 0.25) * kf,
           z: st.from.z + (strike.z - st.from.z) * kf,
         };
-      } else {
+        // BLOCKED STRIKE: the foot met something solid short of full reach.
+        // Momentum is already delivered — but the servo would keep SHOVING
+        // against it for the rest of the window and the equal-opposite ran
+        // the hull backward at ~3 m/s (the point-blank kill band). Abort
+        // straight to PLANT at the contact.
+        const sf = mech.legs[st.swing].foot.pos;
+        const terr = Math.hypot(st.swingTgt.x - sf.x, st.swingTgt.z - sf.z);
+        if (kf > 0.45 && terr > 0.7) st.kick.t = st.kick.dur;
+        // (load-based contact-abort was tried and REVERTED: the foot's
+        // ground grazes during a normal arc trip it too — every kick came
+        // out 25% weaker and the grids got worse, not better)
+      } else if (st.kick.t < st.kick.dur) {
         const rf = smoothstep((st.kick.t - T_STRIKE) / (st.kick.dur - T_STRIKE));
         // plant EARLY: the leg can't reverse 5.5 m/s without overshooting
         // (measured 1.4m past home, latched, machine fell off its own
@@ -1417,26 +1441,42 @@ function controller(world, mech) {
           z: strike.z + (st.from.z - strike.z) * rf,
         };
         kf = 1 - rf;
+        // hand over to PLANT at first ground proximity — the return's tail
+        // (still chasing home horizontally while pressing down) bounced the
+        // foot off the pad (287k/0/204k load flicker) and rocked the frame
+        // over before the plant could engage
+        if (rf > 0.4 && mech.legs[st.swing].foot.pos.y < groundRef + 0.22) st.kick.t = st.kick.dur;
+      } else {
+        // PHASE 3 — PLANT: press the foot down WHERE IT IS and wait for it
+        // to genuinely LOAD. The old clock-latch recorded the print at an
+        // unloaded hover point (return overshoot leaves the foot ~0.5m off
+        // home) and the machine then shifted weight onto fiction — the
+        // stale-prints bug in kick form. A real biped plants where the foot
+        // came down and corrects with the NEXT step.
+        const swf2 = mech.legs[st.swing].foot.pos;
+        if (!st.kick.px) { st.kick.px = swf2.x; st.kick.pz = swf2.z; st.kick.pl = 0; }
+        st.kick.pl += dt;
+        st.swingTgt = { x: st.kick.px, y: groundRef - 0.03, z: st.kick.pz };
+        kf = 0;
+        st.kick.lt = mech.legs[st.swing].load > 0.18 * totalW ? (st.kick.lt || 0) + dt : 0;
+        if (st.kick.lt > 0.1 || st.kick.pl > 0.7) {
+          st.prints[st.swing] = { x: swf2.x, z: swf2.z };
+          st.lastSwing = st.swing;
+          st.kick = null; st.swing = null; st.hold = {}; st.holdCop = {};
+          st.stopping = true;
+          st.phases = planPhases(false, xi);
+          st.pi = 0; st.pt = 0;
+          st.recoverT = Math.max(st.recoverT, 1.2);
+        }
       }
       // counter-lean: the leg whipping forward carries real momentum — the
       // pelvis shifts back through the strike or the kicker faceplants
-      // (measured: R4 0.06 without it); decays with the return
-      st.kickLean = mech.tune.kickLean * kf;
-      st.lastSwingY = st.swingTgt.y;
-      if (st.kick.t >= st.kick.dur) {
-        // the kick ends as a TOUCHDOWN — the one latch path every stable
-        // step already uses. The return phase has the foot home and low, so
-        // both prints are real: latch measured, replan from reality, and
-        // let LIVE capture walk the post-kick momentum to a stop.
-        const swf = mech.legs[st.swing].foot.pos;
-        st.prints[st.swing] = { x: swf.x, z: swf.z };
-        st.lastSwing = st.swing;
-        st.kick = null; st.swing = null; st.hold = {}; st.holdCop = {};
-        st.stopping = true;
-        st.phases = planPhases(false, xi);
-        st.pi = 0; st.pt = 0;
-        st.recoverT = Math.max(st.recoverT, 1.2);
-      }
+      // (measured: R4 0.06 without it); decays with the return. In PLANT,
+      // DECAY rather than track kf — kf drops to 0 at handover and the
+      // one-tick lean release (0.3m pelvis snap) seeded a backward run.
+      if (st.kick && st.kick.px !== undefined) st.kickLean = Math.max(0, st.kickLean - 2.5 * dt);
+      else st.kickLean = mech.tune.kickLean * kf;
+      if (st.kick) st.lastSwingY = st.swingTgt.y;
     }
   }
   // kick counter-lean applies while kicking and decays through recovery
@@ -1456,7 +1496,13 @@ function controller(world, mech) {
     if (st.puntReq <= 0) st.puntReq = null;
     const inDSNow = st.mode === "WALK" && st.phases && st.phases[st.pi] && st.phases[st.pi].kind === "DS";
     const bothLoaded = legL.load + legR.load > 0.55 * totalW;
-    if (st.puntReq && !st.kick && bothLoaded && (st.mode === "STAND" || inDSNow)) {
+    // punt at speed = BRAKE FIRST (gear-change doctrine): firing the kick
+    // with 0.4 m/s of march momentum made the recovery a coin toss on the
+    // exact trigger phase. The request pends while the stop machinery
+    // sheds the speed; the kick fires at the first slow both-loaded DS.
+    const puntSpd = Math.hypot(_comV.x, _comV.z);
+    if (st.puntReq && st.mode === "WALK" && puntSpd > 0.4) st.stopping = true;
+    if (st.puntReq && !st.kick && bothLoaded && puntSpd < 0.45 && (st.mode === "STAND" || inDSNow)) {
       st.puntReq = null;
       if (st.mode === "STAND" && st.spawnDone) {
         st.mode = "WALK"; st.ramp = 1; st.stopping = false;
@@ -1473,7 +1519,7 @@ function controller(world, mech) {
         // flipped, wrong foot kicked, machine toppled backward).
         // The kick owns strike AND return (0.85s) — stretch its SS to fit,
         // and freeze capture (the deliberate counter-lean poisons xiErr).
-        if (st.phases[1]) st.phases[1].dur = Math.max(st.phases[1].dur, mech.tune.kickDur + 0.35);
+        if (st.phases[1]) st.phases[1].dur = Math.max(st.phases[1].dur, mech.tune.kickDur + 1.0); // strike + return + PLANT all inside one SS
         st.pi = 0; st.pt = 0;
         st.swing = null; st.hold = { cap: { x: 0, z: 0 } };
         st.kick = { t: 0, dur: mech.tune.kickDur }; // dur = strike 0.34 + return
@@ -1600,6 +1646,13 @@ export function mechIslandSolve(world, mech) {
   // unsolved lock velocity, or it integrates into a positional ratchet the
   // drift pass then converts into a standing hinge-angle error (measured)
   for (let it = 0; it < 2; it++) for (const j of mech.joints) iterHinge(j, dt, true);
+  // contact close-out: the lock sweep above injects impulses into the foot
+  // bodies AFTER the last friction solve — that dirty tangential velocity
+  // integrated every tick into the sole-skate (feet creeping backward at a
+  // constant ~0.05 m/s, both feet lockstep). Re-balance the contacts, then
+  // give the locks one final word.
+  for (let it = 0; it < 2; it++) for (const c of cs) solveContactOne(c, dt);
+  for (const j of mech.joints) iterHinge(j, dt, true);
   // foot loads for the NEXT tick's controller (N)
   for (const side of ["L", "R"]) {
     const leg = mech.legs[side];
@@ -1666,7 +1719,7 @@ export function mechPunt(world, mech) {
   if (mech.state.mode === "FALLEN" || mech.state.kick) return false;
   if (world.t - (mech._lastPunt || -9) < 2.2) return false;
   mech._lastPunt = world.t;
-  mech.state.puntReq = 1.2; // seconds the request stays pending, waiting for double support
+  mech.state.puntReq = 2.8; // seconds the request stays pending — covers braking from a march plus waiting for double support
   return true;
 }
 export function mechUp(mech) { return mech.hull.R[4]; }

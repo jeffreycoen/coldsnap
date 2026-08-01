@@ -310,7 +310,7 @@ const run = (w, secs) => { const n = Math.round(secs / w.dt); for (let i = 0; i 
   // arc-heavy sortie now fails at ~20s and the failing INDEX moves with
   // every turn-tune combo — a dedicated re-sweep is on the board. The
   // floor still catches any real regression (pre-fix scores were 0-4/6).
-  ok("sorties: compound-maneuver suite (floor 5/6)", clean >= SORTIES.length - 1, "clean " + clean + "/6 " + (detail.join(" ") || ""));
+  ok("sorties: all six compound-maneuver runs survive", clean === SORTIES.length, "clean " + clean + "/6 " + (detail.join(" ") || ""));
 }
 
 // ---------------------------------------------------------------- 6. mortar -> catch or fall -> limp -> respawn
