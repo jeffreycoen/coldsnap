@@ -940,7 +940,13 @@ function controller(world, mech) {
   // symmetric damping shortened the legs mid-rise and threw the feet off
   // the ground (0/0 load windows at late SS)
   const vDamp = clamp(-hull.v.y * (hull.v.y < 0 ? 0.3 : 0.08), -0.12, 0.3);
-  const hipYRef = walkH + (1 - crouch) * (0.995 - 0.93) * g.L - st.hRec + vDamp;
+  // poise needs ~0.17 extra crouch: with hips 1.7 apart, the stance leg
+  // reaches its foot under the pelvis CENTRE only if the hip drops
+  // (3.67m needed at full height vs 3.6 of leg)
+  if (st.crouchX == null) st.crouchX = 0;
+  const cxTgt = st.poise && st.poise.phase !== "recentre" ? 0.18 : 0;
+  st.crouchX += clamp(cxTgt - st.crouchX, -0.35 * dt, 0.35 * dt);
+  const hipYRef = walkH + (1 - crouch) * (0.995 - 0.93) * g.L - st.hRec + vDamp - st.crouchX;
   // gait-frame axes for catch decisions
   const axes = { fwd: { x: sn, z: cs }, left: { x: cs, z: -sn } };
   // pelvis->CoM offset (heading frame, low-passed): the plan is a COM/xi
@@ -1068,6 +1074,74 @@ function controller(world, mech) {
     };
     return { zmp, xiR };
   };
+  // ---- POISE: stand on one leg (design 2026-08-01: "plant the foot,
+  // raise the leg — if it falls over it's not right"). The static
+  // single-support primitive the punt is built on. Phases: shift (weight
+  // onto the stance foot, both planted) -> hold (leg raised, stance ankle
+  // CoP + CMG own balance) -> lower (foot down, latch on load).
+  if (st.mode === "STAND" && st.poiseReq && st.spawnDone && !st.poise) {
+    st.poise = { phase: "crouch", raise: st.poiseReq, t: 0 };
+    st.poiseReq = null;
+  }
+  if (st.poise && st.mode !== "STAND") st.poise = null; // catches/walk own the machine
+  if (st.poise) {
+    const po = st.poise;
+    po.t += dt;
+    const stSide = po.raise === "L" ? "R" : "L";
+    const sp = st.prints[stSide];
+    const rLeg = mech.legs[po.raise];
+    const gSign = po.raise === "L" ? 1 : -1;
+    const gatherPt = {
+      x: sp.x + axes.left.x * gSign * 0.5,
+      z: sp.z + axes.left.z * gSign * 0.5,
+    };
+    if (po.phase === "crouch") {
+      // settle INTO the poise crouch before any weight moves — ramping
+      // height mid-transfer bounced the machine airborne
+      if (st.crouchX > 0.17 && po.t > 1.2) { po.phase = "shift"; po.t = 0; }
+    } else if (po.phase === "shift") {
+      // Sequence a person uses: shift what the tether allows (the planted
+      // trailing leg limits pelvis travel to ~0.46m of its 0.85m journey,
+      // so xi CANNOT reach the stance box at full width) -> STEP the feet
+      // together -> finish the shift on the narrow stance -> raise. Raising
+      // with xi outside the ankle box is textbook LIPM divergence
+      // (measured 0.42 -> 0.9 in 0.5s, e^{wt} to the digit).
+      // gather EARLY (45% unloaded, no dwell): every 0.1s waited is xi
+      // divergence banked before the step
+      if (rLeg.load < 0.45 * totalW && po.t > 0.5) { po.phase = "gather"; po.unl = 0; }
+      else if (po.t > 5) po.phase = "recentre";
+    } else if (po.phase === "gather") {
+      // mini-step: lift, move inboard, place — dragging a grounded foot
+      // wrestles its own friction (588k spike, fall)
+      const hd = Math.hypot(rLeg.foot.pos.x - gatherPt.x, rLeg.foot.pos.z - gatherPt.z);
+      po.gTgt = { x: gatherPt.x, y: hd > 0.2 ? groundRef + 0.18 : groundRef, z: gatherPt.z };
+      if (hd < 0.16 && rLeg.foot.pos.y < groundRef + 0.1) { po.phase = "shift2"; po.t2 = 0; }
+      if ((po.gt = (po.gt || 0) + dt) > 2.5) po.phase = "recentre";
+    } else if (po.phase === "shift2") {
+      // narrow stance: the tether is short now — xi can reach the box
+      po.t2 = (po.t2 || 0) + dt;
+      const exi2 = Math.hypot(xi.x - sp.x, xi.z - sp.z);
+      po.unl = rLeg.load < 0.25 * totalW && exi2 < 0.3 ? (po.unl || 0) + dt : 0;
+      if (po.unl > 0.35) {
+        po.phase = "hold";
+        po.tgt = { x: rLeg.foot.pos.x, y: groundRef + 0.85, z: rLeg.foot.pos.z };
+      } else if (po.t2 > 4) po.phase = "recentre";
+    } else if (po.phase === "hold") {
+      // raise eases up to the held height; balance belongs to the stance
+      // ankle CoP trim + CMG
+      if (po.tgt.y < groundRef + 0.85) po.tgt.y = Math.min(groundRef + 0.85, po.tgt.y + 0.9 * dt);
+      if (hull.R[4] < 0.9 || Math.hypot(xi.x - sp.x, xi.z - sp.z) > 2.2 * k.copLimitZ + 0.15) po.phase = "lower";
+      if (st.poiseDownReq) { po.phase = "lower"; st.poiseDownReq = null; }
+    } else if (po.phase === "lower") {
+      if (po.tgt) po.tgt.y = Math.max(groundRef, po.tgt.y - 2.5 * dt);
+      if (rLeg.load > 0.25 * totalW) { po.phase = "recentre"; po.tgt = null; }
+    } else if (po.phase === "recentre") {
+      // ease the com back between the feet BEFORE re-arming the catches —
+      // ending poise one-sided dumped straight into a catch-fall
+      if (Math.hypot(xi.x - feetMid.x, xi.z - feetMid.z) < 0.22 && rLeg.load > 0.2 * totalW) st.poise = null;
+      if ((po.rt = (po.rt || 0) + dt) > 3) st.poise = null; // don't wedge
+    }
+  }
   if (st.mode === "STAND") {
     // prints TRACK the measured feet at stand: the soles skate backward at
     // ~0.05 m/s (solver-level creep, open item) and the stale prints left
@@ -1081,6 +1155,10 @@ function controller(world, mech) {
     const eF = (xi.x - feetMid.x) * axes.fwd.x + (xi.z - feetMid.z) * axes.fwd.z;
     const eL = (xi.x - feetMid.x) * axes.left.x + (xi.z - feetMid.z) * axes.left.z;
     let catchSide = null;
+    if (st.poise) {
+      // poise owns balance; catches would fight the deliberate one-leg
+      // stance. Its abort path lowers the foot instead.
+    }
     // second trigger: HULL TILT. The standing trim integrator holds xi
     // centred while the machine itself slowly leans (its runaway mode) —
     // the xi test alone never fires and the shipped build fell SILENTLY at
@@ -1092,7 +1170,7 @@ function controller(world, mech) {
     // catches need real lean to work against.)
     st.tiltT = hull.R[4] < 0.965 ? (st.tiltT || 0) + dt : 0;
     const tiltCatch = st.tiltT > 0.6 && (st.standT || 0) > 3;
-    if (Math.abs(eF) > k.copLimitX || Math.abs(eL) > k.copLimitZ + k.halfStance || tiltCatch)
+    if (!st.poise && (Math.abs(eF) > k.copLimitX || Math.abs(eL) > k.copLimitZ + k.halfStance || tiltCatch))
       catchSide = eL > 0 ? "L" : "R";
     // launch gate: walk entry is chaotically sensitive to the residual
     // spawn/crouch sway phase (measured: 7 ticks of settle difference
@@ -1312,8 +1390,19 @@ function controller(world, mech) {
     st.postStop = Math.max(0, (st.postStop || 0) - dt);
     const vLat = _comV.x * axes.left.x + _comV.z * axes.left.z;
     const skL = st.postStop > 0 ? clamp(-vLat * 0.3, -0.2, 0.2) : 0;
-    st.pelvis.x += clamp(feetMid.x - comOffW.x + skL * axes.left.x - st.pelvis.x, -1.2 * dt, 1.2 * dt);
-    st.pelvis.z += clamp(feetMid.z - comOffW.z + skL * axes.left.z - st.pelvis.z, -1.2 * dt, 1.2 * dt);
+    let pTgtX = feetMid.x, pTgtZ = feetMid.z;
+    if (st.poise && st.poise.phase !== "recentre") {
+      // FEEDBACK shift: move the pelvis to steer MEASURED xi onto the
+      // stance foot. The blind fixed-target ease kept pushing after the
+      // weight had arrived and tipped the machine over the outboard edge.
+      const spp = st.prints[st.poise.raise === "L" ? "R" : "L"];
+      const gx = clamp((spp.x - xi.x) * 0.9, -0.4, 0.4);
+      const gz = clamp((spp.z - xi.z) * 0.9, -0.4, 0.4);
+      st.pelvis.x += gx * dt; st.pelvis.z += gz * dt;
+    } else {
+      st.pelvis.x += clamp(pTgtX - comOffW.x + skL * axes.left.x - st.pelvis.x, -1.2 * dt, 1.2 * dt);
+      st.pelvis.z += clamp(pTgtZ - comOffW.z + skL * axes.left.z - st.pelvis.z, -1.2 * dt, 1.2 * dt);
+    }
     st.comRef = null;
   }
   const xiErr = { x: xi.x - xiRef.x, z: xi.z - xiRef.z };
@@ -1543,6 +1632,20 @@ function controller(world, mech) {
   const pelvisRef = { x: st.pelvis.x, z: st.pelvis.z };
   for (const side of ["L", "R"]) {
     const leg = mech.legs[side];
+    if (st.poise && st.poise.tgt && side === st.poise.raise) {
+      const hipActual2 = hull.pos.y + g.hipY;
+      setLegTargets(mech, side, { x: hull.pos.x, z: hull.pos.z }, Math.min(hipYEff, hipActual2 + 0.05), yawMeas, st.poise.tgt, true);
+      continue;
+    }
+    if (st.poise && side === st.poise.raise && st.poise.phase === "gather" && st.poise.gTgt) {
+      const hipA3 = hull.pos.y + g.hipY;
+      setLegTargets(mech, side, { x: hull.pos.x, z: hull.pos.z }, Math.min(hipYEff, hipA3 + 0.05), yawMeas, st.poise.gTgt, true);
+      continue;
+    }
+    if (st.poise && side === st.poise.raise && st.poise.phase === "shift2" && st.poise.gTgt) {
+      setLegTargets(mech, side, pelvisRef, hipYEff, st.heading, { x: st.poise.gTgt.x, y: groundRef, z: st.poise.gTgt.z });
+      continue;
+    }
     const inSSnow = st.mode === "WALK" && st.swing != null;
     if (inSSnow && st.swing === side && st.swingTgt) {
       // swing IK works from the ACTUAL hip height: when the hull sinks in a
@@ -1599,7 +1702,7 @@ function controller(world, mech) {
     const isSwing = st.mode === "WALK" && st.swing === side;
     for (const j of [leg.hipRoll, leg.hipPitch, leg.knee, leg.anklePitch, leg.ankleRoll]) { j.tauFF = 0; j.kpMul = 1; j.kdMul = 1; }
     if (isSwing || leg.load < 0.02 * totalW) continue;
-    const inSS = st.mode === "WALK" && st.swing != null;
+    const inSS = (st.mode === "WALK" && st.swing != null) || (st.poise != null && st.poise.phase !== "recentre");
     const midX = inSS ? leg.foot.pos.x : (legL.foot.pos.x + legR.foot.pos.x) / 2;
     const midZ = inSS ? leg.foot.pos.z : (legL.foot.pos.z + legR.foot.pos.z) / 2;
     let eFwd = (copCmd.x - midX) * axes.fwd.x + (copCmd.z - midZ) * axes.fwd.z;
@@ -1720,6 +1823,14 @@ export function mechPunt(world, mech) {
   if (world.t - (mech._lastPunt || -9) < 2.2) return false;
   mech._lastPunt = world.t;
   mech.state.puntReq = 2.8; // seconds the request stays pending — covers braking from a march plus waiting for double support
+  return true;
+}
+// POISE: raise one leg and stand on the other; call again to lower.
+export function mechPoise(world, mech, side) {
+  const st = mech.state;
+  if (st.mode === "FALLEN") return false;
+  if (st.poise) { st.poiseDownReq = true; return true; }
+  st.poiseReq = side === "R" ? "R" : "L";
   return true;
 }
 export function mechUp(mech) { return mech.hull.R[4]; }
