@@ -55,11 +55,11 @@ export default function MechRange({ onExit }) {
       if (S.joyId == null && Math.hypot(e.clientX - c.x, e.clientY - c.y) < 110) S.joyId = e.pointerId;
     };
     const sliderY = (clientY) => {
-      // vertical slider: 200px track, bottom = 6m, top = 80m
-      const top = window.innerHeight - 340, hgt = 200;
+      // vertical slider along the right edge: bottom = 6m, top = 80m
+      const hgt = 170, top = window.innerHeight - 336; // above the PUNT/FIRE stack
       const t = Math.max(0, Math.min(1, (top + hgt - clientY) / hgt));
       S.aimRange = 6 + t * 74;
-      if (rngThumbRef.current) rngThumbRef.current.style.top = top + hgt - t * hgt - 14 + "px";
+      if (rngThumbRef.current) rngThumbRef.current.style.top = top + hgt - t * hgt - 12 + "px";
       if (rngLabelRef.current) rngLabelRef.current.textContent = Math.round(S.aimRange) + "m";
     };
     window.__MECHRANGE__.sliderY = sliderY;
@@ -231,37 +231,37 @@ export default function MechRange({ onExit }) {
           <div ref={knobRef} style={{ position: "absolute", left: 86 - 20, top: "calc(100% - 150px)", width: 40, height: 40, borderRadius: 22, background: "#5f6e80", opacity: 0.8 }} />
           <div data-mech-rangeslider
             onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.grabRange(e.pointerId, e.clientY); }}
-            style={{ position: "absolute", right: 30, bottom: 140, width: 56, height: 200, borderRadius: 10, background: "rgba(28,33,41,0.7)", border: "1px solid #7a6a4e", touchAction: "none" }}>
-            <div style={{ position: "absolute", left: 26, top: 8, bottom: 8, width: 3, background: "#5f6e80" }} />
+            style={{ position: "absolute", right: 12, bottom: 166, width: 44, height: 170, borderRadius: 8, background: "rgba(28,33,41,0.75)", border: "1px solid #7a6a4e", touchAction: "none" }}>
+            <div style={{ position: "absolute", left: 20, top: 6, bottom: 6, width: 3, background: "#5f6e80" }} />
           </div>
-          <div ref={rngThumbRef} style={{ position: "absolute", right: 30 + 28 - 22, top: "calc(100% - 340px + 146px)", width: 44, height: 28, borderRadius: 8, background: "#7a6a4e", opacity: 0.95, pointerEvents: "none" }} />
-          <div ref={rngLabelRef} style={{ position: "absolute", right: 30, bottom: 348, width: 56, textAlign: "center", color: "#e8d9b8", fontFamily: FONT, fontSize: 13 }}>26m</div>
+          <div ref={rngThumbRef} style={{ position: "absolute", right: 8, top: "calc(100% - 224px)", width: 52, height: 24, borderRadius: 6, background: "#b89a5e", pointerEvents: "none" }} />
+          <div ref={rngLabelRef} style={{ position: "absolute", right: 8, bottom: 340, width: 52, textAlign: "center", color: "#e8d9b8", fontFamily: FONT, fontSize: 13, textShadow: "0 1px 2px #000" }}>26m</div>
           <button data-mech-turnl
             onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.turn(1); }}
             onPointerUp={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.turn(0); }}
             onPointerLeave={() => { const m = window.__MECHRANGE__; if (m) m.turn(0); }}
             onPointerCancel={() => { const m = window.__MECHRANGE__; if (m) m.turn(0); }}
-            style={{ position: "absolute", left: "calc(50% - 84px)", bottom: 40, padding: "14px 22px", fontFamily: FONT, fontSize: 16, color: "#c7d0dc", background: "#1a212b", border: "1px solid #444c58", touchAction: "none" }}>
-            ◀
+            style={{ position: "absolute", left: "calc(50% - 100px)", bottom: 16, width: 72, height: 62, fontFamily: FONT, fontSize: 22, color: "#c7d0dc", background: "rgba(26,33,43,0.85)", border: "1px solid #444c58", touchAction: "none" }}>
+            {"\u25C0\uFE0E"}
           </button>
           <button data-mech-turnr
             onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.turn(-1); }}
             onPointerUp={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.turn(0); }}
             onPointerLeave={() => { const m = window.__MECHRANGE__; if (m) m.turn(0); }}
             onPointerCancel={() => { const m = window.__MECHRANGE__; if (m) m.turn(0); }}
-            style={{ position: "absolute", left: "calc(50% + 20px)", bottom: 40, padding: "14px 22px", fontFamily: FONT, fontSize: 16, color: "#c7d0dc", background: "#1a212b", border: "1px solid #444c58", touchAction: "none" }}>
-            ▶
-          </button>
-          <button data-mech-punt onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.punt(); }}
-            style={{ position: "absolute", right: 110, bottom: 210, padding: "16px 18px", fontFamily: FONT, fontSize: 14, letterSpacing: 1, color: "#c7d0dc", background: "#1d2531", border: "1px solid #5f6e80" }}>
-            🦵 PUNT
+            style={{ position: "absolute", left: "calc(50% + 4px)", bottom: 16, width: 72, height: 62, fontFamily: FONT, fontSize: 22, color: "#c7d0dc", background: "rgba(26,33,43,0.85)", border: "1px solid #444c58", touchAction: "none" }}>
+            {"\u25B6\uFE0E"}
           </button>
           <button data-mech-fire
             onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.fireHeld(true); }}
             onPointerUp={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.fireHeld(false); }}
             onPointerCancel={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.fireHeld(false); }}
-            style={{ position: "absolute", right: 14, bottom: 210, padding: "16px 20px", fontFamily: FONT, fontSize: 14, letterSpacing: 1, color: "#e8d9b8", background: "#2a1d15", border: "1px solid #7a6a4e" }}>
-            ▲ FIRE
+            style={{ position: "absolute", right: 12, bottom: 16, width: 96, height: 70, fontFamily: FONT, fontSize: 15, letterSpacing: 1, color: "#e8d9b8", background: "rgba(42,29,21,0.9)", border: "1px solid #7a6a4e", touchAction: "none" }}>
+            {"\u25B2\uFE0E"} FIRE
+          </button>
+          <button data-mech-punt onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.punt(); }}
+            style={{ position: "absolute", right: 12, bottom: 94, width: 96, height: 62, fontFamily: FONT, fontSize: 14, letterSpacing: 1, color: "#c7d0dc", background: "rgba(29,37,49,0.9)", border: "1px solid #5f6e80", touchAction: "none" }}>
+            PUNT
           </button>
           <button data-mech-reissue onClick={() => window.__MECHRANGE__ && window.__MECHRANGE__.reissue()}
             style={{ position: "absolute", right: 14, top: 90, padding: "12px 16px", fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#c7d0dc", background: "#1a212b", border: "1px solid #5f6e80" }}>
