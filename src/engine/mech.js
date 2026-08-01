@@ -1998,26 +1998,38 @@ export function mechPunt(world, mech) {
   return true;
 }
 // SHOULDER MISSILES (design 2026-08-01: "missiles from a shoulder
-// launcher that can turn and aim independently of the body"). The rack is
+// launcher that can turn and aim independently of the body"; revised
+// 2026-08-01: "rockets need to go where reticle is aimed"). The rack is
 // ~300kg — slewing it fast is a rounding error against the 19t frame
-// (unlike the 1800kg torso), so independent aim costs nothing. It
-// auto-locks the nearest live hostile, slews to bearing, then ripple-fires
+// (unlike the 1800kg torso), so independent aim costs nothing. The salvo
+// flies to the RETICLE point (torso facing at the commanded aimRange);
+// if a live hostile sits within 12m of that point the rack snaps to it
+// with lead, otherwise the rockets land on the point itself. Ripple-fires
 // a lobbed 3-rocket salvo (HIGH ballistic arc — clears buildings) with
 // real mass and per-rocket recoil.
 export function mechMissiles(world, mech) {
   if (mech.state.mode === "FALLEN") return false;
   if (world.t - (mech._lastMsl || -99) < 6) return false;
-  // acquire: nearest live team-2 body within 75m
+  // the reticle's ground point: torso ACTUAL facing (same frame the
+  // cannon preview draws from) at the commanded range
   const torso = mech.waist ? mech.waist.b : mech.hull;
-  let best = null, bestD = 75;
+  const ty = Math.atan2(torso.R[6], torso.R[8]);
+  const rng = clamp(mech.aimRange || 26, 6, 120);
+  const rx = torso.pos.x + Math.sin(ty) * rng, rz = torso.pos.z + Math.cos(ty) * rng;
+  // snap: a live hostile within 12m of the reticle point gets the salvo
+  // (with lead); bare ground gets it where aimed
+  let best = null, bestD = 12;
   for (const b of world.bodies) {
     if (!b.alive || b.team !== 2) continue;
-    const d = Math.hypot(b.pos.x - torso.pos.x, b.pos.z - torso.pos.z);
+    const d = Math.hypot(b.pos.x - rx, b.pos.z - rz);
     if (d < bestD) { bestD = d; best = b; }
   }
-  if (!best || bestD < 8) return false; // no lock / danger-close
+  const tgt = best
+    ? { x: best.pos.x + best.v.x * 1.6, z: best.pos.z + best.v.z * 1.6 } // lead at ~arc flight time
+    : { x: rx, z: rz };
+  if (Math.hypot(tgt.x - torso.pos.x, tgt.z - torso.pos.z) < 8) return false; // danger-close
   mech._lastMsl = world.t;
-  mech.mslTarget = { x: best.pos.x + best.v.x * 1.6, z: best.pos.z + best.v.z * 1.6 }; // lead at ~arc flight time
+  mech.mslTarget = tgt;
   mech.mslSlew = 0; // launcher bearing animates in the controller-side state (visual later)
   const m0 = { x: torso.pos.x, y: torso.pos.y + 0.9, z: torso.pos.z }; // shoulder height
   const dx = mech.mslTarget.x - m0.x, dz = mech.mslTarget.z - m0.z;
@@ -2028,7 +2040,9 @@ export function mechMissiles(world, mech) {
   // and took forever to land. s^2 = g d^2 (1+tan^2) / (2 (d tan + h))
   const g = world.gravity, tanTh = 0.62;
   const den = 2 * (d * tanTh + Math.max(0.5, h));
-  const spd = clamp(Math.sqrt(Math.max(100, g * d * d * (1 + tanTh * tanTh) / den)), 18, 90);
+  // floor 10 (not 18): the solve gives ~17 m/s at 30m — an 18 floor made
+  // every shot inside ~33m fly LONG, missing the reticle it promised
+  const spd = clamp(Math.sqrt(Math.max(100, g * d * d * (1 + tanTh * tanTh) / den)), 10, 90);
   const th = Math.atan(tanTh);
   const cp = Math.cos(th), sp2 = Math.sin(th);
   const ux = dx / d, uz = dz / d;
