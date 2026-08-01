@@ -4,7 +4,7 @@
 // The machine stands, weight-shifts, steps — and still falls; R reissues it.
 import React, { useEffect, useRef, useState } from "react";
 import { makeWorld, makeField, stepWorld, addBody, fireProjectile } from "../engine/core.js";
-import { buildMech, mechCommand, respawnMech, mechFallen, mechFire, mechPunt, mechPoise, mechAimDir } from "../engine/mech.js";
+import { buildMech, mechCommand, respawnMech, mechFallen, mechFire, mechPunt, mechPoise, mechMissiles, mechAimDir } from "../engine/mech.js";
 import { makeRenderer } from "../render/renderer.js";
 import { detectTouch } from "./runner/trials.js";
 import { BUILDERS } from "./scenario.js";
@@ -57,6 +57,7 @@ export default function MechRange({ onExit }) {
       fire: () => mechFire(world, mech),
       punt: () => mechPunt(world, mech),
       poise: () => mechPoise(world, mech, "L"),
+      missiles: () => mechMissiles(world, mech),
     };
     const joyBase = () => ({ x: 86, y: window.innerHeight - 130 });
     const onPD = (e) => {
@@ -118,6 +119,7 @@ export default function MechRange({ onExit }) {
       S.keys[e.code] = true;
       if (e.code === "KeyC") { mechPunt(world, mech); }
       if (e.code === "KeyX") { mechPoise(world, mech, "L"); }
+      if (e.code === "KeyV") { mechMissiles(world, mech); }
       if (e.code === "KeyR") {
         respawnMech(world, mech, 0, 0, 0);
         S.yawT = 0; S.aimYaw = null; mech.aimYaw = null;
@@ -266,7 +268,7 @@ export default function MechRange({ onExit }) {
       <div data-mech-hud style={{ position: "absolute", top: 10, left: 12, color: "#c7d0dc", pointerEvents: "none" }}>
         <p style={{ ...line, color: COLORS.gold, fontSize: 14, letterSpacing: 2 }}>MECH TEST RANGE</p>
         <p style={line}>BIPED FRAME MK1 — GAIT ACCEPTANCE PENDING</p>
-        <p style={line}>{isTouch ? "left stick moves · ◀ ▶ turn · slider sets range · FIRE" : "W/S walk · A/D turn · MOUSE aims · CLICK/SPACE fire · C punt · X one-leg · R reissue"}</p>
+        <p style={line}>{isTouch ? "left stick moves · ◀ ▶ turn · slider sets range · FIRE" : "W/S walk · A/D turn · MOUSE aims · CLICK fire · V missiles · C punt · X one-leg · R reissue"}</p>
         <p data-mech-status style={line}>
           {hud.mode === "FALLEN" ? "FRAME DOWN — R TO REISSUE" : hud.mode} · steps {hud.steps} · falls {hud.falls} · kills {hud.kills} · shots {hud.shots}
         </p>
@@ -304,6 +306,10 @@ export default function MechRange({ onExit }) {
             onPointerCancel={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.fireHeld(false); }}
             style={{ position: "absolute", right: 12, bottom: 16, width: 96, height: 70, fontFamily: FONT, fontSize: 15, letterSpacing: 1, color: "#e8d9b8", background: "rgba(42,29,21,0.9)", border: "1px solid #7a6a4e", touchAction: "none" }}>
             {"\u25B2\uFE0E"} FIRE
+          </button>
+          <button data-mech-msl onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.missiles(); }}
+            style={{ position: "absolute", right: 116, bottom: 164, width: 92, height: 56, fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#e8c9b8", background: "rgba(46,29,21,0.9)", border: "1px solid #7a5e4e", touchAction: "none" }}>
+            ▲▲ MSL
           </button>
           <button data-mech-poise onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.poise(); }}
             style={{ position: "absolute", right: 116, bottom: 94, width: 92, height: 62, fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#c7d0dc", background: "rgba(29,37,49,0.9)", border: "1px solid #5f6e80", touchAction: "none" }}>

@@ -1997,6 +1997,54 @@ export function mechPunt(world, mech) {
   mech.state.puntReq = 2.8; // seconds the request stays pending — covers braking from a march plus waiting for double support
   return true;
 }
+// SHOULDER MISSILES (design 2026-08-01: "missiles from a shoulder
+// launcher that can turn and aim independently of the body"). The rack is
+// ~300kg — slewing it fast is a rounding error against the 19t frame
+// (unlike the 1800kg torso), so independent aim costs nothing. It
+// auto-locks the nearest live hostile, slews to bearing, then ripple-fires
+// a lobbed 3-rocket salvo (HIGH ballistic arc — clears buildings) with
+// real mass and per-rocket recoil.
+export function mechMissiles(world, mech) {
+  if (mech.state.mode === "FALLEN") return false;
+  if (world.t - (mech._lastMsl || -99) < 6) return false;
+  // acquire: nearest live team-2 body within 75m
+  const torso = mech.waist ? mech.waist.b : mech.hull;
+  let best = null, bestD = 75;
+  for (const b of world.bodies) {
+    if (!b.alive || b.team !== 2) continue;
+    const d = Math.hypot(b.pos.x - torso.pos.x, b.pos.z - torso.pos.z);
+    if (d < bestD) { bestD = d; best = b; }
+  }
+  if (!best || bestD < 8) return false; // no lock / danger-close
+  mech._lastMsl = world.t;
+  mech.mslTarget = { x: best.pos.x + best.v.x * 1.6, z: best.pos.z + best.v.z * 1.6 }; // lead at ~arc flight time
+  mech.mslSlew = 0; // launcher bearing animates in the controller-side state (visual later)
+  const m0 = { x: torso.pos.x, y: torso.pos.y + 0.9, z: torso.pos.z }; // shoulder height
+  const dx = mech.mslTarget.x - m0.x, dz = mech.mslTarget.z - m0.z;
+  const d = Math.max(6, Math.hypot(dx, dz));
+  const h = m0.y - world.field.heightAt(mech.mslTarget.x, mech.mslTarget.z);
+  // FIXED 32-degree loft, SPEED solved for the exact hit — a fixed-speed
+  // high arc flew ~10s and expired mid-flight (projectile life cap 8s),
+  // and took forever to land. s^2 = g d^2 (1+tan^2) / (2 (d tan + h))
+  const g = world.gravity, tanTh = 0.62;
+  const den = 2 * (d * tanTh + Math.max(0.5, h));
+  const spd = clamp(Math.sqrt(Math.max(100, g * d * d * (1 + tanTh * tanTh) / den)), 18, 90);
+  const th = Math.atan(tanTh);
+  const cp = Math.cos(th), sp2 = Math.sin(th);
+  const ux = dx / d, uz = dz / d;
+  for (let i = 0; i < 3; i++) {
+    const jx = (i - 1) * 0.012, jz = (i - 1) * -0.009; // slight ripple spread
+    const dir = v3(ux * cp + jx, sp2, uz * cp + jz);
+    V.norm(dir, dir);
+    fireProjectile(world, v3(m0.x + ux * 0.6, m0.y, m0.z + uz * 0.6), dir, spd,
+      { kind: "rocket", pmass: 15, r: 3.2, kv: 13, dmg: 62, crater: 0.8, attacker: "player", ownerMech: mech, delay: i * 0.14, vroll: true });
+    torso.v.x -= dir.x * (15 * spd) * torso.invM;
+    torso.v.z -= dir.z * (15 * spd) * torso.invM;
+  }
+  wake(torso);
+  mech.telem.salvos = (mech.telem.salvos || 0) + 1;
+  return true;
+}
 // POISE: raise one leg and stand on the other; call again to lower.
 export function mechPoise(world, mech, side) {
   const st = mech.state;
