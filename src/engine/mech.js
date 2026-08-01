@@ -282,7 +282,7 @@ function applyRot(b, ex, ey, ez) {
   const q = qFromAxis(V.set(_h5, ex / ang, ey / ang, ez / ang), ang);
   qNorm(qMul(b.q, q, b.q));
 }
-function positionalPass(mech, iters = 2) {
+function positionalPass(mech, iters = 2, anchor = null) {
   const M = __mech__;
   for (let it = 0; it < iters; it++) {
     for (const j of mech.joints) {
@@ -326,12 +326,23 @@ function positionalPass(mech, iters = 2) {
           const lam = cLen / sum;
           // A moves +d, B moves -d
           V.scale(_h6, _h3, lam);
-          V.addScaled(a.pos, a.pos, _h6, a.invM);
-          V.cross(_h4, _h1, _h6); iMulVec(a.invIw, _h4, _h5);
-          applyRot(a, _h5.x, _h5.y, _h5.z);
-          V.addScaled(b.pos, b.pos, _h6, -b.invM);
-          V.cross(_h4, _h2, _h6); iMulVec(b.invIw, _h4, _h5);
-          applyRot(b, -_h5.x, -_h5.y, -_h5.z);
+          // poise-hold anchor: the loaded stance foot takes NO horizontal
+          // position writes (they bypass friction — 95% of the sole-skate,
+          // advisor-1). Vertical closure stays; the chain absorbs the
+          // horizontal over the remaining iterations. Scoped to the hold —
+          // the global version broke the punt and the walk.
+          if (a === anchor) { a.pos.y += _h6.y * a.invM; }
+          else {
+            V.addScaled(a.pos, a.pos, _h6, a.invM);
+            V.cross(_h4, _h1, _h6); iMulVec(a.invIw, _h4, _h5);
+            applyRot(a, _h5.x, _h5.y, _h5.z);
+          }
+          if (b === anchor) { b.pos.y += -_h6.y * b.invM; }
+          else {
+            V.addScaled(b.pos, b.pos, _h6, -b.invM);
+            V.cross(_h4, _h2, _h6); iMulVec(b.invIw, _h4, _h5);
+            applyRot(b, -_h5.x, -_h5.y, -_h5.z);
+          }
           M.qToR(a.q, a.R); M.invInertiaWorld(a.R, a.invIb, a.invIw);
           M.qToR(b.q, b.R); M.invInertiaWorld(b.R, b.invIb, b.invIw);
         }
@@ -975,7 +986,10 @@ function controller(world, mech) {
   // reaches its foot under the pelvis CENTRE only if the hip drops
   // (3.67m needed at full height vs 3.6 of leg)
   if (st.crouchX == null) st.crouchX = 0;
-  const cxTgt = st.poise && st.poise.phase !== "recentre" ? 0.18 : 0;
+  // release the poise crouch only at a QUIET stand — ramping height back
+  // up mid-catch-walk is the catapult pattern (rising ref under load)
+  const cxTgt = st.poise && st.poise.phase !== "recentre" ? 0.18
+    : (st.mode === "WALK" || (st.recoverT || 0) > 0) ? st.crouchX : 0;
   st.crouchX += clamp(cxTgt - st.crouchX, -0.35 * dt, 0.35 * dt);
   const hipYRef = walkH + (1 - crouch) * (0.995 - 0.93) * g.L - st.hRec + vDamp - st.crouchX;
   // gait-frame axes for catch decisions
@@ -1179,8 +1193,13 @@ function controller(world, mech) {
       // raise eases up to the held height, then the foot TUCKS toward the
       // support line (crane stance) — mass over the foot, no roll moment
       if (po.tgt.y < groundRef + 0.85) po.tgt.y = Math.min(groundRef + 0.85, po.tgt.y + 0.5 * dt);
-      if (hull.R[4] < 0.9 || Math.hypot(xi.x - sp.x, xi.z - sp.z) > 2.2 * k.copLimitZ + 0.15) po.phase = "lower"; // abort EARLY — late aborts handed recentre an unrecoverable state
+      if (hull.R[4] < 0.9 || Math.hypot(xi.x - sp.x, xi.z - sp.z) > 1.55 * k.copLimitZ + 0.1) po.phase = "lower"; // abort while ONE capture step can still win: at 0.94 the excursion grows to 1.6 during the lower (e^{wt}) — beyond the 0.9 landing reach
       if (st.poiseDownReq) { po.phase = "lower"; st.poiseDownReq = null; }
+      if (po.phase === "lower") {
+        // the tucked leg's world position is NOT po.tgt — restart the
+        // capture landing from the measured foot
+        po.tgt = { x: rLeg.foot.pos.x, y: rLeg.foot.pos.y, z: rLeg.foot.pos.z };
+      }
     } else if (po.phase === "lower") {
       if (po.tgt) {
         po.tgt.y = Math.max(groundRef, po.tgt.y - 2.5 * dt);
@@ -1195,11 +1214,20 @@ function controller(world, mech) {
       if (rLeg.load > 0.25 * totalW) { po.phase = "recentre"; po.tgt = null; }
     } else if (po.phase === "recentre") {
       if (!po.rk) { po.rk = 1; st.postStop = 2.5; } // arm the post-stop lateral skyhook — recentre inherits real sway
-      // ease the com back between the feet BEFORE re-arming the catches —
-      // ending poise one-sided dumped straight into a catch-fall
-      const quiet2 = Math.hypot(_comV.x, _comV.z) < 0.3;
-      if (Math.hypot(xi.x - feetMid.x, xi.z - feetMid.z) < 0.25 && rLeg.load > 0.2 * totalW && quiet2) st.poise = null;
-      if ((po.rt = (po.rt || 0) + dt) > 6) st.poise = null; // don't wedge — but never hand a MOVING machine to the plain stand early
+      const exiR = Math.hypot(xi.x - feetMid.x, xi.z - feetMid.z);
+      // a BIG excursion is a stepping problem, not a leaning problem: the
+      // gentle stand-ease inherited xi 1.4m out and flailed itself dead in
+      // a second (measured). Hand the machine to the proven catch/stumble
+      // machinery — clearing poise re-arms the stand-catches next tick,
+      // recoverT gives the catch-walk its relaxed stop bounds.
+      if (exiR > 0.42) {
+        st.poise = null;
+        st.recoverT = Math.max(st.recoverT || 0, 0.9);
+      } else {
+        const quiet2 = Math.hypot(_comV.x, _comV.z) < 0.3;
+        if (exiR < 0.25 && rLeg.load > 0.2 * totalW && quiet2) st.poise = null;
+        if ((po.rt = (po.rt || 0) + dt) > 6) st.poise = null;
+      }
     }
   }
   if (st.mode === "STAND") {
@@ -1704,6 +1732,21 @@ function controller(world, mech) {
   for (const side of ["L", "R"]) {
     const leg = mech.legs[side];
     if (st.poise && st.poise.tgt && side === st.poise.raise) {
+      if (st.poise.phase === "hold") {
+        // JOINT-SPACE tuck for the HELD leg: any world-position IK chases
+        // the hull's own sway — the raised 1.5t leg flailed 0.4m at 2Hz
+        // and shook xi out of the box (measured). A held leg is a POSE.
+        // Slewed entry 0.7 rad/s: a snapped tuck's reaction outruns the
+        // ankle (advisor-2, measured).
+        const mir = side === "L" ? 1 : -1; // roll mirrors per side
+        const tuck = { hipRoll: 0.08 * mir, hipPitch: -0.55, knee: 1.35, anklePitch: -0.8, ankleRoll: 0 };
+        for (const jn of ["hipRoll", "hipPitch", "knee", "anklePitch", "ankleRoll"]) {
+          const j = leg[jn];
+          j.target += clamp(tuck[jn] - j.target, -0.7 * dt, 0.7 * dt);
+          j.tRate = 0;
+        }
+        continue;
+      }
       // SAME frame as stance IK: switching to swing-style (measured frame,
       // hull base, tiltComp) at the raise was a step input that yanked the
       // 1.5t leg and kicked the hull +0.5 m/s in 0.1s — the transient that
@@ -1827,6 +1870,9 @@ function controller(world, mech) {
       const eHold = clamp(eLive + vLat3 * 0.35 + st.poise.iTab, -0.9 * k.copLimitZ, 0.9 * k.copLimitZ);
       const slide = Math.hypot(leg.foot.v.x, leg.foot.v.z) > 0.12 ? 0.3 : 1;
       ar.tauFF = clamp((-sag - 0.3 * Fff * eHold) * slide, -0.9 * ar.tauMax, 0.9 * ar.tauMax);
+      // pitch keeps its POSITION spring untouched — its sag structurally
+      // carries the forward moment (cancelling it dropped the hold 16s->5s;
+      // a velocity trim tab also measured NEGATIVE, 16s->14.8s).
     }
   }
 }
@@ -1837,7 +1883,11 @@ export function mechIslandSolve(world, mech) {
   // gather this mech's contacts (flagged in prepContacts, excluded from the
   // LOD-tiered global pass)
   const cs = mech._contacts; cs.length = 0;
-  const cfm = 0.2 * mech.groundC / (dt * dt);
+  // during a poise HOLD the stance foot's ground compliance is the CoP
+  // realization LAG (~0.2s at omega 1.6) that loses the balance race
+  // (advisor-2, measured) — stiffen it 4x for the hold only
+  const poiseHold = mech.state.poise && mech.state.poise.phase === "hold";
+  const cfm = (poiseHold ? 0.05 : 0.2) * mech.groundC / (dt * dt);
   for (const c of world.contacts) {
     if (!c.mech) continue;
     if (c.a.mechRef === mech || (c.b && c.b.mechRef === mech)) {
@@ -1856,12 +1906,22 @@ export function mechIslandSolve(world, mech) {
   // unsolved lock velocity, or it integrates into a positional ratchet the
   // drift pass then converts into a standing hinge-angle error (measured)
   for (let it = 0; it < 2; it++) for (const j of mech.joints) iterHinge(j, dt, true);
+  // poise hold: two extra friction passes on the stance contacts — the
+  // sustained CoP torque slides the foot through residual tangential slip
+  if (poiseHold) {
+    for (let it = 0; it < 2; it++) for (const c of cs) solveContactOne(c, dt);
+  }
   // contact close-out: the lock sweep above injects impulses into the foot
   // bodies AFTER the last friction solve — that dirty tangential velocity
   // integrated every tick into the sole-skate (feet creeping backward at a
   // constant ~0.05 m/s, both feet lockstep). Re-balance the contacts, then
   // give the locks one final word.
   for (let it = 0; it < 2; it++) for (const c of cs) solveContactOne(c, dt);
+  // (STATIC foot clamp during hold: tried, measured WORSE — 17.5s -> 12s.
+  // The skating foot was accidentally tracking the residual controller-side
+  // xi drift, keeping support under it. The drift root is the same slow
+  // equilibrium loop as the standing skate — open engine/controller item.)
+
   for (const j of mech.joints) iterHinge(j, dt, true);
   // foot loads for the NEXT tick's controller (N)
   for (const side of ["L", "R"]) {
@@ -1873,7 +1933,12 @@ export function mechIslandSolve(world, mech) {
 }
 function stepMechs(world) {
   for (const mech of world.mechs) {
-    positionalPass(mech);
+    {
+    const po2 = mech.state.poise;
+    const anchor2 = po2 && po2.phase === "hold"
+      ? mech.legs[po2.raise === "L" ? "R" : "L"].foot : null;
+    positionalPass(mech, 2, anchor2);
+  }
     controller(world, mech);
     mechIslandSolve(world, mech);
   }
