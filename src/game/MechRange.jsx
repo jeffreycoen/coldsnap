@@ -135,10 +135,10 @@ export default function MechRange({ onExit }) {
       // held on release, chassis follows past 60% waist travel
       // keyboard follows the HOUSE convention (every mode steers on A/D);
       // Q/E strafe. Touch sticks keep the spec §0b layout.
-      let tf = S.keys.KeyW ? 0.3 : S.keys.KeyS ? -0.18 : 0;
+      let tf = S.keys.KeyW ? 0.42 : S.keys.KeyS ? -0.18 : 0;
       let tl = S.keys.KeyQ ? 0.22 : S.keys.KeyE ? -0.22 : 0;
       if (S.joyId != null) {
-        if (Math.abs(S.jy) > 0.12) tf = S.jy < 0 ? 0.3 * -S.jy : -0.18 * S.jy;
+        if (Math.abs(S.jy) > 0.12) tf = S.jy < 0 ? 0.42 * -S.jy : -0.18 * S.jy;
         if (Math.abs(S.jx) > 0.12) tl = -0.22 * S.jx;
       }
       if (S.keys.KeyA) S.yawT += 0.7 * dt;
@@ -259,7 +259,7 @@ export default function MechRange({ onExit }) {
   }, []);
   const line = { margin: 0, fontFamily: FONT, fontSize: 12, letterSpacing: 1 };
   return (
-    <div style={{ position: "fixed", inset: 0, background: "#000", touchAction: "none" }}>
+    <div style={{ position: "fixed", inset: 0, background: "#000", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none" }}>
       <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block" }} />
       <div data-mech-hud style={{ position: "absolute", top: 10, left: 12, color: "#c7d0dc", pointerEvents: "none" }}>
         <p style={{ ...line, color: COLORS.gold, fontSize: 14, letterSpacing: 2 }}>MECH TEST RANGE</p>

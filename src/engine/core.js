@@ -517,7 +517,12 @@ export function explode(world, x, y, z, spec) {
     // gave the 3800kg hull a 6.8 m/s shove from one mortar near-miss (and the
     // coax ~50x real momentum). Continuous at the knee; masonry (100kg) and
     // infantry (82kg) keep the demo's toss feel exactly.
-    const dvTemper = b.mass <= 600 ? temper : Math.sqrt(220 / 600) * (600 / b.mass);
+    // DIVERGENCE (guarded, no mechRef in the demo): a mech link is part of
+    // ONE 19-tonne machine — per-body light-mass tosses hit it 15x over and
+    // a single tank shell's blast leg-swept it. Momentum-consistent with
+    // the WHOLE mech mass, applied coherently to every link.
+    const effM = b.mechRef ? Math.max(600, b.mechRef.mass || 19000) : b.mass;
+    const dvTemper = effM <= 600 ? temper : Math.sqrt(220 / 600) * (600 / effM);
     const dv = spec.kv * f * dvTemper * (0.4 + 0.6 * occ);
     V.addScaled(b.v, b.v, dir, dv);
     // torque for tumble
@@ -638,10 +643,14 @@ function stepProjectiles(world) {
         const sp = V.len(p.v);
         if (sp > 1e-6) {
           const J = p.spec.pmass * sp;
-          hitBody.v.x += p.v.x / sp * J * hitBody.invM;
-          hitBody.v.y += p.v.y / sp * J * hitBody.invM;
-          hitBody.v.z += p.v.z / sp * J * hitBody.invM;
-          wake(hitBody);
+          // DIVERGENCE (guarded): a shell striking a mech limb dumps its
+          // momentum into the FRAME (hull), not the 400kg link — a limb
+          // kicked at 7 m/s was an instant leg-sweep
+          const rcv = hitBody.mechRef && hitBody.mechRef.hull ? hitBody.mechRef.hull : hitBody;
+          rcv.v.x += p.v.x / sp * J * rcv.invM;
+          rcv.v.y += p.v.y / sp * J * rcv.invM;
+          rcv.v.z += p.v.z / sp * J * rcv.invM;
+          wake(rcv);
         }
       }
       explode(world, hx, hy, hz, p.spec);
