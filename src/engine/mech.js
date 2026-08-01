@@ -603,7 +603,7 @@ export function buildMech(world, opts = {}) {
   mech.k = deriveGait(L, comH, R.hipX * s, { halfLen: R.foot.hz * s, halfWid: R.foot.hx * s, ankleOffX: R.foot.fwdOff * s }, world.gravity);
   mech.groundC = (0.01 * L) / (M * world.gravity); // spec §4, m/N
   // loop gains, sweepable (defaults = shipped tune)
-  mech.tune = { fzBase: 0.95, fzKp: 2.0, fzKd: 1.6, fzCap: 1.15, floorG: 0.85, katt: 1.2, cmgKp: 2.2, cmgKd: 0.55, cmgSlew: 1.5, yawSS: 1.0, yawSSd: 1.0, turnDS: 0.35, kickLean: 0.5, kickDur: 1.15, kickReach: 1.2, kickH: 0.9 } // punt-suite 4/4 (advisor sweep 2026-08-01); // sortie-swept: full SS yaw spring + heavy SS damping + slow DS turn = 4/6 clean vs 0/6
+  mech.tune = { fzBase: 0.95, fzKp: 2.0, fzKd: 1.6, fzCap: 1.15, floorG: 0.85, katt: 1.2, cmgKp: 2.2, cmgKd: 0.55, cmgSlew: 1.5, yawSS: 1.0, yawSSd: 1.0, turnDS: 0.35, afRate: 0.2, kickLean: 0.5, kickDur: 1.15, kickReach: 1.2, kickH: 0.9 } // punt-suite 4/4 (advisor sweep 2026-08-01); // sortie-swept: full SS yaw spring + heavy SS damping + slow DS turn = 4/6 clean vs 0/6
   // retune the arm dampers with FINAL mass + true gait omega (build-time
   // first pass used running totals — Den Hartog is sensitive to mu/wSway)
   if (mech.arms) for (const sd of ["L", "R"]) {
@@ -826,12 +826,59 @@ function controller(world, mech) {
   // 0.93 the frame is in trouble — shed the commands and recover
   if (st.mode === "WALK" && hull.R[4] < 0.93) st.recoverT = Math.max(st.recoverT, 0.9);
   // (a second, height-based trigger lives after walkH is computed)
+  // ABOUT-FACE: a commanded 180 executed as a march-in-place PIVOT (slew
+  // during single support at afRate; normal turning keeps the sortie-swept
+  // 2.8 deg/cycle DS budget). Travel sheds for the duration; a stumble
+  // aborts and clamps the pending turn to a plain trim so recovery isn't
+  // fighting a pi error.
+  if (st.aboutFace) {
+    const afp = Math.abs(wrapPi(st.headingT - st.heading));
+    if (afp < 0.12) {
+      st.aboutFace = false;
+      // in-place march sway rides above the strict stop bound forever
+      // (measured: turn done, WALK never exits) — take the stumble-stop's
+      // relaxed bounds home to STAND
+      if (st.mode === "WALK") st.recoverT = Math.max(st.recoverT, 1.8); // >= one full cycle, or the window expires before a qualifying touchdown
+    } else if (st.recoverT > 0 || st.mode === "FALLEN") {
+      // abort = kill ALL pending turn and stop. Leaving a residual trim
+      // froze a mid-pivot splayed stance and the frame pumped itself to
+      // 1.9 m/s riderless and fell (measured, march off 0.2)
+      st.aboutFace = false;
+      st.headingT = st.heading;
+      st.stopping = true;
+      st.recoverT = Math.max(st.recoverT, 1.8); // relaxed stop bounds long enough to reach a qualifying touchdown
+    } else {
+      st.cmdT.f = 0; st.cmdT.l = 0;
+      // brake-first (the punt's lesson): pivoting under way-speed momentum
+      // fell 2/8 from a march — shed to a walk-in-place crawl, THEN turn.
+      // LOW-PASSED speed: the instantaneous hull speed swings 0.3-0.9
+      // every sway cycle — a one-shot check flipped to "turn" with the
+      // momentum still there, and a sustained-quiet check never passed
+      if (st.aboutFace === "brake") {
+        const vh = Math.hypot(hull.v.x, hull.v.z);
+        st.afV = st.afV == null ? vh : st.afV + (vh - st.afV) * Math.min(1, dt / 0.7);
+        if (st.afV < 0.4) { st.aboutFace = "turn"; st.afV = null; }
+      }
+    }
+  }
   {
     const inDS = st.mode === "WALK" && st.phases && st.phases[st.pi] && st.phases[st.pi].kind === "DS";
     const pend = Math.abs(wrapPi(st.headingT - st.heading));
     const standOk = st.mode !== "WALK" && pend <= 0.3; // small trims only — big standing turns must STEP (see the walk-entry trigger)
-    if ((standOk || inDS) && !(st.mode === "WALK" && st.recoverT > 0)) {
-      const rate = st.mode === "WALK" ? k.turnRate * (k.stepPeriod / Math.max(k.tDS, 0.2)) * mech.tune.turnDS : k.turnRate;
+    const inSS = st.mode === "WALK" && st.phases && st.phases[st.pi] && st.phases[st.pi].kind !== "DS";
+    if ((standOk || inDS || (st.aboutFace && inSS)) && !(st.mode === "WALK" && st.recoverT > 0)) {
+      let rate = st.mode === "WALK" ? k.turnRate * (k.stepPeriod / Math.max(k.tDS, 0.2)) * mech.tune.turnDS : k.turnRate;
+      if (st.aboutFace && st.mode === "WALK") {
+        // the pivot rotates during SINGLE support only: one gripping sole
+        // resists the twist (the DS grind winds BOTH legs — measured: the
+        // wound chain shortened the frame 0.3m, tripped the height
+        // stumble, and released 0.6 rad as a whip), and every touchdown
+        // lands the swung foot neutral in the new frame, relieving the
+        // wind one leg at a time. Lean PAUSES the pivot (graceful, vs the
+        // stumble abort at 0.93 which ends it)
+        const upr = clamp((hull.R[4] - 0.955) / 0.03, 0, 1);
+        rate = inSS && st.aboutFace === "turn" ? mech.tune.afRate * upr : 0;
+      }
       st.heading += clamp(wrapPi(st.headingT - st.heading), -rate * dt, rate * dt);
     }
   }
@@ -1361,7 +1408,9 @@ function controller(world, mech) {
         // and the machine marched in place degraded (hy 3.8, R4 0.85-0.96
         // hopping) until a pirouette killed it. Stop to STAND, let the
         // launch gate relaunch clean.
-        if ((cmdTMag < 0.02 || st.recoverT > 0) && cmdMag < 0.06) st.stopping = true;
+        // about-face keeps the in-place march alive until the turn is in
+        // (stumbles still stop — the abort above already dropped the flag)
+        if ((cmdTMag < 0.02 || st.recoverT > 0) && cmdMag < 0.06 && !st.aboutFace) st.stopping = true;
         // GEAR CHANGE = stop first: commanding travel against the current
         // motion (reverse at speed) asked the gait for a momentum reversal
         // mid-stride and it died fighting it (sortie2, the instant the
@@ -1995,6 +2044,21 @@ export function mechPunt(world, mech) {
   if (world.t - (mech._lastPunt || -9) < 2.2) return false;
   mech._lastPunt = world.t;
   mech.state.puntReq = 2.8; // seconds the request stays pending — covers braking from a march plus waiting for double support
+  return true;
+}
+// ABOUT-FACE (design 2026-08-01): commanded 180 — through the RIGHT, per
+// drill. Request sets the heading target and stages brake -> turn; the
+// controller executes a march-in-place pivot (single-support slew) and
+// clears the flag when the turn is in.
+export function mechAboutFace(world, mech) {
+  const st = mech.state;
+  if (st.mode === "FALLEN" || st.kick || st.poise || st.aboutFace) return false;
+  if (world.t - (mech._lastAF || -9) < 3) return false;
+  mech._lastAF = world.t;
+  // -pi + eps keeps wrapPi's shortest-path resolution on the RIGHT side
+  st.headingT = wrapPi(st.heading - Math.PI + 0.02);
+  st.aboutFace = "brake";
+  st.cmdT.f = 0; st.cmdT.l = 0;
   return true;
 }
 // SHOULDER MISSILES (design 2026-08-01: "missiles from a shoulder

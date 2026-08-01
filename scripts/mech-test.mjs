@@ -2,7 +2,7 @@
 // mortar" — plus the cheap build-time asserts that catch numbers that were
 // wrong when typed. Runs headless against the real engine + island.
 import { makeWorld, makeField, addBody, stepWorld, worldHash, explode, __mech__ } from "../src/engine/core.js";
-import { buildMech, respawnMech, mechCommand, mechUp, mechFallen, mechCaps, mechIslandSolve, swingLift, __mechTest__ } from "../src/engine/mech.js";
+import { buildMech, respawnMech, mechCommand, mechAboutFace, mechUp, mechFallen, mechCaps, mechIslandSolve, swingLift, __mechTest__ } from "../src/engine/mech.js";
 
 const { v3 } = __mech__;
 const fails = [];
@@ -311,6 +311,30 @@ const run = (w, secs) => { const n = Math.round(secs / w.dt); for (let i = 0; i 
   // every turn-tune combo — a dedicated re-sweep is on the board. The
   // floor still catches any real regression (pre-fix scores were 0-4/6).
   ok("sorties: all six compound-maneuver runs survive", clean === SORTIES.length, "clean " + clean + "/6 " + (detail.join(" ") || ""));
+}
+
+// ---------------------------------------------------------------- 5c. about-face
+// commanded 180 (single-support pivot, brake-first from a march). Bar: no
+// fall, faces the reverse within 0.2 rad, back at STAND, inside 50s.
+{
+  const wrap = (a) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
+  for (const march of [false, true]) {
+    const w = flatWorld();
+    const mech = buildMech(w, { x: 0, z: 0 });
+    run(w, 2);
+    if (march) { mechCommand(mech, { travel: 0.42, lateral: 0, heading: 0 }); run(w, 6); }
+    const y0 = Math.atan2(mech.hull.R[6], mech.hull.R[8]);
+    mechAboutFace(w, mech);
+    let done = -1, fell = false;
+    for (let i = 0; i < Math.round(55 / w.dt); i++) {
+      w.events.length = 0; stepWorld(w);
+      if (mech.state.mode === "FALLEN") { fell = true; break; }
+      const yN = Math.atan2(mech.hull.R[6], mech.hull.R[8]);
+      if (done < 0 && !mech.state.aboutFace && mech.state.mode === "STAND" && Math.abs(wrap(yN - y0 - Math.PI)) < 0.2) { done = i * w.dt; break; }
+    }
+    ok(`about-face from ${march ? "march" : "stand"}: 180 in, no fall, back at STAND`, !fell && done >= 0 && done <= 50,
+      fell ? "FELL" : done < 0 ? "incomplete" : "took " + done.toFixed(1) + "s");
+  }
 }
 
 // ---------------------------------------------------------------- 6. mortar -> catch or fall -> limp -> respawn

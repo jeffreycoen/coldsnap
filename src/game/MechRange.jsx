@@ -4,7 +4,7 @@
 // The machine stands, weight-shifts, steps — and still falls; R reissues it.
 import React, { useEffect, useRef, useState } from "react";
 import { makeWorld, makeField, stepWorld, addBody, fireProjectile } from "../engine/core.js";
-import { buildMech, mechCommand, respawnMech, mechFallen, mechFire, mechPunt, mechPoise, mechMissiles, mechAimDir } from "../engine/mech.js";
+import { buildMech, mechCommand, respawnMech, mechFallen, mechFire, mechPunt, mechPoise, mechMissiles, mechAboutFace, mechAimDir } from "../engine/mech.js";
 import { makeRenderer } from "../render/renderer.js";
 import { detectTouch } from "./runner/trials.js";
 import { BUILDERS } from "./scenario.js";
@@ -68,6 +68,7 @@ export default function MechRange({ onExit }) {
       punt: () => mechPunt(world, mech),
       poise: () => mechPoise(world, mech, "L"),
       missiles: () => mechMissiles(world, mech),
+      about: () => mechAboutFace(world, mech),
     };
     const joyBase = () => ({ x: 86, y: window.innerHeight - 130 });
     const rsBase = () => ({ x: window.innerWidth - 86, y: window.innerHeight - 130 });
@@ -140,6 +141,7 @@ export default function MechRange({ onExit }) {
       if (e.code === "KeyC") { mechPunt(world, mech); }
       if (e.code === "KeyX") { mechPoise(world, mech, "L"); }
       if (e.code === "KeyV") { mechMissiles(world, mech); }
+      if (e.code === "KeyT") { mechAboutFace(world, mech); }
       if (e.code === "KeyR") {
         respawnMech(world, mech, 0, 0, 0);
         S.yawT = 0; S.aimYaw = null; mech.aimYaw = null;
@@ -197,7 +199,9 @@ export default function MechRange({ onExit }) {
       // walking. Rate = actual machine capability, not 5x it.
       if (mech.waist && Math.abs(mech.waist.target) > 0.6 * 0.87 && Math.hypot(tf, tl) > 0.05)
         S.yawT += Math.sign(mech.waist.target) * 0.12 * dt;
-      mechCommand(mech, { travel: tf, lateral: tl, heading: S.yawT });
+      // about-face owns the heading while it runs — writing S.yawT every
+      // frame would overwrite the 180 target the maneuver is executing
+      mechCommand(mech, { travel: tf, lateral: tl, heading: mech.state.aboutFace ? null : S.yawT });
       if (S.keys.Space || S.keys.KeyF || S.fireHeld) mechFire(world, mech); // rate-limited inside
       // tank platoon AI: standoff orbit + gunnery
       const mh = mech.hull;
@@ -295,7 +299,7 @@ export default function MechRange({ onExit }) {
       <div data-mech-hud style={{ position: "absolute", top: 10, left: 12, color: "#c7d0dc", pointerEvents: "none" }}>
         <p style={{ ...line, color: COLORS.gold, fontSize: 14, letterSpacing: 2 }}>MECH TEST RANGE</p>
         <p style={line}>BIPED FRAME MK1 — GAIT ACCEPTANCE PENDING</p>
-        <p style={line}>{isTouch ? "L stick moves · R stick turns · ◀ ▶ aim cannon · slider range" : "W/S walk · A/D turn · MOUSE aims · CLICK fire · V missiles · C punt · X one-leg · R reissue"}</p>
+        <p style={line}>{isTouch ? "L stick moves · R stick turns · ◀ ▶ aim cannon · slider range" : "W/S walk · A/D turn · MOUSE aims · CLICK fire · V missiles · C punt · X one-leg · T 180 · R reissue"}</p>
         <p data-mech-status style={line}>
           {hud.mode === "FALLEN" ? "FRAME DOWN — R TO REISSUE" : hud.mode} · steps {hud.steps} · falls {hud.falls} · kills {hud.kills} · shots {hud.shots}
         </p>
@@ -342,15 +346,19 @@ export default function MechRange({ onExit }) {
             {"\u25B2\uFE0E"} FIRE
           </button>
           <button data-mech-msl onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.missiles(); }}
-            style={{ position: "absolute", ...(narrow ? { left: 12, bottom: 200 } : { left: "calc(50% + 58px)", bottom: 90 }), width: 92, height: 48, fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#e8c9b8", background: "rgba(46,29,21,0.9)", border: "1px solid #7a5e4e", touchAction: "none" }}>
+            style={{ position: "absolute", ...(narrow ? { left: 12, bottom: 200 } : { left: "calc(50% + 5px)", bottom: 90 }), width: 88, height: 48, fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#e8c9b8", background: "rgba(46,29,21,0.9)", border: "1px solid #7a5e4e", touchAction: "none" }}>
             ▲▲ MSL
           </button>
           <button data-mech-poise onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.poise(); }}
-            style={{ position: "absolute", ...(narrow ? { left: 12, bottom: 252 } : { left: "calc(50% - 46px)", bottom: 90 }), width: 92, height: 48, fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#c7d0dc", background: "rgba(29,37,49,0.9)", border: "1px solid #5f6e80", touchAction: "none" }}>
+            style={{ position: "absolute", ...(narrow ? { left: 12, bottom: 252 } : { left: "calc(50% - 93px)", bottom: 90 }), width: 88, height: 48, fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#c7d0dc", background: "rgba(29,37,49,0.9)", border: "1px solid #5f6e80", touchAction: "none" }}>
             ONE LEG
           </button>
+          <button data-mech-about onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.about(); }}
+            style={{ position: "absolute", ...(narrow ? { left: 12, bottom: 356 } : { left: "calc(50% + 103px)", bottom: 90 }), width: 88, height: 48, fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#c7d0dc", background: "rgba(29,37,49,0.9)", border: "1px solid #5f6e80", touchAction: "none" }}>
+            180
+          </button>
           <button data-mech-punt onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.punt(); }}
-            style={{ position: "absolute", ...(narrow ? { left: 12, bottom: 304 } : { left: "calc(50% - 150px)", bottom: 90 }), width: 92, height: 48, fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#c7d0dc", background: "rgba(29,37,49,0.9)", border: "1px solid #5f6e80", touchAction: "none" }}>
+            style={{ position: "absolute", ...(narrow ? { left: 12, bottom: 304 } : { left: "calc(50% - 191px)", bottom: 90 }), width: 88, height: 48, fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#c7d0dc", background: "rgba(29,37,49,0.9)", border: "1px solid #5f6e80", touchAction: "none" }}>
             PUNT
           </button>
           <button data-mech-reissue onClick={() => window.__MECHRANGE__ && window.__MECHRANGE__.reissue()}
