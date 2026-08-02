@@ -353,7 +353,7 @@ export default function MechRange({ onExit }) {
       <div data-mech-hud style={{ position: "absolute", top: 10, left: 12, color: "#c7d0dc", pointerEvents: "none" }}>
         <p style={{ ...line, color: COLORS.gold, fontSize: 14, letterSpacing: 2 }}>MECH TEST RANGE</p>
         <p style={line}>BIPED FRAME MK1 — GAIT ACCEPTANCE PENDING</p>
-        <p style={line}>{isTouch ? "L stick moves · R stick turns (or JETS) · ◀ ▶ aim · slider range" : "W/S walk · A/D turn · MOUSE aims · CLICK fire · V missiles · C punt · X one-leg · T 180 · G gyro · H rcs · R reissue"}</p>
+        <p style={line}>{isTouch ? "L stick moves · R stick turns (or JETS) · ◀ ▶ aim · slider range" : "W/S walk · A/D turn · MOUSE aims · CLICK fire · V missiles · C punt · X one-leg · T 180 · G gyro · H rockets · R reissue"}</p>
         <p data-mech-status style={line}>
           {hud.mode === "FALLEN" ? "FRAME DOWN — R TO REISSUE" : hud.mode} · steps {hud.steps} · falls {hud.falls} · kills {hud.kills} · shots {hud.shots} · garrison {hud.alert ? "ALERTED" : "unaware"}
         </p>
@@ -376,7 +376,7 @@ export default function MechRange({ onExit }) {
         </button>
         <button data-mech-rcs onClick={() => { const m = window.__MECHRANGE__; if (m) m.rcs(); }}
           style={{ position: "absolute", right: 196, top: 144, padding: "10px 12px", fontFamily: FONT, fontSize: 12, letterSpacing: 1, color: hud.rcs ? "#c7d0dc" : "#e8c9b8", background: hud.rcs ? "#1a212b" : "#3a2118", border: hud.rcs ? "1px solid #5f6e80" : "1px solid #7a5e4e" }}>
-          RCS {hud.rcs ? "ON" : "OFF"}
+          ROCKETS {hud.rcs ? "ON" : "OFF"}
         </button>
         {/* action buttons + REISSUE/MENU: every device — desktop had no
             on-screen buttons at all and the 180/PUNT surface was invisible */}
