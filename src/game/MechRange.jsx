@@ -94,13 +94,18 @@ export default function MechRange({ onExit }) {
       if (S.joyId == null && Math.hypot(e.clientX - c.x, e.clientY - c.y) < 110) S.joyId = e.pointerId;
       else if (S.rsId == null && Math.hypot(e.clientX - a.x, e.clientY - a.y) < 110) S.rsId = e.pointerId;
     };
+    const setRange = (r) => {
+      S.aimRange = Math.max(6, Math.min(80, r));
+      const hgt = 150, top = window.innerHeight - 350;
+      const t = (S.aimRange - 6) / 74;
+      if (rngThumbRef.current) rngThumbRef.current.style.top = top + hgt - t * hgt - 12 + "px";
+      if (rngLabelRef.current) rngLabelRef.current.textContent = Math.round(S.aimRange) + "m";
+    };
     const sliderY = (clientY) => {
       // vertical slider along the right edge: bottom = 6m, top = 80m
       const hgt = 150, top = window.innerHeight - 350; // above the right (turn) stick
       const t = Math.max(0, Math.min(1, (top + hgt - clientY) / hgt));
-      S.aimRange = 6 + t * 74;
-      if (rngThumbRef.current) rngThumbRef.current.style.top = top + hgt - t * hgt - 12 + "px";
-      if (rngLabelRef.current) rngLabelRef.current.textContent = Math.round(S.aimRange) + "m";
+      setRange(6 + t * 74);
     };
     window.__MECHRANGE__.sliderY = sliderY;
     window.__MECHRANGE__.grabRange = (id, y) => { S.rngId = id; sliderY(y); };
@@ -126,7 +131,8 @@ export default function MechRange({ onExit }) {
       } else if (e.pointerId === S.rsId) {
         const a = rsBase();
         S.rx = Math.max(-1, Math.min(1, (e.clientX - a.x) / 44));
-        if (rsKnobRef.current) { rsKnobRef.current.style.left = a.x - 20 + S.rx * 34 + "px"; rsKnobRef.current.style.top = a.y - 20 + "px"; }
+        S.ry = Math.max(-1, Math.min(1, (e.clientY - a.y) / 44));
+        if (rsKnobRef.current) { rsKnobRef.current.style.left = a.x - 20 + S.rx * 34 + "px"; rsKnobRef.current.style.top = a.y - 20 + S.ry * 34 + "px"; }
       } else if (e.pointerId === S.rngId) {
         sliderY(e.clientY);
       }
@@ -138,7 +144,7 @@ export default function MechRange({ onExit }) {
         const c = joyBase();
         if (knobRef.current) { knobRef.current.style.left = c.x - 20 + "px"; knobRef.current.style.top = c.y - 20 + "px"; }
       } else if (e.pointerId === S.rsId) {
-        S.rsId = null; S.rx = 0;
+        S.rsId = null; S.rx = 0; S.ry = 0;
         const a = rsBase();
         if (rsKnobRef.current) { rsKnobRef.current.style.left = a.x - 20 + "px"; rsKnobRef.current.style.top = a.y - 20 + "px"; }
       } else if (e.pointerId === S.rngId) {
@@ -191,6 +197,8 @@ export default function MechRange({ onExit }) {
       // the same steering-locked heading target as A/D — the stick cannot
       // wind up a lead the machine can't follow.
       if (Math.abs(S.rx) > 0.15) S.yawT -= S.rx * 0.9 * dt;
+      // right stick vertical = cannon range (rate): push out, pull in
+      if (Math.abs(S.ry || 0) > 0.25) setRange(S.aimRange + -S.ry * 28 * dt);
       // steering lock: the heading COMMAND may lead the actual body by at
       // most 0.5 rad. Unbounded lead (chassis-follow wound to 3.7 rad for a
       // 1.6 rad aim) forced max-rate turning long after the stick released.
@@ -345,7 +353,7 @@ export default function MechRange({ onExit }) {
       <div data-mech-hud style={{ position: "absolute", top: 10, left: 12, color: "#c7d0dc", pointerEvents: "none" }}>
         <p style={{ ...line, color: COLORS.gold, fontSize: 14, letterSpacing: 2 }}>MECH TEST RANGE</p>
         <p style={line}>BIPED FRAME MK1 — GAIT ACCEPTANCE PENDING</p>
-        <p style={line}>{isTouch ? "L stick moves · R stick turns · ◀ ▶ aim cannon · slider range" : "W/S walk · A/D turn · MOUSE aims · CLICK fire · V missiles · C punt · X one-leg · T 180 · B dash · G gyro · H rcs · R reissue"}</p>
+        <p style={line}>{isTouch ? "L stick moves · R stick turns + range · ◀ ▶ aim cannon" : "W/S walk · A/D turn · MOUSE aims · CLICK fire · V missiles · C punt · X one-leg · T 180 · B dash · G gyro · H rcs · R reissue"}</p>
         <p data-mech-status style={line}>
           {hud.mode === "FALLEN" ? "FRAME DOWN — R TO REISSUE" : hud.mode} · steps {hud.steps} · falls {hud.falls} · kills {hud.kills} · shots {hud.shots} · garrison {hud.alert ? "ALERTED" : "unaware"}
         </p>
