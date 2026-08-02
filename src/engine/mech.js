@@ -1092,6 +1092,8 @@ function controller(world, mech) {
     const torso5 = mech.waist ? mech.waist.b : mech.hull;
     const R5 = torso5.R;
     for (const th of mech.thrusters) th.cmd = 0;
+    const jetsLive5 = mech.jetCmd && Math.hypot(mech.jetCmd.x, mech.jetCmd.z) > 0.15;
+    if (jetsLive5) st._thrA = 0; // JETS = FULL MANUAL (Jeff): the auto-stabilizer stands down — its 'saves' were fighting the pilot's stick (traced: auto burns at 1.0 ratcheting a runaway the pilot never commanded)
     if (st._thrA) {
       // demand: push the capture point back over the feet + damp CoM speed
       const dx5 = -ex5 * 2.2 - _comV.x * 0.9;
@@ -1110,12 +1112,47 @@ function controller(world, mech) {
       // — manual mode is for standing scoots, slides, and showing off.
       const jm = Math.min(1, Math.hypot(mech.jetCmd.x, mech.jetCmd.z));
       const jx5 = mech.jetCmd.x / Math.max(1e-6, jm), jz5 = mech.jetCmd.z / Math.max(1e-6, jm);
+      // ASYMMETRIC authority: forward burns run full (the commanded-speed
+      // override tames the brake on that axis); lateral burns soften — a
+      // full side push outruns what sideways stepping can catch (measured:
+      // 0.74 m/s strafe, fell in 4s). The strafing GAIT carries lateral.
+      const fwdX5 = Math.sin(st.heading), fwdZ5 = Math.cos(st.heading);
+      const jf5 = jx5 * fwdX5 + jz5 * fwdZ5;
+      // lateral burns ZERO while walking: aligned side-thrust on a strafing
+      // gait overspeeds what sideways stepping catches (fell in 8s twice;
+      // the opposing-thrust control survived — alignment is the killer).
+      // The strafe steps carry lateral; fire pours on forward boosts and
+      // standing scoots.
+      const quiet5 = st.mode !== "WALK" && Math.hypot(hull.v.x, hull.v.z) < 0.3 && cmdIntent < 0.05; // and NOT while a launch is commanded — scoot-puffs during a strafe launch poisoned it (fell 9.4s, three gating attempts)
+      // MANUAL with ENGINE MANAGEMENT: direction and demand are the
+      // pilot's; fuel flow tapers as speed nears what the stride can
+      // track (0.62 m/s certified) — raw thrust ran the machine to 11m
+      // and a face-plant from ONE held stick (legs are the constraint,
+      // not the rockets; real engines have governors)
+      const vAl5 = (_comV.x * jx5 + _comV.z * jz5); // speed along the burn
+      // authority fits what STEP-CATCHES can ride (autos are silent in
+      // manual — that's the mode's promise): speed-governed to 0.28,
+      // backward extra-soft (no reverse gait exists to catch it)
+      const back5 = -(jx5 * Math.sin(st.heading) + jz5 * Math.cos(st.heading));
+      // manual burns run on a HEAT budget (~2.8s full burn, ~4s cool):
+      // bursts are potent, sustained holds fade out instead of seeding
+      // the self-accelerating catch-march that killed every hold (5
+      // calibrations of pure authority tuning could not fix a hold).
+      // Backward is puffs-only: no reverse gait exists to catch it.
+      // burn CUTS while the machine is catch-stepping (uncommanded WALK):
+      // pushing a machine that is already busy catching is how every
+      // sustained-hold death happened — six authority calibrations could
+      // not out-tune it. Backward is zero: no reverse gait can catch any.
+      const catching5 = st.mode === "WALK" && cmdIntent < 0.05;
+      const gov5 = catching5 || back5 > 0.3 ? 0
+        : clamp((0.28 - vAl5) / 0.12, 0, 1) * 0.65 * clamp((1 - (mech.jetHeat || 0)) * 3, 0, 1);
+      const scale5 = (quiet5 ? 1 : 0.35 + 0.65 * Math.max(0, jf5)) * gov5; // side puffs only on a QUIET stand — they kicked the STAND-catch transitions mid-strafe (fell 9.4s with walking burns already zeroed)
       for (const th of mech.thrusters) {
         const tx5 = -(R5[0] * th.e.x + R5[3] * th.e.y + R5[6] * th.e.z);
         const tz5 = -(R5[2] * th.e.x + R5[5] * th.e.y + R5[8] * th.e.z);
-        th.cmd = clamp((jx5 * tx5 + jz5 * tz5) * 1.6 * jm, 0, 0.8);
+        th.cmd = clamp((jx5 * tx5 + jz5 * tz5) * 1.0 * jm * scale5, 0, 1); // PROPORTIONAL: gain 2.4 clipped every burn to max at any deflection — no finesse axis for the pilot (all-direction falls)
       }
-      st._thrV = null;
+      st._thrV = null; // manual burns get an HONEST brake — telling it burn-speed was commanded let catch-marching run away (traced)
     } else if (mech.thrustAssist && ((st.govF != null && st.govF > 0.505) || st.govDecel)) {
       // SPEED ASSIST — the g_eff-compensated overdrive booster: every outer
       // patch surfaced another coupling with the swept balance stack
@@ -1146,7 +1183,7 @@ function controller(world, mech) {
     let lift = 0;
     for (const th of mech.thrusters) lift += th.cmd * mech.thrustMax * Math.SQRT1_2;
     const jetsLive = mech.jetCmd && Math.hypot(mech.jetCmd.x, mech.jetCmd.z) > 0.15;
-    const liftCap = (st._thrA ? 0.30 : jetsLive ? 0.25 : gyroOff ? 0.25 : 0.20) * W5;
+    const liftCap = (st._thrA ? 0.30 : jetsLive ? 0.32 : gyroOff ? 0.25 : 0.20) * W5;
     if (lift > liftCap) { const sc5 = liftCap / lift; for (const th of mech.thrusters) th.cmd *= sc5; }
   }
   // SPAWN SEQUENCE (spec §5f): settle with both feet loaded (~0.4s) -> crouch
@@ -2183,10 +2220,12 @@ function stepMechs(world) {
       const dt = world.dt;
       if (!mech._thrF) mech._thrF = { x: 0, z: 0 };
       mech._thrF.x = 0; mech._thrF.z = 0;
+      let hotSum = 0;
       for (const th of mech.thrusters) {
         const tgt = mech.thrustersOn ? clamp(th.cmd, 0, 1) : 0;
         const spool = mech.gyroOn === false ? 0.06 : 0.12; // continuous duty needs the faster bell
         th.cur += clamp(tgt - th.cur, -dt / spool, dt / spool);
+        if (th.cur > hotSum) hotSum = th.cur;
         if (th.cur < 0.01) continue;
         const F = th.cur * mech.thrustMax;
         // world-frame mount + exhaust via torso rows-as-basis
@@ -2210,6 +2249,9 @@ function stepMechs(world) {
         torso.w.z += (torso.invIw[6] * tx + torso.invIw[7] * ty2 + torso.invIw[8] * tz2) * dt;
         wake(torso);
       }
+      // heat only accrues on MANUAL burns; autos are engine-managed
+      const manual = mech.jetCmd && Math.hypot(mech.jetCmd.x, mech.jetCmd.z) > 0.15;
+      mech.jetHeat = clamp((mech.jetHeat || 0) + (manual ? hotSum * dt / 2.8 : 0) - dt / 4, 0, 1);
     }
     mechIslandSolve(world, mech);
   }

@@ -193,8 +193,11 @@ export default function MechRange({ onExit }) {
       // the same steering-locked heading target as A/D — the stick cannot
       // wind up a lead the machine can't follow.
       if (S.jetMode) {
-        // JETS mode: right stick vectors a continuous burn (screen frame:
-        // right = -x, up = +z); turn/range revert to arrows + slider
+        // JETS mode: right stick = the ROCKETS, nothing else. Left stick
+        // still walks; the pilot blends legs and fire. (Driving the gait
+        // from the burn vector measured falls at every authority tried —
+        // walking + sustained burns needs the auto-stabilizer, and manual
+        // mode is exactly the promise that it stays silent.)
         mech.jetCmd = { x: -(S.rx || 0), z: -(S.ry || 0) };
       } else {
         mech.jetCmd = null;
