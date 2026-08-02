@@ -620,7 +620,7 @@ export function buildMech(world, opts = {}) {
   mech.k = deriveGait(L, comH, R.hipX * s, { halfLen: R.foot.hz * s, halfWid: R.foot.hx * s, ankleOffX: R.foot.fwdOff * s }, world.gravity);
   mech.groundC = (0.01 * L) / (M * world.gravity); // spec §4, m/N
   // loop gains, sweepable (defaults = shipped tune)
-  mech.tune = { fzBase: 0.95, fzKp: 2.0, fzKd: 1.6, fzCap: 1.15, floorG: 0.85, katt: 1.2, cmgKp: 2.2, cmgKd: 0.55, cmgSlew: 1.5, yawSS: 1.0, yawSSd: 1.0, turnDS: 0.35, afRate: 0.2, standTurn: 0.5, kickLean: 0.5, kickDur: 1.15, kickReach: 1.2, kickH: 0.9 } // punt-suite 4/4 (advisor sweep 2026-08-01); // sortie-swept: full SS yaw spring + heavy SS damping + slow DS turn = 4/6 clean vs 0/6
+  mech.tune = { fzBase: 0.95, fzKp: 2.0, fzKd: 1.6, fzCap: 1.15, floorG: 0.85, katt: 1.2, cmgKp: 2.2, cmgKd: 0.55, cmgSlew: 1.5, yawSS: 1.0, yawSSd: 1.0, turnDS: 0.35, afRate: 0.2, standTurn: 0.8, raibert: 1.6, kickLean: 0.5, kickDur: 1.15, kickReach: 1.2, kickH: 0.9 } // punt-suite 4/4 (advisor sweep 2026-08-01); // sortie-swept: full SS yaw spring + heavy SS damping + slow DS turn = 4/6 clean vs 0/6
   // retune the arm dampers with FINAL mass + true gait omega (build-time
   // first pass used running totals — Den Hartog is sensitive to mu/wSway)
   if (mech.arms) for (const sd of ["L", "R"]) {
@@ -902,7 +902,10 @@ function controller(world, mech) {
     if ((standOk || standFast || inDS || (st.aboutFace && inSS)) && !(st.mode === "WALK" && st.recoverT > 0)) {
       let rate = st.mode === "WALK" ? k.turnRate * (k.stepPeriod / Math.max(k.tDS, 0.2)) * mech.tune.turnDS : (standFast ? mech.tune.standTurn : k.turnRate);
       // absorb headroom: pause ANY walk slew when a loaded leg is near its
-      // yaw stop — the next touchdown relieves it and the slew resumes
+      // yaw stop — the next touchdown relieves it and the slew resumes.
+      // (The old-rig aboutFace SS-pivot is GONE on this rig: it fell at
+      // every rate. The absorb-gated STAND turn + step-turn relief loop
+      // executes the 180 through the ordinary machinery.)
       {
         const W3 = mech.mass * world.gravity;
         let occ = 0;
@@ -911,17 +914,6 @@ function controller(world, mech) {
           if (lg3.hipYaw && lg3.load > 0.12 * W3) occ = Math.max(occ, Math.abs(lg3.yawTgt || 0));
         }
         if (st.mode === "WALK") rate *= clamp((0.55 - occ) / 0.12, 0, 1);
-      }
-      if (st.aboutFace && st.mode === "WALK") {
-        // the pivot rotates during SINGLE support only: one gripping sole
-        // resists the twist (the DS grind winds BOTH legs — measured: the
-        // wound chain shortened the frame 0.3m, tripped the height
-        // stumble, and released 0.6 rad as a whip), and every touchdown
-        // lands the swung foot neutral in the new frame, relieving the
-        // wind one leg at a time. Lean PAUSES the pivot (graceful, vs the
-        // stumble abort at 0.93 which ends it)
-        const upr = clamp((hull.R[4] - 0.955) / 0.03, 0, 1);
-        rate = inSS && st.aboutFace === "turn" ? mech.tune.afRate * upr : 0;
       }
       st.heading += clamp(wrapPi(st.headingT - st.heading), -rate * dt, rate * dt);
     }
@@ -1486,7 +1478,7 @@ function controller(world, mech) {
         // launch gate relaunch clean.
         // about-face keeps the in-place march alive until the turn is in
         // (stumbles still stop — the abort above already dropped the flag)
-        if ((cmdTMag < 0.02 || st.recoverT > 0) && cmdMag < 0.06 && !st.aboutFace) st.stopping = true;
+        if ((cmdTMag < 0.02 || st.recoverT > 0) && cmdMag < 0.06) st.stopping = true;
         // GEAR CHANGE = stop first: commanding travel against the current
         // motion (reverse at speed) asked the gait for a momentum reversal
         // mid-stride and it died fighting it (sortie2, the instant the
@@ -1651,7 +1643,7 @@ function controller(world, mech) {
     {
       const bCap = cmdMag < 0.05 ? 1.0 : 0.7; // uncommanded recovery: full braking — the catch cascade accelerated backward past the 0.7 cap
       const vf = clamp(
-        ((_comV.x - cmdW.x) * axes.fwd.x + (_comV.z - cmdW.z) * axes.fwd.z) / om * 1.3,
+        ((_comV.x - cmdW.x) * axes.fwd.x + (_comV.z - cmdW.z) * axes.fwd.z) / om * mech.tune.raibert,
         -bCap * k.strideCap, bCap * k.strideCap);
       t2.x += vf * axes.fwd.x * smoothstep(s2); t2.z += vf * axes.fwd.z * smoothstep(s2);
     }
