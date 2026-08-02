@@ -414,6 +414,8 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const mechMesh = pool(new THREE.BoxGeometry(1, 1, 1), toon(0xffffff), 24, true);
   mechMesh.receiveShadow = true;
   const MECH_HULL_C = new THREE.Color(0x5f6e80), MECH_LINK_C = new THREE.Color(0x434c58), MECH_FOOT_C = new THREE.Color(0x2f353d);
+  const POD_LOCK_C = new THREE.Color(0x6b3226); // rust-red while the rack holds a live lock
+  const _podQ = new THREE.Quaternion(), _podUp = new THREE.Vector3();
   const iceMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.66, depthWrite: true });
   const _iceC = new THREE.Color();
   const _iceR = new Float32Array(80); // display envelope: fast attack, slow decay
@@ -654,12 +656,22 @@ export function makeRenderer(canvas, world0, opts = {}) {
     if (torsoB && mi < 23) {
       _bq.set(torsoB.q.x, torsoB.q.y, torsoB.q.z, torsoB.q.w);
       const _off = new THREE.Vector3(-1.35, 0.62, -0.05).applyQuaternion(_bq);
-      writeInst(mechMesh, mi, torsoB.pos.x + _off.x, torsoB.pos.y + _off.y, torsoB.pos.z + _off.z, torsoB.q, 0.6, 0.5, 0.9); // pylon
+      const plx = torsoB.pos.x + _off.x, ply = torsoB.pos.y + _off.y, plz = torsoB.pos.z + _off.z;
+      writeInst(mechMesh, mi, plx, ply, plz, torsoB.q, 0.6, 0.5, 0.9); // pylon (fixed mount)
       if (mechMesh.setColorAt) mechMesh.setColorAt(mi, MECH_LINK_C);
       mi++;
-      _off.set(-1.35, 1.32, 0.12).applyQuaternion(_bq);
-      writeInst(mechMesh, mi, torsoB.pos.x + _off.x, torsoB.pos.y + _off.y, torsoB.pos.z + _off.z, torsoB.q, 1.5, 1.15, 2.9); // the pod
-      if (mechMesh.setColorAt) mechMesh.setColorAt(mi, MECH_FOOT_C);
+      // the pod SLEWS independent of the torso: yaw about its own mount by
+      // the engine's tracked launcher bearing (mech.mslYaw, world frame)
+      const mch = torsoB.mechRef;
+      const tYaw = Math.atan2(torsoB.R[6], torsoB.R[8]);
+      let rel = (mch && mch.mslYaw != null ? mch.mslYaw : tYaw) - tYaw;
+      while (rel > Math.PI) rel -= 2 * Math.PI;
+      while (rel < -Math.PI) rel += 2 * Math.PI;
+      _swq.setFromAxisAngle(_podUp.set(0, 1, 0), rel);
+      _podQ.copy(_bq).multiply(_swq);
+      _off.set(0, 0.70, 0.17).applyQuaternion(_podQ);
+      writeInst(mechMesh, mi, plx + _off.x, ply + _off.y, plz + _off.z, _podQ, 1.5, 1.15, 2.9); // the pod
+      if (mechMesh.setColorAt) mechMesh.setColorAt(mi, mch && mch.podLock ? POD_LOCK_C : MECH_FOOT_C);
       mi++;
     }
     mechMesh.count = mi; mechMesh.instanceMatrix.needsUpdate = true;

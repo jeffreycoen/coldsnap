@@ -1885,6 +1885,22 @@ function controller(world, mech) {
     const stLeg = mech.legs[st.poise.raise === "L" ? "R" : "L"];
     stLeg.ankleRoll.target = -stLeg.hipRoll.angle;
   }
+  // SHOULDER POD TRACKING (2026-08-02): the rack slews INDEPENDENT of the
+  // torso — a ~300kg pod on a 19t frame turns for free. It points where
+  // the next salvo would actually go (the reticle solve, snapped targets
+  // included), and at the live mslTarget for a beat after firing.
+  {
+    const torso2 = mech.waist ? mech.waist.b : mech.hull;
+    const tYaw = Math.atan2(torso2.R[6], torso2.R[8]);
+    let want;
+    if (mech.mslTarget && world.t - (mech._lastMsl || -99) < 2.5) want = mech.mslTarget;
+    else if ((st._podT = ((st._podT || 0) + dt)) > 0.1) { st._podT = 0; st._podAim = mslAimPoint(world, mech); want = st._podAim; }
+    else want = st._podAim;
+    const wYaw = want ? Math.atan2(want.x - torso2.pos.x, want.z - torso2.pos.z) : tYaw;
+    if (mech.mslYaw == null) mech.mslYaw = tYaw;
+    mech.mslYaw += clamp(wrapPi(wYaw - mech.mslYaw), -2.8 * dt, 2.8 * dt);
+    mech.podLock = !!(want && want.lock);
+  }
   // reference: no target-rate feedforward, no attitude trim in the legs —
   // stiff kp tracks, kd damps absolute wRel, IK is attitude-blind in the
   // commanded frame ("leg deflection IS the force")
@@ -2093,26 +2109,29 @@ export function mechAboutFace(world, mech) {
 // with lead, otherwise the rockets land on the point itself. Ripple-fires
 // a lobbed 3-rocket salvo (HIGH ballistic arc — clears buildings) with
 // real mass and per-rocket recoil.
-export function mechMissiles(world, mech) {
-  if (mech.state.mode === "FALLEN") return false;
-  if (world.t - (mech._lastMsl || -99) < 6) return false;
-  // the reticle's ground point: torso ACTUAL facing (same frame the
-  // cannon preview draws from) at the commanded range
+// the salvo's target solve, shared with the pod's tracking visual: the
+// reticle's ground point (torso ACTUAL facing at the commanded range),
+// snapped to a live hostile within 12m of it (with lead)
+export function mslAimPoint(world, mech) {
   const torso = mech.waist ? mech.waist.b : mech.hull;
   const ty = Math.atan2(torso.R[6], torso.R[8]);
   const rng = clamp(mech.aimRange || 26, 6, 120);
   const rx = torso.pos.x + Math.sin(ty) * rng, rz = torso.pos.z + Math.cos(ty) * rng;
-  // snap: a live hostile within 12m of the reticle point gets the salvo
-  // (with lead); bare ground gets it where aimed
   let best = null, bestD = 12;
   for (const b of world.bodies) {
     if (!b.alive || b.team !== 2) continue;
     const d = Math.hypot(b.pos.x - rx, b.pos.z - rz);
     if (d < bestD) { bestD = d; best = b; }
   }
-  const tgt = best
-    ? { x: best.pos.x + best.v.x * 1.6, z: best.pos.z + best.v.z * 1.6 } // lead at ~arc flight time
-    : { x: rx, z: rz };
+  return best
+    ? { x: best.pos.x + best.v.x * 1.6, z: best.pos.z + best.v.z * 1.6, lock: true } // lead at ~arc flight time
+    : { x: rx, z: rz, lock: false };
+}
+export function mechMissiles(world, mech) {
+  if (mech.state.mode === "FALLEN") return false;
+  if (world.t - (mech._lastMsl || -99) < 6) return false;
+  const torso = mech.waist ? mech.waist.b : mech.hull;
+  const tgt = mslAimPoint(world, mech);
   if (Math.hypot(tgt.x - torso.pos.x, tgt.z - torso.pos.z) < 8) return false; // danger-close
   mech._lastMsl = world.t;
   mech.mslTarget = tgt;

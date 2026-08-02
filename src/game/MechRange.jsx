@@ -34,25 +34,25 @@ export default function MechRange({ onExit }) {
     // OUTPOST scenario (design 2026-08-01): the mech starts FAR from a
     // garrison that does not know it exists. Walk in, open fire, or blunder
     // inside their picket line — any of those wakes them up.
-    const OUTPOST = { x: 0, z: 40 };
-    const mech = buildMech(world, { x: 0, z: -1 }); // half the original 82m standoff (Jeff, 2026-08-02)
+    const OUTPOST = { x: 0, z: 0 };
+    const mech = buildMech(world, { x: 0, z: 41, yaw: Math.PI }); // approach from the TOP of the map (Jeff, 2026-08-02): the mech walks toward the camera, face-on — no more back-of-the-mech; standoff stays 41m
     const pg = { covers: [], shelters: [], wallIndex: 0 };
-    BUILDERS.house(world, field, pg, { x: -10, z: 38, nx: 5, nz: 4, doorIx: 0, group: "rangeA" });
-    BUILDERS.house(world, field, pg, { x: 9, z: 34, nx: 4, nz: 5, doorIx: 1, group: "rangeB" });
-    BUILDERS.house(world, field, pg, { x: -1, z: 47, nx: 6, nz: 4, doorIx: 0, group: "rangeC" });
-    BUILDERS.hangar(world, field, pg, { x: 16, z: 44, group: "rangeH" });
+    BUILDERS.house(world, field, pg, { x: -10, z: -2, nx: 5, nz: 4, doorIx: 0, group: "rangeA" });
+    BUILDERS.house(world, field, pg, { x: 9, z: -6, nx: 4, nz: 5, doorIx: 1, group: "rangeB" });
+    BUILDERS.house(world, field, pg, { x: -1, z: 7, nx: 6, nz: 4, doorIx: 0, group: "rangeC" });
+    BUILDERS.hangar(world, field, pg, { x: 16, z: 4, group: "rangeH" });
     for (const b of world.bodies) if (b.kind === "chunk") { b.sleeping = true; b.sleepT = 1; }
     // the garrison: a rifle squad on the street, scouts + truck parked —
     // mass, hp, and the full damage pipeline (shell, blast, CRUSH attribute)
     const hostiles = [];
-    for (let i = 0; i < 5; i++) hostiles.push(addBody(world, { kind: "unit", team: 2, group: "tgtSquad", mass: 82, hx: 0.26, hy: 0.9, hz: 0.26, x: -5 + i * 2.1, y: 1.9, z: 41 + (i % 2) * 2, hp: 30, friction: 0.55 }));
-    hostiles.push(addBody(world, { kind: "vehicle", team: 2, group: "tgtScout", mass: 950, hx: 1.25, hy: 0.7, hz: 1.85, x: 5, y: 1.7, z: 39, hp: 55, friction: 0.7 }));
-    hostiles.push(addBody(world, { kind: "vehicle", team: 2, group: "tgtScout", mass: 950, hx: 1.25, hy: 0.7, hz: 1.85, x: -8, y: 1.7, z: 43, hp: 55, friction: 0.7 }));
-    hostiles.push(addBody(world, { kind: "truck", team: 2, group: "tgtTruck", vtype: "truck", mass: 1400, hx: 1.15, hy: 1.05, hz: 2.6, x: 4, y: 2.05, z: 50, hp: 120, friction: 0.6 }));
+    for (let i = 0; i < 5; i++) hostiles.push(addBody(world, { kind: "unit", team: 2, group: "tgtSquad", mass: 82, hx: 0.26, hy: 0.9, hz: 0.26, x: -5 + i * 2.1, y: 1.9, z: 1 + (i % 2) * 2, hp: 30, friction: 0.55 }));
+    hostiles.push(addBody(world, { kind: "vehicle", team: 2, group: "tgtScout", mass: 950, hx: 1.25, hy: 0.7, hz: 1.85, x: 5, y: 1.7, z: -1, hp: 55, friction: 0.7 }));
+    hostiles.push(addBody(world, { kind: "vehicle", team: 2, group: "tgtScout", mass: 950, hx: 1.25, hy: 0.7, hz: 1.85, x: -8, y: 1.7, z: 3, hp: 55, friction: 0.7 }));
+    hostiles.push(addBody(world, { kind: "truck", team: 2, group: "tgtTruck", vtype: "truck", mass: 1400, hx: 1.15, hy: 1.05, hz: 2.6, x: 4, y: 2.05, z: 10, hp: 120, friction: 0.6 }));
     // GARRISON TANKS: parked at the outpost until the alarm — then the
     // engine's own tread physics + goal AI (stepDrive) hunts the mech.
     const tanks = [];
-    for (const [tx, tz] of [[-14, 36], [13, 52]]) {
+    for (const [tx, tz] of [[-14, -4], [13, 12]]) {
       const t = addBody(world, { kind: "vehicle", team: 2, group: "tankPlat", mass: 3400, hx: 1.5, hy: 0.8, hz: 2.4, x: tx, y: 1.8, z: tz, hp: 170, friction: 0.85 });
       t.squad = "tankPlat";
       t.driverSpec = { throttleHabit: 0.5 };
@@ -61,10 +61,10 @@ export default function MechRange({ onExit }) {
     for (const h of hostiles) h._hp0 = h.hp;
     const R = makeRenderer(canvasRef.current, world, { town: false });
 
-    const S = { acc: 0, last: performance.now(), keys: {}, yawT: 0, aimYaw: null, aimRange: 26, aimOff: 0, aiT: 0, orbit: 0, tankFire: [2.5, 5.2], raf: 0, hudT: 0, dead: false, joyId: null, jx: 0, jy: 0, rsId: null, rx: 0, rngId: null, aimHeld: 0, fireHeld: false };
+    const S = { acc: 0, last: performance.now(), keys: {}, yawT: Math.PI, aimYaw: null, aimRange: 26, aimOff: 0, aiT: 0, orbit: 0, tankFire: [2.5, 5.2], raf: 0, hudT: 0, dead: false, joyId: null, jx: 0, jy: 0, rsId: null, rx: 0, rngId: null, aimHeld: 0, fireHeld: false };
     window.__MECHRANGE__ = {
       world, mech,
-      reissue: () => { respawnMech(world, mech, 0, -1, 0); S.yawT = 0; S.aimYaw = null; mech.aimYaw = null; S.aimOff = 0; S.aimHeld = 0; S.rx = 0; mechCommand(mech, { travel: 0, lateral: 0, heading: 0 }); },
+      reissue: () => { respawnMech(world, mech, 0, 41, Math.PI); S.yawT = Math.PI; S.aimYaw = null; mech.aimYaw = null; S.aimOff = 0; S.aimHeld = 0; S.rx = 0; mechCommand(mech, { travel: 0, lateral: 0, heading: 0 }); },
       aim: (dir) => { S.aimHeld = dir; },
       fireHeld: (v) => { S.fireHeld = v; },
       fire: () => mechFire(world, mech),
@@ -146,8 +146,8 @@ export default function MechRange({ onExit }) {
       if (e.code === "KeyV") { mechMissiles(world, mech); }
       if (e.code === "KeyT") { mechAboutFace(world, mech); }
       if (e.code === "KeyR") {
-        respawnMech(world, mech, 0, -1, 0);
-        S.yawT = 0; S.aimYaw = null; mech.aimYaw = null;
+        respawnMech(world, mech, 0, 41, Math.PI);
+        S.yawT = Math.PI; S.aimYaw = null; mech.aimYaw = null;
         mechCommand(mech, { travel: 0, lateral: 0, heading: 0 });
       }
     };
