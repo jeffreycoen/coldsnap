@@ -83,6 +83,7 @@ export default function MechRange({ onExit }) {
         mechDash(world, mech, Math.sin(h) * f + Math.cos(h) * l, Math.cos(h) * f - Math.sin(h) * l);
       },
       gyro: () => { mech.gyroOn = mech.gyroOn === false; },
+      jets: () => { S.jetMode = !S.jetMode; mech.jetCmd = null; },
       rcs: () => { mech.thrustersOn = !mech.thrustersOn; },
     };
     const joyBase = () => ({ x: 86, y: window.innerHeight - 130 });
@@ -166,6 +167,7 @@ export default function MechRange({ onExit }) {
       if (e.code === "KeyB") { window.__MECHRANGE__ && window.__MECHRANGE__.dash(); }
       if (e.code === "KeyG") { window.__MECHRANGE__ && window.__MECHRANGE__.gyro(); }
       if (e.code === "KeyH") { window.__MECHRANGE__ && window.__MECHRANGE__.rcs(); }
+      if (e.code === "KeyJ") { window.__MECHRANGE__ && window.__MECHRANGE__.jets(); }
       if (e.code === "KeyR") {
         respawnMech(world, mech, 0, 41, Math.PI);
         S.yawT = Math.PI; S.aimYaw = null; mech.aimYaw = null;
@@ -196,9 +198,16 @@ export default function MechRange({ onExit }) {
       // of turning). Horizontal deflection is a turn-RATE command feeding
       // the same steering-locked heading target as A/D — the stick cannot
       // wind up a lead the machine can't follow.
-      if (Math.abs(S.rx) > 0.15) S.yawT -= S.rx * 0.9 * dt;
-      // right stick vertical = cannon range (rate): push out, pull in
-      if (Math.abs(S.ry || 0) > 0.25) setRange(S.aimRange + -S.ry * 28 * dt);
+      if (S.jetMode) {
+        // JETS mode: right stick vectors a continuous burn (screen frame:
+        // right = -x, up = +z); turn/range revert to arrows + slider
+        mech.jetCmd = { x: -(S.rx || 0), z: -(S.ry || 0) };
+      } else {
+        mech.jetCmd = null;
+        if (Math.abs(S.rx) > 0.15) S.yawT -= S.rx * 0.9 * dt;
+        // right stick vertical = cannon range (rate): push out, pull in
+        if (Math.abs(S.ry || 0) > 0.25) setRange(S.aimRange + -S.ry * 28 * dt);
+      }
       // steering lock: the heading COMMAND may lead the actual body by at
       // most 0.5 rad. Unbounded lead (chassis-follow wound to 3.7 rad for a
       // 1.6 rad aim) forced max-rate turning long after the stick released.
@@ -328,7 +337,7 @@ export default function MechRange({ onExit }) {
       S.hudT += dt;
       if (S.hudT > 0.25) {
         S.hudT = 0;
-        setHud({ mode: mech.state.mode, steps: mech.telem.steps, falls: mech.telem.falls, kills: world.killCount, shots: mech.telem.shots || 0, alert: S.alert, gyro: mech.gyroOn !== false, rcs: !!mech.thrustersOn });
+        setHud({ mode: mech.state.mode, steps: mech.telem.steps, falls: mech.telem.falls, kills: world.killCount, shots: mech.telem.shots || 0, alert: S.alert, gyro: mech.gyroOn !== false, rcs: !!mech.thrustersOn, jets: !!S.jetMode });
       }
       S.raf = requestAnimationFrame(loop);
     };
@@ -373,6 +382,10 @@ export default function MechRange({ onExit }) {
         <button data-mech-gyro onClick={() => { const m = window.__MECHRANGE__; if (m) m.gyro(); }}
           style={{ position: "absolute", right: 196, top: 90, padding: "10px 12px", fontFamily: FONT, fontSize: 12, letterSpacing: 1, color: hud.gyro ? "#c7d0dc" : "#e8c9b8", background: hud.gyro ? "#1a212b" : "#3a2118", border: hud.gyro ? "1px solid #5f6e80" : "1px solid #7a5e4e" }}>
           GYRO {hud.gyro ? "ON" : "OFF"}
+        </button>
+        <button data-mech-jets onClick={() => { const m = window.__MECHRANGE__; if (m) m.jets(); }}
+          style={{ position: "absolute", right: 196, top: 198, padding: "10px 12px", fontFamily: FONT, fontSize: 12, letterSpacing: 1, color: hud.jets ? "#e8c9b8" : "#c7d0dc", background: hud.jets ? "#3a2118" : "#1a212b", border: hud.jets ? "1px solid #7a5e4e" : "1px solid #5f6e80" }}>
+          R-STICK: {hud.jets ? "JETS" : "TURN"}
         </button>
         <button data-mech-rcs onClick={() => { const m = window.__MECHRANGE__; if (m) m.rcs(); }}
           style={{ position: "absolute", right: 196, top: 144, padding: "10px 12px", fontFamily: FONT, fontSize: 12, letterSpacing: 1, color: hud.rcs ? "#c7d0dc" : "#e8c9b8", background: hud.rcs ? "#1a212b" : "#3a2118", border: hud.rcs ? "1px solid #5f6e80" : "1px solid #7a5e4e" }}>

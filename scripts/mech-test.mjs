@@ -464,6 +464,18 @@ const run = (w, secs) => { const n = Math.round(secs / w.dt); for (let i = 0; i 
     }
     ok("dash: four directions from stand, no falls", falls === 0);
   }
+  {
+    const w = flatWorld();
+    const mech = buildMech(w, { x: 0, z: 0 });
+    mech.thrustersOn = true;
+    run(w, 5);
+    mech.jetCmd = { x: 0.6, z: 0 };
+    let maxVx = 0;
+    for (let i = 0; i < Math.round(2 / w.dt); i++) { w.events.length = 0; stepWorld(w); if (mech.hull.v.x > maxVx) maxVx = mech.hull.v.x; }
+    mech.jetCmd = null;
+    run(w, 6);
+    ok("manual jets: burn scoots the frame and it recovers", maxVx > 0.15 && mech.state.mode !== "FALLEN", "vx " + maxVx.toFixed(2) + " end " + mech.state.mode);
+  }
 }
 
 // ---------------------------------------------------------------- 6. mortar -> catch or fall -> limp -> respawn

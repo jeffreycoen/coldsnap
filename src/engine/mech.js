@@ -1115,8 +1115,22 @@ function controller(world, mech) {
         const tz5 = -(R5[2] * th.e.x + R5[5] * th.e.y + R5[8] * th.e.z);
         th.cmd = clamp(dx5 * tx5 + dz5 * tz5, 0, 1);
       }
+    } else if (mech.jetCmd && Math.hypot(mech.jetCmd.x, mech.jetCmd.z) > 0.15) {
+      // MANUAL JETS (Jeff, 2026-08-02): the pilot vectors the rockets
+      // directly — a held directional burn, world-frame. Stability still
+      // preempts on genuine trouble (branch above); everything else is on
+      // the pilot. The Raibert brake leans against forward burns mid-walk
+      // — manual mode is for standing scoots, slides, and showing off.
+      const jm = Math.min(1, Math.hypot(mech.jetCmd.x, mech.jetCmd.z));
+      const jx5 = mech.jetCmd.x / Math.max(1e-6, jm), jz5 = mech.jetCmd.z / Math.max(1e-6, jm);
+      for (const th of mech.thrusters) {
+        const tx5 = -(R5[0] * th.e.x + R5[3] * th.e.y + R5[6] * th.e.z);
+        const tz5 = -(R5[2] * th.e.x + R5[5] * th.e.y + R5[8] * th.e.z);
+        th.cmd = clamp((jx5 * tx5 + jz5 * tz5) * 1.6 * jm, 0, 0.8);
+      }
+      st._thrV = null;
     } else if (mech.thrustAssist && ((st.govF != null && st.govF > 0.505) || st.govDecel)) {
-      // SPEED ASSIST — DEFERRED (2026-08-02, default OFF): every outer
+      // SPEED ASSIST — the g_eff-compensated overdrive booster: every outer
       // patch surfaced another coupling with the swept balance stack
       // (Raibert fight -> backward cascade at 0.9 m/s; stride geometry
       // outrun at 0.7; overshoot oscillation). The honest integration is
@@ -1144,7 +1158,8 @@ function controller(world, mech) {
     // (stability) / 0.20 W (speed assist)
     let lift = 0;
     for (const th of mech.thrusters) lift += th.cmd * mech.thrustMax * Math.SQRT1_2;
-    const liftCap = (st.dash ? 0.35 : st._thrA ? 0.30 : gyroOff ? 0.25 : 0.20) * W5;
+    const jetsLive = mech.jetCmd && Math.hypot(mech.jetCmd.x, mech.jetCmd.z) > 0.15;
+    const liftCap = (st.dash ? 0.35 : st._thrA ? 0.30 : jetsLive ? 0.25 : gyroOff ? 0.25 : 0.20) * W5;
     if (lift > liftCap) { const sc5 = liftCap / lift; for (const th of mech.thrusters) th.cmd *= sc5; }
   }
   // SPAWN SEQUENCE (spec §5f): settle with both feet loaded (~0.4s) -> crouch
