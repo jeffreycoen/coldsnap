@@ -35,7 +35,7 @@ export default function MechRange({ onExit }) {
     // garrison that does not know it exists. Walk in, open fire, or blunder
     // inside their picket line — any of those wakes them up.
     const OUTPOST = { x: 0, z: 40 };
-    const mech = buildMech(world, { x: 0, z: -42 });
+    const mech = buildMech(world, { x: 0, z: -1 }); // half the original 82m standoff (Jeff, 2026-08-02)
     const pg = { covers: [], shelters: [], wallIndex: 0 };
     BUILDERS.house(world, field, pg, { x: -10, z: 38, nx: 5, nz: 4, doorIx: 0, group: "rangeA" });
     BUILDERS.house(world, field, pg, { x: 9, z: 34, nx: 4, nz: 5, doorIx: 1, group: "rangeB" });
@@ -64,7 +64,7 @@ export default function MechRange({ onExit }) {
     const S = { acc: 0, last: performance.now(), keys: {}, yawT: 0, aimYaw: null, aimRange: 26, aimOff: 0, aiT: 0, orbit: 0, tankFire: [2.5, 5.2], raf: 0, hudT: 0, dead: false, joyId: null, jx: 0, jy: 0, rsId: null, rx: 0, rngId: null, aimHeld: 0, fireHeld: false };
     window.__MECHRANGE__ = {
       world, mech,
-      reissue: () => { respawnMech(world, mech, 0, -42, 0); S.yawT = 0; S.aimYaw = null; mech.aimYaw = null; S.aimOff = 0; S.aimHeld = 0; S.rx = 0; mechCommand(mech, { travel: 0, lateral: 0, heading: 0 }); },
+      reissue: () => { respawnMech(world, mech, 0, -1, 0); S.yawT = 0; S.aimYaw = null; mech.aimYaw = null; S.aimOff = 0; S.aimHeld = 0; S.rx = 0; mechCommand(mech, { travel: 0, lateral: 0, heading: 0 }); },
       aim: (dir) => { S.aimHeld = dir; },
       fireHeld: (v) => { S.fireHeld = v; },
       fire: () => mechFire(world, mech),
@@ -146,7 +146,7 @@ export default function MechRange({ onExit }) {
       if (e.code === "KeyV") { mechMissiles(world, mech); }
       if (e.code === "KeyT") { mechAboutFace(world, mech); }
       if (e.code === "KeyR") {
-        respawnMech(world, mech, 0, -42, 0);
+        respawnMech(world, mech, 0, -1, 0);
         S.yawT = 0; S.aimYaw = null; mech.aimYaw = null;
         mechCommand(mech, { travel: 0, lateral: 0, heading: 0 });
       }
@@ -216,7 +216,9 @@ export default function MechRange({ onExit }) {
           const dOut = Math.hypot(mh.pos.x - OUTPOST.x, mh.pos.z - OUTPOST.z);
           const fired = (mech.telem.shots || 0) + (mech.telem.salvos || 0) > 0;
           const hurt = hostiles.some((h) => !h.alive || h.hp < h._hp0);
-          if (dOut < 42 || (fired && dOut < 90) || hurt) S.alert = true;
+          // picket 28 (was 42): the 41m spawn sits right where the old
+          // picket line ran — the garrison would wake before the first step
+          if (dOut < 28 || (fired && dOut < 90) || hurt) S.alert = true;
         }
       }
       // tank platoon AI: standoff orbit + gunnery — only once ALERTED
