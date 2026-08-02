@@ -2,7 +2,7 @@
 // mortar" — plus the cheap build-time asserts that catch numbers that were
 // wrong when typed. Runs headless against the real engine + island.
 import { makeWorld, makeField, addBody, stepWorld, worldHash, explode, __mech__ } from "../src/engine/core.js";
-import { buildMech, respawnMech, mechCommand, mechAboutFace, mechDash, mechUp, mechFallen, mechCaps, mechIslandSolve, swingLift, __mechTest__ } from "../src/engine/mech.js";
+import { buildMech, respawnMech, mechCommand, mechAboutFace, mechUp, mechFallen, mechCaps, mechIslandSolve, swingLift, __mechTest__ } from "../src/engine/mech.js";
 
 const { v3 } = __mech__;
 const fails = [];
@@ -436,9 +436,8 @@ const run = (w, secs) => { const n = Math.round(secs / w.dt); for (let i = 0; i 
   }
 }
 
-// ---------------------------------------------------------------- 5f. gyro-off + dash
-// gyro OFF = the ideal CMG applies nothing; the rockets run continuous
-// attitude duty and the machine balances on fire. Dash = commanded burst.
+// ---------------------------------------------------------------- 5f. gyro-off + manual jets
+// gyro OFF = the ideal CMG applies nothing; the rockets hold the frame.
 {
   {
     const w = flatWorld();
@@ -450,19 +449,6 @@ const run = (w, secs) => { const n = Math.round(secs / w.dt); for (let i = 0; i 
     run(w, 10);
     ok("gyro-off: rockets hold the stand + save a 20k shove", stood && mech.state.mode !== "FALLEN",
       stood ? "shove " + mech.state.mode : "fell standing");
-  }
-  {
-    const w = flatWorld();
-    const mech = buildMech(w, { x: 0, z: 0 });
-    mech.thrustersOn = true;
-    run(w, 4);
-    let falls = 0;
-    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      mechDash(w, mech, dx, dz);
-      run(w, 3);
-      if (mech.state.mode === "FALLEN") { falls++; break; }
-    }
-    ok("dash: four directions from stand, no falls", falls === 0);
   }
   {
     const w = flatWorld();

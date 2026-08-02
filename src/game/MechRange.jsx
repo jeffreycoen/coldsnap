@@ -4,7 +4,7 @@
 // The machine stands, weight-shifts, steps — and still falls; R reissues it.
 import React, { useEffect, useRef, useState } from "react";
 import { makeWorld, makeField, stepWorld, addBody, fireProjectile } from "../engine/core.js";
-import { buildMech, mechCommand, respawnMech, mechFallen, mechFire, mechPunt, mechPoise, mechMissiles, mechAboutFace, mechDash, mechAimDir } from "../engine/mech.js";
+import { buildMech, mechCommand, respawnMech, mechFallen, mechFire, mechPunt, mechPoise, mechMissiles, mechAboutFace, mechAimDir } from "../engine/mech.js";
 import { makeRenderer } from "../render/renderer.js";
 import { detectTouch } from "./runner/trials.js";
 import { BUILDERS } from "./scenario.js";
@@ -77,11 +77,6 @@ export default function MechRange({ onExit }) {
       poise: () => mechPoise(world, mech, "L"),
       missiles: () => mechMissiles(world, mech),
       about: () => mechAboutFace(world, mech),
-      dash: () => {
-        const h = Math.atan2(mech.hull.R[6], mech.hull.R[8]);
-        const f = S.lastTf || 0, l = S.lastTl || 0;
-        mechDash(world, mech, Math.sin(h) * f + Math.cos(h) * l, Math.cos(h) * f - Math.sin(h) * l);
-      },
       gyro: () => { mech.gyroOn = mech.gyroOn === false; },
       jets: () => { S.jetMode = !S.jetMode; mech.jetCmd = null; },
       rcs: () => { mech.thrustersOn = !mech.thrustersOn; },
@@ -164,7 +159,6 @@ export default function MechRange({ onExit }) {
       if (e.code === "KeyX") { mechPoise(world, mech, "L"); }
       if (e.code === "KeyV") { mechMissiles(world, mech); }
       if (e.code === "KeyT") { mechAboutFace(world, mech); }
-      if (e.code === "KeyB") { window.__MECHRANGE__ && window.__MECHRANGE__.dash(); }
       if (e.code === "KeyG") { window.__MECHRANGE__ && window.__MECHRANGE__.gyro(); }
       if (e.code === "KeyH") { window.__MECHRANGE__ && window.__MECHRANGE__.rcs(); }
       if (e.code === "KeyJ") { window.__MECHRANGE__ && window.__MECHRANGE__.jets(); }
@@ -205,8 +199,6 @@ export default function MechRange({ onExit }) {
       } else {
         mech.jetCmd = null;
         if (Math.abs(S.rx) > 0.15) S.yawT -= S.rx * 0.9 * dt;
-        // right stick vertical = cannon range (rate): push out, pull in
-        if (Math.abs(S.ry || 0) > 0.25) setRange(S.aimRange + -S.ry * 28 * dt);
       }
       // steering lock: the heading COMMAND may lead the actual body by at
       // most 0.5 rad. Unbounded lead (chassis-follow wound to 3.7 rad for a
@@ -236,7 +228,6 @@ export default function MechRange({ onExit }) {
         S.yawT += Math.sign(mech.waist.target) * 0.12 * dt;
       // about-face owns the heading while it runs — writing S.yawT every
       // frame would overwrite the 180 target the maneuver is executing
-      S.lastTf = tf; S.lastTl = tl;
       mechCommand(mech, { travel: tf, lateral: tl, heading: mech.state.aboutFace ? null : S.yawT });
       if (S.keys.Space || S.keys.KeyF || S.fireHeld) mechFire(world, mech); // rate-limited inside
       // awareness: the garrison wakes on proximity (inside the picket),
@@ -362,7 +353,7 @@ export default function MechRange({ onExit }) {
       <div data-mech-hud style={{ position: "absolute", top: 10, left: 12, color: "#c7d0dc", pointerEvents: "none" }}>
         <p style={{ ...line, color: COLORS.gold, fontSize: 14, letterSpacing: 2 }}>MECH TEST RANGE</p>
         <p style={line}>BIPED FRAME MK1 — GAIT ACCEPTANCE PENDING</p>
-        <p style={line}>{isTouch ? "L stick moves · R stick turns + range · ◀ ▶ aim cannon" : "W/S walk · A/D turn · MOUSE aims · CLICK fire · V missiles · C punt · X one-leg · T 180 · B dash · G gyro · H rcs · R reissue"}</p>
+        <p style={line}>{isTouch ? "L stick moves · R stick turns (or JETS) · ◀ ▶ aim · slider range" : "W/S walk · A/D turn · MOUSE aims · CLICK fire · V missiles · C punt · X one-leg · T 180 · G gyro · H rcs · R reissue"}</p>
         <p data-mech-status style={line}>
           {hud.mode === "FALLEN" ? "FRAME DOWN — R TO REISSUE" : hud.mode} · steps {hud.steps} · falls {hud.falls} · kills {hud.kills} · shots {hud.shots} · garrison {hud.alert ? "ALERTED" : "unaware"}
         </p>
@@ -375,10 +366,6 @@ export default function MechRange({ onExit }) {
           <div ref={yawTickRef} style={{ position: "absolute", left: 28, top: 2, width: 4, height: 8, background: "#e8d9b8", transformOrigin: "2px 28px" }} />
           <div ref={bubbleRef} style={{ position: "absolute", left: 25, top: 25, width: 10, height: 10, borderRadius: 6, background: "#7fd47f" }} />
         </div>
-        <button data-mech-dash onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.dash(); }}
-          style={{ position: "absolute", left: "calc(50% - 44px)", bottom: 142, width: 88, height: 44, fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#e8c9b8", background: "rgba(46,29,21,0.9)", border: "1px solid #7a5e4e", touchAction: "none" }}>
-          DASH
-        </button>
         <button data-mech-gyro onClick={() => { const m = window.__MECHRANGE__; if (m) m.gyro(); }}
           style={{ position: "absolute", right: 196, top: 90, padding: "10px 12px", fontFamily: FONT, fontSize: 12, letterSpacing: 1, color: hud.gyro ? "#c7d0dc" : "#e8c9b8", background: hud.gyro ? "#1a212b" : "#3a2118", border: hud.gyro ? "1px solid #5f6e80" : "1px solid #7a5e4e" }}>
           GYRO {hud.gyro ? "ON" : "OFF"}

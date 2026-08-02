@@ -1092,20 +1092,7 @@ function controller(world, mech) {
     const torso5 = mech.waist ? mech.waist.b : mech.hull;
     const R5 = torso5.R;
     for (const th of mech.thrusters) th.cmd = 0;
-    // DASH (player verb): a commanded burst burn along a world direction —
-    // overrides every automatic layer for its window
-    if (st.dash) {
-      st.dash.t -= dt;
-      if (st.dash.t <= 0) st.dash = null;
-      else {
-        for (const th of mech.thrusters) {
-          const tx5 = -(R5[0] * th.e.x + R5[3] * th.e.y + R5[6] * th.e.z);
-          const tz5 = -(R5[2] * th.e.x + R5[5] * th.e.y + R5[8] * th.e.z);
-          th.cmd = clamp((st.dash.x * tx5 + st.dash.z * tz5) * 3.0, 0, 1);
-        }
-      }
-    }
-    if (!st.dash && st._thrA) {
+    if (st._thrA) {
       // demand: push the capture point back over the feet + damp CoM speed
       const dx5 = -ex5 * 2.2 - _comV.x * 0.9;
       const dz5 = -ez5 * 2.2 - _comV.z * 0.9;
@@ -1152,14 +1139,14 @@ function controller(world, mech) {
       if (dv5 > 0.05 && !st.govDecel) { mech.thrusters[2].cmd = mech.thrusters[3].cmd = clamp(dv5 * 2.0, 0, 0.66); }
       else if (dv5 < -0.08) { mech.thrusters[0].cmd = mech.thrusters[1].cmd = clamp(-dv5 * 2.0, 0, 0.66); }
     }
-    if (st._thrA || st.dash) st._thrV = null;
+    if (st._thrA) st._thrV = null;
     // GRIP BUDGET: vertical thrust unweights the soles, and sole friction
     // is what the whole gait stands on — cap total lift at 0.30 W
     // (stability) / 0.20 W (speed assist)
     let lift = 0;
     for (const th of mech.thrusters) lift += th.cmd * mech.thrustMax * Math.SQRT1_2;
     const jetsLive = mech.jetCmd && Math.hypot(mech.jetCmd.x, mech.jetCmd.z) > 0.15;
-    const liftCap = (st.dash ? 0.35 : st._thrA ? 0.30 : jetsLive ? 0.25 : gyroOff ? 0.25 : 0.20) * W5;
+    const liftCap = (st._thrA ? 0.30 : jetsLive ? 0.25 : gyroOff ? 0.25 : 0.20) * W5;
     if (lift > liftCap) { const sc5 = liftCap / lift; for (const th of mech.thrusters) th.cmd *= sc5; }
   }
   // SPAWN SEQUENCE (spec §5f): settle with both feet loaded (~0.4s) -> crouch
@@ -2198,7 +2185,7 @@ function stepMechs(world) {
       mech._thrF.x = 0; mech._thrF.z = 0;
       for (const th of mech.thrusters) {
         const tgt = mech.thrustersOn ? clamp(th.cmd, 0, 1) : 0;
-        const spool = (mech.gyroOn === false || mech.state.dash) ? 0.06 : 0.12; // continuous duty / dash needs the faster bell
+        const spool = mech.gyroOn === false ? 0.06 : 0.12; // continuous duty needs the faster bell
         th.cur += clamp(tgt - th.cur, -dt / spool, dt / spool);
         if (th.cur < 0.01) continue;
         const F = th.cur * mech.thrustMax;
@@ -2279,19 +2266,6 @@ export function mechPunt(world, mech) {
   if (world.t - (mech._lastPunt || -9) < 2.2) return false;
   mech._lastPunt = world.t;
   mech.state.puntReq = 2.8; // seconds the request stays pending — covers braking from a march plus waiting for double support
-  return true;
-}
-// DASH (design 2026-08-02): a commanded directional burn burst — dodge
-// with fire. World-frame direction; no direction = retreat hop.
-export function mechDash(world, mech, dx = 0, dz = 0) {
-  const st = mech.state;
-  if (st.mode === "FALLEN" || st.kick || st.poise || !mech.thrusters || !mech.thrustersOn) return false;
-  if (world.t - (mech._lastDash || -9) < 2.5) return false;
-  const n = Math.hypot(dx, dz);
-  if (n < 0.1) { dx = -Math.sin(st.heading); dz = -Math.cos(st.heading); }
-  else { dx /= n; dz /= n; }
-  mech._lastDash = world.t;
-  st.dash = { x: dx, z: dz, t: 0.45 };
   return true;
 }
 // ABOUT-FACE (design 2026-08-01): commanded 180 — through the RIGHT, per
