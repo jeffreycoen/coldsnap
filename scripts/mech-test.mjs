@@ -360,6 +360,50 @@ const run = (w, secs) => { const n = Math.round(secs / w.dt); for (let i = 0; i 
   }
 }
 
+// ---------------------------------------------------------------- 5e. stabilization rockets
+// six torso nozzles, 45 deg down-and-out, real forces through the waist.
+// Bars: (a) a 48 kN*s side shove FELLS the thruster-free machine and the
+// rockets SAVE it; (b) calm gait never sips thrust; (c) deterministic.
+{
+  const shove = (on) => {
+    const w = flatWorld();
+    const mech = buildMech(w, { x: 0, z: 0 });
+    mech.thrustersOn = on;
+    run(w, 5);
+    mech.hull.v.x += 48000 / mech.hull.mass;
+    for (let i = 0; i < Math.round(12 / w.dt); i++) { w.events.length = 0; stepWorld(w); if (mech.state.mode === "FALLEN") return true; }
+    return false;
+  };
+  ok("thrusters: 48k shove fells the bare machine", shove(false) === true);
+  ok("thrusters: the rockets save the same shove", shove(true) === false);
+  {
+    const w = flatWorld();
+    const mech = buildMech(w, { x: 0, z: 0 });
+    mech.thrustersOn = true;
+    run(w, 10);
+    mechCommand(mech, { travel: 0.42, lateral: 0, heading: 0 });
+    let maxCur = 0, burnT = 0;
+    for (let i = 0; i < Math.round(15 / w.dt); i++) {
+      w.events.length = 0; stepWorld(w);
+      for (const th of mech.thrusters) if (th.cur > maxCur) maxCur = th.cur;
+      if (mech.thrusters.some((th) => th.cur > 0.05)) burnT += w.dt;
+    }
+    ok("thrusters: cold through calm stand + walk", burnT < 1.5, "burn " + burnT.toFixed(1) + "s max " + maxCur.toFixed(2));
+  }
+  {
+    const mk = () => {
+      const w = flatWorld();
+      const mech = buildMech(w, { x: 0, z: 0 });
+      mech.thrustersOn = true;
+      run(w, 6);
+      mech.hull.v.x += 40000 / mech.hull.mass;
+      run(w, 6);
+      return worldHash(w);
+    };
+    ok("thrusters: deterministic under fire", mk() === mk());
+  }
+}
+
 // ---------------------------------------------------------------- 6. mortar -> catch or fall -> limp -> respawn
 {
   const w = flatWorld();

@@ -35,7 +35,8 @@ export default function MechRange({ onExit }) {
     // garrison that does not know it exists. Walk in, open fire, or blunder
     // inside their picket line — any of those wakes them up.
     const OUTPOST = { x: 0, z: 0 };
-    const mech = buildMech(world, { x: 0, z: 41, yaw: Math.PI }); // approach from the TOP of the map (Jeff, 2026-08-02): the mech walks toward the camera, face-on — no more back-of-the-mech; standoff stays 41m
+    const mech = buildMech(world, { x: 0, z: 41, yaw: Math.PI });
+    mech.thrustersOn = true; // stabilization rockets live in the game (CI pins the gait thruster-free) // approach from the TOP of the map (Jeff, 2026-08-02): the mech walks toward the camera, face-on — no more back-of-the-mech; standoff stays 41m
     const pg = { covers: [], shelters: [], wallIndex: 0 };
     BUILDERS.house(world, field, pg, { x: -10, z: -2, nx: 5, nz: 4, doorIx: 0, group: "rangeA" });
     BUILDERS.house(world, field, pg, { x: 9, z: -6, nx: 4, nz: 5, doorIx: 1, group: "rangeB" });

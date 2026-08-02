@@ -570,6 +570,25 @@ export function buildMech(world, opts = {}) {
     mech.headWeld = addWeld(world, torso, head, 6.0e5);
     mech.torso = torso; mech.head = head;
     mech.upper = [torso, arms.L.b, arms.R.b, head];
+    // STABILIZATION ROCKETS (design 2026-08-02): six nozzles on the torso
+    // slab, exhaust canted 45 deg down-and-outward — thrust is therefore
+    // up-and-inward, applied HIGH (the torso rides ~2m above the CoM), so
+    // a burn both rights the lean and pushes the CoM back over support.
+    // Forces are REAL (applied to the torso body, carried into the hull
+    // through the waist ring) — unlike the ideal CMG there is no free
+    // momentum. Unlimited fuel for now (design call).
+    // Layout: torso-local [x(left), y(up), z(fwd)]; exhaust unit vectors.
+    const R2 = Math.SQRT1_2;
+    mech.thrusters = [
+      { p: v3(1.5 * s, -0.4 * s, 1.0 * s), e: v3(0, -R2, R2), cur: 0, cmd: 0 },   // front-left  (thrust up+back  = brake / anti-nose-down)
+      { p: v3(-1.5 * s, -0.4 * s, 1.0 * s), e: v3(0, -R2, R2), cur: 0, cmd: 0 },  // front-right
+      { p: v3(1.5 * s, -0.4 * s, -1.0 * s), e: v3(0, -R2, -R2), cur: 0, cmd: 0 }, // rear-left   (thrust up+fwd   = accelerate)
+      { p: v3(-1.5 * s, -0.4 * s, -1.0 * s), e: v3(0, -R2, -R2), cur: 0, cmd: 0 },// rear-right
+      { p: v3(2.0 * s, -0.4 * s, 0), e: v3(R2, -R2, 0), cur: 0, cmd: 0 },         // left side   (thrust up+right = anti-left-lean)
+      { p: v3(-2.0 * s, -0.4 * s, 0), e: v3(-R2, -R2, 0), cur: 0, cmd: 0 },       // right side
+    ];
+    mech.thrustMax = 30000 * s * s * s; // N per nozzle; the GRIP BUDGET below is the real limiter
+    mech.thrustersOn = false; // opt-in: the certified gait is pinned thruster-free in CI; the game enables
   }
   // torque ceilings from total machine weight
   const M = mech.links.reduce((a, b) => a + b.mass, 0);
@@ -1003,6 +1022,88 @@ function controller(world, mech) {
     hull.w.x += tx * dt / Ih.x;
     hull.w.y += ty * dt / Ih.y;
     hull.w.z += tz * dt / Ih.z;
+  }
+  // THRUSTER AUTO-CONTROL (2026-08-02): error-band ownership — the ankles
+  // and step machinery own the small/slow regime exactly as before; the
+  // rockets wake on the BIG/FAST errors that today become catches and
+  // falls, and on overdrive for speed assist. Hysteresis on the band edge
+  // (the poise lesson: two controllers sharing one band fight).
+  if (mech.thrusters && mech.thrustersOn && st.mode !== "FALLEN") {
+    const W5 = mech.mass * world.gravity;
+    mechCom(mech, _com, _comV);
+    const om5 = Math.sqrt(world.gravity / Math.max(0.5, _com.y - groundRef));
+    const xix = _com.x + _comV.x / om5, xiz = _com.z + _comV.z / om5;
+    const fmx = (st.prints.L.x + st.prints.R.x) / 2, fmz = (st.prints.L.z + st.prints.R.z) / 2;
+    const ex5 = xix - fmx, ez5 = xiz - fmz;
+    const exi = Math.hypot(ex5, ez5);
+    const leanR = Math.hypot(hull.w.x, hull.w.z);
+    // MODE-AWARE bands: the capture point swings +-0.4 every healthy
+    // stride — STAND thresholds fired the rockets 84% of the walk and
+    // the constant unweighting CRAWLED the gait (cruise 0.50 -> 0.21,
+    // measured). Walking trouble = the stumble reflex's own signals.
+    const walking = st.mode === "WALK";
+    // stops are CONTROLLED: the machine needs every newton of sole grip
+    // to brake, and a 30% unweight mid-stop skated it over (2/6 falls at
+    // the decel, measured) — while stopping, only a genuine topple fires
+    const stopping5 = !!st.govDecel; // the whole planned overdrive stop, stumbles included — burns during it skate the braking soles (2/6, measured); mid-cruise stumbles OUTSIDE this window keep full rocket help
+    const trouble = st.spawnDone && (stopping5
+      ? hull.R[4] < 0.945
+      : walking
+        // stumble-only while walking: the exi term fired micro-burns on
+        // marginal strides (12% duty) whose perturbed trajectories broke
+        // 2/6 of the LATER stops — the catch machinery owns marginal
+        // strides; rockets own actual stumbles
+        ? (st.recoverT > 0 || hull.R[4] < 0.945)
+        : (exi > 0.30 || leanR > 0.55 || hull.R[4] < 0.965));
+    const calm = walking
+      ? (st.recoverT <= 0 && hull.R[4] > 0.975 && exi < 0.45)
+      : (exi < 0.18 && leanR < 0.30 && hull.R[4] > 0.985);
+    if (trouble) st._thrA = 1;
+    else if (calm) st._thrA = 0;
+    const torso5 = mech.waist ? mech.waist.b : mech.hull;
+    const R5 = torso5.R;
+    for (const th of mech.thrusters) th.cmd = 0;
+    if (st._thrA) {
+      // demand: push the capture point back over the feet + damp CoM speed
+      const dx5 = -ex5 * 2.2 - _comV.x * 0.9;
+      const dz5 = -ez5 * 2.2 - _comV.z * 0.9;
+      for (const th of mech.thrusters) {
+        // nozzle thrust direction in world (minus exhaust), horizontal part
+        const tx5 = -(R5[0] * th.e.x + R5[3] * th.e.y + R5[6] * th.e.z);
+        const tz5 = -(R5[2] * th.e.x + R5[5] * th.e.y + R5[8] * th.e.z);
+        th.cmd = clamp(dx5 * tx5 + dz5 * tz5, 0, 1);
+      }
+    } else if (mech.thrustAssist && ((st.govF != null && st.govF > 0.505) || st.govDecel)) {
+      // SPEED ASSIST — DEFERRED (2026-08-02, default OFF): every outer
+      // patch surfaced another coupling with the swept balance stack
+      // (Raibert fight -> backward cascade at 0.9 m/s; stride geometry
+      // outrun at 0.7; overshoot oscillation). The honest integration is
+      // thrust-as-effective-gravity INSIDE the capture math (g_eff), a
+      // campaign of its own. Best ensemble so far: 4/6 at raw 0.7.
+      // (assist waits for the governor's establishment gate — burning
+      // into a LAUNCHING gait fell 3/3 at 6-12s, measured)
+      // SPEED ASSIST: rear pair pushes toward the commanded speed in
+      // overdrive; front pair thrust-brakes the decel. Gentler grip
+      // budget — the gait still needs its friction to walk.
+      const fwdX = Math.sin(st.heading), fwdZ = Math.cos(st.heading);
+      const vF5 = _comV.x * fwdX + _comV.z * fwdZ;
+      const wantV = st.govDecel ? 0.42 : Math.min(st.cmdT.f, 0.62); // 0.7 outran the stride geometry — the CoM escapes the support base per step (fell 2/6 at ~25s)
+      const dv5 = wantV - vF5;
+      // _thrV holds STEADY while assisting — nulling it on transient
+      // overshoot re-armed the raw Raibert brake mid-sway and the fight
+      // cascaded backward at 0.9 m/s (measured)
+      st._thrV = st.govDecel ? null : wantV;
+      if (dv5 > 0.05 && !st.govDecel) { mech.thrusters[2].cmd = mech.thrusters[3].cmd = clamp(dv5 * 2.0, 0, 0.66); }
+      else if (dv5 < -0.08) { mech.thrusters[0].cmd = mech.thrusters[1].cmd = clamp(-dv5 * 2.0, 0, 0.66); }
+    }
+    if (!((st.govF != null && st.govF > 0.505) || st.govDecel) || st._thrA) st._thrV = null;
+    // GRIP BUDGET: vertical thrust unweights the soles, and sole friction
+    // is what the whole gait stands on — cap total lift at 0.30 W
+    // (stability) / 0.20 W (speed assist)
+    let lift = 0;
+    for (const th of mech.thrusters) lift += th.cmd * mech.thrustMax * Math.SQRT1_2;
+    const liftCap = (st._thrA ? 0.30 : 0.20) * W5;
+    if (lift > liftCap) { const sc5 = liftCap / lift; for (const th of mech.thrusters) th.cmd *= sc5; }
   }
   // SPAWN SEQUENCE (spec §5f): settle with both feet loaded (~0.4s) -> crouch
   // ramp to walk height (~1.4s) -> only then command authority. Cold-starting
@@ -1596,8 +1697,13 @@ function controller(world, mech) {
     // braking it wrecked the rhythm and yaw (drift -5 rad).
     {
       const bCap = cmdMag < 0.05 ? 1.0 : 0.7; // uncommanded recovery: full braking — the catch cascade accelerated backward past the 0.7 cap
+      // thrust-assisted speed is COMMANDED speed: without this the brake's
+      // foot placement fought the rockets and cascaded backward at 0.7 m/s
+      // (measured) — the legs stride at their cap, thrust makes the rest
+      const cwx = st._thrV != null ? axes.fwd.x * Math.max(Math.hypot(cmdW.x, cmdW.z), st._thrV) : cmdW.x;
+      const cwz = st._thrV != null ? axes.fwd.z * Math.max(Math.hypot(cmdW.x, cmdW.z), st._thrV) : cmdW.z;
       const vf = clamp(
-        ((_comV.x - cmdW.x) * axes.fwd.x + (_comV.z - cmdW.z) * axes.fwd.z) / om * 1.3,
+        ((_comV.x - cwx) * axes.fwd.x + (_comV.z - cwz) * axes.fwd.z) / om * 1.3,
         -bCap * k.strideCap, bCap * k.strideCap);
       t2.x += vf * axes.fwd.x * smoothstep(s2); t2.z += vf * axes.fwd.z * smoothstep(s2);
     }
@@ -2027,6 +2133,36 @@ function stepMechs(world) {
     positionalPass(mech, 2, anchor2);
   }
     controller(world, mech);
+    // thrusters: slew to command, apply real force+torque to the torso
+    if (mech.thrusters) {
+      const torso = mech.waist ? mech.waist.b : mech.hull;
+      const dt = world.dt;
+      for (const th of mech.thrusters) {
+        const tgt = mech.thrustersOn ? clamp(th.cmd, 0, 1) : 0;
+        th.cur += clamp(tgt - th.cur, -dt / 0.12, dt / 0.12); // ~120ms spool
+        if (th.cur < 0.01) continue;
+        const F = th.cur * mech.thrustMax;
+        // world-frame mount + exhaust via torso rows-as-basis
+        const R = torso.R;
+        const px = R[0] * th.p.x + R[3] * th.p.y + R[6] * th.p.z;
+        const py = R[1] * th.p.x + R[4] * th.p.y + R[7] * th.p.z;
+        const pz = R[2] * th.p.x + R[5] * th.p.y + R[8] * th.p.z;
+        const ex = R[0] * th.e.x + R[3] * th.e.y + R[6] * th.e.z;
+        const ey = R[1] * th.e.x + R[4] * th.e.y + R[7] * th.e.z;
+        const ez = R[2] * th.e.x + R[5] * th.e.y + R[8] * th.e.z;
+        // thrust opposes exhaust
+        const fx = -ex * F, fy = -ey * F, fz = -ez * F;
+        torso.v.x += fx * torso.invM * dt;
+        torso.v.y += fy * torso.invM * dt;
+        torso.v.z += fz * torso.invM * dt;
+        // torque r x F about the torso centre
+        const tx = py * fz - pz * fy, ty2 = pz * fx - px * fz, tz2 = px * fy - py * fx;
+        torso.w.x += (torso.invIw[0] * tx + torso.invIw[1] * ty2 + torso.invIw[2] * tz2) * dt;
+        torso.w.y += (torso.invIw[3] * tx + torso.invIw[4] * ty2 + torso.invIw[5] * tz2) * dt;
+        torso.w.z += (torso.invIw[6] * tx + torso.invIw[7] * ty2 + torso.invIw[8] * tz2) * dt;
+        wake(torso);
+      }
+    }
     mechIslandSolve(world, mech);
   }
 }
@@ -2138,7 +2274,7 @@ export function mechMissiles(world, mech) {
   mech.mslSlew = 0; // launcher bearing animates in the controller-side state (visual later)
   // muzzle = the shoulder POD (right side, matches the rendered rack)
   const Rm = torso.R;
-  const m0 = { x: torso.pos.x + Rm[0] * -1.35 + Rm[3] * 1.4, y: torso.pos.y + Rm[1] * -1.35 + Rm[4] * 1.4, z: torso.pos.z + Rm[2] * -1.35 + Rm[5] * 1.4 };
+  const m0 = { x: torso.pos.x + Rm[0] * -1.35 + Rm[3] * 1.05, y: torso.pos.y + Rm[1] * -1.35 + Rm[4] * 1.05, z: torso.pos.z + Rm[2] * -1.35 + Rm[5] * 1.05 }; // matches the halved pod
   const dx = mech.mslTarget.x - m0.x, dz = mech.mslTarget.z - m0.z;
   const d = Math.max(6, Math.hypot(dx, dz));
   const h = m0.y - world.field.heightAt(mech.mslTarget.x, mech.mslTarget.z);
