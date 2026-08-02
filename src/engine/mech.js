@@ -930,6 +930,22 @@ function controller(world, mech) {
   mechCom(mech, _com, _comV);
   const comRel = { x: _com.x, y: Math.max(0.5, _com.y - groundRef), z: _com.z };
   const xi = capturePoint(comRel, _comV, world.gravity);
+  // EFFECTIVE-GRAVITY compensation (speed assist): sustained horizontal
+  // thrust tilts the gravity the LIPM balances against — the equilibrium
+  // capture point shifts by a/omega^2, and every consumer downstream
+  // (plan, catches, stride placement) must see the SHIFTED point or the
+  // whole stack fights the rockets (measured: backward cascades, crawls).
+  // Assist-only: stability burns are sub-second transients and the catch
+  // machinery should keep seeing the raw dynamics during them.
+  // Sign (derived, then measured -sign was 1/6): under sustained forward
+  // thrust the equilibrium xi sits a/om^2 BEHIND the CoP — the machine
+  // water-skis, leaning BACK against the push. Feeding xi + a/om^2 makes
+  // the controller read that leaned-back state as on-reference.
+  if (st._thrV != null && mech._thrF) {
+    const om2e = world.gravity / Math.max(0.5, comRel.y);
+    xi.x += (mech._thrF.x / mech.mass) / om2e;
+    xi.z += (mech._thrF.z / mech.mass) / om2e;
+  }
   // live pendulum frequency — the plan must diverge at the rate the real CoM does
   const om = Math.sqrt(world.gravity / comRel.y);
   const feetMid = { x: (st.prints.L.x + st.prints.R.x) / 2, z: (st.prints.L.z + st.prints.R.z) / 2 };
@@ -2137,6 +2153,8 @@ function stepMechs(world) {
     if (mech.thrusters) {
       const torso = mech.waist ? mech.waist.b : mech.hull;
       const dt = world.dt;
+      if (!mech._thrF) mech._thrF = { x: 0, z: 0 };
+      mech._thrF.x = 0; mech._thrF.z = 0;
       for (const th of mech.thrusters) {
         const tgt = mech.thrustersOn ? clamp(th.cmd, 0, 1) : 0;
         th.cur += clamp(tgt - th.cur, -dt / 0.12, dt / 0.12); // ~120ms spool
@@ -2155,6 +2173,7 @@ function stepMechs(world) {
         torso.v.x += fx * torso.invM * dt;
         torso.v.y += fy * torso.invM * dt;
         torso.v.z += fz * torso.invM * dt;
+        mech._thrF.x += fx; mech._thrF.z += fz;
         // torque r x F about the torso centre
         const tx = py * fz - pz * fy, ty2 = pz * fx - px * fz, tz2 = px * fy - py * fx;
         torso.w.x += (torso.invIw[0] * tx + torso.invIw[1] * ty2 + torso.invIw[2] * tz2) * dt;

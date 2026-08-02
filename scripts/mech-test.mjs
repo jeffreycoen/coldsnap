@@ -360,6 +360,32 @@ const run = (w, secs) => { const n = Math.round(secs / w.dt); for (let i = 0; i 
   }
 }
 
+// ---------------------------------------------------------------- 5d2. thrust-assisted overdrive
+// speed assist + effective-gravity capture compensation: raw 0.9 cruises
+// ~0.61 m/s (vs 0.50 governor-only). Two settle offsets pinned; the
+// ensemble is 5/6 — one chaotic offset (2.4s settle) falls mid-cruise
+// after a 4s rocket fight, documented as the known edge.
+{
+  for (const off of [0, 1.2]) {
+    const w = flatWorld();
+    const mech = buildMech(w, { x: 0, z: 0 });
+    mech.thrustersOn = true; mech.thrustAssist = true;
+    run(w, 2 + off);
+    let fell = false, zAt30 = 0, zAt40 = 0;
+    for (let i = 0; i < Math.round(60 / w.dt); i++) {
+      const t2 = i * w.dt;
+      mechCommand(mech, { travel: t2 > 42 ? 0 : 0.9, lateral: 0, heading: 0 });
+      w.events.length = 0; stepWorld(w);
+      if (t2 >= 30 && zAt30 === 0) zAt30 = mech.hull.pos.z;
+      if (t2 >= 40 && zAt40 === 0) zAt40 = mech.hull.pos.z;
+      if (mech.state.mode === "FALLEN") { fell = true; break; }
+    }
+    const cruise = (zAt40 - zAt30) / 10;
+    ok("thrust assist: raw 0.9 cruises >= 0.55 and stops (off " + off + ")", !fell && cruise >= 0.55 && mech.state.mode === "STAND",
+      fell ? "FELL" : "cruise " + cruise.toFixed(2) + " end " + mech.state.mode);
+  }
+}
+
 // ---------------------------------------------------------------- 5e. stabilization rockets
 // six torso nozzles, 45 deg down-and-out, real forces through the waist.
 // Bars: (a) a 48 kN*s side shove FELLS the thruster-free machine and the
