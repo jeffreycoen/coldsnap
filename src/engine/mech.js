@@ -850,7 +850,13 @@ function controller(world, mech) {
       if (st.govF != null && Math.hypot(hull.v.x, hull.v.z) > 0.55) st.govDecel = true; // leaving overdrive hot
       st.govF = null;
       if (st.govDecel) {
-        if (Math.hypot(hull.v.x, hull.v.z) > 0.55 && st.cmdT.f < 0.42) effF = 0.42; // brake through the certified band, not past it
+        // STAGED decel (advisor): brake through the certified band in two
+        // rungs instead of a 0.42 -> 0 cliff — decel-tail falls at 42-51s
+        // followed every fast cruise (the machine dropped its command
+        // floor while still carrying 0.5+ of momentum)
+        const vh8 = Math.hypot(hull.v.x, hull.v.z);
+        if (vh8 > 0.55 && st.cmdT.f < 0.42) effF = 0.42;
+        else if (vh8 > 0.38 && st.cmdT.f < 0.26) effF = 0.26;
         else st.govDecel = false;
       }
     }
@@ -1224,14 +1230,14 @@ function controller(world, mech) {
       // budget — the gait still needs its friction to walk.
       const fwdX = Math.sin(st.heading), fwdZ = Math.cos(st.heading);
       const vF5 = _comV.x * fwdX + _comV.z * fwdZ;
-      const wantV = st.govDecel ? 0.42 : Math.min(st.cmdT.f, 0.62); // RUNNING-cadence trial at 0.72 reached 0.69 m/s cruise but 1/6 — the fast band needs its own sweep campaign (cadence slope x wantV x raibert-at-speed); cadence stays live above 0.64 as recovery headroom
+      const wantV = st.govDecel ? 0.42 : Math.min(st.cmdT.f, mech._wantVCap || 0.68); // fast-band ceiling 0.68 (advisor sweep: dominates 0.62 — 4/6 vs 3-4/6 at +8% speed; 0.72 is 0/3. Residual mapped: o0.4 sprint-cascade ~30s, decel-tail ~42s)
       const dv5 = wantV - vF5;
       // _thrV holds STEADY while assisting — nulling it on transient
       // overshoot re-armed the raw Raibert brake mid-sway and the fight
       // cascaded backward at 0.9 m/s (measured)
       st._thrV = st.govDecel ? null : wantV;
       if (dv5 > 0.05 && !st.govDecel) { mech.thrusters[2].cmd = mech.thrusters[3].cmd = clamp(dv5 * 2.0, 0, 0.66); }
-      else if (dv5 < -0.08) { mech.thrusters[0].cmd = mech.thrusters[1].cmd = clamp(-dv5 * 2.0, 0, 0.66); }
+      else if (dv5 < -0.08 && dv5 > -0.45) { mech.thrusters[0].cmd = mech.thrusters[1].cmd = clamp(-dv5 * 2.0, 0, 0.66); } // thrust-brake has a REGIME: beyond ~0.45 of overspeed the cascade needs its soles fully weighted (burns at 1.0 through a sprint-cascade unweighted the brake-feet and it ran to 3 m/s, traced)
     }
     if (st._thrA) st._thrV = null;
     // GRIP BUDGET: vertical thrust unweights the soles, and sole friction
@@ -1364,7 +1370,16 @@ function controller(world, mech) {
     // manual-hold falls). Certified band untouched: cadence 1 below
     // 0.45 m/s (uniform cadence-up swept WORSE at normal speeds).
     // Strides co-scale so commanded speed mapping is preserved.
-    const cad6 = clamp(1 - (Math.abs(st.cadV || 0) - 0.64) * 0.55, 0.62, 1); // LOW-PASSED speed, engaging ABOVE today's certified bands (overdrive 0.55, assist 0.62 — the assist stack broke 0/3 with cadence inside its band); running exists FOR the speeds beyond
+    // cadence with HYSTERESIS (advisor): latch ON above engagement,
+    // release 0.12 below — a distance-based factor flickered the clock at
+    // the band edge (cruise wobbles +-0.1) and jittered mid-cruise
+    // strides. The DECEL keeps the certified clock (braking machinery
+    // predates cadence entirely).
+    const eng6 = mech._cadEng || 0.64;
+    const spd6 = Math.abs(st.cadV || 0);
+    if (spd6 > eng6) st._cadOn = true;
+    else if (spd6 < eng6 - 0.12) st._cadOn = false;
+    const cad6 = st.govDecel || !st._cadOn ? 1 : clamp(1 - (spd6 - eng6 + 0.06) * (mech._cadSlope || 0.55), 0.62, 1);
     st.cadence = cad6;
     const tDSr = k.tDS * st.ramp * cad6, tSSr = k.tSS * st.ramp * cad6;
     const strideF = st.stopping ? 0 : clamp(st.cmd.f * k.stepPeriod * cad6, -k.strideCap, k.strideCap);
