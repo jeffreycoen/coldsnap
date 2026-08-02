@@ -368,7 +368,7 @@ export default function MechRange({ onExit }) {
           <div ref={rngLabelRef} style={{ position: "absolute", right: 8, bottom: 354, width: 52, textAlign: "center", color: "#e8d9b8", fontFamily: FONT, fontSize: 13, textShadow: "0 1px 2px #000" }}>26m</div>
           {/* CANNON cluster, bottom centre: turret slew arrows with FIRE between */}
           <button data-mech-aiml
-            onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.aim(1); }}
+            onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.aim(-1); }}
             onPointerUp={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.aim(0); }}
             onPointerLeave={() => { const m = window.__MECHRANGE__; if (m) m.aim(0); }}
             onPointerCancel={() => { const m = window.__MECHRANGE__; if (m) m.aim(0); }}
@@ -376,7 +376,7 @@ export default function MechRange({ onExit }) {
             {"\u25C0\uFE0E"}
           </button>
           <button data-mech-aimr
-            onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.aim(-1); }}
+            onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.aim(1); }}
             onPointerUp={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.aim(0); }}
             onPointerLeave={() => { const m = window.__MECHRANGE__; if (m) m.aim(0); }}
             onPointerCancel={() => { const m = window.__MECHRANGE__; if (m) m.aim(0); }}
