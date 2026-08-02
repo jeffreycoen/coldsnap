@@ -336,6 +336,25 @@ const run = (w, secs) => { const n = Math.round(secs / w.dt); for (let i = 0; i 
     fell ? "FELL" : "cruise " + cruise.toFixed(2) + " end " + mech.state.mode);
 }
 
+// ---------------------------------------------------------------- 5b3. reverse gait
+// backward walk is a real gear now (Jeff, 2026-08-02): -0.42 covers
+// ground and stops clean. The cadence scaler (running) is exercised by
+// the overdrive/assist sections; here we pin reverse.
+{
+  const w = flatWorld();
+  const mech = buildMech(w, { x: 0, z: 0 });
+  run(w, 2.6);
+  let fell = false;
+  for (let i = 0; i < Math.round(40 / w.dt); i++) {
+    const t2 = i * w.dt;
+    mechCommand(mech, { travel: t2 > 32 ? 0 : -0.42, lateral: 0, heading: 0 });
+    w.events.length = 0; stepWorld(w);
+    if (mech.state.mode === "FALLEN") { fell = true; break; }
+  }
+  ok("reverse: -0.42 covers ground and stops to STAND", !fell && mech.hull.pos.z < -3 && mech.state.mode === "STAND",
+    fell ? "FELL" : "z " + mech.hull.pos.z.toFixed(1) + " end " + mech.state.mode);
+}
+
 // ---------------------------------------------------------------- 5c. about-face
 // commanded 180 (single-support pivot, brake-first from a march). Bar: no
 // fall, faces the reverse within 0.2 rad, back at STAND, inside 50s.

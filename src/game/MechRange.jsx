@@ -180,10 +180,10 @@ export default function MechRange({ onExit }) {
       // rotates); RIGHT stick = body TURN rate; cannon has its OWN controls
       // (◀ ▶ turret slew + range slider). Keyboard follows the HOUSE
       // convention (every mode steers on A/D); Q/E strafe; mouse aims.
-      let tf = S.keys.KeyW ? 0.6 : S.keys.KeyS ? -0.18 : 0; // 0.6 raw = overdrive request; the engine governor delivers up to 0.55 once the walk is established
+      let tf = S.keys.KeyW ? 0.6 : S.keys.KeyS ? -0.42 : 0; // reverse gait certified at -0.42 (2026-08-02) // 0.6 raw = overdrive request; the engine governor delivers up to 0.55 once the walk is established
       let tl = S.keys.KeyQ ? 0.22 : S.keys.KeyE ? -0.22 : 0;
       if (S.joyId != null) {
-        if (Math.abs(S.jy) > 0.12) tf = S.jy < 0 ? 0.6 * -S.jy : -0.18 * S.jy;
+        if (Math.abs(S.jy) > 0.12) tf = S.jy < 0 ? 0.6 * -S.jy : -0.42 * S.jy;
         if (Math.abs(S.jx) > 0.12) tl = -0.22 * S.jx;
       }
       if (S.keys.KeyA) S.yawT += 0.7 * dt;

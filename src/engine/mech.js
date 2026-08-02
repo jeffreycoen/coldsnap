@@ -929,6 +929,11 @@ function controller(world, mech) {
   // capture point + MV plan (pelvis ref advances at the commanded velocity)
   mechCom(mech, _com, _comV);
   const comRel = { x: _com.x, y: Math.max(0.5, _com.y - groundRef), z: _com.z };
+  {
+    // cadence speed reference: low-passed forward speed (sway-blind)
+    const vFc = _comV.x * Math.sin(st.heading) + _comV.z * Math.cos(st.heading);
+    st.cadV = (st.cadV || 0) + (vFc - (st.cadV || 0)) * Math.min(1, dt / 0.8);
+  }
   const xi = capturePoint(comRel, _comV, world.gravity);
   // EFFECTIVE-GRAVITY compensation (speed assist): sustained horizontal
   // thrust tilts the gravity the LIPM balances against — the equilibrium
@@ -1144,8 +1149,11 @@ function controller(world, mech) {
       // sustained-hold death happened — six authority calibrations could
       // not out-tune it. Backward is zero: no reverse gait can catch any.
       const catching5 = st.mode === "WALK" && cmdIntent < 0.05;
-      const gov5 = catching5 || back5 > 0.3 ? 0
-        : clamp((0.28 - vAl5) / 0.12, 0, 1) * 0.65 * clamp((1 - (mech.jetHeat || 0)) * 3, 0, 1);
+      // backward burns re-enabled (2026-08-02): the reverse gait is
+      // certified to -0.42 now, so backward pushes have catch-steps to
+      // ride them — same governor/heat/catch-cut guards as every axis
+      const gov5 = catching5 ? 0
+        : clamp((0.28 - vAl5) / 0.12, 0, 1) * (back5 > 0.3 ? 0.6 : 1) * 0.65 * clamp((1 - (mech.jetHeat || 0)) * 3, 0, 1);
       const scale5 = (quiet5 ? 1 : 0.35 + 0.65 * Math.max(0, jf5)) * gov5; // side puffs only on a QUIET stand — they kicked the STAND-catch transitions mid-strafe (fell 9.4s with walking burns already zeroed)
       for (const th of mech.thrusters) {
         const tx5 = -(R5[0] * th.e.x + R5[3] * th.e.y + R5[6] * th.e.z);
@@ -1167,7 +1175,7 @@ function controller(world, mech) {
       // budget — the gait still needs its friction to walk.
       const fwdX = Math.sin(st.heading), fwdZ = Math.cos(st.heading);
       const vF5 = _comV.x * fwdX + _comV.z * fwdZ;
-      const wantV = st.govDecel ? 0.42 : Math.min(st.cmdT.f, 0.62); // 0.7 outran the stride geometry — the CoM escapes the support base per step (fell 2/6 at ~25s)
+      const wantV = st.govDecel ? 0.42 : Math.min(st.cmdT.f, 0.62); // RUNNING-cadence trial at 0.72 reached 0.69 m/s cruise but 1/6 — the fast band needs its own sweep campaign (cadence slope x wantV x raibert-at-speed); cadence stays live above 0.64 as recovery headroom
       const dv5 = wantV - vF5;
       // _thrV holds STEADY while assisting — nulling it on transient
       // overshoot re-armed the raw Raibert brake mid-sway and the fight
@@ -1300,9 +1308,18 @@ function controller(world, mech) {
   // latching/replanning happens ONLY at touchdown, from measured feet.
   const planPhases = (fromStand, xi0) => {
     const stanceSide = st.lastSwing;              // the foot that stays planted first
-    const tDSr = k.tDS * st.ramp, tSSr = k.tSS * st.ramp;
-    const strideF = st.stopping ? 0 : clamp(st.cmd.f * k.stepPeriod, -k.strideCap, k.strideCap);
-    const strideL = st.stopping ? 0 : clamp(st.cmd.l * k.stepPeriod, -k.strideCap, k.strideCap);
+    // RUNNING (Jeff, 2026-08-02: "legs actuated faster proportional to
+    // thrust — like running"): the cycle CLOCK shortens with measured
+    // forward speed, so a thrust-pushed CoM keeps feet under it — the
+    // fixed clock was the wall every fast mode hit (assist ceiling 0.62,
+    // manual-hold falls). Certified band untouched: cadence 1 below
+    // 0.45 m/s (uniform cadence-up swept WORSE at normal speeds).
+    // Strides co-scale so commanded speed mapping is preserved.
+    const cad6 = clamp(1 - (Math.abs(st.cadV || 0) - 0.64) * 0.55, 0.62, 1); // LOW-PASSED speed, engaging ABOVE today's certified bands (overdrive 0.55, assist 0.62 — the assist stack broke 0/3 with cadence inside its band); running exists FOR the speeds beyond
+    st.cadence = cad6;
+    const tDSr = k.tDS * st.ramp * cad6, tSSr = k.tSS * st.ramp * cad6;
+    const strideF = st.stopping ? 0 : clamp(st.cmd.f * k.stepPeriod * cad6, -k.strideCap, k.strideCap);
+    const strideL = st.stopping ? 0 : clamp(st.cmd.l * k.stepPeriod * cad6, -k.strideCap, k.strideCap);
     const prints = [{ x: st.prints[stanceSide].x, z: st.prints[stanceSide].z, side: stanceSide }];
     let side = stanceSide;
     for (let i = 1; i <= 4; i++) {
