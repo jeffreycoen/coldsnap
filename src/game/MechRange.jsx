@@ -31,37 +31,40 @@ export default function MechRange({ onExit }) {
     const field = makeField(64, 1.7, 5);
     field.h.fill(0);
     const world = makeWorld({ field, seed: 5 });
-    const mech = buildMech(world, { x: 0, z: 0 });
-    // sandbox buildings on the pad — something to walk toward (and, once the
-    // march lands, through)
+    // OUTPOST scenario (design 2026-08-01): the mech starts FAR from a
+    // garrison that does not know it exists. Walk in, open fire, or blunder
+    // inside their picket line — any of those wakes them up.
+    const OUTPOST = { x: 0, z: 40 };
+    const mech = buildMech(world, { x: 0, z: -42 });
     const pg = { covers: [], shelters: [], wallIndex: 0 };
-    BUILDERS.house(world, field, pg, { x: -14, z: 18, nx: 5, nz: 4, doorIx: 0, group: "rangeA" });
-    BUILDERS.house(world, field, pg, { x: 13, z: 24, nx: 4, nz: 5, doorIx: 1, group: "rangeB" });
-    BUILDERS.house(world, field, pg, { x: -2, z: 34, nx: 6, nz: 4, doorIx: 0, group: "rangeC" });
-    BUILDERS.hangar(world, field, pg, { x: 18, z: -14, group: "rangeH" });
+    BUILDERS.house(world, field, pg, { x: -10, z: 38, nx: 5, nz: 4, doorIx: 0, group: "rangeA" });
+    BUILDERS.house(world, field, pg, { x: 9, z: 34, nx: 4, nz: 5, doorIx: 1, group: "rangeB" });
+    BUILDERS.house(world, field, pg, { x: -1, z: 47, nx: 6, nz: 4, doorIx: 0, group: "rangeC" });
+    BUILDERS.hangar(world, field, pg, { x: 16, z: 44, group: "rangeH" });
     for (const b of world.bodies) if (b.kind === "chunk") { b.sleeping = true; b.sleepT = 1; }
-    // live targets: a rifle squad, two scouts, a truck — mass, hp, and the
-    // full damage pipeline (shell, blast, CRUSH underfoot all attribute)
-    for (let i = 0; i < 5; i++) addBody(world, { kind: "unit", team: 2, group: "tgtSquad", mass: 82, hx: 0.26, hy: 0.9, hz: 0.26, x: -6 + i * 2.1, y: 1.9, z: 9 + (i % 2) * 2, hp: 30, friction: 0.55 });
-    addBody(world, { kind: "vehicle", team: 2, group: "tgtScout", mass: 950, hx: 1.25, hy: 0.7, hz: 1.85, x: 7, y: 1.7, z: 14, hp: 55, friction: 0.7 });
-    addBody(world, { kind: "vehicle", team: 2, group: "tgtScout", mass: 950, hx: 1.25, hy: 0.7, hz: 1.85, x: -9, y: 1.7, z: 5, hp: 55, friction: 0.7 });
-    addBody(world, { kind: "truck", team: 2, group: "tgtTruck", vtype: "truck", mass: 1400, hx: 1.15, hy: 1.05, hz: 2.6, x: 5, y: 2.05, z: -7, hp: 120, friction: 0.6 });
-    // HOSTILE TANKS: real vehicles on the engine's tread physics + goal AI
-    // (stepDrive runs anything with .squad). The range feeds goals (standoff
-    // orbit around the mech) and gunnery; their shells carry mass and shove.
+    // the garrison: a rifle squad on the street, scouts + truck parked —
+    // mass, hp, and the full damage pipeline (shell, blast, CRUSH attribute)
+    const hostiles = [];
+    for (let i = 0; i < 5; i++) hostiles.push(addBody(world, { kind: "unit", team: 2, group: "tgtSquad", mass: 82, hx: 0.26, hy: 0.9, hz: 0.26, x: -5 + i * 2.1, y: 1.9, z: 41 + (i % 2) * 2, hp: 30, friction: 0.55 }));
+    hostiles.push(addBody(world, { kind: "vehicle", team: 2, group: "tgtScout", mass: 950, hx: 1.25, hy: 0.7, hz: 1.85, x: 5, y: 1.7, z: 39, hp: 55, friction: 0.7 }));
+    hostiles.push(addBody(world, { kind: "vehicle", team: 2, group: "tgtScout", mass: 950, hx: 1.25, hy: 0.7, hz: 1.85, x: -8, y: 1.7, z: 43, hp: 55, friction: 0.7 }));
+    hostiles.push(addBody(world, { kind: "truck", team: 2, group: "tgtTruck", vtype: "truck", mass: 1400, hx: 1.15, hy: 1.05, hz: 2.6, x: 4, y: 2.05, z: 50, hp: 120, friction: 0.6 }));
+    // GARRISON TANKS: parked at the outpost until the alarm — then the
+    // engine's own tread physics + goal AI (stepDrive) hunts the mech.
     const tanks = [];
-    for (const [tx, tz] of [[-24, -10], [22, 32]]) {
+    for (const [tx, tz] of [[-14, 36], [13, 52]]) {
       const t = addBody(world, { kind: "vehicle", team: 2, group: "tankPlat", mass: 3400, hx: 1.5, hy: 0.8, hz: 2.4, x: tx, y: 1.8, z: tz, hp: 170, friction: 0.85 });
       t.squad = "tankPlat";
       t.driverSpec = { throttleHabit: 0.5 };
-      tanks.push(t);
+      tanks.push(t); hostiles.push(t);
     }
+    for (const h of hostiles) h._hp0 = h.hp;
     const R = makeRenderer(canvasRef.current, world, { town: false });
 
     const S = { acc: 0, last: performance.now(), keys: {}, yawT: 0, aimYaw: null, aimRange: 26, aimOff: 0, aiT: 0, orbit: 0, tankFire: [2.5, 5.2], raf: 0, hudT: 0, dead: false, joyId: null, jx: 0, jy: 0, rsId: null, rx: 0, rngId: null, aimHeld: 0, fireHeld: false };
     window.__MECHRANGE__ = {
       world, mech,
-      reissue: () => { respawnMech(world, mech, 0, 0, 0); S.yawT = 0; S.aimYaw = null; mech.aimYaw = null; S.aimOff = 0; S.aimHeld = 0; S.rx = 0; mechCommand(mech, { travel: 0, lateral: 0, heading: 0 }); },
+      reissue: () => { respawnMech(world, mech, 0, -42, 0); S.yawT = 0; S.aimYaw = null; mech.aimYaw = null; S.aimOff = 0; S.aimHeld = 0; S.rx = 0; mechCommand(mech, { travel: 0, lateral: 0, heading: 0 }); },
       aim: (dir) => { S.aimHeld = dir; },
       fireHeld: (v) => { S.fireHeld = v; },
       fire: () => mechFire(world, mech),
@@ -143,7 +146,7 @@ export default function MechRange({ onExit }) {
       if (e.code === "KeyV") { mechMissiles(world, mech); }
       if (e.code === "KeyT") { mechAboutFace(world, mech); }
       if (e.code === "KeyR") {
-        respawnMech(world, mech, 0, 0, 0);
+        respawnMech(world, mech, 0, -42, 0);
         S.yawT = 0; S.aimYaw = null; mech.aimYaw = null;
         mechCommand(mech, { travel: 0, lateral: 0, heading: 0 });
       }
@@ -203,11 +206,23 @@ export default function MechRange({ onExit }) {
       // frame would overwrite the 180 target the maneuver is executing
       mechCommand(mech, { travel: tf, lateral: tl, heading: mech.state.aboutFace ? null : S.yawT });
       if (S.keys.Space || S.keys.KeyF || S.fireHeld) mechFire(world, mech); // rate-limited inside
-      // tank platoon AI: standoff orbit + gunnery
+      // awareness: the garrison wakes on proximity (inside the picket),
+      // on ANY weapon discharge within earshot, or on taking damage
       const mh = mech.hull;
       S.aiT += dt;
       if (S.aiT > 0.3) {
         S.aiT = 0;
+        if (!S.alert) {
+          const dOut = Math.hypot(mh.pos.x - OUTPOST.x, mh.pos.z - OUTPOST.z);
+          const fired = (mech.telem.shots || 0) + (mech.telem.salvos || 0) > 0;
+          const hurt = hostiles.some((h) => !h.alive || h.hp < h._hp0);
+          if (dOut < 42 || (fired && dOut < 90) || hurt) S.alert = true;
+        }
+      }
+      // tank platoon AI: standoff orbit + gunnery — only once ALERTED
+      S.aiT2 = (S.aiT2 || 0) + dt;
+      if (S.aiT2 > 0.3 && S.alert) {
+        S.aiT2 = 0;
         S.orbit += 0.045;
         for (let ti = 0; ti < tanks.length; ti++) {
           const t = tanks[ti];
@@ -220,7 +235,7 @@ export default function MechRange({ onExit }) {
           t.goal = { x: mh.pos.x + Math.sin(oa) * ring, z: mh.pos.z + Math.cos(oa) * ring };
         }
       }
-      for (let ti = 0; ti < tanks.length; ti++) {
+      for (let ti = 0; ti < tanks.length && S.alert; ti++) {
         const t = tanks[ti];
         if (!t.alive) continue;
         S.tankFire[ti] -= dt;
@@ -274,7 +289,7 @@ export default function MechRange({ onExit }) {
       S.hudT += dt;
       if (S.hudT > 0.25) {
         S.hudT = 0;
-        setHud({ mode: mech.state.mode, steps: mech.telem.steps, falls: mech.telem.falls, kills: world.killCount, shots: mech.telem.shots || 0 });
+        setHud({ mode: mech.state.mode, steps: mech.telem.steps, falls: mech.telem.falls, kills: world.killCount, shots: mech.telem.shots || 0, alert: S.alert });
       }
       S.raf = requestAnimationFrame(loop);
     };
@@ -301,9 +316,37 @@ export default function MechRange({ onExit }) {
         <p style={line}>BIPED FRAME MK1 — GAIT ACCEPTANCE PENDING</p>
         <p style={line}>{isTouch ? "L stick moves · R stick turns · ◀ ▶ aim cannon · slider range" : "W/S walk · A/D turn · MOUSE aims · CLICK fire · V missiles · C punt · X one-leg · T 180 · R reissue"}</p>
         <p data-mech-status style={line}>
-          {hud.mode === "FALLEN" ? "FRAME DOWN — R TO REISSUE" : hud.mode} · steps {hud.steps} · falls {hud.falls} · kills {hud.kills} · shots {hud.shots}
+          {hud.mode === "FALLEN" ? "FRAME DOWN — R TO REISSUE" : hud.mode} · steps {hud.steps} · falls {hud.falls} · kills {hud.kills} · shots {hud.shots} · garrison {hud.alert ? "ALERTED" : "unaware"}
         </p>
       </div>
+      <>
+        {/* action buttons + REISSUE/MENU: every device — desktop had no
+            on-screen buttons at all and the 180/PUNT surface was invisible */}
+          <button data-mech-msl onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.missiles(); }}
+            style={{ position: "absolute", ...(narrow ? { left: 12, bottom: 200 } : { left: "calc(50% + 5px)", bottom: 90 }), width: 88, height: 48, fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#e8c9b8", background: "rgba(46,29,21,0.9)", border: "1px solid #7a5e4e", touchAction: "none" }}>
+            ▲▲ MSL
+          </button>
+          <button data-mech-poise onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.poise(); }}
+            style={{ position: "absolute", ...(narrow ? { left: 12, bottom: 252 } : { left: "calc(50% - 93px)", bottom: 90 }), width: 88, height: 48, fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#c7d0dc", background: "rgba(29,37,49,0.9)", border: "1px solid #5f6e80", touchAction: "none" }}>
+            ONE LEG
+          </button>
+          <button data-mech-about onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.about(); }}
+            style={{ position: "absolute", ...(narrow ? { left: 12, bottom: 356 } : { left: "calc(50% + 103px)", bottom: 90 }), width: 88, height: 48, fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#c7d0dc", background: "rgba(29,37,49,0.9)", border: "1px solid #5f6e80", touchAction: "none" }}>
+            180
+          </button>
+          <button data-mech-punt onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.punt(); }}
+            style={{ position: "absolute", ...(narrow ? { left: 12, bottom: 304 } : { left: "calc(50% - 191px)", bottom: 90 }), width: 88, height: 48, fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#c7d0dc", background: "rgba(29,37,49,0.9)", border: "1px solid #5f6e80", touchAction: "none" }}>
+            PUNT
+          </button>
+          <button data-mech-reissue onClick={() => window.__MECHRANGE__ && window.__MECHRANGE__.reissue()}
+            style={{ position: "absolute", right: 70, top: 90, padding: "12px 16px", fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#c7d0dc", background: "#1a212b", border: "1px solid #5f6e80" }}>
+            ⟲ REISSUE
+          </button>
+          <button data-mech-exit onClick={onExit}
+            style={{ position: "absolute", right: 70, top: 144, padding: "12px 16px", fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#c7d0dc", background: "#1a212b", border: "1px solid #444c58" }}>
+            ⏏ MENU
+          </button>
+      </>
       {isTouch && (
         <>
           {/* LEFT stick: travel */}
@@ -345,32 +388,9 @@ export default function MechRange({ onExit }) {
             style={{ position: "absolute", left: "calc(50% - 48px)", bottom: 16, width: 96, height: 70, fontFamily: FONT, fontSize: 15, letterSpacing: 1, color: "#e8d9b8", background: "rgba(42,29,21,0.9)", border: "1px solid #7a6a4e", touchAction: "none" }}>
             {"\u25B2\uFE0E"} FIRE
           </button>
-          <button data-mech-msl onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.missiles(); }}
-            style={{ position: "absolute", ...(narrow ? { left: 12, bottom: 200 } : { left: "calc(50% + 5px)", bottom: 90 }), width: 88, height: 48, fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#e8c9b8", background: "rgba(46,29,21,0.9)", border: "1px solid #7a5e4e", touchAction: "none" }}>
-            ▲▲ MSL
-          </button>
-          <button data-mech-poise onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.poise(); }}
-            style={{ position: "absolute", ...(narrow ? { left: 12, bottom: 252 } : { left: "calc(50% - 93px)", bottom: 90 }), width: 88, height: 48, fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#c7d0dc", background: "rgba(29,37,49,0.9)", border: "1px solid #5f6e80", touchAction: "none" }}>
-            ONE LEG
-          </button>
-          <button data-mech-about onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.about(); }}
-            style={{ position: "absolute", ...(narrow ? { left: 12, bottom: 356 } : { left: "calc(50% + 103px)", bottom: 90 }), width: 88, height: 48, fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#c7d0dc", background: "rgba(29,37,49,0.9)", border: "1px solid #5f6e80", touchAction: "none" }}>
-            180
-          </button>
-          <button data-mech-punt onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.punt(); }}
-            style={{ position: "absolute", ...(narrow ? { left: 12, bottom: 304 } : { left: "calc(50% - 191px)", bottom: 90 }), width: 88, height: 48, fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#c7d0dc", background: "rgba(29,37,49,0.9)", border: "1px solid #5f6e80", touchAction: "none" }}>
-            PUNT
-          </button>
-          <button data-mech-reissue onClick={() => window.__MECHRANGE__ && window.__MECHRANGE__.reissue()}
-            style={{ position: "absolute", right: 70, top: 90, padding: "12px 16px", fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#c7d0dc", background: "#1a212b", border: "1px solid #5f6e80" }}>
-            ⟲ REISSUE
-          </button>
-          <button data-mech-exit onClick={onExit}
-            style={{ position: "absolute", right: 70, top: 144, padding: "12px 16px", fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#c7d0dc", background: "#1a212b", border: "1px solid #444c58" }}>
-            ⏏ MENU
-          </button>
         </>
       )}
+
     </div>
   );
 }

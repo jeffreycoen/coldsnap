@@ -639,11 +639,27 @@ export function makeRenderer(canvas, world0, opts = {}) {
     }
     chunkMesh.count = ki; chunkMesh.instanceMatrix.needsUpdate = true;
     // mech links (kind filter lesson: name EVERY kind explicitly)
+    let torsoB = null;
     let mi = 0;
     for (const b of world.bodies) {
       if ((b.kind !== "mech" && b.kind !== "mechlink" && b.kind !== "mechfoot") || mi >= 24) continue;
+      if (b.visTag === "torso") torsoB = b;
       writeInst(mechMesh, mi, b.pos.x, b.pos.y, b.pos.z, b.q, b.hx * 2, b.hy * 2, b.hz * 2);
       if (mechMesh.setColorAt) mechMesh.setColorAt(mi, b.kind === "mech" ? MECH_HULL_C : b.kind === "mechfoot" ? MECH_FOOT_C : MECH_LINK_C);
+      mi++;
+    }
+    // GINORMOUS shoulder missile pod (design 2026-08-01): an MLRS-scale
+    // rack on the RIGHT shoulder, drawn as two boxes riding the torso frame
+    // (render-only — physics keeps the logical mount)
+    if (torsoB && mi < 23) {
+      _bq.set(torsoB.q.x, torsoB.q.y, torsoB.q.z, torsoB.q.w);
+      const _off = new THREE.Vector3(-1.35, 0.62, -0.05).applyQuaternion(_bq);
+      writeInst(mechMesh, mi, torsoB.pos.x + _off.x, torsoB.pos.y + _off.y, torsoB.pos.z + _off.z, torsoB.q, 0.6, 0.5, 0.9); // pylon
+      if (mechMesh.setColorAt) mechMesh.setColorAt(mi, MECH_LINK_C);
+      mi++;
+      _off.set(-1.35, 1.32, 0.12).applyQuaternion(_bq);
+      writeInst(mechMesh, mi, torsoB.pos.x + _off.x, torsoB.pos.y + _off.y, torsoB.pos.z + _off.z, torsoB.q, 1.5, 1.15, 2.9); // the pod
+      if (mechMesh.setColorAt) mechMesh.setColorAt(mi, MECH_FOOT_C);
       mi++;
     }
     mechMesh.count = mi; mechMesh.instanceMatrix.needsUpdate = true;

@@ -550,6 +550,7 @@ export function buildMech(world, opts = {}) {
     const gW = { kp: Iw * (R.BW * om0b) * (R.BW * om0b), kd: 2 * R.zeta * Math.sqrt(Iw * (R.BW * om0b) * (R.BW * om0b) * Iw), kv: 0, tauMax: 0, Ichain: Iw };
     const waist = addHinge(mech, hull, torso, v3(x, hullY + R.hull.hy * s, z), AXY, REFZ, gW, -0.87, 0.87, "waist");
     mech.waist = waist;
+    torso.visTag = "torso"; // renderer hook: the shoulder missile pod rides this body
     const shoulderY = torsoY + 0.30 * s;
     const arms = {};
     for (const sd of ["L", "R"]) {
@@ -2095,7 +2096,9 @@ export function mechMissiles(world, mech) {
   mech._lastMsl = world.t;
   mech.mslTarget = tgt;
   mech.mslSlew = 0; // launcher bearing animates in the controller-side state (visual later)
-  const m0 = { x: torso.pos.x, y: torso.pos.y + 0.9, z: torso.pos.z }; // shoulder height
+  // muzzle = the shoulder POD (right side, matches the rendered rack)
+  const Rm = torso.R;
+  const m0 = { x: torso.pos.x + Rm[0] * -1.35 + Rm[3] * 1.4, y: torso.pos.y + Rm[1] * -1.35 + Rm[4] * 1.4, z: torso.pos.z + Rm[2] * -1.35 + Rm[5] * 1.4 };
   const dx = mech.mslTarget.x - m0.x, dz = mech.mslTarget.z - m0.z;
   const d = Math.max(6, Math.hypot(dx, dz));
   const h = m0.y - world.field.heightAt(mech.mslTarget.x, mech.mslTarget.z);
