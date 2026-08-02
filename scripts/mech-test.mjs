@@ -313,6 +313,29 @@ const run = (w, secs) => { const n = Math.round(secs / w.dt); for (let i = 0; i 
   ok("sorties: all six compound-maneuver runs survive", clean === SORTIES.length, "clean " + clean + "/6 " + (detail.join(" ") || ""));
 }
 
+// ---------------------------------------------------------------- 5b2. overdrive
+// raw 0.6 travel: the governor launches at 0.42, creeps to 0.55 once the
+// walk is established, and brakes back through the certified band on
+// release. Bar: no fall, cruise >= 0.45 over t=30..40, ends at STAND.
+// (offset 1.2 is the settle state that failed every un-governed variant)
+{
+  const w = flatWorld();
+  const mech = buildMech(w, { x: 0, z: 0 });
+  run(w, 3.2);
+  let fell = false, zAt30 = 0, zAt40 = 0;
+  for (let i = 0; i < Math.round(60 / w.dt); i++) {
+    const t2 = i * w.dt;
+    mechCommand(mech, { travel: t2 > 42 ? 0 : 0.6, lateral: 0, heading: 0 });
+    w.events.length = 0; stepWorld(w);
+    if (t2 >= 30 && zAt30 === 0) zAt30 = mech.hull.pos.z;
+    if (t2 >= 40 && zAt40 === 0) zAt40 = mech.hull.pos.z;
+    if (mech.state.mode === "FALLEN") { fell = true; break; }
+  }
+  const cruise = (zAt40 - zAt30) / 10;
+  ok("overdrive: 0.6 raw cruises >= 0.45 and stops to STAND", !fell && cruise >= 0.45 && mech.state.mode === "STAND",
+    fell ? "FELL" : "cruise " + cruise.toFixed(2) + " end " + mech.state.mode);
+}
+
 // ---------------------------------------------------------------- 5c. about-face
 // commanded 180 (single-support pivot, brake-first from a march). Bar: no
 // fall, faces the reverse within 0.2 rad, back at STAND, inside 50s.

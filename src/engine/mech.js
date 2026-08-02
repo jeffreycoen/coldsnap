@@ -814,7 +814,28 @@ function controller(world, mech) {
     st.cmd.f += clamp(0 - st.cmd.f, -k.travelRate * 2 * dt, k.travelRate * 2 * dt);
     st.cmd.l += clamp(0 - st.cmd.l, -k.travelRate * 2 * dt, k.travelRate * 2 * dt);
   } else {
-    st.cmd.f += clamp(st.cmdT.f - st.cmd.f, -trRate * dt, trRate * dt);
+    // OVERDRIVE governor (2026-08-02, "walking is so freaking slow"): the
+    // gait is ensemble-swept to 0.5 and STEP commands beyond it fall (6.3s)
+    // — but an ESTABLISHED walk cruises at 0.55 cleanly (6/6 settle
+    // offsets) when the extra arrives at 0.03/s. Leaving overdrive holds
+    // the certified band until the frame sheds momentum: a direct 0.55->0
+    // stop fell 2/6 in the decel. Raw commands <= 0.5 pass untouched.
+    let effF = st.cmdT.f;
+    st.walkEstT = st.mode === "WALK" ? (st.walkEstT || 0) + dt : 0;
+    if (st.cmdT.f > 0.5) {
+      st.govDecel = false;
+      if (st.govF == null) st.govF = 0.42; // overdrive LAUNCHES at the robust band — 0.5 launches fell 4/6 across settle offsets
+      if (st.walkEstT > 8) st.govF = Math.min(0.55, st.govF + 0.03 * dt);
+      effF = Math.min(st.cmdT.f, st.govF);
+    } else {
+      if (st.govF != null && Math.hypot(hull.v.x, hull.v.z) > 0.55) st.govDecel = true; // leaving overdrive hot
+      st.govF = null;
+      if (st.govDecel) {
+        if (Math.hypot(hull.v.x, hull.v.z) > 0.55 && st.cmdT.f < 0.42) effF = 0.42; // brake through the certified band, not past it
+        else st.govDecel = false;
+      }
+    }
+    st.cmd.f += clamp(effF - st.cmd.f, -trRate * dt, trRate * dt);
     st.cmd.l += clamp(st.cmdT.l - st.cmd.l, -trRate * dt, trRate * dt);
   }
   // heading rotates continuously at STAND, and during WALK only through DS
