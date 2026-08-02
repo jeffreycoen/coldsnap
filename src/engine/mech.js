@@ -410,9 +410,11 @@ function solveContactOne(c, dt) {
 
 // ---------------------------------------------------------------- rig (spec §0, §1)
 // Reference rig at s=1: leg L = 2.95 (the spec's reference leg), hull 69% of
-// 15.3t. 5 hinges per leg (hipRoll Z, hipPitch X, knee X, anklePitch X,
-// ankleRoll Z) — 10 joints, 11 bodies. Yaw has no joint: heading changes go
-// through stepped foot placement and stance-foot friction.
+// 15.3t. 6 hinges per leg (hipYaw Y, hipRoll Z, hipPitch X, knee X,
+// anklePitch X, ankleRoll Z) — 12 joints, 13 bodies. The hip yaw joint
+// (2026-08-01) is the machine's ONLY yaw actuator: stance legs absorb
+// pelvis rotation at the hip while the soles stay gripped, and each swing
+// lands the foot aligned with the new frame.
 export const RIG = {
   // wide stance + wide feet: a 3.5m-CoM biped on a narrow base spent every
   // controller iteration fighting lateral margins it simply didn't have
@@ -420,8 +422,9 @@ export const RIG = {
   // chunky legs under a low flat slab body. Visual bulk in the legs, MASS
   // in the pelvis (spec §0 + §5b: their pelvis outweighs their torso 2.4:1)
   L1: 1.90, L2: 1.70, ankleH: 0.42, hipX: 0.85, hipY: -0.72,
-  hull: { hx: 1.15, hy: 0.62, hz: 0.95, m: 10800 }, // BALLAST (Jeff, 2026-07-31): +1300 from the torso slab — the reference rig's stability IS its pelvis-heaviness; a lower CoM shrinks the pelvis->CoM offset and the toppling moment
+  hull: { hx: 1.15, hy: 0.62, hz: 0.95, m: 10240 }, // -560: the two yaw blocks carry it now (total unchanged) // BALLAST (Jeff, 2026-07-31): +1300 from the torso slab — the reference rig's stability IS its pelvis-heaviness; a lower CoM shrinks the pelvis->CoM offset and the toppling moment
   hipBlock: { h: 0.20, m: 280 },
+  yawBlock: { h: 0.30, m: 280 }, // conditioning, not anatomy: a light small block between the 10t hull and the 2.5t leg chain explodes through its stops (measured -1.5 rad in 0.5s at 12 iters)
   thigh: { hx: 0.42, hy: 0.95, hz: 0.50, m: 1000 },
   shin: { hx: 0.34, hy: 0.85, hz: 0.40, m: 700 },
   ankleBlock: { h: 0.17, m: 180 },
@@ -435,8 +438,8 @@ export const RIG = {
   // so the SINGLE-leg torque saturates at kpDeg of error — gravity-stiff.
   // (Rejected here twice before — both tests ran on the sign-flipped ground.)
   wlFrac: { hipRoll: 0.567, hipPitch: 0.567, knee: 0.769 },
-  kpDeg: { hipRoll: 6, hipPitch: 8, knee: 12, anklePitch: 6, ankleRoll: 6 },
-  limits: { hipRoll: [-0.55, 0.55], hipPitch: [-1.25, 0.95], knee: [-0.02, 2.4], anklePitch: [-1.45, 1.45], ankleRoll: [-0.9, 0.9] },
+  kpDeg: { hipYaw: 3, hipRoll: 6, hipPitch: 8, knee: 12, anklePitch: 6, ankleRoll: 6 },
+  limits: { hipYaw: [-0.7, 0.7], hipRoll: [-0.55, 0.55], hipPitch: [-1.25, 0.95], knee: [-0.02, 2.4], anklePitch: [-1.45, 1.45], ankleRoll: [-0.9, 0.9] },
   // servo bandwidth (x omega) and damping ratio. BW is sized so kp*e at
   // typical errors (~0.3 rad) commands accelerations INSIDE the physical
   // torque ceiling — BW 9 commanded 4.7x tauMax and the loop bang-banged the
@@ -489,6 +492,7 @@ export function buildMech(world, opts = {}) {
     const hx = x + sx * R.hipX * s, hipPt = v3(hx, hipYw, z);
     const kneePt = v3(hx, hipYw - R.L1 * s, z);
     const anklePt = v3(hx, hipYw - L, z);
+    const yawB = B({ kind: "mechlink", group: "mech", mass: R.yawBlock.m * s3, hx: R.yawBlock.h * s, hy: R.yawBlock.h * s, hz: R.yawBlock.h * s, x: hx, y: hipYw + 0.36 * s, z, friction: 0.6, restitution: 0 });
     const hipB = B({ kind: "mechlink", group: "mech", mass: R.hipBlock.m * s3, hx: R.hipBlock.h * s, hy: R.hipBlock.h * s, hz: R.hipBlock.h * s, x: hx, y: hipYw, z, friction: 0.6, restitution: 0 });
     const thigh = B({ kind: "mechlink", group: "mech", mass: R.thigh.m * s3, hx: R.thigh.hx * s, hy: R.thigh.hy * s, hz: R.thigh.hz * s, x: hx, y: hipYw - R.L1 * s / 2, z, friction: 0.6, restitution: 0 });
     const shin = B({ kind: "mechlink", group: "mech", mass: R.shin.m * s3, hx: R.shin.hx * s, hy: R.shin.hy * s, hz: R.shin.hz * s, x: hx, y: kneePt.y - R.L2 * s / 2, z, friction: 0.6, restitution: 0 });
@@ -509,18 +513,22 @@ export function buildMech(world, opts = {}) {
       const kd = 2 * R.zeta * Math.sqrt(kp * I);
       return { kp, kd, kv: 0.02 * kd, tauMax: 0, Ichain: I, lever };
     };
-    const AXX = v3(1, 0, 0), AXZ = v3(0, 0, 1);
+    const AXX = v3(1, 0, 0), AXZ = v3(0, 0, 1), AXY = v3(0, 1, 0);
+    const gHipY = mkGain([yawB, hipB, thigh, shin, ankB, foot], hipPt, AXY, 0);
     const gHipR = mkGain([hipB, thigh, shin, ankB, foot], hipPt, AXZ, 0);
     const gHipP = mkGain([thigh, shin, ankB, foot], hipPt, AXX, 0);
     const gKnee = mkGain([shin, ankB, foot], kneePt, AXX, 0);
     const gAnkP = mkGain([ankB, foot], anklePt, AXX, 0);
     const gAnkR = mkGain([foot], anklePt, AXZ, 0);
-    gains[side] = { gHipR, gHipP, gKnee, gAnkP, gAnkR };
+    gains[side] = { gHipY, gHipR, gHipP, gKnee, gAnkP, gAnkR };
     const REFY = v3(0, 1, 0);
+    const REFZ2 = v3(0, 0, 1);
     const leg = {
-      side, sx, hipB, thigh, shin, ankB, foot,
+      side, sx, yawB, hipB, thigh, shin, ankB, foot,
       distal: null, // filled after joints exist
-      hipRoll: addHinge(mech, hull, hipB, hipPt, AXZ, REFY, gHipR, R.limits.hipRoll[0], R.limits.hipRoll[1], side + "hipRoll"),
+      yawTgt: 0,
+      hipYaw: addHinge(mech, hull, yawB, hipPt, AXY, REFZ2, gHipY, R.limits.hipYaw[0], R.limits.hipYaw[1], side + "hipYaw"),
+      hipRoll: addHinge(mech, yawB, hipB, hipPt, AXZ, REFY, gHipR, R.limits.hipRoll[0], R.limits.hipRoll[1], side + "hipRoll"),
       hipPitch: addHinge(mech, hipB, thigh, hipPt, AXX, REFY, gHipP, R.limits.hipPitch[0], R.limits.hipPitch[1], side + "hipPitch"),
       knee: addHinge(mech, thigh, shin, kneePt, AXX, REFY, gKnee, R.limits.knee[0], R.limits.knee[1], side + "knee"),
       anklePitch: addHinge(mech, shin, ankB, anklePt, AXX, REFY, gAnkP, R.limits.anklePitch[0], R.limits.anklePitch[1], side + "anklePitch"),
@@ -528,6 +536,7 @@ export function buildMech(world, opts = {}) {
       load: 0,
     };
     leg.distal = {
+      hipYaw: [yawB, hipB, thigh, shin, ankB, foot],
       hipRoll: [hipB, thigh, shin, ankB, foot],
       hipPitch: [thigh, shin, ankB, foot],
       knee: [shin, ankB, foot],
@@ -535,6 +544,7 @@ export function buildMech(world, opts = {}) {
       ankleRoll: [foot],
     };
     mech.legs[side] = leg;
+    (mech._hipExtra = mech._hipExtra || []).push(leg.hipYaw, leg.hipRoll);
   }
   // ---- upper body (spec §5, §5c): torso on a waist YAW ring, hanging arms
   // as Den Hartog dampers (the free stability), head welded (mounts break
@@ -584,7 +594,8 @@ export function buildMech(world, opts = {}) {
     const copX0 = 0.80 * (R.foot.hz * s - R.foot.fwdOff * s);
     const copZ0 = 0.65 * R.foot.hx * s;
     const short = j.name.slice(1);
-    if (j.name.includes("anklePitch")) j.tauMax = 1.40 * M * world.gravity * copX0;
+    if (j.name.includes("hipYaw")) j.tauMax = 0.30 * M * world.gravity; // steering, not load-bearing: about the loaded sole's grip torque, so slip relieves before the servo saturates
+    else if (j.name.includes("anklePitch")) j.tauMax = 1.40 * M * world.gravity * copX0;
     else if (j.name.includes("ankleRoll")) j.tauMax = 1.45 * M * world.gravity * copZ0;
     else j.tauMax = M * world.gravity * L * R.wlFrac[short];
     // reference gain law (mech_model assemble.js): kp = kpTau/(kpDeg rad),
@@ -593,6 +604,11 @@ export function buildMech(world, opts = {}) {
     const kpTau = 0.5 * j.tauMax;
     j.kp = kpTau / (R.kpDeg[short] * Math.PI / 180);
     j.kd = Math.min(j.kp * 6 / 120, 0.9 * j.Ichain * 120);
+    // hip yaw: the gamma-law kd leaves zeta ~0.25 about an axis whose only
+    // ground path is sole-twist friction — underdamped ringing there has
+    // nowhere stiff to drain and detonates the chain (measured, 0.8s).
+    // Critically damp it instead.
+    if (j.name.includes("hipYaw")) j.kd = Math.min(2 * Math.sqrt(j.kp * j.Ichain), 0.9 * j.Ichain * 120);
     j.kv = 0.02 * j.kd;
   }
   // gait constants from measured geometry
@@ -604,7 +620,7 @@ export function buildMech(world, opts = {}) {
   mech.k = deriveGait(L, comH, R.hipX * s, { halfLen: R.foot.hz * s, halfWid: R.foot.hx * s, ankleOffX: R.foot.fwdOff * s }, world.gravity);
   mech.groundC = (0.01 * L) / (M * world.gravity); // spec §4, m/N
   // loop gains, sweepable (defaults = shipped tune)
-  mech.tune = { fzBase: 0.95, fzKp: 2.0, fzKd: 1.6, fzCap: 1.15, floorG: 0.85, katt: 1.2, cmgKp: 2.2, cmgKd: 0.55, cmgSlew: 1.5, yawSS: 1.0, yawSSd: 1.0, turnDS: 0.35, afRate: 0.2, kickLean: 0.5, kickDur: 1.15, kickReach: 1.2, kickH: 0.9 } // punt-suite 4/4 (advisor sweep 2026-08-01); // sortie-swept: full SS yaw spring + heavy SS damping + slow DS turn = 4/6 clean vs 0/6
+  mech.tune = { fzBase: 0.95, fzKp: 2.0, fzKd: 1.6, fzCap: 1.15, floorG: 0.85, katt: 1.2, cmgKp: 2.2, cmgKd: 0.55, cmgSlew: 1.5, yawSS: 1.0, yawSSd: 1.0, turnDS: 0.35, afRate: 0.2, standTurn: 0.5, kickLean: 0.5, kickDur: 1.15, kickReach: 1.2, kickH: 0.9 } // punt-suite 4/4 (advisor sweep 2026-08-01); // sortie-swept: full SS yaw spring + heavy SS damping + slow DS turn = 4/6 clean vs 0/6
   // retune the arm dampers with FINAL mass + true gait omega (build-time
   // first pass used running totals — Den Hartog is sensitive to mu/wSway)
   if (mech.arms) for (const sd of ["L", "R"]) {
@@ -628,8 +644,8 @@ export function buildMech(world, opts = {}) {
     cmd: { f: 0, l: 0 }, cmdT: { f: 0, l: 0 }, heading: yaw, headingT: yaw,
     pelvis: { x, z },
     prints: {
-      L: { x: x + R.hipX * s, z: z },
-      R: { x: x - R.hipX * s, z: z },
+      L: { x: x + R.hipX * s, z: z, yaw },
+      R: { x: x - R.hipX * s, z: z, yaw },
     },
     hold: {}, holdCop: {}, stopping: false, stopPlan: null, settled: 0,
   };
@@ -656,7 +672,7 @@ export function buildMech(world, opts = {}) {
   }
   for (const side of ["L", "R"]) {
     const leg = mech.legs[side];
-    const chain = [hull, leg.hipB, leg.thigh, leg.shin, leg.ankB, leg.foot];
+    const chain = [hull, leg.yawB, leg.hipB, leg.thigh, leg.shin, leg.ankB, leg.foot];
     for (let i = 0; i < chain.length; i++) for (let k2 = i + 1; k2 < chain.length; k2++) {
       const a = chain[i], b = chain[k2];
       world._mechPairs.add(a.id < b.id ? a.id * 100000 + b.id : b.id * 100000 + a.id);
@@ -686,8 +702,8 @@ export function placeMech(world, mech, x, z, yaw) {
   st.cmd = { f: 0, l: 0 }; st.cmdT = { f: 0, l: 0 };
   st.pelvis = { x, z };
   st.prints = {
-    L: { x: mech.legs.L.foot.pos.x, z: mech.legs.L.foot.pos.z },
-    R: { x: mech.legs.R.foot.pos.x, z: mech.legs.R.foot.pos.z },
+    L: { x: mech.legs.L.foot.pos.x, z: mech.legs.L.foot.pos.z, yaw },
+    R: { x: mech.legs.R.foot.pos.x, z: mech.legs.R.foot.pos.z, yaw },
   };
   st.hold = {}; st.holdCop = {}; st.stopping = false; st.stopPlan = null;
   st.settleT = 0; st.settledT = 0; st.spawnDone = false;
@@ -706,18 +722,20 @@ export function respawnMech(world, mech, x, z, yaw) { placeMech(world, mech, x, 
 // -> the five hinge targets. Convention (verified by the zero-g convergence
 // gate): theta_h + = knee forward; hinge targets: hipPitch=-th, knee=+tk,
 // anklePitch=th-tk, hipRoll=phi, ankleRoll=-phi.
-function legIK(mech, sx, pelvis, hipYw, heading, footTgt, out) {
+function legIK(mech, sx, pelvis, hipYw, heading, footTgt, out, legYaw = 0) {
   const g = mech.geom;
   const cs = Math.cos(heading), sn = Math.sin(heading);
   // ankle point in world
   const ax = footTgt.x, az = footTgt.z, ay = footTgt.y + g.ankleH;
-  // hip point in world
+  // hip point in world (hip sockets ride the PELVIS frame; the yaw joint
+  // sits at the socket, so only the decomposition below rotates with it)
   const hxw = pelvis.x + sx * g.hipX * cs, hzw = pelvis.z - sx * g.hipX * sn;
-  // v = hip->ankle in pelvis-ref frame (heading yaw only, level)
+  // v = hip->ankle in the LEG frame (heading + hip yaw absorb, level)
+  const csL = Math.cos(heading + legYaw), snL = Math.sin(heading + legYaw);
   const wx = ax - hxw, wy = ay - hipYw, wz = az - hzw;
-  const vx = wx * cs - wz * sn;         // ref-local X (left)
+  const vx = wx * csL - wz * snL;       // leg-local X (left)
   const vy = wy;
-  const vz = wx * sn + wz * cs;         // ref-local Z (fwd)
+  const vz = wx * snL + wz * csL;       // leg-local Z (fwd)
   const phi = Math.atan2(vx, -vy);
   // planar 2-link in the rolled sagittal plane: down component -hypot(vx,vy), fwd vz
   const dY = -Math.hypot(vx, vy), dZ = vz;
@@ -738,7 +756,7 @@ function legIK(mech, sx, pelvis, hipYw, heading, footTgt, out) {
 const _ikOut = {};
 function setLegTargets(mech, side, pelvis, hipYw, heading, footTgt, tiltComp) {
   const leg = mech.legs[side];
-  legIK(mech, leg.sx, pelvis, hipYw, heading, footTgt, _ikOut);
+  legIK(mech, leg.sx, pelvis, hipYw, heading, footTgt, _ikOut, leg.yawTgt || 0);
   if (tiltComp) {
     // SWING only: the IK frame is attitude-blind (stance leans ARE the
     // force, reference design) but a rolled hull displaces the airborne
@@ -751,6 +769,7 @@ function setLegTargets(mech, side, pelvis, hipYw, heading, footTgt, tiltComp) {
     _ikOut.hipPitch -= clamp(attP, -0.3, 0.3);
     _ikOut.hipRoll -= clamp(attR, -0.3, 0.3);
   }
+  if (leg.hipYaw) leg.hipYaw.target = clamp(leg.yawTgt || 0, leg.hipYaw.lo, leg.hipYaw.hi);
   leg.hipRoll.target = clamp(_ikOut.hipRoll, leg.hipRoll.lo, leg.hipRoll.hi);
   leg.hipPitch.target = clamp(_ikOut.hipPitch, leg.hipPitch.lo, leg.hipPitch.hi);
   leg.knee.target = clamp(_ikOut.knee, leg.knee.lo, leg.knee.hi);
@@ -867,8 +886,32 @@ function controller(world, mech) {
     const pend = Math.abs(wrapPi(st.headingT - st.heading));
     const standOk = st.mode !== "WALK" && pend <= 0.3; // small trims only — big standing turns must STEP (see the walk-entry trigger)
     const inSS = st.mode === "WALK" && st.phases && st.phases[st.pi] && st.phases[st.pi].kind !== "DS";
-    if ((standOk || inDS || (st.aboutFace && inSS)) && !(st.mode === "WALK" && st.recoverT > 0)) {
-      let rate = st.mode === "WALK" ? k.turnRate * (k.stepPeriod / Math.max(k.tDS, 0.2)) * mech.tune.turnDS : k.turnRate;
+    // HIP-YAW STAND TURN: with the yaw joints the pelvis rotates ON planted
+    // feet — big standing turns no longer need to step until the absorb
+    // runs out of range. Rate gated by loaded-leg absorb occupancy.
+    let standFast = false;
+    if (st.mode !== "WALK" && pend > 0.02) {
+      const W4 = mech.mass * world.gravity;
+      let occ4 = 0;
+      for (const sd4 of ["L", "R"]) {
+        const lg4 = mech.legs[sd4];
+        if (lg4.hipYaw && lg4.load > 0.12 * W4) occ4 = Math.max(occ4, Math.abs(lg4.yawTgt || 0));
+      }
+      standFast = occ4 < 0.5;
+    }
+    if ((standOk || standFast || inDS || (st.aboutFace && inSS)) && !(st.mode === "WALK" && st.recoverT > 0)) {
+      let rate = st.mode === "WALK" ? k.turnRate * (k.stepPeriod / Math.max(k.tDS, 0.2)) * mech.tune.turnDS : (standFast ? mech.tune.standTurn : k.turnRate);
+      // absorb headroom: pause ANY walk slew when a loaded leg is near its
+      // yaw stop — the next touchdown relieves it and the slew resumes
+      {
+        const W3 = mech.mass * world.gravity;
+        let occ = 0;
+        for (const sd3 of ["L", "R"]) {
+          const lg3 = mech.legs[sd3];
+          if (lg3.hipYaw && lg3.load > 0.12 * W3) occ = Math.max(occ, Math.abs(lg3.yawTgt || 0));
+        }
+        if (st.mode === "WALK") rate *= clamp((0.55 - occ) / 0.12, 0, 1);
+      }
       if (st.aboutFace && st.mode === "WALK") {
         // the pivot rotates during SINGLE support only: one gripping sole
         // resists the twist (the DS grind winds BOTH legs — measured: the
@@ -881,6 +924,25 @@ function controller(world, mech) {
         rate = inSS && st.aboutFace === "turn" ? mech.tune.afRate * upr : 0;
       }
       st.heading += clamp(wrapPi(st.headingT - st.heading), -rate * dt, rate * dt);
+    }
+  }
+  // HIP-YAW ABSORB (2026-08-01): a LOADED leg's yaw servo holds its foot
+  // at the print's world orientation while the pelvis turns — rotation is
+  // absorbed at the hip, not ground through a twisting sole. Swing legs
+  // slew to 0 so the foot lands aligned with the frame; every touchdown
+  // relieves the absorb on that side.
+  {
+    const W2 = mech.mass * world.gravity;
+    for (const sd2 of ["L", "R"]) {
+      const lg = mech.legs[sd2];
+      if (!lg.hipYaw) break; // (older saves / harness stubs)
+      const pr = st.prints[sd2];
+      if (lg.load > 0.12 * W2) {
+        const want = clamp(wrapPi((pr.yaw != null ? pr.yaw : st.heading) - st.heading), lg.hipYaw.lo + 0.06, lg.hipYaw.hi - 0.06);
+        lg.yawTgt += clamp(want - lg.yawTgt, -2.5 * dt, 2.5 * dt);
+      } else {
+        lg.yawTgt += clamp(0 - lg.yawTgt, -1.5 * dt, 1.5 * dt);
+      }
     }
   }
   const cs = Math.cos(st.heading), sn = Math.sin(st.heading);
@@ -954,7 +1016,14 @@ function controller(world, mech) {
     // it through straight marches broke the fast band (0.53 fell at 8s)
     const tf = Math.min(1, (st.turnLpf || 0) / 0.1);
     const yawSSe = 1 - (1 - mech.tune.yawSS) * tf, yawSSde = 1 + (mech.tune.yawSSd - 1) * tf;
-    const tyD = clamp(kpA * dbY(eyT) * (inSSy ? yawSSe : 1) - kdA * (inSSy ? yawSSde : 1) * hull.w.y, -tauCap, tauCap);
+    // HIP-YAW ERA (2026-08-01): the CMG yaw SPRING is gone. With a real
+    // yaw actuator in the legs, heading-chasing torque belongs to the hip
+    // yaw servos (stance legs rotate the hull against gripped soles —
+    // physical). The momentum-unlimited spring fighting those servos was
+    // the injector that splayed the legs and felled the stand in 1.2s
+    // (measured). Yaw DAMPING stays — it drains ringing about the one
+    // axis whose ground path is soft.
+    const tyD = clamp(-kdA * (inSSy ? yawSSde : 1) * hull.w.y, -tauCap, tauCap);
     const tzD = clamp(-kpA * dbT(-ezT - leanZ) - kdA * hull.w.z, -tauCap, tauCap);
     // slew: the CMG is an OUTER loop, slower than the gait (spec §5b)
     if (!mech._cmgT) mech._cmgT = { x: 0, y: 0, z: 0 };
@@ -1287,8 +1356,8 @@ function controller(world, mech) {
     // ...but never track an AIRBORNE foot (poise raise): its print froze
     // feetMid 0.4m off the stance foot and the CoP trim steered xi off
     // the machine's own support
-    if (legL.load > 0.05 * totalW || !st.poise) { st.prints.L.x = legL.foot.pos.x; st.prints.L.z = legL.foot.pos.z; }
-    if (legR.load > 0.05 * totalW || !st.poise) { st.prints.R.x = legR.foot.pos.x; st.prints.R.z = legR.foot.pos.z; }
+    if (legL.load > 0.05 * totalW || !st.poise) { st.prints.L.x = legL.foot.pos.x; st.prints.L.z = legL.foot.pos.z; st.prints.L.yaw = Math.atan2(legL.foot.R[6], legL.foot.R[8]); }
+    if (legR.load > 0.05 * totalW || !st.poise) { st.prints.R.x = legR.foot.pos.x; st.prints.R.z = legR.foot.pos.z; st.prints.R.yaw = Math.atan2(legR.foot.R[6], legR.foot.R[8]); }
     feetMid.x = (st.prints.L.x + st.prints.R.x) / 2;
     feetMid.z = (st.prints.L.z + st.prints.R.z) / 2;
     const eF = (xi.x - feetMid.x) * axes.fwd.x + (xi.z - feetMid.z) * axes.fwd.z;
@@ -1391,6 +1460,12 @@ function controller(world, mech) {
         st.prints[landSide] = {
           x: sw.foot.pos.x * 0.78 + plan.x * 0.22,
           z: sw.foot.pos.z * 0.78 + plan.z * 0.22,
+          // landing yaw latches MEASURED but clamped near the frame: swing
+          // ringing lands the foot up to 0.15 rad twisted, and holding that
+          // via the absorb servo skewed every stride (walk speed HALVED).
+          // Small errors grind out through the sole like the pre-yaw rig;
+          // only genuine turn absorb is worth holding.
+          yaw: st.heading + clamp(wrapPi(Math.atan2(sw.foot.R[6], sw.foot.R[8]) - st.heading), -0.12, 0.12),
         };
         st.lastSwing = landSide;
         st.swing = null;
@@ -1698,7 +1773,7 @@ function controller(world, mech) {
         kf = 0;
         st.kick.lt = mech.legs[st.swing].load > 0.18 * totalW ? (st.kick.lt || 0) + dt : 0;
         if (st.kick.lt > 0.1 || st.kick.pl > 0.7) {
-          st.prints[st.swing] = { x: swf2.x, z: swf2.z };
+          st.prints[st.swing] = { x: swf2.x, z: swf2.z, yaw: Math.atan2(mech.legs[st.swing].foot.R[6], mech.legs[st.swing].foot.R[8]) };
           st.lastSwing = st.swing;
           st.kick = null; st.swing = null; st.hold = {}; st.holdCop = {};
           st.stopping = true;
@@ -1947,9 +2022,17 @@ export function mechIslandSolve(world, mech) {
   }
   // island: fixed iterations, joints + contacts INTERLEAVED (spec §6)
   for (const j of mech.joints) prepHinge(j, dt);
-  const IT = 12;
+  // 16, not 12 (2026-08-01): the hip yaw joint deepened the serial load
+  // path (hull -> yawB -> hipB -> ... -> foot) and 12 iterations stopped
+  // converging — the standing weight BOUNCED 0..4x W and the frame hopped
+  // itself over in 4s. At 16 the settle is dead quiet (183k..194k).
+  const IT = 20;
   for (let it = 0; it < IT; it++) {
     for (const j of mech.joints) iterHinge(j, dt, false);
+    // the hip stack (hull -> yawB -> hipB) is the deepest serial load path
+    // since the yaw joint landed — give its locks a second visit per sweep
+    // (4 lock solves vs raising IT for all 15 joints; measured equivalent)
+    if (mech._hipExtra) for (const j of mech._hipExtra) iterHinge(j, dt, true);
     for (const c of cs) solveContactOne(c, dt);
   }
   // locks-only close-out: the last motor impulse must not leave the step with
