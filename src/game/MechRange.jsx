@@ -4,7 +4,7 @@
 // The machine stands, weight-shifts, steps — and still falls; R reissues it.
 import React, { useEffect, useRef, useState } from "react";
 import { makeWorld, makeField, stepWorld, addBody, fireProjectile } from "../engine/core.js";
-import { buildMech, mechCommand, respawnMech, mechFallen, mechFire, mechPunt, mechPoise, mechMissiles, mechAboutFace, mechAimDir } from "../engine/mech.js";
+import { buildMech, mechCommand, respawnMech, mechFallen, mechFire, mechPunt, mechPoise, mechMissiles, mechAboutFace, mechDash, mechAimDir } from "../engine/mech.js";
 import { makeRenderer } from "../render/renderer.js";
 import { detectTouch } from "./runner/trials.js";
 import { BUILDERS } from "./scenario.js";
@@ -17,7 +17,10 @@ export default function MechRange({ onExit }) {
   const rngThumbRef = useRef(null);
   const rngLabelRef = useRef(null);
   const isTouch = detectTouch();
-  const [hud, setHud] = useState({ mode: "STAND", steps: 0, falls: 0, kills: 0, shots: 0 });
+  const [hud, setHud] = useState({ mode: "STAND", steps: 0, falls: 0, kills: 0, shots: 0, gyro: true, rcs: true });
+  const gaugeRingRef = useRef(null);
+  const bubbleRef = useRef(null);
+  const yawTickRef = useRef(null);
   // portrait phones have no room for a 3-wide action row between the stick
   // rings — stack it on the left edge instead; re-render on rotation
   const [winW, setWinW] = useState(window.innerWidth);
@@ -74,6 +77,13 @@ export default function MechRange({ onExit }) {
       poise: () => mechPoise(world, mech, "L"),
       missiles: () => mechMissiles(world, mech),
       about: () => mechAboutFace(world, mech),
+      dash: () => {
+        const h = Math.atan2(mech.hull.R[6], mech.hull.R[8]);
+        const f = S.lastTf || 0, l = S.lastTl || 0;
+        mechDash(world, mech, Math.sin(h) * f + Math.cos(h) * l, Math.cos(h) * f - Math.sin(h) * l);
+      },
+      gyro: () => { mech.gyroOn = mech.gyroOn === false; },
+      rcs: () => { mech.thrustersOn = !mech.thrustersOn; },
     };
     const joyBase = () => ({ x: 86, y: window.innerHeight - 130 });
     const rsBase = () => ({ x: window.innerWidth - 86, y: window.innerHeight - 130 });
@@ -147,6 +157,9 @@ export default function MechRange({ onExit }) {
       if (e.code === "KeyX") { mechPoise(world, mech, "L"); }
       if (e.code === "KeyV") { mechMissiles(world, mech); }
       if (e.code === "KeyT") { mechAboutFace(world, mech); }
+      if (e.code === "KeyB") { window.__MECHRANGE__ && window.__MECHRANGE__.dash(); }
+      if (e.code === "KeyG") { window.__MECHRANGE__ && window.__MECHRANGE__.gyro(); }
+      if (e.code === "KeyH") { window.__MECHRANGE__ && window.__MECHRANGE__.rcs(); }
       if (e.code === "KeyR") {
         respawnMech(world, mech, 0, 41, Math.PI);
         S.yawT = Math.PI; S.aimYaw = null; mech.aimYaw = null;
@@ -206,6 +219,7 @@ export default function MechRange({ onExit }) {
         S.yawT += Math.sign(mech.waist.target) * 0.12 * dt;
       // about-face owns the heading while it runs — writing S.yawT every
       // frame would overwrite the 180 target the maneuver is executing
+      S.lastTf = tf; S.lastTl = tl;
       mechCommand(mech, { travel: tf, lateral: tl, heading: mech.state.aboutFace ? null : S.yawT });
       if (S.keys.Space || S.keys.KeyF || S.fireHeld) mechFire(world, mech); // rate-limited inside
       // awareness: the garrison wakes on proximity (inside the picket),
@@ -290,10 +304,23 @@ export default function MechRange({ onExit }) {
         R.setTraj(pts, hitIdx);
       } catch (e) {}
       try { R.render(dt, focus, { x: h.pos.x, z: h.pos.z }, 0); } catch (e) {}
+      // bubble gauge: pitch/roll bubble + yaw compass tick + burn ring
+      if (bubbleRef.current && gaugeRingRef.current && yawTickRef.current) {
+        const Rh = mech.hull.R;
+        let bx = -Rh[3] * 90, by = -Rh[5] * 90; // screen: right = -x, up = +z
+        const mm = Math.hypot(bx, by);
+        if (mm > 21) { bx *= 21 / mm; by *= 21 / mm; }
+        bubbleRef.current.style.transform = "translate(" + bx.toFixed(1) + "px," + by.toFixed(1) + "px)";
+        const tilt = Math.hypot(Rh[3], Rh[5]);
+        bubbleRef.current.style.background = tilt < 0.06 ? "#7fd47f" : tilt < 0.14 ? "#e0b85e" : "#e06a5e";
+        yawTickRef.current.style.transform = "rotate(" + (-Math.atan2(Rh[6], Rh[8])).toFixed(3) + "rad)";
+        const burning = mech.thrusters && mech.thrustersOn && mech.thrusters.some((t2) => t2.cur > 0.1);
+        gaugeRingRef.current.style.borderColor = burning ? "#c96a3a" : "#5f6e80";
+      }
       S.hudT += dt;
       if (S.hudT > 0.25) {
         S.hudT = 0;
-        setHud({ mode: mech.state.mode, steps: mech.telem.steps, falls: mech.telem.falls, kills: world.killCount, shots: mech.telem.shots || 0, alert: S.alert });
+        setHud({ mode: mech.state.mode, steps: mech.telem.steps, falls: mech.telem.falls, kills: world.killCount, shots: mech.telem.shots || 0, alert: S.alert, gyro: mech.gyroOn !== false, rcs: !!mech.thrustersOn });
       }
       S.raf = requestAnimationFrame(loop);
     };
@@ -318,12 +345,31 @@ export default function MechRange({ onExit }) {
       <div data-mech-hud style={{ position: "absolute", top: 10, left: 12, color: "#c7d0dc", pointerEvents: "none" }}>
         <p style={{ ...line, color: COLORS.gold, fontSize: 14, letterSpacing: 2 }}>MECH TEST RANGE</p>
         <p style={line}>BIPED FRAME MK1 — GAIT ACCEPTANCE PENDING</p>
-        <p style={line}>{isTouch ? "L stick moves · R stick turns · ◀ ▶ aim cannon · slider range" : "W/S walk · A/D turn · MOUSE aims · CLICK fire · V missiles · C punt · X one-leg · T 180 · R reissue"}</p>
+        <p style={line}>{isTouch ? "L stick moves · R stick turns · ◀ ▶ aim cannon · slider range" : "W/S walk · A/D turn · MOUSE aims · CLICK fire · V missiles · C punt · X one-leg · T 180 · B dash · G gyro · H rcs · R reissue"}</p>
         <p data-mech-status style={line}>
           {hud.mode === "FALLEN" ? "FRAME DOWN — R TO REISSUE" : hud.mode} · steps {hud.steps} · falls {hud.falls} · kills {hud.kills} · shots {hud.shots} · garrison {hud.alert ? "ALERTED" : "unaware"}
         </p>
       </div>
       <>
+        {/* attitude bubble gauge: pitch/roll bubble, yaw compass tick,
+            ring ignites while thrusters burn */}
+        <div ref={gaugeRingRef} style={{ position: "absolute", left: "calc(50% - 30px)", top: 8, width: 60, height: 60, borderRadius: 32, border: "1px solid #5f6e80", background: "rgba(16,20,26,0.55)", pointerEvents: "none" }}>
+          <div style={{ position: "absolute", left: 22, top: 22, width: 16, height: 16, borderRadius: 9, border: "1px solid rgba(95,110,128,0.5)" }} />
+          <div ref={yawTickRef} style={{ position: "absolute", left: 28, top: 2, width: 4, height: 8, background: "#e8d9b8", transformOrigin: "2px 28px" }} />
+          <div ref={bubbleRef} style={{ position: "absolute", left: 25, top: 25, width: 10, height: 10, borderRadius: 6, background: "#7fd47f" }} />
+        </div>
+        <button data-mech-dash onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.dash(); }}
+          style={{ position: "absolute", left: "calc(50% - 44px)", bottom: 142, width: 88, height: 44, fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#e8c9b8", background: "rgba(46,29,21,0.9)", border: "1px solid #7a5e4e", touchAction: "none" }}>
+          DASH
+        </button>
+        <button data-mech-gyro onClick={() => { const m = window.__MECHRANGE__; if (m) m.gyro(); }}
+          style={{ position: "absolute", right: 196, top: 90, padding: "10px 12px", fontFamily: FONT, fontSize: 12, letterSpacing: 1, color: hud.gyro ? "#c7d0dc" : "#e8c9b8", background: hud.gyro ? "#1a212b" : "#3a2118", border: hud.gyro ? "1px solid #5f6e80" : "1px solid #7a5e4e" }}>
+          GYRO {hud.gyro ? "ON" : "OFF"}
+        </button>
+        <button data-mech-rcs onClick={() => { const m = window.__MECHRANGE__; if (m) m.rcs(); }}
+          style={{ position: "absolute", right: 196, top: 144, padding: "10px 12px", fontFamily: FONT, fontSize: 12, letterSpacing: 1, color: hud.rcs ? "#c7d0dc" : "#e8c9b8", background: hud.rcs ? "#1a212b" : "#3a2118", border: hud.rcs ? "1px solid #5f6e80" : "1px solid #7a5e4e" }}>
+          RCS {hud.rcs ? "ON" : "OFF"}
+        </button>
         {/* action buttons + REISSUE/MENU: every device — desktop had no
             on-screen buttons at all and the 180/PUNT surface was invisible */}
           <button data-mech-msl onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.missiles(); }}
@@ -354,12 +400,12 @@ export default function MechRange({ onExit }) {
       {isTouch && (
         <>
           {/* LEFT stick: travel */}
-          <div style={{ position: "absolute", left: 86 - 55, bottom: 130 - 55, width: 110, height: 110, borderRadius: 60, border: "1px solid #5f6e80", opacity: 0.55 }} />
-          <div ref={knobRef} style={{ position: "absolute", left: 86 - 20, top: "calc(100% - 150px)", width: 40, height: 40, borderRadius: 22, background: "#5f6e80", opacity: 0.8 }} />
+          <div style={{ position: "absolute", left: 86 - 55, bottom: 130 - 55, width: 110, height: 110, borderRadius: 60, border: "1px solid #5f6e80", opacity: 0.55, pointerEvents: "none" }} />
+          <div ref={knobRef} style={{ position: "absolute", left: 86 - 20, top: "calc(100% - 150px)", width: 40, height: 40, borderRadius: 22, background: "#5f6e80", opacity: 0.8, pointerEvents: "none" }} />
           {/* RIGHT stick: body turn (horizontal axis) */}
-          <div style={{ position: "absolute", right: 86 - 55, bottom: 130 - 55, width: 110, height: 110, borderRadius: 60, border: "1px solid #5f6e80", opacity: 0.55 }} />
+          <div style={{ position: "absolute", right: 86 - 55, bottom: 130 - 55, width: 110, height: 110, borderRadius: 60, border: "1px solid #5f6e80", opacity: 0.55, pointerEvents: "none" }} />
           <div style={{ position: "absolute", right: 86 - 26, bottom: 130 + 62, width: 52, textAlign: "center", color: "#8fa0b4", fontFamily: FONT, fontSize: 11, letterSpacing: 1, pointerEvents: "none" }}>TURN</div>
-          <div ref={rsKnobRef} style={{ position: "absolute", left: "calc(100% - 106px)", top: "calc(100% - 150px)", width: 40, height: 40, borderRadius: 22, background: "#5f6e80", opacity: 0.8 }} />
+          <div ref={rsKnobRef} style={{ position: "absolute", left: "calc(100% - 106px)", top: "calc(100% - 150px)", width: 40, height: 40, borderRadius: 22, background: "#5f6e80", opacity: 0.8, pointerEvents: "none" }} />
           {/* cannon range slider, right edge above the turn stick */}
           <div data-mech-rangeslider
             onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.grabRange(e.pointerId, e.clientY); }}

@@ -1035,6 +1035,10 @@ function controller(world, mech) {
     mech.cmgH.x += tx * dt; mech.cmgH.y += ty * dt; mech.cmgH.z += tz * dt;
     if (loaded) { const bl = Math.min(1, dt / 7); mech.cmgH.x -= mech.cmgH.x * bl; mech.cmgH.y -= mech.cmgH.y * bl; mech.cmgH.z -= mech.cmgH.z * bl; }
     const Ih = { x: 1 / Math.max(1e-9, hull.invIw[0]), y: 1 / Math.max(1e-9, hull.invIw[4]), z: 1 / Math.max(1e-9, hull.invIw[8]) };
+    // GYRO TOGGLE (2026-08-02): off = the ideal CMG applies NOTHING — the
+    // rockets (continuous duty below) and ankles are all that hold
+    // attitude. State zeroed so re-engage doesn't dump a stale torque.
+    if (mech.gyroOn === false) { mech._cmgT.x = 0; mech._cmgT.y = 0; mech._cmgT.z = 0; tx = 0; ty = 0; tz = 0; }
     hull.w.x += tx * dt / Ih.x;
     hull.w.y += ty * dt / Ih.y;
     hull.w.z += tz * dt / Ih.z;
@@ -1053,33 +1057,55 @@ function controller(world, mech) {
     const ex5 = xix - fmx, ez5 = xiz - fmz;
     const exi = Math.hypot(ex5, ez5);
     const leanR = Math.hypot(hull.w.x, hull.w.z);
-    // MODE-AWARE bands: the capture point swings +-0.4 every healthy
-    // stride — STAND thresholds fired the rockets 84% of the walk and
-    // the constant unweighting CRAWLED the gait (cruise 0.50 -> 0.21,
-    // measured). Walking trouble = the stumble reflex's own signals.
+    const gyroOff = mech.gyroOn === false;
+    // INTENT-SCALED AUTHORITY (Jeff, 2026-08-02): the player's hands say
+    // who flies the machine. Sticks RELEASED -> the rockets get wide
+    // bands and full budget (catch things the step machinery handles
+    // ugly). Locomotion COMMANDED -> the gait owns the body and rockets
+    // fire only on genuine last-ditch trouble — every mid-stride burn
+    // perturbs the plan (measured: 12% duty halved walk speed).
     const walking = st.mode === "WALK";
-    // stops are CONTROLLED: the machine needs every newton of sole grip
-    // to brake, and a 30% unweight mid-stop skated it over (2/6 falls at
-    // the decel, measured) — while stopping, only a genuine topple fires
-    const stopping5 = !!st.govDecel; // the whole planned overdrive stop, stumbles included — burns during it skate the braking soles (2/6, measured); mid-cruise stumbles OUTSIDE this window keep full rocket help
+    const cmdIntent = Math.abs(st.cmdT.f) + Math.abs(st.cmdT.l);
+    const idle5 = cmdIntent < 0.05 && !st.aboutFace && !st.kick;
+    const stopping5 = !!st.govDecel; // planned overdrive stop: burns skate the braking soles (2/6, measured)
     const trouble = st.spawnDone && (stopping5
       ? hull.R[4] < 0.945
-      : walking
-        // stumble-only while walking: the exi term fired micro-burns on
-        // marginal strides (12% duty) whose perturbed trajectories broke
-        // 2/6 of the LATER stops — the catch machinery owns marginal
-        // strides; rockets own actual stumbles
-        ? (st.recoverT > 0 || hull.R[4] < 0.945)
-        : (exi > 0.30 || leanR > 0.55 || hull.R[4] < 0.965));
+      : idle5 && !walking
+        ? (exi > 0.30 || leanR > 0.55 || hull.R[4] < 0.965) // BISECT: idle wide bands off
+        : idle5
+          ? (st.recoverT > 0 || hull.R[4] < 0.945) // stick released mid-walk: stopping — normal walk bands
+          : walking
+            // INTENT SPLIT: at full-stick overdrive the machine is in
+            // rocket-mode — recovery burns are load-bearing (removing
+            // them measured 0-2/6 on assisted cruise). At sub-overdrive
+            // maneuvering speeds the same burns FIGHT the gait's precise
+            // work — last-ditch only there.
+            ? (st.govF != null
+              ? (st.recoverT > 0 || hull.R[4] < 0.945)
+              : ((st.recoverT > 0 && hull.R[4] < 0.975) || hull.R[4] < 0.935))
+            : (exi > 0.30 || leanR > 0.55 || hull.R[4] < 0.965));
     const calm = walking
       ? (st.recoverT <= 0 && hull.R[4] > 0.975 && exi < 0.45)
-      : (exi < 0.18 && leanR < 0.30 && hull.R[4] > 0.985);
+      : (exi < 0.18 && leanR < 0.30 && hull.R[4] > 0.985); // BISECT: idle calm band off
     if (trouble) st._thrA = 1;
     else if (calm) st._thrA = 0;
     const torso5 = mech.waist ? mech.waist.b : mech.hull;
     const R5 = torso5.R;
     for (const th of mech.thrusters) th.cmd = 0;
-    if (st._thrA) {
+    // DASH (player verb): a commanded burst burn along a world direction —
+    // overrides every automatic layer for its window
+    if (st.dash) {
+      st.dash.t -= dt;
+      if (st.dash.t <= 0) st.dash = null;
+      else {
+        for (const th of mech.thrusters) {
+          const tx5 = -(R5[0] * th.e.x + R5[3] * th.e.y + R5[6] * th.e.z);
+          const tz5 = -(R5[2] * th.e.x + R5[5] * th.e.y + R5[8] * th.e.z);
+          th.cmd = clamp((st.dash.x * tx5 + st.dash.z * tz5) * 3.0, 0, 1);
+        }
+      }
+    }
+    if (!st.dash && st._thrA) {
       // demand: push the capture point back over the feet + damp CoM speed
       const dx5 = -ex5 * 2.2 - _comV.x * 0.9;
       const dz5 = -ez5 * 2.2 - _comV.z * 0.9;
@@ -1112,13 +1138,13 @@ function controller(world, mech) {
       if (dv5 > 0.05 && !st.govDecel) { mech.thrusters[2].cmd = mech.thrusters[3].cmd = clamp(dv5 * 2.0, 0, 0.66); }
       else if (dv5 < -0.08) { mech.thrusters[0].cmd = mech.thrusters[1].cmd = clamp(-dv5 * 2.0, 0, 0.66); }
     }
-    if (!((st.govF != null && st.govF > 0.505) || st.govDecel) || st._thrA) st._thrV = null;
+    if (st._thrA || st.dash) st._thrV = null;
     // GRIP BUDGET: vertical thrust unweights the soles, and sole friction
     // is what the whole gait stands on — cap total lift at 0.30 W
     // (stability) / 0.20 W (speed assist)
     let lift = 0;
     for (const th of mech.thrusters) lift += th.cmd * mech.thrustMax * Math.SQRT1_2;
-    const liftCap = (st._thrA ? 0.30 : 0.20) * W5;
+    const liftCap = (st.dash ? 0.35 : st._thrA ? 0.30 : gyroOff ? 0.25 : 0.20) * W5;
     if (lift > liftCap) { const sc5 = liftCap / lift; for (const th of mech.thrusters) th.cmd *= sc5; }
   }
   // SPAWN SEQUENCE (spec §5f): settle with both feet loaded (~0.4s) -> crouch
@@ -2157,7 +2183,8 @@ function stepMechs(world) {
       mech._thrF.x = 0; mech._thrF.z = 0;
       for (const th of mech.thrusters) {
         const tgt = mech.thrustersOn ? clamp(th.cmd, 0, 1) : 0;
-        th.cur += clamp(tgt - th.cur, -dt / 0.12, dt / 0.12); // ~120ms spool
+        const spool = (mech.gyroOn === false || mech.state.dash) ? 0.06 : 0.12; // continuous duty / dash needs the faster bell
+        th.cur += clamp(tgt - th.cur, -dt / spool, dt / spool);
         if (th.cur < 0.01) continue;
         const F = th.cur * mech.thrustMax;
         // world-frame mount + exhaust via torso rows-as-basis
@@ -2237,6 +2264,19 @@ export function mechPunt(world, mech) {
   if (world.t - (mech._lastPunt || -9) < 2.2) return false;
   mech._lastPunt = world.t;
   mech.state.puntReq = 2.8; // seconds the request stays pending — covers braking from a march plus waiting for double support
+  return true;
+}
+// DASH (design 2026-08-02): a commanded directional burn burst — dodge
+// with fire. World-frame direction; no direction = retreat hop.
+export function mechDash(world, mech, dx = 0, dz = 0) {
+  const st = mech.state;
+  if (st.mode === "FALLEN" || st.kick || st.poise || !mech.thrusters || !mech.thrustersOn) return false;
+  if (world.t - (mech._lastDash || -9) < 2.5) return false;
+  const n = Math.hypot(dx, dz);
+  if (n < 0.1) { dx = -Math.sin(st.heading); dz = -Math.cos(st.heading); }
+  else { dx /= n; dz /= n; }
+  mech._lastDash = world.t;
+  st.dash = { x: dx, z: dz, t: 0.45 };
   return true;
 }
 // ABOUT-FACE (design 2026-08-01): commanded 180 — through the RIGHT, per
