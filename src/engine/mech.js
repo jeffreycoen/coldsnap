@@ -41,6 +41,12 @@ export function deriveGait(L, comH, halfStance, foot, g = 9.81) {
     capCommit: 0.5,
     capDeadband: 0.15,
     restExt: 0.93,
+    // pole-placement campaign hooks (identity values — the step-map gains,
+    // exposed so schedules can move them as functions of period)
+    raibert: 1.3,
+    vChase: 0.45,
+    latchMix: 0.78,
+    seedSpan: 0.3,
     // spec's 0.40 assumes a stiff ankle position servo behind it; with
     // torque-only stance ankles the CoP trim IS the anti-lean authority and
     // 0.40 saturated at 3 degrees of hull lean (measured slow topple)
@@ -832,6 +838,43 @@ function controller(world, mech) {
   // frame is back. Compound maneuvers (reversals, turning strafes) kept
   // killing runs precisely because the sortie kept commanding full stride
   // through the stumble.
+  // POLE-PLACEMENT gain schedule (identity when cruiseGains unset): the
+  // step-map identification is a CRUISE model — launches certify with the
+  // base gains at any period (gait campaign A2), cruise wants the placed
+  // set. Switch on steps-since-rest; base captured lazily at first use.
+  if (k.cruiseGains) {
+    if (!k._baseGains) k._baseGains = { raibert: k.raibert, kCapture: k.kCapture, kDCM: k.kDCM };
+    const on = (st.sinceRest || 0) >= 6 && (st.walkEstT || 0) > 4 && st.mode === "WALK"; // contraction only into an ESTABLISHED walk — starting at step 3 collided with launch settling (0/6, the assist establishment lesson again)
+    // the PERIOD is phase-scheduled too: launches only certify at the base
+    // period (heading-0 launch deaths at 0.8x were identical with either
+    // gain set — the launch machinery runs on pendulum-scale lead-ins).
+    // Cruise contracts to the quick-step at a touchdown replan boundary.
+    if (k.cruisePeriod) {
+      if (!k._basePeriod) k._basePeriod = { tSS: k.tSS, tDS: k.tDS };
+      // RAMPED, never snapped: the sway oscillator rides the base rhythm
+      // and cannot jump frequencies — a step contraction at the switch
+      // measured 1/3 vs 3/3 for gains-only. ~5%/cycle, a runner easing
+      // into cadence.
+      const p = on ? k.cruisePeriod : k._basePeriod;
+      const rate = 0.05 * k._basePeriod.tSS / Math.max(0.3, k.stepPeriod) * dt;
+      k.tSS += clamp(p.tSS - k.tSS, -rate * k._basePeriod.tSS, rate * k._basePeriod.tSS);
+      k.tDS += clamp(p.tDS - k.tDS, -rate * k._basePeriod.tDS, rate * k._basePeriod.tDS);
+      k.stepPeriod = k.tSS + k.tDS;
+      // GAIN SCHEDULING proper: gains follow the LIVE period (lerp base ->
+      // placed by contraction fraction) — snapped gains at intermediate
+      // periods measured 0/6 (placed-for-0.8 gains at 0.9 are wrong)
+      const span = k._basePeriod.tSS - k.cruisePeriod.tSS;
+      const frac = span > 1e-6 ? clamp((k._basePeriod.tSS - k.tSS) / span, 0, 1) : (on ? 1 : 0);
+      const g0 = k._baseGains, g1 = k.cruiseGains;
+      k.raibert = g0.raibert + (g1.raibert - g0.raibert) * frac;
+      k.kCapture = g0.kCapture + (g1.kCapture - g0.kCapture) * frac;
+      k.kDCM = g0.kDCM + (g1.kDCM - g0.kDCM) * frac;
+    }
+    if (!k.cruisePeriod) {
+      const src = on ? k.cruiseGains : k._baseGains;
+      k.raibert = src.raibert; k.kCapture = src.kCapture; k.kDCM = src.kDCM;
+    }
+  }
   st.recoverT = Math.max(0, (st.recoverT || 0) - dt);
   if (st.recoverT > 0) {
     st.cmd.f += clamp(0 - st.cmd.f, -k.travelRate * 2 * dt, k.travelRate * 2 * dt);
@@ -1577,8 +1620,8 @@ function controller(world, mech) {
       const solve = (B, x0, xT) => (B * u + x0 * E0 - xT + B) / (u + E0);
       const fL = mech.legs.L.foot.pos, fR = mech.legs.R.foot.pos;
       ph0.zA = {
-        x: clamp(solve(ph0.zB.x, xi0.x, tgt.x), Math.min(fL.x, fR.x) - 0.3, Math.max(fL.x, fR.x) + 0.3),
-        z: clamp(solve(ph0.zB.z, xi0.z, tgt.z), Math.min(fL.z, fR.z) - 0.3, Math.max(fL.z, fR.z) + 0.3),
+        x: clamp(solve(ph0.zB.x, xi0.x, tgt.x), Math.min(fL.x, fR.x) - k.seedSpan, Math.max(fL.x, fR.x) + k.seedSpan),
+        z: clamp(solve(ph0.zB.z, xi0.z, tgt.z), Math.min(fL.z, fR.z) - k.seedSpan, Math.max(fL.z, fR.z) + k.seedSpan),
       };
       ph0.xiStart = { x: xi0.x, z: xi0.z };
     }
@@ -1818,8 +1861,8 @@ function controller(world, mech) {
         const landSide = st.swing || (ph.stance === "L" ? "R" : "L");
         st.kick = null; // clock touchdown during a straggling kick: the latch here is equivalent (measured prints); never leave a stale kick
         st.prints[landSide] = {
-          x: sw.foot.pos.x * 0.78 + plan.x * 0.22,
-          z: sw.foot.pos.z * 0.78 + plan.z * 0.22,
+          x: sw.foot.pos.x * k.latchMix + plan.x * (1 - k.latchMix),
+          z: sw.foot.pos.z * k.latchMix + plan.z * (1 - k.latchMix),
         };
         st.lastSwing = landSide;
         st.swing = null;
@@ -1942,7 +1985,7 @@ function controller(world, mech) {
       // measured xi) diverges with reality and the tracker would drag the
       // pelvis into the lunge at 2.5 m/s. The excess belongs to the SWING
       // (capture), not the pelvis.
-      const vCap = (0.45 + Math.abs(st.cmd.f) + Math.abs(st.cmd.l)) * dt;
+      const vCap = (k.vChase + Math.abs(st.cmd.f) + Math.abs(st.cmd.l)) * dt;
       st.comRef.x += clamp(om * (xiRef.x - st.comRef.x) * dt, -vCap, vCap);
       st.comRef.z += clamp(om * (xiRef.z - st.comRef.z) * dt, -vCap, vCap);
       st.pelvis.x = st.comRef.x - comOffW.x;
@@ -2010,7 +2053,7 @@ function controller(world, mech) {
       const cwx = st._thrV != null ? axes.fwd.x * Math.max(Math.hypot(cmdW.x, cmdW.z), st._thrV) : cmdW.x;
       const cwz = st._thrV != null ? axes.fwd.z * Math.max(Math.hypot(cmdW.x, cmdW.z), st._thrV) : cmdW.z;
       const vf = clamp(
-        ((_comV.x - cwx) * axes.fwd.x + (_comV.z - cwz) * axes.fwd.z) / om * 1.3,
+        ((_comV.x - cwx) * axes.fwd.x + (_comV.z - cwz) * axes.fwd.z) / om * k.raibert,
         -bCap * k.strideCap, bCap * k.strideCap);
       t2.x += vf * axes.fwd.x * smoothstep(s2); t2.z += vf * axes.fwd.z * smoothstep(s2);
     }
