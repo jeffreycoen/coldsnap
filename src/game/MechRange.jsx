@@ -187,6 +187,7 @@ export default function MechRange({ onExit }) {
     window.addEventListener("touchcancel", onTE);
     window.addEventListener("pointercancel", onPU);
     const focus = { x: 0, y: 3, z: 0 };
+    window.__MECHRANGE__.dbg = { focus, hull: null, trajEnd: null }; // perceptual-measurement taps (render-side only)
     const down = (e) => {
       if (e.repeat) return;
       S.keys[e.code] = true;
@@ -357,13 +358,48 @@ export default function MechRange({ onExit }) {
       }
       R.consume(evs);
       const h = mech.hull;
-      focus.x += (h.pos.x - focus.x) * Math.min(1, 4 * dt);
-      focus.y += (h.pos.y - 1.2 - focus.y) * Math.min(1, 4 * dt);
-      focus.z += (h.pos.z - focus.z) * Math.min(1, 4 * dt);
+      // CAMERA (perceptual campaign): critically-damped spring follow with
+      // the gait band filtered out. The raw 4/dt lerp carried 82% of the
+      // stride sway into the frame (0.34m lateral horizon pump measured) —
+      // the whole WORLD walked with the machine. A second-order follow at
+      // w=2.6 (xz) / 1.4 (y) rides through the 0.55 Hz sway and 1.1 Hz bob
+      // while tracking real locomotion with ~0.4s of lag; the mech now bobs
+      // WITHIN a steady frame, which is what reads as smooth.
+      {
+        const cdt = Math.min(0.05, dt);
+        if (!S.camV) S.camV = { x: 0, y: 0, z: 0 };
+        const tgt = { x: h.pos.x, y: h.pos.y - 1.2, z: h.pos.z };
+        const far = Math.hypot(tgt.x - focus.x, tgt.z - focus.z);
+        if (far > 6) { // reissue/teleport: snap, don't chase
+          focus.x = tgt.x; focus.y = tgt.y; focus.z = tgt.z;
+          S.camV.x = 0; S.camV.y = 0; S.camV.z = 0;
+        } else {
+          const axis = (p, v, t, om) => {
+            const a = om * om * (t - p) - 2 * om * v;
+            return [p + v * cdt + 0.5 * a * cdt * cdt, v + a * cdt];
+          };
+          let r;
+          r = axis(focus.x, S.camV.x, tgt.x, 2.2); focus.x = r[0]; S.camV.x = r[1];
+          r = axis(focus.z, S.camV.z, tgt.z, 2.2); focus.z = r[0]; S.camV.z = r[1];
+          r = axis(focus.y, S.camV.y, tgt.y, 1.1); focus.y = r[0]; S.camV.y = r[1];
+        }
+      }
       // targeting: the shell's actual ballistic arc from the muzzle, drawn
-      // with the same setTraj machinery the bison uses
+      // with the same setTraj machinery the bison uses. Preview inputs are
+      // LOW-PASSED (tau 0.3s): the raw torso pose carries the gait wobble
+      // and the endpoint wandered FIVE METERS during a march (p2p 5.06m
+      // measured) — the LPF'd preview shows the expected volley centre;
+      // actual fire ballistics remain live and untouched.
       try {
-        const { muzzle, dir } = mechAimDir(world, mech);
+        const raw = mechAimDir(world, mech);
+        if (!S.pv) S.pv = { m: { ...raw.muzzle }, d: { ...raw.dir } };
+        const k3 = Math.min(1, dt / 0.45);
+        for (const ax of ["x", "y", "z"]) {
+          S.pv.m[ax] += (raw.muzzle[ax] - S.pv.m[ax]) * k3;
+          S.pv.d[ax] += (raw.dir[ax] - S.pv.d[ax]) * k3;
+        }
+        const dn = Math.hypot(S.pv.d.x, S.pv.d.y, S.pv.d.z) || 1;
+        const muzzle = S.pv.m, dir = { x: S.pv.d.x / dn, y: S.pv.d.y / dn, z: S.pv.d.z / dn };
         const pts = [];
         let px = muzzle.x, py = muzzle.y, pz = muzzle.z;
         let vx = dir.x * 120, vy = dir.y * 120, vz = dir.z * 120;
@@ -376,7 +412,9 @@ export default function MechRange({ onExit }) {
           if (py <= world.field.heightAt(px, pz)) { pts.push({ x: px, y: world.field.heightAt(px, pz), z: pz }); hitIdx = pts.length - 1; break; }
         }
         R.setTraj(pts, hitIdx);
+        window.__MECHRANGE__.dbg.trajEnd = hitIdx >= 0 ? pts[hitIdx] : pts[pts.length - 1];
       } catch (e) {}
+      window.__MECHRANGE__.dbg.hull = { x: h.pos.x, y: h.pos.y, z: h.pos.z };
       try { R.render(dt, focus, { x: h.pos.x, z: h.pos.z }, 0); } catch (e) {}
       // bubble gauge: pitch/roll bubble + yaw compass tick + burn ring
       if (bubbleRef.current && gaugeRingRef.current && yawTickRef.current) {
