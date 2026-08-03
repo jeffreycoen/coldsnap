@@ -18,7 +18,7 @@ for (const rate of [0.2, 0.25, 0.3]) {
       const t = i / 120;
       if (ki + 1 < S4.length && t >= S4[ki + 1][0]) ki++;
       heading += S4[ki][3] / 120;
-      const yn = yaw(mech);
+      const yn = mech.state.heading; // game-identical anchor
       let lead = wrap(heading - yn);
       heading = yn + Math.max(-0.5, Math.min(0.5, lead));
       mechCommand(mech, { travel: S4[ki][1], lateral: S4[ki][2], heading: mech.state.aboutFace && !mech.state.afLive ? null : heading });

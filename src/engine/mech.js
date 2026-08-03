@@ -884,14 +884,19 @@ function controller(world, mech) {
   // and budget tried, terminal signature a 1.0m lateral capture runaway
   // inside a permanent catch-storm — while the SS-pivot sustains
   // ~8.6 deg/s with ZERO falls (6/6 at afRate 0.3). Brake, pivot, resume.
-  if (st.mode === "WALK" && !st.aboutFace && !st.kick && !st.poise && st.spawnDone && !st._noPivot) { // recoverT does NOT block: braking IS the correct recovery for a destabilizing turn, and waiting for calm armed the pivot only after the fall was committed
-    const pendA = Math.abs(wrapPi(st.headingT - st.heading));
-    st._pivLpf = (st._pivLpf || 0) + ((pendA > 0.45 ? 1 : 0) - (st._pivLpf || 0)) * Math.min(1, dt / 0.3); // BELOW the 0.5 steering lock (0.6 could never fire); ~0.5s hold — arm FAST, the walk-turn destabilizes in seconds
-    if (st._pivLpf > 0.7) { st.aboutFace = "brake"; st.afLive = true; st._afT0 = { f: st.cmdT.f, l: st.cmdT.l }; st._pivLpf = 0; } // LIVE pivot: heading keeps tracking the stick — hold to keep pivoting, release to finish
-  }
+  // (auto-pivot trigger moved to the GAME layer via mechPivot(): intent —
+  // stick hard-over — is only measurable UPSTREAM of the steering lock.
+  // Post-clamp, a saturated headingT advances at machine rate for ANY
+  // feed, so pend saturation and target-rate both failed to discriminate
+  // a held full stick from sortie s5's gentle scripted 0.35 rad/s.)
   if (st.aboutFace) {
     const afp = Math.abs(wrapPi(st.headingT - st.heading));
-    if (afp < (st.afLive ? 0.25 : 0.12)) {
+    // LIVE pivots do NOT self-complete by pend (advisor): completing at
+    // pend<0.25 mid-hold dumped the machine back into the grinding walk
+    // between re-arms (browser falls, traced). They end on stick release
+    // or a changed command (game cancels), or after 2s of quiet target.
+    st._afQuiet = st.afLive && afp < 0.05 ? (st._afQuiet || 0) + dt : 0;
+    if (st.afLive ? st._afQuiet > 2 : afp < 0.12) {
       st.aboutFace = false;
       // in-place march sway rides above the strict stop bound forever
       // (measured: turn done, WALK never exits) — take the stumble-stop's
@@ -1635,7 +1640,8 @@ function controller(world, mech) {
       // launchRate halves the SLEW for 2 steps, but the command already
       // slewed to full during the stand — step 1 launched at full stride.
       // Enter gently regardless of what the stick did while standing.
-      st.cmd.f *= 0.5; st.cmd.l *= 0.5;
+      const lf8 = mech._launchF || 0.5;
+      st.cmd.f *= lf8; st.cmd.l *= lf8;
 
       if (catchSide) {
         st.lastSwing = catchSide === "L" ? "R" : "L"; mech.telem.catches++;
@@ -2428,6 +2434,18 @@ export function mechPunt(world, mech) {
 // drill. Request sets the heading target and stages brake -> turn; the
 // controller executes a march-in-place pivot (single-support slew) and
 // clears the flag when the turn is in.
+// LIVE PIVOT (advisor): the game calls this when the stick is held hard
+// over while walking — brake into the certified SS pivot, TRACK the live
+// heading target while the stick stays down, resume on release/change.
+// Sustained walking turns are the arc-class killer (0/3 at every feed);
+// the pivot sustains ~6-8 deg/s with zero falls.
+export function mechPivot(world, mech) {
+  const st = mech.state;
+  if (st.mode !== "WALK" || st.aboutFace || st.kick || st.poise || !st.spawnDone || st._noPivot) return false;
+  st.aboutFace = "brake"; st.afLive = true;
+  st._afT0 = { f: st.cmdT.f, l: st.cmdT.l };
+  return true;
+}
 export function mechAboutFace(world, mech) {
   const st = mech.state;
   if (st.mode === "FALLEN" || st.kick || st.poise || st.aboutFace) return false;

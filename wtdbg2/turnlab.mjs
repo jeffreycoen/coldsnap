@@ -1,7 +1,7 @@
 // Turn lab: feed-rate ladder for sustained walking turns + parked turns.
 // Usage: node wtdbg2/turnlab.mjs [feed] [travel] [trace]
 import { makeWorld, makeField, stepWorld } from "../src/engine/core.js";
-import { buildMech, mechCommand } from "../src/engine/mech.js";
+import { buildMech, mechCommand, mechPivot } from "../src/engine/mech.js";
 const yaw = (m) => Math.atan2(m.hull.R[6], m.hull.R[8]);
 const wrap = (a) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
 const feeds = process.argv[2] ? [Number(process.argv[2])] : [0.5, 0.65, 0.82];
@@ -20,12 +20,14 @@ for (const feed of feeds) {
     for (let i = 0; i < Math.round((2 + off) / world.dt); i++) { world.events.length = 0; stepWorld(world); }
     if (travel > 0) for (let i = 0; i < Math.round(8 / world.dt); i++) { mechCommand(mech, { travel, lateral: 0, heading: 0 }); world.events.length = 0; stepWorld(world); }
     const y0 = yaw(mech);
-    let yawT = yaw(mech), t90 = -1, t180 = -1, fell = -1, tot = 0, prev = y0;
+    let yawT = yaw(mech), t90 = -1, t180 = -1, fell = -1, tot = 0, prev = y0, hardT = 0;
     for (let i = 0; i < Math.round(45 / world.dt); i++) {
       yawT -= feed * world.dt;
-      const yn = yaw(mech);
+      const yn = mech.state.heading; // game-identical anchor
       yawT = yn + Math.max(-0.5, Math.min(0.5, wrap(yawT - yn)));
       mechCommand(mech, { travel, lateral: 0, heading: mech.state.aboutFace && !mech.state.afLive ? null : yawT }); // live pivots track the stick; only the 180 button freezes
+      // game rule: hard-over feed (>=0.7 rad/s ~ |rx|>0.75) arms the live pivot
+      if (feed >= 0.45) { hardT += world.dt; if (hardT > 0.6 && mech.state.mode === "WALK" && !mech.state.aboutFace) { mechPivot(world, mech); hardT = 0; } }
       world.events.length = 0; stepWorld(world);
       tot += wrap(yaw(mech) - prev); prev = yaw(mech);
       const t = i * world.dt;

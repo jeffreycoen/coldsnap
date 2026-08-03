@@ -293,7 +293,7 @@ const run = (w, secs) => { const n = Math.round(secs / w.dt); for (let i = 0; i 
       if (ki + 1 < sc.length && t >= sc[ki + 1][0]) ki++;
       heading += sc[ki][3] / 120;
       { // steering lock, as the game applies it: command leads actual yaw by <= 0.5 rad
-        const yawNow = Math.atan2(mech.hull.R[6], mech.hull.R[8]);
+        const yawNow = mech.state.heading; // game-identical: anchor on the command frame
         let lead = heading - yawNow;
         while (lead > Math.PI) lead -= 2 * Math.PI;
         while (lead < -Math.PI) lead += 2 * Math.PI;

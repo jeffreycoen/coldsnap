@@ -47,7 +47,7 @@ const wrap = (a) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI)
   let yawT = yaw(mech), tot = 0, prev = yaw(mech), t90 = -1;
   for (let i = 0; i < Math.round(30 / world.dt); i++) {
     yawT -= 0.82 * world.dt;
-    const yn = yaw(mech);
+    const yn = mech.state.heading; // game-identical anchor
     yawT = yn + Math.max(-0.5, Math.min(0.5, wrap(yawT - yn)));
     mechCommand(mech, { travel: 0, lateral: 0, heading: yawT });
     world.events.length = 0; stepWorld(world);
@@ -65,7 +65,7 @@ const wrap = (a) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI)
   let yawT = yaw(mech), t90 = -1, fell = false;
   for (let i = 0; i < Math.round(40 / world.dt); i++) {
     yawT -= 0.82 * world.dt;
-    const yn = yaw(mech);
+    const yn = mech.state.heading; // game-identical anchor
     yawT = yn + Math.max(-0.5, Math.min(0.5, wrap(yawT - yn)));
     mechCommand(mech, { travel: 0.42, lateral: 0, heading: yawT });
     world.events.length = 0; stepWorld(world);
