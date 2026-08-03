@@ -1,0 +1,37 @@
+Deep-plant arrest: assist 6/6 (first ever), heading ladder 24/24, mortality 160k
+
+Items 1+2 of the closing loop shared one root, and it was not the
+mixer: the diagonal-heading FALLS are already gone on the integrated
+build (C5 x CMG-frame composition fixed them; 8-heading x 3-offset
+ensemble 24/24 with stops). What remained were two shapes of the
+zero-command death:
+
+- the arrest<->ratchet LIMIT CYCLE: a single arrest shaves the peak,
+  the pump rebuilds through the 0.35..1.0 gap, re-engages, and each
+  lap rolls attitude dice until one kills (traced: heading-2.36 stop,
+  dead at 38.9). Escalating bound on recurrence closed the gap; the
+  recurrence tier then needed three more traced iterations --
+  purgatory@57.3 (bound inside healthy sway re-fires forever),
+  topple-on-release@51.7, pinned-timer@50.5 -- before landing on:
+  recurrence = diagnosis, PLANT IMMEDIATELY.
+- the SUB-THRESHOLD SLOW BURN: an uncommanded catch-walk at 0.35-0.7
+  that never trips any speed bound and decays attitude to death over
+  ~8s (traced @49.5). Speed is not the signature -- TIME is: healthy
+  zero-command stops reach STAND in <3s. A 4s dwell clock triggers
+  the same deep plant.
+- the PLANT itself must do full stop bookkeeping (swing/kick/holds
+  nulled, settle clocks zeroed, prints re-latched from measured feet)
+  -- the natural stops run at touchdown where the latch already did
+  this; a mid-swing plant without it reads STALE prints in the same
+  tick's launch check and catch-relaunches forever (traced: frozen
+  'WALK' at v 0.01, rec pinned).
+
+Measured: assisted overdrive ensemble 6/6 at 0.67 m/s cruise -- the
+first fully clean assist ensemble in project history. Heading ladder
+24/24. Bare-machine shove mortality recalibrated 128k -> 160k (deep
+plant saves sub-threshold burns too; boundary measured 128k-survive /
+160k-fell; rockets still save 160k -- contrast intact). 41 sections
+ALL HARD PASS, golden PASS.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_012ysBEYcrWKjJ8cnrtLFdV5
