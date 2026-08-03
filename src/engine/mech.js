@@ -34,6 +34,7 @@ export function deriveGait(L, comH, halfStance, foot, g = 9.81) {
     yawPerStep: 8 * Math.PI / 180,
     turnRate: (8 * Math.PI / 180) / (tSS + tDS),
     _period0: tSS + tDS, // certified period at derivation — machinery time-constants scale by stepPeriod/_period0
+    _designPeriod: tSS + tDS, // IMMUTABLE derivation period — authority scaling keys here (period0 may be re-certified by the quick-step; the two must not share a variable, measured collision)
     travelRate: 0.6 * Math.sqrt(L / 2.95),
     kDCM: 2.0,
     kCapture: 1.0,
@@ -203,7 +204,7 @@ function prepHinge(j, dt) {
   const tr = j.tRate || 0;
   j._wTgt = tr + ((wRel - tr) + (kpEff * e + j.tauFF) * dt / Ieff) / (1 + kdEff * dt / Ieff);
   j._Ieff = Ieff;
-  j._mBudget = j.tauMax * dt * auth;
+  j._mBudget = j.tauMax * (j.tauMul || 1) * dt * auth; // tauMul: quick-step swing headroom (identity when unset)
   j._sAcc = 0;
   // motor: SINGLE-SHOT per tick (spec: "compute once per tick ... apply").
   // Per-iteration re-application is wrong in BOTH inertia conventions here:
@@ -847,7 +848,7 @@ function controller(world, mech) {
     if (st.cmdT.f > 0.5) {
       st.govDecel = false;
       if (st.govF == null) st.govF = 0.42; // overdrive LAUNCHES at the robust band — 0.5 launches fell 4/6 across settle offsets
-      if (st.walkEstT > 8) st.govF = Math.min(0.55, st.govF + 0.03 * dt);
+      if (st.walkEstT > 8) st.govF = Math.min(mech._govCap || 0.55, st.govF + 0.03 * dt); // _govCap: campaign experiment hook, identity when unset
       effF = Math.min(st.cmdT.f, st.govF);
     } else {
       if (st.govF != null && Math.hypot(hull.v.x, hull.v.z) > 0.55) st.govDecel = true; // leaving overdrive hot
@@ -1508,6 +1509,9 @@ function controller(world, mech) {
     else if (spd6 < eng6 - 0.12) st._cadOn = false;
     const cad6 = st.govDecel || !st._cadOn ? 1 : clamp(1 - (spd6 - eng6 + 0.06) * (mech._cadSlope || 0.55), 0.62, 1);
     st.cadence = cad6;
+    // (gain-per-second invariance for short periods was TRIED here and
+    // measured NEGATIVE both ways — see wtgait/RESULTS.md: the correction
+    // stack is a coupled discrete map, not separable per-loop gains)
     const tDSr = k.tDS * st.ramp * cad6, tSSr = k.tSS * st.ramp * cad6;
     const strideF = st.stopping ? 0 : clamp(st.cmd.f * k.stepPeriod * cad6, -k.strideCap, k.strideCap);
     const strideL = st.stopping ? 0 : clamp(st.cmd.l * k.stepPeriod * cad6, -k.strideCap, k.strideCap);
@@ -2332,7 +2336,19 @@ function controller(world, mech) {
   for (const side of ["L", "R"]) {
     const leg = mech.legs[side];
     const isSwing = st.mode === "WALK" && st.swing === side;
-    for (const j of [leg.hipRoll, leg.hipPitch, leg.knee, leg.anklePitch, leg.ankleRoll]) { j.tauFF = 0; j.kpMul = 1; j.kdMul = 1; }
+    for (const j of [leg.hipRoll, leg.hipPitch, leg.knee, leg.anklePitch, leg.ankleRoll]) { j.tauFF = 0; j.kpMul = 1; j.kdMul = 1; j.tauMul = 1; }
+    if (isSwing) {
+      // QUICK-STEP swing authority (dynamic-gait campaign): a shortened
+      // period moves the clock-phased swing target faster than certified
+      // servos can track — feet landed 0.72m short of plan and the speed
+      // brake became unenforceable (traced runaway at tSS@0.8). Torque
+      // scales as accel ~ 1/T^2. Identity (x1.0) at the certified period.
+      const tRatio = ((k._designPeriod || k._period0) / Math.max(1e-3, k.stepPeriod)) / Math.max(0.62, Math.min(1, st.cadence || 1)); // covers both static scaling AND the live cadence path
+      if (tRatio > 1.001) {
+        const boost = Math.min(4, tRatio * tRatio);
+        for (const j of [leg.hipPitch, leg.knee, leg.anklePitch]) { j.kpMul = boost; j.kdMul = Math.sqrt(boost); j.tauMul = boost; }
+      }
+    }
     if (isSwing || leg.load < 0.02 * totalW) continue;
     const inSS = (st.mode === "WALK" && st.swing != null) || (st.poise != null && st.poise.phase !== "recentre");
     const midX = inSS ? leg.foot.pos.x : (legL.foot.pos.x + legR.foot.pos.x) / 2;
