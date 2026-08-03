@@ -220,9 +220,19 @@ export default function MechRange({ onExit }) {
       // convention (every mode steers on A/D); Q/E strafe; mouse aims.
       let tf = S.keys.KeyW ? 0.6 : S.keys.KeyS ? -0.42 : 0; // reverse gait certified at -0.42 (2026-08-02) // 0.6 raw = overdrive request; the engine governor delivers up to 0.55 once the walk is established
       let tl = S.keys.KeyQ ? 0.22 : S.keys.KeyE ? -0.22 : 0;
-      if (S.joyId != null) {
-        if (Math.abs(S.jy) > 0.12) tf = S.jy < 0 ? 0.6 * -S.jy : -0.42 * S.jy;
-        if (Math.abs(S.jx) > 0.12) tl = -0.22 * S.jx;
+      if (S.joyId != null && (Math.abs(S.jx) > 0.12 || Math.abs(S.jy) > 0.12)) {
+        // SCREEN-RELATIVE movement (Jeff, 2026-08-03: "y axis is inverted"):
+        // the stick points where the mech GOES ON SCREEN; the gait derives
+        // forward/reverse/strafe from the current facing. Body-relative
+        // "up = forward" reads inverted whenever the machine faces the
+        // camera — which is the spawn. Screen->world: right = -x, up = +z;
+        // frame = the SMOOTH command heading (measured yaw is self-noise).
+        const wxS = -S.jx, wzS = -S.jy;
+        const hS = mech.state.heading;
+        const fS = wxS * Math.sin(hS) + wzS * Math.cos(hS);
+        const lS = wxS * Math.cos(hS) - wzS * Math.sin(hS);
+        tf = fS >= 0 ? Math.min(0.6, fS * 0.6) : Math.max(-0.42, fS * 0.42);
+        tl = Math.max(-0.22, Math.min(0.22, lS * 0.26));
       }
       if (S.keys.KeyA) S.yawT += 0.7 * cdt;
       if (S.keys.KeyD) S.yawT -= 0.7 * cdt;
