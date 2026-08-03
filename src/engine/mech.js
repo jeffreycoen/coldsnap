@@ -1148,7 +1148,13 @@ function controller(world, mech) {
     const cmdIntent = Math.abs(st.cmdT.f) + Math.abs(st.cmdT.l);
     const idle5 = cmdIntent < 0.05 && !st.aboutFace && !st.kick;
     const stopping5 = !!st.govDecel || st.aboutFace === "brake"; // planned stops (overdrive decel AND the pivot's brake phase): burns skate the braking soles (2/6 measured; pivot brake-entry fell at 7-10s with turn-band burns)
-    const trouble = st.spawnDone && (stopping5
+    // Q: POISE owns its balance (hip-strategy + CMG pb terms). The idle
+    // stability band read the INTENTIONAL one-leg weight shift as a
+    // capture excursion and burned against the transfer — the shift never
+    // completed and ONE LEG silently did nothing (browser audit + headless
+    // both yaws; poise was certified pre-rockets and never re-gated).
+    const poised5 = !!st.poise;
+    const trouble = !poised5 && st.spawnDone && (stopping5
       ? hull.R[4] < 0.945
       : idle5 && !walking
         ? (exi > 0.30 || leanR > 0.55 || hull.R[4] < 0.965) // BISECT: idle wide bands off
