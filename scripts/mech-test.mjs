@@ -427,11 +427,11 @@ const run = (w, secs) => { const n = Math.round(secs / w.dt); for (let i = 0; i 
     const mech = buildMech(w, { x: 0, z: 0 });
     mech.thrustersOn = on;
     run(w, 5);
-    mech.hull.v.x += 128000 / mech.hull.mass;
+    mech.hull.v.x += 160000 / mech.hull.mass;
     for (let i = 0; i < Math.round(12 / w.dt); i++) { w.events.length = 0; stepWorld(w); if (mech.state.mode === "FALLEN") return true; }
     return false;
   };
-  ok("thrusters: 128k shove fells the bare machine", shove(false) === true); // 48k -> 128k (2026-08-02): the runaway-arrest saves upright cascades — bare mortality moved to where toppling is geometric
+  ok("thrusters: 160k shove fells the bare machine", shove(false) === true); // 48k -> 128k -> 160k (2026-08-02): the deep-plant arrest saves sub-threshold slow burns too — bare mortality moved again; toppling stays geometric (boundary measured 128k survive / 160k fell)
   ok("thrusters: the rockets save the same shove", shove(true) === false);
   {
     const w = flatWorld();

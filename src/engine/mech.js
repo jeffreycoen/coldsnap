@@ -988,18 +988,70 @@ function controller(world, mech) {
   // Scope guards: only UPRIGHT runaways (R4 > 0.9 — a toppling machine is
   // beyond horizontal braking, and blast/shove mortality must stay real),
   // and never inside the about-face (the maneuver owns its dynamics).
+  // zero-command WALK dwell clock: healthy stops reach STAND in < 3s
+  // (C5 stop residual 0.04). Dwelling longer is the sub-threshold slow
+  // burn — an uncommanded catch-walk at 0.35-0.7 that never trips the
+  // speed bound and decays attitude to death over ~8s (traced @49.5).
+  if (st.mode === "WALK" && cmdTMag < 0.05 && !st.aboutFace) st._zcWalkT = (st._zcWalkT || 0) + dt;
+  else st._zcWalkT = 0;
   if (st.mode === "WALK" && cmdTMag < 0.05 && cmdMag < 0.1 && hull.R[4] > 0.9 && !st.aboutFace) {
     const spA = Math.hypot(_comV.x, _comV.z);
-    if (spA > 1.0) st._arrestT = 0.9; // LATCHED: unlatching at the bound let the ratchet re-pump (36.4 -> 37.7, still died)
+    if ((st._zcWalkT || 0) > 4.0) { st._arrestT = Math.max(st._arrestT || 0, 0.9); st._arrestDeep = true; }
+    // ESCALATING re-engage (2026-08-02): a single arrest at 1.0 damps the
+    // runaway, but the ratchet can REBUILD through the 0.35..1.0 gap and
+    // re-engage in a limit cycle — each lap rolls the attitude dice until
+    // one kills (traced: heading 2.36 stop, arrests at 30.5/32.5/33.5...,
+    // dead at 38.9). Recurrence within 3s of a release drops the bound to
+    // 0.55 — below any healthy stop transient's REBUILD, while the FIRST
+    // engagement keeps the certified-invisible 1.0 bound.
+    const recur = world.t - (st._arrestLast || -9) < 3.0;
+    const bound = recur ? 0.55 : 1.0;
+    if (spA > bound) {
+      st._arrestT = 0.9; // LATCHED: unlatching at the bound let the ratchet re-pump (36.4 -> 37.7, still died)
+      // DEEP PLANT on recurrence, IMMEDIATE: the ratchet re-fires the
+      // engagement line every tick it stays fast, so any countdown to a
+      // plant is unreachable (traced three shapes: purgatory@57.3,
+      // topple-on-release@51.7, pinned-timer@50.5). The first arrest
+      // already damped a full latch — a second engagement within 3s IS
+      // the limit-cycle diagnosis, and the answer is to plant NOW.
+      if (recur) st._arrestDeep = true;
+    }
   }
-  if ((st._arrestT || 0) > 0 && hull.R[4] < 0.88) st._arrestT = 0; // toppling: release
+  if ((st._arrestT || 0) > 0 && hull.R[4] < 0.88) { st._arrestT = 0; st._arrestDeep = false; } // toppling: release
   if ((st._arrestT || 0) > 0) {
     st._arrestT -= dt;
     st.stopping = true;
     st.recoverT = Math.max(st.recoverT, 0.6);
-    const kA = Math.min(0.6, 8.0 * dt);
+    const kA = Math.min(0.6, (st._arrestDeep ? 11.0 : 8.0) * dt);
     hull.v.x -= hull.v.x * kA; hull.v.z -= hull.v.z * kA;
-    if (Math.hypot(_comV.x, _comV.z) < 0.35) st._arrestT = 0;
+    // DEEP PLANT: waiting for quiet never comes — the stepping itself
+    // re-accelerates the hull every cycle (traced: v hovered 0.35-0.64
+    // for 5s under 11/s damping, then a fatal attitude roll). After a
+    // 0.3s damp the deep tier plants UNCONDITIONALLY: snap to STAND with
+    // a one-time velocity kill. Upright + zero-command regime only; the
+    // stand catches (proven to 48k shoves) own whatever remains.
+    if (st._arrestDeep) {
+      st._arrestDeep = false; st._arrestT = 0; st._arrestLast = world.t;
+      st.mode = "STAND"; st.stopping = false; st.postStop = 4;
+      // kill hard: 0.25 left enough sway for the stand-catches to relaunch
+      // into another zero-command walk — plant/relaunch cycled past 60s
+      hull.v.x *= 0.1; hull.v.z *= 0.1; hull.w.x *= 0.3; hull.w.y *= 0.3; hull.w.z *= 0.3;
+      if (st.comOff) { st.comOff.iF *= 0.4; st.comOff.iL *= 0.4; } // bleed wound trims like a catch does
+      st.recoverT = Math.max(st.recoverT, 0.6);
+      // full stop bookkeeping — the natural stops run at touchdown where
+      // the latch already nulled swing and prints; a mid-swing plant must
+      // do its own, or the launch check reads STALE prints this same tick
+      // and catch-relaunches forever (traced: plant<->relaunch tick loop,
+      // frozen 'WALK' at v 0.01 with rec pinned)
+      st.swing = null; st.kick = null; st.hold = {}; st.holdCop = {};
+      st.settleT = 0; st.settledT = 0;
+      for (const sd6 of ["L", "R"]) {
+        const f6 = mech.legs[sd6].foot;
+        st.prints[sd6] = { x: f6.pos.x, z: f6.pos.z, yaw: Math.atan2(f6.R[6], f6.R[8]) };
+      }
+    } else if (!st._arrestDeep && Math.hypot(_comV.x, _comV.z) < 0.35) {
+      st._arrestT = 0; st._arrestLast = world.t;
+    }
   }
   // capture point + MV plan (pelvis ref advances at the commanded velocity)
   mechCom(mech, _com, _comV);
