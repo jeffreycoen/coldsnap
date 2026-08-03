@@ -80,6 +80,7 @@ export default function MechRange({ onExit }) {
       gyro: () => { mech.gyroOn = mech.gyroOn === false; },
       jets: () => { S.jetMode = !S.jetMode; mech.jetCmd = null; },
       rcs: () => { mech.thrustersOn = !mech.thrustersOn; },
+      dbg: () => ({ hardT: S.hardT || 0, rx: S.rx || 0, jy: S.jy || 0, jetMode: !!S.jetMode, af: mech.state.aboutFace || 0, afLive: !!mech.state.afLive, cmdTf: mech.state.cmdT.f, govF: mech.state.govF ?? null, thrV: mech.state._thrV ?? null, turnLpf: mech.state.turnLpf || 0, estT: mech.state.walkEstT || 0, burn: mech.thrusters ? Math.max(...mech.thrusters.map((t) => t.cur)) : 0, cad: mech.state.cadence || 1 }),
     };
     const joyBase = () => ({ x: 86, y: window.innerHeight - 130 });
     const rsBase = () => ({ x: window.innerWidth - 86, y: window.innerHeight - 130 });
@@ -156,6 +157,34 @@ export default function MechRange({ onExit }) {
     window.addEventListener("pointerdown", onPD);
     window.addEventListener("pointermove", onPM);
     window.addEventListener("pointerup", onPU);
+    // Q: native-touch reconciliation — pointer ids can cross under real
+    // multi-touch (measured: releasing the RIGHT stick fired pointerup
+    // with the LEFT grab's id, leaving the right stick STUCK at full
+    // deflection with no finger down). When the native touch list goes
+    // empty, every stick state clears unconditionally; when it shrinks,
+    // any grab whose finger no longer exists is released.
+    const onTE = (e) => {
+      // per-SIDE liveness: a grab whose half of the screen holds no
+      // surviving finger is released, whatever pointer id the browser
+      // attributed the up-event to
+      let leftAlive = false, rightAlive = false;
+      for (const t of e.touches) { if (t.clientX < window.innerWidth / 2) leftAlive = true; else rightAlive = true; }
+      if (!leftAlive && S.joyId != null) {
+        S.joyId = null; S.jx = 0; S.jy = 0;
+        const c = joyBase();
+        if (knobRef.current) { knobRef.current.style.left = c.x - 20 + "px"; knobRef.current.style.top = c.y - 20 + "px"; }
+      }
+      if (!rightAlive) {
+        if (S.rsId != null) {
+          S.rsId = null; S.rx = 0; S.ry = 0;
+          const a = rsBase();
+          if (rsKnobRef.current) { rsKnobRef.current.style.left = a.x - 20 + "px"; rsKnobRef.current.style.top = a.y - 20 + "px"; }
+        }
+        S.rngId = null;
+      }
+    };
+    window.addEventListener("touchend", onTE);
+    window.addEventListener("touchcancel", onTE);
     window.addEventListener("pointercancel", onPU);
     const focus = { x: 0, y: 3, z: 0 };
     const down = (e) => {
@@ -177,11 +206,13 @@ export default function MechRange({ onExit }) {
     const up = (e) => { S.keys[e.code] = false; };
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
-    const loop = () => {
-      if (S.dead) return;
-      const now = performance.now();
-      let dt = Math.min(0.05, (now - S.last) / 1000);
-      S.last = now;
+    // Q: commands feed at SIM-TICK cadence, inside the substep loop — the
+    // per-frame feed integrated stick/turn state with FRAME dt (up to 50ms,
+    // 6 substeps per computation under swiftshader jitter), so the pivot
+    // brake, steering lock, and aim state saw lumpy inputs the per-tick
+    // harness never reproduced (the pivot-from-march phone fall class).
+    // Game and harness now share one command cadence by construction.
+    const feedCommands = (cdt) => {
       // §0b (rev 2026-08-01): LEFT stick = travel vector (strafe, never
       // rotates); RIGHT stick = body TURN rate; cannon has its OWN controls
       // (◀ ▶ turret slew + range slider). Keyboard follows the HOUSE
@@ -192,11 +223,11 @@ export default function MechRange({ onExit }) {
         if (Math.abs(S.jy) > 0.12) tf = S.jy < 0 ? 0.6 * -S.jy : -0.42 * S.jy;
         if (Math.abs(S.jx) > 0.12) tl = -0.22 * S.jx;
       }
-      if (S.keys.KeyA) S.yawT += 0.7 * dt;
-      if (S.keys.KeyD) S.yawT -= 0.7 * dt;
+      if (S.keys.KeyA) S.yawT += 0.7 * cdt;
+      if (S.keys.KeyD) S.yawT -= 0.7 * cdt;
       // desktop held-turn pivots too (advisor): keyboard turning was still
       // grinding at machine rate (2 deg/s) with no pivot path
-      S.keyTurnT = (S.keys.KeyA || S.keys.KeyD) ? (S.keyTurnT || 0) + dt : 0;
+      S.keyTurnT = (S.keys.KeyA || S.keys.KeyD) ? (S.keyTurnT || 0) + cdt : 0;
       if (S.keyTurnT > 0.6 && mech.state.mode === "WALK" && !mech.state.aboutFace) { mechPivot(world, mech); S.keyTurnT = 0; }
       if (!S.keys.KeyA && !S.keys.KeyD && S.keyTurnPrev && mech.state.afLive && mech.state.aboutFace) { mech.state.aboutFace = null; mech.state.headingT = mech.state.heading; S.yawT = mech.state.heading; mech.state.recoverT = Math.max(mech.state.recoverT || 0, 0.5); }
       S.keyTurnPrev = S.keys.KeyA || S.keys.KeyD;
@@ -213,16 +244,15 @@ export default function MechRange({ onExit }) {
         mech.jetCmd = { x: -(S.rx || 0), z: -(S.ry || 0) };
       } else {
         mech.jetCmd = null;
-        if (Math.abs(S.rx) > 0.15) S.yawT -= S.rx * 0.9 * dt;
+        if (Math.abs(S.rx) > 0.15) S.yawT -= S.rx * 0.9 * cdt;
         // HARD-OVER stick while walking = live pivot (advisor): intent is
         // only measurable here, upstream of the steering lock
-        S.hardT = Math.abs(S.rx) > 0.5 ? (S.hardT || 0) + dt : 0;
+        S.hardT = Math.abs(S.rx) > 0.5 ? (S.hardT || 0) + cdt : 0;
         if (S.hardT > 0.6 && mech.state.mode === "WALK" && !mech.state.aboutFace) { mechPivot(world, mech); S.hardT = 0; }
       }
       // steering lock: the heading COMMAND may lead the actual body by at
       // most 0.5 rad. Unbounded lead (chassis-follow wound to 3.7 rad for a
       // 1.6 rad aim) forced max-rate turning long after the stick released.
-      const yawNow = Math.atan2(mech.hull.R[6], mech.hull.R[8]);
       {
         // steering lock anchors on the SMOOTH command frame, not measured
         // yaw (advisor): re-anchoring to the wobbling hull each frame fed
@@ -240,7 +270,7 @@ export default function MechRange({ onExit }) {
       // torso can't hold), slider sets range. Turning the body sweeps the
       // reticle with it; the arrows trim on top. Desktop keeps mouse aim.
       if (isTouch) {
-        if (S.aimHeld) S.aimOff = Math.max(-0.85, Math.min(0.85, S.aimOff + S.aimHeld * 0.9 * dt));
+        if (S.aimHeld) S.aimOff = Math.max(-0.85, Math.min(0.85, S.aimOff + S.aimHeld * 0.9 * cdt));
         // aim rides the COMMAND frame, not measured yaw (advisor): the
         // measured anchor fed hull wobble through the 1800kg waist at
         // frame rate — post-turn recoveries jittered the torso into
@@ -254,11 +284,17 @@ export default function MechRange({ onExit }) {
       // fell. Stationary aim holds at the waist stop; turn with A/D or by
       // walking. Rate = actual machine capability, not 5x it.
       if (mech.waist && Math.abs(mech.waist.target) > 0.6 * 0.87 && Math.hypot(tf, tl) > 0.05)
-        S.yawT += Math.sign(mech.waist.target) * 0.12 * dt;
+        S.yawT += Math.sign(mech.waist.target) * 0.12 * cdt;
       // about-face owns the heading while it runs — writing S.yawT every
       // frame would overwrite the 180 target the maneuver is executing
       mechCommand(mech, { travel: tf, lateral: tl, heading: mech.state.aboutFace ? null : S.yawT });
       if (S.keys.Space || S.keys.KeyF || S.fireHeld) mechFire(world, mech); // rate-limited inside
+    };
+    const loop = () => {
+      if (S.dead) return;
+      const now = performance.now();
+      let dt = Math.min(0.05, (now - S.last) / 1000);
+      S.last = now;
       // awareness: the garrison wakes on proximity (inside the picket),
       // on ANY weapon discharge within earshot, or on taking damage
       const mh = mech.hull;
@@ -313,6 +349,7 @@ export default function MechRange({ onExit }) {
       // renderer: muzzle flashes and explosions never drew in this mode
       const evs = [];
       while (S.acc >= world.dt && guard++ < 6) {
+        feedCommands(world.dt); // Q: one command computation per sim tick — game == harness cadence
         world.events.length = 0;
         stepWorld(world);
         for (const e of world.events) evs.push(e);
@@ -377,6 +414,8 @@ export default function MechRange({ onExit }) {
       window.removeEventListener("pointerdown", onPD);
       window.removeEventListener("pointermove", onPM);
       window.removeEventListener("pointerup", onPU);
+      window.removeEventListener("touchend", onTE);
+      window.removeEventListener("touchcancel", onTE);
       window.removeEventListener("pointercancel", onPU);
       delete window.__MECHRANGE__;
       R.dispose();

@@ -1039,21 +1039,40 @@ function controller(world, mech) {
     // the hull against com drift (F ~ tau/comH — instant, no contact lag,
     // no CoP box). The ankle alone can't catch the raise transients: its
     // realized CoP lags through the soft contact and saturates at 44k.
-    let pbX = 0, pbZ = 0, leanX = 0, leanZ = 0;
+    // Q: BODY-FRAME COMPOSITION (the machine could only walk NORTH).
+    // exT/ezT are BODY-frame tilt errors, but the springs applied them as
+    // torques about WORLD x/z — exact at yaw 0, sign-flipped at yaw pi,
+    // fully crossed at +-pi/2. Every walking cert in the project launched
+    // at yaw 0, so the bug was invisible until the spawn faced south:
+    // measured, spawn-yaw ladder 0/5 for all non-zero yaws at certified
+    // 0.42, veer-and-sprint to 2 m/s in ~3.3s. Compose pitch/roll demands
+    // on the body's horizontal axes instead; at yaw 0 this reduces to the
+    // old math term-for-term.
+    // basis on the COMMAND frame, not measured yaw — the advisor's own
+    // lesson recurred: a yawMeas basis jitters with hull wobble and feeds
+    // it into the damping channels (measured: overdrive 6/6 -> 2/6, s2
+    // 2/4). st.heading is smooth, equals body yaw at steady state, and
+    // at yaw 0 makes this math BIT-IDENTICAL to the certified original.
+    const blx = Math.cos(st.heading), blz = -Math.sin(st.heading); // body-left (pitch axis)
+    const bfx = Math.sin(st.heading), bfz = Math.cos(st.heading);  // body-fwd  (roll axis)
+    const wP = hull.w.x * blx + hull.w.z * blz; // pitch rate
+    const wR = hull.w.x * bfx + hull.w.z * bfz; // roll rate
+    let pbP = 0, pbR = 0, leanP = 0, leanR = 0;
     if (st.poise && (st.poise.phase === "hold" || st.poise.phase === "lower")) {
       const spB = st.prints[st.poise.raise === "L" ? "R" : "L"];
       const exB = _com.x - spB.x + _comV.x * 0.4;
       const ezB = _com.z - spB.z + _comV.z * 0.4;
+      const eBF = exB * bfx + ezB * bfz, eBL = exB * blx + ezB * blz;
       // instant torque: transient catcher (post-slew)
-      pbZ = clamp(exB * 420000, -tauCap, tauCap);
-      pbX = clamp(-ezB * 420000, -tauCap, tauCap);
+      pbR = clamp(eBL * 420000, -tauCap, tauCap);
+      pbP = clamp(-eBF * 420000, -tauCap, tauCap);
       // lean SETPOINT: sustained authority. Torque alone cancels against
       // the CMG's own leveler; biasing the level target leans the machine
       // and gravity pushes the com — the real hip strategy.
-      leanZ = clamp(exB * 0.35, -0.1, 0.1);
-      leanX = clamp(-ezB * 0.35, -0.1, 0.1);
+      leanR = clamp(eBL * 0.35, -0.1, 0.1);
+      leanP = clamp(-eBF * 0.35, -0.1, 0.1);
     }
-    const txD = clamp(-kpA * dbT(-exT - leanX) - kdA * hull.w.x, -tauCap, tauCap);
+    const txD = clamp(-kpA * dbT(-exT - leanP) - kdA * wP, -tauCap, tauCap);
     // yaw AUTHORITY only in double support (like the heading slew): the
     // yaw spring chasing heading through SS rotates the hull over the one
     // planted foot until it edge-rolls (R4 collapse mid-SS, the sortie
@@ -1067,20 +1086,24 @@ function controller(world, mech) {
     const tf = Math.min(1, (st.turnLpf || 0) / 0.1);
     const yawSSe = 1 - (1 - mech.tune.yawSS) * tf, yawSSde = 1 + (mech.tune.yawSSd - 1) * tf;
     const tyD = clamp(kpA * dbY(eyT) * (inSSy ? yawSSe : 1) - kdA * (inSSy ? yawSSde : 1) * hull.w.y, -tauCap, tauCap);
-    const tzD = clamp(-kpA * dbT(-ezT - leanZ) - kdA * hull.w.z, -tauCap, tauCap);
+    const tzD = clamp(-kpA * dbT(-ezT - leanR) - kdA * wR, -tauCap, tauCap);
     // slew: the CMG is an OUTER loop, slower than the gait (spec §5b)
+    // (Q: _cmgT.x/.z now hold the PITCH/ROLL channel demands — slewing in
+    // channel space keeps the filter meaningful while the body yaws)
     if (!mech._cmgT) mech._cmgT = { x: 0, y: 0, z: 0 };
     const slewC = (tauCap / (k.stepPeriod / mech.tune.cmgSlew)) * dt;
     mech._cmgT.x += clamp(txD - mech._cmgT.x, -slewC, slewC);
     mech._cmgT.y += clamp(tyD - mech._cmgT.y, -slewC, slewC);
     mech._cmgT.z += clamp(tzD - mech._cmgT.z, -slewC, slewC);
-    let tx = mech._cmgT.x, ty = mech._cmgT.y, tz = mech._cmgT.z;
+    let tP = mech._cmgT.x, ty = mech._cmgT.y, tR = mech._cmgT.z;
     // poise balance bypasses the slew: the CMG's outer-loop filter is right
     // for gait attitude but starves the hip-strategy — the ankle loop is
     // lag-limited (soft-contact CoP realization ~0.2s at w=1.6) and the
     // hold NEEDS an instant actuator. pb terms are already tauCap-clamped.
-    tx = clamp(tx + pbX, -tauCap, tauCap);
-    tz = clamp(tz + pbZ, -tauCap, tauCap);
+    tP = clamp(tP + pbP, -tauCap, tauCap);
+    tR = clamp(tR + pbR, -tauCap, tauCap);
+    // Q: compose the channel torques onto the body's horizontal axes
+    let tx = tP * blx + tR * bfx, tz = tP * blz + tR * bfz;
     // momentum budget: torque only while the store holds; bleed against the
     // ground through the stance (time constant ~7s) while any foot is loaded
     const loaded = legL.load + legR.load > 0.1 * W;
@@ -1090,14 +1113,18 @@ function controller(world, mech) {
     // cmgH stays as telemetry of what an actual store would hold.
     mech.cmgH.x += tx * dt; mech.cmgH.y += ty * dt; mech.cmgH.z += tz * dt;
     if (loaded) { const bl = Math.min(1, dt / 7); mech.cmgH.x -= mech.cmgH.x * bl; mech.cmgH.y -= mech.cmgH.y * bl; mech.cmgH.z -= mech.cmgH.z * bl; }
-    const Ih = { x: 1 / Math.max(1e-9, hull.invIw[0]), y: 1 / Math.max(1e-9, hull.invIw[4]), z: 1 / Math.max(1e-9, hull.invIw[8]) };
     // GYRO TOGGLE (2026-08-02): off = the ideal CMG applies NOTHING — the
     // rockets (continuous duty below) and ankles are all that hold
     // attitude. State zeroed so re-engage doesn't dump a stale torque.
     if (mech.gyroOn === false) { mech._cmgT.x = 0; mech._cmgT.y = 0; mech._cmgT.z = 0; tx = 0; ty = 0; tz = 0; }
-    hull.w.x += tx * dt / Ih.x;
-    hull.w.y += ty * dt / Ih.y;
-    hull.w.z += tz * dt / Ih.z;
+    // Q: FULL inverse-inertia application — the diagonal-only divide was
+    // exact at cardinal yaws (box axis-aligned) and wrong at diagonals
+    // (off-diagonal terms ~ (Ix-Iz)/2): the last piece of the walk-any-
+    // heading bug (cardinals walked, 45s fell). At yaw 0 the matrix is
+    // diagonal and this is bit-identical to the old divide.
+    hull.w.x += (hull.invIw[0] * tx + hull.invIw[1] * ty + hull.invIw[2] * tz) * dt;
+    hull.w.y += (hull.invIw[3] * tx + hull.invIw[4] * ty + hull.invIw[5] * tz) * dt;
+    hull.w.z += (hull.invIw[6] * tx + hull.invIw[7] * ty + hull.invIw[8] * tz) * dt;
   }
   // THRUSTER AUTO-CONTROL (2026-08-02): error-band ownership — the ankles
   // and step machinery own the small/slow regime exactly as before; the
@@ -1124,7 +1151,13 @@ function controller(world, mech) {
     const cmdIntent = Math.abs(st.cmdT.f) + Math.abs(st.cmdT.l);
     const idle5 = cmdIntent < 0.05 && !st.aboutFace && !st.kick;
     const stopping5 = !!st.govDecel || st.aboutFace === "brake"; // planned stops (overdrive decel AND the pivot's brake phase): burns skate the braking soles (2/6 measured; pivot brake-entry fell at 7-10s with turn-band burns)
-    const trouble = st.spawnDone && (stopping5
+    // Q: POISE owns its balance (hip-strategy + CMG pb terms). The idle
+    // stability band read the INTENTIONAL one-leg weight shift as a
+    // capture excursion and burned against the transfer — the shift never
+    // completed and ONE LEG silently did nothing (browser audit + headless
+    // both yaws; poise was certified pre-rockets and never re-gated).
+    const poised5 = !!st.poise;
+    const trouble = !poised5 && st.spawnDone && (stopping5
       ? hull.R[4] < 0.945
       : idle5 && !walking
         ? (exi > 0.30 || leanR > 0.55 || hull.R[4] < 0.965) // BISECT: idle wide bands off
@@ -1238,13 +1271,21 @@ function controller(world, mech) {
       // budget — the gait still needs its friction to walk.
       const fwdX = Math.sin(st.heading), fwdZ = Math.cos(st.heading);
       const vF5 = _comV.x * fwdX + _comV.z * fwdZ;
+      // Q: assist SUSPENDS while a turn is live (turnLpf) — thrust
+      // re-aimed along a rotating heading pumps speed VECTORIALLY (old
+      // momentum + new-axis burn ratcheted 0.66 -> 1.7 m/s in 1.3s,
+      // traced in-browser; the 'pivot-from-march phone fall' and the
+      // o0.4 sprint-cascade were BOTH this). With _thrV null the honest
+      // brake sheds the overspeed into the certified turn envelope.
+      const turning5 = (st.turnLpf || 0) > 0.05;
       const wantV = st.govDecel ? 0.42 : Math.min(st.cmdT.f, mech._wantVCap || 0.68); // fast-band ceiling 0.68 (advisor sweep: dominates 0.62 — 4/6 vs 3-4/6 at +8% speed; 0.72 is 0/3. Residual mapped: o0.4 sprint-cascade ~30s, decel-tail ~42s)
       const dv5 = wantV - vF5;
       // _thrV holds STEADY while assisting — nulling it on transient
       // overshoot re-armed the raw Raibert brake mid-sway and the fight
       // cascaded backward at 0.9 m/s (measured)
-      st._thrV = st.govDecel ? null : wantV;
-      if (dv5 > 0.05 && !st.govDecel) { mech.thrusters[2].cmd = mech.thrusters[3].cmd = clamp(dv5 * 2.0, 0, 0.66); }
+      st._thrV = st.govDecel || turning5 ? null : wantV;
+      if (turning5) { /* no burns through a turn */ }
+      else if (dv5 > 0.05 && !st.govDecel) { mech.thrusters[2].cmd = mech.thrusters[3].cmd = clamp(dv5 * 2.0, 0, 0.66); }
       else if (dv5 < -0.08 && dv5 > -0.45) { mech.thrusters[0].cmd = mech.thrusters[1].cmd = clamp(-dv5 * 2.0, 0, 0.66); } // thrust-brake has a REGIME: beyond ~0.45 of overspeed the cascade needs its soles fully weighted (burns at 1.0 through a sprint-cascade unweighted the brake-feet and it ran to 3 m/s, traced)
     }
     if (st._thrA) st._thrV = null;
@@ -2537,6 +2578,14 @@ export function mechPivot(world, mech) {
   if (st.mode !== "WALK" || st.aboutFace || st.kick || st.poise || !st.spawnDone || st._noPivot) return false;
   st.aboutFace = "brake"; st.afLive = true;
   st._afT0 = { f: st.cmdT.f, l: st.cmdT.l };
+  // Q: shed travel NOW, exactly like the 180 button does — without this a
+  // HELD forward stick kept cmdT at march speed (mechCommand nulls its
+  // writes during the maneuver but never cleared the pre-pivot value), so
+  // the brake stage could not complete and the "pivot" never pivoted: the
+  // turn feed + full march arc-sprinted to 1.9 m/s and fell 6/6 (traced).
+  // The stuck-in-brake bug the advisor fixed for the BUTTON existed here
+  // too; their turn certs held only the turn stick, so it hid.
+  st.cmdT.f = 0; st.cmdT.l = 0;
   return true;
 }
 export function mechAboutFace(world, mech) {
