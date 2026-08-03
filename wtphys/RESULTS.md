@@ -56,3 +56,22 @@ weld ablation decisive that no single component is the armor).
   grid (cmgKp × afRate × turnDS) is unrun.
 - kpDegKnee@1.25 composes with everything measured and is likely safe to add
   next round (left out to keep the bake minimal-risk under one gate cycle).
+
+
+## Loop 2 (quick-step + interaction grids) — verdicts
+- QUICK-STEP REFUTED at ensemble standards: the tSS@0.5 screening jackpot
+  was a single-draw artifact. 4-offset ensembles: 1/4 at every C5 ablation
+  including full pre-C5 reversal. Raw cadence scaling cannot ship; the real
+  quick-step needs swing-servo retune + capture-window scaling (the full
+  dynamic-gait campaign, next license tier).
+- kpDegKnee@1.25 under C5: REGRESSES walk smoothness (0.83→0.93 — overlaps
+  the ride damper's job), gains assisted-speed smoothness (1.00→0.83),
+  slows stops 2.3→5.2s. Not a default; candidate for a speed-mode tune.
+- cfmF ladder 1.05–1.15: alive (2.5 probe flips outcomes) but no measured
+  benefit below the 1.25 breaking point. Stays 0.2.
+- afRate/cmgKp grids: afRate 1.1 gives turn 13.7s and about-face 24-26s
+  BUT 6/8 with a genuine fall vs current 7/8 zero-fall. Never-fall mandate
+  outranks turn speed: current values are the local robustness optimum.
+- Net: the C5 bake is the certified local optimum of this factorial space
+  at this license. Smoothness stands at -17% vs the -50% mandate; the
+  remaining distance is the dynamic-gait campaign, not parameter search.

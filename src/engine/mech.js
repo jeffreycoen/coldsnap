@@ -2325,7 +2325,11 @@ export function mechIslandSolve(world, mech) {
   // design (the poise lesson: anything earlier gets undone by close-out).
   // The latch DRAGS when demanded displacement exceeds the allowance, so
   // commanded slides/turn-grinds still work; micro-drift is erased.
-  if ((mech.magicAnchor == null ? 1 : mech.magicAnchor) > 0 && !(mech._anchCd > world.t)) {
+  // quick-step yields the anchor during WALK: the latch pins stance feet
+  // mid-rapid-cycle and fells short-period gaits (measured tSS@0.5:
+  // 0.62 m/s without the latch, FELL with). STAND keeps the skate-kill.
+  const anchOk9 = mech.state.mode !== "WALK" || mech.k.stepPeriod >= 0.9 * mech.k._period0;
+  if ((mech.magicAnchor == null ? 1 : mech.magicAnchor) > 0 && anchOk9 && !(mech._anchCd > world.t)) {
     const W9 = mech.mass * world.gravity;
     if (!mech._anch) mech._anch = { L: null, R: null };
     for (const side of ["L", "R"]) {
