@@ -492,8 +492,12 @@ const run = (w, secs) => { const n = Math.round(secs / w.dt); for (let i = 0; i 
   explode(w, 2.2, 1.0, 0, { r: 3.0, kv: 26, dmg: 42, crater: 0.7, attacker: "test" });
   run(w, 5);
   ok("mortar near-miss: survives (catch or ride)", !mechFallen(mech) && mechUp(mech) > 0.85, `up=${mechUp(mech).toFixed(2)} fallen=${mechFallen(mech)}`);
-  // point-blank heavy charge: must fall
-  explode(w, 0.6, 1.2, 0.3, { r: 5.0, kv: 220, dmg: 42, crater: 0.7, attacker: "test" });
+  // point-blank heavy charge: must fall. kv 220 -> 550 (2026-08-02): the
+  // C5 physics bake (weld 1.5x, BW/zeta +50/25%) rides out the old
+  // calibration at up=0.98 — the machine legitimately outgrew it. The
+  // invariant guarded is unchanged: sufficient ordnance MUST fell it and
+  // the FALLEN/limp/respawn path stays exercised.
+  explode(w, 0.6, 1.2, 0.3, { r: 5.0, kv: 550, dmg: 42, crater: 0.7, attacker: "test" });
   run(w, 4);
   const fell = mechFallen(mech);
   ok("heavy blast: goes down", fell, `up=${mechUp(mech).toFixed(2)}`);

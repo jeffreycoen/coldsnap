@@ -227,7 +227,7 @@ function iterHinge(j, dt, locksOnly = false) {
     V.cross(_h1, j._rAw, ax); iMulVec(a.invIw, _h1, _h2); V.cross(_h1, _h2, j._rAw); k += V.dot(_h1, ax);
     V.cross(_h1, j._rBw, ax); iMulVec(b.invIw, _h1, _h2); V.cross(_h1, _h2, j._rBw); k += V.dot(_h1, ax);
     const cAx = ai === 0 ? j._C.x : ai === 1 ? j._C.y : j._C.z;
-    const wk = j.weldK || 1; // weld stiffness knob (phys factorial): scales lock bias authority
+    const wk = j.weldK || 1.5; // weld stiffness knob (C4 bake 1.5: stronger welds — smoother and +8k shove)
     const bias = clamp((0.2 * wk / dt) * cAx, -4 * wk, 4 * wk);
     const P = -(vRel + bias) / Math.max(1e-9, k);
     V.scale(_h3, ax, P);
@@ -241,7 +241,7 @@ function iterHinge(j, dt, locksOnly = false) {
     const n = pi === 0 ? j._p1 : j._p2;
     V.sub(_h1, b.w, a.w);
     const Cdot = V.dot(_h1, n);
-    const wk2 = j.weldK || 1;
+    const wk2 = j.weldK || 1.5;
     const bias = clamp((0.2 * wk2 / dt) * V.dot(j._eAng, n), -6 * wk2, 6 * wk2);
     const k = projK(a, b, n);
     const lam = -(Cdot + bias) / Math.max(1e-9, k);
@@ -444,7 +444,7 @@ export const RIG = {
   // typical errors (~0.3 rad) commands accelerations INSIDE the physical
   // torque ceiling — BW 9 commanded 4.7x tauMax and the loop bang-banged the
   // ceiling exactly as spec §6 warns. tauMax is a ceiling, not a tuning knob.
-  BW: 3.5, zeta: 1.1,
+  BW: 5.25, zeta: 1.375, // C4 factorial bake (was 3.5/1.1): +50% servo bandwidth + damping — smoother, stiffer machine (i42 0.82, shove 56k)
 };
 
 // box inertia about its own centroid axes (half extents), world-axis aligned at build
@@ -2275,7 +2275,7 @@ export function mechIslandSolve(world, mech) {
   // realization LAG (~0.2s at omega 1.6) that loses the balance race
   // (advisor-2, measured) — stiffen it 4x for the hold only
   const poiseHold = mech.state.poise && mech.state.poise.phase === "hold";
-  const cfm = (poiseHold ? 0.05 : (mech.cfmF || 0.2)) * mech.groundC / (dt * dt); // ground compliance knob
+  const cfm = (poiseHold ? 0.05 : (mech.cfmF || 0.2)) * mech.groundC / (dt * dt); // ground compliance knob (0.25 measured: breaks sortie s2 + march-180 — stays 0.2)
   for (const c of world.contacts) {
     if (!c.mech) continue;
     if (c.a.mechRef === mech || (c.b && c.b.mechRef === mech)) {
@@ -2325,7 +2325,7 @@ export function mechIslandSolve(world, mech) {
   // design (the poise lesson: anything earlier gets undone by close-out).
   // The latch DRAGS when demanded displacement exceeds the allowance, so
   // commanded slides/turn-grinds still work; micro-drift is erased.
-  if ((mech.magicAnchor == null ? 1 : mech.magicAnchor) > 0) {
+  if ((mech.magicAnchor == null ? 1 : mech.magicAnchor) > 0 && !(mech._anchCd > world.t)) {
     const W9 = mech.mass * world.gravity;
     if (!mech._anch) mech._anch = { L: null, R: null };
     for (const side of ["L", "R"]) {
@@ -2337,6 +2337,9 @@ export function mechIslandSolve(world, mech) {
         const slip = 0.05;
         let dx9 = leg.foot.pos.x - ax9.x, dz9 = leg.foot.pos.z - ax9.z;
         const d9 = Math.hypot(dx9, dz9);
+        if (d9 > 0.22) { // blast-scale displacement in one tick: the feet are BLOWN LOOSE — a pinned-sole machine was unfellable (rode kv 320 at up 0.98, gate-illegal)
+          mech._anch.L = null; mech._anch.R = null; mech._anchCd = world.t + 1.2; break;
+        }
         if (d9 > slip) { const s9 = (d9 - slip) / d9; ax9.x += dx9 * s9; ax9.z += dz9 * s9; dx9 = leg.foot.pos.x - ax9.x; dz9 = leg.foot.pos.z - ax9.z; }
         leg.foot.pos.x -= dx9 * 0.5; leg.foot.pos.z -= dz9 * 0.5; // pull halfway back per tick — stiff yet not a hard snap
         leg.foot.v.x *= 0.55; leg.foot.v.z *= 0.55;
@@ -2350,12 +2353,14 @@ function magicRide(world, mech) {
   // shock absorber no servo could build. The touchdown slam (ayP99 ~6.9
   // m/s^2 measured at cruise) is the biggest roughness component; this
   // eats it at the body instead of asking the leg chain to.
-  const kR = mech.magicRide == null ? 0 : mech.magicRide;
+  const kR = mech.magicRide == null ? 8 : mech.magicRide; // C4 bake: ride damper 8 default
   if (mech.state.mode === "FALLEN") return;
   const W9 = mech.mass * world.gravity;
   const hull = mech.hull;
   const loaded = mech.legs.L.load + mech.legs.R.load > 0.25 * W9;
-  if (kR > 0 && loaded) hull.v.y -= hull.v.y * Math.min(0.6, kR * world.dt);
+  const st9 = mech.state;
+  const striding = st9.mode === "WALK" && !st9.stopping && !st9.govDecel && !st9.recoverT;
+  if (kR > 0 && loaded && striding) hull.v.y -= hull.v.y * Math.min(0.6, kR * world.dt); // WALK-scoped (stop-settle measured FALLEN with it always-on: v 0.64 residual)
   // MAGIC: TOUCHDOWN EASE (edge-triggered) — the landing slam is a discrete
   // event (ayP99 ~7 m/s^2); for a short window after each foot's load-rise
   // the hull's DOWNWARD velocity is bled hard. Continuous damping alone
