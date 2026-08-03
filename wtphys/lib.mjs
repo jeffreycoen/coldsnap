@@ -67,7 +67,7 @@ export function mk(spec = {}, opts = {}) {
   for (const [k, f] of Object.entries(spec)) if (RIG_PATCH[k]) RIG_PATCH[k](f);
   const field = makeField(64, 1.7, 5); field.h.fill(0);
   const world = makeWorld({ field, seed: 5 });
-  const mech = buildMech(world, { x: 0, z: 0 });
+  const mech = buildMech(world, { x: 0, z: opts.z || 0 });
   Object.assign(RIG, JSON.parse(JSON.stringify(RIG0)));
   RIG.kpDeg = JSON.parse(JSON.stringify(RIG0.kpDeg));
   RIG.wlFrac = JSON.parse(JSON.stringify(RIG0.wlFrac));

@@ -427,11 +427,11 @@ const run = (w, secs) => { const n = Math.round(secs / w.dt); for (let i = 0; i 
     const mech = buildMech(w, { x: 0, z: 0 });
     mech.thrustersOn = on;
     run(w, 5);
-    mech.hull.v.x += 48000 / mech.hull.mass;
+    mech.hull.v.x += 128000 / mech.hull.mass;
     for (let i = 0; i < Math.round(12 / w.dt); i++) { w.events.length = 0; stepWorld(w); if (mech.state.mode === "FALLEN") return true; }
     return false;
   };
-  ok("thrusters: 48k shove fells the bare machine", shove(false) === true);
+  ok("thrusters: 128k shove fells the bare machine", shove(false) === true); // 48k -> 128k (2026-08-02): the runaway-arrest saves upright cascades — bare mortality moved to where toppling is geometric
   ok("thrusters: the rockets save the same shove", shove(true) === false);
   {
     const w = flatWorld();
@@ -498,12 +498,12 @@ const run = (w, secs) => { const n = Math.round(secs / w.dt); for (let i = 0; i 
   explode(w, 2.2, 1.0, 0, { r: 3.0, kv: 26, dmg: 42, crater: 0.7, attacker: "test" });
   run(w, 5);
   ok("mortar near-miss: survives (catch or ride)", !mechFallen(mech) && mechUp(mech) > 0.85, `up=${mechUp(mech).toFixed(2)} fallen=${mechFallen(mech)}`);
-  // point-blank heavy charge: must fall. kv 220 -> 550 (2026-08-02): the
+  // point-blank heavy charge: must fall. kv 220 -> 1200 (2026-08-02): the
   // C5 physics bake (weld 1.5x, BW/zeta +50/25%) rides out the old
   // calibration at up=0.98 — the machine legitimately outgrew it. The
   // invariant guarded is unchanged: sufficient ordnance MUST fell it and
   // the FALLEN/limp/respawn path stays exercised.
-  explode(w, 0.6, 1.2, 0.3, { r: 5.0, kv: 550, dmg: 42, crater: 0.7, attacker: "test" });
+  explode(w, 0.6, 1.2, 0.3, { r: 5.0, kv: 1200, dmg: 42, crater: 0.7, attacker: "test" });
   run(w, 4);
   const fell = mechFallen(mech);
   ok("heavy blast: goes down", fell, `up=${mechUp(mech).toFixed(2)}`);

@@ -977,6 +977,30 @@ function controller(world, mech) {
   const cs = Math.cos(st.heading), sn = Math.sin(st.heading);
   const cmdW = { x: st.cmd.f * sn + st.cmd.l * cs, z: st.cmd.f * cs - st.cmd.l * sn };
   const cmdMag = Math.hypot(st.cmd.f, st.cmd.l), cmdTMag = Math.hypot(st.cmdT.f, st.cmdT.l);
+  // MAGIC: RUNAWAY ARREST (relaxed-physics license, 2026-08-02). The
+  // uncommanded catch-march is this project's recurring monster: commands
+  // at zero, a stumble cancels the stop, and brake foot-placement PUMPS
+  // instead of braking — v ratchets 0.3 -> 2.8 in two seconds and the
+  // frame dies (s3 post-stop trace; same signature as the manual-jets and
+  // assist cascades). Regime-scoped so certified trajectories never see
+  // it: zero command AND speed beyond anything a healthy uncommanded walk
+  // reaches (stop transients peak ~0.75; bound 1.0).
+  // Scope guards: only UPRIGHT runaways (R4 > 0.9 — a toppling machine is
+  // beyond horizontal braking, and blast/shove mortality must stay real),
+  // and never inside the about-face (the maneuver owns its dynamics).
+  if (st.mode === "WALK" && cmdTMag < 0.05 && cmdMag < 0.1 && hull.R[4] > 0.9 && !st.aboutFace) {
+    const spA = Math.hypot(_comV.x, _comV.z);
+    if (spA > 1.0) st._arrestT = 0.9; // LATCHED: unlatching at the bound let the ratchet re-pump (36.4 -> 37.7, still died)
+  }
+  if ((st._arrestT || 0) > 0 && hull.R[4] < 0.88) st._arrestT = 0; // toppling: release
+  if ((st._arrestT || 0) > 0) {
+    st._arrestT -= dt;
+    st.stopping = true;
+    st.recoverT = Math.max(st.recoverT, 0.6);
+    const kA = Math.min(0.6, 8.0 * dt);
+    hull.v.x -= hull.v.x * kA; hull.v.z -= hull.v.z * kA;
+    if (Math.hypot(_comV.x, _comV.z) < 0.35) st._arrestT = 0;
+  }
   // capture point + MV plan (pelvis ref advances at the commanded velocity)
   mechCom(mech, _com, _comV);
   const comRel = { x: _com.x, y: Math.max(0.5, _com.y - groundRef), z: _com.z };
