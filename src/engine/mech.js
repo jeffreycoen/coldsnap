@@ -2158,7 +2158,11 @@ function controller(world, mech) {
     const inSSw = st.mode === "WALK" && st.swing != null;
     // and FROZEN when single support is already strained — the return swing
     // finishing off a stressed stance was the last rear-aim fall
-    const wRate = (inSSw ? (hull.R[4] < 0.97 ? 0 : 0.6) : 1.1) * dt;
+    // recovery slews the waist GENTLY in every phase (advisor): swinging
+    // the 1800kg torso at full rate into a recovering frame is the
+    // historic aiming-fall combination — the SS-only freeze left DS
+    // recovery windows exposed (audit: turn -> aim -> fall, twice)
+    const wRate = (st.recoverT > 0 ? 0.3 : inSSw ? (hull.R[4] < 0.97 ? 0 : 0.6) : 1.1) * dt;
     // (advisor NEGATIVE result, recorded: a phase-locked torso reaction
     // wheel — waist winding against the turn each SS — moved the turn
     // rate NOT AT ALL at certified waist slew (~2400 N*m*s per stroke

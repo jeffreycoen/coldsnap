@@ -194,6 +194,12 @@ export default function MechRange({ onExit }) {
       }
       if (S.keys.KeyA) S.yawT += 0.7 * dt;
       if (S.keys.KeyD) S.yawT -= 0.7 * dt;
+      // desktop held-turn pivots too (advisor): keyboard turning was still
+      // grinding at machine rate (2 deg/s) with no pivot path
+      S.keyTurnT = (S.keys.KeyA || S.keys.KeyD) ? (S.keyTurnT || 0) + dt : 0;
+      if (S.keyTurnT > 0.6 && mech.state.mode === "WALK" && !mech.state.aboutFace) { mechPivot(world, mech); S.keyTurnT = 0; }
+      if (!S.keys.KeyA && !S.keys.KeyD && S.keyTurnPrev && mech.state.afLive && mech.state.aboutFace) { mech.state.aboutFace = null; mech.state.headingT = mech.state.heading; S.yawT = mech.state.heading; mech.state.recoverT = Math.max(mech.state.recoverT || 0, 0.5); }
+      S.keyTurnPrev = S.keys.KeyA || S.keys.KeyD;
       // RIGHT stick = TURN (design 2026-08-01: cannon controls independent
       // of turning). Horizontal deflection is a turn-RATE command feeding
       // the same steering-locked heading target as A/D — the stick cannot
@@ -235,7 +241,11 @@ export default function MechRange({ onExit }) {
       // reticle with it; the arrows trim on top. Desktop keeps mouse aim.
       if (isTouch) {
         if (S.aimHeld) S.aimOff = Math.max(-0.85, Math.min(0.85, S.aimOff + S.aimHeld * 0.9 * dt));
-        mech.aimYaw = yawNow + S.aimOff;
+        // aim rides the COMMAND frame, not measured yaw (advisor): the
+        // measured anchor fed hull wobble through the 1800kg waist at
+        // frame rate — post-turn recoveries jittered the torso into
+        // topples (audit falls in the turn->aim->fire sequence, twice)
+        mech.aimYaw = mech.state.heading + S.aimOff;
       } else mech.aimYaw = S.aimYaw;
       mech.aimRange = S.aimRange;
       // chassis-follow ONLY while moving: turning works well inside the
