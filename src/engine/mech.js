@@ -33,6 +33,7 @@ export function deriveGait(L, comH, halfStance, foot, g = 9.81) {
     splayMax: 1.40,
     yawPerStep: 8 * Math.PI / 180,
     turnRate: (8 * Math.PI / 180) / (tSS + tDS),
+    _period0: tSS + tDS, // certified period at derivation — machinery time-constants scale by stepPeriod/_period0
     travelRate: 0.6 * Math.sqrt(L / 2.95),
     kDCM: 2.0,
     kCapture: 1.0,
@@ -226,7 +227,8 @@ function iterHinge(j, dt, locksOnly = false) {
     V.cross(_h1, j._rAw, ax); iMulVec(a.invIw, _h1, _h2); V.cross(_h1, _h2, j._rAw); k += V.dot(_h1, ax);
     V.cross(_h1, j._rBw, ax); iMulVec(b.invIw, _h1, _h2); V.cross(_h1, _h2, j._rBw); k += V.dot(_h1, ax);
     const cAx = ai === 0 ? j._C.x : ai === 1 ? j._C.y : j._C.z;
-    const bias = clamp((0.2 / dt) * cAx, -4, 4);
+    const wk = j.weldK || 1; // weld stiffness knob (phys factorial): scales lock bias authority
+    const bias = clamp((0.2 * wk / dt) * cAx, -4 * wk, 4 * wk);
     const P = -(vRel + bias) / Math.max(1e-9, k);
     V.scale(_h3, ax, P);
     V.addScaled(a.v, a.v, _h3, -a.invM);
@@ -239,7 +241,8 @@ function iterHinge(j, dt, locksOnly = false) {
     const n = pi === 0 ? j._p1 : j._p2;
     V.sub(_h1, b.w, a.w);
     const Cdot = V.dot(_h1, n);
-    const bias = clamp((0.2 / dt) * V.dot(j._eAng, n), -6, 6);
+    const wk2 = j.weldK || 1;
+    const bias = clamp((0.2 * wk2 / dt) * V.dot(j._eAng, n), -6 * wk2, 6 * wk2);
     const k = projK(a, b, n);
     const lam = -(Cdot + bias) / Math.max(1e-9, k);
     angImpulse(a, b, n, lam);
@@ -1016,7 +1019,7 @@ function controller(world, mech) {
   // reaction couples at laterally-offset feet were the yaw pump.
   {
     const W = mech.mass * world.gravity;
-    const tauCap = 0.13 * W * mech.geom.comH;
+    const tauCap = (mech.tune.cmgCap || 0.13) * W * mech.geom.comH;
     const hMax = tauCap * 0.5;
     if (mech.cmgH == null) mech.cmgH = { x: 0, y: 0, z: 0 };
     // attitude errors: tilt from R (level target), yaw vs commanded heading
@@ -1284,7 +1287,7 @@ function controller(world, mech) {
   // 570k landing spike then BOTH feet airborne, hy +0.4 hop. hRec drops the
   // ref to the measured hip at touchdown and re-extends at 0.5 m/s.
   if (st.hRec == null) st.hRec = 0;
-  st.hRec = Math.max(0, st.hRec - 0.5 * dt);
+  st.hRec = Math.max(0, st.hRec - (mech.hRecRate || 0.5) * dt); // touchdown height re-extend rate knob
   // skyhook on the vertical mode: hull mass on gravity-stiff leg springs is
   // underdamped — measured stance load ringing 0 -> 476k -> 0 through SS
   // (trampoline, ballistic windows, xi runaway). Shift the height ref
@@ -1311,6 +1314,8 @@ function controller(world, mech) {
     : (st.mode === "WALK" || (st.recoverT || 0) > 0) ? st.crouchX : 0;
   st.crouchX += clamp(cxTgt - st.crouchX, -0.35 * dt, 0.35 * dt);
   const hipYRef = walkH + (1 - crouch) * (0.995 - 0.93) * g.L - st.hRec + vDamp - st.crouchX;
+  mech._hipYRef = hipYRef; // magic height-rail target (relaxed-physics license)
+  mech._phDS = st.mode === "STAND" || (st.mode === "WALK" && st.phases && st.phases[st.pi] && st.phases[st.pi].kind === "DS");
   // gait-frame axes for catch decisions
   const axes = { fwd: { x: sn, z: cs }, left: { x: cs, z: -sn } };
   // pelvis->CoM offset (heading frame, low-passed): the plan is a COM/xi
@@ -2270,7 +2275,7 @@ export function mechIslandSolve(world, mech) {
   // realization LAG (~0.2s at omega 1.6) that loses the balance race
   // (advisor-2, measured) — stiffen it 4x for the hold only
   const poiseHold = mech.state.poise && mech.state.poise.phase === "hold";
-  const cfm = (poiseHold ? 0.05 : 0.2) * mech.groundC / (dt * dt);
+  const cfm = (poiseHold ? 0.05 : (mech.cfmF || 0.2)) * mech.groundC / (dt * dt); // ground compliance knob
   for (const c of world.contacts) {
     if (!c.mech) continue;
     if (c.a.mechRef === mech || (c.b && c.b.mechRef === mech)) {
@@ -2280,7 +2285,7 @@ export function mechIslandSolve(world, mech) {
   }
   // island: fixed iterations, joints + contacts INTERLEAVED (spec §6)
   for (const j of mech.joints) prepHinge(j, dt);
-  const IT = 12;
+  const IT = mech.solveIT || 12; // phys factorial knob
   for (let it = 0; it < IT; it++) {
     for (const j of mech.joints) iterHinge(j, dt, false);
     for (const c of cs) solveContactOne(c, dt);
@@ -2313,6 +2318,80 @@ export function mechIslandSolve(world, mech) {
     for (const c of cs) if (c.a === leg.foot || c.b === leg.foot) pn += c.pn;
     leg.load = pn / dt;
   }
+  // MAGIC: SOLE ANCHOR (relaxed-physics license, 2026-08-02). Loaded soles
+  // are position-latched with a slip allowance — the eternal solver skate
+  // (constant ~0.05 m/s, friction-blind position writes) dies here instead
+  // of being compensated everywhere downstream. LAST island writer by
+  // design (the poise lesson: anything earlier gets undone by close-out).
+  // The latch DRAGS when demanded displacement exceeds the allowance, so
+  // commanded slides/turn-grinds still work; micro-drift is erased.
+  if ((mech.magicAnchor == null ? 1 : mech.magicAnchor) > 0) {
+    const W9 = mech.mass * world.gravity;
+    if (!mech._anch) mech._anch = { L: null, R: null };
+    for (const side of ["L", "R"]) {
+      const leg = mech.legs[side];
+      const a9 = mech._anch;
+      if (leg.load > 0.28 * W9) {
+        if (!a9[side]) a9[side] = { x: leg.foot.pos.x, z: leg.foot.pos.z };
+        const ax9 = a9[side];
+        const slip = 0.05;
+        let dx9 = leg.foot.pos.x - ax9.x, dz9 = leg.foot.pos.z - ax9.z;
+        const d9 = Math.hypot(dx9, dz9);
+        if (d9 > slip) { const s9 = (d9 - slip) / d9; ax9.x += dx9 * s9; ax9.z += dz9 * s9; dx9 = leg.foot.pos.x - ax9.x; dz9 = leg.foot.pos.z - ax9.z; }
+        leg.foot.pos.x -= dx9 * 0.5; leg.foot.pos.z -= dz9 * 0.5; // pull halfway back per tick — stiff yet not a hard snap
+        leg.foot.v.x *= 0.55; leg.foot.v.z *= 0.55;
+      } else if (leg.load < 0.12 * W9) a9[side] = null;
+    }
+  }
+}
+function magicRide(world, mech) {
+  // MAGIC: RIDE DAMPER (relaxed-physics license, 2026-08-02). Direct
+  // vertical velocity damping on the hull while any sole is loaded — a
+  // shock absorber no servo could build. The touchdown slam (ayP99 ~6.9
+  // m/s^2 measured at cruise) is the biggest roughness component; this
+  // eats it at the body instead of asking the leg chain to.
+  const kR = mech.magicRide == null ? 0 : mech.magicRide;
+  if (mech.state.mode === "FALLEN") return;
+  const W9 = mech.mass * world.gravity;
+  const hull = mech.hull;
+  const loaded = mech.legs.L.load + mech.legs.R.load > 0.25 * W9;
+  if (kR > 0 && loaded) hull.v.y -= hull.v.y * Math.min(0.6, kR * world.dt);
+  // MAGIC: TOUCHDOWN EASE (edge-triggered) — the landing slam is a discrete
+  // event (ayP99 ~7 m/s^2); for a short window after each foot's load-rise
+  // the hull's DOWNWARD velocity is bled hard. Continuous damping alone
+  // made p99 WORSE (+8%: slower sink, harder pop — measured).
+  // MAGIC: HEIGHT RAIL — the SS hip-sink wave (~0.25m servo deflection per
+  // stride by design) is the DOMINANT roughness (RMS 45% of p99: continuous
+  // bounce, not spikes). Pull the hull body straight toward the controller's
+  // own height reference with authority no leg servo could carry.
+  const kH = mech.magicRail == null ? 0 : mech.magicRail;
+  if (kH > 0 && loaded && mech._phDS && mech._hipYRef != null && mech.state.mode !== "FALLEN") {
+    const tgtY = mech._hipYRef - mech.geom.hipY; // hull centre (hipY is negative)
+    const e9 = tgtY - hull.pos.y;
+    const acc9 = Math.max(-8, Math.min(8, e9 * kH - hull.v.y * Math.sqrt(kH) * 1.6));
+    hull.v.y += acc9 * world.dt;
+  }
+  // MAGIC: SWAY SHAPER — bleed only the lateral velocity EXCESS beyond the
+  // gait's own transfer sway (damping all of it wrecks the rhythm — session
+  // law from the Raibert notes)
+  const kS = mech.magicSway == null ? 0 : mech.magicSway;
+  if (kS > 0 && loaded) {
+    const vl9 = hull.v.x, ex9 = Math.abs(vl9) - 0.32;
+    if (ex9 > 0) hull.v.x -= Math.sign(vl9) * Math.min(ex9, ex9 * kS * world.dt);
+  }
+  const kT = mech.magicTd == null ? 0 : mech.magicTd;
+  if (kT > 0) {
+    if (!mech._ldPrev) mech._ldPrev = { L: 0, R: 0 };
+    for (const side of ["L", "R"]) {
+      const ld = mech.legs[side].load;
+      if (mech._ldPrev[side] < 0.10 * W9 && ld > 0.2 * W9 && mech.state.mode === "WALK") mech._tdT = 0.12;
+      mech._ldPrev[side] = ld;
+    }
+    if ((mech._tdT || 0) > 0) {
+      mech._tdT -= world.dt;
+      if (hull.v.y < 0) hull.v.y -= hull.v.y * Math.min(0.8, kT * world.dt);
+    }
+  }
 }
 function stepMechs(world) {
   for (const mech of world.mechs) {
@@ -2323,6 +2402,7 @@ function stepMechs(world) {
     positionalPass(mech, 2, anchor2);
   }
     controller(world, mech);
+    magicRide(world, mech);
     // thrusters: slew to command, apply real force+torque to the torso
     if (mech.thrusters) {
       const torso = mech.waist ? mech.waist.b : mech.hull;
