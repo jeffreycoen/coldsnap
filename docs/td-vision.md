@@ -66,6 +66,7 @@ Working brainstorm, 2026-08-09. Direction only — nothing here is committed unt
 - Same units usable by both sides (symmetry).
 
 ### The bison — all roles worth exploring (order TBD)
+- **Economics (direction, 2026-08-09): prohibitively expensive all-in purchase, not a doctrine gate.** Buying it means forgoing other defenses/attackers — a different game for that run. Arrives mid-run (saving takes waves; intel lines can notice the underbuilt garrison). Its wreck is a massive salvage prize — losing it feeds the enemy. Same price both sides. Trap-vs-dominant balance is a probe-harness question.
 - **Hero unit**: player drives it; towers are the static line. Leverages the sandbox control scheme — the best-feeling thing in the project.
 - **Attacker's weapon**: the enemy fields one against you — narrative mirror of the campaign.
 - **Deployable AI asset**: expensive mobile tower.
@@ -83,6 +84,12 @@ Gap between this TD and an RTS, as separable steps:
 2. an opponent that **holds ground** (Stage B territory)
 3. the player **fielding mobile units** (infantry, bison)
 4. information as a resource (fog/scouting) — unexplored, later
+5. **multiplayer — THE VISION (2026-08-09): two players entering the website and sharing the battlefield**, one defending, one attacking.
+   - Architecture falls out of choices already made: seed-deterministic engine + round-committed decisions = twin simulations exchanging only **decision packets at wave boundaries** (shared map seed, then purchases/placements/orders per round). No state sync, no authoritative server.
+   - Hard requirement from day one: **DEPOT combat uses seeded rng only** — no unseeded Math.random() anywhere in sim-affecting code (the TD's aim/cooldown jitter would desync twins).
+   - Continuous input (live bison driving, mid-wave strikes) breaks boundary-only sync — multiplayer v1 is orders-at-boundaries; hero-driving stays single-player until input-streamed lockstep is proven.
+   - Needs a small signaling service for WebRTC pairing (Pages is static) — the project's first server, tiny.
+   - Build late, design for it now: seeded rng + decisions-as-data cost almost nothing today.
 - **Side selection at start (decided 2026-08-09): the player chooses to defend the depot or attack it.**
   - Attack mode = the attacker economy played by hand: stipend + results income, buy from the roster, commit at wave start, direct the assault. Designing Stage A symmetric means attack mode is mostly UI on top of the same rules.
   - New cost is the **defender AI** (places towers/walls/infantry against procedural terrain) — harder brain than the wave-shopper. Sequence: attacker AI first (player defends), builder AI second (unlocks player attack).
@@ -102,6 +109,8 @@ Gap between this TD and an RTS, as separable steps:
 - **What moves the front**: unit presence.
 - **Infantry command**: placed like towers, with orders — DEFEND (they hold position) or ATTACK (they advance).
 - **Run structure**: not endless — total victory or 50 waves.
+- **Doctrine**: roguelike draft (offered picks, not a fixed tree).
+- **Intel delivery**: between-wave dispatch card — teletyped bureau voice, ACKNOWLEDGE to dismiss, last dispatch re-readable from the bar. Reuses campaign brief machinery. (proposed 2026-08-09; pending Jeff's confirm)
 
 ## Open questions
 - Which bison role ships first? (needs more discussion)
