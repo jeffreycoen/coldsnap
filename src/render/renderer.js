@@ -175,9 +175,12 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const NORM_BG = new THREE.Color(0x8080ff);
   const grad = makeGradientMap();
   const toon = (color, extra) => Object.assign(new THREE.MeshToonMaterial({ color, gradientMap: grad }), extra || {});
-  // camera: fixed RA orientation; only position moves (texel-snapped)
+  // camera: fixed RA orientation; only position moves (texel-snapped).
+  // "tactical" (tower defense): 34° pitch + a wider frustum band + deeper
+  // zoom range — same rig otherwise, so the texel-snap path is untouched.
+  const tac = opts.camera === "tactical";
   const cam = new THREE.OrthographicCamera(-40, 40, 25, -25, 2, 400);
-  const yawA = (194 * Math.PI) / 180, pitchA = (32 * Math.PI) / 180, camDist = 150;
+  const yawA = (194 * Math.PI) / 180, pitchA = ((tac ? 34 : 32) * Math.PI) / 180, camDist = 150;
   const back = { x: Math.sin(yawA) * Math.cos(pitchA), y: Math.sin(pitchA), z: Math.cos(yawA) * Math.cos(pitchA) };
   cam.position.set(back.x * camDist, back.y * camDist, back.z * camDist);
   cam.lookAt(0, 0, 0);
@@ -509,8 +512,8 @@ export function makeRenderer(canvas, world0, opts = {}) {
   let cssW = 0, cssH = 0, halfH = 22, halfW = 36, zoom = 1;
   function applyFrustum() {
     const a = cssW / Math.max(1, cssH);
-    if (a >= 1) { halfH = 22 / zoom; halfW = halfH * a; }
-    else { halfW = 18.5 / zoom; halfH = Math.min(halfW / a, halfW * 2.9); }
+    if (a >= 1) { halfH = (tac ? 26 : 22) / zoom; halfW = halfH * a; }
+    else { halfW = (tac ? 19 : 18.5) / zoom; halfH = Math.min(halfW / a, halfW * (tac ? 2.6 : 2.9)); }
     cam.left = -halfW; cam.right = halfW; cam.top = halfH; cam.bottom = -halfH;
     cam.updateProjectionMatrix();
   }
@@ -537,7 +540,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
     rebuildRTs();
   }
   function setZoom(z) {
-    zoom = Math.max(0.7, Math.min(2, z));
+    zoom = tac ? Math.max(0.5, Math.min(2.6, z)) : Math.max(0.7, Math.min(2, z));
     applyFrustum();
   }
   function setGfx(p) {
@@ -581,6 +584,136 @@ export function makeRenderer(canvas, world0, opts = {}) {
     dummy.updateMatrix();
     mesh.setMatrixAt(i, dummy.matrix);
   }
+  // ---- towers (tower defense): one Group per body, distinct silhouette per
+  // type — ported from ColdsnapTD's renderer. Visual params only; gameplay
+  // stats stay in the game layer. Activated by kind "tower" bodies existing,
+  // so every current mode renders exactly as before.
+  const TOWER_VIS = { mg: { color: 0x5c7a3a, hy: 1.0 }, gun: { color: 0x33619c, hy: 1.5 }, mortar: { color: 0x8a5a1c, hy: 0.8 }, rocket: { color: 0x8a3a3a, hy: 1.2 }, frost: { color: 0x3a7a9c, hy: 1.35 } };
+  const towerGroups = new Map();
+  function buildTowerMesh(type) {
+    const spec = TOWER_VIS[type] || TOWER_VIS.gun;
+    const g = new THREE.Group();
+    const steel = toon(spec.color), dark = toon(new THREE.Color(spec.color).multiplyScalar(0.55).getHex());
+    const iron = toon(0x2a2f36), snowM = toon(0xeef4fa);
+    // a revetment of sandbags on a timber frame: reads at 20px, and it is not
+    // another pile of grey cubes
+    const bagM = toon(0x6f6a58), bagM2 = toon(0x5d594a);
+    for (let iy = 0; iy < 3; iy++) {
+      const r2 = 1.02 - iy * 0.05, n2 = 10;
+      for (let i = 0; i < n2; i++) {
+        const a = (i / n2) * Math.PI * 2 + iy * 0.31;
+        const bag = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.3, 0.34), i % 2 ? bagM : bagM2);
+        bag.position.set(Math.cos(a) * r2, -spec.hy + 0.2 + iy * 0.31, Math.sin(a) * r2);
+        bag.rotation.y = -a; bag.castShadow = true; g.add(bag);
+      }
+    }
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(1.5, spec.hy * 1.25, 1.5), toon(0x3b3029));
+    frame.position.y = -spec.hy * 0.05; frame.castShadow = true; g.add(frame);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.2, spec.hy * 1.5, 0.2), toon(0x2a221d));
+      post.position.set(sx * 0.72, -spec.hy * 0.02, sz * 0.72); post.castShadow = true; g.add(post);
+    }
+    const capStone = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.22, 1.9), toon(0xeef4fa));
+    capStone.position.y = spec.hy * 0.62; g.add(capStone);
+    if (type === "mg") {
+      const slit = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.26, 1.2), steel); slit.position.y = spec.hy * 0.38; g.add(slit);
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.16, 1.8), snowM); cap.position.y = spec.hy * 0.82; g.add(cap);
+      const t = new THREE.Group(); t.position.y = spec.hy * 0.42; g.add(t); g.userData.turret = t;
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.11, 1.5), iron); bar.position.z = 0.75; t.add(bar);
+    } else if (type === "gun") {
+      const deck = new THREE.Mesh(new THREE.BoxGeometry(2.16, 0.3, 2.16), dark); deck.position.y = spec.hy * 0.72; deck.castShadow = true; g.add(deck);
+      const t = new THREE.Group(); t.position.y = spec.hy * 1.05; g.add(t); g.userData.turret = t;
+      const mant = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.62, 1.15), dark); mant.castShadow = true; t.add(mant);
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 2.3), iron); bar.position.z = 1.2; t.add(bar);
+      const brake = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.26, 0.3), iron); brake.position.z = 2.25; t.add(brake);
+    } else if (type === "mortar") {
+      const lip = new THREE.Mesh(new THREE.CylinderGeometry(1.24, 1.24, 0.2, 8), snowM); lip.position.y = spec.hy * 0.72; g.add(lip);
+      const t = new THREE.Group(); t.position.y = spec.hy * 0.5; g.add(t); g.userData.turret = t;
+      const tube = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.9, 0.3), iron);
+      tube.position.set(0, 0.55, 0.2); tube.rotation.x = -0.62; tube.castShadow = true; t.add(tube);
+      const bipod = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.1, 0.1), iron); bipod.position.set(0, 0.2, 0.6); t.add(bipod);
+    } else if (type === "rocket") {
+      const t = new THREE.Group(); t.position.y = spec.hy * 0.6; g.add(t); g.userData.turret = t;
+      const rack = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.9, 1.0), dark); rack.castShadow = true; t.add(rack);
+      for (let i = 0; i < 4; i++) {
+        const tube = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.24, 1.5), iron);
+        tube.position.set((i % 2 ? 0.32 : -0.32), (i < 2 ? 0.26 : -0.16), 0.7);
+        t.add(tube);
+      }
+      t.rotation.x = -0.22;
+    } else {
+      // frost: a growth of ice on a stone plinth
+      const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.95, 0), new THREE.MeshToonMaterial({ color: 0x9fe0ff, gradientMap: grad, transparent: true, opacity: 0.9 }));
+      core.position.y = spec.hy * 0.25; core.castShadow = true; g.add(core);
+      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.5, 5), new THREE.MeshToonMaterial({ color: 0xd6f2ff, gradientMap: grad, transparent: true, opacity: 0.92 }));
+      spike.position.y = spec.hy * 0.95; g.add(spike);
+      for (let i = 0; i < 3; i++) {
+        const s = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.8, 4), new THREE.MeshToonMaterial({ color: 0xbfe8ff, gradientMap: grad, transparent: true, opacity: 0.85 }));
+        const a = i * 2.09;
+        s.position.set(Math.cos(a) * 0.65, -spec.hy * 0.1, Math.sin(a) * 0.65);
+        s.rotation.z = Math.cos(a) * -0.45; s.rotation.x = Math.sin(a) * 0.45;
+        g.add(s);
+      }
+      g.userData.spin = true;
+    }
+    return g;
+  }
+  // frost aura rings under live frost towers
+  const frostRingMesh = pool(new THREE.RingGeometry(0.72, 1.0, 40), new THREE.MeshBasicMaterial({ color: 0x8fd8ff, transparent: true, opacity: 0.14, depthWrite: false }), 16, false);
+  frostRingMesh.layers.set(1);
+
+  // ---- build overlay (tower defense): ghost pad + range preview + objective
+  // marker + spawn banners. Lazy nulls until the game layer calls them, so
+  // nothing here exists for the other modes.
+  const OK_C = new THREE.Color(0x4aff8c), BAD_C = new THREE.Color(0xff6b5e);
+  let hoverPad = null, hoverRing = null, hoverFill = null, objMark = null;
+  const overlay = {
+    // ghost build cursor: pad snapped to a cell (cs meters), ring/fill at range r
+    setHover(on, x, z, y, r, okFlag, cs) {
+      if (!hoverPad) {
+        hoverPad = new THREE.Mesh(new THREE.BoxGeometry(1, 0.12, 1), new THREE.MeshBasicMaterial({ color: 0x4aff8c, transparent: true, opacity: 0.45, depthWrite: false }));
+        hoverPad.layers.set(1); scene.add(hoverPad);
+        hoverRing = new THREE.Mesh(new THREE.RingGeometry(0.97, 1.0, 44), new THREE.MeshBasicMaterial({ color: 0x9fdcff, transparent: true, opacity: 0.55, depthWrite: false }));
+        hoverRing.rotation.x = -Math.PI / 2; hoverRing.layers.set(1); scene.add(hoverRing);
+        hoverFill = new THREE.Mesh(new THREE.CircleGeometry(1, 44), new THREE.MeshBasicMaterial({ color: 0x6fb6dd, transparent: true, opacity: 0.09, depthWrite: false }));
+        hoverFill.rotation.x = -Math.PI / 2; hoverFill.layers.set(1); scene.add(hoverFill);
+      }
+      hoverPad.visible = !!on; hoverRing.visible = !!on && r > 0; hoverFill.visible = hoverRing.visible;
+      if (!on) return;
+      hoverPad.scale.set(cs - 0.08, 1, cs - 0.08);
+      hoverPad.position.set(x, y + 0.08, z);
+      hoverPad.material.color.copy(okFlag ? OK_C : BAD_C);
+      if (r > 0) {
+        hoverRing.position.set(x, y + 0.12, z); hoverRing.scale.set(r, r, 1);
+        hoverFill.position.set(x, y + 0.1, z); hoverFill.scale.set(r, r, 1);
+      }
+    },
+    // objective: mast + flag + pulsing ground ring at the depot
+    setObjective(x, z, y) {
+      if (!objMark) {
+        objMark = new THREE.Group();
+        const mast = new THREE.Mesh(new THREE.BoxGeometry(0.16, 6.0, 0.16), toon(0x2a2f36));
+        mast.position.y = 3.0; mast.castShadow = true; objMark.add(mast);
+        const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.95), new THREE.MeshBasicMaterial({ color: 0x4aff8c, side: THREE.DoubleSide }));
+        flag.position.set(0.85, 5.3, 0); objMark.add(flag);
+        const ring = new THREE.Mesh(new THREE.RingGeometry(2.7, 3.4, 30), new THREE.MeshBasicMaterial({ color: 0x4aff8c, transparent: true, opacity: 0.5, depthWrite: false }));
+        ring.rotation.x = -Math.PI / 2; ring.position.y = 0.1; ring.layers.set(1); objMark.add(ring);
+        scene.add(objMark);
+      }
+      objMark.position.set(x, y, z);
+    },
+    // spawn banners: red cloth on a pole at each entry point
+    setBanners(pts) {
+      for (const sp of pts) {
+        const g = new THREE.Group();
+        const pole = new THREE.Mesh(new THREE.BoxGeometry(0.14, 3.2, 0.14), toon(0x2a2f36)); pole.position.y = 1.6; g.add(pole);
+        const cloth = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.9), new THREE.MeshBasicMaterial({ color: 0xd8433a, side: THREE.DoubleSide })); cloth.position.set(0.72, 2.6, 0); g.add(cloth);
+        g.position.set(sp.x, F.heightAt(sp.x, sp.z), sp.z);
+        scene.add(g);
+      }
+    },
+  };
+
   function render(dt, focus, aim, turretYaw) {
     resize();
     water.visible = world.water != null; // dry ranges have no pond to float
@@ -606,6 +739,37 @@ export function makeRenderer(canvas, world0, opts = {}) {
       if (g.userData.turret) g.userData.turret.rotation.y = turretYaw;
     }
     for (const [id, g] of vehMap) if (!world.byId.has(id)) { scene.remove(g); vehMap.delete(id); }
+    // towers (tower defense): group per body; turret tracks target, recoil on
+    // fire, hurt shrink, frost spin + aura ring
+    let fri = 0;
+    for (const b of world.bodies) {
+      if (b.kind !== "tower") continue;
+      let g = towerGroups.get(b.id);
+      if (!g) { g = buildTowerMesh(b.towerType); towerGroups.set(b.id, g); scene.add(g); }
+      g.position.set(b.pos.x, b.pos.y, b.pos.z);
+      const hurt = b.maxHp ? b.hp / b.maxHp : 1;
+      if (g.userData.turret) {
+        const tgt = b.targetId ? world.byId.get(b.targetId) : null;
+        if (tgt && tgt.alive) g.userData.turret.rotation.y = Math.atan2(tgt.pos.x - b.pos.x, tgt.pos.z - b.pos.z);
+        const since = world.t - (b.flashT || -9);
+        g.userData.turret.position.z = since < 0.14 ? -(1 - since / 0.14) * 0.3 : 0;
+      }
+      if (g.userData.spin) g.rotation.y = world.t * 0.5;
+      g.scale.setScalar(hurt < 0.999 ? 0.94 + 0.06 * hurt : 1);
+      if (world.t - (b.hitT || -9) < 0.12) g.scale.multiplyScalar(1.06);
+      if (b.towerType === "frost" && b.alive && fri < 16 && b.auraR) {
+        // RingGeometry faces +Z: lay it flat on the snow
+        dummy.position.set(b.pos.x, F.heightAt(b.pos.x, b.pos.z) + 0.15, b.pos.z);
+        dummy.rotation.set(-Math.PI / 2, 0, 0);
+        dummy.scale.set(b.auraR, b.auraR, 1);
+        dummy.updateMatrix();
+        frostRingMesh.setMatrixAt(fri, dummy.matrix);
+        dummy.rotation.set(0, 0, 0);
+        fri++;
+      }
+    }
+    frostRingMesh.count = fri; frostRingMesh.instanceMatrix.needsUpdate = true;
+    for (const [id, g] of towerGroups) if (!world.byId.has(id)) { scene.remove(g); towerGroups.delete(id); }
     // units: table-driven multi-part infantry with a speed-keyed march swing.
     // Limb quats compose body * local-X(phase); dead men freeze mid-stride and
     // take the winter-kill tint per role.
@@ -964,5 +1128,5 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // never calls this and keeps the shipped look exactly
   function setGrade(g) { postMat.uniforms.uGrade.value = Math.max(-1, Math.min(1, g || 0)); }
   const project = (x, y, z) => { const v = new THREE.Vector3(x, y, z); v.project(cam); return { x: v.x, y: v.y }; };
-  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
+  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, overlay, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
 }

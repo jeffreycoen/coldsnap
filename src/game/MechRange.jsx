@@ -68,7 +68,7 @@ export default function MechRange({ onExit }) {
 
     const S = { acc: 0, last: performance.now(), keys: {}, yawT: Math.PI, aimYaw: null, aimRange: 26, aimOff: 0, aiT: 0, orbit: 0, tankFire: [2.5, 5.2], raf: 0, hudT: 0, dead: false, joyId: null, jx: 0, jy: 0, rsId: null, rx: 0, rngId: null, aimHeld: 0, fireHeld: false };
     window.__MECHRANGE__ = {
-      world, mech,
+      world, mech, R, addBody: (o) => addBody(world, o),
       reissue: () => { respawnMech(world, mech, 0, 41, Math.PI); S.yawT = Math.PI; S.aimYaw = null; mech.aimYaw = null; S.aimOff = 0; S.aimHeld = 0; S.rx = 0; mechCommand(mech, { travel: 0, lateral: 0, heading: 0 }); },
       aim: (dir) => { S.aimHeld = dir; },
       fireHeld: (v) => { S.fireHeld = v; },
