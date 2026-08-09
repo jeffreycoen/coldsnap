@@ -69,12 +69,21 @@ Working brainstorm, 2026-08-09. Direction only — nothing here is committed unt
 
 ### The bison — all roles worth exploring (order TBD)
 - **Economics (direction, 2026-08-09): prohibitively expensive all-in purchase, not a doctrine gate.** Buying it means forgoing other defenses/attackers — a different game for that run. Arrives mid-run (saving takes waves; intel lines can notice the underbuilt garrison). Its wreck is a massive salvage prize — losing it feeds the enemy. Same price both sides. Trap-vs-dominant balance is a probe-harness question.
-- **Hero unit**: player drives it; towers are the static line. Leverages the sandbox control scheme — the best-feeling thing in the project.
-- **Attacker's weapon**: the enemy fields one against you — narrative mirror of the campaign.
-- **Deployable AI asset**: expensive mobile tower.
-- **Escort/objective**: convoy inversion mission.
+- **DECIDED (2026-08-09): the bison is player-driven when active — you drive OR build, never both.** Driving is your action for the wave; no AI bison. (Multiplayer note: live driving needs the lockstep caveat — boundary-sync v1 may restrict it.)
+- Escort/objective scenario remains a later option.
 
 ## 4. Tech — both kinds
+
+### Doctrine pool (draft v1, 2026-08-09)
+Flat pool + a rare **ultimate** tier (round 9+ slot, once per run). 1-of-3 per draft; cadence rounds 1/2/3 then every 3rd.
+
+**Defender:** ENTRENCH (walls cheaper/tougher) · MARKSMAN PROGRAM (snipers upgraded, elevation bonus doubled) · SALVAGE CORPS (recover more, faster) · STRIKE PRIORITY (off-map strike cheaper, shorter cooldown) · FROST DOCTRINE (stronger/wider slow fields) · RANGEFINDERS (better wind/lead compensation) · DEEP MAGAZINES (fire cadence up) · KILLING GROUND (bounties up) · CIVIL DEFENSE (village pays more, buildings tougher) · MASON'S LEVY (slow free wall repair) · REVETMENTS (armor thresholds up — more glancing hits) · FINAL PROTECTIVE FIRE (all-tower cadence surge while depot threatened)
+
+**Attacker:** SIEGE TRAIN (mortar/tank discount) · INFILTRATION (sappers cheaper/faster) · MASS LEVY (conscripts cheap, wave cap up) · ARMORED SPEARHEAD (tank armor/discount) · CREEPING BARRAGE (attacker off-map strike) · FIELD PROMOTION (surviving units gain accuracy — veterancy) · FORAGE PARTIES (territory income up) · SMOKE DISCIPLINE (units harder to hit while moving) · COMBAT ENGINEERS (units salvage wrecks on the move) · GRENADIER CORPS (grenadier upgrade) · HARDENED PLATE (armor thresholds up) · PIONEER ROADS (grade rough ground — enables mech routes)
+
+**Shared:** WIND DISCIPLINE · SALVAGE RIGHTS (win contested piles) · QUARTERMASTER (stipend up) · FLEXIBLE COMMAND (one reroll per draft)
+
+**Ultimates (rare):** THE FRAME — unlocks banking for the mech (both sides). Mech stays AI-driven, road-bound by engine truth (walker needs graded roads; value varies by seed — treated as flavor, dispatch attaches a "route survey"; PIONEER ROADS mitigates). Defender mech paces roads inside green.
 - **Doctrine picks**: a few one-way choices per run (roguelike-flavored); cheap to build, multiplies procedural replay value.
 - **Banked research**: scrap → tech as an alternative spending sink within a run (tower accuracy, wall cost, strike cooldown…).
 - Symmetric: the attacker banks into its own tree (armored conscripts, faster sappers, mech discount).
@@ -120,8 +129,7 @@ Gap between this TD and an RTS, as separable steps:
 
 ## Open questions
 - Territory influence-field proposal above: confirm (incl. green-gates-build-rights).
-- Bison build order — proposal: AI-driven first (attacker fields it; forces the reusable bison AI), hero-driving second, escort scenario last.
-- Doctrine pool contents: ~12-15 picks/side + shared set, drafted as a table next session. Sub-question: rare picks (bison discount once/run) or flat pool?
+- Doctrine pool v1 above: confirm/adjust picks; numbers are tuning.
 - Intel-line content design: what the attacker's spending looks like through the bureau voice.
 - Wind tuning: strength envelope, drift rate, attacker AI compensation error. (tuning)
 - Multiplayer signaling: free-tier worker vs paste-a-code on pure Pages.
