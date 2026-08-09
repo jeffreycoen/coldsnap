@@ -135,6 +135,7 @@ const run = (w, secs) => { const n = Math.round(secs / w.dt); for (let i = 0; i 
   for (let i = 0; i < mA.joints.length; i++) {
     if (mA.joints[i].kp === 0) continue; // Den Hartog dampers (arms): gravity is the spring
     if (mA.joints[i].name === "waist") continue; // turret ring, not a gait servo
+    if (mA.joints[i].name.includes("hipYaw")) continue; // critically damped (2*sqrt(kp*I)) by design — the gamma law's zeta ~0.25 detonates the soft-grounded yaw axis
     // cap-bound joints diverge by design (kd <= 0.9*I/h wins over kp*gamma*h;
     // the reference's own gamma groups split the same way) — compare only
     // where the derivation, not the cap, sets kd

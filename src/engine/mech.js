@@ -647,9 +647,19 @@ export function buildMech(world, opts = {}) {
   const comH = comBuild - (1 - 0.93) * L * 0.7; // standing crouch pulls the CoM down a touch
   mech.geom = { L, L1: R.L1 * s, L2: R.L2 * s, ankleH: R.ankleH * s, hipX: R.hipX * s, hipY: R.hipY * s, footFwd: R.foot.fwdOff * s, standHip: R.ankleH * s + 0.93 * L, comH };
   mech.k = deriveGait(L, comH, R.hipX * s, { halfLen: R.foot.hz * s, halfWid: R.foot.hx * s, ankleOffX: R.foot.fwdOff * s }, world.gravity);
+  // YAW-RIG GAIT (sweep 2026-08-09): the hip yaw DoF adds sole-yaw
+  // compliance the pendulum-derived period can't damp — sway pumps over
+  // ~7 steps, capture steps eat the stride, and the walk cycles
+  // surge/collapse/STAND forever (0.19 m/s at command 0.5). A 21% longer
+  // single support + kCapture 1.3 lets each stance settle the sway it
+  // inherits: 0.44 m/s ensemble mean, 0/6 falls (plateau 0.70-0.74 tSS;
+  // raibert/servo-stiffness/latch all measured flat).
+  mech.k.tSS *= 1.21;
+  mech.k.stepPeriod = mech.k.tSS + mech.k.tDS;
+  mech.k.kCapture = 1.3;
   mech.groundC = (0.01 * L) / (M * world.gravity); // spec §4, m/N
   // loop gains, sweepable (defaults = shipped tune)
-  mech.tune = { fzBase: 0.95, fzKp: 2.0, fzKd: 1.6, fzCap: 1.15, floorG: 0.85, katt: 1.2, cmgKp: 2.2, cmgKd: 0.55, cmgSlew: 1.5, yawSS: 1.0, yawSSd: 1.0, turnDS: 0.35, windCap: 0.25, afRate: 0.25, standTurn: 0.8, kickLean: 0.5, kickDur: 1.15, kickReach: 1.2, kickH: 0.9 } // punt-suite 4/4 (advisor sweep 2026-08-01); // sortie-swept: full SS yaw spring + heavy SS damping + slow DS turn = 4/6 clean vs 0/6
+  mech.tune = { fzBase: 0.95, fzKp: 2.0, fzKd: 1.6, fzCap: 1.15, floorG: 0.85, katt: 1.2, cmgKp: 2.2, cmgKd: 0.55, cmgSlew: 1.5, yawSS: 1.0, yawSSd: 1.0, turnDS: 0.35, windCap: 0.25, afRate: 0.25, standTurn: 0.8, yawLatch: 0.12, kickLean: 0.5, kickDur: 1.15, kickReach: 1.2, kickH: 0.9 } // punt-suite 4/4 (advisor sweep 2026-08-01); // sortie-swept: full SS yaw spring + heavy SS damping + slow DS turn = 4/6 clean vs 0/6
   // retune the arm dampers with FINAL mass + true gait omega (build-time
   // first pass used running totals — Den Hartog is sensitive to mu/wSway)
   if (mech.arms) for (const sd of ["L", "R"]) {
@@ -1929,7 +1939,7 @@ function controller(world, mech) {
           // via the absorb servo skewed every stride (walk speed HALVED).
           // Small errors grind out through the sole like the pre-yaw rig;
           // only genuine turn absorb is worth holding.
-          yaw: st.heading + clamp(wrapPi(Math.atan2(sw.foot.R[6], sw.foot.R[8]) - st.heading), -0.12, 0.12),
+          yaw: st.heading + clamp(wrapPi(Math.atan2(sw.foot.R[6], sw.foot.R[8]) - st.heading), -(mech.tune.yawLatch ?? 0.12), mech.tune.yawLatch ?? 0.12),
         };
         st.lastSwing = landSide;
         st.swing = null;
