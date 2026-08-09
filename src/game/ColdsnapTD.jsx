@@ -8,10 +8,11 @@
 // the pre-port file.
 import React, { useEffect, useRef, useState } from "react";
 import {
-  makeField, makeWorld, addBody, addWeld, stepWorld, fireProjectile, explode,
-  aimSolve, applyDamage, mulberry32, __mech__,
+  makeField, makeWorld, addBody, addWeld, stepWorld, fireProjectile, fireVolley,
+  explode, aimSolve, applyDamage, mulberry32, __mech__,
 } from "../engine/core.js";
 import { makeRenderer } from "../render/renderer.js";
+import { makeGameAudio } from "../platform/audio.js";
 
 const { V, v3, wake } = __mech__;
 
@@ -239,6 +240,9 @@ const TOWER_SPECS = {
   frost:  { range: 12, fireRate: 0,    projSpeed: 0,  dmg: 0,  blastR: 0,   kv: 0,   cost: 20, hp: 85,  label: "FROST",  icon: "❄", kind: "mg",    slow: 0.42, hy: 1.35, blurb: "Halves their pace in radius" },
 };
 const TOWER_ORDER = ["mg", "gun", "mortar", "rocket", "frost"];
+// off-map rocket support: the engine's volley (strike marker, delayed rain).
+// Not a tower — a command. Long rearm keeps it a decision, not a mortar.
+const STRIKE = { cost: 45, cd: 40, rockets: 6, label: "STRIKE", icon: "▼", blurb: "Six rockets on the mark" };
 
 function stepTowers(world) {
   const dt = world.dt;
@@ -363,6 +367,7 @@ function stepTown(world, grid, town, onRuin) {
     if (standing > b.n0 * 0.66) continue;
     b.ruined = true;
     for (const ci of b.cells) { const c = grid.cells[ci]; c.blocked = false; c.building = null; }
+    world.events.push({ type: "collapse", x: b.x, y: world.field.heightAt(b.x, b.z) + 2, z: b.z });
     if (onRuin) onRuin(b);
   }
 }
@@ -724,6 +729,7 @@ export default function ColdsnapTD() {
       const objG = grid.worldToGrid(OBJ_POS.x, OBJ_POS.z);
       computeFlowField(grid, objG.gx, objG.gz);
       R = makeRenderer(canvas, world, { town: false, camera: "tactical" });
+      const A = makeGameAudio();
       R.setDressing({ rocks: ROCKS, ponds: PONDS });
       R.overlay.setObjective(OBJ_POS.x, OBJ_POS.z, field.heightAt(OBJ_POS.x, OBJ_POS.z));
       R.overlay.setBanners(SPAWN_POINTS);
@@ -738,9 +744,10 @@ export default function ColdsnapTD() {
         started: false, gameOver: false, victory: false,
         paused: false, speed: 1,
         focus: { x: 0, y: field.heightAt(0, 6), z: 6 },
+        strikeCd: 0,
         zoom: 1, acc: 0, t: 0, fps: 60, fpsAcc: 0, fpsN: 0,
         hover: null, pointer: null, toasts: [],
-        hudT: 0, keys: {}, sellById: null,
+        hudT: 0, keys: {}, sellById: null, audio: A,
       };
       stateRef.current = S;
 
@@ -841,6 +848,16 @@ export default function ColdsnapTD() {
         const g = grid.worldToGrid(p.x, p.z);
         if (!grid.inBounds(g.gx, g.gz)) { S.inspectId = null; return; }
         const cell2 = grid.cells[grid.idx(g.gx, g.gz)];
+        if (S.mode === "strike" && !S.sellMode) {
+          S.inspectId = null;
+          if (S.strikeCd > 0) { toast("STRIKE REARMING — " + Math.ceil(S.strikeCd) + "s"); return; }
+          if (S.resources < STRIKE.cost) { toast("NO SCRAP"); return; }
+          S.resources -= STRIKE.cost;
+          S.strikeCd = STRIKE.cd;
+          fireVolley(world, p.x, p.z, STRIKE.rockets, "player");
+          toast("STRIKE INBOUND");
+          return;
+        }
         if (S.sellMode) { S.inspectId = null; sellAt(g.gx, g.gz); }
         else if (cell2.wallId && world.byId.has(cell2.wallId)) S.inspectId = cell2.wallId;
         else { S.inspectId = null; buildAt(g.gx, g.gz, S.mode); }
@@ -850,6 +867,7 @@ export default function ColdsnapTD() {
       const pointers = new Map();
       let pinchD0 = 0, pinchZ0 = 1, dragTotal = 0, downPt = null;
       const onPointerDown = (e) => {
+        A.ensure();
         canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
         pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         if (pointers.size === 1) { dragTotal = 0; downPt = { x: e.clientX, y: e.clientY }; }
@@ -898,7 +916,8 @@ export default function ColdsnapTD() {
         R.setZoom(S.zoom);
       };
       const onKey = (e, down) => { S.keys[e.key.toLowerCase()] = down; };
-      const kd = (e) => onKey(e, true), ku = (e) => onKey(e, false);
+      const kd = (e) => { A.ensure(); if (e.key === "m" || e.key === "M") { A.setMuted(!A.muted); setHud((h) => ({ ...h, muted: A.muted })); } onKey(e, true); };
+      const ku = (e) => onKey(e, false);
       const blockTouch = (e) => e.preventDefault();
       canvas.addEventListener("pointerdown", onPointerDown);
       canvas.addEventListener("pointermove", onPointerMove);
@@ -993,8 +1012,11 @@ export default function ColdsnapTD() {
               if (grid.inBounds(g.gx, g.gz)) {
                 const cell = grid.cells[grid.idx(g.gx, g.gz)];
                 const wp = grid.gridToWorld(g.gx, g.gz);
-                const spec = S.mode === "wall" ? null : TOWER_SPECS[S.mode];
-                S.hover = { x: wp.x, z: wp.z, valid: !cell.blocked && !cell.wallId && !cell.ice, range: spec ? spec.range : 0 };
+                if (S.mode === "strike") S.hover = { x: p.x, z: p.z, valid: S.strikeCd <= 0, range: 7 };
+                else {
+                  const spec = S.mode === "wall" ? null : TOWER_SPECS[S.mode];
+                  S.hover = { x: wp.x, z: wp.z, valid: !cell.blocked && !cell.wallId && !cell.ice, range: spec ? spec.range : 0 };
+                }
               } else S.hover = null;
             } else S.hover = null;
           } else S.hover = null;
@@ -1029,6 +1051,7 @@ export default function ColdsnapTD() {
             }
             if (S.started && !S.gameOver && !S.victory) S.resources += 2.2 * sdt;
           }
+          S.strikeCd = Math.max(0, S.strikeCd - sdt);
           // physics: fixed substeps; events accumulate across them and are
           // drained once per frame — never cleared mid-step
           S.acc += sdt;
@@ -1041,6 +1064,9 @@ export default function ColdsnapTD() {
           if (S.acc > STEP * 6) S.acc = 0;   // clamp, don't spiral
           const evs = drainEvents();
           R.consume(evs);
+          A.setListener(S.focus.x, S.focus.z, 46 / Math.max(0.6, S.zoom));
+          A.consume(evs);
+          A.tick(world, dt);
           // build overlay + render
           if (S.hover) R.overlay.setHover(true, S.hover.x, S.hover.z, field.heightAt(S.hover.x, S.hover.z), S.hover.range, S.hover.valid, GRID_CS);
           else R.overlay.setHover(false);
@@ -1064,6 +1090,7 @@ export default function ColdsnapTD() {
               started: S.started, gameOver: S.gameOver, victory: S.victory,
               mode: S.mode, sellMode: S.sellMode,
               paused: S.paused, speed: S.speed,
+              strikeCd: Math.ceil(S.strikeCd), muted: A.muted,
               toasts: S.toasts.map((t) => t.txt),
               inspect: (() => {
                 if (!S.inspectId) return null;
@@ -1100,6 +1127,7 @@ export default function ColdsnapTD() {
         window.removeEventListener("keydown", kd);
         window.removeEventListener("keyup", ku);
         for (const k of ["__TD__", "__TDBUILD__", "__TDSPAWN__", "__TDSIM__", "__TDGFX__", "__TDWRECK__", "__TDPROJ__", "__TDUNITS__", "__TDSTART__"]) delete window[k];
+        A.dispose();
         if (R) R.dispose();
         stateRef.current = null;
       };
@@ -1122,8 +1150,15 @@ export default function ColdsnapTD() {
   };
   const startGame = () => {
     const S = stateRef.current; if (!S) return;
+    if (S.audio) S.audio.ensure();
     S.started = true;
     setHud((h) => ({ ...h, started: true }));
+  };
+  const toggleMute = () => {
+    const S = stateRef.current; if (!S || !S.audio) return;
+    S.audio.ensure();
+    S.audio.setMuted(!S.audio.muted);
+    setHud((h) => ({ ...h, muted: S.audio.muted }));
   };
   const sellInspected = () => { const S = stateRef.current; if (S && S.inspectId && S.sellById) S.sellById(S.inspectId); };
 
@@ -1157,7 +1192,10 @@ export default function ColdsnapTD() {
             </button>
           </>
         )}
-        <div style={{ ...P.stat, marginLeft: "auto", opacity: 0.65 }}>{hud.fps} fps</div>
+        <button style={{ ...P.btn, marginLeft: "auto", padding: isTouch ? "5px 10px" : "4px 10px", opacity: hud.muted ? 0.5 : 1 }} onClick={toggleMute}>
+          {hud.muted ? "🔇" : "🔊"}
+        </button>
+        <div style={{ ...P.stat, opacity: 0.65 }}>{hud.fps} fps</div>
       </div>
 
       {hud.toasts && hud.toasts.length > 0 && (
@@ -1195,6 +1233,13 @@ export default function ColdsnapTD() {
               </div>
             );
           })}
+          <div
+            style={{ ...P.slot, borderColor: !hud.sellMode && hud.mode === "strike" ? "#ff7a5e" : "#48515f", color: "#ffab8a", opacity: hud.strikeCd > 0 ? 0.45 : hud.resources >= STRIKE.cost ? 1 : 0.45, minWidth: isTouch ? 56 : 52 }}
+            onClick={() => setMode("strike")}>
+            <div style={{ fontSize: 16 }}>{STRIKE.icon}</div>
+            <div>{hud.strikeCd > 0 ? hud.strikeCd + "s" : STRIKE.label}</div>
+            <div style={{ color: "#ffd27a" }}>◆{STRIKE.cost}</div>
+          </div>
           <div style={{ ...P.slot, borderColor: hud.sellMode ? "#ffb45e" : "#48515f", color: hud.sellMode ? "#ffb45e" : "#e6ebf1", minWidth: isTouch ? 56 : 52 }}
             onClick={toggleSell}>
             <div style={{ fontSize: 16 }}>✕</div>

@@ -9,6 +9,7 @@ import { makeRenderer } from "../render/renderer.js";
 import { detectTouch } from "./runner/trials.js";
 import { BUILDERS } from "./scenario.js";
 import { COLORS, FONT } from "../ui/theme.js";
+import { makeGameAudio } from "../platform/audio.js";
 
 export default function MechRange({ onExit }) {
   const canvasRef = useRef(null);
@@ -65,6 +66,7 @@ export default function MechRange({ onExit }) {
     }
     for (const h of hostiles) h._hp0 = h.hp;
     const R = makeRenderer(canvasRef.current, world, { town: false });
+    const A = makeGameAudio();
 
     const S = { acc: 0, last: performance.now(), keys: {}, yawT: Math.PI, aimYaw: null, aimRange: 26, aimOff: 0, aiT: 0, orbit: 0, tankFire: [2.5, 5.2], raf: 0, hudT: 0, dead: false, joyId: null, jx: 0, jy: 0, rsId: null, rx: 0, rngId: null, aimHeld: 0, fireHeld: false };
     window.__MECHRANGE__ = {
@@ -85,6 +87,7 @@ export default function MechRange({ onExit }) {
     const joyBase = () => ({ x: 86, y: window.innerHeight - 130 });
     const rsBase = () => ({ x: window.innerWidth - 86, y: window.innerHeight - 130 });
     const onPD = (e) => {
+      A.ensure();
       if (e.target.closest && e.target.closest("button")) return;
       if (e.pointerType === "mouse") { S.fireHeld = true; mechFire(world, mech); return; } // desktop: fire IMMEDIATELY on mousedown — a quick click released before the next loop tick never fired (audit-caught); holding still auto-fires
       const c = joyBase(), a = rsBase();
@@ -189,7 +192,9 @@ export default function MechRange({ onExit }) {
     const focus = { x: 0, y: 3, z: 0 };
     window.__MECHRANGE__.dbg = { focus, hull: null, trajEnd: null }; // perceptual-measurement taps (render-side only)
     const down = (e) => {
+      A.ensure();
       if (e.repeat) return;
+      if (e.code === "KeyM") { A.setMuted(!A.muted); }
       S.keys[e.code] = true;
       if (e.code === "KeyC") { mechPunt(world, mech); }
       if (e.code === "KeyX") { mechPoise(world, mech, "L"); }
@@ -373,6 +378,9 @@ export default function MechRange({ onExit }) {
         S.acc -= world.dt;
       }
       R.consume(evs);
+      A.setListener(mech.hull.pos.x, mech.hull.pos.z, 50);
+      A.consume(evs);
+      A.tick(world, dt);
       const h = mech.hull;
       // CAMERA (perceptual campaign): critically-damped spring follow with
       // the gait band filtered out. The raw 4/dt lerp carried 82% of the
@@ -472,6 +480,7 @@ export default function MechRange({ onExit }) {
       window.removeEventListener("touchcancel", onTE);
       window.removeEventListener("pointercancel", onPU);
       delete window.__MECHRANGE__;
+      A.dispose();
       R.dispose();
     };
   }, []);

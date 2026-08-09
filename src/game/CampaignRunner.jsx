@@ -10,7 +10,7 @@ import {
   snapAim, recoverBison, worldHash, heading,
   aimSolve,
 } from "../engine/core.js";
-import { makeAudio } from "./runner/audio.js";
+import { makeGameAudio } from "../platform/audio.js";
 import { Typed } from "./runner/Typed.jsx";
 import { PHYS_CAUSES, LABEL_COLORS, detectTouch, makeTrials } from "./runner/trials.js";
 import { makeActions } from "./runner/actions.js";
@@ -96,7 +96,7 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
       isTouch, touch: { joyId: null, jx: 0, jy: 0, drive: { t: 0, s: 0 }, aimId: null, aimJoyId: null, aimV: { x: 0, y: 0 }, ax: 0, ay: 0, moved: 0, downT: 0, pts: new Map() },
       trial: { idx: 0, prog: 0, flashT: 0, t0: 0, volleyCounts: new Map() },
       weapon: "main",
-      medals: {}, labels: [], audio: makeAudio(),
+      medals: {}, labels: [], audio: makeGameAudio(),
     };
     stateRef.current = S;
     // THE GRADE: the record as palette, set at deployment (campaign-only —
@@ -157,7 +157,7 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
       return S.trialLog.events.filter((e) => e.type === "kill" && e.kind === "unit" && e.group !== subj).length;
     };
     const advanceTrial = (skipped) => {
-      S.audio.trial();
+      S.audio.jingleTrial();
       const t = TRIALS[S.trial.idx];
       if (t) {
         let title = "COMMENDATION — " + t.title;
@@ -198,7 +198,7 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
     // the silent completion the bureau didn't ask for: subjects cleared off
     // the sheet, all alive. Logged UNFULFILLED — DEVIATION, no commendation.
     const advanceDeviation = (t) => {
-      S.audio.trial();
+      S.audio.jingleTrial();
       const el = Math.max(0.1, S.world.t - S.trial.t0);
       const dispersed = S.world.bodies.filter((b) => b.group === t.alt.group && b.alive).length;
       const desc = TRIALS[S.trial.idx + 1] ? "Next: " + TRIALS[S.trial.idx + 1].title : "Order complete. Returning to the order book.";
@@ -316,8 +316,7 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
       S.labels.push({ x: e.x, y: (e.y || 2) + 1.4, z: e.z, text: e.cause, t: 1.15, color: LABEL_COLORS[e.cause] || "#fff" });
       try { if (S.isTouch && navigator.vibrate) navigator.vibrate(PHYS_CAUSES.has(e.cause) ? 18 : 9); } catch (err) {}
       if (S.labels.length > 10) S.labels.shift();
-      S.audio.kill();
-      if (e.cause === CAUSE.DROWN) S.audio.splash();
+      S.audio.jingleKill();
       onTrialKill(e);
     };
     // arcade achievements are suppressed on campaign deployments — the
@@ -586,7 +585,6 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
               if (b2.pos.y < w.field.heightAt(b2.pos.x, b2.pos.z) + td.objective.drop || b2.R[4] < 0.8) {
                 S.trial.felled[g] = true;
                 S.trial.prog++;
-                S.audio.crack();
                 S.toasts.push({ id: S.toastSeq++, title: `STRUCTURE AT GRADE · ${S.trial.prog}/${td.need}`, desc: "Roof rating confirmed: zero.", t: 3.4 });
                 if (S.trial.prog >= td.need) advanceTrial();
               }
@@ -663,14 +661,11 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
         if (e.type === "kill") onKill(e);
         else if (e.type === "ach") onAch(e);
       }
-      let boomed = false;
-      for (const e of evs) {
-        if (e.type === "boom" && !boomed && now - (S.lastBoomT || 0) > 90) { S.audio.boom(); S.lastBoomT = now; boomed = true; }
-        else if (e.type === "muzzle") S.audio.fire();
-        else if (e.type === "gmuzzle") S.audio.fire();
-        else if (e.type === "splash") S.audio.splash();
-        else if (e.type === "weldbreak" && e.ice && now - (S.lastCrackT || 0) > 70) { S.audio.crack(); S.lastCrackT = now; }
-      }
+      // sim audio: the shared engine spatializes the event stream and rumbles
+      // the continuous state (bison engine, moving masonry) itself
+      S.audio.setListener(S.focus.x, S.focus.z, 44 / Math.max(0.6, S.zoom || 1));
+      S.audio.consume(evs);
+      S.audio.tick(w, dt);
       R.consume(evs);
       persistSave();
       stateSave();
@@ -787,7 +782,7 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
       setGfx: (p) => R.setGfx(p),
       getState: () => ({ t: S.world.t, bodies: S.world.bodies.length, tally: { ...S.tally }, ach: [...S.world.ach.unlocked], total: S.world.ach.total, hash: worldHash(S.world), medals: { ...S.medals }, trial: { idx: S.trial.idx, prog: S.trial.prog, id: TRIALS[S.trial.idx] ? TRIALS[S.trial.idx].id : "free", free: S.trial.idx >= TRIALS.length } }),
       skipTrial: () => advanceTrial(true),
-      recover: () => { if (S.cds.recover <= 0 && recoverBison(S.world)) { S.cds.recover = 2.5; S.audio.hook(); } },
+      recover: () => { if (S.cds.recover <= 0 && recoverBison(S.world)) { S.cds.recover = 2.5; S.audio.jingleHook(); } },
       freezePool: () => { S.world.pg.freeze(); S.toasts.push({ id: S.toastSeq++, title: "THE POOL HAS FROZEN", desc: "Thin ice. It remembers weight.", t: 4 }); },
       spawnWingman: () => {
         const w = S.world, lead = w.byId.get(w.bisonId);
@@ -820,6 +815,7 @@ export default function CampaignRunner({ entry, onExit, onComplete, record }) {
       window.removeEventListener("pointercancel", onPointerUp);
       window.removeEventListener("contextmenu", onCtx);
       window.removeEventListener("wheel", onWheel);
+      try { S.audio.dispose(); } catch (e) {}
       try { R.dispose(); } catch (e) {}
       if (typeof window !== "undefined" && window.__COLDSNAP__ === api) delete window.__COLDSNAP__;
       if (stateRef.current === S) stateRef.current = null;

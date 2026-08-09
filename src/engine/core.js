@@ -416,12 +416,13 @@ function wakeIsland(world, b) {
 export function fireProjectile(world, from, dir, speed, spec) {
   const p = { pos: v3(from.x, from.y, from.z), v: v3(dir.x * speed, dir.y * speed, dir.z * speed), life: 0, spec, r: 0.18 };
   world.projectiles.push(p);
-  world.events.push({ type: "muzzle", x: from.x, y: from.y, z: from.z, dx: dir.x, dy: dir.y, dz: dir.z });
+  world.events.push({ type: "muzzle", x: from.x, y: from.y, z: from.z, dx: dir.x, dy: dir.y, dz: dir.z, kind: spec.kind || "shell" });
   return p;
 }
 export function fireVolley(world, x, z, n = 6, attacker = "player") {
   const id = world.volleySeq++;
   world.strikeAt = { x, z, until: world.t + 1.35 }; // strike marker: rockets land ~1.2s after the call
+  world.events.push({ type: "strike", x, z }); // audio cue (events are not hashed)
   for (let i = 0; i < n; i++) {
     const ox = (world.rng() - 0.5) * 7, oz = (world.rng() - 0.5) * 7;
     const from = v3(x + ox - 6, world.field.heightAt(x, z) + 55, z + oz - 6);
