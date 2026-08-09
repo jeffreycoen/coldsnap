@@ -1,7 +1,7 @@
 import puppeteer from "puppeteer-core";
 const browser = await puppeteer.launch({ protocolTimeout: 600000, executablePath: "/usr/bin/chromium", headless: true, args: ["--no-sandbox", "--disable-gpu", "--enable-unsafe-swiftshader"] });
 const page = await browser.newPage();
-await page.goto("http://localhost:4173/coldsnap/?seed=11", { waitUntil: "networkidle0" });
+await page.goto("http://localhost:4173/coldsnap/?seed=12", { waitUntil: "networkidle0" });
 await page.evaluate(() => document.querySelector('[data-menu="towerdef"]').click());
 await page.waitForFunction(() => typeof window.__TDSIM__ === "function", { timeout: 20000 });
 const r = await page.evaluate(() => {

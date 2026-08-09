@@ -18,7 +18,7 @@ try {
   await page.setViewport({ width: 960, height: 600 });
   const pageErrors = [];
   page.on("pageerror", (e) => pageErrors.push(String(e)));
-  await page.goto(URL + "?seed=11", { waitUntil: "networkidle0" });
+  await page.goto(URL + "?seed=12", { waitUntil: "networkidle0" });
   await page.evaluate(() => document.querySelector('[data-menu="towerdef"]').click());
   await page.waitForFunction(() => typeof window.__TDSIM__ === "function", { timeout: 20000 });
   await page.evaluate(() => window.__TDSTART__());

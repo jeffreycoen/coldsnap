@@ -20,9 +20,17 @@ const { V, v3, wake } = __mech__;
 // ============================================================== the map
 // 56x56 grid of 2m cells. Enemies enter from the south treeline and walk
 // north to the depot on the plateau.
-const GRID_CS = 2.0, GRID_W = 28, GRID_H = 56; // half the old width (Jeff: the map was twice as wide as it needed to be) — three lanes still fit, chokes just matter more
+const GRID_CS = 2.0, GRID_W = 28, GRID_H = 56; // canonical frame: u across (28 cells), v along the assault axis (56)
 const GRID_OX = -(GRID_W * GRID_CS) / 2, GRID_OZ = -(GRID_H * GRID_CS) / 2;
-const OBJ_POS = { x: 0, z: GRID_OZ + GRID_H * GRID_CS - 7 };
+// ORIENTATION: the rectangular playfield lies in one of four world
+// orientations per seed — the enemy comes from whichever edge the seed
+// says. Generation stays CANONICAL (u, v with v running spawn->depot);
+// these two transforms are the only doorway between frames.
+let ORIENT = 0;
+const fwdU = (u, v) => ORIENT === 0 ? { x: u, z: v } : ORIENT === 1 ? { x: -v, z: u } : ORIENT === 2 ? { x: -u, z: -v } : { x: v, z: -u };
+const fwdDir = (du, dv) => ORIENT === 0 ? { x: du, z: dv } : ORIENT === 1 ? { x: -dv, z: du } : ORIENT === 2 ? { x: -du, z: -dv } : { x: dv, z: -du };
+const invW = (x, z) => ORIENT === 0 ? { u: x, v: z } : ORIENT === 1 ? { u: z, v: -x } : ORIENT === 2 ? { u: -x, v: -z } : { u: -z, v: x };
+let OBJ_POS = { x: 0, z: 49 };
 // ================================================= procedural map
 // Every run is a new field order. The DOCTRINE is fixed, the ground is not:
 // the south THIRD is no-man's-land — open snow, a broken ruin, the treeline
@@ -31,7 +39,7 @@ const OBJ_POS = { x: 0, z: GRID_OZ + GRID_H * GRID_CS - 7 };
 // benches behind it. Passes, ponds, buildings, roads all come off one seed
 // (mulberry32 — same generator the engine trusts), validated for
 // connectivity before a seed is allowed to ship.
-let SPAWN_POINTS = [], PONDS = [], ROCKS = [], TOWN = [], ROADS = [], PASSES = [], BANDS = [], MAP_SEED = 0;
+let SPAWN_POINTS = [], PONDS = [], ROCKS = [], TOWN = [], ROADS = [], PASSES = [], BANDS = [], MAP_SEED = 0, SPAWN_U = [];
 function genMap(seed) {
   const r = mulberry32(seed);
   const bands = [-17 + (r() - 0.5) * 6, 7 + (r() - 0.5) * 8, 31 + (r() - 0.5) * 6];
@@ -67,7 +75,7 @@ function genMap(seed) {
     const x = -18 + r() * 36, z = -12 + r() * 48, rad = 5.5 + r() * 2.5;
     if (passes.flat().some((g) => Math.abs(x - g.x) < 9 && Math.abs(z - g.z) < 14)) continue;
     if (roadDist(x, z) < rad + 6) continue; // a pond ON the road bowls the boss over (25 stumbles, measured)
-    if (Math.hypot(x - OBJ_POS.x, z - OBJ_POS.z) < 16) continue;
+    if (Math.hypot(x - 0, z - 49) < 16) continue;
     if (ponds.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 6)) continue;
     ponds.push({ x, z, r: rad, level: 0 });
   }
@@ -110,15 +118,28 @@ function genMap(seed) {
     town.push({ id: "oldruin" + placed, x, z, nx: 4, nz: 4, ny: 3, door: 0, ruin: 0.5 });
     placed++;
   }
-  return { seed, bands, passes, rocks, ponds, spawns, town, roads };
+  // stamp the canonical layout into the world orientation. Buildings are
+  // axis-aligned lattices, so odd orientations swap their footprints.
+  const T = (o) => { const w = fwdU(o.x, o.z); o.x = w.x; o.z = w.z; return o; };
+  for (const k of rocks) T(k);
+  for (const q of ponds) T(q);
+  for (const t of town) { T(t); if (ORIENT % 2) { const nx0 = t.nx; t.nx = t.nz; t.nz = nx0; t.door = Math.min(t.door, t.nx - 1); } }
+  const spawnU = spawns.map((sp) => sp.x);
+  for (const sp of spawns) T(sp);
+  for (const band of passes) for (const g of band) T(g);
+  for (const route of roads) for (const pt of route) { const w = fwdU(pt[0], pt[1]); pt[0] = w.x; pt[1] = w.z; }
+  return { seed, bands, passes, rocks, ponds, spawns, spawnU, town, roads };
 }
 // validate + install: a seed only ships if every spawn can reach the depot
 function makeMap(seed) {
   for (let attempt = 0; attempt < 10; attempt++) {
     const sd = seed + attempt * 7919;
+    ORIENT = sd % 4;
+    OBJ_POS = fwdU(0, 49);
     const m = genMap(sd);
     MAP_SEED = sd; BANDS = m.bands; PASSES = m.passes; ROCKS = m.rocks;
     PONDS = m.ponds; SPAWN_POINTS = m.spawns; TOWN = m.town; ROADS = m.roads;
+    SPAWN_U = m.spawnU;
     const g = makeGrid(null);
     for (const t of TOWN) { // stamp footprints exactly as buildTown will
       const hx = (t.nx * MASON.pitch) / 2, hz = (t.nz * MASON.pitch) / 2;
@@ -149,13 +170,18 @@ function buildTdTerrain(field, seed = 11) {
     // rolling snowfield climbing north in three TERRACES, each step riding
     // its ridge band — the map reads as benched high ground, not a ramp.
     // Mortars arc over the lips; guns on a bench own the bench below.
-    const stepUp = (z0, w, h2) => { const t = Math.min(1, Math.max(0, (z - z0) / w + 0.5)); return h2 * t * t * (3 - 2 * t); };
+    const cuv = invW(x, z); // terraces climb along the CANONICAL assault axis
+    const stepUp = (v0, w, h2) => { const t = Math.min(1, Math.max(0, (cuv.v - v0) / w + 0.5)); return h2 * t * t * (3 - 2 * t); };
     let y = 2.0
       + Math.sin(x * 0.075 + 1.3) * 0.42
       + Math.cos(z * 0.061 - 0.6) * 0.38
       + Math.sin((x + z) * 0.032) * 0.30
       + (r() - 0.5) * 0.06
       + stepUp(BANDS[0] - 1, 10, 1.8) + stepUp(BANDS[1] - 1, 10, 2.0) + stepUp(BANDS[2] - 1, 10, 2.2);
+    // THE WORLD ENDS at the playfield rim: past it the shelf breaks off and
+    // drops away — the map is the map, not an infinite plain
+    const over = Math.max(0, Math.abs(cuv.u) - 29, Math.abs(cuv.v) - 57);
+    if (over > 0) y = Math.max(-6, y - over * over * 0.55);
     for (const k of ROCKS) {
       const d = Math.hypot(x - k.x, z - k.z) / k.r;
       if (d < 1.6) y += k.h * Math.exp(-d * d * 2.1);
@@ -254,8 +280,8 @@ function makeGrid(field) {
   const G = {
     cells, w: GRID_W, h: GRID_H, cs: GRID_CS, ox: GRID_OX, oz: GRID_OZ,
     idx: (gx, gz) => gz * GRID_W + gx,
-    worldToGrid: (x, z) => ({ gx: Math.floor((x - GRID_OX) / GRID_CS), gz: Math.floor((z - GRID_OZ) / GRID_CS) }),
-    gridToWorld: (gx, gz) => ({ x: GRID_OX + (gx + 0.5) * GRID_CS, z: GRID_OZ + (gz + 0.5) * GRID_CS }),
+    worldToGrid: (x, z) => { const c = invW(x, z); return { gx: Math.floor((c.u - GRID_OX) / GRID_CS), gz: Math.floor((c.v - GRID_OZ) / GRID_CS) }; },
+    gridToWorld: (gx, gz) => fwdU(GRID_OX + (gx + 0.5) * GRID_CS, GRID_OZ + (gz + 0.5) * GRID_CS),
     inBounds: (gx, gz) => gx >= 0 && gx < GRID_W && gz >= 0 && gz < GRID_H,
     cellAt(x, z) {
       const g = G.worldToGrid(x, z);
@@ -537,8 +563,9 @@ function stepEnemies(world, grid) {
     if (t.sleeping) wake(t);
     const cell = grid && grid.cellAt(t.pos.x, t.pos.z);
     if (cell && cell.dist < 1e8 && (cell.dx || cell.dz)) {
-      t.goal = { x: t.pos.x + cell.dx * 9, z: t.pos.z + cell.dz * 9 };
-    } else if (!t.goal) t.goal = { x: 0, z: 40 };
+      const fd = fwdDir(cell.dx, cell.dz);
+      t.goal = { x: t.pos.x + fd.x * 9, z: t.pos.z + fd.z * 9 };
+    } else if (!t.goal) t.goal = { x: OBJ_POS.x, z: OBJ_POS.z };
     // stuck reflex: full throttle and no motion for 3s means the road is a
     // lie — open fire on whatever stands there, rock included
     const sp2 = Math.hypot(t.v.x, t.v.z);
@@ -642,8 +669,9 @@ function stepEnemies(world, grid) {
         // they close slowly while firing rather than standing still
         if (cell && cell.dist < 1e8) {
           const sp = spec.speed * 0.35 * u.frostMul;
-          u.v.x += (cell.dx * sp - u.v.x) * Math.min(1, 4 * dt);
-          u.v.z += (cell.dz * sp - u.v.z) * Math.min(1, 4 * dt);
+          const fd = fwdDir(cell.dx, cell.dz);
+          u.v.x += (fd.x * sp - u.v.x) * Math.min(1, 4 * dt);
+          u.v.z += (fd.z * sp - u.v.z) * Math.min(1, 4 * dt);
           faceTravel(u, dt);
           continue;
         }
@@ -683,8 +711,9 @@ function stepEnemies(world, grid) {
       }
       if (tgt && cell && cell.dist < 1e8) {
         const sp = 1.3 * u.frostMul;
-        u.v.x += (cell.dx * sp - u.v.x) * Math.min(1, 3 * dt);
-        u.v.z += (cell.dz * sp - u.v.z) * Math.min(1, 3 * dt);
+        const fd = fwdDir(cell.dx, cell.dz);
+        u.v.x += (fd.x * sp - u.v.x) * Math.min(1, 3 * dt);
+        u.v.z += (fd.z * sp - u.v.z) * Math.min(1, 3 * dt);
         faceTravel(u, dt);
         continue;
       }
@@ -723,8 +752,9 @@ function stepEnemies(world, grid) {
     const onIce = cell.ice;
     const speed = spec.speed * u.frostMul * (onIce ? 1.3 : 1);
     const gain = Math.min(1, spec.gain * (onIce ? 0.4 : 1) * dt);
-    u.v.x += (cell.dx * speed - u.v.x) * gain;
-    u.v.z += (cell.dz * speed - u.v.z) * gain;
+    const fd = fwdDir(cell.dx, cell.dz);
+    u.v.x += (fd.x * speed - u.v.x) * gain;
+    u.v.z += (fd.z * speed - u.v.z) * gain;
     faceTravel(u, dt);
   }
 }
@@ -762,7 +792,7 @@ function makeWaveState() { return { waveIdx: 0, spawnQueue: 0, spawnTimer: 0, sp
 // 3.4 tonnes with a cannon: it does not queue at your wall — it makes a door.
 const TANK = { mass: 3400, hx: 1.5, hy: 0.8, hz: 2.4, hp: 260, bounty: 25, gunCd: 4.6, gunRange: 34, dmg: 30, blastR: 2.5 };
 function spawnTank(world, sp) {
-  const x = sp.x + (Math.random() - 0.5) * 3, z = sp.z + 1;
+  const x = sp.x + (Math.random() - 0.5) * 2.4, z = sp.z + (Math.random() - 0.5) * 2.4;
   const t = addBody(world, { kind: "vehicle", team: 2, mass: TANK.mass, hx: TANK.hx, hy: TANK.hy, hz: TANK.hz, x, y: world.field.heightAt(x, z) + TANK.hy + 0.1, z, hp: TANK.hp, friction: 0.85 });
   t.squad = "waveArmor"; // stepDrive picks it up: aiDrive steers to b.goal, driveHull runs the treads
   t.driverSpec = { throttleHabit: 0.8 };
@@ -773,7 +803,7 @@ function spawnTank(world, sp) {
 function spawnEnemy(world, sp, tag) {
   if (tag === "tank") return spawnTank(world, sp);
   const spec = ENEMY_SPECS[tag] || ENEMY_SPECS[""];
-  const x = sp.x + (Math.random() - 0.5) * 3.4, z = sp.z + (Math.random() - 0.5) * 1.5;
+  const x = sp.x + (Math.random() - 0.5) * 2.6, z = sp.z + (Math.random() - 0.5) * 2.6;
   const u = addBody(world, { kind: "unit", team: 2, mass: spec.mass, hx: spec.hx, hy: spec.hy, hz: spec.hz, x, z, y: world.field.heightAt(x, z) + spec.hy + 0.02, hp: spec.hp, friction: 0.38 });
   u.tag = tag || ""; u.bounty = spec.bounty;
   u.brave = true;                              // the engine's fear reflexes are for civilians
@@ -1017,14 +1047,14 @@ export default function ColdsnapTD() {
       };
       {
         const rT = mulberry32(MAP_SEED ^ 0x517);
-        for (let tx = -26; tx <= 26; tx += 3.2) {
-          const jx = tx + (rT() - 0.5) * 1.6, jz = -54.5 + rT() * 3.2;
-          if (SPAWN_POINTS.some((sp) => Math.hypot(jx - sp.x, jz - sp.z) < 4.5)) continue;
-          if (rockAt(jx, jz)) continue;
-          treeAt(jx, jz);
+        for (let tu = -26; tu <= 26; tu += 3.2) {
+          const w = fwdU(tu + (rT() - 0.5) * 1.6, -54.5 + rT() * 3.2);
+          if (SPAWN_POINTS.some((sp) => Math.hypot(w.x - sp.x, w.z - sp.z) < 4.5)) continue;
+          if (rockAt(w.x, w.z)) continue;
+          treeAt(w.x, w.z);
         }
         const clumps = [];
-        for (let c = 0; c < 3; c++) clumps.push([-20 + rT() * 40, -46 + rT() * 24, 5 + Math.floor(rT() * 3)]);
+        for (let c = 0; c < 3; c++) { const w = fwdU(-20 + rT() * 40, -46 + rT() * 24); clumps.push([w.x, w.z, 5 + Math.floor(rT() * 3)]); }
         for (const [cx, cz, n2] of clumps) {
           for (let i = 0; i < n2; i++) {
             const a = rT() * 6.28, rr = 1.5 + rT() * 4;
@@ -1037,6 +1067,7 @@ export default function ColdsnapTD() {
       const objG = grid.worldToGrid(OBJ_POS.x, OBJ_POS.z);
       computeFlowField(grid, objG.gx, objG.gz);
       R = makeRenderer(canvas, world, { town: false, camera: "tactical" });
+      const EXT = ORIENT % 2 ? { x: 62, z: 34 } : { x: 34, z: 62 };
       const A = makeGameAudio();
       // echo taps come off the granite and the masonry — the only hard
       // faces on an otherwise acoustically dead snowfield
@@ -1057,7 +1088,7 @@ export default function ColdsnapTD() {
         mode: "wall", sellMode: false, inspectId: null,
         started: false, gameOver: false, victory: false,
         paused: false, speed: 1,
-        focus: { x: 0, y: field.heightAt(0, 6), z: 6 },
+        focus: (() => { const w = fwdU(0, 6); return { x: w.x, y: field.heightAt(w.x, w.z), z: w.z }; })(),
         strikeCd: 0,
         zoom: 1, acc: 0, t: 0, fps: 60, fpsAcc: 0, fpsN: 0,
         hover: null, pointer: null, toasts: [],
@@ -1208,8 +1239,8 @@ export default function ColdsnapTD() {
             const ky = (2 * cb.halfH()) / Math.max(1, r.height);
             S.focus.x -= cb.right.x * dx * kx - cb.up.x * dy * ky;
             S.focus.z -= cb.right.z * dx * kx - cb.up.z * dy * ky;
-            S.focus.x = Math.max(-34, Math.min(34, S.focus.x));
-            S.focus.z = Math.max(-62, Math.min(62, S.focus.z));
+            S.focus.x = Math.max(-EXT.x, Math.min(EXT.x, S.focus.x));
+            S.focus.z = Math.max(-EXT.z, Math.min(EXT.z, S.focus.z));
           }
         } else if (pointers.size === 2 && pinchD0 > 0) {
           const ps = [...pointers.values()];
@@ -1259,7 +1290,8 @@ export default function ColdsnapTD() {
         }
         if (ws.waveIdx === WAVES.length - 1) {
           const bSide = MAP_SEED % 2;
-          const m = buildMech(world, { x: SPAWN_POINTS[bSide === 0 ? 0 : 2].x, z: GRID_OZ + 5, yaw: 0 });
+          const bw = fwdU(SPAWN_U[bSide === 0 ? 0 : 2], -51);
+          const m = buildMech(world, { x: bw.x, z: bw.z, yaw: Math.atan2(OBJ_POS.x - bw.x, OBJ_POS.z - bw.z) });
           m._bossSide = bSide;
           m.thrustersOn = true; m.thrustAssist = true;
           m.bossHp = BOSS.hp;
@@ -1348,7 +1380,7 @@ export default function ColdsnapTD() {
       window.__TDARMOR__ = () => world.bodies.filter((b) => b.kind === "vehicle" && b.team === 2).map((b) => ({ x: +b.pos.x.toFixed(1), y: +b.pos.y.toFixed(1), z: +b.pos.z.toFixed(1), hp: b.hp, alive: b.alive, ctl: b.ctl ? { th: +(b.ctl.throttle || 0).toFixed(2), st: +(b.ctl.steer || 0).toFixed(2) } : null, v: +Math.hypot(b.v.x, b.v.z).toFixed(2), goal: b.goal }));
       window.__TDMAP__ = () => ({ seed: MAP_SEED, passes: PASSES.map((b) => b.map((g) => ({ x: +g.x.toFixed(1), z: +g.z.toFixed(1) }))), spawns: SPAWN_POINTS.map((q) => ({ x: +q.x.toFixed(1), z: q.z })), town: TOWN.length });
       window.__TDBOSS__ = (spawn) => {
-        if (spawn && (!world.mechs || !world.mechs.length)) { const bSide = MAP_SEED % 2; const m = buildMech(world, { x: SPAWN_POINTS[bSide === 0 ? 0 : 2].x, z: GRID_OZ + 5, yaw: 0 }); m._bossSide = bSide; m.thrustersOn = true; m.thrustAssist = true; m.bossHp = BOSS.hp; }
+        if (spawn && (!world.mechs || !world.mechs.length)) { const bSide = MAP_SEED % 2; const bw = fwdU(SPAWN_U[bSide === 0 ? 0 : 2], -51); const m = buildMech(world, { x: bw.x, z: bw.z, yaw: Math.atan2(OBJ_POS.x - bw.x, OBJ_POS.z - bw.z) }); m._bossSide = bSide; m.thrustersOn = true; m.thrustAssist = true; m.bossHp = BOSS.hp; }
         const m = world.mechs && world.mechs[0];
         return m && m.hull ? { x: +m.hull.pos.x.toFixed(1), z: +m.hull.pos.z.toFixed(1), hp: Math.round(m.bossHp), falls: m._bossFalls || 0, down: !!world._bossDown } : { down: !!world._bossDown };
       };
@@ -1373,8 +1405,8 @@ export default function ColdsnapTD() {
           if (S.keys.s || S.keys.arrowdown) S.focus.z -= pan;
           if (S.keys.a || S.keys.arrowleft) S.focus.x -= pan * 0.8;
           if (S.keys.d || S.keys.arrowright) S.focus.x += pan * 0.8;
-          S.focus.x = Math.max(-34, Math.min(34, S.focus.x));
-          S.focus.z = Math.max(-62, Math.min(62, S.focus.z));
+          S.focus.x = Math.max(-EXT.x, Math.min(EXT.x, S.focus.x));
+          S.focus.z = Math.max(-EXT.z, Math.min(EXT.z, S.focus.z));
           S.focus.y = field.heightAt(S.focus.x, S.focus.z);
           // hover preview (mouse only — a finger is not hovering)
           if (!isTouch && S.pointer && S.started && !S.gameOver && !S.victory) {
