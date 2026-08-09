@@ -74,7 +74,11 @@ Gap between this TD and an RTS, as separable steps:
 2. an opponent that **holds ground** (Stage B territory)
 3. the player **fielding mobile units** (infantry, bison)
 4. information as a resource (fog/scouting) — unexplored, later
-- Eventual role swap: player can **attack the depot** instead of defending it (not yet — after Stages A/B prove out).
+- **Side selection at start (decided 2026-08-09): the player chooses to defend the depot or attack it.**
+  - Attack mode = the attacker economy played by hand: stipend + results income, buy from the roster, commit at wave start, direct the assault. Designing Stage A symmetric means attack mode is mostly UI on top of the same rules.
+  - New cost is the **defender AI** (places towers/walls/infantry against procedural terrain) — harder brain than the wave-shopper. Sequence: attacker AI first (player defends), builder AI second (unlocks player attack).
+  - Bison-as-hero slots naturally on the attack side — the campaign's narrative mirror made playable.
+  - Win conditions invert cleanly: depot falls vs regiment breaks (attrition pool = attack mode's loss condition).
 - Each step ships as a playable release; HOLD THE DEPOT never breaks along the way.
 
 ## Settled decisions
