@@ -593,11 +593,12 @@ export function explode(world, x, y, z, spec) {
     // no demo or campaign world holds a "tree" body
     if (b.alive && b.kind === "tree") applyDamage(world, b, dmg, { cause: CAUSE.BLAST, attacker: spec.attacker || "world" });
   }
-  // DIVERGENCE (guarded, tower defense): hitStruct ordnance damages static
-  // walls/emplacements — no demo or campaign spec sets it, and those worlds
-  // hold no tower/wall bodies. Separate loop: the impulse loop above skips
-  // invM 0 and pinned statics belong out of it anyway.
-  if (spec.hitStruct) {
+  // DIVERGENCE (guarded, tower defense): blasts damage static structures —
+  // EVERY blast, EVERYONE's ordnance (Jeff: destruction is symmetric and
+  // tactical; your own mortar chips your own wall). world._tdStruct is set
+  // by worlds that hold wall/tower/rock bodies; demo/campaign never scan.
+  // Separate loop: the impulse loop above skips invM 0 statics.
+  if (spec.hitStruct || world._tdStruct) {
     for (const b of world.bodies) {
       if (!b.alive || (b.kind !== "wall" && b.kind !== "tower" && b.kind !== "rock")) continue;
       const dd = Math.hypot(b.pos.x - x, b.pos.y - y, b.pos.z - z);

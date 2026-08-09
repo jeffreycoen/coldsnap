@@ -728,6 +728,7 @@ export default function ColdsnapTD() {
       buildTdTerrain(field);
       const grid = makeGrid(field);
       const world = makeWorld({ field, seed: 11 });
+      world._tdStruct = true; // every blast in this world damages structures — destruction is symmetric
       const town = buildTown(world, grid, field);
       // DESTRUCTIBLE ROCK: every outcrop is a huge-HP body. Bring one down
       // (airstrikes, massed mortars) and its terrain bump is carved out, its
