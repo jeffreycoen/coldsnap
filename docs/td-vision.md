@@ -55,7 +55,9 @@ Working brainstorm, 2026-08-09. Direction only — nothing here is committed unt
 
 ### Territory control
 - Player holds a zone (shaded **green**), enemy holds theirs (shaded **red**); contested ground between.
-- Front advances/retreats with the waves — control zones move, income follows.
+- **Mechanism (proposed): influence field.** Every living unit and standing structure projects control in a radius (structures > units; depot most). Control soaks into the ground and decays slowly — ground stays yours a while after the shooting moves on. The front is the contour where the fields balance. Implementation: coarse grid (~2m cells) under the hood, updated a few times/sec.
+- **Green gates build rights** — build only in your own color. Losing ground compounds; the depot's large radius is the anti-death-spiral floor (a last stand is always buildable).
+- Income follows the field: village buildings pay whoever's color they stand in.
 - Doctrine note: current map law (south third no-man's-land, first ridge = town line) becomes the *starting* front, not a constant.
 
 ## 3. Units beyond towers
@@ -112,9 +114,14 @@ Gap between this TD and an RTS, as separable steps:
 - **Doctrine**: roguelike draft (offered picks, not a fixed tree).
 - **Intel delivery**: between-wave dispatch card — teletyped bureau voice, ACKNOWLEDGE to dismiss, last dispatch re-readable from the bar. Reuses campaign brief machinery. CONFIRMED.
 - **Wave rhythm**: hard stall points between waves — nothing advances until ACKNOWLEDGE. Doubles as the multiplayer sync point.
+- **Draft cadence**: a pick at each of rounds 1, 2, 3, then every 3rd round after.
+- **Victory**: destroy the enemy regiment or depot; otherwise greater economic power at turn 50 wins.
+- **Scope: no v1 cut — the entire plan gets built.** Sequencing is build order, not scope.
 
 ## Open questions
-- Which bison role ships first? (needs more discussion)
-- Doctrine pick timing (per-wave milestone?) and tree contents (must be discussed).
+- Territory influence-field proposal above: confirm (incl. green-gates-build-rights).
+- Bison build order — proposal: AI-driven first (attacker fields it; forces the reusable bison AI), hero-driving second, escort scenario last.
+- Doctrine pool contents: ~12-15 picks/side + shared set, drafted as a table next session. Sub-question: rare picks (bison discount once/run) or flat pool?
 - Intel-line content design: what the attacker's spending looks like through the bureau voice.
-- Wind tuning: strength envelope, drift rate, how much compensation error the attacker AI gets.
+- Wind tuning: strength envelope, drift rate, attacker AI compensation error. (tuning)
+- Multiplayer signaling: free-tier worker vs paste-a-code on pure Pages.
