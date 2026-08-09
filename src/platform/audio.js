@@ -269,7 +269,7 @@ export function makeGameAudio() {
     windPh += dt * (0.13 + Math.sin(windPh * 0.37) * 0.02);
     seen.add("wind");
     const W = getLoop("wind", 300, "bandpass", 0.35);
-    setLoop(W, 0.028 + 0.02 * (0.5 + 0.5 * Math.sin(windPh)), 240 + 140 * (0.5 + 0.5 * Math.sin(windPh * 0.61 + 1.7)), dt);
+    setLoop(W, 0.011 + 0.008 * (0.5 + 0.5 * Math.sin(windPh)), 240 + 140 * (0.5 + 0.5 * Math.sin(windPh * 0.61 + 1.7)), dt);
     // vehicle engines
     for (const b of world.bodies) {
       if (b.kind !== "vehicle" || !b.alive) continue;
