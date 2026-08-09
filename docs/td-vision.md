@@ -110,7 +110,8 @@ Gap between this TD and an RTS, as separable steps:
 - **Infantry command**: placed like towers, with orders — DEFEND (they hold position) or ATTACK (they advance).
 - **Run structure**: not endless — total victory or 50 waves.
 - **Doctrine**: roguelike draft (offered picks, not a fixed tree).
-- **Intel delivery**: between-wave dispatch card — teletyped bureau voice, ACKNOWLEDGE to dismiss, last dispatch re-readable from the bar. Reuses campaign brief machinery. (proposed 2026-08-09; pending Jeff's confirm)
+- **Intel delivery**: between-wave dispatch card — teletyped bureau voice, ACKNOWLEDGE to dismiss, last dispatch re-readable from the bar. Reuses campaign brief machinery. CONFIRMED.
+- **Wave rhythm**: hard stall points between waves — nothing advances until ACKNOWLEDGE. Doubles as the multiplayer sync point.
 
 ## Open questions
 - Which bison role ships first? (needs more discussion)
