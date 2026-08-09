@@ -77,13 +77,26 @@ Working brainstorm, 2026-08-09. Direction only — nothing here is committed unt
 ### Doctrine pool (draft v1, 2026-08-09)
 Flat pool + a rare **ultimate** tier (round 9+ slot, once per run). 1-of-3 per draft; cadence rounds 1/2/3 then every 3rd.
 
-**Defender:** ENTRENCH (walls cheaper/tougher) · MARKSMAN PROGRAM (snipers upgraded, elevation bonus doubled) · SALVAGE CORPS (recover more, faster) · STRIKE PRIORITY (off-map strike cheaper, shorter cooldown) · FROST DOCTRINE (stronger/wider slow fields) · RANGEFINDERS (better wind/lead compensation) · DEEP MAGAZINES (fire cadence up) · KILLING GROUND (bounties up) · CIVIL DEFENSE (village pays more, buildings tougher) · MASON'S LEVY (slow free wall repair) · REVETMENTS (armor thresholds up — more glancing hits) · FINAL PROTECTIVE FIRE (all-tower cadence surge while depot threatened)
+Balance scheme: every common pick ≈ one tower's value (~25 scrap) per 3 rounds in its niche; two effect sizes only — **+20% specialist** (narrow) or **+10% generalist** (broad); every defender pick has an attacker mirror on the same lever so the draft can't structurally favor a side. Numbers below are ratios-as-proposal; absolute values are probe tuning.
 
-**Attacker:** SIEGE TRAIN (mortar/tank discount) · INFILTRATION (sappers cheaper/faster) · MASS LEVY (conscripts cheap, wave cap up) · ARMORED SPEARHEAD (tank armor/discount) · CREEPING BARRAGE (attacker off-map strike) · FIELD PROMOTION (surviving units gain accuracy — veterancy) · FORAGE PARTIES (territory income up) · SMOKE DISCIPLINE (units harder to hit while moving) · COMBAT ENGINEERS (units salvage wrecks on the move) · GRENADIER CORPS (grenadier upgrade) · HARDENED PLATE (armor thresholds up) · PIONEER ROADS (grade rough ground — enables mech routes)
+| Lever | Defender pick | Attacker pick | Effect (both sides) |
+|---|---|---|---|
+| Fortification | ENTRENCH | SIEGE TRAIN | walls −20% cost, +20% hp / mortar+tank −20% cost |
+| Precision | MARKSMAN PROGRAM | GRENADIER CORPS | sniper/gren: +20% accuracy (tighter scatter), +2 range |
+| Cadence | DEEP MAGAZINES | MASS LEVY | towers +10% fire rate / conscripts −20% cost, wave cap +10% |
+| Armor | REVETMENTS | HARDENED PLATE | own structures/units: glancing threshold +20% |
+| Wind & lead | RANGEFINDERS | SMOKE DISCIPLINE | own fire: −20% wind/lead error / enemy fire at moving own units: +20% scatter |
+| Off-map | STRIKE PRIORITY | CREEPING BARRAGE | strike −20% cost, −20% cooldown / unlocks attacker strike (then same discounts) |
+| Economy: ground | CIVIL DEFENSE | FORAGE PARTIES | own-color territory income +20% |
+| Economy: wrecks | SALVAGE CORPS | COMBAT ENGINEERS | salvage yield +20%, recovery radius +20% |
+| Economy: kills | KILLING GROUND | FIELD PROMOTION | bounties +20% / survivors of a wave gain +10% accuracy (stacking, cap 3) |
+| Repair | MASON'S LEVY | PIONEER ROADS | walls self-repair 1 hp/s / grade rough ground along a chosen path (mech routes, faster vehicles) |
+| Specialist | FROST DOCTRINE | INFILTRATION | frost field +20% radius/slow / sappers −20% cost, +20% speed |
+| Crisis | FINAL PROTECTIVE FIRE | FORLORN HOPE | depot threatened: all towers +20% cadence / regiment below 25%: all units +20% speed+accuracy |
 
-**Shared:** WIND DISCIPLINE · SALVAGE RIGHTS (win contested piles) · QUARTERMASTER (stipend up) · FLEXIBLE COMMAND (one reroll per draft)
+**Shared pool (either side may draw):** WIND DISCIPLINE (−10% wind error — stacks with the specialist) · SALVAGE RIGHTS (win contested piles) · QUARTERMASTER (stipend +10%) · FLEXIBLE COMMAND (one reroll per draft, permanent)
 
-**Ultimates (rare):** THE FRAME — unlocks banking for the mech (both sides). Mech stays AI-driven, road-bound by engine truth (walker needs graded roads; value varies by seed — treated as flavor, dispatch attaches a "route survey"; PIONEER ROADS mitigates). Defender mech paces roads inside green.
+**Ultimates (rare, round 9+ slot, once per run):** THE FRAME — unlocks banking for the mech (both sides). Mech stays AI-driven, road-bound by engine truth (walker needs graded roads; value varies by seed — treated as flavor, dispatch attaches a "route survey"; PIONEER ROADS mitigates). Defender mech paces roads inside green.
 - **Doctrine picks**: a few one-way choices per run (roguelike-flavored); cheap to build, multiplies procedural replay value.
 - **Banked research**: scrap → tech as an alternative spending sink within a run (tower accuracy, wall cost, strike cooldown…).
 - Symmetric: the attacker banks into its own tree (armored conscripts, faster sappers, mech discount).
@@ -130,6 +143,6 @@ Gap between this TD and an RTS, as separable steps:
 ## Open questions
 - Territory influence-field proposal above: confirm (incl. green-gates-build-rights).
 - Doctrine pool v1 above: confirm/adjust picks; numbers are tuning.
-- Intel-line content design: what the attacker's spending looks like through the bureau voice.
-- Wind tuning: strength envelope, drift rate, attacker AI compensation error. (tuning)
-- Multiplayer signaling: free-tier worker vs paste-a-code on pure Pages.
+- Intel-line design = mapping table from real AI state → bureau prose (bought armor → "Rail offload observed…"; banking → "Expenditure below establishment. Purpose unassessed."; doctrine picked → prisoner-interview lines). Decisions inside: truth granularity (counts vs strength-words), one-wave delay or live, whether intel can miss. A writing deliverable.
+- Wind tuning: strength envelope, drift rate, attacker AI compensation error. CONFIRMED as tuning work.
+- Multiplayer signaling: **free-tier worker. DECIDED.**
