@@ -90,7 +90,7 @@ function genMap(seed) {
     { t: "yard", nx: 6, nz: 5, ny: 2, roof: false }, { t: "shed", nx: 4, nz: 4, ny: 3 },
     { t: "chapel", nx: 5, nz: 6, ny: 5 }, { t: "keep", nx: 7, nz: 6, ny: 5 },
   ];
-  const town = [{ id: "depot", x: 0, z: 56, nx: 9, nz: 7, ny: 5, door: 4, depot: true }];
+  const town = [{ id: "depot", x: 0, z: 52, nx: 9, nz: 7, ny: 6, door: 4, depot: true }]; // clear of the rim — the prize must be SEEN
   const benches = [[bands[0] + 8, bands[1] - 7], [bands[1] + 8, bands[2] - 7], [bands[2] + 8, 46]];
   let bid = 0;
   for (let bi = 0; bi < benches.length; bi++) {
@@ -455,9 +455,11 @@ function buildTown(world, grid, field) {
     const grid3 = [], base = field.heightAt(t.x, t.z) + hcs + 0.02;
     for (let ix = 0; ix < t.nx; ix++) for (let iy = 0; iy <= t.ny; iy++) for (let iz = 0; iz < t.nz; iz++) {
       const perim = ix === 0 || ix === t.nx - 1 || iz === 0 || iz === t.nz - 1;
+      const corner = (ix <= 1 || ix >= t.nx - 2) && (iz <= 1 || iz >= t.nz - 2);
       if (iy < t.ny && !perim) continue;                                  // hollow
       if (iy === t.ny && t.roof === false) continue;                      // walled yard: open sky
       if (ix === t.door && (iz === 1 || iz === 2) && iy <= 2) continue;   // the doorway
+      if (t.depot && iy === t.ny && perim && !corner && (ix + iz) % 2) continue; // crenellated roofline
       if (t.ruin && ((ix * 31 + iy * 17 + iz * 7) % 100) / 100 < t.ruin && iy > 0) continue; // ruins arrive pre-broken
       const c = addBody(world, {
         kind: "chunk", team: 0, mass, hx: hcs, hy: hcs, hz: hcs,
@@ -470,6 +472,21 @@ function buildTown(world, grid, field) {
       c.town = t.id;
       c.gpos = [ix, iy, iz];
       grid3.push(c);
+    }
+    // the depot is a GARRISON blockhouse: four corner bastions rise two
+    // courses above the crenellated roof
+    if (t.depot) for (const [bx, bz] of [[0, 0], [t.nx - 1, 0], [0, t.nz - 1], [t.nx - 1, t.nz - 1]]) {
+      for (let iy = t.ny + 1; iy <= t.ny + 2; iy++) {
+        const c = addBody(world, {
+          kind: "chunk", team: 0, mass, hx: hcs, hy: hcs, hz: hcs,
+          x: t.x + (bx - (t.nx - 1) / 2) * pitch,
+          y: base + iy * pitch,
+          z: t.z + (bz - (t.nz - 1) / 2) * pitch,
+          friction: 0.65, restitution: 0.02,
+        });
+        c.sleeping = true; c.town = t.id; c.gpos = [bx, iy, bz];
+        grid3.push(c);
+      }
     }
     const key = (a, b, c2) => a + "," + b + "," + c2;
     const map = new Map(grid3.map((c) => [key(c.gpos[0], c.gpos[1], c.gpos[2]), c]));

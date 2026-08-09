@@ -455,8 +455,14 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const smokeMesh = pool(new THREE.PlaneGeometry(1, 1), smokeMat, 128, false); smokeMesh.layers.set(1);
   const fireMat = new THREE.MeshBasicMaterial({ color: 0xffb257, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
   const fireMesh = pool(new THREE.PlaneGeometry(1, 1), fireMat, 96, false); fireMesh.layers.set(1);
-  const tracerMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }); // white base: per-instance colors carry the hue
+  // NORMAL blending: additive ADDED the hue to bright snow and every round
+  // read white. Solid saturated bodies keep their color on any ground, and
+  // a near-black halo box under each round buys contrast that survives
+  // zoom-out — legibility comes from darkness, not brightness.
+  const tracerMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.98, depthWrite: false }); // white base: per-instance colors carry the hue
   const tracerMesh = pool(new THREE.BoxGeometry(0.09, 0.09, 1), tracerMat, 64, false); tracerMesh.layers.set(1);
+  const haloMat = new THREE.MeshBasicMaterial({ color: 0x140f16, transparent: true, opacity: 0.5, depthWrite: false });
+  const haloMesh = pool(new THREE.BoxGeometry(0.16, 0.16, 1.15), haloMat, 64, false); haloMesh.layers.set(1);
   tracerMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(64 * 3).fill(1), 3);
   tracerMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
   // snow washes out pale amber — munitions burn ORANGE-RED, tracers gold
@@ -746,12 +752,15 @@ export function makeRenderer(canvas, world0, opts = {}) {
     setObjective(x, z, y) {
       if (!objMark) {
         objMark = new THREE.Group();
-        const mast = new THREE.Mesh(new THREE.BoxGeometry(0.16, 6.0, 0.16), toon(0x2a2f36));
-        mast.position.y = 3.0; mast.castShadow = true; objMark.add(mast);
-        const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.95), new THREE.MeshBasicMaterial({ color: 0x4aff8c, side: THREE.DoubleSide }));
-        flag.position.set(0.85, 5.3, 0); objMark.add(flag);
-        const ring = new THREE.Mesh(new THREE.RingGeometry(2.7, 3.4, 30), new THREE.MeshBasicMaterial({ color: 0x4aff8c, transparent: true, opacity: 0.5, depthWrite: false }));
-        ring.rotation.x = -Math.PI / 2; ring.position.y = 0.1; ring.layers.set(1); objMark.add(ring);
+        // the mast clears the depot's bastions — the flag is visible from
+        // anywhere on the field, which is the whole point of a flag
+        const mast = new THREE.Mesh(new THREE.BoxGeometry(0.2, 11.5, 0.2), toon(0x2a2f36));
+        mast.position.y = 5.75; mast.castShadow = true; objMark.add(mast);
+        const flag = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.4), new THREE.MeshBasicMaterial({ color: 0x4aff8c, side: THREE.DoubleSide }));
+        flag.position.set(1.25, 10.5, 0); objMark.add(flag);
+        objMark.userData.flag = flag;
+        const ring = new THREE.Mesh(new THREE.RingGeometry(4.2, 5.0, 36), new THREE.MeshBasicMaterial({ color: 0x4aff8c, transparent: true, opacity: 0.5, depthWrite: false }));
+        ring.rotation.x = -Math.PI / 2; ring.position.y = 0.12; ring.layers.set(1); objMark.add(ring);
         scene.add(objMark);
       }
       objMark.position.set(x, y, z);
@@ -1068,7 +1077,8 @@ export function makeRenderer(canvas, world0, opts = {}) {
       const kind = p.spec.kind;
       if (kind === "rocket") {
         if (ri >= 16) continue;
-        dummy.scale.set(2.6, 2.6, 4.2);
+        const rMin = Math.max(1, 1.35 / zoom);
+        dummy.scale.set(2.6 * rMin, 2.6 * rMin, 4.2);
         dummy.updateMatrix();
         rocketMesh.setMatrixAt(ri, dummy.matrix);
         if (rocketMesh.setColorAt) rocketMesh.setColorAt(ri, p.v.y > 0 ? RKT_ORANGE : RKT_RED);
@@ -1076,13 +1086,19 @@ export function makeRenderer(canvas, world0, opts = {}) {
         continue;
       }
       if (ti >= 64) continue;
-      const th = p.tracer ? 2.2 : kind === "mg" ? 0.7 : 1;
-      dummy.scale.set(th, th, p.tracer ? 3.2 : kind === "mg" ? 1.1 : 1.8);
+      // screen-space floor: zoomed out, a world-accurate round vanishes —
+      // thickness grows with 1/zoom so ammo never drops under ~2px
+      const sMin = Math.max(1, 1.35 / zoom);
+      const th = (p.tracer ? 2.2 : kind === "mg" ? 0.7 : 1) * sMin;
+      const ln = (p.tracer ? 3.2 : kind === "mg" ? 1.1 : 1.8) * Math.max(1, sMin * 0.8);
+      dummy.scale.set(th, th, ln);
       dummy.updateMatrix();
       if (tracerMesh.setColorAt) tracerMesh.setColorAt(ti, p.tracer ? TRC_BRIGHT : kind === "mg" ? TRC_MG : TRC_SHELL);
-      tracerMesh.setMatrixAt(ti++, dummy.matrix);
+      tracerMesh.setMatrixAt(ti, dummy.matrix);
+      haloMesh.setMatrixAt(ti++, dummy.matrix); // same pose; the geometry is fatter
     }
     tracerMesh.count = ti; tracerMesh.instanceMatrix.needsUpdate = true;
+    haloMesh.count = ti; haloMesh.instanceMatrix.needsUpdate = true;
     if (tracerMesh.instanceColor) tracerMesh.instanceColor.needsUpdate = true;
     rocketMesh.count = ri; rocketMesh.instanceMatrix.needsUpdate = true;
     if (rocketMesh.instanceColor) rocketMesh.instanceColor.needsUpdate = true;
