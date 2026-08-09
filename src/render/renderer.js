@@ -704,12 +704,22 @@ export function makeRenderer(canvas, world0, opts = {}) {
   function setDressing(spec) {
     while (dressG.children.length) dressG.remove(dressG.children[0]);
     for (const k of spec.rocks || []) {
-      // a couple of tilted prisms per outcrop reads as granite at this pixel size
-      for (let i = 0; i < 2; i++) {
-        const m = new THREE.Mesh(new THREE.BoxGeometry(k.r * (1.2 - i * 0.35), k.h * (0.9 + i * 0.35), k.r * (1.05 - i * 0.3)), toon(i ? 0x5c636e : 0x6a7280));
-        m.position.set(k.x + (i ? k.r * 0.18 : 0), F.heightAt(k.x, k.z) + k.h * 0.25 * i, k.z - (i ? k.r * 0.12 : 0));
-        m.rotation.y = (k.x * 7 + k.z * 3 + i * 1.3) % 1.1;
-        m.rotation.z = 0.06 + (i ? 0.09 : 0);
+      // no two boulders alike: a per-rock hash drives prism count, full
+      // three-axis tilt, and how deep each block has sunk into the snow —
+      // some barely break the crust, some heave a shoulder out of it
+      let hsh = Math.abs(Math.sin(k.x * 12.9898 + k.z * 78.233) * 43758.5453) % 1;
+      const rnd = () => { hsh = (hsh * 9301 + 0.49297) % 1; return hsh; };
+      const nP = 2 + Math.floor(rnd() * 2);
+      for (let i = 0; i < nP; i++) {
+        const m = new THREE.Mesh(
+          new THREE.BoxGeometry(k.r * (0.65 + rnd() * 0.7), k.h * (0.7 + rnd() * 0.7), k.r * (0.6 + rnd() * 0.65)),
+          toon(i % 2 ? 0x5c636e : 0x6a7280));
+        const sink = k.h * (0.1 + rnd() * 0.45);
+        m.position.set(
+          k.x + (rnd() - 0.5) * k.r * 0.7,
+          F.heightAt(k.x, k.z) + k.h * 0.2 * i - sink,
+          k.z + (rnd() - 0.5) * k.r * 0.7);
+        m.rotation.set((rnd() - 0.5) * 0.5, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.5);
         m.castShadow = true;
         dressG.add(m);
       }
