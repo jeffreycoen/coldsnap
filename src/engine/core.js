@@ -745,6 +745,9 @@ function stepProjectiles(world) {
 // ------------------------------------------------------- damage & killing
 function applyDamage(world, b, dmg, info) {
   if (!b.alive || dmg <= 0) return;
+  // DIVERGENCE (guarded): DEPOT armor thresholds — a sub-armor ballistic hit
+  // glances off (15% dmg); blast (concussion) bypasses armor entirely.
+  if (world.depotCombat && b.armor != null && info.cause !== CAUSE.BLAST && dmg < b.armor) dmg *= 0.15;
   b.hp -= dmg;
   b.lastHit = info;
   if (b.hp <= 0) killBody(world, b, info);
