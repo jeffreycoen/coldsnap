@@ -180,15 +180,31 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // zoom range — same rig otherwise, so the texel-snap path is untouched.
   const tac = opts.camera === "tactical";
   const cam = new THREE.OrthographicCamera(-40, 40, 25, -25, 2, 400);
-  const yawA = (194 * Math.PI) / 180, pitchA = ((tac ? 34 : 32) * Math.PI) / 180, camDist = 150;
-  const back = { x: Math.sin(yawA) * Math.cos(pitchA), y: Math.sin(pitchA), z: Math.cos(yawA) * Math.cos(pitchA) };
-  cam.position.set(back.x * camDist, back.y * camDist, back.z * camDist);
-  cam.lookAt(0, 0, 0);
-  cam.updateMatrixWorld();
-  const camQ = cam.quaternion.clone();
-  const camFwd = { x: -back.x, y: -back.y, z: -back.z };
-  const camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camQ);
-  const camUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camQ);
+  const pitchA = ((tac ? 34 : 32) * Math.PI) / 180, camDist = 150;
+  // yaw is STATE now (tactical mode rotates in 90° steps); the basis
+  // vectors mutate IN PLACE so every closure that captured them — texel
+  // snap, billboards, picking, drag-pan — follows the turn for free
+  let yawA = (194 * Math.PI) / 180, yawTgt = yawA;
+  const back = { x: 0, y: 0, z: 0 };
+  const camQ = new THREE.Quaternion();
+  const camFwd = { x: 0, y: 0, z: 0 };
+  const camRight = new THREE.Vector3();
+  const camUp = new THREE.Vector3();
+  function applyYaw() {
+    back.x = Math.sin(yawA) * Math.cos(pitchA); back.y = Math.sin(pitchA); back.z = Math.cos(yawA) * Math.cos(pitchA);
+    cam.position.set(back.x * camDist, back.y * camDist, back.z * camDist);
+    cam.up.set(0, 1, 0);
+    cam.lookAt(0, 0, 0);
+    cam.updateMatrixWorld();
+    camQ.copy(cam.quaternion);
+    camFwd.x = -back.x; camFwd.y = -back.y; camFwd.z = -back.z;
+    camRight.set(1, 0, 0).applyQuaternion(camQ);
+    camUp.set(0, 1, 0).applyQuaternion(camQ);
+  }
+  applyYaw();
+  // 90° step: eased tween; texel snap suspends while turning (rotZoom in
+  // render()) so the shimmer never shows
+  function rotateStep(dir) { yawTgt += (dir > 0 ? 1 : -1) * Math.PI / 2; }
   const R3 = (v) => ({ x: v.x, y: v.y, z: v.z });
   // lights
   const hemi = new THREE.HemisphereLight(0xe2ecf7, 0x7e8fa3, 0.62);
@@ -1153,13 +1169,28 @@ export function makeRenderer(canvas, world0, opts = {}) {
     } else strikeRing.visible = false;
     // camera: snap position to view texels; residual + shake go to screen shift
     shake = Math.max(0, shake - dt * 4.2);
+    // yaw tween toward the commanded 90° step
+    const yerr = yawTgt - yawA;
+    const turning = Math.abs(yerr) > 0.0005;
+    if (turning) {
+      yawA += yerr * Math.min(1, dt * 6);
+      if (Math.abs(yawTgt - yawA) <= 0.0005) yawA = yawTgt;
+      applyYaw();
+    }
     const texel = (2 * halfW) / rtW;
     const desired = { x: focus.x + back.x * camDist, y: focus.y + back.y * camDist, z: focus.z + back.z * camDist };
-    const sr = snapCam(desired, R3(camRight), R3(camUp), camFwd, texel);
-    cam.position.set(sr.pos.x, sr.pos.y, sr.pos.z);
-    cam.quaternion.copy(camQ);
     const shx = (Math.random() - 0.5) * shake * 1.15, shy = (Math.random() - 0.5) * shake * 1.15;
-    postMat.uniforms.uShift.value.set(-sr.errX + shx, -sr.errY + shy);
+    if (turning) {
+      // mid-turn the texel snap would shimmer — ride the raw position
+      cam.position.set(desired.x, desired.y, desired.z);
+      cam.quaternion.copy(camQ);
+      postMat.uniforms.uShift.value.set(shx, shy);
+    } else {
+      const sr = snapCam(desired, R3(camRight), R3(camUp), camFwd, texel);
+      cam.position.set(sr.pos.x, sr.pos.y, sr.pos.z);
+      cam.quaternion.copy(camQ);
+      postMat.uniforms.uShift.value.set(-sr.errX + shx, -sr.errY + shy);
+    }
     postMat.uniforms.uT.value = world.t; // aurora clock (inert at uGrade 0)
     // sun rig follows focus
     sun.position.set(focus.x + 38, focus.y + 52, focus.z + 22);
@@ -1193,5 +1224,5 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // never calls this and keeps the shipped look exactly
   function setGrade(g) { postMat.uniforms.uGrade.value = Math.max(-1, Math.min(1, g || 0)); }
   const project = (x, y, z) => { const v = new THREE.Vector3(x, y, z); v.project(cam); return { x: v.x, y: v.y }; };
-  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, overlay, setDressing, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
+  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, overlay, setDressing, rotateStep, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
 }

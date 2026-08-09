@@ -1177,6 +1177,7 @@ export default function ColdsnapTD() {
         S.inspectId = null;
       };
       S.sellById = sellById;
+      S.rotate = (d) => R.rotateStep(d);
       const onStructureLost = (b) => {
         for (const c of grid.cells) if (c.wallId === b.id) { c.wallId = null; c.blocked = false; }
         recomputeFlow();
@@ -1287,7 +1288,7 @@ export default function ColdsnapTD() {
         R.setZoom(S.zoom);
       };
       const onKey = (e, down) => { S.keys[e.key.toLowerCase()] = down; };
-      const kd = (e) => { A.ensure(); if (e.key === "m" || e.key === "M") { A.setMuted(!A.muted); setHud((h) => ({ ...h, muted: A.muted })); } onKey(e, true); };
+      const kd = (e) => { A.ensure(); if (e.key === "m" || e.key === "M") { A.setMuted(!A.muted); setHud((h) => ({ ...h, muted: A.muted })); } if (e.key === "q" || e.key === "Q") R.rotateStep(-1); if (e.key === "e" || e.key === "E") R.rotateStep(1); onKey(e, true); };
       const ku = (e) => onKey(e, false);
       const blockTouch = (e) => e.preventDefault();
       canvas.addEventListener("pointerdown", onPointerDown);
@@ -1651,7 +1652,9 @@ export default function ColdsnapTD() {
             </button>
           </>
         )}
-        <button style={{ ...P.btn, marginLeft: "auto", padding: isTouch ? "5px 10px" : "4px 10px", opacity: hud.muted ? 0.5 : 1 }} onClick={toggleMute}>
+        <button style={{ ...P.btn, marginLeft: "auto", padding: isTouch ? "5px 10px" : "4px 10px" }} title="rotate view (Q/E)"
+          onClick={() => { const S = stateRef.current; if (S && S.rotate) S.rotate(1); }}>⟳</button>
+        <button style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", opacity: hud.muted ? 0.5 : 1 }} onClick={toggleMute}>
           {hud.muted ? "🔇" : "🔊"}
         </button>
         <div style={{ ...P.stat, opacity: 0.65 }}>{hud.fps} fps</div>
@@ -1715,7 +1718,7 @@ export default function ColdsnapTD() {
           <div style={{ fontSize: 12, opacity: 0.85, maxWidth: 420, lineHeight: 1.6, marginBottom: 18 }}>
             They come out of the southern treeline for the depot. Wall their road, gun the choke points.
             Rock is free cover. The frozen ponds carry them faster — and you cannot build on ice.
-            {isTouch ? " Drag to pan, pinch to zoom, tap to build. Tap a tower to inspect it." : " WASD pans, wheel zooms, click builds. Click a tower to inspect it."}
+            {isTouch ? " Drag to pan, pinch to zoom, tap to build. Tap a tower to inspect it." : " WASD pans, wheel zooms, Q/E rotates, click builds. Click a tower to inspect it."}
           </div>
           <button style={{ ...P.btn, fontSize: 15, padding: "10px 26px", borderColor: "#4aff8c", color: "#4aff8c" }} onClick={startGame}>
             DIG IN

@@ -54,6 +54,11 @@ export default function StartScreen({ onPlay, onSandbox, onCampaign, onControls,
           <div style={{ opacity: 0.7, letterSpacing: 3, fontSize: 12 }}>WINTER RANGE COMMAND</div>
         </div>
 
+        <button data-menu="towerdef" style={option({ borderColor: "#4e7a5a" })} onClick={onTowerDef}>
+          <div style={{ color: "#8fd4a0", fontSize: 15, letterSpacing: 2 }}>▶ HOLD THE DEPOT</div>
+          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>Tower defense on the snowfield. Wall the passes — the ponds won't hold a foundation.</div>
+        </button>
+
         <button data-menu="campaign" style={option({ borderColor: "#c9a04e" })} onClick={onCampaign}>
           <div style={{ color: COLORS.gold, fontSize: 15, letterSpacing: 2 }}>▶ CLEARANCE CAMPAIGN</div>
           <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>Eight work orders. The territory is being re-let.</div>
@@ -74,11 +79,6 @@ export default function StartScreen({ onPlay, onSandbox, onCampaign, onControls,
         <button data-menu="mech" style={option({ borderColor: "#5f6e80" })} onClick={onMech}>
           <div style={{ color: "#9fb4cc", fontSize: 15, letterSpacing: 2 }}>▶ MECH TEST RANGE</div>
           <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>Biped frame MK1 on the flat pad. Gait acceptance pending — it stands, it steps, it falls.</div>
-        </button>
-
-        <button data-menu="towerdef" style={option({ borderColor: "#4e7a5a" })} onClick={onTowerDef}>
-          <div style={{ color: "#8fd4a0", fontSize: 15, letterSpacing: 2 }}>▶ HOLD THE DEPOT</div>
-          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>Tower defense on the snowfield. Wall the passes — the ponds won't hold a foundation.</div>
         </button>
 
         <button data-menu="controls" style={option()} onClick={onControls}>
