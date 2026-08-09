@@ -411,7 +411,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const AND_DEAD = mkPal({ dom: 0x6d747c, sec: 0x474d54, acc: 0x596069, skin: 0x8b929a, gun: 0x14171a });
   const _swq = new THREE.Quaternion(), _bq = new THREE.Quaternion(), _AXX = new THREE.Vector3(1, 0, 0);
   const chunkGeo = new THREE.BoxGeometry(1.2, 1.2, 1.2);
-  const chunkMesh = pool(chunkGeo, toon(0xa6b2c0), 1000, true); // 865 stones live now (keep 84 + walls 240 + hangar 115 + warehouse 146 + houses 280)
+  const chunkMesh = pool(chunkGeo, toon(0xa6b2c0), 1800, true); // 865 stones live now (keep 84 + walls 240 + hangar 115 + warehouse 146 + houses 280); headroom for the TD town (~700) + collapse rubble
   chunkMesh.receiveShadow = true;
   // mech walker links: plain instanced steel boxes (rig art comes later)
   const mechMesh = pool(new THREE.BoxGeometry(1, 1, 1), toon(0xffffff), 40, true);
@@ -661,6 +661,32 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // frost aura rings under live frost towers
   const frostRingMesh = pool(new THREE.RingGeometry(0.72, 1.0, 40), new THREE.MeshBasicMaterial({ color: 0x8fd8ff, transparent: true, opacity: 0.14, depthWrite: false }), 16, false);
   frostRingMesh.layers.set(1);
+  // player walls (tower defense): stone block + a cap of snow, instanced
+  const wallMesh = pool(new THREE.BoxGeometry(1.8, 1.8, 1.8), toon(0x8e97a4), 256, true);
+  const wallCapMesh = pool(new THREE.BoxGeometry(1.86, 0.22, 1.86), toon(0xeef4fa), 256, false);
+  // map dressing (tower defense): rock prisms + frozen-pond discs, built once
+  const dressG = new THREE.Group();
+  scene.add(dressG);
+  function setDressing(spec) {
+    while (dressG.children.length) dressG.remove(dressG.children[0]);
+    for (const k of spec.rocks || []) {
+      // a couple of tilted prisms per outcrop reads as granite at this pixel size
+      for (let i = 0; i < 2; i++) {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(k.r * (1.2 - i * 0.35), k.h * (0.9 + i * 0.35), k.r * (1.05 - i * 0.3)), toon(i ? 0x5c636e : 0x6a7280));
+        m.position.set(k.x + (i ? k.r * 0.18 : 0), F.heightAt(k.x, k.z) + k.h * 0.25 * i, k.z - (i ? k.r * 0.12 : 0));
+        m.rotation.y = (k.x * 7 + k.z * 3 + i * 1.3) % 1.1;
+        m.rotation.z = 0.06 + (i ? 0.09 : 0);
+        m.castShadow = true;
+        dressG.add(m);
+      }
+    }
+    for (const p of spec.ponds || []) {
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(p.r, 30), new THREE.MeshBasicMaterial({ color: 0xbfe0f0, transparent: true, opacity: 0.88 }));
+      disc.rotation.x = -Math.PI / 2;
+      disc.position.set(p.x, p.level + 0.06, p.z);
+      dressG.add(disc);
+    }
+  }
 
   // ---- build overlay (tower defense): ghost pad + range preview + objective
   // marker + spawn banners. Lazy nulls until the game layer calls them, so
@@ -770,6 +796,17 @@ export function makeRenderer(canvas, world0, opts = {}) {
     }
     frostRingMesh.count = fri; frostRingMesh.instanceMatrix.needsUpdate = true;
     for (const [id, g] of towerGroups) if (!world.byId.has(id)) { scene.remove(g); towerGroups.delete(id); }
+    // player walls (tower defense)
+    let wi = 0;
+    for (const b of world.bodies) {
+      if (b.kind !== "wall" || wi >= 256) continue;
+      const hurtW = b.maxHp ? Math.max(0.75, b.hp / b.maxHp) : 1;
+      writeInst(wallMesh, wi, b.pos.x, b.pos.y, b.pos.z, b.q, b.hx / 0.9 * hurtW, b.hy / 0.9, b.hz / 0.9 * hurtW);
+      writeInst(wallCapMesh, wi, b.pos.x, b.pos.y + b.hy + 0.08, b.pos.z, b.q, 1, 1, 1);
+      wi++;
+    }
+    wallMesh.count = wi; wallMesh.instanceMatrix.needsUpdate = true;
+    wallCapMesh.count = wi; wallCapMesh.instanceMatrix.needsUpdate = true;
     // units: table-driven multi-part infantry with a speed-keyed march swing.
     // Limb quats compose body * local-X(phase); dead men freeze mid-stride and
     // take the winter-kill tint per role.
@@ -1128,5 +1165,5 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // never calls this and keeps the shipped look exactly
   function setGrade(g) { postMat.uniforms.uGrade.value = Math.max(-1, Math.min(1, g || 0)); }
   const project = (x, y, z) => { const v = new THREE.Vector3(x, y, z); v.project(cam); return { x: v.x, y: v.y }; };
-  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, overlay, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
+  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, overlay, setDressing, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
 }

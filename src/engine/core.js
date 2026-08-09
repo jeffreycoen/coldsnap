@@ -102,11 +102,12 @@ export function snapCam(pos, right, up, fwd, texel) {
   return { pos: p, errX: (r - rs) / texel, errY: (u - us) / texel };
 }
 // Ballistic pitch to hit (d horizontal, dy vertical) at speed v. Low arc. Null if out of range.
-export function aimSolve(v, d, dy, g = 9.8) {
+export function aimSolve(v, d, dy, g = 9.8, high = false) {
   const v2 = v * v;
   const disc = v2 * v2 - g * (g * d * d + 2 * dy * v2);
   if (disc < 0) return null;
-  return Math.atan2(v2 - Math.sqrt(disc), g * d);
+  // high: the lobbed solution (mortars clear walls); default low arc unchanged
+  return Math.atan2(v2 + (high ? 1 : -1) * Math.sqrt(disc), g * d);
 }
 
 // ------------------------------------------------------------- heightfield
@@ -583,10 +584,33 @@ export function explode(world, x, y, z, spec) {
       applyDamage(world, b, dmg, { cause: CAUSE.BLAST, attacker: spec.attacker || "world", volley: spec.volley || 0 });
     }
   }
+  // DIVERGENCE (guarded, tower defense): hitStruct ordnance damages static
+  // walls/emplacements — no demo or campaign spec sets it, and those worlds
+  // hold no tower/wall bodies. Separate loop: the impulse loop above skips
+  // invM 0 and pinned statics belong out of it anyway.
+  if (spec.hitStruct) {
+    for (const b of world.bodies) {
+      if (!b.alive || (b.kind !== "wall" && b.kind !== "tower")) continue;
+      const dd = Math.hypot(b.pos.x - x, b.pos.y - y, b.pos.z - z);
+      const reach = spec.r + Math.max(b.hx, b.hy, b.hz);
+      if (dd > reach) continue;
+      applyDamage(world, b, spec.dmg * Math.max(0, 1 - Math.max(0.4, dd) / reach), { cause: CAUSE.BLAST, attacker: spec.attacker || "world" });
+      b.hitT = world.t;
+    }
+  }
   const groundH = world.field.heightAt(x, z);
   if (y - groundH < 1.4 && spec.crater) {
     world.field.carve(x, z, spec.crater * 2.4, spec.crater);
     world.events.push({ type: "splat", x, z, r: spec.crater * 3.4 });
+    // static structures do not follow the heightfield down — re-seat any near
+    // the carve so nothing floats over its own crater (tower defense; inert
+    // in worlds without wall/tower bodies)
+    const seatR = spec.crater * 2.4 + 1.5;
+    for (const s of world.bodies) {
+      if (s.kind !== "wall" && s.kind !== "tower") continue;
+      if (Math.hypot(s.pos.x - x, s.pos.z - z) > seatR) continue;
+      s.pos.y = world.field.heightAt(s.pos.x, s.pos.z) + s.hy;
+    }
   }
 }
 function stepProjectiles(world) {
@@ -614,7 +638,11 @@ function stepProjectiles(world) {
     // body hit
     let hitBody = null, bestT = hitT < 0 ? 1.01 : hitT;
     for (const b of world.bodies) {
-      if (b.invM === 0 && b.kind !== "chunk") continue;
+      // DIVERGENCE (guarded): tower-defense structures are static but shootable;
+      // hitOnly "structure" is enemy rifle fire that ignores the crowd around it
+      if (p.spec.hitOnly === "structure" && b.kind !== "tower" && b.kind !== "wall" && b.kind !== "chunk") continue;
+      if (b.invM === 0 && b.kind !== "chunk" && b.kind !== "tower" && b.kind !== "wall") continue;
+      if ((b.kind === "tower" || b.kind === "wall") && !b.alive) continue;
       if (!b.alive && b.kind === "unit") continue;
       // owner immunity: a point-blank reticle pulls the muzzle back inside the
       // firing hull, and a shell must not detonate on its own tank leaving the
@@ -634,7 +662,10 @@ function stepProjectiles(world) {
       // gate read unit|vehicle only, leaving trucks immune to every shell and
       // round — unnoticed there because its trucks die by CRUSH and DROWN
       // alone. Locked by scripts/righting-test.mjs.
-      if (hitBody && hitBody.alive && (hitBody.kind === "unit" || hitBody.kind === "vehicle" || hitBody.kind === "truck")) {
+      // DIVERGENCE (guarded): noImpact specs (tower defense) deal ALL damage
+      // through the burst — the flat kind-based hit would stack 55 on top of
+      // a 5-damage MG round
+      if (hitBody && hitBody.alive && !p.spec.noImpact && (hitBody.kind === "unit" || hitBody.kind === "vehicle" || hitBody.kind === "truck")) {
         applyDamage(world, hitBody, p.spec.kind === "shell" ? 90 : p.spec.kind === "mg" ? 11 : 55, { cause: CAUSE.PROJECTILE, attacker: p.spec.attacker || "world", volley: p.spec.volley || 0 });
       }
       // DIVERGENCE (guarded): shells with declared mass deliver their real
@@ -2222,7 +2253,7 @@ export function bisonMg(world, target) {
 
 
 // internals the game layer needs that the demo kept module-private
-export { heading };
+export { heading, applyDamage };
 
 // DIVERGENCE from the frozen demo: internal math handed to the mech module
 // (src/engine/mech.js). Additive export only — nothing on the demo path reads it.
