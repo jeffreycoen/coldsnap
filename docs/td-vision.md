@@ -37,6 +37,7 @@ Working brainstorm, 2026-08-09. Direction only — nothing here is committed unt
 ### Environment
 - **Trees**: catch fire when struck by incendiary-capable rounds (blasts already burn them); MG fire steadily shreds them to nothing (progressive destruction, no fire required).
 - Cover is consumable everywhere: boulders, walls, trees, buildings all degrade — cover economy is real.
+- **Wind (decided 2026-08-09)**: a seeded world wind vector drifting smoothly in strength/direction over a round; lateral acceleration on projectiles (guarded core hook, DEPOT-only). High arcs eat the most wind (mortars/rockets/grenades), flat fire barely notices. Symmetric — attacker aim suffers the same drift. **Visible diegetically**: flags on towers/depot angle and ripple with the true vector; tree sway amplitude scales with strength. No wind numbers in the UI — read the flags.
 
 ## 2. Economy — staged symmetry
 
@@ -95,11 +96,15 @@ Gap between this TD and an RTS, as separable steps:
 - Tech: doctrine picks + banked research; no persistent meta-tech.
 - Publishing: MIT licensed (done), Jeff's name stays on it, itch.io target after a stranger playtest + front-door cleanup.
 
+## Answered 2026-08-09
+- **Attacker economy visibility**: diegetic intel lines — and invest in them properly (bureau-voice quality writing, not throwaway strings).
+- **Damage model**: BOTH glancing geometry and armor thresholds. No dice.
+- **What moves the front**: unit presence.
+- **Infantry command**: placed like towers, with orders — DEFEND (they hold position) or ATTACK (they advance).
+- **Run structure**: not endless — total victory or 50 waves.
+
 ## Open questions
-- Attacker economy visibility: hidden / diegetic intel lines / full ledger?
-- Damage model pick: glancing geometry vs armor thresholds vs both?
-- Territory mechanics: what *moves* the front — unit presence, structures, kills?
-- Infantry roster beyond snipers; how they're commanded (place like towers? orders?)
-- Which bison role ships first?
-- Doctrine pick timing (run start? per-wave milestone?) and tree contents.
-- How attrition pools interact with endless-wave structure (does a run have a natural end?)
+- Which bison role ships first? (needs more discussion)
+- Doctrine pick timing (per-wave milestone?) and tree contents (must be discussed).
+- Intel-line content design: what the attacker's spending looks like through the bureau voice.
+- Wind tuning: strength envelope, drift rate, how much compensation error the attacker AI gets.
