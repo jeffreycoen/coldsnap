@@ -23,62 +23,120 @@ const { V, v3, wake } = __mech__;
 const GRID_CS = 2.0, GRID_W = 28, GRID_H = 56; // half the old width (Jeff: the map was twice as wide as it needed to be) — three lanes still fit, chokes just matter more
 const GRID_OX = -(GRID_W * GRID_CS) / 2, GRID_OZ = -(GRID_H * GRID_CS) / 2;
 const OBJ_POS = { x: 0, z: GRID_OZ + GRID_H * GRID_CS - 7 };
-const SPAWN_POINTS = [
-  { x: -18, z: GRID_OZ + 2 }, { x: 0, z: GRID_OZ + 2 }, { x: 18, z: GRID_OZ + 2 },
-];
-// Frozen meltwater. Walkable — slick, so they cross it FASTER — but you cannot
-// sink a foundation into it, so the ponds are permanent holes in your maze.
-const PONDS = [
-  { x: -14, z: -6, r: 8.0, level: 0 },
-  { x: 16, z: 18, r: 7.0, level: 0 },
-  { x: -6, z: 34, r: 6.5, level: 0 },
-];
-// Granite ridges laid across the approach with deliberate passes cut through
-// them. This is the map's spine: three bands, each pierced twice, so a wave
-// has to bunch and you always know roughly where it will be.
-function ridge(x0, z0, x1, z1, gaps, r, h) {
-  const out = [], n = Math.max(2, Math.round(Math.hypot(x1 - x0, z1 - z0) / (r * 1.25)));
-  for (let i = 0; i <= n; i++) {
-    const t = i / n, x = x0 + (x1 - x0) * t, z = z0 + (z1 - z0) * t;
-    let inGap = false;
-    for (const g of gaps) if (Math.hypot(x - g[0], z - g[1]) < g[2]) inGap = true;
-    if (!inGap) out.push({ x, z, r: r * (0.82 + 0.36 * ((i * 7) % 5) / 5), h });
+// ================================================= procedural map
+// Every run is a new field order. The DOCTRINE is fixed, the ground is not:
+// the south THIRD is no-man's-land — open snow, a broken ruin, the treeline
+// the enemy spawns behind — so there is always room to meet them before the
+// town. The first ridge band is the town line; the village lives on the
+// benches behind it. Passes, ponds, buildings, roads all come off one seed
+// (mulberry32 — same generator the engine trusts), validated for
+// connectivity before a seed is allowed to ship.
+let SPAWN_POINTS = [], PONDS = [], ROCKS = [], TOWN = [], ROADS = [], PASSES = [], BANDS = [], MAP_SEED = 0;
+function genMap(seed) {
+  const r = mulberry32(seed);
+  const bands = [-17 + (r() - 0.5) * 6, 7 + (r() - 0.5) * 8, 31 + (r() - 0.5) * 6];
+  const passes = bands.map((z) => [{ x: -20 + r() * 13, z }, { x: 5 + r() * 15, z }]);
+  const rocks = [];
+  for (let bi = 0; bi < bands.length; bi++) {
+    for (let x = -25; x <= 25; x += 5.5 + r() * 3) {
+      const z = bands[bi] + (r() - 0.5) * 2.5;
+      if (passes[bi].some((g) => Math.abs(x - g.x) < 6.5)) continue;
+      rocks.push({ x, z, r: 3.4 + r() * 1.2, h: 3.0 + r() * 0.9 });
+    }
   }
-  return out;
+  const spawns = [-18 + r() * 5, -3 + r() * 6, 13 + r() * 5].map((x) => ({ x, z: GRID_OZ + 2 }));
+  const roads = [0, 1].map((side) => {
+    const pts = [[spawns[side === 0 ? 0 : 2].x, GRID_OZ + 2]];
+    for (const band of passes) pts.push([band[side].x, band[side].z]);
+    pts.push([0, 49]);
+    return pts;
+  });
+  const roadDist = (x, z) => {
+    let best = 1e9;
+    for (const route of roads) for (let i = 0; i < route.length - 1; i++) {
+      const a = route[i], b2 = route[i + 1];
+      const dx = b2[0] - a[0], dz = b2[1] - a[1];
+      const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / (dx * dx + dz * dz)));
+      best = Math.min(best, Math.hypot(x - (a[0] + dx * t), z - (a[1] + dz * t)));
+    }
+    return best;
+  };
+  const ponds = [];
+  const nP = 2 + (r() < 0.5 ? 1 : 0);
+  for (let i = 0; i < 30 && ponds.length < nP; i++) {
+    const x = -18 + r() * 36, z = -12 + r() * 48, rad = 5.5 + r() * 2.5;
+    if (passes.flat().some((g) => Math.abs(x - g.x) < 9 && Math.abs(z - g.z) < 14)) continue;
+    if (roadDist(x, z) < rad + 6) continue; // a pond ON the road bowls the boss over (25 stumbles, measured)
+    if (Math.hypot(x - OBJ_POS.x, z - OBJ_POS.z) < 16) continue;
+    if (ponds.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 6)) continue;
+    ponds.push({ x, z, r: rad, level: 0 });
+  }
+  const TPL = [
+    { t: "croft", nx: 4, nz: 3, ny: 3 }, { t: "house", nx: 6, nz: 5, ny: 4 },
+    { t: "house", nx: 5, nz: 4, ny: 4 }, { t: "long", nx: 8, nz: 4, ny: 3 },
+    { t: "watch", nx: 2, nz: 2, ny: 8 }, { t: "granary", nx: 3, nz: 3, ny: 7 },
+    { t: "yard", nx: 6, nz: 5, ny: 2, roof: false }, { t: "shed", nx: 4, nz: 4, ny: 3 },
+    { t: "chapel", nx: 5, nz: 6, ny: 5 }, { t: "keep", nx: 7, nz: 6, ny: 5 },
+  ];
+  const town = [{ id: "depot", x: 0, z: 56, nx: 9, nz: 7, ny: 5, door: 4, depot: true }];
+  const benches = [[bands[0] + 8, bands[1] - 7], [bands[1] + 8, bands[2] - 7], [bands[2] + 8, 46]];
+  let bid = 0;
+  for (let bi = 0; bi < benches.length; bi++) {
+    const want = bi === 2 ? 3 : 4 + (r() < 0.5 ? 1 : 0);
+    for (let k = 0, placed = 0; k < 90 && placed < want; k++) {
+      const tpl = TPL[Math.floor(r() * TPL.length)];
+      const swap = r() < 0.5;
+      const nx = swap ? tpl.nz : tpl.nx, nz = swap ? tpl.nx : tpl.nz;
+      const x = -21 + r() * 42;
+      const z = benches[bi][0] + r() * Math.max(2, benches[bi][1] - benches[bi][0]);
+      const rad = Math.max(nx, nz) * MASON.pitch / 2 + 2;
+      if (passes.flat().some((g) => Math.abs(x - g.x) < rad + 4 && Math.abs(z - g.z) < 12)) continue;
+      if (ponds.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 3)) continue;
+      if (rocks.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 1.5)) continue;
+      if (town.some((q) => Math.hypot(x - q.x, z - q.z) < rad + Math.max(q.nx, q.nz) * MASON.pitch / 2 + 2.5)) continue;
+      // some of the village was never finished, or didn't winter well — a
+      // fifth of the buildings roll partially built/fallen. That's the rules
+      // working, not a broken roll.
+      const decay = r() < 0.2 ? 0.12 + r() * 0.3 : 0;
+      town.push({ id: tpl.t + bid++, x, z, nx, nz, ny: tpl.ny, door: r() < 0.5 ? 0 : nx - 1, roof: tpl.roof, ruin: decay || undefined });
+      placed++;
+    }
+  }
+  // no-man's-land keeps a broken croft or two — cover, not comfort
+  for (let k = 0, placed = 0; k < 14 && placed < 2; k++) {
+    const x = -18 + r() * 36, z = -46 + r() * 20;
+    if (spawns.some((sp) => Math.hypot(x - sp.x, z - sp.z) < 10)) continue;
+    if (town.some((q) => Math.hypot(x - q.x, z - q.z) < 10)) continue;
+    town.push({ id: "oldruin" + placed, x, z, nx: 4, nz: 4, ny: 3, door: 0, ruin: 0.5 });
+    placed++;
+  }
+  return { seed, bands, passes, rocks, ponds, spawns, town, roads };
 }
-// The granite is down to pass-framing stubs at the terrace lips — geology
-// explains the benches, but the ground between them belongs to the VILLAGE
-// now (Jeff: 80% of the boulders became buildings).
-const ROCKS = [
-  { x: -16, z: -29, r: 4.2, h: 3.4 }, { x: -4, z: -28, r: 4.0, h: 3.2 }, { x: 18, z: -27, r: 4.2, h: 3.4 },
-  { x: -10, z: 3, r: 4.4, h: 3.8 }, { x: 22, z: 2, r: 4.2, h: 3.6 },
-  { x: -16, z: 31, r: 4.0, h: 3.2 }, { x: 18, z: 30, r: 4.2, h: 3.2 },
-];
-// Coldsnap masonry: hollow, welded, and every one can be brought down.
-// The village. Every named building is welded stone on the one lattice
-// builder — footprint/height/roof/ruin are parameters, collapse is physics.
-// Buildings the enemy ever THREATENS pay scrap each wave they survive.
-const TOWN = [
-  // south field: outlying crofts (first to see the war)
-  { id: "croft0",  x: -14, z: -42, nx: 4, nz: 3, ny: 3, door: 0 },
-  { id: "croft1",  x: 12, z: -38, nx: 4, nz: 3, ny: 3, door: 3 },
-  { id: "oldruin", x: 22, z: -44, nx: 4, nz: 4, ny: 3, door: 0, ruin: 0.5 },
-  // bench 1: longhouses lie along the ridge line like ramparts
-  { id: "longW",  x: -20, z: -18, nx: 8, nz: 4, ny: 3, door: 7 },
-  { id: "longE",  x: 10, z: -16, nx: 8, nz: 4, ny: 3, door: 0 },
-  { id: "watchS", x: 24, z: -14, nx: 2, nz: 2, ny: 8, door: 0 },
-  // bench 2: the town proper
-  { id: "granary", x: -21, z: 12, nx: 3, nz: 3, ny: 7, door: 0 },
-  { id: "house2",  x: -11, z: 16, nx: 5, nz: 4, ny: 4, door: 4 },
-  { id: "keep",    x: 0,  z: 22, nx: 7, nz: 6, ny: 5, door: 3 },
-  { id: "yard",    x: 14, z: 14, nx: 6, nz: 5, ny: 2, door: 0, roof: false },
-  { id: "shed",    x: -19, z: 26, nx: 4, nz: 4, ny: 3, door: 0 },
-  // bench 3: the high town before the depot
-  { id: "house3",  x: 11, z: 40, nx: 5, nz: 4, ny: 4, door: 0 },
-  { id: "chapel",  x: -12, z: 44, nx: 5, nz: 6, ny: 5, door: 2 },
-  { id: "watchN",  x: 20, z: 48, nx: 2, nz: 2, ny: 8, door: 0 },
-  { id: "depot",   x: 0,  z: 56, nx: 9, nz: 7, ny: 5, door: 4, depot: true },
-];
+// validate + install: a seed only ships if every spawn can reach the depot
+function makeMap(seed) {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const sd = seed + attempt * 7919;
+    const m = genMap(sd);
+    MAP_SEED = sd; BANDS = m.bands; PASSES = m.passes; ROCKS = m.rocks;
+    PONDS = m.ponds; SPAWN_POINTS = m.spawns; TOWN = m.town; ROADS = m.roads;
+    const g = makeGrid(null);
+    for (const t of TOWN) { // stamp footprints exactly as buildTown will
+      const hx = (t.nx * MASON.pitch) / 2, hz = (t.nz * MASON.pitch) / 2;
+      for (let gz = 0; gz < GRID_H; gz++) for (let gx = 0; gx < GRID_W; gx++) {
+        const wp = g.gridToWorld(gx, gz);
+        if (Math.abs(wp.x - t.x) < hx + 1.0 && Math.abs(wp.z - t.z) < hz + 1.0) {
+          if (Math.hypot(wp.x - OBJ_POS.x, wp.z - OBJ_POS.z) < 5) continue;
+          g.cells[g.idx(gx, gz)].blocked = true;
+        }
+      }
+    }
+    const og = g.worldToGrid(OBJ_POS.x, OBJ_POS.z);
+    // a hamlet under 9 structures is a broken roll too — re-roll it
+    if (TOWN.length >= 9 && checkConnectivity(g, SPAWN_POINTS, og.gx, og.gz)) return;
+  }
+  // ten broken rolls in a row would be a generator bug — the last one stands
+}
+
 const MASON = { hcs: 0.40, pitch: 0.83, mass: 100, breakF: 8.0e4 };
 
 // The ground itself. Written once at boot into the ENGINE's field; the
@@ -97,7 +155,7 @@ function buildTdTerrain(field, seed = 11) {
       + Math.cos(z * 0.061 - 0.6) * 0.38
       + Math.sin((x + z) * 0.032) * 0.30
       + (r() - 0.5) * 0.06
-      + stepUp(-27, 10, 1.8) + stepUp(2.5, 10, 2.0) + stepUp(30.5, 10, 2.2);
+      + stepUp(BANDS[0] - 1, 10, 1.8) + stepUp(BANDS[1] - 1, 10, 2.0) + stepUp(BANDS[2] - 1, 10, 2.2);
     for (const k of ROCKS) {
       const d = Math.hypot(x - k.x, z - k.z) / k.r;
       if (d < 1.6) y += k.h * Math.exp(-d * d * 2.1);
@@ -155,10 +213,6 @@ function buildTdTerrain(field, seed = 11) {
   // terrain it fell every ~20s (swing targets plan LEVEL; slopes land the
   // foot early/late — the M-next rough-ground problem, not solvable here).
   // Everything marches better on a road; the boss NEEDS one.
-  const ROADS = [
-    [[0, -54], [-10, -29], [-4, 3], [-10, 31], [0, 49]],
-    [[6, -54], [12, -27], [16, 2], [12, 30], [4, 49]],
-  ];
   const segD = (x, z, a, b) => {
     const dx = b[0] - a[0], dz = b[1] - a[1];
     const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / (dx * dx + dz * dz)));
@@ -755,9 +809,14 @@ function stepBoss(world, grid) {
     if (world.t < (m._fGrace || 0)) return; // still settling from the last recovery — don't bill it twice
     m._bossFalls = (m._bossFalls || 0) + 1;
     // falls cost TIME, not hp — the player kills the boss, the hills don't
-    // (billed falls self-destructed it at 11 stumbles, measured). A frame
-    // that cannot keep its feet 25 times is structurally done regardless.
-    if (m._bossFalls > 25) m.bossHp = 0;
+    // (billed falls self-destructed it at 11 stumbles, measured; a flat
+    // 25-fall cap then killed it for having a LONG road on seeded maps).
+    // Only a livelock is structural: five falls without 6m of progress.
+    const fp = m._lastFall;
+    if (fp && Math.hypot(m.hull.pos.x - fp.x, m.hull.pos.z - fp.z) < 6) m._fallRepeat = (m._fallRepeat || 0) + 1;
+    else m._fallRepeat = 0;
+    m._lastFall = { x: m.hull.pos.x, z: m.hull.pos.z };
+    if (m._fallRepeat >= 5) m.bossHp = 0;
     if (m.bossHp > 0) {
       // recover ON the road — respawning exactly where it fell re-fell it
       // 13 times in 20s (measured); the nearest waypoint line is graded flat
@@ -765,7 +824,10 @@ function stepBoss(world, grid) {
       if (m._route && m._route.length) {
         const wp0 = m._route[0];
         const dd = Math.hypot(wp0.x - rx, wp0.z - rz) || 1;
-        rx += (wp0.x - rx) / dd * Math.min(2.5, dd); rz += (wp0.z - rz) / dd * Math.min(2.5, dd);
+        // repeated falls in one patch crawl FURTHER each time — a bad 3m of
+        // ground must not become a fall loop (recovery at 2.5m re-entered it)
+        const adv = Math.min(2.5 + (m._fallRepeat || 0) * 3, dd);
+        rx += (wp0.x - rx) / dd * adv; rz += (wp0.z - rz) / dd * adv;
       }
       respawnMech(world, m, rx, rz, Math.atan2(m.hull.R[6], m.hull.R[8]));
       m._fGrace = world.t + 5;
@@ -778,14 +840,12 @@ function stepBoss(world, grid) {
   // plans like one: WAYPOINTS through the pass gaps, straight legs between.
   const hx2 = m.hull.pos.x, hz2 = m.hull.pos.z;
   if (!m._route) {
-    const gaps = [[[-10, -29], [12, -27]], [[-4, 3], [16, 2]], [[-10, 31], [12, 30]]];
+    // COMMIT to one side's cart road end-to-end — picking the nearest gap
+    // per band alternated sides and walked long diagonals with no road
+    // under them (livelocked mid-map on 2 of 5 seeds, measured)
+    const side = m._bossSide || 0;
     m._route = [];
-    let px = hx2;
-    for (const band of gaps) {
-      const g = Math.abs(band[0][0] - px) <= Math.abs(band[1][0] - px) ? band[0] : band[1];
-      m._route.push({ x: g[0], z: g[1] - 5 }, { x: g[0], z: g[1] + 5 });
-      px = g[0];
-    }
+    for (const band of PASSES) m._route.push({ x: band[side].x, z: band[side].z - 5 }, { x: band[side].x, z: band[side].z + 5 });
     m._route.push({ x: OBJ_POS.x, z: OBJ_POS.z });
   }
   while (m._route.length > 1 && Math.hypot(m._route[0].x - hx2, m._route[0].z - hz2) < 4) m._route.shift();
@@ -926,10 +986,13 @@ export default function ColdsnapTD() {
     let R = null;
     try {
       // ---- world: the ENGINE's field + world, with the TD map written in
-      const field = makeField(121, 2.0, 11);
-      buildTdTerrain(field);
+      const urlSeed = parseInt(new URLSearchParams(window.location.search).get("seed"), 10);
+      const seed = Number.isFinite(urlSeed) ? urlSeed : Math.floor(Date.now() % 1000000);
+      makeMap(seed);
+      const field = makeField(121, 2.0, MAP_SEED);
+      buildTdTerrain(field, MAP_SEED);
       const grid = makeGrid(field);
-      const world = makeWorld({ field, seed: 11 });
+      const world = makeWorld({ field, seed: MAP_SEED });
       world._tdStruct = true; // every blast in this world damages structures — destruction is symmetric
       const town = buildTown(world, grid, field);
       // DESTRUCTIBLE ROCK: every outcrop is a huge-HP body. Bring one down
@@ -953,14 +1016,16 @@ export default function ColdsnapTD() {
         return u;
       };
       {
-        const rT = mulberry32(23);
+        const rT = mulberry32(MAP_SEED ^ 0x517);
         for (let tx = -26; tx <= 26; tx += 3.2) {
           const jx = tx + (rT() - 0.5) * 1.6, jz = -54.5 + rT() * 3.2;
           if (SPAWN_POINTS.some((sp) => Math.hypot(jx - sp.x, jz - sp.z) < 4.5)) continue;
           if (rockAt(jx, jz)) continue;
           treeAt(jx, jz);
         }
-        for (const [cx, cz, n2] of [[-22, -12, 7], [22, -16, 6], [-23, 42, 7]]) {
+        const clumps = [];
+        for (let c = 0; c < 3; c++) clumps.push([-20 + rT() * 40, -46 + rT() * 24, 5 + Math.floor(rT() * 3)]);
+        for (const [cx, cz, n2] of clumps) {
           for (let i = 0; i < n2; i++) {
             const a = rT() * 6.28, rr = 1.5 + rT() * 4;
             const jx = cx + Math.cos(a) * rr, jz = cz + Math.sin(a) * rr;
@@ -1193,7 +1258,9 @@ export default function ColdsnapTD() {
           ws.mixBag = out;
         }
         if (ws.waveIdx === WAVES.length - 1) {
-          const m = buildMech(world, { x: 0, z: GRID_OZ + 5, yaw: 0 });
+          const bSide = MAP_SEED % 2;
+          const m = buildMech(world, { x: SPAWN_POINTS[bSide === 0 ? 0 : 2].x, z: GRID_OZ + 5, yaw: 0 });
+          m._bossSide = bSide;
           m.thrustersOn = true; m.thrustAssist = true;
           m.bossHp = BOSS.hp;
           toast("SEISMIC CONTACT — BIPED FRAME INBOUND");
@@ -1279,8 +1346,9 @@ export default function ColdsnapTD() {
       window.__TDPROJ__ = () => world.projectiles.map((p) => ({ x: p.pos.x, y: p.pos.y, z: p.pos.z, vx: p.v.x, vy: p.v.y, vz: p.v.z, gy: field.heightAt(p.pos.x, p.pos.z) }));
       window.__TDSTART__ = () => { S.started = true; };
       window.__TDARMOR__ = () => world.bodies.filter((b) => b.kind === "vehicle" && b.team === 2).map((b) => ({ x: +b.pos.x.toFixed(1), y: +b.pos.y.toFixed(1), z: +b.pos.z.toFixed(1), hp: b.hp, alive: b.alive, ctl: b.ctl ? { th: +(b.ctl.throttle || 0).toFixed(2), st: +(b.ctl.steer || 0).toFixed(2) } : null, v: +Math.hypot(b.v.x, b.v.z).toFixed(2), goal: b.goal }));
+      window.__TDMAP__ = () => ({ seed: MAP_SEED, passes: PASSES.map((b) => b.map((g) => ({ x: +g.x.toFixed(1), z: +g.z.toFixed(1) }))), spawns: SPAWN_POINTS.map((q) => ({ x: +q.x.toFixed(1), z: q.z })), town: TOWN.length });
       window.__TDBOSS__ = (spawn) => {
-        if (spawn && (!world.mechs || !world.mechs.length)) { const m = buildMech(world, { x: 0, z: GRID_OZ + 5, yaw: 0 }); m.thrustersOn = true; m.thrustAssist = true; m.bossHp = BOSS.hp; }
+        if (spawn && (!world.mechs || !world.mechs.length)) { const bSide = MAP_SEED % 2; const m = buildMech(world, { x: SPAWN_POINTS[bSide === 0 ? 0 : 2].x, z: GRID_OZ + 5, yaw: 0 }); m._bossSide = bSide; m.thrustersOn = true; m.thrustAssist = true; m.bossHp = BOSS.hp; }
         const m = world.mechs && world.mechs[0];
         return m && m.hull ? { x: +m.hull.pos.x.toFixed(1), z: +m.hull.pos.z.toFixed(1), hp: Math.round(m.bossHp), falls: m._bossFalls || 0, down: !!world._bossDown } : { down: !!world._bossDown };
       };
@@ -1417,7 +1485,7 @@ export default function ColdsnapTD() {
               started: S.started, gameOver: S.gameOver, victory: S.victory,
               mode: S.mode, sellMode: S.sellMode,
               paused: S.paused, speed: S.speed,
-              strikeCd: Math.ceil(S.strikeCd), muted: A.muted,
+              strikeCd: Math.ceil(S.strikeCd), muted: A.muted, seed: MAP_SEED,
               town: (() => { let up = 0, all = 0; for (const tb of town) { if (tb.id === "depot" || tb.id === "oldruin") continue; all++; if (!tb.ruined) up++; } return { up, all, earned: Math.round(S.townEarned || 0) }; })(),
               bossHp: world.mechs && world.mechs.length && world.mechs[0].bossHp != null ? Math.max(0, Math.round(world.mechs[0].bossHp)) : (world._bossDown ? 0 : null),
               toasts: S.toasts.map((t) => t.txt),
@@ -1455,7 +1523,7 @@ export default function ColdsnapTD() {
         canvas.removeEventListener("touchstart", blockTouch);
         window.removeEventListener("keydown", kd);
         window.removeEventListener("keyup", ku);
-        for (const k of ["__TD__", "__TDBUILD__", "__TDSPAWN__", "__TDSIM__", "__TDGFX__", "__TDWRECK__", "__TDPROJ__", "__TDUNITS__", "__TDSTART__", "__TDROCKS__", "__TDARMOR__", "__TDBOSS__"]) delete window[k];
+        for (const k of ["__TD__", "__TDBUILD__", "__TDSPAWN__", "__TDSIM__", "__TDGFX__", "__TDWRECK__", "__TDPROJ__", "__TDUNITS__", "__TDSTART__", "__TDROCKS__", "__TDARMOR__", "__TDBOSS__", "__TDMAP__"]) delete window[k];
         A.dispose();
         if (R) R.dispose();
         stateRef.current = null;
@@ -1594,6 +1662,7 @@ export default function ColdsnapTD() {
           <button style={{ ...P.btn, fontSize: 15, padding: "10px 26px", borderColor: "#4aff8c", color: "#4aff8c" }} onClick={startGame}>
             DIG IN
           </button>
+          <div style={{ fontSize: 10, opacity: 0.55, marginTop: 12, letterSpacing: 2 }}>FIELD ORDER #{hud.seed || "—"} · ?seed= replays a map</div>
         </div>
       )}
 
@@ -1605,6 +1674,7 @@ export default function ColdsnapTD() {
           <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 16 }}>
             {hud.kills} kills · wave {hud.wave}/{hud.totalWaves}
             {hud.town ? <><br />village: {hud.town.up}/{hud.town.all} standing · ◆{hud.town.earned} earned holding it</> : null}
+            <br /><span style={{ opacity: 0.6 }}>field order #{hud.seed}</span>
           </div>
           <button style={{ ...P.btn, fontSize: 14, padding: "9px 22px", borderColor: "#9fdcff", color: "#9fdcff" }} onClick={restart}>
             RUN IT AGAIN

@@ -1,13 +1,14 @@
 import puppeteer from "puppeteer-core";
 const browser = await puppeteer.launch({ protocolTimeout: 600000, executablePath: "/usr/bin/chromium", headless: true, args: ["--no-sandbox", "--disable-gpu", "--enable-unsafe-swiftshader"] });
 const page = await browser.newPage();
-await page.goto("http://localhost:4173/coldsnap/", { waitUntil: "networkidle0" });
+await page.goto("http://localhost:4173/coldsnap/?seed=11", { waitUntil: "networkidle0" });
 await page.evaluate(() => document.querySelector('[data-menu="towerdef"]').click());
 await page.waitForFunction(() => typeof window.__TDSIM__ === "function", { timeout: 20000 });
 const r = await page.evaluate(() => {
   window.__TDSTART__();
   const G = (x, z) => ({ gx: Math.floor((x + 28) / 2), gz: Math.floor((z + 56) / 2) });
-  for (const [px, pz] of [[-4, 3], [16, 2]]) {
+  const mp = window.__TDMAP__();
+  for (const { x: px, z: pz } of mp.passes[1]) {
     const g = G(px, pz);
     for (let dx = -2; dx <= 2; dx++) { if (dx !== 0) window.__TDBUILD__(g.gx + dx, g.gz, "wall"); }
     window.__TDBUILD__(g.gx - 1, g.gz - 2, "gun");

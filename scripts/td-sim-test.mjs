@@ -18,7 +18,7 @@ try {
   await page.setViewport({ width: 960, height: 600 });
   const pageErrors = [];
   page.on("pageerror", (e) => pageErrors.push(String(e)));
-  await page.goto(URL, { waitUntil: "networkidle0" });
+  await page.goto(URL + "?seed=11", { waitUntil: "networkidle0" });
   await page.evaluate(() => document.querySelector('[data-menu="towerdef"]').click());
   await page.waitForFunction(() => typeof window.__TDSIM__ === "function", { timeout: 20000 });
   await page.evaluate(() => window.__TDSTART__());
@@ -35,7 +35,10 @@ try {
 
   // 2. towers kill: a gun line across the mid pass earns kills + bounty
   r = await page.evaluate(() => {
-    for (let gx = 10; gx <= 17; gx++) window.__TDBUILD__(gx, 26, "gun");
+    const mp = window.__TDMAP__();
+    const p1 = mp.passes[1][0];
+    const g1 = { gx: Math.floor((p1.x + 28) / 2), gz: Math.floor((p1.z + 56) / 2) };
+    for (let gx = g1.gx - 4; gx <= g1.gx + 3; gx++) window.__TDBUILD__(gx, g1.gz + 2, "gun");
     const t0 = window.__TD__();
     window.__TDSPAWN__(8, "");
     window.__TDSIM__(40);
@@ -47,7 +50,7 @@ try {
 
   // 3. walls: rifles chew a wall down and it shatters into engine chunks
   r = await page.evaluate(() => {
-    window.__TDBUILD__(14, 10, "wall");
+    const mpp = window.__TDMAP__(); const pw = mpp.passes[1][0]; window.__TDBUILD__(Math.floor((pw.x + 28) / 2), Math.floor((pw.z + 56) / 2) + 4, "wall");
     const before = window.__TD__().bodies;
     window.__TDSPAWN__(10, "heavy");
     window.__TDSIM__(45);
