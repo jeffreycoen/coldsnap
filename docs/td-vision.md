@@ -1,6 +1,14 @@
-# HOLD THE DEPOT → FIELD COMMAND: Vision Outline
+# COLDSNAP DEPOT: Vision Outline
 
 Working brainstorm, 2026-08-09. Direction only — nothing here is committed until it ships behind gates.
+
+## The module (decided 2026-08-09)
+**COLDSNAP DEPOT is a new module** — HOLD THE DEPOT (ColdsnapTD.jsx) stays intact as the pure TD and its gates keep passing untouched; the symmetric game is built next door. Same pattern as demo → sandbox → campaign.
+- Shared substrate: core.js + renderer.js, map generator, audio, common unit/tower spec data. Core changes only as guarded hooks (TD-hook discipline).
+- Structured as a directory from birth: `src/depot/` with `economy.js`, `territory.js`, `accuracy.js`, `ai/attacker.js`, `ai/builder.js`, `units/` — apply the module-split lesson early, not at 2800 lines.
+- DEPOT inherits none of TD's balance tuning debts; conditional accuracy and the economy land fresh here, TD untouched.
+- Trees/fire/MG-shredding is substrate-level — both modes get it.
+- Start screen gains COLDSNAP DEPOT as a new option.
 
 ## Pillars
 
