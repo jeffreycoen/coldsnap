@@ -427,7 +427,7 @@ export function fireVolley(world, x, z, n = 6, attacker = "player") {
     const ox = (world.rng() - 0.5) * 7, oz = (world.rng() - 0.5) * 7;
     const from = v3(x + ox - 6, world.field.heightAt(x, z) + 55, z + oz - 6);
     const dir = V.norm(v3(), v3(0.11, -1, 0.11));
-    const p = fireProjectile(world, from, dir, 42 + world.rng() * 4, { kind: "rocket", r: 4.4, kv: 13, dmg: 62, crater: 1.1, attacker, volley: id, delay: i * 0.09 });
+    const p = fireProjectile(world, from, dir, 42 + world.rng() * 4, { kind: "rocket", r: 4.4, kv: 13, dmg: 62, crater: 1.1, attacker, volley: id, delay: i * 0.09, hitStruct: true }); // hitStruct: inert outside tower defense (no wall/tower/rock bodies elsewhere)
     p.pos.y += i * 3.5;
   }
   return id;
@@ -589,6 +589,9 @@ export function explode(world, x, y, z, spec) {
     if (b.alive && (b.kind === "unit" || b.kind === "vehicle" || b.kind === "truck")) {
       applyDamage(world, b, dmg, { cause: CAUSE.BLAST, attacker: spec.attacker || "world", volley: spec.volley || 0 });
     }
+    // DIVERGENCE (guarded): trees (tower defense) burn down under any blast —
+    // no demo or campaign world holds a "tree" body
+    if (b.alive && b.kind === "tree") applyDamage(world, b, dmg, { cause: CAUSE.BLAST, attacker: spec.attacker || "world" });
   }
   // DIVERGENCE (guarded, tower defense): hitStruct ordnance damages static
   // walls/emplacements — no demo or campaign spec sets it, and those worlds
@@ -596,7 +599,7 @@ export function explode(world, x, y, z, spec) {
   // invM 0 and pinned statics belong out of it anyway.
   if (spec.hitStruct) {
     for (const b of world.bodies) {
-      if (!b.alive || (b.kind !== "wall" && b.kind !== "tower")) continue;
+      if (!b.alive || (b.kind !== "wall" && b.kind !== "tower" && b.kind !== "rock")) continue;
       const dd = Math.hypot(b.pos.x - x, b.pos.y - y, b.pos.z - z);
       const reach = spec.r + Math.max(b.hx, b.hy, b.hz);
       if (dd > reach) continue;
@@ -648,10 +651,12 @@ function stepProjectiles(world) {
       // hitOnly "structure" is enemy rifle fire that ignores the crowd around it
       if (p.spec.hitOnly === "structure" && b.kind !== "tower" && b.kind !== "wall" && b.kind !== "chunk") continue;
       // structures stop a round only when the spec cares about structures —
-      // tower fire arcs over the player's own wall line (original TD rule)
-      if ((b.kind === "tower" || b.kind === "wall") && !(p.spec.hitOnly === "structure" || p.spec.hitStruct)) continue;
-      if (b.invM === 0 && b.kind !== "chunk" && b.kind !== "tower" && b.kind !== "wall") continue;
-      if ((b.kind === "tower" || b.kind === "wall") && !b.alive) continue;
+      // tower fire arcs over the player's own wall line (original TD rule).
+      // "rock" is terrain-grade masonry: same rules, much more of it.
+      const isStruct = b.kind === "tower" || b.kind === "wall" || b.kind === "rock";
+      if (isStruct && !(p.spec.hitOnly === "structure" || p.spec.hitStruct)) continue;
+      if (b.invM === 0 && b.kind !== "chunk" && !isStruct) continue;
+      if (isStruct && !b.alive) continue;
       if (!b.alive && b.kind === "unit") continue;
       // owner immunity: a point-blank reticle pulls the muzzle back inside the
       // firing hull, and a shell must not detonate on its own tank leaving the

@@ -70,13 +70,16 @@ function buildTdTerrain(field, seed = 11) {
   const { n, cs, h, half } = field;
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
     const x = i * cs - half, z = j * cs - half;
-    // rolling snowfield, rising gently toward the depot end
+    // rolling snowfield climbing north in three TERRACES, each step riding
+    // its ridge band — the map reads as benched high ground, not a ramp.
+    // Mortars arc over the lips; guns on a bench own the bench below.
+    const stepUp = (z0, w, h2) => { const t = Math.min(1, Math.max(0, (z - z0) / w + 0.5)); return h2 * t * t * (3 - 2 * t); };
     let y = 2.0
       + Math.sin(x * 0.075 + 1.3) * 0.42
       + Math.cos(z * 0.061 - 0.6) * 0.38
       + Math.sin((x + z) * 0.032) * 0.30
       + (r() - 0.5) * 0.06
-      + Math.max(0, (z + 10) / 46) * 2.2;             // the long climb north
+      + stepUp(-27, 10, 1.8) + stepUp(2.5, 10, 2.0) + stepUp(30.5, 10, 2.2);
     for (const k of ROCKS) {
       const d = Math.hypot(x - k.x, z - k.z) / k.r;
       if (d < 1.6) y += k.h * Math.exp(-d * d * 2.1);
@@ -112,7 +115,7 @@ function buildTdTerrain(field, seed = 11) {
     const d = Math.hypot(x - OBJ_POS.x, z - OBJ_POS.z);
     if (d < 9) {
       const t = Math.min(1, (9 - d) / 4.5);
-      const ph = 2.0 + Math.max(0, (OBJ_POS.z + 10) / 46) * 2.2 + 0.5;
+      const ph = 2.0 + 1.8 + 2.0 + 2.2 + 0.5; // above all three terrace steps
       h[j * n + i] += (ph - h[j * n + i]) * t;
     }
   }
@@ -726,6 +729,40 @@ export default function ColdsnapTD() {
       const grid = makeGrid(field);
       const world = makeWorld({ field, seed: 11 });
       const town = buildTown(world, grid, field);
+      // DESTRUCTIBLE ROCK: every outcrop is a huge-HP body. Bring one down
+      // (airstrikes, massed mortars) and its terrain bump is carved out, its
+      // cells open, and the pather learns a lane nobody walled. Terrain-
+      // grade masonry: expensive ordnance literally reshapes the approach.
+      const rocksLive = ROCKS.slice();
+      for (const k of ROCKS) {
+        const b = addBody(world, { kind: "rock", team: 0, mass: 0, hx: k.r * 0.75, hy: k.h * 0.8, hz: k.r * 0.75, x: k.x, y: field.heightAt(k.x, k.z) - k.h * 0.2, z: k.z, hp: 380 + k.r * 90 });
+        b.maxHp = b.hp; b.rockRef = k;
+      }
+      // TREELINE: snow pines behind the spawn edge + three clumps upfield.
+      // Real bodies — blasts fell them where they stand.
+      const treeAt = (tx, tz) => {
+        const ty = field.heightAt(tx, tz);
+        const u = addBody(world, { kind: "tree", team: 0, mass: 260, hx: 0.28, hy: 1.6, hz: 0.28, x: tx, y: ty + 1.62, z: tz, hp: 25, friction: 0.5 });
+        u.sleeping = true;
+        return u;
+      };
+      {
+        const rT = mulberry32(23);
+        for (let tx = -50; tx <= 50; tx += 3.2) {
+          const jx = tx + (rT() - 0.5) * 1.6, jz = -54.5 + rT() * 3.2;
+          if (SPAWN_POINTS.some((sp) => Math.hypot(jx - sp.x, jz - sp.z) < 4.5)) continue;
+          if (rockAt(jx, jz)) continue;
+          treeAt(jx, jz);
+        }
+        for (const [cx, cz, n2] of [[-38, -12, 7], [40, -16, 6], [-44, 40, 7]]) {
+          for (let i = 0; i < n2; i++) {
+            const a = rT() * 6.28, rr = 1.5 + rT() * 4;
+            const jx = cx + Math.cos(a) * rr, jz = cz + Math.sin(a) * rr;
+            if (rockAt(jx, jz) || pondAt(jx, jz)) continue;
+            treeAt(jx, jz);
+          }
+        }
+      }
       const objG = grid.worldToGrid(OBJ_POS.x, OBJ_POS.z);
       computeFlowField(grid, objG.gx, objG.gz);
       R = makeRenderer(canvas, world, { town: false, camera: "tactical" });
@@ -961,10 +998,52 @@ export default function ColdsnapTD() {
       const sendNow = () => { const ws = S.ws; if (S.started && ws.betweenWaves && !S.gameOver && !S.victory) { ws.countdown = 0; } };
       S.sendNow = sendNow;
 
+      // a felled outcrop: carve its bump out of the ground, open its cells,
+      // strew boulder rubble, and tell the pather the map changed
+      const breachRock = (b) => {
+        const k = b.rockRef;
+        if (!k) return;
+        const { n, cs, h, half } = field;
+        const i0 = Math.max(0, Math.floor((k.x - k.r * 1.7 + half) / cs)), i1 = Math.min(n - 1, Math.ceil((k.x + k.r * 1.7 + half) / cs));
+        const j0 = Math.max(0, Math.floor((k.z - k.r * 1.7 + half) / cs)), j1 = Math.min(n - 1, Math.ceil((k.z + k.r * 1.7 + half) / cs));
+        for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+          const px = i * cs - half, pz = j * cs - half;
+          const d = Math.hypot(px - k.x, pz - k.z) / k.r;
+          if (d < 1.6) h[j * n + i] -= k.h * Math.exp(-d * d * 2.1); // the exact bump buildTdTerrain added
+        }
+        field.dirty = true;
+        for (let gz = 0; gz < GRID_H; gz++) for (let gx = 0; gx < GRID_W; gx++) {
+          const wp = grid.gridToWorld(gx, gz);
+          if (Math.hypot(wp.x - k.x, wp.z - k.z) < k.r * 0.78 + 0.9) {
+            const c = grid.cells[grid.idx(gx, gz)];
+            if (c.terrain) { c.blocked = false; c.terrain = false; }
+          }
+        }
+        for (let i = 0; i < 9; i++) { // boulder rubble where the ridge stood
+          const a = (i / 9) * 6.28, rr = k.r * (0.2 + 0.5 * ((i * 7) % 5) / 5);
+          const c = addBody(world, { kind: "chunk", team: 0, mass: 320, hx: 0.55, hy: 0.55, hz: 0.55, x: k.x + Math.cos(a) * rr, y: field.heightAt(k.x, k.z) + 1.2 + (i % 3) * 0.9, z: k.z + Math.sin(a) * rr, friction: 0.7, restitution: 0.02 });
+          c.bornT = world.t;
+        }
+        const ri = rocksLive.indexOf(k);
+        if (ri >= 0) rocksLive.splice(ri, 1);
+        R.setDressing({ rocks: rocksLive, ponds: PONDS });
+        recomputeFlow();
+        toast("THE RIDGE IS BREACHED");
+      };
       // events drained once per frame; kills pay bounty off the still-present corpse
       const drainEvents = () => {
         const evs = world.events.slice();
         world.events.length = 0;
+        // dead outcrops sweep by STATE, not by kill event — an event can be
+        // cleared by the next substep before the drain ever sees it
+        for (let i = world.bodies.length - 1; i >= 0; i--) {
+          const rb = world.bodies[i];
+          if (rb.kind === "rock" && !rb.alive) {
+            breachRock(rb);
+            world.byId.delete(rb.id);
+            world.bodies.splice(i, 1);
+          }
+        }
         for (const e of evs) {
           if (e.type === "tdkill") {
             S.resources += e.bounty; S.kills++;
@@ -987,6 +1066,7 @@ export default function ColdsnapTD() {
       window.__TDWRECK__ = (x, z, big) => explode(world, x, field.heightAt(x, z) + 0.5, z, { r: big ? 4.2 : 3.0, kv: big ? 11 : 8, dmg: big ? 45 : 30, crater: big ? 0.9 : 0.6, hitStruct: true, attacker: "world" });
       window.__TDPROJ__ = () => world.projectiles.map((p) => ({ x: p.pos.x, y: p.pos.y, z: p.pos.z, vx: p.v.x, vy: p.v.y, vz: p.v.z, gy: field.heightAt(p.pos.x, p.pos.z) }));
       window.__TDSTART__ = () => { S.started = true; };
+      window.__TDROCKS__ = () => world.bodies.filter((b) => b.kind === "rock").map((b) => ({ x: +b.pos.x.toFixed(1), y: +b.pos.y.toFixed(1), z: +b.pos.z.toFixed(1), hp: Math.round(b.hp), alive: b.alive }));
 
       // ---- main loop
       let last = performance.now();
@@ -1132,7 +1212,7 @@ export default function ColdsnapTD() {
         canvas.removeEventListener("touchstart", blockTouch);
         window.removeEventListener("keydown", kd);
         window.removeEventListener("keyup", ku);
-        for (const k of ["__TD__", "__TDBUILD__", "__TDSPAWN__", "__TDSIM__", "__TDGFX__", "__TDWRECK__", "__TDPROJ__", "__TDUNITS__", "__TDSTART__"]) delete window[k];
+        for (const k of ["__TD__", "__TDBUILD__", "__TDSPAWN__", "__TDSIM__", "__TDGFX__", "__TDWRECK__", "__TDPROJ__", "__TDUNITS__", "__TDSTART__", "__TDROCKS__"]) delete window[k];
         A.dispose();
         if (R) R.dispose();
         stateRef.current = null;
