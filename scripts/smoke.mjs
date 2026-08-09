@@ -562,9 +562,9 @@ try {
   ok("mech range: HUD mounts", true);
   await page.waitForFunction(() => {
     const m = window.__MECHRANGE__;
-    return m && m.world.bodies.filter((b) => b.mechRef).length === 15 && m.mech.hull.R[4] > 0.9;
+    return m && m.world.bodies.filter((b) => b.mechRef).length === 17 && m.mech.hull.R[4] > 0.9;
   }, { timeout: 20000, polling: 1000 });
-  ok("mech range: frame standing (15 mech links, hull upright)", true);
+  ok("mech range: frame standing (17 mech links, hull upright)", true);
   await page.waitForFunction(() => /STAND|WALK/.test(document.querySelector("[data-mech-status]")?.textContent || ""), { timeout: 10000, polling: 500 });
   ok("mech range: status line live", true);
   await page.keyboard.press("KeyR");
@@ -576,6 +576,18 @@ try {
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => document.querySelector('[data-menu="mech"]'), { timeout: 10000 });
   ok("mech range: ESC returns to menu", true);
+
+  // --- HOLD THE DEPOT (tower defense)
+  await clickMenu("towerdef");
+  await page.waitForFunction(() => typeof window.__TD__ === "function", { timeout: 20000 });
+  ok("tower defense: mounts", true);
+  await page.evaluate(() => window.__TDSTART__());
+  await page.waitForFunction(() => { const s = window.__TD__(); return s.t > 1 && s.bodies > 0; }, { timeout: 20000, polling: 500 });
+  const td = await page.evaluate(() => window.__TD__());
+  ok("tower defense: world stepping", td.t > 1 && td.lives === 20, `t=${td.t.toFixed(1)} lives=${td.lives}`);
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => document.querySelector('[data-menu="towerdef"]'), { timeout: 10000 });
+  ok("tower defense: ESC returns to menu", true);
 
   ok("no page errors during the run", pageErrors.length === 0);
   if (pageErrors.length) console.log("page errors:", pageErrors);
