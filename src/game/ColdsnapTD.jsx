@@ -19,18 +19,18 @@ const { V, v3, wake } = __mech__;
 // ============================================================== the map
 // 56x56 grid of 2m cells. Enemies enter from the south treeline and walk
 // north to the depot on the plateau.
-const GRID_CS = 2.0, GRID_W = 56, GRID_H = 56;
+const GRID_CS = 2.0, GRID_W = 28, GRID_H = 56; // half the old width (Jeff: the map was twice as wide as it needed to be) — three lanes still fit, chokes just matter more
 const GRID_OX = -(GRID_W * GRID_CS) / 2, GRID_OZ = -(GRID_H * GRID_CS) / 2;
 const OBJ_POS = { x: 0, z: GRID_OZ + GRID_H * GRID_CS - 7 };
 const SPAWN_POINTS = [
-  { x: -34, z: GRID_OZ + 2 }, { x: 0, z: GRID_OZ + 2 }, { x: 34, z: GRID_OZ + 2 },
+  { x: -18, z: GRID_OZ + 2 }, { x: 0, z: GRID_OZ + 2 }, { x: 18, z: GRID_OZ + 2 },
 ];
 // Frozen meltwater. Walkable — slick, so they cross it FASTER — but you cannot
 // sink a foundation into it, so the ponds are permanent holes in your maze.
 const PONDS = [
-  { x: -20, z: -6, r: 10.0, level: 0 },
-  { x: 22, z: 18, r: 8.0, level: 0 },
-  { x: -6, z: 34, r: 7.0, level: 0 },
+  { x: -14, z: -6, r: 8.0, level: 0 },
+  { x: 16, z: 18, r: 7.0, level: 0 },
+  { x: -6, z: 34, r: 6.5, level: 0 },
 ];
 // Granite ridges laid across the approach with deliberate passes cut through
 // them. This is the map's spine: three bands, each pierced twice, so a wave
@@ -46,19 +46,19 @@ function ridge(x0, z0, x1, z1, gaps, r, h) {
   return out;
 }
 const ROCKS = [
-  ...ridge(-52, -30, 52, -26, [[-20, -29, 7], [22, -27, 7]], 4.6, 3.4),
-  ...ridge(-52, 4, 52, 2, [[-4, 3, 7.5], [34, 2, 6.5]], 4.8, 3.8),
-  ...ridge(-40, 32, 44, 30, [[-16, 31, 6.5], [18, 30, 7]], 4.4, 3.2),
-  { x: -46, z: 14, r: 5.0, h: 3.6 }, { x: 46, z: 16, r: 5.0, h: 3.6 },
+  ...ridge(-27, -30, 27, -26, [[-10, -29, 6], [12, -27, 6]], 4.2, 3.4),
+  ...ridge(-27, 4, 27, 2, [[-4, 3, 6.5], [16, 2, 6]], 4.4, 3.8),
+  ...ridge(-25, 32, 26, 30, [[-10, 31, 6], [12, 30, 6]], 4.2, 3.2),
+  { x: -25, z: 14, r: 4.0, h: 3.6 }, { x: 25, z: 16, r: 4.0, h: 3.6 },
 ];
 // Coldsnap masonry: hollow, welded, and every one can be brought down.
 const TOWN = [
-  { id: "house0", x: -30, z: -14, nx: 6, nz: 5, ny: 4, door: 5 },
-  { id: "house1", x: 30, z: -12, nx: 6, nz: 5, ny: 4, door: 0 },
-  { id: "house2", x: -12, z: 16, nx: 5, nz: 4, ny: 4, door: 4 },
-  { id: "house3", x: 12, z: 40, nx: 5, nz: 4, ny: 4, door: 0 },
+  { id: "house0", x: -17, z: -14, nx: 6, nz: 5, ny: 4, door: 5 },
+  { id: "house1", x: 17, z: -12, nx: 6, nz: 5, ny: 4, door: 0 },
+  { id: "house2", x: -11, z: 16, nx: 5, nz: 4, ny: 4, door: 4 },
+  { id: "house3", x: 11, z: 40, nx: 5, nz: 4, ny: 4, door: 0 },
   { id: "keep",   x: 0,  z: 22, nx: 7, nz: 6, ny: 5, door: 3 },
-  { id: "shed",   x: -34, z: 26, nx: 4, nz: 4, ny: 3, door: 0 },
+  { id: "shed",   x: -19, z: 26, nx: 4, nz: 4, ny: 3, door: 0 },
   { id: "depot",  x: 0,  z: 56, nx: 9, nz: 7, ny: 5, door: 4, depot: true },
 ];
 const MASON = { hcs: 0.40, pitch: 0.83, mass: 100, breakF: 8.0e4 };
@@ -802,13 +802,13 @@ export default function ColdsnapTD() {
       };
       {
         const rT = mulberry32(23);
-        for (let tx = -50; tx <= 50; tx += 3.2) {
+        for (let tx = -26; tx <= 26; tx += 3.2) {
           const jx = tx + (rT() - 0.5) * 1.6, jz = -54.5 + rT() * 3.2;
           if (SPAWN_POINTS.some((sp) => Math.hypot(jx - sp.x, jz - sp.z) < 4.5)) continue;
           if (rockAt(jx, jz)) continue;
           treeAt(jx, jz);
         }
-        for (const [cx, cz, n2] of [[-38, -12, 7], [40, -16, 6], [-44, 40, 7]]) {
+        for (const [cx, cz, n2] of [[-22, -12, 7], [22, -16, 6], [-23, 42, 7]]) {
           for (let i = 0; i < n2; i++) {
             const a = rT() * 6.28, rr = 1.5 + rT() * 4;
             const jx = cx + Math.cos(a) * rr, jz = cz + Math.sin(a) * rr;
@@ -991,8 +991,8 @@ export default function ColdsnapTD() {
             const ky = (2 * cb.halfH()) / Math.max(1, r.height);
             S.focus.x -= cb.right.x * dx * kx - cb.up.x * dy * ky;
             S.focus.z -= cb.right.z * dx * kx - cb.up.z * dy * ky;
-            S.focus.x = Math.max(-75, Math.min(75, S.focus.x));
-            S.focus.z = Math.max(-75, Math.min(75, S.focus.z));
+            S.focus.x = Math.max(-34, Math.min(34, S.focus.x));
+            S.focus.z = Math.max(-62, Math.min(62, S.focus.z));
           }
         } else if (pointers.size === 2 && pinchD0 > 0) {
           const ps = [...pointers.values()];
@@ -1142,8 +1142,8 @@ export default function ColdsnapTD() {
           if (S.keys.s || S.keys.arrowdown) S.focus.z -= pan;
           if (S.keys.a || S.keys.arrowleft) S.focus.x -= pan * 0.8;
           if (S.keys.d || S.keys.arrowright) S.focus.x += pan * 0.8;
-          S.focus.x = Math.max(-75, Math.min(75, S.focus.x));
-          S.focus.z = Math.max(-75, Math.min(75, S.focus.z));
+          S.focus.x = Math.max(-34, Math.min(34, S.focus.x));
+          S.focus.z = Math.max(-62, Math.min(62, S.focus.z));
           S.focus.y = field.heightAt(S.focus.x, S.focus.z);
           // hover preview (mouse only — a finger is not hovering)
           if (!isTouch && S.pointer && S.started && !S.gameOver && !S.victory) {

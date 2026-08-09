@@ -35,7 +35,7 @@ try {
 
   // 2. towers kill: a gun line across the mid pass earns kills + bounty
   r = await page.evaluate(() => {
-    for (let gx = 24; gx <= 31; gx++) window.__TDBUILD__(gx, 26, "gun");
+    for (let gx = 10; gx <= 17; gx++) window.__TDBUILD__(gx, 26, "gun");
     const t0 = window.__TD__();
     window.__TDSPAWN__(8, "");
     window.__TDSIM__(40);
@@ -47,7 +47,7 @@ try {
 
   // 3. walls: rifles chew a wall down and it shatters into engine chunks
   r = await page.evaluate(() => {
-    window.__TDBUILD__(28, 10, "wall");
+    window.__TDBUILD__(14, 10, "wall");
     const before = window.__TD__().bodies;
     window.__TDSPAWN__(10, "heavy");
     window.__TDSIM__(45);

@@ -6,8 +6,8 @@ await page.evaluate(() => document.querySelector('[data-menu="towerdef"]').click
 await page.waitForFunction(() => typeof window.__TDSIM__ === "function", { timeout: 20000 });
 const r = await page.evaluate(() => {
   window.__TDSTART__();
-  const G = (x, z) => ({ gx: Math.floor((x + 56) / 2), gz: Math.floor((z + 56) / 2) });
-  for (const [px, pz] of [[-4, 3], [34, 2]]) {
+  const G = (x, z) => ({ gx: Math.floor((x + 28) / 2), gz: Math.floor((z + 56) / 2) });
+  for (const [px, pz] of [[-4, 3], [16, 2]]) {
     const g = G(px, pz);
     for (let dx = -2; dx <= 2; dx++) { if (dx !== 0) window.__TDBUILD__(g.gx + dx, g.gz, "wall"); }
     window.__TDBUILD__(g.gx - 1, g.gz - 2, "gun");

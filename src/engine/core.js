@@ -415,6 +415,10 @@ function wakeIsland(world, b) {
 // ------------------------------------------------------------- projectiles
 export function fireProjectile(world, from, dir, speed, spec) {
   const p = { pos: v3(from.x, from.y, from.z), v: v3(dir.x * speed, dir.y * speed, dir.z * speed), life: 0, spec, r: 0.18 };
+  // every 4th MG round is a tagged tracer (render-only field; counter, not
+  // rng — the demo's rng stream must not shift)
+  world._trc = (world._trc || 0) + 1;
+  if (spec.kind === "mg" && world._trc % 4 === 0) p.tracer = true;
   world.projectiles.push(p);
   world.events.push({ type: "muzzle", x: from.x, y: from.y, z: from.z, dx: dir.x, dy: dir.y, dz: dir.z, kind: spec.kind || "shell" });
   return p;

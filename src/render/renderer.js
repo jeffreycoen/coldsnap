@@ -439,8 +439,12 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const smokeMesh = pool(new THREE.PlaneGeometry(1, 1), smokeMat, 128, false); smokeMesh.layers.set(1);
   const fireMat = new THREE.MeshBasicMaterial({ color: 0xffb257, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
   const fireMesh = pool(new THREE.PlaneGeometry(1, 1), fireMat, 96, false); fireMesh.layers.set(1);
-  const tracerMat = new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
+  const tracerMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }); // white base: per-instance colors carry the hue
   const tracerMesh = pool(new THREE.BoxGeometry(0.09, 0.09, 1), tracerMat, 64, false); tracerMesh.layers.set(1);
+  tracerMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(64 * 3).fill(1), 3);
+  tracerMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+  // snow washes out pale amber — munitions burn ORANGE-RED, tracers gold
+  const TRC_MG = new THREE.Color(0xff5230), TRC_SHELL = new THREE.Color(0xff8c24), TRC_BRIGHT = new THREE.Color(0xffd94f);
   // DIVERGENCE from the demo: rockets get their own pool with NORMAL blending
   // (additive washes to white over snow) — orange on the climb, red on the
   // dive, so a volley reads as six burning things coming down
@@ -558,7 +562,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
     for (const e of events) {
       if (e.type === "boom") {
         spawnBoom(e.x, e.y, e.z, e.r);
-        shake = Math.min(2.4, shake + 0.5 + e.r * 0.18);
+        shake = Math.min(1.5, shake + 0.28 + e.r * 0.1);
       } else if (e.type === "splat") {
         // 1024: the canvas doubled for the block grid; the demo's 512 factors
         // here were painting craters (and treads below) at half position
@@ -569,7 +573,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
         if (kb && kb.smearStyle) splat.smear(((e.x + F.half) / Wd) * 1024, ((e.z + F.half) / Wd) * 1024, kb.smearStyle, e.x, e.z);
       } else if (e.type === "muzzle") {
         fire.push({ x: e.x, y: e.y, z: e.z, s: 1.1, life: 0.12, age: 0 });
-        shake = Math.min(2.4, shake + 0.25);
+        shake = Math.min(1.5, shake + 0.12);
       } else if (e.type === "gmuzzle") {
         fire.push({ x: e.x, y: e.y + 0.4, z: e.z, s: 0.8, life: 0.1, age: 0 });
       } else if (e.type === "weldbreak") puff(e.x, e.y, e.z, e.ice ? 3 : 2, e.ice ? 0xe8f4fb : 0x8a8f96);
@@ -1059,9 +1063,11 @@ export function makeRenderer(canvas, world0, opts = {}) {
       const th = p.tracer ? 2.2 : kind === "mg" ? 0.7 : 1;
       dummy.scale.set(th, th, p.tracer ? 3.2 : kind === "mg" ? 1.1 : 1.8);
       dummy.updateMatrix();
+      if (tracerMesh.setColorAt) tracerMesh.setColorAt(ti, p.tracer ? TRC_BRIGHT : kind === "mg" ? TRC_MG : TRC_SHELL);
       tracerMesh.setMatrixAt(ti++, dummy.matrix);
     }
     tracerMesh.count = ti; tracerMesh.instanceMatrix.needsUpdate = true;
+    if (tracerMesh.instanceColor) tracerMesh.instanceColor.needsUpdate = true;
     rocketMesh.count = ri; rocketMesh.instanceMatrix.needsUpdate = true;
     if (rocketMesh.instanceColor) rocketMesh.instanceColor.needsUpdate = true;
     // blob shadows for airborne bodies
@@ -1152,7 +1158,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
     const sr = snapCam(desired, R3(camRight), R3(camUp), camFwd, texel);
     cam.position.set(sr.pos.x, sr.pos.y, sr.pos.z);
     cam.quaternion.copy(camQ);
-    const shx = (Math.random() - 0.5) * shake * 2.2, shy = (Math.random() - 0.5) * shake * 2.2;
+    const shx = (Math.random() - 0.5) * shake * 1.15, shy = (Math.random() - 0.5) * shake * 1.15;
     postMat.uniforms.uShift.value.set(-sr.errX + shx, -sr.errY + shy);
     postMat.uniforms.uT.value = world.t; // aurora clock (inert at uGrade 0)
     // sun rig follows focus

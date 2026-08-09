@@ -261,9 +261,49 @@ export function makeGameAudio() {
   };
   const knockCd = new Map();
   let knockBudget = 0, windPh = 0;
+  // incoming whistles: one per falling ballistic round (mortar shells,
+  // strike rockets). Keyed on the projectile OBJECT — it lives until impact.
+  const whistles = new Map();
+  const stepWhistles = (world, dt) => {
+    const live = new Set();
+    if (world.projectiles) for (const p of world.projectiles) {
+      if (!p.spec || (p.spec.kind !== "shell" && p.spec.kind !== "rocket")) continue;
+      if (p.v.y > -6 || p.life < 0.35) continue; // only committed, falling arcs
+      live.add(p);
+      let w = whistles.get(p);
+      if (!w && whistles.size < 8 && !muted) {
+        try {
+          const o = ctx.createOscillator(); o.type = "sine";
+          const g = ctx.createGain(); g.gain.value = 0.0001;
+          let tail = g;
+          if (ctx.createStereoPanner) { const pan = ctx.createStereoPanner(); g.connect(pan); tail = pan; w = { o, g, pan }; }
+          else w = { o, g };
+          tail.connect(master);
+          o.connect(g);
+          o.start();
+          whistles.set(p, w);
+        } catch (e) { continue; }
+      }
+      if (!w) continue;
+      // pitch climbs as it falls faster (the classic incoming shriek),
+      // vibrato gives it air; loudness swells as it nears the ground
+      const fall = Math.min(1, -p.v.y / 42);
+      w.o.frequency.value = (620 + fall * 900) * (1 + Math.sin(p.life * 31) * 0.025);
+      const h = p.pos.y - (world.field ? world.field.heightAt(p.pos.x, p.pos.z) : 0);
+      const near = Math.max(0, 1 - h / 45);
+      w.g.gain.value = 0.05 * (0.25 + 0.75 * near * near) * att(dist(p.pos.x, p.pos.z));
+      if (w.pan) w.pan.pan.value = panOf(p.pos.x);
+    }
+    for (const [p, w] of whistles) {
+      if (live.has(p)) continue;
+      try { w.g.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.02); w.o.stop(ctx.currentTime + 0.1); } catch (e) {}
+      whistles.delete(p);
+    }
+  };
 
   const tick = (world, dt) => {
     if (!ctx || muted) return;
+    stepWhistles(world, dt);
     const seen = new Set();
     // wind bed: a quiet, slowly breathing bandpass — the glue between shots
     windPh += dt * (0.13 + Math.sin(windPh * 0.37) * 0.02);
@@ -335,7 +375,10 @@ export function makeGameAudio() {
     }
   };
 
-  const stopAll = () => { for (const [, L] of loops) { try { L.src.stop(); } catch (e) {} } loops.clear(); };
+  const stopAll = () => {
+    for (const [, L] of loops) { try { L.src.stop(); } catch (e) {} } loops.clear();
+    for (const [, w] of whistles) { try { w.o.stop(); } catch (e) {} } whistles.clear();
+  };
 
   return {
     ensure, consume, tick,
