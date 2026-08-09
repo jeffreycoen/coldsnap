@@ -33,12 +33,20 @@ export function deriveGait(L, comH, halfStance, foot, g = 9.81) {
     splayMax: 1.40,
     yawPerStep: 8 * Math.PI / 180,
     turnRate: (8 * Math.PI / 180) / (tSS + tDS),
+    _period0: tSS + tDS, // certified period at derivation — machinery time-constants scale by stepPeriod/_period0
+    _designPeriod: tSS + tDS, // IMMUTABLE derivation period — authority scaling keys here (period0 may be re-certified by the quick-step; the two must not share a variable, measured collision)
     travelRate: 0.6 * Math.sqrt(L / 2.95),
     kDCM: 2.0,
     kCapture: 1.0,
     capCommit: 0.5,
     capDeadband: 0.15,
     restExt: 0.93,
+    // pole-placement campaign hooks (identity values — the step-map gains,
+    // exposed so schedules can move them as functions of period)
+    raibert: 1.3,
+    vChase: 0.45,
+    latchMix: 0.78,
+    seedSpan: 0.3,
     // spec's 0.40 assumes a stiff ankle position servo behind it; with
     // torque-only stance ankles the CoP trim IS the anti-lean authority and
     // 0.40 saturated at 3 degrees of hull lean (measured slow topple)
@@ -202,7 +210,7 @@ function prepHinge(j, dt) {
   const tr = j.tRate || 0;
   j._wTgt = tr + ((wRel - tr) + (kpEff * e + j.tauFF) * dt / Ieff) / (1 + kdEff * dt / Ieff);
   j._Ieff = Ieff;
-  j._mBudget = j.tauMax * dt * auth;
+  j._mBudget = j.tauMax * (j.tauMul || 1) * dt * auth; // tauMul: quick-step swing headroom (identity when unset)
   j._sAcc = 0;
   // motor: SINGLE-SHOT per tick (spec: "compute once per tick ... apply").
   // Per-iteration re-application is wrong in BOTH inertia conventions here:
@@ -226,7 +234,8 @@ function iterHinge(j, dt, locksOnly = false) {
     V.cross(_h1, j._rAw, ax); iMulVec(a.invIw, _h1, _h2); V.cross(_h1, _h2, j._rAw); k += V.dot(_h1, ax);
     V.cross(_h1, j._rBw, ax); iMulVec(b.invIw, _h1, _h2); V.cross(_h1, _h2, j._rBw); k += V.dot(_h1, ax);
     const cAx = ai === 0 ? j._C.x : ai === 1 ? j._C.y : j._C.z;
-    const bias = clamp((0.2 / dt) * cAx, -4, 4);
+    const wk = j.weldK || 1.5; // weld stiffness knob (C4 bake 1.5: stronger welds — smoother and +8k shove)
+    const bias = clamp((0.2 * wk / dt) * cAx, -4 * wk, 4 * wk);
     const P = -(vRel + bias) / Math.max(1e-9, k);
     V.scale(_h3, ax, P);
     V.addScaled(a.v, a.v, _h3, -a.invM);
@@ -239,7 +248,8 @@ function iterHinge(j, dt, locksOnly = false) {
     const n = pi === 0 ? j._p1 : j._p2;
     V.sub(_h1, b.w, a.w);
     const Cdot = V.dot(_h1, n);
-    const bias = clamp((0.2 / dt) * V.dot(j._eAng, n), -6, 6);
+    const wk2 = j.weldK || 1.5;
+    const bias = clamp((0.2 * wk2 / dt) * V.dot(j._eAng, n), -6 * wk2, 6 * wk2);
     const k = projK(a, b, n);
     const lam = -(Cdot + bias) / Math.max(1e-9, k);
     angImpulse(a, b, n, lam);
@@ -444,7 +454,7 @@ export const RIG = {
   // typical errors (~0.3 rad) commands accelerations INSIDE the physical
   // torque ceiling — BW 9 commanded 4.7x tauMax and the loop bang-banged the
   // ceiling exactly as spec §6 warns. tauMax is a ceiling, not a tuning knob.
-  BW: 3.5, zeta: 1.1,
+  BW: 5.25, zeta: 1.375, // C4 factorial bake (was 3.5/1.1): +50% servo bandwidth + damping — smoother, stiffer machine (i42 0.82, shove 56k)
 };
 
 // box inertia about its own centroid axes (half extents), world-axis aligned at build
@@ -580,6 +590,25 @@ export function buildMech(world, opts = {}) {
     mech.headWeld = addWeld(world, torso, head, 6.0e5);
     mech.torso = torso; mech.head = head;
     mech.upper = [torso, arms.L.b, arms.R.b, head];
+    // STABILIZATION ROCKETS (design 2026-08-02): six nozzles on the torso
+    // slab, exhaust canted 45 deg down-and-outward — thrust is therefore
+    // up-and-inward, applied HIGH (the torso rides ~2m above the CoM), so
+    // a burn both rights the lean and pushes the CoM back over support.
+    // Forces are REAL (applied to the torso body, carried into the hull
+    // through the waist ring) — unlike the ideal CMG there is no free
+    // momentum. Unlimited fuel for now (design call).
+    // Layout: torso-local [x(left), y(up), z(fwd)]; exhaust unit vectors.
+    const R2 = Math.SQRT1_2;
+    mech.thrusters = [
+      { p: v3(1.5 * s, -0.4 * s, 1.0 * s), e: v3(0, -R2, R2), cur: 0, cmd: 0 },   // front-left  (thrust up+back  = brake / anti-nose-down)
+      { p: v3(-1.5 * s, -0.4 * s, 1.0 * s), e: v3(0, -R2, R2), cur: 0, cmd: 0 },  // front-right
+      { p: v3(1.5 * s, -0.4 * s, -1.0 * s), e: v3(0, -R2, -R2), cur: 0, cmd: 0 }, // rear-left   (thrust up+fwd   = accelerate)
+      { p: v3(-1.5 * s, -0.4 * s, -1.0 * s), e: v3(0, -R2, -R2), cur: 0, cmd: 0 },// rear-right
+      { p: v3(2.0 * s, -0.4 * s, 0), e: v3(R2, -R2, 0), cur: 0, cmd: 0 },         // left side   (thrust up+right = anti-left-lean)
+      { p: v3(-2.0 * s, -0.4 * s, 0), e: v3(-R2, -R2, 0), cur: 0, cmd: 0 },       // right side
+    ];
+    mech.thrustMax = 30000 * s * s * s; // N per nozzle; the GRIP BUDGET below is the real limiter
+    mech.thrustersOn = false; // opt-in: the certified gait is pinned thruster-free in CI; the game enables
   }
   // torque ceilings from total machine weight
   const M = mech.links.reduce((a, b) => a + b.mass, 0);
@@ -620,7 +649,7 @@ export function buildMech(world, opts = {}) {
   mech.k = deriveGait(L, comH, R.hipX * s, { halfLen: R.foot.hz * s, halfWid: R.foot.hx * s, ankleOffX: R.foot.fwdOff * s }, world.gravity);
   mech.groundC = (0.01 * L) / (M * world.gravity); // spec §4, m/N
   // loop gains, sweepable (defaults = shipped tune)
-  mech.tune = { fzBase: 0.95, fzKp: 2.0, fzKd: 1.6, fzCap: 1.15, floorG: 0.85, katt: 1.2, cmgKp: 2.2, cmgKd: 0.55, cmgSlew: 1.5, yawSS: 1.0, yawSSd: 1.0, turnDS: 0.35, afRate: 0.2, standTurn: 0.8, raibert: 1.6, kickLean: 0.5, kickDur: 1.15, kickReach: 1.2, kickH: 0.9 } // punt-suite 4/4 (advisor sweep 2026-08-01); // sortie-swept: full SS yaw spring + heavy SS damping + slow DS turn = 4/6 clean vs 0/6
+  mech.tune = { fzBase: 0.95, fzKp: 2.0, fzKd: 1.6, fzCap: 1.15, floorG: 0.85, katt: 1.2, cmgKp: 2.2, cmgKd: 0.55, cmgSlew: 1.5, yawSS: 1.0, yawSSd: 1.0, turnDS: 0.35, windCap: 0.25, afRate: 0.25, standTurn: 0.8, kickLean: 0.5, kickDur: 1.15, kickReach: 1.2, kickH: 0.9 } // punt-suite 4/4 (advisor sweep 2026-08-01); // sortie-swept: full SS yaw spring + heavy SS damping + slow DS turn = 4/6 clean vs 0/6
   // retune the arm dampers with FINAL mass + true gait omega (build-time
   // first pass used running totals — Den Hartog is sensitive to mu/wSway)
   if (mech.arms) for (const sd of ["L", "R"]) {
@@ -828,12 +857,76 @@ function controller(world, mech) {
   // frame is back. Compound maneuvers (reversals, turning strafes) kept
   // killing runs precisely because the sortie kept commanding full stride
   // through the stumble.
+  // POLE-PLACEMENT gain schedule (identity when cruiseGains unset): the
+  // step-map identification is a CRUISE model — launches certify with the
+  // base gains at any period (gait campaign A2), cruise wants the placed
+  // set. Switch on steps-since-rest; base captured lazily at first use.
+  if (k.cruiseGains) {
+    if (!k._baseGains) k._baseGains = { raibert: k.raibert, kCapture: k.kCapture, kDCM: k.kDCM };
+    const on = (st.sinceRest || 0) >= 6 && (st.walkEstT || 0) > 4 && st.mode === "WALK"; // contraction only into an ESTABLISHED walk — starting at step 3 collided with launch settling (0/6, the assist establishment lesson again)
+    // the PERIOD is phase-scheduled too: launches only certify at the base
+    // period (heading-0 launch deaths at 0.8x were identical with either
+    // gain set — the launch machinery runs on pendulum-scale lead-ins).
+    // Cruise contracts to the quick-step at a touchdown replan boundary.
+    if (k.cruisePeriod) {
+      if (!k._basePeriod) k._basePeriod = { tSS: k.tSS, tDS: k.tDS };
+      // RAMPED, never snapped: the sway oscillator rides the base rhythm
+      // and cannot jump frequencies — a step contraction at the switch
+      // measured 1/3 vs 3/3 for gains-only. ~5%/cycle, a runner easing
+      // into cadence.
+      const p = on ? k.cruisePeriod : k._basePeriod;
+      const rate = 0.05 * k._basePeriod.tSS / Math.max(0.3, k.stepPeriod) * dt;
+      k.tSS += clamp(p.tSS - k.tSS, -rate * k._basePeriod.tSS, rate * k._basePeriod.tSS);
+      k.tDS += clamp(p.tDS - k.tDS, -rate * k._basePeriod.tDS, rate * k._basePeriod.tDS);
+      k.stepPeriod = k.tSS + k.tDS;
+      // GAIN SCHEDULING proper: gains follow the LIVE period (lerp base ->
+      // placed by contraction fraction) — snapped gains at intermediate
+      // periods measured 0/6 (placed-for-0.8 gains at 0.9 are wrong)
+      const span = k._basePeriod.tSS - k.cruisePeriod.tSS;
+      const frac = span > 1e-6 ? clamp((k._basePeriod.tSS - k.tSS) / span, 0, 1) : (on ? 1 : 0);
+      const g0 = k._baseGains, g1 = k.cruiseGains;
+      k.raibert = g0.raibert + (g1.raibert - g0.raibert) * frac;
+      k.kCapture = g0.kCapture + (g1.kCapture - g0.kCapture) * frac;
+      k.kDCM = g0.kDCM + (g1.kDCM - g0.kDCM) * frac;
+    }
+    if (!k.cruisePeriod) {
+      const src = on ? k.cruiseGains : k._baseGains;
+      k.raibert = src.raibert; k.kCapture = src.kCapture; k.kDCM = src.kDCM;
+    }
+  }
   st.recoverT = Math.max(0, (st.recoverT || 0) - dt);
   if (st.recoverT > 0) {
     st.cmd.f += clamp(0 - st.cmd.f, -k.travelRate * 2 * dt, k.travelRate * 2 * dt);
     st.cmd.l += clamp(0 - st.cmd.l, -k.travelRate * 2 * dt, k.travelRate * 2 * dt);
   } else {
-    st.cmd.f += clamp(st.cmdT.f - st.cmd.f, -trRate * dt, trRate * dt);
+    // OVERDRIVE governor (2026-08-02, "walking is so freaking slow"): the
+    // gait is ensemble-swept to 0.5 and STEP commands beyond it fall (6.3s)
+    // — but an ESTABLISHED walk cruises at 0.55 cleanly (6/6 settle
+    // offsets) when the extra arrives at 0.03/s. Leaving overdrive holds
+    // the certified band until the frame sheds momentum: a direct 0.55->0
+    // stop fell 2/6 in the decel. Raw commands <= 0.5 pass untouched.
+    let effF = st.cmdT.f;
+    st.walkEstT = st.mode === "WALK" ? (st.walkEstT || 0) + dt : 0;
+    if (st.cmdT.f > 0.5) {
+      st.govDecel = false;
+      if (st.govF == null) st.govF = 0.42; // overdrive LAUNCHES at the robust band — 0.5 launches fell 4/6 across settle offsets
+      if (st.walkEstT > 8) st.govF = Math.min(mech._govCap || 0.55, st.govF + 0.03 * dt); // _govCap: campaign experiment hook, identity when unset
+      effF = Math.min(st.cmdT.f, st.govF);
+    } else {
+      if (st.govF != null && Math.hypot(hull.v.x, hull.v.z) > 0.55) st.govDecel = true; // leaving overdrive hot
+      st.govF = null;
+      if (st.govDecel) {
+        // STAGED decel (advisor): brake through the certified band in two
+        // rungs instead of a 0.42 -> 0 cliff — decel-tail falls at 42-51s
+        // followed every fast cruise (the machine dropped its command
+        // floor while still carrying 0.5+ of momentum)
+        const vh8 = Math.hypot(hull.v.x, hull.v.z);
+        if (vh8 > 0.55 && st.cmdT.f < 0.42) effF = 0.42;
+        else if (vh8 > 0.38 && st.cmdT.f < 0.26) effF = 0.26;
+        else st.govDecel = false;
+      }
+    }
+    st.cmd.f += clamp(effF - st.cmd.f, -trRate * dt, trRate * dt);
     st.cmd.l += clamp(st.cmdT.l - st.cmd.l, -trRate * dt, trRate * dt);
   }
   // heading rotates continuously at STAND, and during WALK only through DS
@@ -851,9 +944,25 @@ function controller(world, mech) {
   // 2.8 deg/cycle DS budget). Travel sheds for the duration; a stumble
   // aborts and clamps the pending turn to a plain trim so recovery isn't
   // fighting a pi error.
+  // AUTO-PIVOT (advisor, 2026-08-02): a commanded turn beyond ~34 deg
+  // while walking routes through the about-face pivot machinery. The
+  // sustained WALKING turn is the arc-class killer — 0/3 at every feed
+  // and budget tried, terminal signature a 1.0m lateral capture runaway
+  // inside a permanent catch-storm — while the SS-pivot sustains
+  // ~8.6 deg/s with ZERO falls (6/6 at afRate 0.3). Brake, pivot, resume.
+  // (auto-pivot trigger moved to the GAME layer via mechPivot(): intent —
+  // stick hard-over — is only measurable UPSTREAM of the steering lock.
+  // Post-clamp, a saturated headingT advances at machine rate for ANY
+  // feed, so pend saturation and target-rate both failed to discriminate
+  // a held full stick from sortie s5's gentle scripted 0.35 rad/s.)
   if (st.aboutFace) {
     const afp = Math.abs(wrapPi(st.headingT - st.heading));
-    if (afp < 0.12) {
+    // LIVE pivots do NOT self-complete by pend (advisor): completing at
+    // pend<0.25 mid-hold dumped the machine back into the grinding walk
+    // between re-arms (browser falls, traced). They end on stick release
+    // or a changed command (game cancels), or after 2s of quiet target.
+    st._afQuiet = st.afLive && afp < 0.05 ? (st._afQuiet || 0) + dt : 0;
+    if (st.afLive ? st._afQuiet > 2 : afp < 0.12) {
       st.aboutFace = false;
       // in-place march sway rides above the strict stop bound forever
       // (measured: turn done, WALK never exits) — take the stumble-stop's
@@ -915,7 +1024,33 @@ function controller(world, mech) {
         }
         if (st.mode === "WALK") rate *= clamp((0.55 - occ) / 0.12, 0, 1);
       }
-      st.heading += clamp(wrapPi(st.headingT - st.heading), -rate * dt, rate * dt);
+      // WIND GATE (advisor): pause the slew while any LOADED sole's
+      // measured yaw lags the command frame past windCap — grinding on
+      // stores elastic twist in the stance chain that releases as the
+      // 50-deg whip felling every sustained turn (baseline: feed 0.5
+      // walking turns 1/3, feed 0.82 0/3, whip traced at ~19s)
+      {
+        const W7 = mech.mass * world.gravity;
+        let fLag = 0;
+        for (const sd7 of ["L", "R"]) {
+          const lg7 = mech.legs[sd7];
+          if (lg7.load > 0.15 * W7) fLag = Math.max(fLag, Math.abs(wrapPi(st.heading - Math.atan2(lg7.foot.R[6], lg7.foot.R[8]))));
+        }
+        if (fLag > mech.tune.windCap) rate = 0;
+      }
+      // TURN RELIEF (advisor): the arc class dies at 60-90 deg of UNBROKEN
+      // turning at any rate (baseline 0/3 at feeds 0.5-0.82; curve-aware
+      // prints and budgets shift the fall time, not the fate). After ~40
+      // deg of accumulated arc, hold one straight cycle so the arc-state
+      // (centre line, comOff frame, capture rhythm) settles, then resume.
+      st.turnRelief = Math.max(0, (st.turnRelief || 0) - dt);
+      if (st.mode === "WALK" && st.turnRelief > 0) rate = 0;
+      const d8 = clamp(wrapPi(st.headingT - st.heading), -rate * dt, rate * dt);
+      st.heading += d8;
+      if (st.mode === "WALK") {
+        st.turnAcc = (st.turnAcc || 0) + Math.abs(d8);
+        if (st.turnAcc > 0.7) { st.turnAcc = 0; st.turnRelief = k.stepPeriod * 1.2; }
+      } else st.turnAcc = 0;
     }
   }
   // HIP-YAW ABSORB (2026-08-01): a LOADED leg's yaw servo holds its foot
@@ -940,10 +1075,107 @@ function controller(world, mech) {
   const cs = Math.cos(st.heading), sn = Math.sin(st.heading);
   const cmdW = { x: st.cmd.f * sn + st.cmd.l * cs, z: st.cmd.f * cs - st.cmd.l * sn };
   const cmdMag = Math.hypot(st.cmd.f, st.cmd.l), cmdTMag = Math.hypot(st.cmdT.f, st.cmdT.l);
+  // MAGIC: RUNAWAY ARREST (relaxed-physics license, 2026-08-02). The
+  // uncommanded catch-march is this project's recurring monster: commands
+  // at zero, a stumble cancels the stop, and brake foot-placement PUMPS
+  // instead of braking — v ratchets 0.3 -> 2.8 in two seconds and the
+  // frame dies (s3 post-stop trace; same signature as the manual-jets and
+  // assist cascades). Regime-scoped so certified trajectories never see
+  // it: zero command AND speed beyond anything a healthy uncommanded walk
+  // reaches (stop transients peak ~0.75; bound 1.0).
+  // Scope guards: only UPRIGHT runaways (R4 > 0.9 — a toppling machine is
+  // beyond horizontal braking, and blast/shove mortality must stay real),
+  // and never inside the about-face (the maneuver owns its dynamics).
+  // zero-command WALK dwell clock: healthy stops reach STAND in < 3s
+  // (C5 stop residual 0.04). Dwelling longer is the sub-threshold slow
+  // burn — an uncommanded catch-walk at 0.35-0.7 that never trips the
+  // speed bound and decays attitude to death over ~8s (traced @49.5).
+  if (st.mode === "WALK" && cmdTMag < 0.05 && !st.aboutFace) st._zcWalkT = (st._zcWalkT || 0) + dt;
+  else st._zcWalkT = 0;
+  if (st.mode === "WALK" && cmdTMag < 0.05 && cmdMag < 0.1 && hull.R[4] > 0.9 && !st.aboutFace) {
+    const spA = Math.hypot(_comV.x, _comV.z);
+    if ((st._zcWalkT || 0) > 4.0) { st._arrestT = Math.max(st._arrestT || 0, 0.9); st._arrestDeep = true; }
+    // ESCALATING re-engage (2026-08-02): a single arrest at 1.0 damps the
+    // runaway, but the ratchet can REBUILD through the 0.35..1.0 gap and
+    // re-engage in a limit cycle — each lap rolls the attitude dice until
+    // one kills (traced: heading 2.36 stop, arrests at 30.5/32.5/33.5...,
+    // dead at 38.9). Recurrence within 3s of a release drops the bound to
+    // 0.55 — below any healthy stop transient's REBUILD, while the FIRST
+    // engagement keeps the certified-invisible 1.0 bound.
+    const recur = world.t - (st._arrestLast || -9) < 3.0;
+    const bound = recur ? 0.55 : 1.0;
+    if (spA > bound) {
+      st._arrestT = 0.9; // LATCHED: unlatching at the bound let the ratchet re-pump (36.4 -> 37.7, still died)
+      // DEEP PLANT on recurrence, IMMEDIATE: the ratchet re-fires the
+      // engagement line every tick it stays fast, so any countdown to a
+      // plant is unreachable (traced three shapes: purgatory@57.3,
+      // topple-on-release@51.7, pinned-timer@50.5). The first arrest
+      // already damped a full latch — a second engagement within 3s IS
+      // the limit-cycle diagnosis, and the answer is to plant NOW.
+      if (recur) st._arrestDeep = true;
+    }
+  }
+  if ((st._arrestT || 0) > 0 && hull.R[4] < 0.88) { st._arrestT = 0; st._arrestDeep = false; } // toppling: release
+  if ((st._arrestT || 0) > 0) {
+    st._arrestT -= dt;
+    st.stopping = true;
+    st.recoverT = Math.max(st.recoverT, 0.6);
+    const kA = Math.min(0.6, (st._arrestDeep ? 11.0 : 8.0) * dt);
+    hull.v.x -= hull.v.x * kA; hull.v.z -= hull.v.z * kA;
+    // DEEP PLANT: waiting for quiet never comes — the stepping itself
+    // re-accelerates the hull every cycle (traced: v hovered 0.35-0.64
+    // for 5s under 11/s damping, then a fatal attitude roll). After a
+    // 0.3s damp the deep tier plants UNCONDITIONALLY: snap to STAND with
+    // a one-time velocity kill. Upright + zero-command regime only; the
+    // stand catches (proven to 48k shoves) own whatever remains.
+    if (st._arrestDeep) {
+      st._arrestDeep = false; st._arrestT = 0; st._arrestLast = world.t;
+      st.mode = "STAND"; st.stopping = false; st.postStop = 4;
+      // kill hard: 0.25 left enough sway for the stand-catches to relaunch
+      // into another zero-command walk — plant/relaunch cycled past 60s
+      hull.v.x *= 0.1; hull.v.z *= 0.1; hull.w.x *= 0.3; hull.w.y *= 0.3; hull.w.z *= 0.3;
+      if (st.comOff) { st.comOff.iF *= 0.4; st.comOff.iL *= 0.4; } // bleed wound trims like a catch does
+      st.recoverT = Math.max(st.recoverT, 0.6);
+      // full stop bookkeeping — the natural stops run at touchdown where
+      // the latch already nulled swing and prints; a mid-swing plant must
+      // do its own, or the launch check reads STALE prints this same tick
+      // and catch-relaunches forever (traced: plant<->relaunch tick loop,
+      // frozen 'WALK' at v 0.01 with rec pinned)
+      st.swing = null; st.kick = null; st.hold = {}; st.holdCop = {};
+      st.settleT = 0; st.settledT = 0;
+      for (const sd6 of ["L", "R"]) {
+        const f6 = mech.legs[sd6].foot;
+        st.prints[sd6] = { x: f6.pos.x, z: f6.pos.z, yaw: Math.atan2(f6.R[6], f6.R[8]) };
+      }
+    } else if (!st._arrestDeep && Math.hypot(_comV.x, _comV.z) < 0.35) {
+      st._arrestT = 0; st._arrestLast = world.t;
+    }
+  }
   // capture point + MV plan (pelvis ref advances at the commanded velocity)
   mechCom(mech, _com, _comV);
   const comRel = { x: _com.x, y: Math.max(0.5, _com.y - groundRef), z: _com.z };
+  {
+    // cadence speed reference: low-passed forward speed (sway-blind)
+    const vFc = _comV.x * Math.sin(st.heading) + _comV.z * Math.cos(st.heading);
+    st.cadV = (st.cadV || 0) + (vFc - (st.cadV || 0)) * Math.min(1, dt / 0.8);
+  }
   const xi = capturePoint(comRel, _comV, world.gravity);
+  // EFFECTIVE-GRAVITY compensation (speed assist): sustained horizontal
+  // thrust tilts the gravity the LIPM balances against — the equilibrium
+  // capture point shifts by a/omega^2, and every consumer downstream
+  // (plan, catches, stride placement) must see the SHIFTED point or the
+  // whole stack fights the rockets (measured: backward cascades, crawls).
+  // Assist-only: stability burns are sub-second transients and the catch
+  // machinery should keep seeing the raw dynamics during them.
+  // Sign (derived, then measured -sign was 1/6): under sustained forward
+  // thrust the equilibrium xi sits a/om^2 BEHIND the CoP — the machine
+  // water-skis, leaning BACK against the push. Feeding xi + a/om^2 makes
+  // the controller read that leaned-back state as on-reference.
+  if (st._thrV != null && mech._thrF) {
+    const om2e = world.gravity / Math.max(0.5, comRel.y);
+    xi.x += (mech._thrF.x / mech.mass) / om2e;
+    xi.z += (mech._thrF.z / mech.mass) / om2e;
+  }
   // live pendulum frequency — the plan must diverge at the rate the real CoM does
   const om = Math.sqrt(world.gravity / comRel.y);
   const feetMid = { x: (st.prints.L.x + st.prints.R.x) / 2, z: (st.prints.L.z + st.prints.R.z) / 2 };
@@ -961,7 +1193,7 @@ function controller(world, mech) {
   // reaction couples at laterally-offset feet were the yaw pump.
   {
     const W = mech.mass * world.gravity;
-    const tauCap = 0.13 * W * mech.geom.comH;
+    const tauCap = (mech.tune.cmgCap || 0.13) * W * mech.geom.comH;
     const hMax = tauCap * 0.5;
     if (mech.cmgH == null) mech.cmgH = { x: 0, y: 0, z: 0 };
     // attitude errors: tilt from R (level target), yaw vs commanded heading
@@ -981,21 +1213,40 @@ function controller(world, mech) {
     // the hull against com drift (F ~ tau/comH — instant, no contact lag,
     // no CoP box). The ankle alone can't catch the raise transients: its
     // realized CoP lags through the soft contact and saturates at 44k.
-    let pbX = 0, pbZ = 0, leanX = 0, leanZ = 0;
+    // Q: BODY-FRAME COMPOSITION (the machine could only walk NORTH).
+    // exT/ezT are BODY-frame tilt errors, but the springs applied them as
+    // torques about WORLD x/z — exact at yaw 0, sign-flipped at yaw pi,
+    // fully crossed at +-pi/2. Every walking cert in the project launched
+    // at yaw 0, so the bug was invisible until the spawn faced south:
+    // measured, spawn-yaw ladder 0/5 for all non-zero yaws at certified
+    // 0.42, veer-and-sprint to 2 m/s in ~3.3s. Compose pitch/roll demands
+    // on the body's horizontal axes instead; at yaw 0 this reduces to the
+    // old math term-for-term.
+    // basis on the COMMAND frame, not measured yaw — the advisor's own
+    // lesson recurred: a yawMeas basis jitters with hull wobble and feeds
+    // it into the damping channels (measured: overdrive 6/6 -> 2/6, s2
+    // 2/4). st.heading is smooth, equals body yaw at steady state, and
+    // at yaw 0 makes this math BIT-IDENTICAL to the certified original.
+    const blx = Math.cos(st.heading), blz = -Math.sin(st.heading); // body-left (pitch axis)
+    const bfx = Math.sin(st.heading), bfz = Math.cos(st.heading);  // body-fwd  (roll axis)
+    const wP = hull.w.x * blx + hull.w.z * blz; // pitch rate
+    const wR = hull.w.x * bfx + hull.w.z * bfz; // roll rate
+    let pbP = 0, pbR = 0, leanP = 0, leanR = 0;
     if (st.poise && (st.poise.phase === "hold" || st.poise.phase === "lower")) {
       const spB = st.prints[st.poise.raise === "L" ? "R" : "L"];
       const exB = _com.x - spB.x + _comV.x * 0.4;
       const ezB = _com.z - spB.z + _comV.z * 0.4;
+      const eBF = exB * bfx + ezB * bfz, eBL = exB * blx + ezB * blz;
       // instant torque: transient catcher (post-slew)
-      pbZ = clamp(exB * 420000, -tauCap, tauCap);
-      pbX = clamp(-ezB * 420000, -tauCap, tauCap);
+      pbR = clamp(eBL * 420000, -tauCap, tauCap);
+      pbP = clamp(-eBF * 420000, -tauCap, tauCap);
       // lean SETPOINT: sustained authority. Torque alone cancels against
       // the CMG's own leveler; biasing the level target leans the machine
       // and gravity pushes the com — the real hip strategy.
-      leanZ = clamp(exB * 0.35, -0.1, 0.1);
-      leanX = clamp(-ezB * 0.35, -0.1, 0.1);
+      leanR = clamp(eBL * 0.35, -0.1, 0.1);
+      leanP = clamp(-eBF * 0.35, -0.1, 0.1);
     }
-    const txD = clamp(-kpA * dbT(-exT - leanX) - kdA * hull.w.x, -tauCap, tauCap);
+    const txD = clamp(-kpA * dbT(-exT - leanP) - kdA * wP, -tauCap, tauCap);
     // yaw AUTHORITY only in double support (like the heading slew): the
     // yaw spring chasing heading through SS rotates the hull over the one
     // planted foot until it edge-rolls (R4 collapse mid-SS, the sortie
@@ -1016,20 +1267,24 @@ function controller(world, mech) {
     // (measured). Yaw DAMPING stays — it drains ringing about the one
     // axis whose ground path is soft.
     const tyD = clamp(-kdA * (inSSy ? yawSSde : 1) * hull.w.y, -tauCap, tauCap);
-    const tzD = clamp(-kpA * dbT(-ezT - leanZ) - kdA * hull.w.z, -tauCap, tauCap);
+    const tzD = clamp(-kpA * dbT(-ezT - leanR) - kdA * wR, -tauCap, tauCap);
     // slew: the CMG is an OUTER loop, slower than the gait (spec §5b)
+    // (Q: _cmgT.x/.z now hold the PITCH/ROLL channel demands — slewing in
+    // channel space keeps the filter meaningful while the body yaws)
     if (!mech._cmgT) mech._cmgT = { x: 0, y: 0, z: 0 };
     const slewC = (tauCap / (k.stepPeriod / mech.tune.cmgSlew)) * dt;
     mech._cmgT.x += clamp(txD - mech._cmgT.x, -slewC, slewC);
     mech._cmgT.y += clamp(tyD - mech._cmgT.y, -slewC, slewC);
     mech._cmgT.z += clamp(tzD - mech._cmgT.z, -slewC, slewC);
-    let tx = mech._cmgT.x, ty = mech._cmgT.y, tz = mech._cmgT.z;
+    let tP = mech._cmgT.x, ty = mech._cmgT.y, tR = mech._cmgT.z;
     // poise balance bypasses the slew: the CMG's outer-loop filter is right
     // for gait attitude but starves the hip-strategy — the ankle loop is
     // lag-limited (soft-contact CoP realization ~0.2s at w=1.6) and the
     // hold NEEDS an instant actuator. pb terms are already tauCap-clamped.
-    tx = clamp(tx + pbX, -tauCap, tauCap);
-    tz = clamp(tz + pbZ, -tauCap, tauCap);
+    tP = clamp(tP + pbP, -tauCap, tauCap);
+    tR = clamp(tR + pbR, -tauCap, tauCap);
+    // Q: compose the channel torques onto the body's horizontal axes
+    let tx = tP * blx + tR * bfx, tz = tP * blz + tR * bfz;
     // momentum budget: torque only while the store holds; bleed against the
     // ground through the stance (time constant ~7s) while any foot is loaded
     const loaded = legL.load + legR.load > 0.1 * W;
@@ -1039,10 +1294,190 @@ function controller(world, mech) {
     // cmgH stays as telemetry of what an actual store would hold.
     mech.cmgH.x += tx * dt; mech.cmgH.y += ty * dt; mech.cmgH.z += tz * dt;
     if (loaded) { const bl = Math.min(1, dt / 7); mech.cmgH.x -= mech.cmgH.x * bl; mech.cmgH.y -= mech.cmgH.y * bl; mech.cmgH.z -= mech.cmgH.z * bl; }
-    const Ih = { x: 1 / Math.max(1e-9, hull.invIw[0]), y: 1 / Math.max(1e-9, hull.invIw[4]), z: 1 / Math.max(1e-9, hull.invIw[8]) };
-    hull.w.x += tx * dt / Ih.x;
-    hull.w.y += ty * dt / Ih.y;
-    hull.w.z += tz * dt / Ih.z;
+    // GYRO TOGGLE (2026-08-02): off = the ideal CMG applies NOTHING — the
+    // rockets (continuous duty below) and ankles are all that hold
+    // attitude. State zeroed so re-engage doesn't dump a stale torque.
+    if (mech.gyroOn === false) { mech._cmgT.x = 0; mech._cmgT.y = 0; mech._cmgT.z = 0; tx = 0; ty = 0; tz = 0; }
+    // Q: FULL inverse-inertia application — the diagonal-only divide was
+    // exact at cardinal yaws (box axis-aligned) and wrong at diagonals
+    // (off-diagonal terms ~ (Ix-Iz)/2): the last piece of the walk-any-
+    // heading bug (cardinals walked, 45s fell). At yaw 0 the matrix is
+    // diagonal and this is bit-identical to the old divide.
+    hull.w.x += (hull.invIw[0] * tx + hull.invIw[1] * ty + hull.invIw[2] * tz) * dt;
+    hull.w.y += (hull.invIw[3] * tx + hull.invIw[4] * ty + hull.invIw[5] * tz) * dt;
+    hull.w.z += (hull.invIw[6] * tx + hull.invIw[7] * ty + hull.invIw[8] * tz) * dt;
+  }
+  // THRUSTER AUTO-CONTROL (2026-08-02): error-band ownership — the ankles
+  // and step machinery own the small/slow regime exactly as before; the
+  // rockets wake on the BIG/FAST errors that today become catches and
+  // falls, and on overdrive for speed assist. Hysteresis on the band edge
+  // (the poise lesson: two controllers sharing one band fight).
+  if (mech.thrusters && mech.thrustersOn && st.mode !== "FALLEN") {
+    const W5 = mech.mass * world.gravity;
+    mechCom(mech, _com, _comV);
+    const om5 = Math.sqrt(world.gravity / Math.max(0.5, _com.y - groundRef));
+    const xix = _com.x + _comV.x / om5, xiz = _com.z + _comV.z / om5;
+    const fmx = (st.prints.L.x + st.prints.R.x) / 2, fmz = (st.prints.L.z + st.prints.R.z) / 2;
+    const ex5 = xix - fmx, ez5 = xiz - fmz;
+    const exi = Math.hypot(ex5, ez5);
+    const leanR = Math.hypot(hull.w.x, hull.w.z);
+    const gyroOff = mech.gyroOn === false;
+    // INTENT-SCALED AUTHORITY (Jeff, 2026-08-02): the player's hands say
+    // who flies the machine. Sticks RELEASED -> the rockets get wide
+    // bands and full budget (catch things the step machinery handles
+    // ugly). Locomotion COMMANDED -> the gait owns the body and rockets
+    // fire only on genuine last-ditch trouble — every mid-stride burn
+    // perturbs the plan (measured: 12% duty halved walk speed).
+    const walking = st.mode === "WALK";
+    const cmdIntent = Math.abs(st.cmdT.f) + Math.abs(st.cmdT.l);
+    const idle5 = cmdIntent < 0.05 && !st.aboutFace && !st.kick;
+    const stopping5 = !!st.govDecel || st.aboutFace === "brake"; // planned stops (overdrive decel AND the pivot's brake phase): burns skate the braking soles (2/6 measured; pivot brake-entry fell at 7-10s with turn-band burns)
+    // Q: POISE owns its balance (hip-strategy + CMG pb terms). The idle
+    // stability band read the INTENTIONAL one-leg weight shift as a
+    // capture excursion and burned against the transfer — the shift never
+    // completed and ONE LEG silently did nothing (browser audit + headless
+    // both yaws; poise was certified pre-rockets and never re-gated).
+    const poised5 = !!st.poise;
+    const trouble = !poised5 && st.spawnDone && (stopping5
+      ? hull.R[4] < 0.945
+      : idle5 && !walking
+        ? (exi > 0.30 || leanR > 0.55 || hull.R[4] < 0.965) // BISECT: idle wide bands off
+        : idle5
+          ? (st.recoverT > 0 || hull.R[4] < 0.945) // stick released mid-walk: stopping — normal walk bands
+          : walking
+            // INTENT SPLIT: at full-stick overdrive the machine is in
+            // rocket-mode — recovery burns are load-bearing (removing
+            // them measured 0-2/6 on assisted cruise). At sub-overdrive
+            // maneuvering speeds the same burns FIGHT the gait's precise
+            // work — last-ditch only there.
+            ? (st.govF != null || ((st.turnLpf || 0) > 0.25 && Math.abs(st.cadV || 0) < 0.3)
+              // full-stick overdrive OR an ACTIVE TURN (advisor): turning
+              // is the arc-class failure regime — rocket recovery there
+              // saves turns and cannot perturb a straight cruise
+              ? (st.recoverT > 0 || hull.R[4] < 0.945)
+              // recovering-and-leaning burns only when SLOW: at speed the
+              // burn + catch-stepping couple into a self-feeding runaway
+              // (traced: eF 1.6, burns saturated 1.0, fell at 6.5s — the
+              // dash lesson recurring inside the certified band)
+              : ((st.recoverT > 0 && hull.R[4] < 0.975 && Math.abs(st.cadV || 0) < 0.3) || hull.R[4] < 0.935))
+            : (exi > 0.30 || leanR > 0.55 || hull.R[4] < 0.965));
+    const calm = walking
+      ? (st.recoverT <= 0 && hull.R[4] > 0.975 && exi < 0.45)
+      : (exi < 0.18 && leanR < 0.30 && hull.R[4] > 0.985); // BISECT: idle calm band off
+    if (trouble) st._thrA = 1;
+    // latch RELEASE (advisor): the hysteresis held burns through entire
+    // turn-recoveries (calm never satisfies mid-turn) and the sustained
+    // burn + catch-stepping at speed self-feeds a runaway — release
+    // whenever walking fast without genuine topple, same rule as arming
+    if (st._thrA && walking && st.govF == null && Math.abs(st.cadV || 0) > 0.3 && hull.R[4] > 0.935) st._thrA = 0;
+    else if (calm) st._thrA = 0;
+    const torso5 = mech.waist ? mech.waist.b : mech.hull;
+    const R5 = torso5.R;
+    for (const th of mech.thrusters) th.cmd = 0;
+    const jetsLive5 = mech.jetCmd && Math.hypot(mech.jetCmd.x, mech.jetCmd.z) > 0.15;
+    if (jetsLive5) st._thrA = 0; // JETS = FULL MANUAL (Jeff): the auto-stabilizer stands down — its 'saves' were fighting the pilot's stick (traced: auto burns at 1.0 ratcheting a runaway the pilot never commanded)
+    if (st._thrA) {
+      // demand: push the capture point back over the feet + damp CoM speed
+      const dx5 = -ex5 * 2.2 - _comV.x * 0.9;
+      const dz5 = -ez5 * 2.2 - _comV.z * 0.9;
+      for (const th of mech.thrusters) {
+        // nozzle thrust direction in world (minus exhaust), horizontal part
+        const tx5 = -(R5[0] * th.e.x + R5[3] * th.e.y + R5[6] * th.e.z);
+        const tz5 = -(R5[2] * th.e.x + R5[5] * th.e.y + R5[8] * th.e.z);
+        th.cmd = clamp(dx5 * tx5 + dz5 * tz5, 0, 1);
+      }
+    } else if (mech.jetCmd && Math.hypot(mech.jetCmd.x, mech.jetCmd.z) > 0.15) {
+      // MANUAL JETS (Jeff, 2026-08-02): the pilot vectors the rockets
+      // directly — a held directional burn, world-frame. Stability still
+      // preempts on genuine trouble (branch above); everything else is on
+      // the pilot. The Raibert brake leans against forward burns mid-walk
+      // — manual mode is for standing scoots, slides, and showing off.
+      const jm = Math.min(1, Math.hypot(mech.jetCmd.x, mech.jetCmd.z));
+      const jx5 = mech.jetCmd.x / Math.max(1e-6, jm), jz5 = mech.jetCmd.z / Math.max(1e-6, jm);
+      // ASYMMETRIC authority: forward burns run full (the commanded-speed
+      // override tames the brake on that axis); lateral burns soften — a
+      // full side push outruns what sideways stepping can catch (measured:
+      // 0.74 m/s strafe, fell in 4s). The strafing GAIT carries lateral.
+      const fwdX5 = Math.sin(st.heading), fwdZ5 = Math.cos(st.heading);
+      const jf5 = jx5 * fwdX5 + jz5 * fwdZ5;
+      // lateral burns ZERO while walking: aligned side-thrust on a strafing
+      // gait overspeeds what sideways stepping catches (fell in 8s twice;
+      // the opposing-thrust control survived — alignment is the killer).
+      // The strafe steps carry lateral; fire pours on forward boosts and
+      // standing scoots.
+      const quiet5 = st.mode !== "WALK" && Math.hypot(hull.v.x, hull.v.z) < 0.3 && cmdIntent < 0.05; // and NOT while a launch is commanded — scoot-puffs during a strafe launch poisoned it (fell 9.4s, three gating attempts)
+      // MANUAL with ENGINE MANAGEMENT: direction and demand are the
+      // pilot's; fuel flow tapers as speed nears what the stride can
+      // track (0.62 m/s certified) — raw thrust ran the machine to 11m
+      // and a face-plant from ONE held stick (legs are the constraint,
+      // not the rockets; real engines have governors)
+      const vAl5 = (_comV.x * jx5 + _comV.z * jz5); // speed along the burn
+      // authority fits what STEP-CATCHES can ride (autos are silent in
+      // manual — that's the mode's promise): speed-governed to 0.28,
+      // backward extra-soft (no reverse gait exists to catch it)
+      const back5 = -(jx5 * Math.sin(st.heading) + jz5 * Math.cos(st.heading));
+      // manual burns run on a HEAT budget (~2.8s full burn, ~4s cool):
+      // bursts are potent, sustained holds fade out instead of seeding
+      // the self-accelerating catch-march that killed every hold (5
+      // calibrations of pure authority tuning could not fix a hold).
+      // Backward is puffs-only: no reverse gait exists to catch it.
+      // burn CUTS while the machine is catch-stepping (uncommanded WALK):
+      // pushing a machine that is already busy catching is how every
+      // sustained-hold death happened — six authority calibrations could
+      // not out-tune it. Backward is zero: no reverse gait can catch any.
+      const catching5 = st.mode === "WALK" && cmdIntent < 0.05;
+      // backward burns re-enabled (2026-08-02): the reverse gait is
+      // certified to -0.42 now, so backward pushes have catch-steps to
+      // ride them — same governor/heat/catch-cut guards as every axis
+      const gov5 = catching5 ? 0
+        : clamp((0.28 - vAl5) / 0.12, 0, 1) * (back5 > 0.3 ? 0.6 : 1) * 0.65 * clamp((1 - (mech.jetHeat || 0)) * 3, 0, 1);
+      const scale5 = (quiet5 ? 1 : 0.35 + 0.65 * Math.max(0, jf5)) * gov5; // side puffs only on a QUIET stand — they kicked the STAND-catch transitions mid-strafe (fell 9.4s with walking burns already zeroed)
+      for (const th of mech.thrusters) {
+        const tx5 = -(R5[0] * th.e.x + R5[3] * th.e.y + R5[6] * th.e.z);
+        const tz5 = -(R5[2] * th.e.x + R5[5] * th.e.y + R5[8] * th.e.z);
+        th.cmd = clamp((jx5 * tx5 + jz5 * tz5) * 1.0 * jm * scale5, 0, 1); // PROPORTIONAL: gain 2.4 clipped every burn to max at any deflection — no finesse axis for the pilot (all-direction falls)
+      }
+      st._thrV = null; // manual burns get an HONEST brake — telling it burn-speed was commanded let catch-marching run away (traced)
+    } else if (mech.thrustAssist && ((st.govF != null && st.govF > 0.505) || st.govDecel)) {
+      // SPEED ASSIST — the g_eff-compensated overdrive booster: every outer
+      // patch surfaced another coupling with the swept balance stack
+      // (Raibert fight -> backward cascade at 0.9 m/s; stride geometry
+      // outrun at 0.7; overshoot oscillation). The honest integration is
+      // thrust-as-effective-gravity INSIDE the capture math (g_eff), a
+      // campaign of its own. Best ensemble so far: 4/6 at raw 0.7.
+      // (assist waits for the governor's establishment gate — burning
+      // into a LAUNCHING gait fell 3/3 at 6-12s, measured)
+      // SPEED ASSIST: rear pair pushes toward the commanded speed in
+      // overdrive; front pair thrust-brakes the decel. Gentler grip
+      // budget — the gait still needs its friction to walk.
+      const fwdX = Math.sin(st.heading), fwdZ = Math.cos(st.heading);
+      const vF5 = _comV.x * fwdX + _comV.z * fwdZ;
+      // Q: assist SUSPENDS while a turn is live (turnLpf) — thrust
+      // re-aimed along a rotating heading pumps speed VECTORIALLY (old
+      // momentum + new-axis burn ratcheted 0.66 -> 1.7 m/s in 1.3s,
+      // traced in-browser; the 'pivot-from-march phone fall' and the
+      // o0.4 sprint-cascade were BOTH this). With _thrV null the honest
+      // brake sheds the overspeed into the certified turn envelope.
+      const turning5 = (st.turnLpf || 0) > 0.05;
+      const wantV = st.govDecel ? 0.42 : Math.min(st.cmdT.f, mech._wantVCap || 0.68); // fast-band ceiling 0.68 (advisor sweep: dominates 0.62 — 4/6 vs 3-4/6 at +8% speed; 0.72 is 0/3. Residual mapped: o0.4 sprint-cascade ~30s, decel-tail ~42s)
+      const dv5 = wantV - vF5;
+      // _thrV holds STEADY while assisting — nulling it on transient
+      // overshoot re-armed the raw Raibert brake mid-sway and the fight
+      // cascaded backward at 0.9 m/s (measured)
+      st._thrV = st.govDecel || turning5 ? null : wantV;
+      if (turning5) { /* no burns through a turn */ }
+      else if (dv5 > 0.05 && !st.govDecel) { mech.thrusters[2].cmd = mech.thrusters[3].cmd = clamp(dv5 * 2.0, 0, 0.66); }
+      else if (dv5 < -0.08 && dv5 > -0.45) { mech.thrusters[0].cmd = mech.thrusters[1].cmd = clamp(-dv5 * 2.0, 0, 0.66); } // thrust-brake has a REGIME: beyond ~0.45 of overspeed the cascade needs its soles fully weighted (burns at 1.0 through a sprint-cascade unweighted the brake-feet and it ran to 3 m/s, traced)
+    }
+    if (st._thrA) st._thrV = null;
+    // GRIP BUDGET: vertical thrust unweights the soles, and sole friction
+    // is what the whole gait stands on — cap total lift at 0.30 W
+    // (stability) / 0.20 W (speed assist)
+    let lift = 0;
+    for (const th of mech.thrusters) lift += th.cmd * mech.thrustMax * Math.SQRT1_2;
+    const jetsLive = mech.jetCmd && Math.hypot(mech.jetCmd.x, mech.jetCmd.z) > 0.15;
+    const liftCap = (st._thrA ? 0.30 : jetsLive ? 0.32 : gyroOff ? 0.25 : 0.20) * W5;
+    if (lift > liftCap) { const sc5 = liftCap / lift; for (const th of mech.thrusters) th.cmd *= sc5; }
   }
   // SPAWN SEQUENCE (spec §5f): settle with both feet loaded (~0.4s) -> crouch
   // ramp to walk height (~1.4s) -> only then command authority. Cold-starting
@@ -1074,7 +1509,7 @@ function controller(world, mech) {
   // 570k landing spike then BOTH feet airborne, hy +0.4 hop. hRec drops the
   // ref to the measured hip at touchdown and re-extends at 0.5 m/s.
   if (st.hRec == null) st.hRec = 0;
-  st.hRec = Math.max(0, st.hRec - 0.5 * dt);
+  st.hRec = Math.max(0, st.hRec - (mech.hRecRate || 0.5) * dt); // touchdown height re-extend rate knob
   // skyhook on the vertical mode: hull mass on gravity-stiff leg springs is
   // underdamped — measured stance load ringing 0 -> 476k -> 0 through SS
   // (trampoline, ballistic windows, xi runaway). Shift the height ref
@@ -1101,6 +1536,8 @@ function controller(world, mech) {
     : (st.mode === "WALK" || (st.recoverT || 0) > 0) ? st.crouchX : 0;
   st.crouchX += clamp(cxTgt - st.crouchX, -0.35 * dt, 0.35 * dt);
   const hipYRef = walkH + (1 - crouch) * (0.995 - 0.93) * g.L - st.hRec + vDamp - st.crouchX;
+  mech._hipYRef = hipYRef; // magic height-rail target (relaxed-physics license)
+  mech._phDS = st.mode === "STAND" || (st.mode === "WALK" && st.phases && st.phases[st.pi] && st.phases[st.pi].kind === "DS");
   // gait-frame axes for catch decisions
   const axes = { fwd: { x: sn, z: cs }, left: { x: cs, z: -sn } };
   // pelvis->CoM offset (heading frame, low-passed): the plan is a COM/xi
@@ -1158,9 +1595,40 @@ function controller(world, mech) {
   // latching/replanning happens ONLY at touchdown, from measured feet.
   const planPhases = (fromStand, xi0) => {
     const stanceSide = st.lastSwing;              // the foot that stays planted first
-    const tDSr = k.tDS * st.ramp, tSSr = k.tSS * st.ramp;
-    const strideF = st.stopping ? 0 : clamp(st.cmd.f * k.stepPeriod, -k.strideCap, k.strideCap);
-    const strideL = st.stopping ? 0 : clamp(st.cmd.l * k.stepPeriod, -k.strideCap, k.strideCap);
+    // RUNNING (Jeff, 2026-08-02: "legs actuated faster proportional to
+    // thrust — like running"): the cycle CLOCK shortens with measured
+    // forward speed, so a thrust-pushed CoM keeps feet under it — the
+    // fixed clock was the wall every fast mode hit (assist ceiling 0.62,
+    // manual-hold falls). Certified band untouched: cadence 1 below
+    // 0.45 m/s (uniform cadence-up swept WORSE at normal speeds).
+    // Strides co-scale so commanded speed mapping is preserved.
+    // cadence with HYSTERESIS (advisor): latch ON above engagement,
+    // release 0.12 below — a distance-based factor flickered the clock at
+    // the band edge (cruise wobbles +-0.1) and jittered mid-cruise
+    // strides. The DECEL keeps the certified clock (braking machinery
+    // predates cadence entirely).
+    const eng6 = mech._cadEng || 0.64;
+    const spd6 = Math.abs(st.cadV || 0);
+    if (spd6 > eng6) st._cadOn = true;
+    else if (spd6 < eng6 - 0.12) st._cadOn = false;
+    const cad6 = st.govDecel || !st._cadOn ? 1 : clamp(1 - (spd6 - eng6 + 0.06) * (mech._cadSlope || 0.55), 0.62, 1);
+    st.cadence = cad6;
+    // (gain-per-second invariance for short periods was TRIED here and
+    // measured NEGATIVE both ways — see wtgait/RESULTS.md: the correction
+    // stack is a coupled discrete map, not separable per-loop gains)
+    const tDSr = k.tDS * st.ramp * cad6, tSSr = k.tSS * st.ramp * cad6;
+    const strideF = st.stopping ? 0 : clamp(st.cmd.f * k.stepPeriod * cad6, -k.strideCap, k.strideCap);
+    const strideL = st.stopping ? 0 : clamp(st.cmd.l * k.stepPeriod * cad6, -k.strideCap, k.strideCap);
+    // CURVE-AWARE PLAN (advisor, 2026-08-02): the straight-line plan was
+    // the sustained-turn killer — feet kept landing on the TANGENT while
+    // the machine walked an ARC, and the accumulated support-path error
+    // felled every long turn (baseline: 0/3 at every feed; higher turnDS
+    // fell FASTER — pure exposure). Successive planned prints rotate by
+    // the heading advance expected per step, so the support path follows
+    // the commanded curve.
+    const pend8 = wrapPi(st.headingT - st.heading);
+    const slew8 = k.turnRate * (k.stepPeriod / Math.max(k.tDS, 0.2)) * mech.tune.turnDS;
+    const dpsi = Math.sign(pend8) * Math.min(Math.abs(pend8), slew8 * tDSr);
     const prints = [{ x: st.prints[stanceSide].x, z: st.prints[stanceSide].z, side: stanceSide }];
     let side = stanceSide;
     for (let i = 1; i <= 4; i++) {
@@ -1168,9 +1636,12 @@ function controller(world, mech) {
       const sgn = side === "L" ? 1 : -1;
       const latOff = strideL + sgn * 2 * k.halfStance;
       const prev = prints[i - 1];
+      const dxL = strideF * axes.fwd.x + latOff * axes.left.x;
+      const dzL = strideF * axes.fwd.z + latOff * axes.left.z;
+      const a8 = dpsi * i, ca = Math.cos(a8), sa = Math.sin(a8);
       prints.push({
-        x: prev.x + strideF * axes.fwd.x + latOff * axes.left.x,
-        z: prev.z + strideF * axes.fwd.z + latOff * axes.left.z,
+        x: prev.x + dxL * ca + dzL * sa,
+        z: prev.z + dzL * ca - dxL * sa,
         side,
       });
     }
@@ -1210,8 +1681,8 @@ function controller(world, mech) {
       const solve = (B, x0, xT) => (B * u + x0 * E0 - xT + B) / (u + E0);
       const fL = mech.legs.L.foot.pos, fR = mech.legs.R.foot.pos;
       ph0.zA = {
-        x: clamp(solve(ph0.zB.x, xi0.x, tgt.x), Math.min(fL.x, fR.x) - 0.3, Math.max(fL.x, fR.x) + 0.3),
-        z: clamp(solve(ph0.zB.z, xi0.z, tgt.z), Math.min(fL.z, fR.z) - 0.3, Math.max(fL.z, fR.z) + 0.3),
+        x: clamp(solve(ph0.zB.x, xi0.x, tgt.x), Math.min(fL.x, fR.x) - k.seedSpan, Math.max(fL.x, fR.x) + k.seedSpan),
+        z: clamp(solve(ph0.zB.z, xi0.z, tgt.z), Math.min(fL.z, fR.z) - k.seedSpan, Math.max(fL.z, fR.z) + k.seedSpan),
       };
       ph0.xiStart = { x: xi0.x, z: xi0.z };
     }
@@ -1399,7 +1870,8 @@ function controller(world, mech) {
       // launchRate halves the SLEW for 2 steps, but the command already
       // slewed to full during the stand — step 1 launched at full stride.
       // Enter gently regardless of what the stick did while standing.
-      st.cmd.f *= 0.5; st.cmd.l *= 0.5;
+      const lf8 = mech._launchF || 0.5;
+      st.cmd.f *= lf8; st.cmd.l *= lf8;
 
       if (catchSide) {
         st.lastSwing = catchSide === "L" ? "R" : "L"; mech.telem.catches++;
@@ -1450,8 +1922,8 @@ function controller(world, mech) {
         const landSide = st.swing || (ph.stance === "L" ? "R" : "L");
         st.kick = null; // clock touchdown during a straggling kick: the latch here is equivalent (measured prints); never leave a stale kick
         st.prints[landSide] = {
-          x: sw.foot.pos.x * 0.78 + plan.x * 0.22,
-          z: sw.foot.pos.z * 0.78 + plan.z * 0.22,
+          x: sw.foot.pos.x * k.latchMix + plan.x * (1 - k.latchMix),
+          z: sw.foot.pos.z * k.latchMix + plan.z * (1 - k.latchMix),
           // landing yaw latches MEASURED but clamped near the frame: swing
           // ringing lands the foot up to 0.15 rad twisted, and holding that
           // via the absorb servo skewed every stride (walk speed HALVED).
@@ -1580,7 +2052,7 @@ function controller(world, mech) {
       // measured xi) diverges with reality and the tracker would drag the
       // pelvis into the lunge at 2.5 m/s. The excess belongs to the SWING
       // (capture), not the pelvis.
-      const vCap = (0.45 + Math.abs(st.cmd.f) + Math.abs(st.cmd.l)) * dt;
+      const vCap = (k.vChase + Math.abs(st.cmd.f) + Math.abs(st.cmd.l)) * dt;
       st.comRef.x += clamp(om * (xiRef.x - st.comRef.x) * dt, -vCap, vCap);
       st.comRef.z += clamp(om * (xiRef.z - st.comRef.z) * dt, -vCap, vCap);
       st.pelvis.x = st.comRef.x - comOffW.x;
@@ -1642,8 +2114,13 @@ function controller(world, mech) {
     // braking it wrecked the rhythm and yaw (drift -5 rad).
     {
       const bCap = cmdMag < 0.05 ? 1.0 : 0.7; // uncommanded recovery: full braking — the catch cascade accelerated backward past the 0.7 cap
+      // thrust-assisted speed is COMMANDED speed: without this the brake's
+      // foot placement fought the rockets and cascaded backward at 0.7 m/s
+      // (measured) — the legs stride at their cap, thrust makes the rest
+      const cwx = st._thrV != null ? axes.fwd.x * Math.max(Math.hypot(cmdW.x, cmdW.z), st._thrV) : cmdW.x;
+      const cwz = st._thrV != null ? axes.fwd.z * Math.max(Math.hypot(cmdW.x, cmdW.z), st._thrV) : cmdW.z;
       const vf = clamp(
-        ((_comV.x - cmdW.x) * axes.fwd.x + (_comV.z - cmdW.z) * axes.fwd.z) / om * mech.tune.raibert,
+        ((_comV.x - cwx) * axes.fwd.x + (_comV.z - cwz) * axes.fwd.z) / om * k.raibert,
         -bCap * k.strideCap, bCap * k.strideCap);
       t2.x += vf * axes.fwd.x * smoothstep(s2); t2.z += vf * axes.fwd.z * smoothstep(s2);
     }
@@ -1917,7 +2394,16 @@ function controller(world, mech) {
     const inSSw = st.mode === "WALK" && st.swing != null;
     // and FROZEN when single support is already strained — the return swing
     // finishing off a stressed stance was the last rear-aim fall
-    const wRate = (inSSw ? (hull.R[4] < 0.97 ? 0 : 0.6) : 1.1) * dt;
+    // recovery slews the waist GENTLY in every phase (advisor): swinging
+    // the 1800kg torso at full rate into a recovering frame is the
+    // historic aiming-fall combination — the SS-only freeze left DS
+    // recovery windows exposed (audit: turn -> aim -> fall, twice)
+    const wRate = (st.recoverT > 0 ? 0.3 : inSSw ? (hull.R[4] < 0.97 ? 0 : 0.6) : 1.1) * dt;
+    // (advisor NEGATIVE result, recorded: a phase-locked torso reaction
+    // wheel — waist winding against the turn each SS — moved the turn
+    // rate NOT AT ALL at certified waist slew (~2400 N*m*s per stroke
+    // against a ~30 kN*m sole-grip regime, 10x short) and its torso
+    // motion during sortie turn segments felled s0. Removed.)
     mech.waist.target += clamp(wTgt - mech.waist.target, -wRate, wRate);
     mech.arms.L.target = 0; mech.arms.R.target = 0;
   }
@@ -1930,6 +2416,22 @@ function controller(world, mech) {
   if (st.poise && (st.poise.phase === "hold" || st.poise.phase === "lower")) {
     const stLeg = mech.legs[st.poise.raise === "L" ? "R" : "L"];
     stLeg.ankleRoll.target = -stLeg.hipRoll.angle;
+  }
+  // SHOULDER POD TRACKING (2026-08-02): the rack slews INDEPENDENT of the
+  // torso — a ~300kg pod on a 19t frame turns for free. It points where
+  // the next salvo would actually go (the reticle solve, snapped targets
+  // included), and at the live mslTarget for a beat after firing.
+  {
+    const torso2 = mech.waist ? mech.waist.b : mech.hull;
+    const tYaw = Math.atan2(torso2.R[6], torso2.R[8]);
+    let want;
+    if (mech.mslTarget && world.t - (mech._lastMsl || -99) < 2.5) want = mech.mslTarget;
+    else if ((st._podT = ((st._podT || 0) + dt)) > 0.1) { st._podT = 0; st._podAim = mslAimPoint(world, mech); want = st._podAim; }
+    else want = st._podAim;
+    const wYaw = want ? Math.atan2(want.x - torso2.pos.x, want.z - torso2.pos.z) : tYaw;
+    if (mech.mslYaw == null) mech.mslYaw = tYaw;
+    mech.mslYaw += clamp(wrapPi(wYaw - mech.mslYaw), -2.8 * dt, 2.8 * dt);
+    mech.podLock = !!(want && want.lock);
   }
   // reference: no target-rate feedforward, no attitude trim in the legs —
   // stiff kp tracks, kd damps absolute wRel, IK is attitude-blind in the
@@ -1944,7 +2446,19 @@ function controller(world, mech) {
   for (const side of ["L", "R"]) {
     const leg = mech.legs[side];
     const isSwing = st.mode === "WALK" && st.swing === side;
-    for (const j of [leg.hipRoll, leg.hipPitch, leg.knee, leg.anklePitch, leg.ankleRoll]) { j.tauFF = 0; j.kpMul = 1; j.kdMul = 1; }
+    for (const j of [leg.hipRoll, leg.hipPitch, leg.knee, leg.anklePitch, leg.ankleRoll]) { j.tauFF = 0; j.kpMul = 1; j.kdMul = 1; j.tauMul = 1; }
+    if (isSwing) {
+      // QUICK-STEP swing authority (dynamic-gait campaign): a shortened
+      // period moves the clock-phased swing target faster than certified
+      // servos can track — feet landed 0.72m short of plan and the speed
+      // brake became unenforceable (traced runaway at tSS@0.8). Torque
+      // scales as accel ~ 1/T^2. Identity (x1.0) at the certified period.
+      const tRatio = ((k._designPeriod || k._period0) / Math.max(1e-3, k.stepPeriod)) / Math.max(0.62, Math.min(1, st.cadence || 1)); // covers both static scaling AND the live cadence path
+      if (tRatio > 1.001) {
+        const boost = Math.min(4, tRatio * tRatio);
+        for (const j of [leg.hipPitch, leg.knee, leg.anklePitch]) { j.kpMul = boost; j.kdMul = Math.sqrt(boost); j.tauMul = boost; }
+      }
+    }
     if (isSwing || leg.load < 0.02 * totalW) continue;
     const inSS = (st.mode === "WALK" && st.swing != null) || (st.poise != null && st.poise.phase !== "recentre");
     const midX = inSS ? leg.foot.pos.x : (legL.foot.pos.x + legR.foot.pos.x) / 2;
@@ -2004,7 +2518,7 @@ export function mechIslandSolve(world, mech) {
   // realization LAG (~0.2s at omega 1.6) that loses the balance race
   // (advisor-2, measured) — stiffen it 4x for the hold only
   const poiseHold = mech.state.poise && mech.state.poise.phase === "hold";
-  const cfm = (poiseHold ? 0.05 : 0.2) * mech.groundC / (dt * dt);
+  const cfm = (poiseHold ? 0.05 : (mech.cfmF || 0.2)) * mech.groundC / (dt * dt); // ground compliance knob (0.25 measured: breaks sortie s2 + march-180 — stays 0.2)
   for (const c of world.contacts) {
     if (!c.mech) continue;
     if (c.a.mechRef === mech || (c.b && c.b.mechRef === mech)) {
@@ -2014,11 +2528,11 @@ export function mechIslandSolve(world, mech) {
   }
   // island: fixed iterations, joints + contacts INTERLEAVED (spec §6)
   for (const j of mech.joints) prepHinge(j, dt);
-  // 16, not 12 (2026-08-01): the hip yaw joint deepened the serial load
+  // 20, not 12 (2026-08-01): the hip yaw joint deepened the serial load
   // path (hull -> yawB -> hipB -> ... -> foot) and 12 iterations stopped
   // converging — the standing weight BOUNCED 0..4x W and the frame hopped
-  // itself over in 4s. At 16 the settle is dead quiet (183k..194k).
-  const IT = 20;
+  // itself over in 4s.
+  const IT = mech.solveIT || 20; // phys factorial knob
   for (let it = 0; it < IT; it++) {
     for (const j of mech.joints) iterHinge(j, dt, false);
     // the hip stack (hull -> yawB -> hipB) is the deepest serial load path
@@ -2055,6 +2569,89 @@ export function mechIslandSolve(world, mech) {
     for (const c of cs) if (c.a === leg.foot || c.b === leg.foot) pn += c.pn;
     leg.load = pn / dt;
   }
+  // MAGIC: SOLE ANCHOR (relaxed-physics license, 2026-08-02). Loaded soles
+  // are position-latched with a slip allowance — the eternal solver skate
+  // (constant ~0.05 m/s, friction-blind position writes) dies here instead
+  // of being compensated everywhere downstream. LAST island writer by
+  // design (the poise lesson: anything earlier gets undone by close-out).
+  // The latch DRAGS when demanded displacement exceeds the allowance, so
+  // commanded slides/turn-grinds still work; micro-drift is erased.
+  // quick-step yields the anchor during WALK: the latch pins stance feet
+  // mid-rapid-cycle and fells short-period gaits (measured tSS@0.5:
+  // 0.62 m/s without the latch, FELL with). STAND keeps the skate-kill.
+  const anchOk9 = mech.state.mode !== "WALK" || mech.k.stepPeriod >= 0.9 * mech.k._period0;
+  if ((mech.magicAnchor == null ? 1 : mech.magicAnchor) > 0 && anchOk9 && !(mech._anchCd > world.t)) {
+    const W9 = mech.mass * world.gravity;
+    if (!mech._anch) mech._anch = { L: null, R: null };
+    for (const side of ["L", "R"]) {
+      const leg = mech.legs[side];
+      const a9 = mech._anch;
+      if (leg.load > 0.28 * W9) {
+        if (!a9[side]) a9[side] = { x: leg.foot.pos.x, z: leg.foot.pos.z };
+        const ax9 = a9[side];
+        const slip = 0.05;
+        let dx9 = leg.foot.pos.x - ax9.x, dz9 = leg.foot.pos.z - ax9.z;
+        const d9 = Math.hypot(dx9, dz9);
+        if (d9 > 0.22) { // blast-scale displacement in one tick: the feet are BLOWN LOOSE — a pinned-sole machine was unfellable (rode kv 320 at up 0.98, gate-illegal)
+          mech._anch.L = null; mech._anch.R = null; mech._anchCd = world.t + 1.2; break;
+        }
+        if (d9 > slip) { const s9 = (d9 - slip) / d9; ax9.x += dx9 * s9; ax9.z += dz9 * s9; dx9 = leg.foot.pos.x - ax9.x; dz9 = leg.foot.pos.z - ax9.z; }
+        leg.foot.pos.x -= dx9 * 0.5; leg.foot.pos.z -= dz9 * 0.5; // pull halfway back per tick — stiff yet not a hard snap
+        leg.foot.v.x *= 0.55; leg.foot.v.z *= 0.55;
+      } else if (leg.load < 0.12 * W9) a9[side] = null;
+    }
+  }
+}
+function magicRide(world, mech) {
+  // MAGIC: RIDE DAMPER (relaxed-physics license, 2026-08-02). Direct
+  // vertical velocity damping on the hull while any sole is loaded — a
+  // shock absorber no servo could build. The touchdown slam (ayP99 ~6.9
+  // m/s^2 measured at cruise) is the biggest roughness component; this
+  // eats it at the body instead of asking the leg chain to.
+  const kR = mech.magicRide == null ? 8 : mech.magicRide; // C4 bake: ride damper 8 default
+  if (mech.state.mode === "FALLEN") return;
+  const W9 = mech.mass * world.gravity;
+  const hull = mech.hull;
+  const loaded = mech.legs.L.load + mech.legs.R.load > 0.25 * W9;
+  const st9 = mech.state;
+  const striding = st9.mode === "WALK" && !st9.stopping && !st9.govDecel && !st9.recoverT;
+  if (kR > 0 && loaded && striding) hull.v.y -= hull.v.y * Math.min(0.6, kR * world.dt); // WALK-scoped (stop-settle measured FALLEN with it always-on: v 0.64 residual)
+  // MAGIC: TOUCHDOWN EASE (edge-triggered) — the landing slam is a discrete
+  // event (ayP99 ~7 m/s^2); for a short window after each foot's load-rise
+  // the hull's DOWNWARD velocity is bled hard. Continuous damping alone
+  // made p99 WORSE (+8%: slower sink, harder pop — measured).
+  // MAGIC: HEIGHT RAIL — the SS hip-sink wave (~0.25m servo deflection per
+  // stride by design) is the DOMINANT roughness (RMS 45% of p99: continuous
+  // bounce, not spikes). Pull the hull body straight toward the controller's
+  // own height reference with authority no leg servo could carry.
+  const kH = mech.magicRail == null ? 0 : mech.magicRail;
+  if (kH > 0 && loaded && mech._phDS && mech._hipYRef != null && mech.state.mode !== "FALLEN") {
+    const tgtY = mech._hipYRef - mech.geom.hipY; // hull centre (hipY is negative)
+    const e9 = tgtY - hull.pos.y;
+    const acc9 = Math.max(-8, Math.min(8, e9 * kH - hull.v.y * Math.sqrt(kH) * 1.6));
+    hull.v.y += acc9 * world.dt;
+  }
+  // MAGIC: SWAY SHAPER — bleed only the lateral velocity EXCESS beyond the
+  // gait's own transfer sway (damping all of it wrecks the rhythm — session
+  // law from the Raibert notes)
+  const kS = mech.magicSway == null ? 0 : mech.magicSway;
+  if (kS > 0 && loaded) {
+    const vl9 = hull.v.x, ex9 = Math.abs(vl9) - 0.32;
+    if (ex9 > 0) hull.v.x -= Math.sign(vl9) * Math.min(ex9, ex9 * kS * world.dt);
+  }
+  const kT = mech.magicTd == null ? 0 : mech.magicTd;
+  if (kT > 0) {
+    if (!mech._ldPrev) mech._ldPrev = { L: 0, R: 0 };
+    for (const side of ["L", "R"]) {
+      const ld = mech.legs[side].load;
+      if (mech._ldPrev[side] < 0.10 * W9 && ld > 0.2 * W9 && mech.state.mode === "WALK") mech._tdT = 0.12;
+      mech._ldPrev[side] = ld;
+    }
+    if ((mech._tdT || 0) > 0) {
+      mech._tdT -= world.dt;
+      if (hull.v.y < 0) hull.v.y -= hull.v.y * Math.min(0.8, kT * world.dt);
+    }
+  }
 }
 function stepMechs(world) {
   for (const mech of world.mechs) {
@@ -2065,6 +2662,46 @@ function stepMechs(world) {
     positionalPass(mech, 2, anchor2);
   }
     controller(world, mech);
+    magicRide(world, mech);
+    // thrusters: slew to command, apply real force+torque to the torso
+    if (mech.thrusters) {
+      const torso = mech.waist ? mech.waist.b : mech.hull;
+      const dt = world.dt;
+      if (!mech._thrF) mech._thrF = { x: 0, z: 0 };
+      mech._thrF.x = 0; mech._thrF.z = 0;
+      let hotSum = 0;
+      for (const th of mech.thrusters) {
+        const tgt = mech.thrustersOn ? clamp(th.cmd, 0, 1) : 0;
+        const spool = mech.gyroOn === false ? 0.06 : 0.12; // continuous duty needs the faster bell
+        th.cur += clamp(tgt - th.cur, -dt / spool, dt / spool);
+        if (th.cur > hotSum) hotSum = th.cur;
+        if (th.cur < 0.01) continue;
+        const F = th.cur * mech.thrustMax;
+        // world-frame mount + exhaust via torso rows-as-basis
+        const R = torso.R;
+        const px = R[0] * th.p.x + R[3] * th.p.y + R[6] * th.p.z;
+        const py = R[1] * th.p.x + R[4] * th.p.y + R[7] * th.p.z;
+        const pz = R[2] * th.p.x + R[5] * th.p.y + R[8] * th.p.z;
+        const ex = R[0] * th.e.x + R[3] * th.e.y + R[6] * th.e.z;
+        const ey = R[1] * th.e.x + R[4] * th.e.y + R[7] * th.e.z;
+        const ez = R[2] * th.e.x + R[5] * th.e.y + R[8] * th.e.z;
+        // thrust opposes exhaust
+        const fx = -ex * F, fy = -ey * F, fz = -ez * F;
+        torso.v.x += fx * torso.invM * dt;
+        torso.v.y += fy * torso.invM * dt;
+        torso.v.z += fz * torso.invM * dt;
+        mech._thrF.x += fx; mech._thrF.z += fz;
+        // torque r x F about the torso centre
+        const tx = py * fz - pz * fy, ty2 = pz * fx - px * fz, tz2 = px * fy - py * fx;
+        torso.w.x += (torso.invIw[0] * tx + torso.invIw[1] * ty2 + torso.invIw[2] * tz2) * dt;
+        torso.w.y += (torso.invIw[3] * tx + torso.invIw[4] * ty2 + torso.invIw[5] * tz2) * dt;
+        torso.w.z += (torso.invIw[6] * tx + torso.invIw[7] * ty2 + torso.invIw[8] * tz2) * dt;
+        wake(torso);
+      }
+      // heat only accrues on MANUAL burns; autos are engine-managed
+      const manual = mech.jetCmd && Math.hypot(mech.jetCmd.x, mech.jetCmd.z) > 0.15;
+      mech.jetHeat = clamp((mech.jetHeat || 0) + (manual ? hotSum * dt / 2.8 : 0) - dt / 4, 0, 1);
+    }
     mechIslandSolve(world, mech);
   }
 }
@@ -2072,6 +2709,21 @@ function stepMechs(world) {
 // ---------------------------------------------------------------- commands + gate helpers
 export function mechCommand(mech, { travel = null, lateral = null, heading = null } = {}) {
   const st = mech.state;
+  // ABOUT-FACE/PIVOT owns the body (advisor fix, 2026-08-02): per-frame
+  // command feeds were re-arming travel AFTER the maneuver's shed each
+  // tick — the brake could never complete while a stick was held, so the
+  // GAME's mid-march 180 has been silently stuck in "brake" (the CI gate
+  // passed only because it stops calling mechCommand after the request).
+  // Live pivots keep tracking heading; the 180 button freezes it.
+  if (st.aboutFace) {
+    // a MATERIALLY CHANGED command cancels a live pivot — new intent wins
+    // (players redirecting mid-pivot, and the sortie scripts whose mid-
+    // sequence commands were being swallowed: 4/6 with hijacking pivots)
+    const t0 = st._afT0;
+    if (st.afLive && t0 && ((travel != null && Math.abs(travel - t0.f) > 0.15) || (lateral != null && Math.abs(lateral - t0.l) > 0.1))) {
+      st.aboutFace = null; st.headingT = st.heading; st.recoverT = Math.max(st.recoverT || 0, 0.5);
+    } else { travel = null; lateral = null; if (!st.afLive) heading = null; }
+  }
   if (travel != null) st.cmdT.f = travel;
   if (lateral != null) st.cmdT.l = lateral;
   if (heading != null) st.headingT = heading;
@@ -2126,6 +2778,26 @@ export function mechPunt(world, mech) {
 // drill. Request sets the heading target and stages brake -> turn; the
 // controller executes a march-in-place pivot (single-support slew) and
 // clears the flag when the turn is in.
+// LIVE PIVOT (advisor): the game calls this when the stick is held hard
+// over while walking — brake into the certified SS pivot, TRACK the live
+// heading target while the stick stays down, resume on release/change.
+// Sustained walking turns are the arc-class killer (0/3 at every feed);
+// the pivot sustains ~6-8 deg/s with zero falls.
+export function mechPivot(world, mech) {
+  const st = mech.state;
+  if (st.mode !== "WALK" || st.aboutFace || st.kick || st.poise || !st.spawnDone || st._noPivot) return false;
+  st.aboutFace = "brake"; st.afLive = true;
+  st._afT0 = { f: st.cmdT.f, l: st.cmdT.l };
+  // Q: shed travel NOW, exactly like the 180 button does — without this a
+  // HELD forward stick kept cmdT at march speed (mechCommand nulls its
+  // writes during the maneuver but never cleared the pre-pivot value), so
+  // the brake stage could not complete and the "pivot" never pivoted: the
+  // turn feed + full march arc-sprinted to 1.9 m/s and fell 6/6 (traced).
+  // The stuck-in-brake bug the advisor fixed for the BUTTON existed here
+  // too; their turn certs held only the turn stick, so it hid.
+  st.cmdT.f = 0; st.cmdT.l = 0;
+  return true;
+}
 export function mechAboutFace(world, mech) {
   const st = mech.state;
   if (st.mode === "FALLEN" || st.kick || st.poise || st.aboutFace) return false;
@@ -2133,7 +2805,7 @@ export function mechAboutFace(world, mech) {
   mech._lastAF = world.t;
   // -pi + eps keeps wrapPi's shortest-path resolution on the RIGHT side
   st.headingT = wrapPi(st.heading - Math.PI + 0.02);
-  st.aboutFace = "brake";
+  st.aboutFace = "brake"; st.afLive = false; // fixed target: the 180 button
   st.cmdT.f = 0; st.cmdT.l = 0;
   return true;
 }
@@ -2147,33 +2819,36 @@ export function mechAboutFace(world, mech) {
 // with lead, otherwise the rockets land on the point itself. Ripple-fires
 // a lobbed 3-rocket salvo (HIGH ballistic arc — clears buildings) with
 // real mass and per-rocket recoil.
-export function mechMissiles(world, mech) {
-  if (mech.state.mode === "FALLEN") return false;
-  if (world.t - (mech._lastMsl || -99) < 6) return false;
-  // the reticle's ground point: torso ACTUAL facing (same frame the
-  // cannon preview draws from) at the commanded range
+// the salvo's target solve, shared with the pod's tracking visual: the
+// reticle's ground point (torso ACTUAL facing at the commanded range),
+// snapped to a live hostile within 12m of it (with lead)
+export function mslAimPoint(world, mech) {
   const torso = mech.waist ? mech.waist.b : mech.hull;
   const ty = Math.atan2(torso.R[6], torso.R[8]);
   const rng = clamp(mech.aimRange || 26, 6, 120);
   const rx = torso.pos.x + Math.sin(ty) * rng, rz = torso.pos.z + Math.cos(ty) * rng;
-  // snap: a live hostile within 12m of the reticle point gets the salvo
-  // (with lead); bare ground gets it where aimed
   let best = null, bestD = 12;
   for (const b of world.bodies) {
     if (!b.alive || b.team !== 2) continue;
     const d = Math.hypot(b.pos.x - rx, b.pos.z - rz);
     if (d < bestD) { bestD = d; best = b; }
   }
-  const tgt = best
-    ? { x: best.pos.x + best.v.x * 1.6, z: best.pos.z + best.v.z * 1.6 } // lead at ~arc flight time
-    : { x: rx, z: rz };
+  return best
+    ? { x: best.pos.x + best.v.x * 1.6, z: best.pos.z + best.v.z * 1.6, lock: true } // lead at ~arc flight time
+    : { x: rx, z: rz, lock: false };
+}
+export function mechMissiles(world, mech) {
+  if (mech.state.mode === "FALLEN") return false;
+  if (world.t - (mech._lastMsl || -99) < 6) return false;
+  const torso = mech.waist ? mech.waist.b : mech.hull;
+  const tgt = mslAimPoint(world, mech);
   if (Math.hypot(tgt.x - torso.pos.x, tgt.z - torso.pos.z) < 8) return false; // danger-close
   mech._lastMsl = world.t;
   mech.mslTarget = tgt;
   mech.mslSlew = 0; // launcher bearing animates in the controller-side state (visual later)
   // muzzle = the shoulder POD (right side, matches the rendered rack)
   const Rm = torso.R;
-  const m0 = { x: torso.pos.x + Rm[0] * -1.35 + Rm[3] * 1.4, y: torso.pos.y + Rm[1] * -1.35 + Rm[4] * 1.4, z: torso.pos.z + Rm[2] * -1.35 + Rm[5] * 1.4 };
+  const m0 = { x: torso.pos.x + Rm[0] * -1.35 + Rm[3] * 1.05, y: torso.pos.y + Rm[1] * -1.35 + Rm[4] * 1.05, z: torso.pos.z + Rm[2] * -1.35 + Rm[5] * 1.05 }; // matches the halved pod
   const dx = mech.mslTarget.x - m0.x, dz = mech.mslTarget.z - m0.z;
   const d = Math.max(6, Math.hypot(dx, dz));
   const h = m0.y - world.field.heightAt(mech.mslTarget.x, mech.mslTarget.z);

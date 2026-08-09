@@ -411,9 +411,20 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const chunkMesh = pool(chunkGeo, toon(0xa6b2c0), 1000, true); // 865 stones live now (keep 84 + walls 240 + hangar 115 + warehouse 146 + houses 280)
   chunkMesh.receiveShadow = true;
   // mech walker links: plain instanced steel boxes (rig art comes later)
-  const mechMesh = pool(new THREE.BoxGeometry(1, 1, 1), toon(0xffffff), 24, true);
+  const mechMesh = pool(new THREE.BoxGeometry(1, 1, 1), toon(0xffffff), 40, true);
   mechMesh.receiveShadow = true;
   const MECH_HULL_C = new THREE.Color(0x5f6e80), MECH_LINK_C = new THREE.Color(0x434c58), MECH_FOOT_C = new THREE.Color(0x2f353d);
+  const POD_LOCK_C = new THREE.Color(0x6b3226); // rust-red while the rack holds a live lock
+  const _podQ = new THREE.Quaternion(), _podUp = new THREE.Vector3();
+  // thruster plumes: tapered additive CONES, hot white core inside an
+  // amber sheath, base at the bell and tip trailing down the exhaust
+  const plumeMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false });
+  const plumeMesh = pool(new THREE.ConeGeometry(0.5, 1, 8), plumeMat, 20, false);
+  const PLUME_CORE = new THREE.Color(1.0, 0.98, 0.9), PLUME_SHEATH = new THREE.Color(1.0, 0.62, 0.22), PLUME_SNOW = new THREE.Color(0.85, 0.92, 1.0);
+  // snow spray: solid little tumbling chips thrown off the blast point
+  const snowMat = new THREE.MeshBasicMaterial({ color: 0xf4f8ff, transparent: true, opacity: 0.9 });
+  const snowMesh = pool(new THREE.BoxGeometry(0.22, 0.22, 0.22), snowMat, 24, false);
+  const _plQ = new THREE.Quaternion(), _plUp = new THREE.Vector3(0, 1, 0), _plDir = new THREE.Vector3();
   const iceMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.66, depthWrite: true });
   const _iceC = new THREE.Color();
   const _iceR = new Float32Array(80); // display envelope: fast attack, slow decay
@@ -642,7 +653,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
     let torsoB = null;
     let mi = 0;
     for (const b of world.bodies) {
-      if ((b.kind !== "mech" && b.kind !== "mechlink" && b.kind !== "mechfoot") || mi >= 24) continue;
+      if ((b.kind !== "mech" && b.kind !== "mechlink" && b.kind !== "mechfoot") || mi >= 32) continue;
       if (b.visTag === "torso") torsoB = b;
       writeInst(mechMesh, mi, b.pos.x, b.pos.y, b.pos.z, b.q, b.hx * 2, b.hy * 2, b.hz * 2);
       if (mechMesh.setColorAt) mechMesh.setColorAt(mi, b.kind === "mech" ? MECH_HULL_C : b.kind === "mechfoot" ? MECH_FOOT_C : MECH_LINK_C);
@@ -654,14 +665,89 @@ export function makeRenderer(canvas, world0, opts = {}) {
     if (torsoB && mi < 23) {
       _bq.set(torsoB.q.x, torsoB.q.y, torsoB.q.z, torsoB.q.w);
       const _off = new THREE.Vector3(-1.35, 0.62, -0.05).applyQuaternion(_bq);
-      writeInst(mechMesh, mi, torsoB.pos.x + _off.x, torsoB.pos.y + _off.y, torsoB.pos.z + _off.z, torsoB.q, 0.6, 0.5, 0.9); // pylon
+      const plx = torsoB.pos.x + _off.x, ply = torsoB.pos.y + _off.y, plz = torsoB.pos.z + _off.z;
+      writeInst(mechMesh, mi, plx, ply, plz, torsoB.q, 0.45, 0.4, 0.7); // pylon (fixed mount)
       if (mechMesh.setColorAt) mechMesh.setColorAt(mi, MECH_LINK_C);
       mi++;
-      _off.set(-1.35, 1.32, 0.12).applyQuaternion(_bq);
-      writeInst(mechMesh, mi, torsoB.pos.x + _off.x, torsoB.pos.y + _off.y, torsoB.pos.z + _off.z, torsoB.q, 1.5, 1.15, 2.9); // the pod
-      if (mechMesh.setColorAt) mechMesh.setColorAt(mi, MECH_FOOT_C);
+      // the pod SLEWS independent of the torso: yaw about its own mount by
+      // the engine's tracked launcher bearing (mech.mslYaw, world frame)
+      const mch = torsoB.mechRef;
+      const tYaw = Math.atan2(torsoB.R[6], torsoB.R[8]);
+      let rel = (mch && mch.mslYaw != null ? mch.mslYaw : tYaw) - tYaw;
+      while (rel > Math.PI) rel -= 2 * Math.PI;
+      while (rel < -Math.PI) rel += 2 * Math.PI;
+      _swq.setFromAxisAngle(_podUp.set(0, 1, 0), rel);
+      _podQ.copy(_bq).multiply(_swq);
+      _off.set(0, 0.48, 0.12).applyQuaternion(_podQ);
+      writeInst(mechMesh, mi, plx + _off.x, ply + _off.y, plz + _off.z, _podQ, 0.75, 0.58, 1.45); // the pod (halved per Jeff, 2026-08-02)
+      if (mechMesh.setColorAt) mechMesh.setColorAt(mi, mch && mch.podLock ? POD_LOCK_C : MECH_FOOT_C);
       mi++;
     }
+    // thruster hardware + plumes: bells always visible; burning nozzles get
+    // an additive flame stretched along the exhaust and a snow blast where
+    // the plume meets the pad
+    let pli = 0;
+    if (torsoB && torsoB.mechRef && torsoB.mechRef.thrusters) {
+      const mch2 = torsoB.mechRef;
+      const tq = _bq; // torso quaternion already set above
+      const nowT = performance.now() * 0.001;
+      let sni = 0;
+      for (let ti2 = 0; ti2 < mch2.thrusters.length && mi < 40; ti2++) {
+        const th = mch2.thrusters[ti2];
+        const mp = new THREE.Vector3(th.p.x, th.p.y, th.p.z).applyQuaternion(tq);
+        const mx = torsoB.pos.x + mp.x, my = torsoB.pos.y + mp.y, mz = torsoB.pos.z + mp.z;
+        _plDir.set(th.e.x, th.e.y, th.e.z).applyQuaternion(tq);
+        _plQ.setFromUnitVectors(_plUp, _plDir);
+        writeInst(mechMesh, mi, mx, my, mz, _plQ, 0.30, 0.38, 0.30); // bell, aimed along its exhaust
+        if (mechMesh.setColorAt) mechMesh.setColorAt(mi, MECH_FOOT_C);
+        mi++;
+        if (th.cur > 0.03 && pli < 18) {
+          const flick = 0.86 + 0.14 * Math.sin(nowT * 31 + ti2 * 2.1) * Math.sin(nowT * 17.3 + ti2);
+          const len = (0.9 + 3.4 * th.cur) * flick;
+          // sheath cone: base at the bell, tip trailing away
+          plumeMesh.setColorAt && plumeMesh.setColorAt(pli, PLUME_SHEATH);
+          writeInst(plumeMesh, pli, mx + _plDir.x * len * 0.5, my + _plDir.y * len * 0.5, mz + _plDir.z * len * 0.5, _plQ, 0.42 + 0.25 * th.cur, len, 0.42 + 0.25 * th.cur);
+          pli++;
+          // hot core, shorter and thin
+          if (pli < 18) {
+            const lc = len * 0.55;
+            plumeMesh.setColorAt && plumeMesh.setColorAt(pli, PLUME_CORE);
+            writeInst(plumeMesh, pli, mx + _plDir.x * lc * 0.5, my + _plDir.y * lc * 0.5, mz + _plDir.z * lc * 0.5, _plQ, 0.20 + 0.1 * th.cur, lc, 0.20 + 0.1 * th.cur);
+            pli++;
+          }
+          // snow blast where the plume meets the pad: a soft splash disc
+          // plus tumbling chips thrown outward, all animated render-side
+          if (_plDir.y < -0.2) {
+            const tGround = (my - world.field.heightAt(mx, mz)) / -_plDir.y;
+            if (tGround < 4.5) {
+              const gx = mx + _plDir.x * tGround, gz = mz + _plDir.z * tGround;
+              const gy = world.field.heightAt(gx, gz);
+              if (pli < 18) {
+                const r2 = (0.9 + 1.7 * th.cur) * (0.9 + 0.2 * Math.sin(nowT * 23 + ti2 * 3.3));
+                plumeMesh.setColorAt && plumeMesh.setColorAt(pli, PLUME_SNOW);
+                _plQ.setFromUnitVectors(_plUp, _plDir); // reuse; disc lies flat via squash
+                writeInst(plumeMesh, pli, gx, gy + 0.10, gz, null, r2, 0.18, r2);
+                pli++;
+              }
+              for (let ci = 0; ci < 3 && sni < 24; ci++) {
+                const ph3 = nowT * (2.2 + ci * 0.7) + ti2 * 2.3 + ci * 2.1;
+                const fr = ph3 % 1;
+                const ang3 = ci * 2.094 + ti2 * 0.9 + Math.floor(ph3) * 1.7;
+                const rr = (0.5 + 1.5 * fr) * (0.8 + th.cur);
+                const sy = gy + (0.9 * fr - 0.9 * fr * fr) * 2.4 * (0.5 + th.cur); // ballistic hop
+                _swq.setFromAxisAngle(_plUp, ph3 * 4.1);
+                writeInst(snowMesh, sni, gx + Math.cos(ang3) * rr, sy + 0.1, gz + Math.sin(ang3) * rr, _swq, 1 - 0.6 * fr, 1 - 0.6 * fr, 1 - 0.6 * fr);
+                sni++;
+              }
+            }
+          }
+        }
+      }
+      snowMesh.count = sni; snowMesh.instanceMatrix.needsUpdate = true;
+    }
+    if (!torsoB || !torsoB.mechRef || !torsoB.mechRef.thrusters) snowMesh.count = 0;
+    plumeMesh.count = pli; plumeMesh.instanceMatrix.needsUpdate = true;
+    if (plumeMesh.instanceColor) plumeMesh.instanceColor.needsUpdate = true;
     mechMesh.count = mi; mechMesh.instanceMatrix.needsUpdate = true;
     if (mechMesh.instanceColor) mechMesh.instanceColor.needsUpdate = true;
     // ice plates — tinted by how close their welds are to failing (shock or creep)
