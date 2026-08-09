@@ -46,7 +46,11 @@ function genMap(seed) {
   const passes = bands.map((z) => [{ x: -20 + r() * 13, z }, { x: 5 + r() * 15, z }]);
   const rocks = [];
   for (let bi = 0; bi < bands.length; bi++) {
+    // some ridges are walls of granite, some are nearly bare — density is
+    // a die roll per band, not a constant
+    const density = 0.35 + r() * 0.65;
     for (let x = -25; x <= 25; x += 5.5 + r() * 3) {
+      if (r() > density) continue;
       const z = bands[bi] + (r() - 0.5) * 2.5;
       if (passes[bi].some((g) => Math.abs(x - g.x) < 6.5)) continue;
       rocks.push({ x, z, r: 3.4 + r() * 1.2, h: 3.0 + r() * 0.9 });
@@ -70,7 +74,7 @@ function genMap(seed) {
     return best;
   };
   const ponds = [];
-  const nP = 2 + (r() < 0.5 ? 1 : 0);
+  const nP = 1 + Math.floor(r() * 4); // 1-4 ponds
   for (let i = 0; i < 30 && ponds.length < nP; i++) {
     const x = -18 + r() * 36, z = -12 + r() * 48, rad = 5.5 + r() * 2.5;
     if (passes.flat().some((g) => Math.abs(x - g.x) < 9 && Math.abs(z - g.z) < 14)) continue;
@@ -90,7 +94,7 @@ function genMap(seed) {
   const benches = [[bands[0] + 8, bands[1] - 7], [bands[1] + 8, bands[2] - 7], [bands[2] + 8, 46]];
   let bid = 0;
   for (let bi = 0; bi < benches.length; bi++) {
-    const want = bi === 2 ? 3 : 4 + (r() < 0.5 ? 1 : 0);
+    const want = 2 + Math.floor(r() * 4); // 2-5 buildings per bench — hamlets and towns both happen
     for (let k = 0, placed = 0; k < 90 && placed < want; k++) {
       const tpl = TPL[Math.floor(r() * TPL.length)];
       const swap = r() < 0.5;
@@ -111,7 +115,8 @@ function genMap(seed) {
     }
   }
   // no-man's-land keeps a broken croft or two — cover, not comfort
-  for (let k = 0, placed = 0; k < 14 && placed < 2; k++) {
+  const nRuin = Math.floor(r() * 3); // 0-2 broken crofts in the waste
+  for (let k = 0, placed = 0; k < 14 && placed < nRuin; k++) {
     const x = -18 + r() * 36, z = -46 + r() * 20;
     if (spawns.some((sp) => Math.hypot(x - sp.x, z - sp.z) < 10)) continue;
     if (town.some((q) => Math.hypot(x - q.x, z - q.z) < 10)) continue;
@@ -152,8 +157,8 @@ function makeMap(seed) {
       }
     }
     const og = g.worldToGrid(OBJ_POS.x, OBJ_POS.z);
-    // a hamlet under 9 structures is a broken roll too — re-roll it
-    if (TOWN.length >= 9 && checkConnectivity(g, SPAWN_POINTS, og.gx, og.gz)) return;
+    // even a hamlet needs SOMETHING to hold — 6 structures incl. the depot
+    if (TOWN.length >= 6 && checkConnectivity(g, SPAWN_POINTS, og.gx, og.gz)) return;
   }
   // ten broken rolls in a row would be a generator bug — the last one stands
 }
@@ -549,6 +554,7 @@ const ENEMY_SPECS = {
   fast:  { mass: 62,  hx: 0.24, hy: 0.82, hz: 0.24, hp: 36,  bounty: 5, speed: 5.1, gain: 18, label: "runner" },
   heavy: { mass: 340, hx: 0.46, hy: 1.02, hz: 0.46, hp: 290, bounty: 12, speed: 2.1, gain: 11, label: "breaker" },
   gren:  { mass: 84,  hx: 0.26, hy: 0.92, hz: 0.26, hp: 66,  bounty: 8, speed: 2.6, gain: 12, label: "grenadier" },
+  sapper:{ mass: 70,  hx: 0.25, hy: 0.84, hz: 0.25, hp: 30,  bounty: 7, speed: 3.8, gain: 16, label: "sapper" },
 };
 
 // March + combat driver. Runs BEFORE the engine step; uprighting, contacts,
@@ -632,9 +638,29 @@ function stepEnemies(world, grid) {
     const spec = ENEMY_SPECS[u.tag] || ENEMY_SPECS[""];
     const cell = grid.cellAt(u.pos.x, u.pos.z);
 
+    // SAPPERS carry one satchel charge: they sprint the road, and the first
+    // wall or emplacement within arm's reach gets it — 1.5s fuse, a blast
+    // that breaches masonry outright. The sapper rarely survives his work.
+    if (u.tag === "sapper") {
+      if (u._fuse != null) {
+        u._fuse -= dt;
+        u.v.x *= 1 - Math.min(1, 8 * dt); u.v.z *= 1 - Math.min(1, 8 * dt); // he stands over the charge
+        if (u._fuse <= 0) {
+          explode(world, u.pos.x, u.pos.y, u.pos.z, { r: 3.4, kv: 9, dmg: 150, crater: 0.6, hitStruct: true, attacker: "enemy" }); // 150 * ~0.5 falloff at plant range clears a 70hp wall in one charge
+          applyDamage(world, u, 1e9, { attacker: "enemy" });
+        }
+        continue;
+      }
+      for (const t2 of world.bodies) {
+        if ((t2.kind !== "wall" && t2.kind !== "tower") || !t2.alive) continue;
+        const dx2 = t2.pos.x - u.pos.x, dz2 = t2.pos.z - u.pos.z;
+        if (dx2 * dx2 + dz2 * dz2 < (t2.hx + 1.3) * (t2.hx + 1.3)) { u._fuse = 1.5; u.flashT = world.t; break; }
+      }
+      // otherwise he runs with the flow like everyone else (falls through)
+    }
     // riflemen: everything that is not a grenadier still carries a rifle and
     // will stop to work on a wall or an emplacement rather than walk past it
-    if (u.tag !== "gren") {
+    if (u.tag !== "gren" && u.tag !== "sapper") {
       u.fireCd = (u.fireCd || 0) - dt;
       u.scanCd = (u.scanCd || 0) - dt;
       const RIFLE_R2 = 13 * 13;
@@ -777,14 +803,14 @@ const WAVES = [
   { units: 20, delay: 0.8 },
   { units: 22, delay: 0.7, mix: [["", 14], ["fast", 8]] },
   { units: 26, delay: 0.7, mix: [["", 18], ["heavy", 4], ["gren", 4]] },
-  { units: 32, delay: 0.6 },
+  { units: 32, delay: 0.6, mix: [["", 26], ["sapper", 6]] },
   { units: 29, delay: 0.45, mix: [["fast", 18], ["heavy", 10], ["tank", 1]] },
   { units: 38, delay: 0.5, mix: [["", 22], ["heavy", 8], ["gren", 8]] },
-  { units: 36, delay: 0.4, mix: [["fast", 16], ["gren", 8], ["heavy", 10], ["tank", 2]] },
+  { units: 38, delay: 0.4, mix: [["fast", 16], ["gren", 8], ["heavy", 10], ["sapper", 2], ["tank", 2]] },
   { units: 46, delay: 0.42, mix: [["", 22], ["heavy", 12], ["gren", 6], ["fast", 6]] },
   { units: 56, delay: 0.38, mix: [["", 18], ["heavy", 16], ["gren", 10], ["fast", 10], ["tank", 2]] },
   { units: 47, delay: 0.3, mix: [["heavy", 30], ["gren", 14], ["tank", 3]] },
-  { units: 70, delay: 0.26, mix: [["", 22], ["fast", 16], ["heavy", 16], ["gren", 12], ["tank", 4]] },
+  { units: 74, delay: 0.26, mix: [["", 20], ["fast", 14], ["heavy", 16], ["gren", 12], ["sapper", 8], ["tank", 4]] },
 ];
 function makeWaveState() { return { waveIdx: 0, spawnQueue: 0, spawnTimer: 0, spawnDelay: 1, active: false, betweenWaves: true, countdown: 8, mixBag: [] }; }
 // WAVE ARMOR: an engine vehicle on the engine's own tread physics + goal AI
@@ -1054,7 +1080,7 @@ export default function ColdsnapTD() {
           treeAt(w.x, w.z);
         }
         const clumps = [];
-        for (let c = 0; c < 3; c++) { const w = fwdU(-20 + rT() * 40, -46 + rT() * 24); clumps.push([w.x, w.z, 5 + Math.floor(rT() * 3)]); }
+        for (let c = 0, nC = 1 + Math.floor(rT() * 4); c < nC; c++) { const w = fwdU(-20 + rT() * 40, -46 + rT() * 24); clumps.push([w.x, w.z, 5 + Math.floor(rT() * 3)]); }
         for (const [cx, cz, n2] of clumps) {
           for (let i = 0; i < n2; i++) {
             const a = rT() * 6.28, rr = 1.5 + rT() * 4;
