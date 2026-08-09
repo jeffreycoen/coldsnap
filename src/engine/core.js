@@ -436,22 +436,27 @@ export function fireVolley(world, x, z, n = 6, attacker = "player") {
   }
   return id;
 }
-function segBoxHit(p0, p1, b) {
-  // segment vs OBB slab test in body space; returns t in [0,1] or -1
+function segBoxHit(p0, p1, b, outAxis) {
+  // segment vs OBB slab test in body space; returns t in [0,1] or -1.
+  // outAxis (optional): if provided, receives .i = the entry axis index
+  // (0/1/2 for x/y/z in the box's local frame) — the face whose slab
+  // constraint set the final tmin, i.e. the struck face's normal axis.
   const d = v3(); V.sub(d, p1, p0);
   const lo = v3(); V.sub(lo, p0, b.pos);
   const o = v3(); rTMulVec(b.R, lo, o);
   const ld = v3(); rTMulVec(b.R, d, ld);
-  let tmin = 0, tmax = 1;
+  let tmin = 0, tmax = 1, tminAxis = -1;
   const hs = [b.hx + 0.15, b.hy + 0.15, b.hz + 0.15];
   const oArr = [o.x, o.y, o.z], dArr = [ld.x, ld.y, ld.z];
   for (let i = 0; i < 3; i++) {
     if (Math.abs(dArr[i]) < 1e-8) { if (Math.abs(oArr[i]) > hs[i]) return -1; continue; }
     let t1 = (-hs[i] - oArr[i]) / dArr[i], t2 = (hs[i] - oArr[i]) / dArr[i];
     if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
-    tmin = Math.max(tmin, t1); tmax = Math.min(tmax, t2);
+    if (t1 > tmin) { tmin = t1; tminAxis = i; }
+    tmax = Math.min(tmax, t2);
     if (tmin > tmax) return -1;
   }
+  if (outAxis) outAxis.i = tminAxis;
   return tmin;
 }
 export function explode(world, x, y, z, spec) {
@@ -659,7 +664,8 @@ function stepProjectiles(world) {
       hitT = b;
     }
     // body hit
-    let hitBody = null, bestT = hitT < 0 ? 1.01 : hitT;
+    let hitBody = null, bestT = hitT < 0 ? 1.01 : hitT, hitAxis = -1;
+    const _segAxis = world.depotCombat ? { i: -1 } : null;
     for (const b of world.bodies) {
       // DIVERGENCE (guarded): tower-defense structures are static but shootable;
       // hitOnly "structure" is enemy rifle fire that ignores the crowd around it
@@ -680,8 +686,8 @@ function stepProjectiles(world) {
       // DIVERGENCE (guarded): a mech is 15 bodies — one owner id can't cover
       // a shoulder-launched round clearing its own arm. No mechRef in the demo.
       if (p.spec.ownerMech && b.mechRef === p.spec.ownerMech && p.life < 0.35) continue;
-      const t = segBoxHit(p0, p.pos, b);
-      if (t >= 0 && t < bestT) { bestT = t; hitBody = b; }
+      const t = segBoxHit(p0, p.pos, b, _segAxis);
+      if (t >= 0 && t < bestT) { bestT = t; hitBody = b; if (_segAxis) hitAxis = _segAxis.i; }
     }
     if (hitBody || hitT >= 0) {
       const hx = p0.x + (p.pos.x - p0.x) * bestT, hy = p0.y + (p.pos.y - p0.y) * bestT, hz = p0.z + (p.pos.z - p0.z) * bestT;
@@ -694,7 +700,23 @@ function stepProjectiles(world) {
       // through the burst — the flat kind-based hit would stack 55 on top of
       // a 5-damage MG round
       if (hitBody && hitBody.alive && !p.spec.noImpact && (hitBody.kind === "unit" || hitBody.kind === "vehicle" || hitBody.kind === "truck")) {
-        applyDamage(world, hitBody, p.spec.kind === "shell" ? 90 : p.spec.kind === "mg" ? 11 : 55, { cause: CAUSE.PROJECTILE, attacker: p.spec.attacker || "world", volley: p.spec.volley || 0 });
+        let impactDmg = p.spec.kind === "shell" ? 90 : p.spec.kind === "mg" ? 11 : 55;
+        // DIVERGENCE (guarded): DEPOT combat scales direct impact damage by
+        // impact obliquity — a glancing hit does less than a square one.
+        // theta = angle between projectile velocity and the struck face's
+        // normal (the axis of least penetration from segBoxHit, hitAxis, in
+        // the target's local frame). Only world.depotCombat sets this up;
+        // no other mode touches hitAxis or this branch.
+        if (world.depotCombat && hitAxis >= 0) {
+          const vLocal = v3(); rTMulVec(hitBody.R, p.v, vLocal);
+          const vArr = [vLocal.x, vLocal.y, vLocal.z];
+          const speed = V.len(p.v);
+          if (speed > 1e-6) {
+            const cosT = Math.abs(vArr[hitAxis]) / speed;
+            impactDmg *= 0.35 + 0.65 * cosT;
+          }
+        }
+        applyDamage(world, hitBody, impactDmg, { cause: CAUSE.PROJECTILE, attacker: p.spec.attacker || "world", volley: p.spec.volley || 0 });
       }
       // DIVERGENCE (guarded): shells with declared mass deliver their real
       // momentum m*v to what they hit, on top of blast — no demo spec sets pmass.
