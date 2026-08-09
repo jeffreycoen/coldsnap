@@ -730,6 +730,12 @@ export default function ColdsnapTD() {
       computeFlowField(grid, objG.gx, objG.gz);
       R = makeRenderer(canvas, world, { town: false, camera: "tactical" });
       const A = makeGameAudio();
+      // echo taps come off the granite and the masonry — the only hard
+      // faces on an otherwise acoustically dead snowfield
+      A.setReflectors([
+        ...ROCKS.filter((k) => k.r >= 4),
+        ...TOWN.map((t) => ({ x: t.x, z: t.z, r: Math.max(t.nx, t.nz) * MASON.pitch * 0.6 })),
+      ]);
       R.setDressing({ rocks: ROCKS, ponds: PONDS });
       R.overlay.setObjective(OBJ_POS.x, OBJ_POS.z, field.heightAt(OBJ_POS.x, OBJ_POS.z));
       R.overlay.setBanners(SPAWN_POINTS);

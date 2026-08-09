@@ -67,6 +67,7 @@ export default function MechRange({ onExit }) {
     for (const h of hostiles) h._hp0 = h.hp;
     const R = makeRenderer(canvasRef.current, world, { town: false });
     const A = makeGameAudio();
+    A.setReflectors([{ x: -10, z: -2, r: 4 }, { x: 9, z: -6, r: 4 }, { x: -1, z: 7, r: 5 }, { x: 16, z: 4, r: 6 }]); // the range buildings
 
     const S = { acc: 0, last: performance.now(), keys: {}, yawT: Math.PI, aimYaw: null, aimRange: 26, aimOff: 0, aiT: 0, orbit: 0, tankFire: [2.5, 5.2], raf: 0, hudT: 0, dead: false, joyId: null, jx: 0, jy: 0, rsId: null, rx: 0, rngId: null, aimHeld: 0, fireHeld: false };
     window.__MECHRANGE__ = {
