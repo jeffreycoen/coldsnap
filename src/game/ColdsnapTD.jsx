@@ -256,7 +256,7 @@ function stepTowers(world) {
     b.fireCd = (b.fireCd || 0) - dt;
     // hold a target between scans; re-acquire only when it dies or walks out
     let best = b.targetId ? world.byId.get(b.targetId) : null;
-    if (best && (!best.alive || best.team !== 2)) best = null;
+    if (best && (!best.alive || best.team !== 2 || (best.kind !== "unit" && best.kind !== "vehicle"))) best = null;
     if (best) {
       const dx = best.pos.x - b.pos.x, dz = best.pos.z - b.pos.z;
       if (dx * dx + dz * dz > spec.range * spec.range) best = null;
@@ -266,7 +266,7 @@ function stepTowers(world) {
       b.scanCd = 0.11 + (b.id % 8) * 0.011;   // ~8Hz, staggered so scans don't align
       let bd = spec.range * spec.range;
       for (const e of world.bodies) {
-        if (e.kind !== "unit" || !e.alive || e.team !== 2) continue;
+        if ((e.kind !== "unit" && e.kind !== "vehicle") || !e.alive || e.team !== 2) continue;
         const dx = e.pos.x - b.pos.x, dz = e.pos.z - b.pos.z;
         const d2 = dx * dx + dz * dz;
         if (d2 < bd) { bd = d2; best = e; }
@@ -422,6 +422,42 @@ const ENEMY_SPECS = {
 // sleep and damage all belong to the engine now.
 function stepEnemies(world, grid) {
   const dt = world.dt;
+  // wave armor: goal rides the flow field ~9m ahead; the cannon works on
+  // whatever structure blocks the road (walls, towers — and the blast
+  // chews rock like everything else in this world)
+  for (const t of world.bodies) {
+    if (t.kind !== "vehicle" || t.team !== 2 || !t.alive || !t.squad) continue;
+    if (t.sleeping) wake(t);
+    const cell = grid && grid.cellAt(t.pos.x, t.pos.z);
+    if (cell && cell.dist < 1e8 && (cell.dx || cell.dz)) {
+      t.goal = { x: t.pos.x + cell.dx * 9, z: t.pos.z + cell.dz * 9 };
+    } else if (!t.goal) t.goal = { x: 0, z: 40 };
+    // stuck reflex: full throttle and no motion for 3s means the road is a
+    // lie — open fire on whatever stands there, rock included
+    const sp2 = Math.hypot(t.v.x, t.v.z);
+    t._stuckT = sp2 < 0.25 && Math.abs((t.ctl && t.ctl.throttle) || 0) > 0.4 ? (t._stuckT || 0) + dt : 0;
+    const desperate = t._stuckT > 3;
+    t.gunT = (t.gunT || 0) - dt;
+    if (t.gunT <= 0) {
+      let tgt = null, td = TANK.gunRange * TANK.gunRange;
+      for (const s of world.bodies) {
+        if ((s.kind !== "tower" && s.kind !== "wall" && !(desperate && s.kind === "rock")) || !s.alive) continue;
+        const dx = s.pos.x - t.pos.x, dz = s.pos.z - t.pos.z, d2 = dx * dx + dz * dz;
+        if (d2 < td) { td = d2; tgt = s; }
+      }
+      if (tgt) {
+        t.gunT = TANK.gunCd + Math.random() * 1.2;
+        const muzzle = v3(t.pos.x, t.pos.y + 1.2, t.pos.z);
+        const dx = tgt.pos.x - muzzle.x, dz = tgt.pos.z - muzzle.z;
+        const d = Math.max(2, Math.hypot(dx, dz));
+        const dy = tgt.pos.y - muzzle.y;
+        let pitch = aimSolve(85, d, dy);
+        if (pitch == null) pitch = Math.atan2(dy, d);
+        fireProjectile(world, muzzle, v3((dx / d) * Math.cos(pitch), Math.sin(pitch), (dz / d) * Math.cos(pitch)), 85,
+          { kind: "shell", r: TANK.blastR, kv: 8, dmg: TANK.dmg, crater: 0.5, noImpact: true, hitStruct: true, attacker: "enemy" });
+      } else t.gunT = 0.5;
+    }
+  }
   const frosts = [];
   for (const b of world.bodies) {
     if (b.kind === "tower" && b.alive && b.towerType === "frost") {
@@ -605,16 +641,30 @@ const WAVES = [
   { units: 22, delay: 0.7, mix: [["", 14], ["fast", 8]] },
   { units: 26, delay: 0.7, mix: [["", 18], ["heavy", 4], ["gren", 4]] },
   { units: 32, delay: 0.6 },
-  { units: 28, delay: 0.45, mix: [["fast", 18], ["heavy", 10]] },
+  { units: 29, delay: 0.45, mix: [["fast", 18], ["heavy", 10], ["tank", 1]] },
   { units: 38, delay: 0.5, mix: [["", 22], ["heavy", 8], ["gren", 8]] },
-  { units: 34, delay: 0.4, mix: [["fast", 16], ["gren", 8], ["heavy", 10]] },
+  { units: 36, delay: 0.4, mix: [["fast", 16], ["gren", 8], ["heavy", 10], ["tank", 2]] },
   { units: 46, delay: 0.42, mix: [["", 22], ["heavy", 12], ["gren", 6], ["fast", 6]] },
-  { units: 54, delay: 0.38, mix: [["", 18], ["heavy", 16], ["gren", 10], ["fast", 10]] },
-  { units: 44, delay: 0.3, mix: [["heavy", 30], ["gren", 14]] },
-  { units: 66, delay: 0.26, mix: [["", 22], ["fast", 16], ["heavy", 16], ["gren", 12]] },
+  { units: 56, delay: 0.38, mix: [["", 18], ["heavy", 16], ["gren", 10], ["fast", 10], ["tank", 2]] },
+  { units: 47, delay: 0.3, mix: [["heavy", 30], ["gren", 14], ["tank", 3]] },
+  { units: 70, delay: 0.26, mix: [["", 22], ["fast", 16], ["heavy", 16], ["gren", 12], ["tank", 4]] },
 ];
 function makeWaveState() { return { waveIdx: 0, spawnQueue: 0, spawnTimer: 0, spawnDelay: 1, active: false, betweenWaves: true, countdown: 8, mixBag: [] }; }
+// WAVE ARMOR: an engine vehicle on the engine's own tread physics + goal AI
+// (stepDrive/aiDrive). It follows the flow field like the infantry but it is
+// 3.4 tonnes with a cannon: it does not queue at your wall — it makes a door.
+const TANK = { mass: 3400, hx: 1.5, hy: 0.8, hz: 2.4, hp: 260, bounty: 25, gunCd: 4.6, gunRange: 34, dmg: 30, blastR: 2.5 };
+function spawnTank(world, sp) {
+  const x = sp.x + (Math.random() - 0.5) * 3, z = sp.z + 1;
+  const t = addBody(world, { kind: "vehicle", team: 2, mass: TANK.mass, hx: TANK.hx, hy: TANK.hy, hz: TANK.hz, x, y: world.field.heightAt(x, z) + TANK.hy + 0.1, z, hp: TANK.hp, friction: 0.85 });
+  t.squad = "waveArmor"; // stepDrive picks it up: aiDrive steers to b.goal, driveHull runs the treads
+  t.driverSpec = { throttleHabit: 0.8 };
+  t.bounty = TANK.bounty;
+  t.gunT = 2 + Math.random() * 2;
+  return t;
+}
 function spawnEnemy(world, sp, tag) {
+  if (tag === "tank") return spawnTank(world, sp);
   const spec = ENEMY_SPECS[tag] || ENEMY_SPECS[""];
   const x = sp.x + (Math.random() - 0.5) * 3.4, z = sp.z + (Math.random() - 0.5) * 1.5;
   const u = addBody(world, { kind: "unit", team: 2, mass: spec.mass, hx: spec.hx, hy: spec.hy, hz: spec.hz, x, z, y: world.field.heightAt(x, z) + spec.hy + 0.02, hp: spec.hp, friction: 0.38 });
@@ -657,9 +707,9 @@ function stepTd(world, grid, onStructureLost, town, onRuin) {
   // bounty at the moment of death — the engine kill event outlives the corpse
   // cull below, so an id lookup at frame-drain time comes up empty
   for (const b of world.bodies) {
-    if (b.kind === "unit" && b.team === 2 && !b.alive && !b._paid) {
+    if ((b.kind === "unit" || b.kind === "wreck") && b.team === 2 && !b.alive && !b._paid && b.bounty) {
       b._paid = true;
-      world.events.push({ type: "tdkill", bounty: b.bounty || 3 });
+      world.events.push({ type: "tdkill", bounty: b.bounty });
     }
   }
   for (let i = world.bodies.length - 1; i >= 0; i--) {
@@ -681,9 +731,9 @@ function stepTd(world, grid, onStructureLost, town, onRuin) {
   // muzzle raised by the same step (found the hard way, pre-port).
   for (let i = world.bodies.length - 1; i >= 0; i--) {
     const b = world.bodies[i];
-    if (b.kind !== "unit" || !b.alive || b.team !== 2) continue;
-    if (Math.hypot(b.pos.x - OBJ_POS.x, b.pos.z - OBJ_POS.z) < 3.0) {
-      world.events.push({ type: "leak", dmg: b.tag === "heavy" ? 2 : 1, x: b.pos.x, y: b.pos.y, z: b.pos.z });
+    if ((b.kind !== "unit" && b.kind !== "vehicle") || !b.alive || b.team !== 2) continue;
+    if (Math.hypot(b.pos.x - OBJ_POS.x, b.pos.z - OBJ_POS.z) < (b.kind === "vehicle" ? 5.0 : 3.0)) {
+      world.events.push({ type: "leak", dmg: b.kind === "vehicle" ? 4 : b.tag === "heavy" ? 2 : 1, x: b.pos.x, y: b.pos.y, z: b.pos.z });
       world.byId.delete(b.id); world.bodies.splice(i, 1);
     }
   }
@@ -736,7 +786,10 @@ export default function ColdsnapTD() {
       // grade masonry: expensive ordnance literally reshapes the approach.
       const rocksLive = ROCKS.slice();
       for (const k of ROCKS) {
-        const b = addBody(world, { kind: "rock", team: 0, mass: 0, hx: k.r * 0.75, hy: k.h * 0.8, hz: k.r * 0.75, x: k.x, y: field.heightAt(k.x, k.z) - k.h * 0.2, z: k.z, hp: 380 + k.r * 90 });
+        // hx 0.55r: the box half-DIAGONAL then matches the grid's 0.78r
+        // blocked circle — a fatter box jutted its corners into passes the
+        // flow field called open and wedged the wave armor (measured)
+        const b = addBody(world, { kind: "rock", team: 0, mass: 0, hx: k.r * 0.55, hy: k.h * 0.8, hz: k.r * 0.55, x: k.x, y: field.heightAt(k.x, k.z) - k.h * 0.2, z: k.z, hp: 380 + k.r * 90 });
         b.maxHp = b.hp; b.rockRef = k;
       }
       // TREELINE: snow pines behind the spawn edge + three clumps upfield.
@@ -1067,6 +1120,7 @@ export default function ColdsnapTD() {
       window.__TDWRECK__ = (x, z, big) => explode(world, x, field.heightAt(x, z) + 0.5, z, { r: big ? 4.2 : 3.0, kv: big ? 11 : 8, dmg: big ? 45 : 30, crater: big ? 0.9 : 0.6, hitStruct: true, attacker: "world" });
       window.__TDPROJ__ = () => world.projectiles.map((p) => ({ x: p.pos.x, y: p.pos.y, z: p.pos.z, vx: p.v.x, vy: p.v.y, vz: p.v.z, gy: field.heightAt(p.pos.x, p.pos.z) }));
       window.__TDSTART__ = () => { S.started = true; };
+      window.__TDARMOR__ = () => world.bodies.filter((b) => b.kind === "vehicle" && b.team === 2).map((b) => ({ x: +b.pos.x.toFixed(1), y: +b.pos.y.toFixed(1), z: +b.pos.z.toFixed(1), hp: b.hp, alive: b.alive, ctl: b.ctl ? { th: +(b.ctl.throttle || 0).toFixed(2), st: +(b.ctl.steer || 0).toFixed(2) } : null, v: +Math.hypot(b.v.x, b.v.z).toFixed(2), goal: b.goal }));
       window.__TDROCKS__ = () => world.bodies.filter((b) => b.kind === "rock").map((b) => ({ x: +b.pos.x.toFixed(1), y: +b.pos.y.toFixed(1), z: +b.pos.z.toFixed(1), hp: Math.round(b.hp), alive: b.alive }));
 
       // ---- main loop
@@ -1128,7 +1182,7 @@ export default function ColdsnapTD() {
                 if (ws.spawnTimer <= 0) { ws.spawnTimer = ws.spawnDelay; spawnOne(); }
               } else {
                 let live = 0;
-                for (const b of world.bodies) if (b.kind === "unit" && b.alive && b.team === 2) live++;
+                for (const b of world.bodies) if ((b.kind === "unit" || b.kind === "vehicle") && b.alive && b.team === 2) live++;
                 if (live === 0) {
                   ws.waveIdx++;
                   if (ws.waveIdx >= WAVES.length) { S.victory = true; toast("THE DEPOT HOLDS"); }
@@ -1164,7 +1218,7 @@ export default function ColdsnapTD() {
             S.hudT = 0;
             let en = 0, nw = 0, nt = 0;
             for (const b of world.bodies) {
-              if (b.kind === "unit" && b.alive && b.team === 2) en++;
+              if ((b.kind === "unit" || b.kind === "vehicle") && b.alive && b.team === 2) en++;
               else if (b.kind === "wall") nw++;
               else if (b.kind === "tower") nt++;
             }
@@ -1213,7 +1267,7 @@ export default function ColdsnapTD() {
         canvas.removeEventListener("touchstart", blockTouch);
         window.removeEventListener("keydown", kd);
         window.removeEventListener("keyup", ku);
-        for (const k of ["__TD__", "__TDBUILD__", "__TDSPAWN__", "__TDSIM__", "__TDGFX__", "__TDWRECK__", "__TDPROJ__", "__TDUNITS__", "__TDSTART__", "__TDROCKS__"]) delete window[k];
+        for (const k of ["__TD__", "__TDBUILD__", "__TDSPAWN__", "__TDSIM__", "__TDGFX__", "__TDWRECK__", "__TDPROJ__", "__TDUNITS__", "__TDSTART__", "__TDROCKS__", "__TDARMOR__"]) delete window[k];
         A.dispose();
         if (R) R.dispose();
         stateRef.current = null;
