@@ -27,6 +27,22 @@ the seven field trials. Masonry collapses, ice fractures, the pond drowns.
   identically from data; `ac-01-interdiction.json` is a contract authored
   purely in JSON with zero engine edits. Both gated in CI
   (`test:predicate`, `test:scenario`).
+- `src/engine/mech.js` — the biped walker: rig build, hinge/contact island
+  solver, gait controller (hip-yaw actuator, CMG, capture-point stepping,
+  stabilization rockets, JETS). Gated by `scripts/mech-test.mjs`
+  (`npm run test:mech`), `righting-test.mjs`, and the sweep harnesses
+  (`scripts/yaw-*.mjs`).
+- `src/game/CampaignRunner.jsx` + `campaign.js` — the eight-work-order
+  clearance campaign over the extracted engine (`npm run test:campaign`).
+- `src/game/MechRange.jsx` — the mech test range (outpost scenario, garrison
+  tanks, shoulder missiles).
+- `src/game/ColdsnapTD.jsx` — HOLD THE DEPOT, a tower defense on the same
+  engine and renderer: flow-field pathing, welded-masonry town, five tower
+  types, twelve waves. Gated by `npm run test:td` (headless leak/kill/bounty
+  sim) and `npm run test:td-render`.
+- `src/aar/` — after-action report composition (`npm run test:aar`).
+- `src/render/renderer.js` also carries the mech, tower, wall and overlay
+  meshes plus the `tactical` camera mode; every mode shares the one renderer.
 - `src/ui/` — the shell: start screen, controls screen, and the app frame that
   mounts the demo (ESC or the ⏏ MENU button returns to the menu).
 - `src/platform/keymap.js` — keyboard remapping. A capture-phase interceptor

@@ -577,7 +577,12 @@ export function explode(world, x, y, z, spec) {
     }
     b.lastImp = { src: "blast", attacker: spec.attacker || "world", t: world.t, volley: spec.volley || 0 };
     if ((spec.attacker || "") === "player") b.lastPlayerTouch = world.t;
-    const dmg = spec.dmg * f * (0.12 + 0.88 * occ) + (dist < 1.0 && spec.kind !== "mg" ? 55 : 0); // point-blank bonus is for real munitions at your feet — a coax round bursting ON its target is just the bullet
+    // DIVERGENCE (guarded): noImpact rounds (tower defense) use the TD's own
+    // law — no occlusion (the tuned numbers predate it; a player's walls
+    // shading the choke they fire into gutted every tower), no flat bonus
+    const dmg = spec.noImpact
+      ? spec.dmg * f * (dist < 1.2 ? 1.5 : 1)
+      : spec.dmg * f * (0.12 + 0.88 * occ) + (dist < 1.0 && spec.kind !== "mg" ? 55 : 0); // point-blank bonus is for real munitions at your feet — a coax round bursting ON its target is just the bullet
     // DIVERGENCE from the frozen demo: trucks in the blast-damage gate too
     // (see the projectile gate in stepProjectiles for the full note)
     if (b.alive && (b.kind === "unit" || b.kind === "vehicle" || b.kind === "truck")) {
@@ -641,6 +646,9 @@ function stepProjectiles(world) {
       // DIVERGENCE (guarded): tower-defense structures are static but shootable;
       // hitOnly "structure" is enemy rifle fire that ignores the crowd around it
       if (p.spec.hitOnly === "structure" && b.kind !== "tower" && b.kind !== "wall" && b.kind !== "chunk") continue;
+      // structures stop a round only when the spec cares about structures —
+      // tower fire arcs over the player's own wall line (original TD rule)
+      if ((b.kind === "tower" || b.kind === "wall") && !(p.spec.hitOnly === "structure" || p.spec.hitStruct)) continue;
       if (b.invM === 0 && b.kind !== "chunk" && b.kind !== "tower" && b.kind !== "wall") continue;
       if ((b.kind === "tower" || b.kind === "wall") && !b.alive) continue;
       if (!b.alive && b.kind === "unit") continue;

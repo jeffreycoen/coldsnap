@@ -15,7 +15,9 @@
     "test:scenario": "node scripts/scenario-test.mjs",
     "test:righting": "node scripts/righting-test.mjs",
     "test:campaign": "node scripts/campaign-test.mjs",
-    "test:mech": "node scripts/mech-test.mjs"
+    "test:mech": "node scripts/mech-test.mjs",
+    "test:td": "node scripts/td-sim-test.mjs",
+    "test:td-render": "node scripts/td-render-test.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",
