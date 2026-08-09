@@ -334,7 +334,13 @@ export default function MechRange({ onExit }) {
           const ang = Math.atan2(dx, dz) + S.orbit * 0 + 0; // ring point on the tank's current bearing
           const ring = 26;
           const oa = ang + Math.sin(S.orbit + ti * 2.1) * 0.5; // weave along the ring
-          t.goal = { x: mh.pos.x + Math.sin(oa) * ring, z: mh.pos.z + Math.cos(oa) * ring };
+          // ring points clamp INSIDE the field — a mech near the edge put
+          // the ring outside the map and the platoon drove off the world
+          const lim = world.field.half - 6;
+          t.goal = {
+            x: Math.max(-lim, Math.min(lim, mh.pos.x + Math.sin(oa) * ring)),
+            z: Math.max(-lim, Math.min(lim, mh.pos.z + Math.cos(oa) * ring)),
+          };
         }
       }
       for (let ti = 0; ti < tanks.length && S.alert; ti++) {
@@ -478,7 +484,7 @@ export default function MechRange({ onExit }) {
         <p style={line}>BIPED FRAME MK1 — GAIT ACCEPTANCE PENDING</p>
         <p style={line}>{isTouch ? "L stick moves · R stick turns (or JETS) · ◀ ▶ aim · slider range" : "W/S walk · A/D turn · MOUSE aims · CLICK fire · V missiles · C punt · X one-leg · T 180 · G gyro · H rockets · J jets · R reissue"}</p>
         <p data-mech-status style={line}>
-          {hud.mode === "FALLEN" ? "FRAME DOWN — R TO REISSUE" : hud.maneuver ? hud.mode + " · " + hud.maneuver : hud.mode} · steps {hud.steps} · falls {hud.falls} · kills {hud.kills} · shots {hud.shots} · garrison {hud.alert ? "ALERTED" : "unaware"}
+          {hud.mode === "FALLEN" ? "FRAME DOWN — R TO REISSUE" : hud.maneuver ? hud.mode + " · " + hud.maneuver : hud.mode} · steps {hud.steps} · falls {hud.falls} · kills {hud.kills} · shots {hud.shots} · <span style={{ color: hud.mslCd > 0.1 ? "#e0b85e" : "#7fd47f" }}>MSL {hud.mslCd > 0.1 ? Math.ceil(hud.mslCd) + "s" : "READY"}</span> · garrison {hud.alert ? "ALERTED" : "unaware"}
         </p>
       </div>
       <>
