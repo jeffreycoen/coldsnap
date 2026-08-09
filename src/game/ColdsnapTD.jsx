@@ -12,6 +12,7 @@ import {
   explode, aimSolve, applyDamage, mulberry32, __mech__,
 } from "../engine/core.js";
 import { makeRenderer } from "../render/renderer.js";
+import { buildMech, mechCommand, mechFallen, respawnMech } from "../engine/mech.js";
 import { makeGameAudio } from "../platform/audio.js";
 
 const { V, v3, wake } = __mech__;
@@ -45,21 +46,38 @@ function ridge(x0, z0, x1, z1, gaps, r, h) {
   }
   return out;
 }
+// The granite is down to pass-framing stubs at the terrace lips — geology
+// explains the benches, but the ground between them belongs to the VILLAGE
+// now (Jeff: 80% of the boulders became buildings).
 const ROCKS = [
-  ...ridge(-27, -30, 27, -26, [[-10, -29, 6], [12, -27, 6]], 4.2, 3.4),
-  ...ridge(-27, 4, 27, 2, [[-4, 3, 6.5], [16, 2, 6]], 4.4, 3.8),
-  ...ridge(-25, 32, 26, 30, [[-10, 31, 6], [12, 30, 6]], 4.2, 3.2),
-  { x: -25, z: 14, r: 4.0, h: 3.6 }, { x: 25, z: 16, r: 4.0, h: 3.6 },
+  { x: -16, z: -29, r: 4.2, h: 3.4 }, { x: -4, z: -28, r: 4.0, h: 3.2 }, { x: 18, z: -27, r: 4.2, h: 3.4 },
+  { x: -10, z: 3, r: 4.4, h: 3.8 }, { x: 22, z: 2, r: 4.2, h: 3.6 },
+  { x: -16, z: 31, r: 4.0, h: 3.2 }, { x: 18, z: 30, r: 4.2, h: 3.2 },
 ];
 // Coldsnap masonry: hollow, welded, and every one can be brought down.
+// The village. Every named building is welded stone on the one lattice
+// builder — footprint/height/roof/ruin are parameters, collapse is physics.
+// Buildings the enemy ever THREATENS pay scrap each wave they survive.
 const TOWN = [
-  { id: "house0", x: -17, z: -14, nx: 6, nz: 5, ny: 4, door: 5 },
-  { id: "house1", x: 17, z: -12, nx: 6, nz: 5, ny: 4, door: 0 },
-  { id: "house2", x: -11, z: 16, nx: 5, nz: 4, ny: 4, door: 4 },
-  { id: "house3", x: 11, z: 40, nx: 5, nz: 4, ny: 4, door: 0 },
-  { id: "keep",   x: 0,  z: 22, nx: 7, nz: 6, ny: 5, door: 3 },
-  { id: "shed",   x: -19, z: 26, nx: 4, nz: 4, ny: 3, door: 0 },
-  { id: "depot",  x: 0,  z: 56, nx: 9, nz: 7, ny: 5, door: 4, depot: true },
+  // south field: outlying crofts (first to see the war)
+  { id: "croft0",  x: -14, z: -42, nx: 4, nz: 3, ny: 3, door: 0 },
+  { id: "croft1",  x: 12, z: -38, nx: 4, nz: 3, ny: 3, door: 3 },
+  { id: "oldruin", x: 22, z: -44, nx: 4, nz: 4, ny: 3, door: 0, ruin: 0.5 },
+  // bench 1: longhouses lie along the ridge line like ramparts
+  { id: "longW",  x: -20, z: -18, nx: 8, nz: 4, ny: 3, door: 7 },
+  { id: "longE",  x: 10, z: -16, nx: 8, nz: 4, ny: 3, door: 0 },
+  { id: "watchS", x: 24, z: -14, nx: 2, nz: 2, ny: 8, door: 0 },
+  // bench 2: the town proper
+  { id: "granary", x: -21, z: 12, nx: 3, nz: 3, ny: 7, door: 0 },
+  { id: "house2",  x: -11, z: 16, nx: 5, nz: 4, ny: 4, door: 4 },
+  { id: "keep",    x: 0,  z: 22, nx: 7, nz: 6, ny: 5, door: 3 },
+  { id: "yard",    x: 14, z: 14, nx: 6, nz: 5, ny: 2, door: 0, roof: false },
+  { id: "shed",    x: -19, z: 26, nx: 4, nz: 4, ny: 3, door: 0 },
+  // bench 3: the high town before the depot
+  { id: "house3",  x: 11, z: 40, nx: 5, nz: 4, ny: 4, door: 0 },
+  { id: "chapel",  x: -12, z: 44, nx: 5, nz: 6, ny: 5, door: 2 },
+  { id: "watchN",  x: 20, z: 48, nx: 2, nz: 2, ny: 8, door: 0 },
+  { id: "depot",   x: 0,  z: 56, nx: 9, nz: 7, ny: 5, door: 4, depot: true },
 ];
 const MASON = { hcs: 0.40, pitch: 0.83, mass: 100, breakF: 8.0e4 };
 
@@ -128,6 +146,39 @@ function buildTdTerrain(field, seed = 11) {
       const lo = Math.min(h[k - 1], h[k + 1], h[k - n], h[k + n]) + maxStep;
       const lod = Math.min(h[k - n - 1], h[k - n + 1], h[k + n - 1], h[k + n + 1]) + dStep;
       const cap = Math.min(lo, lod);
+      if (h[k] > cap) h[k] = cap;
+    }
+  }
+  // CART ROADS: two graded routes spawn->passes->depot, smoothed near-flat
+  // (~6 degrees) along their whole length. The village hauled up these
+  // benches — and the boss walker's gait envelope is flat ground: on raw
+  // terrain it fell every ~20s (swing targets plan LEVEL; slopes land the
+  // foot early/late — the M-next rough-ground problem, not solvable here).
+  // Everything marches better on a road; the boss NEEDS one.
+  const ROADS = [
+    [[0, -54], [-10, -29], [-4, 3], [-10, 31], [0, 49]],
+    [[6, -54], [12, -27], [16, 2], [12, 30], [4, 49]],
+  ];
+  const segD = (x, z, a, b) => {
+    const dx = b[0] - a[0], dz = b[1] - a[1];
+    const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / (dx * dx + dz * dz)));
+    return Math.hypot(x - (a[0] + dx * t), z - (a[1] + dz * t));
+  };
+  const onRoad = new Uint8Array(n * n);
+  for (let j = 1; j < n - 1; j++) for (let i = 1; i < n - 1; i++) {
+    const x = i * cs - half, z = j * cs - half;
+    for (const route of ROADS) {
+      for (let sgi = 0; sgi < route.length - 1 && !onRoad[j * n + i]; sgi++) {
+        if (segD(x, z, route[sgi], route[sgi + 1]) < 4.5) onRoad[j * n + i] = 1;
+      }
+    }
+  }
+  const roadStep = Math.tan(0.10) * cs;
+  for (let pass = 0; pass < 60; pass++) {
+    for (let j = 1; j < n - 1; j++) for (let i = 1; i < n - 1; i++) {
+      const k = j * n + i;
+      if (!onRoad[k]) continue;
+      const cap = Math.min(h[k - 1], h[k + 1], h[k - n], h[k + n]) + roadStep;
       if (h[k] > cap) h[k] = cap;
     }
   }
@@ -320,7 +371,9 @@ function buildTown(world, grid, field) {
     for (let ix = 0; ix < t.nx; ix++) for (let iy = 0; iy <= t.ny; iy++) for (let iz = 0; iz < t.nz; iz++) {
       const perim = ix === 0 || ix === t.nx - 1 || iz === 0 || iz === t.nz - 1;
       if (iy < t.ny && !perim) continue;                                  // hollow
+      if (iy === t.ny && t.roof === false) continue;                      // walled yard: open sky
       if (ix === t.door && (iz === 1 || iz === 2) && iy <= 2) continue;   // the doorway
+      if (t.ruin && ((ix * 31 + iy * 17 + iz * 7) % 100) / 100 < t.ruin && iy > 0) continue; // ruins arrive pre-broken
       const c = addBody(world, {
         kind: "chunk", team: 0, mass, hx: hcs, hy: hcs, hz: hcs,
         x: t.x + (ix - (t.nx - 1) / 2) * pitch,
@@ -675,10 +728,102 @@ function spawnEnemy(world, sp, tag) {
   return u;
 }
 
+// =================================================================== boss
+// WAVE 12: the biped frame itself — 19 tonnes of certified walker on its
+// own gait, island solver and stabilization rockets, walking YOUR map.
+// It carries an hp pool (engine blasts drain it, guarded on bossHp), a
+// hull cannon for whatever stands in the road, and it gets back up when
+// it falls — each knockdown costs it 150 hp.
+const BOSS = { hp: 950, gunCd: 5.0, gunRange: 30, dmg: 35, blastR: 3.0, bounty: 200 };
+function stepBoss(world, grid) {
+  if (!world.mechs || !world.mechs.length) return;
+  const m = world.mechs[0];
+  if (m.bossHp == null || !m.hull) return;
+  const dt = world.dt;
+  if (m.bossHp <= 0) {
+    // the frame dies on its feet: one last magazine detonation, then the
+    // island solver lets go and 19 tonnes of loose metal settles where it
+    // stood — the wreck is the trophy
+    const h = m.hull.pos;
+    for (let i = 0; i < 3; i++) explode(world, h.x + (i - 1) * 1.5, h.y + i * 0.8, h.z, { r: 4.5, kv: 12, dmg: 20, crater: 0.8, attacker: "player" });
+    world.events.push({ type: "tdkill", bounty: BOSS.bounty });
+    world._bossDown = true;
+    world.mechs.length = 0;
+    return;
+  }
+  if (mechFallen(m)) {
+    if (world.t < (m._fGrace || 0)) return; // still settling from the last recovery — don't bill it twice
+    m._bossFalls = (m._bossFalls || 0) + 1;
+    // falls cost TIME, not hp — the player kills the boss, the hills don't
+    // (billed falls self-destructed it at 11 stumbles, measured). A frame
+    // that cannot keep its feet 25 times is structurally done regardless.
+    if (m._bossFalls > 25) m.bossHp = 0;
+    if (m.bossHp > 0) {
+      // recover ON the road — respawning exactly where it fell re-fell it
+      // 13 times in 20s (measured); the nearest waypoint line is graded flat
+      let rx = m.hull.pos.x, rz = m.hull.pos.z;
+      if (m._route && m._route.length) {
+        const wp0 = m._route[0];
+        const dd = Math.hypot(wp0.x - rx, wp0.z - rz) || 1;
+        rx += (wp0.x - rx) / dd * Math.min(2.5, dd); rz += (wp0.z - rz) / dd * Math.min(2.5, dd);
+      }
+      respawnMech(world, m, rx, rz, Math.atan2(m.hull.R[6], m.hull.R[8]));
+      m._fGrace = world.t + 5;
+    }
+    return;
+  }
+  // steering: the walker cannot follow a twitchy flow field — per-cell
+  // heading jitter felled it twice a minute, and pass-hunting deadlocked it
+  // at the first ridge (measured, z -33 for 3 minutes). A 19-tonne biped
+  // plans like one: WAYPOINTS through the pass gaps, straight legs between.
+  const hx2 = m.hull.pos.x, hz2 = m.hull.pos.z;
+  if (!m._route) {
+    const gaps = [[[-10, -29], [12, -27]], [[-4, 3], [16, 2]], [[-10, 31], [12, 30]]];
+    m._route = [];
+    let px = hx2;
+    for (const band of gaps) {
+      const g = Math.abs(band[0][0] - px) <= Math.abs(band[1][0] - px) ? band[0] : band[1];
+      m._route.push({ x: g[0], z: g[1] - 5 }, { x: g[0], z: g[1] + 5 });
+      px = g[0];
+    }
+    m._route.push({ x: OBJ_POS.x, z: OBJ_POS.z });
+  }
+  while (m._route.length > 1 && Math.hypot(m._route[0].x - hx2, m._route[0].z - hz2) < 4) m._route.shift();
+  const wp = m._route[0];
+  const want = Math.atan2(wp.x - hx2, wp.z - hz2);
+  if (m._bossHead == null) m._bossHead = want;
+  let herr = want - m._bossHead;
+  while (herr > Math.PI) herr -= 2 * Math.PI;
+  while (herr < -Math.PI) herr += 2 * Math.PI;
+  m._bossHead += Math.max(-0.45 * dt, Math.min(0.45 * dt, herr));
+  const turning = Math.abs(herr) > 0.5;
+  mechCommand(m, { travel: turning ? 0.35 : 0.9, heading: m._bossHead });
+  m._gunT = (m._gunT || 2) - dt;
+  if (m._gunT <= 0) {
+    let tgt = null, td = BOSS.gunRange * BOSS.gunRange;
+    for (const b of world.bodies) {
+      if ((b.kind !== "tower" && b.kind !== "wall") || !b.alive) continue;
+      const dx = b.pos.x - m.hull.pos.x, dz = b.pos.z - m.hull.pos.z, d2 = dx * dx + dz * dz;
+      if (d2 < td) { td = d2; tgt = b; }
+    }
+    if (tgt) {
+      m._gunT = BOSS.gunCd;
+      const muzzle = v3(m.hull.pos.x, m.hull.pos.y + 1.6, m.hull.pos.z);
+      const dx = tgt.pos.x - muzzle.x, dz = tgt.pos.z - muzzle.z;
+      const d = Math.max(2, Math.hypot(dx, dz));
+      let pitch = aimSolve(80, d, tgt.pos.y - muzzle.y);
+      if (pitch == null) pitch = 0.1;
+      fireProjectile(world, muzzle, v3((dx / d) * Math.cos(pitch), Math.sin(pitch), (dz / d) * Math.cos(pitch)), 80,
+        { kind: "shell", r: BOSS.blastR, kv: 9, dmg: BOSS.dmg, crater: 0.6, noImpact: true, hitStruct: true, attacker: "enemy" });
+    } else m._gunT = 0.6;
+  }
+}
+
 // ================================================================== step
 // One fixed tick: game-layer drivers, then the CERTIFIED engine step, then
 // the TD's own bookkeeping over what the engine did.
 function stepTd(world, grid, onStructureLost, town, onRuin) {
+  stepBoss(world, grid);
   stepEnemies(world, grid);
   stepTowers(world);
   stepWorld(world);
@@ -723,6 +868,13 @@ function stepTd(world, grid, onStructureLost, town, onRuin) {
       world.weldsOf.delete(b.id);
       world._weldPairsDirty = true;
       world.byId.delete(b.id); world.bodies.splice(i, 1);
+    }
+  }
+  if (world.mechs && world.mechs.length && world.mechs[0].bossHp != null && world.mechs[0].hull) {
+    const h = world.mechs[0].hull.pos;
+    if (Math.hypot(h.x - OBJ_POS.x, h.z - OBJ_POS.z) < 6) {
+      world.events.push({ type: "leak", dmg: 99, x: h.x, y: h.y, z: h.z });
+      world.mechs.length = 0;
     }
   }
   if (town) stepTown(world, grid, town, onRuin);
@@ -1040,6 +1192,12 @@ export default function ColdsnapTD() {
           while (bag.length) { i = (i + 7) % bag.length; out.push(bag.splice(i, 1)[0]); }
           ws.mixBag = out;
         }
+        if (ws.waveIdx === WAVES.length - 1) {
+          const m = buildMech(world, { x: 0, z: GRID_OZ + 5, yaw: 0 });
+          m.thrustersOn = true; m.thrustAssist = true;
+          m.bossHp = BOSS.hp;
+          toast("SEISMIC CONTACT — BIPED FRAME INBOUND");
+        }
         toast("WAVE " + (ws.waveIdx + 1));
       };
       const spawnOne = () => {
@@ -1121,6 +1279,11 @@ export default function ColdsnapTD() {
       window.__TDPROJ__ = () => world.projectiles.map((p) => ({ x: p.pos.x, y: p.pos.y, z: p.pos.z, vx: p.v.x, vy: p.v.y, vz: p.v.z, gy: field.heightAt(p.pos.x, p.pos.z) }));
       window.__TDSTART__ = () => { S.started = true; };
       window.__TDARMOR__ = () => world.bodies.filter((b) => b.kind === "vehicle" && b.team === 2).map((b) => ({ x: +b.pos.x.toFixed(1), y: +b.pos.y.toFixed(1), z: +b.pos.z.toFixed(1), hp: b.hp, alive: b.alive, ctl: b.ctl ? { th: +(b.ctl.throttle || 0).toFixed(2), st: +(b.ctl.steer || 0).toFixed(2) } : null, v: +Math.hypot(b.v.x, b.v.z).toFixed(2), goal: b.goal }));
+      window.__TDBOSS__ = (spawn) => {
+        if (spawn && (!world.mechs || !world.mechs.length)) { const m = buildMech(world, { x: 0, z: GRID_OZ + 5, yaw: 0 }); m.thrustersOn = true; m.thrustAssist = true; m.bossHp = BOSS.hp; }
+        const m = world.mechs && world.mechs[0];
+        return m && m.hull ? { x: +m.hull.pos.x.toFixed(1), z: +m.hull.pos.z.toFixed(1), hp: Math.round(m.bossHp), falls: m._bossFalls || 0, down: !!world._bossDown } : { down: !!world._bossDown };
+      };
       window.__TDROCKS__ = () => world.bodies.filter((b) => b.kind === "rock").map((b) => ({ x: +b.pos.x.toFixed(1), y: +b.pos.y.toFixed(1), z: +b.pos.z.toFixed(1), hp: Math.round(b.hp), alive: b.alive }));
 
       // ---- main loop
@@ -1183,16 +1346,39 @@ export default function ColdsnapTD() {
               } else {
                 let live = 0;
                 for (const b of world.bodies) if ((b.kind === "unit" || b.kind === "vehicle") && b.alive && b.team === 2) live++;
+                if (world.mechs && world.mechs.length && world.mechs[0].bossHp != null) live++;
                 if (live === 0) {
                   ws.waveIdx++;
                   if (ws.waveIdx >= WAVES.length) { S.victory = true; toast("THE DEPOT HOLDS"); }
-                  else { ws.betweenWaves = true; ws.countdown = 8; S.resources += 12; toast("WAVE CLEAR +12"); }
+                  else {
+                    ws.betweenWaves = true; ws.countdown = 8; S.resources += 12;
+                    let held = 0;
+                    for (const tb of town) if (tb.threatened && !tb.ruined && tb.id !== "depot" && tb.id !== "oldruin") held++;
+                    const townPay = held * 6;
+                    if (townPay > 0) { S.resources += townPay; S.townEarned = (S.townEarned || 0) + townPay; toast("WAVE CLEAR +12 · TOWN STANDS +" + townPay); }
+                    else toast("WAVE CLEAR +12");
+                  }
                 }
               }
             }
             if (S.started && !S.gameOver && !S.victory) S.resources += 2.2 * sdt;
           }
           S.strikeCd = Math.max(0, S.strikeCd - sdt);
+          // town protection: a building the enemy ever came within 14m of is
+          // THREATENED — if it still stands at wave clear, it pays scrap
+          S.thrT = (S.thrT || 0) + sdt;
+          if (S.thrT > 1) {
+            S.thrT = 0;
+            for (const tb of town) {
+              if (tb.ruined || tb.threatened || tb.id === "depot" || tb.id === "oldruin") continue;
+              for (const b of world.bodies) {
+                if (b.team !== 2 || !b.alive || (b.kind !== "unit" && b.kind !== "vehicle")) continue;
+                if (Math.hypot(b.pos.x - tb.x, b.pos.z - tb.z) < 14) { tb.threatened = true; break; }
+              }
+              if (!tb.threatened && world.mechs && world.mechs.length && world.mechs[0].hull &&
+                  Math.hypot(world.mechs[0].hull.pos.x - tb.x, world.mechs[0].hull.pos.z - tb.z) < 16) tb.threatened = true;
+            }
+          }
           // physics: fixed substeps; events accumulate across them and are
           // drained once per frame — never cleared mid-step
           S.acc += sdt;
@@ -1232,6 +1418,8 @@ export default function ColdsnapTD() {
               mode: S.mode, sellMode: S.sellMode,
               paused: S.paused, speed: S.speed,
               strikeCd: Math.ceil(S.strikeCd), muted: A.muted,
+              town: (() => { let up = 0, all = 0; for (const tb of town) { if (tb.id === "depot" || tb.id === "oldruin") continue; all++; if (!tb.ruined) up++; } return { up, all, earned: Math.round(S.townEarned || 0) }; })(),
+              bossHp: world.mechs && world.mechs.length && world.mechs[0].bossHp != null ? Math.max(0, Math.round(world.mechs[0].bossHp)) : (world._bossDown ? 0 : null),
               toasts: S.toasts.map((t) => t.txt),
               inspect: (() => {
                 if (!S.inspectId) return null;
@@ -1267,7 +1455,7 @@ export default function ColdsnapTD() {
         canvas.removeEventListener("touchstart", blockTouch);
         window.removeEventListener("keydown", kd);
         window.removeEventListener("keyup", ku);
-        for (const k of ["__TD__", "__TDBUILD__", "__TDSPAWN__", "__TDSIM__", "__TDGFX__", "__TDWRECK__", "__TDPROJ__", "__TDUNITS__", "__TDSTART__", "__TDROCKS__", "__TDARMOR__"]) delete window[k];
+        for (const k of ["__TD__", "__TDBUILD__", "__TDSPAWN__", "__TDSIM__", "__TDGFX__", "__TDWRECK__", "__TDPROJ__", "__TDUNITS__", "__TDSTART__", "__TDROCKS__", "__TDARMOR__", "__TDBOSS__"]) delete window[k];
         A.dispose();
         if (R) R.dispose();
         stateRef.current = null;
@@ -1316,6 +1504,10 @@ export default function ColdsnapTD() {
         <div style={P.stat}><span style={{ color: "#ff7a7a" }}>♥</span>{hud.lives}</div>
         <div style={P.stat}>W {hud.wave}/{hud.totalWaves}</div>
         <div style={P.stat}>☠ {hud.enemies}</div>
+        {hud.town && <div style={P.stat} title="village standing · scrap earned">⌂ {hud.town.up}/{hud.town.all}{hud.town.earned > 0 ? " · +" + hud.town.earned : ""}</div>}
+        {hud.bossHp != null && hud.bossHp > 0 && (
+          <div style={{ ...P.stat, borderColor: "#ff6b5e", color: "#ffab8a" }}>FRAME {hud.bossHp}</div>
+        )}
         {hud.started && hud.between && !hud.gameOver && !hud.victory && (
           <button style={{ ...P.btn, borderColor: "#4aff8c", color: "#4aff8c", padding: isTouch ? "5px 10px" : "4px 10px" }} onClick={() => { const S = stateRef.current; if (S && S.sendNow) S.sendNow(); }}>
             SEND {hud.countdown}s
@@ -1412,6 +1604,7 @@ export default function ColdsnapTD() {
           </div>
           <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 16 }}>
             {hud.kills} kills · wave {hud.wave}/{hud.totalWaves}
+            {hud.town ? <><br />village: {hud.town.up}/{hud.town.all} standing · ◆{hud.town.earned} earned holding it</> : null}
           </div>
           <button style={{ ...P.btn, fontSize: 14, padding: "9px 22px", borderColor: "#9fdcff", color: "#9fdcff" }} onClick={restart}>
             RUN IT AGAIN

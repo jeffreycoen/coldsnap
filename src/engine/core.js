@@ -612,6 +612,15 @@ export function explode(world, x, y, z, spec) {
       b.hitT = world.t;
     }
   }
+  // DIVERGENCE (guarded): a BOSS mech carries an hp pool — blasts drain it
+  // by hull proximity. Only tower-defense sets bossHp; range/campaign mechs
+  // never carry the field.
+  if (world.mechs) for (const mm of world.mechs) {
+    if (mm.bossHp == null || !mm.hull) continue;
+    const dd = Math.hypot(mm.hull.pos.x - x, mm.hull.pos.y - y, mm.hull.pos.z - z);
+    const reach = spec.r + 3.5;
+    if (dd < reach && spec.dmg) mm.bossHp -= spec.dmg * Math.max(0, 1 - dd / reach);
+  }
   const groundH = world.field.heightAt(x, z);
   if (y - groundH < 1.4 && spec.crater) {
     world.field.carve(x, z, spec.crater * 2.4, spec.crater);
