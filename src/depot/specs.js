@@ -53,3 +53,14 @@ export const WAVES = Array.from({ length: 50 }, (_, i) => {
 });
 
 export const MASON = { hcs: 0.40, pitch: 0.83, mass: 100, breakF: 8.0e4 };
+
+// Infantry arms — both teams use identical values (symmetry). All fire flows
+// through shooterFire + the accuracy model; occl/windF/windComp like any shooter.
+export const INFANTRY_ARMS = {
+  sniper: { projSpeed: 120, kind: "mg", dmg: 65, fireRate: 4.5, range: 30,
+            acc: 0.006, occl: "arc", windF: 0.10, windComp: 0.8 },
+  rifles: { projSpeed: 90, kind: "mg", dmg: 5, fireRate: 1.3, range: 15,
+            acc: 0.090, occl: "arc", windF: 0.06, windComp: 0.6 },
+  mg:     { projSpeed: 100, kind: "mg", dmg: 5, burst: 6, burstGap: 0.17, fireRate: 2.2,
+            range: 17, acc: 0.070, occl: "arc", windF: 0.06, windComp: 0.6 },
+};

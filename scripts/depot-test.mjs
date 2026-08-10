@@ -3,7 +3,7 @@
 //   node scripts/depot-test.mjs
 import {
   PHASE, makeRunState, startWave, tryStall, advance,
-  regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, shooterFire, nextSpawnTag,
+  regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, shooterFire, squadFire, nextSpawnTag,
   fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed,
   censusDepotChunks, depotStandingFraction, checkDepotBreach, stepDepotCensus,
   DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, DEPOT_CENSUS_HZ,
@@ -13,7 +13,7 @@ import { friendlyFouls } from "../src/depot/state.js";
 import {
   makeWorld, addBody, addWeld, fireProjectile, explode, stepWorld, applyDamage, worldHash, CAUSE, mulberry32,
 } from "../src/engine/core.js";
-import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, WAVES as DEPOT_WAVES, MASON } from "../src/depot/specs.js";
+import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, WAVES as DEPOT_WAVES, MASON, INFANTRY_ARMS } from "../src/depot/specs.js";
 import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks, payBounties } from "../src/depot/units.js";
 import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad } from "../src/depot/squads.js";
 import {
@@ -1984,6 +1984,188 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     };
     const twinA = runTwin(7), twinB = runTwin(7);
     ok("twin-run determinism: identical seed -> identical member positions", twinA === twinB, `${twinA} vs ${twinB}`);
+  }
+}
+
+// --- squadFire (Phase 5 Task 2): infantry combat. Members fire only while
+// stationary (defend, or attack mid-pause); target gates are the exact
+// tower stack (effRange + fieldReaches + arcClears, selfId excluded); MG
+// bursts spend `burst` rounds spaced `burstGap`; the only rng anywhere in a
+// fired round is applyScatter's 2 draws/shot.
+{
+  const flatField = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+
+  const mkStationarySquad = (world, type, team, x, z, n) => {
+    const squad = makeSquad(1, type, team, x, z);
+    for (let i = 0; i < n; i++) {
+      const u = addBody(world, { kind: "unit", team, mass: 90, hx: 0.3, hy: 0.9, hz: 0.3, x, y: 0.9, z, hp: 100 });
+      squad.memberIds.push(u.id);
+    }
+    squad.order = "defend";
+    return squad;
+  };
+
+  // sniper vs conscript: from +4m elevation, at 26m (well inside the 30m
+  // sniper range, elevation-boosted), the majority of 10 seeded trials
+  // should kill a fresh 58hp conscript (one 65-dmg hit at low acc/high
+  // sigma still lands often enough at this range/elevation to dominate).
+  {
+    let kills = 0;
+    for (let seed = 1; seed <= 10; seed++) {
+      const world = makeWorld({ field: flatField, seed });
+      const squad = mkStationarySquad(world, "sniper", 1, 0, 0, SQUAD_SPECS.sniper.n);
+      world.byId.get(squad.memberIds[0]).pos.y = 4.9; // +4m over the flat field's y=0.9 default seat
+      const target = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 26, hp: 58 });
+      const dt = 1 / 30;
+      for (let i = 0; i < 20 / dt && target.alive; i++) {
+        squadFire(world, squad, dt);
+        for (let s = 0; s < 200 && world.projectiles.length; s++) stepWorld(world);
+      }
+      if (!target.alive) kills++;
+    }
+    ok("squadFire: sniper from +4m elevation kills a conscript at 26m in the majority of 10 seeded trials",
+      kills >= 6, `kills=${kills}/10`);
+  }
+
+  // sniper vs tank: SPEC CONTRADICTION, documented prominently rather than
+  // silently patched.
+  //
+  // The brief's stated design intent ("chip-only") assumed b.armor gating
+  // (core.js ~:767: sub-armor ballistic hits glance for 15% dmg) would
+  // reduce a 65-dmg sniper hit against a tank with "armor >= 66". THAT
+  // MECHANISM DOES NOT APPLY HERE AT ALL, for two independent reasons,
+  // both verified by reading the engine, not assumed:
+  //   1. spawnTank (units.js:33-45) never sets t.armor — a live tank body's
+  //      b.armor is undefined, always. The field is entirely unwired for
+  //      DEPOT's wave armor.
+  //   2. Even if it were set, it wouldn't matter: core.js's armor check is
+  //      explicitly gated `info.cause !== CAUSE.BLAST` ("blast bypasses
+  //      armor entirely" — core.js:765-766), and EVERY shooterFire round
+  //      (spec.noImpact:true, including this one) resolves damage through
+  //      explode()'s CAUSE.BLAST path, never CAUSE.PROJECTILE. The armor
+  //      threshold mechanic cannot ever fire against an infantry or tower
+  //      round, tank or no tank, armor or no armor.
+  // So "chip-only" as SPECIFIED cannot happen — yet measured behavior IS
+  // chip (~3.5hp/hit, confirmed across 15 seeds, well under 10). The actual
+  // mitigation is accidental: explode()'s distance falloff (f = 1 -
+  // dist/reach, reach = spec.r + max(tank hx,hy,hz) = 0.3 + 2.4 = 2.7m) so
+  // a hit anywhere but dead-center on a body this large — TANK hx=1.5,
+  // hz=2.4 — attenuates hard. The observed "chip" is a side effect of tank
+  // hitbox geometry vs a small blastR, not the intended armor system.
+  // Flagging this contradiction rather than adding an armor value to TANK
+  // or wiring b.armor onto spawnTank, which the brief did not authorize.
+  {
+    let allChip = true, samples = [];
+    for (let seed = 1; seed <= 10; seed++) {
+      const world = makeWorld({ field: flatField, seed });
+      const squad = mkStationarySquad(world, "sniper", 1, 0, 0, SQUAD_SPECS.sniper.n);
+      const tank = addBody(world, { kind: "vehicle", team: 2, mass: TANK.mass, hx: TANK.hx, hy: TANK.hy, hz: TANK.hz, x: 0, y: TANK.hy, z: 20, hp: TANK.hp });
+      const hp0 = tank.hp;
+      squadFire(world, squad, 0);
+      for (let s = 0; s < 300 && world.projectiles.length; s++) stepWorld(world);
+      const lost = hp0 - tank.hp;
+      samples.push(lost.toFixed(2));
+      if (lost >= 10) allChip = false;
+    }
+    ok("squadFire: sniper vs tank — every resolved hit chips (<10hp), NOT via any armor mechanic (unset + blast-exempt regardless) but via blastR/hitbox falloff geometry — SPEC CONTRADICTION documented above, asserting current behavior",
+      allChip, samples.join(","));
+  }
+
+  // rifle-squad cadence + burst draw-count accounting: over a fixed window,
+  // count applyScatter draws (2/shot) via a wrapped world.rng, scoped to the
+  // squadFire call itself (excludes stepWorld's own unrelated rng draws —
+  // e.g. explode()'s torque jitter on impact, pre-existing engine behavior
+  // no different for a tower's round — so this isolates the FIRE PATH's own
+  // draw count, matching the brief's "none elsewhere" as "no rng anywhere
+  // between target-acquisition and the fired round" rather than a claim
+  // about physics resolution downstream).
+  {
+    const world = makeWorld({ field: flatField, seed: 4 });
+    const squad = mkStationarySquad(world, "rifles", 1, 0, 0, SQUAD_SPECS.rifles.n);
+    const target = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 10, hp: 1e9 });
+    const dt = 1 / 30;
+    let roundsFired = 0, rngCalls = 0;
+    const baseRng = world.rng;
+    for (let i = 0; i < 10 / dt; i++) {
+      const before = world.projectiles.length;
+      world.rng = () => { rngCalls++; return baseRng(); };
+      squadFire(world, squad, dt);
+      world.rng = baseRng;
+      const after = world.projectiles.length;
+      if (after > before) roundsFired += (after - before);
+      for (let s = 0; s < 20; s++) stepWorld(world); // let rounds resolve/expire without letting them pile up unresolved
+    }
+    ok("squadFire: rifle rounds fired > 0 over 10s window", roundsFired > 0, `roundsFired=${roundsFired}`);
+    ok("squadFire: exactly 2 rng draws per round fired inside squadFire itself (applyScatter only)",
+      rngCalls === roundsFired * 2, `rngCalls=${rngCalls} roundsFired=${roundsFired} expected=${roundsFired * 2}`);
+  }
+
+  // MG burst: one trigger pull queues `burst` rounds spaced `burstGap`
+  // seconds apart via fireProjectile's own delay param (mirrors towerShot's
+  // volley handling, just with the MG's own burstGap instead of the tower
+  // volley's fixed 0.12s step). Verify: a single trigger pull produces
+  // `burst` live projectiles, and consecutive rounds' delay values differ
+  // by burstGap.
+  {
+    const world = makeWorld({ field: flatField, seed: 5 });
+    const squad = mkStationarySquad(world, "mg", 1, 0, 0, 1); // single member: keeps one man's burst isolated
+    const target = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 10, hp: 1e9 });
+    squadFire(world, squad, 0); // one trigger pull, dt=0 so fireCd gate doesn't skip it
+    const spec = INFANTRY_ARMS.mg;
+    const memberFired = world.projectiles.filter((p) => Math.abs(p.spec.dmg - spec.dmg) < 1e-9);
+    ok(`squadFire: MG burst queues exactly ${spec.burst} rounds on one trigger pull`,
+      memberFired.length === spec.burst, `queued=${memberFired.length} expected=${spec.burst}`);
+    const delays = memberFired.map((p) => p.spec.delay).sort((a, b) => a - b);
+    let gapOk = true;
+    for (let i = 1; i < delays.length; i++) {
+      if (Math.abs((delays[i] - delays[i - 1]) - spec.burstGap) > 1e-6) gapOk = false;
+    }
+    ok("squadFire: MG burst rounds are spaced exactly burstGap apart", gapOk, JSON.stringify(delays));
+  }
+
+  // no fire while mid-hop: an attacking squad, not yet paused at a cover
+  // leg, must never fire — even with a target sitting well inside range.
+  {
+    const world = makeWorld({ field: flatField, seed: 6 });
+    const squad = makeSquad(1, "rifles", 1, 0, 0);
+    for (let i = 0; i < SQUAD_SPECS.rifles.n; i++) {
+      const u = addBody(world, { kind: "unit", team: 1, mass: 90, hx: 0.3, hy: 0.9, hz: 0.3, x: 0, y: 0.9, z: 0, hp: 100 });
+      squad.memberIds.push(u.id);
+    }
+    squad.order = "attack"; squad.dest = { x: 0, z: 30 }; // starts mid-hop: _pauseT is 0/undefined
+    addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 8, hp: 58 });
+    const dt = 1 / 30;
+    let firedWhileMoving = false;
+    for (let i = 0; i < 3 / dt; i++) {
+      if (!(squad._pauseT > 0)) {
+        const before = world.projectiles.length;
+        squadFire(world, squad, dt);
+        if (world.projectiles.length > before) firedWhileMoving = true;
+      }
+      stepSquad(world, squad, dt);
+      for (const id of squad.memberIds) { const u = world.byId.get(id); u.pos.x += u.v.x * dt; u.pos.z += u.v.z * dt; }
+    }
+    ok("squadFire: no fire while a squad is mid-hop (moving, _pauseT<=0)", !firedWhileMoving);
+  }
+
+  // twin determinism of a 20s firefight fixture: identical seed -> identical
+  // outcome (target hp trace + surviving projectile count).
+  {
+    const runFirefight = (seed) => {
+      const world = makeWorld({ field: flatField, seed });
+      const squad = mkStationarySquad(world, "mg", 1, 0, 0, SQUAD_SPECS.mg.n);
+      const target = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 12, hp: 400 });
+      const dt = 1 / 30;
+      const trace = [];
+      for (let i = 0; i < 20 / dt; i++) {
+        squadFire(world, squad, dt);
+        stepWorld(world);
+        if (i % 30 === 0) trace.push(target.hp.toFixed(3));
+      }
+      return trace.join("|");
+    };
+    const a = runFirefight(9), b = runFirefight(9);
+    ok("squadFire: twin determinism of a 20s firefight fixture (identical seed -> identical target-hp trace)", a === b, `${a === b ? "match" : `A=${a} B=${b}`}`);
   }
 }
 

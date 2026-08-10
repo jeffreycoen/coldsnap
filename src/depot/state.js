@@ -2,11 +2,11 @@
 // DepotGame.jsx's loop can stuff a plain object in a ref (React state must
 // never be read from the closure — see ColdsnapTD.jsx for why).
 import { aimSolve, fireProjectile } from "../engine/core.js";
-import { scatterSigma, applyScatter } from "./accuracy.js";
+import { scatterSigma, applyScatter, arcClears } from "./accuracy.js";
 import { planWave, MIN_WAVE_FLOOR } from "./ai.js";
 import { STIPEND, payResults, combatIneffective, bookValue } from "./economy.js";
 import { composeIntel, openingIntel } from "./intel.js";
-import { TOWER_SPECS, ENEMY_SPECS, TANK } from "./specs.js";
+import { TOWER_SPECS, ENEMY_SPECS, TANK, INFANTRY_ARMS } from "./specs.js";
 import { fogStateFor } from "./territory.js";
 
 // Targeting gate, symmetric: a shooter of `team` (1 = player tower, 2 =
@@ -89,7 +89,18 @@ export const PHASE = { BUILD: "build", WAVE: "wave", STALL: "stall" };
 // and enemy shooters (src/depot/units.js) so every aimed shot in DEPOT —
 // player or enemy — runs through the identical accuracy model.
 // opts: { high (mortar-style lob arc), attacker ("player"|"enemy"),
-//         hitStruct, hitOnly, muzzleStep (per-shot muzzle y offset) }
+//         hitStruct, hitOnly, muzzleStep (per-shot muzzle y offset),
+//         volleyDelay (seconds between shots of a multi-round pull; default
+//         0.12, see below), owner (core.js's fireProjectile owner-immunity
+//         id — REQUIRED for any dynamic-body shooter; towers/enemy units
+//         never needed it because they're either static structures
+//         core.js's hit scan skips by default, or fire hitOnly:"structure"
+//         so units never enter their own hit scan. squadFire's infantry
+//         shooters are ordinary dynamic "unit" bodies with no such
+//         exemption — without owner, a round's very first flight-path
+//         sample sits inside the shooter's own muzzle-adjacent hitbox and
+//         detonates at the muzzle, 0 range, every time; found live while
+//         building squadFire below) }
 export function shooterFire(world, shooter, muzzle, target, spec, opts = {}) {
   const high = !!opts.high;
   const attacker = opts.attacker || "player";
@@ -120,13 +131,20 @@ export function shooterFire(world, shooter, muzzle, target, spec, opts = {}) {
   const rawDir = { x: (dx / d) * Math.cos(pitch), y: Math.sin(pitch), z: (dz / d) * Math.cos(pitch) };
   const shots = spec.volley || 1;
   const muzzleStep = opts.muzzleStep != null ? opts.muzzleStep : 0.28;
+  // volleyDelay: seconds between successive rounds of a multi-shot trigger
+  // pull (fireProjectile's own `delay` param — the round sits inert until
+  // world.t catches up, see core.js ~:649). Rocket towers (spec.volley=4)
+  // rely on the 0.12 default; squadFire's MG bursts pass INFANTRY_ARMS.mg's
+  // burstGap (0.17) here so a "burst" reads as its own spaced mechanism
+  // rather than reusing the tower volley's fixed cadence.
+  const volleyDelay = opts.volleyDelay != null ? opts.volleyDelay : 0.12;
   for (let si = 0; si < shots; si++) {
     const dir = applyScatter(world, rawDir, sigma);
     fireProjectile(world, { x: muzzle.x, y: muzzle.y + si * muzzleStep, z: muzzle.z }, dir, spec.projSpeed,
       {
         kind: spec.kind, r: spec.blastR, kv: spec.kv, dmg: spec.dmg, crater: spec.crater,
-        noImpact: true, attacker, delay: si * 0.12, windF: spec.windF,
-        hitStruct: opts.hitStruct, hitOnly: opts.hitOnly,
+        noImpact: true, attacker, delay: si * volleyDelay, windF: spec.windF,
+        hitStruct: opts.hitStruct, hitOnly: opts.hitOnly, owner: opts.owner,
       });
   }
 }
@@ -137,6 +155,104 @@ export function towerShot(world, tower, target, spec) {
   const muzzle = { x: tower.pos.x, y: tower.pos.y + tower.hy + 0.45, z: tower.pos.z };
   const high = tower.towerType === "mortar";
   shooterFire(world, tower, muzzle, target, spec, { high, attacker: "player" });
+}
+
+// squadFire(world, squad, dt, T, toUV): infantry trigger pull, one call per
+// squad per tick. Movement lives entirely in squads.js (stepSquad) — this
+// stays out of that module so squads.js remains movement-pure with no
+// state.js import (this phase's explicit split). squads.js's own module
+// note documents the ONE rng draw it makes (attack leg-pause dwell); this
+// function makes NONE — the only rng in a fired round is applyScatter's 2
+// draws, same as every tower shot.
+//
+// Fire discipline: members fire ONLY while stationary — order "defend", or
+// "attack" mid-leg-pause (squad._pauseT > 0). stepSquad already holds every
+// member still in both cases (defend: slot-seek settles; attack pause: no
+// new goal is issued), so this is a squad-level gate, not per-member.
+//
+// Per member: a body-local cooldown (u.fireCd, mirrors tower b.fireCd)
+// gates the trigger pull; target acquisition is the EXACT tower stack
+// (stepTowers, DepotGame.jsx) — nearest live enemy unit/vehicle within
+// effRange(world, muzzle, spec) (elevation-scaled), passing fieldReaches
+// (own team's field, so player squads gate on team 1 same as towers) AND
+// arcClears with selfId=u.id excluded (Task 6's own-body fix, same reason
+// towers need it: the sampler's first point sits inside the shooter's own
+// hitbox on a flat shot).
+//
+// T/toUV: threaded exactly like stepUnits(world, grid, fwdDir, T, toUV) —
+// optional, defaulting to an identity toUV and an ungated fieldReaches (no
+// T -> "unheld" never triggers), same contract fieldReaches already
+// documents, so callers/tests that don't care about ground control don't
+// need to construct a territory grid.
+//
+// MG burst: INFANTRY_ARMS.mg carries burst/burstGap instead of a tower's
+// `volley` — kept as its own name so "a burst" reads as this specific
+// infantry mechanic, not an alias for the rocket tower's 4-round salvo.
+// Mechanically it's the identical primitive: shooterFire's volley loop,
+// fired here with spec.volley set to spec.burst and opts.volleyDelay set to
+// spec.burstGap (0.17s) instead of the tower default (0.12s) — see
+// shooterFire's volleyDelay note above. Sniper/rifles have no `burst`, so
+// they fall through as ordinary single-shot pulls (volley defaults to 1).
+//
+// INTERFACE GAP (documented, not silently patched): the brief's verbatim
+// INFANTRY_ARMS table carries no blastR/kv, unlike every other spec table
+// in this file's blast path (TOWER_SPECS, ENEMY_FIRE — every entry there
+// sets both). fireProjectile's hit always resolves through core.js's
+// explode(), which divides by spec.r (`reach = spec.r + ...`, `f = 1 -
+// dist/reach`) and multiplies by spec.kv for its impulse — with both
+// undefined that's NaN op NaN, and a "hit" deals NaN damage (silently
+// leaves hp NaN, body never dies since NaN comparisons are always false).
+// Verified by running an infantry shot through the real engine before this
+// fallback existed. specs.js is kept verbatim per the brief; this merge is
+// the fix, scoped to squadFire only, mirroring TOWER_SPECS.mg's own values
+// (0.3/0.5) since every INFANTRY_ARMS entry is itself kind:"mg".
+//
+// SPEC CONTRADICTION (documented, not silently fixed — see
+// scripts/depot-test.mjs's "sniper vs tank" block for the full trace): the
+// brief's "chip-only" intent for a sniper vs. a tank assumed core.js's
+// b.armor glancing threshold would apply. It never can — spawnTank
+// (units.js) never sets t.armor, AND the armor check is hard-excluded for
+// CAUSE.BLAST, which is the ONLY cause any shooterFire round (noImpact)
+// ever produces. Measured behavior is still chip (~3.5hp/hit) but via an
+// unrelated mechanism: explode()'s distance falloff against a tank's own
+// large hitbox. Asserting current (accidental) behavior, not adding an
+// armor value the brief didn't authorize.
+const INFANTRY_BLAST_R = 0.3, INFANTRY_KV = 0.5;
+export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })) {
+  const spec = INFANTRY_ARMS[squad.type];
+  if (!spec) return;
+  const stationary = squad.order === "defend" || (squad.order === "attack" && squad._pauseT > 0);
+  if (!stationary) return;
+  const enemyTeam = squad.team === 1 ? 2 : 1;
+  const attacker = squad.team === 1 ? "player" : "enemy";
+  const fspec = {
+    ...spec,
+    volley: spec.burst || 1,
+    blastR: spec.blastR != null ? spec.blastR : INFANTRY_BLAST_R,
+    kv: spec.kv != null ? spec.kv : INFANTRY_KV,
+  };
+  for (const id of squad.memberIds) {
+    const u = world.byId.get(id);
+    if (!u || !u.alive) continue;
+    u.fireCd = (u.fireCd || 0) - dt;
+    if (u.fireCd > 0) continue;
+    const muzzle = { x: u.pos.x, y: u.pos.y + 0.5, z: u.pos.z };
+    const eR = effRange(world, muzzle, spec);
+    let best = null, bd = eR * eR;
+    for (const e of world.bodies) {
+      if ((e.kind !== "unit" && e.kind !== "vehicle") || !e.alive || e.team !== enemyTeam) continue;
+      const dx = e.pos.x - u.pos.x, dz = e.pos.z - u.pos.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 >= bd) continue;
+      const c = toUV(e.pos.x, e.pos.z);
+      if (!fieldReaches(T, c.u, c.v, squad.team)) continue;
+      if (!arcClears(world, muzzle, e.pos, spec, u.id)) continue;
+      bd = d2; best = e;
+    }
+    if (!best) continue;
+    u.fireCd = spec.fireRate;
+    shooterFire(world, u, muzzle, best, fspec, { attacker, volleyDelay: spec.burstGap, muzzleStep: 0, owner: u.id });
+  }
 }
 
 // ------------------------------------------------------- fire discipline
