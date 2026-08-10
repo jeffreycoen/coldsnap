@@ -104,16 +104,63 @@ export function coverHop(world, from, dest, threatBearing) {
   return { x: from.x + (ddx / d0) * step, z: from.z + (ddz / d0) * step };
 }
 
+// ----------------------------------------------------- slot-goal clearance
+// A slot goal inside (or grazing) a static solid gets the member
+// depenetration-ejected by the engine and killed by the slam path (dv > 8) —
+// Task 3's documented masonry-slam hazard. Every slot goal this module hands
+// out (defend formation ring, low-exposure micro-slots, attack formation
+// slots) is therefore vetted against the same static-solid set exposureAt
+// scans (solidBlocksPoint's pattern, XZ-expanded AABB): a candidate within
+// clear = member hx + SLOT_CLEAR_PAD of a solid's footprint is rejected, and
+// clearSlot falls back to the NEAREST clear candidate on a fixed ring sweep
+// (deterministic — no rng, radii then azimuths in fixed order).
+const SLOT_CLEAR_PAD = 0.35;
+function slotBlocked(world, x, z, clear) {
+  for (const b of world.bodies) {
+    if (!b.alive || b.invM > 0) continue; // static solids only
+    if (!SOLID_KINDS.has(b.kind)) continue;
+    if (Math.abs(x - b.pos.x) <= b.hx + clear && Math.abs(z - b.pos.z) <= b.hz + clear) return true;
+  }
+  return false;
+}
+export function clearSlot(world, x, z, clear) {
+  if (!slotBlocked(world, x, z, clear)) return { x, z };
+  for (let r = 0.6; r <= 4.81; r += 0.6) {
+    for (let k = 0; k < 16; k++) {
+      const az = (k / 16) * Math.PI * 2;
+      const cx = x + Math.sin(az) * r, cz = z + Math.cos(az) * r;
+      if (!slotBlocked(world, cx, cz, clear)) return { x: cx, z: cz };
+    }
+  }
+  return { x, z }; // no clear ground within 4.8m — keep the slot (never observed on real maps)
+}
+const memberClear = (u) => (u.hx || 0.3) + SLOT_CLEAR_PAD;
+
 // ---------------------------------------------------------------- helpers
 const MOVE_SPEED = 3.2; // m/s — infantry march speed toward a goal point
-function seekGoal(u, dt) {
+function seekGoal(world, u, dt) {
   if (!u.goal) return;
   const dx = u.goal.x - u.pos.x, dz = u.goal.z - u.pos.z;
   const d = Math.hypot(dx, dz);
   if (d < 0.15) { u.v.x *= 1 - Math.min(1, 6 * dt); u.v.z *= 1 - Math.min(1, 6 * dt); return; }
+  // Steer-around (masonry-slam smallfix): a vetted goal isn't enough when
+  // the straight march TO it crosses a solid — the engine depenetrates the
+  // man out of the wall and the impact classifier reads the ejection as a
+  // lethal slam. Probe one step ahead at the member's own clearance; if
+  // blocked, take the first clear heading off a fixed fan (±30/60/90/120°,
+  // nearest-deviation first, positive side first — deterministic, no rng).
+  let hx = dx / d, hz = dz / d;
+  const look = Math.min(d, (u.hx || 0.3) + 0.9), clear = memberClear(u);
+  if (slotBlocked(world, u.pos.x + hx * look, u.pos.z + hz * look, clear)) {
+    const base = Math.atan2(hx, hz);
+    for (const off of [Math.PI / 6, -Math.PI / 6, Math.PI / 3, -Math.PI / 3, Math.PI / 2, -Math.PI / 2, (2 * Math.PI) / 3, -(2 * Math.PI) / 3]) {
+      const az = base + off, px = Math.sin(az), pz = Math.cos(az);
+      if (!slotBlocked(world, u.pos.x + px * look, u.pos.z + pz * look, clear)) { hx = px; hz = pz; break; }
+    }
+  }
   const sp = MOVE_SPEED;
-  u.v.x += ((dx / d) * sp - u.v.x) * Math.min(1, 6 * dt);
-  u.v.z += ((dz / d) * sp - u.v.z) * Math.min(1, 6 * dt);
+  u.v.x += (hx * sp - u.v.x) * Math.min(1, 6 * dt);
+  u.v.z += (hz * sp - u.v.z) * Math.min(1, 6 * dt);
 }
 
 function slotFor(squad, idx, n) {
@@ -183,8 +230,8 @@ export function stepSquad(world, squad, dt) {
     const n = members.length;
     members.forEach((u, i) => {
       const slot = slotFor(squad, i, n);
-      u.goal = { x: slot.x, z: slot.z };
-      seekGoal(u, dt);
+      u.goal = clearSlot(world, slot.x, slot.z, memberClear(u)); // never march a man into masonry
+      seekGoal(world, u, dt);
     });
     return;
   }
@@ -199,11 +246,14 @@ export function stepSquad(world, squad, dt) {
     squad._threatSig = sector;
     const n = members.length;
     members.forEach((u, i) => {
-      const slot = slotFor(squad, i, n);
+      const clear = memberClear(u);
+      const s0 = slotFor(squad, i, n);
+      const slot = clearSlot(world, s0.x, s0.z, clear);
       let best = slot, bestExp = exposureAt(world, slot.x, slot.z, bearing);
       for (let k = 0; k < 8; k++) {
         const az = (k / 8) * Math.PI * 2;
         const cx = slot.x + Math.sin(az) * DEFEND_SLOT_R, cz = slot.z + Math.cos(az) * DEFEND_SLOT_R;
+        if (slotBlocked(world, cx, cz, clear)) continue; // tucked INTO the cover = crushed by it
         const exp = exposureAt(world, cx, cz, bearing);
         if (exp < bestExp - 1e-9) { bestExp = exp; best = { x: cx, z: cz }; }
       }
@@ -212,6 +262,6 @@ export function stepSquad(world, squad, dt) {
   }
   members.forEach((u) => {
     u.goal = u._slotGoal || slotFor(squad, squad.memberIds.indexOf(u.id), members.length);
-    seekGoal(u, dt);
+    seekGoal(world, u, dt);
   });
 }

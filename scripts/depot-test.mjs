@@ -2206,6 +2206,37 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     const twinA = runTwin(7), twinB = runTwin(7);
     ok("twin-run determinism: identical seed -> identical member positions", twinA === twinB, `${twinA} vs ${twinB}`);
   }
+
+  // masonry-slam repro (Phase 5 smallfix): a squad anchored adjacent to a
+  // wall — so a formation/defend slot lands inside the wall's footprint —
+  // must NOT drive any member into the solid (the engine's depenetration
+  // ejects him and the dv>8 slam path kills him). Full stepWorld physics:
+  // pre-fix, a member dies within seconds; post-fix, every slot goal clears
+  // static solids by member hx + 0.35 and all members survive 30s.
+  {
+    const world = makeWorld({ seed: 3 });
+    // flatten the procedural default field so only the wall matters
+    for (let k = 0; k < world.field.h.length; k++) world.field.h[k] = 0;
+    world.field.dirty = false;
+    // wall square on the defend ring: slot 0 sits at anchor + (0, 2.4)
+    const wall = addBody(world, { kind: "wall", team: 1, mass: 0, hx: 1.1, hy: 1.1, hz: 1.1, x: 0, y: 1.1, z: 2.4, hp: 1e9 });
+    const squad = makeSquad(9, "rifles", 1, 0, 0);
+    spawnSquadMembers(world, squad);
+    const dt = world.dt;
+    let goalInSolid = false, died = false;
+    for (let i = 0; i < 30 / dt && !died; i++) {
+      stepSquad(world, squad, dt);
+      for (const id of squad.memberIds) {
+        const u = world.byId.get(id);
+        if (!u || !u.alive) { died = true; continue; }
+        const g = u.goal;
+        if (g && Math.abs(g.x - wall.pos.x) <= wall.hx + u.hx && Math.abs(g.z - wall.pos.z) <= wall.hz + u.hx) goalInSolid = true;
+      }
+      stepWorld(world);
+    }
+    ok("slot goals never target the inside of a static solid (wall on the defend ring)", !goalInSolid);
+    ok("all members survive 30s anchored against a wall (no depenetration slam deaths)", !died);
+  }
 }
 
 // --- squadFire (Phase 5 Task 2): infantry combat. Members fire only while

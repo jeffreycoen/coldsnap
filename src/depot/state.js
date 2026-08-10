@@ -2,7 +2,7 @@
 // DepotGame.jsx's loop can stuff a plain object in a ref (React state must
 // never be read from the closure — see ColdsnapTD.jsx for why).
 import { aimSolve, fireProjectile, addBody } from "../engine/core.js";
-import { SQUAD_SPECS } from "./squads.js";
+import { SQUAD_SPECS, clearSlot } from "./squads.js";
 import { scatterSigma, applyScatter, arcClears } from "./accuracy.js";
 import { planWave, MIN_WAVE_FLOOR } from "./ai.js";
 import { STIPEND, payResults, combatIneffective, bookValue } from "./economy.js";
@@ -267,9 +267,12 @@ export function spawnSquadMembers(world, squad) {
   const spec = SQUAD_SPECS[squad.type];
   for (let i = 0; i < spec.n; i++) {
     const a = (i / spec.n) * Math.PI * 2, r = 1.2;
-    const x = squad.anchor.x + Math.cos(a) * r, z = squad.anchor.z + Math.sin(a) * r;
+    // clearSlot (squads.js smallfix): a ring point overlapping a static solid
+    // gets the man depenetration-ejected and slam-killed on his first tick —
+    // spawn only on vetted ground (member hx 0.28 + the module's 0.35 pad).
+    const p = clearSlot(world, squad.anchor.x + Math.cos(a) * r, squad.anchor.z + Math.sin(a) * r, 0.28 + 0.35);
     const u = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28,
-      x, y: world.field.heightAt(x, z) + 0.74, z, hp: 58, friction: 0.5 });
+      x: p.x, y: world.field.heightAt(p.x, p.z) + 0.74, z: p.z, hp: 58, friction: 0.5 });
     u.utype = squad.type; u.squadId = squad.id; u.dress = "human"; // player side reads human
     squad.memberIds.push(u.id);
   }
