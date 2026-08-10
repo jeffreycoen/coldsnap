@@ -7,6 +7,24 @@ import { planWave, MIN_WAVE_FLOOR } from "./ai.js";
 import { STIPEND, payResults, combatIneffective, bookValue } from "./economy.js";
 import { composeIntel, openingIntel } from "./intel.js";
 import { TOWER_SPECS, ENEMY_SPECS, TANK } from "./specs.js";
+import { fogStateFor } from "./territory.js";
+
+// Targeting gate, symmetric: a shooter of `team` (1 = player tower, 2 =
+// attacker rifleman/grenadier/tank) may only acquire a target at canonical
+// (u, v) position (x, z) if THEIR OWN field reaches it — fogStateFor mirrors
+// the read per team, so a tower checks the player field and an attacker
+// checks the sign-flipped one. "unheld" blocks acquisition; "seam" and
+// "held" both allow it. No T wired (some tests construct a world without
+// territory) -> ungated, so existing asserts that don't care about ground
+// control keep passing. Takes explicit (x, z) rather than a body/target
+// object because territory.js's coordinate system is CANONICAL (u, v) —
+// the map's un-rotated frame, same as the renderer's rim — while body
+// positions live in rotated WORLD space; callers convert via invW (DEPOT's
+// world-to-canonical transform) before calling this.
+export function fieldReaches(T, x, z, team) {
+  if (!T) return true;
+  return fogStateFor(T, x, z, team) !== "unheld";
+}
 
 // Wall build cost — mirrors DepotGame.jsx's buildAt (`const cost = spec ? spec.cost : 5`).
 // specs.js has no wall entry (walls aren't a TOWER_SPECS type), so this is

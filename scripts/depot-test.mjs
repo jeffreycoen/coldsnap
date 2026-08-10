@@ -4,6 +4,7 @@
 import {
   PHASE, makeRunState, startWave, tryStall, advance,
   regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, shooterFire, nextSpawnTag,
+  fieldReaches,
 } from "../src/depot/state.js";
 import {
   makeWorld, addBody, fireProjectile, stepWorld, applyDamage, worldHash, CAUSE, mulberry32,
@@ -11,11 +12,11 @@ import {
 import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, WAVES as DEPOT_WAVES } from "../src/depot/specs.js";
 import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks, payBounties } from "../src/depot/units.js";
 import {
-  makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue,
+  makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue, payTown,
 } from "../src/depot/economy.js";
 import { planWave, waveBudget, MIN_WAVE_FLOOR } from "../src/depot/ai.js";
 import { composeIntel, openingIntel, strengthWord } from "../src/depot/intel.js";
-import { makeTerritory, stepTerritory, holderAt, fogStateAt, DECAY_TAU, EMIT } from "../src/depot/territory.js";
+import { makeTerritory, stepTerritory, holderAt, fogStateAt, fogStateFor, canBuild, DECAY_TAU, EMIT } from "../src/depot/territory.js";
 import fs from "node:fs";
 
 // identity fwdDir (DepotGame.jsx's ORIENT-aware transform, ORIENT===0 case)
@@ -1269,6 +1270,102 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     // out-of-bounds = neutral
     ok("holderAt out of bounds = neutral", holderAt(T, 9999, 9999) === 0);
     ok("fogStateAt out of bounds = unheld", fogStateAt(T, 9999, 9999) === "unheld");
+  }
+}
+
+// --- Phase 4 Task 2: build rights, holder-paid town, targeting boundary ---
+{
+  const halfU = 29, halfV = 57;
+
+  // build refusal: red/seam ground refused, green ground allowed
+  {
+    const T = makeTerritory(halfU, halfV);
+    const x0 = 0, z0 = 0;
+    ok("canBuild refused on neutral/seam ground (fresh field)", canBuild(T, x0, z0) === false);
+    const redEmitters = [{ x: x0, z: z0, w: EMIT.tower.w, r: EMIT.tower.r, sign: -1 }];
+    for (let i = 0; i < 100; i++) stepTerritory(T, redEmitters, 0.05); // 5s, drives it red
+    ok("canBuild refused on red ground", canBuild(T, x0, z0) === false);
+    const T2 = makeTerritory(halfU, halfV);
+    const greenEmitters = [{ x: x0, z: z0, w: EMIT.tower.w, r: EMIT.tower.r, sign: 1 }];
+    for (let i = 0; i < 100; i++) stepTerritory(T2, greenEmitters, 0.05); // 5s, drives it green
+    ok("canBuild allowed on green ground", canBuild(T2, x0, z0) === true);
+  }
+
+  // town pay at stall: a scripted holder flip follows the payout
+  {
+    const T = makeTerritory(halfU, halfV);
+    const buildings = [
+      { id: "a", x: -10, z: 0, ruined: false }, // will be green
+      { id: "b", x: 10, z: 0, ruined: false },  // will be red
+      { id: "c", x: 0, z: 20, ruined: false },  // stays seam (neutral)
+      { id: "d", x: -10, z: 40, ruined: true }, // green ground, but ruined -> no pay
+    ];
+    const emitters = [
+      { x: -10, z: 0, w: EMIT.tower.w, r: EMIT.tower.r, sign: 1 },
+      { x: 10, z: 0, w: EMIT.tower.w, r: EMIT.tower.r, sign: -1 },
+      { x: -10, z: 40, w: EMIT.tower.w, r: EMIT.tower.r, sign: 1 },
+    ];
+    for (let i = 0; i < 100; i++) stepTerritory(T, emitters, 0.05); // 5s
+    let out = payTown(buildings, T);
+    ok("town pay: green building pays player 4, ruined green building pays nothing", out.player === 4, JSON.stringify(out));
+    ok("town pay: red building pays regiment 4", out.regiment === 4, JSON.stringify(out));
+
+    // flip the holder: kill the green tower's influence, let the red side take it
+    const T2 = makeTerritory(halfU, halfV);
+    for (let i = 0; i < 100; i++) stepTerritory(T2, [{ x: -10, z: 0, w: EMIT.tower.w, r: EMIT.tower.r, sign: -1 }, { x: 10, z: 0, w: EMIT.tower.w, r: EMIT.tower.r, sign: -1 }], 0.05);
+    const out2 = payTown([{ x: -10, z: 0, ruined: false }, { x: 10, z: 0, ruined: false }], T2);
+    ok("town pay: holder flip (both red) pays regiment for both", out2.player === 0 && out2.regiment === 8, JSON.stringify(out2));
+  }
+
+  // acquisition gate: a target sitting on ground the player field does NOT
+  // reach (i.e. red/attacker-held — fogStateAt === "unheld") is not
+  // acquired; a friendly presence contesting that same ground (pushing it
+  // off "unheld", to seam or better) makes it acquirable. Symmetric for the
+  // attacker via the sign-flipped team===2 read.
+  {
+    const target = { pos: { x: 22, z: 0 } };
+    // enemy-held ground at the target: a lone enemy emitter drives it red
+    const T = makeTerritory(halfU, halfV);
+    for (let i = 0; i < 100; i++) stepTerritory(T, [{ x: 22, z: 0, w: EMIT.tower.w, r: EMIT.tower.r, sign: -1 }], 0.05); // 5s
+    ok("acquisition blocked on ground the player field doesn't reach (red)", fieldReaches(T, target.pos.x, target.pos.z, 1) === false);
+    // a friendly unit contests the same ground, canceling the enemy hold
+    // back to seam — no longer "unheld", so it's acquirable again
+    const T3 = makeTerritory(halfU, halfV);
+    const contested = [
+      { x: 22, z: 0, w: EMIT.tower.w, r: EMIT.tower.r, sign: -1 },
+      { x: 22, z: 0, w: EMIT.tower.w, r: EMIT.tower.r, sign: 1 },
+    ];
+    for (let i = 0; i < 100; i++) stepTerritory(T3, contested, 0.05); // 5s
+    ok("acquisition allowed once a friendly presence contests the ground", fieldReaches(T3, target.pos.x, target.pos.z, 1) === true);
+
+    // symmetric: an attacker rifleman vs a tower sitting in PLAYER-held fog
+    // (green ground) must be blocked for the attacker, allowed for the
+    // player — team===2 reads the sign-flipped field.
+    const towerTarget = { pos: { x: 0, z: 0 } };
+    const Tgreen = makeTerritory(halfU, halfV);
+    for (let i = 0; i < 100; i++) stepTerritory(Tgreen, [{ x: 0, z: 0, w: EMIT.tower.w, r: EMIT.tower.r, sign: 1 }], 0.05);
+    ok("attacker acquisition blocked in player-held fog (mirrored check)", fieldReaches(Tgreen, towerTarget.pos.x, towerTarget.pos.z, 2) === false);
+    ok("player acquisition allowed in its own held fog", fieldReaches(Tgreen, towerTarget.pos.x, towerTarget.pos.z, 1) === true);
+    // and the mirror image: red ground blocks the player, not the attacker
+    const Tred = makeTerritory(halfU, halfV);
+    for (let i = 0; i < 100; i++) stepTerritory(Tred, [{ x: 0, z: 0, w: EMIT.tower.w, r: EMIT.tower.r, sign: -1 }], 0.05);
+    ok("player acquisition blocked on red ground", fieldReaches(Tred, towerTarget.pos.x, towerTarget.pos.z, 1) === false);
+    ok("attacker acquisition allowed on its own (red) ground", fieldReaches(Tred, towerTarget.pos.x, towerTarget.pos.z, 2) === true);
+  }
+
+  // no-territory calls stay ungated (existing tests that build a world
+  // without wiring territory must keep passing)
+  {
+    ok("fieldReaches with no T is always true (ungated)", fieldReaches(null, 0, 0, 1) === true);
+  }
+
+  // Phase 3 economics unaffected: massacre-at-the-wall still pays results —
+  // rerun a slice of the existing payResults contract untouched by Task 2.
+  {
+    const reg = { heads: 400, tanks: 10, heads0: 400, tanks0: 10, scrap: 0 };
+    payResults(reg, { structureDmg: 100, towerKills: 1, wallKills: 2, buildingKills: 0, leaks: 3 });
+    const expect = 100 * RESULTS.structureDmg + 1 * RESULTS.towerKill + 2 * RESULTS.wallKill + 3 * RESULTS.leak;
+    ok("Phase 3 economics unaffected: payResults still pays the same", Math.abs(reg.scrap - expect) < 1e-9, reg.scrap);
   }
 }
 

@@ -1,5 +1,26 @@
 // src/depot/economy.js — the attacker's books + the book-value verdict.
 // Pure state-in/state-out; rng only in makeRegiment (exactly 2 draws).
+import { holderAt } from "./territory.js";
+
+const TOWN_PAY = 4; // scrap/scrap per standing building per wave (Task 5 may retune)
+
+// Town pay at stall: every standing (non-ruined) town building pays its
+// holder — green ground pays the player scrap, red ground pays the
+// attacker's regiment, seam ground pays nobody. `buildings` is DepotGame's
+// own buildTown() output ({x, z, ruined}); reused as-is rather than
+// duplicated here. Returns the two deltas so the caller (DepotGame.jsx)
+// applies them to S.resources / S.reg.scrap — this stays pure/testable.
+export function payTown(buildings, T) {
+  let player = 0, regiment = 0;
+  for (const b of buildings) {
+    if (b.ruined) continue;
+    const h = holderAt(T, b.x, b.z);
+    if (h === 1) player += TOWN_PAY;
+    else if (h === 2) regiment += TOWN_PAY;
+  }
+  return { player, regiment };
+}
+
 export function makeRegiment(rng) {
   // seed-varied strength: 300-500 heads, 8-14 tanks; 2 rng draws, always.
   const heads = 300 + Math.floor(rng() * 201);

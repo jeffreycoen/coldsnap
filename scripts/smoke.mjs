@@ -696,6 +696,17 @@ try {
     const r = document.querySelector("canvas").getBoundingClientRect();
     return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
   });
+  // Task 2 (build rights): placement now requires holderAt===1 at the cell,
+  // and the original tap point (canvas center at the initial camera focus,
+  // map-center-ish) sits outside the depot's starting emitter radius on the
+  // pinned seed — a tap there gets refused ("GROUND NOT HELD"), not built.
+  // Point the camera at the nearest buildable+held cell to the depot first
+  // (debug hook, DepotGame.jsx) so the rotation-invariance check below still
+  // exercises a real, currently-buildable cell.
+  await page.waitForFunction(() => !!window.__DEPOTFINDBUILDABLE__(), { timeout: 10000, polling: 200 });
+  const buildable = await page.evaluate(() => window.__DEPOTFINDBUILDABLE__());
+  await page.evaluate((b) => window.__DEPOTFOCUS__(b.x, b.z), buildable);
+  await sleep(300); // let the camera settle at the new focus
   const cc = await canvasCenter();
   await page.keyboard.press("e"); // R.rotateStep(1) — 90° camera step
   await sleep(1500); // let the yaw tween settle

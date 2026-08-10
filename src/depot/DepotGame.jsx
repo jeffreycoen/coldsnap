@@ -15,9 +15,10 @@ import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, WAVES, MASON } from "./specs.js";
 import { windAt } from "./wind.js";
-import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot } from "./state.js";
+import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot, fieldReaches } from "./state.js";
 import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks, payBounties } from "./units.js";
-import { makeRegiment } from "./economy.js";
+import { makeRegiment, payTown } from "./economy.js";
+import { makeTerritory, stepTerritory, holderAt, canBuild, EMIT } from "./territory.js";
 import Dispatch from "./Dispatch.jsx";
 
 // ============================================================== the map
@@ -316,7 +317,7 @@ function checkConnectivity(grid, spawns, objGx, objGz) {
 }
 
 // ================================================================ towers
-function stepTowers(world) {
+function stepTowers(world, T) {
   const dt = world.dt;
   for (const b of world.bodies) {
     if (b.kind !== "tower" || !b.alive) continue;
@@ -329,12 +330,19 @@ function stepTowers(world) {
       const dx = best.pos.x - b.pos.x, dz = best.pos.z - b.pos.z;
       if (dx * dx + dz * dz > spec.range * spec.range) best = null;
     }
+    // Targeting gate (symmetric with the attacker's own check in units.js):
+    // a tower may only acquire/keep a target where the PLAYER field reaches
+    // it. A sticky target that has walked into fog is dropped right here —
+    // this validity block runs every tick, so "next rescan" is immediate.
+    if (best) { const c = invW(best.pos.x, best.pos.z); if (!fieldReaches(T, c.u, c.v, 1)) best = null; }
     b.scanCd = (b.scanCd || 0) - dt;
     if (!best && b.scanCd <= 0) {
       b.scanCd = 0.11 + (b.id % 8) * 0.011;
       let bd = spec.range * spec.range;
       for (const e of world.bodies) {
         if (e.kind !== "unit" || !e.alive || e.team !== 2) continue;
+        const c = invW(e.pos.x, e.pos.z);
+        if (!fieldReaches(T, c.u, c.v, 1)) continue;
         const dx = e.pos.x - b.pos.x, dz = e.pos.z - b.pos.z;
         const d2 = dx * dx + dz * dz;
         if (d2 < bd) { bd = d2; best = e; }
@@ -471,8 +479,8 @@ function shatterStructure(world, b, opts) {
 // sapper/tank). Lives in src/depot/units.js; DepotGame just supplies the
 // flow field and the orientation-aware fwdDir (ORIENT is module-local here,
 // so units.js can't reimplement it without drifting).
-function stepEnemies(world, grid) {
-  stepUnits(world, grid, fwdDir);
+function stepEnemies(world, grid, T) {
+  stepUnits(world, grid, fwdDir, T, invW);
 }
 
 // ==================================================================waves
@@ -482,9 +490,9 @@ function spawnEnemy(world, sp, tag) {
 }
 
 // ================================================================== step
-function stepDepot(world, grid, onStructureLost, town, onRuin) {
-  stepEnemies(world, grid);
-  stepTowers(world);
+function stepDepot(world, grid, onStructureLost, town, onRuin, T) {
+  stepEnemies(world, grid, T);
+  stepTowers(world, T);
   world.wind = windAt(MAP_SEED, world.t);
   stepWorld(world);
   stepBreakerRam(world); // heavies (breakers) ram walls/towers — TD's ColdsnapTD.jsx :964-972
@@ -557,6 +565,40 @@ export default function DepotGame({ onExit }) {
       world._tdStruct = true;
       world.depotCombat = true; // Phase 0 combat hooks: glancing, armor, tree fire/shredding
       const town = buildTown(world, grid, field);
+      // Territory (Phase 4 Task 2): who holds the ground. Cells over the
+      // same playable rim the renderer clips to (halfU 29 / halfV 57, see
+      // makeRenderer's rim opt above) — reuse rather than reinvent extents.
+      const T = makeTerritory(29, 57);
+      // town buildings' (x, z) are rotated WORLD space (same as any body);
+      // territory reads canonical (u, v) — precompute once (buildings don't
+      // move) rather than re-converting every stall.
+      const townUV = town.map((b) => { const c = invW(b.x, b.z); return { id: b.id, x: c.u, z: c.v, get ruined() { return b.ruined; } }; });
+      let terrAcc = 0;
+      const TERR_STEP = 0.25; // stepTerritory at ~4Hz — accumulated below, not every frame
+      // Emitter list, rebuilt fresh each territory step from live bodies:
+      // team-signed by kind -> EMIT weight (see territory.js). The depot's
+      // own emitter is its roof-peak flag body (kind "flag", team 1 — built
+      // in buildTown above; towers also carry flagPole=true for the
+      // renderer's pole overlay, so this checks kind, not the flag). Anchor
+      // emitters are permanent and sit on the attacker's own spawn points
+      // (SPAWN_POINTS, from genMap's wave-spawn logic) — 3 of them here,
+      // within the brief's 2-4 width-covering range.
+      // territory.js is CANONICAL (u,v) space (the un-rotated map frame, same
+      // as the renderer's rim) — every body/spawn position here is rotated
+      // WORLD space, so every emitter goes through invW (DEPOT's
+      // world-to-canonical transform) before it's pushed.
+      const buildEmitters = () => {
+        const out = [];
+        for (const b of world.bodies) {
+          if (b.kind === "tower" && b.team === 1 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.tower.w, r: EMIT.tower.r, sign: 1 }); }
+          else if (b.kind === "wall" && b.team === 1 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.wall.w, r: EMIT.wall.r, sign: 1 }); }
+          else if (b.kind === "flag" && b.team === 1) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.depot.w, r: EMIT.depot.r, sign: 1 }); }
+          else if (b.kind === "unit" && b.team === 2 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.unit.w, r: EMIT.unit.r, sign: -1 }); }
+          else if (b.kind === "vehicle" && b.team === 2 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.vehicle.w, r: EMIT.vehicle.r, sign: -1 }); }
+        }
+        for (const sp of SPAWN_POINTS) { const c = invW(sp.x, sp.z); out.push({ x: c.u, z: c.v, w: EMIT.anchor.w, r: EMIT.anchor.r, sign: -1 }); }
+        return out;
+      };
       const rocksLive = ROCKS.slice();
       for (const k of ROCKS) {
         const b = addBody(world, { kind: "rock", team: 0, mass: 0, hx: k.r * 0.55, hy: k.h * 0.8, hz: k.r * 0.55, x: k.x, y: field.heightAt(k.x, k.z) - k.h * 0.2, z: k.z, hp: 380 + k.r * 90 });
@@ -663,6 +705,10 @@ export default function DepotGame({ onExit }) {
         const cell = grid.cells[grid.idx(gx, gz)];
         if (cell.blocked || cell.wallId) { toast("OCCUPIED"); return; }
         if (cell.ice) { toast("NO GROUND — frozen water"); return; }
+        {
+          const wp0 = grid.gridToWorld(gx, gz), c0 = invW(wp0.x, wp0.z);
+          if (!canBuild(T, c0.u, c0.v)) { toast("GROUND NOT HELD"); return; }
+        }
         const spec = mode === "wall" ? null : TOWER_SPECS[mode];
         const cost = spec ? spec.cost : 5;
         if (S.resources < cost) { toast("NO SCRAP"); return; }
@@ -972,6 +1018,28 @@ export default function DepotGame({ onExit }) {
       // point) — used by the smoke test's rotation-invariance check to know
       // the intended build cell without racing the render loop's tween.
       window.__DEPOTGETFOCUS__ = () => ({ x: S.focus.x, z: S.focus.z });
+      window.__DEPOTHOLD__ = (x, z) => { const c = invW(x, z); return holderAt(T, c.u, c.v); };
+      // debug harness (Task 2): the nearest buildable+held cell to the depot
+      // flag. Build rights now gate placement on holderAt===1 — the depot's
+      // own emitter greens ground near itself, but the smoke test's original
+      // build-tap point (canvas center at the initial camera focus) sits
+      // well outside that radius on the pinned seed. The smoke test polls
+      // this until non-null, then points the camera there before tapping.
+      window.__DEPOTFINDBUILDABLE__ = () => {
+        const flag = world.bodies.find((b) => b.kind === "flag");
+        if (!flag) return null;
+        let best = null, bestD = 1e9;
+        for (let gz = 0; gz < GRID_H; gz++) for (let gx = 0; gx < GRID_W; gx++) {
+          const cell = grid.cells[grid.idx(gx, gz)];
+          if (cell.blocked || cell.wallId || cell.ice) continue;
+          const wp = grid.gridToWorld(gx, gz);
+          const c = invW(wp.x, wp.z);
+          if (!canBuild(T, c.u, c.v)) continue;
+          const d = Math.hypot(wp.x - flag.pos.x, wp.z - flag.pos.z);
+          if (d < bestD) { bestD = d; best = { x: wp.x, z: wp.z }; }
+        }
+        return best;
+      };
 
       let last = performance.now();
       const STEP = 1 / 120;
@@ -1028,7 +1096,12 @@ export default function DepotGame({ onExit }) {
               } else {
                 let live = 0;
                 for (const b of world.bodies) if (b.kind === "unit" && b.alive && b.team === 2) live++;
-                if (tryStall(S, WAVES, live, world.rng)) toast("WAVE " + (ws.waveIdx + 1) + " CLEARED");
+                if (tryStall(S, WAVES, live, world.rng)) {
+                  const paid = payTown(townUV, T);
+                  S.resources += paid.player;
+                  if (S.reg) S.reg.scrap += paid.regiment;
+                  toast("WAVE " + (ws.waveIdx + 1) + " CLEARED");
+                }
               }
             }
             // phase === "stall": sim keeps ticking (idle world) — no spawns,
@@ -1036,11 +1109,17 @@ export default function DepotGame({ onExit }) {
             if (S.started && !S.gameOver && !S.victory) S.resources += 2.2 * sdt;
           }
           S.acc += sdt;
+          terrAcc += sdt;
+          let terrGuard = 0;
+          while (terrAcc >= TERR_STEP && terrGuard++ < 8) {
+            terrAcc -= TERR_STEP;
+            stepTerritory(T, buildEmitters(), TERR_STEP);
+          }
           world.events.length = 0;
           let guard = 0;
           while (S.acc >= STEP && guard++ < 6) {
             S.acc -= STEP;
-            stepDepot(world, grid, onStructureLost, town, onRuin);
+            stepDepot(world, grid, onStructureLost, town, onRuin, T);
           }
           if (S.acc > STEP * 6) S.acc = 0;
           const evs = drainEvents();
@@ -1107,7 +1186,7 @@ export default function DepotGame({ onExit }) {
         canvas.removeEventListener("touchstart", blockTouch);
         window.removeEventListener("keydown", kd);
         window.removeEventListener("keyup", ku);
-        for (const k of ["__DEPOT__", "__DEPOTACK__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTTHIN__", "__DEPOTEND__", "__DEPOTFOCUS__", "__DEPOTGETFOCUS__", "__DEPOTSETT__", "__DEPOTFLAGS__"]) delete window[k];
+        for (const k of ["__DEPOT__", "__DEPOTACK__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTTHIN__", "__DEPOTEND__", "__DEPOTFOCUS__", "__DEPOTGETFOCUS__", "__DEPOTSETT__", "__DEPOTFLAGS__", "__DEPOTHOLD__", "__DEPOTFINDBUILDABLE__"]) delete window[k];
         A.dispose();
         if (R) R.dispose();
         stateRef.current = null;

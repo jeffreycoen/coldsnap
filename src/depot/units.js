@@ -10,7 +10,7 @@
 // is world.rng() (mulberry32, seeded); an unseeded Math dot random() call is
 // forbidden in src/depot (scripts/depot-lint.mjs).
 import { addBody, applyDamage, explode } from "../engine/core.js";
-import { shooterFire } from "./state.js";
+import { shooterFire, fieldReaches } from "./state.js";
 import { ENEMY_SPECS, ENEMY_FIRE, TANK } from "./specs.js";
 
 // ---------------------------------------------------------------- spawning
@@ -81,7 +81,7 @@ function faceTravel(u, dt) {
 // Wave armor: an engine vehicle on the engine's own tread physics
 // (stepDrive/aiDrive, called generically from stepWorld). We only need to
 // keep t.goal pointed down the flow field and pull the trigger on its gun.
-function stepTank(world, grid, t, dt, fwdDir) {
+function stepTank(world, grid, t, dt, fwdDir, T, toUV = (x, z) => ({ u: x, v: z })) {
   const cell = grid && grid.cellAt(t.pos.x, t.pos.z);
   if (cell && cell.dist < 1e8 && (cell.dx || cell.dz)) {
     const fd = fwdDir(cell.dx, cell.dz);
@@ -101,6 +101,7 @@ function stepTank(world, grid, t, dt, fwdDir) {
   let tgt = null, td = fspec.range * fspec.range;
   for (const s of world.bodies) {
     if ((s.kind !== "tower" && s.kind !== "wall") || !s.alive) continue;
+    { const c = toUV(s.pos.x, s.pos.z); if (!fieldReaches(T, c.u, c.v, 2)) continue; }
     const dx = s.pos.x - t.pos.x, dz = s.pos.z - t.pos.z, d2 = dx * dx + dz * dz;
     if (d2 < td) { td = d2; tgt = s; }
   }
@@ -113,7 +114,7 @@ function stepTank(world, grid, t, dt, fwdDir) {
 // -------------------------------------------------------------- riflemen
 // Everything but the grenadier and the sapper still carries a rifle and
 // halts to work on a wall or emplacement rather than walk past it.
-function stepRifleman(world, u, spec, cell, dt, fwdDir) {
+function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, v: z })) {
   const fspec = ENEMY_FIRE.rifle;
   u.fireCd = (u.fireCd || 0) - dt;
   u.scanCd = (u.scanCd || 0) - dt;
@@ -121,13 +122,16 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir) {
   let tgt = u.tgtId ? world.byId.get(u.tgtId) : null;
   if (tgt) {
     const dx = tgt.pos.x - u.pos.x, dz = tgt.pos.z - u.pos.z;
-    if (!tgt.alive || (tgt.kind !== "tower" && tgt.kind !== "wall") || dx * dx + dz * dz > R2) tgt = null;
+    const c = toUV(tgt.pos.x, tgt.pos.z);
+    if (!tgt.alive || (tgt.kind !== "tower" && tgt.kind !== "wall") || dx * dx + dz * dz > R2 || !fieldReaches(T, c.u, c.v, 2)) tgt = null;
   }
   if (!tgt && u.scanCd <= 0) {
     u.scanCd = 0.13 + (u.id % 8) * 0.012;
     let td = R2;
     for (const s of world.bodies) {
       if ((s.kind !== "tower" && s.kind !== "wall") || !s.alive) continue;
+      const c = toUV(s.pos.x, s.pos.z);
+      if (!fieldReaches(T, c.u, c.v, 2)) continue;
       const dx = s.pos.x - u.pos.x, dz = s.pos.z - u.pos.z, d2 = dx * dx + dz * dz;
       if (d2 < td) { td = d2; tgt = s; }
     }
@@ -158,7 +162,7 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir) {
 // -------------------------------------------------------------- grenadier
 // Halts at range and lobs shells over your wall at whatever structure is
 // nearest. High-arc fire (opts.high) — same treatment as the mortar tower.
-function stepGrenadier(world, u, cell, dt, fwdDir) {
+function stepGrenadier(world, u, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, v: z })) {
   const fspec = ENEMY_FIRE.lob;
   u.grenCd = (u.grenCd || 0) - dt;
   u.scanCd = (u.scanCd || 0) - dt;
@@ -166,13 +170,16 @@ function stepGrenadier(world, u, cell, dt, fwdDir) {
   let tgt = u.tgtId ? world.byId.get(u.tgtId) : null;
   if (tgt) {
     const dx = tgt.pos.x - u.pos.x, dz = tgt.pos.z - u.pos.z;
-    if (!tgt.alive || (tgt.kind !== "tower" && tgt.kind !== "wall") || dx * dx + dz * dz > R2) tgt = null;
+    const c = toUV(tgt.pos.x, tgt.pos.z);
+    if (!tgt.alive || (tgt.kind !== "tower" && tgt.kind !== "wall") || dx * dx + dz * dz > R2 || !fieldReaches(T, c.u, c.v, 2)) tgt = null;
   }
   if (!tgt && u.scanCd <= 0) {
     u.scanCd = 0.13 + (u.id % 8) * 0.012;
     let td = R2;
     for (const b of world.bodies) {
       if ((b.kind !== "tower" && b.kind !== "wall") || !b.alive) continue;
+      const c = toUV(b.pos.x, b.pos.z);
+      if (!fieldReaches(T, c.u, c.v, 2)) continue;
       const dx = b.pos.x - u.pos.x, dz = b.pos.z - u.pos.z, d2 = dx * dx + dz * dz;
       if (d2 < td) { td = d2; tgt = b; }
     }
@@ -221,12 +228,12 @@ function stepSapper(world, u, dt) {
 // March + combat driver, called before the engine step (same ordering TD
 // uses: game-layer drivers, then stepWorld). grid supplies the flow field;
 // upright/contacts/sleep/damage all belong to the engine.
-export function stepUnits(world, grid, fwdDir) {
+export function stepUnits(world, grid, fwdDir, T, toUV = (x, z) => ({ u: x, v: z })) {
   const dt = world.dt;
   // wave armor (tanks): engine-driven vehicles, gun on a timer
   for (const t of world.bodies) {
     if (t.kind !== "vehicle" || t.team !== 2 || !t.alive || !t.squad) continue;
-    stepTank(world, grid, t, dt, fwdDir);
+    stepTank(world, grid, t, dt, fwdDir, T, toUV);
   }
   for (const u of world.bodies) {
     if (u.kind !== "unit" || !u.alive || u.team !== 2) continue;
@@ -250,8 +257,8 @@ export function stepUnits(world, grid, fwdDir) {
     const cell = grid.cellAt(u.pos.x, u.pos.z);
 
     if (u.tag === "sapper" && stepSapper(world, u, dt)) continue;
-    if (u.tag !== "gren" && u.tag !== "sapper" && stepRifleman(world, u, spec, cell, dt, fwdDir)) continue;
-    if (u.tag === "gren" && stepGrenadier(world, u, cell, dt, fwdDir)) continue;
+    if (u.tag !== "gren" && u.tag !== "sapper" && stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV)) continue;
+    if (u.tag === "gren" && stepGrenadier(world, u, cell, dt, fwdDir, T, toUV)) continue;
 
     // lost / default march (also the fallback path when a rifleman/
     // grenadier has no target in range this tick)

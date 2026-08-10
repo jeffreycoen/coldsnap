@@ -59,11 +59,22 @@ export function holderAt(T, x, z) {
   return 0;
 }
 
-export function fogStateAt(T, x, z) {
+// fogStateFor: the SAME field, read from either side. team 1 (the player)
+// reads the raw value (positive = held); team 2 (the attacker) reads it
+// sign-flipped, so "their" held ground is where the field runs negative.
+// This is the one gate both towers (DepotGame.jsx's stepTowers) and enemy
+// shooters (units.js's stepRifleman/stepGrenadier/stepTank) call — a target
+// is acquirable only where the acquiring side's own field reaches it.
+export function fogStateFor(T, x, z, team) {
   const { ix, iz } = cellOf(T, x, z);
   if (ix < 0 || ix >= T.nx || iz < 0 || iz >= T.nz) return "unheld"; // out of bounds -> neutral/unheld
-  const val = T.v[iz * T.nx + ix];
+  let val = T.v[iz * T.nx + ix];
+  if (team === 2) val = -val;
   if (val > 0.15) return "held";
-  if (val <= 0.15 && val >= -0.15) return "seam";
+  if (val >= -0.15) return "seam";
   return "unheld";
 }
+export function fogStateAt(T, x, z) { return fogStateFor(T, x, z, 1); }
+
+// canBuild: ground rights for placement (towers AND walls) — green only.
+export function canBuild(T, x, z) { return holderAt(T, x, z) === 1; }
