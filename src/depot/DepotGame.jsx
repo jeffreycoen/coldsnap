@@ -368,7 +368,7 @@ function stepTowers(world, T, discipline) {
     // tower/town chunk holds the trigger pull (cadence still resets — keeps
     // the target, retries next cadence; target movement usually clears it).
     // Enemy fire (units.js) never runs this check.
-    if (discipline !== "free" && friendlyFouls(world, muzzle, best.pos, spec)) {
+    if (discipline !== "free" && friendlyFouls(world, muzzle, best.pos, spec, b.id)) {
       b.fireCd = spec.fireRate;
       continue;
     }

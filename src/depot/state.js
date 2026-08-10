@@ -151,9 +151,17 @@ export function towerShot(world, tower, target, spec) {
 // live next to it without threading a filter callback through arcClears's
 // hot path. No rng; pure.
 const FRIENDLY_MARGIN = 0.4;
-function friendlyBlocksPoint(world, x, y, z) {
+// selfId (Task 6 fix): the shooter's OWN body was never excluded — the
+// sampler's first point (s=0.9m from the muzzle) routinely lands inside
+// the shooter's own hx/hy/hz+margin box on anything but a dead-flat, long
+// shot, so every tower was self-blocking a huge fraction of its own shots
+// under CAREFUL (probe's PROBE_DIAG counters caught this: held >>> fired,
+// traced to `BLOCK by tower:mg id=N ... blocking point` matching that same
+// tower's own position). Passing the shooter's id through lets the check
+// skip its own body while still catching every OTHER friendly it might hit.
+function friendlyBlocksPoint(world, x, y, z, selfId) {
   for (const b of world.bodies) {
-    if (!b.alive || b.invM > 0) continue;
+    if (!b.alive || b.invM > 0 || (selfId != null && b.id === selfId)) continue;
     const friendly = ((b.kind === "wall" || b.kind === "tower") && b.team === 1) ||
                       (b.kind === "chunk" && b.team === 0);
     if (!friendly) continue;
@@ -164,12 +172,12 @@ function friendlyBlocksPoint(world, x, y, z) {
   return false;
 }
 
-export function friendlyFouls(world, muzzle, target, spec) {
+export function friendlyFouls(world, muzzle, target, spec, selfId) {
   if (spec.occl === "lofted") {
     const d = Math.hypot(target.x - muzzle.x, target.z - muzzle.z);
     for (let s = 0.9; s < d * 0.15; s += 0.9) {
       const t = s / d, x = muzzle.x + (target.x - muzzle.x) * t, z = muzzle.z + (target.z - muzzle.z) * t;
-      if (friendlyBlocksPoint(world, x, muzzle.y + s * 1.2, z)) return true;
+      if (friendlyBlocksPoint(world, x, muzzle.y + s * 1.2, z, selfId)) return true;
     }
     return false;
   }
@@ -182,7 +190,7 @@ export function friendlyFouls(world, muzzle, target, spec) {
     const t = s / vh;
     const y = muzzle.y + vy0 * t - 4.9 * t * t;
     const x = muzzle.x + (dx / d) * s, z = muzzle.z + (dz / d) * s;
-    if (friendlyBlocksPoint(world, x, y, z)) return true;
+    if (friendlyBlocksPoint(world, x, y, z, selfId)) return true;
   }
   return false;
 }

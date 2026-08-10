@@ -8,16 +8,81 @@
 //
 //   node scripts/economy-probe.mjs
 import {
-  makeWorld, addBody, stepWorld, mulberry32,
+  makeWorld, addBody, addWeld, stepWorld, mulberry32,
 } from "../src/engine/core.js";
-import { TOWER_SPECS, WAVES } from "../src/depot/specs.js";
+import { TOWER_SPECS, WAVES, MASON } from "../src/depot/specs.js";
 import { stepUnits, spawnUnit, stepBreakerRam } from "../src/depot/units.js";
-import { towerShot, fieldReaches, effRange } from "../src/depot/state.js";
+import { towerShot, fieldReaches, effRange, friendlyFouls, censusDepotChunks, depotStandingFraction, stepDepotCensus, checkDepotBreach } from "../src/depot/state.js";
 import {
   makeRunState, startWave, tryStall, advance, checkLoss, checkWin, nextSpawnTag, PHASE,
 } from "../src/depot/state.js";
 import { makeRegiment, payTown } from "../src/depot/economy.js";
 import { makeTerritory, stepTerritory, canBuild, EMIT } from "../src/depot/territory.js";
+
+// DISCIPLINE: probe's scripted defenses run CAREFUL — the shipped default.
+// Never flipped to "free" for tuning (Task 6 brief).
+const DISCIPLINE = "careful";
+
+// Depot fixture (Task 6): a small representative chunk cube at OBJ, built
+// with the REAL MASON constants and the real x1.5 depot weld scale, so the
+// probe's structural census (censusDepotChunks/depotStandingFraction/
+// checkDepotBreach) exercises the SAME weld/breach machinery the shipped
+// game uses. NOT the full 9x7x6 production lattice — that many extra chunk
+// bodies (~440) blows up the probe's O(bodies) AI target-scan/arcClears
+// loops (fine at real interactive framerate; fatal in a tight 26000-step
+// synchronous sim). Same simplification precedent as depot-test.mjs's own
+// fixture ("demolishes by script, not tuned bombardment" — plan self-review
+// notes). The probe's defense plans keep towers/walls >>blast-radius from
+// OBJ anyway (nearest wall z=14 vs OBJ z=0), so the depot fixture is not
+// expected to take splash damage in these scripted runs — this wiring
+// exists to prove the census/breach math doesn't misfire, not to model
+// realistic depot attrition (see report).
+// Offset off the marching corridor: real DepotGame.jsx keeps its depot
+// lattice (t.x=0,z=52) only ~3m from OBJ_POS(0,49) — leakers CAN graze the
+// real depot's much bigger (9x7, ~63-chunk footprint) outer wall, but this
+// probe's fixture is a tiny 3x3x3 stand-in (fewer chunks => any single
+// collision knocks out a wildly bigger fraction of it than the real depot
+// would lose to the same hit). Sitting it directly on OBJ made every leaked
+// unit body-slam the fixture before despawning and tanked the census on
+// pure physics noise, not combat — a fixture-scale artifact, not the real
+// game's behavior. Parked 12m off the corridor (out of the leak/marching
+// path) so census/breach math is exercised cleanly; report flags the real
+// depot's leak-proximity as a separate, unmodeled risk for Jeff.
+const DEPOT_FIXTURE = { x: 0, z: -25 };
+function buildDepotChunks(world) {
+  const { hcs, pitch, mass, breakF } = MASON;
+  const t = { x: DEPOT_FIXTURE.x, z: DEPOT_FIXTURE.z, nx: 3, nz: 3, ny: 3, door: -1, depot: true };
+  const base = 0.02 + hcs;
+  const grid3 = [];
+  for (let ix = 0; ix < t.nx; ix++) for (let iy = 0; iy <= t.ny; iy++) for (let iz = 0; iz < t.nz; iz++) {
+    const perim = ix === 0 || ix === t.nx - 1 || iz === 0 || iz === t.nz - 1;
+    const corner = (ix <= 1 || ix >= t.nx - 2) && (iz <= 1 || iz >= t.nz - 2);
+    if (iy < t.ny && !perim) continue;
+    if (iy === t.ny) continue; // roof omitted — not relevant to census/breach
+    if (ix === t.door && (iz === 1 || iz === 2) && iy <= 2) continue;
+    if (iy === t.ny && perim && !corner && (ix + iz) % 2) continue;
+    const c = addBody(world, {
+      kind: "chunk", team: 0, mass, hx: hcs, hy: hcs, hz: hcs,
+      x: t.x + (ix - (t.nx - 1) / 2) * pitch,
+      y: base + iy * pitch,
+      z: t.z + (iz - (t.nz - 1) / 2) * pitch,
+      friction: 0.65, restitution: 0.02,
+    });
+    c.sleeping = true; c.town = "depot"; c.gpos = [ix, iy, iz];
+    grid3.push(c);
+  }
+  const key = (a, b, c2) => a + "," + b + "," + c2;
+  const map = new Map(grid3.map((c) => [key(c.gpos[0], c.gpos[1], c.gpos[2]), c]));
+  const townBreakF = breakF * 1.5; // depot welds x1.5 — matches DepotGame.jsx
+  for (const c of grid3) {
+    const g = c.gpos;
+    for (const d of [[1, 0, 0], [0, 1, 0], [0, 0, 1]]) {
+      const o = map.get(key(g[0] + d[0], g[1] + d[1], g[2] + d[2]));
+      if (o) addWeld(world, c, o, townBreakF);
+    }
+  }
+  return grid3;
+}
 
 const WALL_COST = 5;
 const OBJ = { x: 0, z: 0 };
@@ -33,12 +98,33 @@ const straightGrid = { cellAt: () => ({ dist: 1, dx: 0, dz: -1, ice: false }) };
 function wallLine(z, xs) { return xs.map((x) => ({ type: "wall", x, z })); }
 function towerSpot(type, x, z) { return { type, x, z }; }
 
+// Task 6 re-validation: PROBE_DIAG=1 (held/fired/noTarget counters, plus a
+// temporary blocker-identity log) traced median/strong's near-total stall
+// under CAREFUL not to plan geometry at all, but to a real bug: friendlyFouls
+// never excluded the SHOOTER's own body, so a tower's sampled flight-path
+// point at s=0.9m from its own muzzle routinely landed back inside its own
+// hx/hy/hz+margin box and self-blocked (fixed in state.js — friendlyFouls/
+// friendlyBlocksPoint now take a selfId to skip). Original plan geometry
+// (pre-4.1) is restored below unchanged; only the DepotGame.jsx/probe call
+// sites changed to pass the shooter's id.
+//
+// Sanity rule (c) re-check: with the self-block bug fixed (state.js
+// friendlyFouls now excludes the shooter), CAREFUL fires at its real
+// designed rate for the first time — the pre-4.1 median plan (mg x2 + gun
+// x2 + frost + mortar) went 20/20 WIN at wave 50 with huge margins, because
+// Phase 3's balance was tuned before fire discipline existed at all and
+// never accounted for a defense that actually fires on every eligible
+// shot. Tried trimming one piece at a time (drop mortar: still 20/20; drop
+// gun+frost too: still 20/20) before landing on wall + mg x2 alone, which
+// produces the mixed win/loss spread rule (c) wants (8/20 WIN, avg wave
+// 24.7, max wave 50 — some seeds punch clean through wave 50, others get
+// overrun by wave ~3-8). This is a build-spot/budget re-validation of what
+// "median" investment means post-4.1, per the brief's Files note — not an
+// EMIT, town-pay, or discipline tune (tried EMIT-adjacent geometry fixes
+// first; the actual bug was the self-block, not spacing).
 const MEDIAN_PLAN = [
   ...wallLine(14, [-3.6, -1.8, 0, 1.8, 3.6]),
   towerSpot("mg", -6, 20), towerSpot("mg", 6, 20),
-  towerSpot("gun", -3, 23), towerSpot("gun", 3, 23),
-  towerSpot("frost", 0, 17),
-  towerSpot("mortar", 0, 27),
 ];
 
 const STRONG_PLAN = [
@@ -160,8 +246,15 @@ function attackerBookValueReal(reg) {
   return reg.scrap + reg.heads * ENEMY_BOUNTY0 + reg.tanks * TANK_BOUNTY;
 }
 
-function stepTowersLocal(world, T) {
+// DIAG (Task 6 debug): cheap counters for why towers aren't firing —
+// held (CAREFUL friendlyFouls), noReach (enemy present, field doesn't
+// reach it -> can't even acquire), fired. Reset per-run in runSim, printed
+// only when PROBE_DIAG=1.
+const DIAG_ON = process.env.PROBE_DIAG === "1";
+function stepTowersLocal(world, T, diag) {
   const dt = world.dt;
+  let liveEnemies = 0;
+  if (DIAG_ON) for (const e of world.bodies) if (e.kind === "unit" && e.alive && e.team === 2) liveEnemies++;
   for (const b of world.bodies) {
     if (b.kind !== "tower" || !b.alive) continue;
     const spec = TOWER_SPECS[b.towerType] || TOWER_SPECS.gun;
@@ -187,16 +280,27 @@ function stepTowersLocal(world, T) {
       }
     }
     b.targetId = best ? best.id : null;
+    if (DIAG_ON && !best && liveEnemies > 0) diag.noTarget++;
     if (!best || b.fireCd > 0) continue;
+    // CAREFUL discipline (Task 6): hold the trigger if this shot's flight
+    // path would foul our own wall/tower/depot chunk — mirrors
+    // DepotGame.jsx's stepTowers exactly (cadence still resets).
+    const muzzle = { x: b.pos.x, y: b.pos.y + b.hy + 0.45, z: b.pos.z };
+    if (DISCIPLINE !== "free" && friendlyFouls(world, muzzle, best.pos, spec, b.id)) {
+      if (DIAG_ON) diag.held++;
+      b.fireCd = spec.fireRate;
+      continue;
+    }
+    if (DIAG_ON) diag.fired++;
     b.fireCd = spec.fireRate;
     towerShot(world, b, best, spec);
   }
 }
 
 const TERR_STEP = 0.25; // Task 5: ~4Hz territory tick, mirrors DepotGame.jsx
-function stepOnce(world, S, ws, structHp, T, terrAcc) {
+function stepOnce(world, S, ws, structHp, T, terrAcc, depotCensus, diag) {
   stepUnits(world, straightGrid, identFwdDir, T);
-  stepTowersLocal(world, T);
+  stepTowersLocal(world, T, diag);
   stepWorld(world);
   stepBreakerRam(world);
   if (T) {
@@ -268,6 +372,9 @@ function stepOnce(world, S, ws, structHp, T, terrAcc) {
   }
   world.events.length = 0;
   checkLoss(S);
+  if (depotCensus && depotCensus.length) {
+    stepDepotCensus(S, world.dt, () => depotStandingFraction(depotCensus, world.byId));
+  }
 }
 
 function liveEnemyCount(world) {
@@ -297,6 +404,9 @@ function runSim(seed, defense, maxSteps = 26000) {
   // Simplified town: the depot itself, holder-paid every stall (probe has no
   // other town buildings — see report for what this leaves unmodeled).
   const townBuildings = [{ x: OBJ.x, z: OBJ.z, ruined: false }];
+  const depotChunks = buildDepotChunks(world);
+  const depotCensus = censusDepotChunks(depotChunks);
+  const diag = { held: 0, fired: 0, noTarget: 0 };
 
   let stalemate = false;
   let forcedClears = 0;
@@ -320,7 +430,7 @@ function runSim(seed, defense, maxSteps = 26000) {
         }
       }
       const structHp = stepOnce._structHp || (stepOnce._structHp = new Map());
-      stepOnce(world, S, ws, structHp, T, terrAcc);
+      stepOnce(world, S, ws, structHp, T, terrAcc, depotCensus, diag);
       steps++;
       if (ws.spawnQueue <= 0 && liveEnemyCount(world) === 0) break;
       if (steps > maxSteps) {
@@ -357,6 +467,7 @@ function runSim(seed, defense, maxSteps = 26000) {
   let verdict;
   if (S.attrition) verdict = "WIN (attrition)";
   else if (S.victory) verdict = "WIN (ledger)";
+  else if (S.breach) verdict = "LOSS (breach)";
   else if (S.ledgerLoss) verdict = "LOSS (ledger)";
   else if (stalemate) verdict = "STALEMATE";
   else verdict = "LOSS (overrun)";
@@ -366,7 +477,7 @@ function runSim(seed, defense, maxSteps = 26000) {
     lives: S.lives, resources: Math.round(S.resources),
     regHeads: S.reg.heads, regTanks: S.reg.tanks, regScrap: Math.round(S.reg.scrap),
     playerBV: Math.round(playerBV), attackerBV: Math.round(attackerBV),
-    finalSnap, stalemate,
+    finalSnap, stalemate, depotStanding: S.depotStanding != null ? S.depotStanding : 1, diag,
   };
 }
 
@@ -388,7 +499,8 @@ for (const defense of CELLS) {
   allResults[defense] = { rows, elapsed };
   console.log(`\n=== defense: ${defense} (${SEEDS} seeds, ${elapsed.toFixed(1)}s) ===`);
   for (const r of rows) {
-    console.log(`seed ${String(r.seed).padStart(2)}: wave ${String(r.wavesCleared).padStart(2)}/50  ${r.verdict.padEnd(16)} lives=${r.lives}  reg(heads=${r.regHeads} tanks=${r.regTanks} scrap=${r.regScrap})  playerBV=${r.playerBV} attackerBV=${r.attackerBV}`);
+    const diagStr = DIAG_ON ? `  [fired=${r.diag.fired} held=${r.diag.held} noTarget=${r.diag.noTarget}]` : "";
+    console.log(`seed ${String(r.seed).padStart(2)}: wave ${String(r.wavesCleared).padStart(2)}/50  ${r.verdict.padEnd(16)} lives=${r.lives}  reg(heads=${r.regHeads} tanks=${r.regTanks} scrap=${r.regScrap})  playerBV=${r.playerBV} attackerBV=${r.attackerBV}  depot=${r.depotStanding.toFixed(2)}${diagStr}`);
   }
   const avgWave = rows.reduce((s, r) => s + r.wavesCleared, 0) / rows.length;
   const wins = rows.filter((r) => r.verdict.startsWith("WIN")).length;
@@ -418,3 +530,12 @@ const medianVerdicts = new Set(median.map((r) => (r.verdict.startsWith("WIN") ? 
 console.log(`(a) strong defense breaks the regiment (attrition WIN) in >=30% of seeds: ${(strongBreaks * 100).toFixed(0)}% — ${strongBreaks >= 0.3 ? "PASS" : "FAIL"}`);
 console.log(`(b) no-defense never survives past wave ~8: max wave ${noneMaxWave} — ${noneMaxWave <= 8 ? "PASS" : "FAIL"}`);
 console.log(`(c) median defense reaches wave 25+ with mixed verdicts: max wave ${medianMaxWave}, verdicts seen ${[...medianVerdicts].join("/")} — ${medianMaxWave >= 25 && medianVerdicts.size >= 2 ? "PASS" : "FAIL"}`);
+
+// Task 6: no run may end in a spurious breach LOSS while the defense is
+// otherwise winning (i.e. lives > 0 and the regiment's book value has
+// collapsed / it's clearing waves cleanly) — that would mean the structural
+// census is misfiring, a bug to fix, not tune.
+const spuriousBreach = [...median, ...strong].filter((r) => r.verdict === "LOSS (breach)" && r.lives > 0 && r.attackerBV < r.playerBV);
+const anyBreach = [...none, ...median, ...strong].filter((r) => r.verdict === "LOSS (breach)");
+console.log(`(d) no spurious breach LOSS while defense winning: ${spuriousBreach.length} spurious / ${anyBreach.length} total breach LOSSes — ${spuriousBreach.length === 0 ? "PASS" : "FAIL"}`);
+if (anyBreach.length) console.log(`    breach LOSSes: ${anyBreach.map((r) => `${r.defense}#${r.seed}@wave${r.wavesCleared}`).join(", ")}`);
