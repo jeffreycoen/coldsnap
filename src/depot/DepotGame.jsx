@@ -937,14 +937,30 @@ export default function DepotGame({ onExit }) {
       window.__DEPOTBUILD__ = (gx, gz, mode) => buildAt(gx, gz, mode || "wall");
       window.__DEPOTSPAWN__ = (n) => { for (let i = 0; i < (n || 1); i++) spawnEnemy(world, SPAWN_POINTS[S.spawnRR++ % SPAWN_POINTS.length]); };
       window.__DEPOTSTART__ = () => { S.started = true; };
-      window.__DEPOTTREES__ = () => world.bodies.filter((b) => b.kind === "tree").map((b) => ({ x: +b.pos.x.toFixed(1), z: +b.pos.z.toFixed(1), y: +b.pos.y.toFixed(1), hp: b.hp, alive: b.alive, burning: b.burning }));
+      window.__DEPOTTREES__ = () => world.bodies.filter((b) => b.kind === "tree").map((b) => ({ id: b.id, x: +b.pos.x.toFixed(2), z: +b.pos.z.toFixed(2), y: +b.pos.y.toFixed(2), hp: +b.hp.toFixed(1), alive: b.alive, burning: b.burning }));
       window.__DEPOTMG__ = (tx, ty, tz) => {
         // debug harness: fire a single mg round at a point (a tree, typically)
-        // from 30m out — used for smoke-testing tree shredding under
+        // from 3m out — used for smoke-testing tree shredding under
         // depotCombat, same shot shape combat-test.mjs uses
         const from = { x: tx, y: ty, z: tz - 3 };
         fireProjectile(world, from, { x: 0, y: 0, z: 1 }, 90,
           { kind: "mg", r: 0.05, kv: 0.3, dmg: 1, crater: 0, attacker: "player" });
+      };
+      window.__DEPOTSHELL__ = (tx, ty, tz) => {
+        // debug harness: a GUN-tower-strength blast at a point. A direct
+        // shell/rocket hit sets tree.burning AND (via the point-blank +55
+        // impact bonus every non-mg direct hit gets, core.js line ~595)
+        // kills a 25hp tree in the same tick — ignition and death are not
+        // separable from one direct hit under current tuning.
+        const from = { x: tx, y: ty, z: tz - 3 };
+        fireProjectile(world, from, { x: 0, y: 0, z: 1 }, 90,
+          { kind: "shell", r: 2.3, kv: 8, dmg: 25, crater: 0.55, attacker: "player" });
+      };
+      window.__DEPOTFOCUS__ = (x, z, zoom) => {
+        // debug harness: point the camera at a world point (e.g. a tree) so
+        // smoke-test screenshots can frame a specific body tightly
+        S.focus.x = x; S.focus.z = z; S.focus.y = field.heightAt(x, z);
+        if (zoom) { S.zoom = zoom; R.setZoom(zoom); }
       };
 
       let last = performance.now();
@@ -1077,7 +1093,7 @@ export default function DepotGame({ onExit }) {
         canvas.removeEventListener("touchstart", blockTouch);
         window.removeEventListener("keydown", kd);
         window.removeEventListener("keyup", ku);
-        for (const k of ["__DEPOT__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__"]) delete window[k];
+        for (const k of ["__DEPOT__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTFOCUS__"]) delete window[k];
         A.dispose();
         if (R) R.dispose();
         stateRef.current = null;
