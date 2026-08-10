@@ -139,6 +139,54 @@ export function towerShot(world, tower, target, spec) {
   shooterFire(world, tower, muzzle, target, spec, { high, attacker: "player" });
 }
 
+// ------------------------------------------------------- fire discipline
+// friendlyFouls: does THIS round's actual flight path pass through one of
+// our own team-1 walls/towers, or a town/depot chunk (team 0)? Same arc
+// sampler arcClears (accuracy.js) uses — "arc" specs march the true
+// ballistic arc, "lofted" specs only check the muzzle climb-out cone
+// (first 15% of flight; a mortar's near-vertical climb still risks its own
+// crew's wall overhang, but the rest of its lob is deliberately unchecked,
+// mirroring arcClears) — kept as a sibling here rather than imported so the
+// friendly-kind filter (team-1 wall/tower + team-0 chunk, +0.4m margin) can
+// live next to it without threading a filter callback through arcClears's
+// hot path. No rng; pure.
+const FRIENDLY_MARGIN = 0.4;
+function friendlyBlocksPoint(world, x, y, z) {
+  for (const b of world.bodies) {
+    if (!b.alive || b.invM > 0) continue;
+    const friendly = ((b.kind === "wall" || b.kind === "tower") && b.team === 1) ||
+                      (b.kind === "chunk" && b.team === 0);
+    if (!friendly) continue;
+    if (Math.abs(x - b.pos.x) <= b.hx + FRIENDLY_MARGIN &&
+        Math.abs(y - b.pos.y) <= b.hy + FRIENDLY_MARGIN &&
+        Math.abs(z - b.pos.z) <= b.hz + FRIENDLY_MARGIN) return true;
+  }
+  return false;
+}
+
+export function friendlyFouls(world, muzzle, target, spec) {
+  if (spec.occl === "lofted") {
+    const d = Math.hypot(target.x - muzzle.x, target.z - muzzle.z);
+    for (let s = 0.9; s < d * 0.15; s += 0.9) {
+      const t = s / d, x = muzzle.x + (target.x - muzzle.x) * t, z = muzzle.z + (target.z - muzzle.z) * t;
+      if (friendlyBlocksPoint(world, x, muzzle.y + s * 1.2, z)) return true;
+    }
+    return false;
+  }
+  const dx = target.x - muzzle.x, dz = target.z - muzzle.z;
+  const d = Math.hypot(dx, dz); if (d < 2) return false;
+  const pitch = aimSolve(spec.projSpeed, d, target.y - muzzle.y, 9.8, false);
+  if (pitch == null) return false;
+  const vh = spec.projSpeed * Math.cos(pitch), vy0 = spec.projSpeed * Math.sin(pitch);
+  for (let s = 0.9; s < d - 0.9; s += 0.9) {
+    const t = s / vh;
+    const y = muzzle.y + vy0 * t - 4.9 * t * t;
+    const x = muzzle.x + (dx / d) * s, z = muzzle.z + (dz / d) * s;
+    if (friendlyBlocksPoint(world, x, y, z)) return true;
+  }
+  return false;
+}
+
 export function makeWaveState() {
   return { waveIdx: 0, spawnQueue: 0, spawnTimer: 0, spawnDelay: 1, active: false, betweenWaves: true, countdown: 8, mixBag: [], results: null };
 }
@@ -448,5 +496,5 @@ export const HUD0 = {
   totalWaves: 50, between: true, countdown: 8, phase: PHASE.BUILD, dispatch: null, lastDispatch: null,
   started: false, gameOver: false, victory: false, attrition: false, ledgerLoss: false, spent: false,
   mode: "wall", sellMode: false, paused: false, speed: 1, inspect: null, toasts: [],
-  pending: null, fogOn: true,
+  pending: null, fogOn: true, discipline: "careful",
 };

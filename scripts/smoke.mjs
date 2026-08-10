@@ -757,6 +757,33 @@ try {
     }
   }
 
+  // Phase 4.1 Task 2 (fire discipline): chip present, defaults CAREFUL, tap
+  // toggles to FREE and persists (localStorage key + a reload round-trip).
+  // Done here, still in build phase, so the reload's fresh world doesn't
+  // disturb the wave-phase flow below it.
+  body = await text();
+  ok("depot: fire discipline chip present, defaults CAREFUL", body.includes("FIRE DISCIPLINE: CAREFUL"));
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll("button")].find((x) => x.textContent.startsWith("FIRE DISCIPLINE"));
+    if (b) b.click();
+  });
+  body = await text();
+  ok("depot: fire discipline chip toggles to FREE", body.includes("FIRE DISCIPLINE: FREE"));
+  const disciplineStored = await page.evaluate(() => localStorage.getItem("coldsnap-depot-discipline"));
+  ok(`depot: fire discipline persisted to localStorage [${disciplineStored}]`, disciplineStored === "free");
+  await page.reload({ waitUntil: "networkidle0" });
+  await clickMenu("depot");
+  await page.waitForFunction(() => typeof window.__DEPOT__ === "function", { timeout: 20000 });
+  await sleep(300); // let the HUD's first tick (hudT > 0.12s) sync S.discipline into React state
+  body = await text();
+  ok("depot: fire discipline FREE survives reload", body.includes("FIRE DISCIPLINE: FREE"));
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll("button")].find((x) => x.textContent.startsWith("FIRE DISCIPLINE"));
+    if (b) b.click(); // back to CAREFUL default for the rest of the run
+  });
+  await page.evaluate(() => window.__DEPOTSTART__());
+  await page.waitForFunction(() => window.__DEPOT__().t > 0.2, { timeout: 10000 });
+
   // arm the SEND countdown to zero (build -> wave immediately) and switch
   // to 2x speed via the HUD's own control
   await page.evaluate(() => {

@@ -15,7 +15,7 @@ import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, WAVES, MASON } from "./specs.js";
 import { windAt } from "./wind.js";
-import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed } from "./state.js";
+import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed } from "./state.js";
 import { reachPolygon, arcClears } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks, payBounties } from "./units.js";
 import { makeRegiment, payTown } from "./economy.js";
@@ -322,7 +322,7 @@ function checkConnectivity(grid, spawns, objGx, objGz) {
 }
 
 // ================================================================ towers
-function stepTowers(world, T) {
+function stepTowers(world, T, discipline) {
   const dt = world.dt;
   for (const b of world.bodies) {
     if (b.kind !== "tower" || !b.alive) continue;
@@ -364,6 +364,14 @@ function stepTowers(world, T) {
     }
     b.targetId = best ? best.id : null;
     if (!best || b.fireCd > 0) continue;
+    // CAREFUL discipline: a shot whose flight path would hit our own wall/
+    // tower/town chunk holds the trigger pull (cadence still resets — keeps
+    // the target, retries next cadence; target movement usually clears it).
+    // Enemy fire (units.js) never runs this check.
+    if (discipline !== "free" && friendlyFouls(world, muzzle, best.pos, spec)) {
+      b.fireCd = spec.fireRate;
+      continue;
+    }
     b.fireCd = spec.fireRate;
     b.flashT = world.t;
     towerShot(world, b, best, spec);
@@ -504,9 +512,9 @@ function spawnEnemy(world, sp, tag) {
 }
 
 // ================================================================== step
-function stepDepot(world, grid, onStructureLost, town, onRuin, T) {
+function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline) {
   stepEnemies(world, grid, T);
-  stepTowers(world, T);
+  stepTowers(world, T, discipline);
   world.wind = windAt(MAP_SEED, world.t);
   stepWorld(world);
   stepBreakerRam(world); // heavies (breakers) ram walls/towers — TD's ColdsnapTD.jsx :964-972
@@ -680,13 +688,22 @@ export default function DepotGame({ onExit }) {
       try { fogOn = window.localStorage.getItem("coldsnap-depot-fog") !== "0"; } catch (e) {}
       R.setFog(fogOn);
 
+      // FIRE DISCIPLINE toggle: CAREFUL (default) holds a tower's trigger
+      // pull when its round's flight path would foul a friendly wall/tower/
+      // town chunk (state.js's friendlyFouls) — FREE fires regardless, the
+      // pre-Task-2 behavior. Same coldsnap-depot-* persistence pattern as
+      // the FOG toggle above. Enemy fire never consults this.
+      let discipline = "careful";
+      try { const v = window.localStorage.getItem("coldsnap-depot-discipline"); if (v === "free" || v === "careful") discipline = v; } catch (e) {}
+
       const S = {
         resources: 120, lives: 20, kills: 0,
         ws: makeDepotWaveState(), spawnRR: 0,
         mode: "wall", sellMode: false, inspectId: null,
         started: false, gameOver: false, victory: false,
-        paused: false, speed: 1, fogOn,
+        paused: false, speed: 1, fogOn, discipline,
         setFog: (v) => { fogOn = v; S.fogOn = v; R.setFog(v); try { window.localStorage.setItem("coldsnap-depot-fog", v ? "1" : "0"); } catch (e) {} },
+        setDiscipline: (v) => { discipline = v; S.discipline = v; try { window.localStorage.setItem("coldsnap-depot-discipline", v); } catch (e) {} },
         phase: PHASE.BUILD, dispatch: null, lastDispatch: null,
         focus: (() => { const w = fwdU(0, 6); return { x: w.x, y: field.heightAt(w.x, w.z), z: w.z }; })(),
         zoom: 1, acc: 0, t: 0, fps: 60, fpsAcc: 0, fpsN: 0,
@@ -1260,7 +1277,7 @@ export default function DepotGame({ onExit }) {
           let guard = 0;
           while (S.acc >= STEP && guard++ < 6) {
             S.acc -= STEP;
-            stepDepot(world, grid, onStructureLost, town, onRuin, T);
+            stepDepot(world, grid, onStructureLost, town, onRuin, T, S.discipline);
           }
           if (S.acc > STEP * 6) S.acc = 0;
           const evs = drainEvents();
@@ -1310,7 +1327,7 @@ export default function DepotGame({ onExit }) {
               attrition: S.attrition, spent: S.spent, ledgerLoss: S.ledgerLoss,
               mode: S.mode, sellMode: S.sellMode,
               paused: S.paused, speed: S.speed,
-              muted: A.muted, fogOn: S.fogOn, seed: MAP_SEED,
+              muted: A.muted, fogOn: S.fogOn, discipline: S.discipline, seed: MAP_SEED,
               toasts: S.toasts.map((t) => t.txt),
               pending: S.pending && S.pendingScreen ? {
                 x: S.pendingScreen.x, y: S.pendingScreen.y,
@@ -1389,6 +1406,11 @@ export default function DepotGame({ onExit }) {
     S.setFog(!S.fogOn);
     setHud((h) => ({ ...h, fogOn: S.fogOn }));
   };
+  const toggleDiscipline = () => {
+    const S = stateRef.current; if (!S || !S.setDiscipline) return;
+    S.setDiscipline(S.discipline === "careful" ? "free" : "careful");
+    setHud((h) => ({ ...h, discipline: S.discipline }));
+  };
   const sellInspected = () => { const S = stateRef.current; if (S && S.inspectId && S.sellById) S.sellById(S.inspectId); };
 
   const palette = [
@@ -1429,6 +1451,9 @@ export default function DepotGame({ onExit }) {
           onClick={() => { const S = stateRef.current; if (S && S.rotate) S.rotate(1); }}>⟳</button>
         <button style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.fogOn ? "#7fd7ff" : "#48515f", opacity: hud.fogOn ? 1 : 0.6 }} title="fog of war (visual only)" onClick={toggleFog}>
           FOG {hud.fogOn ? "ON" : "OFF"}
+        </button>
+        <button style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.discipline === "free" ? "#ff7a7a" : "#4aff8c" }} onClick={toggleDiscipline}>
+          FIRE DISCIPLINE: {hud.discipline === "free" ? "FREE" : "CAREFUL"}
         </button>
         <button style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", opacity: hud.muted ? 0.5 : 1 }} onClick={toggleMute}>
           {hud.muted ? "🔇" : "🔊"}

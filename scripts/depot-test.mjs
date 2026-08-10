@@ -7,6 +7,7 @@ import {
   fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed,
 } from "../src/depot/state.js";
 import { reachPolygon, arcClears } from "../src/depot/accuracy.js";
+import { friendlyFouls } from "../src/depot/state.js";
 import {
   makeWorld, addBody, fireProjectile, stepWorld, applyDamage, worldHash, CAUSE, mulberry32,
 } from "../src/engine/core.js";
@@ -1585,6 +1586,98 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     pending2 = null; // ✗ cancel
     ok("cancel: no scrap deducted", resources2 === 100);
     ok("cancel: no body placed", world2.bodies.filter((b) => b.kind === "tower").length === 0);
+  }
+}
+
+// --- friendlyFouls / fire discipline (Phase 4.1 Task 2)
+{
+  // "arc" spec (gun): a friendly (team-1) wall sitting mid-lane between
+  // muzzle and target fouls the shot.
+  {
+    const world = { field: { heightAt: () => 0 }, bodies: [
+      { alive: true, invM: 0, kind: "wall", team: 1, pos: { x: 8, y: 1.5, z: 0 }, hx: 0.9, hy: 1.5, hz: 0.9 },
+    ] };
+    const muzzle = { x: 0, y: 1.95, z: 0 }, target = { x: 16, y: 1.2, z: 0 };
+    const spec = { projSpeed: 58, occl: "arc" };
+    ok("friendlyFouls: gun's arc through a friendly wall mid-lane fouls", friendlyFouls(world, muzzle, target, spec));
+  }
+  // clear lane (no friendly body) — no foul.
+  {
+    const world = { field: { heightAt: () => 0 }, bodies: [] };
+    const muzzle = { x: 0, y: 1.95, z: 0 }, target = { x: 16, y: 1.2, z: 0 };
+    const spec = { projSpeed: 58, occl: "arc" };
+    ok("friendlyFouls: clear lane does not foul", !friendlyFouls(world, muzzle, target, spec));
+  }
+  // enemy (team-2) or town chunk bodies aren't "friendly" unless team 0/1 —
+  // a team-2 unit sitting in the lane must NOT count as a foul.
+  {
+    const world = { field: { heightAt: () => 0 }, bodies: [
+      { alive: true, invM: 0, kind: "unit", team: 2, pos: { x: 8, y: 1.5, z: 0 }, hx: 0.9, hy: 1.5, hz: 0.9 },
+    ] };
+    const muzzle = { x: 0, y: 1.95, z: 0 }, target = { x: 16, y: 1.2, z: 0 };
+    const spec = { projSpeed: 58, occl: "arc" };
+    ok("friendlyFouls: an enemy body in the lane does not foul", !friendlyFouls(world, muzzle, target, spec));
+  }
+  // "lofted" spec (mortar): the SAME friendly wall, well outside the
+  // muzzle climb-out cone, does not foul — the arc clears over it.
+  {
+    const world = { field: { heightAt: () => 1e3 }, bodies: [
+      { alive: true, invM: 0, kind: "wall", team: 1, pos: { x: 8, y: 1.5, z: 0 }, hx: 0.9, hy: 1.5, hz: 0.9 },
+    ] };
+    const muzzle = { x: 0, y: 1.0, z: 0 }, target = { x: 30, y: 0, z: 0 };
+    const spec = { projSpeed: 33, occl: "lofted" };
+    ok("friendlyFouls: mortar (lofted) fires over a friendly wall outside its climb-out cone", !friendlyFouls(world, muzzle, target, spec));
+  }
+  // "lofted" spec: a friendly wall sitting IN the muzzle climb-out cone
+  // still fouls (can't mortar out from under your own wall's overhang).
+  {
+    const world = { field: { heightAt: () => 1e3 }, bodies: [
+      { alive: true, invM: 0, kind: "wall", team: 1, pos: { x: 2, y: 1.7, z: 0 }, hx: 0.5, hy: 1.7, hz: 0.5 },
+    ] };
+    const muzzle = { x: 0, y: 1.0, z: 0 }, target = { x: 30, y: 0, z: 0 };
+    const spec = { projSpeed: 33, occl: "lofted" };
+    ok("friendlyFouls: mortar (lofted) still fouls on its own wall's climb-out cone", friendlyFouls(world, muzzle, target, spec));
+  }
+  // a town/depot chunk (team 0) counts as friendly too.
+  {
+    const world = { field: { heightAt: () => 0 }, bodies: [
+      { alive: true, invM: 0, kind: "chunk", team: 0, pos: { x: 8, y: 1.5, z: 0 }, hx: 0.9, hy: 1.5, hz: 0.9 },
+    ] };
+    const muzzle = { x: 0, y: 1.95, z: 0 }, target = { x: 16, y: 1.2, z: 0 };
+    const spec = { projSpeed: 58, occl: "arc" };
+    ok("friendlyFouls: a town/depot chunk (team 0) in the lane fouls", friendlyFouls(world, muzzle, target, spec));
+  }
+
+  // --- CAREFUL / FREE discipline fixture: tower, friendly wall mid-lane,
+  // enemy beyond it. Mirrors stepTowers's own gate (DepotGame.jsx) —
+  // CAREFUL holds the trigger pull when friendlyFouls is true (ordnance
+  // count stays static across several cadence windows); FREE fires
+  // regardless. A lofted mortar spec fires even under CAREFUL because its
+  // arc clears the wall.
+  {
+    const gunSpec = { kind: "gun", projSpeed: 58, occl: "arc", volley: 1, acc: 0.02, blastR: 0, kv: 1, dmg: 1, fireRate: 0.2 };
+    const makeFixture = () => {
+      const world = makeWorld({ field: { heightAt: () => 0, dirty: false }, seed: 1 });
+      const tower = addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: 1, hz: 0.8, x: 0, y: 1, z: 0, hp: 80 });
+      addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.9, hy: 0.9, hz: 0.9, x: 8, y: 0.9, z: 0, hp: 70 });
+      const target = addBody(world, { kind: "unit", team: 2, mass: 90, hx: 0.4, hy: 0.9, hz: 0.4, x: 16, y: 0.9, z: 0, hp: 30 });
+      target.v = { x: 0, y: 0, z: 0 };
+      return { world, tower, target };
+    };
+    const runCadence = (discipline, spec, pulls = 5) => {
+      const { world, tower, target } = makeFixture();
+      const muzzle = { x: tower.pos.x, y: tower.pos.y + tower.hy + 0.45, z: tower.pos.z };
+      for (let i = 0; i < pulls; i++) {
+        if (discipline === "free" || !friendlyFouls(world, muzzle, target.pos, spec)) {
+          towerShot(world, tower, target, spec);
+        }
+      }
+      return world.projectiles.length;
+    };
+    ok("fire discipline: CAREFUL holds the shot over a friendly wall (no ordnance fired)", runCadence("careful", gunSpec) === 0);
+    ok("fire discipline: FREE fires regardless of the friendly wall", runCadence("free", gunSpec) > 0);
+    const mortarSpec = { kind: "mortar", projSpeed: 33, occl: "lofted", volley: 1, acc: 0.02, blastR: 0, kv: 1, dmg: 1, fireRate: 0.2 };
+    ok("fire discipline: a lofted mortar fires over the same wall even under CAREFUL", runCadence("careful", mortarSpec) > 0);
   }
 }
 
