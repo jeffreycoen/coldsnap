@@ -15,6 +15,7 @@ import {
 } from "../src/depot/economy.js";
 import { planWave, waveBudget, MIN_WAVE_FLOOR } from "../src/depot/ai.js";
 import { composeIntel, openingIntel, strengthWord } from "../src/depot/intel.js";
+import { makeTerritory, stepTerritory, holderAt, fogStateAt, DECAY_TAU, EMIT } from "../src/depot/territory.js";
 import fs from "node:fs";
 
 // identity fwdDir (DepotGame.jsx's ORIENT-aware transform, ORIENT===0 case)
@@ -1180,6 +1181,95 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     if (digitFound) break;
   }
   ok("no digits in any composeIntel/openingIntel line across 200 seeded runs", !digitFound, digitFound || "");
+}
+
+// --- territory.js: influence field, anchors, slow memory ---
+{
+  const halfU = 29, halfV = 57;
+
+  // decay halves in ~52s (tau*ln2) with no emitters
+  {
+    const T = makeTerritory(halfU, halfV);
+    T.v.fill(1);
+    let t = 0;
+    const target = DECAY_TAU * Math.log(2);
+    const dt = 0.05;
+    while (t < target) { stepTerritory(T, [], dt); t += dt; }
+    const mid = T.v[Math.floor(T.v.length / 2)];
+    ok("decay halves in ~52s", Math.abs(mid - 0.5) < 0.02, `mid=${mid.toFixed(4)} target=${target.toFixed(2)}`);
+  }
+
+  // tower emitter greens its cell within seconds
+  {
+    const T = makeTerritory(halfU, halfV);
+    const emitters = [{ x: 0, z: 0, w: EMIT.tower.w, r: EMIT.tower.r, sign: 1 }];
+    for (let i = 0; i < 100; i++) stepTerritory(T, emitters, 0.05); // 5s
+    ok("tower emitter greens its cell within seconds", holderAt(T, 0, 0) === 1);
+  }
+
+  // opposing emitters at range produce a seam band
+  {
+    const T = makeTerritory(halfU, halfV);
+    const emitters = [
+      { x: -10, z: 0, w: EMIT.tower.w, r: EMIT.tower.r, sign: 1 },
+      { x: 10, z: 0, w: EMIT.tower.w, r: EMIT.tower.r, sign: -1 },
+    ];
+    for (let i = 0; i < 400; i++) stepTerritory(T, emitters, 0.05); // 20s
+    let sawSeam = false;
+    for (let x = -3; x <= 3; x += 2) if (fogStateAt(T, x, 0) === "seam") sawSeam = true;
+    ok("opposing emitters at range produce a seam band", sawSeam);
+    ok("holder green toward attacker 1's tower", holderAt(T, -10, 0) === 1);
+    ok("holder red toward attacker 2's tower", holderAt(T, 10, 0) === 2);
+  }
+
+  // anchor stays red after 300s of no enemy presence
+  {
+    const T = makeTerritory(halfU, halfV);
+    const anchor = { x: 0, z: -50, w: EMIT.anchor.w, r: EMIT.anchor.r, sign: -1 };
+    let t = 0;
+    while (t < 300) { stepTerritory(T, [anchor], 0.5); t += 0.5; }
+    ok("anchor stays red after 300s of re-adding it every tick", holderAt(T, 0, -50) === 2);
+  }
+
+  // determinism: two identical runs produce identical Float32Array
+  {
+    function run() {
+      const T = makeTerritory(halfU, halfV);
+      const emitters = [
+        { x: 5, z: 5, w: EMIT.unit.w, r: EMIT.unit.r, sign: 1 },
+        { x: -8, z: 12, w: EMIT.vehicle.w, r: EMIT.vehicle.r, sign: -1 },
+        { x: 0, z: -40, w: EMIT.anchor.w, r: EMIT.anchor.r, sign: -1 },
+      ];
+      for (let i = 0; i < 200; i++) stepTerritory(T, emitters, 0.1);
+      return T.v;
+    }
+    const a = run(), b = run();
+    let same = a.length === b.length;
+    if (same) for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) { same = false; break; }
+    ok("determinism: two identical runs produce identical Float32Array", same);
+  }
+
+  // holderAt/fogStateAt thresholds
+  {
+    const T = makeTerritory(halfU, halfV);
+    const idx = 0;
+    T.v[idx] = 0.16;
+    let x0 = -halfU + T.cs / 2, z0 = -halfV + T.cs / 2;
+    ok("holderAt threshold >0.15 = green", holderAt(T, x0, z0) === 1);
+    ok("fogStateAt threshold >0.15 = held", fogStateAt(T, x0, z0) === "held");
+    T.v[idx] = 0.10;
+    ok("holderAt at 0.10 (within seam) = neutral", holderAt(T, x0, z0) === 0);
+    ok("fogStateAt at 0.10 (within seam) = seam", fogStateAt(T, x0, z0) === "seam");
+    T.v[idx] = -0.10;
+    ok("holderAt at -0.10 (within seam) = neutral", holderAt(T, x0, z0) === 0);
+    ok("fogStateAt at -0.10 (within seam) = seam", fogStateAt(T, x0, z0) === "seam");
+    T.v[idx] = -0.16;
+    ok("holderAt threshold <-0.15 = red", holderAt(T, x0, z0) === 2);
+    ok("fogStateAt threshold <-0.15 = unheld", fogStateAt(T, x0, z0) === "unheld");
+    // out-of-bounds = neutral
+    ok("holderAt out of bounds = neutral", holderAt(T, 9999, 9999) === 0);
+    ok("fogStateAt out of bounds = unheld", fogStateAt(T, 9999, 9999) === "unheld");
+  }
 }
 
 if (fails.length) {

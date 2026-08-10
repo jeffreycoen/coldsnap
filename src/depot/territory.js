@@ -1,0 +1,69 @@
+// src/depot/territory.js — who holds the ground. Deterministic, rng-free.
+// Cells: 2m over the playable extent (reuse the rim halfU/halfV extents).
+export function makeTerritory(halfU, halfV) {
+  const cs = 2, nx = Math.ceil((halfU * 2) / cs), nz = Math.ceil((halfV * 2) / cs);
+  return { cs, nx, nz, halfU, halfV, v: new Float32Array(nx * nz) }; // v: -1 (red) .. +1 (green)
+}
+export const DECAY_TAU = 75;        // s — slow revert (Jeff)
+export const EMIT = {               // influence/s at the emitter cell, falling linearly to 0 at r
+  depot: { w: 2.4, r: 18 }, tower: { w: 1.2, r: 9 }, wall: { w: 0.5, r: 4 },
+  unit: { w: 0.6, r: 5 }, vehicle: { w: 0.9, r: 7 },
+  anchor: { w: 2.4, r: 14 },        // attacker spawn edge, permanent red
+};
+
+// world (x, z) -> cell (ix, iz), origin at (-halfU, -halfV)
+function cellOf(T, x, z) {
+  const ix = Math.floor((x + T.halfU) / T.cs);
+  const iz = Math.floor((z + T.halfV) / T.cs);
+  return { ix, iz };
+}
+
+export function stepTerritory(T, emitters, dt) {
+  const { v, nx, nz, cs } = T;
+  // decay toward 0 — exponential, factor exp(-dt/τ); half-life = τ·ln2 ≈ 52s at τ=75.
+  const decay = Math.exp(-dt / DECAY_TAU);
+  for (let i = 0; i < v.length; i++) v[i] *= decay;
+
+  for (const e of emitters) {
+    const { x, z, w, r, sign } = e;
+    if (!(r > 0) || w === 0) continue;
+    const { ix: cx, iz: cz } = cellOf(T, x, z);
+    const cellR = Math.ceil(r / cs);
+    const izLo = Math.max(0, cz - cellR), izHi = Math.min(nz - 1, cz + cellR);
+    const ixLo = Math.max(0, cx - cellR), ixHi = Math.min(nx - 1, cx + cellR);
+    for (let iz = izLo; iz <= izHi; iz++) {
+      for (let ix = ixLo; ix <= ixHi; ix++) {
+        // center of this cell in world space
+        const wx = -T.halfU + (ix + 0.5) * cs;
+        const wz = -T.halfV + (iz + 0.5) * cs;
+        const dx = wx - x, dz = wz - z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist > r) continue;
+        const contrib = sign * w * dt * Math.max(0, 1 - dist / r);
+        const idx = iz * nx + ix;
+        let val = v[idx] + contrib;
+        if (val > 1) val = 1;
+        else if (val < -1) val = -1;
+        v[idx] = val;
+      }
+    }
+  }
+}
+
+export function holderAt(T, x, z) {
+  const { ix, iz } = cellOf(T, x, z);
+  if (ix < 0 || ix >= T.nx || iz < 0 || iz >= T.nz) return 0; // out of bounds -> neutral
+  const val = T.v[iz * T.nx + ix];
+  if (val > 0.15) return 1;
+  if (val < -0.15) return 2;
+  return 0;
+}
+
+export function fogStateAt(T, x, z) {
+  const { ix, iz } = cellOf(T, x, z);
+  if (ix < 0 || ix >= T.nx || iz < 0 || iz >= T.nz) return "unheld"; // out of bounds -> neutral/unheld
+  const val = T.v[iz * T.nx + ix];
+  if (val > 0.15) return "held";
+  if (val <= 0.15 && val >= -0.15) return "seam";
+  return "unheld";
+}
