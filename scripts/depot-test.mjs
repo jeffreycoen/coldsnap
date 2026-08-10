@@ -3216,6 +3216,29 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
       /sandbagOrientAt\(world, S\.hover\.x, S\.hover\.z, S\.sandbagOrient[\s\S]{0,400}setHover/.test(src));
   }
 }
+
+// ==== SNAP-SQUADS ============================================================
+// buildSnapshot must report live player squad count (ai.js snapSquads gate —
+// without it the brain never fields its sniper in live play).
+{
+  console.log("\n[snap-squads]");
+  const flatF = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+  const { snapSquads } = await import("../src/depot/ai.js");
+  const { SQUAD_SPECS: SQ, makeSquad: mkSq } = await import("../src/depot/squads.js");
+  const world = makeWorld({ field: flatF, seed: 11 });
+  const squads = [mkSq(1, "rifles", 1, 0, 0), mkSq(2, "rifles", 1, 10, 0)];
+  for (const sq of squads) spawnSquadMembers(world, sq);
+  // same predicate buildSnapshot uses: squads holding at least one live member
+  const liveCount = (list) => list.filter((sq) => sq.memberIds.some((id) => { const u = world.byId.get(id); return u && u.alive; })).length;
+  ok("snap-squads: 2 live squads -> snapshot squads=2", snapSquads({ squads: liveCount(squads) }) === 2);
+  for (const id of squads[1].memberIds) { const u = world.byId.get(id); if (u) u.alive = false; }
+  ok("snap-squads: wiped squad drops from the count", snapSquads({ squads: liveCount(squads) }) === 1);
+  const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  ok("snap-squads: buildSnapshot wires the squads field",
+    /buildSnapshot[\s\S]{0,1600}squads, towerElev/.test(src));
+  void SQ;
+}
+// ==== end SNAP-SQUADS ========================================================
 // ==== end SANDBAG-ROT ========================================================
 
 // ==== TASK 4C: their sniper

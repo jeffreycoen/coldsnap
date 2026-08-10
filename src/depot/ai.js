@@ -30,11 +30,8 @@ export function waveBudget(waveIdx) {
 export const MIN_WAVE_FLOOR = 4 * cost("");
 
 // snapSquads: count of live player squads from the build snapshot.
-// TODO (follow-up, DepotGame.jsx owned by a parallel task): buildSnapshot
-// must add `squads: <count of live player squads>` (S.squads after
-// pruneSquads). Until that lands, snapshots carry no squads key, this
-// reads 0, and the brain never fields a marksman in the live game — the
-// depot-test fixtures pass squads explicitly. Tolerates absent/null snap.
+// DepotGame's buildSnapshot supplies `squads` (S.squads filtered to squads
+// holding a live member). Tolerates absent/null snap for old fixtures.
 export function snapSquads(snap) {
   return (snap && snap.squads) || 0;
 }

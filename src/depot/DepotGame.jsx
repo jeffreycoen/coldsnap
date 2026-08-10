@@ -813,7 +813,11 @@ export default function DepotGame({ onExit }) {
           else if (b.towerType === "frost") frosts++;
           elevSum += b.pos.y; elevN++;
         }
-        return { mortars, mgs, guns, rockets, frosts, walls, towerElev: elevN ? elevSum / elevN : 0 };
+        // squads: live player squads (ai.js snapSquads — the sniper-buy
+        // gate). S.squads is already pruned each sim tick, but count only
+        // squads holding a live member so a same-tick wipe can't inflate it.
+        const squads = S.squads.filter((sq) => sq.memberIds.some((id) => { const u = world.byId.get(id); return u && u.alive; })).length;
+        return { mortars, mgs, guns, rockets, frosts, walls, squads, towerElev: elevN ? elevSum / elevN : 0 };
       };
 
       const toast = (txt) => { S.toasts.push({ txt, t: performance.now() / 1000 }); if (S.toasts.length > 4) S.toasts.shift(); };
