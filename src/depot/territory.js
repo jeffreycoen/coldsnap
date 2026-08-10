@@ -12,7 +12,10 @@ export const EMIT = {               // influence/s at the emitter cell, falling 
   // ~6-7m between a chokepoint wall and the tower row behind it, so median/
   // strong defenses could never actually build past their wall line. 9m
   // (matching tower.r) closes those gaps; see docs plan Task 5 results.
-  depot: { w: 2.4, r: 18 }, tower: { w: 1.2, r: 9 }, wall: { w: 0.5, r: 9 },
+  // depot.r doubled 18 -> 36 (Task 3, Jeff): the starting zone reads as a
+  // homeland, not a footprint — anchor stays r 14, the attacker's muster
+  // ground is a strip, not doubled (probe re-check in Task 6 validates).
+  depot: { w: 2.4, r: 36 }, tower: { w: 1.2, r: 9 }, wall: { w: 0.5, r: 9 },
   unit: { w: 0.6, r: 5 }, vehicle: { w: 0.9, r: 7 },
   anchor: { w: 2.4, r: 14 },        // attacker spawn edge, permanent red
 };
@@ -81,6 +84,16 @@ export function fogStateFor(T, x, z, team) {
   return "unheld";
 }
 export function fogStateAt(T, x, z) { return fogStateFor(T, x, z, 1); }
+
+// valueAt: the RAW field value (-1..+1, unflipped — always the player's
+// sign convention) at a world/canonical (x,z). Used by the renderer's area
+// wash (Task 3), which needs continuous field strength for its alpha ramp,
+// not just the tri-state holderAt/fogStateFor bucket.
+export function valueAt(T, x, z) {
+  const { ix, iz } = cellOf(T, x, z);
+  if (ix < 0 || ix >= T.nx || iz < 0 || iz >= T.nz) return 0;
+  return T.v[iz * T.nx + ix];
+}
 
 // canBuild: ground rights for placement (towers AND walls) — green only.
 export function canBuild(T, x, z) { return holderAt(T, x, z) === 1; }

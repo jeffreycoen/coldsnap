@@ -18,8 +18,9 @@ import {
 } from "../src/depot/economy.js";
 import { planWave, waveBudget, MIN_WAVE_FLOOR } from "../src/depot/ai.js";
 import { composeIntel, openingIntel, strengthWord } from "../src/depot/intel.js";
-import { makeTerritory, stepTerritory, holderAt, fogStateAt, fogStateFor, canBuild, DECAY_TAU, EMIT } from "../src/depot/territory.js";
+import { makeTerritory, stepTerritory, holderAt, fogStateAt, fogStateFor, valueAt, canBuild, DECAY_TAU, EMIT } from "../src/depot/territory.js";
 import { fwdUFor, fwdDirFor, invWFor } from "../src/depot/orient.js";
+import { washAlpha, WASH_SEAM, WASH_MAX_A } from "../src/render/renderer.js";
 import fs from "node:fs";
 
 // identity fwdDir (DepotGame.jsx's ORIENT-aware transform, ORIENT===0 case)
@@ -1190,6 +1191,31 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
 // --- territory.js: influence field, anchors, slow memory ---
 {
   const halfU = 29, halfV = 57;
+
+  // Task 3: depot emitter radius doubled 18 -> 36 (Jeff); anchor stays 14
+  // (attacker's muster ground is a strip, not doubled).
+  ok("EMIT.depot.r pinned at 36 (Task 3 double)", EMIT.depot.r === 36, EMIT.depot.r);
+  ok("EMIT.depot.w unchanged at 2.4", EMIT.depot.w === 2.4, EMIT.depot.w);
+  ok("EMIT.anchor.r unchanged at 14 (not doubled)", EMIT.anchor.r === 14, EMIT.anchor.r);
+
+  // valueAt: raw signed field, unflipped, feeds the renderer's area wash.
+  {
+    const T = makeTerritory(halfU, halfV);
+    T.v[0] = 0.42;
+    ok("valueAt reads the raw cell value", Math.abs(valueAt(T, -halfU + 1, -halfV + 1) - 0.42) < 1e-6);
+    ok("valueAt is 0 out of bounds", valueAt(T, 1e4, 1e4) === 0);
+  }
+
+  // area wash alpha ramp (renderer.js's washAlpha, Task 3): 0 at/under the
+  // seam threshold, linear to WASH_MAX_A at |v|=1, symmetric on the red side.
+  {
+    ok("washAlpha is 0 at the seam threshold", washAlpha(WASH_SEAM) === 0);
+    ok("washAlpha is 0 well inside the seam", washAlpha(0.05) === 0);
+    ok("washAlpha reaches WASH_MAX_A at v=1", Math.abs(washAlpha(1) - WASH_MAX_A) < 1e-9);
+    ok("washAlpha is symmetric for the red side", washAlpha(-1) === washAlpha(1));
+    const mid = washAlpha(0.5);
+    ok("washAlpha ramps monotonically between seam and 1", mid > 0 && mid < WASH_MAX_A, mid);
+  }
 
   // decay halves in ~52s (tau*ln2) with no emitters
   {

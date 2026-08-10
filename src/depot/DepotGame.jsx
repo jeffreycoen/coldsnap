@@ -19,7 +19,7 @@ import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, 
 import { reachPolygon, arcClears } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks, payBounties } from "./units.js";
 import { makeRegiment, payTown } from "./economy.js";
-import { makeTerritory, stepTerritory, holderAt, canBuild, fogStateFor, EMIT } from "./territory.js";
+import { makeTerritory, stepTerritory, holderAt, canBuild, fogStateFor, valueAt, EMIT } from "./territory.js";
 import { fwdUFor, fwdDirFor, invWFor } from "./orient.js";
 import Dispatch from "./Dispatch.jsx";
 
@@ -668,6 +668,10 @@ export default function DepotGame({ onExit }) {
           toWorld: fwdU,
           sample: (x, z) => { const c = invW(x, z); return fogStateFor(T, c.u, c.v, 1); },
           sampleUV: (u, v) => fogStateFor(T, u, v, 1),
+          // Task 3: raw signed field strength (world space), feeding the
+          // area-wash alpha ramp — sample()/sampleUV() only return the
+          // tri-state bucket, not enough for a continuous fade.
+          sampleVal: (x, z) => { const c = invW(x, z); return valueAt(T, c.u, c.v); },
         },
       });
       const EXT = ORIENT % 2 ? { x: 62, z: 34 } : { x: 34, z: 62 };

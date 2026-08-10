@@ -247,6 +247,17 @@ void main(){
   c = mix(c, c * 0.2, edge);
   gl_FragColor = vec4(c, 1.0);
 }`;
+// DEPOT area wash (Task 3) alpha ramp — module-level and exported so
+// depot-test.mjs can pin the curve with a cheap DOM-free unit check
+// instead of a pixel/screenshot assert: 0 at the seam threshold (0.15,
+// matching fogStateFor/holderAt), linear up to 0.10 at |v|=1.0.
+export const WASH_SEAM = 0.15, WASH_MAX_A = 0.10;
+export function washAlpha(v) {
+  const av = v < 0 ? -v : v;
+  if (av <= WASH_SEAM) return 0;
+  const t = (av - WASH_SEAM) / (1 - WASH_SEAM);
+  return (t > 1 ? 1 : t) * WASH_MAX_A;
+}
 export function makeRenderer(canvas, world0, opts = {}) {
   let world = world0;
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance" });
@@ -384,7 +395,21 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // cadence as retintTerritory — never per frame (F.n*F.n ~14.6k vertices is
   // cheap at 4Hz, not at 60).
   const FOG_COLD = { r: 0.62, g: 0.72, b: 0.86 };
-  function updateFogWash(sample) {
+  // DEPOT-only area wash (Task 3): held ground gets a low-opacity color wash
+  // — green for the player's side, red (scoutRed family) mirrored for the
+  // enemy's. Layering, cheapest-first: (1) base relief shade, (2) area wash
+  // blended in, (3) fog desaturation composed ON TOP of the washed color —
+  // so held ground washes green but unheld/seam ground's blue-grey fog cast
+  // rides over whatever red wash it carries (wash reads faintly through fog,
+  // by design — see brief). The grid-line tint (splat canvas, retintTerritory)
+  // is a separate texture layer that multiplies over all of this, unaffected
+  // by wash/fog ordering. alpha ramps linearly 0 at |v|=0.15 (the same seam
+  // threshold as fogStateFor/holderAt) to 0.10 at |v|=1.0 — same per-vertex
+  // loop as the fog pass, so Pi frame cost is unchanged (a handful of extra
+  // multiplies at ~4Hz over F.n*F.n vertices, not per-frame).
+  const WASH_GREEN = { r: 0.35, g: 0.85, b: 0.35 };
+  const WASH_RED = { r: 0.85, g: 0.30, b: 0.28 };
+  function updateFogWash(sample, sampleVal) {
     if (!opts.territory || !terrBaseColor) return;
     const ca = terraGeo.attributes.color;
     const pa = terraGeo.attributes.position;
@@ -392,11 +417,21 @@ export function makeRenderer(canvas, world0, opts = {}) {
       const wx = pa.getX(k), wz = pa.getZ(k);
       const st = sample(wx, wz);
       const f = st === "unheld" ? 0.55 : st === "seam" ? 0.24 : 0;
+      const v = sampleVal ? sampleVal(wx, wz) : 0;
+      const wa = v ? washAlpha(v) : 0;
       const bi = k * 3;
-      if (f === 0) { ca.array[bi] = terrBaseColor[bi]; ca.array[bi + 1] = terrBaseColor[bi + 1]; ca.array[bi + 2] = terrBaseColor[bi + 2]; continue; }
-      ca.array[bi] = terrBaseColor[bi] * (1 - f) + FOG_COLD.r * terrBaseColor[bi] * f;
-      ca.array[bi + 1] = terrBaseColor[bi + 1] * (1 - f) + FOG_COLD.g * terrBaseColor[bi + 1] * f;
-      ca.array[bi + 2] = terrBaseColor[bi + 2] * (1 - f) + FOG_COLD.b * terrBaseColor[bi + 2] * f;
+      if (f === 0 && wa === 0) { ca.array[bi] = terrBaseColor[bi]; ca.array[bi + 1] = terrBaseColor[bi + 1]; ca.array[bi + 2] = terrBaseColor[bi + 2]; continue; }
+      let br = terrBaseColor[bi], bg = terrBaseColor[bi + 1], bb = terrBaseColor[bi + 2];
+      if (wa > 0) {
+        const wc = v > 0 ? WASH_GREEN : WASH_RED;
+        br = br * (1 - wa) + wc.r * wa;
+        bg = bg * (1 - wa) + wc.g * wa;
+        bb = bb * (1 - wa) + wc.b * wa;
+      }
+      if (f === 0) { ca.array[bi] = br; ca.array[bi + 1] = bg; ca.array[bi + 2] = bb; continue; }
+      ca.array[bi] = br * (1 - f) + FOG_COLD.r * br * f;
+      ca.array[bi + 1] = bg * (1 - f) + FOG_COLD.g * bg * f;
+      ca.array[bi + 2] = bb * (1 - f) + FOG_COLD.b * bb * f;
     }
     ca.needsUpdate = true;
   }
@@ -743,9 +778,9 @@ export function makeRenderer(canvas, world0, opts = {}) {
   function setFog(v) { fogOn = !!v; }
   function updateTerritory() {
     if (!opts.territory) return;
-    const { T, toWorld, sampleUV, sample } = opts.territory;
+    const { T, toWorld, sampleUV, sample, sampleVal } = opts.territory;
     splat.retintTerritory(T, toWorld, sampleUV);
-    updateFogWash(sample);
+    updateFogWash(sample, sampleVal);
   }
   const SIL_C = new THREE.Color(0x2c2f34); // flat dark grey — seam silhouettes, no team dress
   // fog debug counters (DEPOT-only): total team-2 alive bodies vs how many
