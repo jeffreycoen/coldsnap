@@ -19,6 +19,7 @@ import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, 
 import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks, payBounties } from "./units.js";
 import { makeRegiment, payTown } from "./economy.js";
 import { makeTerritory, stepTerritory, holderAt, canBuild, EMIT } from "./territory.js";
+import { fwdUFor, fwdDirFor, invWFor } from "./orient.js";
 import Dispatch from "./Dispatch.jsx";
 
 // ============================================================== the map
@@ -26,9 +27,12 @@ import Dispatch from "./Dispatch.jsx";
 const GRID_CS = 2.0, GRID_W = 28, GRID_H = 56;
 const GRID_OX = -(GRID_W * GRID_CS) / 2, GRID_OZ = -(GRID_H * GRID_CS) / 2;
 let ORIENT = 0;
-const fwdU = (u, v) => ORIENT === 0 ? { x: u, z: v } : ORIENT === 1 ? { x: -v, z: u } : ORIENT === 2 ? { x: -u, z: -v } : { x: v, z: -u };
-const fwdDir = (du, dv) => ORIENT === 0 ? { x: du, z: dv } : ORIENT === 1 ? { x: -dv, z: du } : ORIENT === 2 ? { x: -du, z: -dv } : { x: dv, z: -du };
-const invW = (x, z) => ORIENT === 0 ? { u: x, v: z } : ORIENT === 1 ? { u: z, v: -x } : ORIENT === 2 ? { u: -x, v: -z } : { u: -z, v: x };
+// Transform formulas live in orient.js (pure, ORIENT-explicit, headlessly
+// testable) — these wrappers just apply them against the module's current
+// ORIENT, same call sites/behavior as before.
+const fwdU = (u, v) => fwdUFor(ORIENT, u, v);
+const fwdDir = (du, dv) => fwdDirFor(ORIENT, du, dv);
+const invW = (x, z) => invWFor(ORIENT, x, z);
 let OBJ_POS = { x: 0, z: 49 };
 let SPAWN_POINTS = [], PONDS = [], ROCKS = [], TOWN = [], ROADS = [], PASSES = [], BANDS = [], MAP_SEED = 0, SPAWN_U = [];
 

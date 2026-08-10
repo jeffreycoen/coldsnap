@@ -17,6 +17,7 @@ import {
 import { planWave, waveBudget, MIN_WAVE_FLOOR } from "../src/depot/ai.js";
 import { composeIntel, openingIntel, strengthWord } from "../src/depot/intel.js";
 import { makeTerritory, stepTerritory, holderAt, fogStateAt, fogStateFor, canBuild, DECAY_TAU, EMIT } from "../src/depot/territory.js";
+import { fwdUFor, fwdDirFor, invWFor } from "../src/depot/orient.js";
 import fs from "node:fs";
 
 // identity fwdDir (DepotGame.jsx's ORIENT-aware transform, ORIENT===0 case)
@@ -1366,6 +1367,70 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     payResults(reg, { structureDmg: 100, towerKills: 1, wallKills: 2, buildingKills: 0, leaks: 3 });
     const expect = 100 * RESULTS.structureDmg + 1 * RESULTS.towerKill + 2 * RESULTS.wallKill + 3 * RESULTS.leak;
     ok("Phase 3 economics unaffected: payResults still pays the same", Math.abs(reg.scrap - expect) < 1e-9, reg.scrap);
+  }
+}
+
+// --- orientation invariance (regression guard for the invW coordinate-
+// space bug found in Task 2 review): territory.js's own pure functions
+// operate purely on CANONICAL (u, v) space and are orientation-agnostic —
+// testing them alone (as above) never touches the world->canonical
+// conversion at all, which is exactly what hid the original bug (it was
+// invisible on ORIENT===0, where invW is the identity — the only
+// orientation this file's map-dependent scenarios ever ran under). These
+// asserts exercise orient.js's fwdUFor/invWFor directly, across ALL four
+// orientations, plus DepotGame.jsx's real usage pattern (world position ->
+// invWFor -> canonical -> territory) for a non-default orientation.
+{
+  const halfU = 29, halfV = 57;
+
+  // round-trip identity: fwdU then invW recovers the original canonical
+  // point, for every orientation DEPOT ships (not just the default)
+  for (let ORIENT = 0; ORIENT < 4; ORIENT++) {
+    for (const [u, v] of [[0, 0], [12, -30], [-25, 50], [1, -1]]) {
+      const w = fwdUFor(ORIENT, u, v);
+      const back = invWFor(ORIENT, w.x, w.z);
+      const okRT = Math.abs(back.u - u) < 1e-9 && Math.abs(back.v - v) < 1e-9;
+      ok(`orientation ${ORIENT}: invWFor(fwdUFor(u,v)) round-trips (u=${u},v=${v})`, okRT, JSON.stringify({ w, back }));
+    }
+  }
+
+  // a non-default orientation (ORIENT=1: this file's map-dependent scenarios
+  // above only ever exercise ORIENT=0) exercising the SAME pattern
+  // DepotGame.jsx's buildEmitters/buildAt/stepTowers use: convert a world
+  // position via invWFor before ever touching territory.js.
+  {
+    const ORIENT = 1;
+    // (a) a tower emitter greens its own cell
+    const T = makeTerritory(halfU, halfV);
+    const worldPos = { x: 52, z: 0 }; // off-axis world point — under ORIENT=1
+    // this is exactly the shape of position the live bug produced (the
+    // depot flag sat at world x=52, well outside T's halfU=29 bound; only
+    // the invW-converted canonical point falls inside the grid)
+    const c = invWFor(ORIENT, worldPos.x, worldPos.z);
+    ok("orientation 1: world position converts inside the territory grid", Math.abs(c.u) <= halfU && Math.abs(c.v) <= halfV, JSON.stringify(c));
+    // regression guard: the raw (unconverted) world coordinates read as
+    // out-of-bounds/neutral — this is the exact failure mode of the bug
+    // (holderAt on raw world x/z instead of the invW-converted canonical
+    // point), reproduced here so a future regression trips this assert
+    ok("orientation 1: regression guard — WITHOUT invW conversion this world point reads out-of-bounds/neutral", holderAt(T, worldPos.x, worldPos.z) === 0);
+    const emitters = [{ x: c.u, z: c.v, w: EMIT.tower.w, r: EMIT.tower.r, sign: 1 }];
+    for (let i = 0; i < 100; i++) stepTerritory(T, emitters, 0.05); // 5s
+    ok("orientation 1: tower emitter greens its own cell (canonical, post-invW)", holderAt(T, c.u, c.v) === 1);
+
+    // (b) build refusal/allow
+    ok("orientation 1: canBuild allowed at the greened canonical cell", canBuild(T, c.u, c.v) === true);
+    const farWorld = { x: -40, z: 0 }; // invWFor(1,...) -> {u:0,v:40}: inside the grid, far from the emitter at (0,-52)
+    const cFar = invWFor(ORIENT, farWorld.x, farWorld.z);
+    ok("orientation 1: canBuild refused far from the emitter", canBuild(T, cFar.u, cFar.v) === false);
+
+    // (c) targeting gate, both directions
+    ok("orientation 1: player field reaches a target at the tower's own position", fieldReaches(T, c.u, c.v, 1) === true);
+    ok("orientation 1: attacker field (mirrored) does NOT reach player-held ground", fieldReaches(T, c.u, c.v, 2) === false);
+    // drive the far cell red (enemy-held) and re-check both sides
+    const T2 = makeTerritory(halfU, halfV);
+    for (let i = 0; i < 100; i++) stepTerritory(T2, [{ x: cFar.u, z: cFar.v, w: EMIT.tower.w, r: EMIT.tower.r, sign: -1 }], 0.05);
+    ok("orientation 1: player field blocked on enemy-held ground", fieldReaches(T2, cFar.u, cFar.v, 1) === false);
+    ok("orientation 1: attacker field reaches its own (red) ground", fieldReaches(T2, cFar.u, cFar.v, 2) === true);
   }
 }
 
