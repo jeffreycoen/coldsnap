@@ -837,7 +837,7 @@ export default function DepotGame({ onExit }) {
       // this and nothing else. A network-ready multiplayer gate replaces the
       // button later without touching this function.
       const doAdvance = () => {
-        if (phaseAdvance(S, WAVES)) {
+        if (phaseAdvance(S, WAVES, buildSnapshot())) {
           if (S.victory) toast("THE DEPOT HOLDS");
           else toast("WAVE CLEAR +12");
         }
@@ -1068,6 +1068,7 @@ export default function DepotGame({ onExit }) {
               totalWaves: WAVES.length, between: S.ws.betweenWaves, countdown: Math.max(0, Math.ceil(S.ws.countdown)),
               phase: S.phase, dispatch: S.dispatch, lastDispatch: S.lastDispatch,
               started: S.started, gameOver: S.gameOver, victory: S.victory,
+              attrition: S.attrition, ledgerLoss: S.ledgerLoss,
               mode: S.mode, sellMode: S.sellMode,
               paused: S.paused, speed: S.speed,
               muted: A.muted, seed: MAP_SEED,
@@ -1265,7 +1266,7 @@ export default function DepotGame({ onExit }) {
 
       {(hud.gameOver || hud.victory) && !fatal && (
         <Dispatch
-          dispatch={makeEndDispatch({ victory: hud.victory, kills: hud.kills, wave: hud.wave, totalWaves: hud.totalWaves })}
+          dispatch={makeEndDispatch({ victory: hud.victory, kills: hud.kills, wave: hud.wave, totalWaves: hud.totalWaves, attrition: hud.attrition, ledgerLoss: hud.ledgerLoss })}
           gating={false}
           label="RETURN TO BASE"
           onAcknowledge={() => { if (onExit) onExit(); else restart(); }}

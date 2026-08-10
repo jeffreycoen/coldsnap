@@ -3,7 +3,7 @@
 //   node scripts/depot-test.mjs
 import {
   PHASE, makeRunState, startWave, tryStall, advance,
-  enemyLedger, regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, shooterFire, nextSpawnTag,
+  regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, shooterFire, nextSpawnTag,
 } from "../src/depot/state.js";
 import {
   makeWorld, addBody, fireProjectile, stepWorld, applyDamage, worldHash, CAUSE, mulberry32,
@@ -123,39 +123,94 @@ ok("advancing past the last wave sets victory", S.victory === true);
   ok("checkLoss is idempotent (no-op once gameOver)", checkLoss(L) === false);
 }
 
-// god-mode win: drive the machine to wave 50 cleared with resources well
-// past the placeholder enemy ledger -> WIN.
+// god-mode win: drive the machine to wave 50 cleared with player book value
+// (resources + standing structures) far exceeding the attacker's book value
+// (regiment scrap + surviving heads/tanks at purchase price) -> WIN.
 {
   const W50 = Array.from({ length: 50 }, (_, i) => ({ units: 12 + i * 2, delay: 0.9 }));
   const G = makeRunState({ waves: W50, startResources: 999999 });
   G.started = true;
+  G.reg = { heads: 60, tanks: 1, heads0: 400, tanks0: 10, scrap: 20 }; // thin but not combat-ineffective
   G.ws.waveIdx = W50.length - 1;
   G.ws.spawnQueue = 0;
   G.phase = PHASE.WAVE;
   tryStall(G, W50, 0);
   ok("god-mode: final wave clear enters stall", G.phase === PHASE.STALL);
-  const advanced = advance(G, W50);
+  const snap = { mortars: 2, mgs: 3, guns: 2, frosts: 1, walls: 10 };
+  const advanced = advance(G, W50, snap);
   ok("god-mode: advance() fires past final wave", advanced === true);
-  ok("god-mode: resources far exceed placeholder ledger", G.resources >= enemyLedger(W50.length - 1));
   ok("god-mode: victory is set", G.victory === true, G.victory);
   ok("god-mode: gameOver is not set", G.gameOver === false);
-  const endD = makeEndDispatch({ victory: G.victory, kills: 0, wave: W50.length, totalWaves: W50.length });
+  ok("god-mode: not an attrition win (ledger win, regiment still standing)", G.attrition !== true);
+  const endD = makeEndDispatch({ victory: G.victory, kills: 0, wave: W50.length, totalWaves: W50.length, attrition: G.attrition });
   ok("makeEndDispatch returns a card for the win", !!endD && Array.isArray(endD.lines) && endD.lines.length > 0);
+  ok("ledger-win end card mentions the books closing in the Bureau's favor", endD.lines.some((l) => /books close/i.test(l)), JSON.stringify(endD.lines));
+  ok("ledger-win end card carries no digits in its bureau-voice verdict line", !/\d/.test(endD.lines.find((l) => /books close/i.test(l))));
 }
 
-// wave-50-survived but resources under the placeholder ledger -> still LOSS
-// (the brief's "comparing resources vs a placeholder enemy ledger stub").
+// wave-50-survived but the player's book value (scrap + standing structures)
+// falls short of the attacker's (regiment scrap + surviving heads/tanks at
+// purchase price: conscript 4, tank 25) -> LOSS, book-value verdict (not the
+// depot-destroyed loss card).
 {
   const W50 = Array.from({ length: 50 }, (_, i) => ({ units: 12 + i * 2, delay: 0.9 }));
   const B = makeRunState({ waves: W50, startResources: 0 });
   B.started = true;
+  B.reg = { heads: 300, tanks: 10, heads0: 400, tanks0: 10, scrap: 500 }; // rich, intact attacker
   B.ws.waveIdx = W50.length - 1;
   B.ws.spawnQueue = 0;
   B.phase = PHASE.WAVE;
   tryStall(B, W50, 0);
-  advance(B, W50);
+  advance(B, W50, {}); // no standing structures, no snap
   ok("underfunded final-wave clear does not win", B.victory === false);
   ok("underfunded final-wave clear ends in loss", B.gameOver === true);
+  ok("underfunded final-wave clear is flagged a ledger loss (not depot-destroyed)", B.ledgerLoss === true);
+  const endD = makeEndDispatch({ victory: false, kills: 0, wave: W50.length, totalWaves: W50.length, ledgerLoss: B.ledgerLoss });
+  ok("ledger-loss end card says the position is untenable / withdrawal", endD.lines.some((l) => /untenable/i.test(l)), JSON.stringify(endD.lines));
+  ok("ledger-loss end card carries no digits in its bureau-voice verdict line", !/\d/.test(endD.lines.find((l) => /untenable/i.test(l))));
+}
+
+// depot-destroyed LOSS stays exactly as it was (lives hit 0) — unaffected by
+// the book-value verdict machinery.
+{
+  const W50 = Array.from({ length: 50 }, (_, i) => ({ units: 12 + i * 2, delay: 0.9 }));
+  const endD = makeEndDispatch({ victory: false, kills: 7, wave: 22, totalWaves: 50, ledgerLoss: false });
+  ok("depot-destroyed end card still says DEPOT OVERRUN", endD.lines[0] === "DEPOT OVERRUN.", endD.lines[0]);
+}
+
+// attrition victory: a regiment forced combat-ineffective (per
+// combatIneffective) mid-run — well before wave 50 — ends the run early as a
+// WIN with its own attrition end card, independent of book value.
+{
+  const W50 = Array.from({ length: 50 }, (_, i) => ({ units: 12 + i * 2, delay: 0.9 }));
+  const A = makeRunState({ waves: W50, startResources: 0 }); // deliberately poor — would lose on the books
+  A.started = true;
+  A.ws.waveIdx = 10;
+  A.reg = { heads: 10, tanks: 0, heads0: 400, tanks0: 10, scrap: 0 }; // < 12% heads0, 0 tanks -> ineffective
+  A.ws.spawnQueue = 0;
+  A.phase = PHASE.WAVE;
+  const fired = tryStall(A, W50, 0);
+  ok("attrition: tryStall still fires on regiment break", fired === true);
+  ok("attrition: run ends as a WIN mid-run (wave 11 of 50)", A.victory === true, A.victory);
+  ok("attrition: gameOver is not set", A.gameOver === false);
+  ok("attrition: flagged as an attrition win", A.attrition === true);
+  const endD = makeEndDispatch({ victory: true, kills: 3, wave: 11, totalWaves: 50, attrition: A.attrition });
+  ok("attrition end card judges the formation combat-ineffective", endD.lines.some((l) => /combat-ineffective/i.test(l)), JSON.stringify(endD.lines));
+  ok("attrition end card says the field remains in Bureau hands", endD.lines.some((l) => /Bureau hands/i.test(l)), JSON.stringify(endD.lines));
+  ok("attrition end card carries no digits in its bureau-voice verdict line", !/\d/.test(endD.lines.find((l) => /Bureau hands/i.test(l))));
+}
+
+// intact, above-threshold regiment mid-run never triggers an attrition win.
+{
+  const W50 = Array.from({ length: 50 }, (_, i) => ({ units: 12 + i * 2, delay: 0.9 }));
+  const N = makeRunState({ waves: W50 });
+  N.started = true;
+  N.ws.waveIdx = 10;
+  N.reg = { heads: 300, tanks: 5, heads0: 400, tanks0: 10, scrap: 0 };
+  N.ws.spawnQueue = 0;
+  N.phase = PHASE.WAVE;
+  tryStall(N, W50, 0);
+  ok("intact regiment mid-run: no attrition win", N.victory === false && N.attrition !== true);
 }
 
 // ================================================== seeded determinism

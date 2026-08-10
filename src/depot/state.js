@@ -4,8 +4,14 @@
 import { aimSolve, fireProjectile } from "../engine/core.js";
 import { scatterSigma, applyScatter } from "./accuracy.js";
 import { planWave } from "./ai.js";
-import { STIPEND, payResults } from "./economy.js";
+import { STIPEND, payResults, combatIneffective, bookValue } from "./economy.js";
 import { composeIntel, openingIntel } from "./intel.js";
+import { TOWER_SPECS, ENEMY_SPECS, TANK } from "./specs.js";
+
+// Wall build cost — mirrors DepotGame.jsx's buildAt (`const cost = spec ? spec.cost : 5`).
+// specs.js has no wall entry (walls aren't a TOWER_SPECS type), so this is
+// the single source of truth the book-value verdict below reads.
+const WALL_COST = 5;
 
 export const PHASE = { BUILD: "build", WAVE: "wave", STALL: "stall" };
 
@@ -76,7 +82,7 @@ export function makeRunState({ waves, startResources = 120, startLives = 20 }) {
     resources: startResources, lives: startLives, kills: 0,
     ws: makeWaveState(), spawnRR: 0,
     mode: "wall", sellMode: false, inspectId: null,
-    started: false, gameOver: false, victory: false,
+    started: false, gameOver: false, victory: false, attrition: false, ledgerLoss: false,
     paused: false, speed: 1,
     phase: PHASE.BUILD,
     dispatch: null, lastDispatch: null,
@@ -106,11 +112,30 @@ export function makeDispatch(waveIdx, totalWaves, intelLines = []) {
   };
 }
 
-// Placeholder enemy economic ledger — Phase 3 replaces this with the real
-// enemy economy. Climbs linearly with wave index so the final-wave victory
-// check has a non-trivial comparison until then. Pure, no RNG.
-export function enemyLedger(waveIdx) {
-  return 80 + waveIdx * 14;
+// Player-side book value: scrap on hand plus the build cost of every
+// standing structure. snap is the same shape DepotGame.jsx's buildSnapshot()
+// produces ({mortars, mgs, guns, frosts, walls}) — live body counts by type,
+// read fresh at the moment of the verdict. "guns" also covers rocket towers
+// (buildSnapshot lumps them together, same as the AI's counter-play signal
+// elsewhere), valued at TOWER_SPECS.gun.cost.
+function playerBookValue(S, snap) {
+  const s = snap || {};
+  const assets =
+    (s.mortars || 0) * TOWER_SPECS.mortar.cost +
+    (s.mgs || 0) * TOWER_SPECS.mg.cost +
+    (s.guns || 0) * TOWER_SPECS.gun.cost +
+    (s.frosts || 0) * TOWER_SPECS.frost.cost +
+    (s.walls || 0) * WALL_COST;
+  return bookValue({ scrap: S.resources, assets });
+}
+
+// Attacker-side book value: regiment scrap plus the purchase-price value of
+// its surviving unfielded pool (heads at conscript price, tanks at tank
+// price — same ENEMY_SPECS/TANK bounty values ai.js spends at muster).
+function attackerBookValue(S) {
+  if (!S.reg) return 0;
+  const assets = S.reg.heads * ENEMY_SPECS[""].bounty + S.reg.tanks * TANK.bounty;
+  return bookValue({ scrap: S.reg.scrap, assets });
 }
 
 // Stub alternate loss condition — a future phase adds a regiment (a
@@ -134,30 +159,50 @@ export function checkLoss(S) {
 }
 
 // The single place a run flips to WIN: called once the final wave clears.
-// Compares current resources against the placeholder enemy ledger (real
-// economy arrives Phase 3) — falling short still ends the run, but as a
-// LOSS rather than a WIN.
-export function checkWin(S, WAVES) {
-  const ledger = enemyLedger(WAVES.length - 1);
-  if (S.resources >= ledger) {
+// Real book-value audit — player side (scrap + standing structures) vs.
+// attacker side (regiment scrap + surviving heads/tanks at purchase price).
+// Falling short still ends the run, but as a ledger LOSS rather than a WIN.
+export function checkWin(S, WAVES, snap = {}) {
+  if (playerBookValue(S, snap) >= attackerBookValue(S)) {
     S.victory = true;
   } else {
     S.gameOver = true;
+    S.ledgerLoss = true;
   }
   return S.victory;
 }
 
 // End-of-run dispatch copy — same teletyped card style as the between-wave
 // stall dispatch, reused for the WIN/LOSS end card. Pure + deterministic.
-export function makeEndDispatch({ victory, kills, wave, totalWaves }) {
+export function makeEndDispatch({ victory, kills, wave, totalWaves, attrition = false, ledgerLoss = false }) {
   const wo = "WO-9999";
   if (victory) {
+    if (attrition) {
+      return {
+        wo,
+        lines: [
+          "THE FORMATION OPPOSITE IS JUDGED COMBAT-INEFFECTIVE.",
+          "The field remains in Bureau hands.",
+          `${kills} CONFIRMED. FIELD ORDER CLOSED.`,
+        ],
+      };
+    }
     return {
       wo,
       lines: [
         "FINAL WAVE CLEARED.",
-        "THE DEPOT HOLDS.",
+        "The position held. The books close in the Bureau's favor.",
         `${kills} CONFIRMED. FIELD ORDER CLOSED.`,
+      ],
+    };
+  }
+  if (ledgerLoss) {
+    return {
+      wo,
+      lines: [
+        "FINAL WAVE CLEARED.",
+        "The position is judged untenable. Withdrawal authorized.",
+        `${kills} CONFIRMED BEFORE THE LEDGER CLOSED.`,
       ],
     };
   }
@@ -255,6 +300,13 @@ export function tryStall(S, WAVES, liveEnemies, rng = null) {
   // structure kills, leaks) before the dispatch card is drawn — the next
   // wave's planWave call reads reg.scrap as left by this.
   if (S.reg && S.ws.results) payResults(S.reg, S.ws.results);
+  // Attrition victory: checked at every stall, independent of wave index or
+  // book value. A regiment driven combat-ineffective (see economy.js) ends
+  // the run early as a WIN — the attacker can no longer field a wave.
+  if (S.reg && !S.gameOver && !S.victory && combatIneffective(S.reg)) {
+    S.victory = true;
+    S.attrition = true;
+  }
   // Intel: one-wave-old plan (S.intelPlan, buffered by startWave) plus the
   // live regiment read. rng is optional so callers/tests without a world
   // rng (useTable runs) get no intel lines rather than a crash. Wave 0's
@@ -274,13 +326,13 @@ export function tryStall(S, WAVES, liveEnemies, rng = null) {
 // THE single entry point that moves the run out of a stall. A future
 // multiplayer build swaps the ACKNOWLEDGE button for a network-ready gate
 // that calls this same function once all players are ready.
-export function advance(S, WAVES) {
+export function advance(S, WAVES, snap = {}) {
   if (S.phase !== PHASE.STALL) return false;
   const ws = S.ws;
   ws.waveIdx++;
   S.dispatch = null;
   if (ws.waveIdx >= WAVES.length) {
-    checkWin(S, WAVES);
+    checkWin(S, WAVES, snap);
     S.phase = PHASE.BUILD;
     return true;
   }
@@ -295,6 +347,6 @@ export function advance(S, WAVES) {
 export const HUD0 = {
   fps: 0, wave: 1, lives: 20, enemies: 0, resources: 120, walls: 0, towers: 0, kills: 0,
   totalWaves: 50, between: true, countdown: 8, phase: PHASE.BUILD, dispatch: null, lastDispatch: null,
-  started: false, gameOver: false, victory: false,
+  started: false, gameOver: false, victory: false, attrition: false, ledgerLoss: false,
   mode: "wall", sellMode: false, paused: false, speed: 1, inspect: null, toasts: [],
 };
