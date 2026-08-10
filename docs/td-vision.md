@@ -115,7 +115,7 @@ Gap between this TD and an RTS, as separable steps:
 1. an opponent that **spends** (Stage A)
 2. an opponent that **holds ground** (Stage B territory)
 3. the player **fielding mobile units** (infantry, bison)
-4. information as a resource (fog/scouting) — unexplored, later
+4. information as a resource — **fog of war folded into Phase 4 (Jeff, 2026-08-10)**: the influence grid drives visibility as well as build rights. Feel-first principles: never fog terrain, only activity; three states (held = full detail, contested seam = degraded silhouettes, unheld = activity invisible, colder/desaturated/coarser-dither treatment); waves invisible until watch range (makes Phase 3 intel load-bearing); wind flags visible everywhere; ships behind a toggle for feel iteration. Open sub-decision: towers can't acquire into fog (fog = hard targeting boundary); speculative mortar fire into fog = player-ordered, pairs with Phase 5 infantry pushing vision forward.
 5. **multiplayer — THE VISION (2026-08-09): two players entering the website and sharing the battlefield**, one defending, one attacking.
    - Architecture falls out of choices already made: seed-deterministic engine + round-committed decisions = twin simulations exchanging only **decision packets at wave boundaries** (shared map seed, then purchases/placements/orders per round). No state sync, no authoritative server.
    - Hard requirement from day one: **DEPOT combat uses seeded rng only** — no unseeded Math.random() anywhere in sim-affecting code (the TD's aim/cooldown jitter would desync twins).
