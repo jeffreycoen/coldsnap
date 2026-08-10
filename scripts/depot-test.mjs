@@ -805,6 +805,97 @@ function grenLobRun(seed, wind) {
     leakEvents.length === 1, `bodies=${world.bodies.length}`);
 }
 
+// ================================================================
+// Blind-spot fix: towers never targeted tanks, tanks never targeted towers.
+//
+// (a)/(c): tower target ACQUISITION lives inline in DepotGame.jsx's
+// stepTowers (a .jsx module — not importable headlessly, same reason the
+// CAREFUL/FREE discipline fixture above mirrors it rather than importing
+// it). This mirrors stepTowers's fixed scan filter exactly (kind ===
+// "unit" || kind === "vehicle", team 2, alive, in effRange, arcClears) so a
+// regression that reintroduces the old unit-only filter fails these asserts.
+function towerScanNearest(world, tower, spec) {
+  const muzzle = { x: tower.pos.x, y: tower.pos.y + tower.hy + 0.45, z: tower.pos.z };
+  let best = null, bd = spec.range * spec.range;
+  for (const e of world.bodies) {
+    if ((e.kind !== "unit" && e.kind !== "vehicle") || !e.alive || e.team !== 2) continue;
+    const dx = e.pos.x - tower.pos.x, dz = e.pos.z - tower.pos.z, d2 = dx * dx + dz * dz;
+    if (d2 < bd && arcClears(world, muzzle, e.pos, spec, tower.id)) { bd = d2; best = e; }
+  }
+  return best;
+}
+{
+  const world = makeWorld({ field: { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } }, seed: 1 });
+  world.depotCombat = true;
+  const spec = TOWER_SPECS.gun;
+  const tower = addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: spec.hy, hz: 0.8, x: 0, y: spec.hy, z: 0, hp: spec.hp });
+  const tank = addBody(world, { kind: "vehicle", team: 2, mass: TANK.mass, hx: TANK.hx, hy: TANK.hy, hz: TANK.hz, x: 0, y: TANK.hy, z: 12, hp: TANK.hp });
+  tank.v = { x: 0, y: 0, z: 0 };
+  const acquired = towerScanNearest(world, tower, spec);
+  ok("(a) gun tower acquires a team-2 tank (kind vehicle) in range", acquired === tank);
+  const hpBefore = tank.hp;
+  towerShot(world, tower, tank, spec);
+  for (let i = 0; i < 400 && tank.hp === hpBefore && world.projectiles.length; i++) stepWorld(world);
+  ok("(a) gun tower damages the acquired tank", tank.hp < hpBefore, `hp=${tank.hp}`);
+}
+{
+  // (c) sweep: every ENEMY_SPECS kind (kind "unit") + TANK (kind "vehicle")
+  // must be acquirable — future-proofs the kind filter against a new roster
+  // entry landing outside "unit"/"vehicle" again.
+  const spec = TOWER_SPECS.gun;
+  for (const tag of [...Object.keys(ENEMY_SPECS), "tank"]) {
+    const world = makeWorld({ field: { heightAt: () => 0, dirty: false }, seed: 1 });
+    const tower = addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: spec.hy, hz: 0.8, x: 0, y: spec.hy, z: 0, hp: spec.hp });
+    const e = spawnUnit(world, { x: 0, z: 10 }, tag);
+    e.pos.x = 0; e.pos.z = 10; e.v = { x: 0, y: 0, z: 0 };
+    const acquired = towerScanNearest(world, tower, spec);
+    ok(`(c) tower acquires enemy kind "${tag || "conscript"}" (body.kind=${e.kind})`, acquired === e, `acquired=${acquired && acquired.id} e=${e.id}`);
+  }
+}
+
+// (b) the other half: a tank within 34m of a tower fires on it and damages
+// it. Regression fixture — with the old fieldReaches gate still in place,
+// this world's territory is fully "held" for team 1 (a defended base) for
+// the whole run, so team 2's flipped read never left "unheld" and the tank
+// never fired a shot; the gate silently blocked the whole run, no matter
+// how long the tank sat in range. stepTank (units.js) no longer applies
+// that gate to structure fire (TD's reference driver never had one either
+// — see units.js's stepTank comment) so the tank fires purely on
+// range + arcClears, same as TD.
+{
+  const world = makeWorld({ seed: 9 });
+  world.depotCombat = true;
+  const spec = TOWER_SPECS.gun;
+  const tower = addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: spec.hy, hz: 0.8, x: 0, y: spec.hy, z: 0, hp: spec.hp });
+  const tank = spawnUnit(world, { x: 0, z: 15 }, "tank"); // 15m out, inside the 34m gun range
+  tank.pos.x = 0; tank.pos.z = 15;
+  // grid.cellAt reports no forward drift; the fixture pins the tank's pos
+  // back to (0,15) after every stepWorld so a real 12-tonne halt/turn isn't
+  // needed to hold it at a known range for the whole cooldown wind-up —
+  // same pin-in-place approach the tank-leak fixtures above use.
+  const grid = straightGrid(0, 0);
+  const T = makeTerritory(60, 60);
+  // saturate the field fully "held" for team 1 around the tower (a well
+  // defended base) BEFORE the tank ever gets in range — the exact shape of
+  // the fieldReaches regression: the tower's own emission (EMIT.tower) keeps
+  // its own neighborhood "held" for as long as it's alive.
+  for (let i = 0; i < 2000; i++) stepTerritory(T, [{ x: tower.pos.x, z: tower.pos.z, w: EMIT.tower.w, r: EMIT.tower.r, sign: 1 }], 0.05);
+  ok("(b) fixture: field is 'unheld' for team 2 at the tower before the tank fires (would have blocked the old gate)",
+    fogStateFor(T, tower.pos.x, tower.pos.z, 2) === "unheld");
+  const hpBefore = tower.hp;
+  let fired = false;
+  for (let i = 0; i < 600 && tower.alive; i++) {
+    stepTerritory(T, [{ x: tower.pos.x, z: tower.pos.z, w: EMIT.tower.w, r: EMIT.tower.r, sign: 1 },
+      { x: tank.pos.x, z: tank.pos.z, w: EMIT.vehicle.w, r: EMIT.vehicle.r, sign: -1 }], world.dt);
+    stepUnits(world, grid, identFwdDir, T);
+    stepWorld(world);
+    tank.pos.x = 0; tank.pos.z = 15; tank.v.x = 0; tank.v.z = 0;
+    if (tower.hp < hpBefore) { fired = true; break; }
+  }
+  ok("(b) a tank within 34m fires on the tower and damages it, even though the field never left 'unheld'",
+    fired && tower.hp < hpBefore, `hp=${tower.hp} fired=${fired}`);
+}
+
 // off-grid write-off: any team-2 body (infantry or tank) that can't find a
 // path (grid.cellAt reports dist >= 1e8 every tick — a grid gap, or pushed
 // off-map by a collision) must be written off after 12s lost, same as the

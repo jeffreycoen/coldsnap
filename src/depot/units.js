@@ -105,13 +105,33 @@ function stepTank(world, grid, t, dt, fwdDir, T, toUV = (x, z) => ({ u: x, v: z 
   let tgt = null, td = eR * eR;
   for (const s of world.bodies) {
     if ((s.kind !== "tower" && s.kind !== "wall") || !s.alive) continue;
-    { const c = toUV(s.pos.x, s.pos.z); if (!fieldReaches(T, c.u, c.v, 2)) continue; }
+    // NOTE: deliberately NO fieldReaches gate here (unlike stepRifleman/
+    // stepGrenadier below, and unlike a tank's own unit-vs-unit case). A
+    // tower's own emission (EMIT.tower, territory.js) keeps the ground right
+    // around itself pinned "held" for team 1 for as long as it's alive — so
+    // team 2's flipped read is permanently "unheld" at the tower's own
+    // position, and the gate silently vetoes every acquisition attempt no
+    // matter how close or how long a tank sits in range (found via
+    // scripts/depot-test.mjs's tank-vs-tower fixture: field stayed "unheld"
+    // for 60s of simulated siege with the tank parked on top of the tower).
+    // TD's reference tank driver (ColdsnapTD.jsx :597-615) never had a
+    // territory gate on structure fire at all — direct-fire counter-battery
+    // range + line-of-sight (arcClears, right below) is the correct gate.
     const dx = s.pos.x - t.pos.x, dz = s.pos.z - t.pos.z, d2 = dx * dx + dz * dz;
     if (d2 < td && arcClears(world, muzzle, s.pos, fspec, t.id)) { td = d2; tgt = s; }
   }
   if (!tgt) { t.gunT = 0.5; return; }
   t.gunT = fspec.cd + world.rng() * (fspec.cdVar || 0);
-  shooterFire(world, t, muzzle, tgt, fspec, { attacker: "enemy", hitStruct: true });
+  // owner: t.id — without it the shell has no muzzle-clearing immunity
+  // (core.js's owner-immunity gate, ~:698) against the tank's OWN hull.
+  // The muzzle sits at t.pos.x/z (only offset in y), squarely inside the
+  // tank's own 2.4m-deep hz box, and hitStruct:true is required below to
+  // let the round hit the tower target at all — so without an owner id the
+  // round detonates on its own hull on the very first tick, every time,
+  // and never reaches the target. Found by scripts/depot-test.mjs's
+  // tank-vs-tower fixture: a "boom" event landed ~2m from the muzzle,
+  // still inside the tank's own footprint, tower hp never moved.
+  shooterFire(world, t, muzzle, tgt, fspec, { attacker: "enemy", hitStruct: true, owner: t.id });
 }
 
 // -------------------------------------------------------------- riflemen

@@ -322,7 +322,7 @@ function checkConnectivity(grid, spawns, objGx, objGz) {
 }
 
 // ================================================================ towers
-function stepTowers(world, T, discipline) {
+export function stepTowers(world, T, discipline) {
   const dt = world.dt;
   for (const b of world.bodies) {
     if (b.kind !== "tower" || !b.alive) continue;
@@ -336,7 +336,7 @@ function stepTowers(world, T, discipline) {
     const eR = b.effRange != null ? b.effRange : spec.range;
     const muzzle = { x: b.pos.x, y: b.pos.y + b.hy + 0.45, z: b.pos.z };
     let best = b.targetId ? world.byId.get(b.targetId) : null;
-    if (best && (!best.alive || best.team !== 2 || best.kind !== "unit")) best = null;
+    if (best && (!best.alive || best.team !== 2 || (best.kind !== "unit" && best.kind !== "vehicle"))) best = null;
     if (best) {
       const dx = best.pos.x - b.pos.x, dz = best.pos.z - b.pos.z;
       if (dx * dx + dz * dz > eR * eR) best = null;
@@ -354,7 +354,7 @@ function stepTowers(world, T, discipline) {
       b.scanCd = 0.11 + (b.id % 8) * 0.011;
       let bd = eR * eR;
       for (const e of world.bodies) {
-        if (e.kind !== "unit" || !e.alive || e.team !== 2) continue;
+        if ((e.kind !== "unit" && e.kind !== "vehicle") || !e.alive || e.team !== 2) continue;
         const c = invW(e.pos.x, e.pos.z);
         if (!fieldReaches(T, c.u, c.v, 1)) continue;
         const dx = e.pos.x - b.pos.x, dz = e.pos.z - b.pos.z;
