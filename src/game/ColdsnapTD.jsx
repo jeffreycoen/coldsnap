@@ -1445,10 +1445,14 @@ export default function ColdsnapTD() {
           const sdt = S.paused || !S.started || S.gameOver || S.victory ? 0 : dt * S.speed;
           // keyboard pan (desktop nicety; touch pans by drag)
           const pan = 34 * dt / Math.max(0.5, S.zoom);
-          if (S.keys.w || S.keys.arrowup) S.focus.z += pan;
-          if (S.keys.s || S.keys.arrowdown) S.focus.z -= pan;
-          if (S.keys.a || S.keys.arrowleft) S.focus.x -= pan * 0.8;
-          if (S.keys.d || S.keys.arrowright) S.focus.x += pan * 0.8;
+          // screen-relative like touch drag: W = screen-up whatever the Q/E yaw
+          const cb = R.camBasis;
+          const ul = Math.hypot(cb.up.x, cb.up.z) || 1, rl = Math.hypot(cb.right.x, cb.right.z) || 1;
+          const ux = cb.up.x / ul, uz = cb.up.z / ul, rx = cb.right.x / rl, rz = cb.right.z / rl;
+          if (S.keys.w || S.keys.arrowup) { S.focus.x += ux * pan; S.focus.z += uz * pan; }
+          if (S.keys.s || S.keys.arrowdown) { S.focus.x -= ux * pan; S.focus.z -= uz * pan; }
+          if (S.keys.a || S.keys.arrowleft) { S.focus.x -= rx * pan * 0.8; S.focus.z -= rz * pan * 0.8; }
+          if (S.keys.d || S.keys.arrowright) { S.focus.x += rx * pan * 0.8; S.focus.z += rz * pan * 0.8; }
           S.focus.x = Math.max(-EXT.x, Math.min(EXT.x, S.focus.x));
           S.focus.z = Math.max(-EXT.z, Math.min(EXT.z, S.focus.z));
           S.focus.y = field.heightAt(S.focus.x, S.focus.z);
