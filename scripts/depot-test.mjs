@@ -15,7 +15,7 @@ import {
   makeWorld, addBody, addWeld, fireProjectile, explode, stepWorld, applyDamage, worldHash, CAUSE, mulberry32,
 } from "../src/engine/core.js";
 import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, WAVES as DEPOT_WAVES, MASON, INFANTRY_ARMS } from "../src/depot/specs.js";
-import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks, payBounties } from "../src/depot/units.js";
+import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks, payBounties, SNIPER_FIRE } from "../src/depot/units.js";
 import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad } from "../src/depot/squads.js";
 import {
   makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue, payTown,
@@ -3197,6 +3197,70 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
   }
 }
 // ==== end SANDBAG-ROT ========================================================
+
+// ==== TASK 4C: their sniper
+{
+  const flatField = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+  const grid4c = straightGrid(0, -1);
+  // spec pins: roster entry + tower-equal windage (one table, both sides)
+  {
+    const sp = ENEMY_SPECS.sniper;
+    ok("4C spec: ENEMY_SPECS.sniper fielded (speed 2.9, hp 44, bounty 30, android dress)",
+      !!sp && sp.speed === 2.9 && sp.hp === 44 && sp.bounty === 30 && sp.dress === "android", JSON.stringify(sp));
+    ok("4C spec: enemy sniper fires INFANTRY_ARMS.sniper verbatim (acc/windF/windComp/dirDmg/range pin)",
+      SNIPER_FIRE.acc === INFANTRY_ARMS.sniper.acc && SNIPER_FIRE.windF === INFANTRY_ARMS.sniper.windF &&
+      SNIPER_FIRE.windComp === INFANTRY_ARMS.sniper.windComp && SNIPER_FIRE.dirDmg === INFANTRY_ARMS.sniper.dirDmg &&
+      SNIPER_FIRE.dmg === INFANTRY_ARMS.sniper.dmg && SNIPER_FIRE.range === INFANTRY_ARMS.sniper.range, JSON.stringify(SNIPER_FIRE));
+  }
+  // vantage: marching the flow, he stops in the lee of a boulder (exposure
+  // < 0.35 toward the advance bearing, ground not below the 8m forward
+  // mean) and holds permanently.
+  {
+    const world = makeWorld({ field: flatField, seed: 31 });
+    world.depotCombat = true;
+    addBody(world, { kind: "rock", team: 0, mass: 0, hx: 0.5, hy: 0.9, hz: 0.5, x: 0, y: 0.9, z: 0, hp: 1e9 });
+    const sn = spawnUnit(world, { x: 0, z: 6 }, "sniper");
+    sn.pos.x = 0; sn.pos.z = 6; // pin spawn jitter for the fixture
+    for (let i = 0; i < 1200 && !sn.hold; i++) { stepUnits(world, grid4c, identFwdDir); stepWorld(world); }
+    ok("4C vantage: sniper halts in cover (hold set)", sn.hold === true);
+    const bearing = Math.PI; // advance bearing (flow -z)
+    const expHere = exposureAt(world, sn.pos.x, sn.pos.z, bearing);
+    ok("4C vantage: held ground reads exposure < 0.35", expHere < 0.35, `exp=${expHere.toFixed(2)}`);
+    const hx0 = sn.pos.x, hz0 = sn.pos.z;
+    for (let i = 0; i < 3600; i++) { stepUnits(world, grid4c, identFwdDir); stepWorld(world); }
+    const drift = Math.hypot(sn.pos.x - hx0, sn.pos.z - hz0);
+    ok("4C vantage: holds >= 30s (no drift off the vantage)", sn.hold === true && drift < 0.5, `drift=${drift.toFixed(2)}`);
+  }
+  // one-shot: a held sniper kills an exposed member in field reach with a
+  // single round (hp never observed chipped while alive).
+  {
+    const world = makeWorld({ field: flatField, seed: 32 });
+    world.depotCombat = true;
+    const sn = spawnUnit(world, { x: 0, z: 15 }, "sniper");
+    sn.pos.x = 0; sn.pos.z = 15; sn.hold = true;
+    const member = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 0, hp: 58, friction: 0.5 });
+    let chipped = false;
+    for (let i = 0; i < 4800 && member.alive; i++) {
+      stepUnits(world, grid4c, identFwdDir);
+      stepWorld(world);
+      if (member.alive && member.hp < 58 - 1e-9) chipped = true;
+    }
+    ok("4C one-shot: exposed member in field reach dies", !member.alive, `hp=${member.hp && member.hp.toFixed(1)}`);
+    ok("4C one-shot: the kill is a single round (never observed alive below full hp)", !chipped);
+    ok("4C: sniper stayed held through the shot", sn.hold === true);
+  }
+  // fog law: no acquisition beyond his field (green-pinned member cell)
+  {
+    const T6 = makeTerritory(29, 57);
+    for (let i = 0; i < 200; i++) stepTerritory(T6, [{ x: 0, z: 0, w: EMIT.tower.w, r: 6, sign: 1 }], 0.05);
+    const world = makeWorld({ field: flatField, seed: 33 });
+    const sn = spawnUnit(world, { x: 0, z: 10 }, "sniper");
+    sn.pos.x = 0; sn.pos.z = 10; sn.hold = true;
+    addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 0, hp: 58, friction: 0.5 });
+    for (let i = 0; i < 60; i++) { stepUnits(world, grid4c, identFwdDir, T6); stepWorld(world); }
+    ok("4C fog law: member beyond the attacker field is never acquired", sn.tgtId == null, `tgt=${sn.tgtId}`);
+  }
+}
 
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);

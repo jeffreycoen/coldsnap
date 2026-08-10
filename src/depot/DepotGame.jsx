@@ -1443,7 +1443,7 @@ export default function DepotGame({ onExit }) {
           return u ? { id, x: +u.pos.x.toFixed(2), z: +u.pos.z.toFixed(2), alive: u.alive } : null;
         }).filter(Boolean),
       }));
-      window.__DEPOTSANDBAGS__ = () => world.bodies.filter((b) => b.sandbag).map((b) => ({ id: b.id, x: +b.pos.x.toFixed(2), z: +b.pos.z.toFixed(2), alive: b.alive }));
+      window.__DEPOTSANDBAGS__ = () => world.bodies.filter((b) => b.sandbag).map((b) => ({ id: b.id, x: +b.pos.x.toFixed(2), z: +b.pos.z.toFixed(2), hx: b.hx, hz: b.hz, alive: b.alive }));
       window.__DEPOTENEMYPOS__ = () => {
         const b = world.bodies.find((b2) => b2.kind === "unit" && b2.alive && b2.team === 2);
         return b ? { x: b.pos.x, z: b.pos.z } : null;

@@ -26,6 +26,10 @@ export const ENEMY_SPECS = {
   heavy:  { mass: 340, hx: 0.46, hy: 1.02, hz: 0.46, hp: 290, bounty: 12, speed: 2.1, gain: 11, label: "breaker" },
   gren:   { mass: 84,  hx: 0.26, hy: 0.92, hz: 0.26, hp: 66,  bounty: 8,  speed: 2.6, gain: 12, label: "grenadier" },
   sapper: { mass: 70,  hx: 0.25, hy: 0.84, hz: 0.25, hp: 30,  bounty: 7,  speed: 3.8, gain: 16, label: "sapper" },
+  // Their sniper (Phase 5 Task 4C): marches until VANTAGE (units.js), then
+  // holds and works with INFANTRY_ARMS.sniper — one table, both sides.
+  // Priced at 30 scrap of regiment head (a rifles squad's worth of trouble).
+  sniper: { mass: 82,  hx: 0.26, hy: 0.86, hz: 0.26, hp: 44,  bounty: 30, speed: 2.9, gain: 14, label: "marksman", dress: "android" },
 };
 
 // Wave armor: an engine vehicle on the engine's own tread physics (see

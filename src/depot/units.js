@@ -15,7 +15,7 @@ import { arcClears } from "./accuracy.js";
 // exposureAt: squads.js is import-free (movement-pure), so units.js ->
 // squads.js stays acyclic — verified: squads.js imports nothing.
 import { exposureAt } from "./squads.js";
-import { ENEMY_SPECS, ENEMY_FIRE, TANK } from "./specs.js";
+import { ENEMY_SPECS, ENEMY_FIRE, TANK, INFANTRY_ARMS } from "./specs.js";
 
 // ---------------------------------------------------------------- spawning
 export function spawnUnit(world, sp, tag) {
@@ -27,6 +27,7 @@ export function spawnUnit(world, sp, tag) {
     x, z, y: world.field.heightAt(x, z) + spec.hy + 0.02, hp: spec.hp, friction: 0.38,
   });
   u.tag = tag || ""; u.bounty = spec.bounty;
+  if (spec.dress) u.dress = spec.dress;
   u.brave = true;
   if (tag === "gren") u.utype = "gren";
   u.wph = world.rng() * 6.28;
@@ -219,11 +220,37 @@ function seekStandPoint(world, u, sp, dt) {
   return true;
 }
 
+// ----------------------------------------------------- their sniper (4C)
+// Fire spec = INFANTRY_ARMS.sniper verbatim — one table, both sides (spec
+// pin asserted). blastR/kv merged in exactly like state.js's squadFire
+// does (the INTERFACE GAP note there: INFANTRY_ARMS carries no blastR/kv
+// and core.js's explode() NaNs without them); cd aliases fireRate so the
+// rifleman fire path's cooldown code reads one field.
+export const SNIPER_FIRE = { ...INFANTRY_ARMS.sniper, blastR: 0.3, kv: 0.5, cd: INFANTRY_ARMS.sniper.fireRate };
+
+// VANTAGE (small documented heuristic): a marching sniper stops for good
+// where (a) exposure toward the advance bearing < 0.35 — he is IN cover
+// against what he is walking toward — and (b) his ground is no lower than
+// the mean of 6 forward height samples on a ±45° arc at 8m (not shooting
+// out of a hollow). Checked every tick while marching (cheap: one body
+// scan); once true, u.hold latches permanently and he skips the march.
+const VANTAGE_EXPOSURE = 0.35, VANTAGE_R = 8, VANTAGE_N = 6;
+function atVantage(world, u, bearing) {
+  if (exposureAt(world, u.pos.x, u.pos.z, bearing) >= VANTAGE_EXPOSURE) return false;
+  let sum = 0;
+  for (let k = 0; k < VANTAGE_N; k++) {
+    const az = bearing + (k / (VANTAGE_N - 1) - 0.5) * (Math.PI / 2);
+    sum += world.field.heightAt(u.pos.x + Math.sin(az) * VANTAGE_R, u.pos.z + Math.cos(az) * VANTAGE_R);
+  }
+  return world.field.heightAt(u.pos.x, u.pos.z) >= sum / VANTAGE_N;
+}
+
 // -------------------------------------------------------------- riflemen
 // Everything but the grenadier and the sapper still carries a rifle and
 // halts to work on a wall or emplacement rather than walk past it.
 function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, v: z })) {
-  const fspec = ENEMY_FIRE.rifle;
+  const sniper = u.tag === "sniper";
+  const fspec = sniper ? SNIPER_FIRE : ENEMY_FIRE.rifle;
   u.fireCd = (u.fireCd || 0) - dt;
   u.scanCd = (u.scanCd || 0) - dt;
   const muzzle = { x: u.pos.x, y: u.pos.y + 0.5, z: u.pos.z };
@@ -263,14 +290,15 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u
       const dx = s.pos.x - u.pos.x, dz = s.pos.z - u.pos.z, d2 = dx * dx + dz * dz;
       if (d2 < td && arcClears(world, muzzle, s.pos, fspec, u.id)) { td = d2; tgt = s; }
     }
-    // anti-personnel: a member inside the urgency radius outranks any wall
-    const man = nearestPlayerUnit(world, u, muzzle, fspec, R2, URGENCY, T, toUV);
+    // anti-personnel: a member inside the urgency radius outranks any wall.
+    // The sniper has NO urgency radius — full effRange, prefer units always.
+    const man = nearestPlayerUnit(world, u, muzzle, fspec, R2, sniper ? 1 : URGENCY, T, toUV);
     if (man) tgt = man;
   }
   u.tgtId = tgt ? tgt.id : null;
   if (tgt) {
     if (u.fireCd <= 0) {
-      u.fireCd = (u.tag === "heavy" ? 1.1 : 1.5) + world.rng() * 0.5;
+      u.fireCd = (sniper ? fspec.cd : u.tag === "heavy" ? 1.1 : 1.5) + world.rng() * 0.5;
       u.flashT = world.t;
       // unit target: NO hitOnly — the round hits whatever it physically
       // hits (law of the world). Structure target: hitOnly kept. Both carry
@@ -279,6 +307,9 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u
         ? { attacker: "enemy", owner: u.id }
         : { attacker: "enemy", hitStruct: true, hitOnly: "structure", owner: u.id });
     }
+    // a held sniper works his vantage: no closing, no cover hop — he is
+    // already on chosen ground (movement handled below, target or not)
+    if (!u.hold)
     // close slowly while firing rather than standing still — unless taking
     // fire drove him to a cover stand point (4B), which takes priority.
     if (cell && cell.dist < 1e8) {
@@ -291,6 +322,11 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u
       faceTravel(u, dt);
       return true; // handled march this tick — skip the default fallback
     }
+  }
+  if (u.hold) { // vantage hold (4C): permanently claims the march tick
+    u.v.x *= 1 - Math.min(1, 6 * dt);
+    u.v.z *= 1 - Math.min(1, 6 * dt);
+    return true;
   }
   return false; // no target, or target found but no valid cell: default march
 }
@@ -420,6 +456,12 @@ export function stepUnits(world, grid, fwdDir, T, toUV = (x, z) => ({ u: x, v: z
     const cell = grid.cellAt(u.pos.x, u.pos.z);
 
     if (u.tag === "sapper" && stepSapper(world, u, dt)) continue;
+    // sniper vantage check (4C): while marching, latch u.hold at the first
+    // spot that reads as VANTAGE toward the advance bearing.
+    if (u.tag === "sniper" && !u.hold && cell && cell.dist < 1e8 && (cell.dx || cell.dz)) {
+      const fd = fwdDir(cell.dx, cell.dz);
+      if (atVantage(world, u, Math.atan2(fd.x, fd.z))) u.hold = true;
+    }
     if (u.tag !== "gren" && u.tag !== "sapper" && stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV)) continue;
     if (u.tag === "gren" && stepGrenadier(world, u, cell, dt, fwdDir, T, toUV)) continue;
 
