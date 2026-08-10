@@ -617,7 +617,14 @@ export default function DepotGame({ onExit }) {
       const buildEmitters = () => {
         const out = [];
         for (const b of world.bodies) {
-          if (b.kind === "tower" && b.team === 1 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.tower.w, r: EMIT.tower.r, sign: 1 }); }
+          // Towers repel fog by HALF THEIR SIGHT (effRange/2, cached at
+          // build off the true muzzle) instead of the flat EMIT.tower.r:
+          // gun ~9.5, mortar ~13, rocket ~11.5, mg ~7.5 on flat ground,
+          // scaled up on high ground. Frost has no fire range — its
+          // spec.range IS its slow-field radius, so the same effRange/2
+          // rule gives it slow-radius/2 (~6). EMIT.tower.r stays as the
+          // fallback for any tower missing the cache.
+          if (b.kind === "tower" && b.team === 1 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.tower.w, r: (b.effRange != null ? b.effRange : TOWER_SPECS[b.towerType].range) / 2, sign: 1 }); }
           else if (b.kind === "wall" && b.team === 1 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.wall.w, r: EMIT.wall.r, sign: 1 }); }
           else if (b.kind === "flag" && b.team === 1) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.depot.w, r: EMIT.depot.r, sign: 1 }); }
           else if (b.kind === "unit" && b.team === 2 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.unit.w, r: EMIT.unit.r, sign: -1 }); }

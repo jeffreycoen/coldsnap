@@ -2486,6 +2486,20 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     ok("bank screen floor: early-wave banking wave still fields a screen", plan.banked === true && n >= 2, `banked=${plan.banked} n=${n}`);
   }
 
+  // --- Fix 3: territory emission = effRange/2.
+  {
+    ok("fog repel: gun tower emitter r = 9.5 flat (range/2)", TOWER_SPECS.gun.range / 2 === 9.5, TOWER_SPECS.gun.range / 2);
+    ok("fog repel: mortar emitter r = 13 flat (range/2)", TOWER_SPECS.mortar.range / 2 === 13, TOWER_SPECS.mortar.range / 2);
+    ok("fog repel: buildEmitters pushes effRange/2 for towers", depotSrc.includes("r: (b.effRange != null ? b.effRange : TOWER_SPECS[b.towerType].range) / 2"));
+    // elevation carries through: the Fix-1 rise fixture's gun (effRange >
+    // spec.range) repels farther than 9.5.
+    const rise = { heightAt: (x, z) => Math.max(0, 4 * (1 - Math.hypot(x, z) / 10)) };
+    const world = makeWorld({ field: rise, seed: 1 });
+    const spec = TOWER_SPECS.gun;
+    const eff = effRange(world, { x: 0, y: rise.heightAt(0, 0) + spec.hy * 2 + 0.45, z: 0 }, spec);
+    ok("fog repel: hilltop gun repels farther than flat 9.5", eff / 2 > 9.5, (eff / 2).toFixed(2));
+  }
+
 }
 
 if (fails.length) {
