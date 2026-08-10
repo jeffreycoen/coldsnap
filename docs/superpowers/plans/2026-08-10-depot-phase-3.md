@@ -134,7 +134,15 @@ export function openingIntel(reg) { /* strength hint for the run's first dispatc
 **Files:**
 - Create: `scripts/economy-probe.mjs` (50-wave sims × 20 seeds × 3 canned defense qualities (none/median/strong scripted builds): report waves survived, regiment remaining, both ledgers, verdicts; SANITY: strong defense breaks regiments sometimes, none never survives to 50, median reaches late waves — tune STIPEND/RESULTS/waveBudget until true, record finals in report AND plan)
 - Modify: `.github/workflows/deploy.yml` (nothing new needed — test:depot already gated; confirm), `scripts/smoke.mjs` depot section (intel dispatch shows a strength-word line; rotated re-read check)
-- [ ] **Step 1:** probe + tune → **Step 2:** `SMOKE_ONLY=depot node scripts/smoke.mjs` local → **Step 3:** commit, push, `gh` watch CI to success, prod `SMOKE_ONLY=depot` ALL PASS → **Step 4:** final report with probe matrix + Jeff playtest request (the arms-race feel: uncapped tower pay + equal aim is the hard variant by choice — flag any death-spiral observations).
+- [x] **Step 1:** probe + tune → **Step 2:** `SMOKE_ONLY=depot node scripts/smoke.mjs` local → **Step 3:** commit, push, `gh` watch CI to success, prod `SMOKE_ONLY=depot` ALL PASS → **Step 4:** final report with probe matrix + Jeff playtest request (the arms-race feel: uncapped tower pay + equal aim is the hard variant by choice — flag any death-spiral observations).
+
+**Finalized numbers (probe run: 20 seeds none/median, 20 seeds strong — full matrix and sweep detail in `.superpowers/sdd/2026-08-10-depot-phase-3/task-7-report.md`):**
+- `STIPEND` stays at **14** — every value tried above it (17/23/26/32) tipped `median`'s ledger to all-WIN, failing the "mixed verdicts" sanity check.
+- `RESULTS` rates unchanged from Task 1's proposal.
+- `waveBudget`'s curve unchanged (`20 + 100*(w/50)^0.85 + max(0,w-50)*0.6`) — raising its ceiling alone had no measurable effect (spend is scrap-constrained, not budget-target-constrained).
+- One targeted `ai.js` addition: a fully-saturated wall-pressure signal (`sig.wall >= 0.999`, only reachable by a heavily walled build like `strong`'s 12-wall plan) now erupts banked scrap immediately rather than waiting for the 2.2x surge threshold. Bank/surge/tankPush thresholds themselves are unchanged (pinned by `depot-test.mjs` fixtures).
+- Measured: `none` dies wave 1-2 every seed (20/20). `median` reaches wave 50 every seed with a real WIN/LOSS ledger mix (15/20 WIN, 5/20 LOSS). `strong` reaches wave 50 every seed, tanks always driven to 0, but the literal attrition flag (heads<12% AND tanks=0) never fires (0/20) — see the report for why this is structural under the "depletion only at muster" contract, not an undertuned constant, and the recommendation for a follow-up if Jeff wants the literal flag to fire more often.
+- Also fixed in this pass: `playerBookValue`/`buildSnapshot` no longer value rocket towers at gun cost (Task 6 deferred item).
 
 ---
 
