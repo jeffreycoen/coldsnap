@@ -1604,6 +1604,7 @@ export default function DepotGame({ onExit }) {
         <Dispatch
           dispatch={makeEndDispatch({ victory: hud.victory, kills: hud.kills, wave: hud.wave, totalWaves: hud.totalWaves, attrition: hud.attrition, spent: hud.spent, ledgerLoss: hud.ledgerLoss, breach: hud.breach })}
           gating={false}
+          outcome={hud.victory ? "win" : "loss"}
           label="RETURN TO BASE"
           onAcknowledge={() => { if (onExit) onExit(); else restart(); }}
         />

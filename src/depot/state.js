@@ -385,7 +385,7 @@ export function stepDepotCensus(S, dt, computeFraction) {
 }
 
 export function makeWaveState() {
-  return { waveIdx: 0, spawnQueue: 0, spawnTimer: 0, spawnDelay: 1, active: false, betweenWaves: true, countdown: 8, mixBag: [], results: null };
+  return { waveIdx: 0, spawnQueue: 0, spawnTimer: 0, spawnDelay: 1, active: false, betweenWaves: true, countdown: 8, mixBag: [], results: null, fielded: 0, musterScrap: null };
 }
 
 export function makeRunState({ waves, startResources = 120, startLives = 20 }) {
@@ -515,9 +515,8 @@ export function makeEndDispatch({ victory, kills, wave, totalWaves, attrition = 
       return {
         wo,
         lines: [
-          "Three musters called without issue.",
-          "The offensive is judged spent.",
-          "The field remains in Bureau hands.",
+          "Three musters called. The enemy could not field a wave.",
+          "The offensive is judged spent. The field remains in Bureau hands.",
           `${kills} CONFIRMED. FIELD ORDER CLOSED.`,
         ],
       };
@@ -591,6 +590,10 @@ export function startWave(S, WAVES, opts = {}) {
     delay = w.delay;
     mix = w.mix;
   } else {
+    // Muster-time solvency snapshot, BEFORE planWave spends the scrap —
+    // tryStall's starved check reads this, never the post-buy balance
+    // (which is routinely near zero after a perfectly healthy muster).
+    ws.musterScrap = reg.scrap;
     const plan = planWave(reg, snap || {}, ws.waveIdx, rng);
     const { buys } = plan;
     units = buys.reduce((s, b) => s + b.n, 0);
@@ -605,6 +608,7 @@ export function startWave(S, WAVES, opts = {}) {
     S.intelPlan = S.pendingPlan || null;
     S.pendingPlan = plan;
   }
+  ws.fielded = units;
   ws.spawnQueue = units;
   ws.spawnDelay = delay;
   ws.spawnTimer = 0;
@@ -646,15 +650,19 @@ export function tryStall(S, WAVES, liveEnemies, rng = null) {
   // (massacres pay nothing, per payResults above) without ever driving the
   // regiment's heads/tanks under combatIneffective's threshold — the field
   // stays crowded with unspent conscripts the attacker simply can't afford
-  // to muster. Tracked across stalls (S.starvedStreak): each stall the
-  // attacker closes with reg.scrap under MIN_WAVE_FLOOR (can't afford even
-  // a token 4-conscript muster) extends the streak; any solvent stall
-  // resets it to 0. Three CONSECUTIVE starved stalls reads as the offensive
-  // being spent — an early WIN, independent of and stacked after the
-  // combatIneffective check above (either can fire first; both are guarded
-  // by !S.gameOver && !S.victory so they can't double-fire the same stall).
+  // to muster. Tracked across stalls (S.starvedStreak): a stall counts as
+  // starved ONLY IF this wave fielded zero units AND the attacker could not
+  // afford even a token 4-conscript muster AT MUSTER TIME (ws.musterScrap,
+  // snapshotted by startWave BEFORE planWave spends the scrap — the post-buy
+  // balance is near zero after every healthy muster and must never be read
+  // here). A wave that fielded troops ALWAYS resets the streak to 0. Three
+  // CONSECUTIVE starved stalls reads as the offensive being spent — an
+  // early WIN, independent of and stacked after the combatIneffective check
+  // above (either can fire first; both are guarded by !S.gameOver &&
+  // !S.victory so they can't double-fire the same stall).
   if (S.reg && !S.gameOver && !S.victory) {
-    S.starvedStreak = S.reg.scrap < MIN_WAVE_FLOOR ? (S.starvedStreak || 0) + 1 : 0;
+    const starved = (S.ws.fielded || 0) === 0 && (S.ws.musterScrap ?? S.reg.scrap) < MIN_WAVE_FLOOR;
+    S.starvedStreak = starved ? (S.starvedStreak || 0) + 1 : 0;
     if (S.starvedStreak >= 3) {
       S.victory = true;
       S.spent = true;

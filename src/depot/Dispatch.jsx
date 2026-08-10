@@ -22,7 +22,10 @@ function Typed({ text, cps = 45, style }) {
   return <span style={style}>{text.slice(0, n)}{n < text.length ? <span style={{ opacity: 0.6 }}>{"▌"}</span> : null}</span>;
 }
 
-export default function Dispatch({ dispatch, gating, onAcknowledge, label }) {
+// outcome (optional, end-of-run cards only): "win" | "loss". Renders an
+// explicit verdict banner above the teletyped body — the spent-offensive
+// early WIN read as a defeat when the card carried no verdict at all.
+export default function Dispatch({ dispatch, gating, onAcknowledge, label, outcome }) {
   const [armed, setArmed] = useState(false);
 
   useEffect(() => {
@@ -40,6 +43,11 @@ export default function Dispatch({ dispatch, gating, onAcknowledge, label }) {
           <span style={{ color: "#7fd7ff", letterSpacing: 2 }}>FIELD DISPATCH</span>
           <span style={{ opacity: 0.6 }}>{dispatch.wo}</span>
         </div>
+        {outcome && (
+          <div style={{ ...S.verdict, color: outcome === "win" ? "#4aff8c" : "#ff7a7a", borderColor: outcome === "win" ? "#2b7a4c" : "#7a2b2b" }}>
+            {outcome === "win" ? "VICTORY — THE FIELD IS HELD" : "DEFEAT — THE FIELD IS LOST"}
+          </div>
+        )}
         <div style={S.body}>
           {dispatch.lines.map((line, i) => (
             <div key={i} style={S.line}><Typed text={line} /></div>
@@ -60,6 +68,7 @@ export default function Dispatch({ dispatch, gating, onAcknowledge, label }) {
 const S = {
   scrim: { position: "absolute", inset: 0, background: "rgba(6,10,16,0.72)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 20 },
   card: { width: "min(420px, 86vw)", background: "#0d1420", border: "1px solid #2c3846", borderRadius: 6, padding: "16px 18px", boxShadow: "0 10px 40px rgba(0,0,0,0.5)" },
+  verdict: { fontSize: 13, letterSpacing: 3, textAlign: "center", border: "1px solid", borderRadius: 4, padding: "6px 0", marginBottom: 12, fontFamily: "monospace" },
   head: { display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 12, borderBottom: "1px solid #2c3846", paddingBottom: 8 },
   body: { minHeight: 64, fontSize: 13, lineHeight: 1.7, color: "#e6ebf1", letterSpacing: 0.5, fontFamily: "monospace" },
   line: { marginBottom: 4 },

@@ -310,6 +310,75 @@ ok("advancing past the last wave sets victory", S.victory === true);
   ok("solvent stall resets streak: no win after only 2 post-reset", P3.victory !== true, P3.starvedStreak);
 }
 
+// ================================================== spent misfire (Jeff's repro)
+// The starved check must read the attacker's MUSTER-TIME solvency, not the
+// post-buy scrap planWave leaves behind. A wave that actually fielded troops
+// can NEVER count as starved, no matter how broke the regiment is after
+// buying it — otherwise every well-spent wave increments the streak and the
+// run ends early after 3 perfectly normal waves.
+{
+  const W50 = Array.from({ length: 50 }, (_, i) => ({ units: 12 + i * 2, delay: 0.9 }));
+  const rng = mulberry32(1234);
+  // (a) Jeff's repro: 4 consecutive waves that field real troops. planWave
+  // spends scrap down at muster, so post-buy reg.scrap is routinely under
+  // MIN_WAVE_FLOOR — the streak must stay 0 and the run must continue.
+  const J = makeRunState({ waves: W50, startResources: 0 });
+  J.started = true;
+  J.reg = { heads: 400, tanks: 0, heads0: 400, tanks0: 0, scrap: MIN_WAVE_FLOOR + 2 };
+  for (let w = 0; w < 4; w++) {
+    J.reg.scrap = MIN_WAVE_FLOOR + 2; // solvent at muster, nearly all spent by planWave
+    startWave(J, W50, { reg: J.reg, snap: {}, rng });
+    ok(`repro wave ${w + 1} fields troops`, J.ws.spawnQueue > 0, J.ws.spawnQueue);
+    J.ws.spawnQueue = 0;
+    tryStall(J, W50, 0, rng);
+    ok(`repro wave ${w + 1}: post-spend scrap under floor yet streak stays 0`,
+      J.starvedStreak === 0, `streak=${J.starvedStreak} scrap=${J.reg.scrap}`);
+    advance(J, W50, {});
+  }
+  ok("repro: run continues past 4 fielded waves — no spent misfire", J.victory !== true && J.gameOver !== true);
+
+  // (b) genuinely starved: 3 consecutive musters where the attacker cannot
+  // afford the floor AND fields zero units -> early WIN, spent flag set.
+  const G = makeRunState({ waves: W50, startResources: 0 });
+  G.started = true;
+  G.reg = { heads: 400, tanks: 0, heads0: 400, tanks0: 0, scrap: 0 };
+  for (let w = 0; w < 3; w++) {
+    G.reg.scrap = 0;
+    startWave(G, W50, { reg: G.reg, snap: {}, rng });
+    ok(`starved wave ${w + 1} fields nothing`, G.ws.spawnQueue === 0, G.ws.spawnQueue);
+    tryStall(G, W50, 0, rng);
+    if (w < 2) advance(G, W50, {});
+  }
+  ok("3 empty musters: early WIN", G.victory === true && G.gameOver === false);
+  ok("3 empty musters: flagged spent", G.spent === true);
+
+  // (c) a fielded wave between two starved ones resets the counter.
+  const R = makeRunState({ waves: W50, startResources: 0 });
+  R.started = true;
+  R.reg = { heads: 400, tanks: 0, heads0: 400, tanks0: 0, scrap: 0 };
+  const cycle = (scrap) => {
+    R.reg.scrap = scrap;
+    startWave(R, W50, { reg: R.reg, snap: {}, rng });
+    R.ws.spawnQueue = 0;
+    tryStall(R, W50, 0, rng);
+    advance(R, W50, {});
+  };
+  cycle(0); // starved 1
+  cycle(MIN_WAVE_FLOOR + 40); // fields troops — resets
+  ok("fielded wave resets starved streak", R.starvedStreak === 0, R.starvedStreak);
+  cycle(0); // starved 1 again
+  cycle(0); // starved 2
+  ok("reset held: only 2 starved since the fielded wave, run continues", R.victory !== true, R.starvedStreak);
+}
+
+// The spent end card must read unambiguously as a WIN — "musters called
+// without issue" read as a defeat notice; the card must state the verdict.
+{
+  const d = makeEndDispatch({ victory: true, kills: 12, wave: 6, totalWaves: 50, spent: true });
+  ok("spent card does not open with the ambiguous 'without issue' line", !d.lines.some((l) => /without issue/i.test(l)), JSON.stringify(d.lines));
+  ok("spent card pairs the verdict with Bureau hands on one line", d.lines.some((l) => /judged spent/i.test(l) && /Bureau hands/i.test(l)), JSON.stringify(d.lines));
+}
+
 // ================================================== seeded determinism
 // Two independently built worlds from the same seed, driven through an
 // identical scripted "wave" (spawn N bodies via world.rng(), fire a
