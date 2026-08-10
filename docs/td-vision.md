@@ -79,6 +79,16 @@ Working brainstorm, 2026-08-09. Direction only — nothing here is committed unt
 
 ## 3. Units beyond towers
 
+### Phase 5 decisions (Jeff, 2026-08-10, via multiple-choice)
+- Roster: SNIPER + RIFLE SQUAD (4) + MG TEAM (2); anti-armor stays the towers' job.
+- Command: per-squad; tap squad → DEFEND / ATTACK.
+- ATTACK = advance to tapped point, cover-to-cover, fight what it meets, hold there.
+- Cover: existing world geometry (proximity exposure reduction) + placeable SANDBAG emplacement (cheap, destructible).
+- Persistence: squads persist across waves, NO healing — casualties permanent, replacements bought.
+- Sniper: anti-personnel king — outranges gun towers on a clear elevated lane, one-shots infantry, chip-only vs armor.
+- FULL MIRROR: enemy squads get cover-seeking + cover-to-cover advance, and a sniper joins their AI buy list (intel: marksman warnings).
+- Rides along: buildable-edge line redone as a screen-constant thin stroke (current too thick).
+
 ### Defending infantry — snipers and troops
 - Deployable infantry for defense (later: assault). Snipers = long range, low cadence, accuracy strongly elevation/LOS-driven — the showcase unit for the conditional-accuracy model.
 - Infantry uses **cover**; when cover is destroyed they're exposed and die by existing mechanisms (blast, collapse, crush — machinery already in core).
