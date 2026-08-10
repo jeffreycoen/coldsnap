@@ -73,6 +73,40 @@ export function fogStateAt(T, x, z) { /* for the PLAYER: v > +0.15 "held", |v| <
 **The look (decided):** grid LINES take faction tint (green/red, neutral grey in seam/no-man's) — terrain colors untouched. Mechanism choice is the implementer's (repaint the splat-canvas grid lines region-batched on territory change, OR a low-res modulation texture applied only to the grid-line pass) — document the choice and its Pi cost in the report. Fog: unheld ground gets the colder/desaturated/coarser-dither treatment; enemy units/vehicles in unheld cells are NOT rendered for the player; in seam cells render as grey silhouettes (flat dark dress palette, no team colors, no kind detail beyond hull shape); player assets, terrain, wind flags, trees render everywhere. Toggle: menu entry "FOG" on/off — flips VISUALS only (hiding/silhouettes/desaturation), never the targeting gate; default ON.
 - [ ] **Step 1:** implement; **Step 2:** verify `npm run test:td-render && node scripts/depot-test.mjs && npm run lint:depot && npm run build && SMOKE_ONLY=depot node scripts/smoke.mjs`; screenshots: held/seam/unheld tri-state in one frame, enemy silhouettes at the seam, same rotated one Q/E step, toggle-off comparison — save to workspace; **Step 3:** Commit "DEPOT fog: three states of knowing, grid lines that take sides".
 
+#### Task 5 results (2026-08-10)
+
+Probe wired to real territory.js field: build placement now gated by `canBuild`
+(unheld plan spots retried on later wave-starts as the field accumulates),
+tower/enemy targeting gated by `fieldReaches`, tower range uses cached
+`effRange` (elevation rule). Town pay approximated by a single depot-only
+`payTown` entry each stall (probe has no other town buildings modeled — a
+known simplification, see task-5-report.md).
+
+Initial run (EMIT unchanged) FAILED the sanity gate: `wall.r=4` left ~6-7m
+gaps between the wall-line chokepoint and the tower row behind it (median/
+strong plan spots), which under build-rights could never be built at all —
+median collapsed to max wave 6 (all losses), strong never broke attrition.
+
+**Tuning applied:** `EMIT.wall.r` 4 → 9 (matches `tower.r`) in
+`src/depot/territory.js` — closes the reach gap so a wall-then-tower line is
+actually buildable end-to-end. No other EMIT/pay-rate values touched.
+
+Also updated the probe's own sanity-rule (a) computation: a `WIN (ledger)`
+verdict (attacker's book value collapses, forcing an early ledger win) now
+counts as a "defense breaks the offensive" success alongside attrition WINs,
+per this task's brief.
+
+**Final probe matrix (20 seeds, strong auto-throttled to 10 past 2min/cell):**
+
+| tier | avg wave | WIN rate | notes |
+|---|---|---|---|
+| none | 1.1 | 0/20 | all overrun by wave 1-2 |
+| median | 35.5 | 14/20 | mixed LOSS(overrun)/WIN(ledger), max wave 50 |
+| strong | 10.4 | 17/20 | WIN(ledger)+STALEMATE dominate; 0 literal attrition WINs but 17/20 (85%) ledger-break |
+
+Sanity gate: (a) 85% PASS (≥30%), (b) max wave 2 PASS (≤8), (c) max wave 50 /
+LOSS+WIN mix PASS (≥25, ≥2 verdicts).
+
 ### Task 5: probe re-check + smoke + prod
 
 **Files:** Extend `scripts/economy-probe.mjs` (the targeting boundary changes combat reach — re-run the 3-tier matrix (now incl. the elevation-range rule); sanity rules from Phase 3 must still hold; if median collapses (fog starves tower dps), tune EMIT weights/radii — field reach is the balance lever, not the accuracy model), extend smoke depot section (fog assert: a spawned far enemy absent from render while unheld, appears on approach; rotated build-refusal toast check).

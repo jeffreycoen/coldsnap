@@ -6,7 +6,13 @@ export function makeTerritory(halfU, halfV) {
 }
 export const DECAY_TAU = 75;        // s — slow revert (Jeff)
 export const EMIT = {               // influence/s at the emitter cell, falling linearly to 0 at r
-  depot: { w: 2.4, r: 18 }, tower: { w: 1.2, r: 9 }, wall: { w: 0.5, r: 4 },
+  // wall.r bumped 4 -> 9 (Task 5 probe re-check): under the build-rights
+  // rule a wall's own footprint must reach the NEXT build slot behind it for
+  // a defensive line to be buildable at all — 4m left field-reach gaps of
+  // ~6-7m between a chokepoint wall and the tower row behind it, so median/
+  // strong defenses could never actually build past their wall line. 9m
+  // (matching tower.r) closes those gaps; see docs plan Task 5 results.
+  depot: { w: 2.4, r: 18 }, tower: { w: 1.2, r: 9 }, wall: { w: 0.5, r: 9 },
   unit: { w: 0.6, r: 5 }, vehicle: { w: 0.9, r: 7 },
   anchor: { w: 2.4, r: 14 },        // attacker spawn edge, permanent red
 };

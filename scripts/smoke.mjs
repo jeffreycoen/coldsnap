@@ -814,6 +814,31 @@ try {
     if (b) b.click();
   });
 
+  // Task 5 (Phase 4 close): rotated build-refusal toast check. Build
+  // placement gates on canBuild (green ground only, toast "GROUND NOT
+  // HELD") — this must still fire correctly in ROTATED coordinates, since
+  // the tap point is converted screen->world->canonical(u,v) through the
+  // camera's current yaw. Reuses the same unheld point the fog assert
+  // above already proved reads "unheld" (the live enemy's own ground),
+  // rotates the view another 90° on top of the earlier rotation, points
+  // the camera at that unheld cell, and taps canvas center.
+  if (enemyPos) {
+    await page.keyboard.press("e"); // another 90° camera step, on top of the earlier rotation
+    await sleep(1500);
+    await page.evaluate((p) => window.__DEPOTFOCUS__(p.x, p.z), enemyPos);
+    await sleep(300);
+    const ccUnheld = await canvasCenter();
+    await page.click('[data-tower-key="gun"]');
+    await page.mouse.click(ccUnheld.x, ccUnheld.y);
+    await page.waitForFunction(() => document.body.innerText.includes("GROUND NOT HELD"), { timeout: 3000, polling: 100 })
+      .then(() => true).catch(() => false);
+    body = await text();
+    ok("depot: build refusal toast (GROUND NOT HELD) fires on unheld ground after rotation", body.includes("GROUND NOT HELD"));
+    ok("depot: refused build spawns no pending-confirm UI", (await page.$("[data-pending-confirm]")) === null);
+  } else {
+    ok("depot: rotated build-refusal check — no unheld sample point available (skipped)", true);
+  }
+
   // swiftshader is too slow to wait real-time for a full 12-unit wave to
   // walk/leak — use the debug harness to instantly drain the wave (zero the
   // spawn queue, kill the live enemies) so the phase machine's own tick

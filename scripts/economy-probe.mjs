@@ -12,11 +12,12 @@ import {
 } from "../src/engine/core.js";
 import { TOWER_SPECS, WAVES } from "../src/depot/specs.js";
 import { stepUnits, spawnUnit, stepBreakerRam } from "../src/depot/units.js";
-import { towerShot } from "../src/depot/state.js";
+import { towerShot, fieldReaches, effRange } from "../src/depot/state.js";
 import {
   makeRunState, startWave, tryStall, advance, checkLoss, checkWin, nextSpawnTag, PHASE,
 } from "../src/depot/state.js";
-import { makeRegiment } from "../src/depot/economy.js";
+import { makeRegiment, payTown } from "../src/depot/economy.js";
+import { makeTerritory, stepTerritory, canBuild, EMIT } from "../src/depot/territory.js";
 
 const WALL_COST = 5;
 const OBJ = { x: 0, z: 0 };
@@ -57,15 +58,37 @@ function overflowSpot(i) {
   return towerSpot("mg", x, 33 + row * 3);
 }
 
-function buildAt(world, occupied, spot, snapCounts) {
+// buildEmitters (Task 5): mirrors DepotGame.jsx's buildEmitters — live
+// team-1 towers/walls + a permanent depot anchor (sign +1) push green;
+// live team-2 units/vehicles + the permanent attacker-spawn anchor (sign -1)
+// push red. Probe has no rotation, so world (x, z) IS canonical (u, v).
+function buildEmitters(world) {
+  const out = [];
+  for (const b of world.bodies) {
+    if (b.kind === "tower" && b.team === 1 && b.alive) out.push({ x: b.pos.x, z: b.pos.z, w: EMIT.tower.w, r: EMIT.tower.r, sign: 1 });
+    else if (b.kind === "wall" && b.team === 1 && b.alive) out.push({ x: b.pos.x, z: b.pos.z, w: EMIT.wall.w, r: EMIT.wall.r, sign: 1 });
+    else if (b.kind === "unit" && b.team === 2 && b.alive) out.push({ x: b.pos.x, z: b.pos.z, w: EMIT.unit.w, r: EMIT.unit.r, sign: -1 });
+    else if (b.kind === "vehicle" && b.team === 2 && b.alive) out.push({ x: b.pos.x, z: b.pos.z, w: EMIT.vehicle.w, r: EMIT.vehicle.r, sign: -1 });
+  }
+  out.push({ x: OBJ.x, z: OBJ.z, w: EMIT.depot.w, r: EMIT.depot.r, sign: 1 });
+  out.push({ x: SPAWN.x, z: SPAWN.z, w: EMIT.anchor.w, r: EMIT.anchor.r, sign: -1 });
+  return out;
+}
+
+// Build-rights check (Task 5): the probe's canned defense plans predate the
+// green-ground rule — a spot only builds once the field actually holds it.
+// Unheld spots are left for a later wave's refreshDefense() retry (the
+// field keeps accumulating every step in between via stepTerritory below).
+function buildAt(world, occupied, spot, T) {
   const spec = spot.type === "wall" ? null : TOWER_SPECS[spot.type];
   const cost = spec ? spec.cost : WALL_COST;
-  const y = 0; // flat probe field height baseline (world.field.heightAt below)
+  if (T && !canBuild(T, spot.x, spot.z)) return null;
   const h = world.field.heightAt(spot.x, spot.z);
   let b;
   if (spec) {
     b = addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: spec.hy, hz: 0.8, x: spot.x, y: h + spec.hy, z: spot.z, hp: spec.hp });
     b.towerType = spot.type;
+    b.effRange = effRange(world, { x: spot.x, y: h + spec.hy + 0.45, z: spot.z }, spec);
   } else {
     b = addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.9, hy: 0.9, hz: 0.9, x: spot.x, y: h + 0.9, z: spot.z, hp: 70 });
   }
@@ -77,7 +100,7 @@ function buildAt(world, occupied, spot, snapCounts) {
 // plan (in order) not currently standing, spending resources as affordable.
 // For "strong", once the fixed plan is exhausted, keeps buying overflow mg
 // slots with whatever scrap remains (uncapped arms race).
-function refreshDefense(world, S, occupied, plan, overflow) {
+function refreshDefense(world, S, occupied, plan, overflow, T) {
   for (let i = 0; i < plan.length; i++) {
     const key = i;
     const alive = occupied.get(key) && world.byId.has(occupied.get(key));
@@ -85,8 +108,9 @@ function refreshDefense(world, S, occupied, plan, overflow) {
     const spot = plan[i];
     const cost = spot.type === "wall" ? WALL_COST : TOWER_SPECS[spot.type].cost;
     if (S.resources < cost) continue;
-    const { body } = buildAt(world, occupied, spot);
-    occupied.set(key, body.id);
+    const built = buildAt(world, occupied, spot, T);
+    if (!built) continue; // ground not held yet — retry next wave
+    occupied.set(key, built.body.id);
     S.resources -= cost;
   }
   if (overflow) {
@@ -94,8 +118,9 @@ function refreshDefense(world, S, occupied, plan, overflow) {
     let guard = 0;
     while (S.resources >= TOWER_SPECS.mg.cost && guard++ < 200) {
       const spot = overflowSpot(oi);
-      const { body } = buildAt(world, occupied, spot);
-      occupied.set("ov" + oi, body.id);
+      const built = buildAt(world, occupied, spot, T);
+      if (!built) { oi++; continue; } // skip unheld overflow slot, try the next one
+      occupied.set("ov" + oi, built.body.id);
       S.resources -= TOWER_SPECS.mg.cost;
       oi++;
     }
@@ -135,25 +160,27 @@ function attackerBookValueReal(reg) {
   return reg.scrap + reg.heads * ENEMY_BOUNTY0 + reg.tanks * TANK_BOUNTY;
 }
 
-function stepTowersLocal(world) {
+function stepTowersLocal(world, T) {
   const dt = world.dt;
   for (const b of world.bodies) {
     if (b.kind !== "tower" || !b.alive) continue;
     const spec = TOWER_SPECS[b.towerType] || TOWER_SPECS.gun;
     if (spec.fireRate <= 0) continue;
+    const eR = b.effRange || spec.range; // Task 5: elevation-scaled, cached at build time
     b.fireCd = (b.fireCd || 0) - dt;
     let best = b.targetId ? world.byId.get(b.targetId) : null;
     if (best && (!best.alive || best.team !== 2 || best.kind !== "unit")) best = null;
     if (best) {
       const dx = best.pos.x - b.pos.x, dz = best.pos.z - b.pos.z;
-      if (dx * dx + dz * dz > spec.range * spec.range) best = null;
+      if (dx * dx + dz * dz > eR * eR || !fieldReaches(T, best.pos.x, best.pos.z, 1)) best = null;
     }
     b.scanCd = (b.scanCd || 0) - dt;
     if (!best && b.scanCd <= 0) {
       b.scanCd = 0.11 + (b.id % 8) * 0.011;
-      let bd = spec.range * spec.range;
+      let bd = eR * eR;
       for (const e of world.bodies) {
         if (e.kind !== "unit" || !e.alive || e.team !== 2) continue;
+        if (!fieldReaches(T, e.pos.x, e.pos.z, 1)) continue;
         const dx = e.pos.x - b.pos.x, dz = e.pos.z - b.pos.z;
         const d2 = dx * dx + dz * dz;
         if (d2 < bd) { bd = d2; best = e; }
@@ -166,11 +193,20 @@ function stepTowersLocal(world) {
   }
 }
 
-function stepOnce(world, S, ws, structHp) {
-  stepUnits(world, straightGrid, identFwdDir);
-  stepTowersLocal(world);
+const TERR_STEP = 0.25; // Task 5: ~4Hz territory tick, mirrors DepotGame.jsx
+function stepOnce(world, S, ws, structHp, T, terrAcc) {
+  stepUnits(world, straightGrid, identFwdDir, T);
+  stepTowersLocal(world, T);
   stepWorld(world);
   stepBreakerRam(world);
+  if (T) {
+    terrAcc.v += world.dt;
+    let guard = 0;
+    while (terrAcc.v >= TERR_STEP && guard++ < 8) {
+      terrAcc.v -= TERR_STEP;
+      stepTerritory(T, buildEmitters(world), TERR_STEP);
+    }
+  }
 
   for (const b of world.bodies) {
     if (b.kind !== "wall" && b.kind !== "tower") continue;
@@ -252,13 +288,22 @@ function runSim(seed, defense, maxSteps = 26000) {
   S.reg = makeRegiment(rng);
   const occupied = new Map();
   const plan = defense === "strong" ? STRONG_PLAN : defense === "median" ? MEDIAN_PLAN : [];
+  // Task 5: field reach now limits combat + build rights — probe wires the
+  // same territory.js field the real game does, halfU/halfV matching the
+  // real rim (DepotGame.jsx makeTerritory(29, 57)); OBJ/SPAWN are the probe's
+  // simplified single-corridor stand-ins for the depot flag / attacker anchor.
+  const T = makeTerritory(29, 57);
+  const terrAcc = { v: 0 };
+  // Simplified town: the depot itself, holder-paid every stall (probe has no
+  // other town buildings — see report for what this leaves unmodeled).
+  const townBuildings = [{ x: OBJ.x, z: OBJ.z, ruined: false }];
 
   let stalemate = false;
   let forcedClears = 0;
   let wavesCleared = 0;
 
   while (!S.gameOver && !S.victory) {
-    if (defense !== "none") refreshDefense(world, S, occupied, plan, defense === "strong");
+    if (defense !== "none") refreshDefense(world, S, occupied, plan, defense === "strong", T);
 
     const snap = buildSnapshot(world);
     startWave(S, WAVES, { reg: S.reg, snap, rng });
@@ -275,7 +320,7 @@ function runSim(seed, defense, maxSteps = 26000) {
         }
       }
       const structHp = stepOnce._structHp || (stepOnce._structHp = new Map());
-      stepOnce(world, S, ws, structHp);
+      stepOnce(world, S, ws, structHp, T, terrAcc);
       steps++;
       if (ws.spawnQueue <= 0 && liveEnemyCount(world) === 0) break;
       if (steps > maxSteps) {
@@ -295,6 +340,9 @@ function runSim(seed, defense, maxSteps = 26000) {
     if (S.gameOver) break;
     stepOnce._structHp = new Map(); // fresh attribution map per wave
     tryStall(S, WAVES, 0, null);
+    const townPaid = payTown(townBuildings, T);
+    S.resources += townPaid.player;
+    S.reg.scrap += townPaid.regiment;
     if (forcedClears > 6) { stalemate = true; break; } // truly wedged run — bail out
     wavesCleared = ws.waveIdx + 1;
     if (S.victory) break; // attrition win flips at tryStall
@@ -358,7 +406,11 @@ const none = allResults.none.rows;
 const median = allResults.median.rows;
 const strong = allResults.strong.rows;
 
-const strongBreaks = strong.filter((r) => r.verdict === "WIN (attrition)").length / strong.length;
+// Task 5: an offensive-spent WIN (ledger) — the attacker's book value
+// collapses below the player's, forcing a ledger win before wave 50 — is
+// also a defense success (the regiment can no longer sustain the assault),
+// not just a literal attrition wipeout. Count both.
+const strongBreaks = strong.filter((r) => r.verdict === "WIN (attrition)" || r.verdict === "WIN (ledger)").length / strong.length;
 const noneMaxWave = Math.max(...none.map((r) => r.wavesCleared));
 const medianMaxWave = Math.max(...median.map((r) => r.wavesCleared));
 const medianVerdicts = new Set(median.map((r) => (r.verdict.startsWith("WIN") ? "WIN" : "LOSS")));
