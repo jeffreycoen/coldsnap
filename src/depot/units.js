@@ -70,6 +70,14 @@ function stepTank(world, grid, t, dt, fwdDir) {
   if (cell && cell.dist < 1e8 && (cell.dx || cell.dz)) {
     const fd = fwdDir(cell.dx, cell.dz);
     t.goal = { x: t.pos.x + fd.x * 9, z: t.pos.z + fd.z * 9 };
+    t.lostT = 0;
+  } else {
+    // off-grid write-off: same 12s window infantry uses (above). Without
+    // this a tank that wanders off the flow field (grid gap, pushed off
+    // the map by a collision, etc.) keeps driving forever — no leak radius
+    // ever catches it, and it never dies. Mirrors the infantry lostT path.
+    t.lostT = (t.lostT || 0) + dt;
+    if (t.lostT > 12) applyDamage(world, t, 1e9, { attacker: "world" });
   }
   t.gunT = (t.gunT || 0) - dt;
   if (t.gunT > 0) return;

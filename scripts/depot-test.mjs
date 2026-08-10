@@ -708,6 +708,48 @@ function grenLobRun(seed, wind) {
     leakEvents.length === 1, `bodies=${world.bodies.length}`);
 }
 
+// off-grid write-off: any team-2 body (infantry or tank) that can't find a
+// path (grid.cellAt reports dist >= 1e8 every tick — a grid gap, or pushed
+// off-map by a collision) must be written off after 12s lost, same as the
+// leak path — no attacker body should be able to persist off-map forever.
+function lostGrid() {
+  return {
+    cellAt: () => ({ dist: 1e9, dx: 0, dz: 0, ice: false }),
+    worldToGrid: () => null,
+    inBounds: () => false,
+    cells: [], idx: () => 0, gridToWorld: () => ({ x: 0, z: 0 }),
+  };
+}
+{
+  const world = makeWorld({ seed: 9 });
+  world.dt = 0.1;
+  const tank = spawnUnit(world, { x: 40, z: 40 }, "tank");
+  const grid = lostGrid();
+  const dt = 0.1;
+  let killedAt = null;
+  for (let i = 0; i < 200; i++) { // 20s simulated, window is 12s
+    stepUnits(world, grid, identFwdDir);
+    if (!tank.alive && killedAt == null) killedAt = (i + 1) * dt;
+  }
+  ok("off-grid write-off: a lost tank is destroyed within the 12s window", killedAt != null && killedAt <= 13, `killedAt=${killedAt}`);
+  // vehicles become wreck bodies on death (engine's killBody resets hp to
+  // 1e9 for the corpse physics), so alive===false is the real signal here.
+  ok("off-grid write-off: the tank stops driving once written off (kind flips to wreck, no longer alive)", tank.alive === false && tank.kind === "wreck", `alive=${tank.alive} kind=${tank.kind}`);
+}
+{
+  const world = makeWorld({ seed: 10 });
+  world.dt = 0.1;
+  const rifleman = spawnUnit(world, { x: 40, z: 40 }, "");
+  const grid = lostGrid();
+  const dt = 0.1;
+  let killedAt = null;
+  for (let i = 0; i < 200; i++) {
+    stepUnits(world, grid, identFwdDir);
+    if (!rifleman.alive && killedAt == null) killedAt = (i + 1) * dt;
+  }
+  ok("off-grid write-off: a lost rifleman is destroyed within the 12s window (infantry parity)", killedAt != null && killedAt <= 13, `killedAt=${killedAt}`);
+}
+
 // wave mix bag: nextSpawnTag pulls from the wave's mix (deterministic
 // stride-7 shuffle, no RNG) and yields the exact composition requested.
 {
