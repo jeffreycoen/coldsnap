@@ -14,7 +14,8 @@ import {
 import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, WAVES, MASON } from "./specs.js";
-import { makeWaveState, HUD0 } from "./state.js";
+import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, tryStall, advance as phaseAdvance } from "./state.js";
+import Dispatch from "./Dispatch.jsx";
 
 // ============================================================== the map
 // Same 28x56 canonical frame as HOLD THE DEPOT — one field, one depot.
@@ -625,6 +626,7 @@ export default function DepotGame({ onExit }) {
   const [hud, setHud] = useState(HUD0);
   const [fatal, setFatal] = useState(null);
   const [runId, setRunId] = useState(0);
+  const [rereadDispatch, setRereadDispatch] = useState(false);
   const restart = () => { setFatal(null); setHud({ ...HUD0 }); setRunId((r) => r + 1); };
 
   useEffect(() => {
@@ -693,6 +695,7 @@ export default function DepotGame({ onExit }) {
         mode: "wall", sellMode: false, inspectId: null,
         started: false, gameOver: false, victory: false,
         paused: false, speed: 1,
+        phase: PHASE.BUILD, dispatch: null, lastDispatch: null,
         focus: (() => { const w = fwdU(0, 6); return { x: w.x, y: field.heightAt(w.x, w.z), z: w.z }; })(),
         zoom: 1, acc: 0, t: 0, fps: 60, fpsAcc: 0, fpsN: 0,
         hover: null, pointer: null, toasts: [],
@@ -865,11 +868,8 @@ export default function DepotGame({ onExit }) {
       window.addEventListener("keyup", ku);
 
       const startWave = () => {
-        const ws = S.ws;
-        const w = WAVES[ws.waveIdx];
-        ws.spawnQueue = w.units; ws.spawnDelay = w.delay; ws.spawnTimer = 0;
-        ws.betweenWaves = false; ws.active = true;
-        toast("WAVE " + (ws.waveIdx + 1));
+        phaseStartWave(S, WAVES);
+        toast("WAVE " + (S.ws.waveIdx + 1));
       };
       const spawnOne = () => {
         const ws = S.ws;
@@ -877,8 +877,18 @@ export default function DepotGame({ onExit }) {
         spawnEnemy(world, sp);
         ws.spawnQueue--;
       };
-      const sendNow = () => { const ws = S.ws; if (S.started && ws.betweenWaves && !S.gameOver && !S.victory) { ws.countdown = 0; } };
+      const sendNow = () => { const ws = S.ws; if (S.started && S.phase === PHASE.BUILD && ws.betweenWaves && !S.gameOver && !S.victory) { ws.countdown = 0; } };
       S.sendNow = sendNow;
+      // THE single entry point out of a stall — the ACKNOWLEDGE button calls
+      // this and nothing else. A network-ready multiplayer gate replaces the
+      // button later without touching this function.
+      const doAdvance = () => {
+        if (phaseAdvance(S, WAVES)) {
+          if (S.victory) toast("THE DEPOT HOLDS");
+          else toast("WAVE CLEAR +12");
+        }
+      };
+      S.doAdvance = doAdvance;
 
       const breachRock = (b) => {
         const k = b.rockRef;
@@ -933,7 +943,8 @@ export default function DepotGame({ onExit }) {
         return evs;
       };
 
-      window.__DEPOT__ = () => ({ t: world.t, scrap: S.resources, lives: S.lives, kills: S.kills, wave: S.ws.waveIdx + 1, bodies: world.bodies.length, fps: S.fps, paused: S.paused, speed: S.speed });
+      window.__DEPOT__ = () => ({ t: world.t, scrap: S.resources, lives: S.lives, kills: S.kills, wave: S.ws.waveIdx + 1, bodies: world.bodies.length, fps: S.fps, paused: S.paused, speed: S.speed, phase: S.phase });
+      window.__DEPOTACK__ = () => { if (S.doAdvance) S.doAdvance(); };
       window.__DEPOTBUILD__ = (gx, gz, mode) => buildAt(gx, gz, mode || "wall");
       window.__DEPOTSPAWN__ = (n) => { for (let i = 0; i < (n || 1); i++) spawnEnemy(world, SPAWN_POINTS[S.spawnRR++ % SPAWN_POINTS.length]); };
       window.__DEPOTSTART__ = () => { S.started = true; };
@@ -1008,23 +1019,21 @@ export default function DepotGame({ onExit }) {
           }
           const ws = S.ws;
           if (S.started && !S.gameOver && !S.victory) {
-            if (ws.betweenWaves) {
+            if (S.phase === PHASE.BUILD) {
               ws.countdown -= sdt;
               if (ws.countdown <= 0 && ws.waveIdx < WAVES.length) startWave();
-            } else {
+            } else if (S.phase === PHASE.WAVE) {
               if (ws.spawnQueue > 0) {
                 ws.spawnTimer -= sdt;
                 if (ws.spawnTimer <= 0) { ws.spawnTimer = ws.spawnDelay; spawnOne(); }
               } else {
                 let live = 0;
                 for (const b of world.bodies) if (b.kind === "unit" && b.alive && b.team === 2) live++;
-                if (live === 0) {
-                  ws.waveIdx++;
-                  if (ws.waveIdx >= WAVES.length) { S.victory = true; toast("THE DEPOT HOLDS"); }
-                  else { ws.betweenWaves = true; ws.countdown = 8; S.resources += 12; toast("WAVE CLEAR +12"); }
-                }
+                if (tryStall(S, WAVES, live)) toast("WAVE " + (ws.waveIdx + 1) + " CLEARED");
               }
             }
+            // phase === "stall": sim keeps ticking (idle world) — no spawns,
+            // no countdown, until ACKNOWLEDGE calls doAdvance().
             if (S.started && !S.gameOver && !S.victory) S.resources += 2.2 * sdt;
           }
           S.acc += sdt;
@@ -1058,6 +1067,7 @@ export default function DepotGame({ onExit }) {
               fps: S.fps, wave: Math.min(WAVES.length, S.ws.waveIdx + 1), lives: S.lives, enemies: en,
               resources: Math.floor(S.resources), walls: nw, towers: nt, kills: S.kills,
               totalWaves: WAVES.length, between: S.ws.betweenWaves, countdown: Math.max(0, Math.ceil(S.ws.countdown)),
+              phase: S.phase, dispatch: S.dispatch, lastDispatch: S.lastDispatch,
               started: S.started, gameOver: S.gameOver, victory: S.victory,
               mode: S.mode, sellMode: S.sellMode,
               paused: S.paused, speed: S.speed,
@@ -1097,7 +1107,7 @@ export default function DepotGame({ onExit }) {
         canvas.removeEventListener("touchstart", blockTouch);
         window.removeEventListener("keydown", kd);
         window.removeEventListener("keyup", ku);
-        for (const k of ["__DEPOT__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTFOCUS__"]) delete window[k];
+        for (const k of ["__DEPOT__", "__DEPOTACK__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTFOCUS__"]) delete window[k];
         A.dispose();
         if (R) R.dispose();
         stateRef.current = null;
@@ -1144,7 +1154,11 @@ export default function DepotGame({ onExit }) {
       <div style={P.top}>
         <div style={P.stat}><span style={{ color: "#ffd27a" }}>◆</span>{hud.resources}</div>
         <div style={P.stat}><span style={{ color: "#ff7a7a" }}>♥</span>{hud.lives}</div>
-        <div style={P.stat}>W {hud.wave}/{hud.totalWaves}</div>
+        <div style={{ ...P.stat, cursor: hud.lastDispatch ? "pointer" : "default" }}
+          onClick={() => { if (hud.lastDispatch) setRereadDispatch(true); }}
+          title={hud.lastDispatch ? "re-read last dispatch" : undefined}>
+          W {hud.wave}/{hud.totalWaves}
+        </div>
         <div style={P.stat}>☠ {hud.enemies}</div>
         {hud.started && hud.between && !hud.gameOver && !hud.victory && (
           <button style={{ ...P.btn, borderColor: "#4aff8c", color: "#4aff8c", padding: isTouch ? "5px 10px" : "4px 10px" }} onClick={() => { const S = stateRef.current; if (S && S.sendNow) S.sendNow(); }}>
@@ -1179,6 +1193,22 @@ export default function DepotGame({ onExit }) {
           {hud.toasts.map((t, i) => <div key={i} style={P.toast}>{t}</div>)}
         </div>
       )}
+
+      {(() => {
+        const gating = hud.phase === PHASE.STALL && !!hud.dispatch;
+        const active = gating ? hud.dispatch : (rereadDispatch ? hud.lastDispatch : null);
+        if (!active) return null;
+        return (
+          <Dispatch
+            dispatch={active}
+            gating={gating}
+            onAcknowledge={() => {
+              if (gating) { const S = stateRef.current; if (S && S.doAdvance) S.doAdvance(); }
+              setRereadDispatch(false);
+            }}
+          />
+        );
+      })()}
 
       {hud.inspect && (
         <div style={{ position: "absolute", left: "50%", transform: "translateX(-50%)", bottom: isTouch ? 96 : 104, zIndex: 5 }}>
