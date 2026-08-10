@@ -2061,6 +2061,36 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     ok("spawnTank: t.armor pinned to 140", tank.armor === 140, `armor=${tank.armor}`);
   }
 
+  // rifle/mg DPS vs a soft fixture, FLAGGED (world.depotCombat=true) — this
+  // is the mode dirDmg actually fires in, so it's the only measurement the
+  // ±10% replaces-not-adds contract can be checked against (an unflagged
+  // fixture never exercises the direct-hit path at all and would trivially
+  // "pass" no matter what dirDmg is set to). Baselines below are the
+  // pre-wiring (dmg-only blast) flagged measurement recorded in
+  // task-A2-report.md; INFANTRY_ARMS.rifles/mg.dirDmg were scaled down from
+  // a naive dmg-equal value (5) specifically to land inside this band.
+  {
+    const dpsFixture = (type) => {
+      const world = makeWorld({ field: flatField, seed: 4 });
+      world.depotCombat = true;
+      const squad = mkStationarySquad(world, type, 1, 0, 0, SQUAD_SPECS[type].n);
+      const target = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 10, hp: 1e9 });
+      const dt = 1 / 30, dur = 20;
+      const hp0 = target.hp;
+      for (let i = 0; i < dur / dt; i++) {
+        squadFire(world, squad, dt);
+        for (let s = 0; s < 20; s++) stepWorld(world);
+      }
+      return (hp0 - target.hp) / dur;
+    };
+    const BASELINE_RIFLES = 3.7817, BASELINE_MG = 9.3645; // flagged, pre-wiring (dirDmg unset)
+    const rDps = dpsFixture("rifles"), mDps = dpsFixture("mg");
+    ok("squadFire: flagged rifles DPS within +/-10% of pre-wiring baseline",
+      Math.abs(rDps / BASELINE_RIFLES - 1) <= 0.10, `dps=${rDps.toFixed(4)} baseline=${BASELINE_RIFLES}`);
+    ok("squadFire: flagged mg DPS within +/-10% of pre-wiring baseline",
+      Math.abs(mDps / BASELINE_MG - 1) <= 0.10, `dps=${mDps.toFixed(4)} baseline=${BASELINE_MG}`);
+  }
+
   // rifle-squad cadence + burst draw-count accounting: over a fixed window,
   // count applyScatter draws (2/shot) via a wrapped world.rng, scoped to the
   // squadFire call itself (excludes stepWorld's own unrelated rng draws —
