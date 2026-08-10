@@ -833,7 +833,7 @@ export const HUD0 = {
   fps: 0, wave: 1, lives: 20, enemies: 0, resources: 120, walls: 0, towers: 0, kills: 0,
   totalWaves: 50, between: true, countdown: 8, phase: PHASE.BUILD, dispatch: null, lastDispatch: null,
   started: false, gameOver: false, victory: false, attrition: false, ledgerLoss: false, spent: false, breach: false,
-  mode: "wall", sellMode: false, paused: false, speed: 1, inspect: null, toasts: [],
+  mode: "wall", sellMode: false, sandbagOrient: 0, paused: false, speed: 1, inspect: null, toasts: [],
   pending: null, fogOn: true, discipline: "careful", depotStanding: 1,
   squadSel: null, squadFlag: null,
 };

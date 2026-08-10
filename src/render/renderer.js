@@ -1050,7 +1050,10 @@ export function makeRenderer(canvas, world0, opts = {}) {
       }
       hoverPad.visible = !!on; hoverRing.visible = !!on && r > 0; hoverFill.visible = hoverRing.visible;
       if (!on) return;
-      hoverPad.scale.set(cs - 0.08, 1, cs - 0.08);
+      // cs: number (square cell pad) or {x,z} (oriented footprint — sandbag
+      // ghost passes the bag's live long-axis so the toggle reads instantly).
+      if (typeof cs === "object" && cs) hoverPad.scale.set(cs.x, 1, cs.z);
+      else hoverPad.scale.set(cs - 0.08, 1, cs - 0.08);
       hoverPad.position.set(x, y + 0.08, z);
       hoverPad.material.color.copy(okFlag ? OK_C : BAD_C);
       if (r > 0) {

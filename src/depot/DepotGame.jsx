@@ -1556,7 +1556,15 @@ export default function DepotGame({ onExit }) {
           A.setListener(S.focus.x, S.focus.z, 46 / Math.max(0.6, S.zoom));
           A.consume(evs);
           A.tick(world, dt);
-          if (S.hover) R.overlay.setHover(true, S.hover.x, S.hover.z, field.heightAt(S.hover.x, S.hover.z), S.hover.range, S.hover.valid, GRID_CS);
+          if (S.hover) {
+            // Sandbag ghost: oriented footprint read LIVE each frame — the
+            // toggle (and auto-continue near an existing line) re-renders the
+            // preview immediately, never a cached orientation.
+            const pad = S.mode === "sandbag" && !S.sellMode && !S.inspectId && S.selSquadId == null
+              ? (sandbagOrientAt(world, S.hover.x, S.hover.z, S.sandbagOrient || 0) === 1 ? { x: 0.7, z: 1.8 } : { x: 1.8, z: 0.7 })
+              : GRID_CS;
+            R.overlay.setHover(true, S.hover.x, S.hover.z, field.heightAt(S.hover.x, S.hover.z), S.hover.range, S.hover.valid, pad);
+          }
           else R.overlay.setHover(false);
           if (S.pending) {
             const P0 = S.pending;
@@ -1609,7 +1617,7 @@ export default function DepotGame({ onExit }) {
               started: S.started, gameOver: S.gameOver, victory: S.victory,
               attrition: S.attrition, spent: S.spent, ledgerLoss: S.ledgerLoss, breach: S.breach,
               depotStanding: S.depotStanding != null ? S.depotStanding : 1,
-              mode: S.mode, sellMode: S.sellMode,
+              mode: S.mode, sellMode: S.sellMode, sandbagOrient: S.sandbagOrient || 0,
               paused: S.paused, speed: S.speed,
               muted: A.muted, fogOn: S.fogOn, discipline: S.discipline, seed: MAP_SEED,
               toasts: S.toasts.map((t) => t.txt),

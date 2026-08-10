@@ -3195,6 +3195,26 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     ok("sandbag-rot: bar icon reflects orientation (▬ vs ▮)", src.includes("▮") && /sandbagOrient[^\n]{0,120}▮|▮[^\n]{0,120}sandbagOrient/.test(src));
     ok("sandbag-rot: placement routes through sandbagOrientAt", src.includes("sandbagOrientAt("));
   }
+
+  // (d) toggle applies IMMEDIATELY (regression: the 8Hz frame setHud rebuilt
+  // the whole hud object WITHOUT sandbagOrient, clobbering the toggle's icon
+  // flip back to ▬ within 120ms). The frame-loop hud snapshot must carry
+  // sandbagOrient, HUD0 must seed it, and the hover ghost must read the LIVE
+  // toggle (via sandbagOrientAt at the hover cell) every frame, not a cached
+  // copy.
+  {
+    const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    // the frame snapshot is the setHud({...}) that also carries mode/sellMode
+    const snap = src.match(/setHud\(\{[\s\S]{0,2400}?\}\);\n\s+\}\n/);
+    ok("sandbag-rot: frame hud snapshot carries sandbagOrient (no clobber)",
+      !!snap && snap[0].includes("mode: S.mode") && snap[0].includes("sandbagOrient: S.sandbagOrient"));
+    const { HUD0 } = await import("../src/depot/state.js");
+    ok("sandbag-rot: HUD0 seeds sandbagOrient", HUD0.sandbagOrient === 0);
+    // hover ghost: per-frame oriented footprint from live toggle state
+    ok("sandbag-rot: hover ghost reads live orientation via sandbagOrientAt",
+      /setHover[\s\S]{0,400}sandbagOrientAt\(world, S\.hover\.x, S\.hover\.z, S\.sandbagOrient/.test(src) ||
+      /sandbagOrientAt\(world, S\.hover\.x, S\.hover\.z, S\.sandbagOrient[\s\S]{0,400}setHover/.test(src));
+  }
 }
 // ==== end SANDBAG-ROT ========================================================
 
