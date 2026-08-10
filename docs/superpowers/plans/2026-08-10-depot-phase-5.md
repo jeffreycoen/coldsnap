@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Revision note (2026-08-10, post-Task-1):** Task 1 shipped (`fb91e9e`) and falsified one plan assumption: units.js has NO reusable walk-to-point machinery (its march is flow-field + team-2 only). squads.js therefore owns its own `seekGoal` velocity steer, squads advance as a block (anchor cover-hops, members hold formation slots, ONE rng draw per attack leg), and sandbags need no new body kind (`chunk` masonry is already what exposure scoring sees). Tasks below are rewritten against the shipped module. Also folded in per Jeff: **wave timeout** — waves advance on annihilation OR a time trigger (stuck units must never wedge the run).
+**Revision notes:** (post-Task-1, 2026-08-10): Task 1 shipped (`fb91e9e`) and falsified one plan assumption: units.js has NO reusable walk-to-point machinery (its march is flow-field + team-2 only). squads.js therefore owns its own `seekGoal` velocity steer, squads advance as a block (anchor cover-hops, members hold formation slots, ONE rng draw per attack leg), and sandbags need no new body kind (`chunk` masonry is already what exposure scoring sees). Tasks below are rewritten against the shipped module. Also folded in per Jeff: **wave timeout** — waves advance on annihilation OR a time trigger (stuck units must never wedge the run).
 
 **Goal:** Commandable infantry squads both sides — sniper (1), rifles (4), MG team (2) — placed like towers, per-squad DEFEND/ATTACK-to-point orders, cover-to-cover advance, real-geometry cover + sandbags, persistence without healing. Enemy mirror: cover-aware halt points + an AI-placed sniper. Plus: screen-constant buildable-edge line, and the wave-timeout guard.
 
@@ -45,55 +45,65 @@ export const INFANTRY_ARMS = {
 - [ ] **Step 1: failing asserts** — sniper kills a conscript at 26m from +4 elevation (majority of 10 seeded trials); sniper vs tank chips (< 10 hp/shot); rifles/MG cadence + burst draw-count accounting (2 draws per round via applyScatter, none elsewhere); no fire while a squad is mid-hop (moving); twin determinism of a 20s firefight fixture.
 - [ ] **Step 2:** verify fail → **Step 3:** implement → **Step 4:** `node scripts/depot-test.mjs && npm run test:accuracy && npm run lint:depot` → **Step 5:** Commit "DEPOT infantry arms: the scoped rifle, the burst gun, the line".
 
+**Second revision (2026-08-10, post-armor-interlude + bug-family day):** Tasks 3-7 below incorporate the armor wiring (dirDmg/tank armor 140), the four playtest fixes, and today's bug-family lessons. Task 2 amendments already shipped in practice: sniper dirDmg 130, rifles 4.1, mg 3.6 (flagged-DPS parity — the table above is superseded by src/depot/specs.js as shipped).
+
+## Risk register — what we expect to bite (learned today)
+
+1. **The scaffold-filter family** (4 bugs: tower scan, bounty, leak, off-grid — all `kind === "unit"` assumptions). Team-1 infantry is a NEW body class; every consumer of unit bodies may mishandle it. Task 3 carries a sweep assert. Highest-probability victims: corpse cleanup (DepotGame.jsx:534 prunes dead `kind unit` — must not touch team-1 corpses differently than intended), kill-feed/bounty (must NOT pay the attacker bounties for squad kills... or SHOULD it? — results-pay decision says towers pay; squad kills paying is consistent: CHECK economy RESULTS — killing your infantry currently pays them nothing; leave as-is this phase, note for balance), restock guards, fog rendering (team-1 members must render in your own fog everywhere).
+2. **The self-hit family** (4 bugs: infantry muzzle, tank shell, grenadier lob, arcClears self-block). Law: every fire call threads `owner`; every LOS/foul check threads `selfId`. New fire paths in Task 4 (enemy anti-personnel) must do both — assert draw/owner on every new path.
+3. **The targeting laws** (established by today's fixes, now canonical): STRUCTURE fire never gates on territory (range + arcClears only); UNIT-vs-unit fire always fog-gates. Task 4's shooters implement both; asserts enforce both directions.
+4. **Enemy rifles are structure-only** (`hitOnly: "structure"`, specs.js:45-49): they literally cannot hit player squads. Task 4 MUST add anti-personnel targeting or player infantry is invulnerable to their infantry. When their rounds start hitting units, their `dirDmg: 5` WAKES UP (documented inert vs structures) — flagged-DPS parity must be re-measured vs units (expect a rescale to ~4.1 like ours).
+5. **Balance is attacker-shifted post-fixes** (honest muster + counter-battery + wall-chewing infantry). Jeff failed at wave 5 pre-misfire-fix. Task 7 is a REBALANCE: early waveBudget ramp is the primary lever; target median-reaches-low-20s.
+6. **Pending in-flight**: the spent-misfire fix (state.js) must land before Task 3 dispatches (same file).
+
 ### Task 3: wiring — spawn, loop, orders UI, sandbags, persistence
 
-**Files:** Modify `src/depot/DepotGame.jsx` (build-bar entries SNIPER ◆30 / RIFLES ◆20 / MG ◆25 / SANDBAG ◆3; member spawning; NEW loop section driving squads; selection + order UI), `src/depot/state.js` (squad roster in run state; persistence), extend depot-test + smoke.
+**Files:** Modify `src/depot/DepotGame.jsx`, `src/depot/state.js`, extend depot-test + smoke.
 
-- **Spawning:** placement uses the tower flow (green-only, ghost, confirm ✓/✗; sniper's preview = his 30m reach fan via reachPolygon with INFANTRY_ARMS.sniper). On confirm: `makeSquad` + `addBody` per member (kind "unit", team 1, hp 58, dress: player palette — check how team dress selects and pick the player-side look; positions on the formation ring). memberIds recorded.
-- **Loop (new section, after enemy stepping, before towers):** for each live squad — prune dead memberIds; if empty, delete squad; else `stepSquad(world, squad, dt)` then `squadFire(world, squad, dt)`. Squad bodies are territory emitters automatically (EMIT.unit via the existing emitter list builder — VERIFY it includes team-1 units; Phase 4 built it from live bodies by kind+team, read it).
-- **Sandbag:** build-bar item, cost 3, instant placement (wall-exempt rule — no confirm): a single `chunk`-kind body (hx 0.9, hy 0.45, hz 0.35, mass high, sleeping) — masonry the exposure scan and blast physics already understand. No weld lattice. Counts for territory via EMIT.wall (verify the emitter builder's kind mapping picks it up as wall-ish; if keyed on kind "wall" exactly, either map chunk-with-flag or tag it `b.sandbag = true` and add to the builder).
-- **Selection + orders:** tap a member/squad marker → squad selected (ring overlay under members via renderer overlay API); floating chips DEFEND | ATTACK (screen-space, 350ms arming); ATTACK → next ground tap = dest (flag marker until arrival — reuse the survey-stake/flag machinery); tap elsewhere deselects. Persist selection through rotation.
-- **Persistence:** squads + surviving members cross stalls untouched (assert: no restock/reissue path touches team-1 units — read runner restock guards). Casualties permanent; annihilated squad's roster entry pruned.
-- [ ] **Step 1: failing asserts** — placement deducts + green-only + confirm; loop drives an ATTACK order end-to-end headless (reuse Task 1's fixtures but through the real state tick); sandbag raises cover (exposureAt drop) and appears in the emitter list; 2-casualty rifle squad persists a stall with 2 members; selection state machine headless.
-- [ ] **Step 2:** verify fail → **Step 3:** implement → **Step 4:** `node scripts/depot-test.mjs && npm run lint:depot && npm run build && SMOKE_ONLY=depot node scripts/smoke.mjs` (smoke: place rifles → ATTACK order → squad advances; sandbag place; rotated variant); screenshots: selected squad + chips, sniper fan, sandbag line, mid-advance — task3-*.png → **Step 5:** Commit "DEPOT infantry: placed, ordered, dug in, and kept".
+**Spawn (code — adapt to spawnUnit's real shape, units.js:18, but team-1):**
+```js
+// DepotGame or state.js — spawn a squad's members as team-1 unit bodies.
+function spawnSquadMembers(world, squad) {
+  const spec = SQUAD_SPECS[squad.type];
+  for (let i = 0; i < spec.n; i++) {
+    const a = (i / spec.n) * Math.PI * 2, r = 1.2;
+    const x = squad.anchor.x + Math.cos(a) * r, z = squad.anchor.z + Math.sin(a) * r;
+    const u = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28,
+      x, y: world.field.heightAt(x, z) + 0.74, z, hp: 58, friction: 0.5 });
+    u.utype = squad.type; u.squadId = squad.id; u.dress = "human";  // player side reads human
+    squad.memberIds.push(u.id);
+  }
+}
+```
+- Build bar: SNIPER ◆30 / RIFLES ◆20 / MG ◆25 / SANDBAG ◆3. Squad placement = tower flow (green-only + confirm; sniper preview = reachPolygon with INFANTRY_ARMS.sniper, fog-independent per the new preview rule). Sandbag: instant (wall-exempt), single sleeping chunk body (hx .9, hy .45, hz .35, hp 60) tagged `b.sandbag = true`; add to territory emitter builder under EMIT.wall.
+- Loop section (after enemies, before towers): prune dead members → delete empty squads → stepSquad → squadFire.
+- Selection/orders UI: tap member/marker → ring overlay + DEFEND|ATTACK chips (screen-space, 350ms arming); ATTACK → next ground tap = dest with flag marker; tap-elsewhere deselects.
+- Persistence: squads survive stalls; **SWEEP ASSERT (risk 1):** a team-1 member exercised against every unit-body consumer — corpse cleanup leaves squad roster consistent; no bounty paid to attacker on member death; no leak triggered by a member near the depot; emitter list includes members (green side); restock never touches them; fog never hides them from their owner.
+- [ ] Failing asserts (incl. sweep) → implement → `node scripts/depot-test.mjs && npm run lint:depot && npm run build && SMOKE_ONLY=depot node scripts/smoke.mjs` (smoke: place → ATTACK → advance; rotated variant) + screenshots → Commit "DEPOT infantry: placed, ordered, dug in, and kept".
 
-### Task 4: the enemy mirror — narrowed to what their movement model supports
+### Task 4: the enemy mirror — cover, their sniper, AND anti-personnel fire (risk 4)
 
-**Files:** Modify `src/depot/units.js` (halt-point cover), `src/depot/ai.js` (sniper buy + vantage placement), `src/depot/intel.js` (marksman lines), extend depot-test.
+**Files:** `src/depot/units.js`, `src/depot/specs.js`, `src/depot/ai.js`, `src/depot/intel.js`, extend depot-test.
 
-- **Halt-point cover (NOT cover-to-cover marching — their movement is the flow field):** when riflemen/grenadiers select their halt distance to fire (existing halt logic in units.js), they now evaluate ~5 candidate halt points (current + 4 lateral offsets ≤3m) and take the lowest `exposureAt` (threat bearing = toward their target). Re-evaluate when they take a hit (u.lastHit change), max once per 2s. Deterministic, no rng.
-- **Enemy sniper:** joins ENEMY_SPECS as a buyable (price 30, INFANTRY_ARMS.sniper values, dress android). Behavior: walks the flow field until it reaches the first cell where `exposureAt` is low AND elevation ≥ mean forward ground (a vantage heuristic — implementer designs it small, documents it), then HOLDS there permanently and fires via the same squadFire-style gate stack (single member, no squad object needed — a `u.holdFire`-style stationary shooter flag in units.js).
-- **ai.js:** sniper enters the buy blend when `snap.squads ≥ 2` (buildSnapshot gains `squads` count — wire in DepotGame's snapshot builder); weight modest (they're expensive per head).
-- **intel.js:** marksman family (wired to sniper purchases, one-wave delay, gaps as usual): "Marksman activity reported forward of the line." / "Single-shot reports at long interval. Pattern deliberate." / "A scope flash logged at the ridge. Range disputed." — no digits.
-- [ ] **Step 1: failing asserts** — halted rifleman relocates to lower exposure after a hit; enemy sniper stops at a vantage (exposure < 0.5, holds ≥ 30s) and kills an exposed conscript-class target; AI buys a sniper when snap.squads=3 (share > 0 baseline); marksman line emitted digit-free; twin determinism.
-- [ ] **Step 2:** verify fail → **Step 3:** implement → **Step 4:** `node scripts/depot-test.mjs && npm run lint:depot` → **Step 5:** Commit "DEPOT mirror: they take cover too, and one of them has a scope".
+- **Anti-personnel (NEW, mandatory):** riflemen/grenadiers gain unit-vs-unit targeting: if a player unit (team-1 kind unit) is within range AND their field reaches it (unit-vs-unit law: fog-gated) AND arcClears — prefer it over structure fire at ≤ 60% range (close infantry is the urgent threat), else structures. Rounds at units need `hitOnly` relaxed — audit the fire spec: drop hitOnly for the anti-personnel shot only; thread owner (self-hit law). Re-measure their flagged DPS vs units; rescale their dirDmg into parity (~4.1 expected).
+- **Halt-point cover:** existing halt logic evaluates 5 candidates (current + 4 lateral ≤3m), lowest exposureAt vs target bearing; re-eval on lastHit change, ≤ once/2s.
+- **Their sniper:** ENEMY_SPECS entry (price 30, INFANTRY_ARMS.sniper values, dress android); walks flow field until first low-exposure + elevated vantage (small documented heuristic), holds, fires through the same gates (fog-gated vs units — the unit law).
+- **ai.js:** sniper joins buys when snap.squads ≥ 2 (snapshot gains squads count). **intel.js:** marksman family, 3 variants, digit-free.
+- [ ] Failing asserts: rifleman kills an exposed squad member (fog reached); rifleman does NOT acquire a member beyond their field (fog law); structure fire still territory-free (structure law); DPS parity numbers recorded; sniper vantage hold + kill; AI buy trigger; intel line. → implement → scoped gates → Commit "DEPOT mirror: they shoot back at men now, and one of them has a scope".
 
-### Task 5: buildable-edge line — screen-constant stroke (deferred from 4.1)
+### Task 5: buildable-edge line — screen-constant stroke (unchanged from prior revision)
+- ~1.5px at dpr 1 at all zooms/rotations; overlay-pass or zoom-inverse width, document. → td-render + smoke + 3-zoom screenshots → Commit "DEPOT: the buildable edge is a line, not a band".
 
-**Files:** Modify `src/render/renderer.js`.
-- The contour renders ~1.5px at dpr 1 regardless of zoom: overlay-pass screen-space stroke from the threshold contour, or zoom-inverse ground width — implementer's call, document. Crisp at all zooms + rotations.
-- [ ] **Step 1:** implement → **Step 2:** `npm run test:td-render && npm run build && SMOKE_ONLY=depot node scripts/smoke.mjs`; screenshots at 3 zooms + rotated → **Step 3:** Commit "DEPOT: the buildable edge is a line, not a band".
+### Task 6: wave timeout (unchanged semantics; now also covers squads era)
+- WAVE_TIMEOUT 75s after spawning completes → survivors withdraw (despawn, no bounty/death, heads RETURN to regiment), stall proceeds; dispatch line "Contact broken off. The remainder withdrew in order."; annihilation path untouched; off-grid write-off stays. NOTE (learned): the spent-offensive counter must treat a withdrawn wave as FIELDED (it mustered) — assert the interaction explicitly.
+- [ ] Failing asserts (immortal straggler → 75s stall; heads returned exactly; no bounty; withdrawal line truthful; spent-counter unaffected by withdrawal) → implement → scoped gates → Commit "DEPOT: waves end by annihilation or the clock — nobody wedges the war".
 
-### Task 6: wave timeout — annihilation OR the clock (Jeff, 2026-08-10)
-
-**Files:** Modify `src/depot/state.js` (tryStall condition + withdrawal), `src/depot/economy.js` (returns), extend depot-test.
-
-- Today `tryStall` requires zero live enemies — a stuck unit wedges the run forever. New rule: the wave also ends `WAVE_TIMEOUT = 75`s after its spawning completed (timer on wave state; tunable, Task 7 probes it).
-- On timeout: surviving attackers **withdraw** — despawned (no death event, no bounty, no smear), and their heads/tanks RETURN to the regiment (`reg.heads += survivors`, they didn't die — muster semantics stay honest). Dispatch line on the stall card when a withdrawal happened: "Contact broken off. The remainder withdrew in order." (digit-free).
-- Off-grid write-off (12s) stays as-is for truly lost units mid-wave; the timeout is the backstop for stuck-but-on-grid.
-- [ ] **Step 1: failing asserts** — a wave with one immortal-fixture straggler stalls at 75s; survivor heads return to reg (count exact); no bounty paid on withdrawal; annihilation before 75s stalls immediately (existing behavior untouched); withdrawal line appears (no-gap fixture) and never lies (no line when annihilated).
-- [ ] **Step 2:** verify fail → **Step 3:** implement → **Step 4:** `node scripts/depot-test.mjs && npm run lint:depot` → **Step 5:** Commit "DEPOT: waves end by annihilation or the clock — nobody wedges the war".
-
-### Task 7: probe + prod closer
-
-**Files:** `scripts/economy-probe.mjs` (median tier gains a sniper+rifles purchase; enemy sniper in their sim; WAVE_TIMEOUT active — verify no tier's results are dominated by withdrawals, which would signal a pathing/aggression bug, not balance), plan doc numbers.
-- [ ] **Step 1:** re-run matrix; all four sanity rules hold + new rule (e): withdrawals < 20% of waves in every tier (else investigate stuck-unit causes before tuning anything).
-- [ ] **Step 2:** full scoped verify + 3 consecutive smokes → **Step 3:** commit ("DEPOT Phase 5 closes: infantry in the line, probe green"), PUSH the batch, foreground CI poll, prod SMOKE_ONLY=depot ALL PASS → **Step 4:** report + phone-check screenshots (squad orders, sniper overwatch, sandbags under fire, enemy cover use, thin edge line, a timeout withdrawal if stageable).
+### Task 7: closer — REBALANCE + probe + batch push
+- The probe is a rebalance this time (risk 5): median must reach low-20s avg again post-fixes. PRIMARY lever: early waveBudget ramp (waves 1-8 flatten); secondary: player start scrap/stipend; NEVER: CAREFUL default, Phase 3 results rates first. Rules: all four sanity + (e) withdrawals < 20% of waves + (f) no empty solvent waves (the new invariant, probe-level).
+- Full scoped verify + 3 smokes → commit → PUSH batch → foreground CI poll → prod SMOKE_ONLY=depot ALL PASS → report + phone-check screenshots (squads in action, enemy shooting at them, sniper duel if stageable, thin edge line, withdrawal dispatch).
 
 ---
-
-## Self-review notes
-- Revision incorporates every Task 1 finding: seekGoal architecture (T3 loop section), block advance (T3 asserts), sandbag-as-chunk (T3), lint-grep gotcha (constraints), state.js-owns-fire (T2), mirror narrowed to halt-points + vantage sniper (T4).
-- Wave timeout returns survivors to the regiment — keeps muster-only depletion honest and makes withdrawal economically meaningful (they come back next wave).
-- Sniper-vs-armor left to the existing threshold system with an assert that documents actual behavior — no special cases.
-- Probe rule (e) treats heavy withdrawals as a bug signal, not a balance dial.
+## Self-review notes (second revision)
+- Every risk-register item maps to a concrete task change: filters (T3 sweep), self-hit (T4 threading asserts), laws (T4 both directions), structure-only rifles (T4 anti-personnel + parity re-measure), balance (T7 rebalance), in-flight collision (T3 waits for spent-misfire fix).
+- Code included where writable today (spawn, sandbag, spec deltas); UI flows remain prose + asserts (they wire into DepotGame's real tap machinery, read at implement time).
+- Anti-personnel preference at ≤60% range is a first guess — probe/playtest tunable.
