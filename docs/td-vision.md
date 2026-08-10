@@ -49,6 +49,15 @@ Working brainstorm, 2026-08-09. Direction only — nothing here is committed unt
 - Turn-50 ledger: book value both sides (scrap + build-cost of standing assets / purchase-price of surviving regiment).
 - Enemy aim: EQUAL to towers through the shared accuracy model (pure symmetry).
 
+### Phase 4 decisions (Jeff, 2026-08-10, via multiple-choice)
+- Front decay: SLOW (~60-90s revert) — repelled pushes leave a healing bruise.
+- Attacker spawn edge is a permanent red anchor (mirrors the depot's green).
+- Fog/towers: HARD boundary — no acquiring into fog; blind mortars wait for Phase 5 orders.
+- Territory look: GRID-LINE TINTING (green/red/neutral lines, terrain palette untouched).
+- Land income: town buildings pay their holder per wave (protection pay returns as territory income).
+- Fog ON by default; feel toggle retained.
+- (Also shipped post-P3: offensive-spent starvation WIN, tank leak/off-grid/bounty fixes, rim termination + decal clamp + time-fading scorches.)
+
 ### Stage A: Economic mirror (start here)
 - Attacker gets a scrap economy: per-round stipend + payment for results (structure damage, buildings destroyed, leaks).
 - Attacker **buys waves** from a priced roster (bounties ≈ prices already); mech is saved-for, not scripted.
