@@ -680,6 +680,31 @@ try {
   await page.evaluate(() => window.__DEPOTSTART__());
   await page.waitForFunction(() => window.__DEPOT__().t > 0.2, { timeout: 10000 });
 
+  // Task 5: the run opens on the depot, not the middle of the field —
+  // S.focus's initial value should land near the depot's own flag anchor
+  // (the roof-peak flagPole body buildTown places at the depot's world
+  // (x, z)). Checked BEFORE anything below re-points the camera via
+  // __DEPOTFOCUS__. Also checked after a Q/E view rotation — rotation is a
+  // renderer-only yaw around the same S.focus world point (proven
+  // algebraically above), so it must not move.
+  {
+    const depotFlag = (await page.evaluate(() => window.__DEPOTFLAGS__())).find((f) => f.kind === "flag");
+    const openFocus = await page.evaluate(() => window.__DEPOTGETFOCUS__());
+    const openDist = depotFlag ? Math.hypot(openFocus.x - depotFlag.x, openFocus.z - depotFlag.z) : null;
+    ok(`depot: opening camera focus lands on the depot [focus=${JSON.stringify(openFocus)} flag=${JSON.stringify(depotFlag)} dist=${openDist == null ? "n/a" : openDist.toFixed(2)}]`,
+      !!depotFlag && openDist < 5);
+
+    const hud0 = await page.evaluate(() => window.__DEPOT__());
+    ok(`depot: depotStanding starts at 1 (fully standing) [${hud0.depotStanding}]`, hud0.depotStanding === 1);
+
+    await page.keyboard.press("e"); // R.rotateStep(1) — 90° camera step
+    await sleep(1500); // let the yaw tween settle
+    const rotFocus = await page.evaluate(() => window.__DEPOTGETFOCUS__());
+    const rotDist = depotFlag ? Math.hypot(rotFocus.x - depotFlag.x, rotFocus.z - depotFlag.z) : null;
+    ok(`depot: opening focus still on the depot after a Q/E rotation (focus is a world point, rotation is view-only) [dist=${rotDist == null ? "n/a" : rotDist.toFixed(2)}]`,
+      !!depotFlag && rotDist < 5);
+  }
+
   // rotation-invariance (Global Constraint): Q/E view rotation (renderer-only,
   // src/render/renderer.js) must never shift where a tap-build lands. The
   // canvas's geometric center is the orbit camera's pivot — its ground ray

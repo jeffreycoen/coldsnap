@@ -15,7 +15,7 @@ import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, WAVES, MASON } from "./specs.js";
 import { windAt } from "./wind.js";
-import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed } from "./state.js";
+import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, censusDepotChunks, depotStandingFraction, stepDepotCensus } from "./state.js";
 import { reachPolygon, arcClears } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks, payBounties } from "./units.js";
 import { makeRegiment, payTown } from "./economy.js";
@@ -588,6 +588,10 @@ export default function DepotGame({ onExit }) {
       world._tdStruct = true;
       world.depotCombat = true; // Phase 0 combat hooks: glancing, armor, tree fire/shredding
       const town = buildTown(world, grid, field);
+      // Structural loss (Task 5): the depot's own chunk lattice IS its health
+      // bar — census taken once here (ids + home world positions), read back
+      // at ~1Hz via stepDepotCensus below against world.byId (live pos/alive).
+      const depotCensus = censusDepotChunks(world.bodies);
       // Territory (Phase 4 Task 2): who holds the ground. Cells over the
       // same playable rim the renderer clips to (halfU 29 / halfV 57, see
       // makeRenderer's rim opt above) — reuse rather than reinvent extents.
@@ -710,7 +714,18 @@ export default function DepotGame({ onExit }) {
         setFog: (v) => { fogOn = v; S.fogOn = v; R.setFog(v); try { window.localStorage.setItem("coldsnap-depot-fog", v ? "1" : "0"); } catch (e) {} },
         setDiscipline: (v) => { discipline = v; S.discipline = v; try { window.localStorage.setItem("coldsnap-depot-discipline", v); } catch (e) {} },
         phase: PHASE.BUILD, dispatch: null, lastDispatch: null,
-        focus: (() => { const w = fwdU(0, 6); return { x: w.x, y: field.heightAt(w.x, w.z), z: w.z }; })(),
+        // Opens on the depot, not the middle of the field. TOWN[i].x/z for
+        // the depot entry ({id:"depot", x:0, z:52, ...} in genMap) are
+        // already WORLD-space — genMap's T() helper runs every town entry
+        // through fwdU before storing it — so this is exactly the same
+        // point fwdU(0, 52) would give under the map's live ORIENT; reading
+        // it off TOWN directly (rather than re-deriving via fwdU(0, 52))
+        // can't drift out of sync with wherever genMap actually placed it.
+        focus: (() => {
+          const depotT = TOWN.find((t) => t.depot);
+          const w = depotT ? { x: depotT.x, z: depotT.z } : fwdU(0, 52);
+          return { x: w.x, y: field.heightAt(w.x, w.z), z: w.z };
+        })(),
         zoom: 1, acc: 0, t: 0, fps: 60, fpsAcc: 0, fpsN: 0,
         hover: null, pointer: null, toasts: [], pending: null,
         hudT: 0, keys: {}, sellById: null, audio: A,
@@ -1078,7 +1093,7 @@ export default function DepotGame({ onExit }) {
         return evs;
       };
 
-      window.__DEPOT__ = () => ({ t: world.t, scrap: S.resources, lives: S.lives, kills: S.kills, wave: S.ws.waveIdx + 1, bodies: world.bodies.length, fps: S.fps, paused: S.paused, speed: S.speed, phase: S.phase, reg: { ...S.reg } });
+      window.__DEPOT__ = () => ({ t: world.t, scrap: S.resources, lives: S.lives, kills: S.kills, wave: S.ws.waveIdx + 1, bodies: world.bodies.length, fps: S.fps, paused: S.paused, speed: S.speed, phase: S.phase, reg: { ...S.reg }, depotStanding: S.depotStanding != null ? S.depotStanding : 1, breach: !!S.breach });
       window.__DEPOTACK__ = () => { if (S.doAdvance) S.doAdvance(); };
       window.__DEPOTBUILD__ = (gx, gz, mode) => buildAt(gx, gz, mode || "wall");
       window.__DEPOTSPAWN__ = (n) => { for (let i = 0; i < (n || 1); i++) spawnEnemy(world, SPAWN_POINTS[S.spawnRR++ % SPAWN_POINTS.length]); };
@@ -1286,6 +1301,12 @@ export default function DepotGame({ onExit }) {
           }
           if (S.acc > STEP * 6) S.acc = 0;
           const evs = drainEvents();
+          // Structural loss census — ~1Hz (stepDepotCensus's own accumulator
+          // gate, not this per-frame call site) — gated by sdt like the rest
+          // of the sim clock, so it doesn't run while paused/pre-start/
+          // post-game. Fraction is exposed on hud for the smoke test; there
+          // is deliberately no health-bar UI — the building is the readout.
+          stepDepotCensus(S, sdt, () => depotStandingFraction(depotCensus, world.byId));
           R.consume(evs);
           A.setListener(S.focus.x, S.focus.z, 46 / Math.max(0.6, S.zoom));
           A.consume(evs);
@@ -1329,7 +1350,8 @@ export default function DepotGame({ onExit }) {
               totalWaves: WAVES.length, between: S.ws.betweenWaves, countdown: Math.max(0, Math.ceil(S.ws.countdown)),
               phase: S.phase, dispatch: S.dispatch, lastDispatch: S.lastDispatch,
               started: S.started, gameOver: S.gameOver, victory: S.victory,
-              attrition: S.attrition, spent: S.spent, ledgerLoss: S.ledgerLoss,
+              attrition: S.attrition, spent: S.spent, ledgerLoss: S.ledgerLoss, breach: S.breach,
+              depotStanding: S.depotStanding != null ? S.depotStanding : 1,
               mode: S.mode, sellMode: S.sellMode,
               paused: S.paused, speed: S.speed,
               muted: A.muted, fogOn: S.fogOn, discipline: S.discipline, seed: MAP_SEED,
@@ -1562,7 +1584,7 @@ export default function DepotGame({ onExit }) {
 
       {(hud.gameOver || hud.victory) && !fatal && (
         <Dispatch
-          dispatch={makeEndDispatch({ victory: hud.victory, kills: hud.kills, wave: hud.wave, totalWaves: hud.totalWaves, attrition: hud.attrition, spent: hud.spent, ledgerLoss: hud.ledgerLoss })}
+          dispatch={makeEndDispatch({ victory: hud.victory, kills: hud.kills, wave: hud.wave, totalWaves: hud.totalWaves, attrition: hud.attrition, spent: hud.spent, ledgerLoss: hud.ledgerLoss, breach: hud.breach })}
           gating={false}
           label="RETURN TO BASE"
           onAcknowledge={() => { if (onExit) onExit(); else restart(); }}

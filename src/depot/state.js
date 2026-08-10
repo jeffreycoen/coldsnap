@@ -187,6 +187,79 @@ export function friendlyFouls(world, muzzle, target, spec) {
   return false;
 }
 
+// ------------------------------------------------------- structural loss
+// The depot is a physical lattice of chunks (buildTown, DepotGame.jsx) — its
+// own health bar IS the building. "Standing" means alive AND still within
+// DEPOT_STANDING_TOL of the chunk's home position: a stone a mortar has
+// launched off its perch reads as gone even if the body is technically still
+// alive and asleep somewhere downrange (matches the campaign's demolition
+// semantics — displacement counts as destruction, not survival).
+export const DEPOT_STANDING_TOL = 1.2; // meters
+export const DEPOT_BREACH_FRAC = 0.58; // standing fraction below this -> LOSS
+export const DEPOT_CENSUS_HZ = 1; // census cadence — NOT per frame
+
+// censusDepotChunks: called once at buildTown time. bodies is world.bodies
+// (or any array of chunk-like {id, kind, town, pos}) — picks out the depot's
+// own chunks (b.town === "depot") and records id + home (x, y, z) at build
+// time, before anything's had a chance to move. Pure, no world/rng deps.
+export function censusDepotChunks(bodies) {
+  const out = [];
+  for (const b of bodies) {
+    if (b.kind !== "chunk" || b.town !== "depot") continue;
+    out.push({ id: b.id, home: { x: b.pos.x, y: b.pos.y, z: b.pos.z } });
+  }
+  return out;
+}
+
+// depotStandingFraction: fraction of the census still standing. byId is a
+// Map (world.byId works directly) or anything with a .get(id) -> body-like
+// {alive, pos:{x,y,z}}. A census entry with no live body at all (welded off
+// and despawned) counts as not-standing, same as one that's merely wandered
+// past the tolerance. Empty census reads as 1.0 (nothing to lose yet/ever —
+// callers should not invoke this before buildTown has run).
+export function depotStandingFraction(census, byId) {
+  if (!census || census.length === 0) return 1;
+  let standing = 0;
+  for (const c of census) {
+    const b = byId && byId.get ? byId.get(c.id) : null;
+    if (!b || b.alive === false) continue;
+    const dx = b.pos.x - c.home.x, dy = b.pos.y - c.home.y, dz = b.pos.z - c.home.z;
+    if (Math.sqrt(dx * dx + dy * dy + dz * dz) <= DEPOT_STANDING_TOL) standing++;
+  }
+  return standing / census.length;
+}
+
+// checkDepotBreach: the second (independent) LOSS track, alongside checkLoss
+// (lives). Idempotent — no-op once the run has already ended, same contract
+// as checkLoss, and the two never fight: whichever fires first sets gameOver
+// and the other's own guard keeps it from overwriting the outcome.
+export function checkDepotBreach(S, fraction) {
+  if (S.gameOver || S.victory) return false;
+  if (fraction < DEPOT_BREACH_FRAC) {
+    S.gameOver = true;
+    S.breach = true;
+    return true;
+  }
+  return false;
+}
+
+// stepDepotCensus: the ~1Hz gate. Accumulates dt on S.depotCensusAcc and only
+// invokes computeFraction (the caller's — usually
+// depotStandingFraction(census, world.byId) — actual work) once the
+// accumulator crosses 1/DEPOT_CENSUS_HZ seconds, matching the territory
+// step's own accumulator pattern (DepotGame.jsx's TERR_STEP) rather than
+// re-scanning every chunk every frame. Returns true the tick it actually ran
+// the census (so callers can e.g. throttle a debug log to the same cadence).
+export function stepDepotCensus(S, dt, computeFraction) {
+  S.depotCensusAcc = (S.depotCensusAcc || 0) + dt;
+  if (S.depotCensusAcc < 1 / DEPOT_CENSUS_HZ) return false;
+  S.depotCensusAcc -= 1 / DEPOT_CENSUS_HZ;
+  const fraction = computeFraction();
+  S.depotStanding = fraction;
+  checkDepotBreach(S, fraction);
+  return true;
+}
+
 export function makeWaveState() {
   return { waveIdx: 0, spawnQueue: 0, spawnTimer: 0, spawnDelay: 1, active: false, betweenWaves: true, countdown: 8, mixBag: [], results: null };
 }
@@ -292,8 +365,17 @@ export function checkWin(S, WAVES, snap = {}) {
 
 // End-of-run dispatch copy — same teletyped card style as the between-wave
 // stall dispatch, reused for the WIN/LOSS end card. Pure + deterministic.
-export function makeEndDispatch({ victory, kills, wave, totalWaves, attrition = false, spent = false, ledgerLoss = false }) {
+export function makeEndDispatch({ victory, kills, wave, totalWaves, attrition = false, spent = false, ledgerLoss = false, breach = false }) {
   const wo = "WO-9999";
+  if (!victory && breach) {
+    return {
+      wo,
+      lines: [
+        "THE DEPOT IS BREACHED.",
+        "The position is lost. Withdrawal under fire.",
+      ],
+    };
+  }
   if (victory) {
     if (attrition) {
       return {
@@ -494,7 +576,7 @@ export function advance(S, WAVES, snap = {}) {
 export const HUD0 = {
   fps: 0, wave: 1, lives: 20, enemies: 0, resources: 120, walls: 0, towers: 0, kills: 0,
   totalWaves: 50, between: true, countdown: 8, phase: PHASE.BUILD, dispatch: null, lastDispatch: null,
-  started: false, gameOver: false, victory: false, attrition: false, ledgerLoss: false, spent: false,
+  started: false, gameOver: false, victory: false, attrition: false, ledgerLoss: false, spent: false, breach: false,
   mode: "wall", sellMode: false, paused: false, speed: 1, inspect: null, toasts: [],
-  pending: null, fogOn: true, discipline: "careful",
+  pending: null, fogOn: true, discipline: "careful", depotStanding: 1,
 };

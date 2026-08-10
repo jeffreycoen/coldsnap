@@ -5,6 +5,8 @@ import {
   PHASE, makeRunState, startWave, tryStall, advance,
   regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, shooterFire, nextSpawnTag,
   fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed,
+  censusDepotChunks, depotStandingFraction, checkDepotBreach, stepDepotCensus,
+  DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, DEPOT_CENSUS_HZ,
 } from "../src/depot/state.js";
 import { reachPolygon, arcClears } from "../src/depot/accuracy.js";
 import { friendlyFouls } from "../src/depot/state.js";
@@ -1750,6 +1752,96 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
   const depotBroken = bombard(true);
   ok("identical shell impact pops welds on a standard building", houseBroken > 0, `broken=${houseBroken}`);
   ok("depot welds x1.5: same impact pops strictly fewer welds on the depot lattice", depotBroken < houseBroken, `house=${houseBroken} depot=${depotBroken}`);
+}
+
+// --- structural loss (Task 5): the depot's chunk lattice IS its health bar.
+// censusDepotChunks/depotStandingFraction/checkDepotBreach are pure, so this
+// drives them against a hand-built lattice (same gpos-chunk shape buildTown
+// produces, tagged .town === "depot") rather than the full DepotGame.jsx
+// boot (JSX, not importable headlessly).
+{
+  const { hcs, pitch, mass } = MASON;
+  const buildDepotLattice = (nx = 5, ny = 2, nz = 5) => {
+    const world = makeWorld({ field: { heightAt: () => 0, dirty: false, carve: () => {} }, seed: 1 });
+    const chunks = [];
+    for (let ix = 0; ix < nx; ix++) for (let iy = 0; iy <= ny; iy++) for (let iz = 0; iz < nz; iz++) {
+      const c = addBody(world, {
+        kind: "chunk", team: 0, mass, hx: hcs, hy: hcs, hz: hcs,
+        x: (ix - (nx - 1) / 2) * pitch, y: hcs + 0.02 + iy * pitch, z: (iz - (nz - 1) / 2) * pitch,
+        friction: 0.65, restitution: 0.02,
+      });
+      c.sleeping = true; c.town = "depot"; c.gpos = [ix, iy, iz];
+      chunks.push(c);
+    }
+    return { world, chunks };
+  };
+
+  // census at spawn: full lattice, nothing moved or killed yet -> 1.0.
+  const spawnFixture = buildDepotLattice();
+  const spawnCensus = censusDepotChunks(spawnFixture.world.bodies);
+  ok("depot census picks up every depot chunk at build", spawnCensus.length === spawnFixture.chunks.length, `n=${spawnCensus.length}`);
+  ok("depot census fraction is 1.0 at spawn (nothing moved or killed)",
+    depotStandingFraction(spawnCensus, spawnFixture.world.byId) === 1);
+
+  // scripted demolition: kill ~1/4 outright, displace another ~1/4 well past
+  // the standing tolerance (a launched stone, still "alive" but not home) —
+  // together crossing the 0.58 breach line without either tactic alone
+  // needing to carry the whole fraction.
+  const demoFixture = buildDepotLattice();
+  const demoCensus = censusDepotChunks(demoFixture.world.bodies);
+  const half = demoFixture.chunks.length / 2;
+  for (let i = 0; i < demoFixture.chunks.length; i++) {
+    const c = demoFixture.chunks[i];
+    if (i < half / 2) c.alive = false; // outright destroyed
+    else if (i < half) c.pos = { x: c.pos.x + 20, y: c.pos.y, z: c.pos.z }; // launched well past 1.2m
+  }
+  const demoFraction = depotStandingFraction(demoCensus, demoFixture.world.byId);
+  ok(`half the depot demolished (kill+displace) crosses the ${DEPOT_BREACH_FRAC} breach line`,
+    demoFraction < DEPOT_BREACH_FRAC, `fraction=${demoFraction}`);
+  ok("a displaced-but-alive stone does not count as standing (demolition semantics)",
+    demoFraction <= 0.5 + 1e-9, `fraction=${demoFraction}`);
+
+  const Sb = makeRunState({ waves: WAVES });
+  Sb.started = true;
+  const breached = checkDepotBreach(Sb, demoFraction);
+  ok("checkDepotBreach fires when standing fraction crosses the line", breached === true);
+  ok("checkDepotBreach sets gameOver", Sb.gameOver === true);
+  ok("checkDepotBreach flags breach (distinct from lives-loss/ledger-loss)", Sb.breach === true);
+  ok("checkDepotBreach does not set victory", Sb.victory === false);
+  ok("checkDepotBreach is idempotent (no-op once gameOver)", checkDepotBreach(Sb, 0) === false);
+
+  const breachCard = makeEndDispatch({ victory: false, kills: 4, wave: 3, totalWaves: 50, breach: true });
+  ok("breach end card leads with the depot-is-breached line", breachCard.lines[0] === "THE DEPOT IS BREACHED.");
+  ok("breach end card carries the withdrawal-under-fire line", breachCard.lines.includes("The position is lost. Withdrawal under fire."));
+  ok("breach end card is digit-free (bureau voice, no wave/kill counters)", !breachCard.lines.some((l) => /\d/.test(l)));
+
+  // lives-loss path stays exactly as it was — a fully-standing depot (1.0)
+  // still loses the run the moment lives hit 0, and checkDepotBreach at 1.0
+  // never fires. Two independent tracks, neither masks the other.
+  const Sl = makeRunState({ waves: WAVES });
+  Sl.started = true;
+  Sl.lives = 0;
+  const livesLost = checkLoss(Sl);
+  ok("lives-loss path unaffected by structural-loss addition", livesLost === true && Sl.gameOver === true && !Sl.breach);
+  ok("a fully-standing depot (1.0) never trips checkDepotBreach", checkDepotBreach({ gameOver: false, victory: false }, 1) === false);
+
+  // census cadence: stepDepotCensus must gate computeFraction to ~1Hz
+  // (DEPOT_CENSUS_HZ), not call it every frame regardless of how many small
+  // ticks it's fed. 10 ticks of 0.25s = 2.5s of sim time -> exactly
+  // floor(2.5 * DEPOT_CENSUS_HZ) = 2 calls.
+  {
+    let calls = 0;
+    const Sc = { depotCensusAcc: 0, gameOver: false, victory: false };
+    for (let i = 0; i < 10; i++) stepDepotCensus(Sc, 0.25, () => { calls++; return 1; });
+    ok(`census cost sanity: runs at ~${DEPOT_CENSUS_HZ}Hz, not per frame (10x 0.25s ticks -> ${calls} calls)`, calls === 2);
+    // and a single huge-dt tick (a paused/backgrounded tab catching up)
+    // still only fires once per crossed 1/Hz boundary it actually reports —
+    // no runaway loop, no crash.
+    let calls2 = 0;
+    const Sc2 = { depotCensusAcc: 0, gameOver: false, victory: false };
+    stepDepotCensus(Sc2, 0.01, () => { calls2++; return 1; });
+    ok("census does not fire on a sub-threshold tick", calls2 === 0);
+  }
 }
 
 if (fails.length) {
