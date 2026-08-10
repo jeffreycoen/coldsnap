@@ -17,7 +17,7 @@ import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, WAVES, MASON, INFANTRY_ARMS } fr
 import { windAt } from "./wind.js";
 import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, executeWithdrawal, WAVE_TIMEOUT, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, pruneSquads } from "./state.js";
 import { SQUAD_SPECS, makeSquad, stepSquad } from "./squads.js";
-import { reachPolygon, arcClears } from "./accuracy.js";
+import { reachPolygon, arcClears, squadReach } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks, payBounties } from "./units.js";
 import { makeRegiment, payTown } from "./economy.js";
 import { makeTerritory, stepTerritory, holderAt, canBuild, fogStateFor, valueAt, EMIT } from "./territory.js";
@@ -1348,6 +1348,7 @@ export default function DepotGame({ onExit }) {
       // the intended build cell without racing the render loop's tween.
       window.__DEPOTGETFOCUS__ = () => ({ x: S.focus.x, z: S.focus.z });
       window.__DEPOTHOLD__ = (x, z) => { const c = invW(x, z); return holderAt(T, c.u, c.v); };
+      window.__DEPOTSELREACH__ = () => (S.selReach ? { id: S.selReach.id, n: S.selReach.pts.length, cx: +S.selReach.cx.toFixed(2), cz: +S.selReach.cz.toFixed(2), maxR: +Math.max(...S.selReach.pts.map((p) => Math.hypot(p.x - S.selReach.cx, p.z - S.selReach.cz))).toFixed(2) } : null);
       // debug harness (Task 2): the nearest buildable+held cell to the depot
       // flag. Build rights now gate placement on holderAt===1 — the depot's
       // own emitter greens ground near itself, but the smoke test's original
@@ -1500,7 +1501,24 @@ export default function DepotGame({ onExit }) {
           // overlay API (read-only use — renderer belongs to a parallel
           // task). Ring radius = the squad's own weapon range.
           const selSq = S.selSquadId != null ? S.squads.find((q) => q.id === S.selSquadId) : null;
-          if (selSq) S.hover = { x: selSq.anchor.x, z: selSq.anchor.z, valid: true, range: INFANTRY_ARMS[selSq.type].range };
+          if (selSq && selSq.type === "sniper") {
+            // Sniper selection shows the TRUE reach fan — squadReach fires
+            // from the member's head (pos.y + 0.5, squadFire's own muzzle),
+            // elevation-scaled and terrain/solid-clipped, fog-independent
+            // like the placement preview (null territory: what he COULD
+            // see). The old flat spec.range ring read from the anchor's
+            // ground and under-sold every elevated or crest-line sniper.
+            // 1Hz refresh: defend micro-shuffles and attack legs move him.
+            if (!S.selReach || S.selReach.id !== selSq.id || world.t - S.selReach.t > 1) {
+              const u0 = selSq.memberIds.map((id) => world.byId.get(id)).find((u) => u && u.alive);
+              const pts = u0 ? squadReach(world, selSq, null, invW) : null;
+              S.selReach = pts ? { id: selSq.id, t: world.t, pts, cx: u0.pos.x, cz: u0.pos.z } : null;
+            }
+            S.hover = { x: selSq.anchor.x, z: selSq.anchor.z, valid: true, range: 0 };
+          } else {
+            S.selReach = null;
+            if (selSq) S.hover = { x: selSq.anchor.x, z: selSq.anchor.z, valid: true, range: INFANTRY_ARMS[selSq.type].range };
+          }
           const ws = S.ws;
           if (S.started && !S.gameOver && !S.victory) {
             if (S.phase === PHASE.BUILD) {
@@ -1574,6 +1592,10 @@ export default function DepotGame({ onExit }) {
             const P0 = S.pending;
             R.overlay.setPending(true, P0.wp.x, P0.y, P0.wp.z, P0.poly, P0.ringR, P0.color);
           } else R.overlay.setPending(false);
+          if (R.overlay.setReach) {
+            if (S.selReach) R.overlay.setReach(true, S.selReach.cx, field.heightAt(S.selReach.cx, S.selReach.cz), S.selReach.cz, S.selReach.pts, 0xffd27a);
+            else R.overlay.setReach(false);
+          }
           R.render(dt, S.focus, AIM_OFF, 0);
           // ✓/✗ screen-space anchor (Task 3): rotation-proof because it's
           // recomputed from the live camera every frame via project() —

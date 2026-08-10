@@ -9,6 +9,7 @@
 // modules have finished evaluating. Kept in one place (state.js, per Task 3's
 // brief) rather than duplicated.
 import { effRange, fieldReaches } from "./state.js";
+import { INFANTRY_ARMS } from "./specs.js";
 import { aimSolve } from "../engine/core.js";
 const REF_RANGE = 16;          // acc is calibrated at this ground distance
 const RANGE_K = 0.045;         // +4.5% sigma per meter beyond REF_RANGE
@@ -154,6 +155,22 @@ export function reachPolygon(world, T, muzzle, spec, team, toUV = (x, z) => ({ u
     pts.push({ x: muzzle.x + dx * last, z: muzzle.z + dz * last });
   }
   return pts;
+}
+
+// Selected-squad reach fan: the same polygon squadFire actually shoots by —
+// muzzle at a live member's HEAD (pos.y + 0.5, squadFire's own formula), not
+// the anchor's ground height (the old flat spec.range ring under-read every
+// elevated sniper and ignored terrain entirely). First live member stands in
+// for the squad (sniper squads are n=1; for others the members hold within a
+// couple meters of each other). Null when nothing is alive.
+export function squadReach(world, squad, T = null, toUV = (x, z) => ({ u: x, v: z })) {
+  for (const id of squad.memberIds) {
+    const u = world.byId.get(id);
+    if (!u || !u.alive) continue;
+    const muzzle = { x: u.pos.x, y: u.pos.y + 0.5, z: u.pos.z };
+    return reachPolygon(world, T, muzzle, INFANTRY_ARMS[squad.type], squad.team, toUV);
+  }
+  return null;
 }
 
 export function applyScatter(world, dir, sigma) {

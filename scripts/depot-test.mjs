@@ -9,7 +9,7 @@ import {
   spawnSquadMembers, spawnSandbag, SANDBAG_COST, pruneSquads,
   DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, DEPOT_CENSUS_HZ,
 } from "../src/depot/state.js";
-import { reachPolygon, arcClears } from "../src/depot/accuracy.js";
+import { reachPolygon, arcClears, squadReach } from "../src/depot/accuracy.js";
 import { friendlyFouls } from "../src/depot/state.js";
 import {
   makeWorld, addBody, addWeld, fireProjectile, explode, stepWorld, applyDamage, worldHash, CAUSE, mulberry32,
@@ -3457,6 +3457,54 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     }
     ok("SQUAD-PACE twins: identical seeds -> identical anchor paths through the threat transition",
       same && a.sq.order === "defend" && b.sq.order === "defend", `same=${same} orders=${a.sq.order}/${b.sq.order}`);
+  }
+}
+
+// ==== SNIPER-REACH (selection fan fix): the selected-squad range display
+// must be computed from the member's HEAD (pos.y + 0.5, the squadFire muzzle)
+// — not the anchor's ground height with the flat spec.range ring it showed
+// before (Jeff's report: "view distance calculated from base instead of head").
+{
+  const mkField = (heightAt) => ({ heightAt, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } });
+  const flat = mkField(() => 0);
+
+  // (a) flat ground: the head muzzle (ground + 1.24) earns the elevation
+  // bonus a base muzzle (elev 0) never would — reach must exceed the flat
+  // 30m spec.range the old ring displayed.
+  {
+    const w = makeWorld({ field: flat, seed: 31 });
+    const sq = makeSquad(1, "sniper", 1, 0, 0);
+    spawnSquadMembers(w, sq);
+    const pts = squadReach(w, sq);
+    const reach = Math.max(...pts.map((p) => Math.hypot(p.x, p.z)));
+    ok("SNIPER-REACH flat: head-muzzle fan reaches past base spec.range", reach > INFANTRY_ARMS.sniper.range, reach.toFixed(2));
+  }
+
+  // (b) a 0.7m ridge ring at 8m: a head-height sightline clears it (arc ~1.2m
+  // vs 0.7 + 0.35 clearance); a base-height one is blocked. The fan must
+  // cross the ridge.
+  {
+    const ridge = mkField((x, z) => { const r = Math.hypot(x, z); return r > 7.5 && r < 8.5 ? 0.7 : 0; });
+    const w = makeWorld({ field: ridge, seed: 32 });
+    const sq = makeSquad(1, "sniper", 1, 0, 0);
+    spawnSquadMembers(w, sq);
+    const pts = squadReach(w, sq);
+    const reach = Math.max(...pts.map((p) => Math.hypot(p.x, p.z)));
+    ok("SNIPER-REACH ridge: head-height fan sees over a 0.7m ridge at 8m", reach > 20, reach.toFixed(2));
+  }
+
+  // (c) no live members -> null (dead squad selected mid-prune).
+  {
+    const w = makeWorld({ field: flat, seed: 33 });
+    const sq = makeSquad(1, "sniper", 1, 0, 0);
+    ok("SNIPER-REACH empty: squad with no live members returns null", squadReach(w, sq) === null);
+  }
+
+  // (d) DepotGame's selection path draws the fan via squadReach, not the old
+  // flat INFANTRY_ARMS range ring at the anchor.
+  {
+    const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("SNIPER-REACH wiring: DepotGame selection uses squadReach for the sniper", /squadReach\(/.test(src));
   }
 }
 

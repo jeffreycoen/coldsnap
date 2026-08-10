@@ -1037,6 +1037,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const OK_C = new THREE.Color(0x4aff8c), BAD_C = new THREE.Color(0xff6b5e);
   let hoverPad = null, hoverRing = null, hoverFill = null, objMark = null;
   let pendingPad = null, pendingFill = null, pendingEdge = null, pendingAuraRing = null, pendingAuraFill = null;
+  let reachFill = null, reachEdge = null;
   const overlay = {
     // ghost build cursor: pad snapped to a cell (cs meters), ring/fill at range r
     setHover(on, x, z, y, r, okFlag, cs) {
@@ -1126,6 +1127,38 @@ export function makeRenderer(canvas, world0, opts = {}) {
         pendingAuraRing.position.set(x, y + 0.14, z); pendingAuraRing.scale.set(ringR, ringR, 1);
         pendingAuraFill.position.set(x, y + 0.12, z); pendingAuraFill.scale.set(ringR, ringR, 1);
       }
+    },
+    // selected-squad reach fan (sniper): same fill+edge treatment as the
+    // pending preview, minus the ghost pad — this marks sight, not a build.
+    // (cx, cz) is the shooter's own position (the fan's triangulation center
+    // and the point the rays were marched from), not a grid cell.
+    setReach(on, cx, y, cz, pts, color) {
+      if (!reachFill) {
+        reachFill = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide }));
+        reachFill.layers.set(1); scene.add(reachFill);
+        reachEdge = new THREE.LineLoop(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.8 }));
+        reachEdge.layers.set(1); scene.add(reachEdge);
+      }
+      const have = on && pts && pts.length > 2;
+      reachFill.visible = have; reachEdge.visible = have;
+      if (!have) return;
+      const n = pts.length;
+      const posArr = new Float32Array((n + 1) * 3);
+      posArr[0] = cx; posArr[1] = y + 0.14; posArr[2] = cz;
+      for (let i = 0; i < n; i++) { posArr[(i + 1) * 3] = pts[i].x; posArr[(i + 1) * 3 + 1] = y + 0.14; posArr[(i + 1) * 3 + 2] = pts[i].z; }
+      const idx = [];
+      for (let i = 1; i <= n; i++) idx.push(0, i, (i % n) + 1);
+      reachFill.geometry.dispose();
+      reachFill.geometry = new THREE.BufferGeometry();
+      reachFill.geometry.setAttribute("position", new THREE.BufferAttribute(posArr, 3));
+      reachFill.geometry.setIndex(idx);
+      const edgeArr = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { edgeArr[i * 3] = pts[i].x; edgeArr[i * 3 + 1] = y + 0.16; edgeArr[i * 3 + 2] = pts[i].z; }
+      reachEdge.geometry.dispose();
+      reachEdge.geometry = new THREE.BufferGeometry();
+      reachEdge.geometry.setAttribute("position", new THREE.BufferAttribute(edgeArr, 3));
+      reachFill.material.color.setHex(color || 0xffd27a);
+      reachEdge.material.color.setHex(color || 0xffd27a);
     },
     // spawn banners: red cloth on a pole at each entry point
     setBanners(pts) {
