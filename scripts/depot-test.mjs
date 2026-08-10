@@ -11,7 +11,7 @@ import {
 import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, WAVES as DEPOT_WAVES } from "../src/depot/specs.js";
 import { stepUnits, spawnUnit, stepBreakerRam } from "../src/depot/units.js";
 import {
-  makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue,
+  makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue, regimentKill,
 } from "../src/depot/economy.js";
 import { planWave, waveBudget } from "../src/depot/ai.js";
 import fs from "node:fs";
@@ -739,6 +739,119 @@ function shareOf(buys, types) {
   ok("50-wave loop: regiment never negative", !negative);
   ok("50-wave loop: total spend stays within total income",
     reg.scrap >= 0 && reg.scrap <= totalIncome, `final scrap=${reg.scrap} income=${totalIncome}`);
+}
+
+// --- Task 4: economy wired into the loop ----------------------------------
+
+// startWave(S, WAVES, {reg, snap, rng}) generates from planWave instead of
+// the static table — spawnQueue/mixBag match the plan's buys exactly.
+{
+  const S = makeRunState({ waves: WAVES });
+  S.started = true;
+  const reg = makeRegiment(mulberry32(7));
+  const rng = mulberry32(8);
+  const plan = planWave({ ...reg }, BASE_SNAP, 0, mulberry32(8)); // same stream, unconsumed reg, to predict shape
+  startWave(S, WAVES, { reg, snap: BASE_SNAP, rng });
+  ok("startWave(reg): spawnQueue matches planWave's total buys",
+    S.ws.spawnQueue === totalUnits(plan.buys), `${S.ws.spawnQueue} vs ${totalUnits(plan.buys)}`);
+  ok("startWave(reg): phase advances to wave", S.phase === PHASE.WAVE);
+  ok("startWave(reg): ws.results accumulator reset", S.ws.results &&
+    S.ws.results.structureDmg === 0 && S.ws.results.leaks === 0);
+}
+
+// startWave with useTable (or no reg) keeps the old static-table behavior —
+// the escape hatch existing/older tests rely on.
+{
+  const S = makeRunState({ waves: WAVES });
+  S.started = true;
+  startWave(S, WAVES, { useTable: true });
+  ok("startWave useTable: falls back to the static table", S.ws.spawnQueue === WAVES[0].units);
+}
+
+// payResults at stall: the wave's accumulated results (structure damage +
+// structure kills + leaks) land on reg.scrap via the RESULTS table exactly.
+{
+  const S = makeRunState({ waves: WAVES });
+  S.started = true;
+  S.reg = { heads: 300, tanks: 8, heads0: 300, tanks0: 8, scrap: 60 };
+  startWave(S, WAVES, { useTable: true });
+  S.ws.results = { structureDmg: 100, towerKills: 2, wallKills: 3, buildingKills: 1, leaks: 2 };
+  S.ws.spawnQueue = 0;
+  const scrapBefore = S.reg.scrap;
+  const fired = tryStall(S, WAVES, 0);
+  const expected = scrapBefore + 100 * RESULTS.structureDmg + 2 * RESULTS.towerKill
+    + 3 * RESULTS.wallKill + 1 * RESULTS.buildingKill + 2 * RESULTS.leak;
+  ok("tryStall pays results into reg.scrap", fired && Math.abs(S.reg.scrap - expected) < 1e-9,
+    `${S.reg.scrap} vs ${expected}`);
+}
+
+// STIPEND paid at advance().
+{
+  const S = makeRunState({ waves: WAVES });
+  S.started = true;
+  S.reg = { heads: 300, tanks: 8, heads0: 300, tanks0: 8, scrap: 60 };
+  startWave(S, WAVES, { useTable: true });
+  S.ws.spawnQueue = 0;
+  tryStall(S, WAVES, 0);
+  const before = S.reg.scrap;
+  advance(S, WAVES);
+  ok("advance() pays STIPEND into reg.scrap", S.reg.scrap === before + STIPEND, `${S.reg.scrap} vs ${before + STIPEND}`);
+}
+
+// regimentKill: a killed conscript/tank decrements reg.heads/tanks
+// permanently, clamped at 0 — never recovers, never negative.
+{
+  const reg = { heads: 2, tanks: 1, heads0: 300, tanks0: 8, scrap: 0 };
+  regimentKill(reg, "unit");
+  regimentKill(reg, "unit");
+  regimentKill(reg, "unit"); // one past zero
+  regimentKill(reg, "vehicle");
+  regimentKill(reg, "vehicle"); // one past zero
+  ok("regimentKill: heads depleted permanently, clamped at 0", reg.heads === 0);
+  ok("regimentKill: tanks depleted permanently, clamped at 0", reg.tanks === 0);
+}
+
+// The consequence loop, asserted: two identical regiments buy an identical
+// wave (same rng stream), then diverge — one gets massacred (all kills, no
+// leaks: heads thinned, no scrap earned), the other leaks through untouched
+// (no kills: heads intact, full leak payout). The massacred regiment must
+// field a measurably poorer next wave — fewer buyable units AND fewer heads
+// left to buy with — even though it earns the same flat STIPEND.
+{
+  const mkReg = () => makeRegiment(mulberry32(42));
+  const regMassacred = mkReg();
+  const regLeaked = mkReg();
+  const waveIdx = 6;
+  const snap = BASE_SNAP;
+
+  // wave N: identical buy (same rng stream, identical starting regiments)
+  planWave(regMassacred, snap, waveIdx, mulberry32(100));
+  planWave(regLeaked, snap, waveIdx, mulberry32(100));
+  ok("consequence loop setup: identical wave-N buy from identical inputs",
+    regMassacred.heads === regLeaked.heads && regMassacred.tanks === regLeaked.tanks
+    && regMassacred.scrap === regLeaked.scrap);
+
+  // wave N results: massacred wave killed outright (no leaks, no scrap
+  // earned, heads thinned by the kills); leaked-through wave earns full
+  // leak payout and loses no heads.
+  const KILLED = 40;
+  for (let i = 0; i < KILLED; i++) regimentKill(regMassacred, "unit");
+  payResults(regMassacred, { structureDmg: 0, towerKills: 0, wallKills: 0, buildingKills: 0, leaks: 0 });
+  payResults(regLeaked, { structureDmg: 0, towerKills: 0, wallKills: 0, buildingKills: 0, leaks: KILLED });
+  regMassacred.scrap += STIPEND;
+  regLeaked.scrap += STIPEND;
+  ok("consequence loop: massacre leaves fewer heads than a leak-through",
+    regMassacred.heads < regLeaked.heads, `${regMassacred.heads} vs ${regLeaked.heads}`);
+  ok("consequence loop: leak-through earns more scrap than a massacre",
+    regLeaked.scrap > regMassacred.scrap, `${regLeaked.scrap} vs ${regMassacred.scrap}`);
+
+  // wave N+1: same snap, identical fresh rng stream — the only difference
+  // left is the regiment state itself.
+  const planMassacred = planWave(regMassacred, snap, waveIdx + 1, mulberry32(101));
+  const planLeaked = planWave(regLeaked, snap, waveIdx + 1, mulberry32(101));
+  ok("consequence loop: a massacred wave yields a measurably poorer next wave",
+    totalUnits(planMassacred.buys) < totalUnits(planLeaked.buys),
+    `${totalUnits(planMassacred.buys)} vs ${totalUnits(planLeaked.buys)}`);
 }
 
 if (fails.length) {

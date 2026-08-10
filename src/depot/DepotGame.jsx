@@ -17,6 +17,7 @@ import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, WAVES, MASON } from "./specs.js"
 import { windAt } from "./wind.js";
 import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot } from "./state.js";
 import { stepUnits, spawnUnit, stepBreakerRam } from "./units.js";
+import { makeRegiment, regimentKill } from "./economy.js";
 import Dispatch from "./Dispatch.jsx";
 
 // ============================================================== the map
@@ -623,8 +624,35 @@ export default function DepotGame({ onExit }) {
         zoom: 1, acc: 0, t: 0, fps: 60, fpsAcc: 0, fpsN: 0,
         hover: null, pointer: null, toasts: [],
         hudT: 0, keys: {}, sellById: null, audio: A,
+        // The attacker's economy — seeded off the run's own rng stream, not
+        // an unseeded generator, so ?seed= replays reproduce the same
+        // regiment. Mutated in place by planWave/payResults/regimentKill;
+        // never replaced.
+        reg: makeRegiment(world.rng),
       };
       stateRef.current = S;
+      // id -> last-observed hp for wall/tower/building bodies, so structure
+      // damage dealt (not just kills) can be attributed to the attacker
+      // across ticks — there is no discrete "damage" event to read instead
+      // (see applyDamage in engine/core.js: it sets b.lastHit but pushes no
+      // event unless the hit is lethal).
+      const structHp = new Map();
+
+      // buildSnapshot: the counter-signal read planWave uses to weight its
+      // buy — a fresh count of the player's live defenses every stall.
+      const buildSnapshot = () => {
+        let mortars = 0, mgs = 0, guns = 0, frosts = 0, walls = 0, elevSum = 0, elevN = 0;
+        for (const b of world.bodies) {
+          if (b.kind === "wall") { walls++; continue; }
+          if (b.kind !== "tower") continue;
+          if (b.towerType === "mortar") mortars++;
+          else if (b.towerType === "mg") mgs++;
+          else if (b.towerType === "gun" || b.towerType === "rocket") guns++;
+          else if (b.towerType === "frost") frosts++;
+          elevSum += b.pos.y; elevN++;
+        }
+        return { mortars, mgs, guns, frosts, walls, towerElev: elevN ? elevSum / elevN : 0 };
+      };
 
       const toast = (txt) => { S.toasts.push({ txt, t: performance.now() / 1000 }); if (S.toasts.length > 4) S.toasts.shift(); };
 
@@ -792,7 +820,7 @@ export default function DepotGame({ onExit }) {
       window.addEventListener("keyup", ku);
 
       const startWave = () => {
-        phaseStartWave(S, WAVES);
+        phaseStartWave(S, WAVES, { reg: S.reg, snap: buildSnapshot(), rng: world.rng });
         toast("WAVE " + (S.ws.waveIdx + 1));
       };
       const spawnOne = () => {
@@ -856,12 +884,35 @@ export default function DepotGame({ onExit }) {
             world.bodies.splice(i, 1);
           }
         }
+        // Structure damage dealt this frame, attributed via b.lastHit —
+        // there's no discrete per-hit damage event, so this rides the hp
+        // delta since the last frame's snapshot (see structHp above).
+        if (S.ws.results) {
+          for (const b of world.bodies) {
+            if (b.kind !== "wall" && b.kind !== "tower" && b.kind !== "building") continue;
+            const prev = structHp.get(b.id);
+            if (prev != null && b.hp < prev && b.lastHit && b.lastHit.attacker === "enemy") {
+              S.ws.results.structureDmg += prev - b.hp;
+            }
+            structHp.set(b.id, b.hp);
+          }
+          for (const id of structHp.keys()) if (!world.byId.get(id)) structHp.delete(id);
+        }
         for (const e of evs) {
           if (e.type === "tdkill") {
             S.resources += e.bounty; S.kills++;
           } else if (e.type === "leak") {
             S.lives -= e.dmg;
             toast("LEAK — -1 life");
+            if (S.ws.results) S.ws.results.leaks++;
+          } else if (e.type === "kill") {
+            if (e.attacker === "player" && (e.kind === "unit" || e.kind === "vehicle")) {
+              regimentKill(S.reg, e.kind);
+            } else if (e.attacker === "enemy" && S.ws.results) {
+              if (e.kind === "tower") S.ws.results.towerKills++;
+              else if (e.kind === "wall") S.ws.results.wallKills++;
+              else if (e.kind === "building") S.ws.results.buildingKills++;
+            }
           }
         }
         // The single place a run flips to LOSS (depot destroyed, or the
@@ -871,7 +922,7 @@ export default function DepotGame({ onExit }) {
         return evs;
       };
 
-      window.__DEPOT__ = () => ({ t: world.t, scrap: S.resources, lives: S.lives, kills: S.kills, wave: S.ws.waveIdx + 1, bodies: world.bodies.length, fps: S.fps, paused: S.paused, speed: S.speed, phase: S.phase });
+      window.__DEPOT__ = () => ({ t: world.t, scrap: S.resources, lives: S.lives, kills: S.kills, wave: S.ws.waveIdx + 1, bodies: world.bodies.length, fps: S.fps, paused: S.paused, speed: S.speed, phase: S.phase, reg: { ...S.reg } });
       window.__DEPOTACK__ = () => { if (S.doAdvance) S.doAdvance(); };
       window.__DEPOTBUILD__ = (gx, gz, mode) => buildAt(gx, gz, mode || "wall");
       window.__DEPOTSPAWN__ = (n) => { for (let i = 0; i < (n || 1); i++) spawnEnemy(world, SPAWN_POINTS[S.spawnRR++ % SPAWN_POINTS.length]); };

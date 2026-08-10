@@ -3,6 +3,8 @@
 // never be read from the closure — see ColdsnapTD.jsx for why).
 import { aimSolve, fireProjectile } from "../engine/core.js";
 import { scatterSigma, applyScatter } from "./accuracy.js";
+import { planWave } from "./ai.js";
+import { STIPEND, payResults } from "./economy.js";
 
 export const PHASE = { BUILD: "build", WAVE: "wave", STALL: "stall" };
 
@@ -65,7 +67,7 @@ export function towerShot(world, tower, target, spec) {
 }
 
 export function makeWaveState() {
-  return { waveIdx: 0, spawnQueue: 0, spawnTimer: 0, spawnDelay: 1, active: false, betweenWaves: true, countdown: 8, mixBag: [] };
+  return { waveIdx: 0, spawnQueue: 0, spawnTimer: 0, spawnDelay: 1, active: false, betweenWaves: true, countdown: 8, mixBag: [], results: null };
 }
 
 export function makeRunState({ waves, startResources = 120, startLives = 20 }) {
@@ -184,15 +186,39 @@ function buildMixBag(mix) {
   while (bag.length) { i = (i + 7) % bag.length; out.push(bag.splice(i, 1)[0]); }
   return out;
 }
-export function startWave(S, WAVES) {
+// opts: { useTable (escape hatch — old static-table behavior, no regiment
+//         needed, kept for tests that don't wire an attacker economy),
+//         reg (the attacker's live regiment — makeRegiment output, mutated
+//         in place by planWave), snap (buildSnapshot), rng (world.rng) }.
+// useTable, or no reg supplied, falls back to the static WAVES[waveIdx]
+// entry exactly as before. Otherwise the wave is generated fresh from
+// planWave(reg, snap, waveIdx, rng) — reg.heads/tanks/scrap deplete at buy
+// time (ai.js's contract), so a depleted regiment naturally fields a
+// smaller/weaker wave. Always resets ws.results, the accumulator DepotGame
+// fills with this wave's structure-damage/kill/leak events for payResults
+// at stall.
+export function startWave(S, WAVES, opts = {}) {
+  const { useTable = false, reg = null, snap = null, rng = null } = opts;
   const ws = S.ws;
   const w = WAVES[ws.waveIdx];
-  ws.spawnQueue = w.units;
-  ws.spawnDelay = w.delay;
+  let units, delay, mix;
+  if (useTable || !reg) {
+    units = w.units;
+    delay = w.delay;
+    mix = w.mix;
+  } else {
+    const { buys } = planWave(reg, snap || {}, ws.waveIdx, rng);
+    units = buys.reduce((s, b) => s + b.n, 0);
+    delay = w.delay;
+    mix = buys.map((b) => [b.type, b.n]);
+  }
+  ws.spawnQueue = units;
+  ws.spawnDelay = delay;
   ws.spawnTimer = 0;
   ws.active = true;
   ws.betweenWaves = false;
-  ws.mixBag = w.mix ? buildMixBag(w.mix) : [];
+  ws.mixBag = mix && mix.length ? buildMixBag(mix) : [];
+  ws.results = { structureDmg: 0, towerKills: 0, wallKills: 0, buildingKills: 0, leaks: 0 };
   S.phase = PHASE.WAVE;
 }
 
@@ -212,6 +238,10 @@ export function tryStall(S, WAVES, liveEnemies) {
   if (liveEnemies > 0) return false;
   S.ws.active = false;
   S.phase = PHASE.STALL;
+  // The attacker cashes in this wave's results (structure damage dealt,
+  // structure kills, leaks) before the dispatch card is drawn — the next
+  // wave's planWave call reads reg.scrap as left by this.
+  if (S.reg && S.ws.results) payResults(S.reg, S.ws.results);
   const d = makeDispatch(S.ws.waveIdx, WAVES.length);
   S.dispatch = d;
   S.lastDispatch = d;
@@ -232,6 +262,7 @@ export function advance(S, WAVES) {
     return true;
   }
   S.resources += 12;
+  if (S.reg) S.reg.scrap += STIPEND;
   ws.betweenWaves = true;
   ws.countdown = 8;
   S.phase = PHASE.BUILD;
