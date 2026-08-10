@@ -29,6 +29,16 @@ export function waveBudget(waveIdx) {
 // afford a token muster, not merely a thin one.
 export const MIN_WAVE_FLOOR = 4 * cost("");
 
+// snapSquads: count of live player squads from the build snapshot.
+// TODO (follow-up, DepotGame.jsx owned by a parallel task): buildSnapshot
+// must add `squads: <count of live player squads>` (S.squads after
+// pruneSquads). Until that lands, snapshots carry no squads key, this
+// reads 0, and the brain never fields a marksman in the live game — the
+// depot-test fixtures pass squads explicitly. Tolerates absent/null snap.
+export function snapSquads(snap) {
+  return (snap && snap.squads) || 0;
+}
+
 // Counter-weight signals from the build snapshot, each 0..1.
 function signals(snap) {
   return {
@@ -104,6 +114,20 @@ function buyInfantryMix(shares, budget, reg, buys) {
   }
 }
 
+// Marksman counter-buy (Task 4D): player squads on the field make a
+// sniper (ENEMY_SPECS.sniper, 30 scrap of regiment head) worth fielding.
+// Mirrors buyTanks' shape; one head per sniper.
+function buySnipers(n, reg, buys) {
+  const c = cost("sniper");
+  const take = Math.min(Math.max(0, n), reg.heads, Math.floor(reg.scrap / c));
+  if (take <= 0) return 0;
+  reg.heads -= take;
+  reg.scrap -= take * c;
+  const existing = buys.find((b) => b.type === "sniper");
+  if (existing) existing.n += take; else buys.push({ type: "sniper", n: take });
+  return take;
+}
+
 function buyTanks(n, reg, buys) {
   const c = cost("tank");
   const take = Math.min(Math.max(0, n), reg.tanks, Math.floor(reg.scrap / c));
@@ -135,6 +159,15 @@ export function planWave(reg, snap, waveIdx, rng) {
   const buys = [];
   let banked = false;
 
+  // Marksman counter-weight: modest and deterministic (NO rng draw — the
+  // 4-draw stream contract stays intact). At >=2 live player squads, from
+  // wave 4 on, one sniper goes forward per wave, provided the buy leaves
+  // at least a token muster's scrap behind. Banking waves skip it (a thin
+  // screen doesn't carry a scope). 3+ squads reads as saturation and is
+  // still one sniper — they're 30 scrap of regiment head each.
+  const sniperWanted = snapSquads(snap) >= 2 && waveIdx >= 4 &&
+    reg.scrap >= cost("sniper") + MIN_WAVE_FLOOR ? 1 : 0;
+
   const bankThreshold = 1.8 * baseline;
   if (reg.scrap > bankThreshold) {
     const goal = dominant === "mg" ? "tankPush" : "surge";
@@ -151,12 +184,14 @@ export function planWave(reg, snap, waveIdx, rng) {
     const erupt = goal === "tankPush" ? tankPushReady : (desperate || reg.scrap >= surgeThreshold);
 
     if (erupt && goal === "tankPush") {
+      if (sniperWanted) buySnipers(sniperWanted, reg, buys);
       const want = 2 + Math.floor(sizeRoll * 3); // 2..4
       buyTanks(want, reg, buys);
       const screenBudget = Math.min(reg.scrap, baseline);
       buyInfantryMix(shares, screenBudget, reg, buys);
       banked = false;
     } else if (erupt) {
+      if (sniperWanted) buySnipers(sniperWanted, reg, buys);
       const spend = reg.scrap * jitterSpend;
       buyInfantryMix(shares, spend, reg, buys);
       banked = false;
@@ -173,6 +208,7 @@ export function planWave(reg, snap, waveIdx, rng) {
   } else {
     // mg pressure buys a tank first (reserving its cost) before the
     // infantry mix spends down the rest of the wave's budget.
+    if (sniperWanted) buySnipers(sniperWanted, reg, buys);
     if (shares.tankPref > 0.3 && reg.tanks > 0 && reg.scrap >= cost("tank")) {
       buyTanks(1, reg, buys);
     }

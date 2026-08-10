@@ -1144,6 +1144,112 @@ try {
   ok("depot: ESC returns to menu", true);
   }
 
+  // ==== TASK 4 (Phase 5): the enemy mirror — a fresh depot run where enemy
+  // rifles engage a PLACED squad ordered into contested ground: at least one
+  // member goes down under anti-personnel fire (4A's urgency pass, live in
+  // prod). Marksman intel + AI sniper buys are asserted headlessly in
+  // depot-test.mjs — the live game can't field them until DepotGame's
+  // buildSnapshot wires `squads` (see ai.js's snapSquads TODO).
+  if (sectionEnabled("depot")) {
+  const DEPOT_SEED4 = 11;
+  await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (k.startsWith("coldsnap-depot")) localStorage.removeItem(k); });
+  await page.goto(URL + (URL.includes("?") ? "&" : "?") + `seed=${DEPOT_SEED4}`, { waitUntil: "networkidle0" });
+  await clickMenu("depot");
+  await page.waitForFunction(() => !!window.__DEPOT__ && !!window.__DEPOTSTART__, { timeout: 15000 });
+  await page.evaluate(() => window.__DEPOTSTART__());
+  await page.waitForFunction(() => window.__DEPOT__().t > 0.2, { timeout: 10000 });
+  const SHOTS4 = process.env.DEPOT_SHOTS || null;
+  const shot4 = async (name) => { if (SHOTS4) { await page.screenshot({ path: SHOTS4 + "/" + name }); } };
+  // 2x sim speed (HUD's own control) — swiftshader budget, same as above.
+  await page.evaluate(() => {
+    const spd = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "1×");
+    if (spd) spd.click();
+  });
+  // local copies of the Task-3 helpers (scoped there): settle + projected tap
+  const settleAt4 = async (x, z, zoom) => {
+    await page.evaluate((p) => window.__DEPOTFOCUS__(p.x, p.z, p.zoom || undefined), { x, z, zoom });
+    await page.waitForFunction((p) => {
+      const r = document.querySelector("canvas").getBoundingClientRect();
+      const g = window.__DEPOTGROUNDAT__(r.left + r.width / 2, r.top + r.height / 2);
+      return !!g && Math.hypot(g.x - p.x, g.z - p.z) < 1.0;
+    }, { timeout: 8000, polling: 200 }, { x, z }).catch(() => {});
+    await sleep(150);
+  };
+  const tapWorld4 = async (x, z) => {
+    for (let i = 0; i < 12; i++) {
+      const pt = await page.evaluate((p) => {
+        const q = window.__DEPOTSCREENAT__(p.x, p.z);
+        if (!q) return null;
+        const r = document.querySelector("canvas").getBoundingClientRect();
+        if (q.x < r.left + 8 || q.x > r.right - 8 || q.y < r.top + 60 || q.y > r.bottom - 110) return null;
+        return q;
+      }, { x, z });
+      if (pt) { await page.mouse.click(Math.round(pt.x), Math.round(pt.y)); return true; }
+      await sleep(400);
+    }
+    return false;
+  };
+  // place a rifles squad on held ground (tower flow: tap -> confirm)
+  await page.waitForFunction(() => !!window.__DEPOTFINDBUILDABLE__(5), { timeout: 10000, polling: 200 });
+  let placed4 = false;
+  for (const cr of [5, 7, 9, 11]) {
+    const cand = await page.evaluate((r) => window.__DEPOTFINDBUILDABLE__(r), cr);
+    if (!cand) continue;
+    await settleAt4(cand.x, cand.z);
+    await page.click('[data-tower-key="sq_rifles"]');
+    if (!(await tapWorld4(cand.x, cand.z))) continue;
+    const opened = await page.waitForFunction(() => !!document.querySelector("[data-pending-confirm]"), { timeout: 3000, polling: 100 }).then(() => true).catch(() => false);
+    if (!opened) continue;
+    await sleep(400);
+    await page.click("[data-pending-confirm]");
+    placed4 = await page.waitForFunction(() => (window.__DEPOTSQUADS__() || []).length === 1, { timeout: 5000, polling: 100 }).then(() => true).catch(() => false);
+    if (placed4) break;
+  }
+  ok("depot task4: rifles squad placed for the firefight", placed4);
+  if (placed4) {
+    // field an assault force (debug spawner — phase stays build, no dispatch
+    // modal in the way) and order the squad INTO it: contested ground is
+    // where the attacker field reaches men (unit-vs-unit fog law).
+    await page.evaluate(() => window.__DEPOTSPAWN__(12));
+    await page.evaluate(() => window.__DEPOTSPAWN__(12));
+    await page.waitForFunction(() => !!window.__DEPOTENEMYPOS__(), { timeout: 10000, polling: 200 });
+    const en4 = await page.evaluate(() => window.__DEPOTENEMYPOS__());
+    let sq4 = (await page.evaluate(() => window.__DEPOTSQUADS__()))[0];
+    // select: tap a member until the order chips arm
+    let chips4 = false;
+    for (let i = 0; i < 8 && !chips4; i++) {
+      sq4 = (await page.evaluate(() => window.__DEPOTSQUADS__()))[0];
+      const m = sq4.members[0];
+      await settleAt4(m.x, m.z, 1.6);
+      if (!(await tapWorld4(m.x, m.z))) continue;
+      chips4 = await page.waitForFunction(() => !!document.querySelector("[data-squad-attack]"), { timeout: 1500, polling: 100 }).then(() => true).catch(() => false);
+    }
+    ok("depot task4: squad selected (ATTACK chip up)", chips4);
+    if (chips4) {
+      const dest4 = { x: sq4.anchor.x + (en4.x - sq4.anchor.x) * 0.55, z: sq4.anchor.z + (en4.z - sq4.anchor.z) * 0.55 };
+      await page.click("[data-squad-attack]");
+      await settleAt4(dest4.x, dest4.z, 1.2);
+      await tapWorld4(dest4.x, dest4.z);
+      // keep pressure on: fresh riflemen every so often while we wait for
+      // the mirror to find a man (blast knockback + fog seams make any
+      // single volley uncertain; a sustained firefight is not).
+      let down4 = false;
+      for (let round = 0; round < 24 && !down4; round++) {
+        await page.evaluate(() => window.__DEPOTSPAWN__(4));
+        down4 = await page.waitForFunction(() => {
+          const q = (window.__DEPOTSQUADS__() || [])[0];
+          return !q || q.members.filter((m) => m.alive).length < 4;
+        }, { timeout: 8000, polling: 400 }).then(() => true).catch(() => false);
+      }
+      await shot4("task4-firefight.png");
+      ok("depot task4: enemy rifles found a man (a member is down under fire)", down4);
+    }
+  }
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => document.querySelector('[data-menu="depot"]'), { timeout: 10000 });
+  ok("depot task4: ESC returns to menu", true);
+  }
+
   ok("no page errors during the run", pageErrors.length === 0);
   if (pageErrors.length) console.log("page errors:", pageErrors);
 } finally {

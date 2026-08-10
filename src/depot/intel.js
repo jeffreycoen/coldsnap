@@ -48,6 +48,12 @@ const SAPPERS = [
   "Captured requisition slip: breaching charges, quantity withheld.",
 ];
 
+const MARKSMAN = [
+  "Marksman activity reported forward of the line.",
+  "Single-shot reports at long interval. Pattern deliberate.",
+  "A scope flash logged at the ridge. Range disputed.",
+];
+
 const GAP_CHANCE = 0.25; // seeded silence — see composeIntel's draw order below
 
 // composeIntel(prevPlan, reg, rng) -> string[] (0-3 lines)
@@ -91,6 +97,12 @@ export function composeIntel(prevPlan, reg, rng) {
 
   const sapperBuy = buys && buyOf(buys, "sapper");
   tryFamily(!!(sapperBuy && sapperBuy.n > 0), SAPPERS, null);
+
+  // marksman (Task 4D): sniper purchases, same 1-wave delay as everything
+  // above (prevPlan key), same 25% gap. APPENDED LAST in the draw order so
+  // every previously-seeded composition is byte-identical.
+  const sniperBuy = buys && buyOf(buys, "sniper");
+  tryFamily(!!(sniperBuy && sniperBuy.n > 0), MARKSMAN, null);
 
   return lines;
 }
