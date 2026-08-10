@@ -4,7 +4,7 @@
 const REF_RANGE = 16;          // acc is calibrated at this ground distance
 const RANGE_K = 0.045;         // +4.5% sigma per meter beyond REF_RANGE
 const ELEV_K = 0.06;           // per meter of height advantage (signed)
-const ELEV_MIN = 0.55, ELEV_MAX = 1.8;   // clamp of the elevation multiplier
+const ELEV_MIN = 0.72, ELEV_MAX = 1.8;   // clamp of the elevation multiplier
 const GRAZE_K = 1.6;           // full graze multiplies sigma by 1+GRAZE_K
 const GRAZE_MARGIN = 1.25;     // lane half-width (m) that counts as grazing
 const GRAZE_STEP = 0.9;        // ray sample spacing (m)

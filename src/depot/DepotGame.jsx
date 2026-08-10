@@ -1238,7 +1238,7 @@ export default function DepotGame({ onExit }) {
             const sel = !hud.sellMode && hud.mode === p.key;
             const afford = hud.resources >= p.cost;
             return (
-              <div key={p.key}
+              <div key={p.key} data-tower-key={p.key}
                 style={{ ...P.slot, borderColor: sel ? "#4aff8c" : "#48515f", opacity: afford ? 1 : 0.45, minWidth: isTouch ? 56 : 52 }}
                 onClick={() => setMode(p.key)}>
                 <div style={{ fontSize: 16 }}>{p.icon}</div>

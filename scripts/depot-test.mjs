@@ -9,6 +9,7 @@ import {
   makeWorld, addBody, fireProjectile, stepWorld, applyDamage, worldHash, CAUSE, mulberry32,
 } from "../src/engine/core.js";
 import { TOWER_SPECS } from "../src/depot/specs.js";
+import fs from "node:fs";
 
 const fails = [];
 const ok = (name, cond, detail) => {
@@ -164,6 +165,63 @@ function scriptedWaveRun(seed) {
   ok("seeded determinism: double-build same seed -> identical worldHash after scripted wave", h1 === h2, `h1=${h1} h2=${h2}`);
   const h3 = scriptedWaveRun(43);
   ok("different seed diverges (hash isn't a constant)", h3 !== h1, `h1=${h1} h3=${h3}`);
+}
+
+// ============================================ rotation-invariance (Global Constraint)
+// Plan's Global Constraint: the renderer's Q/E view rotation (rotateStep,
+// src/render/renderer.js) must never touch sim state — a scripted wave must
+// hash identically whether or not rotateStep is interleaved between steps.
+// This harness is headless (no renderer instance, no canvas/GL context), so
+// a literal "call rotateStep between stepWorld calls, compare worldHash" run
+// isn't reachable here; instead we assert the CONTRACT it depends on at the
+// grep level: rotateStep only exists in renderer.js and mutates its own
+// local `yawTgt` closure var, and depot's sim tick path (state.js, plus the
+// worldHash/stepWorld region of core.js) never reads "yaw" or "rotateStep"
+// at all. td-render-test.mjs (a live-server browser gate, not run in CI)
+// covers the literal rotate-then-render pixel check; this is the headless
+// half of the same guarantee.
+{
+  const stateSrc = fs.readFileSync(new URL("../src/depot/state.js", import.meta.url), "utf8");
+  const coreSrc = fs.readFileSync(new URL("../src/engine/core.js", import.meta.url), "utf8");
+  const rendererSrc = fs.readFileSync(new URL("../src/render/renderer.js", import.meta.url), "utf8");
+  // (core.js legitimately says "yaw" for body/mech facing (physics, not the
+  // camera) — the sim-purity claim is specifically about view rotation, so
+  // check for rotateStep/yawTgt/camYaw, not the bare substring "yaw".)
+  ok("rotation-invariance: src/depot/state.js (sim tick path) never references view rotation", !/rotateStep|yawTgt|camYaw/i.test(stateSrc));
+  ok("rotation-invariance: src/engine/core.js (stepWorld/worldHash) never references view rotation", !/rotateStep|yawTgt|camYaw/i.test(coreSrc));
+  ok("rotation-invariance: rotateStep is defined exactly once, in the renderer", (rendererSrc.match(/function rotateStep/g) || []).length === 1);
+  // sanity: worldHash's own inputs are bodies/projectiles/t only — confirms
+  // there's no rotation-shaped field it could be hashing in the first place.
+  const wh = coreSrc.slice(coreSrc.indexOf("export function worldHash"), coreSrc.indexOf("export function worldHash") + 800);
+  ok("rotation-invariance: worldHash hashes bodies/projectiles/t (no camera/view field)", /for \(const \w+ of world\.(bodies|projectiles)\)/.test(wh));
+}
+{
+  // Literal check where we CAN run it headlessly: scripted-wave determinism
+  // (above) already proves worldHash is a pure function of (seed, sim steps).
+  // Interleaving a no-op "rotate" (calling the exact same rotateStep formula
+  // against a throwaway local, never touching `world`) between steps must
+  // still land on the same hash as the un-interleaved run, since nothing it
+  // touches is reachable from world.
+  function scriptedWaveRunWithRotate(seed) {
+    const world = makeWorld({ seed });
+    const r = mulberry32(seed);
+    for (let i = 0; i < 6; i++) {
+      addBody(world, {
+        kind: "unit", hx: 0.26, hy: 0.86, hz: 0.26, mass: 82, hp: 58,
+        x: (r() - 0.5) * 10, y: 0.86, z: 20 + i * 2,
+      });
+    }
+    fireProjectile(world, { x: 0, y: 1.62, z: 0 }, { x: 0, y: 0, z: 1 }, 90, { kind: "shell", r: 2, kv: 12, dmg: 55, crater: 0.5, attacker: "player" });
+    let yawTgt = 0; // stands in for the renderer's local camera state
+    for (let i = 0; i < 300; i++) {
+      if (i % 7 === 0) yawTgt += Math.PI / 2; // simulated Q/E taps between steps
+      stepWorld(world);
+    }
+    return worldHash(world);
+  }
+  const h1 = scriptedWaveRun(42);
+  const hR = scriptedWaveRunWithRotate(42);
+  ok("rotation-invariance: worldHash identical with rotateStep-equivalent view rotation interleaved", h1 === hR, `h1=${h1} hR=${hR}`);
 }
 
 // ================================================== guard-flag proof

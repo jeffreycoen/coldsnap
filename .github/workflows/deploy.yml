@@ -35,6 +35,7 @@ jobs:
       # test:td / test:td-render need a live preview server (browser gates) — run locally, not here
       - run: npm run test:combat
       - run: npm run test:depot
+      - run: npm run test:accuracy
       - run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

@@ -74,7 +74,7 @@ console.log(ok + "/" + n); if (ok !== n) process.exit(1);
 const REF_RANGE = 16;          // acc is calibrated at this ground distance
 const RANGE_K = 0.045;         // +4.5% sigma per meter beyond REF_RANGE
 const ELEV_K = 0.06;           // per meter of height advantage (signed)
-const ELEV_MIN = 0.55, ELEV_MAX = 1.8;   // clamp of the elevation multiplier
+const ELEV_MIN = 0.72, ELEV_MAX = 1.8;   // clamp of the elevation multiplier (Task 6 probe: 0.55 let elevated close-range gun shots saturate to ~100% hit)
 const GRAZE_K = 1.6;           // full graze multiplies sigma by 1+GRAZE_K
 const GRAZE_MARGIN = 1.25;     // lane half-width (m) that counts as grazing
 const GRAZE_STEP = 0.9;        // ray sample spacing (m)
@@ -139,7 +139,7 @@ export function applyScatter(world, dir, sigma) {
 
 **Interfaces:**
 - Consumes: `scatterSigma`/`applyScatter` from Task 1.
-- Produces: every tower spec in specs.js gains `acc` (base sigma, radians): mg 0.028, gun 0.012, mortar 0.020, rocket 0.026 (frost has no fire). The old flat volley `(rng-0.5)*3` XZ offset is REMOVED (rocket volley spread now comes from per-shot scatter).
+- Produces: every tower spec in specs.js gains `acc` (base sigma, radians): mg 0.028, gun 0.012, mortar 0.020, rocket 0.026 (frost has no fire). The old flat volley `(rng-0.5)*3` XZ offset is REMOVED (rocket volley spread now comes from per-shot scatter). **Task 6 retune** (accuracy-probe.mjs sanity — no cell at 0%/100% except mg beyond range): mg 0.028 → **0.090**, gun 0.012 → **0.070**, rocket 0.026 → **0.340**; mortar `acc` unchanged (0.020). Final probe matrix recorded in `.superpowers/sdd/2026-08-09-depot-phase-2/task-6-report.md`.
 
 - [ ] **Step 1: Failing asserts in depot-test.mjs**: seeded world, one gun tower on flat ground vs a static dummy at range 18 — fire 40 shots via the exposed fire path (extract the per-shot aim computation from the tower loop into an exported `towerShot(world, tower, target, spec)` in DepotGame.jsx or state.js if needed for headless reach — extraction in scope); assert (a) impact spread stddev > 0 (not laser), (b) same seed twice → identical impact list (determinism), (c) tower raised +4m → mean radial miss distance strictly smaller than at 0m (the diegetic promise, measured).
 - [ ] **Step 2: verify fail** → **Step 3: Implement**: compute `sigma = scatterSigma(world, muzzle, {x:ax2,y:ay2,z:az2}, spec)` once per trigger pull; per shot `dir = applyScatter(world, rawDir, sigma)`; delete the ox/oz block.
@@ -178,9 +178,9 @@ if (world.depotCombat && world.wind && p.spec.windF) {
   p.v.z += (world.wind.z - p.v.z * 0.02) * p.spec.windF * dt;
 }
 ```
-- specs.js `windF`: mg 0.06, gun shell 0.45, mortar 1.1, rocket 1.3. Enemy grenades later reuse mortar's.
+- specs.js `windF`: mg 0.06, gun shell 0.45, mortar 1.1, rocket 1.3. Enemy grenades later reuse mortar's. **Task 6 retune** (accuracy-probe.mjs sanity): gun 0.45 → **0.9**, mortar 1.1 → **0.04** (mortar's high-arc solve at long range produces multi-second hang times — at 1.1 the leaky-integrator wind drag saturated flight drift to a total miss at wind ≥3 regardless of windComp); mg and rocket `windF` unchanged.
 - DepotGame tick: `world.wind = windAt(S.seed, world.t)` every frame (before stepWorld).
-- Tower compensation: towers aim with PARTIAL wind hold-off — `windComp` per spec (gun 0.7, mortar 0.5, rocket 0.5, mg 0): offset the aim point by `-wind * windF * tof * windComp` (tof from the existing lead loop). Imperfect by design; doctrine (RANGEFINDERS) raises it in Phase 6.
+- Tower compensation: towers aim with PARTIAL wind hold-off — `windComp` per spec (gun 0.7, mortar 0.5, rocket 0.5, mg 0): offset the aim point by `-wind * windF * tof * windComp` (tof from the existing lead loop). Imperfect by design; doctrine (RANGEFINDERS) raises it in Phase 6. **Task 6 retune**: gun 0.7 → **0.6**, mortar 0.5 → **0.6**; rocket/mg unchanged.
 
 - [ ] **Step 1: Failing tests**: combat-test — flat-fire shell with `windF` under strong constant `world.wind` lands strictly leeward vs zero-wind twin (same seed); unflagged world identical trajectories with/without world.wind (guard proof); windAt determinism (two calls same args identical, no world needed). accuracy-test — windAt envelope bounds (0 ≤ mag ≤ 6 over t 0..600 sampled per second).
 - [ ] **Step 2: verify fail** → **Step 3: Implement** (core hook + wind.js + tick wiring + compensation) → **Step 4: Verify** — `npm run test:combat && npm run test:accuracy && npm run test:depot && npm run golden && npm run test:righting && npm run lint:depot` (core touched → golden+righting mandatory).

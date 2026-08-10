@@ -674,6 +674,26 @@ try {
   await page.evaluate(() => window.__DEPOTSTART__());
   await page.waitForFunction(() => window.__DEPOT__().t > 0.2, { timeout: 10000 });
 
+  // rotation-invariance (Global Constraint): Q/E view rotation (renderer-only,
+  // src/render/renderer.js) must never shift where a tap-build lands. Build a
+  // tower at the canvas center (the camera's orbit pivot — the one screen
+  // point whose ground ray is invariant to yaw), rotate 90°, then tap-build
+  // the SAME pixel again: it must resolve to the SAME already-built cell
+  // (blocked, no second tower) — not a rotation-skewed neighbor cell.
+  // __DEPOTFLAGS__ also carries the objective flagpole (kind:"flag") — filter to built towers only
+  await page.click('[data-tower-key="mg"]');
+  await page.mouse.click(480, 300);
+  await page.waitForFunction(() => window.__DEPOTFLAGS__().filter((f) => f.kind === "tower").length === 1, { timeout: 5000, polling: 100 });
+  const towerBeforeRotate = await page.evaluate(() => window.__DEPOTFLAGS__().filter((f) => f.kind === "tower")[0]);
+  await page.keyboard.press("e"); // R.rotateStep(1) — 90° camera step
+  await sleep(1500); // let the yaw AND camera-position lerp fully settle (both tween)
+  await page.click('[data-tower-key="mg"]');
+  await page.mouse.click(480, 300);
+  await sleep(500); // OCCUPIED toast / no-op settle
+  const towersAfterRotate = await page.evaluate(() => window.__DEPOTFLAGS__().filter((f) => f.kind === "tower"));
+  ok(`depot: tap-build after Q/E rotation lands on the same intended cell (still occupied, no stray tower) [before=${JSON.stringify(towerBeforeRotate)} after=${JSON.stringify(towersAfterRotate)}]`,
+    towersAfterRotate.length === 1 && towersAfterRotate[0].x === towerBeforeRotate.x && towersAfterRotate[0].z === towerBeforeRotate.z);
+
   // arm the SEND countdown to zero (build -> wave immediately) and switch
   // to 2x speed via the HUD's own control
   await page.evaluate(() => {
