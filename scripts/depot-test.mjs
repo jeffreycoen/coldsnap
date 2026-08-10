@@ -896,6 +896,66 @@ function towerScanNearest(world, tower, spec) {
     fired && tower.hp < hpBefore, `hp=${tower.hp} fired=${fired}`);
 }
 
+// (b2) same regression, infantry side: a rifleman and a grenadier each
+// acquire and damage a wall standing in fully player-held ground. Mirrors
+// the tank-vs-tower fixture above — stepRifleman/stepGrenadier (units.js)
+// must gate structure fire on range + arcClears only, never on territory.
+{
+  const world = makeWorld({ seed: 12 });
+  world.depotCombat = true;
+  const spec = TOWER_SPECS.gun;
+  const g0 = world.field.heightAt(0, 0);
+  const wall = addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.4, hy: 0.83, hz: 0.4, x: 0, y: g0 + 0.83, z: 0, hp: 999 });
+  const rifleman = spawnUnit(world, { x: 0, z: 8 }, "");
+  rifleman.pos.x = 0; rifleman.pos.z = 8;
+  const grid = straightGrid(0, 0); // no forward drift; pin rifleman at range
+  const T = makeTerritory(60, 60);
+  for (let i = 0; i < 2000; i++) stepTerritory(T, [{ x: wall.pos.x, z: wall.pos.z, w: EMIT.tower.w, r: EMIT.tower.r, sign: 1 }], 0.05);
+  ok("(b2) fixture: field is 'unheld' for team 2 at the wall before the rifleman fires",
+    fogStateFor(T, wall.pos.x, wall.pos.z, 2) === "unheld");
+  const hpBefore = wall.hp;
+  let fired = false;
+  for (let i = 0; i < 600 && wall.alive; i++) {
+    stepTerritory(T, [{ x: wall.pos.x, z: wall.pos.z, w: EMIT.tower.w, r: EMIT.tower.r, sign: 1 },
+      { x: rifleman.pos.x, z: rifleman.pos.z, w: EMIT.unit.w, r: EMIT.unit.r, sign: -1 }], world.dt);
+    stepUnits(world, grid, identFwdDir, T);
+    stepWorld(world);
+    rifleman.pos.x = 0; rifleman.pos.z = 8; rifleman.v.x = 0; rifleman.v.z = 0;
+    if (wall.hp < hpBefore) { fired = true; break; }
+  }
+  ok("(b2) a rifleman within range fires on a wall and damages it, even though the field never left 'unheld'",
+    fired && wall.hp < hpBefore, `hp=${wall.hp} fired=${fired}`);
+}
+{
+  const world = makeWorld({ seed: 13 });
+  world.depotCombat = true;
+  const g0 = world.field.heightAt(0, 0);
+  const wall = addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.4, hy: 0.83, hz: 0.4, x: 0, y: g0 + 0.83, z: 0, hp: 999 });
+  const gren = spawnUnit(world, { x: 0, z: 16 }, "gren");
+  gren.pos.x = 0; gren.pos.z = 16;
+  const grid = straightGrid(0, 0);
+  const T = makeTerritory(60, 60);
+  for (let i = 0; i < 2000; i++) stepTerritory(T, [{ x: wall.pos.x, z: wall.pos.z, w: EMIT.tower.w, r: EMIT.tower.r, sign: 1 }], 0.05);
+  ok("(b2) fixture: field is 'unheld' for team 2 at the wall before the grenadier fires",
+    fogStateFor(T, wall.pos.x, wall.pos.z, 2) === "unheld");
+  const hpBefore = wall.hp;
+  let fired = false;
+  // world.dt is ~1/120s here, so the grenadier's ~3s cadence plus its
+  // lofted shell's flight time needs several thousand ticks, not 600
+  // (600 ticks is only ~5s simulated — enough for the tank/rifleman
+  // fixtures' faster direct fire, not this one).
+  for (let i = 0; i < 6000 && wall.alive; i++) {
+    stepTerritory(T, [{ x: wall.pos.x, z: wall.pos.z, w: EMIT.tower.w, r: EMIT.tower.r, sign: 1 },
+      { x: gren.pos.x, z: gren.pos.z, w: EMIT.unit.w, r: EMIT.unit.r, sign: -1 }], world.dt);
+    stepUnits(world, grid, identFwdDir, T);
+    stepWorld(world);
+    gren.pos.x = 0; gren.pos.z = 16; gren.v.x = 0; gren.v.z = 0;
+    if (wall.hp < hpBefore) { fired = true; break; }
+  }
+  ok("(b2) a grenadier within range fires on a wall and damages it, even though the field never left 'unheld'",
+    fired && wall.hp < hpBefore, `hp=${wall.hp} fired=${fired}`);
+}
+
 // off-grid write-off: any team-2 body (infantry or tank) that can't find a
 // path (grid.cellAt reports dist >= 1e8 every tick — a grid gap, or pushed
 // off-map by a collision) must be written off after 12s lost, same as the

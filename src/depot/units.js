@@ -149,8 +149,15 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u
   let tgt = u.tgtId ? world.byId.get(u.tgtId) : null;
   if (tgt) {
     const dx = tgt.pos.x - u.pos.x, dz = tgt.pos.z - u.pos.z;
-    const c = toUV(tgt.pos.x, tgt.pos.z);
-    if (!tgt.alive || (tgt.kind !== "tower" && tgt.kind !== "wall") || dx * dx + dz * dz > R2 || !fieldReaches(T, c.u, c.v, 2) || !arcClears(world, muzzle, tgt.pos, fspec, u.id)) tgt = null;
+    // NOTE: deliberately NO fieldReaches gate on structure fire here (see
+    // stepTank's comment above, and the identical fix there) — a wall or
+    // tower's own territory emission keeps the ground around itself pinned
+    // "held" for team 1 for as long as it's alive, so team 2's flipped read
+    // never leaves "unheld" no matter how close or how long the rifleman
+    // sits in range. Direct-fire range + arcClears LOS is the correct gate
+    // for structure fire, not ground control. Unit-vs-unit targeting is
+    // unaffected and correctly keeps its own field gate (see below).
+    if (!tgt.alive || (tgt.kind !== "tower" && tgt.kind !== "wall") || dx * dx + dz * dz > R2 || !arcClears(world, muzzle, tgt.pos, fspec, u.id)) tgt = null;
   }
   if (!tgt && u.scanCd <= 0) {
     u.scanCd = 0.13 + (u.id % 8) * 0.012;
@@ -159,8 +166,6 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u
     let td = R2;
     for (const s of world.bodies) {
       if ((s.kind !== "tower" && s.kind !== "wall") || !s.alive) continue;
-      const c = toUV(s.pos.x, s.pos.z);
-      if (!fieldReaches(T, c.u, c.v, 2)) continue;
       const dx = s.pos.x - u.pos.x, dz = s.pos.z - u.pos.z, d2 = dx * dx + dz * dz;
       if (d2 < td && arcClears(world, muzzle, s.pos, fspec, u.id)) { td = d2; tgt = s; }
     }
@@ -199,8 +204,13 @@ function stepGrenadier(world, u, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, 
   let tgt = u.tgtId ? world.byId.get(u.tgtId) : null;
   if (tgt) {
     const dx = tgt.pos.x - u.pos.x, dz = tgt.pos.z - u.pos.z;
-    const c = toUV(tgt.pos.x, tgt.pos.z);
-    if (!tgt.alive || (tgt.kind !== "tower" && tgt.kind !== "wall") || dx * dx + dz * dz > R2 || !fieldReaches(T, c.u, c.v, 2) || !arcClears(world, muzzle, tgt.pos, fspec, u.id)) tgt = null;
+    // NOTE: deliberately NO fieldReaches gate on structure fire here — same
+    // rationale as stepTank/stepRifleman above: a wall or tower's own
+    // territory emission keeps the ground around itself pinned "held" for
+    // team 1 for as long as it's alive, so team 2's flipped read never
+    // leaves "unheld". Direct-fire range + arcClears LOS is the correct
+    // gate; unit-vs-unit targeting keeps its own field gate elsewhere.
+    if (!tgt.alive || (tgt.kind !== "tower" && tgt.kind !== "wall") || dx * dx + dz * dz > R2 || !arcClears(world, muzzle, tgt.pos, fspec, u.id)) tgt = null;
   }
   if (!tgt && u.scanCd <= 0) {
     u.scanCd = 0.13 + (u.id % 8) * 0.012;
@@ -209,8 +219,6 @@ function stepGrenadier(world, u, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, 
     let td = R2;
     for (const b of world.bodies) {
       if ((b.kind !== "tower" && b.kind !== "wall") || !b.alive) continue;
-      const c = toUV(b.pos.x, b.pos.z);
-      if (!fieldReaches(T, c.u, c.v, 2)) continue;
       const dx = b.pos.x - u.pos.x, dz = b.pos.z - u.pos.z, d2 = dx * dx + dz * dz;
       if (d2 < td && arcClears(world, muzzle, b.pos, fspec, u.id)) { td = d2; tgt = b; }
     }
@@ -219,7 +227,14 @@ function stepGrenadier(world, u, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, 
   if (tgt && u.grenCd <= 0) {
     u.grenCd = 3.0 + world.rng() * 0.6;
     u.flashT = world.t;
-    shooterFire(world, u, muzzle, tgt, fspec, { high: true, attacker: "enemy", hitStruct: true });
+    // owner: u.id — without it the lofted shell has no muzzle-clearing
+    // immunity against the grenadier's own body (core.js's owner-immunity
+    // gate, ~:698) and detonates at the launch point on the very first
+    // tick, same failure mode as stepTank's shell needed owner: t.id for.
+    // Only surfaced once the fieldReaches gate above stopped permanently
+    // vetoing grenadier-vs-wall acquisition (scripts/depot-test.mjs's
+    // rifleman/grenadier-vs-wall fixtures).
+    shooterFire(world, u, muzzle, tgt, fspec, { high: true, attacker: "enemy", hitStruct: true, owner: u.id });
   }
   if (tgt && cell && cell.dist < 1e8) {
     const sp = 1.3 * u.frostMul;
