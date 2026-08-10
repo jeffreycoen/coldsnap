@@ -15,7 +15,7 @@ import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, WAVES, MASON, INFANTRY_ARMS } from "./specs.js";
 import { windAt } from "./wind.js";
-import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, executeWithdrawal, WAVE_TIMEOUT, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, SANDBAG_COST, pruneSquads } from "./state.js";
+import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, executeWithdrawal, WAVE_TIMEOUT, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, pruneSquads } from "./state.js";
 import { SQUAD_SPECS, makeSquad, stepSquad } from "./squads.js";
 import { reachPolygon, arcClears } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks, payBounties } from "./units.js";
@@ -941,7 +941,9 @@ export default function DepotGame({ onExit }) {
       const placeSandbagAt = (gx, gz) => {
         const v = canPlaceInfantryAt(gx, gz, SANDBAG_COST);
         if (!v.ok) { toast(v.msg); return; }
-        spawnSandbag(world, v.wp.x, v.wp.z);
+        // AUTO-CONTINUE: adjacent (2.2m) to an existing bag -> orient along
+        // the line to it; isolated line starts use the bar toggle.
+        spawnSandbag(world, v.wp.x, v.wp.z, sandbagOrientAt(world, v.wp.x, v.wp.z, S.sandbagOrient || 0));
         S.resources -= SANDBAG_COST;
       };
       // Squad placement rides the tower pending-confirm flow. Sniper preview
@@ -1669,6 +1671,13 @@ export default function DepotGame({ onExit }) {
 
   const setMode = (m) => {
     const S = stateRef.current; if (!S) return;
+    // Re-tap SANDBAG while already in sandbag mode: cycle pending
+    // orientation 90 degrees (two states). Placement-state only.
+    if (m === "sandbag" && S.mode === "sandbag" && !S.sellMode) {
+      S.sandbagOrient = ((S.sandbagOrient || 0) + 1) % 2;
+      setHud((h) => ({ ...h, sandbagOrient: S.sandbagOrient }));
+      return;
+    }
     S.mode = m; S.sellMode = false; S.inspectId = null; S.pending = null; S.selSquadId = null; S.orderMode = null;
     setHud((h) => ({ ...h, mode: m, sellMode: false }));
   };
@@ -1708,7 +1717,8 @@ export default function DepotGame({ onExit }) {
     { key: "sq_sniper", label: "SNIPER", icon: "✛", cost: SQUAD_SPECS.sniper.cost },
     { key: "sq_rifles", label: "RIFLES", icon: "∴", cost: SQUAD_SPECS.rifles.cost },
     { key: "sq_mg", label: "MG TEAM", icon: "≣", cost: SQUAD_SPECS.mg.cost },
-    { key: "sandbag", label: "SANDBAG", icon: "▬", cost: SANDBAG_COST },
+    // icon reflects pending orientation (sandbagOrient): ▬ (long x) vs ▮ (long z)
+    { key: "sandbag", label: "SANDBAG", icon: hud.sandbagOrient ? "▮" : "▬", cost: SANDBAG_COST },
   ];
 
   return (

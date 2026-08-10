@@ -12,6 +12,9 @@
 import { addBody, applyDamage, explode } from "../engine/core.js";
 import { shooterFire, fieldReaches, effRange } from "./state.js";
 import { arcClears } from "./accuracy.js";
+// exposureAt: squads.js is import-free (movement-pure), so units.js ->
+// squads.js stays acyclic — verified: squads.js imports nothing.
+import { exposureAt } from "./squads.js";
 import { ENEMY_SPECS, ENEMY_FIRE, TANK } from "./specs.js";
 
 // ---------------------------------------------------------------- spawning
@@ -168,6 +171,54 @@ function unitTargetValid(world, u, muzzle, tgt, fspec, R2, T, toUV) {
 // the boundary by depot-test.mjs's "4A priority" asserts).
 const URGENCY = 0.6;
 
+// ------------------------------------------------------- cover halt (4B)
+// When engaging and TAKING FIRE, evaluate 5 candidate stand points: the
+// current spot + 4 lateral offsets (±1.5m, ±3m perpendicular to the threat
+// bearing); take the lowest exposureAt (threat bearing = toward tgt).
+// Re-evaluated ONLY when u.lastHit changes identity (core.js's applyDamage
+// stamps a fresh info object per hit), at most once per 2s (u._coverT).
+// Deterministic, zero rng. u._standPt stays null when the current spot is
+// already the best available — being shot at is not, by itself, a reason
+// to leave good ground.
+const COVER_OFFSETS = [1.5, -1.5, 3, -3];
+function coverHaltUpdate(world, u, tgt) {
+  if (!u.lastHit || u.lastHit === u._coverHit) return;
+  if (world.t - (u._coverT != null ? u._coverT : -1e9) < 2) return;
+  u._coverHit = u.lastHit;
+  u._coverT = world.t;
+  const bearing = Math.atan2(tgt.pos.x - u.pos.x, tgt.pos.z - u.pos.z);
+  const px = Math.cos(bearing), pz = -Math.sin(bearing); // perpendicular to threat
+  let best = null, bestExp = exposureAt(world, u.pos.x, u.pos.z, bearing);
+  for (const off of COVER_OFFSETS) {
+    const cx = u.pos.x + px * off, cz = u.pos.z + pz * off;
+    const e = exposureAt(world, cx, cz, bearing);
+    if (e < bestExp - 1e-9) { bestExp = e; best = { x: cx, z: cz }; }
+  }
+  u._standPt = best;
+}
+
+// Steer toward the chosen stand point — the same "close slowly while
+// firing" velocity nudge shape, aimed at the stand point instead of the
+// flow cell. Returns true when it drove the man this tick.
+function seekStandPoint(world, u, sp, dt) {
+  if (!u._standPt) return false;
+  const dx = u._standPt.x - u.pos.x, dz = u._standPt.z - u.pos.z;
+  const d = Math.hypot(dx, dz);
+  if (d > 0.25) {
+    // a halted body may have gone to SLEEP (engine skips integration and
+    // re-zeros v below its wake threshold — a gentle accel from rest never
+    // escapes it). Wake with a full-speed kick, then steer normally.
+    if (u.sleeping) { u.sleeping = false; u.v.x = (dx / d) * sp; u.v.z = (dz / d) * sp; }
+    u.v.x += ((dx / d) * sp - u.v.x) * Math.min(1, 4 * dt);
+    u.v.z += ((dz / d) * sp - u.v.z) * Math.min(1, 4 * dt);
+  } else {
+    u.v.x *= 1 - Math.min(1, 6 * dt);
+    u.v.z *= 1 - Math.min(1, 6 * dt);
+  }
+  faceTravel(u, dt);
+  return true;
+}
+
 // -------------------------------------------------------------- riflemen
 // Everything but the grenadier and the sapper still carries a rifle and
 // halts to work on a wall or emplacement rather than walk past it.
@@ -228,9 +279,12 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u
         ? { attacker: "enemy", owner: u.id }
         : { attacker: "enemy", hitStruct: true, hitOnly: "structure", owner: u.id });
     }
-    // close slowly while firing rather than standing still
+    // close slowly while firing rather than standing still — unless taking
+    // fire drove him to a cover stand point (4B), which takes priority.
     if (cell && cell.dist < 1e8) {
       const sp = spec.speed * 0.35 * u.frostMul;
+      coverHaltUpdate(world, u, tgt);
+      if (seekStandPoint(world, u, sp, dt)) return true;
       const fd = fwdDir(cell.dx, cell.dz);
       u.v.x += (fd.x * sp - u.v.x) * Math.min(1, 4 * dt);
       u.v.z += (fd.z * sp - u.v.z) * Math.min(1, 4 * dt);
@@ -300,6 +354,8 @@ function stepGrenadier(world, u, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, 
   }
   if (tgt && cell && cell.dist < 1e8) {
     const sp = 1.3 * u.frostMul;
+    coverHaltUpdate(world, u, tgt); // 4B: same cover halt as the riflemen
+    if (seekStandPoint(world, u, sp, dt)) return true;
     const fd = fwdDir(cell.dx, cell.dz);
     u.v.x += (fd.x * sp - u.v.x) * Math.min(1, 3 * dt);
     u.v.z += (fd.z * sp - u.v.z) * Math.min(1, 3 * dt);

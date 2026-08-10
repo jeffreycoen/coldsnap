@@ -286,16 +286,35 @@ export function spawnSquadMembers(world, squad) {
 // 60hp still matters. DepotGame's territory emitter builder adds it under
 // EMIT.wall (green influence, wall-weight).
 export const SANDBAG_COST = 3;
-export function spawnSandbag(world, x, z) {
+// orient (0|1) swaps hx/hz — axis-aligned bodies only, no rotation matrices.
+// Orientation is player input, like placement coords: placement-state only,
+// sim/determinism untouched (multiplayer-safe by the same argument).
+export function spawnSandbag(world, x, z, orient = 0) {
   const y = world.field.heightAt(x, z);
   const b = addBody(world, {
-    kind: "chunk", team: 1, mass: 0, hx: 0.9, hy: 0.45, hz: 0.35,
+    kind: "chunk", team: 1, mass: 0,
+    hx: orient === 1 ? 0.35 : 0.9, hy: 0.45, hz: orient === 1 ? 0.9 : 0.35,
     x, y: y + 0.45, z, hp: 60, friction: 0.7, restitution: 0.02,
   });
   b.sandbag = true;
   b.sleeping = true;
   b.maxHp = b.hp;
   return b;
+}
+
+// sandbagOrientAt: AUTO-CONTINUE. If (x,z) lands within 2.2m of an existing
+// live sandbag, orient along the line to the NEAREST such bag (|dx| >= |dz|
+// -> long axis x, orient 0; else orient 1) — overrides the toggle for that
+// placement. Isolated placements (line starts) fall back to toggleOrient.
+export function sandbagOrientAt(world, x, z, toggleOrient) {
+  let best = null, bestD2 = 2.2 * 2.2;
+  for (const b of world.bodies) {
+    if (!b.sandbag || !b.alive) continue;
+    const dx = b.pos.x - x, dz = b.pos.z - z, d2 = dx * dx + dz * dz;
+    if (d2 <= bestD2) { bestD2 = d2; best = b; }
+  }
+  if (!best) return toggleOrient;
+  return Math.abs(best.pos.x - x) >= Math.abs(best.pos.z - z) ? 0 : 1;
 }
 
 // pruneSquads(world, squads): roster hygiene, run once per tick BEFORE

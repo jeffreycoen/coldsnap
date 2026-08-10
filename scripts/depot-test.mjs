@@ -3101,6 +3101,103 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
   }
 }
 
+// ==== TASK 4B: cover-aware halt points
+{
+  const flatField = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+  const sinkGrid = straightGrid(0, 0);
+  // fixture: rifleman engaging a wall to the south (-z), a boulder off his
+  // right shoulder — NOT on his line of fire (cover counts inside the 60-
+  // degree interposition arc without sitting on the LOS ray).
+  const mkCoverWorld = (seed) => {
+    const world = makeWorld({ field: flatField, seed });
+    world.depotCombat = true;
+    const wall = addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.4, hy: 0.83, hz: 0.4, x: 0, y: 0.83, z: -10, hp: 9999 });
+    addBody(world, { kind: "rock", team: 0, mass: 0, hx: 0.5, hy: 0.9, hz: 0.5, x: 2.2, y: 0.9, z: -1.6, hp: 1e9 });
+    const r = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.88, z: 0, hp: 500, friction: 0.38 });
+    r.tag = ""; r.brave = true;
+    return { world, wall, r };
+  };
+  // taking fire beside a boulder -> relocates to its lee (exposure strictly drops)
+  {
+    const { world, r } = mkCoverWorld(21);
+    for (let i = 0; i < 30; i++) { stepUnits(world, sinkGrid, identFwdDir); stepWorld(world); }
+    ok("4B setup: rifleman engaged (wall target held)", !!r.tgtId);
+    const startX = r.pos.x, startZ = r.pos.z;
+    const bearing = Math.atan2(0 - r.pos.x, -10 - r.pos.z);
+    const exp0 = exposureAt(world, startX, startZ, bearing);
+    applyDamage(world, r, 1, { attacker: "player" }); // takes fire
+    for (let i = 0; i < 600; i++) { stepUnits(world, sinkGrid, identFwdDir); stepWorld(world); }
+    ok("4B: a hit while engaged picks a cover stand point", !!r._standPt, JSON.stringify(r._standPt));
+    const expS = r._standPt ? exposureAt(world, r._standPt.x, r._standPt.z, bearing) : 1;
+    ok("4B: chosen stand point strictly drops exposure", expS < exp0 - 1e-6, `start=${exp0.toFixed(2)} stand=${expS.toFixed(2)}`);
+    const dArrive = r._standPt ? Math.hypot(r.pos.x - r._standPt.x, r.pos.z - r._standPt.z) : 99;
+    ok("4B: the man actually moves to the stand point", dArrive < 0.6, `d=${dArrive.toFixed(2)}`);
+  }
+  // re-evaluation rate-limited: hammered with hits every tick, the cover
+  // pick still fires at most once per 2s.
+  {
+    const { world, r } = mkCoverWorld(22);
+    for (let i = 0; i < 30; i++) { stepUnits(world, sinkGrid, identFwdDir); stepWorld(world); }
+    const seen = new Set();
+    for (let i = 0; i < 360; i++) { // 3s at 1/120
+      applyDamage(world, r, 0.01, { attacker: "player" }); // fresh lastHit identity every tick
+      stepUnits(world, sinkGrid, identFwdDir); stepWorld(world);
+      if (r._coverT != null) seen.add(r._coverT);
+    }
+    ok("4B: cover re-evaluation rate-limited to once per 2s", seen.size >= 1 && seen.size <= 2, `evals=${seen.size}`);
+  }
+  // no relocation without being hit
+  {
+    const { world, r } = mkCoverWorld(23);
+    for (let i = 0; i < 600; i++) { stepUnits(world, sinkGrid, identFwdDir); stepWorld(world); }
+    ok("4B: never hit -> never relocates (no stand point, no cover clock)", r._standPt == null && r._coverT == null,
+      `standPt=${JSON.stringify(r._standPt)} coverT=${r._coverT}`);
+  }
+}
+
+// ==== SANDBAG-ROT ============================================================
+// 90-degree placement orientation + line auto-continue (placement-state only).
+{
+  console.log("\n[sandbag-rot]");
+  const flatF = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+  const { sandbagOrientAt } = await import("../src/depot/state.js");
+
+  // (a) orientation param swaps dims — axis-aligned bodies only, no rotation.
+  {
+    const world = makeWorld({ field: flatF, seed: 7 });
+    const b0 = spawnSandbag(world, 0, 0, 0);
+    ok("sandbag-rot: orient 0 keeps hx .9 / hz .35", b0.hx === 0.9 && b0.hz === 0.35, `hx=${b0.hx} hz=${b0.hz}`);
+    const b1 = spawnSandbag(world, 10, 0, 1);
+    ok("sandbag-rot: orient 1 swaps to hx .35 / hz .9", b1.hx === 0.35 && b1.hz === 0.9, `hx=${b1.hx} hz=${b1.hz}`);
+    const bd = spawnSandbag(world, 20, 0);
+    ok("sandbag-rot: orient defaults to 0", bd.hx === 0.9 && bd.hz === 0.35);
+  }
+
+  // (b) auto-continue: placing within ~2.2m of an existing bag orients
+  // along the line to that bag, overriding the toggle for that placement.
+  {
+    const world = makeWorld({ field: flatF, seed: 8 });
+    spawnSandbag(world, 0, 0, 0);
+    ok("sandbag-rot: adjacent along x continues the x line (orient 0)", sandbagOrientAt(world, 1.8, 0, 1) === 0);
+    ok("sandbag-rot: adjacent along z continues the z line (orient 1)", sandbagOrientAt(world, 0, 1.8, 0) === 1);
+    ok("sandbag-rot: isolated placement uses the toggle", sandbagOrientAt(world, 30, 30, 1) === 1 && sandbagOrientAt(world, 30, 30, 0) === 0);
+    const dead = spawnSandbag(world, 40, 40, 0); dead.alive = false;
+    ok("sandbag-rot: dead bags don't steer auto-continue", sandbagOrientAt(world, 41.8, 40, 1) === 1);
+    ok("sandbag-rot: beyond 2.2m is a line start (toggle wins)", sandbagOrientAt(world, 3.0, 0, 1) === 1);
+  }
+
+  // (c) UI toggle: tapping SANDBAG while already in sandbag mode cycles the
+  // pending orientation (two states) and the bar icon reflects it — source
+  // asserts (DepotGame closures), same pattern as sweep/emitters above.
+  {
+    const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("sandbag-rot: sandbag button re-tap cycles orientation", /sandbagOrient[\s\S]{0,80}\+ 1\) % 2/.test(src));
+    ok("sandbag-rot: bar icon reflects orientation (▬ vs ▮)", src.includes("▮") && /sandbagOrient[^\n]{0,120}▮|▮[^\n]{0,120}sandbagOrient/.test(src));
+    ok("sandbag-rot: placement routes through sandbagOrientAt", src.includes("sandbagOrientAt("));
+  }
+}
+// ==== end SANDBAG-ROT ========================================================
+
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
   process.exit(1);
