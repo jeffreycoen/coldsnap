@@ -65,11 +65,37 @@ function makeSplat(town) {
     cx.strokeRect(uu(-8.6), vv2(19.4), 17.2 * W2U, 17.2 * W2U);
   };
   paintBase();
+  // clean-base snapshot for the fade pass (DEPOT only, see fade() below):
+  // a second canvas holding the untouched ground art, redrawn over the live
+  // canvas at low alpha so old scorch/tread/smear staining greys out toward
+  // it instead of vanishing to a flat wipe. Skipped when the caller never
+  // fades (TD/campaign/demo never allocate it — no cost, no behavior change).
+  let baseCv = null, baseCx = null;
   const tex = new THREE.CanvasTexture(cv);
   tex.minFilter = THREE.NearestFilter; tex.magFilter = THREE.NearestFilter; tex.generateMipmaps = false;
   return {
     tex,
     clear() { paintBase(); tex.needsUpdate = true; },
+    // called once by callers that want the fade pass; cheap (one extra
+    // 1024x1024 canvas), so only DEPOT opts into it.
+    armFade() {
+      if (baseCv) return;
+      baseCv = document.createElement("canvas");
+      baseCv.width = 1024; baseCv.height = 1024;
+      baseCx = baseCv.getContext("2d");
+      if (baseCx.drawImage) baseCx.drawImage(cv, 0, 0);
+    },
+    // re-blend the clean base over the live canvas at a low alpha: a batched,
+    // periodic call (every few seconds, from the render loop) — never per
+    // frame. Fresh damage repaints darker than the fade can keep up with, so
+    // it stays legible while old staining gradually greys out.
+    fade(alpha) {
+      if (!baseCx || !cx.drawImage) return;
+      cx.globalAlpha = alpha;
+      cx.drawImage(baseCv, 0, 0);
+      cx.globalAlpha = 1;
+      tex.needsUpdate = true;
+    },
     treads: 0,
     tread(u, v) {
       cx.globalAlpha = 1;
@@ -223,10 +249,40 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const terraGeo = new THREE.PlaneGeometry(Wd, Wd, F.n - 1, F.n - 1);
   terraGeo.rotateX(-Math.PI / 2);
   const splat = makeSplat(opts.town !== false); // default keeps the demo/sandbox ground art
+  // SCORCH DECALS LIGHTEN OVER TIME (DEPOT-only, opts.fadeDecals gated —
+  // TD/campaign/demo never set it, so their splat stays byte-identical):
+  // every FADE_EVERY seconds, re-blend the clean base over the whole canvas
+  // at FADE_ALPHA. Batched on world.t, not per frame — a couple of minutes
+  // of light passes greys out old battle staining while fresh hits (painted
+  // at full alpha in consume()) still read as the newest damage.
+  const FADE_EVERY = 4, FADE_ALPHA = 0.03;
+  let nextFadeT = FADE_EVERY;
+  if (opts.fadeDecals) splat.armFade();
   const terraMat = toon(0xffffff); terraMat.map = splat.tex;
   const terra = new THREE.Mesh(terraGeo, terraMat);
   terra.receiveShadow = true;
   scene.add(terra);
+  // THE WORLD ENDS at the playfield rim (DEPOT-only, opts.rim gated — TD,
+  // campaign and demo pass no rim and render byte-identical): collapse every
+  // vertex outside the rim box onto its boundary in x/z. The overhung strip
+  // degenerates to zero area, so ground, grid AND any splat decal painted
+  // out there simply has no geometry left to show it — a hard edge instead
+  // of a shelf trailing into the fog. Static, one-time pass on plane build.
+  if (opts.rim) {
+    const { halfU, halfV, toCanonical, toWorld } = opts.rim;
+    const pa = terraGeo.attributes.position;
+    for (let k = 0; k < pa.count; k++) {
+      const x = pa.getX(k), z = pa.getZ(k);
+      const c = toCanonical(x, z);
+      const cu = Math.max(-halfU, Math.min(halfU, c.u));
+      const cv = Math.max(-halfV, Math.min(halfV, c.v));
+      if (cu !== c.u || cv !== c.v) {
+        const w = toWorld(cu, cv);
+        pa.setX(k, w.x); pa.setZ(k, w.z);
+      }
+    }
+    pa.needsUpdate = true;
+  }
   function syncTerrain() {
     const pa = terraGeo.attributes.position;
     for (let j = 0; j < F.n; j++) for (let i = 0; i < F.n; i++) pa.setY(j * F.n + i, F.h[j * F.n + i]);
@@ -810,6 +866,10 @@ export function makeRenderer(canvas, world0, opts = {}) {
     resize();
     water.visible = world.water != null; // dry ranges have no pond to float
     if (F.dirty) syncTerrain();
+    if (opts.fadeDecals && world.t >= nextFadeT) {
+      splat.fade(FADE_ALPHA);
+      nextFadeT = world.t + FADE_EVERY;
+    }
     // vehicles sync
     for (const b of world.bodies) {
       // DIVERGENCE from the demo: kind "truck" joins the loop. The demo's
@@ -1330,6 +1390,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
     vehMap.clear();
     debris.length = 0; smoke.length = 0; fire.length = 0;
     splat.clear();
+    nextFadeT = world.t + FADE_EVERY;
     syncTerrain();
   }
   resize(); rebuildRTs();

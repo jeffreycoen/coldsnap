@@ -589,7 +589,13 @@ export default function DepotGame({ onExit }) {
       }
       const objG = grid.worldToGrid(OBJ_POS.x, OBJ_POS.z);
       computeFlowField(grid, objG.gx, objG.gz);
-      R = makeRenderer(canvas, world, { town: false, camera: "tactical" });
+      R = makeRenderer(canvas, world, {
+        town: false, camera: "tactical", fadeDecals: true,
+        // playable rim (matches buildDepotTerrain's falloff box, 29x57
+        // canonical): ground/grid/decals beyond it get no geometry to
+        // paint on (see renderer.js). TD/campaign/demo pass no rim.
+        rim: { halfU: 29, halfV: 57, toCanonical: invW, toWorld: fwdU },
+      });
       const EXT = ORIENT % 2 ? { x: 62, z: 34 } : { x: 34, z: 62 };
       const A = makeGameAudio();
       A.setReflectors([
