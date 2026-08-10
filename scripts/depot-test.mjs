@@ -2430,6 +2430,62 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     ok("view height: startPending's ghost muzzle sits at the true turret top", depotSrc.includes("y: y + spec.hy * 2 + 0.45"));
   }
 
+  // --- Fix 2: empty waves — repro fixture (the playtest's massacre loop:
+  // player kills everything, attacker income is STIPEND only). Pre-fix,
+  // 4/5 of these seeds fielded NOBODY on waves 3-4 while solvent.
+  {
+    const conscriptC = ENEMY_SPECS[""].bounty;
+    let emptySolvent = 0, everBought = 0;
+    for (const seed of [11, 12345, 777, 999999, 42]) {
+      const rng = mulberry32(seed);
+      const reg = makeRegiment(rng);
+      for (let w = 0; w < 10; w++) {
+        const solvent = reg.scrap >= conscriptC && reg.heads > 0;
+        const { buys } = planWave(reg, {}, w, rng);
+        const n = buys.reduce((s, b) => s + b.n, 0);
+        if (solvent && n === 0) emptySolvent++;
+        if (n > 0) everBought++;
+        payResults(reg, { structureDmg: 0, towerKills: 0, wallKills: 0, buildingKills: 0, leaks: 0 });
+        reg.scrap += STIPEND;
+      }
+    }
+    ok("empty waves: massacre fixture (5 seeds x 10 waves) — every solvent wave musters", emptySolvent === 0, `${emptySolvent} empty solvent waves`);
+    ok("empty waves: fixture actually bought units", everBought === 50, `${everBought}/50`);
+  }
+
+  // --- Fix 2 invariant: planWave NEVER returns empty buys while the
+  // regiment can afford the cheapest unit and has heads. 50 seeds x 10
+  // waves, varied snapshots.
+  {
+    const conscriptC = ENEMY_SPECS[""].bounty;
+    let violations = 0, checked = 0;
+    for (let seed = 1; seed <= 50; seed++) {
+      const rng = mulberry32(seed * 7919);
+      const reg = makeRegiment(rng);
+      const snap = { mortars: seed % 7, mgs: seed % 9, guns: seed % 5, frosts: seed % 6, walls: seed % 9, towerElev: 0 };
+      for (let w = 0; w < 10; w++) {
+        const solvent = reg.scrap >= conscriptC && reg.heads > 0;
+        const { buys } = planWave(reg, snap, w, rng);
+        if (solvent) { checked++; if (buys.reduce((s, b) => s + b.n, 0) === 0) violations++; }
+        payResults(reg, { structureDmg: 0, towerKills: 0, wallKills: 0, buildingKills: 0, leaks: 0 });
+        reg.scrap += STIPEND;
+      }
+    }
+    ok("empty waves INVARIANT: no empty buys while solvent (50 seeds x 10 waves)", violations === 0, `${violations}/${checked}`);
+  }
+
+  // --- Fix 2: banking still banks (thin screen, never absent) and the
+  // screen floor holds — a high-scrap not-yet-erupting wave fields >= 2
+  // bodies even when the computed screen budget quantizes tiny.
+  {
+    const waveIdx = 2; // early wave: baseline ~26, screen budget ~3.3-6.6 pre-floor
+    const baseline = waveBudget(waveIdx);
+    const reg = { heads: 300, tanks: 1, heads0: 300, tanks0: 8, scrap: 1.9 * baseline };
+    const plan = planWave(reg, { mortars: 0, mgs: 8, guns: 0, frosts: 0, walls: 0, towerElev: 0 }, waveIdx, mulberry32(7));
+    const n = plan.buys.reduce((s, b) => s + b.n, 0);
+    ok("bank screen floor: early-wave banking wave still fields a screen", plan.banked === true && n >= 2, `banked=${plan.banked} n=${n}`);
+  }
+
 }
 
 if (fails.length) {

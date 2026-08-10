@@ -74,17 +74,33 @@ function computeShares(snap, jitter) {
 // Spend `budget` scrap across infantry types by share, respecting reg.heads
 // and reg.scrap; appends/merges into `buys`. Never goes negative.
 function buyInfantryMix(shares, budget, reg, buys) {
-  let spend = Math.max(0, Math.min(budget, reg.scrap));
-  for (const type of INF_TYPES) {
-    if (spend <= 0 || reg.heads <= 0) break;
+  const spend = Math.max(0, Math.min(budget, reg.scrap));
+  let spent = 0;
+  const take = (type, n) => {
+    if (n <= 0) return;
     const c = cost(type);
-    const alloc = spend * shares[type];
-    let n = Math.min(Math.floor(alloc / c), reg.heads, Math.floor(reg.scrap / c));
-    if (n <= 0) continue;
     reg.heads -= n;
     reg.scrap -= n * c;
+    spent += n * c;
     const existing = buys.find((b) => b.type === type);
     if (existing) existing.n += n; else buys.push({ type, n });
+  };
+  for (const type of INF_TYPES) {
+    if (spent >= spend || reg.heads <= 0) break;
+    const c = cost(type);
+    const alloc = spend * shares[type];
+    take(type, Math.min(Math.floor(alloc / c), reg.heads, Math.floor(reg.scrap / c)));
+  }
+  // Spend-down pass (playtest fix, 2026-08-10): the share pass floors each
+  // type's allocation by its unit cost with no rollover, so a small budget
+  // (waves 1-4, spend ~= 24) leaves ~80% unspent and fields one conscript —
+  // or nobody at all — while the regiment is solvent. Roll the combined
+  // remainder into the cheapest affordable types (cost-ascending) so any
+  // budget >= one conscript's cost always fields something.
+  for (const type of INF_TYPES.slice().sort((a, b) => cost(a) - cost(b))) {
+    if (reg.heads <= 0) break;
+    const c = cost(type);
+    take(type, Math.min(Math.floor((spend - spent) / c), reg.heads, Math.floor(reg.scrap / c)));
   }
 }
 
@@ -145,8 +161,12 @@ export function planWave(reg, snap, waveIdx, rng) {
       buyInfantryMix(shares, spend, reg, buys);
       banked = false;
     } else {
-      // not yet affordable: bank, buy a thin screen only.
-      const screenBudget = Math.min(reg.scrap, baseline * 0.25 * (0.5 + sizeRoll * 0.5));
+      // not yet affordable: bank, buy a thin screen only. Floored at 2
+      // conscripts (playtest fix): the computed budget at early-wave
+      // baselines quantized to zero bodies, making a "banking" wave an
+      // ABSENT wave — instant stall clear. A banking wave is thin, never
+      // absent.
+      const screenBudget = Math.min(reg.scrap, Math.max(baseline * 0.25 * (0.5 + sizeRoll * 0.5), 2 * cost("")));
       buyInfantryMix(shares, screenBudget, reg, buys);
       banked = true;
     }
