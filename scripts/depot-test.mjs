@@ -3,11 +3,12 @@
 //   node scripts/depot-test.mjs
 import {
   PHASE, makeRunState, startWave, tryStall, advance,
-  enemyLedger, regimentDestroyed, checkLoss, checkWin, makeEndDispatch,
+  enemyLedger, regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot,
 } from "../src/depot/state.js";
 import {
   makeWorld, addBody, fireProjectile, stepWorld, applyDamage, worldHash, CAUSE, mulberry32,
 } from "../src/engine/core.js";
+import { TOWER_SPECS } from "../src/depot/specs.js";
 
 const fails = [];
 const ok = (name, cond, detail) => {
@@ -211,6 +212,73 @@ function scriptedWaveRun(seed) {
   // shred path, so hp loss here must stay far under a single shred hit.
   ok("guard: TD world — tree doesn't take the direct-shred 4hp/hit (only pre-existing blast splash)", (hpBefore - tree.hp) < 2, `hp=${tree.hp} was=${hpBefore}`);
   ok("guard: TD world — tree never ignites without the flag", tree.burning == null, `burning=${tree.burning}`);
+}
+
+// ================================================== tower scatter (Task 2)
+// A gun tower fires at a static dummy through towerShot (the extracted
+// per-trigger-pull path: 2-pass lead + one sigma per pull + per-shot
+// applyScatter). "impact" = the ground-carve "splat" event each shell
+// crater produces on landing (gun's crater is nonzero, so every resolved
+// shot leaves exactly one).
+// raise=0 seats the tower normally (base on the ground, center hy above it —
+// same seating DepotGame.jsx's build path uses); raise adds a platform height
+// on top of that, so a "raised" tower keeps the same self-graze footprint
+// instead of burying its muzzle in its own AABB.
+function fireShots(seed, raise, n = 40) {
+  const world = makeWorld({ seed });
+  const spec = TOWER_SPECS.gun;
+  const g0 = world.field.heightAt(0, 0);
+  const tower = addBody(world, {
+    kind: "tower", team: 1, mass: 0, hx: 0.8, hy: spec.hy, hz: 0.8,
+    x: 0, y: g0 + spec.hy + raise, z: 0, hp: spec.hp,
+  });
+  tower.towerType = "gun";
+  const target = addBody(world, {
+    kind: "unit", team: 2, hx: 0.26, hy: 0.86, hz: 0.26, mass: 82, hp: 58,
+    x: 0, y: world.field.heightAt(0, 18) + 0.86, z: 18,
+  });
+  const impacts = [];    // ground-carve splat per shot (spread/determinism)
+  const misses = [];     // closest 3D approach of the round to the target's
+                          // own position during flight (radial miss distance)
+  for (let i = 0; i < n; i++) {
+    towerShot(world, tower, target, spec);
+    const before = world.events.length;
+    let closest = Infinity;
+    for (let s = 0; s < 400 && world.projectiles.length; s++) {
+      stepWorld(world);
+      for (const p of world.projectiles) {
+        const d = Math.hypot(p.pos.x - target.pos.x, p.pos.y - target.pos.y, p.pos.z - target.pos.z);
+        if (d < closest) closest = d;
+      }
+    }
+    misses.push(closest);
+    for (let e = before; e < world.events.length; e++) {
+      if (world.events[e].type === "splat") impacts.push({ x: world.events[e].x, z: world.events[e].z });
+    }
+  }
+  return { impacts, misses };
+}
+{
+  const ground = fireShots(90, 0, 40);
+  // A rare long-tail scatter draw can send a flat-trajectory round past the
+  // 400-step resolve budget before it lands; almost all resolve.
+  ok("tower scatter: nearly every shot resolves to an impact", ground.impacts.length >= 38, `${ground.impacts.length}`);
+
+  // (a) spread nonzero — not a laser
+  const mx = ground.impacts.reduce((s, p) => s + p.x, 0) / ground.impacts.length;
+  const mz = ground.impacts.reduce((s, p) => s + p.z, 0) / ground.impacts.length;
+  const variance = ground.impacts.reduce((s, p) => s + (p.x - mx) ** 2 + (p.z - mz) ** 2, 0) / ground.impacts.length;
+  ok("tower scatter: impact spread stddev > 0", Math.sqrt(variance) > 0, `stddev=${Math.sqrt(variance)}`);
+
+  // (b) same-seed determinism of the impact list
+  const ground2 = fireShots(90, 0, 40);
+  ok("tower scatter: same seed twice -> identical impact list", JSON.stringify(ground.impacts) === JSON.stringify(ground2.impacts));
+
+  // (c) raised tower (+4m platform) has strictly smaller mean radial miss than ground tower
+  const raised = fireShots(90, 4, 40);
+  const meanMiss = (arr) => arr.reduce((s, v) => s + v, 0) / arr.length;
+  const groundMiss = meanMiss(ground.misses), raisedMiss = meanMiss(raised.misses);
+  ok("tower scatter: raised tower mean radial miss < ground tower's", raisedMiss < groundMiss, `raised=${raisedMiss} ground=${groundMiss}`);
 }
 
 if (fails.length) {

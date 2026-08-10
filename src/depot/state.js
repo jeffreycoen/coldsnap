@@ -1,7 +1,43 @@
 // COLDSNAP DEPOT — run state shape. Kept tiny and dependency-free so
 // DepotGame.jsx's loop can stuff a plain object in a ref (React state must
 // never be read from the closure — see ColdsnapTD.jsx for why).
+import { aimSolve, fireProjectile } from "../engine/core.js";
+import { scatterSigma, applyScatter } from "./accuracy.js";
+
 export const PHASE = { BUILD: "build", WAVE: "wave", STALL: "stall" };
+
+// One tower trigger pull: 2-pass lead solve against `target`'s velocity,
+// then fire spec.volley (or 1) shots. sigma is computed once per pull from
+// the led aim point (spec.acc, range/elevation/graze) and applied per shot
+// via applyScatter — conditional accuracy, not a flat volley spread.
+// Extracted out of DepotGame.jsx's stepTowers so it's reachable headless
+// (that file is JSX; this one is plain JS, already imported by tests).
+export function towerShot(world, tower, target, spec) {
+  const muzzle = { x: tower.pos.x, y: tower.pos.y + tower.hy + 0.45, z: tower.pos.z };
+  const high = tower.towerType === "mortar";
+  let ax2 = target.pos.x, az2 = target.pos.z, ay2 = target.pos.y;
+  for (let li = 0; li < 2; li++) {
+    const ld = Math.max(2, Math.hypot(ax2 - muzzle.x, az2 - muzzle.z));
+    const lp = aimSolve(spec.projSpeed, ld, ay2 - muzzle.y, 9.8, high);
+    if (lp == null) break;
+    const tof = ld / Math.max(1e-3, spec.projSpeed * Math.cos(lp));
+    ax2 = target.pos.x + target.v.x * tof;
+    az2 = target.pos.z + target.v.z * tof;
+    ay2 = world.field.heightAt(ax2, az2) + target.hy;
+  }
+  const dx = ax2 - muzzle.x, dz = az2 - muzzle.z, dy = ay2 - muzzle.y;
+  const sigma = scatterSigma(world, muzzle, { x: ax2, y: ay2, z: az2 }, spec);
+  const d = Math.max(2, Math.hypot(dx, dz));
+  let pitch = aimSolve(spec.projSpeed, d, dy, 9.8, high);
+  if (pitch == null) pitch = high ? 1.1 : 0.45;
+  const rawDir = { x: (dx / d) * Math.cos(pitch), y: Math.sin(pitch), z: (dz / d) * Math.cos(pitch) };
+  const shots = spec.volley || 1;
+  for (let si = 0; si < shots; si++) {
+    const dir = applyScatter(world, rawDir, sigma);
+    fireProjectile(world, { x: muzzle.x, y: muzzle.y + si * 0.28, z: muzzle.z }, dir, spec.projSpeed,
+      { kind: spec.kind, r: spec.blastR, kv: spec.kv, dmg: spec.dmg, crater: spec.crater, noImpact: true, attacker: "player", delay: si * 0.12 });
+  }
+}
 
 export function makeWaveState() {
   return { waveIdx: 0, spawnQueue: 0, spawnTimer: 0, spawnDelay: 1, active: false, betweenWaves: true, countdown: 8 };

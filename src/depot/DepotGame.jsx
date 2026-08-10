@@ -9,12 +9,12 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   makeField, makeWorld, addBody, addWeld, stepWorld, fireProjectile,
-  aimSolve, applyDamage, mulberry32,
+  applyDamage, mulberry32,
 } from "../engine/core.js";
 import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, WAVES, MASON } from "./specs.js";
-import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, tryStall, advance as phaseAdvance, checkLoss, makeEndDispatch } from "./state.js";
+import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, tryStall, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot } from "./state.js";
 import Dispatch from "./Dispatch.jsx";
 
 // ============================================================== the map
@@ -341,32 +341,7 @@ function stepTowers(world) {
     if (!best || b.fireCd > 0) continue;
     b.fireCd = spec.fireRate;
     b.flashT = world.t;
-    const muzzle = { x: b.pos.x, y: b.pos.y + b.hy + 0.45, z: b.pos.z };
-    const high = b.towerType === "mortar";
-    let ax2 = best.pos.x, az2 = best.pos.z, ay2 = best.pos.y;
-    for (let li = 0; li < 2; li++) {
-      const ld = Math.max(2, Math.hypot(ax2 - muzzle.x, az2 - muzzle.z));
-      const lp = aimSolve(spec.projSpeed, ld, ay2 - muzzle.y, 9.8, high);
-      if (lp == null) break;
-      const tof = ld / Math.max(1e-3, spec.projSpeed * Math.cos(lp));
-      ax2 = best.pos.x + best.v.x * tof;
-      az2 = best.pos.z + best.v.z * tof;
-      ay2 = world.field.heightAt(ax2, az2) + best.hy;
-    }
-    const dx = ax2 - muzzle.x, dz = az2 - muzzle.z;
-    const dy = ay2 - muzzle.y;
-    const shots = spec.volley || 1;
-    for (let si = 0; si < shots; si++) {
-      const ox = shots > 1 ? (world.rng() - 0.5) * 3 : 0;
-      const oz = shots > 1 ? (world.rng() - 0.5) * 3 : 0;
-      const tdx = dx + ox, tdz = dz + oz;
-      const td = Math.max(2, Math.hypot(tdx, tdz));
-      let pitch = aimSolve(spec.projSpeed, td, dy, 9.8, high);
-      if (pitch == null) pitch = high ? 1.1 : 0.45;
-      const dir = { x: (tdx / td) * Math.cos(pitch), y: Math.sin(pitch), z: (tdz / td) * Math.cos(pitch) };
-      fireProjectile(world, { x: muzzle.x, y: muzzle.y + si * 0.28, z: muzzle.z }, dir, spec.projSpeed,
-        { kind: spec.kind, r: spec.blastR, kv: spec.kv, dmg: spec.dmg, crater: spec.crater, noImpact: true, attacker: "player", delay: si * 0.12 });
-    }
+    towerShot(world, b, best, spec);
   }
 }
 
