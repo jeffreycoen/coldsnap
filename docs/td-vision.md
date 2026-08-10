@@ -88,6 +88,7 @@ Working brainstorm, 2026-08-09. Direction only — nothing here is committed unt
 - Sniper: anti-personnel king — outranges gun towers on a clear elevated lane, one-shots infantry, chip-only vs armor.
 - FULL MIRROR: enemy squads get cover-seeking + cover-to-cover advance, and a sniper joins their AI buy list (intel: marksman warnings).
 - Rides along: buildable-edge line redone as a screen-constant thin stroke (current too thick).
+- Armor model live (2026-08-10): small arms carry a direct-hit component (glancing+threshold consulted; replaces struck-body blast); tanks armor 140; sniper chip 19.5/hit; shells remain concussion.
 
 ### Defending infantry — snipers and troops
 - Deployable infantry for defense (later: assault). Snipers = long range, low cadence, accuracy strongly elevation/LOS-driven — the showcase unit for the conditional-accuracy model.

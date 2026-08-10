@@ -513,29 +513,46 @@ for (const defense of CELLS) {
 }
 
 // ------------------------------------------------------------- sanity gate
+// Full (a)-(d) sanity rules need all three cells (none/median/strong); a
+// single-tier run (e.g. --cells=median, used for quick post-tuning re-checks)
+// skips whichever checks depend on missing cells instead of crashing.
 console.log("\n=== SANITY RULES ===");
-const none = allResults.none.rows;
-const median = allResults.median.rows;
-const strong = allResults.strong.rows;
+const none = allResults.none && allResults.none.rows;
+const median = allResults.median && allResults.median.rows;
+const strong = allResults.strong && allResults.strong.rows;
 
-// Task 5: an offensive-spent WIN (ledger) — the attacker's book value
-// collapses below the player's, forcing a ledger win before wave 50 — is
-// also a defense success (the regiment can no longer sustain the assault),
-// not just a literal attrition wipeout. Count both.
-const strongBreaks = strong.filter((r) => r.verdict === "WIN (attrition)" || r.verdict === "WIN (ledger)").length / strong.length;
-const noneMaxWave = Math.max(...none.map((r) => r.wavesCleared));
-const medianMaxWave = Math.max(...median.map((r) => r.wavesCleared));
-const medianVerdicts = new Set(median.map((r) => (r.verdict.startsWith("WIN") ? "WIN" : "LOSS")));
-
-console.log(`(a) strong defense breaks the regiment (attrition WIN) in >=30% of seeds: ${(strongBreaks * 100).toFixed(0)}% — ${strongBreaks >= 0.3 ? "PASS" : "FAIL"}`);
-console.log(`(b) no-defense never survives past wave ~8: max wave ${noneMaxWave} — ${noneMaxWave <= 8 ? "PASS" : "FAIL"}`);
-console.log(`(c) median defense reaches wave 25+ with mixed verdicts: max wave ${medianMaxWave}, verdicts seen ${[...medianVerdicts].join("/")} — ${medianMaxWave >= 25 && medianVerdicts.size >= 2 ? "PASS" : "FAIL"}`);
+if (strong) {
+  // Task 5: an offensive-spent WIN (ledger) — the attacker's book value
+  // collapses below the player's, forcing a ledger win before wave 50 — is
+  // also a defense success (the regiment can no longer sustain the assault),
+  // not just a literal attrition wipeout. Count both.
+  const strongBreaks = strong.filter((r) => r.verdict === "WIN (attrition)" || r.verdict === "WIN (ledger)").length / strong.length;
+  console.log(`(a) strong defense breaks the regiment (attrition WIN) in >=30% of seeds: ${(strongBreaks * 100).toFixed(0)}% — ${strongBreaks >= 0.3 ? "PASS" : "FAIL"}`);
+} else {
+  console.log("(a) skipped — strong cell not run");
+}
+if (none) {
+  const noneMaxWave = Math.max(...none.map((r) => r.wavesCleared));
+  console.log(`(b) no-defense never survives past wave ~8: max wave ${noneMaxWave} — ${noneMaxWave <= 8 ? "PASS" : "FAIL"}`);
+} else {
+  console.log("(b) skipped — none cell not run");
+}
+if (median) {
+  const medianMaxWave = Math.max(...median.map((r) => r.wavesCleared));
+  const medianVerdicts = new Set(median.map((r) => (r.verdict.startsWith("WIN") ? "WIN" : "LOSS")));
+  console.log(`(c) median defense reaches wave 25+ with mixed verdicts: max wave ${medianMaxWave}, verdicts seen ${[...medianVerdicts].join("/")} — ${medianMaxWave >= 25 && medianVerdicts.size >= 2 ? "PASS" : "FAIL"}`);
+} else {
+  console.log("(c) skipped — median cell not run");
+}
 
 // Task 6: no run may end in a spurious breach LOSS while the defense is
 // otherwise winning (i.e. lives > 0 and the regiment's book value has
 // collapsed / it's clearing waves cleanly) — that would mean the structural
 // census is misfiring, a bug to fix, not tune.
-const spuriousBreach = [...median, ...strong].filter((r) => r.verdict === "LOSS (breach)" && r.lives > 0 && r.attackerBV < r.playerBV);
-const anyBreach = [...none, ...median, ...strong].filter((r) => r.verdict === "LOSS (breach)");
-console.log(`(d) no spurious breach LOSS while defense winning: ${spuriousBreach.length} spurious / ${anyBreach.length} total breach LOSSes — ${spuriousBreach.length === 0 ? "PASS" : "FAIL"}`);
-if (anyBreach.length) console.log(`    breach LOSSes: ${anyBreach.map((r) => `${r.defense}#${r.seed}@wave${r.wavesCleared}`).join(", ")}`);
+const breachPool = [...(none || []), ...(median || []), ...(strong || [])];
+if (breachPool.length) {
+  const spuriousBreach = breachPool.filter((r) => r.verdict === "LOSS (breach)" && r.lives > 0 && r.attackerBV < r.playerBV);
+  const anyBreach = breachPool.filter((r) => r.verdict === "LOSS (breach)");
+  console.log(`(d) no spurious breach LOSS while defense winning: ${spuriousBreach.length} spurious / ${anyBreach.length} total breach LOSSes — ${spuriousBreach.length === 0 ? "PASS" : "FAIL"}`);
+  if (anyBreach.length) console.log(`    breach LOSSes: ${anyBreach.map((r) => `${r.defense}#${r.seed}@wave${r.wavesCleared}`).join(", ")}`);
+}
