@@ -9,6 +9,9 @@ import {
   makeWorld, addBody, fireProjectile, stepWorld, applyDamage, worldHash, CAUSE, mulberry32,
 } from "../src/engine/core.js";
 import { TOWER_SPECS } from "../src/depot/specs.js";
+import {
+  makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue,
+} from "../src/depot/economy.js";
 import fs from "node:fs";
 
 const fails = [];
@@ -408,6 +411,72 @@ function fireShots(seed, raise, n = 40) {
     }
     ok("mg fells a 70hp tree via sustained fire", tree.alive === false, `pulls=${pulls}`);
     ok("mg felling doesn't ignite the tree (mg never sets burning)", tree.burning == null);
+  }
+}
+
+// ================================================== economy (Task 1)
+// makeRegiment: seed-varied strength within bounds, exactly 2 rng draws.
+{
+  let minHeads = Infinity, maxHeads = -Infinity, minTanks = Infinity, maxTanks = -Infinity;
+  let boundsOk = true;
+  for (let seed = 1; seed <= 50; seed++) {
+    const rng = mulberry32(seed);
+    const reg = makeRegiment(rng);
+    if (reg.heads < 300 || reg.heads > 500 || reg.tanks < 8 || reg.tanks > 14) boundsOk = false;
+    minHeads = Math.min(minHeads, reg.heads); maxHeads = Math.max(maxHeads, reg.heads);
+    minTanks = Math.min(minTanks, reg.tanks); maxTanks = Math.max(maxTanks, reg.tanks);
+  }
+  ok("makeRegiment: heads/tanks stay within bounds over 50 seeds", boundsOk, `heads ${minHeads}..${maxHeads} tanks ${minTanks}..${maxTanks}`);
+  ok("makeRegiment: heads0/tanks0 mirror initial heads/tanks", (() => {
+    const rng = mulberry32(7);
+    const reg = makeRegiment(rng);
+    return reg.heads0 === reg.heads && reg.tanks0 === reg.tanks && reg.scrap === 60;
+  })());
+
+  // exactly-2-draw contract: a counting rng lets us assert draw count directly,
+  // and confirms a 3rd draw (if any leaked in) would change the next value.
+  {
+    const base = mulberry32(1);
+    let n = 0;
+    const wrapped = () => { n++; return base(); };
+    makeRegiment(wrapped);
+    ok("makeRegiment: draws rng exactly twice", n === 2, `draws=${n}`);
+  }
+
+  // payResults: fixture arithmetic
+  {
+    const reg = { scrap: 60, heads: 400, heads0: 400, tanks: 10, tanks0: 10 };
+    const ev = { structureDmg: 100, towerKills: 2, wallKills: 3, buildingKills: 1, leaks: 4 };
+    payResults(reg, ev);
+    const expected = 60 + 100 * RESULTS.structureDmg + 2 * RESULTS.towerKill + 3 * RESULTS.wallKill + 1 * RESULTS.buildingKill + 4 * RESULTS.leak;
+    ok("payResults: fixture arithmetic matches RESULTS weights", Math.abs(reg.scrap - expected) < 1e-9, `got=${reg.scrap} expected=${expected}`);
+  }
+  {
+    // uncapped: results can push scrap arbitrarily high, no clamping
+    const reg = { scrap: 0, heads: 1, heads0: 400, tanks: 0, tanks0: 10 };
+    payResults(reg, { structureDmg: 0, towerKills: 1000, wallKills: 0, buildingKills: 0, leaks: 0 });
+    ok("payResults: uncapped by decision — no ceiling on scrap gain", reg.scrap === 1000 * RESULTS.towerKill, reg.scrap);
+  }
+
+  // combatIneffective: 12% boundary + tanks>0 blocking
+  {
+    const heads0 = 400;
+    const atBoundary = { heads: 0.12 * heads0, heads0, tanks: 0 };
+    ok("combatIneffective: exactly at 12% boundary is NOT ineffective (strict <)", combatIneffective(atBoundary) === false);
+    const justUnder = { heads: 0.12 * heads0 - 1, heads0, tanks: 0 };
+    ok("combatIneffective: just under 12% with 0 tanks IS ineffective", combatIneffective(justUnder) === true);
+    const underHeadsWithTank = { heads: 0.12 * heads0 - 1, heads0, tanks: 1 };
+    ok("combatIneffective: tanks>0 blocks ineffective status even under head threshold", combatIneffective(underHeadsWithTank) === false);
+    const fullStrength = { heads: heads0, heads0, tanks: 0 };
+    ok("combatIneffective: full-strength regiment is not ineffective", combatIneffective(fullStrength) === false);
+  }
+
+  // bookValue: symmetry fixture — total is order-independent additive sum
+  {
+    ok("bookValue: scrap + assets sums directly", bookValue({ scrap: 60, assets: 40 }) === 100);
+    ok("bookValue: symmetric under swapping scrap/assets values", bookValue({ scrap: 60, assets: 40 }) === bookValue({ scrap: 40, assets: 60 }));
+    ok("bookValue: zero assets reduces to scrap alone", bookValue({ scrap: 77, assets: 0 }) === 77);
+    ok("bookValue: STIPEND is a stable per-round constant", STIPEND === 14);
   }
 }
 
