@@ -448,5 +448,5 @@ export const HUD0 = {
   totalWaves: 50, between: true, countdown: 8, phase: PHASE.BUILD, dispatch: null, lastDispatch: null,
   started: false, gameOver: false, victory: false, attrition: false, ledgerLoss: false, spent: false,
   mode: "wall", sellMode: false, paused: false, speed: 1, inspect: null, toasts: [],
-  pending: null,
+  pending: null, fogOn: true,
 };

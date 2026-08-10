@@ -769,6 +769,51 @@ try {
   await page.waitForFunction(() => window.__DEPOT__().bodies > 1, { timeout: 10000, polling: 250 });
   ok("depot: enemies present in the world", true);
 
+  // Phase 4 Task 4 (fog): freshly-spawned enemies start far from the depot
+  // (unheld ground), so the renderer should render fewer team-2 bodies than
+  // are actually alive right now — DOM-cheap via the renderer's own debug
+  // counter (window.__DEPOTFOGDBG__), no pixel sampling.
+  const fog1 = await page.evaluate(() => window.__DEPOTFOGDBG__());
+  ok(`depot fog: some newly-spawned enemies are hidden while far/unheld [visible=${fog1.visible} total=${fog1.total}]`,
+    fog1.total > 0 && fog1.visible < fog1.total);
+  // Direct proof that the SAME field gates both halves of "absent while
+  // unheld, appears on approach": the hidden enemy's own ground reads
+  // unheld (why it's not drawn), and the depot's own ground — where an
+  // approaching enemy would eventually stand — reads held (where it WOULD
+  // draw). A live multi-second walk-to-depot is too slow under swiftshader
+  // for the smoke budget (~100m at conscript speed); this checks the same
+  // gate at both ends instead of waiting on it.
+  const enemyPos = await page.evaluate(() => window.__DEPOTENEMYPOS__());
+  const depotFlag = (await page.evaluate(() => window.__DEPOTFLAGS__())).find((f) => f.kind === "flag");
+  if (enemyPos) {
+    const enemyState = await page.evaluate((p) => window.__DEPOTFOGAT__(p.x, p.z), enemyPos);
+    ok(`depot fog: the hidden enemy's own ground reads unheld [${enemyState}]`, enemyState === "unheld");
+  } else {
+    ok("depot fog: no live enemy to sample (skipped)", true);
+  }
+  if (depotFlag) {
+    const depotState = await page.evaluate((p) => window.__DEPOTFOGAT__(p.x, p.z), depotFlag);
+    ok(`depot fog: the depot's own ground (where an approach ends) reads held [${depotState}]`, depotState === "held");
+  } else {
+    ok("depot fog: no depot flag found (skipped)", true);
+  }
+  // toggle FOG off: gating disables entirely, so everyone alive should now
+  // render (visible === total) on the very next frame.
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll("button")].find((x) => x.textContent.startsWith("FOG"));
+    if (b) b.click();
+  });
+  await sleep(150);
+  const fog3 = await page.evaluate(() => window.__DEPOTFOGDBG__());
+  ok(`depot fog: toggled OFF renders every alive team-2 body [visible=${fog3.visible} total=${fog3.total}]`,
+    fog3.total === 0 || fog3.visible === fog3.total);
+  // toggle back ON for the rest of the run (persistence key gets exercised
+  // either way — leave it however the test lands, next section clears it).
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll("button")].find((x) => x.textContent.startsWith("FOG"));
+    if (b) b.click();
+  });
+
   // swiftshader is too slow to wait real-time for a full 12-unit wave to
   // walk/leak — use the debug harness to instantly drain the wave (zero the
   // spawn queue, kill the live enemies) so the phase machine's own tick

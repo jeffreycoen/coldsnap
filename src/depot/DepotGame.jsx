@@ -19,7 +19,7 @@ import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, 
 import { reachPolygon } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks, payBounties } from "./units.js";
 import { makeRegiment, payTown } from "./economy.js";
-import { makeTerritory, stepTerritory, holderAt, canBuild, EMIT } from "./territory.js";
+import { makeTerritory, stepTerritory, holderAt, canBuild, fogStateFor, EMIT } from "./territory.js";
 import { fwdUFor, fwdDirFor, invWFor } from "./orient.js";
 import Dispatch from "./Dispatch.jsx";
 
@@ -647,6 +647,16 @@ export default function DepotGame({ onExit }) {
         // canonical): ground/grid/decals beyond it get no geometry to
         // paint on (see renderer.js). TD/campaign/demo pass no rim.
         rim: { halfU: 29, halfV: 57, toCanonical: invW, toWorld: fwdU },
+        // Phase 4 Task 4: grid-line faction tint + three-state fog. sample()
+        // (WORLD space) drives per-frame enemy visibility/silhouette gating;
+        // sampleUV (CANONICAL space, matches T's own grid) drives the 4Hz
+        // splat-line retint + terrain fog wash via R.updateTerritory().
+        territory: {
+          T,
+          toWorld: fwdU,
+          sample: (x, z) => { const c = invW(x, z); return fogStateFor(T, c.u, c.v, 1); },
+          sampleUV: (u, v) => fogStateFor(T, u, v, 1),
+        },
       });
       const EXT = ORIENT % 2 ? { x: 62, z: 34 } : { x: 34, z: 62 };
       const A = makeGameAudio();
@@ -658,13 +668,21 @@ export default function DepotGame({ onExit }) {
       R.overlay.setObjective(OBJ_POS.x, OBJ_POS.z, field.heightAt(OBJ_POS.x, OBJ_POS.z));
       R.overlay.setBanners(SPAWN_POINTS);
       const AIM_OFF = { x: 0, z: -500 };
+      // FOG toggle: visuals only (see renderer.js setFog) — default ON,
+      // persisted with the same localStorage-key pattern CampaignRunner uses
+      // for "coldsnap-camp-deployed". Targeting (fogStateFor in units.js /
+      // state.js) is untouched by this flag.
+      let fogOn = true;
+      try { fogOn = window.localStorage.getItem("coldsnap-depot-fog") !== "0"; } catch (e) {}
+      R.setFog(fogOn);
 
       const S = {
         resources: 120, lives: 20, kills: 0,
         ws: makeDepotWaveState(), spawnRR: 0,
         mode: "wall", sellMode: false, inspectId: null,
         started: false, gameOver: false, victory: false,
-        paused: false, speed: 1,
+        paused: false, speed: 1, fogOn,
+        setFog: (v) => { fogOn = v; S.fogOn = v; R.setFog(v); try { window.localStorage.setItem("coldsnap-depot-fog", v ? "1" : "0"); } catch (e) {} },
         phase: PHASE.BUILD, dispatch: null, lastDispatch: null,
         focus: (() => { const w = fwdU(0, 6); return { x: w.x, y: field.heightAt(w.x, w.z), z: w.z }; })(),
         zoom: 1, acc: 0, t: 0, fps: 60, fpsAcc: 0, fpsN: 0,
@@ -1144,6 +1162,17 @@ export default function DepotGame({ onExit }) {
         }
         return best;
       };
+      // Task 4 debug hooks: DOM/pixel-cheap fog asserts for smoke.mjs.
+      // __DEPOTFOGDBG__ reports the renderer's own per-frame count of
+      // team-2-alive bodies vs how many it actually rendered (some hidden
+      // by fog when unheld) — no pixel sampling needed. __DEPOTFOGAT__
+      // exposes fogStateFor at a world point for direct state checks.
+      window.__DEPOTFOGDBG__ = () => R.getFogDebug();
+      window.__DEPOTFOGAT__ = (x, z) => { const c = invW(x, z); return fogStateFor(T, c.u, c.v, 1); };
+      window.__DEPOTENEMYPOS__ = () => {
+        const b = world.bodies.find((b2) => b2.kind === "unit" && b2.alive && b2.team === 2);
+        return b ? { x: b.pos.x, z: b.pos.z } : null;
+      };
 
       let last = performance.now();
       const STEP = 1 / 120;
@@ -1219,6 +1248,10 @@ export default function DepotGame({ onExit }) {
             terrAcc -= TERR_STEP;
             stepTerritory(T, buildEmitters(), TERR_STEP);
           }
+          // grid-line retint + terrain fog wash: same 4Hz cadence as the
+          // territory field itself, not per frame (see renderer.js
+          // updateTerritory/retintTerritory/updateFogWash).
+          if (terrGuard > 0 && R.updateTerritory) R.updateTerritory();
           world.events.length = 0;
           let guard = 0;
           while (S.acc >= STEP && guard++ < 6) {
@@ -1273,7 +1306,7 @@ export default function DepotGame({ onExit }) {
               attrition: S.attrition, spent: S.spent, ledgerLoss: S.ledgerLoss,
               mode: S.mode, sellMode: S.sellMode,
               paused: S.paused, speed: S.speed,
-              muted: A.muted, seed: MAP_SEED,
+              muted: A.muted, fogOn: S.fogOn, seed: MAP_SEED,
               toasts: S.toasts.map((t) => t.txt),
               pending: S.pending && S.pendingScreen ? {
                 x: S.pendingScreen.x, y: S.pendingScreen.y,
@@ -1313,7 +1346,7 @@ export default function DepotGame({ onExit }) {
         canvas.removeEventListener("touchstart", blockTouch);
         window.removeEventListener("keydown", kd);
         window.removeEventListener("keyup", ku);
-        for (const k of ["__DEPOT__", "__DEPOTACK__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTTHIN__", "__DEPOTEND__", "__DEPOTFOCUS__", "__DEPOTGETFOCUS__", "__DEPOTSETT__", "__DEPOTFLAGS__", "__DEPOTHOLD__", "__DEPOTFINDBUILDABLE__", "__DEPOTFINDRISE__", "__DEPOTFINDNEARROCK__"]) delete window[k];
+        for (const k of ["__DEPOT__", "__DEPOTACK__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTTHIN__", "__DEPOTEND__", "__DEPOTFOCUS__", "__DEPOTGETFOCUS__", "__DEPOTSETT__", "__DEPOTFLAGS__", "__DEPOTHOLD__", "__DEPOTFINDBUILDABLE__", "__DEPOTFINDRISE__", "__DEPOTFINDNEARROCK__", "__DEPOTFOGDBG__", "__DEPOTFOGAT__", "__DEPOTENEMYPOS__"]) delete window[k];
         A.dispose();
         if (R) R.dispose();
         stateRef.current = null;
@@ -1346,6 +1379,11 @@ export default function DepotGame({ onExit }) {
     S.audio.ensure();
     S.audio.setMuted(!S.audio.muted);
     setHud((h) => ({ ...h, muted: S.audio.muted }));
+  };
+  const toggleFog = () => {
+    const S = stateRef.current; if (!S || !S.setFog) return;
+    S.setFog(!S.fogOn);
+    setHud((h) => ({ ...h, fogOn: S.fogOn }));
   };
   const sellInspected = () => { const S = stateRef.current; if (S && S.inspectId && S.sellById) S.sellById(S.inspectId); };
 
@@ -1385,6 +1423,9 @@ export default function DepotGame({ onExit }) {
         )}
         <button style={{ ...P.btn, marginLeft: "auto", padding: isTouch ? "5px 10px" : "4px 10px" }} title="rotate view (Q/E)"
           onClick={() => { const S = stateRef.current; if (S && S.rotate) S.rotate(1); }}>⟳</button>
+        <button style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.fogOn ? "#7fd7ff" : "#48515f", opacity: hud.fogOn ? 1 : 0.6 }} title="fog of war (visual only)" onClick={toggleFog}>
+          FOG {hud.fogOn ? "ON" : "OFF"}
+        </button>
         <button style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", opacity: hud.muted ? 0.5 : 1 }} onClick={toggleMute}>
           {hud.muted ? "🔇" : "🔊"}
         </button>

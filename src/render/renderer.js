@@ -13,10 +13,24 @@ function makeGradientMap() {
   t.generateMipmaps = false; t.needsUpdate = true;
   return t;
 }
+// DEPOT-only grid-line faction tint. Reads a value cell in the same masonry
+// grid the base grid lines are drawn into (see paintBase below), painted
+// with rgba() over the existing line color rather than replacing it — the
+// underlying grey grid never disappears, it just gets a wash.
+const TERR_TINT = {
+  held: "rgba(94,148,94,0.55)",    // muted green — player ground
+  unheld: "rgba(150,84,76,0.55)",  // muted red (PAL.scoutRed family) — enemy/neutral-far
+  seam: null,                      // no wash — the base grey line already reads as no-man's-land
+};
 function makeSplat(town) {
   const cv = document.createElement("canvas");
   cv.width = 1024; cv.height = 1024; // DIVERGENCE from the demo (512): block-scale grid needs the resolution
   const cx = cv.getContext("2d");
+  // grid geometry constants, lifted out of paintBase's closure so the
+  // territory retint pass (DEPOT-only, see retintTerritory below) can find
+  // the same line pixels without re-deriving the layout.
+  const W2Ug = 1024 / 188.7, U0g = 94.35, BLK = 0.83;
+  const gridPx = (worldCoord) => (worldCoord + U0g) * W2Ug;
   const paintBase = () => {
     cx.globalAlpha = 1; cx.fillStyle = "#f2f6fa"; cx.fillRect(0, 0, 1024, 1024);
     cx.fillStyle = "#e2eaf3";
@@ -35,9 +49,8 @@ function makeSplat(town) {
       // DIVERGENCE from the demo's 4m/20m grid: cells are one masonry block
       // (0.83m PITCH) with a heavier line every 4 blocks, so terrain relief
       // reads in the same visual unit as every wall and house.
-      const W2Ug = 1024 / 188.7, U0g = 94.35, BLK = 0.83;
       for (let k = Math.ceil(-92 / BLK); k * BLK <= 92; k++) {
-        const gp = Math.round((k * BLK + U0g) * W2Ug);
+        const gp = Math.round(gridPx(k * BLK));
         cx.fillStyle = k % 4 === 0 ? "rgba(78,92,110,0.7)" : "rgba(116,130,148,0.7)"; // opaque enough to read on open snow
         cx.fillRect(gp, 0, 1, 1024);
         cx.fillRect(0, gp, 1024, 1);
@@ -95,6 +108,50 @@ function makeSplat(town) {
       cx.drawImage(baseCv, 0, 0);
       cx.globalAlpha = 1;
       tex.needsUpdate = true;
+    },
+    // DEPOT-only: grid-line faction tint, region-batched on territory change.
+    // prevState holds one byte per territory cell (0 seam/unpainted, 1 held,
+    // 2 unheld) from the last call; only cells whose state actually flipped
+    // get their crossing grid-line segments repainted — a fast-moving front
+    // touches a handful of cells, a static line touches none. Called at the
+    // territory field's own ~4Hz tick (DepotGame.jsx), never per frame.
+    _terrPrev: null,
+    retintTerritory(T, toWorld, sample) {
+      if (!cx.fillRect) return; // jsdom e2e stub — feature-detect like paintBase
+      const { nx, nz, cs, halfU, halfV } = T;
+      if (!this._terrPrev || this._terrPrev.length !== nx * nz) this._terrPrev = new Uint8Array(nx * nz);
+      const prev = this._terrPrev;
+      const code = (s) => s === "held" ? 1 : s === "unheld" ? 2 : 0;
+      for (let iz = 0; iz < nz; iz++) {
+        for (let ix = 0; ix < nx; ix++) {
+          const u = -halfU + (ix + 0.5) * cs, v = -halfV + (iz + 0.5) * cs;
+          const st = sample(u, v);
+          const c = code(st);
+          const idx = iz * nx + ix;
+          if (c === prev[idx]) continue;
+          prev[idx] = c;
+          const w = toWorld(u, v); // canonical -> world (90deg-step transforms preserve axis alignment)
+          const half = cs / 2;
+          const wxLo = w.x - half, wxHi = w.x + half, wzLo = w.z - half, wzHi = w.z + half;
+          const pxLo = gridPx(wxLo), pxHi = gridPx(wxHi), pzLo = gridPx(wzLo), pzHi = gridPx(wzHi);
+          const tint = TERR_TINT[st];
+          // vertical grid lines crossing this cell's x-span
+          for (let k = Math.ceil((wxLo - U0g) / BLK - 0.001); k * BLK + U0g <= wxHi + 0.001; k++) {
+            const gp = Math.round(gridPx(k * BLK));
+            cx.fillStyle = k % 4 === 0 ? "rgba(78,92,110,0.7)" : "rgba(116,130,148,0.7)";
+            cx.fillRect(gp, Math.min(pzLo, pzHi), 1, Math.abs(pzHi - pzLo) + 1);
+            if (tint) { cx.fillStyle = tint; cx.fillRect(gp, Math.min(pzLo, pzHi), 1, Math.abs(pzHi - pzLo) + 1); }
+          }
+          // horizontal grid lines crossing this cell's z-span
+          for (let k = Math.ceil((wzLo - U0g) / BLK - 0.001); k * BLK + U0g <= wzHi + 0.001; k++) {
+            const gp = Math.round(gridPx(k * BLK));
+            cx.fillStyle = k % 4 === 0 ? "rgba(78,92,110,0.7)" : "rgba(116,130,148,0.7)";
+            cx.fillRect(Math.min(pxLo, pxHi), gp, Math.abs(pxHi - pxLo) + 1, 1);
+            if (tint) { cx.fillStyle = tint; cx.fillRect(Math.min(pxLo, pxHi), gp, Math.abs(pxHi - pxLo) + 1, 1); }
+          }
+          tex.needsUpdate = true;
+        }
+      }
     },
     treads: 0,
     tread(u, v) {
@@ -283,6 +340,12 @@ export function makeRenderer(canvas, world0, opts = {}) {
     }
     pa.needsUpdate = true;
   }
+  // DEPOT-only fog terrain wash: a snapshot of syncTerrain's slope-shaded
+  // color, taken fresh every time the terrain rebuilds, so the 4Hz fog pass
+  // (updateFogWash below) always blends FROM the true relief shade rather
+  // than from a color that already carries a previous tick's wash — no
+  // cumulative drift as a cell's held/seam/unheld state flips back and forth.
+  let terrBaseColor = null;
   function syncTerrain() {
     const pa = terraGeo.attributes.position;
     for (let j = 0; j < F.n; j++) for (let i = 0; i < F.n; i++) pa.setY(j * F.n + i, F.h[j * F.n + i]);
@@ -309,6 +372,33 @@ export function makeRenderer(canvas, world0, opts = {}) {
     }
     ca.needsUpdate = true;
     F.dirty = false;
+    if (opts.territory) {
+      if (!terrBaseColor || terrBaseColor.length !== ca.array.length) terrBaseColor = new Float32Array(ca.array.length);
+      terrBaseColor.set(ca.array);
+    }
+  }
+  // DEPOT-only: unheld ground reads colder/desaturated — a slow blue-grey
+  // wash toward the base relief shade, blended per vertex from terrBaseColor
+  // (never compounding). Full strength unheld, half strength at the seam,
+  // untouched when held. Called at the territory field's ~4Hz tick, same
+  // cadence as retintTerritory — never per frame (F.n*F.n ~14.6k vertices is
+  // cheap at 4Hz, not at 60).
+  const FOG_COLD = { r: 0.62, g: 0.72, b: 0.86 };
+  function updateFogWash(sample) {
+    if (!opts.territory || !terrBaseColor) return;
+    const ca = terraGeo.attributes.color;
+    const pa = terraGeo.attributes.position;
+    for (let k = 0; k < F.n * F.n; k++) {
+      const wx = pa.getX(k), wz = pa.getZ(k);
+      const st = sample(wx, wz);
+      const f = st === "unheld" ? 0.55 : st === "seam" ? 0.24 : 0;
+      const bi = k * 3;
+      if (f === 0) { ca.array[bi] = terrBaseColor[bi]; ca.array[bi + 1] = terrBaseColor[bi + 1]; ca.array[bi + 2] = terrBaseColor[bi + 2]; continue; }
+      ca.array[bi] = terrBaseColor[bi] * (1 - f) + FOG_COLD.r * terrBaseColor[bi] * f;
+      ca.array[bi + 1] = terrBaseColor[bi + 1] * (1 - f) + FOG_COLD.g * terrBaseColor[bi + 1] * f;
+      ca.array[bi + 2] = terrBaseColor[bi + 2] * (1 - f) + FOG_COLD.b * terrBaseColor[bi + 2] * f;
+    }
+    ca.needsUpdate = true;
   }
   syncTerrain();
   // water
@@ -646,6 +736,24 @@ export function makeRenderer(canvas, world0, opts = {}) {
     postMat.uniforms.uPalette.value = gfx.palette;
     rebuildRTs();
   }
+  // DEPOT-only fog-of-war: default ON whenever a territory sampler is
+  // supplied; toggled visuals-only by setFog (menu FOG on/off) — never gates
+  // targeting, which reads fogStateFor directly in units.js/state.js.
+  let fogOn = true;
+  function setFog(v) { fogOn = !!v; }
+  function updateTerritory() {
+    if (!opts.territory) return;
+    const { T, toWorld, sampleUV, sample } = opts.territory;
+    splat.retintTerritory(T, toWorld, sampleUV);
+    updateFogWash(sample);
+  }
+  const SIL_C = new THREE.Color(0x2c2f34); // flat dark grey — seam silhouettes, no team dress
+  // fog debug counters (DEPOT-only): total team-2 alive bodies vs how many
+  // were actually rendered this frame — cheap, DOM-readable via
+  // window.__DEPOTFOGDBG__ (DepotGame.jsx), used by smoke.mjs's fog assert
+  // instead of anything pixel-based.
+  let fogDbgTotal = 0, fogDbgVisible = 0;
+  function getFogDebug() { return { total: fogDbgTotal, visible: fogDbgVisible }; }
   let shake = 0;
   function consume(events) {
     for (const e of events) {
@@ -920,6 +1028,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
       splat.fade(FADE_ALPHA);
       nextFadeT = world.t + FADE_EVERY;
     }
+    fogDbgTotal = 0; fogDbgVisible = 0;
     // vehicles sync
     for (const b of world.bodies) {
       // DIVERGENCE from the demo: kind "truck" joins the loop. The demo's
@@ -932,11 +1041,31 @@ export function makeRenderer(canvas, world0, opts = {}) {
         g = b.id === world.bisonId ? buildBison() : (b.vtype === "truck" ? buildTruck() : buildScout());
         vehMap.set(b.id, g); scene.add(g);
       }
+      // DEPOT fog (opts.territory, gated by fogOn): unheld enemy vehicles
+      // are not rendered; seam vehicles drop to a flat silhouette (no team
+      // dress color). Player/neutral vehicles and everything when fog is off
+      // are untouched.
+      let fogHide = false, fogSil = false;
+      if (opts.territory && b.team === 2 && b.alive) {
+        fogDbgTotal++;
+        if (fogOn) {
+          const st = opts.territory.sample(b.pos.x, b.pos.z);
+          fogHide = st === "unheld";
+          fogSil = st === "seam";
+        }
+        if (!fogHide) fogDbgVisible++;
+      }
+      g.visible = !fogHide;
+      if (fogHide) continue;
       g.position.set(b.pos.x, b.pos.y, b.pos.z);
       g.quaternion.set(b.q.x, b.q.y, b.q.z, b.q.w);
       if ((b.kind === "wreck" || (b.kind === "truck" && !b.alive)) && !g.userData.dead) {
         g.userData.dead = true;
         g.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.material.color.lerp(wreckTint, 0.75); } });
+      }
+      if (g.userData.hull && !g.userData.dead) {
+        if (fogSil) { g.userData.hull.material.color.copy(SIL_C); if (g.userData.top) g.userData.top.material.color.copy(SIL_C); g.userData.fogSil = true; }
+        else if (g.userData.fogSil) { g.userData.hull.material.color.setHex(PAL.scoutRed); if (g.userData.top) g.userData.top.material.color.setHex(0x6f3b36); g.userData.fogSil = false; }
       }
       if (g.userData.turret) g.userData.turret.rotation.y = turretYaw;
     }
@@ -1043,6 +1172,20 @@ export function makeRenderer(canvas, world0, opts = {}) {
       const R = b.R;
       const isG = b.utype === "gren";
       if (isG ? gi >= 24 : ci >= 96) continue;
+      // DEPOT fog (opts.territory, gated by fogOn): an enemy standing in
+      // unheld ground is not rendered at all — a shell from the fog is
+      // information earned, a soldier standing there is not. In the seam,
+      // render but force the flat silhouette palette below (no dress read).
+      let fogSil = false;
+      if (opts.territory && b.team === 2 && b.alive) {
+        fogDbgTotal++;
+        if (fogOn) {
+          const st = opts.territory.sample(b.pos.x, b.pos.z);
+          if (st === "unheld") continue;
+          fogSil = st === "seam";
+        }
+        fogDbgVisible++;
+      }
       const sp = b.alive ? Math.hypot(b.v.x, b.v.z) : 0;
       b.wph = (b.wph || 0) + sp * dt * 3.4;
       const sw = Math.sin(b.wph) * Math.min(0.5, sp * 0.24);
@@ -1062,8 +1205,13 @@ export function makeRenderer(canvas, world0, opts = {}) {
           q = _bq;
         }
         writeInst(pools[pi], idx, px, py, pz, q, 1, 1, 1);
-        const pal = b.dress === "android" ? (b.alive ? AND_LIVE : AND_DEAD) : (b.alive ? INF_LIVE : INF_DEAD)[isG ? "gren" : "con"];
-        if (pools[pi].setColorAt) pools[pi].setColorAt(idx, pal[p.role]);
+        if (pools[pi].setColorAt) {
+          if (fogSil) pools[pi].setColorAt(idx, SIL_C);
+          else {
+            const pal = b.dress === "android" ? (b.alive ? AND_LIVE : AND_DEAD) : (b.alive ? INF_LIVE : INF_DEAD)[isG ? "gren" : "con"];
+            pools[pi].setColorAt(idx, pal[p.role]);
+          }
+        }
       }
       if (isG) gi++; else ci++;
     }
@@ -1448,5 +1596,5 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // never calls this and keeps the shipped look exactly
   function setGrade(g) { postMat.uniforms.uGrade.value = Math.max(-1, Math.min(1, g || 0)); }
   const project = (x, y, z) => { const v = new THREE.Vector3(x, y, z); v.project(cam); return { x: v.x, y: v.y }; };
-  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, overlay, setDressing, rotateStep, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
+  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, overlay, setDressing, rotateStep, updateTerritory, setFog, getFogDebug, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
 }
