@@ -16,19 +16,11 @@ export const ENEMY_SPECS = {
   "": { mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, hp: 58, bounty: 4, speed: 3.2, gain: 14, label: "conscript" },
 };
 
-// Flat waves: unit count climbs, spawn delay tightens. No mixes, no armor,
-// no boss — those are later-phase scripting.
-export const WAVES = [
-  { units: 12, delay: 0.9 },
-  { units: 16, delay: 0.85 },
-  { units: 20, delay: 0.8 },
-  { units: 24, delay: 0.75 },
-  { units: 28, delay: 0.7 },
-  { units: 32, delay: 0.65 },
-  { units: 36, delay: 0.6 },
-  { units: 40, delay: 0.55 },
-  { units: 46, delay: 0.5 },
-  { units: 52, delay: 0.45 },
-];
+// 50-wave ramp: unit count and spawn delay scale linearly with wave index.
+// No mixes, no armor, no boss — those are later-phase scripting.
+export const WAVES = Array.from({ length: 50 }, (_, i) => ({
+  units: 12 + i * 2,
+  delay: Math.max(0.18, 0.9 - i * 0.014),
+}));
 
 export const MASON = { hcs: 0.40, pitch: 0.83, mass: 100, breakF: 8.0e4 };

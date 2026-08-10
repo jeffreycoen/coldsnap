@@ -1,7 +1,10 @@
 // Headless test for the depot wave phase machine: build -> wave -> stall ->
 // advance -> wave 2. Drives src/depot/state.js directly, no DOM/three.js.
 //   node scripts/depot-test.mjs
-import { PHASE, makeRunState, startWave, tryStall, advance } from "../src/depot/state.js";
+import {
+  PHASE, makeRunState, startWave, tryStall, advance,
+  enemyLedger, regimentDestroyed, checkLoss, checkWin, makeEndDispatch,
+} from "../src/depot/state.js";
 
 const fails = [];
 const ok = (name, cond, detail) => {
@@ -78,6 +81,58 @@ ok("final wave clear enters stall", S.phase === PHASE.STALL);
 ok("final dispatch says FINAL WAVE CLEARED", S.dispatch.lines[1].includes("FINAL WAVE CLEARED"), S.dispatch.lines[1]);
 advance(S, WAVES);
 ok("advancing past the last wave sets victory", S.victory === true);
+
+// ===================================================== 50-wave end states
+// force-lose: depot hp (lives) driven to 0 mid-run -> LOSS, regardless of
+// wave progress or resources.
+{
+  const W50 = Array.from({ length: 50 }, (_, i) => ({ units: 12 + i * 2, delay: 0.9 }));
+  const L = makeRunState({ waves: W50 });
+  L.started = true;
+  L.ws.waveIdx = 4;
+  L.lives = 0;
+  ok("regimentDestroyed stub is always false", regimentDestroyed(L) === false);
+  const lost = checkLoss(L);
+  ok("checkLoss fires when lives hit 0", lost === true);
+  ok("checkLoss sets gameOver", L.gameOver === true);
+  ok("checkLoss does not set victory", L.victory === false);
+  ok("checkLoss is idempotent (no-op once gameOver)", checkLoss(L) === false);
+}
+
+// god-mode win: drive the machine to wave 50 cleared with resources well
+// past the placeholder enemy ledger -> WIN.
+{
+  const W50 = Array.from({ length: 50 }, (_, i) => ({ units: 12 + i * 2, delay: 0.9 }));
+  const G = makeRunState({ waves: W50, startResources: 999999 });
+  G.started = true;
+  G.ws.waveIdx = W50.length - 1;
+  G.ws.spawnQueue = 0;
+  G.phase = PHASE.WAVE;
+  tryStall(G, W50, 0);
+  ok("god-mode: final wave clear enters stall", G.phase === PHASE.STALL);
+  const advanced = advance(G, W50);
+  ok("god-mode: advance() fires past final wave", advanced === true);
+  ok("god-mode: resources far exceed placeholder ledger", G.resources >= enemyLedger(W50.length - 1));
+  ok("god-mode: victory is set", G.victory === true, G.victory);
+  ok("god-mode: gameOver is not set", G.gameOver === false);
+  const endD = makeEndDispatch({ victory: G.victory, kills: 0, wave: W50.length, totalWaves: W50.length });
+  ok("makeEndDispatch returns a card for the win", !!endD && Array.isArray(endD.lines) && endD.lines.length > 0);
+}
+
+// wave-50-survived but resources under the placeholder ledger -> still LOSS
+// (the brief's "comparing resources vs a placeholder enemy ledger stub").
+{
+  const W50 = Array.from({ length: 50 }, (_, i) => ({ units: 12 + i * 2, delay: 0.9 }));
+  const B = makeRunState({ waves: W50, startResources: 0 });
+  B.started = true;
+  B.ws.waveIdx = W50.length - 1;
+  B.ws.spawnQueue = 0;
+  B.phase = PHASE.WAVE;
+  tryStall(B, W50, 0);
+  advance(B, W50);
+  ok("underfunded final-wave clear does not win", B.victory === false);
+  ok("underfunded final-wave clear ends in loss", B.gameOver === true);
+}
 
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);

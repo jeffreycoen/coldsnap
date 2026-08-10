@@ -39,6 +39,71 @@ export function makeDispatch(waveIdx, totalWaves) {
   };
 }
 
+// Placeholder enemy economic ledger — Phase 3 replaces this with the real
+// enemy economy. Climbs linearly with wave index so the final-wave victory
+// check has a non-trivial comparison until then. Pure, no RNG.
+export function enemyLedger(waveIdx) {
+  return 80 + waveIdx * 14;
+}
+
+// Stub alternate loss condition — a future phase adds a regiment (a
+// player-side unit group) that can be wiped out mid-run. Always false for
+// now; the hook exists so callers already check it.
+export function regimentDestroyed(S) {
+  return false;
+}
+
+// The single place a run flips to LOSS: depot destroyed (lives <= 0) or the
+// stubbed regiment-destroyed hook. Idempotent — no-ops once the run has
+// already ended. Headless-testable, called from DepotGame.jsx's frame loop.
+export function checkLoss(S) {
+  if (S.gameOver || S.victory) return false;
+  if (S.lives <= 0 || regimentDestroyed(S)) {
+    S.lives = Math.max(0, S.lives);
+    S.gameOver = true;
+    return true;
+  }
+  return false;
+}
+
+// The single place a run flips to WIN: called once the final wave clears.
+// Compares current resources against the placeholder enemy ledger (real
+// economy arrives Phase 3) — falling short still ends the run, but as a
+// LOSS rather than a WIN.
+export function checkWin(S, WAVES) {
+  const ledger = enemyLedger(WAVES.length - 1);
+  if (S.resources >= ledger) {
+    S.victory = true;
+  } else {
+    S.gameOver = true;
+  }
+  return S.victory;
+}
+
+// End-of-run dispatch copy — same teletyped card style as the between-wave
+// stall dispatch, reused for the WIN/LOSS end card. Pure + deterministic.
+export function makeEndDispatch({ victory, kills, wave, totalWaves }) {
+  const wo = "WO-9999";
+  if (victory) {
+    return {
+      wo,
+      lines: [
+        "FINAL WAVE CLEARED.",
+        "THE DEPOT HOLDS.",
+        `${kills} CONFIRMED. FIELD ORDER CLOSED.`,
+      ],
+    };
+  }
+  return {
+    wo,
+    lines: [
+      "DEPOT OVERRUN.",
+      `LOST AT WAVE ${wave} OF ${totalWaves}.`,
+      `${kills} CONFIRMED BEFORE THE LINE BROKE.`,
+    ],
+  };
+}
+
 // Phase machine — the single source of truth for build/wave/stall transitions.
 // Kept dependency-free (no world/render refs) so it is headless-testable from
 // scripts/depot-test.mjs and so DepotGame.jsx's frame loop and the offline
@@ -81,7 +146,7 @@ export function advance(S, WAVES) {
   ws.waveIdx++;
   S.dispatch = null;
   if (ws.waveIdx >= WAVES.length) {
-    S.victory = true;
+    checkWin(S, WAVES);
     S.phase = PHASE.BUILD;
     return true;
   }
@@ -94,7 +159,7 @@ export function advance(S, WAVES) {
 
 export const HUD0 = {
   fps: 0, wave: 1, lives: 20, enemies: 0, resources: 120, walls: 0, towers: 0, kills: 0,
-  totalWaves: 10, between: true, countdown: 8, phase: PHASE.BUILD, dispatch: null, lastDispatch: null,
+  totalWaves: 50, between: true, countdown: 8, phase: PHASE.BUILD, dispatch: null, lastDispatch: null,
   started: false, gameOver: false, victory: false,
   mode: "wall", sellMode: false, paused: false, speed: 1, inspect: null, toasts: [],
 };

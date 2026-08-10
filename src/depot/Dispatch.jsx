@@ -22,7 +22,7 @@ function Typed({ text, cps = 45, style }) {
   return <span style={style}>{text.slice(0, n)}{n < text.length ? <span style={{ opacity: 0.6 }}>{"▌"}</span> : null}</span>;
 }
 
-export default function Dispatch({ dispatch, gating, onAcknowledge }) {
+export default function Dispatch({ dispatch, gating, onAcknowledge, label }) {
   const [armed, setArmed] = useState(false);
 
   useEffect(() => {
@@ -50,7 +50,7 @@ export default function Dispatch({ dispatch, gating, onAcknowledge }) {
           disabled={!armed}
           onClick={() => { if (armed) onAcknowledge(); }}
         >
-          {gating ? "ACKNOWLEDGE" : "CLOSE"}
+          {label || (gating ? "ACKNOWLEDGE" : "CLOSE")}
         </button>
       </div>
     </div>

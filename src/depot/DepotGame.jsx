@@ -14,7 +14,7 @@ import {
 import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, WAVES, MASON } from "./specs.js";
-import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, tryStall, advance as phaseAdvance } from "./state.js";
+import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, tryStall, advance as phaseAdvance, checkLoss, makeEndDispatch } from "./state.js";
 import Dispatch from "./Dispatch.jsx";
 
 // ============================================================== the map
@@ -937,9 +937,12 @@ export default function DepotGame({ onExit }) {
           } else if (e.type === "leak") {
             S.lives -= e.dmg;
             toast("LEAK — -1 life");
-            if (S.lives <= 0) { S.lives = 0; S.gameOver = true; }
           }
         }
+        // The single place a run flips to LOSS (depot destroyed, or the
+        // stubbed regiment-destroyed hook) — same function depot-test.mjs
+        // drives headlessly.
+        checkLoss(S);
         return evs;
       };
 
@@ -966,6 +969,12 @@ export default function DepotGame({ onExit }) {
         const from = { x: tx, y: ty, z: tz - 3 };
         fireProjectile(world, from, { x: 0, y: 0, z: 1 }, 90,
           { kind: "shell", r: 2.3, kv: 8, dmg: 25, crater: 0.55, attacker: "player" });
+      };
+      window.__DEPOTEND__ = (victory) => {
+        // debug harness: force the run into its end state for screenshotting
+        // the WIN/LOSS end card without simming 50 waves — pattern matches
+        // the other window.__DEPOT*__ hooks above.
+        if (victory) S.victory = true; else { S.lives = 0; S.gameOver = true; }
       };
       window.__DEPOTFOCUS__ = (x, z, zoom) => {
         // debug harness: point the camera at a world point (e.g. a tree) so
@@ -1107,7 +1116,7 @@ export default function DepotGame({ onExit }) {
         canvas.removeEventListener("touchstart", blockTouch);
         window.removeEventListener("keydown", kd);
         window.removeEventListener("keyup", ku);
-        for (const k of ["__DEPOT__", "__DEPOTACK__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTFOCUS__"]) delete window[k];
+        for (const k of ["__DEPOT__", "__DEPOTACK__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTEND__", "__DEPOTFOCUS__"]) delete window[k];
         A.dispose();
         if (R) R.dispose();
         stateRef.current = null;
@@ -1265,18 +1274,12 @@ export default function DepotGame({ onExit }) {
       )}
 
       {(hud.gameOver || hud.victory) && !fatal && (
-        <div style={P.ovl}>
-          <div style={{ fontSize: 24, letterSpacing: 3, color: hud.victory ? "#4aff8c" : "#ff7a7a", marginBottom: 8 }}>
-            {hud.victory ? "THE DEPOT HOLDS" : "THE DEPOT FALLS"}
-          </div>
-          <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 16 }}>
-            {hud.kills} kills · wave {hud.wave}/{hud.totalWaves}
-            <br /><span style={{ opacity: 0.6 }}>field order #{hud.seed}</span>
-          </div>
-          <button style={{ ...P.btn, fontSize: 14, padding: "9px 22px", borderColor: "#9fdcff", color: "#9fdcff" }} onClick={restart}>
-            RUN IT AGAIN
-          </button>
-        </div>
+        <Dispatch
+          dispatch={makeEndDispatch({ victory: hud.victory, kills: hud.kills, wave: hud.wave, totalWaves: hud.totalWaves })}
+          gating={false}
+          label="RETURN TO BASE"
+          onAcknowledge={() => { if (onExit) onExit(); else restart(); }}
+        />
       )}
 
       {fatal && (
