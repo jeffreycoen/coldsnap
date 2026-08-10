@@ -909,6 +909,179 @@ try {
   await page.waitForFunction(() => window.__DEPOT__().phase === "build" && window.__DEPOT__().wave === 2, { timeout: 5000, polling: 200 });
   ok("depot: ACKNOWLEDGE advances to wave 2", true);
 
+  // ---- Phase 5 Task 3: infantry. Sniper preview fan (fog-independent),
+  // sandbag line (instant), rifles placement (tower flow: green-only +
+  // confirm), member tap -> selection chips, ATTACK -> ground tap = dest,
+  // advance observed — then a rotated variant of the order flow (the taps
+  // convert screen->world through the live camera yaw). Enemy fire is
+  // structure-only this phase, so live enemies from the running waves can't
+  // hurt the squad mid-check.
+  {
+    const SHOTS = process.env.DEPOT_SHOTS || null;
+    const shot = async (name) => { if (SHOTS) { await page.screenshot({ path: SHOTS + "/" + name }); } };
+    // settleAt: point the camera and POLL until the canvas-center ground ray
+    // actually converges on the target (the pivot tweens toward S.focus — a
+    // fixed sleep lands taps meters off under swiftshader when the tween is
+    // still in flight).
+    const settleAt = async (x, z, zoom) => {
+      await page.evaluate((p) => window.__DEPOTFOCUS__(p.x, p.z, p.zoom || undefined), { x, z, zoom });
+      await page.waitForFunction((p) => {
+        const r = document.querySelector("canvas").getBoundingClientRect();
+        const g = window.__DEPOTGROUNDAT__(r.left + r.width / 2, r.top + r.height / 2);
+        return !!g && Math.hypot(g.x - p.x, g.z - p.z) < 1.0; // texel-snapped pivot can idle ~0.5m off the exact focus
+      }, { timeout: 8000, polling: 200 }, { x, z }).catch(() => {}); // best-effort: on raised terrain the center ray clips short of the pivot and never converges — the tap then lands where the player would SEE it land, which is what the asserts measure against
+      await sleep(150);
+    };
+    // tapWorld: tap a KNOWN world point via its live screen projection —
+    // immune to residual pivot-tween error at the canvas center.
+    const tapWorld = async (x, z, strict) => {
+      // retry until the point projects INSIDE the canvas and clear of the
+      // top/bottom HUD bars — a mid-tween projection can sit off-screen or
+      // under a DOM bar, where the click would hit UI instead of ground.
+      for (let i = 0; i < 12; i++) {
+        const pt = await page.evaluate((p) => {
+          const q = window.__DEPOTSCREENAT__(p.x, p.z);
+          if (!q) return null;
+          const r = document.querySelector("canvas").getBoundingClientRect();
+          if (q.x < r.left + 8 || q.x > r.right - 8 || q.y < r.top + 60 || q.y > r.bottom - 110) return null;
+          if (p.strict) {
+            // ray-verify (opt-in): the ground ray through that pixel must
+            // actually reach the target — near the depot mound the ray can
+            // clip a closer slope and land the tap on a refusable cell.
+            const g = window.__DEPOTGROUNDAT__(q.x, q.y);
+            if (!g || Math.hypot(g.x - p.x, g.z - p.z) > 2.4) return null;
+          }
+          return q;
+        }, { x, z, strict: !!strict });
+        if (pt) { await page.mouse.click(Math.round(pt.x), Math.round(pt.y)); return true; }
+        await sleep(400);
+      }
+      return false;
+    };
+
+    // sniper preview: pending fan opens, then cancel (no scrap moves)
+    await page.waitForFunction(() => !!window.__DEPOTFINDBUILDABLE__(5), { timeout: 10000, polling: 200 });
+    const sqCell = await page.evaluate(() => window.__DEPOTFINDBUILDABLE__(5)); // clear of masonry: a fan opened INSIDE the depot lattice clips to nothing
+    await settleAt(sqCell.x, sqCell.z, 1.4); // framed so the 30m preview fan fits the shot
+    await page.click('[data-tower-key="sq_sniper"]');
+    await tapWorld(sqCell.x, sqCell.z);
+    let ccc = await canvasCenter();
+    const sniperPending = await page.waitForFunction(() => !!document.querySelector("[data-pending-confirm]"), { timeout: 5000, polling: 100 }).then(() => true).catch(() => false);
+    ok("depot squads: sniper placement opens the pending preview fan", sniperPending);
+    await shot("task3-sniper-preview.png");
+    if (sniperPending) { await sleep(400); await page.click("[data-pending-cancel]"); }
+
+    // sandbag line: instant (wall-exempt), tagged bodies appear per tap
+    await page.click('[data-tower-key="sandbag"]');
+    for (const off of [-2, 0, 2]) {
+      await settleAt(sqCell.x + off, sqCell.z + 3, 2.4);
+      await tapWorld(sqCell.x + off, sqCell.z + 3);
+      await sleep(150);
+    }
+    const bags = await page.evaluate(() => window.__DEPOTSANDBAGS__());
+    ok(`depot squads: sandbag line placed instantly [${bags.length}]`, bags.length >= 2);
+    await shot("task3-sandbag-line.png");
+
+    // rifles: tower flow — tap selects, ✓ confirms, 4 members spawn.
+    // clearR=4: keep the spawn ring + 2.4m formation slots out of static
+    // bodies (tower/wall/sandbag) — a slot inside one gets a man crushed.
+    // candidate loop: widening clearR pushes the pick away from the depot
+    // mound, whose near slope can occlude the tap ray entirely.
+    let rifleOpened = false;
+    for (const cr of [5, 7, 9, 11]) {
+      const cand = await page.evaluate((r) => window.__DEPOTFINDBUILDABLE__(r), cr);
+      if (!cand) continue;
+      await settleAt(cand.x, cand.z);
+      await page.click('[data-tower-key="sq_rifles"]');
+      // non-strict tap: near the depot mound the ray may land a cell or two
+      // off the candidate — any held cell opens the confirm flow, which is
+      // what this loop actually verifies (a refusal just tries the next).
+      if (!(await tapWorld(cand.x, cand.z))) continue;
+      rifleOpened = await page.waitForFunction(() => !!document.querySelector("[data-pending-confirm]"), { timeout: 3000, polling: 100 }).then(() => true).catch(() => false);
+      if (rifleOpened) break;
+    }
+    ok("depot squads: rifles placement opens the confirm flow", rifleOpened);
+    await sleep(400);
+    await page.click("[data-pending-confirm]");
+    await page.waitForFunction(() => (window.__DEPOTSQUADS__() || []).length === 1, { timeout: 5000, polling: 100 });
+    let sqs = await page.evaluate(() => window.__DEPOTSQUADS__());
+    ok(`depot squads: rifles placed with 4 members [${sqs[0].members.length}]`, sqs[0].members.length === 4);
+
+    // selection: tap a member -> chips appear (350ms-armed). Sell mode ON
+    // during member taps: a miss-tap (members drift on their defend
+    // micro-seek; the mound bends the tap ray) then lands as a harmless
+    // "NOTHING HERE" instead of opening a stray build pending — squad
+    // selection in tapAt runs BEFORE the sell branch, so hits still select.
+    await page.click("[data-sell-toggle]");
+    const selectSquad = async () => {
+      for (let attempt = 0; attempt < 10; attempt++) {
+        const q = (await page.evaluate(() => window.__DEPOTSQUADS__()))[0];
+        if (!q) return false;
+        const m = q.members.filter((mm) => mm.alive)[attempt % Math.max(1, q.members.length)] || q.members[0];
+        await settleAt(q.anchor.x, q.anchor.z, 1.8);
+        await tapWorld(m.x, m.z);
+        const got = await page.waitForFunction(() => !!document.querySelector("[data-squad-attack]"), { timeout: 1200, polling: 100 }).then(() => true).catch(() => false);
+        if (got) return true;
+      }
+      return false;
+    };
+    const chips = await selectSquad();
+    ok("depot squads: tap on a member selects the squad (DEFEND|ATTACK chips)", chips);
+    await shot("task3-squad-selected.png");
+
+    // ATTACK -> next ground tap = dest. The dest tap is OFF-CENTER (140px
+    // sideways) with the camera parked on the squad — no camera travel involved,
+    // so the tap lands a guaranteed few meters from the anchor and the
+    // squad must actually march there. tapPt (the live camera's own ground
+    // ray at the tap pixel) is what the player SEES the tap hit; the dest
+    // must faithfully equal it.
+    await sleep(450); // chip arming window
+    await page.click("[data-squad-attack]");
+    ccc = await canvasCenter();
+    // horizontal offset: vertical pixels foreshorten along the ground at the
+    // tactical camera's shallow pitch (140px up = ~40m downrange), sideways
+    // pixels don't (~10m) — keep the march inside the assert budget.
+    const tapPt1 = await page.evaluate((c) => window.__DEPOTGROUNDAT__(c.x - 140, c.y), ccc);
+    await page.mouse.click(ccc.x - 140, ccc.y);
+    // NOTE: the read races arrival at 2x sim speed — a short dest can flip
+    // attack -> defend (arrived, dest cleared) between the tap and this
+    // evaluate. Both states prove the tap landed: attacking WITH a dest near
+    // the intended point, or already dug in AT the intended point.
+    const orderLanded = (q, d) => !!q && !!d && ((q.order === "attack" && !!q.dest && Math.hypot(q.dest.x - d.x, q.dest.z - d.z) < 1.5) ||
+      (q.order === "defend" && Math.hypot(q.anchor.x - d.x, q.anchor.z - d.z) < 1.5));
+    sqs = await page.evaluate(() => window.__DEPOTSQUADS__());
+    ok(`depot squads: ATTACK ground tap set the dest the camera showed [order=${sqs[0].order} dest=${JSON.stringify(sqs[0].dest)} tap=${JSON.stringify(tapPt1)}]`,
+      orderLanded(sqs[0], tapPt1));
+    await shot("task3-mid-advance.png");
+    const advanced = await page.waitForFunction((d) => {
+      const q = (window.__DEPOTSQUADS__() || [])[0];
+      return !!q && Math.hypot(q.anchor.x - d.x, q.anchor.z - d.z) < 2.5;
+    }, { timeout: 30000, polling: 300 }, tapPt1).then(() => true).catch(() => false);
+    ok("depot squads: advance observed (anchor reaches the ordered dest)", advanced);
+
+    // rotated variant: 90° view step, re-order ATTACK — the dest tap must
+    // still land where the camera says it does.
+    await page.keyboard.press("e");
+    await sleep(1500);
+    sqs = await page.evaluate(() => window.__DEPOTSQUADS__());
+    if (!(await page.$("[data-squad-attack]"))) {
+      await selectSquad();
+    }
+    await sleep(450);
+    await page.click("[data-squad-attack]");
+    ccc = await canvasCenter();
+    const tapPt2 = await page.evaluate((c) => window.__DEPOTGROUNDAT__(c.x + 140, c.y), ccc);
+    await page.mouse.click(ccc.x + 140, ccc.y);
+    sqs = await page.evaluate(() => window.__DEPOTSQUADS__());
+    ok(`depot squads: rotated ATTACK ground tap set the dest the camera showed [order=${sqs[0].order} dest=${JSON.stringify(sqs[0].dest)} tap=${JSON.stringify(tapPt2)}]`,
+      orderLanded(sqs[0], tapPt2));
+    const advanced2 = await page.waitForFunction((d) => {
+      const q = (window.__DEPOTSQUADS__() || [])[0];
+      return !!q && Math.hypot(q.anchor.x - d.x, q.anchor.z - d.z) < 2.5;
+    }, { timeout: 30000, polling: 300 }, tapPt2).then(() => true).catch(() => false);
+    ok("depot squads: rotated advance observed", advanced2);
+  }
+
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => document.querySelector('[data-menu="depot"]'), { timeout: 10000 });
   ok("depot: ESC returns to menu", true);

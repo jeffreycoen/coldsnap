@@ -6,6 +6,7 @@ import {
   regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, shooterFire, squadFire, nextSpawnTag,
   fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed,
   censusDepotChunks, depotStandingFraction, checkDepotBreach, stepDepotCensus,
+  spawnSquadMembers, spawnSandbag, SANDBAG_COST, pruneSquads,
   DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, DEPOT_CENSUS_HZ,
 } from "../src/depot/state.js";
 import { reachPolygon, arcClears } from "../src/depot/accuracy.js";
@@ -2583,6 +2584,218 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     const declipped = Math.hypot(reachPolygon(flatWorld, null, muzzle, spec, 1)[0].x - muzzle.x, reachPolygon(flatWorld, null, muzzle, spec, 1)[0].z - muzzle.z);
     ok("preview declip: fog-frontier preview extends beyond the territory boundary", declipped > clipped + 3 && declipped > spec.range - 1.5, `${declipped.toFixed(1)} vs clipped ${clipped.toFixed(1)}`);
     ok("preview declip: startPending passes null territory into reachPolygon", depotSrc.includes("reachPolygon(world, null, muzzle, spec, 1, invW)"));
+  }
+}
+
+// ===================================================== Phase 5 Task 3:
+// wiring — spawn, sandbags, roster prune, stall persistence, and the
+// SWEEP ASSERT (risk 1: the scaffold-filter family). Team-1 infantry is a
+// NEW body class; every consumer of unit bodies is exercised against a real
+// team-1 member here so a `kind === "unit"` assumption can't silently
+// mishandle them the way the Phase-4 tower-scan/bounty/leak/off-grid
+// quartet did.
+{
+  const flatField = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+
+  // --- spawnSquadMembers: spec.n team-1 unit bodies ringed on the anchor,
+  // dress "human", squadId/utype stamped, roster filled.
+  {
+    const world = makeWorld({ field: flatField, seed: 3 });
+    const sq = makeSquad(1, "rifles", 1, 4, -6);
+    spawnSquadMembers(world, sq);
+    ok("spawnSquadMembers: roster has spec.n ids", sq.memberIds.length === SQUAD_SPECS.rifles.n, `${sq.memberIds.length}`);
+    let allGood = true, dressGood = true, ringGood = true;
+    for (const id of sq.memberIds) {
+      const u = world.byId.get(id);
+      if (!u || u.kind !== "unit" || u.team !== 1 || !u.alive || u.squadId !== sq.id || u.utype !== "rifles") allGood = false;
+      if (u.dress !== "human") dressGood = false;
+      if (Math.hypot(u.pos.x - 4, u.pos.z - (-6)) > 2.5) ringGood = false;
+    }
+    ok("spawnSquadMembers: members are live team-1 unit bodies with squadId/utype", allGood);
+    ok("spawnSquadMembers: members dressed human (player side reads human)", dressGood);
+    ok("spawnSquadMembers: members ring the anchor (within 2.5m)", ringGood);
+    const sn = makeSquad(2, "sniper", 1, 0, 0);
+    spawnSquadMembers(world, sn);
+    ok("spawnSquadMembers: sniper squad is a single man", sn.memberIds.length === 1);
+  }
+
+  // --- spawnSandbag: single static sleeping chunk, tagged b.sandbag, brief
+  // dims (hx .9, hy .45, hz .35), hp 60. Static (mass 0 -> invM 0) so
+  // squads.js's exposureAt (which filters invM > 0) reads it as cover, and
+  // core.js's hit scan still hits it (chunk-kind exemption, core.js ~:691).
+  {
+    const world = makeWorld({ field: flatField, seed: 3 });
+    const b = spawnSandbag(world, 2, 5);
+    ok("spawnSandbag: chunk body tagged b.sandbag", b.kind === "chunk" && b.sandbag === true);
+    ok("spawnSandbag: brief dims + hp 60", b.hx === 0.9 && b.hy === 0.45 && b.hz === 0.35 && b.hp === 60,
+      `hx=${b.hx} hy=${b.hy} hz=${b.hz} hp=${b.hp}`);
+    ok("spawnSandbag: static + sleeping", b.invM === 0 && b.sleeping === true);
+    ok("spawnSandbag: costs 3 scrap (SANDBAG_COST)", SANDBAG_COST === 3);
+    // cover integration: a man behind the sandbag line reads less exposed
+    // than one on open ground, against a threat beyond the bags.
+    const behind = exposureAt(world, 2, 3.8, 0); // threatBearing 0 = +z, bag interposed
+    const open = exposureAt(world, 20, 3.8, 0);
+    ok("spawnSandbag: exposureAt reads the bag as cover", behind < open, `behind=${behind.toFixed(2)} open=${open.toFixed(2)}`);
+  }
+
+  // --- pruneSquads: dead/swept members leave the roster; empty squads die.
+  {
+    const world = makeWorld({ field: flatField, seed: 3 });
+    const sq = makeSquad(1, "rifles", 1, 0, 0);
+    spawnSquadMembers(world, sq);
+    const deadId = sq.memberIds[0];
+    applyDamage(world, world.byId.get(deadId), 1e9, { attacker: "enemy" });
+    let squads = pruneSquads(world, [sq]);
+    ok("pruneSquads: dead member leaves the roster", squads.length === 1 && !squads[0].memberIds.includes(deadId),
+      `roster=${squads[0] ? squads[0].memberIds.length : "gone"}`);
+    // corpse sweep consistency: DepotGame's cleanup later deletes the body
+    // entirely (byId + bodies) — roster must stay consistent then too.
+    for (const id of [...sq.memberIds]) {
+      const u = world.byId.get(id);
+      applyDamage(world, u, 1e9, { attacker: "enemy" });
+      world.byId.delete(id);
+      world.bodies.splice(world.bodies.indexOf(u), 1);
+    }
+    squads = pruneSquads(world, squads);
+    ok("pruneSquads: fully dead squad is deleted", squads.length === 0);
+  }
+
+  // --- persistence: a squad survives a wave -> stall -> advance cycle (the
+  // phase machine touches no unit bodies; nothing in the stall path culls
+  // team-1 members).
+  {
+    const world = makeWorld({ field: flatField, seed: 5 });
+    const sq = makeSquad(1, "mg", 1, 0, 10);
+    spawnSquadMembers(world, sq);
+    const S3 = makeRunState({ waves: [{ units: 2, delay: 1 }, { units: 2, delay: 1 }] });
+    S3.started = true;
+    startWave(S3, [{ units: 2, delay: 1 }, { units: 2, delay: 1 }]);
+    S3.ws.spawnQueue = 0;
+    tryStall(S3, [{ units: 2, delay: 1 }, { units: 2, delay: 1 }], 0);
+    for (let i = 0; i < 120; i++) { stepSquad(world, sq, 1 / 60); squadFire(world, sq, 1 / 60); stepWorld(world); }
+    advance(S3, [{ units: 2, delay: 1 }, { units: 2, delay: 1 }]);
+    const alive = sq.memberIds.filter((id) => { const u = world.byId.get(id); return u && u.alive; }).length;
+    ok("persistence: full squad roster alive through stall -> advance", alive === SQUAD_SPECS.mg.n, `alive=${alive}`);
+  }
+
+  // ------------------------------------------------ SWEEP ASSERT (risk 1)
+  // One team-1 member exercised against EVERY unit-body consumer.
+  {
+    const world = makeWorld({ field: flatField, seed: 7 });
+    const sq = makeSquad(1, "rifles", 1, 0, 40);
+    spawnSquadMembers(world, sq);
+    const member = world.byId.get(sq.memberIds[0]);
+
+    // (a) bounty: even with a bounty maliciously stamped on, a dead team-1
+    // member pays the attacker NOTHING (payBounties team gate does the work).
+    member.bounty = 4;
+    applyDamage(world, member, 1e9, { attacker: "enemy" });
+    world.events.length = 0;
+    payBounties(world);
+    ok("sweep/bounty: no tdkill event for a dead team-1 member", !world.events.some((e) => e.type === "tdkill"));
+
+    // (b) leak: a live member standing ON the depot objective triggers no
+    // leak and is not removed.
+    const m2 = world.byId.get(sq.memberIds[1]);
+    m2.pos.x = 0; m2.pos.z = 40;
+    world.events.length = 0;
+    checkLeaks(world, { x: 0, z: 40 });
+    ok("sweep/leak: member at the depot triggers no leak", !world.events.some((e) => e.type === "leak") && world.byId.has(m2.id));
+
+    // (c) stepUnits (enemy march driver) never drives a team-1 member.
+    const vx0 = m2.v.x, vz0 = m2.v.z, px0 = m2.pos.x, pz0 = m2.pos.z;
+    stepUnits(world, straightGrid(0, 1), identFwdDir);
+    ok("sweep/march: stepUnits leaves team-1 members untouched",
+      m2.v.x === vx0 && m2.v.z === vz0 && m2.pos.x === px0 && m2.pos.z === pz0);
+
+    // (d) corpse cleanup: DepotGame's sweep (kind unit, any team, deadT+2.5s)
+    // is INTENDED to clear team-1 corpses too — pruneSquads (tested above)
+    // keeps the roster consistent when it does. Source-assert the sweep is
+    // team-agnostic by design, not accidentally team-2-only.
+    const depotSrc3 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("sweep/corpse: DepotGame corpse sweep is kind-gated, team-agnostic",
+      depotSrc3.includes('b.kind === "unit" && !b.alive && world.t - (b.deadT || 0) > 2.5'));
+
+    // (e) emitters: team-1 members must emit GREEN influence (EMIT.unit,
+    // sign +1) and sandbags must emit under EMIT.wall — buildEmitters is a
+    // DepotGame closure, so source-assert the branches exist, and
+    // functionally prove a green unit-weight emitter holds ground.
+    ok("sweep/emitters: buildEmitters includes team-1 units at EMIT.unit sign +1",
+      depotSrc3.includes('b.kind === "unit" && b.team === 1 && b.alive') &&
+      /team === 1[\s\S]{0,220}EMIT\.unit\.w, r: EMIT\.unit\.r, sign: 1/.test(depotSrc3));
+    ok("sweep/emitters: buildEmitters includes sandbags under EMIT.wall",
+      depotSrc3.includes("b.sandbag") &&
+      /sandbag[\s\S]{0,220}EMIT\.wall\.w, r: EMIT\.wall\.r, sign: 1/.test(depotSrc3));
+    {
+      const T3 = makeTerritory(29, 57);
+      for (let i = 0; i < 40; i++) stepTerritory(T3, [{ x: 0, z: 0, w: EMIT.unit.w, r: EMIT.unit.r, sign: 1 }], 0.25);
+      ok("sweep/emitters: a green unit emitter holds its ground (holderAt 1)", holderAt(T3, 0, 0) === 1);
+    }
+
+    // (f) tower scan: stepTowers acquires team 2 ONLY — a team-1 member in
+    // range is invisible to friendly guns (source assert; stepTowers lives
+    // in DepotGame.jsx which node can't import as JSX).
+    ok("sweep/towerscan: stepTowers scan filters to team 2",
+      depotSrc3.includes('(e.kind !== "unit" && e.kind !== "vehicle") || !e.alive || e.team !== 2'));
+
+    // (g) __DEPOTTHIN__ (the wave-drain harness) kills team 2 only.
+    ok("sweep/thin: __DEPOTTHIN__ kills only team-2 units",
+      /__DEPOTTHIN__[\s\S]{0,400}b\.kind === "unit" && b\.team === 2 && b\.alive/.test(depotSrc3));
+
+    // (h) fog-render ownership: the renderer's fog gate hides team-2 bodies
+    // only — team-1 members always render for their owner.
+    const rendSrc = fs.readFileSync(new URL("../src/render/renderer.js", import.meta.url), "utf8");
+    const fogGates = rendSrc.match(/opts\.territory && b\.team === 2 && b\.alive/g) || [];
+    ok("sweep/fog: renderer fog gates check team === 2 (team-1 always renders)", fogGates.length >= 2, `gates=${fogGates.length}`);
+
+    // (i) restock: no restock machinery exists anywhere in src/depot — the
+    // campaign's restock (scenario.js) is keyed off campaign spawn pools and
+    // never reaches depot bodies.
+    let restockHits = 0;
+    for (const f of fs.readdirSync(new URL("../src/depot", import.meta.url))) {
+      const src = fs.readFileSync(new URL("../src/depot/" + f, import.meta.url), "utf8");
+      if (/restock/i.test(src)) restockHits++;
+    }
+    ok("sweep/restock: no restock path exists in src/depot", restockHits === 0, `hits=${restockHits}`);
+
+    // (j) squadFire acquisition: a member never targets its own team — park
+    // a second friendly squad in range with no enemies present; nothing fires.
+    {
+      const world4 = makeWorld({ field: flatField, seed: 9 });
+      const a = makeSquad(1, "rifles", 1, 0, 0); spawnSquadMembers(world4, a);
+      const b4 = makeSquad(2, "mg", 1, 0, 8); spawnSquadMembers(world4, b4);
+      squadFire(world4, a, 0);
+      ok("sweep/squadFire: no friendly acquisition (no rounds in the air)", world4.projectiles.length === 0);
+    }
+  }
+
+  // --- placement validation reuse: squad placement rides validatePlacement
+  // exactly like towers (green-only + afford) — sandbag placement too.
+  {
+    const v1 = validatePlacement({ blocked: false, ice: false, held: false, resources: 100, cost: SQUAD_SPECS.rifles.cost });
+    ok("squad placement: unheld ground refused", !v1.ok && v1.msg === "GROUND NOT HELD");
+    const v2 = validatePlacement({ blocked: false, ice: false, held: true, resources: 2, cost: SANDBAG_COST });
+    ok("sandbag placement: unaffordable refused", !v2.ok && v2.msg === "NO SCRAP");
+    const v3 = validatePlacement({ blocked: false, ice: false, held: true, resources: 30, cost: SQUAD_SPECS.sniper.cost });
+    ok("squad placement: held + funded passes", v3.ok === true);
+  }
+
+  // --- sniper placement preview: reachPolygon with INFANTRY_ARMS.sniper,
+  // fog-INDEPENDENT (null territory, per the Phase-5 preview rule) — the
+  // fan must reach full range even across enemy-held ground.
+  {
+    const spec = INFANTRY_ARMS.sniper;
+    const flatWorld = { field: { heightAt: () => 0 }, bodies: [] };
+    const muzzle = { x: 0, y: 1.24, z: 0 };
+    const T4 = makeTerritory(29, 57);
+    for (let i = 0; i < 200; i++) stepTerritory(T4, [{ x: 15, z: 0, w: EMIT.tower.w, r: 3, sign: -1 }], 0.05);
+    const poly = reachPolygon(flatWorld, null, muzzle, spec, 1);
+    const reach = Math.hypot(poly[0].x - muzzle.x, poly[0].z - muzzle.z);
+    ok("sniper preview: fog-independent fan reaches full sniper range", reach > spec.range - 1.5, reach.toFixed(1));
+    const depotSrc4 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("sniper preview: DepotGame builds the squad preview with null territory + INFANTRY_ARMS",
+      /INFANTRY_ARMS\[[^\]]*\][\s\S]{0,300}reachPolygon\(world, null, muzzle/.test(depotSrc4) ||
+      /reachPolygon\(world, null, muzzle, arms/.test(depotSrc4));
   }
 }
 

@@ -13,9 +13,10 @@ import {
 } from "../engine/core.js";
 import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
-import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, WAVES, MASON } from "./specs.js";
+import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, WAVES, MASON, INFANTRY_ARMS } from "./specs.js";
 import { windAt } from "./wind.js";
-import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, censusDepotChunks, depotStandingFraction, stepDepotCensus } from "./state.js";
+import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, SANDBAG_COST, pruneSquads } from "./state.js";
+import { SQUAD_SPECS, makeSquad, stepSquad } from "./squads.js";
 import { reachPolygon, arcClears } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks, payBounties } from "./units.js";
 import { makeRegiment, payTown } from "./economy.js";
@@ -513,8 +514,44 @@ function spawnEnemy(world, sp, tag) {
 }
 
 // ================================================================== step
-function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline) {
+// Team-1 infantry uprighting — same quaternion-settle snippet units.js's
+// stepUnits applies to team-2 marchers (which deliberately skips team 1).
+// Without it a member shoved by a blast stays toppled forever; squads.js is
+// movement-pure (goal seeking only) and owns no engine-orientation state.
+function uprightMember(u, dt) {
+  const supported = u.grounded || Math.abs(u.v.y) < 0.6;
+  if (!supported || u.R[4] <= -0.5) return;
+  if (u.R[4] < 0.995) {
+    const yaw2 = Math.atan2(u.R[6], u.R[8]) * 0.5;
+    const ty = Math.sin(yaw2), tw = Math.cos(yaw2);
+    const a = Math.min(1, 14 * dt);
+    const sgn = u.q.y * ty + u.q.w * tw < 0 ? -1 : 1;
+    u.q.x += (0 - u.q.x) * a; u.q.y += (ty * sgn - u.q.y) * a;
+    u.q.z += (0 - u.q.z) * a; u.q.w += (tw * sgn - u.q.w) * a;
+    const L2 = Math.hypot(u.q.x, u.q.y, u.q.z, u.q.w) || 1;
+    u.q.x /= L2; u.q.y /= L2; u.q.z /= L2; u.q.w /= L2;
+  }
+  u.w.x *= 1 - Math.min(1, 6 * dt); u.w.z *= 1 - Math.min(1, 6 * dt);
+}
+
+function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S) {
   stepEnemies(world, grid, T);
+  // Squads (Phase 5 Task 3), after enemies, before towers — the brief's
+  // loop-order contract: prune dead members -> delete empty squads ->
+  // stepSquad (movement) -> squadFire (combat). squadFire threads T + invW
+  // so player squads fog-gate on the SAME field towers do (team 1).
+  if (S && S.squads) {
+    S.squads = pruneSquads(world, S.squads);
+    if (S.selSquadId != null && !S.squads.some((q) => q.id === S.selSquadId)) { S.selSquadId = null; S.orderMode = null; }
+    for (const sq of S.squads) {
+      stepSquad(world, sq, world.dt);
+      squadFire(world, sq, world.dt, T, invW);
+      for (const id of sq.memberIds) {
+        const u = world.byId.get(id);
+        if (u && u.alive) uprightMember(u, world.dt);
+      }
+    }
+  }
   stepTowers(world, T, discipline);
   world.wind = windAt(MAP_SEED, world.t);
   stepWorld(world);
@@ -627,6 +664,8 @@ export default function DepotGame({ onExit }) {
           if (b.kind === "tower" && b.team === 1 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.tower.w, r: (b.effRange != null ? b.effRange : TOWER_SPECS[b.towerType].range) / 2, sign: 1 }); }
           else if (b.kind === "wall" && b.team === 1 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.wall.w, r: EMIT.wall.r, sign: 1 }); }
           else if (b.kind === "flag" && b.team === 1) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.depot.w, r: EMIT.depot.r, sign: 1 }); }
+          else if (b.kind === "unit" && b.team === 1 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.unit.w, r: EMIT.unit.r, sign: 1 }); }
+          else if (b.kind === "chunk" && b.sandbag && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.wall.w, r: EMIT.wall.r, sign: 1 }); }
           else if (b.kind === "unit" && b.team === 2 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.unit.w, r: EMIT.unit.r, sign: -1 }); }
           else if (b.kind === "vehicle" && b.team === 2 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.vehicle.w, r: EMIT.vehicle.r, sign: -1 }); }
         }
@@ -735,6 +774,10 @@ export default function DepotGame({ onExit }) {
         })(),
         zoom: 1, acc: 0, t: 0, fps: 60, fpsAcc: 0, fpsN: 0,
         hover: null, pointer: null, toasts: [], pending: null,
+        // Squads (Phase 5 Task 3): live squad rosters + selection/order UI
+        // state. selArmedAt mirrors pending's 350ms trailing-tap guard so
+        // the tap that selected a squad can't double-fire an order chip.
+        squads: [], nextSquadId: 1, selSquadId: null, selArmedAt: 0, orderMode: null,
         hudT: 0, keys: {}, sellById: null, audio: A,
         // The attacker's economy — seeded off the run's own rng stream, not
         // an unseeded generator, so ?seed= replays reproduce the same
@@ -864,7 +907,87 @@ export default function DepotGame({ onExit }) {
         const p = S.pending;
         if (!pendingArmed(p, world.t)) return;
         S.pending = null;
+        if (p.squad) { placeSquadAt(p.gx, p.gz, p.squad); return; }
         buildAt(p.gx, p.gz, p.mode);
+      };
+      // ---------------------------------------------- squads (Phase 5 Task 3)
+      // Build-bar mode keys -> squad type. Prefixed (sq_mg vs mg) because the
+      // MG TOWER already owns the bare "mg" mode key.
+      const SQUAD_MODE = { sq_sniper: "sniper", sq_rifles: "rifles", sq_mg: "mg" };
+      // Infantry/sandbag placement checks: same validatePlacement gate as
+      // towers (occupied/ice/held/afford) — men don't claim the grid cell
+      // (no cell.blocked write, no connectivity re-check: bodies, not
+      // structures), but they place by the same ground rules.
+      const canPlaceInfantryAt = (gx, gz, cost) => {
+        if (!grid.inBounds(gx, gz)) return { ok: false, msg: "OFF THE FIELD" };
+        const cell = grid.cells[grid.idx(gx, gz)];
+        const wp = grid.gridToWorld(gx, gz), c0 = invW(wp.x, wp.z);
+        const v = validatePlacement({
+          blocked: !!(cell.blocked || cell.wallId), ice: !!cell.ice,
+          held: canBuild(T, c0.u, c0.v), resources: S.resources, cost,
+        });
+        return v.ok ? { ok: true, wp } : v;
+      };
+      const placeSquadAt = (gx, gz, type) => {
+        const v = canPlaceInfantryAt(gx, gz, SQUAD_SPECS[type].cost);
+        if (!v.ok) { toast(v.msg); return; }
+        const sq = makeSquad(S.nextSquadId++, type, 1, v.wp.x, v.wp.z);
+        spawnSquadMembers(world, sq);
+        S.squads.push(sq);
+        S.resources -= SQUAD_SPECS[type].cost;
+      };
+      // Sandbag: instant, wall-exempt (brief) — same reasoning as walls: a
+      // ring/confirm pair on a 3-scrap bag is meaningless.
+      const placeSandbagAt = (gx, gz) => {
+        const v = canPlaceInfantryAt(gx, gz, SANDBAG_COST);
+        if (!v.ok) { toast(v.msg); return; }
+        spawnSandbag(world, v.wp.x, v.wp.z);
+        S.resources -= SANDBAG_COST;
+      };
+      // Squad placement rides the tower pending-confirm flow. Sniper preview
+      // is the reachPolygon fan with INFANTRY_ARMS.sniper, fog-INDEPENDENT
+      // (null territory — the Phase-5 preview rule: show what he COULD see,
+      // clipped by terrain/solids only; live fire stays fog-gated in
+      // squadFire). Rifles/MG get a plain range ring — their reach is short
+      // and omnidirectional enough that a fan reads as noise.
+      const startPendingSquad = (gx, gz, mode, wp) => {
+        const type = SQUAD_MODE[mode];
+        const arms = INFANTRY_ARMS[type];
+        const y = field.heightAt(wp.x, wp.z);
+        let poly = null, ringR = 0;
+        if (type === "sniper") {
+          const muzzle = { x: wp.x, y: y + 1.24, z: wp.z }; // ground + 0.74 seat + 0.5 squadFire muzzle
+          poly = reachPolygon(world, null, muzzle, arms, 1, invW);
+        } else {
+          ringR = arms.range;
+        }
+        S.pending = { gx, gz, mode, squad: type, wp, y, poly, ringR, color: 0xffd27a, cost: SQUAD_SPECS[type].cost, armedAt: world.t + PENDING_ARM_S }; // amber: a green fan vanishes into the held-terrain wash
+      };
+      // Selection: tap within 1.6m of any live member selects his squad.
+      const squadAtPoint = (p) => {
+        for (const sq of S.squads) for (const id of sq.memberIds) {
+          const u = world.byId.get(id);
+          if (u && u.alive && Math.hypot(u.pos.x - p.x, u.pos.z - p.z) < 1.6) return sq;
+        }
+        return null;
+      };
+      const selectedSquad = () => (S.selSquadId != null ? S.squads.find((q) => q.id === S.selSquadId) || null : null);
+      // Order chips (DEFEND | ATTACK). 350ms arming (selArmedAt, same
+      // trailing-tap guard as pending ✓) so the selecting tap can't
+      // double-fire a chip. DEFEND digs in where the men stand (anchor =
+      // live-member centroid); ATTACK arms the next ground tap as dest.
+      S.orderSquad = (kind) => {
+        const sq = selectedSquad();
+        if (!sq || world.t < S.selArmedAt) return;
+        if (kind === "defend") {
+          let cx = 0, cz = 0, n = 0;
+          for (const id of sq.memberIds) { const u = world.byId.get(id); if (u && u.alive) { cx += u.pos.x; cz += u.pos.z; n++; } }
+          if (n) sq.anchor = { x: cx / n, z: cz / n };
+          sq.order = "defend"; sq.dest = null; sq._legTarget = null; sq._pauseT = 0; sq._threatSig = undefined;
+          S.orderMode = null;
+        } else if (kind === "attack") {
+          S.orderMode = "attack";
+        }
       };
       const sellAt = (gx, gz) => {
         if (!grid.inBounds(gx, gz)) return;
@@ -935,6 +1058,19 @@ export default function DepotGame({ onExit }) {
         if (S.pending) { clearPending(); return; }
         const p = groundPoint(cx, cy);
         if (!p) { S.inspectId = null; return; }
+        // Squad order flow: an armed ATTACK consumes this ground tap as the
+        // destination (flag marker renders at dest until arrival).
+        if (S.orderMode === "attack") {
+          const osq = selectedSquad();
+          if (osq) { osq.order = "attack"; osq.dest = { x: p.x, z: p.z }; osq._legTarget = null; osq._pauseT = 0; }
+          S.orderMode = null;
+          return;
+        }
+        // Tap on a squad member selects his squad; tap elsewhere while one
+        // is selected deselects (and consumes the tap — no accidental build).
+        const tappedSquad = squadAtPoint(p);
+        if (tappedSquad) { S.selSquadId = tappedSquad.id; S.selArmedAt = world.t + PENDING_ARM_S; S.orderMode = null; S.inspectId = null; return; }
+        if (S.selSquadId != null) { S.selSquadId = null; S.orderMode = null; return; }
         const g = grid.worldToGrid(p.x, p.z);
         if (!grid.inBounds(g.gx, g.gz)) { S.inspectId = null; return; }
         const cell2 = grid.cells[grid.idx(g.gx, g.gz)];
@@ -942,6 +1078,13 @@ export default function DepotGame({ onExit }) {
         if (cell2.wallId && world.byId.has(cell2.wallId)) { S.inspectId = cell2.wallId; return; }
         S.inspectId = null;
         if (S.mode === "wall") { buildAt(g.gx, g.gz, "wall"); return; } // walls exempt: instant, as today
+        if (S.mode === "sandbag") { placeSandbagAt(g.gx, g.gz); return; } // sandbags: instant, wall-exempt (brief)
+        if (SQUAD_MODE[S.mode]) {
+          const v = canPlaceInfantryAt(g.gx, g.gz, SQUAD_SPECS[SQUAD_MODE[S.mode]].cost);
+          if (!v.ok) { toast(v.msg); return; }
+          startPendingSquad(g.gx, g.gz, S.mode, v.wp);
+          return;
+        }
         const v = canBuildAt(g.gx, g.gz, S.mode);
         if (!v.ok) { toast(v.msg); return; }
         startPending(g.gx, g.gz, S.mode, v);
@@ -1169,7 +1312,12 @@ export default function DepotGame({ onExit }) {
       // build-tap point (canvas center at the initial camera focus) sits
       // well outside that radius on the pinned seed. The smoke test polls
       // this until non-null, then points the camera there before tapping.
-      window.__DEPOTFINDBUILDABLE__ = () => {
+      // clearR (optional, Task 3): also require no tower/wall/sandbag body
+      // within clearR meters of the cell — squad members spawn on a 1.2m
+      // ring and seek 2.4m formation slots, and a slot inside a static body
+      // gets a man ejected/crushed by contact resolution (found live in the
+      // Task 3 smoke: 1 of 4 riflemen died at spawn next to the mg tower).
+      window.__DEPOTFINDBUILDABLE__ = (clearR) => {
         const flag = world.bodies.find((b) => b.kind === "flag");
         if (!flag) return null;
         let best = null, bestD = 1e9;
@@ -1179,6 +1327,8 @@ export default function DepotGame({ onExit }) {
           const wp = grid.gridToWorld(gx, gz);
           const c = invW(wp.x, wp.z);
           if (!canBuild(T, c.u, c.v)) continue;
+          if (clearR && world.bodies.some((b) => b.alive && (b.kind === "tower" || b.kind === "wall" || b.kind === "rock" || b.kind === "tree" || b.kind === "chunk") &&
+            Math.hypot(wp.x - b.pos.x, wp.z - b.pos.z) < clearR)) continue;
           const d = Math.hypot(wp.x - flag.pos.x, wp.z - flag.pos.z);
           if (d < bestD) { bestD = d; best = { x: wp.x, z: wp.z }; }
         }
@@ -1228,6 +1378,32 @@ export default function DepotGame({ onExit }) {
       // exposes fogStateFor at a world point for direct state checks.
       window.__DEPOTFOGDBG__ = () => R.getFogDebug();
       window.__DEPOTFOGAT__ = (x, z) => { const c = invW(x, z); return fogStateFor(T, c.u, c.v, 1); };
+      // Task 3 debug hooks: squad + sandbag state reads for smoke.mjs, plus
+      // the live center-ray ground point — the camera pivot TWEENS toward
+      // S.focus, so a fixed post-focus sleep lands taps meters off under
+      // swiftshader; the smoke polls this until it converges instead.
+      window.__DEPOTGROUNDAT__ = (cx, cy) => groundPoint(cx, cy);
+      // ...and the inverse: a world point's current client-pixel position,
+      // so the smoke can tap a KNOWN cell instead of hoping the tweening
+      // center ray lands on one.
+      window.__DEPOTSCREENAT__ = (x, z) => {
+        if (!R.project) return null;
+        const nd = R.project(x, field.heightAt(x, z), z);
+        if (!nd) return null;
+        const rect = canvas.getBoundingClientRect();
+        return { x: rect.left + (nd.x * 0.5 + 0.5) * rect.width, y: rect.top + (-nd.y * 0.5 + 0.5) * rect.height };
+      };
+      window.__DEPOTSQUADS__ = () => S.squads.map((sq) => ({
+        id: sq.id, type: sq.type, order: sq.order,
+        anchor: { x: +sq.anchor.x.toFixed(2), z: +sq.anchor.z.toFixed(2) },
+        dest: sq.dest ? { x: +sq.dest.x.toFixed(2), z: +sq.dest.z.toFixed(2) } : null,
+        sel: S.selSquadId === sq.id, ordering: S.selSquadId === sq.id && S.orderMode === "attack",
+        members: sq.memberIds.map((id) => {
+          const u = world.byId.get(id);
+          return u ? { id, x: +u.pos.x.toFixed(2), z: +u.pos.z.toFixed(2), alive: u.alive } : null;
+        }).filter(Boolean),
+      }));
+      window.__DEPOTSANDBAGS__ = () => world.bodies.filter((b) => b.sandbag).map((b) => ({ id: b.id, x: +b.pos.x.toFixed(2), z: +b.pos.z.toFixed(2), alive: b.alive }));
       window.__DEPOTENEMYPOS__ = () => {
         const b = world.bodies.find((b2) => b2.kind === "unit" && b2.alive && b2.team === 2);
         return b ? { x: b.pos.x, z: b.pos.z } : null;
@@ -1276,6 +1452,11 @@ export default function DepotGame({ onExit }) {
               S.hover = { x: ib.pos.x, z: ib.pos.z, valid: true, range: ispec ? ispec.range : 0 };
             }
           }
+          // Selected squad: ring overlay at the anchor via the EXISTING hover
+          // overlay API (read-only use — renderer belongs to a parallel
+          // task). Ring radius = the squad's own weapon range.
+          const selSq = S.selSquadId != null ? S.squads.find((q) => q.id === S.selSquadId) : null;
+          if (selSq) S.hover = { x: selSq.anchor.x, z: selSq.anchor.z, valid: true, range: INFANTRY_ARMS[selSq.type].range };
           const ws = S.ws;
           if (S.started && !S.gameOver && !S.victory) {
             if (S.phase === PHASE.BUILD) {
@@ -1315,7 +1496,7 @@ export default function DepotGame({ onExit }) {
           let guard = 0;
           while (S.acc >= STEP && guard++ < 6) {
             S.acc -= STEP;
-            stepDepot(world, grid, onStructureLost, town, onRuin, T, S.discipline);
+            stepDepot(world, grid, onStructureLost, town, onRuin, T, S.discipline, S);
           }
           if (S.acc > STEP * 6) S.acc = 0;
           const evs = drainEvents();
@@ -1351,6 +1532,18 @@ export default function DepotGame({ onExit }) {
               S.pendingScreen = { x: rect.left + (nd.x * 0.5 + 0.5) * rect.width, y: rect.top + (-nd.y * 0.5 + 0.5) * rect.height };
             } else S.pendingScreen = null;
           } else S.pendingScreen = null;
+          // Squad chip + attack-flag anchors: screen-space, recomputed from
+          // the live camera every frame (rotation/pan-proof, same rationale
+          // as pendingScreen above).
+          if (selSq && R.project) {
+            const rect2 = canvas.getBoundingClientRect();
+            const toScreen = (x, y, z) => {
+              const nd = R.project(x, y, z);
+              return nd ? { x: rect2.left + (nd.x * 0.5 + 0.5) * rect2.width, y: rect2.top + (-nd.y * 0.5 + 0.5) * rect2.height } : null;
+            };
+            S.squadScreen = toScreen(selSq.anchor.x, field.heightAt(selSq.anchor.x, selSq.anchor.z) + 2.2, selSq.anchor.z);
+            S.flagScreen = selSq.dest ? toScreen(selSq.dest.x, field.heightAt(selSq.dest.x, selSq.dest.z) + 1.6, selSq.dest.z) : null;
+          } else { S.squadScreen = null; S.flagScreen = null; }
           S.hudT += dt;
           if (S.hudT > 0.12) {
             S.hudT = 0;
@@ -1374,6 +1567,12 @@ export default function DepotGame({ onExit }) {
               paused: S.paused, speed: S.speed,
               muted: A.muted, fogOn: S.fogOn, discipline: S.discipline, seed: MAP_SEED,
               toasts: S.toasts.map((t) => t.txt),
+              squadSel: (() => {
+                const sq = S.selSquadId != null ? S.squads.find((q) => q.id === S.selSquadId) : null;
+                if (!sq || !S.squadScreen) return null;
+                return { id: sq.id, label: SQUAD_SPECS[sq.type].label, order: sq.order, x: S.squadScreen.x, y: S.squadScreen.y, armed: world.t >= S.selArmedAt, aiming: S.orderMode === "attack" };
+              })(),
+              squadFlag: S.flagScreen ? { x: S.flagScreen.x, y: S.flagScreen.y } : null,
               pending: S.pending && S.pendingScreen ? {
                 x: S.pendingScreen.x, y: S.pendingScreen.y,
                 cost: S.pending.cost, armed: pendingArmed(S.pending, world.t),
@@ -1412,7 +1611,7 @@ export default function DepotGame({ onExit }) {
         canvas.removeEventListener("touchstart", blockTouch);
         window.removeEventListener("keydown", kd);
         window.removeEventListener("keyup", ku);
-        for (const k of ["__DEPOT__", "__DEPOTACK__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTTHIN__", "__DEPOTEND__", "__DEPOTFOCUS__", "__DEPOTGETFOCUS__", "__DEPOTSETT__", "__DEPOTFLAGS__", "__DEPOTHOLD__", "__DEPOTFINDBUILDABLE__", "__DEPOTFINDRISE__", "__DEPOTFINDNEARROCK__", "__DEPOTFOGDBG__", "__DEPOTFOGAT__", "__DEPOTENEMYPOS__"]) delete window[k];
+        for (const k of ["__DEPOT__", "__DEPOTACK__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTTHIN__", "__DEPOTEND__", "__DEPOTFOCUS__", "__DEPOTGETFOCUS__", "__DEPOTSETT__", "__DEPOTFLAGS__", "__DEPOTHOLD__", "__DEPOTFINDBUILDABLE__", "__DEPOTFINDRISE__", "__DEPOTFINDNEARROCK__", "__DEPOTFOGDBG__", "__DEPOTFOGAT__", "__DEPOTENEMYPOS__", "__DEPOTSQUADS__", "__DEPOTSANDBAGS__", "__DEPOTGROUNDAT__", "__DEPOTSCREENAT__"]) delete window[k];
         A.dispose();
         if (R) R.dispose();
         stateRef.current = null;
@@ -1426,7 +1625,7 @@ export default function DepotGame({ onExit }) {
 
   const setMode = (m) => {
     const S = stateRef.current; if (!S) return;
-    S.mode = m; S.sellMode = false; S.inspectId = null; S.pending = null;
+    S.mode = m; S.sellMode = false; S.inspectId = null; S.pending = null; S.selSquadId = null; S.orderMode = null;
     setHud((h) => ({ ...h, mode: m, sellMode: false }));
   };
   const toggleSell = () => {
@@ -1461,6 +1660,11 @@ export default function DepotGame({ onExit }) {
   const palette = [
     { key: "wall", label: "WALL", icon: "▦", cost: 5 },
     ...TOWER_ORDER.map((k) => ({ key: k, label: TOWER_SPECS[k].label, icon: TOWER_SPECS[k].icon, cost: TOWER_SPECS[k].cost })),
+    // Squads (Phase 5 Task 3): mode keys prefixed sq_ — the MG tower owns "mg"
+    { key: "sq_sniper", label: "SNIPER", icon: "✛", cost: SQUAD_SPECS.sniper.cost },
+    { key: "sq_rifles", label: "RIFLES", icon: "∴", cost: SQUAD_SPECS.rifles.cost },
+    { key: "sq_mg", label: "MG TEAM", icon: "≣", cost: SQUAD_SPECS.mg.cost },
+    { key: "sandbag", label: "SANDBAG", icon: "▬", cost: SANDBAG_COST },
   ];
 
   return (
@@ -1546,6 +1750,25 @@ export default function DepotGame({ onExit }) {
         </div>
       )}
 
+      {hud.squadSel && (
+        <div style={{ position: "absolute", left: hud.squadSel.x, top: hud.squadSel.y, transform: "translate(-50%, -100%)", zIndex: 7, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, pointerEvents: "auto" }}>
+          <div style={{ fontSize: 10, letterSpacing: 1, color: "#7dffa8", background: "rgba(14,18,24,0.85)", padding: "1px 6px", borderRadius: 4 }}>
+            {hud.squadSel.label}{hud.squadSel.aiming ? " — TAP GROUND" : ""}
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button data-squad-defend
+              style={{ ...P.btn, borderColor: hud.squadSel.order === "defend" ? "#7dffa8" : "#48515f", color: "#7dffa8", opacity: hud.squadSel.armed ? 1 : 0.5 }}
+              onClick={() => stateRef.current && stateRef.current.orderSquad("defend")}>DEFEND</button>
+            <button data-squad-attack
+              style={{ ...P.btn, borderColor: hud.squadSel.aiming ? "#ff6b5e" : "#48515f", color: "#ff6b5e", opacity: hud.squadSel.armed ? 1 : 0.5 }}
+              onClick={() => stateRef.current && stateRef.current.orderSquad("attack")}>ATTACK</button>
+          </div>
+        </div>
+      )}
+      {hud.squadFlag && (
+        <div data-squad-flag style={{ position: "absolute", left: hud.squadFlag.x, top: hud.squadFlag.y, transform: "translate(-50%, -100%)", zIndex: 6, pointerEvents: "none", color: "#ff6b5e", fontSize: 18 }}>⚑</div>
+      )}
+
       {hud.inspect && (
         <div style={{ position: "absolute", left: "50%", transform: "translateX(-50%)", bottom: isTouch ? 96 : 104, zIndex: 5 }}>
           <div style={{ ...P.panel, position: "static", borderColor: "#7fd7ff", display: "flex", alignItems: "center", gap: 10, padding: "6px 10px" }}>
@@ -1575,7 +1798,7 @@ export default function DepotGame({ onExit }) {
               </div>
             );
           })}
-          <div style={{ ...P.slot, borderColor: hud.sellMode ? "#ffb45e" : "#48515f", color: hud.sellMode ? "#ffb45e" : "#e6ebf1", minWidth: isTouch ? 56 : 52 }}
+          <div data-sell-toggle style={{ ...P.slot, borderColor: hud.sellMode ? "#ffb45e" : "#48515f", color: hud.sellMode ? "#ffb45e" : "#e6ebf1", minWidth: isTouch ? 56 : 52 }}
             onClick={toggleSell}>
             <div style={{ fontSize: 16 }}>✕</div>
             <div>SELL</div>

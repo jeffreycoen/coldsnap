@@ -1,7 +1,8 @@
 // COLDSNAP DEPOT — run state shape. Kept tiny and dependency-free so
 // DepotGame.jsx's loop can stuff a plain object in a ref (React state must
 // never be read from the closure — see ColdsnapTD.jsx for why).
-import { aimSolve, fireProjectile } from "../engine/core.js";
+import { aimSolve, fireProjectile, addBody } from "../engine/core.js";
+import { SQUAD_SPECS } from "./squads.js";
 import { scatterSigma, applyScatter, arcClears } from "./accuracy.js";
 import { planWave, MIN_WAVE_FLOOR } from "./ai.js";
 import { STIPEND, payResults, combatIneffective, bookValue } from "./economy.js";
@@ -253,6 +254,62 @@ export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })
     u.fireCd = spec.fireRate;
     shooterFire(world, u, muzzle, best, fspec, { attacker, volleyDelay: spec.burstGap, muzzleStep: 0, owner: u.id });
   }
+}
+
+// ------------------------------------------------------------ squad wiring
+// spawnSquadMembers(world, squad): a squad's members spawn as ORDINARY
+// team-1 "unit" bodies (brief's sketch, adapted to addBody's real shape) so
+// every existing unit-body system — territory emitters, fog, combat,
+// physics — sees them for free. dress "human" (the player side reads human;
+// androids are the enemy's dress). squadId back-references the roster so
+// pruneSquads and the selection UI can walk body -> squad.
+export function spawnSquadMembers(world, squad) {
+  const spec = SQUAD_SPECS[squad.type];
+  for (let i = 0; i < spec.n; i++) {
+    const a = (i / spec.n) * Math.PI * 2, r = 1.2;
+    const x = squad.anchor.x + Math.cos(a) * r, z = squad.anchor.z + Math.sin(a) * r;
+    const u = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28,
+      x, y: world.field.heightAt(x, z) + 0.74, z, hp: 58, friction: 0.5 });
+    u.utype = squad.type; u.squadId = squad.id; u.dress = "human"; // player side reads human
+    squad.memberIds.push(u.id);
+  }
+}
+
+// Sandbag: instant (wall-exempt) 3-scrap cover — a single STATIC sleeping
+// chunk body tagged b.sandbag. Static (mass 0 -> invM 0) on purpose:
+// squads.js's exposureAt filters out dynamic bodies (invM > 0), so a massy
+// sandbag would never read as cover; core.js's projectile hit scan exempts
+// chunk-kind from its invM-0 skip (~:691), so rounds still hit it and its
+// 60hp still matters. DepotGame's territory emitter builder adds it under
+// EMIT.wall (green influence, wall-weight).
+export const SANDBAG_COST = 3;
+export function spawnSandbag(world, x, z) {
+  const y = world.field.heightAt(x, z);
+  const b = addBody(world, {
+    kind: "chunk", team: 1, mass: 0, hx: 0.9, hy: 0.45, hz: 0.35,
+    x, y: y + 0.45, z, hp: 60, friction: 0.7, restitution: 0.02,
+  });
+  b.sandbag = true;
+  b.sleeping = true;
+  b.maxHp = b.hp;
+  return b;
+}
+
+// pruneSquads(world, squads): roster hygiene, run once per tick BEFORE
+// stepSquad/squadFire (the loop-order contract: prune dead members ->
+// delete empty squads -> step -> fire). A member whose body is dead OR
+// already swept out of world.byId (DepotGame's 2.5s corpse cleanup is
+// team-agnostic by design) leaves the roster; a squad with no members left
+// is deleted. Returns the filtered array; the surviving squad objects are
+// the same references (selection ids stay valid).
+export function pruneSquads(world, squads) {
+  for (const sq of squads) {
+    sq.memberIds = sq.memberIds.filter((id) => {
+      const u = world.byId.get(id);
+      return !!u && u.alive;
+    });
+  }
+  return squads.filter((sq) => sq.memberIds.length > 0);
 }
 
 // ------------------------------------------------------- fire discipline
@@ -711,4 +768,5 @@ export const HUD0 = {
   started: false, gameOver: false, victory: false, attrition: false, ledgerLoss: false, spent: false, breach: false,
   mode: "wall", sellMode: false, paused: false, speed: 1, inspect: null, toasts: [],
   pending: null, fogOn: true, discipline: "careful", depotStanding: 1,
+  squadSel: null, squadFlag: null,
 };
