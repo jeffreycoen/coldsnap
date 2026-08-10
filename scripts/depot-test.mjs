@@ -6,7 +6,7 @@ import {
   regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, shooterFire, nextSpawnTag,
   fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed,
 } from "../src/depot/state.js";
-import { reachPolygon } from "../src/depot/accuracy.js";
+import { reachPolygon, arcClears } from "../src/depot/accuracy.js";
 import {
   makeWorld, addBody, fireProjectile, stepWorld, applyDamage, worldHash, CAUSE, mulberry32,
 } from "../src/engine/core.js";
@@ -1438,7 +1438,7 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
 // ============================================================ Task 3: placement preview + confirm
 {
   const flatWorld = () => ({ field: { heightAt: () => 0 }, bodies: [] });
-  const spec = { range: 20, hy: 1.0 };
+  const spec = { range: 20, hy: 1.0, projSpeed: 60, occl: "arc" };
 
   // --- effRange pins
   ok("effRange: flat ground = 1.0x", effRange(flatWorld(), { x: 0, y: 0, z: 0 }, spec) === spec.range);
@@ -1468,14 +1468,17 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
 
     // wall fixture due east (+x) at x=10 — the ray toward +x (index 0) must
     // stop well short of spec.range; a ray away from it (index 32, -x) is
-    // unaffected.
+    // unaffected. Tall (hy 2.5, spans y 0..5) so the gun's real arc — which
+    // can climb well above a short wall's 1.8m by mid-lane — still can't
+    // clear over it; a short wall is a legitimate arc-over case now that
+    // reachPolygon tests the true flight path instead of a straight line.
     const wallWorld = { field: { heightAt: () => 0 }, bodies: [
-      { alive: true, invM: 0, kind: "wall", pos: { x: 10, y: 0.9, z: 0 }, hx: 0.9, hy: 0.9, hz: 0.9 },
+      { alive: true, invM: 0, kind: "wall", pos: { x: 10, y: 2.5, z: 0 }, hx: 0.9, hy: 2.5, hz: 0.9 },
     ] };
     const wallPoly = reachPolygon(wallWorld, null, muzzle, spec, 1);
     const eastDist = Math.hypot(wallPoly[0].x - muzzle.x, wallPoly[0].z - muzzle.z);
     const westDist = Math.hypot(wallPoly[32].x - muzzle.x, wallPoly[32].z - muzzle.z);
-    ok("reachPolygon: ray toward a wall fixture stops short of it", eastDist < 9.5 && eastDist > 0, eastDist);
+    ok("reachPolygon: ray toward a wall fixture stops short of it", eastDist < 10.5 && eastDist > 0, eastDist);
     ok("reachPolygon: ray away from the wall reaches full range, unaffected", westDist > spec.range - 1.5, westDist);
 
     // fog boundary clip: territory.js's default (uncontested) state reads
@@ -1490,6 +1493,56 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     const foggedPoly = reachPolygon(flatWorld(), T, muzzle, spec, 1);
     const foggedDist = Math.hypot(foggedPoly[0].x - muzzle.x, foggedPoly[0].z - muzzle.z);
     ok("reachPolygon: fog boundary clips rays well short of open-flat full range", foggedDist < spec.range - 3, foggedDist);
+  }
+
+  // --- arcClears (Phase 4.1 Task 1): the round's true flight path, not a
+  // straight-line sightline.
+  {
+    // "arc" spec: a flat-ish trajectory that still bulges above the straight
+    // muzzle-target line (gravity), enough to clear a low crest the old
+    // straight-line test would have rejected.
+    {
+      const world = { field: { heightAt: (x) => (Math.abs(x - 10) < 1 ? 3.5 : 0) }, bodies: [] };
+      const muzzle = { x: 0, y: 2, z: 0 }, target = { x: 20, y: 2, z: 0 };
+      const spec = { projSpeed: 16, occl: "arc" };
+      // old straight-line test (groundY + TARGET_H(1.2) > line(2)) would reject: 3.5+1.2 > 2
+      ok("arcClears: gun's true arc clears a low crest the straight line would reject", arcClears(world, muzzle, target, spec));
+    }
+    // "arc" spec: a wall sitting directly in the flat lane still blocks.
+    {
+      const world = { field: { heightAt: () => 0 }, bodies: [
+        { alive: true, invM: 0, kind: "wall", pos: { x: 8, y: 1.5, z: 0 }, hx: 0.9, hy: 1.5, hz: 0.9 },
+      ] };
+      const muzzle = { x: 0, y: 1.95, z: 0 }, target = { x: 16, y: 1.2, z: 0 };
+      const spec = { projSpeed: 58, occl: "arc" };
+      ok("arcClears: gun is still blocked by a wall directly in the flat lane", !arcClears(world, muzzle, target, spec));
+    }
+    // "lofted" spec: ignores terrain and a wall well beyond its own
+    // muzzle climb-out cone (first 15% of flight)...
+    {
+      const muzzle = { x: 0, y: 1.0, z: 0 }, target = { x: 30, y: 0, z: 0 };
+      const wallWorld = { field: { heightAt: () => 1e3 }, bodies: [
+        { alive: true, invM: 0, kind: "wall", pos: { x: 20, y: 5, z: 0 }, hx: 1, hy: 5, hz: 1 },
+      ] };
+      const spec = { projSpeed: 33, occl: "lofted" };
+      ok("arcClears: mortar (lofted) ignores terrain and a wall beyond its own climb-out cone", arcClears(wallWorld, muzzle, target, spec));
+      // ...but NOT a wall sitting in its own climb-out cone (can't mortar
+      // out from under your own wall's overhang).
+      const ownWallWorld = { field: { heightAt: () => 1e3 }, bodies: [
+        { alive: true, invM: 0, kind: "wall", pos: { x: 2, y: 1.7, z: 0 }, hx: 0.5, hy: 1.7, hz: 0.5 },
+      ] };
+      ok("arcClears: mortar (lofted) is blocked firing out from under its own wall's climb-out cone", !arcClears(ownWallWorld, muzzle, target, spec));
+    }
+    // reachPolygon: a lofted spec on open ground is ~a full circle (range/fog
+    // limited only) — min radial reach > 0.9x effRange across all azimuths.
+    {
+      const spec = { range: 26, projSpeed: 33, occl: "lofted", hy: 0.8 };
+      const muzzle = { x: 0, y: 2.0, z: 0 };
+      const poly = reachPolygon({ field: { heightAt: () => 0 }, bodies: [] }, null, muzzle, spec, 1);
+      let minR = Infinity;
+      for (const p of poly) minR = Math.min(minR, Math.hypot(p.x - muzzle.x, p.z - muzzle.z));
+      ok("reachPolygon: mortar (lofted) on open ground is ~a full circle", minR > 0.9 * spec.range, minR);
+    }
   }
 
   // --- confirm state machine, headless

@@ -11,6 +11,7 @@
 // forbidden in src/depot (scripts/depot-lint.mjs).
 import { addBody, applyDamage, explode } from "../engine/core.js";
 import { shooterFire, fieldReaches, effRange } from "./state.js";
+import { arcClears } from "./accuracy.js";
 import { ENEMY_SPECS, ENEMY_FIRE, TANK } from "./specs.js";
 
 // ---------------------------------------------------------------- spawning
@@ -105,7 +106,7 @@ function stepTank(world, grid, t, dt, fwdDir, T, toUV = (x, z) => ({ u: x, v: z 
     if ((s.kind !== "tower" && s.kind !== "wall") || !s.alive) continue;
     { const c = toUV(s.pos.x, s.pos.z); if (!fieldReaches(T, c.u, c.v, 2)) continue; }
     const dx = s.pos.x - t.pos.x, dz = s.pos.z - t.pos.z, d2 = dx * dx + dz * dz;
-    if (d2 < td) { td = d2; tgt = s; }
+    if (d2 < td && arcClears(world, muzzle, s.pos, fspec)) { td = d2; tgt = s; }
   }
   if (!tgt) { t.gunT = 0.5; return; }
   t.gunT = fspec.cd + world.rng() * (fspec.cdVar || 0);
@@ -128,7 +129,7 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u
   if (tgt) {
     const dx = tgt.pos.x - u.pos.x, dz = tgt.pos.z - u.pos.z;
     const c = toUV(tgt.pos.x, tgt.pos.z);
-    if (!tgt.alive || (tgt.kind !== "tower" && tgt.kind !== "wall") || dx * dx + dz * dz > R2 || !fieldReaches(T, c.u, c.v, 2)) tgt = null;
+    if (!tgt.alive || (tgt.kind !== "tower" && tgt.kind !== "wall") || dx * dx + dz * dz > R2 || !fieldReaches(T, c.u, c.v, 2) || !arcClears(world, muzzle, tgt.pos, fspec)) tgt = null;
   }
   if (!tgt && u.scanCd <= 0) {
     u.scanCd = 0.13 + (u.id % 8) * 0.012;
@@ -140,7 +141,7 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u
       const c = toUV(s.pos.x, s.pos.z);
       if (!fieldReaches(T, c.u, c.v, 2)) continue;
       const dx = s.pos.x - u.pos.x, dz = s.pos.z - u.pos.z, d2 = dx * dx + dz * dz;
-      if (d2 < td) { td = d2; tgt = s; }
+      if (d2 < td && arcClears(world, muzzle, s.pos, fspec)) { td = d2; tgt = s; }
     }
   }
   u.tgtId = tgt ? tgt.id : null;
@@ -178,7 +179,7 @@ function stepGrenadier(world, u, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, 
   if (tgt) {
     const dx = tgt.pos.x - u.pos.x, dz = tgt.pos.z - u.pos.z;
     const c = toUV(tgt.pos.x, tgt.pos.z);
-    if (!tgt.alive || (tgt.kind !== "tower" && tgt.kind !== "wall") || dx * dx + dz * dz > R2 || !fieldReaches(T, c.u, c.v, 2)) tgt = null;
+    if (!tgt.alive || (tgt.kind !== "tower" && tgt.kind !== "wall") || dx * dx + dz * dz > R2 || !fieldReaches(T, c.u, c.v, 2) || !arcClears(world, muzzle, tgt.pos, fspec)) tgt = null;
   }
   if (!tgt && u.scanCd <= 0) {
     u.scanCd = 0.13 + (u.id % 8) * 0.012;
@@ -190,7 +191,7 @@ function stepGrenadier(world, u, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, 
       const c = toUV(b.pos.x, b.pos.z);
       if (!fieldReaches(T, c.u, c.v, 2)) continue;
       const dx = b.pos.x - u.pos.x, dz = b.pos.z - u.pos.z, d2 = dx * dx + dz * dz;
-      if (d2 < td) { td = d2; tgt = b; }
+      if (d2 < td && arcClears(world, muzzle, b.pos, fspec)) { td = d2; tgt = b; }
     }
   }
   u.tgtId = tgt ? tgt.id : null;

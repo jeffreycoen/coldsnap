@@ -16,7 +16,7 @@ import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, WAVES, MASON } from "./specs.js";
 import { windAt } from "./wind.js";
 import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed } from "./state.js";
-import { reachPolygon } from "./accuracy.js";
+import { reachPolygon, arcClears } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks, payBounties } from "./units.js";
 import { makeRegiment, payTown } from "./economy.js";
 import { makeTerritory, stepTerritory, holderAt, canBuild, fogStateFor, EMIT } from "./territory.js";
@@ -334,6 +334,7 @@ function stepTowers(world, T) {
     // spec.range for any tower predating that cache (shouldn't happen, but
     // keeps old saves/tests that construct tower bodies directly working).
     const eR = b.effRange != null ? b.effRange : spec.range;
+    const muzzle = { x: b.pos.x, y: b.pos.y + b.hy + 0.45, z: b.pos.z };
     let best = b.targetId ? world.byId.get(b.targetId) : null;
     if (best && (!best.alive || best.team !== 2 || best.kind !== "unit")) best = null;
     if (best) {
@@ -342,9 +343,12 @@ function stepTowers(world, T) {
     }
     // Targeting gate (symmetric with the attacker's own check in units.js):
     // a tower may only acquire/keep a target where the PLAYER field reaches
-    // it. A sticky target that has walked into fog is dropped right here —
-    // this validity block runs every tick, so "next rescan" is immediate.
+    // it, AND where its own round's flight path (arc for mg/gun, muzzle
+    // climb-out only for mortar/rocket) actually clears the terrain — a
+    // sticky target that has walked into fog, or that a rock has since risen
+    // between, is dropped right here so "next rescan" is immediate.
     if (best) { const c = invW(best.pos.x, best.pos.z); if (!fieldReaches(T, c.u, c.v, 1)) best = null; }
+    if (best && !arcClears(world, muzzle, best.pos, spec)) best = null;
     b.scanCd = (b.scanCd || 0) - dt;
     if (!best && b.scanCd <= 0) {
       b.scanCd = 0.11 + (b.id % 8) * 0.011;
@@ -355,7 +359,7 @@ function stepTowers(world, T) {
         if (!fieldReaches(T, c.u, c.v, 1)) continue;
         const dx = e.pos.x - b.pos.x, dz = e.pos.z - b.pos.z;
         const d2 = dx * dx + dz * dz;
-        if (d2 < bd) { bd = d2; best = e; }
+        if (d2 < bd && arcClears(world, muzzle, e.pos, spec)) { bd = d2; best = e; }
       }
     }
     b.targetId = best ? best.id : null;

@@ -9,6 +9,7 @@
 // modules have finished evaluating. Kept in one place (state.js, per Task 3's
 // brief) rather than duplicated.
 import { effRange, fieldReaches } from "./state.js";
+import { aimSolve } from "../engine/core.js";
 const REF_RANGE = 16;          // acc is calibrated at this ground distance
 const RANGE_K = 0.045;         // +4.5% sigma per meter beyond REF_RANGE
 const ELEV_K = 0.06;           // per meter of height advantage (signed)
@@ -30,6 +31,42 @@ export function solidBlocksPoint(world, x, y, z) {
     if (Math.abs(x - b.pos.x) <= b.hx && Math.abs(y - b.pos.y) <= b.hy && Math.abs(z - b.pos.z) <= b.hz) return true;
   }
   return false;
+}
+
+// Does the round's actual flight path clear the terrain? Samples the
+// ballistic arc from muzzle to target (aimSolve pitch, projSpeed), comparing
+// arc height vs ground+clearance at each step. Solids still use
+// solidBlocksPoint at the ARC height (not the straight line).
+// occlusion class per spec: "arc"    -> terrain checked along the true arc
+//                                        (gun, mg, rifle, tank)
+//                           "lofted" -> terrain ignored entirely (mortar,
+//                                        rocket, gren lob); solids near the
+//                                        MUZZLE (first 15% of flight) still
+//                                        block lofted fire (you cannot mortar
+//                                        out from under your own wall's
+//                                        overhang)
+export function arcClears(world, muzzle, target, spec) {
+  if (spec.occl === "lofted") {
+    const d = Math.hypot(target.x - muzzle.x, target.z - muzzle.z);
+    for (let s = 0.9; s < d * 0.15; s += 0.9) {
+      const t = s / d, x = muzzle.x + (target.x - muzzle.x) * t, z = muzzle.z + (target.z - muzzle.z) * t;
+      if (solidBlocksPoint(world, x, muzzle.y + s * 1.2, z)) return false; // steep climb-out cone
+    }
+    return true;
+  }
+  const dx = target.x - muzzle.x, dz = target.z - muzzle.z;
+  const d = Math.hypot(dx, dz); if (d < 2) return true;
+  const pitch = aimSolve(spec.projSpeed, d, target.y - muzzle.y, 9.8, false);
+  if (pitch == null) return false;
+  const vh = spec.projSpeed * Math.cos(pitch), vy0 = spec.projSpeed * Math.sin(pitch);
+  for (let s = 0.9; s < d - 0.9; s += 0.9) {
+    const t = s / vh;                                  // time at horizontal distance s
+    const y = muzzle.y + vy0 * t - 4.9 * t * t;        // arc height
+    const x = muzzle.x + (dx / d) * s, z = muzzle.z + (dz / d) * s;
+    if (world.field.heightAt(x, z) + 0.35 > y) return false;   // terrain pierces the arc
+    if (solidBlocksPoint(world, x, y, z)) return false;         // solid at arc height
+  }
+  return true;
 }
 
 export function losGraze(world, muzzle, aim) {
@@ -85,15 +122,23 @@ export function reachPolygon(world, T, muzzle, spec, team, toUV = (x, z) => ({ u
   for (let i = 0; i < REACH_N; i++) {
     const az = (i / REACH_N) * Math.PI * 2;
     const dx = Math.cos(az), dz = Math.sin(az);
-    const ex = muzzle.x + dx * effR, ez = muzzle.z + dz * effR;
-    const targetY = world.field.heightAt(ex, ez) + TARGET_H;
     let last = 0;
     for (let d = REACH_STEP; d <= effR; d += REACH_STEP) {
       const px = muzzle.x + dx * d, pz = muzzle.z + dz * d;
-      const groundY = world.field.heightAt(px, pz);
-      const lineY = muzzle.y + (targetY - muzzle.y) * (d / effR);
-      if (groundY + TARGET_H > lineY) break;               // terrain obstruction
-      if (solidBlocksPoint(world, px, muzzle.y, pz)) break; // static solid
+      // arcClears's own s-loop deliberately excludes the last ~0.9m before
+      // its target (the target point itself isn't terrain-tested — it's
+      // assumed reachable). Querying it with a target exactly AT d would
+      // therefore let a solid/terrain feature sitting right at d slip
+      // through untested. Query one step further out so d itself falls
+      // inside arcClears's tested span, but only ever commit `last` to d.
+      const qd = d + REACH_STEP, qx = muzzle.x + dx * qd, qz = muzzle.z + dz * qd;
+      const qy = world.field.heightAt(qx, qz) + TARGET_H;
+      // arcClears tests the round's true flight path — solids at arc height
+      // for "arc" specs, muzzle climb-out only for "lofted" (see doc comment
+      // on arcClears in this file). Do not ALSO straight-line test solids
+      // here for "arc" specs — arcClears already covers them along the arc,
+      // and double-testing would reject reachable ground the round clears.
+      if (!arcClears(world, muzzle, { x: qx, y: qy, z: qz }, spec)) break;
       if (T) { const c = toUV(px, pz); if (!fieldReaches(T, c.u, c.v, team)) break; } // fog boundary
       last = d;
     }
