@@ -24,17 +24,6 @@ export function payResults(reg, ev) {
     + ev.wallKills * RESULTS.wallKill + ev.buildingKills * RESULTS.buildingKill + ev.leaks * RESULTS.leak;
 }
 
-// A confirmed enemy kill (player-attributed, body kind "unit" or "vehicle")
-// permanently thins the regiment's manpower/armor pool — ON TOP OF the
-// heads/tanks already spent at purchase time (planWave's buys deplete the
-// pool regardless of whether the bought unit survives the wave; a kill on
-// top of that further shrinks what's left to buy with next wave). Clamped
-// at 0 — never goes negative.
-export function regimentKill(reg, kind) {
-  if (kind === "vehicle") reg.tanks = Math.max(0, reg.tanks - 1);
-  else if (kind === "unit") reg.heads = Math.max(0, reg.heads - 1);
-}
-
 export function combatIneffective(reg) {
   // attrition victory threshold
   return reg.heads < 0.12 * reg.heads0 && reg.tanks === 0;

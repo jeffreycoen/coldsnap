@@ -11,7 +11,7 @@ import {
 import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, WAVES as DEPOT_WAVES } from "../src/depot/specs.js";
 import { stepUnits, spawnUnit, stepBreakerRam } from "../src/depot/units.js";
 import {
-  makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue, regimentKill,
+  makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue,
 } from "../src/depot/economy.js";
 import { planWave, waveBudget } from "../src/depot/ai.js";
 import fs from "node:fs";
@@ -798,25 +798,36 @@ function shareOf(buys, types) {
   ok("advance() pays STIPEND into reg.scrap", S.reg.scrap === before + STIPEND, `${S.reg.scrap} vs ${before + STIPEND}`);
 }
 
-// regimentKill: a killed conscript/tank decrements reg.heads/tanks
-// permanently, clamped at 0 — never recovers, never negative.
+// Regiment depletion happens ONLY at muster (planWave's buys), never at
+// death — a fielded unit's cost is spent the moment it's bought and never
+// returns, dead, leaked, or otherwise. A wave's kill events must NOT
+// further deplete reg.heads/reg.tanks.
 {
-  const reg = { heads: 2, tanks: 1, heads0: 300, tanks0: 8, scrap: 0 };
-  regimentKill(reg, "unit");
-  regimentKill(reg, "unit");
-  regimentKill(reg, "unit"); // one past zero
-  regimentKill(reg, "vehicle");
-  regimentKill(reg, "vehicle"); // one past zero
-  ok("regimentKill: heads depleted permanently, clamped at 0", reg.heads === 0);
-  ok("regimentKill: tanks depleted permanently, clamped at 0", reg.tanks === 0);
+  const reg = makeRegiment(mulberry32(9));
+  const rng = mulberry32(10);
+  const before = { heads: reg.heads, tanks: reg.tanks };
+  planWave(reg, BASE_SNAP, 6, rng);
+  const afterBuy = { heads: reg.heads, tanks: reg.tanks };
+  ok("regiment depletes at muster (buy-time only)",
+    afterBuy.heads <= before.heads && afterBuy.tanks <= before.tanks);
+  // simulate a wave's worth of kills against this same regiment — nothing
+  // in the kill-accounting path touches reg.heads/reg.tanks, so a bare
+  // payResults call (the only thing DepotGame.jsx does with kill/leak
+  // events on the regiment side) must leave heads/tanks untouched.
+  payResults(reg, { structureDmg: 50, towerKills: 3, wallKills: 4, buildingKills: 1, leaks: 0 });
+  ok("a wave's kills do not further deplete the regiment",
+    reg.heads === afterBuy.heads && reg.tanks === afterBuy.tanks,
+    `${reg.heads}/${reg.tanks} vs ${afterBuy.heads}/${afterBuy.tanks}`);
 }
 
 // The consequence loop, asserted: two identical regiments buy an identical
-// wave (same rng stream), then diverge — one gets massacred (all kills, no
-// leaks: heads thinned, no scrap earned), the other leaks through untouched
-// (no kills: heads intact, full leak payout). The massacred regiment must
-// field a measurably poorer next wave — fewer buyable units AND fewer heads
-// left to buy with — even though it earns the same flat STIPEND.
+// wave (same rng stream, so heads/tanks/scrap depletion at muster is
+// identical), then diverge on RESULTS income only — one gets massacred
+// (no leaks, no structure damage, earns nothing back), the other leaks
+// through untouched (full leak payout). Same flat STIPEND for both. The
+// massacred regiment must field a measurably poorer next wave — purely
+// from lower scrap, since heads/tanks are identical (buy-time depletion is
+// the only manpower drain, and both bought the same thing).
 {
   const mkReg = () => makeRegiment(mulberry32(42));
   const regMassacred = mkReg();
@@ -831,22 +842,21 @@ function shareOf(buys, types) {
     regMassacred.heads === regLeaked.heads && regMassacred.tanks === regLeaked.tanks
     && regMassacred.scrap === regLeaked.scrap);
 
-  // wave N results: massacred wave killed outright (no leaks, no scrap
-  // earned, heads thinned by the kills); leaked-through wave earns full
-  // leak payout and loses no heads.
+  // wave N results: massacred wave killed outright (no leaks, no results
+  // income); leaked-through wave earns full leak payout. Heads/tanks are
+  // untouched by either — only scrap diverges.
   const KILLED = 40;
-  for (let i = 0; i < KILLED; i++) regimentKill(regMassacred, "unit");
   payResults(regMassacred, { structureDmg: 0, towerKills: 0, wallKills: 0, buildingKills: 0, leaks: 0 });
   payResults(regLeaked, { structureDmg: 0, towerKills: 0, wallKills: 0, buildingKills: 0, leaks: KILLED });
   regMassacred.scrap += STIPEND;
   regLeaked.scrap += STIPEND;
-  ok("consequence loop: massacre leaves fewer heads than a leak-through",
-    regMassacred.heads < regLeaked.heads, `${regMassacred.heads} vs ${regLeaked.heads}`);
+  ok("consequence loop: heads/tanks stay equal — kills don't deplete manpower",
+    regMassacred.heads === regLeaked.heads && regMassacred.tanks === regLeaked.tanks);
   ok("consequence loop: leak-through earns more scrap than a massacre",
     regLeaked.scrap > regMassacred.scrap, `${regLeaked.scrap} vs ${regMassacred.scrap}`);
 
   // wave N+1: same snap, identical fresh rng stream — the only difference
-  // left is the regiment state itself.
+  // left is reg.scrap.
   const planMassacred = planWave(regMassacred, snap, waveIdx + 1, mulberry32(101));
   const planLeaked = planWave(regLeaked, snap, waveIdx + 1, mulberry32(101));
   ok("consequence loop: a massacred wave yields a measurably poorer next wave",

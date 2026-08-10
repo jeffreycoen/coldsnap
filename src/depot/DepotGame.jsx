@@ -17,7 +17,7 @@ import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, WAVES, MASON } from "./specs.js"
 import { windAt } from "./wind.js";
 import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot } from "./state.js";
 import { stepUnits, spawnUnit, stepBreakerRam } from "./units.js";
-import { makeRegiment, regimentKill } from "./economy.js";
+import { makeRegiment } from "./economy.js";
 import Dispatch from "./Dispatch.jsx";
 
 // ============================================================== the map
@@ -626,8 +626,9 @@ export default function DepotGame({ onExit }) {
         hudT: 0, keys: {}, sellById: null, audio: A,
         // The attacker's economy — seeded off the run's own rng stream, not
         // an unseeded generator, so ?seed= replays reproduce the same
-        // regiment. Mutated in place by planWave/payResults/regimentKill;
-        // never replaced.
+        // regiment. Mutated in place by planWave (buy-time depletion — the
+        // only depletion path; a fielded unit's cost is spent at muster
+        // and never returns, dead or alive) and payResults; never replaced.
         reg: makeRegiment(world.rng),
       };
       stateRef.current = S;
@@ -906,9 +907,7 @@ export default function DepotGame({ onExit }) {
             toast("LEAK — -1 life");
             if (S.ws.results) S.ws.results.leaks++;
           } else if (e.type === "kill") {
-            if (e.attacker === "player" && (e.kind === "unit" || e.kind === "vehicle")) {
-              regimentKill(S.reg, e.kind);
-            } else if (e.attacker === "enemy" && S.ws.results) {
+            if (e.attacker === "enemy" && S.ws.results) {
               if (e.kind === "tower") S.ws.results.towerKills++;
               else if (e.kind === "wall") S.ws.results.wallKills++;
               else if (e.kind === "building") S.ws.results.buildingKills++;
