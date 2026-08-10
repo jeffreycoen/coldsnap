@@ -2,10 +2,31 @@
 // Drives the system Chromium via puppeteer-core against a running server.
 //   npm run build && npm run preview &   then:   node scripts/smoke.mjs
 //   SMOKE_URL=https://jeffreycoen.github.io/coldsnap/ node scripts/smoke.mjs
+//
+// SMOKE_ONLY=<section[,section...]> restricts the run to a subset of
+// sections, e.g. SMOKE_ONLY=depot or SMOKE_ONLY=depot,td. Unset runs
+// everything (this is what CI does — leave deploy.yml alone). Sections:
+// start, controls, demo, contracts, campaign, phone, keymap, mech, td, depot.
+// Each enabled section seeds its own localStorage/navigation preconditions
+// so any subset is runnable standalone for local iteration.
 import puppeteer from "puppeteer-core";
 
 const URL = process.env.SMOKE_URL || "http://localhost:4173/coldsnap/";
 const CHROME = process.env.CHROME_BIN || "/usr/bin/chromium";
+
+const ALL_SECTIONS = ["start", "controls", "demo", "contracts", "campaign", "phone", "keymap", "mech", "td", "depot"];
+const ONLY = process.env.SMOKE_ONLY
+  ? process.env.SMOKE_ONLY.split(",").map((s) => s.trim()).filter(Boolean)
+  : null;
+if (ONLY) {
+  const unknown = ONLY.filter((s) => !ALL_SECTIONS.includes(s));
+  if (unknown.length) {
+    console.error(`Unknown SMOKE_ONLY section(s): ${unknown.join(", ")} — known: ${ALL_SECTIONS.join(", ")}`);
+    process.exit(1);
+  }
+}
+const sectionEnabled = (name) => !ONLY || ONLY.includes(name);
+console.log(`sections: ${(ONLY || ALL_SECTIONS).join(", ")}${ONLY ? " (subset)" : " (all)"}`);
 
 const fails = [];
 const ok = (name, cond) => {
@@ -29,100 +50,126 @@ try {
   const clickMenu = (sel) => page.evaluate((s) => document.querySelector(`[data-menu="${s}"]`).click(), sel);
   const text = () => page.evaluate(() => document.body.innerText);
 
-  // --- start screen
+  // page always starts loaded at the start screen, regardless of which
+  // sections below are enabled — every section can assume this baseline.
   await page.goto(URL, { waitUntil: "networkidle0" });
   let body = await text();
-  ok("start screen shows the demo option", body.includes("PROVING GROUNDS"));
-  ok("start screen shows contract placeholder", body.includes("CONTRACT SANDBOX"));
-  ok("start screen shows controls option", body.includes("CONTROLS"));
-  ok("no game canvas on the start screen", (await page.$("canvas")) === null);
 
-  // --- controls: rebind volley v -> q (and check swap safety via defaults)
-  await clickMenu("controls");
-  await page.waitForFunction(() => document.body.innerText.includes("ROCKET VOLLEY"));
-  await page.evaluate(() => document.querySelector('[data-bind="volley"]').click());
-  // a bare modifier must not bind — the capture waits for the real key
-  await page.keyboard.press("Shift");
-  await sleep(120);
-  const stillListening = await page.evaluate(() => document.querySelector('[data-bind="volley"]').textContent.includes("PRESS"));
-  ok("modifier alone doesn't bind, capture keeps listening", stillListening);
-  await page.keyboard.press("q");
-  await page.waitForFunction(() => document.querySelector('[data-bind="volley"]').textContent.trim() === "Q");
-  ok("volley rebinds to Q", true);
-  const stored = await page.evaluate(() => localStorage.getItem("coldsnap-keymap"));
-  ok("keymap persisted to storage", !!stored && JSON.parse(stored).volley === "q");
+  // --- start screen
+  if (sectionEnabled("start")) {
+    ok("start screen shows the demo option", body.includes("PROVING GROUNDS"));
+    ok("start screen shows contract placeholder", body.includes("CONTRACT SANDBOX"));
+    ok("start screen shows controls option", body.includes("CONTROLS"));
+    ok("no game canvas on the start screen", (await page.$("canvas")) === null);
+  }
 
-  // swap: bind MG to q as well — volley should take MG's old key g
-  await page.evaluate(() => document.querySelector('[data-bind="mg"]').click());
-  await page.keyboard.press("q");
-  await page.waitForFunction(() => document.querySelector('[data-bind="mg"]').textContent.trim() === "Q");
-  const volleyNow = await page.evaluate(() => document.querySelector('[data-bind="volley"]').textContent.trim());
-  ok("conflicting key swaps instead of double-binding", volleyNow === "G");
-  // put it back: volley=q, mg=g
-  await page.evaluate(() => document.querySelector('[data-bind="volley"]').click());
-  await page.keyboard.press("q");
-  await page.waitForFunction(() => document.querySelector('[data-bind="volley"]').textContent.trim() === "Q");
+  // --- controls: rebind volley v -> q (and check swap safety via defaults),
+  // then persistence across reload. Self-contained: only needs the start screen.
+  if (sectionEnabled("controls")) {
+    await clickMenu("controls");
+    await page.waitForFunction(() => document.body.innerText.includes("ROCKET VOLLEY"));
+    await page.evaluate(() => document.querySelector('[data-bind="volley"]').click());
+    // a bare modifier must not bind — the capture waits for the real key
+    await page.keyboard.press("Shift");
+    await sleep(120);
+    const stillListening = await page.evaluate(() => document.querySelector('[data-bind="volley"]').textContent.includes("PRESS"));
+    ok("modifier alone doesn't bind, capture keeps listening", stillListening);
+    await page.keyboard.press("q");
+    await page.waitForFunction(() => document.querySelector('[data-bind="volley"]').textContent.trim() === "Q");
+    ok("volley rebinds to Q", true);
+    const stored = await page.evaluate(() => localStorage.getItem("coldsnap-keymap"));
+    ok("keymap persisted to storage", !!stored && JSON.parse(stored).volley === "q");
 
-  // --- persistence across reload
+    // swap: bind MG to q as well — volley should take MG's old key g
+    await page.evaluate(() => document.querySelector('[data-bind="mg"]').click());
+    await page.keyboard.press("q");
+    await page.waitForFunction(() => document.querySelector('[data-bind="mg"]').textContent.trim() === "Q");
+    const volleyNow = await page.evaluate(() => document.querySelector('[data-bind="volley"]').textContent.trim());
+    ok("conflicting key swaps instead of double-binding", volleyNow === "G");
+    // put it back: volley=q, mg=g
+    await page.evaluate(() => document.querySelector('[data-bind="volley"]').click());
+    await page.keyboard.press("q");
+    await page.waitForFunction(() => document.querySelector('[data-bind="volley"]').textContent.trim() === "Q");
+
+    // --- persistence across reload
+    await page.reload({ waitUntil: "networkidle0" });
+    await clickMenu("controls");
+    await page.waitForFunction(() => document.querySelector('[data-bind="volley"]'));
+    const volleyAfterReload = await page.evaluate(() => document.querySelector('[data-bind="volley"]').textContent.trim());
+    ok("rebind survives a reload", volleyAfterReload === "Q");
+    await clickMenu("back");
+  }
+
+  // --- demo: launch, in-game remap check, autosave, ESC. Depends on the
+  // "controls" section having rebound volley to Q — if that section didn't
+  // run, seed the same keymap directly via localStorage (cheap) so the
+  // in-game remap assertions still hold, then make sure we're at the menu.
+  if (sectionEnabled("demo")) {
+    await page.evaluate(() => {
+      const existing = JSON.parse(localStorage.getItem("coldsnap-keymap") || "{}");
+      if (existing.volley !== "q") localStorage.setItem("coldsnap-keymap", JSON.stringify({ ...existing, volley: "q" }));
+    });
+    await page.evaluate(() => localStorage.setItem("coldsnap-screen", "menu"));
+    await page.reload({ waitUntil: "networkidle0" });
+
+    await clickMenu("demo");
+    await page.waitForSelector("canvas");
+    await page.waitForFunction(() => !!window.__COLDSNAP__);
+    ok("demo boots from the menu", true);
+    await page.mouse.click(480, 300); // dismiss the deploy overlay
+    await sleep(400);
+
+    // --- remap behavior in-game: old key dead, new key fires
+    await page.keyboard.press("v");
+    await sleep(150);
+    let cds = await page.evaluate(() => window.__COLDSNAP__._S.cds.volley);
+    ok("old volley key V is suppressed", cds === 0);
+    await page.keyboard.press("q");
+    await sleep(150);
+    cds = await page.evaluate(() => window.__COLDSNAP__._S.cds.volley);
+    ok("remapped Q fires the volley", cds > 0);
+
+    // default (identity) binding still works: W drives
+    await page.keyboard.down("w");
+    await sleep(350);
+    const throttle = await page.evaluate(() => window.__COLDSNAP__._world().control.throttle);
+    ok("default W still drives forward", throttle > 0);
+
+    // focus loss releases held keys (no runaway tank after alt-tab/OS menus)
+    await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+    await sleep(250);
+    const throttleAfterBlur = await page.evaluate(() => window.__COLDSNAP__._world().control.throttle);
+    ok("window blur releases the held drive key", throttleAfterBlur === 0);
+    await page.keyboard.up("w");
+
+    // --- autosave: zoom/sound changes survive a reload, which resumes the game
+    await page.evaluate(() => { window.__COLDSNAP__._S.zoomBy(1.5); window.__COLDSNAP__._S.audio.setMuted(false); });
+    await sleep(1600); // external autosaver polls at 1s
+    // auto-resume mounts the game during page load, which delays network-idle
+    // lifecycle events under software WebGL — wait on the canvas instead
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForSelector("canvas", { timeout: 30000 });
+    ok("reload auto-resumes into the last game", true);
+    await page.waitForFunction(
+      () => window.__COLDSNAP__ && Math.abs(window.__COLDSNAP__._S.zoom - 1.5) < 0.05 && window.__COLDSNAP__._S.audio.muted === false,
+      { timeout: 10000 }
+    );
+    ok("zoom and sound settings restore after reload", true);
+
+    // --- ESC returns to the menu, demo unmounts
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => !document.querySelector("canvas"));
+    body = await text();
+    ok("ESC returns to the start screen", body.includes("PROVING GROUNDS"));
+  }
+
+  // --- contract sandbox: boots, wears the bureau voice, ESC returns.
+  // Self-contained: resets trial progress and parks at the menu first, so
+  // it doesn't depend on the "demo" section having returned to the start screen.
+  if (sectionEnabled("contracts")) {
+  await page.evaluate(() => localStorage.removeItem("coldsnap-cs-trial"));
+  await page.evaluate(() => localStorage.setItem("coldsnap-screen", "menu"));
   await page.reload({ waitUntil: "networkidle0" });
-  await clickMenu("controls");
-  await page.waitForFunction(() => document.querySelector('[data-bind="volley"]'));
-  const volleyAfterReload = await page.evaluate(() => document.querySelector('[data-bind="volley"]').textContent.trim());
-  ok("rebind survives a reload", volleyAfterReload === "Q");
-  await clickMenu("back");
-
-  // --- launch the demo
-  await clickMenu("demo");
-  await page.waitForSelector("canvas");
-  await page.waitForFunction(() => !!window.__COLDSNAP__);
-  ok("demo boots from the menu", true);
-  await page.mouse.click(480, 300); // dismiss the deploy overlay
-  await sleep(400);
-
-  // --- remap behavior in-game: old key dead, new key fires
-  await page.keyboard.press("v");
-  await sleep(150);
-  let cds = await page.evaluate(() => window.__COLDSNAP__._S.cds.volley);
-  ok("old volley key V is suppressed", cds === 0);
-  await page.keyboard.press("q");
-  await sleep(150);
-  cds = await page.evaluate(() => window.__COLDSNAP__._S.cds.volley);
-  ok("remapped Q fires the volley", cds > 0);
-
-  // default (identity) binding still works: W drives
-  await page.keyboard.down("w");
-  await sleep(350);
-  const throttle = await page.evaluate(() => window.__COLDSNAP__._world().control.throttle);
-  ok("default W still drives forward", throttle > 0);
-
-  // focus loss releases held keys (no runaway tank after alt-tab/OS menus)
-  await page.evaluate(() => window.dispatchEvent(new Event("blur")));
-  await sleep(250);
-  const throttleAfterBlur = await page.evaluate(() => window.__COLDSNAP__._world().control.throttle);
-  ok("window blur releases the held drive key", throttleAfterBlur === 0);
-  await page.keyboard.up("w");
-
-  // --- autosave: zoom/sound changes survive a reload, which resumes the game
-  await page.evaluate(() => { window.__COLDSNAP__._S.zoomBy(1.5); window.__COLDSNAP__._S.audio.setMuted(false); });
-  await sleep(1600); // external autosaver polls at 1s
-  // auto-resume mounts the game during page load, which delays network-idle
-  // lifecycle events under software WebGL — wait on the canvas instead
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForSelector("canvas", { timeout: 30000 });
-  ok("reload auto-resumes into the last game", true);
-  await page.waitForFunction(
-    () => window.__COLDSNAP__ && Math.abs(window.__COLDSNAP__._S.zoom - 1.5) < 0.05 && window.__COLDSNAP__._S.audio.muted === false,
-    { timeout: 10000 }
-  );
-  ok("zoom and sound settings restore after reload", true);
-
-  // --- ESC returns to the menu, demo unmounts
-  await page.keyboard.press("Escape");
-  await page.waitForFunction(() => !document.querySelector("canvas"));
-  body = await text();
-  ok("ESC returns to the start screen", body.includes("PROVING GROUNDS"));
-
-  // --- contract sandbox: boots, wears the bureau voice, ESC returns
   await clickMenu("contracts");
   await page.waitForSelector("canvas");
   await page.waitForFunction(() => !!window.__COLDSNAP__);
@@ -237,8 +284,17 @@ try {
   ok("fresh detail is on the pad, order still stands", await page.evaluate(() => window.__COLDSNAP__._S.trial.idx === 0));
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => !document.querySelector("canvas"));
+  }
 
-  // --- clearance program: order book gating, AC-01 completes, AC-02 unseals
+  // --- clearance program: order book gating, AC-01 completes, AC-02 unseals.
+  // Self-contained: wipes campaign progress/record and parks at the menu, so
+  // it doesn't depend on the "contracts" section having run first.
+  if (sectionEnabled("campaign")) {
+  await page.evaluate(() => {
+    for (const k of ["coldsnap-camp-progress", "coldsnap-camp-record", "coldsnap-camp-medals"]) localStorage.removeItem(k);
+    localStorage.setItem("coldsnap-screen", "menu");
+  });
+  await page.reload({ waitUntil: "networkidle0" });
   await clickMenu("campaign");
   await page.waitForFunction(() => document.body.innerText.includes("ORDER BOOK"));
   let book = await text();
@@ -505,8 +561,11 @@ try {
   ok("the campaign record is wiped from storage", true);
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => document.body.innerText.includes("PROVING GROUNDS"));
+  }
 
-  // --- phone layout: the order must be readable on a small touch screen
+  // --- phone layout: the order must be readable on a small touch screen.
+  // Already self-contained: its own page, own storage reset.
+  if (sectionEnabled("phone")) {
   const phone = await browser.newPage();
   phone.on("pageerror", (e) => pageErrors.push(String(e)));
   await phone.emulate({
@@ -542,19 +601,23 @@ try {
   await phone.waitForFunction(() => window.__MECHRANGE__ && window.__MECHRANGE__.mech.state.mode !== "FALLEN" && window.__MECHRANGE__.mech.hull.R[4] > 0.95, { timeout: 15000, polling: 500 });
   ok("phone: REISSUE button reissues the frame", true);
   await phone.close();
+  }
 
-  // --- corrupt/hostile stored keymap resets to defaults (escape unbindable)
-  // (also reset the resume screen: the phone section stored "sandbox" in the
-  // shared profile, and this section expects to land on the menu)
+  // --- corrupt/hostile stored keymap resets to defaults (escape unbindable).
+  // Guards against a missing keymap key (falls back to {}) so it doesn't
+  // depend on the "controls"/"demo" sections having created one first.
+  if (sectionEnabled("keymap")) {
   await page.evaluate(() => localStorage.setItem("coldsnap-screen", "menu"));
-  await page.evaluate(() => localStorage.setItem("coldsnap-keymap", JSON.stringify({ ...JSON.parse(localStorage.getItem("coldsnap-keymap")), forward: "escape" })));
+  await page.evaluate(() => localStorage.setItem("coldsnap-keymap", JSON.stringify({ ...JSON.parse(localStorage.getItem("coldsnap-keymap") || "{}"), forward: "escape" })));
   await page.reload({ waitUntil: "networkidle0" });
   await clickMenu("controls");
   await page.waitForFunction(() => document.querySelector('[data-bind="forward"]'));
   const fwdKey = await page.evaluate(() => document.querySelector('[data-bind="forward"]').textContent.trim());
   ok("stored 'escape' binding is rejected, defaults restored", fwdKey === "W");
+  }
 
   // --- MECH TEST RANGE (WIP surface: stands + steps; the march gate is WIP)
+  if (sectionEnabled("mech")) {
   await page.evaluate(() => localStorage.setItem("coldsnap-screen", "menu"));
   await page.reload({ waitUntil: "networkidle0" });
   await clickMenu("mech");
@@ -576,8 +639,13 @@ try {
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => document.querySelector('[data-menu="mech"]'), { timeout: 10000 });
   ok("mech range: ESC returns to menu", true);
+  }
 
-  // --- HOLD THE DEPOT (tower defense)
+  // --- HOLD THE DEPOT (tower defense). Parks at the menu first so it
+  // doesn't depend on the "mech" section having left us there via ESC.
+  if (sectionEnabled("td")) {
+  await page.evaluate(() => localStorage.setItem("coldsnap-screen", "menu"));
+  await page.reload({ waitUntil: "networkidle0" });
   await clickMenu("towerdef");
   await page.waitForFunction(() => typeof window.__TD__ === "function", { timeout: 20000 });
   ok("tower defense: mounts", true);
@@ -588,11 +656,14 @@ try {
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => document.querySelector('[data-menu="towerdef"]'), { timeout: 10000 });
   ok("tower defense: ESC returns to menu", true);
+  }
 
   // --- DEPOT (wave-survival build) — enter from the start screen, wave 1
   // spawns, dispatch appears once it clears, ACKNOWLEDGE advances to wave 2.
   // Section budget ~120s. swiftshader is slow, so run at 2x speed and use
   // debug hooks rather than waiting real-time for a full 12-unit wave.
+  // Already self-contained: clears its own storage keys and parks at the menu.
+  if (sectionEnabled("depot")) {
   await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (k.startsWith("coldsnap-depot")) localStorage.removeItem(k); });
   await page.evaluate(() => localStorage.setItem("coldsnap-screen", "menu"));
   await page.reload({ waitUntil: "networkidle0" });
@@ -636,6 +707,7 @@ try {
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => document.querySelector('[data-menu="depot"]'), { timeout: 10000 });
   ok("depot: ESC returns to menu", true);
+  }
 
   ok("no page errors during the run", pageErrors.length === 0);
   if (pageErrors.length) console.log("page errors:", pageErrors);
