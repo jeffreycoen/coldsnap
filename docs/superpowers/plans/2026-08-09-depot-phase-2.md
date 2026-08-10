@@ -15,6 +15,7 @@
 - No hit percentages or wind numbers in any UI. The player reads flags and fall of shot.
 - Anchors: DepotGame.jsx tower-fire block ≈ lines 330-370 (scan/lead/volley-spread/fireProjectile); core.js `aimSolve` :105, `stepProjectiles` ≈ :644, wind hook goes in its integration step. Verify anchors by reading before editing.
 - Commit trailer: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
+- **Rotation invariance (Jeff, 2026-08-09): everything must work identically under Q/E view rotation.** The sim is world-space (rotation is camera-only), so this is asserted at the seams: (a) depot-test — run a scripted wave, then the same seed with `rotateStep` calls interleaved: identical worldHash (rendering must never leak into sim); (b) smoke depot section — rotate one step, tap-build a tower, verify it lands on the intended cell; verify flags/sway render correctly rotated (screenshot). Any feature this phase adds gets exercised at least once in a rotated view.
 
 ---
 
