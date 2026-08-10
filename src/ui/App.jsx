@@ -6,6 +6,7 @@ import CampaignScreen from "./CampaignScreen.jsx";
 import CampaignRunner from "../game/CampaignRunner.jsx";
 import MechRange from "../game/MechRange.jsx";
 import ColdsnapTD from "../game/ColdsnapTD.jsx";
+import DepotGame from "../depot/DepotGame.jsx";
 import { CAMPAIGN, loadProgress, saveProgress, loadRecord, recordOutcome, resetCampaign } from "../game/campaign.js";
 import Controls from "./Controls.jsx";
 import { DEFAULTS, loadKeymap, saveKeymap, installKeyRemap } from "../platform/keymap.js";
@@ -68,7 +69,7 @@ export default function App() {
   // ESC leaves a game for the menu. Registered in bubble phase so the
   // remapper (capture) runs first — Escape is unbindable, so it always lands.
   useEffect(() => {
-    if (!GAME_SCREENS.has(screen) && screen !== "campaign" && screen !== "mechrange" && screen !== "towerdef") return; // the order book and the mech range exit on ESC too (range stays out of GAME_SCREENS: it reads raw key codes, no remap)
+    if (!GAME_SCREENS.has(screen) && screen !== "campaign" && screen !== "mechrange" && screen !== "towerdef" && screen !== "depot") return; // the order book and the mech range exit on ESC too (range stays out of GAME_SCREENS: it reads raw key codes, no remap)
     const onEsc = (e) => { if (e.key === "Escape") setScreen(screen === "mission" ? "campaign" : "menu"); };
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
@@ -108,6 +109,9 @@ export default function App() {
   if (screen === "towerdef") {
     return <ColdsnapTD />;
   }
+  if (screen === "depot") {
+    return <DepotGame onExit={() => setScreen("menu")} />;
+  }
   if (screen === "controls") {
     return <Controls keymap={keymap} onChange={applyKeymap} onBack={() => setScreen("menu")} />;
   }
@@ -126,5 +130,5 @@ export default function App() {
       </div>
     );
   }
-  return <StartScreen onPlay={() => setScreen("demo")} onSandbox={() => setScreen("sandbox")} onCampaign={() => setScreen("campaign")} onControls={() => setScreen("controls")} onMech={() => setScreen("mechrange")} onTowerDef={() => setScreen("towerdef")} />;
+  return <StartScreen onPlay={() => setScreen("demo")} onSandbox={() => setScreen("sandbox")} onCampaign={() => setScreen("campaign")} onControls={() => setScreen("controls")} onMech={() => setScreen("mechrange")} onTowerDef={() => setScreen("towerdef")} onDepot={() => setScreen("depot")} />;
 }

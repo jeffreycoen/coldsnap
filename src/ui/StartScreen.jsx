@@ -8,7 +8,7 @@ const TRIAL_IDS = ["gunnery", "roadkill", "saturation", "demolition", "deep_end"
 const medalColor = (m) =>
   !m ? COLORS.btnBorder : m.deviation ? COLORS.dim : m.medal === "GOLD" ? COLORS.gold : m.medal === "SILVER" ? COLORS.text : "#b0764a";
 
-export default function StartScreen({ onPlay, onSandbox, onCampaign, onControls, onMech, onTowerDef }) {
+export default function StartScreen({ onPlay, onSandbox, onCampaign, onControls, onMech, onTowerDef, onDepot }) {
   const [medals, setMedals] = useState(null);
   const [csMedals, setCsMedals] = useState(null);
   const [isTouch] = useState(detectTouch);
@@ -57,6 +57,11 @@ export default function StartScreen({ onPlay, onSandbox, onCampaign, onControls,
         <button data-menu="towerdef" style={option({ borderColor: "#4e7a5a" })} onClick={onTowerDef}>
           <div style={{ color: "#8fd4a0", fontSize: 15, letterSpacing: 2 }}>▶ HOLD THE DEPOT</div>
           <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>Tower defense on the snowfield. Wall the passes — the ponds won't hold a foundation.</div>
+        </button>
+
+        <button data-menu="depot" style={option({ borderColor: "#6a8a9a" })} onClick={onDepot}>
+          <div style={{ color: "#9fd4e4", fontSize: 15, letterSpacing: 2 }}>▶ COLDSNAP DEPOT</div>
+          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>Early build: conscript waves only, on the certified engine's combat hooks.</div>
         </button>
 
         <button data-menu="campaign" style={option({ borderColor: "#c9a04e" })} onClick={onCampaign}>
