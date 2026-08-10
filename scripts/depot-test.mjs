@@ -9,7 +9,7 @@ import {
   makeWorld, addBody, fireProjectile, stepWorld, applyDamage, worldHash, CAUSE, mulberry32,
 } from "../src/engine/core.js";
 import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, WAVES as DEPOT_WAVES } from "../src/depot/specs.js";
-import { stepUnits, spawnUnit, stepBreakerRam } from "../src/depot/units.js";
+import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks } from "../src/depot/units.js";
 import {
   makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue,
 } from "../src/depot/economy.js";
@@ -666,6 +666,46 @@ function grenLobRun(seed, wind) {
     stepBreakerRam(world);
   }
   ok("breaker: ramming a wall deals contact damage", wall.hp < hpBefore, `hp=${wall.hp}`);
+}
+
+// tank leak: a tank that reaches the depot must leak like anything else
+// that gets there — lives damage, unit removed, attacker paid — not march
+// off-map forever (Task 7 probe finding: DepotGame.jsx's leak-check used
+// to only cover kind === "unit", so a surviving tank never despawned).
+{
+  const objPos = { x: 0, z: 0 };
+  const world = makeWorld({ seed: 7 });
+  const tank = spawnUnit(world, { x: objPos.x, z: objPos.z }, "tank");
+  tank.pos.x = objPos.x; tank.pos.z = objPos.z; // pin inside the leak radius, no jitter
+  ok("tank leak setup: spawned as kind vehicle", tank.kind === "vehicle");
+
+  checkLeaks(world, objPos);
+  const leakEvents = world.events.filter((e) => e.type === "leak");
+  ok("tank leak: reaching the depot fires a leak event", leakEvents.length === 1, JSON.stringify(leakEvents));
+  ok("tank leak: dmg mirrors TD's vehicle leak cost (4 lives)", leakEvents[0] && leakEvents[0].dmg === 4, JSON.stringify(leakEvents[0]));
+  ok("tank leak: the tank body is removed from the world", !world.byId.get(tank.id) && !world.bodies.includes(tank));
+
+  // results-pay: the attacker is credited via the same leak-pay path
+  // infantry leaks use (RESULTS.leak per leak, through payResults).
+  const reg = makeRegiment(mulberry32(12));
+  const scrapBefore = reg.scrap;
+  payResults(reg, { structureDmg: 0, towerKills: 0, wallKills: 0, buildingKills: 0, leaks: leakEvents.length });
+  ok("tank leak: attacker is paid RESULTS.leak for the tank leak",
+    reg.scrap === scrapBefore + RESULTS.leak, `${reg.scrap} vs ${scrapBefore + RESULTS.leak}`);
+}
+{
+  // infantry leak radius (3.0m) must NOT catch a tank still outside its
+  // own 5.0m radius but inside infantry's smaller one is moot (5>3) —
+  // the real regression is the inverse: a tank sitting between 3m and 5m
+  // used to leak nothing at all under the old kind==="unit"-only check.
+  const objPos = { x: 0, z: 0 };
+  const world = makeWorld({ seed: 8 });
+  const tank = spawnUnit(world, { x: objPos.x, z: objPos.z }, "tank");
+  tank.pos.x = objPos.x + 4; tank.pos.z = objPos.z; // 4m out: past infantry's 3.0m, inside tank's 5.0m
+  checkLeaks(world, objPos);
+  const leakEvents = world.events.filter((e) => e.type === "leak");
+  ok("tank leak: fires at 4m (inside the 5.0m vehicle radius, outside the old 3.0m infantry-only radius)",
+    leakEvents.length === 1, `bodies=${world.bodies.length}`);
 }
 
 // wave mix bag: nextSpawnTag pulls from the wave's mix (deterministic

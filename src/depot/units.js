@@ -280,3 +280,24 @@ export function stepBreakerRam(world) {
     }
   }
 }
+
+// ------------------------------------------------------------------- leaks
+// Any live enemy that reaches the depot leaks: lives damage, unit removed.
+// Infantry (kind "unit") leak within 3.0m for 1 life (2 if tagged "heavy").
+// Vehicles (tanks, kind "vehicle") leak within 5.0m for 4 lives — TD's
+// vehicle leak semantics (ColdsnapTD.jsx :1017-1023: vehicle radius
+// 5.0/dmg 4 vs infantry radius 3.0/dmg 1-2). Without this, a tank that
+// survives to the depot marches off-map and persists forever (found during
+// Task 7 balance probing — a wave with a surviving tank never clears).
+export function checkLeaks(world, objPos) {
+  for (let i = world.bodies.length - 1; i >= 0; i--) {
+    const b = world.bodies[i];
+    if ((b.kind !== "unit" && b.kind !== "vehicle") || !b.alive || b.team !== 2) continue;
+    const radius = b.kind === "vehicle" ? 5.0 : 3.0;
+    if (Math.hypot(b.pos.x - objPos.x, b.pos.z - objPos.z) < radius) {
+      const dmg = b.kind === "vehicle" ? 4 : b.tag === "heavy" ? 2 : 1;
+      world.events.push({ type: "leak", dmg, x: b.pos.x, y: b.pos.y, z: b.pos.z });
+      world.byId.delete(b.id); world.bodies.splice(i, 1);
+    }
+  }
+}

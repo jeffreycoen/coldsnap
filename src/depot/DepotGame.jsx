@@ -16,7 +16,7 @@ import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, WAVES, MASON } from "./specs.js";
 import { windAt } from "./wind.js";
 import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot } from "./state.js";
-import { stepUnits, spawnUnit, stepBreakerRam } from "./units.js";
+import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks } from "./units.js";
 import { makeRegiment } from "./economy.js";
 import Dispatch from "./Dispatch.jsx";
 
@@ -515,14 +515,7 @@ function stepDepot(world, grid, onStructureLost, town, onRuin) {
     }
   }
   if (town) stepTown(world, grid, town, onRuin);
-  for (let i = world.bodies.length - 1; i >= 0; i--) {
-    const b = world.bodies[i];
-    if (b.kind !== "unit" || !b.alive || b.team !== 2) continue;
-    if (Math.hypot(b.pos.x - OBJ_POS.x, b.pos.z - OBJ_POS.z) < 3.0) {
-      world.events.push({ type: "leak", dmg: 1, x: b.pos.x, y: b.pos.y, z: b.pos.z });
-      world.byId.delete(b.id); world.bodies.splice(i, 1);
-    }
-  }
+  checkLeaks(world, OBJ_POS);
 }
 
 // ============================================================== component
@@ -910,7 +903,7 @@ export default function DepotGame({ onExit }) {
             S.resources += e.bounty; S.kills++;
           } else if (e.type === "leak") {
             S.lives -= e.dmg;
-            toast("LEAK — -1 life");
+            toast(`LEAK — -${e.dmg} life${e.dmg === 1 ? "" : "s"}`);
             if (S.ws.results) S.ws.results.leaks++;
           } else if (e.type === "kill") {
             if (e.attacker === "enemy" && S.ws.results) {
