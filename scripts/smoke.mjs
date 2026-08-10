@@ -959,6 +959,33 @@ try {
       return false;
     };
 
+    // Mound ray fix (Phase 5 smallfix): taps land where they look. The
+    // condition tapWorld's opt-in `strict` mode guards against — the ground
+    // ray through a point's own projected pixel wandering off near the depot
+    // mound's steep relief — must now hold GAME-side with no harness help:
+    // groundPoint picks against the drawn (triangulated) terrain instead of
+    // the bilinear heightfield, so the projected pixel and the pick ray
+    // agree. Asserted at the mound cell itself (__DEPOTFINDRISE__: highest
+    // buildable cell near the flag — the worst case Task 3 documented).
+    // tapWorld's strict mode is kept as opt-in robustness for mid-tween
+    // frames, but no call in this file needs it.
+    {
+      const rise = await page.evaluate(() => window.__DEPOTFINDRISE__());
+      if (rise) {
+        await settleAt(rise.x, rise.z, 1.8);
+        const err = await page.evaluate((p) => {
+          const q = window.__DEPOTSCREENAT__(p.x, p.z);
+          if (!q) return null;
+          const g = window.__DEPOTGROUNDAT__(q.x, q.y);
+          return g ? Math.hypot(g.x - p.x, g.z - p.z) : null;
+        }, rise);
+        ok(`depot: mound tap ray lands on the cell it visually covers (no harness strictness) [err=${err == null ? "null" : err.toFixed(2)}m]`,
+          err != null && err < 2.4);
+      } else {
+        ok("depot: mound cell found for the tap-ray assert", false);
+      }
+    }
+
     // sniper preview: pending fan opens, then cancel (no scrap moves)
     await page.waitForFunction(() => !!window.__DEPOTFINDBUILDABLE__(5), { timeout: 10000, polling: 200 });
     const sqCell = await page.evaluate(() => window.__DEPOTFINDBUILDABLE__(5)); // clear of masonry: a fan opened INSIDE the depot lattice clips to nothing

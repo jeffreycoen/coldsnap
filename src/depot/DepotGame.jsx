@@ -1025,6 +1025,28 @@ export default function DepotGame({ onExit }) {
         const r = canvas.getBoundingClientRect();
         return { x: ((cx - r.left) / Math.max(1, r.width)) * 2 - 1, y: -(((cy - r.top) / Math.max(1, r.height)) * 2 - 1) };
       };
+      // pickHeightAt (mound-ray smallfix): height of the RENDERED terrain —
+      // the same triangulated PlaneGeometry surface the player sees (two
+      // triangles per grid quad, split on the b–d anti-diagonal, matching
+      // THREE.PlaneGeometry's index order; syncTerrain maps vertex (i,j) to
+      // F.h[j*n+i] 1:1) — NOT field.heightAt's bilinear patch. On convex
+      // relief (the depot mound's crest) the bilinear surface bulges ABOVE
+      // the drawn triangles, so a tap ray grazing the crest hit a phantom
+      // bulge the player can't see and selected a nearer cell than the one
+      // visibly under the cursor. Picking against the drawn surface makes
+      // taps land where they look. Sim/physics still use field.heightAt —
+      // this is view-space picking only.
+      const pickHeightAt = (x, z) => {
+        const F = field, fx = (x + F.half) / F.cs, fz = (z + F.half) / F.cs;
+        let i = Math.floor(fx), j = Math.floor(fz);
+        i = Math.max(0, Math.min(F.n - 2, i)); j = Math.max(0, Math.min(F.n - 2, j));
+        const tx = Math.max(0, Math.min(1, fx - i)), tz = Math.max(0, Math.min(1, fz - j));
+        const h00 = F.h[j * F.n + i], h10 = F.h[j * F.n + i + 1];
+        const h01 = F.h[(j + 1) * F.n + i], h11 = F.h[(j + 1) * F.n + i + 1];
+        return tx + tz <= 1
+          ? h00 + tx * (h10 - h00) + tz * (h01 - h00)
+          : h11 + (1 - tx) * (h01 - h11) + (1 - tz) * (h10 - h11);
+      };
       const groundPoint = (cx, cy) => {
         const nd = toNdc(cx, cy);
         const cb = R.camBasis, cam = R._cam;
@@ -1035,16 +1057,18 @@ export default function DepotGame({ onExit }) {
         const f = cb.fwd;
         let lo = 0, hi = 400;
         let prev = 0, found = -1;
-        for (let t = 0; t <= 400; t += 1.5) {
+        // 0.75m march (was 1.5): a thin crest wholly inside one step would be
+        // skipped and the tap would land BEHIND the visible ridge.
+        for (let t = 0; t <= 400; t += 0.75) {
           const x = ox + f.x * t, y2 = oy + f.y * t, z = oz + f.z * t;
-          if (y2 <= field.heightAt(x, z)) { found = t; lo = prev; hi = t; break; }
+          if (y2 <= pickHeightAt(x, z)) { found = t; lo = prev; hi = t; break; }
           prev = t;
         }
         if (found < 0) return null;
         for (let i = 0; i < 12; i++) {
           const mid = (lo + hi) / 2;
           const x = ox + f.x * mid, y2 = oy + f.y * mid, z = oz + f.z * mid;
-          if (y2 <= field.heightAt(x, z)) hi = mid; else lo = mid;
+          if (y2 <= pickHeightAt(x, z)) hi = mid; else lo = mid;
         }
         const t = (lo + hi) / 2;
         return { x: ox + f.x * t, z: oz + f.z * t };
@@ -1388,7 +1412,9 @@ export default function DepotGame({ onExit }) {
       // center ray lands on one.
       window.__DEPOTSCREENAT__ = (x, z) => {
         if (!R.project) return null;
-        const nd = R.project(x, field.heightAt(x, z), z);
+        // pickHeightAt, not heightAt: project the point where it is DRAWN,
+        // so the projection round-trips with groundPoint's mesh picking.
+        const nd = R.project(x, pickHeightAt(x, z), z);
         if (!nd) return null;
         const rect = canvas.getBoundingClientRect();
         return { x: rect.left + (nd.x * 0.5 + 0.5) * rect.width, y: rect.top + (-nd.y * 0.5 + 0.5) * rect.height };
