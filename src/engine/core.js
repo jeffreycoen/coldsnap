@@ -165,7 +165,7 @@ export function makeBody(o) {
     invIb: boxInertiaInv(m, o.hx, o.hy, o.hz),
     pos: v3(o.x || 0, o.y || 0, o.z || 0), q: o.q ? qNorm({ ...o.q }) : qIdent(),
     v: v3(), w: v3(), R: new Float32Array(9), invIw: new Float32Array(9),
-    hp: o.hp != null ? o.hp : 1e9, alive: true, sleeping: false, sleepT: 0,
+    hp: o.hp != null ? o.hp : (o.kind === "tree" ? 30 : 1e9), alive: true, sleeping: false, sleepT: 0,
     grounded: false, airT: 0, subT: 0, flipT: 0,
     lastImp: null,            // {src,attacker,t,volley}
     lastPlayerTouch: -1e9,    // for bowling / newton's first
@@ -717,6 +717,15 @@ function stepProjectiles(world) {
           }
         }
         applyDamage(world, hitBody, impactDmg, { cause: CAUSE.PROJECTILE, attacker: p.spec.attacker || "world", volley: p.spec.volley || 0 });
+      }
+      // DIVERGENCE (guarded): DEPOT tree combat — mg fire shreds a tree's hp
+      // directly (blast already burns them via explode(), unguarded, for TD);
+      // a shell/rocket direct hit ignites it instead of an instant kill.
+      // Guarded on world.depotCombat only: _tdStruct worlds already get their
+      // tree damage through the blast path and must not gain a second one.
+      if (hitBody && hitBody.alive && world.depotCombat && hitBody.kind === "tree") {
+        if (p.spec.kind === "mg") applyDamage(world, hitBody, 4, { cause: CAUSE.PROJECTILE, attacker: p.spec.attacker || "world" });
+        else if (p.spec.kind === "shell" || p.spec.kind === "rocket") hitBody.burning = world.t;
       }
       // DIVERGENCE (guarded): shells with declared mass deliver their real
       // momentum m*v to what they hit, on top of blast — no demo spec sets pmass.
@@ -1634,6 +1643,16 @@ function classifyImpacts(world) {
 }
 function stepStatus(world) {
   const dt = world.dt;
+  // DIVERGENCE (guarded): DEPOT — a burning tree (ignited by a direct
+  // shell/rocket hit, see stepProjectiles) loses 2 hp/s off world dt/t, never
+  // wall clock. burnt-out (hp<=0) fells it through the normal kill path;
+  // renderer reads b.burning for flame/char progression, b.alive for felled.
+  if (world.depotCombat) {
+    for (const b of world.bodies) {
+      if (b.kind !== "tree" || !b.alive || b.burning == null) continue;
+      applyDamage(world, b, 2 * dt, { cause: CAUSE.BLAST, attacker: "world" });
+    }
+  }
   // vehicles bearing on bodies (an ice raft, a rubble pile, the fallen) still give
   // the treads something to bite — terrain isn't the only thing worth driving on.
   for (const b of world.bodies) if (b.kind === "vehicle") b.onBody = false;

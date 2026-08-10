@@ -698,6 +698,13 @@ export function makeRenderer(canvas, world0, opts = {}) {
   treeCanopyMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(144 * 3).fill(1), 3);
   treeCanopyMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
   const TREE_LIVE = new THREE.Color(0x2e5240), TREE_DEAD = new THREE.Color(0x594a38);
+  const TREE_CHARRED = new THREE.Color(0x1c1712);
+  const _treeC = new THREE.Color();
+  // DEPOT: burning tree flame — a small additive plane pool, one per burning
+  // tree (indexed 1:1 with the tree loop below so no id map is needed).
+  // Flicker is derived from world.t + the tree's own position, never
+  // Math.random (house rule: renderer never rolls its own dice).
+  const treeFlameMesh = pool(new THREE.PlaneGeometry(0.9, 1.5), fireMat, 144, false); treeFlameMesh.layers.set(1);
   // map dressing (tower defense): rock prisms + frozen-pond discs, built once
   const dressG = new THREE.Group();
   scene.add(dressG);
@@ -854,20 +861,43 @@ export function makeRenderer(canvas, world0, opts = {}) {
     }
     wallMesh.count = wi; wallMesh.instanceMatrix.needsUpdate = true;
     wallCapMesh.count = wi; wallCapMesh.instanceMatrix.needsUpdate = true;
-    // trees (tower defense)
-    let tri = 0;
+    // trees (tower defense); DEPOT (world.depotCombat) adds burning
+    // flame/char progression — inert without the flag, existing TD path
+    // (alive green / felled TREE_DEAD) is untouched.
+    let tri = 0, tfi = 0;
     for (const b of world.bodies) {
       if (b.kind !== "tree" || tri >= 144) continue;
       const R2b = b.R;
+      const cx = b.pos.x + R2b[3] * b.hy * 0.85, cy = b.pos.y + R2b[4] * b.hy * 0.85, cz = b.pos.z + R2b[5] * b.hy * 0.85;
       writeInst(treeTrunkMesh, tri, b.pos.x, b.pos.y - b.hy * 0.35, b.pos.z, b.q, 1, 1, 1);
       // canopy rides the trunk's up axis so a felled tree carries its crown over
-      writeInst(treeCanopyMesh, tri, b.pos.x + R2b[3] * b.hy * 0.85, b.pos.y + R2b[4] * b.hy * 0.85, b.pos.z + R2b[5] * b.hy * 0.85, b.q, 1, 1, 1);
-      if (treeCanopyMesh.setColorAt) treeCanopyMesh.setColorAt(tri, b.alive ? TREE_LIVE : TREE_DEAD);
+      writeInst(treeCanopyMesh, tri, cx, cy, cz, b.q, 1, 1, 1);
+      if (treeCanopyMesh.setColorAt) {
+        if (world.depotCombat && b.burning != null) {
+          const denom = b.maxHp || 30;
+          const burnFrac = Math.max(0, Math.min(1, 1 - b.hp / denom));
+          _treeC.copy(b.alive ? TREE_LIVE : TREE_DEAD).lerp(TREE_CHARRED, b.alive ? burnFrac : 1);
+          treeCanopyMesh.setColorAt(tri, _treeC);
+        } else {
+          treeCanopyMesh.setColorAt(tri, b.alive ? TREE_LIVE : TREE_DEAD);
+        }
+      }
+      if (world.depotCombat && b.burning != null && b.alive && tfi < 144) {
+        // flicker phase keyed off the tree's own position (deterministic,
+        // no Math.random) so each burning tree licks independently
+        const phase = (b.pos.x * 3.1 + b.pos.z * 1.7);
+        const flick = 0.75 + 0.25 * Math.sin(world.t * 9 + phase);
+        const s = flick * (0.6 + 0.4 * Math.min(1, (world.t - b.burning) / 2));
+        dummy.position.set(cx, cy - b.hy * 0.2, cz); dummy.quaternion.copy(camQ);
+        dummy.scale.set(s, s, 1); dummy.updateMatrix();
+        treeFlameMesh.setMatrixAt(tfi++, dummy.matrix);
+      }
       tri++;
     }
     treeTrunkMesh.count = tri; treeTrunkMesh.instanceMatrix.needsUpdate = true;
     treeCanopyMesh.count = tri; treeCanopyMesh.instanceMatrix.needsUpdate = true;
     if (treeCanopyMesh.instanceColor) treeCanopyMesh.instanceColor.needsUpdate = true;
+    treeFlameMesh.count = tfi; treeFlameMesh.instanceMatrix.needsUpdate = true;
     // units: table-driven multi-part infantry with a speed-keyed march swing.
     // Limb quats compose body * local-X(phase); dead men freeze mid-stride and
     // take the winter-kill tint per role.

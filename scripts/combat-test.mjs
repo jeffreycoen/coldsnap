@@ -56,5 +56,63 @@ ok("depotCombat: 50-dmg round vs armor 40 penetrates (50 hp lost)", armorHp(true
 ok("depotCombat: 30-dmg blast vs armor 40 bypasses armor (30 hp lost)", armorHp(true, 30, CAUSE.BLAST) === 30, `lost=${armorHp(true, 30, CAUSE.BLAST)}`);
 ok("guard: without depotCombat, armor is ignored (30 hp lost)", armorHp(false, 30, CAUSE.PROJECTILE) === 30, `lost=${armorHp(false, 30, CAUSE.PROJECTILE)}`);
 
+// Tree combat: under world.depotCombat, mg direct hits shred a tree's hp
+// (default 30) at 4/hit — ~8 hits fells it. A shell/rocket direct hit
+// ignites (t.burning = world.t) instead of killing outright; a burning
+// tree loses 2 hp/s off world dt/t (not wall clock) and dies ~15s later.
+// Unflagged worlds: trees are inert to direct rounds (TD/campaign keep
+// their existing blast-only tree damage, unchanged).
+function makeTreeWorld(depotCombat) {
+  const world = makeWorld({ seed: 1 });
+  if (depotCombat) world.depotCombat = true;
+  const tree = addBody(world, { kind: "tree", hx: 0.28, hy: 1.6, hz: 0.28, x: 0, y: 1.62, z: 20, mass: 260, friction: 0.5 });
+  return { world, tree };
+}
+// mg: minimal blast (r/dmg near-zero) so the ~8-hit fell is attributable to
+// the new direct 4hp/hit path, not the pre-existing (unguarded) blast-on-tree
+// mechanic every projectile already triggers via explode(). shell: a real
+// blast, to prove ignite fires on the SAME hit that lands it (set before
+// explode() runs, so it survives even if that same blast kills the tree).
+function fireAt(world, kind) {
+  const spec = kind === "mg" ? { kind, r: 0.05, kv: 0.3, dmg: 1, crater: 0, attacker: "player" }
+    : { kind, r: 3, kv: 12, dmg: 55, crater: 0, attacker: "player" };
+  fireProjectile(world, { x: 0, y: 1.62, z: 0 }, { x: 0, y: 0, z: 1 }, 90, spec);
+  for (let i = 0; i < 60 && world.projectiles.length; i++) stepWorld(world);
+}
+
+{
+  const { world, tree } = makeTreeWorld(true);
+  ok("depotCombat: tree spawns with default hp 30", tree.hp === 30, `hp=${tree.hp}`);
+  let hits = 0;
+  while (tree.alive && hits < 20) { fireAt(world, "mg"); hits++; }
+  ok("depotCombat: mg fells a tree in ~8 hits", !tree.alive && hits >= 7 && hits <= 9, `hits=${hits} alive=${tree.alive}`);
+}
+
+{
+  const { world, tree } = makeTreeWorld(true);
+  fireAt(world, "shell");
+  ok("depotCombat: shell direct hit ignites the tree", tree.burning != null, `burning=${tree.burning} alive=${tree.alive} hp=${tree.hp}`);
+}
+
+{
+  const { world, tree } = makeTreeWorld(true);
+  tree.burning = 0;
+  world.t = 0;
+  let steps = 0;
+  const dt = world.dt;
+  while (tree.alive && steps < Math.ceil(20 / dt)) { stepWorld(world); steps++; }
+  const seconds = steps * dt;
+  ok("depotCombat: burning tree dies ~15s (2hp/s off world dt/t)", !tree.alive && seconds > 13 && seconds < 17, `died at t=${seconds.toFixed(2)}s`);
+}
+
+{
+  const { world, tree } = makeTreeWorld(false);
+  let hits = 0;
+  while (tree.alive && hits < 20) { fireAt(world, "mg"); hits++; }
+  ok("guard: without depotCombat, mg direct hits do not fell a tree", tree.alive, `hits=${hits} alive=${tree.alive} hp=${tree.hp}`);
+  fireAt(world, "shell");
+  ok("guard: without depotCombat, shell direct hit does not ignite", tree.burning == null, `burning=${tree.burning}`);
+}
+
 console.log(fails.length ? `\n${fails.length} FAIL(S)` : "\nALL PASS");
 process.exit(fails.length ? 1 : 0);
