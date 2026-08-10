@@ -485,6 +485,17 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const pennantMesh = pool(pennantGeo, toon(0xffc95c), 8, false); // bright gold — the outline pass eats duller inks at pennant size
   const _stakeUp = new THREE.Vector3(0, 1, 0);
 
+  // depot flags: pole + cloth at every body carrying b.flagPole === true.
+  // Same instanced-pennant trick as the survey stakes above, scaled up and
+  // driven by world.wind instead of a fixed flutter — heading tracks
+  // atan2(wind.z, wind.x), ripple amplitude/stiffness track wind.mag. No
+  // world.wind means no flags drawn (TD/campaign/demo untouched).
+  const flagPoleMesh = pool(new THREE.BoxGeometry(0.1, 2.6, 0.1), toon(0x4a4038), 24, true);
+  const flagClothGeo = new THREE.BoxGeometry(1.0, 0.6, 0.04); flagClothGeo.translate(0.52, 0, 0);
+  const flagClothMesh = pool(flagClothGeo, toon(0xffc95c), 24, false);
+  const _flagUp = new THREE.Vector3(0, 1, 0);
+  const _flagQ1 = new THREE.Quaternion(), _flagQ2 = new THREE.Quaternion();
+
   // snowfall: instanced flakes drifting in a box around the camera focus
   const flakeMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false });
   const flakeMesh = pool(new THREE.PlaneGeometry(0.14, 0.14), flakeMat, 220, false);
@@ -700,6 +711,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const TREE_LIVE = new THREE.Color(0x2e5240), TREE_DEAD = new THREE.Color(0x594a38);
   const TREE_CHARRED = new THREE.Color(0x1c1712);
   const _treeC = new THREE.Color();
+  const _swayAxis = new THREE.Vector3(), _swayQ = new THREE.Quaternion(), _treeQ = new THREE.Quaternion();
   // DEPOT: burning tree flame — a small additive plane pool, one per burning
   // tree (indexed 1:1 with the tree loop below so no id map is needed).
   // Flicker is derived from world.t + the tree's own position, never
@@ -865,13 +877,27 @@ export function makeRenderer(canvas, world0, opts = {}) {
     // flame/char progression — inert without the flag, existing TD path
     // (alive green / felled TREE_DEAD) is untouched.
     let tri = 0, tfi = 0;
+    const windSway = world.wind; // tree lean/oscillation only exists when a wind field is present
     for (const b of world.bodies) {
       if (b.kind !== "tree" || tri >= 144) continue;
       const R2b = b.R;
       const cx = b.pos.x + R2b[3] * b.hy * 0.85, cy = b.pos.y + R2b[4] * b.hy * 0.85, cz = b.pos.z + R2b[5] * b.hy * 0.85;
-      writeInst(treeTrunkMesh, tri, b.pos.x, b.pos.y - b.hy * 0.35, b.pos.z, b.q, 1, 1, 1);
+      let treeQ = b.q;
+      if (windSway && b.alive) {
+        // lean + oscillation scaled by wind.mag, phase from position (no rng);
+        // felled/charred-dead trees (!b.alive) are untouched
+        const mag = windSway.mag || 0;
+        const phase = b.pos.x * 1.3 + b.pos.z * 0.9;
+        const angle = mag * 0.035 + mag * 0.02 * Math.sin(world.t * 1.6 + phase);
+        const wm = Math.hypot(windSway.x, windSway.z) || 1;
+        _swayAxis.set(windSway.z / wm, 0, -windSway.x / wm);
+        _swayQ.setFromAxisAngle(_swayAxis, angle);
+        _treeQ.set(b.q.x, b.q.y, b.q.z, b.q.w).premultiply(_swayQ);
+        treeQ = _treeQ;
+      }
+      writeInst(treeTrunkMesh, tri, b.pos.x, b.pos.y - b.hy * 0.35, b.pos.z, treeQ, 1, 1, 1);
       // canopy rides the trunk's up axis so a felled tree carries its crown over
-      writeInst(treeCanopyMesh, tri, cx, cy, cz, b.q, 1, 1, 1);
+      writeInst(treeCanopyMesh, tri, cx, cy, cz, treeQ, 1, 1, 1);
       if (treeCanopyMesh.setColorAt) {
         if (world.depotCombat && b.burning != null) {
           const denom = b.maxHp || 30;
@@ -1178,6 +1204,37 @@ export function makeRenderer(canvas, world0, opts = {}) {
       }
       stakeMesh.count = si; stakeMesh.instanceMatrix.needsUpdate = true;
       pennantMesh.count = si; pennantMesh.instanceMatrix.needsUpdate = true;
+    }
+    // depot flags — wind-driven, only when world.wind exists
+    {
+      let fi = 0;
+      const wind = world.wind;
+      if (wind) {
+        const heading = Math.atan2(wind.z, wind.x);
+        const mag = wind.mag || 0;
+        const amp = Math.min(0.55, 0.12 + mag * 0.09); // ripple amplitude scales with wind strength
+        const stiff = 2.2 + mag * 0.9; // stronger wind = faster flutter (looser stiffness reads as quicker snap)
+        for (const b of world.bodies) {
+          if (!b.flagPole || fi >= 24) continue;
+          dummy.position.set(b.pos.x, b.pos.y + 1.3, b.pos.z);
+          dummy.quaternion.identity();
+          dummy.scale.set(1, 1, 1);
+          dummy.updateMatrix();
+          flagPoleMesh.setMatrixAt(fi, dummy.matrix);
+          const phase = b.pos.x * 2.3 + b.pos.z * 1.9; // deterministic per-position flutter, no rng
+          const flutter = Math.sin(world.t * stiff + phase) * amp;
+          _flagQ1.setFromAxisAngle(_flagUp, heading);
+          _flagQ2.setFromAxisAngle(_flagUp, flutter);
+          dummy.quaternion.copy(_flagQ1).multiply(_flagQ2);
+          dummy.position.set(b.pos.x, b.pos.y + 2.2, b.pos.z);
+          dummy.scale.set(1, 1, 1 + Math.abs(flutter) * 0.3);
+          dummy.updateMatrix();
+          flagClothMesh.setMatrixAt(fi, dummy.matrix);
+          fi++;
+        }
+      }
+      flagPoleMesh.count = fi; flagPoleMesh.instanceMatrix.needsUpdate = true;
+      flagClothMesh.count = fi; flagClothMesh.instanceMatrix.needsUpdate = true;
     }
     // snowfall drifts around the focus, wrapping in a 64x34x64 box
     for (let i = 0; i < flakes.length; i++) {

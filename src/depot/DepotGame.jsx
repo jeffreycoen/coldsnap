@@ -407,6 +407,16 @@ function buildTown(world, grid, field) {
         cells.push(grid.idx(gx, gz));
       }
     }
+    if (t.depot) {
+      // roof-peak flag anchor: kinematic marker body, no collision role —
+      // the renderer draws pole+cloth at any body with flagPole === true
+      const fx = t.x, fz = t.z;
+      const flag = addBody(world, {
+        kind: "flag", team: 1, mass: 0, hx: 0.05, hy: 0.05, hz: 0.05,
+        x: fx, y: base + (t.ny + 2.6) * pitch, z: fz,
+      });
+      flag.sleeping = true; flag.flagPole = true;
+    }
     out.push({ id: t.id, cells, stones: grid3, n0: grid3.length, ruined: false, x: t.x, z: t.z });
   }
   return out;
@@ -703,6 +713,7 @@ export default function DepotGame({ onExit }) {
         if (spec) {
           b = addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: spec.hy, hz: 0.8, x: wp.x, y: y + spec.hy, z: wp.z, hp: spec.hp });
           b.towerType = mode;
+          b.flagPole = true;
         } else {
           b = addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.9, hy: 0.9, hz: 0.9, x: wp.x, y: y + 0.9, z: wp.z, hp: 70 });
         }
@@ -928,6 +939,8 @@ export default function DepotGame({ onExit }) {
       window.__DEPOTBUILD__ = (gx, gz, mode) => buildAt(gx, gz, mode || "wall");
       window.__DEPOTSPAWN__ = (n) => { for (let i = 0; i < (n || 1); i++) spawnEnemy(world, SPAWN_POINTS[S.spawnRR++ % SPAWN_POINTS.length]); };
       window.__DEPOTSTART__ = () => { S.started = true; };
+      window.__DEPOTSETT__ = (t) => { world.t = t; world.wind = windAt(MAP_SEED, world.t); };
+      window.__DEPOTFLAGS__ = () => world.bodies.filter((b) => b.flagPole).map((b) => ({ id: b.id, kind: b.kind, x: +b.pos.x.toFixed(2), y: +b.pos.y.toFixed(2), z: +b.pos.z.toFixed(2) }));
       window.__DEPOTTREES__ = () => world.bodies.filter((b) => b.kind === "tree").map((b) => ({ id: b.id, x: +b.pos.x.toFixed(2), z: +b.pos.z.toFixed(2), y: +b.pos.y.toFixed(2), hp: +b.hp.toFixed(1), alive: b.alive, burning: b.burning }));
       window.__DEPOTMG__ = (tx, ty, tz) => {
         // debug harness: fire a single mg round at a point (a tree, typically)
@@ -1101,7 +1114,7 @@ export default function DepotGame({ onExit }) {
         canvas.removeEventListener("touchstart", blockTouch);
         window.removeEventListener("keydown", kd);
         window.removeEventListener("keyup", ku);
-        for (const k of ["__DEPOT__", "__DEPOTACK__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTTHIN__", "__DEPOTEND__", "__DEPOTFOCUS__"]) delete window[k];
+        for (const k of ["__DEPOT__", "__DEPOTACK__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTTHIN__", "__DEPOTEND__", "__DEPOTFOCUS__", "__DEPOTSETT__", "__DEPOTFLAGS__"]) delete window[k];
         A.dispose();
         if (R) R.dispose();
         stateRef.current = null;
