@@ -38,16 +38,20 @@ export const TANK = { mass: 3400, hx: 1.5, hy: 0.8, hz: 2.4, hp: 260, bounty: 25
 // TOWER_SPECS.mortar, tank mirrors TOWER_SPECS.gun. cd/cdVar/range are the
 // TD driver's own halt-range and fire-cadence constants (ColdsnapTD.jsx
 // :678-721 rifle, :723-754 grenadier, :597-615 tank gun).
-// rifle dirDmg: LEFT at 5 (dmg-equal), unlike TOWER_SPECS.mg/INFANTRY_ARMS
-// above, because it's measured INERT — core.js's direct-hit component only
-// ever fires against hitBody.kind === "unit"/"vehicle"/"truck", and enemy
-// riflemen (stepRifleman, units.js) only ever target kind "tower"/"wall"
-// (hitOnly: "structure") — never a unit/vehicle/truck body. Measured
-// flagged (world.depotCombat=true) vs a wall fixture: DPS identical
-// before/after dirDmg (0.2138 -> 0.2138, 0% drift) — no rescale needed. See
-// scripts/depot-test.mjs's enemy-rifle DPS assert.
+// rifle dirDmg: was LEFT at 5 (dmg-equal) while riflemen only ever targeted
+// structures (hitOnly: "structure" — the direct-hit component is inert
+// against walls/towers, 0% drift, see the enemy-rifle-vs-wall DPS assert).
+// Phase 5 Task 4A gives riflemen an anti-personnel pass (units.js's
+// nearestPlayerUnit), so dirDmg now FIRES against unit bodies — measured
+// flagged (world.depotCombat=true) vs a pinned soft-unit fixture (bodies
+// re-pinned per tick: knockback dynamics made a free fixture chaotic):
+// dmg-equal dirDmg (5) drifted DPS +7.5% over the pre-wiring blast-only
+// baseline (1.9763 -> 2.1254); rescaled to 4.5 (1.9182, -2.9%) to sit
+// centered in the ±10% replaces-not-adds contract, mirroring INFANTRY_ARMS'
+// own rifles rescale. See depot-test.mjs's "==== TASK 4A" parity assert.
+// The wall path is unaffected (dirDmg still inert there).
 export const ENEMY_FIRE = {
-  rifle: { projSpeed: 70, dmg: 5, dmgHeavy: 9, dirDmg: 5, kind: "mg", blastR: 0.6, kv: 1.0, crater: 0, acc: 0.090, windF: 0.06, windComp: 0, cd: 1.5, cdVar: 0.5, range: 13, occl: "arc" },
+  rifle: { projSpeed: 70, dmg: 5, dmgHeavy: 9, dirDmg: 4.5, kind: "mg", blastR: 0.6, kv: 1.0, crater: 0, acc: 0.090, windF: 0.06, windComp: 0, cd: 1.5, cdVar: 0.5, range: 13, occl: "arc" },
   lob:   { projSpeed: 28, dmg: 20, kind: "shell", blastR: 2.6, kv: 6, crater: 0.45, acc: 0.020, windF: 0.04, windComp: 0.6, cd: 3.0, cdVar: 0.6, range: 21, occl: "lofted" },
   tank:  { projSpeed: 85, dmg: TANK.dmg, kind: "shell", blastR: TANK.blastR, kv: 8, crater: 0.5, acc: 0.070, windF: 0.9, windComp: 0.6, cd: TANK.gunCd, cdVar: 1.2, range: TANK.gunRange, occl: "arc" },
 };

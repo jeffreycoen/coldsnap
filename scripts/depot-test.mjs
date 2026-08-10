@@ -2951,10 +2951,12 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
   };
   const grid4 = straightGrid(0, -1);
 
-  // parity pin: dmg-equal dirDmg (5) measured +11.8% flagged DPS vs the
-  // pre-wiring (blast-only) baseline against a soft unit fixture; rescaled
-  // to 4.5 (measured +0.6%). Baseline recorded 2026-08-10 with dirDmg
-  // stripped from the spec, same fixture as below.
+  // parity pin (flagged, pinned-body fixture — both bodies re-pinned every
+  // tick so blast knockback can't turn the measurement chaotic; a free
+  // fixture showed ~9% run-to-run drift from post-knockback dynamics):
+  // pre-wiring blast-only baseline 1.9763; dmg-equal dirDmg (5) drifted
+  // +7.5% (2.1254); rescaled to 4.5 -> -2.9% (1.9182), inside the ±10%
+  // replaces-not-adds band and mirroring INFANTRY_ARMS' own rescale.
   {
     const dpsVsUnit = () => {
       const world = makeWorld({ field: flatField, seed: 4 });
@@ -2972,10 +2974,12 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
           fireCd = ENEMY_FIRE.rifle.cd;
         }
         for (let s = 0; s < 5; s++) stepWorld(world);
+        target.pos.x = 0; target.pos.y = 0.74; target.pos.z = 0; target.v.x = 0; target.v.y = 0; target.v.z = 0;
+        rifleman.pos.x = 0; rifleman.pos.y = 0.88; rifleman.pos.z = 8; rifleman.v.x = 0; rifleman.v.y = 0; rifleman.v.z = 0;
       }
       return (hp0 - target.hp) / dur;
     };
-    const BASELINE_RIFLE_VS_UNIT = 0.2714; // flagged, pre-wiring (dirDmg stripped)
+    const BASELINE_RIFLE_VS_UNIT = 1.9763; // flagged, pre-wiring (dirDmg stripped), pinned fixture
     const d = dpsVsUnit();
     ok("4A parity: flagged enemy-rifle DPS vs a soft unit within +/-10% of pre-wiring baseline",
       Math.abs(d / BASELINE_RIFLE_VS_UNIT - 1) <= 0.10, `dps=${d.toFixed(4)} baseline=${BASELINE_RIFLE_VS_UNIT}`);

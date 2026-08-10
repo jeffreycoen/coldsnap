@@ -134,6 +134,40 @@ function stepTank(world, grid, t, dt, fwdDir, T, toUV = (x, z) => ({ u: x, v: z 
   shooterFire(world, t, muzzle, tgt, fspec, { attacker: "enemy", hitStruct: true, owner: t.id });
 }
 
+// ---------------------------------------------------- anti-personnel pass
+// A player soldier inside `urgency` of effective range is a more urgent
+// target than any wall — IF our field reaches him (the unit-vs-unit law:
+// fog gates men, never masonry). fieldReaches is read with the ATTACKER's
+// sign (team 2); arcClears threads the shooter's own id (self-hit law).
+function nearestPlayerUnit(world, u, muzzle, fspec, R2, urgency, T, toUV) {
+  let best = null, bd = R2 * urgency * urgency; // (urgency*R)^2
+  for (const s of world.bodies) {
+    if (s.kind !== "unit" || !s.alive || s.team !== 1) continue;
+    const c = toUV(s.pos.x, s.pos.z);
+    if (!fieldReaches(T, c.u, c.v, 2)) continue; // attacker-sign fog gate
+    const dx = s.pos.x - u.pos.x, dz = s.pos.z - u.pos.z, d2 = dx * dx + dz * dz;
+    if (d2 < bd && arcClears(world, muzzle, s.pos, fspec, u.id)) { bd = d2; best = s; }
+  }
+  return best;
+}
+
+// Sticky-target revalidation for a UNIT target: alive, still team 1, still
+// in range, still fog-reachable (units revalidate WITH the field gate every
+// tick — structures deliberately without, see the notes below), LOS clear.
+function unitTargetValid(world, u, muzzle, tgt, fspec, R2, T, toUV) {
+  if (!tgt || !tgt.alive || tgt.kind !== "unit" || tgt.team !== 1) return false;
+  const dx = tgt.pos.x - u.pos.x, dz = tgt.pos.z - u.pos.z;
+  if (dx * dx + dz * dz > R2) return false;
+  const c = toUV(tgt.pos.x, tgt.pos.z);
+  if (!fieldReaches(T, c.u, c.v, 2)) return false;
+  return arcClears(world, muzzle, tgt.pos, fspec, u.id);
+}
+
+// The one new tunable Task 4 introduces: a player soldier inside 60% of
+// effective range outranks any structure target (pinned on both sides of
+// the boundary by depot-test.mjs's "4A priority" asserts).
+const URGENCY = 0.6;
+
 // -------------------------------------------------------------- riflemen
 // Everything but the grenadier and the sapper still carries a rifle and
 // halts to work on a wall or emplacement rather than walk past it.
@@ -147,7 +181,11 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u
   // sticky-target validity check in between scans (u._effR).
   let R2 = (u._effR != null ? u._effR : fspec.range) ** 2;
   let tgt = u.tgtId ? world.byId.get(u.tgtId) : null;
-  if (tgt) {
+  if (tgt && tgt.kind === "unit") {
+    // sticky UNIT target: revalidate WITH the fog gate each tick (unit-vs-
+    // unit law) — structures below stay field-free, as today.
+    if (!unitTargetValid(world, u, muzzle, tgt, fspec, R2, T, toUV)) tgt = null;
+  } else if (tgt) {
     const dx = tgt.pos.x - u.pos.x, dz = tgt.pos.z - u.pos.z;
     // NOTE: deliberately NO fieldReaches gate on structure fire here (see
     // stepTank's comment above, and the identical fix there) — a wall or
@@ -160,7 +198,12 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u
     if (!tgt.alive || (tgt.kind !== "tower" && tgt.kind !== "wall") || dx * dx + dz * dz > R2 || !arcClears(world, muzzle, tgt.pos, fspec, u.id)) tgt = null;
   }
   if (!tgt && u.scanCd <= 0) {
-    u.scanCd = 0.13 + (u.id % 8) * 0.012;
+    // seq, not id: b.id is a module-global counter (differs across worlds
+    // in one process), b.seq is world-local — the scan-phase stagger must
+    // key off seq or a same-seed twin run desyncs its rescan ticks (found
+    // by Task 4A's twin-determinism assert once units began re-scanning
+    // mid-fight for unit targets).
+    u.scanCd = 0.13 + (u.seq % 8) * 0.012;
     u._effR = effRange(world, muzzle, fspec);
     R2 = u._effR * u._effR;
     let td = R2;
@@ -169,15 +212,21 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u
       const dx = s.pos.x - u.pos.x, dz = s.pos.z - u.pos.z, d2 = dx * dx + dz * dz;
       if (d2 < td && arcClears(world, muzzle, s.pos, fspec, u.id)) { td = d2; tgt = s; }
     }
+    // anti-personnel: a member inside the urgency radius outranks any wall
+    const man = nearestPlayerUnit(world, u, muzzle, fspec, R2, URGENCY, T, toUV);
+    if (man) tgt = man;
   }
   u.tgtId = tgt ? tgt.id : null;
   if (tgt) {
     if (u.fireCd <= 0) {
       u.fireCd = (u.tag === "heavy" ? 1.1 : 1.5) + world.rng() * 0.5;
       u.flashT = world.t;
-      shooterFire(world, u, muzzle, tgt, fspec, {
-        attacker: "enemy", hitStruct: true, hitOnly: "structure",
-      });
+      // unit target: NO hitOnly — the round hits whatever it physically
+      // hits (law of the world). Structure target: hitOnly kept. Both carry
+      // owner: u.id (self-hit law — uniform muzzle-clearing immunity).
+      shooterFire(world, u, muzzle, tgt, fspec, tgt.kind === "unit"
+        ? { attacker: "enemy", owner: u.id }
+        : { attacker: "enemy", hitStruct: true, hitOnly: "structure", owner: u.id });
     }
     // close slowly while firing rather than standing still
     if (cell && cell.dist < 1e8) {
@@ -202,7 +251,11 @@ function stepGrenadier(world, u, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, 
   const muzzle = { x: u.pos.x, y: u.pos.y + 1.0, z: u.pos.z };
   let R2 = (u._effR != null ? u._effR : fspec.range) ** 2;
   let tgt = u.tgtId ? world.byId.get(u.tgtId) : null;
-  if (tgt) {
+  if (tgt && tgt.kind === "unit") {
+    // sticky UNIT target: fog-gated revalidation every tick (same law as
+    // stepRifleman above).
+    if (!unitTargetValid(world, u, muzzle, tgt, fspec, R2, T, toUV)) tgt = null;
+  } else if (tgt) {
     const dx = tgt.pos.x - u.pos.x, dz = tgt.pos.z - u.pos.z;
     // NOTE: deliberately NO fieldReaches gate on structure fire here — same
     // rationale as stepTank/stepRifleman above: a wall or tower's own
@@ -213,7 +266,12 @@ function stepGrenadier(world, u, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, 
     if (!tgt.alive || (tgt.kind !== "tower" && tgt.kind !== "wall") || dx * dx + dz * dz > R2 || !arcClears(world, muzzle, tgt.pos, fspec, u.id)) tgt = null;
   }
   if (!tgt && u.scanCd <= 0) {
-    u.scanCd = 0.13 + (u.id % 8) * 0.012;
+    // seq, not id: b.id is a module-global counter (differs across worlds
+    // in one process), b.seq is world-local — the scan-phase stagger must
+    // key off seq or a same-seed twin run desyncs its rescan ticks (found
+    // by Task 4A's twin-determinism assert once units began re-scanning
+    // mid-fight for unit targets).
+    u.scanCd = 0.13 + (u.seq % 8) * 0.012;
     u._effR = effRange(world, muzzle, fspec);
     R2 = u._effR * u._effR;
     let td = R2;
@@ -222,6 +280,9 @@ function stepGrenadier(world, u, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, 
       const dx = b.pos.x - u.pos.x, dz = b.pos.z - u.pos.z, d2 = dx * dx + dz * dz;
       if (d2 < td && arcClears(world, muzzle, b.pos, fspec, u.id)) { td = d2; tgt = b; }
     }
+    // anti-personnel: same 60% urgency radius as the riflemen, fog-gated
+    const man = nearestPlayerUnit(world, u, muzzle, fspec, R2, URGENCY, T, toUV);
+    if (man) tgt = man;
   }
   u.tgtId = tgt ? tgt.id : null;
   if (tgt && u.grenCd <= 0) {
@@ -234,6 +295,7 @@ function stepGrenadier(world, u, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, 
     // Only surfaced once the fieldReaches gate above stopped permanently
     // vetoing grenadier-vs-wall acquisition (scripts/depot-test.mjs's
     // rifleman/grenadier-vs-wall fixtures).
+    // Unit shots keep hitStruct and carry NO hitOnly — blast is blast.
     shooterFire(world, u, muzzle, tgt, fspec, { high: true, attacker: "enemy", hitStruct: true, owner: u.id });
   }
   if (tgt && cell && cell.dist < 1e8) {
