@@ -13,6 +13,7 @@ import { stepUnits, spawnUnit, stepBreakerRam } from "../src/depot/units.js";
 import {
   makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue,
 } from "../src/depot/economy.js";
+import { planWave, waveBudget } from "../src/depot/ai.js";
 import fs from "node:fs";
 
 // identity fwdDir (DepotGame.jsx's ORIENT-aware transform, ORIENT===0 case)
@@ -621,6 +622,123 @@ function grenLobRun(seed, wind) {
   const counts = tags.reduce((m, t) => ((m[t] = (m[t] || 0) + 1), m), {});
   ok("mix bag yields the exact requested composition", counts[""] === 2 && counts.fast === 2, JSON.stringify(counts));
   ok("mix bag is exhausted after pulling the full mix", nextSpawnTag(S) === "");
+}
+
+// --- ai.js: the buy brain -------------------------------------------------
+const BASE_SNAP = { mortars: 0, mgs: 0, guns: 0, frosts: 0, walls: 0, towerElev: 0 };
+function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
+function shareOf(buys, types) {
+  const total = totalUnits(buys);
+  if (total === 0) return 0;
+  const n = buys.filter((b) => types.includes(b.type)).reduce((s, b) => s + b.n, 0);
+  return n / total;
+}
+
+// determinism: same reg/snap/waveIdx/rng-stream -> identical plan
+{
+  const reg1 = { heads: 300, tanks: 8, heads0: 300, tanks0: 8, scrap: 60 };
+  const reg2 = { ...reg1 };
+  const p1 = planWave(reg1, BASE_SNAP, 20, mulberry32(99));
+  const p2 = planWave(reg2, BASE_SNAP, 20, mulberry32(99));
+  ok("planWave determinism: identical output for identical inputs",
+    JSON.stringify(p1) === JSON.stringify(p2));
+  ok("planWave determinism: identical resulting regiment state",
+    JSON.stringify(reg1) === JSON.stringify(reg2));
+}
+
+// counter-response: each pressure signal measurably raises its counter's
+// share of the wave vs. an unpressured baseline.
+{
+  const mkReg = () => ({ heads: 300, tanks: 8, heads0: 300, tanks0: 8, scrap: 60 });
+  const waveIdx = 20;
+
+  const base = planWave(mkReg(), BASE_SNAP, waveIdx, mulberry32(1));
+  const baseFastShare = shareOf(base.buys, ["fast"]);
+  const mortarSnap = { ...BASE_SNAP, mortars: 6 };
+  const mortarPlan = planWave(mkReg(), mortarSnap, waveIdx, mulberry32(1));
+  ok("mortar-heavy build raises runner (fast) share",
+    shareOf(mortarPlan.buys, ["fast"]) > baseFastShare,
+    `${shareOf(mortarPlan.buys, ["fast"]).toFixed(3)} vs ${baseFastShare.toFixed(3)}`);
+
+  const baseWallShare = shareOf(base.buys, ["sapper", "heavy"]);
+  const wallSnap = { ...BASE_SNAP, walls: 8 };
+  const wallPlan = planWave(mkReg(), wallSnap, waveIdx, mulberry32(1));
+  ok("walled build raises sapper+breaker share",
+    shareOf(wallPlan.buys, ["sapper", "heavy"]) > baseWallShare,
+    `${shareOf(wallPlan.buys, ["sapper", "heavy"]).toFixed(3)} vs ${baseWallShare.toFixed(3)}`);
+
+  const baseGrenShare = shareOf(base.buys, ["gren"]);
+  const frostSnap = { ...BASE_SNAP, frosts: 5 };
+  const frostPlan = planWave(mkReg(), frostSnap, waveIdx, mulberry32(1));
+  ok("frost farm raises grenadier share",
+    shareOf(frostPlan.buys, ["gren"]) > baseGrenShare,
+    `${shareOf(frostPlan.buys, ["gren"]).toFixed(3)} vs ${baseGrenShare.toFixed(3)}`);
+
+  const mgSnap = { ...BASE_SNAP, mgs: 8 };
+  const mgReg = mkReg();
+  const mgPlan = planWave(mgReg, mgSnap, waveIdx, mulberry32(1));
+  ok("mg-heavy build buys a tank the unpressured wave doesn't",
+    shareOf(mgPlan.buys, ["tank"]) > 0 && shareOf(base.buys, ["tank"]) === 0,
+    `mg tank share=${shareOf(mgPlan.buys, ["tank"])}`);
+}
+
+// banking: high scrap banks (thin screen, banked:true) until affordable,
+// then erupts — tank push (tanks>=2) when mg-dominant, else surge (>2.2x).
+{
+  const waveIdx = 20;
+  const baseline = waveBudget(waveIdx);
+
+  // banked, not yet erupting (mg-dominant, only 1 tank on hand)
+  const bankedReg = { heads: 300, tanks: 1, heads0: 300, tanks0: 8, scrap: 1.9 * baseline };
+  const scrapBefore = bankedReg.scrap;
+  const bankedPlan = planWave(bankedReg, { ...BASE_SNAP, mgs: 8 }, waveIdx, mulberry32(2));
+  ok("banking: high scrap + not-yet-affordable push banks (thin screen)",
+    bankedPlan.banked === true);
+  ok("banking: thin screen spends well under full scrap",
+    bankedReg.scrap > scrapBefore - baseline * 0.6, `left=${bankedReg.scrap}`);
+
+  // erupts as a tank push once tanks>=2 and scrap covers 2 tanks
+  const pushReg = { heads: 300, tanks: 4, heads0: 300, tanks0: 8, scrap: 1.9 * baseline };
+  const pushPlan = planWave(pushReg, { ...BASE_SNAP, mgs: 8 }, waveIdx, mulberry32(3));
+  const tankBuy = pushPlan.buys.find((b) => b.type === "tank");
+  ok("banking: tank push erupts with 2-4 tanks once affordable",
+    pushPlan.banked === false && !!tankBuy && tankBuy.n >= 2 && tankBuy.n <= 4,
+    JSON.stringify(pushPlan.buys));
+
+  // erupts as a surge (no mg dominance) once scrap clears 2.2x baseline
+  const surgeReg = { heads: 300, tanks: 8, heads0: 300, tanks0: 8, scrap: 2.3 * baseline };
+  const surgePlan = planWave(surgeReg, BASE_SNAP, waveIdx, mulberry32(4));
+  ok("banking: surge erupts once scrap clears 2.2x baseline",
+    surgePlan.banked === false && totalUnits(surgePlan.buys) > 0);
+}
+
+// depletion: empty pools never go negative, plan degrades gracefully
+{
+  const emptyReg = { heads: 0, tanks: 0, heads0: 300, tanks0: 8, scrap: 100 };
+  const emptyPlan = planWave(emptyReg, BASE_SNAP, 10, mulberry32(5));
+  ok("depletion: empty heads/tanks pool yields no buys",
+    totalUnits(emptyPlan.buys) === 0, JSON.stringify(emptyPlan.buys));
+  ok("depletion: regiment never goes negative",
+    emptyReg.heads >= 0 && emptyReg.tanks >= 0 && emptyReg.scrap >= 0);
+}
+
+// 50-wave loop: full run against a static snapshot completes, stays solvent
+{
+  const reg = makeRegiment(mulberry32(11));
+  const rng = mulberry32(12);
+  const snap = { mortars: 3, mgs: 2, guns: 4, frosts: 1, walls: 2, towerElev: 0 };
+  let totalIncome = reg.scrap;
+  let negative = false;
+  for (let w = 0; w < 50; w++) {
+    reg.scrap += STIPEND;
+    totalIncome += STIPEND;
+    planWave(reg, snap, w, rng);
+    if (reg.heads < 0 || reg.tanks < 0 || reg.scrap < 0) negative = true;
+  }
+  ok("50-wave planWave loop completes without stalling", true);
+  ok("50-wave loop: regiment never negative", !negative);
+  ok("50-wave loop: total spend stays within total income",
+    reg.scrap >= 0 && reg.scrap <= totalIncome, `final scrap=${reg.scrap} income=${totalIncome}`);
 }
 
 if (fails.length) {
