@@ -20,7 +20,7 @@ import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad } from "../src/
 import {
   makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue, payTown,
 } from "../src/depot/economy.js";
-import { planWave, waveBudget, MIN_WAVE_FLOOR } from "../src/depot/ai.js";
+import { planWave, waveBudget, MIN_WAVE_FLOOR, snapSquads } from "../src/depot/ai.js";
 import { composeIntel, openingIntel, strengthWord } from "../src/depot/intel.js";
 import { makeTerritory, stepTerritory, holderAt, fogStateAt, fogStateFor, valueAt, canBuild, DECAY_TAU, EMIT } from "../src/depot/territory.js";
 import { fwdUFor, fwdDirFor, invWFor } from "../src/depot/orient.js";
@@ -3259,6 +3259,161 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 0, hp: 58, friction: 0.5 });
     for (let i = 0; i < 60; i++) { stepUnits(world, grid4c, identFwdDir, T6); stepWorld(world); }
     ok("4C fog law: member beyond the attacker field is never acquired", sn.tgtId == null, `tgt=${sn.tgtId}`);
+  }
+}
+
+// ==== TASK 4D: the brain buys it, the bureau warns you
+{
+  // AI: sniper counter-buy when the player fields squads (snap.squads >= 2),
+  // none at the squads=0 baseline; rng stream length stays exactly 4.
+  const runWaves = (squads) => {
+    const rng = mulberry32(77);
+    const reg = { heads: 400, tanks: 0, heads0: 400, tanks0: 0, scrap: 0 };
+    let snipers = 0, firstWave = null;
+    for (let w = 0; w <= 8; w++) {
+      reg.scrap = 50; // topped up each wave: normal (non-banking) branch
+      const plan = planWave(reg, { squads }, w, rng);
+      const b = plan.buys.find((x) => x.type === "sniper");
+      if (b) { snipers += b.n; if (firstWave == null) firstWave = w; }
+    }
+    return { snipers, firstWave };
+  };
+  {
+    const with3 = runWaves(3), with0 = runWaves(0);
+    ok("4D AI: >=1 sniper bought by wave 8 when snap.squads=3", with3.snipers >= 1, `snipers=${with3.snipers} first=${with3.firstWave}`);
+    ok("4D AI: zero sniper buys at the squads=0 baseline", with0.snipers === 0, `snipers=${with0.snipers}`);
+    ok("4D AI: snapSquads tolerates an unwired snapshot (no squads key)", snapSquads({}) === 0 && snapSquads(null) === 0);
+  }
+  {
+    // rng stream parity: exactly 4 draws per planWave, sniper branch active
+    let draws = 0;
+    const base = mulberry32(78);
+    const rng = () => { draws++; return base(); };
+    const reg = { heads: 400, tanks: 0, heads0: 400, tanks0: 0, scrap: 50 };
+    const plan = planWave(reg, { squads: 3 }, 6, rng);
+    ok("4D AI: planWave still consumes exactly 4 rng draws with the sniper buy live",
+      draws === 4 && plan.buys.some((b) => b.type === "sniper"), `draws=${draws} buys=${JSON.stringify(plan.buys)}`);
+  }
+  // intel: marksman family — keyed off the ONE-WAVE-OLD plan (prevPlan),
+  // digit-free, ~25% seeded silence, appended AFTER every existing family
+  // so no established seeded composition shifts.
+  {
+    const prevPlan = { buys: [{ type: "sniper", n: 1 }], banked: false };
+    let marksman = 0, total = 0, digits = 0;
+    const pool = new Set();
+    for (let seed = 0; seed < 200; seed++) {
+      const lines = composeIntel(prevPlan, null, mulberry32(1000 + seed));
+      total++;
+      for (const L of lines) {
+        if (/\d/.test(L)) digits++;
+        if (/[Mm]arksman|scope|Single-shot/.test(L)) { marksman++; pool.add(L); }
+      }
+    }
+    ok("4D intel: marksman line emitted for a sniper purchase (delayed-wave prevPlan key)", marksman > 0, `hits=${marksman}/200`);
+    ok("4D intel: every emitted line is digit-free", digits === 0, `digits=${digits}`);
+    ok("4D intel: seeded silence gaps the family ~25% (never all 200)", marksman >= 100 && marksman <= 180, `hits=${marksman}`);
+    ok("4D intel: line pool has 3 workshopped variants in rotation", pool.size === 3, `variants=${pool.size}`);
+    const silentPlan = composeIntel(null, null, mulberry32(5));
+    ok("4D intel: no plan -> no marksman line (bureau never speculates)", silentPlan.length === 0, JSON.stringify(silentPlan));
+  }
+}
+
+// ==== SQUAD-PACE (Phase 5): threat-gated attack pacing. A squad with no
+// live team-2 body within 25m of its anchor and no member hit inside 4s is
+// UNTHREATENED: it skips the cover dwell (still burning the leg's one rng
+// draw) and hops 9m straight legs. Threatened = exactly the old behavior.
+{
+  const flatField = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+  const mkAttackSquad = (world, x, z, dx, dz) => {
+    const sq = makeSquad(1, "rifles", 1, x, z);
+    for (let i = 0; i < 4; i++) {
+      const u = addBody(world, { kind: "unit", team: 1, mass: 90, hx: 0.3, hy: 0.9, hz: 0.3, x, y: 0.9, z, hp: 100 });
+      sq.memberIds.push(u.id);
+    }
+    sq.order = "attack"; sq.dest = { x: dx, z: dz };
+    return sq;
+  };
+  const addEnemy = (world, x, z) =>
+    addBody(world, { kind: "unit", team: 2, mass: 90, hx: 0.3, hy: 0.9, hz: 0.3, x, y: 0.9, z, hp: 100 });
+  const DT = 1 / 60;
+  const runAdvance = (world, sq, maxTicks = 60000) => {
+    let t = 0;
+    for (let i = 0; i < maxTicks && sq.order === "attack"; i++) { stepSquad(world, sq, DT); world.t += DT; t += DT; }
+    return t;
+  };
+
+  // --- timing: unthreatened 30m advance completes in under half the
+  // threatened-fixture time (enemy parked at the midpoint keeps the whole
+  // advance inside the 25m threat radius).
+  {
+    const wU = makeWorld({ field: flatField, seed: 9 });
+    const sqU = mkAttackSquad(wU, 0, 0, 0, 30);
+    const tU = runAdvance(wU, sqU);
+    const wT = makeWorld({ field: flatField, seed: 9 });
+    addEnemy(wT, 0, 15);
+    const sqT = mkAttackSquad(wT, 0, 0, 0, 30);
+    const tT = runAdvance(wT, sqT);
+    ok("SQUAD-PACE timing: unthreatened 30m advance under half threatened time",
+      sqU.order === "defend" && sqT.order === "defend" && tU < tT / 2,
+      `unthreatened=${tU.toFixed(1)}s threatened=${tT.toFixed(1)}s`);
+    globalThis.__squadPaceTimes = { tU, tT };
+  }
+
+  // --- draw-count stability: equal completed legs -> identical rng draws.
+  {
+    const countDraws = (world) => { const r = world.rng; let n = 0; world.rng = () => { n++; return r(); }; return () => n; };
+    const runLegs = (world, sq, legs) => {
+      const draws = countDraws(world);
+      let done = 0, had = false;
+      for (let i = 0; i < 120000 && done < legs && sq.order === "attack"; i++) {
+        stepSquad(world, sq, DT); world.t += DT;
+        if (sq._legTarget) had = true;
+        else if (had) { had = false; done++; } // leg completed (target consumed)
+      }
+      return { done, draws: draws() };
+    };
+    const wU = makeWorld({ field: flatField, seed: 11 });
+    const rU = runLegs(wU, mkAttackSquad(wU, 0, 0, 0, 100), 3);
+    const wT = makeWorld({ field: flatField, seed: 11 });
+    addEnemy(wT, 0, 12);
+    const rT = runLegs(wT, mkAttackSquad(wT, 0, 0, 0, 100), 3);
+    ok("SQUAD-PACE draws: identical draw count for equal legs (threatened vs not)",
+      rU.done === 3 && rT.done === 3 && rU.draws === rT.draws,
+      `unthreatened=${rU.draws}/${rU.done} legs threatened=${rT.draws}/${rT.done} legs`);
+  }
+
+  // --- threat radius boundary: enemy at 24m -> careful (<=6m leg); at 26m
+  // -> double-time (9m leg). First leg target measured off the start anchor.
+  {
+    const legLen = (enemyX) => {
+      const w = makeWorld({ field: flatField, seed: 13 });
+      addEnemy(w, enemyX, 0);
+      const sq = mkAttackSquad(w, 0, 0, 0, 30);
+      stepSquad(w, sq, DT);
+      return Math.hypot(sq._legTarget.x, sq._legTarget.z);
+    };
+    const near = legLen(24), far = legLen(26);
+    ok("SQUAD-PACE boundary: enemy at 24m -> careful 6m legs", near <= 6.01, `leg=${near.toFixed(2)}m`);
+    ok("SQUAD-PACE boundary: enemy at 26m -> double-time 9m legs", Math.abs(far - 9) < 0.01, `leg=${far.toFixed(2)}m`);
+  }
+
+  // --- twin determinism: identical worlds (enemy behind the start, so the
+  // squad transitions threatened -> unthreatened mid-advance) track exactly.
+  {
+    const mk = () => {
+      const w = makeWorld({ field: flatField, seed: 21 });
+      addEnemy(w, 0, -10);
+      return { w, sq: mkAttackSquad(w, 0, 0, 0, 30) };
+    };
+    const a = mk(), b = mk();
+    let same = true;
+    for (let i = 0; i < 30000 && (a.sq.order === "attack" || b.sq.order === "attack"); i++) {
+      stepSquad(a.w, a.sq, DT); a.w.t += DT;
+      stepSquad(b.w, b.sq, DT); b.w.t += DT;
+      if (a.sq.anchor.x !== b.sq.anchor.x || a.sq.anchor.z !== b.sq.anchor.z || a.sq.order !== b.sq.order) { same = false; break; }
+    }
+    ok("SQUAD-PACE twins: identical seeds -> identical anchor paths through the threat transition",
+      same && a.sq.order === "defend" && b.sq.order === "defend", `same=${same} orders=${a.sq.order}/${b.sq.order}`);
   }
 }
 

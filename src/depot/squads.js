@@ -178,6 +178,29 @@ function defaultThreatBearing(world, squad, from) {
   return 0;
 }
 
+// ------------------------------------------------------ threat-gated pace
+// A squad is THREATENED iff any live team-2 unit/vehicle sits within 25m of
+// its anchor OR any member's lastHit changed within the last 4s (sampled —
+// lastHit is an identity-compared info object from core.js applyDamage, so
+// we stamp world.t when we SEE it change; computed only at leg boundaries,
+// never per tick). Deterministic; no rng.
+export const THREAT_RADIUS = 25; // m from squad anchor
+export const THREAT_HIT_WINDOW = 4; // s since a member's lastHit changed
+export function squadThreatened(world, squad, members) {
+  let hit = false;
+  for (const u of members) {
+    if (u.lastHit !== u._paceHit) { u._paceHit = u.lastHit; u._paceHitT = world.t; }
+    if (u._paceHit && world.t - u._paceHitT < THREAT_HIT_WINDOW) hit = true;
+  }
+  if (hit) return true;
+  for (const b of world.bodies) {
+    if (!b.alive || b.team !== 2) continue;
+    if (b.kind !== "unit" && b.kind !== "vehicle") continue;
+    if (Math.hypot(b.pos.x - squad.anchor.x, b.pos.z - squad.anchor.z) <= THREAT_RADIUS) return true;
+  }
+  return false;
+}
+
 // stepSquad(world, squad, dt): order machine.
 //   defend: members hold formation around anchor, each man micro-seeks the
 //           lowest-exposure spot within 3m of his slot (recompute on threat
@@ -212,15 +235,34 @@ export function stepSquad(world, squad, dt) {
       // moving leg: pick a cover-hop target if we don't have one yet (pure,
       // no rng), then advance the squad anchor toward it.
       if (!squad._legTarget) {
-        const bearing = defaultThreatBearing(world, squad, { x: cx, z: cz });
-        squad._legTarget = coverHop(world, { x: cx, z: cz }, squad.dest, bearing);
+        // LEG BOUNDARY: threat state re-evaluated here only (not per-tick).
+        squad._threatened = squadThreatened(world, squad, members);
+        if (squad._threatened) {
+          const bearing = defaultThreatBearing(world, squad, { x: cx, z: cz });
+          squad._legTarget = coverHop(world, { x: cx, z: cz }, squad.dest, bearing);
+        } else {
+          // DOUBLE-TIME: nobody's shooting, so exposure is ignored — the
+          // straightest-progress candidate is the direct step toward dest,
+          // at 1.5x the careful hop radius (9m). Deterministic, no rng.
+          const step = Math.min(HOP_R * 1.5, dToDest);
+          squad._legTarget = {
+            x: cx + ((squad.dest.x - cx) / dToDest) * step,
+            z: cz + ((squad.dest.z - cz) / dToDest) * step,
+          };
+        }
       }
       const lx = squad._legTarget.x - cx, lz = squad._legTarget.z - cz;
       const ld = Math.hypot(lx, lz);
       if (ld < 0.3) {
-        // arrived at this leg's cover point: pause 1.5-3s before the next
-        // hop. ONE rng draw here — exactly once per attack leg, per the brief.
-        squad._pauseT = 1.5 + world.rng() * 1.5;
+        // arrived at this leg's cover point. ONE rng draw here — exactly
+        // once per attack leg, per the brief — and it is drawn UNCONDITIONALLY
+        // so the rng stream stays identical between threatened and
+        // unthreatened runs of equal legs (draw-count stability contract);
+        // an unthreatened squad discards the dwell and rolls straight into
+        // the next leg.
+        const dwell = 1.5 + world.rng() * 1.5;
+        if (squad._threatened) squad._pauseT = dwell; // pause 1.5-3s before the next hop
+        else squad._legTarget = null; // double-time: skip the dwell, next tick picks a fresh leg
       } else {
         const step = Math.min(ld, MOVE_SPEED * dt);
         squad.anchor = { x: cx + (lx / ld) * step, z: cz + (lz / ld) * step };
