@@ -3508,6 +3508,178 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
   }
 }
 
+// ==== ROT-PATH ===============================================================
+// Pathfinding + walking under all 4 map orientations. History: territory was
+// dead on 3/4 orientations because emitters skipped invW — the same class of
+// bug could hide in any movement path that mixes CANONICAL (u,v) grid data
+// with WORLD (x,z) body positions. Each lane below drives a real movement
+// path with the ORIENT-explicit transforms (fwdUFor/fwdDirFor/invWFor) across
+// ALL FOUR orientations and asserts world-space progress toward the rotated
+// objective. Squad movement (squads.js) is world-space-pure, so its lanes pin
+// that the SAME scenario, rotated, still converges (equivariance by behavior,
+// not by exact coordinates — spawn jitter is drawn in world axes).
+{
+  const ROT_DT = 1 / 60;
+  const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+  // faithful replica of DepotGame.jsx's makeGrid coordinate formulas (28x56,
+  // cs 2), ORIENT-explicit — pins the worldToGrid/gridToWorld transform pair.
+  const RG_CS = 2.0, RG_W = 28, RG_H = 56, RG_OX = -(RG_W * RG_CS) / 2, RG_OZ = -(RG_H * RG_CS) / 2;
+  const realGridXform = (O) => ({
+    worldToGrid: (x, z) => { const c = invWFor(O, x, z); return { gx: Math.floor((c.u - RG_OX) / RG_CS), gz: Math.floor((c.v - RG_OZ) / RG_CS) }; },
+    gridToWorld: (gx, gz) => fwdUFor(O, RG_OX + (gx + 0.5) * RG_CS, RG_OZ + (gz + 0.5) * RG_CS),
+  });
+  // canonical straight flow toward +v (the depot direction), any position.
+  const canonFlowGrid = () => ({
+    cellAt: () => ({ dist: 5, dx: 0, dz: 1, ice: false }),
+    worldToGrid: () => null, inBounds: () => false,
+    cells: [], idx: () => 0, gridToWorld: () => ({ x: 0, z: 0 }),
+  });
+
+  // (a) transform pins: grid round-trip identity + fwdDirFor is fwdUFor's
+  // linear part (length-preserving, invertible) — every orientation.
+  for (let O = 0; O < 4; O++) {
+    const g = realGridXform(O);
+    let rt = true;
+    for (const [gx, gz] of [[0, 0], [27, 0], [0, 55], [27, 55], [13, 27], [5, 40]]) {
+      const w = g.gridToWorld(gx, gz), back = g.worldToGrid(w.x, w.z);
+      if (back.gx !== gx || back.gz !== gz) rt = false;
+    }
+    ok(`ROT-PATH a: orientation ${O} grid worldToGrid(gridToWorld) round-trips`, rt);
+    const fd = fwdDirFor(O, 0.6, 0.8), fu = fwdUFor(O, 0.6, 0.8);
+    ok(`ROT-PATH a: orientation ${O} fwdDirFor matches fwdUFor's linear part, length preserved`,
+      fd.x === fu.x && fd.z === fu.z && Math.abs(Math.hypot(fd.x, fd.z) - 1) < 1e-9);
+  }
+
+  // (b) infantry flow-field march: a conscript on a canonical +v flow closes
+  // on the ROTATED objective fwdU(0,49) under every orientation.
+  for (let O = 0; O < 4; O++) {
+    const world = makeWorld({ field: flatF, seed: 41 });
+    world.depotCombat = true;
+    const sp = fwdUFor(O, 0, 0);
+    const u = spawnUnit(world, { x: sp.x, z: sp.z }, "");
+    u.pos.x = sp.x; u.pos.z = sp.z; // pin world-axis spawn jitter
+    const obj = fwdUFor(O, 0, 49);
+    const d0 = Math.hypot(u.pos.x - obj.x, u.pos.z - obj.z);
+    const grid = canonFlowGrid();
+    const fwd = (du, dv) => fwdDirFor(O, du, dv);
+    const toUV = (x, z) => invWFor(O, x, z);
+    for (let i = 0; i < 300; i++) { stepUnits(world, grid, fwd, undefined, toUV); stepWorld(world); }
+    const d1 = Math.hypot(u.pos.x - obj.x, u.pos.z - obj.z);
+    ok(`ROT-PATH b: orientation ${O} infantry march closes on the rotated objective`, d1 < d0 - 4, `d0=${d0.toFixed(1)} d1=${d1.toFixed(1)}`);
+  }
+
+  // (c) tank waypoint: t.goal must sit 9m down the ROTATED flow direction —
+  // the exact fwdDir(cell.dx, cell.dz) contract stepTank relies on.
+  for (let O = 0; O < 4; O++) {
+    const world = makeWorld({ field: flatF, seed: 42 });
+    world.depotCombat = true;
+    const sp = fwdUFor(O, 0, 0);
+    const t = spawnUnit(world, { x: sp.x, z: sp.z }, "tank");
+    t.pos.x = sp.x; t.pos.z = sp.z;
+    stepUnits(world, canonFlowGrid(), (du, dv) => fwdDirFor(O, du, dv), undefined, (x, z) => invWFor(O, x, z));
+    const want = fwdDirFor(O, 0, 1);
+    const gx = t.goal.x - t.pos.x, gz = t.goal.z - t.pos.z;
+    ok(`ROT-PATH c: orientation ${O} tank goal is 9m down the rotated flow`,
+      Math.abs(gx - want.x * 9) < 1e-6 && Math.abs(gz - want.z * 9) < 1e-6, `goal=(${gx.toFixed(2)},${gz.toFixed(2)})`);
+  }
+
+  // (d) sniper vantage march: marching the rotated flow, he latches hold in
+  // the lee of a boulder interposed toward the rotated advance bearing —
+  // mirrors the 4C fixture, rotated through every orientation.
+  for (let O = 0; O < 4; O++) {
+    const world = makeWorld({ field: flatF, seed: 43 });
+    world.depotCombat = true;
+    const rock = fwdUFor(O, 0, 12);
+    addBody(world, { kind: "rock", team: 0, mass: 0, hx: 0.5, hy: 0.9, hz: 0.5, x: rock.x, y: 0.9, z: rock.z, hp: 1e9 });
+    const sp = fwdUFor(O, 0, 6);
+    const sn = spawnUnit(world, { x: sp.x, z: sp.z }, "sniper");
+    sn.pos.x = sp.x; sn.pos.z = sp.z;
+    const fwd = (du, dv) => fwdDirFor(O, du, dv);
+    const toUV = (x, z) => invWFor(O, x, z);
+    for (let i = 0; i < 1200 && !sn.hold; i++) { stepUnits(world, canonFlowGrid(), fwd, undefined, toUV); stepWorld(world); }
+    const fdw = fwdDirFor(O, 0, 1);
+    const bearing = Math.atan2(fdw.x, fdw.z);
+    ok(`ROT-PATH d: orientation ${O} sniper latches a vantage hold`, sn.hold === true);
+    ok(`ROT-PATH d: orientation ${O} held ground reads exposure < 0.35 toward the rotated advance`,
+      sn.hold === true && exposureAt(world, sn.pos.x, sn.pos.z, bearing) < 0.35);
+  }
+
+  // (e) squad ATTACK legs + double-time (world-space path, rotated scenario):
+  // unthreatened squad double-times from fwdU(0,0) to dest fwdU(0,30) and
+  // flips to defend on arrival, every orientation.
+  for (let O = 0; O < 4; O++) {
+    const world = makeWorld({ field: flatF, seed: 44 });
+    const a0 = fwdUFor(O, 0, 0), dest = fwdUFor(O, 0, 30);
+    const sq = makeSquad(1, "rifles", 1, a0.x, a0.z);
+    spawnSquadMembers(world, sq);
+    sq.order = "attack"; sq.dest = { x: dest.x, z: dest.z };
+    let ticks = 0;
+    while (sq.order === "attack" && ticks++ < 30000) { stepSquad(world, sq, ROT_DT); world.t += ROT_DT; }
+    ok(`ROT-PATH e: orientation ${O} attack squad reaches the rotated dest and flips to defend`,
+      sq.order === "defend" && Math.hypot(sq.anchor.x - dest.x, sq.anchor.z - dest.z) < 1.5, `order=${sq.order} ticks=${ticks}`);
+  }
+
+  // (f) squad ATTACK under threat: the first coverHop leg still strictly
+  // reduces distance-to-dest with the whole scene rotated (enemy near the
+  // anchor forces the careful-hop branch).
+  for (let O = 0; O < 4; O++) {
+    const world = makeWorld({ field: flatF, seed: 45 });
+    const a0 = fwdUFor(O, 0, 0), dest = fwdUFor(O, 0, 30);
+    const ep = fwdUFor(O, 3, -5);
+    addBody(world, { kind: "unit", team: 2, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: ep.x, y: 0.74, z: ep.z, hp: 40, friction: 0.5 });
+    const sq = makeSquad(1, "rifles", 1, a0.x, a0.z);
+    spawnSquadMembers(world, sq);
+    sq.order = "attack"; sq.dest = { x: dest.x, z: dest.z };
+    stepSquad(world, sq, ROT_DT);
+    const lt = sq._legTarget;
+    const dLeg = lt ? Math.hypot(dest.x - lt.x, dest.z - lt.z) : Infinity;
+    ok(`ROT-PATH f: orientation ${O} threatened coverHop leg strictly reduces distance-to-dest`,
+      sq._threatened === true && lt && dLeg < 30 - 1e-6, `dLeg=${dLeg.toFixed(2)}`);
+  }
+
+  // (g) DEFEND slot-seek with masonry in the ring: rotated wall at fwdU(0,2.4)
+  // sits on a formation slot at 2 of the 4 orientations — every member's goal
+  // must be vetted clear of it (clearSlot) and members must physically
+  // converge on their goals. MG team (2 members) rather than rifles (4):
+  // with 4 members the O=3 wall placement routes two members onto crossing
+  // paths where they mutually body-block ~2m short of their slots — a
+  // pre-existing, orientation-INDEPENDENT crowding deadlock (reproduced
+  // byte-identically with ORIENT code removed entirely: seekGoal's
+  // steer-around fan only probes STATIC solids, never fellow members).
+  // Deliberately not fixed in the ROT-PATH lane — it is not a coordinate-
+  // transform bug, and a unit-avoidance change would ripple through every
+  // squad determinism pin in this file.
+  for (let O = 0; O < 4; O++) {
+    const world = makeWorld({ field: flatF, seed: 46 });
+    const a0 = fwdUFor(O, 0, 0), wp = fwdUFor(O, 0, 2.4);
+    const wall = addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.4, hy: 0.83, hz: 0.4, x: wp.x, y: 0.83, z: wp.z, hp: 999 });
+    const sq = makeSquad(1, "mg", 1, a0.x, a0.z);
+    spawnSquadMembers(world, sq);
+    for (let i = 0; i < 900; i++) { stepSquad(world, sq, world.dt); stepWorld(world); }
+    let converged = true, clearOfWall = true;
+    for (const id of sq.memberIds) {
+      const u = world.byId.get(id);
+      if (!u || !u.alive) { converged = false; continue; }
+      if (u.goal && Math.hypot(u.goal.x - u.pos.x, u.goal.z - u.pos.z) > 1.2) converged = false;
+      if (Math.abs(u.pos.x - wall.pos.x) < wall.hx + 0.2 && Math.abs(u.pos.z - wall.pos.z) < wall.hz + 0.2) clearOfWall = false;
+    }
+    ok(`ROT-PATH g: orientation ${O} defend members converge on vetted slots, none inside the wall`, converged && clearOfWall);
+  }
+
+  // (h) leak radius at the rotated objective: an enemy at fwdU(0,48.5)
+  // leaks against OBJ_POS = fwdU(0,49) under every orientation.
+  for (let O = 0; O < 4; O++) {
+    const world = makeWorld({ field: flatF, seed: 47 });
+    const bp = fwdUFor(O, 0, 48.5), obj = fwdUFor(O, 0, 49);
+    const u = spawnUnit(world, { x: bp.x, z: bp.z }, "");
+    u.pos.x = bp.x; u.pos.z = bp.z;
+    checkLeaks(world, { x: obj.x, z: obj.z });
+    const leaked = world.events.some((e) => e.type === "leak");
+    ok(`ROT-PATH h: orientation ${O} enemy at the rotated depot leaks`, leaked && !world.byId.has(u.id));
+  }
+}
+// ==== end ROT-PATH ===========================================================
+
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
   process.exit(1);
