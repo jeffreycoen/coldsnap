@@ -15,7 +15,8 @@ import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, WAVES, MASON } from "./specs.js";
 import { windAt } from "./wind.js";
-import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot, fieldReaches } from "./state.js";
+import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed } from "./state.js";
+import { reachPolygon } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks, payBounties } from "./units.js";
 import { makeRegiment, payTown } from "./economy.js";
 import { makeTerritory, stepTerritory, holderAt, canBuild, EMIT } from "./territory.js";
@@ -328,11 +329,16 @@ function stepTowers(world, T) {
     const spec = TOWER_SPECS[b.towerType] || TOWER_SPECS.gun;
     if (spec.fireRate <= 0) continue;
     b.fireCd = (b.fireCd || 0) - dt;
+    // effRange: towers don't move, so this is computed once at build time
+    // (buildAt below) and cached on the body — b.effRange falls back to
+    // spec.range for any tower predating that cache (shouldn't happen, but
+    // keeps old saves/tests that construct tower bodies directly working).
+    const eR = b.effRange != null ? b.effRange : spec.range;
     let best = b.targetId ? world.byId.get(b.targetId) : null;
     if (best && (!best.alive || best.team !== 2 || best.kind !== "unit")) best = null;
     if (best) {
       const dx = best.pos.x - b.pos.x, dz = best.pos.z - b.pos.z;
-      if (dx * dx + dz * dz > spec.range * spec.range) best = null;
+      if (dx * dx + dz * dz > eR * eR) best = null;
     }
     // Targeting gate (symmetric with the attacker's own check in units.js):
     // a tower may only acquire/keep a target where the PLAYER field reaches
@@ -342,7 +348,7 @@ function stepTowers(world, T) {
     b.scanCd = (b.scanCd || 0) - dt;
     if (!best && b.scanCd <= 0) {
       b.scanCd = 0.11 + (b.id % 8) * 0.011;
-      let bd = spec.range * spec.range;
+      let bd = eR * eR;
       for (const e of world.bodies) {
         if (e.kind !== "unit" || !e.alive || e.team !== 2) continue;
         const c = invW(e.pos.x, e.pos.z);
@@ -662,7 +668,7 @@ export default function DepotGame({ onExit }) {
         phase: PHASE.BUILD, dispatch: null, lastDispatch: null,
         focus: (() => { const w = fwdU(0, 6); return { x: w.x, y: field.heightAt(w.x, w.z), z: w.z }; })(),
         zoom: 1, acc: 0, t: 0, fps: 60, fpsAcc: 0, fpsN: 0,
-        hover: null, pointer: null, toasts: [],
+        hover: null, pointer: null, toasts: [], pending: null,
         hudT: 0, keys: {}, sellById: null, audio: A,
         // The attacker's economy — seeded off the run's own rng stream, not
         // an unseeded generator, so ?seed= replays reproduce the same
@@ -729,6 +735,9 @@ export default function DepotGame({ onExit }) {
           b = addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: spec.hy, hz: 0.8, x: wp.x, y: y + spec.hy, z: wp.z, hp: spec.hp });
           b.towerType = mode;
           b.flagPole = true;
+          // effRange cached once (Task 3): towers are static, so the
+          // elevation-scaled acquisition range never changes after this.
+          b.effRange = effRange(world, { x: wp.x, y: y + spec.hy + 0.45, z: wp.z }, spec);
         } else {
           b = addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.9, hy: 0.9, hz: 0.9, x: wp.x, y: y + 0.9, z: wp.z, hp: 70 });
         }
@@ -736,6 +745,49 @@ export default function DepotGame({ onExit }) {
         cell.wallId = b.id;
         S.resources -= cost;
         recomputeFlow();
+      };
+      // Validate-only twin of buildAt's early checks (Task 3): used to gate
+      // entry into the pending-confirm flow WITHOUT mutating anything —
+      // cell.blocked stays false, no scrap moves, until confirmPending()
+      // below actually calls buildAt. Mirrors buildAt's checks exactly
+      // (same order, same toasts) so a cell that would fail at confirm time
+      // never gets this far in the first place.
+      const canBuildAt = (gx, gz, mode) => {
+        if (!grid.inBounds(gx, gz)) return { ok: false };
+        const cell = grid.cells[grid.idx(gx, gz)];
+        const wp = grid.gridToWorld(gx, gz), c0 = invW(wp.x, wp.z);
+        const spec = TOWER_SPECS[mode];
+        const v = validatePlacement({
+          blocked: !!(cell.blocked || cell.wallId), ice: !!cell.ice,
+          held: canBuild(T, c0.u, c0.v), resources: S.resources, cost: spec.cost,
+        });
+        return v.ok ? { ok: true, spec, wp } : v;
+      };
+      // Pending placement (Task 3): tap a buildable cell in tower mode ->
+      // ghost + reach polygon + ✓/✗, armed after 350ms, no scrap spent until
+      // confirmPending. Walls stay exempt (instant, via buildAt directly) —
+      // a ring/confirm pair on a 5-scrap wall is meaningless (brief).
+      const clearPending = () => { S.pending = null; };
+      const startPending = (gx, gz, mode, v) => {
+        const spec = v.spec, wp = v.wp;
+        const y = field.heightAt(wp.x, wp.z);
+        const muzzle = { x: wp.x, y: y + spec.hy + 0.45, z: wp.z };
+        let poly = null, ringR = 0, color = 0xff5544;
+        if (mode === "frost") {
+          // aura, not a gun: plain radius, no LOS clipping, blue-white —
+          // "honest about what it does" (brief).
+          ringR = spec.range;
+          color = 0x9fdcff;
+        } else {
+          poly = reachPolygon(world, T, muzzle, spec, 1, invW);
+        }
+        S.pending = { gx, gz, mode, wp, y, poly, ringR, color, cost: spec.cost, armedAt: world.t + PENDING_ARM_S };
+      };
+      const confirmPending = () => {
+        const p = S.pending;
+        if (!pendingArmed(p, world.t)) return;
+        S.pending = null;
+        buildAt(p.gx, p.gz, p.mode);
       };
       const sellAt = (gx, gz) => {
         if (!grid.inBounds(gx, gz)) return;
@@ -760,6 +812,8 @@ export default function DepotGame({ onExit }) {
         S.inspectId = null;
       };
       S.sellById = sellById;
+      S.confirmPending = confirmPending;
+      S.clearPending = clearPending;
       S.rotate = (d) => R.rotateStep(d);
       const onStructureLost = (b) => {
         for (const c of grid.cells) if (c.wallId === b.id) { c.wallId = null; c.blocked = false; }
@@ -797,14 +851,23 @@ export default function DepotGame({ onExit }) {
       };
       const tapAt = (cx, cy) => {
         if (!S.started || S.gameOver || S.victory) return;
+        // any tap on the canvas while a placement is pending resolves it —
+        // confirm/cancel are the ✓/✗ HTML buttons (separate DOM elements,
+        // so their own onClick fires instead of this canvas handler); a tap
+        // that reaches here is by definition "elsewhere" and cancels.
+        if (S.pending) { clearPending(); return; }
         const p = groundPoint(cx, cy);
         if (!p) { S.inspectId = null; return; }
         const g = grid.worldToGrid(p.x, p.z);
         if (!grid.inBounds(g.gx, g.gz)) { S.inspectId = null; return; }
         const cell2 = grid.cells[grid.idx(g.gx, g.gz)];
-        if (S.sellMode) { S.inspectId = null; sellAt(g.gx, g.gz); }
-        else if (cell2.wallId && world.byId.has(cell2.wallId)) S.inspectId = cell2.wallId;
-        else { S.inspectId = null; buildAt(g.gx, g.gz, S.mode); }
+        if (S.sellMode) { S.inspectId = null; sellAt(g.gx, g.gz); return; }
+        if (cell2.wallId && world.byId.has(cell2.wallId)) { S.inspectId = cell2.wallId; return; }
+        S.inspectId = null;
+        if (S.mode === "wall") { buildAt(g.gx, g.gz, "wall"); return; } // walls exempt: instant, as today
+        const v = canBuildAt(g.gx, g.gz, S.mode);
+        if (!v.ok) { toast(v.msg); return; }
+        startPending(g.gx, g.gz, S.mode, v);
       };
 
       const pointers = new Map();
@@ -1044,6 +1107,43 @@ export default function DepotGame({ onExit }) {
         }
         return best;
       };
+      // Screenshot harness only (Task 3 verification, not a smoke-test dep):
+      // the highest buildable+held cell within reach of the flag, and the
+      // buildable+held cell nearest a live rock — so a ring-on-a-rise and a
+      // ring-bitten-by-an-obstacle shot can be composed deterministically
+      // on the pinned seed instead of eyeballing the procedural map.
+      window.__DEPOTFINDRISE__ = () => {
+        const flag = world.bodies.find((b) => b.kind === "flag");
+        if (!flag) return null;
+        let best = null, bestY = -1e9;
+        for (let gz = 0; gz < GRID_H; gz++) for (let gx = 0; gx < GRID_W; gx++) {
+          const cell = grid.cells[grid.idx(gx, gz)];
+          if (cell.blocked || cell.wallId || cell.ice) continue;
+          const wp = grid.gridToWorld(gx, gz);
+          const c = invW(wp.x, wp.z);
+          if (!canBuild(T, c.u, c.v)) continue;
+          if (Math.hypot(wp.x - flag.pos.x, wp.z - flag.pos.z) > 40) continue;
+          const y = field.heightAt(wp.x, wp.z);
+          if (y > bestY) { bestY = y; best = { x: wp.x, z: wp.z, y }; }
+        }
+        return best;
+      };
+      window.__DEPOTFINDNEARROCK__ = () => {
+        const rocks = world.bodies.filter((b) => b.kind === "rock" && b.alive);
+        let best = null, bestD = 1e9;
+        for (let gz = 0; gz < GRID_H; gz++) for (let gx = 0; gx < GRID_W; gx++) {
+          const cell = grid.cells[grid.idx(gx, gz)];
+          if (cell.blocked || cell.wallId || cell.ice) continue;
+          const wp = grid.gridToWorld(gx, gz);
+          const c = invW(wp.x, wp.z);
+          if (!canBuild(T, c.u, c.v)) continue;
+          for (const r of rocks) {
+            const d = Math.hypot(wp.x - r.pos.x, wp.z - r.pos.z);
+            if (d < bestD && d > 2) { bestD = d; best = { x: wp.x, z: wp.z }; }
+          }
+        }
+        return best;
+      };
 
       let last = performance.now();
       const STEP = 1 / 120;
@@ -1068,7 +1168,7 @@ export default function DepotGame({ onExit }) {
           S.focus.x = Math.max(-EXT.x, Math.min(EXT.x, S.focus.x));
           S.focus.z = Math.max(-EXT.z, Math.min(EXT.z, S.focus.z));
           S.focus.y = field.heightAt(S.focus.x, S.focus.z);
-          if (!isTouch && S.pointer && S.started && !S.gameOver && !S.victory) {
+          if (!isTouch && S.pointer && S.started && !S.gameOver && !S.victory && !S.pending) {
             const p = groundPoint(S.pointer.x, S.pointer.y);
             if (p) {
               const g = grid.worldToGrid(p.x, p.z);
@@ -1133,7 +1233,26 @@ export default function DepotGame({ onExit }) {
           A.tick(world, dt);
           if (S.hover) R.overlay.setHover(true, S.hover.x, S.hover.z, field.heightAt(S.hover.x, S.hover.z), S.hover.range, S.hover.valid, GRID_CS);
           else R.overlay.setHover(false);
+          if (S.pending) {
+            const P0 = S.pending;
+            R.overlay.setPending(true, P0.wp.x, P0.y, P0.wp.z, P0.poly, P0.ringR, P0.color);
+          } else R.overlay.setPending(false);
           R.render(dt, S.focus, AIM_OFF, 0);
+          // ✓/✗ screen-space anchor (Task 3): rotation-proof because it's
+          // recomputed from the live camera every frame via project() —
+          // Q/E view rotation or a pan moves the cell's projected point,
+          // and this just follows it, rather than being pinned once at tap
+          // time. Written to a ref-adjacent plain field on S (not React
+          // state) so it doesn't force a rerender every frame; the hud tick
+          // below (throttled to ~8Hz) is what actually pushes it to React.
+          if (S.pending) {
+            const P0 = S.pending;
+            const nd = R.project ? R.project(P0.wp.x, P0.y + 1.6, P0.wp.z) : null;
+            if (nd) {
+              const rect = canvas.getBoundingClientRect();
+              S.pendingScreen = { x: rect.left + (nd.x * 0.5 + 0.5) * rect.width, y: rect.top + (-nd.y * 0.5 + 0.5) * rect.height };
+            } else S.pendingScreen = null;
+          } else S.pendingScreen = null;
           S.hudT += dt;
           if (S.hudT > 0.12) {
             S.hudT = 0;
@@ -1156,6 +1275,10 @@ export default function DepotGame({ onExit }) {
               paused: S.paused, speed: S.speed,
               muted: A.muted, seed: MAP_SEED,
               toasts: S.toasts.map((t) => t.txt),
+              pending: S.pending && S.pendingScreen ? {
+                x: S.pendingScreen.x, y: S.pendingScreen.y,
+                cost: S.pending.cost, armed: pendingArmed(S.pending, world.t),
+              } : null,
               inspect: (() => {
                 if (!S.inspectId) return null;
                 const b = world.byId.get(S.inspectId);
@@ -1190,7 +1313,7 @@ export default function DepotGame({ onExit }) {
         canvas.removeEventListener("touchstart", blockTouch);
         window.removeEventListener("keydown", kd);
         window.removeEventListener("keyup", ku);
-        for (const k of ["__DEPOT__", "__DEPOTACK__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTTHIN__", "__DEPOTEND__", "__DEPOTFOCUS__", "__DEPOTGETFOCUS__", "__DEPOTSETT__", "__DEPOTFLAGS__", "__DEPOTHOLD__", "__DEPOTFINDBUILDABLE__"]) delete window[k];
+        for (const k of ["__DEPOT__", "__DEPOTACK__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTTHIN__", "__DEPOTEND__", "__DEPOTFOCUS__", "__DEPOTGETFOCUS__", "__DEPOTSETT__", "__DEPOTFLAGS__", "__DEPOTHOLD__", "__DEPOTFINDBUILDABLE__", "__DEPOTFINDRISE__", "__DEPOTFINDNEARROCK__"]) delete window[k];
         A.dispose();
         if (R) R.dispose();
         stateRef.current = null;
@@ -1204,12 +1327,12 @@ export default function DepotGame({ onExit }) {
 
   const setMode = (m) => {
     const S = stateRef.current; if (!S) return;
-    S.mode = m; S.sellMode = false; S.inspectId = null;
+    S.mode = m; S.sellMode = false; S.inspectId = null; S.pending = null;
     setHud((h) => ({ ...h, mode: m, sellMode: false }));
   };
   const toggleSell = () => {
     const S = stateRef.current; if (!S) return;
-    S.sellMode = !S.sellMode; S.inspectId = null;
+    S.sellMode = !S.sellMode; S.inspectId = null; S.pending = null;
     setHud((h) => ({ ...h, sellMode: S.sellMode }));
   };
   const startGame = () => {
@@ -1292,6 +1415,21 @@ export default function DepotGame({ onExit }) {
           />
         );
       })()}
+
+      {hud.pending && (
+        <div style={{ position: "absolute", left: hud.pending.x, top: hud.pending.y, transform: "translate(-50%, -50%)", zIndex: 7, display: "flex", gap: 6, pointerEvents: "auto" }}>
+          <button data-pending-confirm
+            style={{ ...P.btn, borderColor: "#4aff8c", color: "#4aff8c", opacity: hud.pending.armed ? 1 : 0.5, fontWeight: "bold", fontSize: 16, padding: "2px 10px" }}
+            onClick={() => stateRef.current && stateRef.current.confirmPending()}>
+            ✓ ◆{hud.pending.cost}
+          </button>
+          <button data-pending-cancel
+            style={{ ...P.btn, borderColor: "#ff6b5e", color: "#ff6b5e", fontWeight: "bold", fontSize: 16, padding: "2px 10px" }}
+            onClick={() => stateRef.current && stateRef.current.clearPending()}>
+            ✗
+          </button>
+        </div>
+      )}
 
       {hud.inspect && (
         <div style={{ position: "absolute", left: "50%", transform: "translateX(-50%)", bottom: isTouch ? 96 : 104, zIndex: 5 }}>

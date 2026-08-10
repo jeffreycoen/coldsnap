@@ -812,6 +812,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // nothing here exists for the other modes.
   const OK_C = new THREE.Color(0x4aff8c), BAD_C = new THREE.Color(0xff6b5e);
   let hoverPad = null, hoverRing = null, hoverFill = null, objMark = null;
+  let pendingPad = null, pendingFill = null, pendingEdge = null, pendingAuraRing = null, pendingAuraFill = null;
   const overlay = {
     // ghost build cursor: pad snapped to a cell (cs meters), ring/fill at range r
     setHover(on, x, z, y, r, okFlag, cs) {
@@ -849,6 +850,55 @@ export function makeRenderer(canvas, world0, opts = {}) {
         scene.add(objMark);
       }
       objMark.position.set(x, y, z);
+    },
+    // Task 3: placement preview — translucent ghost pad + a filled/edged
+    // reach polygon (or a plain aura ring for frost, which sets pts=null
+    // and uses ringR instead — an aura isn't LOS-clipped, so no polygon).
+    // Lazily built on first use, same pattern as hoverPad/hoverRing above.
+    setPending(on, x, y, z, pts, ringR, color) {
+      if (!pendingPad) {
+        pendingPad = new THREE.Mesh(new THREE.BoxGeometry(1, 1.8, 1), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.32, depthWrite: false }));
+        pendingPad.layers.set(1); scene.add(pendingPad);
+        pendingFill = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: 0xff5544, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide }));
+        pendingFill.layers.set(1); scene.add(pendingFill);
+        pendingEdge = new THREE.LineLoop(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xff5544, transparent: true, opacity: 0.85 }));
+        pendingEdge.layers.set(1); scene.add(pendingEdge);
+        pendingAuraRing = new THREE.Mesh(new THREE.RingGeometry(0.96, 1.0, 48), new THREE.MeshBasicMaterial({ color: 0x9fdcff, transparent: true, opacity: 0.7, depthWrite: false }));
+        pendingAuraRing.rotation.x = -Math.PI / 2; pendingAuraRing.layers.set(1); scene.add(pendingAuraRing);
+        pendingAuraFill = new THREE.Mesh(new THREE.CircleGeometry(1, 48), new THREE.MeshBasicMaterial({ color: 0x9fdcff, transparent: true, opacity: 0.14, depthWrite: false }));
+        pendingAuraFill.rotation.x = -Math.PI / 2; pendingAuraFill.layers.set(1); scene.add(pendingAuraFill);
+      }
+      const havePoly = on && pts && pts.length > 2;
+      const haveAura = on && !havePoly && ringR > 0;
+      pendingPad.visible = !!on;
+      pendingFill.visible = havePoly;
+      pendingEdge.visible = havePoly;
+      pendingAuraRing.visible = haveAura;
+      pendingAuraFill.visible = haveAura;
+      if (!on) return;
+      pendingPad.position.set(x, y + 0.9, z);
+      if (havePoly) {
+        const n = pts.length;
+        const posArr = new Float32Array((n + 1) * 3);
+        posArr[0] = x; posArr[1] = y + 0.14; posArr[2] = z;
+        for (let i = 0; i < n; i++) { posArr[(i + 1) * 3] = pts[i].x; posArr[(i + 1) * 3 + 1] = y + 0.14; posArr[(i + 1) * 3 + 2] = pts[i].z; }
+        const idx = [];
+        for (let i = 1; i <= n; i++) idx.push(0, i, (i % n) + 1);
+        pendingFill.geometry.dispose();
+        pendingFill.geometry = new THREE.BufferGeometry();
+        pendingFill.geometry.setAttribute("position", new THREE.BufferAttribute(posArr, 3));
+        pendingFill.geometry.setIndex(idx);
+        const edgeArr = new Float32Array(n * 3);
+        for (let i = 0; i < n; i++) { edgeArr[i * 3] = pts[i].x; edgeArr[i * 3 + 1] = y + 0.16; edgeArr[i * 3 + 2] = pts[i].z; }
+        pendingEdge.geometry.dispose();
+        pendingEdge.geometry = new THREE.BufferGeometry();
+        pendingEdge.geometry.setAttribute("position", new THREE.BufferAttribute(edgeArr, 3));
+        pendingFill.material.color.setHex(color || 0xff5544);
+        pendingEdge.material.color.setHex(color || 0xff5544);
+      } else if (haveAura) {
+        pendingAuraRing.position.set(x, y + 0.14, z); pendingAuraRing.scale.set(ringR, ringR, 1);
+        pendingAuraFill.position.set(x, y + 0.12, z); pendingAuraFill.scale.set(ringR, ringR, 1);
+      }
     },
     // spawn banners: red cloth on a pole at each entry point
     setBanners(pts) {

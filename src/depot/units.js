@@ -10,7 +10,7 @@
 // is world.rng() (mulberry32, seeded); an unseeded Math dot random() call is
 // forbidden in src/depot (scripts/depot-lint.mjs).
 import { addBody, applyDamage, explode } from "../engine/core.js";
-import { shooterFire, fieldReaches } from "./state.js";
+import { shooterFire, fieldReaches, effRange } from "./state.js";
 import { ENEMY_SPECS, ENEMY_FIRE, TANK } from "./specs.js";
 
 // ---------------------------------------------------------------- spawning
@@ -98,7 +98,9 @@ function stepTank(world, grid, t, dt, fwdDir, T, toUV = (x, z) => ({ u: x, v: z 
   t.gunT = (t.gunT || 0) - dt;
   if (t.gunT > 0) return;
   const fspec = ENEMY_FIRE.tank;
-  let tgt = null, td = fspec.range * fspec.range;
+  const muzzle = { x: t.pos.x, y: t.pos.y + 1.2, z: t.pos.z };
+  const eR = effRange(world, muzzle, fspec);
+  let tgt = null, td = eR * eR;
   for (const s of world.bodies) {
     if ((s.kind !== "tower" && s.kind !== "wall") || !s.alive) continue;
     { const c = toUV(s.pos.x, s.pos.z); if (!fieldReaches(T, c.u, c.v, 2)) continue; }
@@ -107,7 +109,6 @@ function stepTank(world, grid, t, dt, fwdDir, T, toUV = (x, z) => ({ u: x, v: z 
   }
   if (!tgt) { t.gunT = 0.5; return; }
   t.gunT = fspec.cd + world.rng() * (fspec.cdVar || 0);
-  const muzzle = { x: t.pos.x, y: t.pos.y + 1.2, z: t.pos.z };
   shooterFire(world, t, muzzle, tgt, fspec, { attacker: "enemy", hitStruct: true });
 }
 
@@ -118,7 +119,11 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u
   const fspec = ENEMY_FIRE.rifle;
   u.fireCd = (u.fireCd || 0) - dt;
   u.scanCd = (u.scanCd || 0) - dt;
-  const R2 = fspec.range * fspec.range;
+  const muzzle = { x: u.pos.x, y: u.pos.y + 0.5, z: u.pos.z };
+  // per-rescan (unlike towers' static positions, an infantryman's own effR
+  // moves with it) — recomputed every scan tick below and reused for the
+  // sticky-target validity check in between scans (u._effR).
+  let R2 = (u._effR != null ? u._effR : fspec.range) ** 2;
   let tgt = u.tgtId ? world.byId.get(u.tgtId) : null;
   if (tgt) {
     const dx = tgt.pos.x - u.pos.x, dz = tgt.pos.z - u.pos.z;
@@ -127,6 +132,8 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u
   }
   if (!tgt && u.scanCd <= 0) {
     u.scanCd = 0.13 + (u.id % 8) * 0.012;
+    u._effR = effRange(world, muzzle, fspec);
+    R2 = u._effR * u._effR;
     let td = R2;
     for (const s of world.bodies) {
       if ((s.kind !== "tower" && s.kind !== "wall") || !s.alive) continue;
@@ -141,7 +148,6 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u
     if (u.fireCd <= 0) {
       u.fireCd = (u.tag === "heavy" ? 1.1 : 1.5) + world.rng() * 0.5;
       u.flashT = world.t;
-      const muzzle = { x: u.pos.x, y: u.pos.y + 0.5, z: u.pos.z };
       shooterFire(world, u, muzzle, tgt, fspec, {
         attacker: "enemy", hitStruct: true, hitOnly: "structure",
       });
@@ -166,7 +172,8 @@ function stepGrenadier(world, u, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, 
   const fspec = ENEMY_FIRE.lob;
   u.grenCd = (u.grenCd || 0) - dt;
   u.scanCd = (u.scanCd || 0) - dt;
-  const R2 = fspec.range * fspec.range;
+  const muzzle = { x: u.pos.x, y: u.pos.y + 1.0, z: u.pos.z };
+  let R2 = (u._effR != null ? u._effR : fspec.range) ** 2;
   let tgt = u.tgtId ? world.byId.get(u.tgtId) : null;
   if (tgt) {
     const dx = tgt.pos.x - u.pos.x, dz = tgt.pos.z - u.pos.z;
@@ -175,6 +182,8 @@ function stepGrenadier(world, u, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, 
   }
   if (!tgt && u.scanCd <= 0) {
     u.scanCd = 0.13 + (u.id % 8) * 0.012;
+    u._effR = effRange(world, muzzle, fspec);
+    R2 = u._effR * u._effR;
     let td = R2;
     for (const b of world.bodies) {
       if ((b.kind !== "tower" && b.kind !== "wall") || !b.alive) continue;
@@ -188,7 +197,6 @@ function stepGrenadier(world, u, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, 
   if (tgt && u.grenCd <= 0) {
     u.grenCd = 3.0 + world.rng() * 0.6;
     u.flashT = world.t;
-    const muzzle = { x: u.pos.x, y: u.pos.y + 1.0, z: u.pos.z };
     shooterFire(world, u, muzzle, tgt, fspec, { high: true, attacker: "enemy", hitStruct: true });
   }
   if (tgt && cell && cell.dist < 1e8) {

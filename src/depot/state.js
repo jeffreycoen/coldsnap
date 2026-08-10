@@ -26,6 +26,54 @@ export function fieldReaches(T, x, z, team) {
   return fogStateFor(T, x, z, team) !== "unheld";
 }
 
+// Elevation-scaled acquisition range — the single symmetric rule both towers
+// (DepotGame.jsx's stepTowers) and enemy shooters (units.js) consume: high
+// ground sees farther. `muzzle` is the shooter's actual firing point (tower:
+// pos + hy + 0.45, matching towerShot's own muzzle formula; units: their own
+// per-type muzzle offset) — NOT the body's pos.y, which is ground+hy only.
+// meanSurroundY samples world.field.heightAt at SURROUND_N points around a
+// SURROUND_R-meter ring centered on the muzzle's (x, z); elev is how far the
+// muzzle sits above that local average (clamped at 0 — no penalty downhill,
+// symmetric with scatterSigma's own elevation treatment). Capped at 1.2x
+// (10m+ of relative height buys nothing further).
+const SURROUND_R = 6, SURROUND_N = 8;
+export function effRange(world, muzzle, spec) {
+  let sum = 0;
+  for (let i = 0; i < SURROUND_N; i++) {
+    const a = (i / SURROUND_N) * Math.PI * 2;
+    sum += world.field.heightAt(muzzle.x + Math.cos(a) * SURROUND_R, muzzle.z + Math.sin(a) * SURROUND_R);
+  }
+  const meanSurroundY = sum / SURROUND_N;
+  const elev = Math.max(0, muzzle.y - meanSurroundY);
+  return spec.range * Math.min(1.2, 1 + 0.02 * elev);
+}
+
+// ---------------------------------------------------------- pending placement
+// Task 3's confirm-before-build flow, factored into pure/headless-testable
+// pieces so depot-test.mjs can drive the state machine without React/DOM —
+// same split as the PHASE machine above. DepotGame.jsx's canBuildAt/
+// startPending/confirmPending are thin wrappers around these.
+//
+// validatePlacement: same four checks buildAt makes (occupied, ice, held,
+// afford), reduced to booleans/numbers so callers don't need to hand this a
+// live grid cell or territory object — just answers already read from one.
+export function validatePlacement({ blocked, ice, held, resources, cost }) {
+  if (blocked) return { ok: false, msg: "OCCUPIED" };
+  if (ice) return { ok: false, msg: "NO GROUND — frozen water" };
+  if (!held) return { ok: false, msg: "GROUND NOT HELD" };
+  if (resources < cost) return { ok: false, msg: "NO SCRAP" };
+  return { ok: true };
+}
+
+// Trailing-tap guard (brief): the confirm button appears at the same screen
+// spot the opening tap landed on, so it must not register a click for this
+// long after appearing, or the tap that opened it double-fires as the
+// confirm. Purely a time constant — not RNG, so no depot-lint concern.
+export const PENDING_ARM_S = 0.35;
+export function pendingArmed(pending, nowT) {
+  return !!pending && nowT >= pending.armedAt;
+}
+
 // Wall build cost — mirrors DepotGame.jsx's buildAt (`const cost = spec ? spec.cost : 5`).
 // specs.js has no wall entry (walls aren't a TOWER_SPECS type), so this is
 // the single source of truth the book-value verdict below reads.
@@ -400,4 +448,5 @@ export const HUD0 = {
   totalWaves: 50, between: true, countdown: 8, phase: PHASE.BUILD, dispatch: null, lastDispatch: null,
   started: false, gameOver: false, victory: false, attrition: false, ledgerLoss: false, spent: false,
   mode: "wall", sellMode: false, paused: false, speed: 1, inspect: null, toasts: [],
+  pending: null,
 };

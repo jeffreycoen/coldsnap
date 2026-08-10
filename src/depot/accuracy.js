@@ -1,6 +1,14 @@
 // Conditional accuracy — the one scatter model every DEPOT shooter uses
 // (towers now; riflemen/grenadiers in Phase 3/5; the bison in Phase 7).
 // Pure: no state, rng only inside applyScatter (exactly two draws).
+//
+// reachPolygon (bottom of file) imports effRange/fieldReaches from state.js,
+// which itself imports scatterSigma/applyScatter from here — a circular
+// import, but a safe one: neither side calls the other's export at its own
+// module top level, only from inside function bodies invoked well after both
+// modules have finished evaluating. Kept in one place (state.js, per Task 3's
+// brief) rather than duplicated.
+import { effRange, fieldReaches } from "./state.js";
 const REF_RANGE = 16;          // acc is calibrated at this ground distance
 const RANGE_K = 0.045;         // +4.5% sigma per meter beyond REF_RANGE
 const ELEV_K = 0.06;           // per meter of height advantage (signed)
@@ -8,6 +16,21 @@ const ELEV_MIN = 0.72, ELEV_MAX = 1.8;   // clamp of the elevation multiplier
 const GRAZE_K = 1.6;           // full graze multiplies sigma by 1+GRAZE_K
 const GRAZE_MARGIN = 1.25;     // lane half-width (m) that counts as grazing
 const GRAZE_STEP = 0.9;        // ray sample spacing (m)
+
+// Same static-solid kind filter losGraze uses (rock/wall/tower/tree/chunk —
+// "building chunk" in Task 3's brief is the shatterStructure/town debris
+// kind, "chunk"). A plain point-in-AABB test — reachPolygon below marches a
+// point outward and asks "am I inside something solid yet", which is a
+// cheaper question than losGraze's segment-grazing one.
+const SOLID_KINDS = new Set(["rock", "wall", "tower", "tree", "chunk"]);
+export function solidBlocksPoint(world, x, y, z) {
+  for (const b of world.bodies) {
+    if (!b.alive || b.invM > 0) continue;
+    if (!SOLID_KINDS.has(b.kind)) continue;
+    if (Math.abs(x - b.pos.x) <= b.hx && Math.abs(y - b.pos.y) <= b.hy && Math.abs(z - b.pos.z) <= b.hz) return true;
+  }
+  return false;
+}
 
 export function losGraze(world, muzzle, aim) {
   // Worst (closest) pass-by of the muzzle->aim segment against static solids.
@@ -38,6 +61,45 @@ export function scatterSigma(world, muzzle, aim, spec) {
   const elev = Math.min(ELEV_MAX, Math.max(ELEV_MIN, 1 + ELEV_K * (aim.y - muzzle.y)));
   const graze = 1 + GRAZE_K * losGraze(world, muzzle, aim);
   return spec.acc * range * elev * graze;
+}
+
+// ---------------------------------------------------------------- preview
+// Placement-preview reach polygon (Task 3): 64 azimuth rays marched outward
+// from `muzzle` (a firing point, {x,y,z} — same convention as effRange) to
+// spec's elevation-scaled effRange, each ray stopping at the first of:
+//   - terrain obstruction: the ground (+TARGET_H, an assumed 1.2m target
+//     height) rises above the straight sightline from the muzzle to the
+//     ray's own full-range endpoint (also assumed to sit at ground+TARGET_H
+//     there) — a simple single-segment sightline, re-derived per ray, not a
+//     multi-bounce visibility solve.
+//   - a static solid (solidBlocksPoint, same kind filter as losGraze)
+//   - the fog/targeting boundary (fieldReaches false for `team` at that
+//     point) — only checked when a territory T is supplied; toUV converts
+//     the marched WORLD (x, z) point to territory's CANONICAL (u, v), same
+//     as every other T caller in this codebase (state.js's own doc comment).
+// Recomputed on selection only (DepotGame.jsx), not per frame.
+const REACH_N = 64, REACH_STEP = 0.9, TARGET_H = 1.2;
+export function reachPolygon(world, T, muzzle, spec, team, toUV = (x, z) => ({ u: x, v: z })) {
+  const effR = effRange(world, muzzle, spec);
+  const pts = [];
+  for (let i = 0; i < REACH_N; i++) {
+    const az = (i / REACH_N) * Math.PI * 2;
+    const dx = Math.cos(az), dz = Math.sin(az);
+    const ex = muzzle.x + dx * effR, ez = muzzle.z + dz * effR;
+    const targetY = world.field.heightAt(ex, ez) + TARGET_H;
+    let last = 0;
+    for (let d = REACH_STEP; d <= effR; d += REACH_STEP) {
+      const px = muzzle.x + dx * d, pz = muzzle.z + dz * d;
+      const groundY = world.field.heightAt(px, pz);
+      const lineY = muzzle.y + (targetY - muzzle.y) * (d / effR);
+      if (groundY + TARGET_H > lineY) break;               // terrain obstruction
+      if (solidBlocksPoint(world, px, muzzle.y, pz)) break; // static solid
+      if (T) { const c = toUV(px, pz); if (!fieldReaches(T, c.u, c.v, team)) break; } // fog boundary
+      last = d;
+    }
+    pts.push({ x: muzzle.x + dx * last, z: muzzle.z + dz * last });
+  }
+  return pts;
 }
 
 export function applyScatter(world, dir, sigma) {

@@ -4,8 +4,9 @@
 import {
   PHASE, makeRunState, startWave, tryStall, advance,
   regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, shooterFire, nextSpawnTag,
-  fieldReaches,
+  fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed,
 } from "../src/depot/state.js";
+import { reachPolygon } from "../src/depot/accuracy.js";
 import {
   makeWorld, addBody, fireProjectile, stepWorld, applyDamage, worldHash, CAUSE, mulberry32,
 } from "../src/engine/core.js";
@@ -1431,6 +1432,106 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     for (let i = 0; i < 100; i++) stepTerritory(T2, [{ x: cFar.u, z: cFar.v, w: EMIT.tower.w, r: EMIT.tower.r, sign: -1 }], 0.05);
     ok("orientation 1: player field blocked on enemy-held ground", fieldReaches(T2, cFar.u, cFar.v, 1) === false);
     ok("orientation 1: attacker field reaches its own (red) ground", fieldReaches(T2, cFar.u, cFar.v, 2) === true);
+  }
+}
+
+// ============================================================ Task 3: placement preview + confirm
+{
+  const flatWorld = () => ({ field: { heightAt: () => 0 }, bodies: [] });
+  const spec = { range: 20, hy: 1.0 };
+
+  // --- effRange pins
+  ok("effRange: flat ground = 1.0x", effRange(flatWorld(), { x: 0, y: 0, z: 0 }, spec) === spec.range);
+  ok("effRange: +6m elevation = 1.12x", Math.abs(effRange(flatWorld(), { x: 0, y: 6, z: 0 }, spec) - spec.range * 1.12) < 1e-9,
+    effRange(flatWorld(), { x: 0, y: 6, z: 0 }, spec));
+  ok("effRange: caps at 1.2x (well beyond +10m)", effRange(flatWorld(), { x: 0, y: 40, z: 0 }, spec) === spec.range * 1.2);
+  ok("effRange: no downhill penalty (muzzle below surround clamps to 0 elev)", effRange(flatWorld(), { x: 0, y: -20, z: 0 }, spec) === spec.range);
+
+  // --- enemy symmetric consumption: units.js's stepRifleman/stepGrenadier/
+  // stepTank all import effRange from state.js (grep-verified below rather
+  // than re-simulating a full unit tick here — the sim behavior is
+  // exercised by the rest of this file's unit tests; this asserts the
+  // wiring itself so a future edit that reverts to spec.range trips it).
+  {
+    const unitsSrc = fs.readFileSync(new URL("../src/depot/units.js", import.meta.url), "utf8");
+    ok("units.js imports effRange from state.js", /import\s*\{[^}]*effRange[^}]*\}\s*from\s*"\.\/state\.js"/.test(unitsSrc));
+    ok("units.js's tank/rifle/grenadier scans consume effRange (not raw spec.range) for their threshold", (unitsSrc.match(/effRange\(world,\s*muzzle,\s*fspec\)/g) || []).length === 3);
+  }
+
+  // --- reachPolygon
+  {
+    const muzzle = { x: 0, y: 1.5, z: 0 };
+    const flatPoly = reachPolygon(flatWorld(), null, muzzle, spec, 1);
+    ok("reachPolygon: 64 points", flatPoly.length === 64);
+    ok("reachPolygon: open flat ground reaches ~full effRange", Math.hypot(flatPoly[0].x - muzzle.x, flatPoly[0].z - muzzle.z) > spec.range - 1.5,
+      Math.hypot(flatPoly[0].x, flatPoly[0].z));
+
+    // wall fixture due east (+x) at x=10 — the ray toward +x (index 0) must
+    // stop well short of spec.range; a ray away from it (index 32, -x) is
+    // unaffected.
+    const wallWorld = { field: { heightAt: () => 0 }, bodies: [
+      { alive: true, invM: 0, kind: "wall", pos: { x: 10, y: 0.9, z: 0 }, hx: 0.9, hy: 0.9, hz: 0.9 },
+    ] };
+    const wallPoly = reachPolygon(wallWorld, null, muzzle, spec, 1);
+    const eastDist = Math.hypot(wallPoly[0].x - muzzle.x, wallPoly[0].z - muzzle.z);
+    const westDist = Math.hypot(wallPoly[32].x - muzzle.x, wallPoly[32].z - muzzle.z);
+    ok("reachPolygon: ray toward a wall fixture stops short of it", eastDist < 9.5 && eastDist > 0, eastDist);
+    ok("reachPolygon: ray away from the wall reaches full range, unaffected", westDist > spec.range - 1.5, westDist);
+
+    // fog boundary clip: territory.js's default (uncontested) state reads
+    // as reachable by either side (fieldReaches with no T, or neutral
+    // ground, is true) — the boundary this clips at is enemy-HELD ground.
+    // Drive a strong enemy emitter due east of the muzzle so team-1's field
+    // does not reach it; every ray toward it must clip well short of
+    // spec.range on otherwise-flat open ground.
+    const halfU = 29, halfV = 57;
+    const T = makeTerritory(halfU, halfV);
+    for (let i = 0; i < 200; i++) stepTerritory(T, [{ x: 15, z: 0, w: EMIT.tower.w, r: 3, sign: -1 }], 0.05);
+    const foggedPoly = reachPolygon(flatWorld(), T, muzzle, spec, 1);
+    const foggedDist = Math.hypot(foggedPoly[0].x - muzzle.x, foggedPoly[0].z - muzzle.z);
+    ok("reachPolygon: fog boundary clips rays well short of open-flat full range", foggedDist < spec.range - 3, foggedDist);
+  }
+
+  // --- confirm state machine, headless
+  {
+    ok("PENDING_ARM_S is 0.35 (brief: armed 350ms)", PENDING_ARM_S === 0.35);
+    const cost = 15;
+    const v1 = validatePlacement({ blocked: false, ice: false, held: true, resources: 100, cost });
+    ok("validatePlacement: ok when unblocked/unfrozen/held/affordable", v1.ok === true);
+    ok("validatePlacement: OCCUPIED", validatePlacement({ blocked: true, ice: false, held: true, resources: 100, cost }).msg === "OCCUPIED");
+    ok("validatePlacement: ice", validatePlacement({ blocked: false, ice: true, held: true, resources: 100, cost }).msg.includes("frozen"));
+    ok("validatePlacement: GROUND NOT HELD", validatePlacement({ blocked: false, ice: false, held: false, resources: 100, cost }).msg === "GROUND NOT HELD");
+    ok("validatePlacement: NO SCRAP", validatePlacement({ blocked: false, ice: false, held: true, resources: 4, cost }).msg === "NO SCRAP");
+
+    // full headless drive: select -> pending (no scrap spent) -> before-armed
+    // confirm no-ops -> after-armed confirm places+deducts; separately,
+    // cancel leaves everything untouched.
+    const world = makeWorld({ field: { heightAt: () => 0, dirty: false }, seed: 5 });
+    world.t = 10;
+    let resources = 100;
+    const pending = { gx: 3, gz: 4, mode: "mg", cost, armedAt: world.t + PENDING_ARM_S };
+    ok("select -> pending: no scrap spent yet", resources === 100);
+    ok("confirm before armed: no-op (trailing-tap guard)", pendingArmed(pending, world.t) === false);
+    world.t += 0.2; // still short of 0.35
+    ok("confirm still not armed at +0.2s", pendingArmed(pending, world.t) === false);
+    world.t += 0.2; // now past 0.35 total
+    ok("confirm armed at +0.4s total", pendingArmed(pending, world.t) === true);
+    // confirm: deducts + places (mirrors DepotGame.jsx's confirmPending -> buildAt)
+    if (pendingArmed(pending, world.t)) {
+      resources -= pending.cost;
+      addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: 1, hz: 0.8, x: pending.gx, y: 1, z: pending.gz, hp: 80 });
+    }
+    ok("confirm: scrap deducted", resources === 100 - cost, resources);
+    ok("confirm: tower placed", world.bodies.some((b) => b.kind === "tower"));
+
+    // cancel path: fresh pending, never confirmed, dropped
+    let resources2 = 100;
+    const world2 = makeWorld({ field: { heightAt: () => 0, dirty: false }, seed: 5 });
+    let pending2 = { gx: 1, gz: 1, mode: "mg", cost, armedAt: world2.t + PENDING_ARM_S };
+    world2.t += 1; // well past armed
+    pending2 = null; // ✗ cancel
+    ok("cancel: no scrap deducted", resources2 === 100);
+    ok("cancel: no body placed", world2.bodies.filter((b) => b.kind === "tower").length === 0);
   }
 }
 

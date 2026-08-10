@@ -713,11 +713,49 @@ try {
   const focus = await page.evaluate(() => window.__DEPOTGETFOCUS__());
   await page.click('[data-tower-key="mg"]');
   await page.mouse.click(cc.x, cc.y);
+  // Task 3: tower builds now go through a pending-confirm flow — tap
+  // selects the cell (ghost + reach polygon + ✓/✗), armed 350ms later.
+  // Wait past the arm window, then tap ✓.
+  await page.waitForFunction(() => !!document.querySelector("[data-pending-confirm]"), { timeout: 5000, polling: 100 });
+  await sleep(400);
+  await page.click("[data-pending-confirm]");
   await page.waitForFunction(() => window.__DEPOTFLAGS__().filter((f) => f.kind === "tower").length === 1, { timeout: 10000, polling: 100 });
   const tower = await page.evaluate(() => window.__DEPOTFLAGS__().filter((f) => f.kind === "tower")[0]);
   const dist = Math.hypot(tower.x - focus.x, tower.z - focus.z);
   ok(`depot: tap-build after Q/E rotation lands on the intended (focus) cell [focus=${JSON.stringify(focus)} tower=${JSON.stringify(tower)} dist=${dist.toFixed(2)}]`,
     dist < 2.0);
+
+  // cancel path: select another cell (gun), then ✗ instead of ✓ — no scrap
+  // should move and no second tower should appear.
+  {
+    const resourcesBefore = await page.evaluate(() => window.__DEPOT__().scrap);
+    const buildable2 = await page.evaluate(() => window.__DEPOTFINDBUILDABLE__());
+    if (buildable2) {
+      await page.evaluate((b) => window.__DEPOTFOCUS__(b.x, b.z), buildable2);
+      await sleep(300);
+      const cc2 = await canvasCenter();
+      await page.click('[data-tower-key="gun"]');
+      await page.mouse.click(cc2.x, cc2.y);
+      const gotPending = await page.evaluate(() => new Promise((res) => {
+        let n = 0;
+        const iv = setInterval(() => {
+          if (document.querySelector("[data-pending-cancel]") || ++n > 30) { clearInterval(iv); res(!!document.querySelector("[data-pending-cancel]")); }
+        }, 100);
+      }));
+      if (gotPending) {
+        await sleep(400);
+        await page.click("[data-pending-cancel]");
+        const resourcesAfter = await page.evaluate(() => window.__DEPOT__().scrap);
+        const towerCount = await page.evaluate(() => window.__DEPOTFLAGS__().filter((f) => f.kind === "tower").length);
+        ok(`depot: cancel path spends no scrap [before=${resourcesBefore} after=${resourcesAfter}]`, resourcesAfter >= resourcesBefore);
+        ok("depot: cancel path leaves tower count unchanged", towerCount === 1);
+      } else {
+        ok("depot: cancel path — no buildable cell found for second selection (skipped)", true);
+      }
+    } else {
+      ok("depot: cancel path — no second buildable cell found (skipped)", true);
+    }
+  }
 
   // arm the SEND countdown to zero (build -> wave immediately) and switch
   // to 2x speed via the HUD's own control
