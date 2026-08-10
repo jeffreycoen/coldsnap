@@ -970,6 +970,14 @@ export default function DepotGame({ onExit }) {
         fireProjectile(world, from, { x: 0, y: 0, z: 1 }, 90,
           { kind: "shell", r: 2.3, kv: 8, dmg: 25, crater: 0.55, attacker: "player" });
       };
+      window.__DEPOTTHIN__ = () => {
+        // debug harness: instantly drain the current wave — zero the spawn
+        // queue and kill every live enemy — so tests can force wave -> stall
+        // without waiting real time for a full wave to walk/leak (smoke.mjs
+        // uses this to stay inside its budget under swiftshader).
+        S.ws.spawnQueue = 0;
+        for (const b of world.bodies) if (b.kind === "unit" && b.team === 2 && b.alive) applyDamage(world, b, 1e6, { cause: "BLAST", attacker: "player" });
+      };
       window.__DEPOTEND__ = (victory) => {
         // debug harness: force the run into its end state for screenshotting
         // the WIN/LOSS end card without simming 50 waves — pattern matches
@@ -1116,7 +1124,7 @@ export default function DepotGame({ onExit }) {
         canvas.removeEventListener("touchstart", blockTouch);
         window.removeEventListener("keydown", kd);
         window.removeEventListener("keyup", ku);
-        for (const k of ["__DEPOT__", "__DEPOTACK__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTEND__", "__DEPOTFOCUS__"]) delete window[k];
+        for (const k of ["__DEPOT__", "__DEPOTACK__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTTHIN__", "__DEPOTEND__", "__DEPOTFOCUS__"]) delete window[k];
         A.dispose();
         if (R) R.dispose();
         stateRef.current = null;

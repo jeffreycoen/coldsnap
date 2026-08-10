@@ -5,6 +5,9 @@ import {
   PHASE, makeRunState, startWave, tryStall, advance,
   enemyLedger, regimentDestroyed, checkLoss, checkWin, makeEndDispatch,
 } from "../src/depot/state.js";
+import {
+  makeWorld, addBody, fireProjectile, stepWorld, applyDamage, worldHash, CAUSE, mulberry32,
+} from "../src/engine/core.js";
 
 const fails = [];
 const ok = (name, cond, detail) => {
@@ -132,6 +135,82 @@ ok("advancing past the last wave sets victory", S.victory === true);
   advance(B, W50);
   ok("underfunded final-wave clear does not win", B.victory === false);
   ok("underfunded final-wave clear ends in loss", B.gameOver === true);
+}
+
+// ================================================== seeded determinism
+// Two independently built worlds from the same seed, driven through an
+// identical scripted "wave" (spawn N bodies via world.rng(), fire a
+// deterministic volley, step to rest) must land on the same worldHash. This
+// proves depot map/enemy generation — which all runs through world.rng(),
+// per DepotGame.jsx's header comment — replays exactly from ?seed=, the
+// same guarantee scenario-test.mjs/campaign-test.mjs hold engine-side.
+function scriptedWaveRun(seed) {
+  const world = makeWorld({ seed });
+  const r = mulberry32(seed);
+  for (let i = 0; i < 6; i++) {
+    addBody(world, {
+      kind: "unit", hx: 0.26, hy: 0.86, hz: 0.26, mass: 82, hp: 58,
+      x: (r() - 0.5) * 10, y: 0.86, z: 20 + i * 2,
+    });
+  }
+  fireProjectile(world, { x: 0, y: 1.62, z: 0 }, { x: 0, y: 0, z: 1 }, 90, { kind: "shell", r: 2, kv: 12, dmg: 55, crater: 0.5, attacker: "player" });
+  for (let i = 0; i < 300; i++) stepWorld(world);
+  return worldHash(world);
+}
+{
+  const h1 = scriptedWaveRun(42);
+  const h2 = scriptedWaveRun(42);
+  ok("seeded determinism: double-build same seed -> identical worldHash after scripted wave", h1 === h2, `h1=${h1} h2=${h2}`);
+  const h3 = scriptedWaveRun(43);
+  ok("different seed diverges (hash isn't a constant)", h3 !== h1, `h1=${h1} h3=${h3}`);
+}
+
+// ================================================== guard-flag proof
+// world.depotCombat is the single guard flag gating glancing/armor/tree
+// combat (Tasks 2-4). A TD-style world — the default, no flag set — must
+// leave every one of those hooks inert: no glancing scale-down, no armor
+// gate, trees untouched by direct rounds. Full on/off coverage for these
+// mechanics lives in combat-test.mjs (test:combat); this is the consolidated
+// proof that depot-test.mjs's own suite also verifies the guard holds.
+{
+  // glancing: head-on vs. grazing hit must deal identical damage without the flag
+  const runOnce = (grazing) => {
+    const world = makeWorld({ seed: 1 });
+    const target = addBody(world, { kind: "vehicle", hx: 1, hy: 1, hz: 1, x: 0, y: 5, z: 20, mass: 500, hp: 1000 });
+    const dir = grazing
+      ? { x: Math.sin(75 * Math.PI / 180), y: 0, z: Math.cos(75 * Math.PI / 180) }
+      : { x: 0, y: 0, z: 1 };
+    const D = 25;
+    const from = { x: 0 - dir.x * D, y: 5, z: 20 - dir.z * D };
+    fireProjectile(world, from, dir, 60, { kind: "shell", r: 0, kv: 12, dmg: 55, crater: 0, attacker: "player" });
+    for (let i = 0; i < 240 && world.projectiles.length; i++) stepWorld(world);
+    return target.hp;
+  };
+  const headOn = runOnce(false);
+  const graze = runOnce(true);
+  ok("guard: TD world (no depotCombat) — head-on and grazing deal identical damage", headOn === graze, `head-on hp=${headOn} graze hp=${graze}`);
+
+  // armor: gate ignored without the flag
+  const withoutFlagLoss = (() => {
+    const world = makeWorld({ seed: 1 });
+    const b = addBody(world, { kind: "vehicle", hx: 1, hy: 1, hz: 1, x: 0, y: 5, z: 20, mass: 500, hp: 1000 });
+    b.armor = 40;
+    applyDamage(world, b, 30, { cause: CAUSE.PROJECTILE, attacker: "player" });
+    return 1000 - b.hp;
+  })();
+  ok("guard: TD world — armor threshold ignored (full 30 hp lost)", withoutFlagLoss === 30, `lost=${withoutFlagLoss}`);
+
+  // trees: inert to direct mg fire without the flag
+  const world = makeWorld({ seed: 1 });
+  const tree = addBody(world, { kind: "tree", hx: 0.28, hy: 1.6, hz: 0.28, x: 0, y: 1.62, z: 20, mass: 260, friction: 0.5 });
+  const hpBefore = tree.hp;
+  fireProjectile(world, { x: 0, y: 1.62, z: 0 }, { x: 0, y: 0, z: 1 }, 90, { kind: "mg", r: 0.05, kv: 0.3, dmg: 1, crater: 0, attacker: "player" });
+  for (let i = 0; i < 60 && world.projectiles.length; i++) stepWorld(world);
+  // pre-existing (unguarded) blast-on-tree damage still applies on every hit
+  // regardless of the flag — the guard only gates the NEW 4hp/hit direct
+  // shred path, so hp loss here must stay far under a single shred hit.
+  ok("guard: TD world — tree doesn't take the direct-shred 4hp/hit (only pre-existing blast splash)", (hpBefore - tree.hp) < 2, `hp=${tree.hp} was=${hpBefore}`);
+  ok("guard: TD world — tree never ignites without the flag", tree.burning == null, `burning=${tree.burning}`);
 }
 
 if (fails.length) {

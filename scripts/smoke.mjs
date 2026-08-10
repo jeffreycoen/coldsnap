@@ -589,6 +589,54 @@ try {
   await page.waitForFunction(() => document.querySelector('[data-menu="towerdef"]'), { timeout: 10000 });
   ok("tower defense: ESC returns to menu", true);
 
+  // --- DEPOT (wave-survival build) — enter from the start screen, wave 1
+  // spawns, dispatch appears once it clears, ACKNOWLEDGE advances to wave 2.
+  // Section budget ~120s. swiftshader is slow, so run at 2x speed and use
+  // debug hooks rather than waiting real-time for a full 12-unit wave.
+  await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (k.startsWith("coldsnap-depot")) localStorage.removeItem(k); });
+  await page.evaluate(() => localStorage.setItem("coldsnap-screen", "menu"));
+  await page.reload({ waitUntil: "networkidle0" });
+  await clickMenu("depot");
+  await page.waitForFunction(() => typeof window.__DEPOT__ === "function", { timeout: 20000 });
+  ok("depot: mounts", true);
+
+  await page.evaluate(() => window.__DEPOTSTART__());
+  await page.waitForFunction(() => window.__DEPOT__().t > 0.2, { timeout: 10000 });
+
+  // arm the SEND countdown to zero (build -> wave immediately) and switch
+  // to 2x speed via the HUD's own control
+  await page.evaluate(() => {
+    const btns = [...document.querySelectorAll("button")];
+    const send = btns.find((b) => b.textContent.startsWith("SEND")); if (send) send.click();
+    const spd = btns.find((b) => b.textContent.trim() === "1×"); if (spd) spd.click();
+  });
+  await page.waitForFunction(() => window.__DEPOT__().phase === "wave", { timeout: 10000 });
+  ok("depot: build -> wave, wave 1 spawns", true);
+  await page.waitForFunction(() => window.__DEPOT__().bodies > 1, { timeout: 10000, polling: 250 });
+  ok("depot: enemies present in the world", true);
+
+  // swiftshader is too slow to wait real-time for a full 12-unit wave to
+  // walk/leak — use the debug harness to instantly drain the wave (zero the
+  // spawn queue, kill the live enemies) so the phase machine's own tick
+  // flips wave -> stall on the next frame.
+  await page.evaluate(() => window.__DEPOTTHIN__());
+  await page.waitForFunction(() => window.__DEPOT__().phase === "stall", { timeout: 15000, polling: 250 });
+  ok("depot: wave -> stall (wave 1 cleared)", true);
+  await page.waitForFunction(() => !!document.querySelector("[data-dispatch-wo]"), { timeout: 5000, polling: 200 });
+  ok("depot: dispatch card appears after wave clear", true);
+
+  await page.waitForFunction(() => {
+    const b = document.querySelector("[data-dispatch-wo] button");
+    return !!b && b.textContent === "ACKNOWLEDGE";
+  }, { timeout: 3000, polling: 200 });
+  await page.evaluate(() => document.querySelector("[data-dispatch-wo] button").click());
+  await page.waitForFunction(() => window.__DEPOT__().phase === "build" && window.__DEPOT__().wave === 2, { timeout: 5000, polling: 200 });
+  ok("depot: ACKNOWLEDGE advances to wave 2", true);
+
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => document.querySelector('[data-menu="depot"]'), { timeout: 10000 });
+  ok("depot: ESC returns to menu", true);
+
   ok("no page errors during the run", pageErrors.length === 0);
   if (pageErrors.length) console.log("page errors:", pageErrors);
 } finally {

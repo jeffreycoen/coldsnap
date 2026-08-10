@@ -19,6 +19,7 @@
     "test:td": "node scripts/td-sim-test.mjs",
     "test:td-render": "node scripts/td-render-test.mjs",
     "test:combat": "node scripts/combat-test.mjs",
+    "test:depot": "node scripts/depot-test.mjs",
     "lint:depot": "node scripts/depot-lint.mjs"
   },
   "dependencies": {
