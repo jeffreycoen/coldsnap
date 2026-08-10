@@ -1562,6 +1562,29 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
       ] };
       ok("arcClears: mortar (lofted) is blocked firing out from under its own wall's climb-out cone", !arcClears(ownWallWorld, muzzle, target, spec));
     }
+    // Playtest item 1: a gun tower on a rise, firing DOWNSLOPE at a target
+    // in plain sight, must not self-block. The tower's own AABB IS a "tower"
+    // kind solid (SOLID_KINDS), and its muzzle sits only 0.45m above the top
+    // of that box. A steeply DEPRESSED downslope arc (target both close and
+    // well below the tower) drops fast enough that its very first sample
+    // (s=0.9m from the muzzle, diagonal so both the x and z offsets stay
+    // under the tower's own hx/hz=0.8 footprint) lands back inside the
+    // tower's own y-range too — solidBlocksPoint without a selfId exclusion
+    // reports the tower's OWN box as the obstruction. Terrain is flat here
+    // (heightAt always 0, far below every sampled arc point) specifically so
+    // the block can ONLY be attributed to the self-box, not a terrain
+    // clearance false-positive. Fails (arcClears false) without selfId
+    // threaded through; passes with it (the fix).
+    {
+      const hy = 1.6, hx = 0.8, hz = 0.8, centerY = 9;
+      const towerBody = { id: 501, alive: true, invM: 0, kind: "tower", pos: { x: 0, y: centerY, z: 0 }, hx, hy, hz };
+      const world = { field: { heightAt: () => 0 }, bodies: [towerBody] };
+      const muzzle = { x: 0, y: centerY + hy + 0.45, z: 0 };
+      const target = { x: 6, y: 0, z: 6 }; // steep, close-in, downhill and diagonal
+      const spec = { projSpeed: 45, occl: "arc" };
+      ok("arcClears: downslope tower shot self-blocks WITHOUT selfId (repro of the bug)", !arcClears(world, muzzle, target, spec));
+      ok("arcClears: downslope tower shot clears WITH selfId excluding its own body (the fix)", arcClears(world, muzzle, target, spec, towerBody.id));
+    }
     // reachPolygon: a lofted spec on open ground is ~a full circle (range/fog
     // limited only) — min radial reach > 0.9x effRange across all azimuths.
     {

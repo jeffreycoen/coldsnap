@@ -348,7 +348,7 @@ function stepTowers(world, T, discipline) {
     // sticky target that has walked into fog, or that a rock has since risen
     // between, is dropped right here so "next rescan" is immediate.
     if (best) { const c = invW(best.pos.x, best.pos.z); if (!fieldReaches(T, c.u, c.v, 1)) best = null; }
-    if (best && !arcClears(world, muzzle, best.pos, spec)) best = null;
+    if (best && !arcClears(world, muzzle, best.pos, spec, b.id)) best = null;
     b.scanCd = (b.scanCd || 0) - dt;
     if (!best && b.scanCd <= 0) {
       b.scanCd = 0.11 + (b.id % 8) * 0.011;
@@ -359,7 +359,7 @@ function stepTowers(world, T, discipline) {
         if (!fieldReaches(T, c.u, c.v, 1)) continue;
         const dx = e.pos.x - b.pos.x, dz = e.pos.z - b.pos.z;
         const d2 = dx * dx + dz * dz;
-        if (d2 < bd && arcClears(world, muzzle, e.pos, spec)) { bd = d2; best = e; }
+        if (d2 < bd && arcClears(world, muzzle, e.pos, spec, b.id)) { bd = d2; best = e; }
       }
     }
     b.targetId = best ? best.id : null;

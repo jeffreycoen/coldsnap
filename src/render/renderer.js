@@ -250,8 +250,10 @@ void main(){
 // DEPOT area wash (Task 3) alpha ramp — module-level and exported so
 // depot-test.mjs can pin the curve with a cheap DOM-free unit check
 // instead of a pixel/screenshot assert: 0 at the seam threshold (0.15,
-// matching fogStateFor/holderAt), linear up to 0.10 at |v|=1.0.
-export const WASH_SEAM = 0.15, WASH_MAX_A = 0.10;
+// matching fogStateFor/holderAt), linear up to 0.20 at |v|=1.0 (doubled from
+// the original 0.10 per playtest feedback — the wash read as too faint to
+// tell held ground apart from unheld at a glance).
+export const WASH_SEAM = 0.15, WASH_MAX_A = 0.20;
 export function washAlpha(v) {
   const av = v < 0 ? -v : v;
   if (av <= WASH_SEAM) return 0;
@@ -409,29 +411,61 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // multiplies at ~4Hz over F.n*F.n vertices, not per-frame).
   const WASH_GREEN = { r: 0.35, g: 0.85, b: 0.35 };
   const WASH_RED = { r: 0.85, g: 0.30, b: 0.28 };
+  // BUILDABLE-EDGE LINE (playtest item 3): a crisp, full-opacity contour
+  // right where holderAt/sampleVal crosses the WASH_SEAM threshold on the
+  // PLAYER's sign (v > WASH_SEAM) — i.e. the actual build-rights boundary,
+  // not the fog seam band (which is a soft f=0.24 tint, not a hard line).
+  // Cell-edge detection ("marching-squares-lite"): a vertex is ON the edge
+  // if its own player-green state differs from either of its +i/+j grid
+  // neighbors' state. Ground-space by construction (grid indices, world
+  // vertex positions) — rotation-proof, same as everything else in this
+  // pass. Drawn in the SAME per-vertex color loop (same 4Hz territory
+  // refresh, opts.territory-gated — TD/campaign/demo unaffected), painted
+  // last so it stays full-opacity over both wash and fog tint.
+  const EDGE_GREEN = { r: 0.42, g: 1.0, b: 0.34 };
   function updateFogWash(sample, sampleVal) {
     if (!opts.territory || !terrBaseColor) return;
     const ca = terraGeo.attributes.color;
     const pa = terraGeo.attributes.position;
-    for (let k = 0; k < F.n * F.n; k++) {
+    const N = F.n;
+    // pass 1: per-vertex value cache (avoids re-sampling neighbors twice)
+    const vals = updateFogWash._vals && updateFogWash._vals.length === N * N ? updateFogWash._vals : (updateFogWash._vals = new Float32Array(N * N));
+    if (sampleVal) {
+      for (let k = 0; k < N * N; k++) { const wx = pa.getX(k), wz = pa.getZ(k); vals[k] = sampleVal(wx, wz); }
+    } else vals.fill(0);
+    const isGreen = (v) => v > WASH_SEAM;
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const k = j * N + i;
       const wx = pa.getX(k), wz = pa.getZ(k);
       const st = sample(wx, wz);
       const f = st === "unheld" ? 0.55 : st === "seam" ? 0.24 : 0;
-      const v = sampleVal ? sampleVal(wx, wz) : 0;
+      const v = vals[k];
       const wa = v ? washAlpha(v) : 0;
       const bi = k * 3;
-      if (f === 0 && wa === 0) { ca.array[bi] = terrBaseColor[bi]; ca.array[bi + 1] = terrBaseColor[bi + 1]; ca.array[bi + 2] = terrBaseColor[bi + 2]; continue; }
-      let br = terrBaseColor[bi], bg = terrBaseColor[bi + 1], bb = terrBaseColor[bi + 2];
-      if (wa > 0) {
-        const wc = v > 0 ? WASH_GREEN : WASH_RED;
-        br = br * (1 - wa) + wc.r * wa;
-        bg = bg * (1 - wa) + wc.g * wa;
-        bb = bb * (1 - wa) + wc.b * wa;
+      let br, bg, bb;
+      if (f === 0 && wa === 0) { br = terrBaseColor[bi]; bg = terrBaseColor[bi + 1]; bb = terrBaseColor[bi + 2]; }
+      else {
+        br = terrBaseColor[bi]; bg = terrBaseColor[bi + 1]; bb = terrBaseColor[bi + 2];
+        if (wa > 0) {
+          const wc = v > 0 ? WASH_GREEN : WASH_RED;
+          br = br * (1 - wa) + wc.r * wa;
+          bg = bg * (1 - wa) + wc.g * wa;
+          bb = bb * (1 - wa) + wc.b * wa;
+        }
+        if (f !== 0) {
+          br = br * (1 - f) + FOG_COLD.r * br * f;
+          bg = bg * (1 - f) + FOG_COLD.g * bg * f;
+          bb = bb * (1 - f) + FOG_COLD.b * bb * f;
+        }
       }
-      if (f === 0) { ca.array[bi] = br; ca.array[bi + 1] = bg; ca.array[bi + 2] = bb; continue; }
-      ca.array[bi] = br * (1 - f) + FOG_COLD.r * br * f;
-      ca.array[bi + 1] = bg * (1 - f) + FOG_COLD.g * bg * f;
-      ca.array[bi + 2] = bb * (1 - f) + FOG_COLD.b * bb * f;
+      // edge test: own state vs +i / +j neighbor state
+      const own = isGreen(v);
+      const ie = i < N - 1 ? j * N + (i + 1) : k;
+      const js = j < N - 1 ? (j + 1) * N + i : k;
+      if (own !== isGreen(vals[ie]) || own !== isGreen(vals[js])) {
+        br = EDGE_GREEN.r; bg = EDGE_GREEN.g; bb = EDGE_GREEN.b;
+      }
+      ca.array[bi] = br; ca.array[bi + 1] = bg; ca.array[bi + 2] = bb;
     }
     ca.needsUpdate = true;
   }

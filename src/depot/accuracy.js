@@ -24,9 +24,18 @@ const GRAZE_STEP = 0.9;        // ray sample spacing (m)
 // point outward and asks "am I inside something solid yet", which is a
 // cheaper question than losGraze's segment-grazing one.
 const SOLID_KINDS = new Set(["rock", "wall", "tower", "tree", "chunk"]);
-export function solidBlocksPoint(world, x, y, z) {
+// selfId (mirrors state.js's friendlyFouls Task 6 fix): without excluding
+// the shooter's own body, the arc sampler's early points (s=0.9m from the
+// muzzle) routinely land inside the shooter's own hx/hy/hz box — and a
+// DEPRESSED (downslope) arc stays low and close to the muzzle for LONGER
+// before climbing clear, so it self-blocks far more often than a level or
+// uphill shot. That's why downslope aiming looked broken: arcClears was
+// reporting "blocked" against the tower's own footprint, not any real
+// terrain or obstruction. Pass the shooter's id to skip its own body while
+// still catching every OTHER solid (rocks, other towers, walls, trees).
+export function solidBlocksPoint(world, x, y, z, selfId) {
   for (const b of world.bodies) {
-    if (!b.alive || b.invM > 0) continue;
+    if (!b.alive || b.invM > 0 || (selfId != null && b.id === selfId)) continue;
     if (!SOLID_KINDS.has(b.kind)) continue;
     if (Math.abs(x - b.pos.x) <= b.hx && Math.abs(y - b.pos.y) <= b.hy && Math.abs(z - b.pos.z) <= b.hz) return true;
   }
@@ -45,12 +54,12 @@ export function solidBlocksPoint(world, x, y, z) {
 //                                        block lofted fire (you cannot mortar
 //                                        out from under your own wall's
 //                                        overhang)
-export function arcClears(world, muzzle, target, spec) {
+export function arcClears(world, muzzle, target, spec, selfId) {
   if (spec.occl === "lofted") {
     const d = Math.hypot(target.x - muzzle.x, target.z - muzzle.z);
     for (let s = 0.9; s < d * 0.15; s += 0.9) {
       const t = s / d, x = muzzle.x + (target.x - muzzle.x) * t, z = muzzle.z + (target.z - muzzle.z) * t;
-      if (solidBlocksPoint(world, x, muzzle.y + s * 1.2, z)) return false; // steep climb-out cone
+      if (solidBlocksPoint(world, x, muzzle.y + s * 1.2, z, selfId)) return false; // steep climb-out cone
     }
     return true;
   }
@@ -64,7 +73,7 @@ export function arcClears(world, muzzle, target, spec) {
     const y = muzzle.y + vy0 * t - 4.9 * t * t;        // arc height
     const x = muzzle.x + (dx / d) * s, z = muzzle.z + (dz / d) * s;
     if (world.field.heightAt(x, z) + 0.35 > y) return false;   // terrain pierces the arc
-    if (solidBlocksPoint(world, x, y, z)) return false;         // solid at arc height
+    if (solidBlocksPoint(world, x, y, z, selfId)) return false; // solid at arc height
   }
   return true;
 }
