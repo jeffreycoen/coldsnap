@@ -24,6 +24,13 @@ export function towerShot(world, tower, target, spec) {
     ax2 = target.pos.x + target.v.x * tof;
     az2 = target.pos.z + target.v.z * tof;
     ay2 = world.field.heightAt(ax2, az2) + target.hy;
+    // DIVERGENCE (guarded): partial wind hold-off — towers correct for wind
+    // drift by only windComp of the true offset (imperfect by design; doctrine
+    // raises it later). No-op without world.wind or spec.windF/windComp.
+    if (world.wind && spec.windF && spec.windComp) {
+      ax2 -= world.wind.x * spec.windF * tof * spec.windComp;
+      az2 -= world.wind.z * spec.windF * tof * spec.windComp;
+    }
   }
   const dx = ax2 - muzzle.x, dz = az2 - muzzle.z, dy = ay2 - muzzle.y;
   const sigma = scatterSigma(world, muzzle, { x: ax2, y: ay2, z: az2 }, spec);
@@ -35,7 +42,7 @@ export function towerShot(world, tower, target, spec) {
   for (let si = 0; si < shots; si++) {
     const dir = applyScatter(world, rawDir, sigma);
     fireProjectile(world, { x: muzzle.x, y: muzzle.y + si * 0.28, z: muzzle.z }, dir, spec.projSpeed,
-      { kind: spec.kind, r: spec.blastR, kv: spec.kv, dmg: spec.dmg, crater: spec.crater, noImpact: true, attacker: "player", delay: si * 0.12 });
+      { kind: spec.kind, r: spec.blastR, kv: spec.kv, dmg: spec.dmg, crater: spec.crater, noImpact: true, attacker: "player", delay: si * 0.12, windF: spec.windF });
   }
 }
 

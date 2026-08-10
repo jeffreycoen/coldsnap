@@ -1,5 +1,6 @@
 import { scatterSigma, applyScatter, losGraze } from "../src/depot/accuracy.js";
 import { mulberry32 } from "../src/engine/core.js";
+import { windAt } from "../src/depot/wind.js";
 let n = 0, ok = 0; const T = (name, c) => { n++; if (c) ok++; else console.error("FAIL", name); };
 const w = (bodies = []) => ({ rng: mulberry32(7), bodies, field: { heightAt: () => 0 } });
 const spec = { projSpeed: 62, acc: 0.010 };
@@ -23,4 +24,17 @@ T("graze range", losGraze(w([box(0.9, 10)]), M(1.5), A(20)) > 0 && losGraze(w([b
 // sigma 0 => unchanged dir, zero draws? NO — draw-count stability: still 2 draws
 { const a = { rng: mulberry32(9) }; const d = applyScatter(a, { x: 0, y: 0, z: 1 }, 0);
   T("zero sigma", d.z > 0.9999); }
+// windAt envelope: mag stays within [0, 6] across a broad time span, sampled
+// every second, for a spread of seeds.
+{
+  let inRange = true, minM = Infinity, maxM = -Infinity;
+  for (const seed of [1, 42, 977, 12345]) {
+    for (let t = 0; t <= 600; t++) {
+      const { mag } = windAt(seed, t);
+      if (mag < 0 || mag > 6) inRange = false;
+      minM = Math.min(minM, mag); maxM = Math.max(maxM, mag);
+    }
+  }
+  T("windAt: mag stays within [0, 6] over t=0..600s", inRange);
+}
 console.log(ok + "/" + n); if (ok !== n) process.exit(1);

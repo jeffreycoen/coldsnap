@@ -14,6 +14,7 @@ import {
 import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, WAVES, MASON } from "./specs.js";
+import { windAt } from "./wind.js";
 import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, tryStall, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot } from "./state.js";
 import Dispatch from "./Dispatch.jsx";
 
@@ -538,6 +539,7 @@ function spawnEnemy(world, sp) {
 function stepDepot(world, grid, onStructureLost, town, onRuin) {
   stepEnemies(world, grid);
   stepTowers(world);
+  world.wind = windAt(MAP_SEED, world.t);
   stepWorld(world);
   for (let i = world.bodies.length - 1; i >= 0; i--) {
     const b = world.bodies[i];

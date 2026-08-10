@@ -4,6 +4,7 @@
 // (axis of least penetration from segBoxHit, exposed as hitAxis). Guard proof:
 // without the flag, head-on and grazing hits must deal identical damage.
 import { makeWorld, addBody, fireProjectile, stepWorld, applyDamage, CAUSE } from "../src/engine/core.js";
+import { windAt } from "../src/depot/wind.js";
 
 const fails = [];
 const ok = (name, cond, detail = "") => { console.log(`${cond ? "PASS" : "FAIL"} — ${name}${detail ? `  [${detail}]` : ""}`); if (!cond) fails.push(name); };
@@ -113,6 +114,32 @@ function fireAt(world, kind) {
   fireAt(world, "shell");
   ok("guard: without depotCombat, shell direct hit does not ignite", tree.burning == null, `burning=${tree.burning}`);
 }
+
+// Wind: flat-fire shell with windF drifts leeward under strong constant
+// world.wind vs a zero-wind twin (same seed, same everything else). Guard
+// proof: without world.depotCombat set, wind is a no-op even with world.wind
+// present. windAt determinism: two calls, same args, identical output.
+function windLandingX({ depotCombat, wind }) {
+  const world = makeWorld({ seed: 1 });
+  if (depotCombat) world.depotCombat = true;
+  if (wind) world.wind = wind;
+  const p = fireProjectile(world, { x: 0, y: 2, z: 0 }, { x: 0, y: 0.02, z: 1 }, 58,
+    { kind: "shell", r: 0, kv: 8, dmg: 25, crater: 0, attacker: "player", windF: 0.45 });
+  let landX = p.pos.x;
+  for (let i = 0; i < 240 && world.projectiles.length; i++) { stepWorld(world); landX = p.pos.x; }
+  return landX;
+}
+const STRONG_WIND = { x: 6, z: 0, mag: 6 };
+const leewardX = windLandingX({ depotCombat: true, wind: STRONG_WIND });
+const zeroWindX = windLandingX({ depotCombat: true, wind: null });
+ok("wind: strong crosswind drifts shell landing leeward vs zero-wind twin", leewardX > zeroWindX + 0.5, `wind=${leewardX.toFixed(2)} zero=${zeroWindX.toFixed(2)}`);
+
+const guardOnX = windLandingX({ depotCombat: false, wind: STRONG_WIND });
+const guardOffX = windLandingX({ depotCombat: false, wind: null });
+ok("guard: without depotCombat, world.wind is a no-op (identical trajectories)", Math.abs(guardOnX - guardOffX) < 1e-9, `wind=${guardOnX} none=${guardOffX}`);
+
+const w1 = windAt(42, 123.5), w2 = windAt(42, 123.5);
+ok("windAt: deterministic for same (seed, t)", w1.x === w2.x && w1.z === w2.z && w1.mag === w2.mag);
 
 console.log(fails.length ? `\n${fails.length} FAIL(S)` : "\nALL PASS");
 process.exit(fails.length ? 1 : 0);

@@ -650,6 +650,14 @@ function stepProjectiles(world) {
     p.life += dt;
     const p0 = v3(p.pos.x, p.pos.y, p.pos.z);
     p.v.y -= world.gravity * dt;
+    // DIVERGENCE (guarded): DEPOT wind — lateral drag toward the wind vector,
+    // scaled per projectile kind (spec.windF, 0 when absent). High arcs eat the
+    // most wind purely because they fly longer; windF separates mg (nearly
+    // immune) from mortar/rocket (kited). No rng; world.wind is set by the mode.
+    if (world.depotCombat && world.wind && p.spec.windF) {
+      p.v.x += (world.wind.x - p.v.x * 0.02) * p.spec.windF * dt;
+      p.v.z += (world.wind.z - p.v.z * 0.02) * p.spec.windF * dt;
+    }
     V.addScaled(p.pos, p.pos, p.v, dt);
     // terrain hit
     let hitT = -1;
