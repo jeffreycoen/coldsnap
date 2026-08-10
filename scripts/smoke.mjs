@@ -664,9 +664,15 @@ try {
   // debug hooks rather than waiting real-time for a full 12-unit wave.
   // Already self-contained: clears its own storage keys and parks at the menu.
   if (sectionEnabled("depot")) {
+  // Pinned map seed (verified locally: focus cell lands on buildable ground,
+  // not a pond, on this seed) — an unpinned reload gets a random procedural
+  // map, and on some seeds the tap-build-after-rotate assert's target cell
+  // is blocked/pond, timing the section out. See rimfix-report.md.
+  const DEPOT_SEED = 11;
+  const depotURL = URL + (URL.includes("?") ? "&" : "?") + `seed=${DEPOT_SEED}`;
   await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (k.startsWith("coldsnap-depot")) localStorage.removeItem(k); });
   await page.evaluate(() => localStorage.setItem("coldsnap-screen", "menu"));
-  await page.reload({ waitUntil: "networkidle0" });
+  await page.goto(depotURL, { waitUntil: "networkidle0" });
   await clickMenu("depot");
   await page.waitForFunction(() => typeof window.__DEPOT__ === "function", { timeout: 20000 });
   ok("depot: mounts", true);
