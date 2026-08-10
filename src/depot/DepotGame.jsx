@@ -15,7 +15,8 @@ import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, WAVES, MASON } from "./specs.js";
 import { windAt } from "./wind.js";
-import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, tryStall, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot } from "./state.js";
+import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot } from "./state.js";
+import { stepUnits, spawnUnit, stepBreakerRam } from "./units.js";
 import Dispatch from "./Dispatch.jsx";
 
 // ============================================================== the map
@@ -465,84 +466,18 @@ function shatterStructure(world, b, opts) {
 }
 
 // =============================================================== enemies
-// March driver. Conscript-only — no rifle-halt, grenadier, sapper or wave
-// armor logic; that all lives in ColdsnapTD.jsx for later phases.
+// March + combat driver — full roster (conscript/runner/breaker/grenadier/
+// sapper/tank). Lives in src/depot/units.js; DepotGame just supplies the
+// flow field and the orientation-aware fwdDir (ORIENT is module-local here,
+// so units.js can't reimplement it without drifting).
 function stepEnemies(world, grid) {
-  const dt = world.dt;
-  for (const u of world.bodies) {
-    if (u.kind !== "unit" || !u.alive || u.team !== 2) continue;
-    const supported = u.grounded || Math.abs(u.v.y) < 0.6;
-    if (supported && u.R[4] > -0.5) {
-      if (u.R[4] < 0.995) {
-        const yaw2 = Math.atan2(u.R[6], u.R[8]) * 0.5;
-        const ty = Math.sin(yaw2), tw = Math.cos(yaw2);
-        const a = Math.min(1, 14 * dt);
-        const sgn = u.q.y * ty + u.q.w * tw < 0 ? -1 : 1;
-        u.q.x += (0 - u.q.x) * a; u.q.y += (ty * sgn - u.q.y) * a;
-        u.q.z += (0 - u.q.z) * a; u.q.w += (tw * sgn - u.q.w) * a;
-        const L2 = Math.hypot(u.q.x, u.q.y, u.q.z, u.q.w) || 1;
-        u.q.x /= L2; u.q.y /= L2; u.q.z /= L2; u.q.w /= L2;
-      }
-      u.w.x *= 1 - Math.min(1, 6 * dt); u.w.z *= 1 - Math.min(1, 6 * dt);
-    }
-    if (!grid || !supported || u.R[4] < 0.7) continue;
-    const spec = ENEMY_SPECS[""];
-    const cell = grid.cellAt(u.pos.x, u.pos.z);
-    if (!cell || cell.dist >= 1e8) {
-      let ex = -u.pos.x, ez = -u.pos.z;
-      const g = grid ? grid.worldToGrid(u.pos.x, u.pos.z) : null;
-      if (g) {
-        let bd = 1e9;
-        for (let dz2 = -1; dz2 <= 1; dz2++) for (let dx2 = -1; dx2 <= 1; dx2++) {
-          if (!dx2 && !dz2) continue;
-          const nx2 = g.gx + dx2, nz2 = g.gz + dz2;
-          if (!grid.inBounds(nx2, nz2)) continue;
-          const nc = grid.cells[grid.idx(nx2, nz2)];
-          if (nc.blocked || nc.dist >= 1e8) continue;
-          if (nc.dist < bd) { bd = nc.dist; const wp = grid.gridToWorld(nx2, nz2); ex = wp.x - u.pos.x; ez = wp.z - u.pos.z; }
-        }
-      }
-      const bl = Math.hypot(ex, ez) || 1;
-      u.v.x += ((ex / bl) * 2.6 - u.v.x) * Math.min(1, 6 * dt);
-      u.v.z += ((ez / bl) * 2.6 - u.v.z) * Math.min(1, 6 * dt);
-      faceTravel(u, dt);
-      u.lostT = (u.lostT || 0) + dt;
-      if (u.lostT > 12) applyDamage(world, u, 1e9, { attacker: "world" });
-      continue;
-    }
-    u.lostT = 0;
-    const onIce = cell.ice;
-    const speed = spec.speed * (onIce ? 1.3 : 1);
-    const gain = Math.min(1, spec.gain * (onIce ? 0.4 : 1) * dt);
-    const fd = fwdDir(cell.dx, cell.dz);
-    u.v.x += (fd.x * speed - u.v.x) * gain;
-    u.v.z += (fd.z * speed - u.v.z) * gain;
-    faceTravel(u, dt);
-  }
-}
-function faceTravel(u, dt) {
-  const sp = Math.hypot(u.v.x, u.v.z);
-  u.wph = (u.wph || 0) + sp * dt * 3.6;
-  if (sp > 0.5) {
-    const desired = Math.atan2(u.v.x, u.v.z);
-    let err = desired - Math.atan2(u.R[6], u.R[8]);
-    while (err > Math.PI) err -= 2 * Math.PI;
-    while (err < -Math.PI) err += 2 * Math.PI;
-    u.w.y += err * 6 * dt;
-    u.w.y *= 1 - Math.min(1, 4 * dt);
-  }
+  stepUnits(world, grid, fwdDir);
 }
 
 // ==================================================================waves
 function makeDepotWaveState() { return makeWaveState(); }
-function spawnEnemy(world, sp) {
-  const spec = ENEMY_SPECS[""];
-  const x = sp.x + (world.rng() - 0.5) * 2.6, z = sp.z + (world.rng() - 0.5) * 2.6;
-  const u = addBody(world, { kind: "unit", team: 2, mass: spec.mass, hx: spec.hx, hy: spec.hy, hz: spec.hz, x, z, y: world.field.heightAt(x, z) + spec.hy + 0.02, hp: spec.hp, friction: 0.38 });
-  u.tag = ""; u.bounty = spec.bounty;
-  u.brave = true;
-  u.wph = world.rng() * 6.28;
-  return u;
+function spawnEnemy(world, sp, tag) {
+  return spawnUnit(world, sp, tag);
 }
 
 // ================================================================== step
@@ -551,6 +486,7 @@ function stepDepot(world, grid, onStructureLost, town, onRuin) {
   stepTowers(world);
   world.wind = windAt(MAP_SEED, world.t);
   stepWorld(world);
+  stepBreakerRam(world); // heavies (breakers) ram walls/towers — TD's ColdsnapTD.jsx :964-972
   for (let i = world.bodies.length - 1; i >= 0; i--) {
     const b = world.bodies[i];
     if ((b.kind === "wall" || b.kind === "tower") && !b.alive) {
@@ -861,8 +797,9 @@ export default function DepotGame({ onExit }) {
       };
       const spawnOne = () => {
         const ws = S.ws;
+        const tag = nextSpawnTag(S);
         const sp = SPAWN_POINTS[S.spawnRR++ % SPAWN_POINTS.length];
-        spawnEnemy(world, sp);
+        spawnEnemy(world, sp, tag);
         ws.spawnQueue--;
       };
       const sendNow = () => { const ws = S.ws; if (S.started && S.phase === PHASE.BUILD && ws.betweenWaves && !S.gameOver && !S.victory) { ws.countdown = 0; } };

@@ -11,16 +11,45 @@ export const TOWER_SPECS = {
 };
 export const TOWER_ORDER = ["mg", "gun", "mortar", "rocket", "frost"];
 
-// Conscript-only — the only enemy type Phase 0/1 spawns.
+// The zoo returns (Phase 3 Task 2) — ported straight from ColdsnapTD.jsx's
+// ENEMY_SPECS (:569-574) and TANK (:836). bounty === TD's price value.
 export const ENEMY_SPECS = {
-  "": { mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, hp: 58, bounty: 4, speed: 3.2, gain: 14, label: "conscript" },
+  "":     { mass: 82,  hx: 0.26, hy: 0.86, hz: 0.26, hp: 58,  bounty: 4,  speed: 3.2, gain: 14, label: "conscript" },
+  fast:   { mass: 62,  hx: 0.24, hy: 0.82, hz: 0.24, hp: 36,  bounty: 5,  speed: 5.1, gain: 18, label: "runner" },
+  heavy:  { mass: 340, hx: 0.46, hy: 1.02, hz: 0.46, hp: 290, bounty: 12, speed: 2.1, gain: 11, label: "breaker" },
+  gren:   { mass: 84,  hx: 0.26, hy: 0.92, hz: 0.26, hp: 66,  bounty: 8,  speed: 2.6, gain: 12, label: "grenadier" },
+  sapper: { mass: 70,  hx: 0.25, hy: 0.84, hz: 0.25, hp: 30,  bounty: 7,  speed: 3.8, gain: 16, label: "sapper" },
 };
 
-// 50-wave ramp: unit count and spawn delay scale linearly with wave index.
-// No mixes, no armor, no boss — those are later-phase scripting.
-export const WAVES = Array.from({ length: 50 }, (_, i) => ({
-  units: 12 + i * 2,
-  delay: Math.max(0.18, 0.9 - i * 0.014),
-}));
+// Wave armor: an engine vehicle on the engine's own tread physics (see
+// src/depot/units.js's stepTank) — 3.4 tonnes with a cannon. Ported from
+// ColdsnapTD.jsx :836.
+export const TANK = { mass: 3400, hx: 1.5, hy: 0.8, hz: 2.4, hp: 260, bounty: 25, gunCd: 4.6, gunRange: 34, dmg: 30, blastR: 2.5 };
+
+// Enemy fire specs — acc/windF/windComp EQUAL to the analogous tower (Jeff's
+// decision: aim fully equal). rifle mirrors TOWER_SPECS.mg, lob mirrors
+// TOWER_SPECS.mortar, tank mirrors TOWER_SPECS.gun. cd/cdVar/range are the
+// TD driver's own halt-range and fire-cadence constants (ColdsnapTD.jsx
+// :678-721 rifle, :723-754 grenadier, :597-615 tank gun).
+export const ENEMY_FIRE = {
+  rifle: { projSpeed: 70, dmg: 5, dmgHeavy: 9, kind: "mg", blastR: 0.6, kv: 1.0, crater: 0, acc: 0.090, windF: 0.06, windComp: 0, cd: 1.5, cdVar: 0.5, range: 13 },
+  lob:   { projSpeed: 28, dmg: 20, kind: "shell", blastR: 2.6, kv: 6, crater: 0.45, acc: 0.020, windF: 0.04, windComp: 0.6, cd: 3.0, cdVar: 0.6, range: 21 },
+  tank:  { projSpeed: 85, dmg: TANK.dmg, kind: "shell", blastR: TANK.blastR, kv: 8, crater: 0.5, acc: 0.070, windF: 0.9, windComp: 0.6, cd: TANK.gunCd, cdVar: 1.2, range: TANK.gunRange },
+};
+
+// 50-wave ramp: unit count and spawn delay scale linearly with wave index,
+// same shape as Phase 0/1. The AI brain replaces this table wholesale in
+// Task 3/4 — for now the new unit types are seeded into later waves' mixes
+// so they're reachable; earlier waves stay conscript-only (mix undefined ==
+// all conscripts, same as before).
+export const WAVES = Array.from({ length: 50 }, (_, i) => {
+  const w = { units: 12 + i * 2, delay: Math.max(0.18, 0.9 - i * 0.014) };
+  if (i === 2) w.mix = [["", 14], ["fast", 8]];
+  else if (i === 4) w.mix = [["", 16], ["heavy", 4], ["gren", 4]];
+  else if (i === 6) w.mix = [["", 18], ["sapper", 6]];
+  else if (i === 8) w.mix = [["fast", 16], ["heavy", 8], ["tank", 2]];
+  else if (i >= 10 && i % 3 === 0) w.mix = [["", 10], ["fast", 8], ["heavy", 8], ["gren", 6], ["sapper", 4], ["tank", 2]];
+  return w;
+});
 
 export const MASON = { hcs: 0.40, pitch: 0.83, mass: 100, breakF: 8.0e4 };

@@ -3,16 +3,30 @@
 //   node scripts/depot-test.mjs
 import {
   PHASE, makeRunState, startWave, tryStall, advance,
-  enemyLedger, regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot,
+  enemyLedger, regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, shooterFire, nextSpawnTag,
 } from "../src/depot/state.js";
 import {
   makeWorld, addBody, fireProjectile, stepWorld, applyDamage, worldHash, CAUSE, mulberry32,
 } from "../src/engine/core.js";
-import { TOWER_SPECS } from "../src/depot/specs.js";
+import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, WAVES as DEPOT_WAVES } from "../src/depot/specs.js";
+import { stepUnits, spawnUnit, stepBreakerRam } from "../src/depot/units.js";
 import {
   makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue,
 } from "../src/depot/economy.js";
 import fs from "node:fs";
+
+// identity fwdDir (DepotGame.jsx's ORIENT-aware transform, ORIENT===0 case)
+// so these headless tests match the default map orientation exactly.
+const identFwdDir = (dx, dz) => ({ x: dx, z: dz });
+// a straight-line flow field toward +z, for tests that don't build a real grid
+function straightGrid(dirX, dirZ) {
+  return {
+    cellAt: () => ({ dist: 1, dx: dirX, dz: dirZ, ice: false }),
+    worldToGrid: () => null,
+    inBounds: () => false,
+    cells: [], idx: () => 0, gridToWorld: () => ({ x: 0, z: 0 }),
+  };
+}
 
 const fails = [];
 const ok = (name, cond, detail) => {
@@ -478,6 +492,135 @@ function fireShots(seed, raise, n = 40) {
     ok("bookValue: zero assets reduces to scrap alone", bookValue({ scrap: 77, assets: 0 }) === 77);
     ok("bookValue: STIPEND is a stable per-round constant", STIPEND === 14);
   }
+}
+
+// ================================================== the roster returns (Task 2)
+// spec value pins — brief's exact acc/windF/windComp, tower-equal by
+// Jeff's decision (rifle=mg, gren lob=mortar, tank=gun).
+{
+  ok("ENEMY_FIRE.rifle acc matches TOWER_SPECS.mg exactly", ENEMY_FIRE.rifle.acc === TOWER_SPECS.mg.acc && ENEMY_FIRE.rifle.acc === 0.090);
+  ok("ENEMY_FIRE.rifle windF/windComp match TOWER_SPECS.mg exactly", ENEMY_FIRE.rifle.windF === TOWER_SPECS.mg.windF && ENEMY_FIRE.rifle.windComp === TOWER_SPECS.mg.windComp);
+  ok("ENEMY_FIRE.lob acc/windF match TOWER_SPECS.mortar exactly", ENEMY_FIRE.lob.acc === TOWER_SPECS.mortar.acc && ENEMY_FIRE.lob.acc === 0.020 && ENEMY_FIRE.lob.windF === TOWER_SPECS.mortar.windF && ENEMY_FIRE.lob.windF === 0.04);
+  ok("ENEMY_FIRE.lob windComp matches TOWER_SPECS.mortar", ENEMY_FIRE.lob.windComp === TOWER_SPECS.mortar.windComp);
+  ok("ENEMY_FIRE.tank acc/windF match TOWER_SPECS.gun exactly", ENEMY_FIRE.tank.acc === TOWER_SPECS.gun.acc && ENEMY_FIRE.tank.acc === 0.070 && ENEMY_FIRE.tank.windF === TOWER_SPECS.gun.windF && ENEMY_FIRE.tank.windF === 0.9);
+  ok("ENEMY_FIRE.tank windComp matches TOWER_SPECS.gun", ENEMY_FIRE.tank.windComp === TOWER_SPECS.gun.windComp);
+  ok("ENEMY_SPECS carries the full roster (conscript/runner/breaker/grenadier/sapper)", ["", "fast", "heavy", "gren", "sapper"].every((k) => ENEMY_SPECS[k]));
+  ok("ENEMY_SPECS bounty === TD price (spot check: heavy 12, gren 8, sapper 7, fast 5)", ENEMY_SPECS.heavy.bounty === 12 && ENEMY_SPECS.gren.bounty === 8 && ENEMY_SPECS.sapper.bounty === 7 && ENEMY_SPECS.fast.bounty === 5);
+  ok("TANK bounty === TD price (25)", TANK.bounty === 25);
+  ok("later waves reach the new unit types (mix present somewhere in the table)", DEPOT_WAVES.some((w) => w.mix && w.mix.some((m) => m[0] === "tank")));
+}
+
+// seeded skirmish: 2 riflemen vs 1 wall — damage lands, and the whole run
+// (positions, hp, RNG-drawn scatter) replays identically from the same seed.
+function riflemenVsWallRun(seed) {
+  const world = makeWorld({ seed });
+  world.depotCombat = true;
+  const g0 = world.field.heightAt(0, 0);
+  const wall = addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.4, hy: 0.83, hz: 0.4, x: 0, y: g0 + 0.83, z: 0, hp: 999 });
+  const grid = straightGrid(0, -1); // riflemen halt+fire rather than march into range-13 target
+  const riflemen = [
+    spawnUnit(world, { x: -1, z: 8 }, ""),
+    spawnUnit(world, { x: 1, z: 9 }, ""),
+  ];
+  for (let i = 0; i < 400; i++) {
+    stepUnits(world, grid, identFwdDir);
+    stepWorld(world);
+  }
+  return { hp: wall.hp, hash: worldHash(world), riflemen };
+}
+{
+  const a = riflemenVsWallRun(11);
+  ok("2 riflemen vs a wall: damage lands", a.hp < 999, `hp=${a.hp}`);
+  const b = riflemenVsWallRun(11);
+  ok("2 riflemen vs a wall: same seed twice -> identical wall hp", a.hp === b.hp, `a=${a.hp} b=${b.hp}`);
+  ok("2 riflemen vs a wall: same seed twice -> identical worldHash (deterministic twin)", a.hash === b.hash, `a=${a.hash} b=${b.hash}`);
+}
+
+// grenadier leeward drift: a strong constant crosswind should pull the
+// mean impact point downwind relative to a no-wind baseline. windComp=0.6
+// only partially corrects (spec.windF/windComp equal to the mortar tower),
+// so a residual drift must survive — same pattern as the tower scatter
+// test above, applied to shooterFire directly (bypasses march/halt).
+function grenLobRun(seed, wind) {
+  const world = makeWorld({ seed });
+  world.depotCombat = true;
+  if (wind) world.wind = wind;
+  const g0 = world.field.heightAt(0, 0);
+  const target = addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.4, hy: 0.83, hz: 0.4, x: 0, y: g0 + 0.83, z: 0, hp: 1e9 });
+  const gz = world.field.heightAt(0, 16);
+  const gren = addBody(world, { kind: "unit", team: 2, mass: 84, hx: 0.26, hy: 0.92, hz: 0.26, hp: 66, x: 0, y: gz + 0.92, z: 16 });
+  const impacts = [];
+  for (let i = 0; i < 25; i++) {
+    const muzzle = { x: gren.pos.x, y: gren.pos.y + 1.0, z: gren.pos.z };
+    shooterFire(world, gren, muzzle, target, ENEMY_FIRE.lob, { high: true, attacker: "enemy", hitStruct: true });
+    const before = world.events.length;
+    for (let s = 0; s < 400 && world.projectiles.length; s++) stepWorld(world);
+    for (let e = before; e < world.events.length; e++) {
+      if (world.events[e].type === "splat") impacts.push(world.events[e].x);
+    }
+  }
+  return impacts.reduce((s, v) => s + v, 0) / (impacts.length || 1);
+}
+{
+  const noWind = grenLobRun(21, null);
+  const crossX = grenLobRun(21, { x: 6, y: 0, z: 0 });
+  ok("grenadier lob: strong crosswind drifts mean impact leeward (+x wind -> mean x shifts positive vs no-wind)", crossX > noWind, `noWind=${noWind.toFixed(3)} wind=${crossX.toFixed(3)}`);
+  const noWind2 = grenLobRun(21, null);
+  ok("grenadier lob: same seed, no wind twice -> identical mean impact (deterministic)", noWind === noWind2, `${noWind} vs ${noWind2}`);
+}
+
+// sapper satchel still breaches: a sapper next to a wall plants and detonates.
+{
+  const world = makeWorld({ seed: 5 });
+  world.depotCombat = true;
+  const g0 = world.field.heightAt(0, 0);
+  const wall = addBody(world, { kind: "wall", team: 1, mass: 100, hx: 0.4, hy: 0.83, hz: 0.4, x: 0, y: g0 + 0.83, z: 0, hp: 70 });
+  const sapper = spawnUnit(world, { x: 0.9, z: 0 }, "sapper");
+  const grid = straightGrid(0, -1);
+  let fused = false;
+  for (let i = 0; i < 200 && wall.alive; i++) {
+    stepUnits(world, grid, identFwdDir);
+    if (sapper._fuse != null) fused = true;
+    stepWorld(world);
+  }
+  ok("sapper: plants the charge (fuse arms) on approach to a wall", fused);
+  ok("sapper: satchel breaches the wall outright", wall.alive === false, `hp=${wall.hp}`);
+}
+
+// breaker ram: a fast-moving heavy shoulders into a wall and deals damage
+// (stepBreakerRam reads world.contacts after stepWorld, same as TD).
+{
+  const world = makeWorld({ seed: 6 });
+  world.depotCombat = true;
+  const g0 = world.field.heightAt(0, 0.6);
+  const wall = addBody(world, { kind: "wall", team: 1, mass: 200, hx: 0.4, hy: 0.83, hz: 0.4, x: 0, y: g0 + 0.83, z: 1.2, hp: 500 });
+  const heavy = addBody(world, {
+    kind: "unit", team: 2, mass: 340, hx: 0.46, hy: 1.02, hz: 0.46,
+    x: 0, z: 0, y: world.field.heightAt(0, 0) + 1.02, hp: 290, friction: 0.38,
+  });
+  heavy.tag = "heavy";
+  let hpBefore = wall.hp;
+  // steady shove — sustains the ram speed stepBreakerRam's sp>0.8 gate needs
+  // (a one-time velocity kick decays to nothing over 0.8m of ground friction
+  // before it ever reaches the wall; the march AI would normally sustain this)
+  for (let i = 0; i < 60 && wall.alive; i++) {
+    heavy.v.z = 3;
+    stepWorld(world);
+    stepBreakerRam(world);
+  }
+  ok("breaker: ramming a wall deals contact damage", wall.hp < hpBefore, `hp=${wall.hp}`);
+}
+
+// wave mix bag: nextSpawnTag pulls from the wave's mix (deterministic
+// stride-7 shuffle, no RNG) and yields the exact composition requested.
+{
+  const S = makeRunState({ waves: [{ units: 4, delay: 1, mix: [["", 2], ["fast", 2]] }] });
+  S.started = true;
+  startWave(S, [{ units: 4, delay: 1, mix: [["", 2], ["fast", 2]] }]);
+  const tags = [nextSpawnTag(S), nextSpawnTag(S), nextSpawnTag(S), nextSpawnTag(S)];
+  const counts = tags.reduce((m, t) => ((m[t] = (m[t] || 0) + 1), m), {});
+  ok("mix bag yields the exact requested composition", counts[""] === 2 && counts.fast === 2, JSON.stringify(counts));
+  ok("mix bag is exhausted after pulling the full mix", nextSpawnTag(S) === "");
 }
 
 if (fails.length) {

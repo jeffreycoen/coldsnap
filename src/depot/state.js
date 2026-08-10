@@ -6,15 +6,18 @@ import { scatterSigma, applyScatter } from "./accuracy.js";
 
 export const PHASE = { BUILD: "build", WAVE: "wave", STALL: "stall" };
 
-// One tower trigger pull: 2-pass lead solve against `target`'s velocity,
-// then fire spec.volley (or 1) shots. sigma is computed once per pull from
-// the led aim point (spec.acc, range/elevation/graze) and applied per shot
-// via applyScatter — conditional accuracy, not a flat volley spread.
-// Extracted out of DepotGame.jsx's stepTowers so it's reachable headless
-// (that file is JSX; this one is plain JS, already imported by tests).
-export function towerShot(world, tower, target, spec) {
-  const muzzle = { x: tower.pos.x, y: tower.pos.y + tower.hy + 0.45, z: tower.pos.z };
-  const high = tower.towerType === "mortar";
+// One trigger pull, general shooter core: 2-pass lead solve against
+// `target`'s velocity, then fire spec.volley (or 1) shots. sigma is
+// computed once per pull from the led aim point (spec.acc, range/
+// elevation/graze) and applied per shot via applyScatter — conditional
+// accuracy, not a flat volley spread. Shared by towers (towerShot below)
+// and enemy shooters (src/depot/units.js) so every aimed shot in DEPOT —
+// player or enemy — runs through the identical accuracy model.
+// opts: { high (mortar-style lob arc), attacker ("player"|"enemy"),
+//         hitStruct, hitOnly, muzzleStep (per-shot muzzle y offset) }
+export function shooterFire(world, shooter, muzzle, target, spec, opts = {}) {
+  const high = !!opts.high;
+  const attacker = opts.attacker || "player";
   let ax2 = target.pos.x, az2 = target.pos.z, ay2 = target.pos.y;
   for (let li = 0; li < 2; li++) {
     const ld = Math.max(2, Math.hypot(ax2 - muzzle.x, az2 - muzzle.z));
@@ -24,9 +27,11 @@ export function towerShot(world, tower, target, spec) {
     ax2 = target.pos.x + target.v.x * tof;
     az2 = target.pos.z + target.v.z * tof;
     ay2 = world.field.heightAt(ax2, az2) + target.hy;
-    // DIVERGENCE (guarded): partial wind hold-off — towers correct for wind
-    // drift by only windComp of the true offset (imperfect by design; doctrine
-    // raises it later). No-op without world.wind or spec.windF/windComp.
+    // DIVERGENCE (guarded): partial wind hold-off — shooters correct for
+    // wind drift by only windComp of the true offset (imperfect by design;
+    // doctrine raises it later). No-op without world.wind or spec.windF/
+    // windComp. Enemy specs carry the same windF/windComp as their tower
+    // analog (Jeff's decision: aim fully equal), so this applies identically.
     if (world.wind && spec.windF && spec.windComp) {
       ax2 -= world.wind.x * spec.windF * tof * spec.windComp;
       az2 -= world.wind.z * spec.windF * tof * spec.windComp;
@@ -39,15 +44,28 @@ export function towerShot(world, tower, target, spec) {
   if (pitch == null) pitch = high ? 1.1 : 0.45;
   const rawDir = { x: (dx / d) * Math.cos(pitch), y: Math.sin(pitch), z: (dz / d) * Math.cos(pitch) };
   const shots = spec.volley || 1;
+  const muzzleStep = opts.muzzleStep != null ? opts.muzzleStep : 0.28;
   for (let si = 0; si < shots; si++) {
     const dir = applyScatter(world, rawDir, sigma);
-    fireProjectile(world, { x: muzzle.x, y: muzzle.y + si * 0.28, z: muzzle.z }, dir, spec.projSpeed,
-      { kind: spec.kind, r: spec.blastR, kv: spec.kv, dmg: spec.dmg, crater: spec.crater, noImpact: true, attacker: "player", delay: si * 0.12, windF: spec.windF });
+    fireProjectile(world, { x: muzzle.x, y: muzzle.y + si * muzzleStep, z: muzzle.z }, dir, spec.projSpeed,
+      {
+        kind: spec.kind, r: spec.blastR, kv: spec.kv, dmg: spec.dmg, crater: spec.crater,
+        noImpact: true, attacker, delay: si * 0.12, windF: spec.windF,
+        hitStruct: opts.hitStruct, hitOnly: opts.hitOnly,
+      });
   }
 }
 
+// One tower trigger pull — thin wrapper over shooterFire. Kept as its own
+// export (depot-test.mjs and DepotGame.jsx's stepTowers call it by name).
+export function towerShot(world, tower, target, spec) {
+  const muzzle = { x: tower.pos.x, y: tower.pos.y + tower.hy + 0.45, z: tower.pos.z };
+  const high = tower.towerType === "mortar";
+  shooterFire(world, tower, muzzle, target, spec, { high, attacker: "player" });
+}
+
 export function makeWaveState() {
-  return { waveIdx: 0, spawnQueue: 0, spawnTimer: 0, spawnDelay: 1, active: false, betweenWaves: true, countdown: 8 };
+  return { waveIdx: 0, spawnQueue: 0, spawnTimer: 0, spawnDelay: 1, active: false, betweenWaves: true, countdown: 8, mixBag: [] };
 }
 
 export function makeRunState({ waves, startResources = 120, startLives = 20 }) {
@@ -154,6 +172,18 @@ export function makeEndDispatch({ victory, kills, wave, totalWaves }) {
 
 // Begin spawning the next queued wave. Caller (DepotGame) is responsible for
 // any presentation side effects (toasts) — this only mutates state.
+// Ported from ColdsnapTD.jsx's startWave: w.mix (an array of [tag, count]
+// pairs) expands into a bag of tags, then a fixed-stride-7 shuffle
+// interleaves types instead of clumping them. Deterministic — no RNG (the
+// stride is a constant), so this needs no world.rng() plumbing.
+function buildMixBag(mix) {
+  const bag = [];
+  for (const m of mix) for (let i = 0; i < m[1]; i++) bag.push(m[0]);
+  const out = [];
+  let i = 0;
+  while (bag.length) { i = (i + 7) % bag.length; out.push(bag.splice(i, 1)[0]); }
+  return out;
+}
 export function startWave(S, WAVES) {
   const ws = S.ws;
   const w = WAVES[ws.waveIdx];
@@ -162,7 +192,15 @@ export function startWave(S, WAVES) {
   ws.spawnTimer = 0;
   ws.active = true;
   ws.betweenWaves = false;
+  ws.mixBag = w.mix ? buildMixBag(w.mix) : [];
   S.phase = PHASE.WAVE;
+}
+
+// Next spawn tag for this tick: pulled from the wave's mix bag if the wave
+// has one, "" (conscript) otherwise. Caller pops S.ws.spawnQueue itself.
+export function nextSpawnTag(S) {
+  const ws = S.ws;
+  return ws.mixBag.length ? ws.mixBag.pop() : "";
 }
 
 // Called once per tick while phase === "wave". When the spawn queue is
