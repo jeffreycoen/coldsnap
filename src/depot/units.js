@@ -36,6 +36,7 @@ function spawnTank(world, sp) {
     kind: "vehicle", team: 2, mass: TANK.mass, hx: TANK.hx, hy: TANK.hy, hz: TANK.hz,
     x, y: world.field.heightAt(x, z) + TANK.hy + 0.1, z, hp: TANK.hp, friction: 0.85,
   });
+  t.armor = 140;
   t.tag = "tank";
   t.squad = "waveArmor"; // engine's stepDrive/aiDrive picks this up generically
   t.driverSpec = { throttleHabit: 0.8 };

@@ -2027,48 +2027,38 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
       kills >= 6, `kills=${kills}/10`);
   }
 
-  // sniper vs tank: SPEC CONTRADICTION, documented prominently rather than
-  // silently patched.
-  //
-  // The brief's stated design intent ("chip-only") assumed b.armor gating
-  // (core.js ~:767: sub-armor ballistic hits glance for 15% dmg) would
-  // reduce a 65-dmg sniper hit against a tank with "armor >= 66". THAT
-  // MECHANISM DOES NOT APPLY HERE AT ALL, for two independent reasons,
-  // both verified by reading the engine, not assumed:
-  //   1. spawnTank (units.js:33-45) never sets t.armor — a live tank body's
-  //      b.armor is undefined, always. The field is entirely unwired for
-  //      DEPOT's wave armor.
-  //   2. Even if it were set, it wouldn't matter: core.js's armor check is
-  //      explicitly gated `info.cause !== CAUSE.BLAST` ("blast bypasses
-  //      armor entirely" — core.js:765-766), and EVERY shooterFire round
-  //      (spec.noImpact:true, including this one) resolves damage through
-  //      explode()'s CAUSE.BLAST path, never CAUSE.PROJECTILE. The armor
-  //      threshold mechanic cannot ever fire against an infantry or tower
-  //      round, tank or no tank, armor or no armor.
-  // So "chip-only" as SPECIFIED cannot happen — yet measured behavior IS
-  // chip (~3.5hp/hit, confirmed across 15 seeds, well under 10). The actual
-  // mitigation is accidental: explode()'s distance falloff (f = 1 -
-  // dist/reach, reach = spec.r + max(tank hx,hy,hz) = 0.3 + 2.4 = 2.7m) so
-  // a hit anywhere but dead-center on a body this large — TANK hx=1.5,
-  // hz=2.4 — attenuates hard. The observed "chip" is a side effect of tank
-  // hitbox geometry vs a small blastR, not the intended armor system.
-  // Flagging this contradiction rather than adding an armor value to TANK
-  // or wiring b.armor onto spawnTank, which the brief did not authorize.
+  // sniper vs tank (A2): the direct-hit component (A1's core.js hook,
+  // world.depotCombat + spec.dirDmg) now actually consults t.armor.
+  // INFANTRY_ARMS.sniper carries dirDmg: 130, spawnTank sets t.armor = 140
+  // (units.js) — 130 < 140 so every direct hit glances at the engine's 0.15
+  // multiplier: 130 * 0.15 = 19.5 hp/hit. Requires world.depotCombat = true
+  // (unset in makeWorld by default; test opts it in explicitly) — this
+  // replaces the old ~3.5hp "chip via hitbox falloff" accident (see git
+  // history) now that dirDmg/armor are actually wired end to end.
   {
-    let allChip = true, samples = [];
+    let samples = [];
     for (let seed = 1; seed <= 10; seed++) {
       const world = makeWorld({ field: flatField, seed });
+      world.depotCombat = true;
       const squad = mkStationarySquad(world, "sniper", 1, 0, 0, SQUAD_SPECS.sniper.n);
       const tank = addBody(world, { kind: "vehicle", team: 2, mass: TANK.mass, hx: TANK.hx, hy: TANK.hy, hz: TANK.hz, x: 0, y: TANK.hy, z: 20, hp: TANK.hp });
+      tank.armor = 140;
       const hp0 = tank.hp;
       squadFire(world, squad, 0);
       for (let s = 0; s < 300 && world.projectiles.length; s++) stepWorld(world);
       const lost = hp0 - tank.hp;
-      samples.push(lost.toFixed(2));
-      if (lost >= 10) allChip = false;
+      samples.push(lost);
     }
-    ok("squadFire: sniper vs tank — every resolved hit chips (<10hp), NOT via any armor mechanic (unset + blast-exempt regardless) but via blastR/hitbox falloff geometry — SPEC CONTRADICTION documented above, asserting current behavior",
-      allChip, samples.join(","));
+    const inRange = samples.every((l) => l >= 19 && l <= 20.5);
+    ok("squadFire: sniper vs armored tank (armor 140) glances 19-20hp/hit via dirDmg+armor",
+      inRange, samples.map((l) => l.toFixed(2)).join(","));
+  }
+
+  // tank armor pin: spawnTank always sets t.armor === 140.
+  {
+    const world = makeWorld({ field: flatField, seed: 1 });
+    const tank = spawnUnit(world, { x: 0, z: 0 }, "tank");
+    ok("spawnTank: t.armor pinned to 140", tank.armor === 140, `armor=${tank.armor}`);
   }
 
   // rifle-squad cadence + burst draw-count accounting: over a fixed window,

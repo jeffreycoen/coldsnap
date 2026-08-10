@@ -142,7 +142,7 @@ export function shooterFire(world, shooter, muzzle, target, spec, opts = {}) {
     const dir = applyScatter(world, rawDir, sigma);
     fireProjectile(world, { x: muzzle.x, y: muzzle.y + si * muzzleStep, z: muzzle.z }, dir, spec.projSpeed,
       {
-        kind: spec.kind, r: spec.blastR, kv: spec.kv, dmg: spec.dmg, crater: spec.crater,
+        kind: spec.kind, r: spec.blastR, kv: spec.kv, dmg: spec.dmg, dirDmg: spec.dirDmg, crater: spec.crater,
         noImpact: true, attacker, delay: si * volleyDelay, windF: spec.windF,
         hitStruct: opts.hitStruct, hitOnly: opts.hitOnly, owner: opts.owner,
       });
