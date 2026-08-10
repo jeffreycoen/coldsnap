@@ -55,16 +55,27 @@ export function fogStateAt(T, x, z) { /* for the PLAYER: v > +0.15 "held", |v| <
 - [ ] **Step 1: failing asserts** — build refusal on red/seam ground, allowed on green; a scripted town building flips holder and the stall payout follows; a target beyond the field is not acquired, same target with a friendly unit near it (field extended) is; symmetric check for an attacker rifleman vs a tower in player-held fog; consequence: massacre-at-the-wall still pays results (Phase 3 economics unaffected).
 - [ ] **Step 2:** verify fail → **Step 3:** implement → **Step 4:** `node scripts/depot-test.mjs && npm run lint:depot && npm run build` → **Step 5:** Commit "DEPOT: build rights, holder-paid town, and guns that cannot see past the line".
 
-### Task 3: the look — grid tinting + three-state fog (renderer)
+### Task 3: placement preview + confirm (Jeff, 2026-08-10)
+
+**Files:** Modify `src/depot/DepotGame.jsx` (placement flow), `src/depot/state.js` or `accuracy.js` (shared reach sampler), `src/render/renderer.js` (overlay polygon — reuse the overlay API), `src/depot/specs.js` (acquisition-range elevation rule); extend depot-test + smoke.
+
+**Behavior:**
+- NEW SIM RULE (symmetric, both sides): acquisition range scales with muzzle height above mean surrounding ground: `range * min(1.2, 1 + 0.02 * elev)` — high ground sees farther. Applies to towers AND enemy shooters; probe re-check in Task 5 covers it.
+- Selecting a build cell shows a ghost tower + **effective-reach polygon**: ~64 azimuth rays from muzzle height, each stopping at the first LOS obstruction (terrain/static solids — reuse/extract the graze sampler) or the elevation-scaled range. Red, translucent fill, hard edge. After Task 2 lands, rays also clip at the fog targeting boundary. Recomputed on selection move only (not per frame).
+- Purchase requires confirm: ✓/✗ pair floating by the cell (screen-space — rotation-proof), armed after 350ms (trailing-tap lesson); ✓ deducts scrap + places, ✗ or tap-elsewhere cancels; no scrap moves before ✓. WALLS EXEMPT: instant placement as today (5-scrap spam; ring meaningless). Frost tower shows its slow-field radius as the ring instead (blue-white, honest about what it does).
+- [ ] **Step 1: failing asserts** — elevation rule pins (range at +6m = 1.12×, cap at 1.2×); reach sampler stops at a wall fixture and at spec.range on open flat; confirm flow headless (select → pending, no scrap spent → confirm → placed+deducted; cancel → nothing).
+- [ ] **Step 2:** verify fail → **Step 3:** implement → **Step 4:** `node scripts/depot-test.mjs && npm run test:accuracy && npm run lint:depot && npm run build && SMOKE_ONLY=depot node scripts/smoke.mjs` (smoke: confirm-flow tap sequence replaces the old direct-tap build; rotated variant); screenshots: ring on flat vs on a rise (visibly bigger), ring bitten by a boulder, confirm pair visible — save to workspace → **Step 5:** Commit "DEPOT placement: the red reach polygon and the ✓ that spends the scrap".
+
+### Task 4: the look — grid tinting + three-state fog (renderer)
 
 **Files:** Modify `src/render/renderer.js` (new DEPOT-only option, e.g. `opts.territory` carrying a sampler; grid-line tint + fog treatment), `src/depot/DepotGame.jsx` (pass sampler + per-frame fog visibility for enemy bodies); extend smoke.
 
 **The look (decided):** grid LINES take faction tint (green/red, neutral grey in seam/no-man's) — terrain colors untouched. Mechanism choice is the implementer's (repaint the splat-canvas grid lines region-batched on territory change, OR a low-res modulation texture applied only to the grid-line pass) — document the choice and its Pi cost in the report. Fog: unheld ground gets the colder/desaturated/coarser-dither treatment; enemy units/vehicles in unheld cells are NOT rendered for the player; in seam cells render as grey silhouettes (flat dark dress palette, no team colors, no kind detail beyond hull shape); player assets, terrain, wind flags, trees render everywhere. Toggle: menu entry "FOG" on/off — flips VISUALS only (hiding/silhouettes/desaturation), never the targeting gate; default ON.
 - [ ] **Step 1:** implement; **Step 2:** verify `npm run test:td-render && node scripts/depot-test.mjs && npm run lint:depot && npm run build && SMOKE_ONLY=depot node scripts/smoke.mjs`; screenshots: held/seam/unheld tri-state in one frame, enemy silhouettes at the seam, same rotated one Q/E step, toggle-off comparison — save to workspace; **Step 3:** Commit "DEPOT fog: three states of knowing, grid lines that take sides".
 
-### Task 4: probe re-check + smoke + prod
+### Task 5: probe re-check + smoke + prod
 
-**Files:** Extend `scripts/economy-probe.mjs` (the targeting boundary changes combat reach — re-run the 3-tier matrix; sanity rules from Phase 3 must still hold; if median collapses (fog starves tower dps), tune EMIT weights/radii — field reach is the balance lever, not the accuracy model), extend smoke depot section (fog assert: a spawned far enemy absent from render while unheld, appears on approach; rotated build-refusal toast check).
+**Files:** Extend `scripts/economy-probe.mjs` (the targeting boundary changes combat reach — re-run the 3-tier matrix (now incl. the elevation-range rule); sanity rules from Phase 3 must still hold; if median collapses (fog starves tower dps), tune EMIT weights/radii — field reach is the balance lever, not the accuracy model), extend smoke depot section (fog assert: a spawned far enemy absent from render while unheld, appears on approach; rotated build-refusal toast check).
 - [ ] **Step 1:** probe → tune → record finals in report + this plan; **Step 2:** full scoped verify + 3 consecutive local smoke passes; **Step 3:** commit ("DEPOT balance under fog: probe re-run, field weights tuned"), push, FOREGROUND CI poll to success, prod `SMOKE_ONLY=depot` ALL PASS; **Step 4:** report incl. screenshots for Jeff's phone-check list (rim, tint, fog states, toggle).
 
 ---
