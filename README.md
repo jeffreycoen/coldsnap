@@ -5,6 +5,10 @@ the seven field trials. Masonry collapses, ice fractures, the pond drowns.
 
 **Play it:** https://jeffreycoen.github.io/coldsnap/
 
+**Credits:** Direction & design — Jeff Coen. Code — Claude (Anthropic's
+Fable 5), written across many sessions under Jeff's direction. MIT licensed;
+copyright held by Jeff Coen.
+
 ## Layout
 
 - `src/demo/coldsnap-proving-grounds.jsx` — the original proving-grounds demo,
