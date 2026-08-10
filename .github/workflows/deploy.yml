@@ -32,6 +32,8 @@ jobs:
       - run: npm run test:righting
       - run: npm run test:campaign
       - run: npm run test:mech
+      - run: npm run test:td
+      - run: npm run test:td-render
       - run: npm run test:combat
       - run: npm run test:depot
       - run: npm run build
