@@ -103,7 +103,8 @@ export function planWave(reg, snap, waveIdx, rng) {
 
   const baseline = waveBudget(waveIdx);
   const shares = computeShares(snap, jitterShare);
-  const dominant = dominantCounter(signals(snap));
+  const sig = signals(snap);
+  const dominant = dominantCounter(sig);
 
   const buys = [];
   let banked = false;
@@ -114,7 +115,14 @@ export function planWave(reg, snap, waveIdx, rng) {
     const tankC = cost("tank");
     const surgeThreshold = 2.2 * baseline;
     const tankPushReady = reg.tanks >= 2 && reg.scrap >= 2 * tankC;
-    const erupt = goal === "tankPush" ? tankPushReady : reg.scrap >= surgeThreshold;
+    // Saturated wall pressure (a fully fortified position, signals.wall at
+    // its clamp01 ceiling) reads as desperate — the doctrine skips the
+    // patient 2.2x surge wait and throws whatever's banked at the wire now.
+    // Only ever fires at the signal's max (walls >= 8), so a moderate
+    // defense (median-strength builds) never trips it — only a maxed-out
+    // wall count does.
+    const desperate = dominant === "wall" && sig.wall >= 0.999;
+    const erupt = goal === "tankPush" ? tankPushReady : (desperate || reg.scrap >= surgeThreshold);
 
     if (erupt && goal === "tankPush") {
       const want = 2 + Math.floor(sizeRoll * 3); // 2..4

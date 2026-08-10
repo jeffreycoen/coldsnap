@@ -642,17 +642,23 @@ export default function DepotGame({ onExit }) {
       // buildSnapshot: the counter-signal read planWave uses to weight its
       // buy — a fresh count of the player's live defenses every stall.
       const buildSnapshot = () => {
-        let mortars = 0, mgs = 0, guns = 0, frosts = 0, walls = 0, elevSum = 0, elevN = 0;
+        // guns and rockets are counted separately so the book-value verdict
+        // (state.js's playerBookValue) can price each at its own real spec
+        // cost — rockets are NOT gun-priced here (Phase 3 Task 7 fix). The
+        // AI's counter-play read (ai.js's signals()) never looks at either
+        // field, so this split changes nothing about wave-planning pressure.
+        let mortars = 0, mgs = 0, guns = 0, rockets = 0, frosts = 0, walls = 0, elevSum = 0, elevN = 0;
         for (const b of world.bodies) {
           if (b.kind === "wall") { walls++; continue; }
           if (b.kind !== "tower") continue;
           if (b.towerType === "mortar") mortars++;
           else if (b.towerType === "mg") mgs++;
-          else if (b.towerType === "gun" || b.towerType === "rocket") guns++;
+          else if (b.towerType === "gun") guns++;
+          else if (b.towerType === "rocket") rockets++;
           else if (b.towerType === "frost") frosts++;
           elevSum += b.pos.y; elevN++;
         }
-        return { mortars, mgs, guns, frosts, walls, towerElev: elevN ? elevSum / elevN : 0 };
+        return { mortars, mgs, guns, rockets, frosts, walls, towerElev: elevN ? elevSum / elevN : 0 };
       };
 
       const toast = (txt) => { S.toasts.push({ txt, t: performance.now() / 1000 }); if (S.toasts.length > 4) S.toasts.shift(); };

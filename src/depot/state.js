@@ -114,16 +114,19 @@ export function makeDispatch(waveIdx, totalWaves, intelLines = []) {
 
 // Player-side book value: scrap on hand plus the build cost of every
 // standing structure. snap is the same shape DepotGame.jsx's buildSnapshot()
-// produces ({mortars, mgs, guns, frosts, walls}) — live body counts by type,
-// read fresh at the moment of the verdict. "guns" also covers rocket towers
-// (buildSnapshot lumps them together, same as the AI's counter-play signal
-// elsewhere), valued at TOWER_SPECS.gun.cost.
+// produces ({mortars, mgs, guns, rockets, frosts, walls}) — live body counts
+// by type, read fresh at the moment of the verdict. guns and rockets are
+// counted separately and valued at each tower's own real spec cost — the
+// AI's counter-play signal elsewhere still lumps gun+rocket together (that's
+// a shopping-pressure heuristic, not a ledger), but the book-value verdict
+// must not undervalue (or overvalue) a rocket tower at gun price.
 function playerBookValue(S, snap) {
   const s = snap || {};
   const assets =
     (s.mortars || 0) * TOWER_SPECS.mortar.cost +
     (s.mgs || 0) * TOWER_SPECS.mg.cost +
     (s.guns || 0) * TOWER_SPECS.gun.cost +
+    (s.rockets || 0) * TOWER_SPECS.rocket.cost +
     (s.frosts || 0) * TOWER_SPECS.frost.cost +
     (s.walls || 0) * WALL_COST;
   return bookValue({ scrap: S.resources, assets });
