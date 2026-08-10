@@ -43,19 +43,19 @@ In `explode()`'s body-damage loop (the noImpact branch), skip the body whose id 
 
 ```js
 // specs.js — small arms gain dirDmg equal to their current dmg (replacement, not addition):
-// INFANTRY_ARMS: sniper dirDmg: 65, rifles dirDmg: 5, mg dirDmg: 5
+// INFANTRY_ARMS: sniper dirDmg: 130 (Jeff: doubled), rifles dirDmg: 5, mg dirDmg: 5
 // TOWER_SPECS:   mg tower dirDmg: 5      (gun/mortar/rocket: NONE — blast-only by design)
 // enemy rifle spec: dirDmg: 5            (tank shell: NONE)
-// units.js spawnTank: t.armor = 80       (sniper 65 < 80 => glances: 65*0.15 = 9.75/hit chip)
+// units.js spawnTank: t.armor = 140      (sniper 130 < 140 => glances: 130*0.15 = 19.5/hit chip — Jeff doubled)
 ```
 
-- [ ] **A2.1 failing tests** (depot-test.mjs): sniper vs tank ≈ 9-10 hp/hit (principled chip — replaces the old ~3.5 accidental assert, update it); sniper vs conscript still one-shots; rifle/mg DPS vs a soft fixture within ±10% of pre-change measurement (record before/after in the report — no soft-target rebalance); tank armor pin (80).
+- [ ] **A2.1 failing tests** (depot-test.mjs): sniper vs tank ≈ 19-20 hp/hit (principled chip — replaces the old ~3.5 accidental assert, update it); sniper vs conscript still one-shots; rifle/mg DPS vs a soft fixture within ±10% of pre-change measurement (record before/after in the report — no soft-target rebalance); tank armor pin (140).
 - [ ] **A2.2** verify fail → **A2.3** implement → **A2.4** `node scripts/depot-test.mjs && npm run test:combat && npm run test:accuracy && npm run lint:depot` → **A2.5** Commit "DEPOT: small arms hit what they hit — armor on tanks, direct rounds through it".
 
 ### Task A3: sanity + docs
 
 **Files:** `scripts/economy-probe.mjs` (quick single-tier median re-run — 10 seeds — confirming no verdict flip from the tank-chip change), `docs/td-vision.md` (one line under Phase 3/5 decisions: armor model now live — direct component on small arms, blast stays concussion).
-- [ ] **A3.1** median 10-seed run: verdict mix within historical range (8/20-ish WIN rate scaled) → if it flips hard, tank armor is the lever (75-90 band) — record. **A3.2** `SMOKE_ONLY=depot node scripts/smoke.mjs` local PASS → **A3.3** Commit "Armor wiring closed: probe steady, vision updated". NO PUSH (phase batch).
+- [ ] **A3.1** median 10-seed run: verdict mix within historical range (8/20-ish WIN rate scaled) → if it flips hard, tank armor is the lever (120-160 band, must stay > 130) — record. **A3.2** `SMOKE_ONLY=depot node scripts/smoke.mjs` local PASS → **A3.3** Commit "Armor wiring closed: probe steady, vision updated". NO PUSH (phase batch).
 
 ---
-**Self-review:** replaces-not-adds keeps soft DPS flat (asserted ±10%); shells stay concussion; impulse still applies on direct hits (being shot shoves); guard proofs on both the core gate and unflagged worlds; the sniper chip becomes 9.75/hit by arithmetic, not accident — flagged as a modest intentional buff for Jeff's sign-off here: **sniper kills a tank solo in ~2 minutes of sustained fire. Acceptable ceiling?**
+**Self-review:** replaces-not-adds keeps soft DPS flat (asserted ±10%); shells stay concussion; impulse still applies on direct hits (being shot shoves); guard proofs on both the core gate and unflagged worlds; the sniper chip becomes 9.75/hit by arithmetic, not accident — flagged as a modest intentional buff for Jeff's sign-off here: **sniper chip 19.5/hit per Jeff (doubled); armor 140 keeps it sub-threshold.**
