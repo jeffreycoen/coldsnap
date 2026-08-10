@@ -41,6 +41,14 @@ Working brainstorm, 2026-08-09. Direction only — nothing here is committed unt
 
 ## 2. Economy — staged symmetry
 
+### Phase 3 decisions (Jeff, 2026-08-10, via multiple-choice)
+- Regiment: seed-varied 300-500 heads + motor pool; opening dispatch hints strength; attrition victory = combat-ineffective before wave 50.
+- Results pay: structure damage, buildings, leaks AND tower kills — UNCAPPED (full arms race; revisit cap only if death spirals prove out).
+- AI: one fixed counter-rule brain (personalities deferred); banking toward tank pushes OR infantry surge waves, chosen by counter-rules.
+- Intel: strength-words only, one-wave delay, seeded gaps (silence, never lies).
+- Turn-50 ledger: book value both sides (scrap + build-cost of standing assets / purchase-price of surviving regiment).
+- Enemy aim: EQUAL to towers through the shared accuracy model (pure symmetry).
+
 ### Stage A: Economic mirror (start here)
 - Attacker gets a scrap economy: per-round stipend + payment for results (structure damage, buildings destroyed, leaks).
 - Attacker **buys waves** from a priced roster (bounties ≈ prices already); mech is saved-for, not scripted.
