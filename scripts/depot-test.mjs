@@ -9,9 +9,9 @@ import {
 import { reachPolygon, arcClears } from "../src/depot/accuracy.js";
 import { friendlyFouls } from "../src/depot/state.js";
 import {
-  makeWorld, addBody, fireProjectile, stepWorld, applyDamage, worldHash, CAUSE, mulberry32,
+  makeWorld, addBody, addWeld, fireProjectile, explode, stepWorld, applyDamage, worldHash, CAUSE, mulberry32,
 } from "../src/engine/core.js";
-import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, WAVES as DEPOT_WAVES } from "../src/depot/specs.js";
+import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, WAVES as DEPOT_WAVES, MASON } from "../src/depot/specs.js";
 import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks, payBounties } from "../src/depot/units.js";
 import {
   makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue, payTown,
@@ -1705,6 +1705,51 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     const mortarSpec = { kind: "mortar", projSpeed: 33, occl: "lofted", volley: 1, acc: 0.02, blastR: 0, kv: 1, dmg: 1, fireRate: 0.2 };
     ok("fire discipline: a lofted mortar fires over the same wall even under CAREFUL", runCadence("careful", mortarSpec) > 0);
   }
+}
+
+// --- depot welds x1.5: identical shell bombardment against a standard
+// town building's chunk lattice vs the depot's lattice (mirrors buildTown's
+// gpos-adjacency weld pass in DepotGame.jsx — that file is JSX/React and
+// can't be imported into a headless node test, so the fixture reproduces
+// its weld-wiring exactly, with the same t.depot -> breakF*1.5 scaling this
+// task adds to buildTown itself).
+{
+  const { hcs, pitch, mass, breakF } = MASON;
+  const buildLattice = (isDepot, nx = 4, ny = 3, nz = 4) => {
+    const world = makeWorld({ field: { heightAt: () => 0, dirty: false, carve: () => {} }, seed: 1 });
+    const grid3 = [];
+    for (let ix = 0; ix < nx; ix++) for (let iy = 0; iy <= ny; iy++) for (let iz = 0; iz < nz; iz++) {
+      const c = addBody(world, {
+        kind: "chunk", team: 0, mass, hx: hcs, hy: hcs, hz: hcs,
+        x: (ix - (nx - 1) / 2) * pitch, y: hcs + 0.02 + iy * pitch, z: (iz - (nz - 1) / 2) * pitch,
+        friction: 0.65, restitution: 0.02,
+      });
+      c.sleeping = true; c.gpos = [ix, iy, iz];
+      grid3.push(c);
+    }
+    const key = (a, b, c2) => a + "," + b + "," + c2;
+    const map = new Map(grid3.map((c) => [key(c.gpos[0], c.gpos[1], c.gpos[2]), c]));
+    const townBreakF = isDepot ? breakF * 1.5 : breakF; // matches buildTown's t.depot scaling
+    const welds = [];
+    for (const c of grid3) {
+      const g = c.gpos;
+      for (const d of [[1, 0, 0], [0, 1, 0], [0, 0, 1]]) {
+        const o = map.get(key(g[0] + d[0], g[1] + d[1], g[2] + d[2]));
+        if (o) welds.push(addWeld(world, c, o, townBreakF));
+      }
+    }
+    return { world, welds };
+  };
+  const shellSpec = { kind: "shell", r: 2, kv: 12, dmg: 55, crater: 0.5, attacker: "player" };
+  const bombard = (isDepot) => {
+    const { world, welds } = buildLattice(isDepot);
+    explode(world, 0, hcs + 0.02 + pitch, 0, shellSpec); // same relative impact point both fixtures
+    return welds.filter((w) => w.broken).length;
+  };
+  const houseBroken = bombard(false);
+  const depotBroken = bombard(true);
+  ok("identical shell impact pops welds on a standard building", houseBroken > 0, `broken=${houseBroken}`);
+  ok("depot welds x1.5: same impact pops strictly fewer welds on the depot lattice", depotBroken < houseBroken, `house=${houseBroken} depot=${depotBroken}`);
 }
 
 if (fails.length) {

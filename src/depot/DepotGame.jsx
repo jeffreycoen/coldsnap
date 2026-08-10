@@ -421,11 +421,12 @@ function buildTown(world, grid, field) {
     }
     const key = (a, b, c2) => a + "," + b + "," + c2;
     const map = new Map(grid3.map((c) => [key(c.gpos[0], c.gpos[1], c.gpos[2]), c]));
+    const townBreakF = t.depot ? breakF * 1.5 : breakF; // the depot is built like it matters
     for (const c of grid3) {
       const g = c.gpos;
       for (const d of [[1, 0, 0], [0, 1, 0], [0, 0, 1]]) {
         const o = map.get(key(g[0] + d[0], g[1] + d[1], g[2] + d[2]));
-        if (o) addWeld(world, c, o, breakF);
+        if (o) addWeld(world, c, o, townBreakF);
       }
     }
     const cells = [];
