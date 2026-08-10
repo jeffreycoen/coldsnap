@@ -14,6 +14,7 @@ import {
   makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue,
 } from "../src/depot/economy.js";
 import { planWave, waveBudget } from "../src/depot/ai.js";
+import { composeIntel, openingIntel, strengthWord } from "../src/depot/intel.js";
 import fs from "node:fs";
 
 // identity fwdDir (DepotGame.jsx's ORIENT-aware transform, ORIENT===0 case)
@@ -862,6 +863,98 @@ function shareOf(buys, types) {
   ok("consequence loop: a massacred wave yields a measurably poorer next wave",
     totalUnits(planMassacred.buys) < totalUnits(planLeaked.buys),
     `${totalUnits(planMassacred.buys)} vs ${totalUnits(planLeaked.buys)}`);
+}
+
+// ---------------------------------------------------------------- intel.js
+// composeIntel/openingIntel: bureau field-recon prose. One wave old, seeded
+// silences, no digits ever.
+
+const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
+
+// armor plan -> armor line present, given a no-gap rng (first draw >= 0.25).
+{
+  const prevPlan = { buys: [{ type: "tank", n: 5 }], banked: false };
+  const reg = { heads: 400, heads0: 400 };
+  const rng = seqRng([0.5, 0.1]); // draw1: not silenced; draw2: variant pick
+  const lines = composeIntel(prevPlan, reg, rng);
+  ok("armor plan yields exactly one armor line (no-gap rng)", lines.length === 1, JSON.stringify(lines));
+  ok("armor line carries the squad's-worth strength word (5 tanks)",
+    lines[0] && lines[0].includes("squad's worth"), lines[0]);
+}
+
+// gap rng -> line absent, prevPlan object never mutated.
+{
+  const prevPlan = { buys: [{ type: "tank", n: 5 }], banked: false };
+  const snapshot = JSON.stringify(prevPlan);
+  const reg = { heads: 400, heads0: 400 };
+  const rng = seqRng([0.1]); // draw1 < GAP_CHANCE: silenced, no draw2 needed
+  const lines = composeIntel(prevPlan, reg, rng);
+  ok("gapped armor line is silenced, not altered", lines.length === 0, JSON.stringify(lines));
+  ok("prevPlan is never mutated by composeIntel", JSON.stringify(prevPlan) === snapshot);
+}
+
+// one-wave delay: intel at stall n reports the plan that governed wave n-1,
+// never the plan that just fought wave n.
+{
+  const S = makeRunState({ waves: WAVES });
+  S.started = true;
+  S.reg = makeRegiment(mulberry32(3));
+  const snap = { mortars: 0, mgs: 0, guns: 0, frosts: 0, walls: 0, towerElev: 0 };
+  startWave(S, WAVES, { reg: S.reg, snap, rng: mulberry32(50) });
+  ok("wave 0 startWave: no intel history yet", S.intelPlan === null);
+  const plan0 = S.pendingPlan;
+  S.ws.spawnQueue = 0;
+  tryStall(S, WAVES, 0, mulberry32(51));
+  ok("wave 0 stall dispatch carries the opening strength estimate, not plan intel",
+    S.dispatch.lines.some((l) => l.includes("Regimental strength estimate")));
+  advance(S, WAVES);
+  startWave(S, WAVES, { reg: S.reg, snap, rng: mulberry32(52) });
+  ok("wave 1 startWave: intelPlan is wave 0's plan (one-wave delay)", S.intelPlan === plan0);
+  ok("wave 1 startWave: pendingPlan has moved on to wave 1's plan", S.pendingPlan !== plan0);
+}
+
+// strengthWord boundaries.
+{
+  ok("strengthWord(3) = a handful", strengthWord(3) === "a handful");
+  ok("strengthWord(4) = a squad's worth", strengthWord(4) === "a squad's worth");
+  ok("strengthWord(8) = a squad's worth", strengthWord(8) === "a squad's worth");
+  ok("strengthWord(9) = in number", strengthWord(9) === "in number");
+  ok("strengthWord(15) = in number", strengthWord(15) === "in number");
+  ok("strengthWord(16) = company strength", strengthWord(16) === "company strength");
+}
+
+// openingIntel thresholds.
+{
+  ok("openingIntel <360 = understrength", openingIntel({ heads0: 359 }).includes("understrength"));
+  ok("openingIntel 360 = at establishment", openingIntel({ heads0: 360 }).includes("at establishment"));
+  ok("openingIntel 440 = at establishment", openingIntel({ heads0: 440 }).includes("at establishment"));
+  ok("openingIntel >440 = reinforced", openingIntel({ heads0: 441 }).includes("reinforced"));
+}
+
+// no digits in any emitted line, across 200 seeded compositions covering
+// every family (varied buys/banked/reg shapes) plus openingIntel.
+{
+  let digitFound = null;
+  for (let seed = 1; seed <= 200; seed++) {
+    const rng = mulberry32(seed);
+    const n = 1 + Math.floor(rng() * 40);
+    const shapes = [
+      { buys: [{ type: "tank", n }], banked: false },
+      { buys: [{ type: "", n }, { type: "fast", n }, { type: "sapper", n }], banked: false },
+      { buys: [{ type: "sapper", n }], banked: true },
+      { buys: [], banked: true },
+      null,
+    ];
+    const prevPlan = shapes[seed % shapes.length];
+    const reg = { heads: seed * 3, heads0: 300 + (seed % 200) };
+    const lines = composeIntel(prevPlan, reg, rng);
+    const opening = openingIntel(reg);
+    for (const l of [...lines, opening]) {
+      if (/\d/.test(l)) { digitFound = l; break; }
+    }
+    if (digitFound) break;
+  }
+  ok("no digits in any composeIntel/openingIntel line across 200 seeded runs", !digitFound, digitFound || "");
 }
 
 if (fails.length) {

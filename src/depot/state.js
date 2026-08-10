@@ -5,6 +5,7 @@ import { aimSolve, fireProjectile } from "../engine/core.js";
 import { scatterSigma, applyScatter } from "./accuracy.js";
 import { planWave } from "./ai.js";
 import { STIPEND, payResults } from "./economy.js";
+import { composeIntel, openingIntel } from "./intel.js";
 
 export const PHASE = { BUILD: "build", WAVE: "wave", STALL: "stall" };
 
@@ -88,8 +89,10 @@ export function makeRunState({ waves, startResources = 120, startLives = 20 }) {
 
 // Bureau placeholder copy for the between-wave stall card. Pure + deterministic
 // (no RNG — depot-lint forbids it) — waveIdx is the index of the wave that
-// just died, totalWaves is WAVES.length.
-export function makeDispatch(waveIdx, totalWaves) {
+// just died, totalWaves is WAVES.length. intelLines (already composed by the
+// caller — composeIntel/openingIntel run their own seeded rng draws before
+// this is called) are appended under the CLEARED header.
+export function makeDispatch(waveIdx, totalWaves, intelLines = []) {
   const wo = "WO-" + String(1000 + waveIdx).padStart(4, "0");
   const next = waveIdx + 2;
   return {
@@ -97,6 +100,7 @@ export function makeDispatch(waveIdx, totalWaves) {
     lines: [
       `WAVE ${waveIdx + 1} CLEARED. HOLD.`,
       next <= totalWaves ? `RESUPPLY INBOUND — WAVE ${next} OF ${totalWaves}.` : "FINAL WAVE CLEARED.",
+      ...intelLines,
       "ACKNOWLEDGE TO CONTINUE.",
     ],
   };
@@ -207,10 +211,19 @@ export function startWave(S, WAVES, opts = {}) {
     delay = w.delay;
     mix = w.mix;
   } else {
-    const { buys } = planWave(reg, snap || {}, ws.waveIdx, rng);
+    const plan = planWave(reg, snap || {}, ws.waveIdx, rng);
+    const { buys } = plan;
     units = buys.reduce((s, b) => s + b.n, 0);
     delay = w.delay;
     mix = buys.map((b) => [b.type, b.n]);
+    // Intel delay buffer: the plan that governed the PREVIOUS wave (still
+    // sitting in S.pendingPlan from the prior startWave call) becomes the
+    // one-wave-old source composeIntel reads at the next stall; this wave's
+    // fresh plan takes pendingPlan's place and won't surface as intel until
+    // the wave after this one clears. First wave of a run: intelPlan stays
+    // null (no history yet), so plan-keyed intel families stay silent.
+    S.intelPlan = S.pendingPlan || null;
+    S.pendingPlan = plan;
   }
   ws.spawnQueue = units;
   ws.spawnDelay = delay;
@@ -232,7 +245,7 @@ export function nextSpawnTag(S) {
 // Called once per tick while phase === "wave". When the spawn queue is
 // drained and no enemies remain alive, flips to "stall" and populates the
 // dispatch card. Returns true if the transition happened this call.
-export function tryStall(S, WAVES, liveEnemies) {
+export function tryStall(S, WAVES, liveEnemies, rng = null) {
   if (S.phase !== PHASE.WAVE) return false;
   if (S.ws.spawnQueue > 0) return false;
   if (liveEnemies > 0) return false;
@@ -242,7 +255,17 @@ export function tryStall(S, WAVES, liveEnemies) {
   // structure kills, leaks) before the dispatch card is drawn — the next
   // wave's planWave call reads reg.scrap as left by this.
   if (S.reg && S.ws.results) payResults(S.reg, S.ws.results);
-  const d = makeDispatch(S.ws.waveIdx, WAVES.length);
+  // Intel: one-wave-old plan (S.intelPlan, buffered by startWave) plus the
+  // live regiment read. rng is optional so callers/tests without a world
+  // rng (useTable runs) get no intel lines rather than a crash. Wave 0's
+  // stall gets the opening strength estimate instead — there's no plan
+  // history yet for composeIntel to report on.
+  let intelLines = [];
+  if (rng) {
+    if (S.ws.waveIdx === 0 && S.reg) intelLines = [openingIntel(S.reg)];
+    else intelLines = composeIntel(S.intelPlan, S.reg, rng);
+  }
+  const d = makeDispatch(S.ws.waveIdx, WAVES.length, intelLines);
   S.dispatch = d;
   S.lastDispatch = d;
   return true;

@@ -1028,7 +1028,7 @@ export default function DepotGame({ onExit }) {
               } else {
                 let live = 0;
                 for (const b of world.bodies) if (b.kind === "unit" && b.alive && b.team === 2) live++;
-                if (tryStall(S, WAVES, live)) toast("WAVE " + (ws.waveIdx + 1) + " CLEARED");
+                if (tryStall(S, WAVES, live, world.rng)) toast("WAVE " + (ws.waveIdx + 1) + " CLEARED");
               }
             }
             // phase === "stall": sim keeps ticking (idle world) — no spawns,
