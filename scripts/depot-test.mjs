@@ -15,6 +15,7 @@ import {
 } from "../src/engine/core.js";
 import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, WAVES as DEPOT_WAVES, MASON } from "../src/depot/specs.js";
 import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks, payBounties } from "../src/depot/units.js";
+import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad } from "../src/depot/squads.js";
 import {
   makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue, payTown,
 } from "../src/depot/economy.js";
@@ -1864,6 +1865,125 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     const Sc2 = { depotCensusAcc: 0, gameOver: false, victory: false };
     stepDepotCensus(Sc2, 0.01, () => { calls2++; return 1; });
     ok("census does not fire on a sub-threshold tick", calls2 === 0);
+  }
+}
+
+// --- squads.js (Phase 5 Task 1): squad brains — exposure, cover-hop, and
+// the defend/attack order machine. Pure functions over world + squad state.
+{
+  // exposureAt: a man behind a wall (relative to the threat bearing) should
+  // read low exposure; open field reads 1; a wall BEHIND him (away from the
+  // threat) doesn't help at all — still 1.
+  {
+    const world = makeWorld({ field: { heightAt: () => 0, dirty: false }, seed: 1 });
+    // man at origin; threat bears due +z (bearing 0, atan2(dx,dz) convention).
+    // wall sits between him and the threat, 1.5m out along +z.
+    addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.9, hy: 0.9, hz: 0.3, x: 0, y: 0.9, z: 1.5, hp: 70 });
+    const covered = exposureAt(world, 0, 0, 0);
+    ok(`exposureAt: wall between man and threat reads low (0.1-0.3)`, covered >= 0.1 && covered <= 0.3, `exposure=${covered}`);
+
+    const worldOpen = makeWorld({ field: { heightAt: () => 0, dirty: false }, seed: 1 });
+    const openExposure = exposureAt(worldOpen, 0, 0, 0);
+    ok("exposureAt: open field (no solids nearby) reads 1", openExposure === 1, `exposure=${openExposure}`);
+
+    const worldBehind = makeWorld({ field: { heightAt: () => 0, dirty: false }, seed: 1 });
+    // wall is BEHIND the man relative to the threat bearing (threat at
+    // bearing 0 / +z; wall sits at -z, i.e. behind him) — should not cover.
+    addBody(worldBehind, { kind: "wall", team: 1, mass: 0, hx: 0.9, hy: 0.9, hz: 0.3, x: 0, y: 0.9, z: -1.5, hp: 70 });
+    const behindExposure = exposureAt(worldBehind, 0, 0, 0);
+    ok("exposureAt: wall behind the man (away from threat) does not cover, reads 1", behindExposure === 1, `exposure=${behindExposure}`);
+  }
+
+  // coverHop: given a boulder near one candidate advance cell and open
+  // ground elsewhere, both cells reducing distance-to-dest, coverHop must
+  // pick the boulder-adjacent one.
+  {
+    const world = makeWorld({ field: { heightAt: () => 0, dirty: false }, seed: 1 });
+    // dest straight ahead at +z=40. A rock sits 1.5m past the (0,6) ring
+    // candidate, directly along the threat bearing (0 == +z) — that
+    // candidate reads well-covered; every other ring candidate is open
+    // ground. coverHop must pick the covered one.
+    addBody(world, { kind: "rock", team: 0, mass: 0, hx: 1.2, hy: 1.2, hz: 1.2, x: 0, y: 1.2, z: 7.5, hp: 1e9 });
+    const from = { x: 0, z: 0 }, dest = { x: 0, z: 40 };
+    const hop = coverHop(world, from, dest, 0);
+    const distFromRock = Math.hypot(hop.x - 0, hop.z - 7.5);
+    ok("coverHop prefers a boulder-adjacent advance cell over open ground",
+      distFromRock < 2.2, `hop=(${hop.x.toFixed(2)},${hop.z.toFixed(2)}) distFromRock=${distFromRock.toFixed(2)}`);
+    ok("coverHop's pick strictly reduces distance-to-dest",
+      Math.hypot(dest.x - hop.x, dest.z - hop.z) < Math.hypot(dest.x - from.x, dest.z - from.z));
+  }
+
+  // stepSquad defend: members hold within 3m of anchor over 30 sim seconds.
+  {
+    const world = makeWorld({ field: { heightAt: () => 0, dirty: false }, seed: 1 });
+    const squad = makeSquad(1, "rifles", 1, 0, 0);
+    for (let i = 0; i < SQUAD_SPECS.rifles.n; i++) {
+      const u = addBody(world, { kind: "unit", team: 1, mass: 90, hx: 0.35, hy: 0.9, hz: 0.35, x: 0, y: 0.9, z: 0, hp: 100 });
+      squad.memberIds.push(u.id);
+    }
+    const dt = 1 / 30;
+    let maxDist = 0;
+    for (let i = 0; i < 30 / dt; i++) {
+      stepSquad(world, squad, dt);
+      for (const id of squad.memberIds) {
+        const u = world.byId.get(id);
+        u.pos.x += u.v.x * dt; u.pos.z += u.v.z * dt;
+        const d = Math.hypot(u.pos.x - squad.anchor.x, u.pos.z - squad.anchor.z);
+        if (d > maxDist) maxDist = d;
+      }
+    }
+    ok("stepSquad defend holds members within 3m of anchor over 30 sim seconds",
+      maxDist <= 3.05, `maxDist=${maxDist.toFixed(2)}`);
+  }
+
+  // stepSquad attack: reaches a 30m dest in legs (arrival < 60s), then order
+  // flips to defend at dest.
+  {
+    const world = makeWorld({ field: { heightAt: () => 0, dirty: false }, seed: 2 });
+    const squad = makeSquad(2, "mg", 1, 0, 0);
+    for (let i = 0; i < SQUAD_SPECS.mg.n; i++) {
+      const u = addBody(world, { kind: "unit", team: 1, mass: 90, hx: 0.35, hy: 0.9, hz: 0.35, x: 0, y: 0.9, z: 0, hp: 100 });
+      squad.memberIds.push(u.id);
+    }
+    squad.order = "attack"; squad.dest = { x: 0, z: 30 };
+    const dt = 1 / 30;
+    let arrivedAt = -1;
+    for (let i = 0; i < 60 / dt; i++) {
+      stepSquad(world, squad, dt);
+      for (const id of squad.memberIds) {
+        const u = world.byId.get(id);
+        u.pos.x += u.v.x * dt; u.pos.z += u.v.z * dt;
+      }
+      if (squad.order === "defend" && arrivedAt < 0) arrivedAt = (i + 1) * dt;
+    }
+    ok(`attack squad reaches 30m dest in legs, arrival < 60s`, arrivedAt > 0 && arrivedAt < 60, `arrivedAt=${arrivedAt}`);
+    ok("attack squad flips to defend at dest", squad.order === "defend");
+    ok("defend anchor set to the arrival dest", Math.abs(squad.anchor.z - 30) < 1.5, `anchor.z=${squad.anchor.z}`);
+  }
+
+  // determinism twin-run: identical seed -> identical member positions.
+  {
+    const runTwin = (seed) => {
+      const world = makeWorld({ field: { heightAt: () => 0, dirty: false }, seed });
+      addBody(world, { kind: "rock", team: 0, mass: 0, hx: 1.2, hy: 1.2, hz: 1.2, x: 5, y: 1.2, z: 10, hp: 1e9 });
+      const squad = makeSquad(3, "rifles", 1, 0, 0);
+      for (let i = 0; i < SQUAD_SPECS.rifles.n; i++) {
+        const u = addBody(world, { kind: "unit", team: 1, mass: 90, hx: 0.35, hy: 0.9, hz: 0.35, x: 0, y: 0.9, z: 0, hp: 100 });
+        squad.memberIds.push(u.id);
+      }
+      squad.order = "attack"; squad.dest = { x: 0, z: 30 };
+      const dt = 1 / 30;
+      for (let i = 0; i < 50 / dt; i++) {
+        stepSquad(world, squad, dt);
+        for (const id of squad.memberIds) {
+          const u = world.byId.get(id);
+          u.pos.x += u.v.x * dt; u.pos.z += u.v.z * dt;
+        }
+      }
+      return squad.memberIds.map((id) => { const u = world.byId.get(id); return `${u.pos.x.toFixed(6)},${u.pos.z.toFixed(6)}`; }).join("|");
+    };
+    const twinA = runTwin(7), twinB = runTwin(7);
+    ok("twin-run determinism: identical seed -> identical member positions", twinA === twinB, `${twinA} vs ${twinB}`);
   }
 }
 
