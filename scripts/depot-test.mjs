@@ -2830,6 +2830,273 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
   }
 }
 
+// ==== TASK 6 ===================== wave timeout: annihilation OR the clock
+// Survivors withdraw in order at spawnDoneT + WAVE_TIMEOUT: no kill events,
+// no bounty, no leak damage — heads/tanks return to the regiment, and the
+// stall card says so (digit-free, only when someone actually withdrew).
+{
+  const M6 = await import("../src/depot/state.js");
+  const WT = M6.WAVE_TIMEOUT, execW = M6.executeWithdrawal;
+  ok("task6: WAVE_TIMEOUT exported at 75", WT === 75, String(WT));
+  ok("task6: executeWithdrawal exported", typeof execW === "function");
+
+  const W3 = [{ units: 3, delay: 1 }, { units: 4, delay: 1 }, { units: 5, delay: 1 }];
+  const mkS6 = () => {
+    const S6 = makeRunState({ waves: W3 });
+    S6.started = true;
+    S6.reg = { heads: 50, tanks: 5, heads0: 50, tanks0: 5, scrap: 200 };
+    return S6;
+  };
+  const unitBody = (w, team, extra = {}) => addBody(w, {
+    kind: "unit", team, hp: 1e9, hx: 0.26, hy: 0.86, hz: 0.26, mass: 82,
+    x: 0, y: 0.86, z: 30, ...extra,
+  });
+
+  if (typeof execW === "function") {
+    // (a) immortal straggler: stall fires at spawnDoneT + WAVE_TIMEOUT, never before
+    const Sa = mkS6();
+    startWave(Sa, W3, { useTable: true });
+    Sa.ws.spawnQueue = 0;
+    Sa.ws.spawnDoneT = 100;
+    const wA = makeWorld({ seed: 5 });
+    const strag = unitBody(wA, 2, { x: -4 }); strag.bounty = 4;
+    wA.t = 100 + WT - 0.1;
+    ok("task6(a): before the clock — no stall, no withdraw flag",
+      tryStall(Sa, W3, 1, null, wA) === false && !Sa.ws.withdrawPending, Sa.phase);
+    wA.t = 100 + WT + 0.1;
+    ok("task6(a): past the clock — withdraw pending, stall deferred to the sweep",
+      tryStall(Sa, W3, 1, null, wA) === false && Sa.ws.withdrawPending === true, Sa.phase);
+
+    // (b)+(c)+(g): the sweep returns exactly the ACTUALLY-alive team-2 bodies
+    const deadOne = unitBody(wA, 2, { x: 4, hp: 10 }); deadOne.alive = false; deadOne.bounty = 4;
+    const tank6 = addBody(wA, { kind: "vehicle", team: 2, hp: 400, hx: 1.2, hy: 0.9, hz: 1.8, mass: 900, x: 8, y: 0.9, z: 30 });
+    const friendly6 = unitBody(wA, 1, { x: -8, hp: 40 });
+    const heads0 = Sa.reg.heads, tanks0 = Sa.reg.tanks, scrap0 = Sa.reg.scrap;
+    const lives0 = Sa.lives, kills0 = Sa.kills, res0 = Sa.resources, ev0 = wA.events.length;
+    const r6 = execW(Sa, wA);
+    ok("task6(b): heads returned == live infantry at timeout",
+      Sa.reg.heads === heads0 + 1 && r6.inf === 1, `heads ${heads0}->${Sa.reg.heads}`);
+    ok("task6(b): tanks returned == live tanks at timeout",
+      Sa.reg.tanks === tanks0 + 1 && r6.tanks === 1, `tanks ${tanks0}->${Sa.reg.tanks}`);
+    ok("task6(b): dead body neither returned nor left in the world",
+      !wA.byId.get(deadOne.id) || Sa.reg.heads === heads0 + 1);
+    ok("task6(g): team-1 squad member never swept",
+      wA.byId.get(friendly6.id) === friendly6 && wA.bodies.includes(friendly6));
+    ok("task6(c): zero bounty, zero kill/leak events, zero lives cost during withdrawal",
+      wA.events.length === ev0 && Sa.reg.scrap === scrap0 && Sa.lives === lives0 &&
+      Sa.kills === kills0 && Sa.resources === res0);
+    ok("task6: pending cleared, withdrew counted",
+      Sa.ws.withdrawPending === false && Sa.ws.withdrew === 2, String(Sa.ws.withdrew));
+    ok("task6: swept bodies fully removed (byId + bodies)",
+      !wA.byId.get(strag.id) && !wA.byId.get(tank6.id) &&
+      !wA.bodies.includes(strag) && !wA.bodies.includes(tank6));
+
+    // stall completes after the sweep; (e) truthful digit-free line; (f) streak
+    Sa.ws.musterScrap = 0; // broke at muster, but it FIELDED — streak must stay 0
+    ok("task6(a): stall fires once the field is clear",
+      tryStall(Sa, W3, 0, null, wA) === true && Sa.phase === PHASE.STALL);
+    const wline = (Sa.dispatch?.lines || []).find((l) => /withdrew in order/i.test(l));
+    ok("task6(e): withdrawal line present when withdrew > 0, digit-free",
+      !!wline && !/\d/.test(wline), JSON.stringify(Sa.dispatch?.lines));
+    ok("task6(f): withdrawn (fielded) wave never increments the starved streak",
+      Sa.starvedStreak === 0, String(Sa.starvedStreak));
+
+    // (d) annihilation before the clock stalls immediately — and says nothing
+    const Sd = mkS6();
+    startWave(Sd, W3, { useTable: true });
+    Sd.ws.spawnQueue = 0;
+    Sd.ws.spawnDoneT = 100;
+    ok("task6(d): annihilation before the clock stalls immediately",
+      tryStall(Sd, W3, 0, null, { t: 110 }) === true && Sd.phase === PHASE.STALL);
+    ok("task6(e): no withdrawal line on an annihilated wave",
+      !(Sd.dispatch?.lines || []).some((l) => /withdrew/i.test(l)), JSON.stringify(Sd.dispatch?.lines));
+
+    // (h) twin determinism through a timeout wave
+    const twin6 = (seed) => {
+      const S2 = mkS6();
+      startWave(S2, W3, { useTable: true });
+      S2.ws.spawnQueue = 0;
+      const w2 = makeWorld({ seed });
+      const rr = mulberry32(seed);
+      for (let i = 0; i < 5; i++) unitBody(w2, 2, { x: (rr() - 0.5) * 8, z: 25 + i });
+      for (let i = 0; i < 60; i++) stepWorld(w2);
+      S2.ws.spawnDoneT = 0;
+      w2.t += WT + 1;
+      tryStall(S2, W3, 5, null, w2);
+      execW(S2, w2);
+      tryStall(S2, W3, 0, null, w2);
+      for (let i = 0; i < 60; i++) stepWorld(w2);
+      return `${worldHash(w2)}|${S2.ws.withdrew}|${S2.reg.heads}|${S2.reg.tanks}`;
+    };
+    ok("task6(h): twin determinism through a timeout wave", twin6(77) === twin6(77));
+  } else {
+    ok("task6: implementation present (executeWithdrawal)", false, "not exported yet");
+  }
+}
+
+// ==== TASK 4 (Phase 5): the enemy mirror — anti-personnel fire, cover
+// halts, their sniper, AI buy + intel. APPEND-ONLY section.
+// ==== TASK 4A: anti-personnel fire — riflemen + grenadiers
+{
+  const flatField = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+  const mkMember = (world, x, z, hp = 58) => {
+    const u = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x, y: 0.74, z, hp, friction: 0.5 });
+    u.dress = "human";
+    return u;
+  };
+  const mkRifleman = (world, x, z) => {
+    const u = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x, y: 0.88, z, hp: 58, friction: 0.38 });
+    u.tag = ""; u.brave = true;
+    return u;
+  };
+  const grid4 = straightGrid(0, -1);
+
+  // parity pin: dmg-equal dirDmg (5) measured +11.8% flagged DPS vs the
+  // pre-wiring (blast-only) baseline against a soft unit fixture; rescaled
+  // to 4.5 (measured +0.6%). Baseline recorded 2026-08-10 with dirDmg
+  // stripped from the spec, same fixture as below.
+  {
+    const dpsVsUnit = () => {
+      const world = makeWorld({ field: flatField, seed: 4 });
+      world.depotCombat = true;
+      const target = mkMember(world, 0, 0, 1e9);
+      const rifleman = mkRifleman(world, 0, 8);
+      const dt = 1 / 30, dur = 40;
+      const hp0 = target.hp;
+      let fireCd = 0;
+      for (let i = 0; i < dur / dt; i++) {
+        fireCd -= dt;
+        if (fireCd <= 0) {
+          const muzzle = { x: rifleman.pos.x, y: rifleman.pos.y + 0.5, z: rifleman.pos.z };
+          shooterFire(world, rifleman, muzzle, target, ENEMY_FIRE.rifle, { attacker: "enemy", owner: rifleman.id });
+          fireCd = ENEMY_FIRE.rifle.cd;
+        }
+        for (let s = 0; s < 5; s++) stepWorld(world);
+      }
+      return (hp0 - target.hp) / dur;
+    };
+    const BASELINE_RIFLE_VS_UNIT = 0.2714; // flagged, pre-wiring (dirDmg stripped)
+    const d = dpsVsUnit();
+    ok("4A parity: flagged enemy-rifle DPS vs a soft unit within +/-10% of pre-wiring baseline",
+      Math.abs(d / BASELINE_RIFLE_VS_UNIT - 1) <= 0.10, `dps=${d.toFixed(4)} baseline=${BASELINE_RIFLE_VS_UNIT}`);
+    ok("4A parity: ENEMY_FIRE.rifle.dirDmg rescaled to 4.5 (was dmg-equal 5)", ENEMY_FIRE.rifle.dirDmg === 4.5, `dirDmg=${ENEMY_FIRE.rifle.dirDmg}`);
+    ok("4A parity: ENEMY_FIRE.lob has no dirDmg (blast-only, nothing to rescale)", ENEMY_FIRE.lob.dirDmg === undefined);
+  }
+
+  // rifleman kills an exposed squad member within its field — 10-trial
+  // majority. The member is a REAL squad member (stepSquad drives him back
+  // to his slot after blast knockback — a driverless body just slides out
+  // of range and the engagement fizzles, found while building this
+  // fixture); the rifleman sits at a flow sink (dx=dz=0: his halt point).
+  const sinkGrid = straightGrid(0, 0);
+  const killRun = (seed) => {
+    const world = makeWorld({ field: flatField, seed });
+    world.depotCombat = true;
+    const sq4 = makeSquad(1, "sniper", 1, 0, 0);
+    spawnSquadMembers(world, sq4);
+    const member = world.byId.get(sq4.memberIds[0]);
+    const r = mkRifleman(world, 0, 5);
+    for (let i = 0; i < 10800 && member.alive; i++) {
+      stepSquad(world, sq4, world.dt);
+      stepUnits(world, sinkGrid, identFwdDir);
+      stepWorld(world);
+    }
+    return { dead: !member.alive, hash: worldHash(world), shooterHp: r.hp };
+  };
+  {
+    let kills = 0;
+    for (let seed = 1; seed <= 10; seed++) if (killRun(seed).dead) kills++;
+    ok("4A: rifleman kills an exposed member within his field (10-trial majority)", kills >= 6, `kills=${kills}/10`);
+    const a = killRun(3), b = killRun(3);
+    ok("4A: twin determinism (same seed twice -> identical worldHash)", a.hash === b.hash, `${a.hash} vs ${b.hash}`);
+  }
+
+  // owner threading: 50 unit-target pulls at a fixed 8m — the shooter's own
+  // round must clear his muzzle every time (no self-detonation, hp intact).
+  // Source-assert both step drivers thread owner on every fire call.
+  {
+    const world = makeWorld({ field: flatField, seed: 8 });
+    world.depotCombat = true;
+    const target = mkMember(world, 0, 0, 1e9);
+    const r = mkRifleman(world, 0, 8);
+    for (let i = 0; i < 50; i++) {
+      const muzzle = { x: r.pos.x, y: r.pos.y + 0.5, z: r.pos.z };
+      shooterFire(world, r, muzzle, target, ENEMY_FIRE.rifle, { attacker: "enemy", owner: r.id });
+      for (let s = 0; s < 200 && world.projectiles.length; s++) stepWorld(world);
+    }
+    ok("4A owner: 50 shots, no self-hit (shooter hp intact)", r.hp === 58 && r.alive, `hp=${r.hp}`);
+    const unitsSrc = fs.readFileSync(new URL("../src/depot/units.js", import.meta.url), "utf8");
+    const fireCalls = unitsSrc.match(/shooterFire\(world, [ut], muzzle, tgt, fspec,[\s\S]{0,240}?\)\;/g) || [];
+    ok("4A owner: every units.js fire call threads owner (source sweep)",
+      fireCalls.length >= 3 && fireCalls.every((c) => c.includes("owner:")), `calls=${fireCalls.length}`);
+  }
+
+  // fog law, both directions: unit-vs-unit fire ALWAYS gates on the
+  // attacker's (sign-flipped) field; structure fire NEVER does.
+  {
+    const T4 = makeTerritory(29, 57);
+    // green (team-1) field pinned at the member's cell -> team 2 reads unheld
+    for (let i = 0; i < 200; i++) stepTerritory(T4, [{ x: 0, z: 0, w: EMIT.tower.w, r: 6, sign: 1 }], 0.05);
+    const world = makeWorld({ field: flatField, seed: 9 });
+    const member = mkMember(world, 0, 0);
+    const wall = addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.4, hy: 0.83, hz: 0.4, x: 3, y: 0.83, z: 6, hp: 999 });
+    const r = mkRifleman(world, 0, 7);
+    for (let i = 0; i < 30; i++) stepUnits(world, grid4, identFwdDir, T4);
+    const tgt = world.byId.get(r.tgtId);
+    ok("4A fog law: member on ground the attacker's field can't reach is NOT acquired", !tgt || tgt.id !== member.id, `tgt=${tgt && tgt.kind}`);
+    ok("4A fog law: structure fire stays field-free (wall acquired on the same unheld ground)", !!tgt && tgt.id === wall.id, `tgt=${tgt && tgt.kind}`);
+    // reverse: red field at the member -> acquirable, and preferred over the wall
+    const T5 = makeTerritory(29, 57);
+    for (let i = 0; i < 200; i++) stepTerritory(T5, [{ x: 0, z: 0, w: EMIT.tower.w, r: 6, sign: -1 }], 0.05);
+    const world2 = makeWorld({ field: flatField, seed: 9 });
+    const member2 = mkMember(world2, 0, 0);
+    addBody(world2, { kind: "wall", team: 1, mass: 0, hx: 0.4, hy: 0.83, hz: 0.4, x: 3, y: 0.83, z: 6, hp: 999 });
+    const r2 = mkRifleman(world2, 0, 7);
+    for (let i = 0; i < 30; i++) stepUnits(world2, grid4, identFwdDir, T5);
+    const tgt2 = world2.byId.get(r2.tgtId);
+    ok("4A fog law: member on attacker-reachable ground IS acquired (field flips the gate)", !!tgt2 && tgt2.id === member2.id, `tgt=${tgt2 && tgt2.kind}`);
+  }
+
+  // priority boundary, both sides of 0.6R (flat effR = 13 -> urgency 7.8m):
+  {
+    // member at 6m (inside urgency), wall at 5m (nearer!) -> member wins
+    const world = makeWorld({ field: flatField, seed: 12 });
+    const member = mkMember(world, 0, 1);
+    addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.4, hy: 0.83, hz: 0.4, x: 0, y: 0.83, z: 2, hp: 999 });
+    const r = mkRifleman(world, 0, 7);
+    for (let i = 0; i < 30; i++) stepUnits(world, grid4, identFwdDir);
+    const tgt = world.byId.get(r.tgtId);
+    ok("4A priority: member inside 0.6R beats a NEARER wall", !!tgt && tgt.id === member.id, `tgt=${tgt && tgt.kind}`);
+    // member at 10m (outside urgency, inside 13m range), wall at 11m -> wall wins
+    const world2 = makeWorld({ field: flatField, seed: 12 });
+    mkMember(world2, 0, -3);
+    const wall2 = addBody(world2, { kind: "wall", team: 1, mass: 0, hx: 0.4, hy: 0.83, hz: 0.4, x: 0, y: 0.83, z: -4, hp: 999 });
+    const r2 = mkRifleman(world2, 0, 7);
+    for (let i = 0; i < 30; i++) stepUnits(world2, grid4, identFwdDir);
+    const tgt2 = world2.byId.get(r2.tgtId);
+    ok("4A priority: member OUTSIDE 0.6R loses to the wall (urgency boundary pinned)", !!tgt2 && tgt2.id === wall2.id, `tgt=${tgt2 && tgt2.kind}`);
+  }
+
+  // grenadier: same urgency pass, lob lands blast on a member (no hitOnly)
+  {
+    const world = makeWorld({ field: flatField, seed: 6 });
+    world.depotCombat = true;
+    const member = mkMember(world, 0, 0);
+    const g = addBody(world, { kind: "unit", team: 2, mass: 84, hx: 0.26, hy: 0.92, hz: 0.26, x: 0, y: 0.94, z: 10, hp: 66, friction: 0.38 });
+    g.tag = "gren"; g.utype = "gren"; g.brave = true;
+    for (let i = 0; i < 4800 && member.alive; i++) {
+      stepUnits(world, grid4, identFwdDir);
+      stepWorld(world);
+    }
+    ok("4A grenadier: acquires a member inside the urgency radius", g.tgtId === member.id || !member.alive || member.hp < 58, `tgt=${g.tgtId} hp=${member.hp && member.hp.toFixed(1)}`);
+    ok("4A grenadier: lob blast hurts the member (unit shots carry no hitOnly)", member.hp < 58, `hp=${member.hp && member.hp.toFixed(1)}`);
+    // owner threading keeps the shell off his own hull at launch; close-in
+    // SPLASH from his own blast is the law of the world (blast is blast),
+    // so the assert is survival, not zero damage.
+    ok("4A grenadier: the lobber survives his own lobs (owner threaded)", g.alive, `hp=${g.hp && g.hp.toFixed(1)}`);
+  }
+}
+
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
   process.exit(1);

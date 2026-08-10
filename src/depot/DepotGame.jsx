@@ -15,7 +15,7 @@ import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, WAVES, MASON, INFANTRY_ARMS } from "./specs.js";
 import { windAt } from "./wind.js";
-import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, SANDBAG_COST, pruneSquads } from "./state.js";
+import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, executeWithdrawal, WAVE_TIMEOUT, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, SANDBAG_COST, pruneSquads } from "./state.js";
 import { SQUAD_SPECS, makeSquad, stepSquad } from "./squads.js";
 import { reachPolygon, arcClears } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks, payBounties } from "./units.js";
@@ -1187,6 +1187,10 @@ export default function DepotGame({ onExit }) {
         const sp = SPAWN_POINTS[S.spawnRR++ % SPAWN_POINTS.length];
         spawnEnemy(world, sp, tag);
         ws.spawnQueue--;
+        // Wave clock starts at spawn-completion, not wave start — a slow,
+        // long wave gets its full assault window; only the aftermath is
+        // clamped (tryStall's WAVE_TIMEOUT clause reads this).
+        if (ws.spawnQueue <= 0) ws.spawnDoneT = world.t;
       };
       const sendNow = () => { const ws = S.ws; if (S.started && S.phase === PHASE.BUILD && ws.betweenWaves && !S.gameOver && !S.victory) { ws.countdown = 0; } };
       S.sendNow = sendNow;
@@ -1278,7 +1282,7 @@ export default function DepotGame({ onExit }) {
         return evs;
       };
 
-      window.__DEPOT__ = () => ({ t: world.t, scrap: S.resources, lives: S.lives, kills: S.kills, wave: S.ws.waveIdx + 1, bodies: world.bodies.length, fps: S.fps, paused: S.paused, speed: S.speed, phase: S.phase, reg: { ...S.reg }, depotStanding: S.depotStanding != null ? S.depotStanding : 1, breach: !!S.breach });
+      window.__DEPOT__ = () => ({ t: world.t, scrap: S.resources, lives: S.lives, kills: S.kills, wave: S.ws.waveIdx + 1, bodies: world.bodies.length, fps: S.fps, paused: S.paused, speed: S.speed, phase: S.phase, reg: { ...S.reg }, depotStanding: S.depotStanding != null ? S.depotStanding : 1, breach: !!S.breach, withdrew: S.ws.withdrew || 0 });
       window.__DEPOTACK__ = () => { if (S.doAdvance) S.doAdvance(); };
       window.__DEPOTBUILD__ = (gx, gz, mode) => buildAt(gx, gz, mode || "wall");
       window.__DEPOTSPAWN__ = (n) => { for (let i = 0; i < (n || 1); i++) spawnEnemy(world, SPAWN_POINTS[S.spawnRR++ % SPAWN_POINTS.length]); };
@@ -1312,6 +1316,14 @@ export default function DepotGame({ onExit }) {
         // uses this to stay inside its budget under swiftshader).
         S.ws.spawnQueue = 0;
         for (const b of world.bodies) if (b.kind === "unit" && b.team === 2 && b.alive) applyDamage(world, b, 1e6, { cause: "BLAST", attacker: "player" });
+      };
+      window.__DEPOTWEDGE__ = () => {
+        // debug harness: wedge the current wave — drain the spawn queue and
+        // backdate the wave clock past WAVE_TIMEOUT so the next tick times
+        // out and every live enemy withdraws (smoke.mjs drives the Task 6
+        // withdrawal path with this instead of waiting 75 real seconds).
+        S.ws.spawnQueue = 0;
+        S.ws.spawnDoneT = world.t - (WAVE_TIMEOUT + 1);
       };
       window.__DEPOTEND__ = (victory) => {
         // debug harness: force the run into its end state for screenshotting
@@ -1493,9 +1505,15 @@ export default function DepotGame({ onExit }) {
                 ws.spawnTimer -= sdt;
                 if (ws.spawnTimer <= 0) { ws.spawnTimer = ws.spawnDelay; spawnOne(); }
               } else {
+                // Timed-out wave: survivors withdraw in order BEFORE the
+                // live count, so the same tick's tryStall sees a clear
+                // field and stalls with ws.withdrew already booked. Silent
+                // exit — no kill events, no bounty, no smears; heads/tanks
+                // return to the regiment inside executeWithdrawal.
+                if (S.ws.withdrawPending) executeWithdrawal(S, world);
                 let live = 0;
                 for (const b of world.bodies) if (b.kind === "unit" && b.alive && b.team === 2) live++;
-                if (tryStall(S, WAVES, live, world.rng)) {
+                if (tryStall(S, WAVES, live, world.rng, world)) {
                   const paid = payTown(townUV, T);
                   S.resources += paid.player;
                   if (S.reg) S.reg.scrap += paid.regiment;

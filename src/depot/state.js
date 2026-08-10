@@ -445,8 +445,14 @@ export function stepDepotCensus(S, dt, computeFraction) {
 }
 
 export function makeWaveState() {
-  return { waveIdx: 0, spawnQueue: 0, spawnTimer: 0, spawnDelay: 1, active: false, betweenWaves: true, countdown: 8, mixBag: [], results: null, fielded: 0, musterScrap: null };
+  return { waveIdx: 0, spawnQueue: 0, spawnTimer: 0, spawnDelay: 1, active: false, betweenWaves: true, countdown: 8, mixBag: [], results: null, fielded: 0, musterScrap: null, spawnDoneT: null, withdrawPending: false, withdrew: 0 };
 }
+
+// Wave timeout: seconds of world-time after spawning completes before the
+// survivors break contact and withdraw in order. Task 7's balance probe may
+// tune this; rule (e) there treats heavy withdrawal (>20% of waves) as a
+// stuck-unit bug signal, not a dial.
+export const WAVE_TIMEOUT = 75;
 
 export function makeRunState({ waves, startResources = 120, startLives = 20 }) {
   return {
@@ -675,6 +681,9 @@ export function startWave(S, WAVES, opts = {}) {
   ws.active = true;
   ws.betweenWaves = false;
   ws.mixBag = mix && mix.length ? buildMixBag(mix) : [];
+  ws.spawnDoneT = null;
+  ws.withdrawPending = false;
+  ws.withdrew = 0;
   ws.results = { structureDmg: 0, towerKills: 0, wallKills: 0, buildingKills: 0, leaks: 0 };
   S.phase = PHASE.WAVE;
 }
@@ -689,9 +698,18 @@ export function nextSpawnTag(S) {
 // Called once per tick while phase === "wave". When the spawn queue is
 // drained and no enemies remain alive, flips to "stall" and populates the
 // dispatch card. Returns true if the transition happened this call.
-export function tryStall(S, WAVES, liveEnemies, rng = null) {
+export function tryStall(S, WAVES, liveEnemies, rng = null, world = null) {
   if (S.phase !== PHASE.WAVE) return false;
   if (S.ws.spawnQueue > 0) return false;
+  // Waves end by annihilation OR the clock: WAVE_TIMEOUT seconds of
+  // world-time (never wall clock) after the last queued unit spawned
+  // (ws.spawnDoneT, stamped by DepotGame's spawn driver), survivors break
+  // contact. The sweep itself (executeWithdrawal) is the caller's job —
+  // this only raises the flag; the stall completes on a later call once
+  // the field is actually clear.
+  const timedOut = world && S.ws.spawnDoneT != null &&
+    (world.t - S.ws.spawnDoneT) > WAVE_TIMEOUT;
+  if (liveEnemies > 0 && timedOut) { S.ws.withdrawPending = true; return false; }
   if (liveEnemies > 0) return false;
   S.ws.active = false;
   S.phase = PHASE.STALL;
@@ -739,9 +757,36 @@ export function tryStall(S, WAVES, liveEnemies, rng = null) {
     else intelLines = composeIntel(S.intelPlan, S.reg, rng);
   }
   const d = makeDispatch(S.ws.waveIdx, WAVES.length, intelLines);
+  // Truthful withdrawal line: appears ONLY when at least one unit actually
+  // withdrew (never on annihilated waves), and stays digit-free.
+  if (S.ws.withdrew > 0) {
+    d.lines.splice(d.lines.length - 1, 0, "Contact broken off. The remainder withdrew in order.");
+  }
   S.dispatch = d;
   S.lastDispatch = d;
   return true;
+}
+
+// The timeout sweep: every ACTUALLY-alive team-2 body (unit|vehicle) leaves
+// the world via the leak-removal mechanics (units.js checkLeaks: byId.delete
+// + bodies.splice) MINUS the lives cost and MINUS the leak event — no kill
+// events, no bounty (nothing dies, so units.js's _paid guard never fires),
+// no smears. Their manpower returns to the regiment: they didn't die, the
+// books stay honest. Team-1 squad members are structurally untouchable
+// (team filter). Dead bodies are left to the normal corpse sweep.
+export function executeWithdrawal(S, world) {
+  let inf = 0, tanks = 0;
+  for (let i = world.bodies.length - 1; i >= 0; i--) {
+    const b = world.bodies[i];
+    if ((b.kind !== "unit" && b.kind !== "vehicle") || !b.alive || b.team !== 2) continue;
+    if (b.kind === "vehicle") tanks++; else inf++;
+    world.byId.delete(b.id);
+    world.bodies.splice(i, 1);
+  }
+  if (S.reg) { S.reg.heads += inf; S.reg.tanks += tanks; }
+  S.ws.withdrew = inf + tanks;
+  S.ws.withdrawPending = false;
+  return { inf, tanks };
 }
 
 // THE single entry point that moves the run out of a stall. A future
