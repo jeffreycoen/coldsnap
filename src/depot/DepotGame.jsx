@@ -16,7 +16,7 @@ import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, WAVES, MASON } from "./specs.js";
 import { windAt } from "./wind.js";
 import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot } from "./state.js";
-import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks } from "./units.js";
+import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks, payBounties } from "./units.js";
 import { makeRegiment } from "./economy.js";
 import Dispatch from "./Dispatch.jsx";
 
@@ -497,12 +497,7 @@ function stepDepot(world, grid, onStructureLost, town, onRuin) {
       if (onStructureLost) onStructureLost(b);
     }
   }
-  for (const b of world.bodies) {
-    if (b.kind === "unit" && b.team === 2 && !b.alive && !b._paid && b.bounty) {
-      b._paid = true;
-      world.events.push({ type: "tdkill", bounty: b.bounty });
-    }
-  }
+  payBounties(world);
   for (let i = world.bodies.length - 1; i >= 0; i--) {
     const b = world.bodies[i];
     if (b.kind === "unit" && !b.alive && world.t - (b.deadT || 0) > 2.5) { world.byId.delete(b.id); world.bodies.splice(i, 1); }
@@ -1067,7 +1062,7 @@ export default function DepotGame({ onExit }) {
               totalWaves: WAVES.length, between: S.ws.betweenWaves, countdown: Math.max(0, Math.ceil(S.ws.countdown)),
               phase: S.phase, dispatch: S.dispatch, lastDispatch: S.lastDispatch,
               started: S.started, gameOver: S.gameOver, victory: S.victory,
-              attrition: S.attrition, ledgerLoss: S.ledgerLoss,
+              attrition: S.attrition, spent: S.spent, ledgerLoss: S.ledgerLoss,
               mode: S.mode, sellMode: S.sellMode,
               paused: S.paused, speed: S.speed,
               muted: A.muted, seed: MAP_SEED,
@@ -1265,7 +1260,7 @@ export default function DepotGame({ onExit }) {
 
       {(hud.gameOver || hud.victory) && !fatal && (
         <Dispatch
-          dispatch={makeEndDispatch({ victory: hud.victory, kills: hud.kills, wave: hud.wave, totalWaves: hud.totalWaves, attrition: hud.attrition, ledgerLoss: hud.ledgerLoss })}
+          dispatch={makeEndDispatch({ victory: hud.victory, kills: hud.kills, wave: hud.wave, totalWaves: hud.totalWaves, attrition: hud.attrition, spent: hud.spent, ledgerLoss: hud.ledgerLoss })}
           gating={false}
           label="RETURN TO BASE"
           onAcknowledge={() => { if (onExit) onExit(); else restart(); }}

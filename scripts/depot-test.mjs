@@ -9,11 +9,11 @@ import {
   makeWorld, addBody, fireProjectile, stepWorld, applyDamage, worldHash, CAUSE, mulberry32,
 } from "../src/engine/core.js";
 import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, WAVES as DEPOT_WAVES } from "../src/depot/specs.js";
-import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks } from "../src/depot/units.js";
+import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks, payBounties } from "../src/depot/units.js";
 import {
   makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue,
 } from "../src/depot/economy.js";
-import { planWave, waveBudget } from "../src/depot/ai.js";
+import { planWave, waveBudget, MIN_WAVE_FLOOR } from "../src/depot/ai.js";
 import { composeIntel, openingIntel, strengthWord } from "../src/depot/intel.js";
 import fs from "node:fs";
 
@@ -211,6 +211,94 @@ ok("advancing past the last wave sets victory", S.victory === true);
   N.phase = PHASE.WAVE;
   tryStall(N, W50, 0);
   ok("intact regiment mid-run: no attrition win", N.victory === false && N.attrition !== true);
+}
+
+// bounty bug: killing a TANK (kind: "vehicle") must pay its bounty (25),
+// same as a killed infantry unit (kind: "unit") does.
+{
+  const world = makeWorld({ seed: 1 });
+  const tank = spawnUnit(world, { x: 0, z: 10 }, "tank");
+  ok("spawned tank carries the TANK bounty", tank.bounty === TANK.bounty, tank.bounty);
+  tank.alive = false;
+  const before = world.events.length;
+  payBounties(world);
+  const evs = world.events.slice(before);
+  const tdk = evs.find((e) => e.type === "tdkill");
+  ok("dead tank pays a tdkill bounty event", !!tdk, JSON.stringify(evs));
+  ok("tank bounty is 25 (TANK.bounty)", tdk && tdk.bounty === 25, tdk);
+  const before2 = world.events.length;
+  payBounties(world);
+  ok("bounty is paid only once (b._paid guard)", world.events.length === before2);
+}
+
+// economic-paralysis victory: 3 CONSECUTIVE stalls where the attacker
+// couldn't afford a minimum wave (reg.scrap < MIN_WAVE_FLOOR) end the run
+// early as a WIN — "the offensive is spent" — independent of combatIneffective.
+{
+  const W50 = Array.from({ length: 50 }, (_, i) => ({ units: 12 + i * 2, delay: 0.9 }));
+  const P = makeRunState({ waves: W50, startResources: 0 });
+  P.started = true;
+  P.ws.waveIdx = 5;
+  // heads/tanks well above the attrition threshold — this must NOT be an
+  // attrition win, only a starvation one.
+  P.reg = { heads: 300, tanks: 5, heads0: 400, tanks0: 10, scrap: MIN_WAVE_FLOOR - 1 };
+  P.ws.spawnQueue = 0;
+  P.phase = PHASE.WAVE;
+  tryStall(P, W50, 0);
+  ok("starved stall 1/3: no win yet", P.victory !== true);
+  P.phase = PHASE.WAVE; P.ws.spawnQueue = 0;
+  tryStall(P, W50, 0);
+  ok("starved stall 2/3: still no win", P.victory !== true);
+  P.phase = PHASE.WAVE; P.ws.spawnQueue = 0;
+  tryStall(P, W50, 0);
+  ok("starved stall 3/3: run ends as an early WIN", P.victory === true, P.victory);
+  ok("spent win: gameOver is not set", P.gameOver === false);
+  ok("spent win: not flagged as attrition", P.attrition !== true);
+  ok("spent win: flagged as spent", P.spent === true);
+  const endD = makeEndDispatch({ victory: true, kills: 5, wave: 8, totalWaves: 50, spent: P.spent });
+  ok("spent end card judges the offensive spent", endD.lines.some((l) => /offensive is judged spent/i.test(l)), JSON.stringify(endD.lines));
+  ok("spent end card says the field remains in Bureau hands", endD.lines.some((l) => /Bureau hands/i.test(l)), JSON.stringify(endD.lines));
+  ok("spent end card carries no digits in its bureau-voice verdict lines", !/\d/.test(endD.lines.find((l) => /Bureau hands/i.test(l))) && !/\d/.test(endD.lines.find((l) => /offensive is judged spent/i.test(l))));
+}
+
+// only 2 consecutive starved stalls: no trigger.
+{
+  const W50 = Array.from({ length: 50 }, (_, i) => ({ units: 12 + i * 2, delay: 0.9 }));
+  const P2 = makeRunState({ waves: W50, startResources: 0 });
+  P2.started = true;
+  P2.ws.waveIdx = 5;
+  P2.reg = { heads: 300, tanks: 5, heads0: 400, tanks0: 10, scrap: MIN_WAVE_FLOOR - 1 };
+  P2.ws.spawnQueue = 0;
+  P2.phase = PHASE.WAVE;
+  tryStall(P2, W50, 0);
+  P2.phase = PHASE.WAVE; P2.ws.spawnQueue = 0;
+  tryStall(P2, W50, 0);
+  ok("2 starved stalls: no win", P2.victory !== true && P2.gameOver !== true);
+}
+
+// a solvent stall resets the consecutive counter.
+{
+  const W50 = Array.from({ length: 50 }, (_, i) => ({ units: 12 + i * 2, delay: 0.9 }));
+  const P3 = makeRunState({ waves: W50, startResources: 0 });
+  P3.started = true;
+  P3.ws.waveIdx = 5;
+  P3.reg = { heads: 300, tanks: 5, heads0: 400, tanks0: 10, scrap: MIN_WAVE_FLOOR - 1 };
+  P3.ws.spawnQueue = 0;
+  P3.phase = PHASE.WAVE;
+  tryStall(P3, W50, 0); // starved 1
+  P3.phase = PHASE.WAVE; P3.ws.spawnQueue = 0;
+  P3.reg.scrap = MIN_WAVE_FLOOR - 1;
+  tryStall(P3, W50, 0); // starved 2
+  P3.phase = PHASE.WAVE; P3.ws.spawnQueue = 0;
+  P3.reg.scrap = MIN_WAVE_FLOOR + 500; // solvent — resets streak
+  tryStall(P3, W50, 0);
+  P3.phase = PHASE.WAVE; P3.ws.spawnQueue = 0;
+  P3.reg.scrap = MIN_WAVE_FLOOR - 1;
+  tryStall(P3, W50, 0); // starved 1 again post-reset
+  P3.phase = PHASE.WAVE; P3.ws.spawnQueue = 0;
+  P3.reg.scrap = MIN_WAVE_FLOOR - 1;
+  tryStall(P3, W50, 0); // starved 2 again
+  ok("solvent stall resets streak: no win after only 2 post-reset", P3.victory !== true, P3.starvedStreak);
 }
 
 // ================================================== seeded determinism

@@ -3,7 +3,7 @@
 // never be read from the closure — see ColdsnapTD.jsx for why).
 import { aimSolve, fireProjectile } from "../engine/core.js";
 import { scatterSigma, applyScatter } from "./accuracy.js";
-import { planWave } from "./ai.js";
+import { planWave, MIN_WAVE_FLOOR } from "./ai.js";
 import { STIPEND, payResults, combatIneffective, bookValue } from "./economy.js";
 import { composeIntel, openingIntel } from "./intel.js";
 import { TOWER_SPECS, ENEMY_SPECS, TANK } from "./specs.js";
@@ -83,6 +83,7 @@ export function makeRunState({ waves, startResources = 120, startLives = 20 }) {
     ws: makeWaveState(), spawnRR: 0,
     mode: "wall", sellMode: false, inspectId: null,
     started: false, gameOver: false, victory: false, attrition: false, ledgerLoss: false,
+    starvedStreak: 0, spent: false,
     paused: false, speed: 1,
     phase: PHASE.BUILD,
     dispatch: null, lastDispatch: null,
@@ -177,7 +178,7 @@ export function checkWin(S, WAVES, snap = {}) {
 
 // End-of-run dispatch copy — same teletyped card style as the between-wave
 // stall dispatch, reused for the WIN/LOSS end card. Pure + deterministic.
-export function makeEndDispatch({ victory, kills, wave, totalWaves, attrition = false, ledgerLoss = false }) {
+export function makeEndDispatch({ victory, kills, wave, totalWaves, attrition = false, spent = false, ledgerLoss = false }) {
   const wo = "WO-9999";
   if (victory) {
     if (attrition) {
@@ -185,6 +186,17 @@ export function makeEndDispatch({ victory, kills, wave, totalWaves, attrition = 
         wo,
         lines: [
           "THE FORMATION OPPOSITE IS JUDGED COMBAT-INEFFECTIVE.",
+          "The field remains in Bureau hands.",
+          `${kills} CONFIRMED. FIELD ORDER CLOSED.`,
+        ],
+      };
+    }
+    if (spent) {
+      return {
+        wo,
+        lines: [
+          "Three musters called without issue.",
+          "The offensive is judged spent.",
           "The field remains in Bureau hands.",
           `${kills} CONFIRMED. FIELD ORDER CLOSED.`,
         ],
@@ -310,6 +322,24 @@ export function tryStall(S, WAVES, liveEnemies, rng = null) {
     S.victory = true;
     S.attrition = true;
   }
+  // Economic-paralysis victory: a strong defense can starve the attacker
+  // (massacres pay nothing, per payResults above) without ever driving the
+  // regiment's heads/tanks under combatIneffective's threshold — the field
+  // stays crowded with unspent conscripts the attacker simply can't afford
+  // to muster. Tracked across stalls (S.starvedStreak): each stall the
+  // attacker closes with reg.scrap under MIN_WAVE_FLOOR (can't afford even
+  // a token 4-conscript muster) extends the streak; any solvent stall
+  // resets it to 0. Three CONSECUTIVE starved stalls reads as the offensive
+  // being spent — an early WIN, independent of and stacked after the
+  // combatIneffective check above (either can fire first; both are guarded
+  // by !S.gameOver && !S.victory so they can't double-fire the same stall).
+  if (S.reg && !S.gameOver && !S.victory) {
+    S.starvedStreak = S.reg.scrap < MIN_WAVE_FLOOR ? (S.starvedStreak || 0) + 1 : 0;
+    if (S.starvedStreak >= 3) {
+      S.victory = true;
+      S.spent = true;
+    }
+  }
   // Intel: one-wave-old plan (S.intelPlan, buffered by startWave) plus the
   // live regiment read. rng is optional so callers/tests without a world
   // rng (useTable runs) get no intel lines rather than a crash. Wave 0's
@@ -350,6 +380,6 @@ export function advance(S, WAVES, snap = {}) {
 export const HUD0 = {
   fps: 0, wave: 1, lives: 20, enemies: 0, resources: 120, walls: 0, towers: 0, kills: 0,
   totalWaves: 50, between: true, countdown: 8, phase: PHASE.BUILD, dispatch: null, lastDispatch: null,
-  started: false, gameOver: false, victory: false, attrition: false, ledgerLoss: false,
+  started: false, gameOver: false, victory: false, attrition: false, ledgerLoss: false, spent: false,
   mode: "wall", sellMode: false, paused: false, speed: 1, inspect: null, toasts: [],
 };

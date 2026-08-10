@@ -19,6 +19,16 @@ export function waveBudget(waveIdx) {
   return 20 + 100 * Math.pow(Math.min(w, 50) / 50, 0.85) + Math.max(0, w - 50) * 0.6;
 }
 
+// MIN_WAVE_FLOOR — the smallest muster still worth calling: 4 bare
+// conscripts (ENEMY_SPECS[""].bounty each). Below this, reg.scrap can't even
+// buy the cheapest possible wave (a wave with as few as one live body still
+// makes the attacker "field" something), so scrap under the floor is read
+// as genuine economic paralysis rather than a doctrine choosing to bank
+// (see state.js's "spent offensive" trigger, Phase 3 Task 8). 4 is
+// deliberately small — this must only fire when the attacker truly can't
+// afford a token muster, not merely a thin one.
+export const MIN_WAVE_FLOOR = 4 * cost("");
+
 // Counter-weight signals from the build snapshot, each 0..1.
 function signals(snap) {
   return {
