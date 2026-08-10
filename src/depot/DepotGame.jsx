@@ -796,7 +796,11 @@ export default function DepotGame({ onExit }) {
           b.flagPole = true;
           // effRange cached once (Task 3): towers are static, so the
           // elevation-scaled acquisition range never changes after this.
-          b.effRange = effRange(world, { x: wp.x, y: y + spec.hy + 0.45, z: wp.z }, spec);
+          // Derived from the LIVE body so it matches towerShot's muzzle
+          // (pos.y + hy + 0.45 = turret TOP + 0.45) and can never drift —
+          // the old ground+hy+0.45 form sat a full half-height below the
+          // muzzle and under-computed the elevation bonus.
+          b.effRange = effRange(world, { x: b.pos.x, y: b.pos.y + b.hy + 0.45, z: b.pos.z }, spec);
         } else {
           b = addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.9, hy: 0.9, hz: 0.9, x: wp.x, y: y + 0.9, z: wp.z, hp: 70 });
         }
@@ -830,7 +834,10 @@ export default function DepotGame({ onExit }) {
       const startPending = (gx, gz, mode, v) => {
         const spec = v.spec, wp = v.wp;
         const y = field.heightAt(wp.x, wp.z);
-        const muzzle = { x: wp.x, y: y + spec.hy + 0.45, z: wp.z };
+        // Ghost muzzle at the TRUE turret top (ground + 2*hy + 0.45) —
+        // same height buildAt's body-derived effRange and towerShot use, so
+        // the preview's sightlines originate where the tower will fire from.
+        const muzzle = { x: wp.x, y: y + spec.hy * 2 + 0.45, z: wp.z };
         let poly = null, ringR = 0, color = 0xff5544;
         if (mode === "frost") {
           // aura, not a gun: plain radius, no LOS clipping, blue-white —

@@ -2400,6 +2400,38 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
   }
 }
 
+// ============================================================ 2026-08-10 playtest batch
+// Four fixes: tower view height, empty waves, fog-repel = effRange/2,
+// preview declipped from fog. See .superpowers/sdd/2026-08-10-depot-phase-5/.
+{
+  const depotSrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+
+  // --- Fix 1: tower view height — cached effRange derives from the LIVE
+  // body's true muzzle (pos.y + hy + 0.45 = turret top + 0.45), identical
+  // to towerShot's formula; the ghost muzzle uses ground + 2*hy + 0.45.
+  {
+    // A rise: 4m knoll at the origin falling off over 10m, so a muzzle on
+    // top sits above effRange's 6m surround ring and earns an elevation
+    // bonus. Replicates buildAt's placement math headlessly (buildAt itself
+    // lives in the JSX shell).
+    const rise = { heightAt: (x, z) => Math.max(0, 4 * (1 - Math.hypot(x, z) / 10)) };
+    const world = makeWorld({ field: rise, seed: 1 });
+    const spec = TOWER_SPECS.gun;
+    const y = rise.heightAt(0, 0);
+    const b = addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: spec.hy, hz: 0.8, x: 0, y: y + spec.hy, z: 0, hp: spec.hp });
+    const fromBody = effRange(world, { x: b.pos.x, y: b.pos.y + b.hy + 0.45, z: b.pos.z }, spec);
+    const fromTop = effRange(world, { x: 0, y: y + spec.hy * 2 + 0.45, z: 0 }, spec);
+    const fromOldWrong = effRange(world, { x: 0, y: y + spec.hy + 0.45, z: 0 }, spec);
+    ok("view height: body-derived cached effRange equals the true turret-top value", Math.abs(fromBody - fromTop) < 1e-9, `${fromBody} vs ${fromTop}`);
+    ok("view height: tower on a rise earns an elevation bonus", fromBody > spec.range, fromBody);
+    ok("view height: true-top range exceeds the old half-height-low value", fromBody > fromOldWrong, `${fromBody} vs ${fromOldWrong}`);
+    // wiring: the two formerly-wrong sites in DepotGame.jsx
+    ok("view height: buildAt caches effRange off the live body's muzzle", depotSrc.includes("effRange(world, { x: b.pos.x, y: b.pos.y + b.hy + 0.45, z: b.pos.z }, spec)"));
+    ok("view height: startPending's ghost muzzle sits at the true turret top", depotSrc.includes("y: y + spec.hy * 2 + 0.45"));
+  }
+
+}
+
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
   process.exit(1);
