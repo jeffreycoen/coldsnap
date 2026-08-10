@@ -415,14 +415,68 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // right where holderAt/sampleVal crosses the WASH_SEAM threshold on the
   // PLAYER's sign (v > WASH_SEAM) — i.e. the actual build-rights boundary,
   // not the fog seam band (which is a soft f=0.24 tint, not a hard line).
-  // Cell-edge detection ("marching-squares-lite"): a vertex is ON the edge
-  // if its own player-green state differs from either of its +i/+j grid
-  // neighbors' state. Ground-space by construction (grid indices, world
-  // vertex positions) — rotation-proof, same as everything else in this
-  // pass. Drawn in the SAME per-vertex color loop (same 4Hz territory
-  // refresh, opts.territory-gated — TD/campaign/demo unaffected), painted
-  // last so it stays full-opacity over both wash and fog tint.
+  // Phase 5 Task 5: the Phase 4.1 version painted this into the terrain
+  // VERTEX COLORS, so its minimum width was one grid cell — a ground-space
+  // band that got fatter on screen the further you zoomed in (Jeff: too
+  // thick). Now it is an OVERLAY-PASS stroke: a marching-squares contour
+  // (linear-interpolated at v = WASH_SEAM, so it is smooth, not staircased)
+  // built from the same vals[] grid, drawn as THREE.LineSegments on layer 1
+  // in the color pass. WebGL lines rasterize exactly 1 RT pixel wide no
+  // matter the projection, so the stroke is screen-constant at every zoom
+  // and every Q/E rotation BY CONSTRUCTION — no zoom-inverse width math to
+  // keep in sync with the frustum (which was the alternative, rejected
+  // because the vertex-color band can never go below one cell and a quad
+  // strip contour would need per-frame rebuild on zoom). A second
+  // LineSegments sharing the same geometry, offset half an RT pixel
+  // diagonally in camera space each frame, doubles the rasterized footprint
+  // to ~1.5px at dpr 1 and keeps the hairline from drowning in the
+  // dither/quantize post pass. Geometry rebuilds at the territory tick
+  // (~4Hz), never per frame; DEPOT-gated (created lazily inside
+  // updateFogWash, which bails without opts.territory).
   const EDGE_GREEN = { r: 0.42, g: 1.0, b: 0.34 };
+  let edgeLineA = null, edgeLineB = null;
+  function rebuildEdgeContour(vals, pa, N) {
+    if (!edgeLineA) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(0), 3));
+      const mat = new THREE.LineBasicMaterial({ color: new THREE.Color(EDGE_GREEN.r, EDGE_GREEN.g, EDGE_GREEN.b) });
+      edgeLineA = new THREE.LineSegments(geo, mat);
+      edgeLineB = new THREE.LineSegments(geo, mat); // same geometry, screen-space-offset in render()
+      for (const m of [edgeLineA, edgeLineB]) { m.layers.set(1); m.frustumCulled = false; scene.add(m); }
+    }
+    const TH = WASH_SEAM, out = [];
+    const LIFT = 0.16; // same ground clearance as the placement-preview edge loop
+    // crossing point on the grid edge between vertices ka/kb, lifted to terrain
+    const cross = (ka, kb) => {
+      const da = vals[ka] - TH, db = vals[kb] - TH;
+      let t = da / (da - db);
+      if (!(t >= 0 && t <= 1)) t = 0.5;
+      out.push(
+        pa.getX(ka) + (pa.getX(kb) - pa.getX(ka)) * t,
+        pa.getY(ka) + (pa.getY(kb) - pa.getY(ka)) * t + LIFT,
+        pa.getZ(ka) + (pa.getZ(kb) - pa.getZ(ka)) * t);
+    };
+    const pts = [];
+    for (let j = 0; j < N - 1; j++) for (let i = 0; i < N - 1; i++) {
+      const k00 = j * N + i, k10 = k00 + 1, k01 = k00 + N, k11 = k01 + 1;
+      const g00 = vals[k00] > TH, g10 = vals[k10] > TH, g01 = vals[k01] > TH, g11 = vals[k11] > TH;
+      if (g00 === g10 && g00 === g01 && g00 === g11) continue;
+      pts.length = 0;
+      if (g00 !== g10) pts.push([k00, k10]);
+      if (g10 !== g11) pts.push([k10, k11]);
+      if (g01 !== g11) pts.push([k01, k11]);
+      if (g00 !== g01) pts.push([k00, k01]);
+      // 2 crossings -> one segment; 4 (saddle) -> two, paired as listed
+      for (let p = 0; p + 1 < pts.length; p += 2) { cross(pts[p][0], pts[p][1]); cross(pts[p + 1][0], pts[p + 1][1]); }
+    }
+    const geo = edgeLineA.geometry;
+    if (geo.attributes.position.array.length < out.length) {
+      geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(Math.ceil(out.length * 1.5)), 3));
+    }
+    geo.attributes.position.array.set(out);
+    geo.attributes.position.needsUpdate = true;
+    geo.setDrawRange(0, out.length / 3);
+  }
   function updateFogWash(sample, sampleVal) {
     if (!opts.territory || !terrBaseColor) return;
     const ca = terraGeo.attributes.color;
@@ -433,7 +487,6 @@ export function makeRenderer(canvas, world0, opts = {}) {
     if (sampleVal) {
       for (let k = 0; k < N * N; k++) { const wx = pa.getX(k), wz = pa.getZ(k); vals[k] = sampleVal(wx, wz); }
     } else vals.fill(0);
-    const isGreen = (v) => v > WASH_SEAM;
     for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
       const k = j * N + i;
       const wx = pa.getX(k), wz = pa.getZ(k);
@@ -458,16 +511,10 @@ export function makeRenderer(canvas, world0, opts = {}) {
           bb = bb * (1 - f) + FOG_COLD.b * bb * f;
         }
       }
-      // edge test: own state vs +i / +j neighbor state
-      const own = isGreen(v);
-      const ie = i < N - 1 ? j * N + (i + 1) : k;
-      const js = j < N - 1 ? (j + 1) * N + i : k;
-      if (own !== isGreen(vals[ie]) || own !== isGreen(vals[js])) {
-        br = EDGE_GREEN.r; bg = EDGE_GREEN.g; bb = EDGE_GREEN.b;
-      }
       ca.array[bi] = br; ca.array[bi + 1] = bg; ca.array[bi + 2] = bb;
     }
     ca.needsUpdate = true;
+    rebuildEdgeContour(vals, pa, N);
   }
   syncTerrain();
   // water
@@ -1618,6 +1665,11 @@ export function makeRenderer(canvas, world0, opts = {}) {
       applyYaw();
     }
     const texel = (2 * halfW) / rtW;
+    // buildable-edge stroke B: half an RT pixel diagonal offset in camera
+    // space — thickens the 1px WebGL line to ~1.5px on screen at any zoom or
+    // yaw (texel already carries the current frustum/zoom; camRight/camUp
+    // mutate with the yaw tween, so rotation is covered for free)
+    if (edgeLineB) edgeLineB.position.set(0, 0, 0).addScaledVector(camRight, texel * 0.5).addScaledVector(camUp, texel * 0.5);
     const desired = { x: focus.x + back.x * camDist, y: focus.y + back.y * camDist, z: focus.z + back.z * camDist };
     const shx = (Math.random() - 0.5) * shake * 1.15, shy = (Math.random() - 0.5) * shake * 1.15;
     if (turning) {
