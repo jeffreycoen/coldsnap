@@ -595,7 +595,12 @@ export function explode(world, x, y, z, spec) {
       : spec.dmg * f * (0.12 + 0.88 * occ) + (dist < 1.0 && spec.kind !== "mg" ? 55 : 0); // point-blank bonus is for real munitions at your feet — a coax round bursting ON its target is just the bullet
     // DIVERGENCE from the frozen demo: trucks in the blast-damage gate too
     // (see the projectile gate in stepProjectiles for the full note)
-    if (b.alive && (b.kind === "unit" || b.kind === "vehicle" || b.kind === "truck")) {
+    // DIVERGENCE (guarded): the body a dirDmg round directly struck already
+    // took its damage as a direct hit in stepProjectiles (armor-consulted,
+    // CAUSE.PROJECTILE) — skip it here so it isn't hit twice by the blast
+    // component too. Everyone else in the burst (including a neighbor 1m
+    // away) still takes the blast normally.
+    if (b.alive && (b.kind === "unit" || b.kind === "vehicle" || b.kind === "truck") && b.id !== spec._directHitId) {
       applyDamage(world, b, dmg, { cause: CAUSE.BLAST, attacker: spec.attacker || "world", volley: spec.volley || 0 });
     }
     // DIVERGENCE (guarded): trees (tower defense) burn down under any blast —
@@ -707,8 +712,14 @@ function stepProjectiles(world) {
       // DIVERGENCE (guarded): noImpact specs (tower defense) deal ALL damage
       // through the burst — the flat kind-based hit would stack 55 on top of
       // a 5-damage MG round
-      if (hitBody && hitBody.alive && !p.spec.noImpact && (hitBody.kind === "unit" || hitBody.kind === "vehicle" || hitBody.kind === "truck")) {
-        let impactDmg = p.spec.kind === "shell" ? 90 : p.spec.kind === "mg" ? 11 : 55;
+      // DIVERGENCE (guarded): DEPOT noImpact rounds (tower defense MG/rocket
+      // specs) can also carry a dirDmg — the flat, direct-hit component that
+      // armor actually gets to see (their blast damage is concussion and
+      // bypasses armor by design). Only opened under world.depotCombat +
+      // spec.dirDmg != null so TD's noImpact-only law is untouched elsewhere.
+      if (hitBody && hitBody.alive && (!p.spec.noImpact || (world.depotCombat && p.spec.dirDmg != null)) && (hitBody.kind === "unit" || hitBody.kind === "vehicle" || hitBody.kind === "truck")) {
+        let impactDmg = p.spec.dirDmg != null ? p.spec.dirDmg
+          : p.spec.kind === "shell" ? 90 : p.spec.kind === "mg" ? 11 : 55;
         // DIVERGENCE (guarded): DEPOT combat scales direct impact damage by
         // impact obliquity — a glancing hit does less than a square one.
         // theta = angle between projectile velocity and the struck face's
@@ -725,6 +736,14 @@ function stepProjectiles(world) {
           }
         }
         applyDamage(world, hitBody, impactDmg, { cause: CAUSE.PROJECTILE, attacker: p.spec.attacker || "world", volley: p.spec.volley || 0 });
+        // DIVERGENCE (guarded): mark the struck body so explode()'s noImpact
+        // blast-damage loop skips it below — the round already paid its
+        // damage here as a direct hit; impulse/toss from the burst still
+        // applies (being shot still shoves you). p.spec is a fresh object
+        // per fireProjectile call (every call site builds a literal inside
+        // its firing loop, never shared across a volley/burst), so tagging
+        // it here is race-free — no cross-contamination between projectiles.
+        if (p.spec.dirDmg != null) p.spec._directHitId = hitBody.id;
       }
       // DIVERGENCE (guarded): DEPOT tree combat — mg fire shreds a tree's hp
       // directly (blast already burns them via explode(), unguarded, for TD);

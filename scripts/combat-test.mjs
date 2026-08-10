@@ -141,5 +141,51 @@ ok("guard: without depotCombat, world.wind is a no-op (identical trajectories)",
 const w1 = windAt(42, 123.5), w2 = windAt(42, 123.5);
 ok("windAt: deterministic for same (seed, t)", w1.x === w2.x && w1.z === w2.z && w1.mag === w2.mag);
 
+// Direct-hit component (A1): under world.depotCombat, a noImpact spec with
+// dirDmg set delivers that flat damage as a direct hit (CAUSE.PROJECTILE,
+// armor consulted), on top of the existing noImpact-blast law which still
+// hits everyone else in the burst. The struck body is marked via
+// spec._directHitId so explode()'s noImpact blast-damage loop skips it —
+// damage only, impulse/toss still applies. Guarded: without the flag, a
+// dirDmg noImpact spec behaves exactly as before (pure blast, no direct
+// component, no armor consultation).
+function dirHitWorld({ depotCombat, grazing = false, armor = null, neighbor = false }) {
+  const world = makeWorld({ seed: 1 });
+  if (depotCombat) world.depotCombat = true;
+  const target = addBody(world, { kind: "unit", hx: 0.4, hy: 0.9, hz: 0.4, x: 0, y: 1, z: 20, mass: 82, hp: 100 });
+  if (armor != null) target.armor = armor;
+  let neighborBody = null;
+  if (neighbor) neighborBody = addBody(world, { kind: "unit", hx: 0.4, hy: 0.9, hz: 0.4, x: 1, y: 1, z: 20, mass: 82, hp: 100 });
+  const dir = grazing
+    ? { x: Math.sin(75 * Math.PI / 180), y: 0, z: Math.cos(75 * Math.PI / 180) }
+    : { x: 0, y: 0, z: 1 };
+  const D = 25;
+  const from = { x: 0 - dir.x * D, y: 1, z: 20 - dir.z * D };
+  fireProjectile(world, from, dir, 240, { kind: "mg", r: 3, kv: 4, dmg: 6, crater: 0, dirDmg: 20, noImpact: true, attacker: "player" });
+  for (let i = 0; i < 240 && world.projectiles.length; i++) stepWorld(world);
+  return { targetLoss: 100 - target.hp, neighborLoss: neighborBody ? 100 - neighborBody.hp : null };
+}
+
+// (a) flagged, head-on, soft body: hp loss ~= 20 (direct, not blast-falloff)
+const a = dirHitWorld({ depotCombat: true });
+ok("A1(a): depotCombat direct hit on soft body loses ~20 hp", Math.abs(a.targetLoss - 20) < 1.5, `loss=${a.targetLoss}`);
+
+// (b) flagged, head-on, armor 30 body: hp loss ~= 3 (0.15 glance-off; PROJECTILE cause consults armor)
+const b = dirHitWorld({ depotCombat: true, armor: 30 });
+ok("A1(b): depotCombat direct hit vs armor 30 glances to ~3 hp", Math.abs(b.targetLoss - 3) < 1.0, `loss=${b.targetLoss}`);
+
+// (c) flagged, grazing (75 deg off normal) vs soft body: less than head-on
+const c = dirHitWorld({ depotCombat: true, grazing: true });
+ok("A1(c): depotCombat grazing direct hit loses less than head-on", c.targetLoss < a.targetLoss, `graze=${c.targetLoss} headOn=${a.targetLoss}`);
+
+// (d) neighbor 1m away still takes blast splash while struck body takes only direct
+const d = dirHitWorld({ depotCombat: true, neighbor: true });
+ok("A1(d): neighbor 1m away still takes blast splash", d.neighborLoss > 0, `neighborLoss=${d.neighborLoss}`);
+ok("A1(d): struck body's loss is the direct component, not direct+blast", Math.abs(d.targetLoss - 20) < 1.5, `loss=${d.targetLoss}`);
+
+// (e) unflagged world: dirDmg spec behaves as before (pure blast, guard proof)
+const e = dirHitWorld({ depotCombat: false });
+ok("A1(e): guard — without depotCombat, dirDmg spec is pure blast (not ~20 direct)", Math.abs(e.targetLoss - 20) > 1.5, `loss=${e.targetLoss}`);
+
 console.log(fails.length ? `\n${fails.length} FAIL(S)` : "\nALL PASS");
 process.exit(fails.length ? 1 : 0);
