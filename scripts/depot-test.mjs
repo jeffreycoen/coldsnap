@@ -2500,6 +2500,21 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     ok("fog repel: hilltop gun repels farther than flat 9.5", eff / 2 > 9.5, (eff / 2).toFixed(2));
   }
 
+  // --- Fix 4: preview declipped from fog. Same enemy-held-ground fixture
+  // as the reachPolygon fog test above: with T the ray clips short; with
+  // null (what startPending now passes) it reaches full range. Physical
+  // clipping (arcClears) is unconditional either way.
+  {
+    const spec = { range: 20, hy: 1.0, projSpeed: 60, occl: "arc" };
+    const flatWorld = { field: { heightAt: () => 0 }, bodies: [] };
+    const muzzle = { x: 0, y: 2.45, z: 0 };
+    const T = makeTerritory(29, 57);
+    for (let i = 0; i < 200; i++) stepTerritory(T, [{ x: 15, z: 0, w: EMIT.tower.w, r: 3, sign: -1 }], 0.05);
+    const clipped = Math.hypot(reachPolygon(flatWorld, T, muzzle, spec, 1)[0].x - muzzle.x, reachPolygon(flatWorld, T, muzzle, spec, 1)[0].z - muzzle.z);
+    const declipped = Math.hypot(reachPolygon(flatWorld, null, muzzle, spec, 1)[0].x - muzzle.x, reachPolygon(flatWorld, null, muzzle, spec, 1)[0].z - muzzle.z);
+    ok("preview declip: fog-frontier preview extends beyond the territory boundary", declipped > clipped + 3 && declipped > spec.range - 1.5, `${declipped.toFixed(1)} vs clipped ${clipped.toFixed(1)}`);
+    ok("preview declip: startPending passes null territory into reachPolygon", depotSrc.includes("reachPolygon(world, null, muzzle, spec, 1, invW)"));
+  }
 }
 
 if (fails.length) {

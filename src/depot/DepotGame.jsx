@@ -852,7 +852,11 @@ export default function DepotGame({ onExit }) {
           ringR = spec.range;
           color = 0x9fdcff;
         } else {
-          poly = reachPolygon(world, T, muzzle, spec, 1, invW);
+          // T deliberately null (playtest fix): the preview shows what the
+          // tower COULD reach — terrain/solid clipping only (arcClears is
+          // unconditional inside reachPolygon). Live acquisition stays
+          // fog-gated (stepTowers' own fieldReaches) — the guns obey what is.
+          poly = reachPolygon(world, null, muzzle, spec, 1, invW);
         }
         S.pending = { gx, gz, mode, wp, y, poly, ringR, color, cost: spec.cost, armedAt: world.t + PENDING_ARM_S };
       };
