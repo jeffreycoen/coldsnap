@@ -281,6 +281,78 @@ function fireShots(seed, raise, n = 40) {
   ok("tower scatter: raised tower mean radial miss < ground tower's", raisedMiss < groundMiss, `raised=${raisedMiss} ground=${groundMiss}`);
 }
 
+// ================================================== tree hp retune (Task 5)
+// Phase 1 finding: at 25hp a GUN-tower shell's blast (noImpact law) killed a
+// tree the same tick it ignited — burning was never visible. 70hp measured
+// against the real tower path (towerShot -> fireProjectile with
+// noImpact:true, matching TOWER_SPECS.gun exactly, not the unguarded flat
+// +55 point-blank bonus that only non-noImpact specs get): a direct hit
+// leaves ~36-39hp of the 70, alive and burning, dying ~16-18s later from the
+// 2hp/s drain — comfortably inside the ~20s budget and never same-tick.
+{
+  const g0Tree = (seed, range) => {
+    const world = makeWorld({ seed });
+    world.depotCombat = true;
+    const spec = TOWER_SPECS.gun;
+    const g0 = world.field.heightAt(0, 0);
+    const tower = addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: spec.hy, hz: 0.8, x: 0, y: g0 + spec.hy, z: 0, hp: spec.hp });
+    tower.towerType = "gun";
+    const tree = addBody(world, { kind: "tree", team: 0, mass: 260, hx: 0.28, hy: 1.6, hz: 0.28, x: 0, y: world.field.heightAt(0, range) + 1.62, z: range, hp: 70, friction: 0.5 });
+    let pulls = 0;
+    while (tree.burning == null && tree.alive && pulls < 30) {
+      towerShot(world, tower, tree, spec);
+      for (let s = 0; s < 400 && world.projectiles.length; s++) stepWorld(world);
+      pulls++;
+    }
+    return { world, tree };
+  };
+
+  // direct hit: alive and burning immediately after ignition (not a
+  // same-tick kill), across a spread of seeds/ranges (occlusion/scatter vary
+  // the blast fraction but the direct hit should never one-shot a 70hp tree)
+  let minHp = Infinity, maxHp = -Infinity;
+  for (let seed = 1; seed <= 8; seed++) {
+    for (const range of [6, 12, 18]) {
+      const { tree } = g0Tree(seed, range);
+      ok(`gun shell hit (seed ${seed} range ${range}) leaves tree alive`, tree.alive === true, `hp=${tree.hp.toFixed(1)}`);
+      ok(`gun shell hit (seed ${seed} range ${range}) ignites tree`, tree.burning != null);
+      minHp = Math.min(minHp, tree.hp);
+      maxHp = Math.max(maxHp, tree.hp);
+    }
+  }
+  console.log(`  (measured post-ignite hp range across 24 trials: ${minHp.toFixed(1)}..${maxHp.toFixed(1)} of 70)`);
+
+  // burn-down: dies within ~20s of ignition, from the unchanged 2hp/s drain
+  {
+    const { world, tree } = g0Tree(1, 12);
+    const igniteT = world.t;
+    let steps = 0;
+    while (tree.alive && steps < 20 / world.dt) { stepWorld(world); steps++; }
+    ok("70hp tree burns down within 20s of ignition", tree.alive === false, `t=${(world.t - igniteT).toFixed(1)}s`);
+  }
+
+  // mg still fells a tree with sustained direct fire (4hp/hit shred stacks
+  // with the pre-existing unguarded blast splash on the same round; measured
+  // combined damage lands well short of instant-killing a full-hp tree)
+  {
+    const world = makeWorld({ seed: 3 });
+    world.depotCombat = true;
+    const spec = TOWER_SPECS.mg;
+    const g0 = world.field.heightAt(0, 0);
+    const tower = addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: spec.hy, hz: 0.8, x: 0, y: g0 + spec.hy, z: 0, hp: spec.hp });
+    tower.towerType = "mg";
+    const tree = addBody(world, { kind: "tree", team: 0, mass: 260, hx: 0.28, hy: 1.6, hz: 0.28, x: 0, y: world.field.heightAt(0, 10) + 1.62, z: 10, hp: 70, friction: 0.5 });
+    let pulls = 0;
+    while (tree.alive && pulls < 40) {
+      towerShot(world, tower, tree, spec);
+      for (let s = 0; s < 200 && world.projectiles.length; s++) stepWorld(world);
+      pulls++;
+    }
+    ok("mg fells a 70hp tree via sustained fire", tree.alive === false, `pulls=${pulls}`);
+    ok("mg felling doesn't ignite the tree (mg never sets burning)", tree.burning == null);
+  }
+}
+
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
   process.exit(1);

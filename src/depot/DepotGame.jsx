@@ -639,7 +639,7 @@ export default function DepotGame({ onExit }) {
       }
       const treeAt = (tx, tz) => {
         const ty = field.heightAt(tx, tz);
-        const u = addBody(world, { kind: "tree", team: 0, mass: 260, hx: 0.28, hy: 1.6, hz: 0.28, x: tx, y: ty + 1.62, z: tz, hp: 25, friction: 0.5 });
+        const u = addBody(world, { kind: "tree", team: 0, mass: 260, hx: 0.28, hy: 1.6, hz: 0.28, x: tx, y: ty + 1.62, z: tz, hp: 70, friction: 0.5 });
         u.sleeping = true;
         return u;
       };
@@ -951,14 +951,15 @@ export default function DepotGame({ onExit }) {
           { kind: "mg", r: 0.05, kv: 0.3, dmg: 1, crater: 0, attacker: "player" });
       };
       window.__DEPOTSHELL__ = (tx, ty, tz) => {
-        // debug harness: a GUN-tower-strength blast at a point. A direct
-        // shell/rocket hit sets tree.burning AND (via the point-blank +55
-        // impact bonus every non-mg direct hit gets, core.js line ~595)
-        // kills a 25hp tree in the same tick — ignition and death are not
-        // separable from one direct hit under current tuning.
+        // debug harness: a real GUN-tower round (noImpact:true, matching
+        // TOWER_SPECS.gun and towerShot's fireProjectile call exactly — the
+        // flat +55 point-blank impact bonus only applies to non-noImpact
+        // specs, which a live tower never fires). A direct shell hit sets
+        // tree.burning and, at 70hp (Task 5), leaves it alive to burn down
+        // ~2hp/s rather than dying in the same tick.
         const from = { x: tx, y: ty, z: tz - 3 };
         fireProjectile(world, from, { x: 0, y: 0, z: 1 }, 90,
-          { kind: "shell", r: 2.3, kv: 8, dmg: 25, crater: 0.55, attacker: "player" });
+          { kind: "shell", r: 2.3, kv: 8, dmg: 25, crater: 0.55, noImpact: true, attacker: "player" });
       };
       window.__DEPOTTHIN__ = () => {
         // debug harness: instantly drain the current wave — zero the spawn
