@@ -981,6 +981,10 @@ export default function DepotGame({ onExit }) {
         S.focus.x = x; S.focus.z = z; S.focus.y = field.heightAt(x, z);
         if (zoom) { S.zoom = zoom; R.setZoom(zoom); }
       };
+      // debug harness: read the current camera focus (canvas-center world
+      // point) — used by the smoke test's rotation-invariance check to know
+      // the intended build cell without racing the render loop's tween.
+      window.__DEPOTGETFOCUS__ = () => ({ x: S.focus.x, z: S.focus.z });
 
       let last = performance.now();
       const STEP = 1 / 120;
@@ -1115,7 +1119,7 @@ export default function DepotGame({ onExit }) {
         canvas.removeEventListener("touchstart", blockTouch);
         window.removeEventListener("keydown", kd);
         window.removeEventListener("keyup", ku);
-        for (const k of ["__DEPOT__", "__DEPOTACK__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTTHIN__", "__DEPOTEND__", "__DEPOTFOCUS__", "__DEPOTSETT__", "__DEPOTFLAGS__"]) delete window[k];
+        for (const k of ["__DEPOT__", "__DEPOTACK__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTTHIN__", "__DEPOTEND__", "__DEPOTFOCUS__", "__DEPOTGETFOCUS__", "__DEPOTSETT__", "__DEPOTFLAGS__"]) delete window[k];
         A.dispose();
         if (R) R.dispose();
         stateRef.current = null;

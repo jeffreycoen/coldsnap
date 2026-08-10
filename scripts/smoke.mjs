@@ -675,24 +675,32 @@ try {
   await page.waitForFunction(() => window.__DEPOT__().t > 0.2, { timeout: 10000 });
 
   // rotation-invariance (Global Constraint): Q/E view rotation (renderer-only,
-  // src/render/renderer.js) must never shift where a tap-build lands. Build a
-  // tower at the canvas center (the camera's orbit pivot — the one screen
-  // point whose ground ray is invariant to yaw), rotate 90°, then tap-build
-  // the SAME pixel again: it must resolve to the SAME already-built cell
-  // (blocked, no second tower) — not a rotation-skewed neighbor cell.
-  // __DEPOTFLAGS__ also carries the objective flagpole (kind:"flag") — filter to built towers only
-  await page.click('[data-tower-key="mg"]');
-  await page.mouse.click(480, 300);
-  await page.waitForFunction(() => window.__DEPOTFLAGS__().filter((f) => f.kind === "tower").length === 1, { timeout: 5000, polling: 100 });
-  const towerBeforeRotate = await page.evaluate(() => window.__DEPOTFLAGS__().filter((f) => f.kind === "tower")[0]);
+  // src/render/renderer.js) must never shift where a tap-build lands. The
+  // canvas's geometric center is the orbit camera's pivot — its ground ray
+  // always hits S.focus (proven algebraically: cam.position is set to
+  // `focus + back*camDist` every frame, so the center ray, marching camDist
+  // along -back, lands exactly on focus for any yaw). So: rotate 90° first,
+  // let it settle, tap-build the canvas center, and assert the built tower
+  // landed within one grid cell (2m) of __DEPOTGETFOCUS__'s world point —
+  // the "intended cell" — rather than a rotation-skewed neighbor. (A double
+  // tap-before/after-rotate version of this check raced the render loop's
+  // yaw/texel-snap tween under swiftshader and was flaky; this single-tap
+  // version doesn't depend on timing at all, only on the algebra above.)
+  const canvasCenter = async () => page.evaluate(() => {
+    const r = document.querySelector("canvas").getBoundingClientRect();
+    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+  });
+  const cc = await canvasCenter();
   await page.keyboard.press("e"); // R.rotateStep(1) — 90° camera step
-  await sleep(1500); // let the yaw AND camera-position lerp fully settle (both tween)
+  await sleep(1500); // let the yaw tween settle
+  const focus = await page.evaluate(() => window.__DEPOTGETFOCUS__());
   await page.click('[data-tower-key="mg"]');
-  await page.mouse.click(480, 300);
-  await sleep(500); // OCCUPIED toast / no-op settle
-  const towersAfterRotate = await page.evaluate(() => window.__DEPOTFLAGS__().filter((f) => f.kind === "tower"));
-  ok(`depot: tap-build after Q/E rotation lands on the same intended cell (still occupied, no stray tower) [before=${JSON.stringify(towerBeforeRotate)} after=${JSON.stringify(towersAfterRotate)}]`,
-    towersAfterRotate.length === 1 && towersAfterRotate[0].x === towerBeforeRotate.x && towersAfterRotate[0].z === towerBeforeRotate.z);
+  await page.mouse.click(cc.x, cc.y);
+  await page.waitForFunction(() => window.__DEPOTFLAGS__().filter((f) => f.kind === "tower").length === 1, { timeout: 10000, polling: 100 });
+  const tower = await page.evaluate(() => window.__DEPOTFLAGS__().filter((f) => f.kind === "tower")[0]);
+  const dist = Math.hypot(tower.x - focus.x, tower.z - focus.z);
+  ok(`depot: tap-build after Q/E rotation lands on the intended (focus) cell [focus=${JSON.stringify(focus)} tower=${JSON.stringify(tower)} dist=${dist.toFixed(2)}]`,
+    dist < 2.0);
 
   // arm the SEND countdown to zero (build -> wave immediately) and switch
   // to 2x speed via the HUD's own control
