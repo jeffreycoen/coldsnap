@@ -2091,6 +2091,66 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
       Math.abs(mDps / BASELINE_MG - 1) <= 0.10, `dps=${mDps.toFixed(4)} baseline=${BASELINE_MG}`);
   }
 
+  // mg TOWER + enemy rifleman DPS, FLAGGED — same replaces-not-adds contract
+  // as squadFire's INFANTRY_ARMS check above, one level out: TOWER_SPECS.mg
+  // and ENEMY_FIRE.rifle also carry dirDmg under the same guard.
+  // - mg tower vs a soft unit fixture: dmg-equal dirDmg (5) drifted DPS
+  //   +45.4% over the flagged pre-wiring baseline; rescaled to 3.4.
+  // - enemy rifleman vs a soft WALL fixture (their actual damage path —
+  //   stepRifleman only ever targets kind "tower"/"wall", hitOnly:
+  //   "structure"): the direct-hit component never fires here at all —
+  //   core.js's dirDmg branch is scoped to hitBody.kind === "unit"/
+  //   "vehicle"/"truck", which a wall/tower never is. Measured DPS is
+  //   bit-identical with dirDmg present or stripped (0% drift) — left at 5
+  //   (dmg-equal, per brief) since there's nothing to rescale.
+  {
+    const towerMgDps = () => {
+      const world = makeWorld({ field: flatField, seed: 4 });
+      world.depotCombat = true;
+      const spec = TOWER_SPECS.mg;
+      const g0 = world.field.heightAt(0, 0);
+      const tower = addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: spec.hy, hz: 0.8, x: 0, y: g0 + spec.hy, z: 0, hp: spec.hp });
+      tower.towerType = "mg";
+      const target = addBody(world, { kind: "unit", team: 2, hx: 0.26, hy: 0.86, hz: 0.26, mass: 82, hp: 1e9, x: 0, y: world.field.heightAt(0, 10) + 0.86, z: 10 });
+      const dt = 1 / 30, dur = 20;
+      const hp0 = target.hp;
+      let fireCd = 0;
+      for (let i = 0; i < dur / dt; i++) {
+        fireCd -= dt;
+        if (fireCd <= 0) { towerShot(world, tower, target, spec); fireCd = spec.fireRate; }
+        for (let s = 0; s < 5; s++) stepWorld(world);
+      }
+      return (hp0 - target.hp) / dur;
+    };
+    const enemyRifleDps = () => {
+      const world = makeWorld({ field: flatField, seed: 4 });
+      world.depotCombat = true;
+      const fspec = ENEMY_FIRE.rifle;
+      const g0 = world.field.heightAt(0, 0);
+      const target = addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.4, hy: 0.83, hz: 0.4, x: 0, y: g0 + 0.83, z: 0, hp: 1e9 });
+      const rifleman = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, hp: 58, x: 0, y: g0 + 0.86, z: 10 });
+      const dt = 1 / 30, dur = 20;
+      const hp0 = target.hp;
+      let fireCd = 0;
+      for (let i = 0; i < dur / dt; i++) {
+        fireCd -= dt;
+        if (fireCd <= 0) {
+          const muzzle = { x: rifleman.pos.x, y: rifleman.pos.y + 0.5, z: rifleman.pos.z };
+          shooterFire(world, rifleman, muzzle, target, fspec, { attacker: "enemy", hitStruct: true, hitOnly: "structure" });
+          fireCd = fspec.cd;
+        }
+        for (let s = 0; s < 5; s++) stepWorld(world);
+      }
+      return (hp0 - target.hp) / dur;
+    };
+    const BASELINE_TOWER_MG = 3.8391, BASELINE_ENEMY_RIFLE = 0.2138; // flagged, pre-wiring (dirDmg unset)
+    const tDps = towerMgDps(), eDps = enemyRifleDps();
+    ok("towerShot: flagged mg-tower DPS within +/-10% of pre-wiring baseline",
+      Math.abs(tDps / BASELINE_TOWER_MG - 1) <= 0.10, `dps=${tDps.toFixed(4)} baseline=${BASELINE_TOWER_MG}`);
+    ok("shooterFire: flagged enemy-rifle DPS (vs its real wall/tower target path) within +/-10% of pre-wiring baseline (dirDmg is inert there, 0% drift)",
+      Math.abs(eDps / BASELINE_ENEMY_RIFLE - 1) <= 0.10, `dps=${eDps.toFixed(4)} baseline=${BASELINE_ENEMY_RIFLE}`);
+  }
+
   // rifle-squad cadence + burst draw-count accounting: over a fixed window,
   // count applyScatter draws (2/shot) via a wrapped world.rng, scoped to the
   // squadFire call itself (excludes stepWorld's own unrelated rng draws —
