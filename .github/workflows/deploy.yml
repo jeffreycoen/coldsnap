@@ -32,8 +32,7 @@ jobs:
       - run: npm run test:righting
       - run: npm run test:campaign
       - run: npm run test:mech
-      - run: npm run test:td
-      - run: npm run test:td-render
+      # test:td / test:td-render need a live preview server (browser gates) — run locally, not here
       - run: npm run test:combat
       - run: npm run test:depot
       - run: npm run build
