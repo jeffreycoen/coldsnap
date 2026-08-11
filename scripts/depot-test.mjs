@@ -4706,6 +4706,161 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
 }
 // ==== end 6.5 TASK 6 =========================================================
 
+// ==== FRONT F1 Task 1: their depot stands ====================================
+// DepotGame.jsx is JSX (not importable headlessly) — extract the REAL map
+// machinery (module header + genMap/makeMap/makeGrid/pondAt/rockAt/
+// checkConnectivity/buildTown) from the source text and evaluate it with its
+// imported deps injected. This runs the actual shipped code, not a copy.
+{
+  const depotSrcF1 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  const sliceFn = (name) => {
+    const start = depotSrcF1.indexOf(`\nfunction ${name}(`);
+    if (start < 0) throw new Error("F1 extract: missing function " + name);
+    const rest = depotSrcF1.slice(start + 1);
+    const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
+    return rest.slice(0, m < 0 ? rest.length : m + 9);
+  };
+  const headerStart = depotSrcF1.indexOf("const GRID_CS");
+  const headerEnd = depotSrcF1.indexOf("function genMap");
+  const header = depotSrcF1.slice(headerStart, headerEnd);
+  const mapSrc = [
+    header,
+    sliceFn("genMap"), sliceFn("makeMap"), sliceFn("pondAt"), sliceFn("rockAt"),
+    sliceFn("makeGrid"), sliceFn("checkConnectivity"), sliceFn("buildTown"),
+    `return { genMap, makeMap, makeGrid, checkConnectivity, buildTown, invW,
+      state: () => ({ ORIENT, OBJ_POS, SPAWN_POINTS, PONDS, ROCKS, TOWN, ROADS, MAP_SEED }) };`,
+  ].join("\n");
+  const makeMapModule = () => new Function(
+    "mulberry32", "MASON", "fwdUFor", "fwdDirFor", "invWFor", "addBody", "addWeld", mapSrc,
+  )(mulberry32, MASON, fwdUFor, fwdDirFor, invWFor, addBody, addWeld);
+
+  const M = makeMapModule();
+  M.makeMap(5);
+  const st = M.state();
+  const depot2 = st.TOWN.find((t) => t.id === "depot2");
+  ok("F1/1a: genMap places depot2 (team 2) in the town list", !!depot2 && depot2.team === 2, JSON.stringify(depot2));
+  {
+    const c = depot2 ? invWFor(st.ORIENT, depot2.x, depot2.z) : { u: 9e9, v: 9e9 };
+    ok("F1/1a: depot2 sits at canonical (0, -46)", Math.abs(c.u - 0) < 0.01 && Math.abs(c.v - -46) < 0.01, `u=${c.u} v=${c.v}`);
+    ok("F1/1a: depot2 shares the depot lattice template (9x7x6, door 4, depot flag)",
+      !!depot2 && depot2.depot === true &&
+      Math.max(depot2.nx, depot2.nz) === 9 && Math.min(depot2.nx, depot2.nz) === 7 && depot2.ny === 6,
+      depot2 && `${depot2.nx}x${depot2.nz}x${depot2.ny}`);
+  }
+
+  // real buildTown on the real map: same stone-count law both depots, two flags
+  {
+    const world = makeWorld({ field: { heightAt: () => 0 }, seed: 5 });
+    const grid = M.makeGrid(null);
+    M.buildTown(world, grid, { heightAt: () => 0 });
+    const stones1 = world.bodies.filter((b) => b.kind === "chunk" && b.town === "depot").length;
+    const stones2 = world.bodies.filter((b) => b.kind === "chunk" && b.town === "depot2").length;
+    ok("F1/1b: depot2 chunk lattice exists with the same stone count as depot", stones2 > 0 && stones2 === stones1, `depot=${stones1} depot2=${stones2}`);
+    const flags = world.bodies.filter((b) => b.kind === "flag");
+    ok("F1/1b: exactly two flag bodies, teams 1 and 2",
+      flags.length === 2 && flags.map((f) => f.team).sort().join(",") === "1,2",
+      `n=${flags.length} teams=${flags.map((f) => f.team)}`);
+
+    // territory with the NEW emitter law: flags emit by team sign, no anchors.
+    // Emitters here are built from the REAL flag bodies by the same rule the
+    // source must carry (grep-pinned below).
+    const T = makeTerritory(29, 57);
+    const flagEmitters = flags.map((f) => {
+      const c = invWFor(st.ORIENT, f.pos.x, f.pos.z);
+      return { x: c.u, z: c.v, w: EMIT.depot.w, r: EMIT.depot.r, sign: f.team === 2 ? -1 : 1 };
+    });
+    for (let i = 0; i < 120; i++) stepTerritory(T, flagEmitters, 0.25); // 30 simulated s
+    ok("F1/1c: after 30s their depot ground reads unheld for team 1", fogStateFor(T, 0, -46, 1) === "unheld", fogStateFor(T, 0, -46, 1));
+    ok("F1/1c: ...and held for team 2 (sign mirror of ours)", fogStateFor(T, 0, -46, 2) === "held", fogStateFor(T, 0, -46, 2));
+    ok("F1/1c: our depot still held for team 1", fogStateFor(T, 0, 49, 1) === "held", fogStateFor(T, 0, 49, 1));
+
+    // the old permanent spawn anchor is gone. NOTE (deviation from the plan's
+    // literal assert): the spawn edge does NOT decay to 0 in play — the enemy
+    // depot flag's homeland radius (EMIT.depot.r = 36 from (0,-46)) reaches
+    // v = -54 by design, so the spawn edge stays red via the FLAG. Pin both
+    // halves: (1) with the flag as the only enemy emitter the spawn edge is
+    // still enemy-held; (2) ground primed red with no live emitter τ-decays
+    // (nothing is permanently pinned by an anchor anymore).
+    const spU = invWFor(st.ORIENT, st.SPAWN_POINTS[0].x, st.SPAWN_POINTS[0].z);
+    ok("F1/1c: spawn edge held red by the enemy FLAG (no anchor needed)", fogStateFor(T, spU.u, spU.v, 2) === "held", fogStateFor(T, spU.u, spU.v, 2));
+    const T2 = makeTerritory(29, 57);
+    for (let i = 0; i < 120; i++) stepTerritory(T2, [{ x: 24, z: 0, w: EMIT.anchor.w, r: EMIT.anchor.r, sign: -1 }], 0.25);
+    const primed = valueAt(T2, 24, 0);
+    for (let i = 0; i < 120; i++) stepTerritory(T2, flagEmitters, 0.25); // 30s, live set has no anchor there
+    const after = valueAt(T2, 24, 0);
+    ok("F1/1c: red ground with no live emitter decays toward 0 (τ-decay)", primed < -0.5 && Math.abs(after) < Math.abs(primed) * 0.75, `primed=${primed.toFixed(3)} after=${after.toFixed(3)}`);
+  }
+
+  // source pins: the emitter rule and the deleted anchor push
+  ok("F1/1c: buildEmitters flags emit by team sign", /b\.kind === "flag"[^\n]*sign: b\.team === 2 \? -1 : 1/.test(depotSrcF1));
+  ok("F1/1c: the SPAWN_POINTS anchor push is deleted", !/for \(const sp of SPAWN_POINTS\)[^\n]*EMIT\.anchor/.test(depotSrcF1));
+
+  // renderer: cloth tint keys on the flag body's team (DEPOT-gated by the
+  // existing world.wind gate — TD/no-option renders never reach this block)
+  {
+    const rSrc = fs.readFileSync(new URL("../src/render/renderer.js", import.meta.url), "utf8");
+    ok("F1/1d: flag cloth tint keys on the flag body's team", /flagClothMesh\.setColorAt\(fi, b\.team === 2 \?/.test(rSrc));
+  }
+
+  // connectivity both directions + 20-seed placement sweep: depot2 never
+  // fouls roads/spawns/ponds/rocks and every map builds
+  {
+    const halfDiag = Math.hypot(9, 7) * MASON.pitch / 2;
+    for (let s = 1; s <= 20; s++) {
+      const Mi = makeMapModule();
+      Mi.makeMap(s * 101);
+      const sti = Mi.state();
+      const d2 = sti.TOWN.find((t) => t.id === "depot2");
+      if (!d2) { ok(`F1/sweep seed ${s * 101}: depot2 present`, false); continue; }
+      // clearance in world space against the built map
+      const roadDistW = (x, z) => {
+        let best = 1e9;
+        for (const route of sti.ROADS) for (let i = 0; i < route.length - 1; i++) {
+          const a = route[i], b2 = route[i + 1];
+          const dx = b2[0] - a[0], dz = b2[1] - a[1];
+          const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / (dx * dx + dz * dz)));
+          best = Math.min(best, Math.hypot(x - (a[0] + dx * t), z - (a[1] + dz * t)));
+        }
+        return best;
+      };
+      const rd = roadDistW(d2.x, d2.z);
+      const pondFoul = sti.PONDS.some((q) => Math.hypot(d2.x - q.x, d2.z - q.z) < q.r + halfDiag);
+      const rockFoul = sti.ROCKS.some((q) => Math.hypot(d2.x - q.x, d2.z - q.z) < q.r + halfDiag);
+      const spawnFoul = sti.SPAWN_POINTS.some((sp) => Math.hypot(d2.x - sp.x, d2.z - sp.z) < halfDiag + 2);
+      ok(`F1/sweep seed ${s * 101}: depot2 clear of roads/ponds/rocks/spawns`,
+        rd > halfDiag + 2 && !pondFoul && !rockFoul && !spawnFoul,
+        `roadDist=${rd.toFixed(2)} pond=${pondFoul} rock=${rockFoul} spawn=${spawnFoul}`);
+      // connectivity both directions on the accepted map
+      const g = Mi.makeGrid(null);
+      for (const t of sti.TOWN) {
+        const hx = (t.nx * MASON.pitch) / 2, hz = (t.nz * MASON.pitch) / 2;
+        for (let gz = 0; gz < g.h; gz++) for (let gx = 0; gx < g.w; gx++) {
+          const wp = g.gridToWorld(gx, gz);
+          if (Math.abs(wp.x - t.x) < hx + 1.0 && Math.abs(wp.z - t.z) < hz + 1.0) {
+            if (Math.hypot(wp.x - sti.OBJ_POS.x, wp.z - sti.OBJ_POS.z) < 5) continue;
+            g.cells[g.idx(gx, gz)].blocked = true;
+          }
+        }
+      }
+      const og = g.worldToGrid(sti.OBJ_POS.x, sti.OBJ_POS.z);
+      const doorW = fwdUFor(sti.ORIENT, 0, -51); // just outside depot2's door face
+      const dg = g.worldToGrid(doorW.x, doorW.z);
+      ok(`F1/sweep seed ${s * 101}: spawns reach the objective AND depot2's doorway`,
+        Mi.checkConnectivity(g, sti.SPAWN_POINTS, og.gx, og.gz) &&
+        Mi.checkConnectivity(g, sti.SPAWN_POINTS, dg.gx, dg.gz));
+    }
+  }
+
+  // twin determinism: two extractions, same seed -> identical map state
+  {
+    const A = makeMapModule(); A.makeMap(77);
+    const B = makeMapModule(); B.makeMap(77);
+    ok("F1: twin determinism — same seed, identical town layout",
+      JSON.stringify(A.state().TOWN) === JSON.stringify(B.state().TOWN));
+  }
+}
+// ==== end FRONT F1 Task 1 ====================================================
+
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
   process.exit(1);

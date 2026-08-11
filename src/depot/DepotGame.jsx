@@ -86,7 +86,27 @@ function genMap(seed) {
     { t: "yard", nx: 6, nz: 5, ny: 2, roof: false }, { t: "shed", nx: 4, nz: 4, ny: 3 },
     { t: "chapel", nx: 5, nz: 6, ny: 5 }, { t: "keep", nx: 7, nz: 6, ny: 5 },
   ];
-  const town = [{ id: "depot", x: 0, z: 52, nx: 9, nz: 7, ny: 6, door: 4, depot: true }];
+  // FRONT F1: the enemy depot — same lattice as ours (symmetry), centered on
+  // the enemy end behind the spawn line's midpoint gap. Canonical (0, -46):
+  // spawns sit at v = -54, roads run from them THROUGH the passes toward
+  // (0, 49) — at v = -46 the two roads are still near their spawn-x origins
+  // (|x| >= ~3 by construction), and the depot footprint (9*0.83/2 ≈ 3.7m
+  // half-width) needs the road-clearance check below regardless: makeMap's
+  // existing retry loop re-rolls the seed when the placement is fouled.
+  const town = [
+    { id: "depot", x: 0, z: 52, nx: 9, nz: 7, ny: 6, door: 4, depot: true },
+    { id: "depot2", x: 0, z: -46, nx: 9, nz: 7, ny: 6, door: 4, depot: true, team: 2 }, // provisional (F5)
+  ];
+  // depot2 placement clearance: fouled by a road or a spawn -> flag the map
+  // bad; makeMap's retry loop (the same one that re-rolls on failed
+  // connectivity) rolls a fresh seed. No second loop, no extra rng draws.
+  const d2 = town[1];
+  const d2HalfDiag = Math.hypot(d2.nx, d2.nz) * MASON.pitch / 2;
+  const depot2Foul =
+    roadDist(d2.x, d2.z) <= d2HalfDiag + 2 ||
+    spawns.some((sp) => Math.hypot(d2.x - sp.x, d2.z - sp.z) < d2HalfDiag + 2) ||
+    ponds.some((q) => Math.hypot(d2.x - q.x, d2.z - q.z) < q.r + d2HalfDiag) ||
+    rocks.some((q) => Math.hypot(d2.x - q.x, d2.z - q.z) < q.r + d2HalfDiag);
   const benches = [[bands[0] + 8, bands[1] - 7], [bands[1] + 8, bands[2] - 7], [bands[2] + 8, 46]];
   let bid = 0;
   for (let bi = 0; bi < benches.length; bi++) {
@@ -123,7 +143,7 @@ function genMap(seed) {
   for (const sp of spawns) T(sp);
   for (const band of passes) for (const g of band) T(g);
   for (const route of roads) for (const pt of route) { const w = fwdU(pt[0], pt[1]); pt[0] = w.x; pt[1] = w.z; }
-  return { seed, bands, passes, rocks, ponds, spawns, spawnU, town, roads };
+  return { seed, bands, passes, rocks, ponds, spawns, spawnU, town, roads, depot2Foul };
 }
 function makeMap(seed) {
   for (let attempt = 0; attempt < 10; attempt++) {
@@ -146,7 +166,14 @@ function makeMap(seed) {
       }
     }
     const og = g.worldToGrid(OBJ_POS.x, OBJ_POS.z);
-    if (TOWN.length >= 6 && checkConnectivity(g, SPAWN_POINTS, og.gx, og.gz)) return;
+    // FRONT F1: the map must also let every spawn reach the enemy depot's
+    // doorway (canonical (0, -51), just outside depot2's door face) — the
+    // enemy must be able to defend home ground later (guards F3).
+    const d2door = fwdU(0, -51);
+    const dg = g.worldToGrid(d2door.x, d2door.z);
+    if (TOWN.length >= 6 && !m.depot2Foul &&
+        checkConnectivity(g, SPAWN_POINTS, og.gx, og.gz) &&
+        checkConnectivity(g, SPAWN_POINTS, dg.gx, dg.gz)) return;
   }
 }
 
@@ -446,7 +473,7 @@ function buildTown(world, grid, field) {
       // the renderer draws pole+cloth at any body with flagPole === true
       const fx = t.x, fz = t.z;
       const flag = addBody(world, {
-        kind: "flag", team: 1, mass: 0, hx: 0.05, hy: 0.05, hz: 0.05,
+        kind: "flag", team: t.team || 1, mass: 0, hx: 0.05, hy: 0.05, hz: 0.05,
         x: fx, y: base + (t.ny + 2.6) * pitch, z: fz,
       });
       flag.sleeping = true; flag.flagPole = true;
@@ -650,10 +677,9 @@ export default function DepotGame({ onExit }) {
       // team-signed by kind -> EMIT weight (see territory.js). The depot's
       // own emitter is its roof-peak flag body (kind "flag", team 1 — built
       // in buildTown above; towers also carry flagPole=true for the
-      // renderer's pole overlay, so this checks kind, not the flag). Anchor
-      // emitters are permanent and sit on the attacker's own spawn points
-      // (SPAWN_POINTS, from genMap's wave-spawn logic) — 3 of them here,
-      // within the brief's 2-4 width-covering range.
+      // renderer's pole overlay, so this checks kind, not the flag). Each
+      // depot's flag is its side's permanent anchor (FRONT F1) — team 2's
+      // flag at depot2 replaces the old spawn-point anchor emitters.
       // territory.js is CANONICAL (u,v) space (the un-rotated map frame, same
       // as the renderer's rim) — every body/spawn position here is rotated
       // WORLD space, so every emitter goes through invW (DEPOT's
@@ -670,13 +696,16 @@ export default function DepotGame({ onExit }) {
           // fallback for any tower missing the cache.
           if (b.kind === "tower" && b.team === 1 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.tower.w, r: (b.effRange != null ? b.effRange : TOWER_SPECS[b.towerType].range) / 2, sign: 1 }); }
           else if (b.kind === "wall" && b.team === 1 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.wall.w, r: EMIT.wall.r, sign: 1 }); }
-          else if (b.kind === "flag" && b.team === 1) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.depot.w, r: EMIT.depot.r, sign: 1 }); }
+          // FRONT F1: flags emit their OWN team's influence at homeland
+          // strength — the enemy depot IS the enemy anchor now.
+          else if (b.kind === "flag") { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.depot.w, r: EMIT.depot.r, sign: b.team === 2 ? -1 : 1 }); }
           else if (b.kind === "unit" && b.team === 1 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.unit.w, r: EMIT.unit.r, sign: 1 }); }
           else if (b.kind === "chunk" && b.sandbag && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.wall.w, r: EMIT.wall.r, sign: 1 }); }
           else if (b.kind === "unit" && b.team === 2 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.unit.w, r: EMIT.unit.r, sign: -1 }); }
           else if (b.kind === "vehicle" && b.team === 2 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.vehicle.w, r: EMIT.vehicle.r, sign: -1 }); }
         }
-        for (const sp of SPAWN_POINTS) { const c = invW(sp.x, sp.z); out.push({ x: c.u, z: c.v, w: EMIT.anchor.w, r: EMIT.anchor.r, sign: -1 }); }
+        // FRONT F1: the SPAWN_POINTS anchor emitters are gone — spawn points
+        // are spawn locations only; the enemy's permanent red is its depot flag.
         return out;
       };
       const rocksLive = ROCKS.slice();

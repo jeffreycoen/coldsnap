@@ -757,6 +757,17 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const flagClothMesh = pool(flagClothGeo, toon(0xffc95c), 24, false);
   const _flagUp = new THREE.Vector3(0, 1, 0);
   const _flagQ1 = new THREE.Quaternion(), _flagQ2 = new THREE.Quaternion();
+  // FRONT F1: cloth tint keys on the flag body's team. instanceColor
+  // MULTIPLIES the gold material color, so the enemy multiplier is chosen so
+  // gold(0xffc95c) * mult == the enemy scarlet family (PAL.scoutRed 0x8a4a44)
+  // exactly, component-wise. Team 1/undefined stays identity white (gold).
+  // DEPOT-gated by the existing world.wind gate above — no-wind (TD/campaign/
+  // demo) renders never draw flags at all, byte-identical.
+  const _flagGold = new THREE.Color(0xffc95c);
+  const _flagScarlet = new THREE.Color(0x8a4a44);
+  const _flagEnemyMult = new THREE.Color(
+    _flagScarlet.r / _flagGold.r, _flagScarlet.g / _flagGold.g, _flagScarlet.b / _flagGold.b);
+  const _flagWhite = new THREE.Color(1, 1, 1);
 
   // lens glint (DEPOT pair, 6.5 Task 6): a small additive flash at a holding
   // spotter's eyes — BOTH SIDES (it is also how the player spots the enemy's
@@ -1687,8 +1698,10 @@ export function makeRenderer(canvas, world0, opts = {}) {
           dummy.scale.set(1, 1, 1 + Math.abs(flutter) * 0.3);
           dummy.updateMatrix();
           flagClothMesh.setMatrixAt(fi, dummy.matrix);
+          flagClothMesh.setColorAt(fi, b.team === 2 ? _flagEnemyMult : _flagWhite);
           fi++;
         }
+        if (flagClothMesh.instanceColor) flagClothMesh.instanceColor.needsUpdate = true;
       }
       flagPoleMesh.count = fi; flagPoleMesh.instanceMatrix.needsUpdate = true;
       flagClothMesh.count = fi; flagClothMesh.instanceMatrix.needsUpdate = true;
