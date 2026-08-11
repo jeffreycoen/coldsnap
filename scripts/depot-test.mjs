@@ -2300,8 +2300,8 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     for (let i = 0; i < Math.round(maxT / dt); i++) {
       const prevLeg = squad._legTarget, prevPause = squad._pauseT || 0, prevOrder = squad.order;
       stepSquad(world, squad, dt);
-      if (prevOrder === "attack" && prevLeg &&
-        ((prevPause <= 0 && (squad._pauseT || 0) > 0) || (squad.order === "attack" && squad._legTarget === null && (squad._pauseT || 0) <= 0)))
+      if (prevOrder === "attack" && prevLeg && prevPause <= 0 &&
+        (((squad._pauseT || 0) > 0) || (squad.order === "attack" && squad._legTarget === null)))
         st.legs++;
       const ms = members();
       for (const u of ms) uprightMember(u, dt);
@@ -3532,9 +3532,14 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
   const addEnemy = (world, x, z) =>
     addBody(world, { kind: "unit", team: 2, mass: 90, hx: 0.3, hy: 0.9, hz: 0.3, x, y: 0.9, z, hp: 100 });
   const DT = 1 / 60;
+  // members integrate (pos += v*dt) so the rubber-band anchor has a squad
+  // body to pace against — the anchor no longer marches off alone.
+  const stepMembers = (world, sq) => {
+    for (const id of sq.memberIds) { const u = world.byId.get(id); u.pos.x += u.v.x * DT; u.pos.z += u.v.z * DT; }
+  };
   const runAdvance = (world, sq, maxTicks = 60000) => {
     let t = 0;
-    for (let i = 0; i < maxTicks && sq.order === "attack"; i++) { stepSquad(world, sq, DT); world.t += DT; t += DT; }
+    for (let i = 0; i < maxTicks && sq.order === "attack"; i++) { stepSquad(world, sq, DT); stepMembers(world, sq); world.t += DT; t += DT; }
     return t;
   };
 
@@ -3562,7 +3567,7 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
       const draws = countDraws(world);
       let done = 0, had = false;
       for (let i = 0; i < 120000 && done < legs && sq.order === "attack"; i++) {
-        stepSquad(world, sq, DT); world.t += DT;
+        stepSquad(world, sq, DT); stepMembers(world, sq); world.t += DT;
         if (sq._legTarget) had = true;
         else if (had) { had = false; done++; } // leg completed (target consumed)
       }
@@ -3604,8 +3609,8 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     const a = mk(), b = mk();
     let same = true;
     for (let i = 0; i < 30000 && (a.sq.order === "attack" || b.sq.order === "attack"); i++) {
-      stepSquad(a.w, a.sq, DT); a.w.t += DT;
-      stepSquad(b.w, b.sq, DT); b.w.t += DT;
+      stepSquad(a.w, a.sq, DT); stepMembers(a.w, a.sq); a.w.t += DT;
+      stepSquad(b.w, b.sq, DT); stepMembers(b.w, b.sq); b.w.t += DT;
       if (a.sq.anchor.x !== b.sq.anchor.x || a.sq.anchor.z !== b.sq.anchor.z || a.sq.order !== b.sq.order) { same = false; break; }
     }
     ok("SQUAD-PACE twins: identical seeds -> identical anchor paths through the threat transition",
@@ -3767,7 +3772,12 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     spawnSquadMembers(world, sq);
     sq.order = "attack"; sq.dest = { x: dest.x, z: dest.z };
     let ticks = 0;
-    while (sq.order === "attack" && ticks++ < 30000) { stepSquad(world, sq, ROT_DT); world.t += ROT_DT; }
+    // members integrate (pos += v*dt) so the rubber-band anchor has a squad
+    // body to pace against — the anchor no longer marches off alone.
+    while (sq.order === "attack" && ticks++ < 30000) {
+      stepSquad(world, sq, ROT_DT); world.t += ROT_DT;
+      for (const id of sq.memberIds) { const u = world.byId.get(id); u.pos.x += u.v.x * ROT_DT; u.pos.z += u.v.z * ROT_DT; }
+    }
     ok(`ROT-PATH e: orientation ${O} attack squad reaches the rotated dest and flips to defend`,
       sq.order === "defend" && Math.hypot(sq.anchor.x - dest.x, sq.anchor.z - dest.z) < 1.5, `order=${sq.order} ticks=${ticks}`);
   }

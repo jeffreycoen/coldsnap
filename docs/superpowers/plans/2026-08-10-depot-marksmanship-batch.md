@@ -40,6 +40,14 @@
 - [ ] **Failing asserts first:** sniper on every diag crest fixture acquires + lands rounds downslope (today: 0 projectiles); true crest pierces still veto (the 17 real blocks stay blocked); tower behavior unchanged on its existing fixtures; reachPolygon downslope fans widen accordingly (sniper selected-reach shows it — Jeff eyeballs); flagged-DPS parity: rifles/mg/sniper vs the pinned soft fixtures within ±10% of pre-change (level-ground lanes barely move — measure, record, rescale only if breached); twin determinism.
 - [ ] fail → implement → `node scripts/depot-test.mjs && npm run test:accuracy && npm run lint:depot && npm run build && SMOKE_ONLY=depot node scripts/smoke.mjs` → Commit "DEPOT sightlines: the predictor stops lying — pad to epsilon, arcs pinned to physics" → PUSH + report.
 
+### Task 2b: universal selection LOS — every selected shooter shows its true fan
+
+**Files:** `src/depot/DepotGame.jsx` (selection paths: inspected towers ~:1497, selected squads ~:1503-1521), `scripts/depot-test.mjs` (light — fan-source asserts), smoke (one state-hook assert).
+
+**Jeff, 2026-08-10:** selecting ANY soldier or tower highlights its current line of sight. The sniper's selReach path is the template — generalize it: inspected tower → reachPolygon from its real muzzle (pos.y + hy + 0.45, its cached effRange spec), computed ONCE at select (static body); selected rifles/mg squad → the same fan from the first live member's muzzle at the sniper's 1Hz refresh (replaces their flat range ring); frost tower keeps its honest aura ring (it is not a gun). Fans are fog-independent (what the shooter COULD reach — the established preview rule; live fire stays fog-gated). Render-only; sequenced AFTER Task 2 so the fan shows honest arcs, never the pad bug.
+- [ ] Asserts: selected tower's fan derives from its muzzle/effRange (compare a flat-ground tower's fan max radius ≈ effRange); squad fan present for all three types; no per-frame recompute for towers (call-count guard); render-only (twin determinism with selections interleaved).
+- [ ] fail → implement → `node scripts/depot-test.mjs && npm run lint:depot && npm run build && SMOKE_ONLY=depot node scripts/smoke.mjs` → Commit "DEPOT: select anything that shoots, see what it sees" → PUSH + report.
+
 ### Task 3: the pair — sniper + spotter, symmetric
 
 **Files:** `src/depot/squads.js` (spotter behavior + conversion), `src/depot/specs.js` (SQUAD_SPECS.sniper n:2, price; ENEMY side mirrors), `src/depot/units.js` (enemy marksman pair), `src/depot/state.js` (squadFire: spotter never fires), `src/depot/ai.js` (buy covers two heads), `src/depot/intel.js` (line audit only — marksman family already exists), `src/depot/DepotGame.jsx` (placement/selection), `scripts/depot-test.mjs`, smoke.

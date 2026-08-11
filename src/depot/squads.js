@@ -163,6 +163,13 @@ function seekGoal(world, u, dt) {
     }
   }
   const sp = MOVE_SPEED;
+  // Wake-on-seek (diag-squadlag root cause): a paused body goes to SLEEP
+  // (core.js skips integration and re-zeros v below the wake threshold — a
+  // gentle accel-from-rest never escapes it, so a slept marcher stalls
+  // forever). Wake with a full-speed kick along the chosen heading — the
+  // units.js seekStandPoint precedent. Only here, past the d<0.15 early
+  // return: the idle branch never wakes, so settled defenders keep sleeping.
+  if (u.sleeping) { u.sleeping = false; u.v.x = hx * sp; u.v.z = hz * sp; }
   u.v.x += (hx * sp - u.v.x) * Math.min(1, 6 * dt);
   u.v.z += (hz * sp - u.v.z) * Math.min(1, 6 * dt);
 }
@@ -268,8 +275,21 @@ export function stepSquad(world, squad, dt) {
         if (squad._threatened) squad._pauseT = dwell; // pause 1.5-3s before the next hop
         else squad._legTarget = null; // double-time: skip the dwell, next tick picks a fresh leg
       } else {
-        const step = Math.min(ld, MOVE_SPEED * dt);
-        squad.anchor = { x: cx + (lx / ld) * step, z: cz + (lz / ld) * step };
+        // Rubber-band (1b): the anchor is a virtual point — don't let it
+        // outrun the squad body. If any live member trails the anchor by
+        // more than COHESION_M, hold this tick (leg target unchanged; the
+        // leg-arrival draw above still fires exactly once per leg, only
+        // later in wall-clock). Deadlock-free: wake-on-seek keeps members
+        // marching toward their slots.
+        let trail = 0;
+        for (const u of members) {
+          const d = Math.hypot(u.pos.x - cx, u.pos.z - cz);
+          if (d > trail) trail = d;
+        }
+        if (trail <= COHESION_M) {
+          const step = Math.min(ld, MOVE_SPEED * dt);
+          squad.anchor = { x: cx + (lx / ld) * step, z: cz + (lz / ld) * step };
+        }
       }
     }
 

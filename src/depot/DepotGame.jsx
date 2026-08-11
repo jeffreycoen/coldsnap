@@ -1501,6 +1501,21 @@ export default function DepotGame({ onExit }) {
           // overlay API (read-only use — renderer belongs to a parallel
           // task). Ring radius = the squad's own weapon range.
           const selSq = S.selSquadId != null ? S.squads.find((q) => q.id === S.selSquadId) : null;
+          // Honest ring: ring + chip render at the LIVE-MEMBER CENTROID, not
+          // squad.anchor — the anchor is a virtual march point and can lead
+          // the men (rubber-band bounds it to COHESION_M, but the ring should
+          // sit on the troops, not the ghost). Render-only; falls back to the
+          // anchor if no member is alive this frame.
+          let sqCx = 0, sqCz = 0;
+          if (selSq) {
+            let nLive = 0;
+            for (const id of selSq.memberIds) {
+              const u = world.byId.get(id);
+              if (u && u.alive) { sqCx += u.pos.x; sqCz += u.pos.z; nLive++; }
+            }
+            if (nLive) { sqCx /= nLive; sqCz /= nLive; }
+            else { sqCx = selSq.anchor.x; sqCz = selSq.anchor.z; }
+          }
           if (selSq && selSq.type === "sniper") {
             // Sniper selection shows the TRUE reach fan — squadReach fires
             // from the member's head (pos.y + 0.5, squadFire's own muzzle),
@@ -1514,10 +1529,10 @@ export default function DepotGame({ onExit }) {
               const pts = u0 ? squadReach(world, selSq, null, invW) : null;
               S.selReach = pts ? { id: selSq.id, t: world.t, pts, cx: u0.pos.x, cz: u0.pos.z } : null;
             }
-            S.hover = { x: selSq.anchor.x, z: selSq.anchor.z, valid: true, range: 0 };
+            S.hover = { x: sqCx, z: sqCz, valid: true, range: 0 };
           } else {
             S.selReach = null;
-            if (selSq) S.hover = { x: selSq.anchor.x, z: selSq.anchor.z, valid: true, range: INFANTRY_ARMS[selSq.type].range };
+            if (selSq) S.hover = { x: sqCx, z: sqCz, valid: true, range: INFANTRY_ARMS[selSq.type].range };
           }
           const ws = S.ws;
           if (S.started && !S.gameOver && !S.victory) {
@@ -1621,7 +1636,7 @@ export default function DepotGame({ onExit }) {
               const nd = R.project(x, y, z);
               return nd ? { x: rect2.left + (nd.x * 0.5 + 0.5) * rect2.width, y: rect2.top + (-nd.y * 0.5 + 0.5) * rect2.height } : null;
             };
-            S.squadScreen = toScreen(selSq.anchor.x, field.heightAt(selSq.anchor.x, selSq.anchor.z) + 2.2, selSq.anchor.z);
+            S.squadScreen = toScreen(sqCx, field.heightAt(sqCx, sqCz) + 2.2, sqCz);
             S.flagScreen = selSq.dest ? toScreen(selSq.dest.x, field.heightAt(selSq.dest.x, selSq.dest.z) + 1.6, selSq.dest.z) : null;
           } else { S.squadScreen = null; S.flagScreen = null; }
           S.hudT += dt;
