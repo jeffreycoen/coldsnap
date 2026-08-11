@@ -32,8 +32,23 @@ A tuned game must satisfy ALL, across 20 seeds per tier (none/median/strong scri
 - Update the probe's three scripted defense tiers to the current game: build costs, the pair (median tier gains one sniper pair — it's now a normal purchase), sandbags, squads that actually march (sleep fix changes probe pathing assumptions), CAREFUL default ON as shipped.
 - Verify the probe still runs headless within its time budget (the pair's placement solvers run at placement only — assert no per-tick cost).
 - Baseline run: 20 seeds × 3 tiers, NO tuning — record the full matrix (waves survived, verdicts, withdrawal rate, breach count, regiment remainder) as the before picture.
-- [ ] Gates: probe completes; matrix recorded in report + this plan; depot-test/lint/build green (probe-only changes).
-- [ ] Commit "DEPOT balance: the probe learns today's game — baseline matrix recorded" → PUSH + report with the matrix.
+- [x] Gates: probe completes; matrix recorded in report + this plan; depot-test/lint/build green (probe-only changes).
+- [x] Commit "DEPOT balance: the probe learns today's game — baseline matrix recorded" → PUSH + report with the matrix.
+
+#### Task 1 baseline matrix (recorded 2026-08-11, 20 seeds/cell, NO tuning)
+
+Probe refreshed to today's game: sandbags (3), the pair (45, 2-man, spotter unarmed) via real makeSquad/stepSquad/squadFire, CAREFUL default, wave-timeout clock + executeWithdrawal (exact shipped sequence), stall gate counts infantry only (mirrors DepotGame.jsx), tank-escape workaround no longer charges a life (shipped game charges none). `median-alt` = median with the pair's 45 scrap in 3 mg towers instead (rule (g) comparator, now a default probe cell).
+
+| tier | avg wave | verdicts | withdrawal rate | breach LOSSes | regiment remainder (avg) |
+|---|---|---|---|---|---|
+| none | 1.0 | 20/20 LOSS (overrun), all wave 1 | 0/40 (0%) | 0 | ~357 heads, ~10 tanks, ~13 scrap |
+| median (pair) | 50.0 | 20/20 WIN (ledger) | 102/1000 (10.2%) | 0 | ~147 heads, ~10 tanks, ~10 scrap |
+| strong | 50.0 | 2/20 WIN (ledger), 18/20 LOSS (ledger) — every seed survives all 50 waves with 8-10 lives | 345/1000 (34.5%) | 0 | ~144 heads, ~1.7 tanks, ~19 scrap |
+| median-alt (g) | 46.1 | 20/20 WIN (11 ledger, 9 attrition) | 371/922 (40.2%) | 0 | ~55 heads, ~0.3 tanks, ~30 scrap |
+
+Sanity rules: (a) FAIL 10% (2/20; threshold 30%) — (b) PASS max wave 1 — (c) FAIL max wave 50 but verdicts all WIN, no mix — (d) PASS 0 spurious/0 total — (e) FAIL 27.6% pooled (818/2962; median alone 10.2% passes, strong 34.5% and median-alt 40.2% blow it) — (f) PASS 0 empty-solvent waves — (g) PASS by letter (pair better 9/20, alt >= pair 11/20) but see caveat: median-alt out-attrites the pair badly (9 attrition WINs and ~55 heads left vs 0 and ~147).
+
+Headline oddities for Task 2: strong LOSES on the ledger while never being overrun (its book value grinds to ~250 vs regiment ~650 — the fortress survives but bankrupts itself; pre-absolute-cover this plan went 20/20 WIN); median never loses (no verdict mix at all); withdrawals over the line for strong/median-alt (attackers time out against standing defenses rather than dying); probe runtime now ~24 min for the full sweep (old 10-seed auto-degrade guard retired — it would have corrupted the matrix).
 
 ### Task 2: read the baseline with Jeff — STOP POINT
 
