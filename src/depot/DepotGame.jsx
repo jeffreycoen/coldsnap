@@ -7,6 +7,7 @@
 // the map) — the JS built-in unseeded generator is forbidden here — so runs
 // replay exactly from ?seed=.
 import React, { useEffect, useRef, useState } from "react";
+import { MK } from "../version.js";
 import {
   makeField, makeWorld, addBody, addWeld, stepWorld, fireProjectile,
   applyDamage, mulberry32,
@@ -1886,7 +1887,7 @@ export default function DepotGame({ onExit }) {
         {onExit && (
           <button style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px" }} onClick={onExit}>⏏ MENU</button>
         )}
-        <div style={{ ...P.stat, opacity: 0.65 }}>{hud.fps} fps</div>
+        <div style={{ ...P.stat, opacity: 0.65 }}>{hud.fps} fps · {MK}</div>
       </div>
 
       {hud.toasts && hud.toasts.length > 0 && (

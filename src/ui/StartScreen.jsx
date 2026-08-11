@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { COLORS, FONT, btn, detectTouch } from "./theme.js";
+import { MK } from "../version.js";
 
 // Display-only mirror of the demo's trial order for the medal star row; the
 // demo file is frozen and does not export TRIALS.
@@ -52,6 +53,7 @@ export default function StartScreen({ onPlay, onSandbox, onCampaign, onControls,
         <div style={{ textAlign: "center", marginBottom: 8 }}>
           <div style={{ fontSize: 34, color: COLORS.red, letterSpacing: 8 }}>COLDSNAP</div>
           <div style={{ opacity: 0.7, letterSpacing: 3, fontSize: 12 }}>WINTER RANGE COMMAND</div>
+          <div data-mk style={{ opacity: 0.5, letterSpacing: 2, fontSize: 10, marginTop: 4 }}>{MK}</div>
         </div>
 
         <button data-menu="depot" style={option({ borderColor: "#6a8a9a" })} onClick={onDepot}>
