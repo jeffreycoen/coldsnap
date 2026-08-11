@@ -138,6 +138,10 @@ const memberClear = (u) => (u.hx || 0.3) + SLOT_CLEAR_PAD;
 
 // ---------------------------------------------------------------- helpers
 const MOVE_SPEED = 3.2; // m/s — infantry march speed toward a goal point
+// Rubber-band cohesion: the attack anchor holds (this tick) while any live
+// member trails it by more than COHESION_M. Deadlock-free because seekGoal's
+// wake below keeps members marching toward their slots.
+export const COHESION_M = 6; // m — max live-member-to-anchor distance before the anchor waits
 function seekGoal(world, u, dt) {
   if (!u.goal) return;
   const dx = u.goal.x - u.pos.x, dz = u.goal.z - u.pos.z;

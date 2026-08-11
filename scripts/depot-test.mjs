@@ -16,7 +16,7 @@ import {
 } from "../src/engine/core.js";
 import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, WAVES as DEPOT_WAVES, MASON, INFANTRY_ARMS } from "../src/depot/specs.js";
 import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks, payBounties, SNIPER_FIRE } from "../src/depot/units.js";
-import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad } from "../src/depot/squads.js";
+import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad, COHESION_M } from "../src/depot/squads.js";
 import {
   makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue, payTown,
 } from "../src/depot/economy.js";
@@ -2236,6 +2236,159 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     }
     ok("slot goals never target the inside of a static solid (wall on the defend ring)", !goalInSolid);
     ok("all members survive 30s anchored against a wall (no depenetration slam deaths)", !died);
+  }
+}
+
+// --- squads.js (marksmanship batch Task 1): wake-on-seek + rubber-band
+// anchor + honest ring. Fixtures promoted from scripts/diag-squadlag.mjs
+// (full stepWorld physics — the sleep bug only reproduces with the engine's
+// sleeper in the loop). Diagnosed defect: core.js sleeps a body at
+// |v|^2<0.06 for 0.55s; the threatened attack's 1.5-3s leg pauses guarantee
+// it, and seekGoal's gentle accel-from-rest never escapes the engine's
+// re-zeroing — members sleep forever while the anchor marches on alone.
+{
+  // keeps men on their feet — copy of DepotGame.jsx's uprightMember
+  const uprightMember = (u, dt) => {
+    const supported = u.grounded || Math.abs(u.v.y) < 0.6;
+    if (!supported || u.R[4] <= -0.5) return;
+    if (u.R[4] < 0.995) {
+      const yaw2 = Math.atan2(u.R[6], u.R[8]) * 0.5;
+      const ty = Math.sin(yaw2), tw = Math.cos(yaw2);
+      const a = Math.min(1, 14 * dt);
+      const sgn = u.q.y * ty + u.q.w * tw < 0 ? -1 : 1;
+      u.q.x += (0 - u.q.x) * a; u.q.y += (ty * sgn - u.q.y) * a;
+      u.q.z += (0 - u.q.z) * a; u.q.w += (tw * sgn - u.q.w) * a;
+      const L2 = Math.hypot(u.q.x, u.q.y, u.q.z, u.q.w) || 1;
+      u.q.x /= L2; u.q.y /= L2; u.q.z /= L2; u.q.w /= L2;
+    }
+  };
+
+  const makeFixture = ({ rocks = false, threat = false, seed = 1 } = {}) => {
+    const world = makeWorld({ seed });
+    const squad = makeSquad(1, "rifles", 1, 0, 0);
+    spawnSquadMembers(world, squad);
+    squad.order = "attack";
+    squad.dest = { x: 0, z: 35 };
+    if (rocks) {
+      // masonry cluster straddling the direct route at z=17
+      for (const [x, z] of [[-2.5, 17], [-0.9, 17], [0.9, 17], [2.5, 17], [-1.7, 18.4], [1.7, 18.4]]) {
+        addBody(world, { kind: "rock", team: 0, mass: 0, hx: 0.9, hy: 0.8, hz: 0.9,
+          x, y: world.field.heightAt(x, z) + 0.8, z, hp: 1e9 });
+      }
+    }
+    if (threat) {
+      // live enemy inside THREAT_RADIUS of the route, passive (no combat stepped)
+      addBody(world, { kind: "unit", team: 2, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28,
+        x: 15, y: world.field.heightAt(15, 20) + 0.74, z: 20, hp: 58 });
+    }
+    return { world, squad };
+  };
+
+  // Full-physics march runner. Instruments: rng draw count, leg-arrival
+  // count (a leg ends when the dwell arms from zero — threatened — or when
+  // _legTarget resets while still attacking — double-time), max member-to-
+  // anchor distance across the whole run, arrival times.
+  const runMarch = (fix, maxT = 120) => {
+    const { world, squad } = fix;
+    const dt = world.dt;
+    let draws = 0;
+    const rng0 = world.rng;
+    world.rng = () => { draws++; return rng0(); };
+    const members = () => squad.memberIds.map((id) => world.byId.get(id)).filter((u) => u && u.alive);
+    const st = { draws: 0, legs: 0, cohesionMax: 0, anchorArriveT: null, lastManArriveT: null, alive4: false, trace: "" };
+    const dest = squad.dest;
+    for (let i = 0; i < Math.round(maxT / dt); i++) {
+      const prevLeg = squad._legTarget, prevPause = squad._pauseT || 0, prevOrder = squad.order;
+      stepSquad(world, squad, dt);
+      if (prevOrder === "attack" && prevLeg &&
+        ((prevPause <= 0 && (squad._pauseT || 0) > 0) || (squad.order === "attack" && squad._legTarget === null && (squad._pauseT || 0) <= 0)))
+        st.legs++;
+      const ms = members();
+      for (const u of ms) uprightMember(u, dt);
+      stepWorld(world);
+      for (const u of ms) {
+        const d = Math.hypot(u.pos.x - squad.anchor.x, u.pos.z - squad.anchor.z);
+        if (d > st.cohesionMax) st.cohesionMax = d;
+      }
+      const anchorD = Math.hypot(dest.x - squad.anchor.x, dest.z - squad.anchor.z);
+      if (st.anchorArriveT == null && anchorD <= 1.0) st.anchorArriveT = world.t;
+      if (ms.length && st.lastManArriveT == null &&
+        Math.max(...ms.map((u) => Math.hypot(dest.x - u.pos.x, dest.z - u.pos.z))) <= 4.0)
+        st.lastManArriveT = world.t;
+      if (st.lastManArriveT != null && world.t > st.lastManArriveT + 2) break;
+    }
+    st.draws = draws;
+    st.alive4 = members().length === 4;
+    st.trace = members().map((u) => `${u.pos.x.toFixed(6)},${u.pos.z.toFixed(6)},${u.sleeping ? 1 : 0}`).join("|") + `#d${draws}`;
+    world.rng = rng0;
+    return st;
+  };
+
+  // 1) threatened open-ground attack: every member arrives (within 8s of the
+  // anchor's own arrival), nobody left sleeping mid-field. Pre-fix: 0/4 ever
+  // arrive — the first leg pause sleeps all four for good.
+  {
+    const s = runMarch(makeFixture({ threat: true }));
+    ok("threatened open-ground attack: anchor arrives", s.anchorArriveT != null, `anchorArriveT=${s.anchorArriveT}`);
+    ok("threatened open-ground attack: all 4 members alive at dest", s.alive4);
+    ok("threatened open-ground attack: last man arrives within 8s of the anchor",
+      s.anchorArriveT != null && s.lastManArriveT != null && s.lastManArriveT - s.anchorArriveT <= 8,
+      `anchor=${s.anchorArriveT?.toFixed(1)} lastMan=${s.lastManArriveT?.toFixed(1) ?? "never"}`);
+    ok("threatened open-ground attack: max member-to-anchor lag bounded < COHESION_M + slack",
+      s.cohesionMax < COHESION_M + 2.5, `cohesionMax=${s.cohesionMax.toFixed(2)} COHESION_M=${COHESION_M}`);
+    // rng contract: exactly ONE draw per completed attack leg — the
+    // rubber-band may delay legs in wall-clock but never adds or drops draws.
+    ok("threatened attack: rng draws == completed legs (one draw per leg)",
+      s.draws === s.legs, `draws=${s.draws} legs=${s.legs}`);
+  }
+
+  // 2) rock-cluster route, threatened: 4/4 arrive (pre-fix: wedged members
+  // sleep forever against the masonry — 2/4).
+  {
+    const s = runMarch(makeFixture({ rocks: true, threat: true, seed: 2 }));
+    ok("rock-cluster threatened attack: all 4 members alive", s.alive4);
+    ok("rock-cluster threatened attack: last man arrives",
+      s.lastManArriveT != null && s.anchorArriveT != null && s.lastManArriveT - s.anchorArriveT <= 8,
+      `anchor=${s.anchorArriveT?.toFixed(1) ?? "never"} lastMan=${s.lastManArriveT?.toFixed(1) ?? "never"}`);
+    ok("rock-cluster threatened attack: cohesion bounded",
+      s.cohesionMax < COHESION_M + 2.5, `cohesionMax=${s.cohesionMax.toFixed(2)}`);
+    ok("rock-cluster threatened attack: rng draws == completed legs",
+      s.draws === s.legs, `draws=${s.draws} legs=${s.legs}`);
+  }
+
+  // 3) settled defenders keep sleeping: the d<0.15 idle branch must NOT wake
+  // (idle-world determinism property). Let a defend squad settle under full
+  // physics, then verify members are asleep and STAY asleep.
+  {
+    const world = makeWorld({ seed: 5 });
+    const squad = makeSquad(4, "rifles", 1, 0, 0);
+    spawnSquadMembers(world, squad);
+    const dt = world.dt;
+    const ms = () => squad.memberIds.map((id) => world.byId.get(id)).filter((u) => u && u.alive);
+    for (let i = 0; i < Math.round(20 / dt); i++) {
+      stepSquad(world, squad, dt);
+      for (const u of ms()) uprightMember(u, dt);
+      stepWorld(world);
+    }
+    const settled = ms().every((u) => u.sleeping);
+    ok("settled defenders are asleep after 20s", settled, JSON.stringify(ms().map((u) => !!u.sleeping)));
+    let stayedAsleep = true;
+    for (let i = 0; i < Math.round(5 / dt); i++) {
+      stepSquad(world, squad, dt);
+      stepWorld(world);
+      if (!ms().every((u) => u.sleeping)) stayedAsleep = false;
+    }
+    ok("settled defenders STAY asleep through 5 more seconds of stepSquad (idle branch never wakes)", stayedAsleep);
+  }
+
+  // 4) twin determinism under full physics — threatened rocky march,
+  // identical seed -> identical member positions, sleep flags, and draw
+  // count (rng stream identity through a threatened attack).
+  {
+    const a = runMarch(makeFixture({ rocks: true, threat: true, seed: 9 }));
+    const b = runMarch(makeFixture({ rocks: true, threat: true, seed: 9 }));
+    ok("twin determinism (full physics, threatened, rocks): traces + draw counts identical",
+      a.trace === b.trace, `${a.trace} vs ${b.trace}`);
   }
 }
 
