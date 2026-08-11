@@ -155,11 +155,39 @@ function seekGoal(world, u, dt) {
   // nearest-deviation first, positive side first — deterministic, no rng).
   let hx = dx / d, hz = dz / d;
   const look = Math.min(d, (u.hx || 0.3) + 0.9), clear = memberClear(u);
-  if (slotBlocked(world, u.pos.x + hx * look, u.pos.z + hz * look, clear)) {
-    const base = Math.atan2(hx, hz);
-    for (const off of [Math.PI / 6, -Math.PI / 6, Math.PI / 3, -Math.PI / 3, Math.PI / 2, -Math.PI / 2, (2 * Math.PI) / 3, -(2 * Math.PI) / 3]) {
-      const az = base + off, px = Math.sin(az), pz = Math.cos(az);
-      if (!slotBlocked(world, u.pos.x + px * look, u.pos.z + pz * look, clear)) { hx = px; hz = pz; break; }
+  const blockedAhead = (px, pz) => slotBlocked(world, u.pos.x + px * look, u.pos.z + pz * look, clear);
+  // Detour COMMIT (diag-squadlag fixture D): re-fanning every tick in a
+  // concave solid pocket flip-flops the chosen side — the man vibrates in
+  // place with zero net displacement (a deterministic local-minimum
+  // oscillation the velocity-based wedge test can't even see). A found
+  // detour heading is therefore held for DETOUR_T seconds (or until it
+  // blocks), so the man actually TRAVELS along the wall and exits the
+  // pocket. Per-body scalar state; draw-free; deterministic.
+  if ((u._detourT || 0) > 0 && !blockedAhead(u._detourHx, u._detourHz)) {
+    u._detourT -= dt;
+    hx = u._detourHx; hz = u._detourHz;
+  } else {
+    u._detourT = 0;
+    if (blockedAhead(hx, hz)) {
+      const base = Math.atan2(hx, hz);
+      // Fan widened to ±150° (a concave pocket can require walking nearly
+      // BACKWARD along the wall before a forward lane opens), and the LAST
+      // SUCCESSFUL SIDE is tried first at every magnitude (wall-follow
+      // memory): without it, successive fans alternate sides and the man
+      // patrols the same 2m of wall forever. Deterministic per-body state.
+      const s = u._detourSide === -1 ? -1 : 1;
+      const mags = [Math.PI / 6, Math.PI / 3, Math.PI / 2, (2 * Math.PI) / 3, (5 * Math.PI) / 6];
+      // preferred side EXHAUSTED first (all magnitudes), THEN the other
+      // side — interleaving magnitudes across sides lets a symmetric pocket
+      // hand the win to alternating sides and the patrol loop returns.
+      for (const off of [...mags.map((m) => m * s), ...mags.map((m) => -m * s)]) {
+        const az = base + off, px = Math.sin(az), pz = Math.cos(az);
+        if (!blockedAhead(px, pz)) {
+          hx = px; hz = pz; u._detourHx = px; u._detourHz = pz; u._detourT = 0.45;
+          u._detourSide = off >= 0 ? 1 : -1;
+          break;
+        }
+      }
     }
   }
   const sp = MOVE_SPEED;
