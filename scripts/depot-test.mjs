@@ -5,6 +5,7 @@ import {
   PHASE, makeRunState, startWave, tryStall, advance,
   regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, shooterFire, squadFire, nextSpawnTag,
   fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed,
+  PENDING_EDGE_PAD, pendingButtonsVisible, canvasTapConsumesPending,
   censusDepotChunks, depotStandingFraction, checkDepotBreach, checkEnemyBreach, stepDepotCensus, hostileStructure,
   spawnSquadMembers, spawnSandbag, SANDBAG_COST, pruneSquads,
   DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, DEPOT_CENSUS_HZ, standingStructure,
@@ -6286,6 +6287,48 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
   }
 }
 // ==== end F1.6 BRIDGE ========================================================
+
+// ==== mk0.27: NO TAP GOES SILENTLY MISSING ===================================
+{
+  console.log("\n[mk0.27: confirm-tap thefts]");
+  const rect = { left: 0, top: 0, width: 800, height: 600 };
+  const pending = { gx: 1, gz: 1, mode: "mg", cost: 20, armedAt: 5 };
+
+  // (a) the unarmed ✓ tap: inert, but the pending survives untouched, so the
+  // next tap still resolves normally (it is not a swallowed tap).
+  ok("mk0.27/a: an unarmed pending is not confirmable", pendingArmed(pending, 4.9) === false);
+  ok("mk0.27/a: the pending still resolves on the next canvas tap (buttons on screen)",
+    canvasTapConsumesPending(pending, { x: 400, y: 300 }, rect) === true);
+
+  // (b) the pan theft: buttons off the viewport -> a canvas tap is NOT eaten.
+  ok("mk0.27/b: buttons panned off the right edge are not visible",
+    pendingButtonsVisible({ x: 799, y: 300 }, rect) === false);
+  ok("mk0.27/b: buttons panned above the top edge are not visible",
+    pendingButtonsVisible({ x: 400, y: 2 }, rect) === false);
+  ok("mk0.27/b: an unprojectable anchor (behind the camera) is not visible",
+    pendingButtonsVisible(null, rect) === false);
+  ok("mk0.27/b: a canvas tap is NOT consumed while the buttons are off-screen",
+    canvasTapConsumesPending(pending, { x: 900, y: 300 }, rect) === false);
+  ok("mk0.27/b: no pending at all consumes nothing",
+    canvasTapConsumesPending(null, { x: 400, y: 300 }, rect) === false);
+  ok("mk0.27/b: the edge pad is a real margin", PENDING_EDGE_PAD > 0
+    && pendingButtonsVisible({ x: PENDING_EDGE_PAD - 1, y: 300 }, rect) === false
+    && pendingButtonsVisible({ x: PENDING_EDGE_PAD, y: 300 }, rect) === true);
+
+  // (c) the wiring: DepotGame uses both, says something on the inert tap, and
+  // auto-cancels the pending when its anchor leaves the viewport.
+  {
+    const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("mk0.27/c: the canvas-tap pending-clear goes through canvasTapConsumesPending",
+      /canvasTapConsumesPending\(S\.pending, S\.pendingScreen/.test(src));
+    ok("mk0.27/c: the unarmed ✓ tap toasts instead of vanishing",
+      /if \(!pendingArmed\(p, world\.t\)\) \{[^}]*toast\(/.test(src.replace(/\n/g, " ")));
+    ok("mk0.27/c: a pending whose anchor leaves the viewport auto-cancels with a toast",
+      /pendingButtonsVisible\(/.test(src) && /PLACEMENT CANCELLED/.test(src));
+  }
+}
+// ==== end mk0.27 =============================================================
+
 
 
 

@@ -782,6 +782,31 @@ try {
     }
   }
 
+  // mk0.27: the pan theft. Open a pending, then move the camera until its
+  // ✓/✗ anchor leaves the viewport — the pending must cancel itself out loud
+  // instead of lingering invisibly and eating the next ground tap.
+  {
+    const buildable3 = await page.evaluate(() => window.__DEPOTFINDBUILDABLE__());
+    if (buildable3) {
+      await page.evaluate((b) => window.__DEPOTFOCUS__(b.x, b.z), buildable3);
+      await sleep(300);
+      const cc3 = await canvasCenter();
+      await page.click('[data-tower-key="gun"]');
+      await page.mouse.click(cc3.x, cc3.y);
+      const opened = await page.waitForFunction(() => window.__DEPOTPENDING__() != null, { timeout: 5000, polling: 50 }).then(() => true).catch(() => false);
+      ok("depot: pending opens for the pan-theft check", opened);
+      if (opened) {
+        await page.evaluate((b) => window.__DEPOTFOCUS__(b.x + 120, b.z + 120), buildable3);
+        const cancelled = await page.waitForFunction(() => window.__DEPOTPENDING__() == null, { timeout: 5000, polling: 50 }).then(() => true).catch(() => false);
+        ok("depot: a pending whose ✓/✗ pair leaves the viewport cancels itself", cancelled);
+        const said = await page.evaluate(() => /MOVED OFF SCREEN/.test(document.body.innerText));
+        ok("depot: the off-screen cancel is announced (no silent disappearance)", said);
+      }
+    } else {
+      ok("depot: pan-theft check — no buildable cell found (skipped)", true);
+    }
+  }
+
   // Phase 4.1 Task 2 (fire discipline): chip present, defaults CAREFUL, tap
   // toggles to FREE and persists (localStorage key + a reload round-trip).
   // Done here, still in build phase, so the reload's fresh world doesn't

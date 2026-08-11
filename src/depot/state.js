@@ -79,6 +79,31 @@ export function pendingArmed(pending, nowT) {
   return !!pending && nowT >= pending.armedAt;
 }
 
+// --- confirm-tap thefts (mk0.27) --------------------------------------------
+// Two taps used to vanish without a trace:
+//  1. ✓ tapped before it arms — confirmPending no-opped silently, so the tap
+//     read as broken. It stays inert (the arm guard is the point), but it now
+//     SAYS so, and it leaves the pending exactly as it was: the next tap
+//     opens/cancels normally.
+//  2. panning until the ✓/✗ pair leaves the viewport — the pending was still
+//     set, so the next ground tap was silently eaten by the "any canvas tap
+//     resolves a pending" rule with no visible thing to resolve. Now the
+//     pending auto-cancels (with a toast) the moment its anchor leaves the
+//     screen, and a canvas tap only counts as "resolve the pending" while the
+//     buttons are actually on-screen.
+export const PENDING_EDGE_PAD = 8;   // px — a button half off the edge is not tappable
+export function pendingButtonsVisible(screen, rect, pad = PENDING_EDGE_PAD) {
+  if (!screen || !rect) return false;
+  return screen.x >= rect.left + pad && screen.x <= rect.left + rect.width - pad
+      && screen.y >= rect.top + pad && screen.y <= rect.top + rect.height - pad;
+}
+// Does a canvas tap resolve (cancel) the open pending? Only when the pending
+// exists AND its buttons are on-screen — otherwise the tap belongs to whatever
+// the player actually tapped.
+export function canvasTapConsumesPending(pending, screen, rect) {
+  return !!pending && pendingButtonsVisible(screen, rect);
+}
+
 // Wall build cost — mirrors DepotGame.jsx's buildAt (`const cost = spec ? spec.cost : 5`).
 // specs.js has no wall entry (walls aren't a TOWER_SPECS type), so this is
 // the single source of truth the book-value verdict below reads.

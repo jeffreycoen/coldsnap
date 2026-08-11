@@ -16,7 +16,7 @@ import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, WAVES, MASON, INFANTRY_ARMS } from "./specs.js";
 import { windAt } from "./wind.js";
-import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, executeWithdrawal, WAVE_TIMEOUT, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, pruneSquads } from "./state.js";
+import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, executeWithdrawal, WAVE_TIMEOUT, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, pruneSquads } from "./state.js";
 import { SQUAD_SPECS, makeSquad, stepSquad } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
@@ -949,7 +949,10 @@ export default function DepotGame({ onExit }) {
       };
       const confirmPending = () => {
         const p = S.pending;
-        if (!pendingArmed(p, world.t)) return;
+        // mk0.27: the arm guard stays (the opening tap must not double-fire
+        // as the confirm), but an early ✓ tap SAYS so instead of vanishing —
+        // and leaves the pending exactly as it was, so the next tap works.
+        if (!pendingArmed(p, world.t)) { if (p) toast("HOLD — ARMING"); return; }
         S.pending = null;
         if (p.squad) { placeSquadAt(p.gx, p.gz, p.squad); return; }
         buildAt(p.gx, p.gz, p.mode);
@@ -1128,7 +1131,11 @@ export default function DepotGame({ onExit }) {
         // confirm/cancel are the ✓/✗ HTML buttons (separate DOM elements,
         // so their own onClick fires instead of this canvas handler); a tap
         // that reaches here is by definition "elsewhere" and cancels.
-        if (S.pending) { clearPending(); return; }
+        // mk0.27: only while the ✓/✗ pair is actually ON SCREEN. Panned off
+        // the viewport, the pending is invisible, and eating the player's
+        // next ground tap to "resolve" it is a stolen tap.
+        if (canvasTapConsumesPending(S.pending, S.pendingScreen, canvas.getBoundingClientRect())) { clearPending(); return; }
+        if (S.pending) clearPending();
         const p = groundPoint(cx, cy);
         if (!p) { S.inspectId = null; return; }
         // Squad order flow: an armed ATTACK consumes this ground tap as the
@@ -1328,6 +1335,9 @@ export default function DepotGame({ onExit }) {
       };
 
       window.__DEPOT__ = () => ({ t: world.t, scrap: S.resources, kills: S.kills, wave: S.ws.waveIdx + 1, bodies: world.bodies.length, fps: S.fps, paused: S.paused, speed: S.speed, phase: S.phase, reg: { ...S.reg }, depotStanding: S.depotStanding != null ? S.depotStanding : 1, breach: !!S.breach, enemyStanding: S.enemyStanding != null ? S.enemyStanding : 1, enemyBreach: !!S.enemyBreach, withdrew: S.ws.withdrew || 0 });
+      // mk0.27 debug harness: the live pending + its screen anchor (smoke
+      // asserts the tap-theft repairs through this).
+      window.__DEPOTPENDING__ = () => (S.pending ? { armed: pendingArmed(S.pending, world.t), screen: S.pendingScreen, gx: S.pending.gx, gz: S.pending.gz } : null);
       window.__DEPOTACK__ = () => { if (S.doAdvance) S.doAdvance(); };
       window.__DEPOTBUILD__ = (gx, gz, mode) => buildAt(gx, gz, mode || "wall");
       window.__DEPOTSPAWN__ = (n) => { for (let i = 0; i < (n || 1); i++) spawnEnemy(world, SPAWN_POINTS[S.spawnRR++ % SPAWN_POINTS.length]); };
@@ -1704,6 +1714,12 @@ export default function DepotGame({ onExit }) {
               const rect = canvas.getBoundingClientRect();
               S.pendingScreen = { x: rect.left + (nd.x * 0.5 + 0.5) * rect.width, y: rect.top + (-nd.y * 0.5 + 0.5) * rect.height };
             } else S.pendingScreen = null;
+            // mk0.27: pan/rotate far enough and the ✓/✗ pair leaves the
+            // viewport — an invisible pending that still eats taps. Cancel
+            // it out loud the moment its anchor goes off screen.
+            if (!pendingButtonsVisible(S.pendingScreen, canvas.getBoundingClientRect())) {
+              clearPending(); S.pendingScreen = null; toast("PLACEMENT CANCELLED — MOVED OFF SCREEN");
+            }
           } else S.pendingScreen = null;
           // Squad chip + attack-flag anchors: screen-space, recomputed from
           // the live camera every frame (rotation/pan-proof, same rationale
@@ -1786,7 +1802,7 @@ export default function DepotGame({ onExit }) {
         canvas.removeEventListener("touchstart", blockTouch);
         window.removeEventListener("keydown", kd);
         window.removeEventListener("keyup", ku);
-        for (const k of ["__DEPOT__", "__DEPOTACK__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTTHIN__", "__DEPOTEND__", "__DEPOTFOCUS__", "__DEPOTGETFOCUS__", "__DEPOTSETT__", "__DEPOTFLAGS__", "__DEPOTHOLD__", "__DEPOTFINDBUILDABLE__", "__DEPOTFINDRISE__", "__DEPOTFINDNEARROCK__", "__DEPOTFOGDBG__", "__DEPOTFOGAT__", "__DEPOTENEMYPOS__", "__DEPOTSQUADS__", "__DEPOTSANDBAGS__", "__DEPOTGROUNDAT__", "__DEPOTSCREENAT__"]) delete window[k];
+        for (const k of ["__DEPOT__", "__DEPOTACK__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTTHIN__", "__DEPOTEND__", "__DEPOTFOCUS__", "__DEPOTGETFOCUS__", "__DEPOTSETT__", "__DEPOTFLAGS__", "__DEPOTHOLD__", "__DEPOTFINDBUILDABLE__", "__DEPOTFINDRISE__", "__DEPOTFINDNEARROCK__", "__DEPOTFOGDBG__", "__DEPOTFOGAT__", "__DEPOTENEMYPOS__", "__DEPOTSQUADS__", "__DEPOTSANDBAGS__", "__DEPOTGROUNDAT__", "__DEPOTSCREENAT__", "__DEPOTPENDING__"]) delete window[k];
         A.dispose();
         if (R) R.dispose();
         stateRef.current = null;
