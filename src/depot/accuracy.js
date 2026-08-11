@@ -234,7 +234,9 @@ export function squadReach(world, squad, T = null, toUV = (x, z) => ({ u: x, v: 
     if (!u || !u.alive) continue;
     if (u.role === "spotter") continue; // binoculars — the fan shows the RIFLE's reach (6.5 Task 6)
     const muzzle = { x: u.pos.x, y: u.pos.y + 0.5, z: u.pos.z };
-    return reachPolygon(world, T, muzzle, INFANTRY_ARMS[squad.type], squad.team, toUV, u.id);
+    const arms = INFANTRY_ARMS[squad.type];
+    if (!arms) return null; // unarmed squads (sappers — tools, not shooters): no reach fan
+    return reachPolygon(world, T, muzzle, arms, squad.team, toUV, u.id);
   }
   return null;
 }
