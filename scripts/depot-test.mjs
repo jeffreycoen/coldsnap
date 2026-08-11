@@ -4216,6 +4216,106 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
 }
 // ==== end SIGHTLINES 6.5 Task 1 ==============================================
 
+// ==== SIGHTLINES 6.5 Task 2: one flight model — friendlyFouls runs the tracer
+// Audit #1: friendlyFouls carried a private 0.9m-step ANALYTIC parabola
+// (y = -4.9t^2) while arcClears marches the engine's own cadence (t = k/120,
+// semi-implicit Euler height). Fix: extract the march as marchArc in
+// accuracy.js; arcClears and friendlyFouls both call it — one flight model,
+// two questions.
+{
+  console.log("\n[sightlines-6.5 task 2: one flight model]");
+
+  // (a) refactor-safety pin: arcClears verdicts across the crest matrix,
+  // byte-identical to the PRE-refactor snapshot (captured 2026-08-10 against
+  // the un-extracted loop; 325 fixtures = 5 setbacks x 5 shapes x 13 ranges).
+  {
+    const mkCrestWorld = (H, rampLen, seed = 1) => {
+      const world = makeWorld({ seed });
+      const f = world.field;
+      for (let j = 0; j < f.n; j++) for (let i = 0; i < f.n; i++) {
+        const x = i * f.cs - f.half;
+        f.h[f.idx(i, j)] = x <= 0 ? H : x >= rampLen ? 0 : H * 0.5 * (1 + Math.cos(Math.PI * x / rampLen));
+      }
+      return world;
+    };
+    const PRE_SNAPSHOT =
+      "1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111110111111111111100111111111100011111111111111111111111011111111111000011111111110000111111110000001111111001111111111100011111111110000001111111100000111111100000000111110001111111111000011111111100000001111111000000011111000000000001";
+    let bits = "";
+    for (const setback of [0, 1, 2, 3, 4]) for (const [H, ramp] of [[3, 6], [4, 8], [6, 8], [6, 12], [8, 10]]) {
+      for (let tx = 2; tx <= 26; tx += 2) {
+        const world = mkCrestWorld(H, ramp);
+        const sh = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: -setback, y: world.field.heightAt(-setback, 0) + 0.74, z: 0, hp: 58 });
+        const muzzle = { x: -setback, y: sh.pos.y + 0.5, z: 0 };
+        const tgt = { x: tx, y: world.field.heightAt(tx, 0) + 0.74, z: 0 };
+        bits += arcClears(world, muzzle, tgt, INFANTRY_ARMS.sniper, sh.id) ? "1" : "0";
+      }
+    }
+    ok("task2(a): arcClears verdicts byte-identical to the pre-refactor crest snapshot",
+      bits === PRE_SNAPSHOT, `${bits.length} verdicts, first diff at ${[...bits].findIndex((b, i) => b !== PRE_SNAPSHOT[i])}`);
+  }
+
+  // shared: flat world + a real unscattered gun round fired along the exact
+  // friendlyFouls trajectory (aimSolve dir), hitStruct so walls are physical
+  const flatWorld = () => { const w = makeWorld({ seed: 2 }); w.field.h.fill(0); return w; };
+  const gun = TOWER_SPECS.gun;
+  const fireReal = (world, muzzle, tgt, ownerId) => {
+    const d = Math.hypot(tgt.x - muzzle.x, tgt.z - muzzle.z);
+    const pitch = aimSolve(gun.projSpeed, d, tgt.y - muzzle.y, 9.8, false);
+    const ch = Math.cos(pitch), az = Math.atan2(tgt.z - muzzle.z, tgt.x - muzzle.x);
+    const dir = { x: ch * Math.cos(az), y: Math.sin(pitch), z: ch * Math.sin(az) };
+    const p = fireProjectile(world, muzzle, dir, gun.projSpeed, { kind: "shell", r: 0.3, kv: 0, dmg: 1, crater: 0, hitStruct: true, owner: ownerId, attacker: "test" });
+    let minD = 1e9;
+    for (let s = 0; s < 3000 && world.projectiles.includes(p); s++) {
+      stepWorld(world);
+      const dd = Math.hypot(p.pos.x - tgt.x, p.pos.y - tgt.y, p.pos.z - tgt.z);
+      if (dd < minD) minD = dd;
+    }
+    return minD; // closest approach to the aim point; <=1m means it arrived
+  };
+  const muzzle = { x: 0, y: 1.5, z: 0 }, tgt = { x: 12, y: 0.86, z: 0 };
+
+  // (b) keystone, direction 1: a friendly wall square in the lane — the
+  // verdict says FOUL and the real round physically strikes that wall.
+  {
+    const world = flatWorld();
+    const sh = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 0, hp: 58 });
+    const wall = addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.6, hy: 2, hz: 2, x: 6, y: 2, z: 0, hp: 999 });
+    const fouls = friendlyFouls(world, muzzle, tgt, gun, sh.id);
+    const minD = fireReal(world, muzzle, tgt, sh.id);
+    ok("task2(b): friendly wall in lane — verdict FOULS and the real round strikes the wall",
+      fouls === true && wall.hitT > 0 && minD > 1, `fouls=${fouls} wallHit=${wall.hitT > 0} minD=${minD.toFixed(2)}`);
+  }
+
+  // (c) keystone, direction 2: same wall shifted off the lane — the verdict
+  // says CLEAR and the real round arrives on the aim point untouched.
+  {
+    const world = flatWorld();
+    const sh = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 0, hp: 58 });
+    const wall = addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.6, hy: 2, hz: 2, x: 6, y: 2, z: 6, hp: 999 });
+    const fouls = friendlyFouls(world, muzzle, tgt, gun, sh.id);
+    const minD = fireReal(world, muzzle, tgt, sh.id);
+    ok("task2(c): friendly wall off the lane — verdict CLEAR and the real round arrives",
+      fouls === false && !(wall.hitT > 0) && minD <= 1, `fouls=${fouls} wallHit=${wall.hitT > 0} minD=${minD.toFixed(2)}`);
+  }
+
+  // (d) the margins case (audit #1's teeth): a thin friendly wall at x=4.95 —
+  // exactly between the old parabola's fixed 0.9m sample points, so the
+  // analytic sampler never sees it, but the engine-cadence march does and a
+  // REAL round physically strikes it. The verdict must be the integrator's:
+  // FOUL. Pre-refactor: friendlyFouls says clear while the round hits — the
+  // safety check guessing.
+  {
+    const world = flatWorld();
+    const sh = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 0, hp: 58 });
+    const wall = addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.01, hy: 3, hz: 2, x: 4.95, y: 3, z: 0, hp: 999 });
+    const fouls = friendlyFouls(world, muzzle, tgt, gun, sh.id);
+    const minD = fireReal(world, muzzle, tgt, sh.id);
+    ok("task2(d): analytic-vs-integrator margin case resolves to the integrator's answer (FOUL)",
+      wall.hitT > 0 && fouls === true, `realHitsWall=${wall.hitT > 0} fouls=${fouls} minD=${minD.toFixed(2)}`);
+  }
+}
+// ==== end SIGHTLINES 6.5 Task 2 ==============================================
+
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
   process.exit(1);

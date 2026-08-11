@@ -93,33 +93,55 @@ const TARGET_BODY_H = 1.24;
 //                                        block lofted fire (you cannot mortar
 //                                        out from under your own wall's
 //                                        overhang)
-export function arcClears(world, muzzle, target, spec, selfId) {
+// marchArc: the ONE flight march (6.5 Task 2). Walks the round's actual
+// flight path — lofted specs walk only the steep climb-out cone (first 15%
+// of flight, contract unchanged), "arc" specs walk engine-cadence samples
+// (t = k*ARC_DT, the integrator's own Euler height; see the ARC_EPS
+// derivation above) — calling hit(x, y, z) at every sample. First true
+// aborts the march. Returns:
+//   true  -> hit fired somewhere along the flight
+//   false -> the whole tested span is hit-free (includes d < 2: point-blank
+//            has no tested span)
+//   null  -> no ballistic solution exists (aimSolve failed; there IS no
+//            flight to march — callers decide what that means)
+// arcClears passes terrain+solidBlocksPoint as hit; friendlyFouls
+// (state.js) passes friendlyBlocksPoint. One flight model, two questions.
+export function marchArc(world, muzzle, target, spec, hit) {
   if (spec.occl === "lofted") {
     const d = Math.hypot(target.x - muzzle.x, target.z - muzzle.z);
     for (let s = 0.9; s < d * 0.15; s += 0.9) {
       const t = s / d, x = muzzle.x + (target.x - muzzle.x) * t, z = muzzle.z + (target.z - muzzle.z) * t;
-      if (solidBlocksPoint(world, x, muzzle.y + s * 1.2, z, selfId)) return false; // steep climb-out cone
+      if (hit(x, muzzle.y + s * 1.2, z)) return true;  // steep climb-out cone
     }
-    return true;
+    return false;
   }
   const dx = target.x - muzzle.x, dz = target.z - muzzle.z;
-  const d = Math.hypot(dx, dz); if (d < 2) return true;
+  const d = Math.hypot(dx, dz); if (d < 2) return false;
   const pitch = aimSolve(spec.projSpeed, d, target.y - muzzle.y, 9.8, false);
-  if (pitch == null) return false;
+  if (pitch == null) return null;
   const vh = spec.projSpeed * Math.cos(pitch), vy0 = spec.projSpeed * Math.sin(pitch);
-  const tgh = world.field.heightAt(target.x, target.z);
   for (let k = 1; ; k++) {
     const t = k * ARC_DT, s = vh * t;                  // engine-cadence sample (see ARC_EPS derivation)
     if (s >= d - 0.9) break;                           // last ~0.9m: the target point itself, assumed reachable
     const y = muzzle.y + vy0 * t - 4.9 * t * (t + ARC_DT); // integrator's own Euler height
     const x = muzzle.x + (dx / d) * s, z = muzzle.z + (dz / d) * s;
-    const h = world.field.heightAt(x, z);
-    if (h + ARC_EPS > y &&                             // terrain pierces the arc…
-        !(y > h && y <= tgh + TARGET_BODY_H))          // …unless it's the final descent onto the target's body
-      return false;
-    if (solidBlocksPoint(world, x, y, z, selfId)) return false; // solid at arc height
+    if (hit(x, y, z)) return true;
   }
-  return true;
+  return false;
+}
+
+export function arcClears(world, muzzle, target, spec, selfId) {
+  const tgh = world.field.heightAt(target.x, target.z);
+  const blocked = marchArc(world, muzzle, target, spec, (x, y, z) => {
+    if (spec.occl !== "lofted") {                      // lofted flight ignores terrain entirely
+      const h = world.field.heightAt(x, z);
+      if (h + ARC_EPS > y &&                           // terrain pierces the arc…
+          !(y > h && y <= tgh + TARGET_BODY_H))        // …unless it's the final descent onto the target's body
+        return true;
+    }
+    return solidBlocksPoint(world, x, y, z, selfId);   // solid at arc height
+  });
+  return blocked === null ? false : !blocked;          // no solution -> not clear
 }
 
 export function losGraze(world, muzzle, aim) {

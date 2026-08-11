@@ -3,7 +3,7 @@
 // never be read from the closure — see ColdsnapTD.jsx for why).
 import { aimSolve, fireProjectile, addBody } from "../engine/core.js";
 import { SQUAD_SPECS, clearSlot } from "./squads.js";
-import { scatterSigma, applyScatter, arcClears } from "./accuracy.js";
+import { scatterSigma, applyScatter, arcClears, marchArc } from "./accuracy.js";
 import { planWave, MIN_WAVE_FLOOR } from "./ai.js";
 import { STIPEND, payResults, combatIneffective, bookValue } from "./economy.js";
 import { composeIntel, openingIntel } from "./intel.js";
@@ -372,27 +372,16 @@ function friendlyBlocksPoint(world, x, y, z, selfId) {
   return false;
 }
 
+// 6.5 Task 2: the private 0.9m-step analytic parabola is gone — friendlyFouls
+// marches the SAME flight model arcClears predicts with (accuracy.js's
+// marchArc: engine-cadence samples, integrator-exact Euler heights; lofted
+// specs keep the climb-out-cone contract). One flight model, two questions —
+// this one asks friendlyBlocksPoint. marchArc's null (no ballistic solution:
+// there is no flight, so nothing to foul) reads as no-foul, exactly as the
+// old `pitch == null -> false` did.
 export function friendlyFouls(world, muzzle, target, spec, selfId) {
-  if (spec.occl === "lofted") {
-    const d = Math.hypot(target.x - muzzle.x, target.z - muzzle.z);
-    for (let s = 0.9; s < d * 0.15; s += 0.9) {
-      const t = s / d, x = muzzle.x + (target.x - muzzle.x) * t, z = muzzle.z + (target.z - muzzle.z) * t;
-      if (friendlyBlocksPoint(world, x, muzzle.y + s * 1.2, z, selfId)) return true;
-    }
-    return false;
-  }
-  const dx = target.x - muzzle.x, dz = target.z - muzzle.z;
-  const d = Math.hypot(dx, dz); if (d < 2) return false;
-  const pitch = aimSolve(spec.projSpeed, d, target.y - muzzle.y, 9.8, false);
-  if (pitch == null) return false;
-  const vh = spec.projSpeed * Math.cos(pitch), vy0 = spec.projSpeed * Math.sin(pitch);
-  for (let s = 0.9; s < d - 0.9; s += 0.9) {
-    const t = s / vh;
-    const y = muzzle.y + vy0 * t - 4.9 * t * t;
-    const x = muzzle.x + (dx / d) * s, z = muzzle.z + (dz / d) * s;
-    if (friendlyBlocksPoint(world, x, y, z, selfId)) return true;
-  }
-  return false;
+  return marchArc(world, muzzle, target, spec,
+    (x, y, z) => friendlyBlocksPoint(world, x, y, z, selfId)) === true;
 }
 
 // ------------------------------------------------------- structural loss
