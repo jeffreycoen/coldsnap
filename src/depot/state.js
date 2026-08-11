@@ -424,7 +424,9 @@ function friendlyBlocksPoint(world, x, y, z, selfId) {
     // actually held the shot the depot would have caught.
     if (!b.alive || (selfId != null && b.id === selfId)) continue;
     const friendly = ((b.kind === "wall" || b.kind === "tower") && b.team === 1) ||
-                      (b.kind === "chunk" && b.team === 0);
+                      // enemy depot masonry (town "depot2") is a VICTORY TARGET,
+                      // not a friendly — CAREFUL must never hold fire for it
+                      (b.kind === "chunk" && b.team === 0 && b.town !== "depot2");
     if (!friendly) continue;
     if (b.invM > 0 && b.kind !== "chunk") continue; // dynamic non-masonry never fouls
     if (Math.abs(x - b.pos.x) <= b.hx + FRIENDLY_MARGIN &&
