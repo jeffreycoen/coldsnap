@@ -34,10 +34,18 @@ const SOLID_KINDS = new Set(["rock", "wall", "tower", "tree", "chunk"]);
 // reporting "blocked" against the tower's own footprint, not any real
 // terrain or obstruction. Pass the shooter's id to skip its own body while
 // still catching every OTHER solid (rocks, other towers, walls, trees).
+// Filter by KIND, not mobility (6.5 Task 1): a stone is an obstacle whether
+// or not physics lets it move — sleeping masonry is the whole town, and
+// town/depot chunks (mass 100/88/320) and trees (mass 260) are dynamic, so
+// the old `invM > 0` skip made the chunk/tree SOLID_KINDS entries dead code.
+// Units/vehicles stay excluded (dynamic AND not in SOLID_KINDS). Loose
+// battlefield debris (shattered chunks) now also blocks aiming — correct
+// physics (rubble is cover), and exposureAt already treated it as cover.
 export function solidBlocksPoint(world, x, y, z, selfId) {
   for (const b of world.bodies) {
-    if (!b.alive || b.invM > 0 || (selfId != null && b.id === selfId)) continue;
+    if (!b.alive || (selfId != null && b.id === selfId)) continue;
     if (!SOLID_KINDS.has(b.kind)) continue;
+    if (b.invM > 0 && b.kind !== "chunk" && b.kind !== "tree") continue; // dynamic non-masonry never blocks
     if (Math.abs(x - b.pos.x) <= b.hx && Math.abs(y - b.pos.y) <= b.hy && Math.abs(z - b.pos.z) <= b.hz) return true;
   }
   return false;

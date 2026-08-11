@@ -4102,6 +4102,120 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
 }
 // ==== end SIGHTLINES =========================================================
 
+// ==== SIGHTLINES 6.5 Task 1: masonry and trees are real to aiming/discipline
+// Audit #2/#3: solidBlocksPoint and friendlyBlocksPoint skipped every body
+// with invM > 0 (dynamic). Town/depot chunks (mass 100/88/320) and trees
+// (mass 260) are dynamic, so the "chunk"/"tree" entries in SOLID_KINDS were
+// dead code — only static bodies (sandbags, rocks, walls, towers) ever
+// matched. Fix: filter by KIND — a stone is an obstacle whether or not
+// physics lets it move.
+{
+  console.log("\n[sightlines-6.5 task 1: obstacle filter]");
+  const { solidBlocksPoint } = await import("../src/depot/accuracy.js");
+  const flat = () => ({ heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } });
+
+  // (a) tower behind a town house: a dynamic masonry chunk (mass 100, the
+  // town lattice) masking a target must kill acquisition. Pre-fix: acquires.
+  {
+    const world = makeWorld({ field: flat(), seed: 1 });
+    world.depotCombat = true;
+    const spec = TOWER_SPECS.gun;
+    const tower = addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: spec.hy, hz: 0.8, x: 0, y: spec.hy, z: 0, hp: spec.hp });
+    // a house-sized dynamic chunk wall mid-lane, tall enough to eat the arc
+    addBody(world, { kind: "chunk", team: 0, mass: 100, hx: 1.2, hy: 3.2, hz: 1.2, x: 0, y: 3.2, z: 8, hp: 400 });
+    const target = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.3, hy: 0.9, hz: 0.3, x: 0, y: 0.9, z: 16, hp: 30 });
+    target.v = { x: 0, y: 0, z: 0 };
+    ok("task1(a): tower does NOT acquire a target masked by a town house (dynamic chunk)",
+      towerScanNearest(world, tower, spec) !== target);
+  }
+
+  // (b) tree masks acquisition the same way (mass 260 — dynamic).
+  {
+    const world = makeWorld({ field: flat(), seed: 1 });
+    world.depotCombat = true;
+    const spec = TOWER_SPECS.gun;
+    const tower = addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: spec.hy, hz: 0.8, x: 0, y: spec.hy, z: 0, hp: spec.hp });
+    addBody(world, { kind: "tree", team: 0, mass: 260, hx: 0.9, hy: 3.4, hz: 0.9, x: 0, y: 3.4, z: 8, hp: 30 });
+    const target = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.3, hy: 0.9, hz: 0.3, x: 0, y: 0.9, z: 16, hp: 30 });
+    target.v = { x: 0, y: 0, z: 0 };
+    ok("task1(b): a tree masks acquisition", towerScanNearest(world, tower, spec) !== target);
+  }
+
+  // (c) units/vehicles still never block (dynamic AND not in SOLID_KINDS).
+  {
+    const world = { field: flat(), bodies: [
+      { alive: true, invM: 1 / 90, kind: "unit", team: 2, id: 9001, pos: { x: 0, y: 1, z: 0 }, hx: 2, hy: 2, hz: 2 },
+      { alive: true, invM: 1 / 12000, kind: "vehicle", team: 2, id: 9002, pos: { x: 0, y: 1, z: 0 }, hx: 2, hy: 2, hz: 2 },
+    ] };
+    ok("task1(c): dynamic units/vehicles still never block a point", !solidBlocksPoint(world, 0, 1, 0));
+  }
+
+  // (d) sandbag behavior unchanged: a static sleeping chunk still blocks.
+  {
+    const world = { field: flat(), bodies: [
+      { alive: true, invM: 0, kind: "chunk", sandbag: true, team: 0, id: 9003, pos: { x: 0, y: 0.35, z: 0 }, hx: 0.9, hy: 0.35, hz: 0.35 },
+    ] };
+    ok("task1(d): sandbag (static chunk) still blocks", solidBlocksPoint(world, 0, 0.35, 0));
+  }
+
+  // (e) CAREFUL discipline: the team-0-chunk clause in friendlyBlocksPoint
+  // finally fires — depot masonry (dynamic, team 0) in the lane fouls, so
+  // CAREFUL holds and the depot chunk's hp is untouched over the whole run.
+  // FREE fires regardless. Pre-fix: friendlyFouls false, CAREFUL shoots
+  // through its own depot.
+  {
+    const gunSpec = { kind: "gun", projSpeed: 58, occl: "arc", volley: 1, acc: 0.0, blastR: 0, kv: 1, dmg: 6, fireRate: 0.2 };
+    const makeFixture = () => {
+      const world = makeWorld({ field: flat(), seed: 1 });
+      const tower = addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: 1, hz: 0.8, x: 0, y: 1, z: 0, hp: 80 });
+      const depotChunk = addBody(world, { kind: "chunk", team: 0, mass: 88, hx: 1.0, hy: 2.4, hz: 1.0, x: 0, y: 2.4, z: 8, hp: 400 });
+      const target = addBody(world, { kind: "unit", team: 2, mass: 90, hx: 0.4, hy: 0.9, hz: 0.4, x: 0, y: 0.9, z: 16, hp: 3000 });
+      target.v = { x: 0, y: 0, z: 0 };
+      return { world, tower, depotChunk, target };
+    };
+    const run = (discipline) => {
+      const { world, tower, depotChunk, target } = makeFixture();
+      const muzzle = { x: tower.pos.x, y: tower.pos.y + tower.hy + 0.45, z: tower.pos.z };
+      const chunkHp0 = depotChunk.hp;
+      let fired = 0;
+      for (let i = 0; i < 8; i++) {
+        if (discipline === "free" || !friendlyFouls(world, muzzle, target.pos, gunSpec, tower.id)) {
+          towerShot(world, tower, target, gunSpec); fired++;
+        }
+        for (let s = 0; s < 60; s++) stepWorld(world);
+      }
+      return { fired, chunkDmg: chunkHp0 - depotChunk.hp };
+    };
+    const careful = run("careful"), free = run("free");
+    ok("task1(e): CAREFUL holds when the arc crosses depot masonry (0 ordnance)", careful.fired === 0, `fired=${careful.fired}`);
+    ok("task1(e): depot chunk hp unchanged under CAREFUL over the whole run", careful.chunkDmg === 0, `dmg=${careful.chunkDmg}`);
+    ok("task1(e): FREE still fires", free.fired > 0, `fired=${free.fired}`);
+  }
+
+  // (f) twin determinism: the masked-acquisition firefight hashes identical.
+  {
+    const run = () => {
+      const world = makeWorld({ field: flat(), seed: 5 });
+      world.depotCombat = true;
+      const spec = TOWER_SPECS.gun;
+      const tower = addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: spec.hy, hz: 0.8, x: 0, y: spec.hy, z: 0, hp: spec.hp });
+      addBody(world, { kind: "chunk", team: 0, mass: 100, hx: 1.2, hy: 3.2, hz: 1.2, x: 0, y: 3.2, z: 8, hp: 400 });
+      const masked = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.3, hy: 0.9, hz: 0.3, x: 0, y: 0.9, z: 16, hp: 3000 });
+      const open = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.3, hy: 0.9, hz: 0.3, x: 10, y: 0.9, z: 4, hp: 3000 });
+      masked.v = { x: 0, y: 0, z: 0 }; open.v = { x: 0, y: 0, z: 0 };
+      for (let i = 0; i < 10; i++) {
+        const tgt = towerScanNearest(world, tower, spec);
+        if (tgt) towerShot(world, tower, tgt, spec);
+        for (let s = 0; s < 30; s++) stepWorld(world);
+        masked.pos.x = 0; masked.pos.z = 16; open.pos.x = 10; open.pos.z = 4;
+      }
+      return worldHash(world);
+    };
+    ok("task1(f): twin determinism through a masked-acquisition firefight", run() === run());
+  }
+}
+// ==== end SIGHTLINES 6.5 Task 1 ==============================================
+
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
   process.exit(1);

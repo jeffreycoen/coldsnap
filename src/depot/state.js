@@ -356,10 +356,15 @@ const FRIENDLY_MARGIN = 0.4;
 // skip its own body while still catching every OTHER friendly it might hit.
 function friendlyBlocksPoint(world, x, y, z, selfId) {
   for (const b of world.bodies) {
-    if (!b.alive || b.invM > 0 || (selfId != null && b.id === selfId)) continue;
+    // Kind-not-mobility filter (6.5 Task 1, mirrors solidBlocksPoint):
+    // town/depot chunks are dynamic (mass 88-320), so the old `invM > 0`
+    // skip made the team-0-chunk clause below dead code — CAREFUL never
+    // actually held the shot the depot would have caught.
+    if (!b.alive || (selfId != null && b.id === selfId)) continue;
     const friendly = ((b.kind === "wall" || b.kind === "tower") && b.team === 1) ||
                       (b.kind === "chunk" && b.team === 0);
     if (!friendly) continue;
+    if (b.invM > 0 && b.kind !== "chunk") continue; // dynamic non-masonry never fouls
     if (Math.abs(x - b.pos.x) <= b.hx + FRIENDLY_MARGIN &&
         Math.abs(y - b.pos.y) <= b.hy + FRIENDLY_MARGIN &&
         Math.abs(z - b.pos.z) <= b.hz + FRIENDLY_MARGIN) return true;
