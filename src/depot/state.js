@@ -292,9 +292,18 @@ export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })
     }
     if (!best) continue;
     u.fireCd = spec.fireRate;
+    // F1.5 Task 1: lofted specs (mortars) lob — shooterFire's high aimSolve
+    // branch, the exact flag the mortar TOWER's towerShot passes. Everyone
+    // else (occl "arc") is byte-unchanged. Structure shots keep hitOnly
+    // "structure" + hitStruct: the shell still detonates ON the wall (core.js
+    // ~:690 — isStruct passes on hitOnly === "structure"), so blast lands.
+    // Fire discipline note (shipped as-is, flagged for playtest): squadFire
+    // has no friendlyFouls check (that's a tower doctrine) — your own
+    // mortars CAN hit your own men.
+    const high = spec.occl === "lofted";
     shooterFire(world, u, muzzle, best, fspec, bestIsStruct
-      ? { attacker, volleyDelay: spec.burstGap, muzzleStep: 0, owner: u.id, hitStruct: true, hitOnly: "structure" }
-      : { attacker, volleyDelay: spec.burstGap, muzzleStep: 0, owner: u.id });
+      ? { attacker, volleyDelay: spec.burstGap, muzzleStep: 0, owner: u.id, hitStruct: true, hitOnly: "structure", high }
+      : { attacker, volleyDelay: spec.burstGap, muzzleStep: 0, owner: u.id, high });
   }
 }
 

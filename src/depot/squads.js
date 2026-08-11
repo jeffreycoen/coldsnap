@@ -25,6 +25,9 @@ export const SQUAD_SPECS = {           // costs are scrap; members spawn as unit
   // enemy's satchel sapper. Tools, not shooters: no rifle (squadFire skips
   // the type), one charge per man, the charge consumes the planter.
   sappers: { n: 2, cost: 25, label: "SAPPER TEAM" }, // provisional (F5)
+  // F1.5 Task 1: the mortar team — two men and a tube, the player mirror of
+  // the enemy grenadier's lob (INFANTRY_ARMS.mortars).
+  mortars: { n: 2, cost: 30, label: "MORTAR TEAM" }, // provisional (F5)
 };
 
 // Task 6 (the pair): squads.js now imports arcClears/effRange/INFANTRY_ARMS

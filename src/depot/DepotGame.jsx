@@ -957,7 +957,7 @@ export default function DepotGame({ onExit }) {
       // ---------------------------------------------- squads (Phase 5 Task 3)
       // Build-bar mode keys -> squad type. Prefixed (sq_mg vs mg) because the
       // MG TOWER already owns the bare "mg" mode key.
-      const SQUAD_MODE = { sq_sniper: "sniper", sq_rifles: "rifles", sq_mg: "mg", sq_sappers: "sappers" };
+      const SQUAD_MODE = { sq_sniper: "sniper", sq_rifles: "rifles", sq_mg: "mg", sq_sappers: "sappers", sq_mortars: "mortars" };
       // Infantry/sandbag placement checks: same validatePlacement gate as
       // towers (occupied/ice/held/afford) — men don't claim the grid cell
       // (no cell.blocked write, no connectivity re-check: bodies, not
@@ -1848,6 +1848,9 @@ export default function DepotGame({ onExit }) {
     // F1 Task 4.5: the demolition team — the only player weapon that moves
     // reinforced depot masonry (rifles measured at zero).
     { key: "sq_sappers", label: "SAPPERS", icon: "✸", cost: SQUAD_SPECS.sappers.cost },
+    // F1.5 Task 1: the mortar team — selection shows squadReach's lofted
+    // near-circle fan (accuracy.js handles occl "lofted" already).
+    { key: "sq_mortars", label: "MORTAR TEAM", icon: "◎", cost: SQUAD_SPECS.mortars.cost },
     // icon reflects pending orientation (sandbagOrient): ▬ (long x) vs ▮ (long z)
     { key: "sandbag", label: "SANDBAG", icon: hud.sandbagOrient ? "▮" : "▬", cost: SANDBAG_COST },
   ];

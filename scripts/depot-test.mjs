@@ -5530,6 +5530,166 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
 }
 // ==== end F1 VERIFICATION FIXES ==============================================
 
+// ==== F1.5 TASK 1: the mortar team (mk0.2) ===================================
+// The player mirror of the enemy grenadier's lob: INFANTRY_ARMS.mortars +
+// SQUAD_SPECS.mortars + squadFire's `high` flag (lofted specs lob; everyone
+// else fires exactly as before). Fixtures mirror F1 Task 4's shapes.
+{
+  const flatM = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+  const mkMortars = (world, x, z) => {
+    const squad = makeSquad(1, "mortars", 1, x, z);
+    const n = (SQUAD_SPECS.mortars && SQUAD_SPECS.mortars.n) || 2;
+    for (let i = 0; i < n; i++) {
+      const u = addBody(world, { kind: "unit", team: 1, mass: 90, hx: 0.3, hy: 0.9, hz: 0.3, x: x + i * 1.1 - 1, y: 0.9, z, hp: 100 });
+      squad.memberIds.push(u.id);
+    }
+    squad.order = "defend";
+    return squad;
+  };
+
+  // (a) spec + squad tables exist, mirror of the grenadier's lob numbers.
+  {
+    const m = INFANTRY_ARMS.mortars;
+    ok("F1.5/1a: INFANTRY_ARMS.mortars exists, lofted, grenadier-lob ballistics",
+      !!m && m.occl === "lofted" && m.projSpeed === ENEMY_FIRE.lob.projSpeed && m.dmg === ENEMY_FIRE.lob.dmg
+      && m.blastR === ENEMY_FIRE.lob.blastR && m.kv === ENEMY_FIRE.lob.kv && m.acc === ENEMY_FIRE.lob.acc
+      && m.range === ENEMY_FIRE.lob.range && m.dirDmg == null);
+    ok("F1.5/1b: SQUAD_SPECS.mortars = 2 men, 30 scrap",
+      !!SQUAD_SPECS.mortars && SQUAD_SPECS.mortars.n === 2 && SQUAD_SPECS.mortars.cost === 30);
+  }
+
+  // (b) the lob: a mortar team fires at an enemy unit and the round leaves
+  // STEEP (pitch > 0.6 rad — the high aimSolve branch, not the flat one).
+  // Draw pin rides the same fixture: exactly 2 rng draws per round fired
+  // (applyScatter's two), none elsewhere in squadFire.
+  {
+    const world = makeWorld({ field: flatM, seed: 61 });
+    world.depotCombat = true;
+    const squad = mkMortars(world, 0, 0);
+    addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 14, hp: 1e9 });
+    const rng0 = world.rng; let draws = 0, counting = false;
+    world.rng = () => { if (counting) draws++; return rng0(); };
+    const fired = [];
+    const seen = new Set();
+    const dt = 1 / 30;
+    // Draw counter scoped to the FIRE path only (the contract: squadFire
+    // draws nothing itself; applyScatter's 2/shot is the whole budget).
+    // stepWorld's explode() legitimately draws 3/shoved-body for tumble
+    // torque — engine physics shared by every shell, outside the contract.
+    for (let i = 0; i < 4 / dt; i++) {
+      counting = true; squadFire(world, squad, dt); counting = false;
+      for (const p of world.projectiles) {
+        if (seen.has(p)) continue;
+        seen.add(p);
+        fired.push(Math.asin(p.v.y / Math.hypot(p.v.x, p.v.y, p.v.z)));
+      }
+      for (let s = 0; s < 20; s++) stepWorld(world);
+    }
+    ok("F1.5/1c: mortar rounds leave lofted (every round pitch > 0.6 rad)",
+      fired.length > 0 && fired.every((p) => p > 0.6), `rounds=${fired.length} minPitch=${fired.length ? Math.min(...fired).toFixed(3) : "-"}`);
+    ok("F1.5/1c: exactly 2 rng draws per round, none elsewhere", fired.length > 0 && draws === fired.length * 2,
+      `draws=${draws} rounds=${fired.length}`);
+  }
+
+  // (c) blast kills: a soft cluster (3 men, 30hp) dies to shells — blast is
+  // the whole weapon (no dirDmg).
+  {
+    const world = makeWorld({ field: flatM, seed: 62 });
+    world.depotCombat = true;
+    const squad = mkMortars(world, 0, 0);
+    // mass 400: a mass-82 man survives by getting blast-SHOVED out of the
+    // tube's 21m reach (measured -22.4,23.0 — physics, not a miss); the
+    // heavy fixture keeps the cluster in place so the kill is what's proven.
+    const men = [0, 1, 2].map((i) => addBody(world, { kind: "unit", team: 2, mass: 400, hx: 0.26, hy: 0.86, hz: 0.26, x: (i - 1) * 0.9, y: 0.86, z: 13, hp: 30 }));
+    const dt = 1 / 30;
+    for (let i = 0; i < 40 / dt && men.some((m) => m.alive); i++) { squadFire(world, squad, dt); for (let s = 0; s < 20; s++) stepWorld(world); }
+    ok("F1.5/1d: shell blast kills a soft cluster", men.every((m) => !m.alive), `alive=${men.filter((m) => m.alive).length}`);
+  }
+
+  // (d) the lofted law: an interposing wall between team and target — the
+  // shell arcs OVER it and the man behind still takes fire (mirror of the
+  // mortar tower's own over-wall behavior; a flat "arc" spec would be
+  // LOS-blocked and never even acquire).
+  {
+    const world = makeWorld({ field: flatM, seed: 63 });
+    world.depotCombat = true;
+    const squad = mkMortars(world, 0, 0);
+    addBody(world, { kind: "wall", team: 2, mass: 0, hx: 2.5, hy: 1.4, hz: 0.5, x: 0, y: 1.4, z: 8, hp: 1e9 });
+    const man = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 14, hp: 1e9 });
+    const dt = 1 / 30;
+    for (let i = 0; i < 30 / dt; i++) { squadFire(world, squad, dt); for (let s = 0; s < 20; s++) stepWorld(world); }
+    ok("F1.5/1e: shells arc over an interposing wall (man behind it takes damage)", man.hp < 1e9, `dmg=${(1e9 - man.hp).toFixed(2)}`);
+  }
+
+  // (e) structure fallback: no unit in reach — the team lobs at an enemy
+  // wall and the wall LOSES hp (the shell detonates on structure contact;
+  // hitOnly "structure" + real blastR).
+  {
+    const world = makeWorld({ field: flatM, seed: 64 });
+    world.depotCombat = true;
+    const squad = mkMortars(world, 0, 0);
+    const wall = addBody(world, { kind: "wall", team: 2, mass: 0, hx: 0.9, hy: 0.9, hz: 0.9, x: 0, y: 0.9, z: 12, hp: 4000 });
+    const dt = 1 / 30;
+    for (let i = 0; i < 30 / dt; i++) { squadFire(world, squad, dt); for (let s = 0; s < 20; s++) stepWorld(world); }
+    ok("F1.5/1f: structure fallback — the wall takes shell damage", wall.hp < 4000, `dmg=${(4000 - wall.hp).toFixed(2)}`);
+  }
+
+  // (f) the fog law, both signs: an everywhere-unheld field stops unit
+  // shots, never wall shots.
+  {
+    const Tred = makeTerritory(120, 120); Tred.v.fill(-1);
+    const world = makeWorld({ field: flatM, seed: 65 });
+    world.depotCombat = true;
+    const squad = mkMortars(world, 0, 0);
+    const man = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: -6, y: 0.86, z: 10, hp: 1e9 });
+    const wall = addBody(world, { kind: "wall", team: 2, mass: 0, hx: 0.9, hy: 0.9, hz: 0.9, x: 6, y: 0.9, z: 10, hp: 4000 });
+    const dt = 1 / 30;
+    for (let i = 0; i < 30 / dt; i++) { squadFire(world, squad, dt, Tred); for (let s = 0; s < 20; s++) stepWorld(world); }
+    ok("F1.5/1g: unit shots fog-gate (unheld field, man untouched)", man.hp === 1e9, `dmg=${(1e9 - man.hp).toFixed(2)}`);
+    ok("F1.5/1g: wall shots never fog-gate (wall bitten under unheld field)", wall.hp < 4000, `dmg=${(4000 - wall.hp).toFixed(2)}`);
+  }
+
+  // (g) the grenadier stands byte-unchanged: pinned worldHash of a
+  // grenadier-vs-wall-and-man fixture, captured 2026-08-11 PRE-Task-1 on
+  // e210a91 (hash 4259097005). Any drift in his spec, driver, or fire path
+  // shows here.
+  {
+    const world = makeWorld({ field: flatM, seed: 91 });
+    world.depotCombat = true;
+    addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.5, hy: 0.8, hz: 0.5, x: 0, y: 0.8, z: -6, hp: 4000 });
+    addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 3, y: 0.74, z: -4, hp: 1e9 });
+    const g = spawnUnit(world, { x: 0, z: 8 }, "gren");
+    g.pos.x = 0; g.pos.z = 8;
+    world.dt = 1 / 60;
+    for (let i = 0; i < 12 * 60; i++) { stepUnits(world, straightGrid(0, -1), identFwdDir); stepWorld(world); }
+    ok("F1.5/1h: enemy grenadier behavior byte-unchanged (pre-change pin 4259097005)",
+      worldHash(world) === 4259097005, `hash=${worldHash(world)}`);
+  }
+
+  // (h) twin determinism of the whole mortar path.
+  {
+    const runM = () => {
+      const world = makeWorld({ field: flatM, seed: 66 });
+      world.depotCombat = true;
+      const squad = mkMortars(world, 0, 0);
+      addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 13, hp: 1e9 });
+      addBody(world, { kind: "wall", team: 2, mass: 0, hx: 0.9, hy: 0.9, hz: 0.9, x: 5, y: 0.9, z: 12, hp: 4000 });
+      const dt = 1 / 30;
+      for (let i = 0; i < 12 / dt; i++) { squadFire(world, squad, dt); for (let s = 0; s < 20; s++) stepWorld(world); }
+      return worldHash(world);
+    };
+    ok("F1.5/1i: twin determinism of the mortar-team path", runM() === runM());
+  }
+
+  // (i) build bar: sq_mortars wired in DepotGame.jsx (SQUAD_MODE + palette).
+  {
+    const depotSrcM = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("F1.5/1j: build bar carries sq_mortars (SQUAD_MODE + palette)",
+      /sq_mortars:\s*"mortars"/.test(depotSrcM) && /key:\s*"sq_mortars"/.test(depotSrcM));
+  }
+}
+// ==== end F1.5 TASK 1 ========================================================
+
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
   process.exit(1);

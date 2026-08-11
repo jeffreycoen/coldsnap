@@ -110,4 +110,10 @@ export const INFANTRY_ARMS = {
             acc: 0.090, occl: "arc", windF: 0.06, windComp: 0.6 },
   mg:     { projSpeed: 100, kind: "mg", dmg: 5, dirDmg: 3.6, burst: 6, burstGap: 0.17, fireRate: 2.2,
             range: 17, acc: 0.070, occl: "arc", windF: 0.06, windComp: 0.6 },
+  // F1.5 Task 1: the tube comes off the tower — the player mirror of the
+  // enemy grenadier's lob (ENEMY_FIRE.lob values verbatim, aim fully equal
+  // per the standing law). dirDmg none: shells are blast weapons. cd 3.0 ->
+  // fireRate 3.0 (squadFire's cooldown field). // provisional (F5)
+  mortars: { projSpeed: 28, kind: "shell", dmg: 20, blastR: 2.6, kv: 6, crater: 0.45,
+             fireRate: 3.0, range: 21, acc: 0.020, occl: "lofted", windF: 0.04, windComp: 0.6 },
 };
