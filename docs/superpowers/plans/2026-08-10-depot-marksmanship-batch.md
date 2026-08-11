@@ -50,6 +50,8 @@
 
 ### Task 3: the pair — sniper + spotter, symmetric
 
+> **SUPERSEDED (2026-08-11):** implemented as `2026-08-10-depot-phase-6-5-sightlines-and-pair.md` Task 6, which carries this spec verbatim plus the finalized survey solver. This entry is kept for provenance only.
+
 **Files:** `src/depot/squads.js` (spotter behavior + conversion), `src/depot/specs.js` (SQUAD_SPECS.sniper n:2, price; ENEMY side mirrors), `src/depot/units.js` (enemy marksman pair), `src/depot/state.js` (squadFire: spotter never fires), `src/depot/ai.js` (buy covers two heads), `src/depot/intel.js` (line audit only — marksman family already exists), `src/depot/DepotGame.jsx` (placement/selection), `scripts/depot-test.mjs`, smoke.
 
 **The mechanic (Jeff, locked 2026-08-10):**

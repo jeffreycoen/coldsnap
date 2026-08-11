@@ -113,6 +113,8 @@ export function marchArc(world, muzzle, target, spec, hit) { /* extracted loop *
 
 ### Task 6: the pair — sniper + spotter
 
+> **IMPLEMENTED (2026-08-11).** Supersedes marksmanship-batch Task 3 (noted there).
+
 **Spec:** verbatim from `2026-08-10-depot-marksmanship-batch.md` Task 3 (solver: control-points+rim, clear/ice/rim vets, height rank, cover breaks near-ties ≤0.3m, ties→nearest→scan order; placement/re-anchor only; look: rifle-less binocular silhouette + both-sides lens glint + settled sniper pose, generic in fog silhouettes; degradation: spotter death stops direction, sniper death converts spotter to rifleman KEEPING current hp; spotter never fires; price 45 provisional both sides; director only — no vision transfer). That plan entry is superseded by this task; the sniper's stand-point scorer uses Task 2's `marchArc`-backed reach sampling.
 
 **Sequenced LAST deliberately:** the pair's LOS scoring must run on conformant sightlines (Tasks 1-2) or the spotter directs the sniper using physics that then changes under him.

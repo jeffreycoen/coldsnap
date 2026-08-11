@@ -918,6 +918,9 @@ function towerScanNearest(world, tower, spec) {
     const tower = addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: spec.hy, hz: 0.8, x: 0, y: spec.hy, z: 0, hp: spec.hp });
     const e = spawnUnit(world, { x: 0, z: 10 }, tag);
     e.pos.x = 0; e.pos.z = 10; e.v = { x: 0, y: 0, z: 0 };
+    // the pair (6.5 Task 6): a sniper spawn fields a spotter too — park him
+    // farther out so the nearest-acquisition assert still targets the sniper
+    if (e.pairId != null) { const m = world.byId.get(e.pairId); m.pos.x = 4; m.pos.z = 16; m.v = { x: 0, y: 0, z: 0 }; }
     const acquired = towerScanNearest(world, tower, spec);
     ok(`(c) tower acquires enemy kind "${tag || "conscript"}" (body.kind=${e.kind})`, acquired === e, `acquired=${acquired && acquired.id} e=${e.id}`);
   }
@@ -2403,7 +2406,11 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
   const mkStationarySquad = (world, type, team, x, z, n) => {
     const squad = makeSquad(1, type, team, x, z);
     for (let i = 0; i < n; i++) {
-      const u = addBody(world, { kind: "unit", team, mass: 90, hx: 0.3, hy: 0.9, hz: 0.3, x, y: 0.9, z, hp: 100 });
+      // spread members (overlapped bodies depenetration-slam each other) and
+      // mirror spawnSquadMembers' pair roles: member 0 shoots, member 1 of a
+      // sniper squad is the spotter (never fires) — 6.5 Task 6.
+      const u = addBody(world, { kind: "unit", team, mass: 90, hx: 0.3, hy: 0.9, hz: 0.3, x: type === "sniper" ? x + i * 1.2 : x, y: 0.9, z, hp: 100 });
+      if (type === "sniper") u.role = i === 0 ? "sniper" : "spotter";
       squad.memberIds.push(u.id);
     }
     squad.order = "defend";
@@ -2800,7 +2807,9 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     ok("spawnSquadMembers: members ring the anchor (within 2.5m)", ringGood);
     const sn = makeSquad(2, "sniper", 1, 0, 0);
     spawnSquadMembers(world, sn);
-    ok("spawnSquadMembers: sniper squad is a single man", sn.memberIds.length === 1);
+    const roles = sn.memberIds.map((id) => world.byId.get(id).role);
+    ok("spawnSquadMembers: sniper squad fields the PAIR (sniper + spotter, 6.5 Task 6)",
+      sn.memberIds.length === 2 && roles.includes("sniper") && roles.includes("spotter"), JSON.stringify(roles));
   }
 
   // --- spawnSandbag: single static sleeping chunk, tagged b.sandbag, brief
@@ -2960,7 +2969,7 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     ok("squad placement: unheld ground refused", !v1.ok && v1.msg === "GROUND NOT HELD");
     const v2 = validatePlacement({ blocked: false, ice: false, held: true, resources: 2, cost: SANDBAG_COST });
     ok("sandbag placement: unaffordable refused", !v2.ok && v2.msg === "NO SCRAP");
-    const v3 = validatePlacement({ blocked: false, ice: false, held: true, resources: 30, cost: SQUAD_SPECS.sniper.cost });
+    const v3 = validatePlacement({ blocked: false, ice: false, held: true, resources: 50, cost: SQUAD_SPECS.sniper.cost }); // 50 >= the pair's 45
     ok("squad placement: held + funded passes", v3.ok === true);
   }
 
@@ -3406,8 +3415,8 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
   // spec pins: roster entry + tower-equal windage (one table, both sides)
   {
     const sp = ENEMY_SPECS.sniper;
-    ok("4C spec: ENEMY_SPECS.sniper fielded (speed 2.9, hp 44, bounty 30, android dress)",
-      !!sp && sp.speed === 2.9 && sp.hp === 44 && sp.bounty === 30 && sp.dress === "android", JSON.stringify(sp));
+    ok("4C spec: ENEMY_SPECS.sniper fielded (speed 2.9, hp 44, bounty 45 = the pair price, android dress)",
+      !!sp && sp.speed === 2.9 && sp.hp === 44 && sp.bounty === 45 && sp.dress === "android", JSON.stringify(sp));
     ok("4C spec: enemy sniper fires INFANTRY_ARMS.sniper verbatim (acc/windF/windComp/dirDmg/range pin)",
       SNIPER_FIRE.acc === INFANTRY_ARMS.sniper.acc && SNIPER_FIRE.windF === INFANTRY_ARMS.sniper.windF &&
       SNIPER_FIRE.windComp === INFANTRY_ARMS.sniper.windComp && SNIPER_FIRE.dirDmg === INFANTRY_ARMS.sniper.dirDmg &&
@@ -3427,10 +3436,15 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     const bearing = Math.PI; // advance bearing (flow -z)
     const expHere = exposureAt(world, sn.pos.x, sn.pos.z, bearing);
     ok("4C vantage: held ground reads exposure < 0.35", expHere < 0.35, `exp=${expHere.toFixed(2)}`);
+    // The pair (6.5 Task 6): the spotter now directs the sniper at the
+    // latch — he may resettle up to SPOT_R of the hold point, ONCE, then
+    // must sit still. Assert the resettle is bounded and the final ground
+    // is held (no drift over the last 10 simulated seconds).
+    for (let i = 0; i < 2400; i++) { stepUnits(world, grid4c, identFwdDir); stepWorld(world); }
     const hx0 = sn.pos.x, hz0 = sn.pos.z;
-    for (let i = 0; i < 3600; i++) { stepUnits(world, grid4c, identFwdDir); stepWorld(world); }
+    for (let i = 0; i < 1200; i++) { stepUnits(world, grid4c, identFwdDir); stepWorld(world); }
     const drift = Math.hypot(sn.pos.x - hx0, sn.pos.z - hz0);
-    ok("4C vantage: holds >= 30s (no drift off the vantage)", sn.hold === true && drift < 0.5, `drift=${drift.toFixed(2)}`);
+    ok("4C vantage: directed resettle then holds (no drift over the last 10s)", sn.hold === true && drift < 0.5, `drift=${drift.toFixed(2)}`);
   }
   // one-shot: a held sniper kills an exposed member in field reach with a
   // single round (hp never observed chipped while alive).
@@ -3472,7 +3486,7 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     const reg = { heads: 400, tanks: 0, heads0: 400, tanks0: 0, scrap: 0 };
     let snipers = 0, firstWave = null;
     for (let w = 0; w <= 8; w++) {
-      reg.scrap = 50; // topped up each wave: normal (non-banking) branch
+      reg.scrap = 65; // topped up each wave (>= 45 pair + token-muster floor, under the late-wave bank threshold)
       const plan = planWave(reg, { squads }, w, rng);
       const b = plan.buys.find((x) => x.type === "sniper");
       if (b) { snipers += b.n; if (firstWave == null) firstWave = w; }
@@ -3490,7 +3504,7 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     let draws = 0;
     const base = mulberry32(78);
     const rng = () => { draws++; return base(); };
-    const reg = { heads: 400, tanks: 0, heads0: 400, tanks0: 0, scrap: 50 };
+    const reg = { heads: 400, tanks: 0, heads0: 400, tanks0: 0, scrap: 65 };
     const plan = planWave(reg, { squads: 3 }, 6, rng);
     ok("4D AI: planWave still consumes exactly 4 rng draws with the sniper buy live",
       draws === 4 && plan.buys.some((b) => b.type === "sniper"), `draws=${draws} buys=${JSON.stringify(plan.buys)}`);
@@ -4059,7 +4073,11 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
       world.depotCombat = true;
       const squad = makeSquad(1, type, 1, 0, 0);
       for (let i = 0; i < SQUAD_SPECS[type].n; i++) {
-        const u = addBody(world, { kind: "unit", team: 1, mass: 90, hx: 0.3, hy: 0.9, hz: 0.3, x: 0, y: 0.9, z: 0, hp: 100 });
+        // pair roles + spread (6.5 Task 6): member 1 of a sniper squad is the
+        // non-firing spotter, parked clear of the sniper's body — the fixture
+        // measures the RIFLE's DPS, which the spotter must not change.
+        const u = addBody(world, { kind: "unit", team: 1, mass: 90, hx: 0.3, hy: 0.9, hz: 0.3, x: type === "sniper" ? i * 1.2 : 0, y: 0.9, z: 0, hp: 100 });
+        if (type === "sniper") u.role = i === 0 ? "sniper" : "spotter";
         squad.memberIds.push(u.id);
       }
       squad.order = "defend";
@@ -4462,6 +4480,231 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
   }
 }
 // ==== end SIGHTLINES 6.5 Task 4 ==============================================
+
+// ==== 6.5 TASK 6: THE PAIR — sniper + spotter ================================
+// Spec: 2026-08-10-depot-phase-6-5-sightlines-and-pair.md Task 6 (supersedes
+// marksmanship-batch Task 3, carried verbatim there). Failing-first asserts.
+{
+  const SQ = { ...(await import("../src/depot/squads.js")) };
+  const { surveyHighGround, standScore, bestStandPoint } = SQ;
+  const flatF = () => ({ heightAt: () => 0, cs: 2, half: 20, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } });
+  // knoll fields: heights defined so maxima sit ON 2m control points
+  const knollF = (kx, kz, h = 1.5, r = 1.4) => ({
+    heightAt: (x, z) => (Math.hypot(x - kx, z - kz) < r ? h : 0),
+    cs: 2, half: 20, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; },
+  });
+  const grid6 = straightGrid(0, -1);
+
+  // (a) pair spawns 2 both sides at 45
+  {
+    ok("pair(a): SQUAD_SPECS.sniper fields two men at 45 scrap",
+      SQUAD_SPECS.sniper && SQUAD_SPECS.sniper.n === 2 && SQUAD_SPECS.sniper.cost === 45, JSON.stringify(SQUAD_SPECS.sniper));
+    const world = makeWorld({ field: flatF(), seed: 61 });
+    const sq = makeSquad(1, "sniper", 1, 0, 0);
+    spawnSquadMembers(world, sq);
+    const members = sq.memberIds.map((id) => world.byId.get(id));
+    ok("pair(a): player pair spawns sniper + spotter roles",
+      members.length === 2 && members.some((u) => u.role === "sniper") && members.some((u) => u.role === "spotter"),
+      JSON.stringify(members.map((u) => u.role)));
+    ok("pair(a): ENEMY_SPECS.sniper priced at 45 (bounty mirrors the pair price)", ENEMY_SPECS.sniper.bounty === 45, ENEMY_SPECS.sniper.bounty);
+    const w2 = makeWorld({ field: flatF(), seed: 62 });
+    const sn = spawnUnit(w2, { x: 0, z: 10 }, "sniper");
+    const pairBodies = w2.bodies.filter((b) => b.kind === "unit" && b.team === 2);
+    const spotter = pairBodies.find((b) => b.role === "spotter");
+    ok("pair(a): enemy marksman arrives as two men (sniper + spotter)",
+      pairBodies.length === 2 && !!spotter && sn.role === "sniper", `bodies=${pairBodies.length}`);
+    ok("pair(a): enemy pair kill payout sums to the 45 price",
+      pairBodies.reduce((s, b) => s + (b.bounty || 0), 0) === 45,
+      JSON.stringify(pairBodies.map((b) => b.bounty)));
+  }
+
+  // (b) survey correctness — knoll: the spotter lands on the true max
+  {
+    const world = makeWorld({ field: knollF(2, 2), seed: 63 });
+    const best = surveyHighGround && surveyHighGround(world, 0, 0, 0, 0.63);
+    let maxH = -1e9;
+    for (let j = -3; j <= 3; j++) for (let i = -3; i <= 3; i++) {
+      const x = i * 2, z = j * 2;
+      if (Math.hypot(x, z) > 5) continue;
+      maxH = Math.max(maxH, world.field.heightAt(x, z));
+    }
+    ok("pair(b): survey lands on the true max within 5m (knoll fixture)",
+      !!best && best.h >= maxH - 1e-9, best && `h=${best.h} max=${maxH}`);
+  }
+  // (b2) twin-knoll cover tiebreak: equal heights, the covered one wins
+  {
+    const twinF = {
+      heightAt: (x, z) => (Math.hypot(x - 4, z) < 1.4 || Math.hypot(x + 4, z) < 1.4 ? 1.5 : 0),
+      cs: 2, half: 20, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; },
+    };
+    const world = makeWorld({ field: twinF, seed: 64 });
+    // threat due +z (bearing 0); a rock just +z of the WEST knoll covers it
+    addBody(world, { kind: "rock", team: 0, mass: 0, hx: 0.6, hy: 1.0, hz: 0.6, x: -4, y: 1.0, z: 1.8, hp: 1e9 });
+    const best = surveyHighGround && surveyHighGround(world, 0, 0, 0, 0.35);
+    ok("pair(b2): cover breaks the near-tie — spotter takes the covered knoll",
+      !!best && best.x < 0, best && `x=${best.x.toFixed(2)} z=${best.z.toFixed(2)}`);
+  }
+  // (b3) ice + blocked rejection
+  {
+    const world = makeWorld({ field: knollF(2, 2), seed: 65 });
+    world.pondAt = (x, z) => Math.hypot(x - 2, z - 2) < 1.4; // the knoll is frozen pond
+    const best = surveyHighGround && surveyHighGround(world, 0, 0, 0, 0.63);
+    ok("pair(b3): pond-ice candidates rejected (spotter never stands on the ice)",
+      !!best && !world.pondAt(best.x, best.z), best && `x=${best.x} z=${best.z} h=${best.h}`);
+    const w2 = makeWorld({ field: knollF(2, 2), seed: 66 });
+    addBody(w2, { kind: "rock", team: 0, mass: 0, hx: 1.2, hy: 1.4, hz: 1.2, x: 2, y: 1.4, z: 2, hp: 1e9 });
+    const b2 = surveyHighGround && surveyHighGround(w2, 0, 0, 0, 0.63);
+    ok("pair(b3): solid-blocked candidates rejected (knoll under a rock skipped)",
+      !!b2 && !(Math.abs(b2.x - 2) <= 1.55 && Math.abs(b2.z - 2) <= 1.55), b2 && `x=${b2.x} z=${b2.z}`);
+  }
+
+  // (c) directed stand point scores >= the anchor's own score
+  {
+    const world = makeWorld({ field: flatF(), seed: 67 });
+    // wall hugging the anchor masks most of its test rays
+    addBody(world, { kind: "wall", team: 1, mass: 0, hx: 3.0, hy: 2.2, hz: 0.4, x: 0, y: 2.2, z: 1.6, hp: 5000 });
+    const sn = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 0, hp: 58 });
+    const anchorScore = standScore ? standScore(world, 0, 0, 0, sn.id) : -1;
+    const stand = bestStandPoint && bestStandPoint(world, 0, 0, 0, sn);
+    const standS = stand && standScore(world, stand.x, stand.z, 0, sn.id);
+    ok("pair(c): the directed firing spot scores >= the anchor default",
+      stand != null && standS >= anchorScore, `anchor=${anchorScore} directed=${standS}`);
+  }
+
+  // (d) spotter fires zero rounds ever + (e/f) both death paths + twin determinism
+  {
+    const runFight = (killWho) => {
+      const world = makeWorld({ field: flatF(), seed: 68 });
+      world.depotCombat = true;
+      const sq = makeSquad(1, "sniper", 1, 0, 0);
+      spawnSquadMembers(world, sq);
+      let squads = [sq];
+      const members = sq.memberIds.map((id) => world.byId.get(id));
+      const spotterId = members.find((u) => u.role === "spotter").id;
+      const sniperId = members.find((u) => u.role === "sniper").id;
+      // pinned soft enemies in range keep the trigger warm
+      const tgt = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.3, hy: 0.9, hz: 0.3, x: 0, y: 0.9, z: 14, hp: 90000 });
+      let spotterRounds = 0;
+      const seen = new Set();
+      for (let i = 0; i < 1500; i++) {
+        if (i === 700 && killWho) {
+          const victim = world.byId.get(killWho === "spotter" ? spotterId : sniperId);
+          if (victim) applyDamage(world, victim, 1e9, { attacker: "enemy" });
+        }
+        squads = pruneSquads(world, squads);
+        for (const q of squads) { stepSquad(world, q, world.dt); squadFire(world, q, world.dt); }
+        stepWorld(world);
+        tgt.pos.x = 0; tgt.pos.z = 14; tgt.v.x = 0; tgt.v.z = 0; tgt.hp = 90000; tgt.alive = true;
+        for (const p of world.projectiles) {
+          if (!seen.has(p) && p.spec && p.spec.owner === spotterId) spotterRounds++;
+          seen.add(p);
+        }
+      }
+      const spotter = world.byId.get(spotterId), sniper = world.byId.get(sniperId);
+      return { spotterRounds, squads, spotter, sniper, hash: worldHash(world) };
+    };
+    const clean = runFight(null);
+    ok("pair(d): the spotter fires zero rounds across a 25s firefight", clean.spotterRounds === 0, `rounds=${clean.spotterRounds}`);
+    ok("pair(d): the sniper squad still kills (sniper fires as before)",
+      clean.squads.length === 1 && clean.squads[0].type === "sniper", JSON.stringify(clean.squads.map((q) => q.type)));
+    const twin = runFight(null);
+    ok("pair(d): twin determinism with the pair in play", clean.hash === twin.hash, `${clean.hash} vs ${twin.hash}`);
+    // spotter dies -> direction stops, sniper holds his squad and type
+    const sd = runFight("spotter");
+    ok("pair(e): spotter death — sniper holds, squad stays a sniper squad",
+      sd.squads.length === 1 && sd.squads[0].type === "sniper" && sd.sniper && sd.sniper.alive,
+      JSON.stringify(sd.squads.map((q) => q.type)));
+    // sniper dies -> spotter converts to a lone rifleman, keeps hp, fires
+    const nd = runFight("sniper");
+    ok("pair(f): sniper death — spotter respec'd to rifles (squad + utype)",
+      nd.squads.length === 1 && nd.squads[0].type === "rifles" && nd.spotter && nd.spotter.utype === "rifles" && !nd.spotter.role,
+      JSON.stringify({ type: nd.squads[0] && nd.squads[0].type, utype: nd.spotter && nd.spotter.utype }));
+    ok("pair(f): the converted spotter fires from then on", nd.spotterRounds > 0, `rounds=${nd.spotterRounds}`);
+  }
+  // (f2) conversion keeps current hp — no heal, no reset
+  {
+    const world = makeWorld({ field: flatF(), seed: 69 });
+    const sq = makeSquad(1, "sniper", 1, 0, 0);
+    spawnSquadMembers(world, sq);
+    const members = sq.memberIds.map((id) => world.byId.get(id));
+    const spotter = members.find((u) => u.role === "spotter");
+    const sniper = members.find((u) => u.role === "sniper");
+    spotter.hp = 21.5;
+    applyDamage(world, sniper, 1e9, { attacker: "enemy" });
+    const squads = pruneSquads(world, [sq]);
+    ok("pair(f2): conversion keeps the spotter's current hp (same man, different tool)",
+      squads.length === 1 && squads[0].type === "rifles" && Math.abs(spotter.hp - 21.5) < 1e-9, `hp=${spotter.hp}`);
+  }
+
+  // (g) enemy mirror: pair marches, sniper holds, spotter surveys + settles,
+  // never fires; sniper death converts the spotter to a rifleman
+  {
+    const world = makeWorld({ field: flatF(), seed: 70 });
+    world.depotCombat = true;
+    addBody(world, { kind: "rock", team: 0, mass: 0, hx: 0.5, hy: 0.9, hz: 0.5, x: 0, y: 0.9, z: 0, hp: 1e9 });
+    const sn = spawnUnit(world, { x: 0, z: 6 }, "sniper");
+    sn.pos.x = 0; sn.pos.z = 6;
+    const spotter = world.bodies.find((b) => b.role === "spotter" && b.team === 2);
+    let spotterFired = false;
+    const seen = new Set();
+    for (let i = 0; i < 2400; i++) {
+      stepUnits(world, grid6, identFwdDir);
+      stepWorld(world);
+      for (const p of world.projectiles) { if (!seen.has(p) && spotter && p.spec && p.spec.owner === spotter.id) spotterFired = true; seen.add(p); }
+    }
+    ok("pair(g): enemy sniper holds a vantage with his spotter alive", sn.hold === true);
+    ok("pair(g): enemy spotter settles near his sniper's ground (within survey radius + slack)",
+      !!spotter && Math.hypot(spotter.pos.x - sn.pos.x, spotter.pos.z - sn.pos.z) < SQ.SPOT_R + 3,
+      spotter && `d=${Math.hypot(spotter.pos.x - sn.pos.x, spotter.pos.z - sn.pos.z).toFixed(2)}`);
+    ok("pair(g): enemy spotter never fires", spotterFired === false);
+    applyDamage(world, sn, 1e9, { attacker: "player" });
+    for (let i = 0; i < 120; i++) { stepUnits(world, grid6, identFwdDir); stepWorld(world); }
+    ok("pair(g): enemy sniper death converts the spotter to a rifleman (tag swap, role cleared)",
+      !!spotter && spotter.alive && spotter.tag === "" && !spotter.role, spotter && `tag="${spotter.tag}" role=${spotter.role}`);
+  }
+
+  // (h) affordability: ai.js buys the pair at 45, skips it when the buy
+  // would eat the token-muster floor
+  {
+    const snap = { squads: 3, mortars: 0, walls: 0, frosts: 0, mgs: 0 };
+    const rich = { heads: 40, tanks: 0, scrap: 45 + MIN_WAVE_FLOOR };
+    const planR = planWave(rich, snap, 6, mulberry32(5));
+    const poor = { heads: 40, tanks: 0, scrap: 45 + MIN_WAVE_FLOOR - 1 };
+    const planP = planWave(poor, snap, 6, mulberry32(5));
+    ok("pair(h): sniper pair bought at exactly the 45 + floor threshold",
+      planR.buys.some((b) => b.type === "sniper"), JSON.stringify(planR.buys));
+    ok("pair(h): one scrap short of 45 + floor -> no pair fielded",
+      !planP.buys.some((b) => b.type === "sniper"), JSON.stringify(planP.buys));
+  }
+
+  // (i) rng stream identity on a pairless run: fielding the pair adds ZERO
+  // draws to spawn (spotter placement is draw-free), and a pairless spawn
+  // stream is untouched
+  {
+    const countDraws = (tag) => {
+      const world = makeWorld({ field: flatF(), seed: 71 });
+      let n = 0;
+      const rng0 = world.rng;
+      world.rng = () => { n++; return rng0(); };
+      spawnUnit(world, { x: 0, z: 10 }, tag);
+      return n;
+    };
+    ok("pair(i): conscript spawn draw count unchanged (3)", countDraws("") === 3, countDraws(""));
+    ok("pair(i): sniper PAIR spawn draws exactly what a lone spawn drew (spotter adds zero draws)",
+      countDraws("sniper") === 3, countDraws("sniper"));
+  }
+
+  // (j) renderer: pair look rides DEPOT-gated only (flag-off untouched) —
+  // every role-driven pose/prop/glint block keys on world.depotCombat
+  {
+    const rSrc = fs.readFileSync(new URL("../src/render/renderer.js", import.meta.url), "utf8");
+    const roleRefs = (rSrc.match(/\brole\s*===\s*"(spotter|sniper)"/g) || []).length;
+    ok("pair(j): renderer reads the pair roles (pose/prop/glint present)", roleRefs >= 2, `refs=${roleRefs}`);
+    ok("pair(j): pair look gated on world.depotCombat (flag-off byte-identical path)",
+      /depotCombat[\s\S]{0,400}role/.test(rSrc));
+  }
+}
+// ==== end 6.5 TASK 6 =========================================================
 
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);

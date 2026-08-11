@@ -243,6 +243,7 @@ export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })
   for (const id of squad.memberIds) {
     const u = world.byId.get(id);
     if (!u || !u.alive) continue;
+    if (u.role === "spotter") continue; // binoculars, not a rifle — he NEVER fires (draws nothing)
     u.fireCd = (u.fireCd || 0) - dt;
     if (u.fireCd > 0) continue;
     const muzzle = { x: u.pos.x, y: u.pos.y + 0.5, z: u.pos.z };
@@ -282,6 +283,10 @@ export function spawnSquadMembers(world, squad) {
     const u = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28,
       x: p.x, y: world.field.heightAt(p.x, p.z) + 0.74, z: p.z, hp: 58, friction: 0.5 });
     u.utype = squad.type; u.squadId = squad.id; u.dress = "human"; // player side reads human
+    // The pair (6.5 Task 6): a sniper squad is sniper + spotter. Member 0
+    // carries the rifle; member 1 carries binoculars and NEVER fires until
+    // converted (squadFire's role skip below).
+    if (squad.type === "sniper") u.role = i === 0 ? "sniper" : "spotter";
     squad.memberIds.push(u.id);
   }
 }
@@ -338,6 +343,22 @@ export function pruneSquads(world, squads) {
       const u = world.byId.get(id);
       return !!u && u.alive;
     });
+    // The pair's degradation (6.5 Task 6): sniper dies -> the spotter
+    // converts to a lone rifleman — utype/spec swap to rifles, squad
+    // relabels (SQUAD_SPECS lookup follows type), existing one-man-squad
+    // machinery carries it. He KEEPS his current hp (same man, different
+    // tool — no heal, no reset). Spotter dies -> nothing here: direction
+    // simply never re-runs (directPair requires both roles alive).
+    if (sq.type === "sniper") {
+      const members = sq.memberIds.map((id) => world.byId.get(id));
+      const hasSniper = members.some((u) => u && u.role === "sniper");
+      const spotter = members.find((u) => u && u.role === "spotter");
+      if (!hasSniper && spotter) {
+        sq.type = "rifles";
+        sq._spotGoal = null; sq._snipeGoal = null; sq._threatSig = undefined;
+        spotter.role = undefined; spotter.utype = "rifles"; spotter.settled = false;
+      }
+    }
   }
   return squads.filter((sq) => sq.memberIds.length > 0);
 }

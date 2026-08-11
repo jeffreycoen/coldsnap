@@ -12,9 +12,11 @@
 import { addBody, applyDamage, explode } from "../engine/core.js";
 import { shooterFire, fieldReaches, effRange } from "./state.js";
 import { arcClears } from "./accuracy.js";
-// exposureAt: squads.js is import-free (movement-pure), so units.js ->
-// squads.js stays acyclic — verified: squads.js imports nothing.
-import { exposureAt } from "./squads.js";
+// exposureAt + the pair's shared survey/direction solvers (6.5 Task 6: ONE
+// behavior module, both signs). squads.js now imports accuracy/state for the
+// stand-point scorer — the same documented-safe deferred cycle accuracy.js
+// and state.js already share (no top-level cross calls).
+import { exposureAt, surveyHighGround, bestStandPoint } from "./squads.js";
 import { ENEMY_SPECS, ENEMY_FIRE, TANK, INFANTRY_ARMS } from "./specs.js";
 
 // ---------------------------------------------------------------- spawning
@@ -31,6 +33,24 @@ export function spawnUnit(world, sp, tag) {
   u.brave = true;
   if (tag === "gren") u.utype = "gren";
   u.wph = world.rng() * 6.28;
+  // The pair (6.5 Task 6): a marksman buy fields TWO men. The spotter spawns
+  // DRAW-FREE (fixed offset, derived walk phase) so fielding the pair adds
+  // ZERO rng draws — a pairless run's stream is untouched, and the pairless-
+  // identity contract holds trivially. Kill payout splits the 45 buy price:
+  // 30 for the sniper, 15 for the spotter (sums to the price — symmetric
+  // with the player's own 45-scrap pair).
+  if (tag === "sniper") {
+    u.role = "sniper"; u.bounty = 30;
+    const s = addBody(world, {
+      kind: "unit", team: 2, mass: spec.mass, hx: spec.hx, hy: spec.hy, hz: spec.hz,
+      x: x + 1.1, z: z + 0.7, y: world.field.heightAt(x + 1.1, z + 0.7) + spec.hy + 0.02, hp: spec.hp, friction: 0.38,
+    });
+    s.tag = "sniper"; s.role = "spotter"; s.bounty = 15;
+    if (spec.dress) s.dress = spec.dress;
+    s.brave = true;
+    s.wph = u.wph + 1.7;                    // derived, not drawn
+    s.pairId = u.id; u.pairId = s.id;
+  }
   return u;
 }
 
@@ -324,6 +344,16 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u
     }
   }
   if (u.hold) { // vantage hold (4C): permanently claims the march tick
+    // The pair (6.5 Task 6): a directed sniper walks the few meters to his
+    // spotter-chosen stand point (u._standPt, set once at the latch), then
+    // settles — seekStandPoint drives, damps on arrival. Undirected holds
+    // (no spotter) keep the old damp-in-place exactly.
+    if (u._standPt) {
+      u.settled = Math.hypot(u._standPt.x - u.pos.x, u._standPt.z - u.pos.z) <= 0.3;
+      seekStandPoint(world, u, spec.speed * 0.35 * u.frostMul, dt);
+      return true;
+    }
+    u.settled = true;
     u.v.x *= 1 - Math.min(1, 6 * dt);
     u.v.z *= 1 - Math.min(1, 6 * dt);
     return true;
@@ -455,12 +485,46 @@ export function stepUnits(world, grid, fwdDir, T, toUV = (x, z) => ({ u: x, v: z
     const spec = ENEMY_SPECS[u.tag] || ENEMY_SPECS[""];
     const cell = grid.cellAt(u.pos.x, u.pos.z);
 
+    // The pair, enemy sign (6.5 Task 6): the spotter carries binoculars, not
+    // a rifle — he NEVER fires (no stepRifleman for him) and never draws rng.
+    // He shadows his sniper on the march; once the sniper latches a hold he
+    // takes the surveyed high ground (set at latch time, below) and settles.
+    // His sniper dead -> he converts to a lone rifleman: tag swap to "" (the
+    // conscript rifle, ENEMY_FIRE.rifle), role cleared, hp KEPT — same man,
+    // different tool. Bounty stays his own 15.
+    if (u.role === "spotter") {
+      const sn2 = u.pairId != null ? world.byId.get(u.pairId) : null;
+      if (!sn2 || !sn2.alive) {
+        u.role = undefined; u.tag = ""; u.pairId = null;
+        u._standPt = null; u.hold = false; u.settled = false;
+        continue; // next tick he marches and fights as an ordinary rifleman
+      }
+      const spd = spec.speed * u.frostMul;
+      u._standPt = u._spotPt || { x: sn2.pos.x + 1.1, z: sn2.pos.z + 0.7 };
+      u.settled = !!u._spotPt && Math.hypot(u._standPt.x - u.pos.x, u._standPt.z - u.pos.z) < 0.35;
+      seekStandPoint(world, u, spd, dt);
+      continue;
+    }
     if (u.tag === "sapper" && stepSapper(world, u, dt)) continue;
     // sniper vantage check (4C): while marching, latch u.hold at the first
-    // spot that reads as VANTAGE toward the advance bearing.
+    // spot that reads as VANTAGE toward the advance bearing. The pair (6.5
+    // Task 6): at the latch, a live spotter surveys the high ground around
+    // the hold point and directs the sniper to his best firing spot — the
+    // SAME solvers the player's pair uses (one behavior module, both signs).
+    // Placement-time only (the latch happens once); draw-free.
     if (u.tag === "sniper" && !u.hold && cell && cell.dist < 1e8 && (cell.dx || cell.dz)) {
       const fd = fwdDir(cell.dx, cell.dz);
-      if (atVantage(world, u, Math.atan2(fd.x, fd.z))) u.hold = true;
+      if (atVantage(world, u, Math.atan2(fd.x, fd.z))) {
+        u.hold = true;
+        const sp2 = u.pairId != null ? world.byId.get(u.pairId) : null;
+        if (sp2 && sp2.alive && sp2.role === "spotter") {
+          const bearing = Math.atan2(fd.x, fd.z);
+          const spot = surveyHighGround(world, u.pos.x, u.pos.z, bearing, (sp2.hx || 0.3) + 0.35);
+          if (spot) sp2._spotPt = { x: spot.x, z: spot.z };
+          const stand = bestStandPoint(world, u.pos.x, u.pos.z, bearing, u);
+          if (stand) u._standPt = { x: stand.x, z: stand.z };
+        }
+      }
     }
     if (u.tag !== "gren" && u.tag !== "sapper" && stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV)) continue;
     if (u.tag === "gren" && stepGrenadier(world, u, cell, dt, fwdDir, T, toUV)) continue;

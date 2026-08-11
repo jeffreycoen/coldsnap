@@ -758,6 +758,14 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const _flagUp = new THREE.Vector3(0, 1, 0);
   const _flagQ1 = new THREE.Quaternion(), _flagQ2 = new THREE.Quaternion();
 
+  // lens glint (DEPOT pair, 6.5 Task 6): a small additive flash at a holding
+  // spotter's eyes — BOTH SIDES (it is also how the player spots the enemy's
+  // pair once it's out of the fog). world.t-driven phase keyed off the body's
+  // own position: deterministic, no rng. Drawn only for fully-visible units
+  // in DEPOT (world.depotCombat) — fog seam silhouettes stay generic.
+  const glintMat = new THREE.MeshBasicMaterial({ color: 0xfff6c8, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+  const glintMesh = pool(new THREE.PlaneGeometry(1, 1), glintMat, 8, false); glintMesh.layers.set(1);
+
   // snowfall: instanced flakes drifting in a box around the camera focus
   const flakeMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false });
   const flakeMesh = pool(new THREE.PlaneGeometry(0.14, 0.14), flakeMat, 220, false);
@@ -1318,7 +1326,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
     // units: table-driven multi-part infantry with a speed-keyed march swing.
     // Limb quats compose body * local-X(phase); dead men freeze mid-stride and
     // take the winter-kill tint per role.
-    let ci = 0, gi = 0;
+    let ci = 0, gi = 0, gli = 0;
     for (const b of world.bodies) {
       if (b.kind !== "unit") continue;
       const R = b.R;
@@ -1344,17 +1352,43 @@ export function makeRenderer(canvas, world0, opts = {}) {
       const spec = isG ? INFANTRY.gren : INFANTRY.con;
       const pools = isG ? grenPools : conPools;
       const idx = isG ? gi : ci;
+      // The pair's look (DEPOT-gated, 6.5 Task 6): b.role drives pose/prop.
+      // Spotter — no rifle ever; binoculars-up while holding (settled).
+      // Sniper — settled low pose on his directed ground. All of it keys on
+      // world.depotCombat AND b.role, so every other mode (and every
+      // role-less DEPOT body) renders byte-identical to before; fog seam
+      // silhouettes (fogSil) stay generic man-shapes — fog costs exactly
+      // this identification, by design.
+      const pairLook = world.depotCombat && b.alive && !fogSil && (b.role === "spotter" || b.role === "sniper");
+      const crouch = pairLook && b.role === "sniper" && b.settled ? 0.7 : 1;
       for (let pi = 0; pi < spec.length; pi++) {
         const p = spec[pi], o = p.off;
-        const px = b.pos.x + R[0] * o[0] + R[3] * o[1] + R[6] * o[2];
-        const py = b.pos.y + R[1] * o[0] + R[4] * o[1] + R[7] * o[2];
-        const pz = b.pos.z + R[2] * o[0] + R[5] * o[1] + R[8] * o[2];
+        const oy = o[1] * crouch - (crouch < 1 ? 0.06 : 0);
+        const px = b.pos.x + R[0] * o[0] + R[3] * oy + R[6] * o[2];
+        const py = b.pos.y + R[1] * o[0] + R[4] * oy + R[7] * o[2];
+        const pz = b.pos.z + R[2] * o[0] + R[5] * oy + R[8] * o[2];
         let q = b.q;
         if (p.swing) {
           _bq.set(b.q.x, b.q.y, b.q.z, b.q.w);
-          _swq.setFromAxisAngle(_AXX, sw * p.swing * p.swingK);
+          // binoculars-up: a holding spotter's arms lift to his face (fixed
+          // raise replaces the march swing) — same quat compose, new angle
+          const raise = pairLook && b.role === "spotter" && b.settled && (p.key === "armL" || p.key === "armR");
+          _swq.setFromAxisAngle(_AXX, raise ? -2.2 : sw * p.swing * p.swingK);
           _bq.multiply(_swq);
           q = _bq;
+        }
+        if (pairLook && b.role === "spotter" && p.key === "rifle") {
+          if (b.settled) {
+            // the rifle slot doubles as the binoculars: a stub at the eyes
+            const bx = b.pos.x + R[3] * 0.5 + R[6] * 0.2;
+            const by = b.pos.y + R[4] * 0.5 + R[7] * 0.2;
+            const bz = b.pos.z + R[5] * 0.5 + R[8] * 0.2;
+            writeInst(pools[pi], idx, bx, by, bz, b.q, 1.6, 1.6, 0.3);
+          } else {
+            writeInst(pools[pi], idx, px, py, pz, q, 0, 0, 0); // no rifle on the march either
+          }
+          if (pools[pi].setColorAt) pools[pi].setColorAt(idx, fogSil ? SIL_C : (b.dress === "android" ? (b.alive ? AND_LIVE : AND_DEAD) : (b.alive ? INF_LIVE : INF_DEAD)[isG ? "gren" : "con"]).gun);
+          continue;
         }
         writeInst(pools[pi], idx, px, py, pz, q, 1, 1, 1);
         if (pools[pi].setColorAt) {
@@ -1365,8 +1399,21 @@ export function makeRenderer(canvas, world0, opts = {}) {
           }
         }
       }
+      // periodic lens glint from a holding spotter (both sides): world.t-
+      // driven phase off his own position — deterministic, no rng, no state
+      if (pairLook && b.role === "spotter" && b.settled && gli < 8) {
+        const ph = world.t * 0.45 + b.pos.x * 0.13 + b.pos.z * 0.29;
+        const f = ph - Math.floor(ph);
+        if (f < 0.16) {
+          const s = 0.55 * Math.sin((f / 0.16) * Math.PI);
+          dummy.position.set(b.pos.x + R[3] * 0.55 + R[6] * 0.24, b.pos.y + R[4] * 0.55 + R[7] * 0.24, b.pos.z + R[5] * 0.55 + R[8] * 0.24);
+          dummy.quaternion.copy(camQ); dummy.scale.set(s, s, 1); dummy.updateMatrix();
+          glintMesh.setMatrixAt(gli++, dummy.matrix);
+        }
+      }
       if (isG) gi++; else ci++;
     }
+    glintMesh.count = gli; glintMesh.instanceMatrix.needsUpdate = true;
     for (const m of conPools) { m.count = ci; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
     for (const m of grenPools) { m.count = gi; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
     // chunks

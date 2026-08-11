@@ -624,6 +624,13 @@ export default function DepotGame({ onExit }) {
       const world = makeWorld({ field, seed: MAP_SEED });
       world._tdStruct = true;
       world.depotCombat = true; // Phase 0 combat hooks: glancing, armor, tree fire/shredding
+      // The pair's survey vets (6.5 Task 6): thread the mode's pond test and
+      // playable rim onto the world so squads.js's surveyHighGround /
+      // bestStandPoint can reject ice and off-rim candidates without
+      // importing mode-local map state. Pure functions of the static map —
+      // twin worlds read identically (determinism-safe).
+      world.pondAt = (x, z) => !!pondAt(x, z);
+      world.inRim = (x, z) => { const c = invW(x, z); return Math.abs(c.u) <= 29 && Math.abs(c.v) <= 57; };
       const town = buildTown(world, grid, field);
       // Structural loss (Task 5): the depot's own chunk lattice IS its health
       // bar — census taken once here (ids + home world positions), read back
@@ -990,6 +997,7 @@ export default function DepotGame({ onExit }) {
           for (const id of sq.memberIds) { const u = world.byId.get(id); if (u && u.alive) { cx += u.pos.x; cz += u.pos.z; n++; } }
           if (n) sq.anchor = { x: cx / n, z: cz / n };
           sq.order = "defend"; sq.dest = null; sq._legTarget = null; sq._pauseT = 0; sq._threatSig = undefined;
+          sq._surveyPending = true; // DEFEND re-anchor: the pair re-surveys (6.5 Task 6)
           S.orderMode = null;
         } else if (kind === "attack") {
           S.orderMode = "attack";
@@ -1336,6 +1344,24 @@ export default function DepotGame({ onExit }) {
         // the WIN/LOSS end card without simming 50 waves — pattern matches
         // the other window.__DEPOT*__ hooks above.
         if (victory) S.victory = true; else { S.lives = 0; S.gameOver = true; }
+      };
+      window.__DEPOTPAIR__ = (x, z) => {
+        // debug harness (6.5 Task 6): field a sniper PAIR at a world point,
+        // cost-free — smoke asserts the spotter climbs / the sniper settles
+        // and frames the screenshot without driving the placement UI.
+        const sq = makeSquad(S.nextSquadId++, "sniper", 1, x, z);
+        spawnSquadMembers(world, sq);
+        S.squads.push(sq);
+        return sq.id;
+      };
+      window.__DEPOTPAIRSTATE__ = (id) => {
+        const sq = S.squads.find((q) => q.id === id);
+        if (!sq) return null;
+        return {
+          type: sq.type,
+          spotGoal: sq._spotGoal || null, snipeGoal: sq._snipeGoal || null,
+          members: sq.memberIds.map((mid) => { const u = world.byId.get(mid); return u && { role: u.role || null, x: +u.pos.x.toFixed(2), z: +u.pos.z.toFixed(2), settled: !!u.settled, alive: u.alive }; }),
+        };
       };
       window.__DEPOTFOCUS__ = (x, z, zoom) => {
         // debug harness: point the camera at a world point (e.g. a tree) so

@@ -15,13 +15,29 @@
 // exactly one draw per attack leg, per the brief.
 
 export const SQUAD_SPECS = {           // costs are scrap; members spawn as unit bodies (team param)
-  sniper: { n: 1, cost: 30, label: "SNIPER" },
+  // The pair (sightlines 6.5 Task 6): a sniper squad is TWO men — sniper +
+  // spotter. 45 scrap (30 sniper + half a rifles squad for the spotter),
+  // provisional like every price (balance pass owns them).
+  sniper: { n: 2, cost: 45, label: "SNIPER" },
   rifles: { n: 4, cost: 20, label: "RIFLE SQUAD" },
   mg:     { n: 2, cost: 25, label: "MG TEAM" },
 };
 
+// Task 6 (the pair): squads.js now imports arcClears/effRange/INFANTRY_ARMS
+// for the sniper stand-point scorer — a module cycle with state.js/accuracy.js
+// of the same SAFE shape those two already share (documented at the top of
+// accuracy.js): no side calls the other's export at module top level, only
+// from inside function bodies invoked long after evaluation.
+import { arcClears } from "./accuracy.js";
+import { effRange } from "./state.js";
+import { INFANTRY_ARMS } from "./specs.js";
+
 export function makeSquad(id, type, team, x, z) {
-  return { id, type, team, order: "defend", dest: null, memberIds: [], anchor: { x, z } };
+  // _surveyPending: the pair's placement/re-anchor survey trigger — set here
+  // (placement), on attack arrival (below), and by the DEFEND chip
+  // (DepotGame.jsx). Consumed once by the defend branch; harmless on
+  // rifles/mg squads (directPair only runs for type "sniper").
+  return { id, type, team, order: "defend", dest: null, memberIds: [], anchor: { x, z }, _surveyPending: true };
 }
 
 // ------------------------------------------------------------- exposure
@@ -135,6 +151,128 @@ export function clearSlot(world, x, z, clear) {
   return { x, z }; // no clear ground within 4.8m — keep the slot (never observed on real maps)
 }
 const memberClear = (u) => (u.hx || 0.3) + SLOT_CLEAR_PAD;
+export const slotBlockedPublic = (world, x, z, clear) => slotBlocked(world, x, z, clear);
+
+// ------------------------------------------------- the pair (6.5 Task 6)
+// surveyHighGround: the spotter's survey — deterministic, draw-free, run on
+// placement and DEFEND re-anchor ONLY (never mid-fight, never per frame).
+// The field is bilinear over its control points, so the true maximum in the
+// disc lies at a control point or on the rim: evaluate every control point
+// inside SPOT_R plus 16 fixed rim azimuths; REJECT candidates inside solids
+// (slotBlocked), on pond ice (world.pondAt, threaded by the mode; absent in
+// bare fixtures -> skipped), or off the playable rim (world.inRim, same
+// threading); RANK by height, cover breaking near-ties within SPOT_TIE_M
+// (lowest exposureAt toward the threat bearing), remaining ties -> nearest
+// anchor, then fixed scan order (first strict winner keeps the slot).
+export const SPOT_R = 5, SPOT_TIE_M = 0.3;
+export function surveyHighGround(world, cx, cz, threatBearing, clear) {
+  const F = world.field, cands = [];
+  const i0 = Math.floor((cx - SPOT_R + F.half) / F.cs), i1 = Math.ceil((cx + SPOT_R + F.half) / F.cs);
+  const j0 = Math.floor((cz - SPOT_R + F.half) / F.cs), j1 = Math.ceil((cz + SPOT_R + F.half) / F.cs);
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {   // control points in the disc
+    const x = i * F.cs - F.half, z = j * F.cs - F.half;
+    if (Math.hypot(x - cx, z - cz) > SPOT_R) continue;
+    cands.push({ x, z });
+  }
+  for (let k = 0; k < 16; k++) {                                    // rim
+    const a = (k / 16) * Math.PI * 2;
+    cands.push({ x: cx + Math.sin(a) * SPOT_R, z: cz + Math.cos(a) * SPOT_R });
+  }
+  let best = null;
+  for (const c of cands) {
+    if (slotBlocked(world, c.x, c.z, clear)) continue;              // solids
+    if (world.pondAt && world.pondAt(c.x, c.z)) continue;           // ice — the mode's pond test
+    if (world.inRim && !world.inRim(c.x, c.z)) continue;            // playable rim
+    const h = F.heightAt(c.x, c.z);
+    const e = exposureAt(world, c.x, c.z, threatBearing);
+    const d = Math.hypot(c.x - cx, c.z - cz);
+    if (!best) { best = { x: c.x, z: c.z, h, e, d }; continue; }
+    const dh = h - best.h;
+    if (dh > SPOT_TIE_M) best = { x: c.x, z: c.z, h, e, d };
+    else if (dh > -SPOT_TIE_M) {                                    // near-tie band: cover, then distance
+      if (e < best.e - 1e-9 || (Math.abs(e - best.e) <= 1e-9 && d < best.d - 1e-9)) best = { x: c.x, z: c.z, h, e, d };
+    }
+  }
+  return best;                                                       // null only if everything blocked
+}
+
+// standScore: count of clear test rays from a candidate sniper stand point —
+// muzzle at ground + 1.24 (the 0.74 seat + 0.5 head muzzle squadFire uses),
+// 12 fixed azimuths biased to the threat bearing (a ±120° fan), each ray
+// asked at the spec's elevation-scaled effRange via the shared flight tracer
+// (arcClears -> marchArc). Deterministic, draw-free, placement-time only.
+const STAND_RAYS = 12, STAND_FAN = (Math.PI * 4) / 3, STAND_TGT_H = 1.2;
+export function standScore(world, x, z, threatBearing, selfId) {
+  const spec = INFANTRY_ARMS.sniper;
+  const muzzle = { x, y: world.field.heightAt(x, z) + 1.24, z };
+  const eR = effRange(world, muzzle, spec);
+  let score = 0;
+  for (let k = 0; k < STAND_RAYS; k++) {
+    const az = threatBearing + ((k - (STAND_RAYS - 1) / 2) / (STAND_RAYS - 1)) * STAND_FAN;
+    const tx = x + Math.sin(az) * eR, tz = z + Math.cos(az) * eR;
+    const ty = world.field.heightAt(tx, tz) + STAND_TGT_H;
+    if (arcClears(world, muzzle, { x: tx, y: ty, z: tz }, spec, selfId)) score++;
+  }
+  return score;
+}
+
+// bestStandPoint: the spotter directs the sniper — candidates are the anchor
+// itself, 8 ring points at 2.5m, and the 4 best-height survey candidates
+// (control points + rim, re-vetted); highest standScore wins, ties -> nearest
+// anchor, then scan order. The anchor is candidate 0, so the directed spot
+// NEVER scores below the default. Placement/re-anchor only.
+const STAND_RING_R = 2.5;
+export function bestStandPoint(world, cx, cz, threatBearing, sniper) {
+  const F = world.field, clear = memberClear(sniper);
+  const cands = [{ x: cx, z: cz }];
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * Math.PI * 2;
+    cands.push({ x: cx + Math.sin(a) * STAND_RING_R, z: cz + Math.cos(a) * STAND_RING_R });
+  }
+  const hiCands = [];
+  if (F.cs != null && F.half != null) {
+    const i0 = Math.floor((cx - SPOT_R + F.half) / F.cs), i1 = Math.ceil((cx + SPOT_R + F.half) / F.cs);
+    const j0 = Math.floor((cz - SPOT_R + F.half) / F.cs), j1 = Math.ceil((cz + SPOT_R + F.half) / F.cs);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const x = i * F.cs - F.half, z = j * F.cs - F.half;
+      if (Math.hypot(x - cx, z - cz) > SPOT_R) continue;
+      hiCands.push({ x, z, h: F.heightAt(x, z) });
+    }
+    for (let k = 0; k < 16; k++) {
+      const a = (k / 16) * Math.PI * 2;
+      const x = cx + Math.sin(a) * SPOT_R, z = cz + Math.cos(a) * SPOT_R;
+      hiCands.push({ x, z, h: F.heightAt(x, z) });
+    }
+    hiCands.sort((a, b) => b.h - a.h);                 // stable in V8: scan order breaks height ties
+    for (let k = 0; k < 4 && k < hiCands.length; k++) cands.push(hiCands[k]);
+  }
+  let best = null, bestScore = -1, bestD = Infinity;
+  for (const c of cands) {
+    if (slotBlocked(world, c.x, c.z, clear)) continue;
+    if (world.pondAt && world.pondAt(c.x, c.z)) continue;
+    if (world.inRim && !world.inRim(c.x, c.z)) continue;
+    const s = standScore(world, c.x, c.z, threatBearing, sniper.id);
+    const d = Math.hypot(c.x - cx, c.z - cz);
+    if (s > bestScore || (s === bestScore && d < bestD - 1e-9)) { best = { x: c.x, z: c.z }; bestScore = s; bestD = d; }
+  }
+  return best;
+}
+
+// directPair: run the survey + direction for a sniper squad on placement /
+// DEFEND re-anchor. Spotter alive -> he takes the surveyed high ground and
+// directs the sniper to the best firing spot; spotter dead -> direction
+// simply never re-runs (no special case) and both goals clear.
+export function directPair(world, squad, members) {
+  squad._spotGoal = null; squad._snipeGoal = null;
+  const sniper = members.find((u) => u.role === "sniper");
+  const spotter = members.find((u) => u.role === "spotter");
+  if (!sniper || !spotter) return;
+  const bearing = defaultThreatBearing(world, squad, squad.anchor);
+  const spot = surveyHighGround(world, squad.anchor.x, squad.anchor.z, bearing, memberClear(spotter));
+  if (spot) squad._spotGoal = { x: spot.x, z: spot.z };
+  const stand = bestStandPoint(world, squad.anchor.x, squad.anchor.z, bearing, sniper);
+  if (stand) squad._snipeGoal = { x: stand.x, z: stand.z };
+}
 
 // ---------------------------------------------------------------- helpers
 const MOVE_SPEED = 3.2; // m/s — infantry march speed toward a goal point
@@ -266,6 +404,7 @@ export function stepSquad(world, squad, dt) {
       squad._legTarget = null;
       squad._pauseT = 0;
       squad._threatSig = undefined; // force a defend re-scan on arrival
+      squad._surveyPending = true;  // DEFEND re-anchor: the pair re-surveys (6.5 Task 6)
     } else if (squad._pauseT > 0) {
       // dwelling at the current cover leg — no movement, no new rng draw.
       squad._pauseT -= dt;
@@ -325,6 +464,7 @@ export function stepSquad(world, squad, dt) {
     members.forEach((u, i) => {
       const slot = slotFor(squad, i, n);
       u.goal = clearSlot(world, slot.x, slot.z, memberClear(u)); // never march a man into masonry
+      u.settled = false; // pair poses (renderer) only ever read true while holding
       seekGoal(world, u, dt);
     });
     return;
@@ -334,6 +474,14 @@ export function stepSquad(world, squad, dt) {
   // lowest-exposure spot within DEFEND_SLOT_R of his slot. Recomputed on
   // threat-bearing change (bucketed to 1 of 8 sectors) rather than every
   // frame — matches units.js's own scanCd-style throttling pattern.
+  // The pair (6.5 Task 6): survey + direction run ONCE per placement /
+  // re-anchor (the _surveyPending flag), never per frame, never on terrain
+  // change — craters may later destroy the spotter's hill and he does NOT
+  // re-survey (no battlefield pacing). Draw-free.
+  if (squad._surveyPending) {
+    squad._surveyPending = false;
+    if (squad.type === "sniper") directPair(world, squad, members);
+  }
   const bearing = defaultThreatBearing(world, squad, squad.anchor);
   const sector = Math.round(bearing / (Math.PI / 4));
   if (squad._threatSig !== sector) {
@@ -356,6 +504,12 @@ export function stepSquad(world, squad, dt) {
   }
   members.forEach((u) => {
     u.goal = u._slotGoal || slotFor(squad, squad.memberIds.indexOf(u.id), members.length);
+    // the pair's directed ground outranks the formation micro-slot
+    if (u.role === "spotter" && squad._spotGoal) u.goal = squad._spotGoal;
+    else if (u.role === "sniper" && squad._snipeGoal) u.goal = squad._snipeGoal;
+    // settled: holding on chosen ground (renderer poses/glint key off this;
+    // deterministic body field, sim-inert)
+    u.settled = !!u.role && Math.hypot(u.goal.x - u.pos.x, u.goal.z - u.pos.z) < 0.35;
     seekGoal(world, u, dt);
   });
 }
