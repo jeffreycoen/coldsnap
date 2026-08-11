@@ -12,7 +12,7 @@ import {
 import { reachPolygon, arcClears, squadReach } from "../src/depot/accuracy.js";
 import { friendlyFouls } from "../src/depot/state.js";
 import {
-  makeWorld, addBody, addWeld, fireProjectile, explode, stepWorld, applyDamage, worldHash, CAUSE, mulberry32,
+  makeWorld, addBody, addWeld, fireProjectile, explode, stepWorld, applyDamage, worldHash, CAUSE, mulberry32, aimSolve,
 } from "../src/engine/core.js";
 import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, WAVES as DEPOT_WAVES, MASON, INFANTRY_ARMS } from "../src/depot/specs.js";
 import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks, payBounties, SNIPER_FIRE } from "../src/depot/units.js";
@@ -3216,10 +3216,15 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
 
   // priority boundary, both sides of 0.6R (flat effR = 13 -> urgency 7.8m):
   {
-    // member at 6m (inside urgency), wall at 5m (nearer!) -> member wins
+    // member at 6m (inside urgency), wall at 5m (nearer!) -> member wins.
+    // The wall sits OFF the member's LOS ray (x=1.5): the physics-true
+    // arcClears (SIGHTLINES, 2026-08-10) samples at the engine's own step
+    // cadence and correctly sees an on-ray wall the old 0.9m grid happened
+    // to straddle — an on-ray fixture would (rightly) block acquisition
+    // instead of testing the priority boundary this assert is about.
     const world = makeWorld({ field: flatField, seed: 12 });
     const member = mkMember(world, 0, 1);
-    addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.4, hy: 0.83, hz: 0.4, x: 0, y: 0.83, z: 2, hp: 999 });
+    addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.4, hy: 0.83, hz: 0.4, x: 1.5, y: 0.83, z: 2, hp: 999 });
     const r = mkRifleman(world, 0, 7);
     for (let i = 0; i < 30; i++) stepUnits(world, grid4, identFwdDir);
     const tgt = world.byId.get(r.tgtId);
@@ -3842,6 +3847,166 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
   }
 }
 // ==== end ROT-PATH ===========================================================
+
+// ==== SIGHTLINES (marksmanship batch Task 2): physics-true arcClears =========
+// The fixed +0.35m terrain pad vetoed 94% of downslope shots that physically
+// clear (diag-downslope*.mjs, 2026-08-10: 249/266 pad-only vetoes, median real
+// clearance 0.217m). Replaced by engine-cadence sampling + a derived epsilon
+// (see accuracy.js's ARC_EPS derivation). The keystone below fires REAL
+// projectiles and requires arcClears' verdict to match observed impacts in
+// both directions — the predictor is pinned to the simulator, not to a pad.
+{
+  // rounded (cosine) crest, same family as diag-downslope-crest.mjs
+  const mkCrestWorld = (H, rampLen, seed = 1) => {
+    const world = makeWorld({ seed });
+    const f = world.field;
+    for (let j = 0; j < f.n; j++) for (let i = 0; i < f.n; i++) {
+      const x = i * f.cs - f.half;
+      f.h[f.idx(i, j)] = x <= 0 ? H : x >= rampLen ? 0 : H * 0.5 * (1 + Math.cos(Math.PI * x / rampLen));
+    }
+    return world;
+  };
+  const sniperArm = INFANTRY_ARMS.sniper;
+  const CREST_SHAPES = [[3, 6], [4, 8], [6, 8], [6, 12], [8, 10]];
+  const mkShooter = (world, sx) => addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: sx, y: world.field.heightAt(sx, 0) + 0.74, z: 0, hp: 58 });
+
+  // Fire one real, unscattered round straight along the aimSolve direction and
+  // watch where it lands. "Lands" = the flight's closest approach to the aim
+  // point is <= 1m (the round arrived on the target); otherwise it ate terrain
+  // en route (the crest). Deterministic: no rng draws anywhere in this path.
+  const simulate = (world, muzzle, target, spec, ownerId) => {
+    const dx = target.x - muzzle.x, dz = target.z - muzzle.z;
+    const d = Math.hypot(dx, dz);
+    const pitch = aimSolve(spec.projSpeed, d, target.y - muzzle.y, 9.8, false);
+    if (pitch == null) return { lands: false };
+    const ch = Math.cos(pitch), az = Math.atan2(dz, dx);
+    const dir = { x: ch * Math.cos(az), y: Math.sin(pitch), z: ch * Math.sin(az) };
+    const p = fireProjectile(world, muzzle, dir, spec.projSpeed, { kind: "mg", r: 0.35, kv: 0, dmg: 0, crater: 0, owner: ownerId, attacker: "test" });
+    let minD = 1e9;
+    for (let s = 0; s < 5000 && world.projectiles.includes(p); s++) {
+      stepWorld(world);
+      const dd = Math.hypot(p.pos.x - target.x, p.pos.y - target.y, p.pos.z - target.z);
+      if (dd < minD) minD = dd;
+    }
+    return { lands: minD <= 1.0 };
+  };
+
+  // keystone: predictor == simulator across the whole crest matrix
+  {
+    let total = 0, simLands = 0, simBlocks = 0, falseClear = 0, falseBlock = 0;
+    const bad = [];
+    for (const setback of [0, 1, 2, 3, 4]) for (const [H, ramp] of CREST_SHAPES) {
+      for (let tx = 2; tx <= 26; tx += 2) {
+        const world = mkCrestWorld(H, ramp);
+        const sh = mkShooter(world, -setback);
+        const muzzle = { x: -setback, y: sh.pos.y + 0.5, z: 0 };
+        const tgt = { x: tx, y: world.field.heightAt(tx, 0) + 0.74, z: 0 };
+        const sim = simulate(world, muzzle, tgt, sniperArm, sh.id);
+        const w2 = mkCrestWorld(H, ramp);
+        const pr = arcClears(w2, muzzle, tgt, sniperArm, sh.id);
+        total++; sim.lands ? simLands++ : simBlocks++;
+        if (pr !== sim.lands) {
+          pr ? falseClear++ : falseBlock++;
+          if (bad.length < 6) bad.push(`sb${setback} H${H}r${ramp} tx${tx} predicted=${pr}`);
+        }
+      }
+    }
+    ok("SIGHTLINES keystone: arcClears matches real-projectile impacts on every crest fixture (both directions)",
+      falseClear === 0 && falseBlock === 0,
+      `total=${total} simLands=${simLands} falseClear=${falseClear} falseBlock=${falseBlock}${bad.length ? " | " + bad.join(" | ") : ""}`);
+    ok("SIGHTLINES keystone: true crest pierces exist and stay blocked (no false clears)",
+      simBlocks > 0 && falseClear === 0, `simBlocks=${simBlocks}`);
+  }
+
+  // end-to-end: sniper squad acquires + lands rounds downslope on every crest
+  // shape (pre-fix: 0 projectiles — the pad vetoed acquisition entirely)
+  for (const [H, ramp] of CREST_SHAPES) {
+    const world = mkCrestWorld(H, ramp);
+    const sh = mkShooter(world, -2);
+    sh.utype = "sniper";
+    const tx = Math.min(26, ramp + 6);
+    const tgt = addBody(world, { kind: "unit", team: 2, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: tx, y: world.field.heightAt(tx, 0) + 0.74, z: 0, hp: 58 });
+    const squad = makeSquad(1, "sniper", 1, -2, 0);
+    squad.memberIds.push(sh.id); squad.order = "defend";
+    squadFire(world, squad, 0.5, null);
+    const fired = world.projectiles.length;
+    let impactX = null;
+    if (fired) {
+      const p = world.projectiles[0];
+      for (let s = 0; s < 5000 && world.projectiles.includes(p); s++) stepWorld(world);
+      impactX = p.pos.x;
+    }
+    ok(`SIGHTLINES: sniper acquires + lands downslope on crest H${H}/r${ramp} (pre-fix: 0 projectiles)`,
+      fired > 0 && impactX != null && impactX > 0,
+      `fired=${fired} impactX=${impactX == null ? "-" : impactX.toFixed(2)} tgt.x=${tx} (hit or crater downslope of the lip)`);
+  }
+
+  // reachPolygon: the downslope fan widens (pre-fix the +x ray stopped at
+  // the pad wall; physically the sniper sees the whole slope). Fixtures
+  // chosen where the slope is NOT true dead ground — on the steepest crests
+  // at deep setback the short fan is real (the ray stops at the first block
+  // by design, and the lip genuinely shadows the near slope there).
+  for (const [sb, H, r, pre] of [[2, 3, 6, 4.50], [1, 6, 8, 3.60]]) {
+    const world = mkCrestWorld(H, r);
+    const muzzle = { x: -sb, y: world.field.heightAt(-sb, 0) + 0.74 + 0.5, z: 0 };
+    const pts = reachPolygon(world, null, muzzle, sniperArm, 1);
+    const down = Math.hypot(pts[0].x - muzzle.x, pts[0].z - muzzle.z);
+    ok(`SIGHTLINES: reachPolygon downslope ray widens on sb${sb} H${H}/r${r} (pre-change pin: ${pre}m)`,
+      down > 12, `downslope reach=${down.toFixed(2)}m`);
+  }
+
+  // flagged-DPS parity (replaces-not-adds contract): rifles/mg/sniper vs the
+  // pinned soft fixture, measured PRE-change on 2026-08-10 with the 0.35 pad
+  // still in place — the epsilon change must not move level-ground DPS >10%.
+  {
+    const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+    const dpsFixture = (type) => {
+      const world = makeWorld({ field: flatF, seed: 4 });
+      world.depotCombat = true;
+      const squad = makeSquad(1, type, 1, 0, 0);
+      for (let i = 0; i < SQUAD_SPECS[type].n; i++) {
+        const u = addBody(world, { kind: "unit", team: 1, mass: 90, hx: 0.3, hy: 0.9, hz: 0.3, x: 0, y: 0.9, z: 0, hp: 100 });
+        squad.memberIds.push(u.id);
+      }
+      squad.order = "defend";
+      const target = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 10, hp: 1e9 });
+      const dt = 1 / 30, dur = 20;
+      const hp0 = target.hp;
+      for (let i = 0; i < dur / dt; i++) {
+        squadFire(world, squad, dt);
+        for (let s = 0; s < 20; s++) stepWorld(world);
+      }
+      return (hp0 - target.hp) / dur;
+    };
+    // pre-change flagged measurements (0.35-pad arcClears), 2026-08-10:
+    const PRE = { rifles: 3.8013, mg: 9.2525, sniper: 30.5412 };
+    for (const type of ["rifles", "mg", "sniper"]) {
+      const d = dpsFixture(type);
+      ok(`SIGHTLINES parity: flagged ${type} DPS within +/-10% of pre-change measurement`,
+        Math.abs(d / PRE[type] - 1) <= 0.10, `dps=${d.toFixed(4)} pre=${PRE[type]}`);
+    }
+  }
+
+  // twin determinism: two identical crest firefights hash identical
+  {
+    const run = () => {
+      const world = mkCrestWorld(6, 8, 9);
+      world.depotCombat = true;
+      const sh = mkShooter(world, -2);
+      sh.utype = "sniper";
+      const tgt = addBody(world, { kind: "unit", team: 2, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 14, y: world.field.heightAt(14, 0) + 0.74, z: 0, hp: 5e3 });
+      const squad = makeSquad(1, "sniper", 1, -2, 0);
+      squad.memberIds.push(sh.id); squad.order = "defend";
+      for (let i = 0; i < 600; i++) {
+        squadFire(world, squad, world.dt * 5, null);
+        for (let s = 0; s < 5; s++) stepWorld(world);
+      }
+      return worldHash(world);
+    };
+    ok("SIGHTLINES: twin determinism through a crest firefight", run() === run());
+  }
+}
+// ==== end SIGHTLINES =========================================================
 
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);

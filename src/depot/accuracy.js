@@ -47,6 +47,36 @@ export function solidBlocksPoint(world, x, y, z, selfId) {
 // ballistic arc from muzzle to target (aimSolve pitch, projSpeed), comparing
 // arc height vs ground+clearance at each step. Solids still use
 // solidBlocksPoint at the ARC height (not the straight line).
+//
+// ARC_EPS derivation (replaces the old fixed +0.35m pad, which vetoed 94% of
+// downslope shots that physically clear — diag-downslope*.mjs, 2026-08-10):
+// arcClears is a PREDICTOR of the engine's projectile integrator, so it now
+// samples exactly where the engine samples — at t = k*world.dt along the
+// flight — using the integrator's own semi-implicit Euler height,
+//   y(t) = y0 + vy0*t - (g/2)*t*(t+dt)
+// (one dt lower than the analytic parabola: v is decremented before the
+// position add). The engine grounds a round only when a step ENDPOINT dips
+// to/below heightAt (core.js's terrain-hit check; the bisection afterwards
+// only refines the impact point) — terrain between endpoints is physically
+// invisible to the round, so cadence-matched sampling has ZERO sampling
+// error and the old pad's insurance term (0.9m step x tan(0.52) slope cap
+// / 2 ~ 0.26m of unseen inter-sample rise) vanishes with it. What remains
+// is float slack between this closed form and the engine's accumulated
+// sums: ~1e-6 over any in-range flight, rounded up generously.
+// ARC_DT is the engine step (world.dt's fixed value, asserted at makeWorld).
+// Wind (world.wind, flagged modes) is deliberately unmodeled here, exactly
+// as it was under the pad: scatter + windComp own that error budget.
+// Keystone proof: depot-test.mjs "SIGHTLINES keystone" fires real
+// projectiles across the whole crest matrix and requires this predictor to
+// match observed impacts in both directions, 325/325.
+const ARC_EPS = 1e-4, ARC_DT = 1 / 120;
+// Target body height above its ground (muzzle convention: 1.24m AGL —
+// reachPolygon's TARGET_H plus the same head allowance squadFire's own
+// muzzle formula uses). The final approach may descend below terrain+eps
+// INTO this band while still above the raw ground: that is a round arriving
+// on the target's body, not one eating the crest — the old pad faked this
+// "target volume" by excluding the last 0.9m; now it is explicit.
+const TARGET_BODY_H = 1.24;
 // occlusion class per spec: "arc"    -> terrain checked along the true arc
 //                                        (gun, mg, rifle, tank)
 //                           "lofted" -> terrain ignored entirely (mortar,
@@ -69,11 +99,16 @@ export function arcClears(world, muzzle, target, spec, selfId) {
   const pitch = aimSolve(spec.projSpeed, d, target.y - muzzle.y, 9.8, false);
   if (pitch == null) return false;
   const vh = spec.projSpeed * Math.cos(pitch), vy0 = spec.projSpeed * Math.sin(pitch);
-  for (let s = 0.9; s < d - 0.9; s += 0.9) {
-    const t = s / vh;                                  // time at horizontal distance s
-    const y = muzzle.y + vy0 * t - 4.9 * t * t;        // arc height
+  const tgh = world.field.heightAt(target.x, target.z);
+  for (let k = 1; ; k++) {
+    const t = k * ARC_DT, s = vh * t;                  // engine-cadence sample (see ARC_EPS derivation)
+    if (s >= d - 0.9) break;                           // last ~0.9m: the target point itself, assumed reachable
+    const y = muzzle.y + vy0 * t - 4.9 * t * (t + ARC_DT); // integrator's own Euler height
     const x = muzzle.x + (dx / d) * s, z = muzzle.z + (dz / d) * s;
-    if (world.field.heightAt(x, z) + 0.35 > y) return false;   // terrain pierces the arc
+    const h = world.field.heightAt(x, z);
+    if (h + ARC_EPS > y &&                             // terrain pierces the arc…
+        !(y > h && y <= tgh + TARGET_BODY_H))          // …unless it's the final descent onto the target's body
+      return false;
     if (solidBlocksPoint(world, x, y, z, selfId)) return false; // solid at arc height
   }
   return true;
