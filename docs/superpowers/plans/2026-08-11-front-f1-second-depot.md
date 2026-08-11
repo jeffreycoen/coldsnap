@@ -194,6 +194,19 @@ export function hostileStructure(b, team) {
 - [ ] **Step 1 — failing asserts:** an ordered squad in range of depot2 with no units in reach fires and depot2 stone hp drops; a live enemy unit re-entering range immediately outranks the stone; fog NEVER gates stone shots either side (law, asserted both signs); enemy infantry at your depot damages "depot" masonry through the same set; owner threaded (zero self-hit events across 200 rounds); unit-target damage parity unchanged to 4 decimals (open-ground fixture); twin determinism.
 - [ ] **Step 2:** verify fail → **Step 3:** implement → **Step 4:** gates → **Step 5:** Commit "FRONT F1: the offense exists — rifles bite stone" → PUSH + report.
 
+### Task 4½: the player sapper squad (added 2026-08-11 — Jeff's pick after Task 4's measurement)
+
+**Why:** Task 4's measured truth — rifle fire moves reinforced depot masonry ZERO meters (3,696 rounds / 20 min / 0.000m). No player weapon can win the war. Jeff picked the symmetric fix: a purchasable demolition team, the exact mirror of the enemy's satchel sapper.
+
+**Files:** `src/depot/squads.js` (SQUAD_SPECS + charge behavior), `src/depot/state.js` (squad step wiring), `src/depot/specs.js` (if a charge spec constant belongs there), `src/depot/DepotGame.jsx` (build bar entry), `scripts/depot-test.mjs`, smoke.
+
+- SQUAD_SPECS gains `sappers: { n: 2, cost: 25, label: "SAPPER TEAM" }` `// provisional (F5)`. Build-bar key `sq_sappers`, placed like any squad (green ground, confirm flow).
+- Each member carries ONE satchel charge. Behavior mirrors units.js stepSapper (:408-424) exactly, sign-flipped: when within arm's reach (hx + 1.3) of a `hostileStructure(b, 1)` target — enemy depot masonry now; enemy towers/walls when F3 builds them — he plants: 1.5s fuse, then the identical blast (`explode(world, …, { r: 3.4, kv: 9, dmg: 150, crater: 0.6, hitStruct: true, attacker: "player" })`) and the charge consumes him (`applyDamage 1e9`, same as the enemy's — "the sapper rarely survives his work"; symmetry is the law and the fiction).
+- He walks there by ATTACK order like any squad member (seekGoal); no charge use on defend; carries no rifle (squadFire skips type "sappers" — they are tools, not shooters; zero rng draws).
+- Blast shove vs welded masonry is the demolition mechanism (enemy sappers already breach player walls this way — kv 9 pops welds and scatters stones past the 1.2m standing tolerance).
+- [ ] **Step 1 — failing asserts:** a sapper team ordered onto depot2 plants and detonates (charge events observed, planter dies, no bounty paid to anyone); stones displace past DEPOT_STANDING_TOL (the thing rifles measurably cannot do — pin the contrast); repeated teams drive standing fraction below DEPOT_BREACH_FRAC → victory by breach THROUGH PLAY (the first real win); defend order never plants; no draws added (stream identity vs pre-change on a sapperless run); symmetric check — the enemy sapper's behavior byte-unchanged; twin determinism.
+- [ ] **Step 2:** verify fail → **Step 3:** implement → **Step 4:** gates → **Step 5:** Commit "FRONT F1: the sapper team — the war becomes winnable (mk0.14)" with MK bump → PUSH + report incl. teams-to-breach count (measured, not tuned).
+
 ### Task 5: closer — probe + smoke + stale docs + Jeff plays
 
 **Files:** `scripts/economy-probe.mjs`, `scripts/smoke.mjs`, `src/depot/state.js` (stale comment), `2026-08-09-depot-roadmap.md` (note), `scripts/depot-test.mjs`.
