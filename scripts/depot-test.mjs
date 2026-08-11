@@ -4517,7 +4517,7 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
   {
     const accSrc = fs.readFileSync(new URL("../src/depot/accuracy.js", import.meta.url), "utf8");
     ok("task4(f): squadReach threads selfId into reachPolygon (source pin)",
-      /squadReach[\s\S]{0,600}reachPolygon\(world, T, muzzle, INFANTRY_ARMS\[squad\.type\], squad\.team, toUV, u\.id\)/.test(accSrc));
+      /squadReach[\s\S]{0,700}reachPolygon\(world, T, muzzle, arms, squad\.team, toUV, u\.id\)/.test(accSrc));
     const world = makeWorld({ field: flat(), seed: 2 });
     world.depotCombat = true;
     const u = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 0, hp: 58 });
