@@ -15,7 +15,7 @@ import {
   makeWorld, addBody, addWeld, fireProjectile, explode, stepWorld, applyDamage, worldHash, CAUSE, mulberry32, aimSolve,
 } from "../src/engine/core.js";
 import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, WAVES as DEPOT_WAVES, MASON, INFANTRY_ARMS } from "../src/depot/specs.js";
-import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks, payBounties, SNIPER_FIRE } from "../src/depot/units.js";
+import { stepUnits, spawnUnit, stepBreakerRam, payBounties, SNIPER_FIRE } from "../src/depot/units.js";
 import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad, COHESION_M } from "../src/depot/squads.js";
 import {
   makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue, payTown,
@@ -106,111 +106,82 @@ startWave(S, WAVES);
 ok("startWave arms wave 2's spawn queue", S.ws.spawnQueue === 4, S.ws.spawnQueue);
 ok("phase is wave again", S.phase === PHASE.WAVE, S.phase);
 
-// --- clear final wave -> victory
+// --- clear the last table row -> the war continues (FRONT F1: waves cycle)
 S.ws.waveIdx = WAVES.length - 1;
 S.ws.spawnQueue = 0;
 S.phase = PHASE.WAVE;
 tryStall(S, WAVES, 0);
-ok("final wave clear enters stall", S.phase === PHASE.STALL);
-ok("final dispatch says FINAL WAVE CLEARED", S.dispatch.lines[1].includes("FINAL WAVE CLEARED"), S.dispatch.lines[1]);
+ok("last-row wave clear enters stall", S.phase === PHASE.STALL);
+ok("no FINAL WAVE copy on the last-row card", !S.dispatch.lines.some((l) => l.includes("FINAL WAVE")), JSON.stringify(S.dispatch.lines));
 advance(S, WAVES);
-ok("advancing past the last wave sets victory", S.victory === true);
+ok("advancing past the last table row sets NO victory (only a breach ends the run)", S.victory === false && S.gameOver === false);
 
-// ===================================================== 50-wave end states
-// force-lose: depot hp (lives) driven to 0 mid-run -> LOSS, regardless of
-// wave progress or resources.
+// ===================================================== end states (FRONT F1)
+// checkLoss keeps only the stubbed regiment hook — with the stub false it
+// can never fire; the depot's masonry (checkDepotBreach) is the loss track.
 {
   const W50 = Array.from({ length: 50 }, (_, i) => ({ units: 12 + i * 2, delay: 0.9 }));
   const L = makeRunState({ waves: W50 });
   L.started = true;
   L.ws.waveIdx = 4;
-  L.lives = 0;
   ok("regimentDestroyed stub is always false", regimentDestroyed(L) === false);
-  const lost = checkLoss(L);
-  ok("checkLoss fires when lives hit 0", lost === true);
-  ok("checkLoss sets gameOver", L.gameOver === true);
+  ok("checkLoss never fires without the regiment stub (lives retired)", checkLoss(L) === false && L.gameOver === false);
   ok("checkLoss does not set victory", L.victory === false);
-  ok("checkLoss is idempotent (no-op once gameOver)", checkLoss(L) === false);
 }
 
-// god-mode win: drive the machine to wave 50 cleared with player book value
-// (resources + standing structures) far exceeding the attacker's book value
-// (regiment scrap + surviving heads/tanks at purchase price) -> WIN.
+// FRONT F1: the book-value verdict is retired as an ending. Rich or poor,
+// clearing the last table row ends nothing — advance() never calls checkWin.
+// checkWin itself stays exported (the probe reads it) with its old verdict.
 {
   const W50 = Array.from({ length: 50 }, (_, i) => ({ units: 12 + i * 2, delay: 0.9 }));
   const G = makeRunState({ waves: W50, startResources: 999999 });
   G.started = true;
-  G.reg = { heads: 60, tanks: 1, heads0: 400, tanks0: 10, scrap: 20 }; // thin but not combat-ineffective
+  G.reg = { heads: 60, tanks: 1, heads0: 400, tanks0: 10, scrap: 20 };
   G.ws.waveIdx = W50.length - 1;
   G.ws.spawnQueue = 0;
   G.phase = PHASE.WAVE;
   tryStall(G, W50, 0);
-  ok("god-mode: final wave clear enters stall", G.phase === PHASE.STALL);
   const snap = { mortars: 2, mgs: 3, guns: 2, frosts: 1, walls: 10 };
-  const advanced = advance(G, W50, snap);
-  ok("god-mode: advance() fires past final wave", advanced === true);
-  ok("god-mode: victory is set", G.victory === true, G.victory);
-  ok("god-mode: gameOver is not set", G.gameOver === false);
-  ok("god-mode: not an attrition win (ledger win, regiment still standing)", G.attrition !== true);
-  const endD = makeEndDispatch({ victory: G.victory, kills: 0, wave: W50.length, totalWaves: W50.length, attrition: G.attrition });
-  ok("makeEndDispatch returns a card for the win", !!endD && Array.isArray(endD.lines) && endD.lines.length > 0);
-  ok("ledger-win end card mentions the books closing in the Bureau's favor", endD.lines.some((l) => /books close/i.test(l)), JSON.stringify(endD.lines));
-  ok("ledger-win end card carries no digits in its bureau-voice verdict line", !/\d/.test(endD.lines.find((l) => /books close/i.test(l))));
-}
-
-// wave-50-survived but the player's book value (scrap + standing structures)
-// falls short of the attacker's (regiment scrap + surviving heads/tanks at
-// purchase price: conscript 4, tank 25) -> LOSS, book-value verdict (not the
-// depot-destroyed loss card).
-{
-  const W50 = Array.from({ length: 50 }, (_, i) => ({ units: 12 + i * 2, delay: 0.9 }));
+  advance(G, W50, snap);
+  ok("rich player past the table end: NO ledger win", G.victory === false && G.gameOver === false);
   const B = makeRunState({ waves: W50, startResources: 0 });
   B.started = true;
-  B.reg = { heads: 300, tanks: 10, heads0: 400, tanks0: 10, scrap: 500 }; // rich, intact attacker
+  B.reg = { heads: 300, tanks: 10, heads0: 400, tanks0: 10, scrap: 500 };
   B.ws.waveIdx = W50.length - 1;
   B.ws.spawnQueue = 0;
   B.phase = PHASE.WAVE;
   tryStall(B, W50, 0);
-  advance(B, W50, {}); // no standing structures, no snap
-  ok("underfunded final-wave clear does not win", B.victory === false);
-  ok("underfunded final-wave clear ends in loss", B.gameOver === true);
-  ok("underfunded final-wave clear is flagged a ledger loss (not depot-destroyed)", B.ledgerLoss === true);
-  const endD = makeEndDispatch({ victory: false, kills: 0, wave: W50.length, totalWaves: W50.length, ledgerLoss: B.ledgerLoss });
-  ok("ledger-loss end card says the position is untenable / withdrawal", endD.lines.some((l) => /untenable/i.test(l)), JSON.stringify(endD.lines));
-  ok("ledger-loss end card carries no digits in its bureau-voice verdict line", !/\d/.test(endD.lines.find((l) => /untenable/i.test(l))));
+  advance(B, W50, {});
+  ok("poor player past the table end: NO ledger loss", B.victory === false && B.gameOver === false && B.ledgerLoss !== true);
+  // the retired function still answers when the probe calls it directly
+  const Sw = makeRunState({ waves: W50, startResources: 999999 });
+  ok("checkWin (retired, probe-only) still returns its book verdict when called directly",
+    checkWin(Sw, W50, snap) === true && Sw.victory === true);
 }
 
-// depot-destroyed LOSS stays exactly as it was (lives hit 0) — unaffected by
-// the book-value verdict machinery.
+// FRONT F1: the loss card is always the breach card — there is no other loss.
 {
-  const W50 = Array.from({ length: 50 }, (_, i) => ({ units: 12 + i * 2, delay: 0.9 }));
-  const endD = makeEndDispatch({ victory: false, kills: 7, wave: 22, totalWaves: 50, ledgerLoss: false });
-  ok("depot-destroyed end card still says DEPOT OVERRUN", endD.lines[0] === "DEPOT OVERRUN.", endD.lines[0]);
+  const endD = makeEndDispatch({ victory: false, kills: 7 });
+  ok("loss end card leads with THE DEPOT IS BREACHED", endD.lines[0] === "THE DEPOT IS BREACHED.", endD.lines[0]);
 }
 
-// attrition victory: a regiment forced combat-ineffective (per
-// combatIneffective) mid-run — well before wave 50 — ends the run early as a
-// WIN with its own attrition end card, independent of book value.
+// FRONT F1: a combat-ineffective regiment no longer ends the run — the
+// bureau observes it once on the dispatch card and the war continues.
 {
   const W50 = Array.from({ length: 50 }, (_, i) => ({ units: 12 + i * 2, delay: 0.9 }));
-  const A = makeRunState({ waves: W50, startResources: 0 }); // deliberately poor — would lose on the books
+  const A = makeRunState({ waves: W50, startResources: 0 });
   A.started = true;
   A.ws.waveIdx = 10;
   A.reg = { heads: 10, tanks: 0, heads0: 400, tanks0: 10, scrap: 0 }; // < 12% heads0, 0 tanks -> ineffective
   A.ws.spawnQueue = 0;
   A.phase = PHASE.WAVE;
   const fired = tryStall(A, W50, 0);
-  ok("attrition: tryStall still fires on regiment break", fired === true);
-  ok("attrition: run ends as a WIN mid-run (wave 11 of 50)", A.victory === true, A.victory);
-  ok("attrition: gameOver is not set", A.gameOver === false);
-  ok("attrition: flagged as an attrition win", A.attrition === true);
-  const endD = makeEndDispatch({ victory: true, kills: 3, wave: 11, totalWaves: 50, attrition: A.attrition });
-  ok("attrition end card judges the formation combat-ineffective", endD.lines.some((l) => /combat-ineffective/i.test(l)), JSON.stringify(endD.lines));
-  ok("attrition end card says the field remains in Bureau hands", endD.lines.some((l) => /Bureau hands/i.test(l)), JSON.stringify(endD.lines));
-  ok("attrition end card carries no digits in its bureau-voice verdict line", !/\d/.test(endD.lines.find((l) => /Bureau hands/i.test(l))));
+  ok("attrition retired: tryStall still fires on regiment break", fired === true);
+  ok("attrition retired: run does NOT end", A.victory === false && A.gameOver === false);
+  ok("attrition retired: the bureau observes it on the card", A.dispatch.lines.some((l) => /combat-ineffective/i.test(l)), JSON.stringify(A.dispatch.lines));
 }
 
-// intact, above-threshold regiment mid-run never triggers an attrition win.
+// intact, above-threshold regiment mid-run never draws the observation.
 {
   const W50 = Array.from({ length: 50 }, (_, i) => ({ units: 12 + i * 2, delay: 0.9 }));
   const N = makeRunState({ waves: W50 });
@@ -220,7 +191,7 @@ ok("advancing past the last wave sets victory", S.victory === true);
   N.ws.spawnQueue = 0;
   N.phase = PHASE.WAVE;
   tryStall(N, W50, 0);
-  ok("intact regiment mid-run: no attrition win", N.victory === false && N.attrition !== true);
+  ok("intact regiment mid-run: no break observation, no ending", N.victory === false && !N.dispatch.lines.some((l) => /combat-ineffective/i.test(l)));
 }
 
 // bounty bug: killing a TANK (kind: "vehicle") must pay its bounty (25),
@@ -255,20 +226,13 @@ ok("advancing past the last wave sets victory", S.victory === true);
   P.ws.spawnQueue = 0;
   P.phase = PHASE.WAVE;
   tryStall(P, W50, 0);
-  ok("starved stall 1/3: no win yet", P.victory !== true);
+  ok("starved stall 1/3: no observation yet", P.victory !== true && !P.dispatch.lines.some((l) => /spent/i.test(l)));
   P.phase = PHASE.WAVE; P.ws.spawnQueue = 0;
   tryStall(P, W50, 0);
-  ok("starved stall 2/3: still no win", P.victory !== true);
+  ok("starved stall 2/3: still none", P.victory !== true && !P.dispatch.lines.some((l) => /spent/i.test(l)));
   P.phase = PHASE.WAVE; P.ws.spawnQueue = 0;
   tryStall(P, W50, 0);
-  ok("starved stall 3/3: run ends as an early WIN", P.victory === true, P.victory);
-  ok("spent win: gameOver is not set", P.gameOver === false);
-  ok("spent win: not flagged as attrition", P.attrition !== true);
-  ok("spent win: flagged as spent", P.spent === true);
-  const endD = makeEndDispatch({ victory: true, kills: 5, wave: 8, totalWaves: 50, spent: P.spent });
-  ok("spent end card judges the offensive spent", endD.lines.some((l) => /offensive is judged spent/i.test(l)), JSON.stringify(endD.lines));
-  ok("spent end card says the field remains in Bureau hands", endD.lines.some((l) => /Bureau hands/i.test(l)), JSON.stringify(endD.lines));
-  ok("spent end card carries no digits in its bureau-voice verdict lines", !/\d/.test(endD.lines.find((l) => /Bureau hands/i.test(l))) && !/\d/.test(endD.lines.find((l) => /offensive is judged spent/i.test(l))));
+  ok("starved stall 3/3: FRONT F1 — no win, only a one-time spent observation", P.victory !== true && P.gameOver !== true && P.dispatch.lines.some((l) => /spent/i.test(l)), JSON.stringify(P.dispatch.lines));
 }
 
 // only 2 consecutive starved stalls: no trigger.
@@ -283,7 +247,7 @@ ok("advancing past the last wave sets victory", S.victory === true);
   tryStall(P2, W50, 0);
   P2.phase = PHASE.WAVE; P2.ws.spawnQueue = 0;
   tryStall(P2, W50, 0);
-  ok("2 starved stalls: no win", P2.victory !== true && P2.gameOver !== true);
+  ok("2 starved stalls: no ending, no spent observation", P2.victory !== true && P2.gameOver !== true && !P2.dispatch.lines.some((l) => /spent/i.test(l)));
 }
 
 // a solvent stall resets the consecutive counter.
@@ -350,8 +314,8 @@ ok("advancing past the last wave sets victory", S.victory === true);
     tryStall(G, W50, 0, rng);
     if (w < 2) advance(G, W50, {});
   }
-  ok("3 empty musters: early WIN", G.victory === true && G.gameOver === false);
-  ok("3 empty musters: flagged spent", G.spent === true);
+  ok("3 empty musters: FRONT F1 — no ending", G.victory !== true && G.gameOver !== true);
+  ok("3 empty musters: the bureau observes the offensive spent", G.dispatch.lines.some((l) => /spent/i.test(l)), JSON.stringify(G.dispatch.lines));
 
   // (c) a fielded wave between two starved ones resets the counter.
   const R = makeRunState({ waves: W50, startResources: 0 });
@@ -372,12 +336,10 @@ ok("advancing past the last wave sets victory", S.victory === true);
   ok("reset held: only 2 starved since the fielded wave, run continues", R.victory !== true, R.starvedStreak);
 }
 
-// The spent end card must read unambiguously as a WIN — "musters called
-// without issue" read as a defeat notice; the card must state the verdict.
+// FRONT F1: the only victory card is the enemy-breach card, whatever flags ride along.
 {
   const d = makeEndDispatch({ victory: true, kills: 12, wave: 6, totalWaves: 50, spent: true });
-  ok("spent card does not open with the ambiguous 'without issue' line", !d.lines.some((l) => /without issue/i.test(l)), JSON.stringify(d.lines));
-  ok("spent card pairs the verdict with Bureau hands on one line", d.lines.some((l) => /judged spent/i.test(l) && /Bureau hands/i.test(l)), JSON.stringify(d.lines));
+  ok("victory card is always the opposing-depot breach card", d.lines[0] === "THE OPPOSING DEPOT IS BREACHED.", JSON.stringify(d.lines));
 }
 
 // ================================================== seeded determinism
@@ -835,44 +797,20 @@ function grenLobRun(seed, wind) {
   ok("breaker: ramming a wall deals contact damage", wall.hp < hpBefore, `hp=${wall.hp}`);
 }
 
-// tank leak: a tank that reaches the depot must leak like anything else
-// that gets there — lives damage, unit removed, attacker paid — not march
-// off-map forever (Task 7 probe finding: DepotGame.jsx's leak-check used
-// to only cover kind === "unit", so a surviving tank never despawned).
+// FRONT F1: leaks are retired. A tank (or any enemy) that reaches the depot
+// STAYS — no leak event, no removal. The economy's RESULTS.leak rate
+// survives untouched (the dead field reads 0; F5 retires the rates).
 {
-  const objPos = { x: 0, z: 0 };
   const world = makeWorld({ seed: 7 });
-  const tank = spawnUnit(world, { x: objPos.x, z: objPos.z }, "tank");
-  tank.pos.x = objPos.x; tank.pos.z = objPos.z; // pin inside the leak radius, no jitter
-  ok("tank leak setup: spawned as kind vehicle", tank.kind === "vehicle");
-
-  checkLeaks(world, objPos);
-  const leakEvents = world.events.filter((e) => e.type === "leak");
-  ok("tank leak: reaching the depot fires a leak event", leakEvents.length === 1, JSON.stringify(leakEvents));
-  ok("tank leak: dmg mirrors TD's vehicle leak cost (4 lives)", leakEvents[0] && leakEvents[0].dmg === 4, JSON.stringify(leakEvents[0]));
-  ok("tank leak: the tank body is removed from the world", !world.byId.get(tank.id) && !world.bodies.includes(tank));
-
-  // results-pay: the attacker is credited via the same leak-pay path
-  // infantry leaks use (RESULTS.leak per leak, through payResults).
+  const tank = spawnUnit(world, { x: 0, z: 0 }, "tank");
+  tank.pos.x = 0; tank.pos.z = 0;
+  ok("no-leak: tank at the depot persists (no event, no removal)",
+    world.byId.has(tank.id) && !world.events.some((e) => e.type === "leak"));
   const reg = makeRegiment(mulberry32(12));
   const scrapBefore = reg.scrap;
-  payResults(reg, { structureDmg: 0, towerKills: 0, wallKills: 0, buildingKills: 0, leaks: leakEvents.length });
-  ok("tank leak: attacker is paid RESULTS.leak for the tank leak",
-    reg.scrap === scrapBefore + RESULTS.leak, `${reg.scrap} vs ${scrapBefore + RESULTS.leak}`);
-}
-{
-  // infantry leak radius (3.0m) must NOT catch a tank still outside its
-  // own 5.0m radius but inside infantry's smaller one is moot (5>3) —
-  // the real regression is the inverse: a tank sitting between 3m and 5m
-  // used to leak nothing at all under the old kind==="unit"-only check.
-  const objPos = { x: 0, z: 0 };
-  const world = makeWorld({ seed: 8 });
-  const tank = spawnUnit(world, { x: objPos.x, z: objPos.z }, "tank");
-  tank.pos.x = objPos.x + 4; tank.pos.z = objPos.z; // 4m out: past infantry's 3.0m, inside tank's 5.0m
-  checkLeaks(world, objPos);
-  const leakEvents = world.events.filter((e) => e.type === "leak");
-  ok("tank leak: fires at 4m (inside the 5.0m vehicle radius, outside the old 3.0m infantry-only radius)",
-    leakEvents.length === 1, `bodies=${world.bodies.length}`);
+  payResults(reg, { structureDmg: 0, towerKills: 0, wallKills: 0, buildingKills: 0, leaks: 0 });
+  ok("no-leak: payResults with the dead leaks field at 0 pays nothing for leaks",
+    reg.scrap === scrapBefore, `${reg.scrap} vs ${scrapBefore}`);
 }
 
 // ================================================================
@@ -2063,14 +2001,11 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
   ok("breach end card carries the withdrawal-under-fire line", breachCard.lines.includes("The position is lost. Withdrawal under fire."));
   ok("breach end card is digit-free (bureau voice, no wave/kill counters)", !breachCard.lines.some((l) => /\d/.test(l)));
 
-  // lives-loss path stays exactly as it was — a fully-standing depot (1.0)
-  // still loses the run the moment lives hit 0, and checkDepotBreach at 1.0
-  // never fires. Two independent tracks, neither masks the other.
+  // FRONT F1: the lives track is gone — checkLoss (regiment stub only)
+  // never fires, and a fully-standing depot never trips the breach.
   const Sl = makeRunState({ waves: WAVES });
   Sl.started = true;
-  Sl.lives = 0;
-  const livesLost = checkLoss(Sl);
-  ok("lives-loss path unaffected by structural-loss addition", livesLost === true && Sl.gameOver === true && !Sl.breach);
+  ok("checkLoss without the regiment stub never fires (lives retired)", checkLoss(Sl) === false && Sl.gameOver === false && !Sl.breach);
   ok("a fully-standing depot (1.0) never trips checkDepotBreach", checkDepotBreach({ gameOver: false, victory: false }, 1) === false);
 
   // census cadence: stepDepotCensus must gate computeFraction to ~1Hz
@@ -3002,13 +2937,12 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     payBounties(world);
     ok("sweep/bounty: no tdkill event for a dead team-1 member", !world.events.some((e) => e.type === "tdkill"));
 
-    // (b) leak: a live member standing ON the depot objective triggers no
-    // leak and is not removed.
+    // (b) FRONT F1: leaks retired — a live member at the depot objective is
+    // simply a body on the field; nothing removes him.
     const m2 = world.byId.get(sq.memberIds[1]);
     m2.pos.x = 0; m2.pos.z = 40;
     world.events.length = 0;
-    checkLeaks(world, { x: 0, z: 40 });
-    ok("sweep/leak: member at the depot triggers no leak", !world.events.some((e) => e.type === "leak") && world.byId.has(m2.id));
+    ok("sweep: member at the depot persists (leak machinery gone)", world.byId.has(m2.id));
 
     // (c) stepUnits (enemy march driver) never drives a team-1 member.
     const vx0 = m2.v.x, vz0 = m2.v.z, px0 = m2.pos.x, pz0 = m2.pos.z;
@@ -3149,7 +3083,7 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     const tank6 = addBody(wA, { kind: "vehicle", team: 2, hp: 400, hx: 1.2, hy: 0.9, hz: 1.8, mass: 900, x: 8, y: 0.9, z: 30 });
     const friendly6 = unitBody(wA, 1, { x: -8, hp: 40 });
     const heads0 = Sa.reg.heads, tanks0 = Sa.reg.tanks, scrap0 = Sa.reg.scrap;
-    const lives0 = Sa.lives, kills0 = Sa.kills, res0 = Sa.resources, ev0 = wA.events.length;
+    const kills0 = Sa.kills, res0 = Sa.resources, ev0 = wA.events.length;
     const r6 = execW(Sa, wA);
     ok("task6(b): heads returned == live infantry at timeout",
       Sa.reg.heads === heads0 + 1 && r6.inf === 1, `heads ${heads0}->${Sa.reg.heads}`);
@@ -3159,8 +3093,8 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
       !wA.byId.get(deadOne.id) || Sa.reg.heads === heads0 + 1);
     ok("task6(g): team-1 squad member never swept",
       wA.byId.get(friendly6.id) === friendly6 && wA.bodies.includes(friendly6));
-    ok("task6(c): zero bounty, zero kill/leak events, zero lives cost during withdrawal",
-      wA.events.length === ev0 && Sa.reg.scrap === scrap0 && Sa.lives === lives0 &&
+    ok("task6(c): zero bounty, zero kill events, zero cost during withdrawal",
+      wA.events.length === ev0 && Sa.reg.scrap === scrap0 &&
       Sa.kills === kills0 && Sa.resources === res0);
     ok("task6: pending cleared, withdrew counted",
       Sa.ws.withdrawPending === false && Sa.ws.withdrew === 2, String(Sa.ws.withdrew));
@@ -4057,16 +3991,15 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     ok(`ROT-PATH g: orientation ${O} defend members converge on vetted slots, none inside the wall`, converged && clearOfWall);
   }
 
-  // (h) leak radius at the rotated objective: an enemy at fwdU(0,48.5)
-  // leaks against OBJ_POS = fwdU(0,49) under every orientation.
+  // (h) FRONT F1: an enemy at the rotated objective PERSISTS under every
+  // orientation — the leak machinery is gone; he stays and fights.
   for (let O = 0; O < 4; O++) {
     const world = makeWorld({ field: flatF, seed: 47 });
-    const bp = fwdUFor(O, 0, 48.5), obj = fwdUFor(O, 0, 49);
+    const bp = fwdUFor(O, 0, 48.5);
     const u = spawnUnit(world, { x: bp.x, z: bp.z }, "");
     u.pos.x = bp.x; u.pos.z = bp.z;
-    checkLeaks(world, { x: obj.x, z: obj.z });
-    const leaked = world.events.some((e) => e.type === "leak");
-    ok(`ROT-PATH h: orientation ${O} enemy at the rotated depot leaks`, leaked && !world.byId.has(u.id));
+    ok(`ROT-PATH h: orientation ${O} enemy at the rotated depot persists`,
+      world.byId.has(u.id) && !world.events.some((e) => e.type === "leak"));
   }
 }
 // ==== end ROT-PATH ===========================================================
@@ -4975,6 +4908,179 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
   }
 }
 // ==== end FRONT F1 Task 1 ====================================================
+
+// ==== FRONT F1 Task 3: the only ending =======================================
+// The two breaches are the ONLY run-enders. Leaks/lives retire; waves cycle
+// past the table; attrition/spent become one-time dispatch observations.
+{
+  const W3 = [{ units: 3, delay: 1 }, { units: 4, delay: 0.8 }, { units: 5, delay: 0.7 }];
+
+  // (a) leaks retired at the source: units.js exports no checkLeaks, the
+  // world removal path is gone, DepotGame neither imports nor calls it, and
+  // no leak event branch/lives field survives in HUD or run state.
+  {
+    const unitsSrc = fs.readFileSync(new URL("../src/depot/units.js", import.meta.url), "utf8");
+    const depotSrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    const stateSrc = fs.readFileSync(new URL("../src/depot/state.js", import.meta.url), "utf8");
+    ok("F1/3a: units.js no longer defines checkLeaks", !unitsSrc.includes("function checkLeaks"));
+    ok("F1/3a: DepotGame neither imports nor calls checkLeaks", !depotSrc.includes("checkLeaks"));
+    ok("F1/3a grep pin: no lives field in DepotGame (HUD, hooks, run state)", !/\blives\b/.test(depotSrc.replace(/\/\/[^\n]*/g, "")));
+    ok("F1/3a grep pin: no heart chip in DepotGame", !depotSrc.includes("♥"));
+    ok("F1/3a grep pin: no FINAL WAVE copy in state.js cards", !stateSrc.includes("FINAL WAVE"));
+    ok("F1/3a grep pin: no n-of-50 wave display in DepotGame", !depotSrc.includes("totalWaves"));
+    ok("F1/3a: makeRunState carries no lives", !("lives" in makeRunState({ waves: W3 })));
+    ok("F1/3a: wave-results bookkeeping keeps the leaks field (economy rates untouched)",
+      makeRunState({ waves: W3 }).ws === undefined || true); // shape guard below
+    const S0 = makeRunState({ waves: W3 });
+    startWave(S0, W3, { useTable: true });
+    ok("F1/3a: ws.results.leaks still initialized (dead field reads 0)", S0.ws.results.leaks === 0);
+  }
+
+  // (a2) an enemy parked at your depot for 30 simulated seconds neither
+  // despawns nor costs anything — he stays, fights, and his structure fire
+  // chews depot masonry (the shared hostile-structure set makes "depot"
+  // chunks targetable by team 2 — the Task 3/4 interlock).
+  {
+    const { hcs, pitch, mass } = MASON;
+    const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+    const world = makeWorld({ field: flatF, seed: 31 });
+    const chunks = [];
+    for (let ix = 0; ix < 3; ix++) for (let iy = 0; iy <= 2; iy++) for (let iz = 0; iz < 1; iz++) {
+      const c = addBody(world, {
+        kind: "chunk", team: 0, mass, hx: hcs, hy: hcs, hz: hcs,
+        x: (ix - 1) * pitch, y: hcs + 0.02 + iy * pitch, z: 20 + iz * pitch,
+        friction: 0.65, restitution: 0.02,
+      });
+      c.sleeping = true; c.town = "depot"; chunks.push(c);
+    }
+    const home = chunks.map((c) => ({ id: c.id, x: c.pos.x, y: c.pos.y, z: c.pos.z }));
+    const u = spawnUnit(world, { x: 0, z: 8 }, "");
+    u.pos.x = 0; u.pos.z = 8; // parked well inside rifle range of the lattice
+    world.dt = 1 / 60;
+    for (let i = 0; i < 30 * 60; i++) {
+      stepUnits(world, straightGrid(0, 1), identFwdDir);
+      stepWorld(world);
+    }
+    ok("F1/3a2: parked enemy persists 30s (no despawn, no leak events)",
+      world.byId.has(u.id) && u.alive && !world.events.some((e) => e.type === "leak"),
+      `alive=${u.alive}`);
+    // Masonry falls by DISPLACEMENT, not hit points (core.js: chunks take
+    // blast impulse; hp damage covers units/vehicles, and the structure hp
+    // loop covers wall/tower/rock). The observable for "his fire chews the
+    // building" is physical: he acquires a depot chunk and his rounds shove
+    // stones off their homes (weld-free fixture so single stones can move).
+    ok("F1/3a2: he acquires depot masonry as a target", u.tgtId != null && chunks.some((c) => c.id === u.tgtId), `tgt=${u.tgtId}`);
+    const moved = home.filter((h) => {
+      const b = world.byId.get(h.id);
+      if (!b) return true;
+      return Math.hypot(b.pos.x - h.x, b.pos.y - h.y, b.pos.z - h.z) > 0.05;
+    }).length;
+    ok("F1/3a2: his structure fire physically works the masonry (stones shoved off home)", moved > 0, `moved=${moved}/${chunks.length}`);
+  }
+
+  // (b) waves cycle: the run advances past the table's end with waves still
+  // spawning — composition clamps at the last row, no victory fires.
+  {
+    const S = makeRunState({ waves: W3 });
+    S.started = true;
+    S.ws.waveIdx = W3.length - 1;
+    S.ws.spawnQueue = 0;
+    S.phase = PHASE.WAVE;
+    tryStall(S, W3, 0);
+    ok("F1/3c: last-row stall carries no FINAL WAVE copy", !S.dispatch.lines.some((l) => l.includes("FINAL WAVE")), JSON.stringify(S.dispatch.lines));
+    advance(S, W3, {});
+    ok("F1/3c: advancing past the table's end sets NO victory and returns to build",
+      S.victory === false && S.gameOver === false && S.phase === PHASE.BUILD, `victory=${S.victory}`);
+    ok("F1/3c: waveIdx runs past the table", S.ws.waveIdx === W3.length);
+    startWave(S, W3, { useTable: true });
+    ok("F1/3c: wave past the end clamps to the last table row", S.ws.spawnQueue === W3[W3.length - 1].units, S.ws.spawnQueue);
+    // deep cycle: 60 waves in, still spawning, still no ending
+    for (let w = 0; w < 57; w++) {
+      S.ws.spawnQueue = 0; S.phase = PHASE.WAVE;
+      tryStall(S, W3, 0);
+      advance(S, W3, {});
+      startWave(S, W3, { useTable: true });
+    }
+    ok("F1/3c: wave 60+ still spawns from the clamped row, run alive",
+      S.ws.waveIdx >= 60 && S.ws.spawnQueue === W3[W3.length - 1].units && !S.victory && !S.gameOver,
+      `idx=${S.ws.waveIdx}`);
+  }
+
+  // (c) forced combatIneffective sets NO victory; its dispatch line appears
+  // exactly once (the bureau reports; the guns finish it).
+  {
+    const S = makeRunState({ waves: W3 });
+    S.started = true;
+    S.reg = { heads: 10, tanks: 0, heads0: 400, tanks0: 10, scrap: 0 }; // ineffective
+    S.ws.spawnQueue = 0; S.phase = PHASE.WAVE;
+    tryStall(S, W3, 0);
+    ok("F1/3b: combat-ineffective regiment sets NO victory", S.victory === false && S.gameOver === false);
+    const line1 = S.dispatch.lines.find((l) => /combat-ineffective/i.test(l));
+    ok("F1/3b: the observation line appears at the stall", !!line1, JSON.stringify(S.dispatch.lines));
+    ok("F1/3b: observation is digit-free bureau voice", line1 && !/\d/.test(line1), line1);
+    advance(S, W3, {});
+    S.ws.spawnQueue = 0; S.phase = PHASE.WAVE;
+    tryStall(S, W3, 0);
+    ok("F1/3b: the observation appears only once (second stall silent)",
+      !S.dispatch.lines.some((l) => /combat-ineffective/i.test(l)), JSON.stringify(S.dispatch.lines));
+  }
+
+  // (c2) three starved musters: NO victory; a one-time spent observation.
+  {
+    const S = makeRunState({ waves: W3 });
+    S.started = true;
+    S.reg = { heads: 300, tanks: 5, heads0: 400, tanks0: 10, scrap: MIN_WAVE_FLOOR - 1 };
+    for (let i = 0; i < 3; i++) { S.reg.scrap = MIN_WAVE_FLOOR - 1; S.ws.spawnQueue = 0; S.phase = PHASE.WAVE; tryStall(S, W3, 0); if (i < 2) advance(S, W3, {}); }
+    ok("F1/3b: three starved stalls set NO victory (spent retired as an ending)",
+      S.victory === false && S.gameOver === false, `victory=${S.victory} spent=${S.spent}`);
+    ok("F1/3b: spent observation line appears once, digit-free",
+      S.dispatch.lines.some((l) => /spent/i.test(l) && !/\d/.test(l)), JSON.stringify(S.dispatch.lines));
+    advance(S, W3, {});
+    S.ws.spawnQueue = 0; S.phase = PHASE.WAVE; tryStall(S, W3, 0);
+    ok("F1/3b: spent observation not repeated", !S.dispatch.lines.some((l) => /spent/i.test(l)), JSON.stringify(S.dispatch.lines));
+  }
+
+  // (d) exhaustive: the only two enders are the two breaches. Force every
+  // retired condition — regiment stub, ledger/book-value, attrition, spent —
+  // and assert no end; then the two breaches still end it.
+  {
+    const S = makeRunState({ waves: W3 });
+    S.started = true;
+    S.reg = { heads: 5, tanks: 0, heads0: 400, tanks0: 10, scrap: 0 }; // ineffective AND broke
+    ok("F1/3b: checkLoss without breach never fires (regiment stub only)", checkLoss(S) === false && !S.gameOver);
+    S.ws.waveIdx = W3.length - 1; S.ws.spawnQueue = 0; S.phase = PHASE.WAVE;
+    tryStall(S, W3, 0);   // attrition + spent conditions live here
+    advance(S, W3, {});   // past the table end — old checkWin territory
+    ok("F1/3d: no retired condition ends the run",
+      !S.victory && !S.gameOver && !S.breach && !S.enemyBreach, `v=${S.victory} go=${S.gameOver}`);
+    checkEnemyBreach(S, 0.1);
+    ok("F1/3d: enemy breach still ends it (victory)", S.victory === true && S.enemyBreach === true);
+    const S2 = makeRunState({ waves: W3 });
+    checkDepotBreach(S2, 0.1);
+    ok("F1/3d: player breach still ends it (loss)", S2.gameOver === true && S2.breach === true);
+  }
+
+  // (e) twin determinism: two identical drives through the cycling phase
+  // machine produce identical dispatch/flag traces (pure path, zero draws).
+  {
+    const drive = () => {
+      const S = makeRunState({ waves: W3 });
+      S.started = true;
+      S.reg = { heads: 10, tanks: 0, heads0: 400, tanks0: 10, scrap: 0 };
+      const trace = [];
+      for (let w = 0; w < 8; w++) {
+        startWave(S, W3, { useTable: true });
+        S.ws.spawnQueue = 0;
+        tryStall(S, W3, 0);
+        trace.push(JSON.stringify([S.ws.waveIdx, S.dispatch && S.dispatch.lines, S.victory, S.gameOver]));
+        advance(S, W3, {});
+      }
+      return trace.join("|");
+    };
+    ok("F1/3e: twin determinism through the cycling phase machine", drive() === drive());
+  }
+}
+// ==== end FRONT F1 Task 3 ====================================================
 
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);

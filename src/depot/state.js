@@ -226,6 +226,21 @@ export function towerShot(world, tower, target, spec) {
 // unrelated mechanism: explode()'s distance falloff against a tank's own
 // large hitbox. Asserting current (accidental) behavior, not adding an
 // armor value the brief didn't authorize.
+// FRONT F1 (Task 4a): hostileStructure(b, team): what team's shooters may
+// treat as an enemy STRUCTURE target. Team 2 (attacker): player towers/walls
+// (as today) + the player depot's masonry. Team 1 (player): enemy towers/
+// walls (none until F3 — the set is ready for them) + the enemy depot's
+// masonry. Structure fire never fog-gates (the law) — range + arcClears only.
+export function hostileStructure(b, team) {
+  if (!b.alive) return false;
+  if (team === 1) {
+    if ((b.kind === "tower" || b.kind === "wall") && b.team === 2) return true; // F3-ready
+    return b.kind === "chunk" && b.town === "depot2";
+  }
+  if ((b.kind === "tower" || b.kind === "wall") && b.team === 1) return true;
+  return b.kind === "chunk" && b.town === "depot";
+}
+
 const INFANTRY_BLAST_R = 0.3, INFANTRY_KV = 0.5;
 export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })) {
   const spec = INFANTRY_ARMS[squad.type];
@@ -518,9 +533,9 @@ export function makeWaveState() {
 // stuck-unit bug signal, not a dial.
 export const WAVE_TIMEOUT = 75;
 
-export function makeRunState({ waves, startResources = 120, startLives = 20 }) {
+export function makeRunState({ waves, startResources = 120 }) {
   return {
-    resources: startResources, lives: startLives, kills: 0,
+    resources: startResources, kills: 0,
     ws: makeWaveState(), spawnRR: 0,
     mode: "wall", sellMode: false, inspectId: null,
     started: false, gameOver: false, victory: false, attrition: false, ledgerLoss: false,
@@ -542,12 +557,13 @@ export function makeRunState({ waves, startResources = 120, startLives = 20 }) {
 // this is called) are appended under the CLEARED header.
 export function makeDispatch(waveIdx, totalWaves, intelLines = []) {
   const wo = "WO-" + String(1000 + waveIdx).padStart(4, "0");
-  const next = waveIdx + 2;
+  // FRONT F1: open-ended copy — the war runs until a depot falls, so the
+  // card never counts down to a final wave (totalWaves kept in the signature
+  // for callers; deliberately unread).
   return {
     wo,
     lines: [
       `WAVE ${waveIdx + 1} CLEARED. HOLD.`,
-      next <= totalWaves ? `RESUPPLY INBOUND — WAVE ${next} OF ${totalWaves}.` : "FINAL WAVE CLEARED.",
       ...intelLines,
       "ACKNOWLEDGE TO CONTINUE.",
     ],
@@ -590,23 +606,22 @@ export function regimentDestroyed(S) {
   return false;
 }
 
-// The single place a run flips to LOSS: depot destroyed (lives <= 0) or the
-// stubbed regiment-destroyed hook. Idempotent — no-ops once the run has
-// already ended. Headless-testable, called from DepotGame.jsx's frame loop.
+// FRONT F1: lives are gone — the depot's masonry is its own health bar
+// (checkDepotBreach sets gameOver directly). What remains here is the
+// stubbed regiment-destroyed hook, kept so a future player-side regiment
+// wipe still has its single loss gate. Idempotent, headless-testable.
 export function checkLoss(S) {
   if (S.gameOver || S.victory) return false;
-  if (S.lives <= 0 || regimentDestroyed(S)) {
-    S.lives = Math.max(0, S.lives);
+  if (regimentDestroyed(S)) {
     S.gameOver = true;
     return true;
   }
   return false;
 }
 
-// The single place a run flips to WIN: called once the final wave clears.
-// Real book-value audit — player side (scrap + standing structures) vs.
-// attacker side (regiment scrap + surviving heads/tanks at purchase price).
-// Falling short still ends the run, but as a ledger LOSS rather than a WIN.
+// FRONT F1: RETIRED AS AN ENDING — advance() no longer calls this (waves
+// cycle; the only enders are the two breaches). Kept exported because the
+// economy probe still reads the book-value verdict; F5 may delete it.
 export function checkWin(S, WAVES, snap = {}) {
   if (playerBookValue(S, snap) >= attackerBookValue(S)) {
     S.victory = true;
@@ -618,12 +633,13 @@ export function checkWin(S, WAVES, snap = {}) {
 }
 
 // End-of-run dispatch copy — same teletyped card style as the between-wave
-// stall dispatch, reused for the WIN/LOSS end card. Pure + deterministic.
-export function makeEndDispatch({ victory, kills, wave, totalWaves, attrition = false, spent = false, ledgerLoss = false, breach = false, enemyBreach = false }) {
+// stall dispatch. FRONT F1: only two endings exist — a depot fell. Victory
+// means THEIR depot is rubble; loss means YOURS is. The retired verdict
+// branches (attrition, spent, ledger, final-wave) are gone with their
+// endings; extra fields in the argument object are tolerated and ignored.
+export function makeEndDispatch({ victory, kills = 0 }) {
   const wo = "WO-9999";
-  // FRONT F1: the victory-breach card outranks the generic victory branches —
-  // rubble at their end is THE ending, not a bookkeeping verdict.
-  if (victory && enemyBreach) {
+  if (victory) {
     return {
       wo,
       lines: [
@@ -633,61 +649,11 @@ export function makeEndDispatch({ victory, kills, wave, totalWaves, attrition = 
       ],
     };
   }
-  if (!victory && breach) {
-    return {
-      wo,
-      lines: [
-        "THE DEPOT IS BREACHED.",
-        "The position is lost. Withdrawal under fire.",
-      ],
-    };
-  }
-  if (victory) {
-    if (attrition) {
-      return {
-        wo,
-        lines: [
-          "THE FORMATION OPPOSITE IS JUDGED COMBAT-INEFFECTIVE.",
-          "The field remains in Bureau hands.",
-          `${kills} CONFIRMED. FIELD ORDER CLOSED.`,
-        ],
-      };
-    }
-    if (spent) {
-      return {
-        wo,
-        lines: [
-          "Three musters called. The enemy could not field a wave.",
-          "The offensive is judged spent. The field remains in Bureau hands.",
-          `${kills} CONFIRMED. FIELD ORDER CLOSED.`,
-        ],
-      };
-    }
-    return {
-      wo,
-      lines: [
-        "FINAL WAVE CLEARED.",
-        "The position held. The books close in the Bureau's favor.",
-        `${kills} CONFIRMED. FIELD ORDER CLOSED.`,
-      ],
-    };
-  }
-  if (ledgerLoss) {
-    return {
-      wo,
-      lines: [
-        "FINAL WAVE CLEARED.",
-        "The position is judged untenable. Withdrawal authorized.",
-        `${kills} CONFIRMED BEFORE THE LEDGER CLOSED.`,
-      ],
-    };
-  }
   return {
     wo,
     lines: [
-      "DEPOT OVERRUN.",
-      `LOST AT WAVE ${wave} OF ${totalWaves}.`,
-      `${kills} CONFIRMED BEFORE THE LINE BROKE.`,
+      "THE DEPOT IS BREACHED.",
+      "The position is lost. Withdrawal under fire.",
     ],
   };
 }
@@ -725,7 +691,9 @@ function buildMixBag(mix) {
 export function startWave(S, WAVES, opts = {}) {
   const { useTable = false, reg = null, snap = null, rng = null } = opts;
   const ws = S.ws;
-  const w = WAVES[ws.waveIdx];
+  // FRONT F1: waves cycle — the index clamps at the last table row and the
+  // war runs until a depot falls. // provisional (F2 replaces waves wholesale)
+  const w = WAVES[Math.min(ws.waveIdx, WAVES.length - 1)];
   let units, delay, mix;
   if (useTable || !reg) {
     units = w.units;
@@ -793,33 +761,25 @@ export function tryStall(S, WAVES, liveEnemies, rng = null, world = null) {
   // structure kills, leaks) before the dispatch card is drawn — the next
   // wave's planWave call reads reg.scrap as left by this.
   if (S.reg && S.ws.results) payResults(S.reg, S.ws.results);
-  // Attrition victory: checked at every stall, independent of wave index or
-  // book value. A regiment driven combat-ineffective (see economy.js) ends
-  // the run early as a WIN — the attacker can no longer field a wave.
-  if (S.reg && !S.gameOver && !S.victory && combatIneffective(S.reg)) {
-    S.victory = true;
-    S.attrition = true;
+  // FRONT F1: a broken or starved regiment no longer ENDS the war — it just
+  // can't defend its depot. The bureau notes it once; the guns finish it.
+  // Each observation is a one-time dispatch line composed at this stall
+  // (digit-free bureau voice), spliced onto the card below.
+  const observations = [];
+  if (S.reg && !S._reportedBreak && combatIneffective(S.reg)) {
+    S._reportedBreak = true; // one-time dispatch line, composed at this stall
+    observations.push("The formation opposite is judged combat-ineffective. The guns will say the rest.");
   }
-  // Economic-paralysis victory: a strong defense can starve the attacker
-  // (massacres pay nothing, per payResults above) without ever driving the
-  // regiment's heads/tanks under combatIneffective's threshold — the field
-  // stays crowded with unspent conscripts the attacker simply can't afford
-  // to muster. Tracked across stalls (S.starvedStreak): a stall counts as
-  // starved ONLY IF this wave fielded zero units AND the attacker could not
-  // afford even a token 4-conscript muster AT MUSTER TIME (ws.musterScrap,
-  // snapshotted by startWave BEFORE planWave spends the scrap — the post-buy
-  // balance is near zero after every healthy muster and must never be read
-  // here). A wave that fielded troops ALWAYS resets the streak to 0. Three
-  // CONSECUTIVE starved stalls reads as the offensive being spent — an
-  // early WIN, independent of and stacked after the combatIneffective check
-  // above (either can fire first; both are guarded by !S.gameOver &&
-  // !S.victory so they can't double-fire the same stall).
-  if (S.reg && !S.gameOver && !S.victory) {
+  // Starvation is still tracked (same muster-time solvency rule as before:
+  // ws.musterScrap snapshotted by startWave BEFORE planWave spends, a
+  // fielded wave always resets the streak) — but three starved stalls now
+  // only earn a report, not a victory.
+  if (S.reg) {
     const starved = (S.ws.fielded || 0) === 0 && (S.ws.musterScrap ?? S.reg.scrap) < MIN_WAVE_FLOOR;
     S.starvedStreak = starved ? (S.starvedStreak || 0) + 1 : 0;
-    if (S.starvedStreak >= 3) {
-      S.victory = true;
-      S.spent = true;
+    if (S.starvedStreak >= 3 && !S._reportedSpent) {
+      S._reportedSpent = true; // one-time dispatch line
+      observations.push("Three musters called and none fielded. The offensive opposite is judged spent.");
     }
   }
   // Intel: one-wave-old plan (S.intelPlan, buffered by startWave) plus the
@@ -833,6 +793,9 @@ export function tryStall(S, WAVES, liveEnemies, rng = null, world = null) {
     else intelLines = composeIntel(S.intelPlan, S.reg, rng);
   }
   const d = makeDispatch(S.ws.waveIdx, WAVES.length, intelLines);
+  // One-time bureau observations (combat-ineffective / spent) slot above the
+  // ACKNOWLEDGE line — reports, not verdicts.
+  for (const line of observations) d.lines.splice(d.lines.length - 1, 0, line);
   // Truthful withdrawal line: appears ONLY when at least one unit actually
   // withdrew (never on annihilated waves), and stays digit-free.
   if (S.ws.withdrew > 0) {
@@ -844,8 +807,7 @@ export function tryStall(S, WAVES, liveEnemies, rng = null, world = null) {
 }
 
 // The timeout sweep: every ACTUALLY-alive team-2 body (unit|vehicle) leaves
-// the world via the leak-removal mechanics (units.js checkLeaks: byId.delete
-// + bodies.splice) MINUS the lives cost and MINUS the leak event — no kill
+// the world directly (byId.delete + bodies.splice) — no kill
 // events, no bounty (nothing dies, so units.js's _paid guard never fires),
 // no smears. Their manpower returns to the regiment: they didn't die, the
 // books stay honest. Team-1 squad members are structurally untouchable
@@ -873,11 +835,8 @@ export function advance(S, WAVES, snap = {}) {
   const ws = S.ws;
   ws.waveIdx++;
   S.dispatch = null;
-  if (ws.waveIdx >= WAVES.length) {
-    checkWin(S, WAVES, snap);
-    S.phase = PHASE.BUILD;
-    return true;
-  }
+  // FRONT F1: no table-end ending — the index runs on (startWave clamps the
+  // row) and only a breach ends the run.
   S.resources += 12;
   if (S.reg) S.reg.scrap += STIPEND;
   ws.betweenWaves = true;
@@ -887,9 +846,9 @@ export function advance(S, WAVES, snap = {}) {
 }
 
 export const HUD0 = {
-  fps: 0, wave: 1, lives: 20, enemies: 0, resources: 120, walls: 0, towers: 0, kills: 0,
-  totalWaves: 50, between: true, countdown: 8, phase: PHASE.BUILD, dispatch: null, lastDispatch: null,
-  started: false, gameOver: false, victory: false, attrition: false, ledgerLoss: false, spent: false, breach: false, enemyBreach: false,
+  fps: 0, wave: 1, enemies: 0, resources: 120, walls: 0, towers: 0, kills: 0,
+  between: true, countdown: 8, phase: PHASE.BUILD, dispatch: null, lastDispatch: null,
+  started: false, gameOver: false, victory: false, breach: false, enemyBreach: false,
   mode: "wall", sellMode: false, sandbagOrient: 0, paused: false, speed: 1, inspect: null, toasts: [],
   pending: null, fogOn: true, discipline: "careful", depotStanding: 1, enemyStanding: 1,
   squadSel: null, squadFlag: null,

@@ -19,7 +19,7 @@ import { windAt } from "./wind.js";
 import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, executeWithdrawal, WAVE_TIMEOUT, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, pruneSquads } from "./state.js";
 import { SQUAD_SPECS, makeSquad, stepSquad } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accuracy.js";
-import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks, payBounties } from "./units.js";
+import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
 import { makeRegiment, payTown } from "./economy.js";
 import { makeTerritory, stepTerritory, holderAt, canBuild, fogStateFor, valueAt, EMIT } from "./territory.js";
 import { fwdUFor, fwdDirFor, invWFor } from "./orient.js";
@@ -606,7 +606,7 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
     }
   }
   if (town) stepTown(world, grid, town, onRuin);
-  checkLeaks(world, OBJ_POS);
+  // FRONT F1: no leak check — an enemy at the depot stays and chews masonry.
 }
 
 // ============================================================== component
@@ -792,7 +792,7 @@ export default function DepotGame({ onExit }) {
       try { const v = window.localStorage.getItem("coldsnap-depot-discipline"); if (v === "free" || v === "careful") discipline = v; } catch (e) {}
 
       const S = {
-        resources: 120, lives: 20, kills: 0,
+        resources: 120, kills: 0,
         ws: makeDepotWaveState(), spawnRR: 0,
         mode: "wall", sellMode: false, inspectId: null,
         started: false, gameOver: false, victory: false,
@@ -1310,10 +1310,6 @@ export default function DepotGame({ onExit }) {
         for (const e of evs) {
           if (e.type === "tdkill") {
             S.resources += e.bounty; S.kills++;
-          } else if (e.type === "leak") {
-            S.lives -= e.dmg;
-            toast(`LEAK — -${e.dmg} life${e.dmg === 1 ? "" : "s"}`);
-            if (S.ws.results) S.ws.results.leaks++;
           } else if (e.type === "kill") {
             if (e.attacker === "enemy" && S.ws.results) {
               if (e.kind === "tower") S.ws.results.towerKills++;
@@ -1329,7 +1325,7 @@ export default function DepotGame({ onExit }) {
         return evs;
       };
 
-      window.__DEPOT__ = () => ({ t: world.t, scrap: S.resources, lives: S.lives, kills: S.kills, wave: S.ws.waveIdx + 1, bodies: world.bodies.length, fps: S.fps, paused: S.paused, speed: S.speed, phase: S.phase, reg: { ...S.reg }, depotStanding: S.depotStanding != null ? S.depotStanding : 1, breach: !!S.breach, enemyStanding: S.enemyStanding != null ? S.enemyStanding : 1, enemyBreach: !!S.enemyBreach, withdrew: S.ws.withdrew || 0 });
+      window.__DEPOT__ = () => ({ t: world.t, scrap: S.resources, kills: S.kills, wave: S.ws.waveIdx + 1, bodies: world.bodies.length, fps: S.fps, paused: S.paused, speed: S.speed, phase: S.phase, reg: { ...S.reg }, depotStanding: S.depotStanding != null ? S.depotStanding : 1, breach: !!S.breach, enemyStanding: S.enemyStanding != null ? S.enemyStanding : 1, enemyBreach: !!S.enemyBreach, withdrew: S.ws.withdrew || 0 });
       window.__DEPOTACK__ = () => { if (S.doAdvance) S.doAdvance(); };
       window.__DEPOTBUILD__ = (gx, gz, mode) => buildAt(gx, gz, mode || "wall");
       window.__DEPOTSPAWN__ = (n) => { for (let i = 0; i < (n || 1); i++) spawnEnemy(world, SPAWN_POINTS[S.spawnRR++ % SPAWN_POINTS.length]); };
@@ -1376,7 +1372,7 @@ export default function DepotGame({ onExit }) {
         // debug harness: force the run into its end state for screenshotting
         // the WIN/LOSS end card without simming 50 waves — pattern matches
         // the other window.__DEPOT*__ hooks above.
-        if (victory) S.victory = true; else { S.lives = 0; S.gameOver = true; }
+        if (victory) { S.victory = true; S.enemyBreach = true; } else { S.gameOver = true; S.breach = true; }
       };
       window.__DEPOTPAIR__ = (x, z) => {
         // debug harness (6.5 Task 6): field a sniper PAIR at a world point,
@@ -1612,7 +1608,7 @@ export default function DepotGame({ onExit }) {
           if (S.started && !S.gameOver && !S.victory) {
             if (S.phase === PHASE.BUILD) {
               ws.countdown -= sdt;
-              if (ws.countdown <= 0 && ws.waveIdx < WAVES.length) startWave();
+              if (ws.countdown <= 0) startWave(); // FRONT F1: waves cycle — no table-end gate
             } else if (S.phase === PHASE.WAVE) {
               if (ws.spawnQueue > 0) {
                 ws.spawnTimer -= sdt;
@@ -1731,12 +1727,12 @@ export default function DepotGame({ onExit }) {
             const nowS = performance.now() / 1000;
             S.toasts = S.toasts.filter((t) => nowS - t.t < 2.2);
             setHud({
-              fps: S.fps, wave: Math.min(WAVES.length, S.ws.waveIdx + 1), lives: S.lives, enemies: en,
+              fps: S.fps, wave: S.ws.waveIdx + 1, enemies: en,
               resources: Math.floor(S.resources), walls: nw, towers: nt, kills: S.kills,
-              totalWaves: WAVES.length, between: S.ws.betweenWaves, countdown: Math.max(0, Math.ceil(S.ws.countdown)),
+              between: S.ws.betweenWaves, countdown: Math.max(0, Math.ceil(S.ws.countdown)),
               phase: S.phase, dispatch: S.dispatch, lastDispatch: S.lastDispatch,
               started: S.started, gameOver: S.gameOver, victory: S.victory,
-              attrition: S.attrition, spent: S.spent, ledgerLoss: S.ledgerLoss, breach: S.breach, enemyBreach: S.enemyBreach,
+              breach: S.breach, enemyBreach: S.enemyBreach,
               depotStanding: S.depotStanding != null ? S.depotStanding : 1,
               enemyStanding: S.enemyStanding != null ? S.enemyStanding : 1,
               mode: S.mode, sellMode: S.sellMode, sandbagOrient: S.sandbagOrient || 0,
@@ -1856,11 +1852,10 @@ export default function DepotGame({ onExit }) {
       <canvas key={runId} ref={canvasRef} style={P.cv} />
       <div style={P.top}>
         <div style={P.stat}><span style={{ color: "#ffd27a" }}>◆</span>{hud.resources}</div>
-        <div style={P.stat}><span style={{ color: "#ff7a7a" }}>♥</span>{hud.lives}</div>
         <div style={{ ...P.stat, cursor: hud.lastDispatch ? "pointer" : "default" }}
           onClick={() => { if (hud.lastDispatch) setRereadDispatch(true); }}
           title={hud.lastDispatch ? "re-read last dispatch" : undefined}>
-          W {hud.wave}/{hud.totalWaves}
+          W {hud.wave}
         </div>
         <div style={P.stat}>☠ {hud.enemies}</div>
         {hud.started && hud.between && !hud.gameOver && !hud.victory && (
@@ -2009,7 +2004,7 @@ export default function DepotGame({ onExit }) {
 
       {(hud.gameOver || hud.victory) && !fatal && (
         <Dispatch
-          dispatch={makeEndDispatch({ victory: hud.victory, kills: hud.kills, wave: hud.wave, totalWaves: hud.totalWaves, attrition: hud.attrition, spent: hud.spent, ledgerLoss: hud.ledgerLoss, breach: hud.breach, enemyBreach: hud.enemyBreach })}
+          dispatch={makeEndDispatch({ victory: hud.victory, kills: hud.kills })}
           gating={false}
           outcome={hud.victory ? "win" : "loss"}
           label="RETURN TO BASE"

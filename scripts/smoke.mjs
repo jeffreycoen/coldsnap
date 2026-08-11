@@ -1112,7 +1112,8 @@ try {
   // ==== TASK 6 ============== wave timeout: survivors withdraw in order
   // Force the timeout path with the __DEPOTWEDGE__ debug hook (backdates the
   // wave clock) instead of waiting 75 real seconds: spawn stragglers, wedge,
-  // and assert the stall fires with heads/tanks returned and no lives lost.
+  // and assert the stall fires with heads/tanks returned (FRONT F1: lives
+  // are retired — withdrawal must fire no leak-era side effects).
   {
     await page.evaluate(() => { if (window.__DEPOT__().phase === "stall") window.__DEPOTACK__(); });
     const inWave = await page.waitForFunction(() => window.__DEPOT__().phase === "wave",
@@ -1124,7 +1125,7 @@ try {
         window.__DEPOTSPAWN__(4);
         const h = window.__DEPOT__();
         window.__DEPOTWEDGE__();
-        return { heads: h.reg.heads, tanks: h.reg.tanks, lives: h.lives };
+        return { heads: h.reg.heads, tanks: h.reg.tanks, kills: h.kills, scrap: h.scrap };
       });
       const stalled = await page.waitForFunction(() => window.__DEPOT__().phase === "stall",
         { timeout: 15000, polling: 100 }).then(() => true).catch(() => false);
@@ -1133,8 +1134,8 @@ try {
       const returned = (after.reg.heads - before.heads) + (after.reg.tanks - before.tanks);
       ok(`depot task6: withdrawal returns manpower to the regiment [withdrew=${after.withdrew} returned=${returned}]`,
         after.withdrew > 0 && returned === after.withdrew);
-      ok(`depot task6: withdrawal costs no lives [before=${before.lives} after=${after.lives}]`,
-        after.lives === before.lives);
+      ok(`depot task6: withdrawal books no kills [before=${before.kills} after=${after.kills}]`,
+        after.kills === before.kills);
       if (process.env.DEPOT_SHOTS) await page.screenshot({ path: process.env.DEPOT_SHOTS + "/task6-withdrawal-stall.png" });
     }
   }

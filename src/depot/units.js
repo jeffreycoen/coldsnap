@@ -10,7 +10,7 @@
 // is world.rng() (mulberry32, seeded); an unseeded Math dot random() call is
 // forbidden in src/depot (scripts/depot-lint.mjs).
 import { addBody, applyDamage, explode } from "../engine/core.js";
-import { shooterFire, fieldReaches, effRange } from "./state.js";
+import { shooterFire, fieldReaches, effRange, hostileStructure } from "./state.js";
 import { arcClears } from "./accuracy.js";
 // exposureAt + the pair's shared survey/direction solvers (6.5 Task 6: ONE
 // behavior module, both signs). squads.js now imports accuracy/state for the
@@ -128,7 +128,9 @@ function stepTank(world, grid, t, dt, fwdDir, T, toUV = (x, z) => ({ u: x, v: z 
   const eR = effRange(world, muzzle, fspec);
   let tgt = null, td = eR * eR;
   for (const s of world.bodies) {
-    if ((s.kind !== "tower" && s.kind !== "wall") || !s.alive) continue;
+    // FRONT F1 (4c): the shared hostile-structure set — behavior identical
+    // to the old inline tower|wall filter except depot masonry joins it.
+    if (!hostileStructure(s, 2)) continue;
     // NOTE: deliberately NO fieldReaches gate here (unlike stepRifleman/
     // stepGrenadier below, and unlike a tank's own unit-vs-unit case). A
     // tower's own emission (EMIT.tower, territory.js) keeps the ground right
@@ -293,7 +295,7 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u
     // sits in range. Direct-fire range + arcClears LOS is the correct gate
     // for structure fire, not ground control. Unit-vs-unit targeting is
     // unaffected and correctly keeps its own field gate (see below).
-    if (!tgt.alive || (tgt.kind !== "tower" && tgt.kind !== "wall") || dx * dx + dz * dz > R2 || !arcClears(world, muzzle, tgt.pos, fspec, u.id)) tgt = null;
+    if (!hostileStructure(tgt, 2) || dx * dx + dz * dz > R2 || !arcClears(world, muzzle, tgt.pos, fspec, u.id)) tgt = null;
   }
   if (!tgt && u.scanCd <= 0) {
     // seq, not id: b.id is a module-global counter (differs across worlds
@@ -306,7 +308,9 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u
     R2 = u._effR * u._effR;
     let td = R2;
     for (const s of world.bodies) {
-      if ((s.kind !== "tower" && s.kind !== "wall") || !s.alive) continue;
+      // FRONT F1 (4c): shared hostile-structure set — identical to the old
+      // inline tower|wall filter except depot masonry joins it.
+      if (!hostileStructure(s, 2)) continue;
       const dx = s.pos.x - u.pos.x, dz = s.pos.z - u.pos.z, d2 = dx * dx + dz * dz;
       if (d2 < td && arcClears(world, muzzle, s.pos, fspec, u.id)) { td = d2; tgt = s; }
     }
@@ -383,7 +387,7 @@ function stepGrenadier(world, u, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, 
     // team 1 for as long as it's alive, so team 2's flipped read never
     // leaves "unheld". Direct-fire range + arcClears LOS is the correct
     // gate; unit-vs-unit targeting keeps its own field gate elsewhere.
-    if (!tgt.alive || (tgt.kind !== "tower" && tgt.kind !== "wall") || dx * dx + dz * dz > R2 || !arcClears(world, muzzle, tgt.pos, fspec, u.id)) tgt = null;
+    if (!hostileStructure(tgt, 2) || dx * dx + dz * dz > R2 || !arcClears(world, muzzle, tgt.pos, fspec, u.id)) tgt = null;
   }
   if (!tgt && u.scanCd <= 0) {
     // seq, not id: b.id is a module-global counter (differs across worlds
@@ -396,7 +400,8 @@ function stepGrenadier(world, u, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, 
     R2 = u._effR * u._effR;
     let td = R2;
     for (const b of world.bodies) {
-      if ((b.kind !== "tower" && b.kind !== "wall") || !b.alive) continue;
+      // FRONT F1 (4c): shared hostile-structure set (depot masonry joins).
+      if (!hostileStructure(b, 2)) continue;
       const dx = b.pos.x - u.pos.x, dz = b.pos.z - u.pos.z, d2 = dx * dx + dz * dz;
       if (d2 < td && arcClears(world, muzzle, b.pos, fspec, u.id)) { td = d2; tgt = b; }
     }
@@ -446,7 +451,9 @@ function stepSapper(world, u, dt) {
     return true;
   }
   for (const t2 of world.bodies) {
-    if ((t2.kind !== "wall" && t2.kind !== "tower") || !t2.alive) continue;
+    // FRONT F1 (4c): the sapper's wall-seek gains depot chunks via the
+    // shared hostile-structure set.
+    if (!hostileStructure(t2, 2)) continue;
     const dx2 = t2.pos.x - u.pos.x, dz2 = t2.pos.z - u.pos.z;
     if (dx2 * dx2 + dz2 * dz2 < (t2.hx + 1.3) * (t2.hx + 1.3)) { u._fuse = 1.5; u.flashT = world.t; return true; }
   }
@@ -581,23 +588,7 @@ export function stepBreakerRam(world) {
   }
 }
 
-// ------------------------------------------------------------------- leaks
-// Any live enemy that reaches the depot leaks: lives damage, unit removed.
-// Infantry (kind "unit") leak within 3.0m for 1 life (2 if tagged "heavy").
-// Vehicles (tanks, kind "vehicle") leak within 5.0m for 4 lives — TD's
-// vehicle leak semantics (ColdsnapTD.jsx :1017-1023: vehicle radius
-// 5.0/dmg 4 vs infantry radius 3.0/dmg 1-2). Without this, a tank that
-// survives to the depot marches off-map and persists forever (found during
-// Task 7 balance probing — a wave with a surviving tank never clears).
-export function checkLeaks(world, objPos) {
-  for (let i = world.bodies.length - 1; i >= 0; i--) {
-    const b = world.bodies[i];
-    if ((b.kind !== "unit" && b.kind !== "vehicle") || !b.alive || b.team !== 2) continue;
-    const radius = b.kind === "vehicle" ? 5.0 : 3.0;
-    if (Math.hypot(b.pos.x - objPos.x, b.pos.z - objPos.z) < radius) {
-      const dmg = b.kind === "vehicle" ? 4 : b.tag === "heavy" ? 2 : 1;
-      world.events.push({ type: "leak", dmg, x: b.pos.x, y: b.pos.y, z: b.pos.z });
-      world.byId.delete(b.id); world.bodies.splice(i, 1);
-    }
-  }
-}
+// FRONT F1: checkLeaks is GONE. An enemy that reaches the depot stays and
+// fights — his structure fire (the shared hostile-structure set above)
+// chews the building, and the breach census is the cost. Wave timeout
+// (executeWithdrawal) and the off-grid write-off remain the only removals.
