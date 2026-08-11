@@ -12,7 +12,9 @@
 3. **The confirm-button tap thefts (mk0.27).** Two cases where a tap silently vanishes: tapping ✓ before it's armed, and panning away from an open confirm. Both become visible/harmless.
 4. **The coin-flip test gets fixed (mk0.28).** One browser check fails randomly on a quarter of runs and costs a retry every task. The agent must find *why* it flakes and fix the cause — papering over it with a longer wait is banned.
 
-**What you'll playtest:** rockets arcing over ridges onto targets they could never reach; firefights at the front line where both sides can actually shoot each other; snappier build confirms.
+5. **MOVE and ATTACK become separate orders, and the buttons grow (mk0.29).** Today a squad has DEFEND and ATTACK, and ATTACK is both "go there" and "fight on the way." They separate: **MOVE** — travel fast, don't stop to fight (double-time the whole way, weapons quiet until you arrive); **ATTACK** — advance fighting, cover to cover, as today. And every order/confirm button gets visibly bigger — they're too small, especially under a thumb.
+
+**What you'll playtest:** rockets arcing over ridges onto targets they could never reach; firefights at the front line where both sides can actually shoot each other; snappier build confirms; ordering squads to rush ground without picking fights, and buttons you can actually hit.
 
 **Risk worth knowing:** fix 2 cuts both ways — *their* riflemen also get to shoot *your* men standing at the boundary. Symmetric, as everything.
 
@@ -49,5 +51,10 @@ Diagnosed lines (re-verify): confirmPending no-ops while unarmed (DepotGame ~:95
 
 ## T4 — kill the flake (mk0.28)
 "rotated advance observed" fails ~1 in 4 clean runs. DIAGNOSE root cause first (timing? camera tween race? the known swiftshader load sensitivity? the smoke-race lessons in project memory: never raf-poll expensive predicates, always waitForFunction+polling) and fix the CAUSE — test or game, wherever it lives. A longer sleep is a banned fix. Report the mechanism. Reading: smoke.mjs depot rotated-advance section + the smoke-race lesson comments, DepotGame rotation/camera tween, prior flake notes in F1 Task 1's report (present on clean builds).
+
+## T5 — MOVE order + bigger buttons (mk0.29)
+- **MOVE order:** third chip (MOVE | ATTACK | DEFEND). MOVE = the existing double-time path unconditionally (squads.js attack branch already has the unthreatened straight-leg mode — force it regardless of threat) + members DO NOT fire en route (squadFire's stationary gate already blocks moving shooters; assert the leg-pause case too: a MOVE squad pauses only at arrival, so add `order === "move"` to squadFire's skip). On arrival → defend, same as attack's arrival. RNG CONTRACT: the double-time path already draws its one-per-leg unconditionally — MOVE reuses it exactly; stream identity pinned vs an attack order of equal legs.
+- **Buttons grow:** the squad order chips, ✓/✗ confirm pair, and bottom build bar get a size pass — chips/confirm ~1.5x tap target (padding+font, min ~44px touch height), build-bar slots wider on touch. Render-only. One phone-framed screenshot for Jeff.
+- [ ] Failing asserts: MOVE squad crosses a threatened field without firing (attack twin fires); draws identical between MOVE and unthreatened-ATTACK of equal path; arrival flips to defend; chips render 3 orders. Reading: squads.js stepSquad (attack branch, _threatened, leg draws), state.js squadFire stationary gate, DepotGame orderSquad/squadSel chip block + P styles, smoke squad-order taps (update selectors if labels change). Traps: the one-draw-per-leg contract; trailing-tap arming (~350ms) applies to the new chip; smoke taps must use data- attributes not label text.
 
 Each task: bump MK, commit with trailers, push, FOREGROUND CI poll, report per practice.
