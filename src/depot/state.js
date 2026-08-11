@@ -474,13 +474,36 @@ export const DEPOT_CENSUS_HZ = 1; // census cadence — NOT per frame
 // time, before anything's had a chance to move. Pure, no world/rng deps.
 // FRONT F1: townId parameter — "depot" (default, today's callers) or
 // "depot2" (the enemy depot's lattice).
+// SIEGE FIX (mk0.21): the census ALSO stamps each stone's home onto the body
+// itself (b.home, the very object the census row holds). Sappers need the
+// standing/rubble verdict at plant time and have no census in hand — this
+// makes the census's own rule readable from any body, with no threading and
+// no second source of truth. The one mutation is documented here and in
+// standingStructure below; everything else about this function stays pure.
 export function censusDepotChunks(bodies, townId = "depot") {
   const out = [];
   for (const b of bodies) {
     if (b.kind !== "chunk" || b.town !== townId) continue;
-    out.push({ id: b.id, home: { x: b.pos.x, y: b.pos.y, z: b.pos.z } });
+    const home = { x: b.pos.x, y: b.pos.y, z: b.pos.z };
+    b.home = home;
+    out.push({ id: b.id, home });
   }
   return out;
+}
+
+// standingStructure(b): "is this still the BUILDING, or is it a corpse?" —
+// depotStandingFraction's rule, asked of one body. Census-stamped stone
+// (b.home) counts only while it sits within DEPOT_STANDING_TOL of where it
+// was built; anything else with no home (walls, towers, un-censused fixture
+// stone) is standing by definition — it has never been knocked anywhere.
+// Sappers (both signs) filter their targets through this: rubble is a corpse,
+// and the assault is on the building.
+export function standingStructure(b) {
+  if (!b || !b.alive) return false;
+  const h = b.home;
+  if (!h) return true;
+  const dx = b.pos.x - h.x, dy = b.pos.y - h.y, dz = b.pos.z - h.z;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz) <= DEPOT_STANDING_TOL;
 }
 
 // depotStandingFraction: fraction of the census still standing. byId is a

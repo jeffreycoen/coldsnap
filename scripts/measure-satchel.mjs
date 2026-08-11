@@ -29,6 +29,23 @@
 //   r 5.0 kv 60  -> 10 teams   (rubble-waste plateau)
 // The cliff is welded-shell physics: below it the shock never unzips the
 // perimeter and the roof stands forever; above it collapse cascades.
+//
+// SIEGE FIX (mk0.21) — Jeff doubled the charge to {r:5, kv:90, dmg:300} and
+// the sappers now spurn rubble and plant at contact range. Re-measured with
+// this harness (--sides) and scripts/diag-sapper-breach.mjs:
+//   SIDES, old {r:3.4,kv:9,dmg:150} -> shipped {r:5,kv:90,dmg:300}
+//     WALL  (hp 100): 1m 113.6->246.9 | 2m 79.5->197.2 | 3m 44.8->146.7
+//                     4m 10.1-> 96.0  | 5m  0.0-> 45.3 | 6m  0.0->  0.0
+//     TOWER (hp 130): 1m 118.0->251.8 | 2m 88.1->206.7 | 3m 57.7->160.8
+//                     4m 27.2->114.9  | 5m  0.0-> 68.8 | 6m  0.0-> 22.7
+//     UNIT  (hp 58) : lethal radius 2.5m -> 4.6m; shove at 0.5m 7.5 -> 79.3 m/s
+//     SPLASH        : friend at 3m and 4m now DIES too (was: lives) — the
+//                     fratricide channel widened; fixing it was deliberately
+//                     out of scope for mk0.21.
+//   TEAMS-TO-BREACH (real depot2, 233 stones, threshold 0.58)
+//     sequential walk-in teams: 11 -> 3   (diag "quiet" mode)
+//     20 teams massed at once : never breached (plateau 0.751) -> BREACHED at
+//                               t=60s, final fraction 0.056, on 3 charges.
 import { makeWorld, addBody, addWeld, explode, stepWorld, mulberry32 } from "../src/engine/core.js";
 import { censusDepotChunks, depotStandingFraction, spawnSquadMembers, DEPOT_BREACH_FRAC, DEPOT_STANDING_TOL } from "../src/depot/state.js";
 import { squadFire } from "../src/depot/state.js";
@@ -139,9 +156,12 @@ function teamsToBreachPlay(spec, cap = 30) {
 // Print old → new per cell. These are the recorded numbers from the mk0.14 report —
 // the harness makes them reproducible instead of historical.
 function sidesRun() {
-  const OLD = { r: 3.4, kv: 9 };
-  const NEW = { r: SATCHEL.r, kv: SATCHEL.kv };
-  const full = (s) => ({ ...s, dmg: 150, crater: 0.6, hitStruct: true, attacker: "player" });
+  // SIEGE FIX (mk0.21): the old column is the ORIGINAL charge (r 3.4, kv 9,
+  // dmg 150); the new column is whatever SATCHEL currently is, damage
+  // included — the doubling moved dmg too, so this can no longer hard-code it.
+  const OLD = { r: 3.4, kv: 9, dmg: 150 };
+  const NEW = { r: SATCHEL.r, kv: SATCHEL.kv, dmg: SATCHEL.dmg };
+  const full = (s) => ({ dmg: 150, ...s, crater: 0.6, hitStruct: true, attacker: "player" });
   const oneShot = (spec, mk) => {           // mk(world) -> body; blast at (0, 1.2, d) is set by mk
     const world = makeWorld({ field: flat, seed: 11 });
     world.depotCombat = true;
@@ -180,7 +200,7 @@ function sidesRun() {
     return { planter: planter.hp <= 0, friend: friend.hp <= 0 };
   };
   const fmt = (n) => (Math.round(n * 10) / 10).toString();
-  console.log(`SATCHEL SIDE-MEASUREMENTS — old {r:${OLD.r}, kv:${OLD.kv}} → shipped {r:${NEW.r}, kv:${NEW.kv}} (chest-height charge, one step)`);
+  console.log(`SATCHEL SIDE-MEASUREMENTS — old {r:${OLD.r}, kv:${OLD.kv}, dmg:${OLD.dmg}} → shipped {r:${NEW.r}, kv:${NEW.kv}, dmg:${NEW.dmg}} (chest-height charge, one step)`);
   for (const [label, kind, hp, hy] of [["WALL  (hp 100)", "wall", 100, 0.9], ["TOWER (hp 130)", "tower", 130, 1.5]]) {
     const cells = [];
     for (let d = 1; d <= 6; d++) cells.push(`d=${d}m ${fmt(structDmg(OLD, kind, hp, hy, d))} → ${fmt(structDmg(NEW, kind, hp, hy, d))}`);

@@ -801,6 +801,28 @@ export function makeRenderer(canvas, world0, opts = {}) {
       fire.push({ x: x + (Math.random() - 0.5) * r * 0.4, y: y + 0.3 + Math.random() * 0.6, z: z + (Math.random() - 0.5) * r * 0.4, s: 0.7 + Math.random() * r * 0.35, life: 0.32, age: 0 });
     }
   }
+  // spawnDemo: the satchel's signature (SIEGE FIX mk0.21). Roughly four times
+  // a shell's debris, a smoke COLUMN (tall, slow, stacked up the y axis rather
+  // than sprayed flat) and a fireball twice the radius — deliberately over
+  // spawnBoom so a demolition never reads as a near miss. Pool caps are still
+  // respected, so a busy frame degrades instead of stalling.
+  function spawnDemo(x, y, z, r) {
+    spawnBoom(x, y, z, r);                              // the base blast under it
+    for (let i = 0; i < 34; i++) {
+      if (debris.length >= 200) break;
+      const a = Math.random() * Math.PI * 2, up = 7 + Math.random() * 11;
+      debris.push({ x, y: y + 0.3, z, vx: Math.cos(a) * (3 + Math.random() * 10), vy: up, vz: Math.sin(a) * (3 + Math.random() * 10), rot: Math.random() * 6, spin: (Math.random() - 0.5) * 16, life: 1.8 + Math.random() * 1.2 });
+    }
+    for (let i = 0; i < 26; i++) {                      // the column: stacked, rising, slow
+      if (smoke.length >= 128) break;
+      const t = i / 26;
+      smoke.push({ x: x + (Math.random() - 0.5) * r * (0.5 + t), y: y + 0.4 + t * r * 1.6, z: z + (Math.random() - 0.5) * r * (0.5 + t), vy: 2.6 + Math.random() * 2.2, s: 1.4 + Math.random() * 1.6 + t * 1.2, life: 2.4 + Math.random() * 1.4, age: 0 });
+    }
+    for (let i = 0; i < 14; i++) {                      // the fireball
+      if (fire.length >= 96) break;
+      fire.push({ x: x + (Math.random() - 0.5) * r * 0.9, y: y + 0.3 + Math.random() * 1.6, z: z + (Math.random() - 0.5) * r * 0.9, s: 1.4 + Math.random() * r * 0.8, life: 0.5, age: 0 });
+    }
+  }
   function puff(x, y, z, n, col) {
     for (let i = 0; i < n; i++) {
       if (smoke.length >= 128) break;
@@ -895,6 +917,16 @@ export function makeRenderer(canvas, world0, opts = {}) {
       if (e.type === "boom") {
         spawnBoom(e.x, e.y, e.z, e.r);
         shake = Math.min(1.5, shake + 0.28 + e.r * 0.1);
+      } else if (e.type === "demo") {
+        // SIEGE FIX (mk0.21) — DEPOT's demolition charge (squads.js/units.js
+        // push this beside core's own boom; core.js is frozen and its boom
+        // can't say "satchel"). A sapper's charge must read as a BUILDING
+        // COMING DOWN, not another shell landing: the same instanced pools,
+        // driven much harder — a standing column of smoke instead of a puff,
+        // a wide fireball, stone thrown high and far, and a shake that stops
+        // the screen. No new pools, no new materials, cosmetic only.
+        spawnDemo(e.x, e.y, e.z, e.r);
+        shake = 1.5;
       } else if (e.type === "splat") {
         // 1024: the canvas doubled for the block grid; the demo's 512 factors
         // here were painting craters (and treads below) at half position

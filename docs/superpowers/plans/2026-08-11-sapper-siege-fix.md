@@ -52,3 +52,33 @@ export const SATCHEL = { r: 5, kv: 90, dmg: 300, crater: 0.6, hitStruct: true };
 - `scripts/measure-satchel.mjs` + `scripts/diag-sapper-breach.mjs` — the measurement harnesses (extend, don't fork; the diag script has the massed/sequential/live run modes).
 - `scripts/depot-test.mjs` — existing pins that WILL move: mk0.17 Pin A band, Task 4½ breach-through-play team count, enemy-sapper behavior fingerprints; every moved pin is a declared re-measure in the report.
 - **Trap notes:** depot stones have NO hp — displacement/joint-break is the only demolition currency (walls DO have hp — dmg 300 one-shots them, was already one-shot at 150; state plainly); depot welds 120k, town 80k; rng contracts (satchel path draws zero); coordinate spaces (canonical vs world) irrelevant here but hover near territory code; the sleep/wake rule if touching movement.
+
+## Re-measured after implementation (mk0.21, 2026-08-11) — measured, not tuned
+
+**SATCHEL side-measurements** (`node scripts/measure-satchel.mjs --sides`), old
+`{r:3.4, kv:9, dmg:150}` → shipped `{r:5, kv:90, dmg:300}`, chest-height charge:
+
+| probe | 1m | 2m | 3m | 4m | 5m | 6m |
+|---|---|---|---|---|---|---|
+| WALL hp-damage (hp 100) | 113.6 → 246.9 | 79.5 → 197.2 | 44.8 → 146.7 | 10.1 → 96.0 | 0.0 → 45.3 | 0.0 → 0.0 |
+| TOWER hp-damage (hp 130) | 118.0 → 251.8 | 88.1 → 206.7 | 57.7 → 160.8 | 27.2 → 114.9 | 0.0 → 68.8 | 0.0 → 22.7 |
+
+- UNIT (hp 58): lethal radius **2.5m → 4.6m**; shove |v| at 0.5m **7.5 → 79.3 m/s**.
+- OWN-TEAM SPLASH: planter always dies (unchanged). A friendly at 3m and at 4m
+  now **dies too** (previously lived) — the fratricide channel WIDENED. Fixing
+  fratricide was deliberately excluded from this task.
+- mk0.17 Pin A band re-pinned in depot-test: satchel-vs-wall at 4m was 47
+  (band 35–60), now **96.0** (band 80–115). Declared re-measure.
+
+**Teams-to-breach** (real depot2 lattice, 233 stones, breach < 0.58 standing):
+
+| measurement | before | after |
+|---|---|---|
+| sequential walk-in teams (`diag-sapper-breach.mjs quiet 20`) | ~11 | **3** |
+| 20 teams massed at once (`diag-sapper-breach.mjs mass 20`) | NEVER (plateau 0.751) | **BREACHED at t=60s**, final 0.056 |
+| depot-test F1/4.5i through-play | 9 | **2** |
+
+The massed case now breaches — on **3** planted charges, all 3 on standing
+masonry, **0** on rubble (was ~30 of 34 wasted on rubble). Fratricide is still
+present (22 carriers lost to their own side's blasts before planting) and is now
+worse per blast, but it no longer decides the outcome.

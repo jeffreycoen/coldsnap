@@ -7,14 +7,14 @@ import {
   fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed,
   censusDepotChunks, depotStandingFraction, checkDepotBreach, checkEnemyBreach, stepDepotCensus, hostileStructure,
   spawnSquadMembers, spawnSandbag, SANDBAG_COST, pruneSquads,
-  DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, DEPOT_CENSUS_HZ,
+  DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, DEPOT_CENSUS_HZ, standingStructure,
 } from "../src/depot/state.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "../src/depot/accuracy.js";
 import { friendlyFouls } from "../src/depot/state.js";
 import {
   makeWorld, addBody, addWeld, fireProjectile, explode, stepWorld, applyDamage, worldHash, CAUSE, mulberry32, aimSolve,
 } from "../src/engine/core.js";
-import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, WAVES as DEPOT_WAVES, MASON, INFANTRY_ARMS, SATCHEL } from "../src/depot/specs.js";
+import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, WAVES as DEPOT_WAVES, MASON, INFANTRY_ARMS, SATCHEL, SAPPER_PLANT_PAD } from "../src/depot/specs.js";
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties, SNIPER_FIRE } from "../src/depot/units.js";
 import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad, COHESION_M } from "../src/depot/squads.js";
 import {
@@ -760,11 +760,16 @@ function grenLobRun(seed, wind) {
   const world = makeWorld({ seed: 5 });
   world.depotCombat = true;
   const g0 = world.field.heightAt(0, 0);
-  const wall = addBody(world, { kind: "wall", team: 1, mass: 100, hx: 0.4, hy: 0.83, hz: 0.4, x: 0, y: g0 + 0.83, z: 0, hp: 70 });
-  const sapper = spawnUnit(world, { x: 0.9, z: 0 }, "sapper");
+  // SIEGE FIX (mk0.21): the plant gate is CONTACT range now (hx +
+  // SAPPER_PLANT_PAD), not arm's length, so this fixture has to let the man
+  // actually WALK ONTO the wall instead of leaning on a jittered spawn
+  // happening to land inside the old 1.7m reach — a proper 2.4m-wide wall
+  // segment, the sapper staged 5m off it and marching -z straight into it.
+  const wall = addBody(world, { kind: "wall", team: 1, mass: 100, hx: 1.2, hy: 0.83, hz: 0.4, x: 0, y: g0 + 0.83, z: 0, hp: 70 });
+  const sapper = spawnUnit(world, { x: 0, z: 5 }, "sapper");
   const grid = straightGrid(0, -1);
   let fused = false;
-  for (let i = 0; i < 200 && wall.alive; i++) {
+  for (let i = 0; i < 400 && wall.alive; i++) {
     stepUnits(world, grid, identFwdDir);
     if (sapper._fuse != null) fused = true;
     stepWorld(world);
@@ -5403,7 +5408,13 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     const srcU = fs.readFileSync(new URL("../src/depot/units.js", import.meta.url), "utf8");
     const i0 = srcU.indexOf("function stepSapper"); const j0 = srcU.indexOf("\n// ", i0);
     const sha = createHash("sha1").update(srcU.slice(i0, j0)).digest("hex");
-    ok("F1/4.5f: enemy stepSapper source bytes unchanged (modulo the shared SATCHEL spell)", sha === "0af8b8132c1a73dc732f6947155f07a16234a741", sha);
+    // SIEGE FIX (mk0.21) — DECLARED RE-PIN of both fingerprints. stepSapper's
+    // bytes change by design this time: the enemy sapper takes the SAME
+    // standing-masonry filter, the SAME shared contact pad and the SAME
+    // demolition marker the player's sappers took (symmetry is the law), so
+    // the slice sha1 moves 0af8b81... -> 98292fb..., and his behavior hash
+    // moves with the doubled charge and the tighter plant.
+    ok("F1/4.5f: enemy stepSapper source bytes pinned (mk0.21: shared filter + pad + demo marker)", sha === "98292fb241479800bc48dfa24bafe403a12615d0", sha);
     const Tg = makeTerritory(120, 120); Tg.v.fill(1);
     const world = makeWorld({ field: flatS, seed: 47 });
     world.depotCombat = true;
@@ -5411,7 +5422,7 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     spawnUnit(world, { x: 0, z: 0 }, "sapper");
     world.dt = 1 / 60;
     for (let i = 0; i < 8 * 60; i++) { stepUnits(world, straightGrid(0, 1), identFwdDir, Tg, (x, z) => ({ u: x, v: z })); stepWorld(world); }
-    ok("F1/4.5f: enemy sapper behavior re-pinned under the shared bigger charge (was 2646093 at {r:3.4,kv:9})", worldHash(world) === 2935719, `hash=${worldHash(world)}`);
+    ok("F1/4.5f: enemy sapper behavior re-pinned (mk0.21 doubled charge + contact plant; was 2935719 at kv45/1.3, 2646093 at {r:3.4,kv:9})", worldHash(world) === 3365681, `hash=${worldHash(world)}`);
   }
 
   // (g) twin determinism of the demolition path.
@@ -5501,7 +5512,13 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     explode(world, 0, 1.2, 4, { ...SATCHEL, attacker: "enemy" });   // d=4m — the measured 47-damage case
     stepWorld(world);
     const dmg = 100 - wall.hp;
-    ok("F1-fix A: satchel-vs-wall damage at 4m within the recorded band", dmg > 35 && dmg < 60);
+    // SIEGE FIX (mk0.21) — DECLARED RE-PIN. The charge doubled (dmg 150 ->
+    // 300), so this band moves with it: the measured figure at 4m went 47 ->
+    // 96.0, and the whole curve is now 1m 246.9 / 2m 197.2 / 3m 146.7 /
+    // 4m 96.0 / 5m 45.3 / 6m 0.0 against a 100hp wall. Every wall in the game
+    // is one-shot well inside 4m, which was already true at 150 — walls have
+    // hp; the doubling only widens the range at which they die.
+    ok("F1-fix A: satchel-vs-wall damage at 4m within the recorded band (mk0.21: doubled charge)", dmg > 80 && dmg < 115, `dmg=${dmg.toFixed(1)}`);
   }
 
   // F1-fix B: friendlyFouls holds for OWN depot masonry, fires through THEIRS.
@@ -5689,6 +5706,233 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
   }
 }
 // ==== end F1.5 TASK 1 ========================================================
+
+// ==== SAPPER SIEGE FIX (mk0.21) ==============================================
+// Jeff's four directives (2026-08-11): (1) the satchel is twice the charge,
+// (2) the detonation is visibly unmistakable, (3) sappers walk PAST rubble and
+// plant only on standing masonry, (4) they get as close as pathing physically
+// allows before planting. Symmetry law: the enemy sapper gets the identical
+// spec / filter / distance via the shared constants in specs.js.
+{
+  const flatX = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+
+  // (a) A — twice the charge. One shared spec, both signs.
+  ok("SIEGE a: SATCHEL doubled to {kv:90, dmg:300} (radius unmoved)",
+    SATCHEL.kv === 90 && SATCHEL.dmg === 300 && SATCHEL.r === 5, JSON.stringify(SATCHEL));
+
+  // (b) D — the contact-range constant is ONE shared export, tighter than the
+  // old hx + 1.3 arm's-length gate, and both sappers spell it.
+  ok("SIEGE b: SAPPER_PLANT_PAD exported and tighter than the old 1.3 reach",
+    typeof SAPPER_PLANT_PAD === "number" && SAPPER_PLANT_PAD < 1.3, String(SAPPER_PLANT_PAD));
+  {
+    const srcQ = fs.readFileSync(new URL("../src/depot/squads.js", import.meta.url), "utf8");
+    const srcU2 = fs.readFileSync(new URL("../src/depot/units.js", import.meta.url), "utf8");
+    ok("SIEGE b: both sides spell the shared pad (no literal 1.3 plant gate left)",
+      /SAPPER_PLANT_PAD/.test(srcQ) && /SAPPER_PLANT_PAD/.test(srcU2)
+      && !/hx \+ 1\.3\)/.test(srcQ) && !/hx \+ 1\.3\)/.test(srcU2));
+  }
+
+  // (c) C — standing masonry only. A rubble stone (shoved 3m off its home) in
+  // arm's reach is IGNORED; the man keeps his charge for the standing wall.
+  // standingStructure is the census's own rule, reused.
+  {
+    const world = makeWorld({ field: flatX, seed: 71 });
+    world.depotCombat = true;
+    const stone = addBody(world, { kind: "chunk", team: 0, mass: 100, hx: 0.4, hy: 0.4, hz: 0.4,
+      x: 0, y: 0.42, z: 0, friction: 0.65 });
+    stone.town = "depot2";
+    censusDepotChunks(world.bodies, "depot2");            // stamps b.home
+    ok("SIEGE c: a stone at home reads STANDING", standingStructure(stone) === true);
+    stone.pos.x += 3;                                      // blasted clear — rubble
+    ok("SIEGE c: a stone 3m off its home reads RUBBLE", standingStructure(stone) === false);
+    ok("SIEGE c: a wall (no census home) always reads standing",
+      standingStructure(addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.5, hy: 0.8, hz: 0.5, x: 20, y: 0.8, z: 0, hp: 100 })) === true);
+  }
+  // (c2) behavioral: a sapper squad ordered through a field of rubble does NOT
+  // spend its charges on it — it walks on to the standing lattice beyond.
+  {
+    const world = makeWorld({ field: flatX, seed: 72 });
+    world.depotCombat = true;
+    // standing lattice at z = 14, with a lump of rubble lying in the approach
+    // at z = 11.2 (same town, alive, but 3m off its recorded home — exactly the
+    // wreckage an earlier charge throws into the next team's path). Under the
+    // OLD arm's-length rule the first man reaching z ~ 9.5 would spend his
+    // charge on that corpse; he must now step around it and go on to the wall.
+    for (let ix = -1; ix <= 1; ix++) for (let iy = 0; iy <= 2; iy++) {
+      const c = addBody(world, { kind: "chunk", team: 0, mass: MASON.mass, hx: MASON.hcs, hy: MASON.hcs, hz: MASON.hcs,
+        x: ix * MASON.pitch, y: MASON.hcs + 0.02 + iy * MASON.pitch, z: 14, friction: 0.65, restitution: 0.02 });
+      c.sleeping = true; c.town = "depot2";
+    }
+    const rubble = addBody(world, { kind: "chunk", team: 0, mass: MASON.mass, hx: MASON.hcs, hy: MASON.hcs, hz: MASON.hcs,
+      x: 0, y: MASON.hcs + 0.02, z: 11.2, friction: 0.65, restitution: 0.02 });
+    rubble.sleeping = true; rubble.town = "depot2";
+    censusDepotChunks(world.bodies, "depot2");
+    rubble.home.z -= 3;                                    // it was blasted here from 3m back
+    const squad = makeSquad(1, "sappers", 1, 0, 8);
+    for (let i = 0; i < 2; i++) {
+      const u = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: i * 1.1 - 0.55, y: 0.74, z: 8, hp: 58 });
+      u.utype = "sappers"; u.squadId = squad.id; squad.memberIds.push(u.id);
+    }
+    squad.order = "attack"; squad.dest = { x: 0, z: 14 };
+    let plantZ = null;
+    const dt = 1 / 30;
+    for (let i = 0; i < 25 / dt; i++) {
+      stepSquad(world, squad, dt);
+      for (const id of squad.memberIds) {
+        const u = world.byId.get(id);
+        if (u && u.alive && u._fuse != null && plantZ == null) plantZ = u.pos.z;
+      }
+      for (let s = 0; s < 20; s++) stepWorld(world);
+      if (!squad.memberIds.some((id) => { const u = world.byId.get(id); return u && u.alive; })) break;
+    }
+    ok("SIEGE c2: the team walks PAST the rubble and plants at the standing wall",
+      plantZ != null && plantZ > 12.5, `plantZ=${plantZ == null ? "never" : plantZ.toFixed(2)}`);
+  }
+
+  // (d) D — the plant happens at CONTACT range: the fuse only ever lights
+  // within the shared pad of a standing stone's face (never at the old 1.3).
+  {
+    const world = makeWorld({ field: flatX, seed: 73 });
+    world.depotCombat = true;
+    for (let ix = -1; ix <= 1; ix++) for (let iy = 0; iy <= 2; iy++) {
+      const c = addBody(world, { kind: "chunk", team: 0, mass: MASON.mass, hx: MASON.hcs, hy: MASON.hcs, hz: MASON.hcs,
+        x: ix * MASON.pitch, y: MASON.hcs + 0.02 + iy * MASON.pitch, z: 10, friction: 0.65, restitution: 0.02 });
+      c.sleeping = true; c.town = "depot2";
+    }
+    censusDepotChunks(world.bodies, "depot2");
+    const squad = makeSquad(1, "sappers", 1, 0, 4);
+    for (let i = 0; i < 2; i++) {
+      const u = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: i * 1.1 - 0.55, y: 0.74, z: 4, hp: 58 });
+      u.utype = "sappers"; u.squadId = squad.id; squad.memberIds.push(u.id);
+    }
+    squad.order = "attack"; squad.dest = { x: 0, z: 10 };
+    let gap = null;
+    const dt = 1 / 30;
+    for (let i = 0; i < 25 / dt && gap == null; i++) {
+      stepSquad(world, squad, dt);
+      for (const id of squad.memberIds) {
+        const u = world.byId.get(id);
+        if (!u || !u.alive || u._fuse == null || gap != null) continue;
+        let best = Infinity;
+        for (const b of world.bodies) {
+          if (b.kind !== "chunk" || !b.alive || !standingStructure(b)) continue;
+          best = Math.min(best, Math.hypot(b.pos.x - u.pos.x, b.pos.z - u.pos.z) - b.hx);
+        }
+        gap = best;
+      }
+      for (let s = 0; s < 20; s++) stepWorld(world);
+    }
+    ok("SIEGE d: the charge is planted at contact range (face gap <= the shared pad)",
+      gap != null && gap <= SAPPER_PLANT_PAD + 1e-6, `gap=${gap == null ? "never planted" : gap.toFixed(3)}m pad=${SAPPER_PLANT_PAD}`);
+  }
+
+  // (e) B — the detonation SHOWS. The demolition pushes its own cosmetic
+  // event alongside core's standard boom (core.js is frozen — the depot layer
+  // emits the marker), and the renderer scales the existing pools off it.
+  {
+    const world = makeWorld({ field: flatX, seed: 74 });
+    world.depotCombat = true;
+    const u = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 0, hp: 58 });
+    u.utype = "sappers";
+    const squad = makeSquad(1, "sappers", 1, 0, 0); squad.memberIds.push(u.id);
+    squad.order = "attack";
+    u._fuse = 0.01;
+    world.events.length = 0;
+    stepSquad(world, squad, 1 / 30);
+    const demo = world.events.find((e) => e.type === "demo");
+    ok("SIEGE e: the player charge emits a demolition marker event", !!demo && demo.r === SATCHEL.r, JSON.stringify(demo || null));
+    ok("SIEGE e: core's own boom still fires alongside it (no core change)", world.events.some((e) => e.type === "boom"));
+    const srcR = fs.readFileSync(new URL("../src/render/renderer.js", import.meta.url), "utf8");
+    ok("SIEGE e: the renderer consumes the demolition marker", /e\.type === "demo"/.test(srcR));
+    const srcC = fs.readFileSync(new URL("../src/engine/core.js", import.meta.url), "utf8");
+    ok("SIEGE e: core.js stays frozen (the marker is pushed by the depot layer, not the engine)",
+      !/type:\s*"demo"/.test(srcC));
+  }
+  // (e2) symmetry: the enemy sapper's detonation shows the same way.
+  {
+    const Tg = makeTerritory(120, 120); Tg.v.fill(1);
+    const world = makeWorld({ field: flatX, seed: 75 });
+    world.depotCombat = true;
+    const s = spawnUnit(world, { x: 0, z: 0 }, "sapper");
+    s._fuse = 0.001;
+    world.dt = 1 / 60; world.events.length = 0;
+    stepUnits(world, straightGrid(0, 1), identFwdDir, Tg, (x, z) => ({ u: x, v: z }));
+    ok("SIEGE e2: the ENEMY charge emits the same demolition marker (symmetry)",
+      world.events.some((e) => e.type === "demo" && e.r === SATCHEL.r));
+  }
+
+  // (f) symmetry of the FILTER and the DISTANCE on the enemy sign: their
+  // sapper ignores rubble too, and stops at the same contact pad.
+  {
+    const Tg = makeTerritory(120, 120); Tg.v.fill(1);
+    const world = makeWorld({ field: flatX, seed: 76 });
+    world.depotCombat = true;
+    const rub = addBody(world, { kind: "chunk", team: 0, mass: MASON.mass, hx: MASON.hcs, hy: MASON.hcs, hz: MASON.hcs,
+      x: 0, y: MASON.hcs + 0.02, z: 5, friction: 0.65 });
+    rub.town = "depot";
+    censusDepotChunks(world.bodies, "depot");
+    rub.home.z -= 3;                                        // rubble, blasted forward
+    const s = spawnUnit(world, { x: 0, z: 0 }, "sapper");
+    world.dt = 1 / 60;
+    let litAt = null;
+    for (let i = 0; i < 6 * 60 && litAt == null; i++) {
+      stepUnits(world, straightGrid(0, 1), identFwdDir, Tg, (x, z) => ({ u: x, v: z }));
+      if (s._fuse != null) litAt = s.pos.z;
+      stepWorld(world);
+    }
+    ok("SIEGE f: the enemy sapper spurns rubble too (no fuse on a displaced stone)",
+      litAt == null, `litAt=${litAt}`);
+  }
+
+  // (g) the approach-and-plant path still draws NOTHING (the demolition
+  // marker is a push, not a roll) and the whole demolition — blast included —
+  // stays twin-deterministic. Draws are counted up to the plant, not through
+  // the blast: core's own explode/applyDamage draw, as they always have, and
+  // that is the engine's business, not the sapper's (same scope as the
+  // original F1/4.5d pin).
+  {
+    const runS = (countDraws) => {
+      const world = makeWorld({ field: flatX, seed: 77 });
+      world.depotCombat = true;
+      for (let ix = -1; ix <= 1; ix++) for (let iy = 0; iy <= 2; iy++) {
+        const c = addBody(world, { kind: "chunk", team: 0, mass: MASON.mass, hx: MASON.hcs, hy: MASON.hcs, hz: MASON.hcs,
+          x: ix * MASON.pitch, y: MASON.hcs + 0.02 + iy * MASON.pitch, z: 10, friction: 0.65, restitution: 0.02 });
+        c.sleeping = true; c.town = "depot2";
+        for (const o of world.bodies) {
+          if (o === c || o.kind !== "chunk") continue;
+          if (Math.abs(o.pos.x - c.pos.x) < MASON.pitch * 1.1 && Math.abs(o.pos.y - c.pos.y) < MASON.pitch * 1.1
+              && Math.abs(o.pos.x - c.pos.x) + Math.abs(o.pos.y - c.pos.y) > 1e-6) addWeld(world, c, o, MASON.breakF * 1.5);
+        }
+      }
+      censusDepotChunks(world.bodies, "depot2");
+      // staged ALREADY at the wall (anchor inside ARRIVE_TOL of the dest) so
+      // the squad's own per-attack-leg dwell draw — pre-existing march
+      // behavior, documented in stepSquad, nothing to do with the charge —
+      // never fires and the demolition path is measured on its own.
+      const squad = makeSquad(1, "sappers", 1, 0, 9.2);
+      for (let i = 0; i < 2; i++) {
+        const u = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: i * 1.1 - 0.55, y: 0.74, z: 9.2, hp: 58 });
+        u.utype = "sappers"; u.squadId = squad.id; squad.memberIds.push(u.id);
+      }
+      squad.order = "attack"; squad.dest = { x: 0, z: 10 };
+      let draws = 0;
+      if (countDraws) { const r0 = world.rng; world.rng = () => { draws++; return r0(); }; }
+      const dt = 1 / 30;
+      let lit = false;
+      for (let i = 0; i < (countDraws ? 1.4 : 6) / dt; i++) {
+        stepSquad(world, squad, dt);
+        if (squad.memberIds.some((id) => { const u = world.byId.get(id); return u && u._fuse != null; })) lit = true;
+        for (let s = 0; s < 20; s++) stepWorld(world);
+      }
+      return { hash: worldHash(world), draws, lit };
+    };
+    const gRun = runS(true);
+    ok("SIEGE g: the charge is planted (fuse lit) with ZERO rng draws in the approach-and-plant path",
+      gRun.lit && gRun.draws === 0, `lit=${gRun.lit} draws=${gRun.draws}`);
+    ok("SIEGE g: twin determinism of the demolition path", runS(false).hash === runS(false).hash);
+  }
+}
+// ==== end SAPPER SIEGE FIX ===================================================
 
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);

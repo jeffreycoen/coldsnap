@@ -10,14 +10,14 @@
 // is world.rng() (mulberry32, seeded); an unseeded Math dot random() call is
 // forbidden in src/depot (scripts/depot-lint.mjs).
 import { addBody, applyDamage, explode } from "../engine/core.js";
-import { shooterFire, fieldReaches, effRange, hostileStructure } from "./state.js";
+import { shooterFire, fieldReaches, effRange, hostileStructure, standingStructure } from "./state.js";
 import { arcClears } from "./accuracy.js";
 // exposureAt + the pair's shared survey/direction solvers (6.5 Task 6: ONE
 // behavior module, both signs). squads.js now imports accuracy/state for the
 // stand-point scorer — the same documented-safe deferred cycle accuracy.js
 // and state.js already share (no top-level cross calls).
 import { exposureAt, surveyHighGround, bestStandPoint } from "./squads.js";
-import { ENEMY_SPECS, ENEMY_FIRE, TANK, INFANTRY_ARMS, SATCHEL } from "./specs.js";
+import { ENEMY_SPECS, ENEMY_FIRE, TANK, INFANTRY_ARMS, SATCHEL, SAPPER_PLANT_PAD } from "./specs.js";
 
 // ---------------------------------------------------------------- spawning
 export function spawnUnit(world, sp, tag) {
@@ -445,6 +445,9 @@ function stepSapper(world, u, dt) {
     u._fuse -= dt;
     u.v.x *= 1 - Math.min(1, 8 * dt); u.v.z *= 1 - Math.min(1, 8 * dt);
     if (u._fuse <= 0) {
+      // SIEGE FIX (mk0.21): the enemy demolition SHOWS the same way the
+      // player's does — a cosmetic marker beside core's boom (core frozen).
+      world.events.push({ type: "demo", x: u.pos.x, y: u.pos.y, z: u.pos.z, r: SATCHEL.r });
       explode(world, u.pos.x, u.pos.y, u.pos.z, { ...SATCHEL, attacker: "enemy" });
       applyDamage(world, u, 1e9, { attacker: "enemy" });
     }
@@ -454,8 +457,13 @@ function stepSapper(world, u, dt) {
     // FRONT F1 (4c): the sapper's wall-seek gains depot chunks via the
     // shared hostile-structure set.
     if (!hostileStructure(t2, 2)) continue;
+    // SIEGE FIX (mk0.21): STANDING masonry only, and CONTACT range — the
+    // identical filter and the identical shared pad the player's sappers use
+    // (squads.js stepSapperCharges). Symmetry is the law.
+    if (!standingStructure(t2)) continue;
     const dx2 = t2.pos.x - u.pos.x, dz2 = t2.pos.z - u.pos.z;
-    if (dx2 * dx2 + dz2 * dz2 < (t2.hx + 1.3) * (t2.hx + 1.3)) { u._fuse = 1.5; u.flashT = world.t; return true; }
+    const reach2 = t2.hx + SAPPER_PLANT_PAD;
+    if (dx2 * dx2 + dz2 * dz2 < reach2 * reach2) { u._fuse = 1.5; u.flashT = world.t; return true; }
   }
   return false; // otherwise runs with the flow like everyone else
 }

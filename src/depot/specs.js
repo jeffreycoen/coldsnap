@@ -91,7 +91,30 @@ export const MASON = { hcs: 0.40, pitch: 0.83, mass: 100, breakF: 8.0e4 };
 // kv 42 -> 17, kv 45 -> 9, kv 60 -> 10 (rubble-waste plateau). kv 45 is the
 // smallest charge that breaches with a single-digit team count from the real
 // plant distance (hx + 1.3). dmg/crater unchanged from the old charge.
-export const SATCHEL = { r: 5, kv: 45, dmg: 150, crater: 0.6, hitStruct: true }; // provisional (F5)
+// SIEGE FIX (mk0.21) — Jeff 2026-08-11 directive 1: the charge is DOUBLED.
+// Force AND damage double (kv 45 -> 90, dmg 150 -> 300); the radius is a
+// separate dial he did not move, so r stays 5. Known consequences, measured
+// and reported rather than tuned around: the mk0.17 satchel-vs-wall band
+// moves (walls have hp — 150 already one-shot a 100hp wall, 300 merely
+// one-shots it harder); the infantry lethal radius grows; and the ENEMY
+// sapper carries this same doubled charge against the player's depot and
+// walls (symmetry is the law). Depot stones have NO hp at all — displacement
+// past DEPOT_STANDING_TOL and weld-breaking (120,000 at a depot) is the only
+// demolition currency there, which is what kv buys.
+export const SATCHEL = { r: 5, kv: 90, dmg: 300, crater: 0.6, hitStruct: true }; // provisional (F5)
+
+// SIEGE FIX (mk0.21) — Jeff's directive 4: get as close as possible before
+// planting. The plant gate was arm's length (chunk hx + 1.3); this is CONTACT
+// range, and it is the tightest value the player sapper can physically reach:
+// squads.js hands every member a clearSlot-vetted goal, and clearSlot rejects
+// any point within (stone hx + member hx 0.28 + SLOT_CLEAR_PAD 0.35) of a
+// solid — so hx + 0.63 is the closest a man's CENTER can be legally parked,
+// and seekGoal settles within 0.15 of that goal. hx + 0.7 is that floor plus
+// a hair of settle margin. The enemy sapper (flow-field driven, no slot
+// vetting) can and does close further; he shares the constant so the trigger
+// is identical on both signs. Closer plant = more of the blast's force lands
+// on the stone, which is the physics reason the old 1.3 under-delivered.
+export const SAPPER_PLANT_PAD = 0.7;
 
 // Infantry arms — both teams use identical values (symmetry). All fire flows
 // through shooterFire + the accuracy model; occl/windF/windComp like any shooter.

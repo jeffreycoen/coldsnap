@@ -36,8 +36,8 @@ export const SQUAD_SPECS = {           // costs are scrap; members spawn as unit
 // accuracy.js): no side calls the other's export at module top level, only
 // from inside function bodies invoked long after evaluation.
 import { arcClears } from "./accuracy.js";
-import { effRange, hostileStructure } from "./state.js";
-import { INFANTRY_ARMS, SATCHEL } from "./specs.js";
+import { effRange, hostileStructure, standingStructure } from "./state.js";
+import { INFANTRY_ARMS, SATCHEL, SAPPER_PLANT_PAD } from "./specs.js";
 // FRONT F1 (Task 4.5): the player sapper's satchel — same core explode/
 // applyDamage the enemy sapper uses (units.js stepSapper), sign-flipped.
 import { applyDamage, explode } from "../engine/core.js";
@@ -403,7 +403,8 @@ const ARRIVE_TOL = 1.0;
 
 // ------------------------------------------------- the satchel (F1 Task 4.5)
 // Mirror of units.js stepSapper, sign-flipped: each sapper carries ONE
-// charge; within arm's reach (hx + 1.3) of a hostileStructure(b, 1) target —
+// charge; at CONTACT range (hx + SAPPER_PLANT_PAD) of a STANDING
+// hostileStructure(b, 1) target —
 // enemy depot masonry now, enemy towers/walls when F3 builds them — he
 // plants: 1.5s fuse, the identical blast, and the charge consumes him
 // ("the sapper rarely survives his work"; symmetry is the law and the
@@ -416,6 +417,14 @@ function stepSapperCharges(world, squad, dt, members) {
       u._fuse -= dt;
       u.v.x *= 1 - Math.min(1, 8 * dt); u.v.z *= 1 - Math.min(1, 8 * dt);
       if (u._fuse <= 0) {
+        // SIEGE FIX (mk0.21) directive 2 — SHOW the blast. core.js is frozen,
+        // and its boom event carries no way to say "this was a demolition
+        // charge, not a shell", so the depot layer pushes a parallel COSMETIC
+        // marker beside it. Renderer-only (renderer.js's consume): it scales
+        // the existing debris/smoke/fire pools into a demolition column and
+        // kicks the shake — no new pools, no engine change, no sim effect,
+        // no rng.
+        world.events.push({ type: "demo", x: u.pos.x, y: u.pos.y, z: u.pos.z, r: SATCHEL.r });
         explode(world, u.pos.x, u.pos.y, u.pos.z, { ...SATCHEL, attacker: "player" }); // THE shared charge (specs.js) — both sides, one spec
         applyDamage(world, u, 1e9, { attacker: "player" });
       }
@@ -424,8 +433,15 @@ function stepSapperCharges(world, squad, dt, members) {
     if (squad.order !== "attack") continue; // no charge use on defend
     for (const t2 of world.bodies) {
       if (!hostileStructure(t2, 1)) continue;
+      // SIEGE FIX (mk0.21) directive 3 — STANDING masonry only. Rubble already
+      // knocked off its home is a corpse; blowing it again is the wasted-charge
+      // channel the breach diagnosis found (~30 of 34 charges). The enemy
+      // sapper runs the identical filter (units.js) — symmetry is the law.
+      if (!standingStructure(t2)) continue;
       const dx = t2.pos.x - u.pos.x, dz = t2.pos.z - u.pos.z;
-      if (dx * dx + dz * dz < (t2.hx + 1.3) * (t2.hx + 1.3)) { u._fuse = 1.5; u.flashT = world.t; break; }
+      // directive 4 — CONTACT range (specs.js SAPPER_PLANT_PAD), not arm's length.
+      const reach = t2.hx + SAPPER_PLANT_PAD;
+      if (dx * dx + dz * dz < reach * reach) { u._fuse = 1.5; u.flashT = world.t; break; }
     }
   }
 }
