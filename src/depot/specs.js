@@ -80,6 +80,19 @@ export const WAVES = Array.from({ length: 50 }, (_, i) => {
 
 export const MASON = { hcs: 0.40, pitch: 0.83, mass: 100, breakF: 8.0e4 };
 
+// FRONT F1 Task 4.5 — THE satchel charge, one spec for both sides (the enemy
+// sapper's stepSapper and the player sapper squad detonate this exact object;
+// symmetry is law). Raised from {r:3.4, kv:9} by Jeff's decision 2026-08-11:
+// the old charge peaked at 89,268 force vs the depot's 120,000 joint strength
+// — sappers could never breach a depot. Tuned by measurement (see
+// scripts/measure-satchel.mjs for the full {r,kv} curve): {r:5, kv:30} is the
+// knee. Measured THROUGH PLAY (real squads walking in, wasting charges on
+// scattered rubble like real sappers do): kv 30 -> 56 teams, kv 38 -> 18,
+// kv 42 -> 17, kv 45 -> 9, kv 60 -> 10 (rubble-waste plateau). kv 45 is the
+// smallest charge that breaches with a single-digit team count from the real
+// plant distance (hx + 1.3). dmg/crater unchanged from the old charge.
+export const SATCHEL = { r: 5, kv: 45, dmg: 150, crater: 0.6, hitStruct: true }; // provisional (F5)
+
 // Infantry arms — both teams use identical values (symmetry). All fire flows
 // through shooterFire + the accuracy model; occl/windF/windComp like any shooter.
 export const INFANTRY_ARMS = {

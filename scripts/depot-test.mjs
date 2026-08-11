@@ -5235,6 +5235,261 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
 }
 // ==== end FRONT F1 Task 4 ====================================================
 
+// ==== FRONT F1 Task 4.5: the player sapper squad =============================
+// Rifle fire moves reinforced depot masonry ZERO meters (Task 4's measured
+// truth) — the sapper team is the symmetric fix: the exact mirror of the
+// enemy's satchel sapper. One charge per man, 1.5s fuse, the charge consumes
+// the planter, ATTACK-order only, no rifle, zero rng draws in the charge path.
+{
+  const { createHash } = await import("node:crypto");
+  const flatS = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+  const { hcs, pitch, mass } = MASON;
+  const mkLatticeS = (world, townId, z0, welds = false) => {
+    const chunks = [];
+    for (let ix = 0; ix < 3; ix++) for (let iy = 0; iy <= 2; iy++) {
+      const c = addBody(world, { kind: "chunk", team: 0, mass, hx: hcs, hy: hcs, hz: hcs,
+        x: (ix - 1) * pitch, y: hcs + 0.02 + iy * pitch, z: z0, friction: 0.65, restitution: 0.02 });
+      c.sleeping = true; c.town = townId; c.gpos = [ix, iy, 0]; chunks.push(c);
+    }
+    if (welds) {
+      const key = (a, b) => a + "," + b;
+      const map = new Map(chunks.map((c) => [key(c.gpos[0], c.gpos[1]), c]));
+      for (const c of chunks) for (const d of [[1, 0], [0, 1]]) {
+        const o = map.get(key(c.gpos[0] + d[0], c.gpos[1] + d[1]));
+        if (o) addWeld(world, c, o, MASON.breakF * 1.5); // the depot weld (buildTown)
+      }
+    }
+    return chunks;
+  };
+  const mkSquadS = (world, x, z, type) => {
+    const squad = makeSquad(1, type, 1, x, z);
+    for (let i = 0; i < SQUAD_SPECS[type].n; i++) {
+      const u = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: x + i * 1.1 - 0.55, y: 0.74, z, hp: 58 });
+      u.utype = type; u.squadId = squad.id;
+      squad.memberIds.push(u.id);
+    }
+    return squad;
+  };
+
+  // (a) the spec exists: 2 men, 25 scrap, provisional.
+  ok("F1/4.5a: SQUAD_SPECS.sappers exists (n:2, cost:25)",
+    !!SQUAD_SPECS.sappers && SQUAD_SPECS.sappers.n === 2 && SQUAD_SPECS.sappers.cost === 25,
+    JSON.stringify(SQUAD_SPECS.sappers));
+
+  // (b) ordered onto depot2 (welded — the reinforced lattice rifles measured
+  // ZERO against), the team plants, detonates, dies to its own work, pays no
+  // bounty, and displaces stone past DEPOT_STANDING_TOL. The contrast is run
+  // in the SAME fixture with rifles first.
+  const runTeamS = (world, x, z, destZ) => {
+    const squad = mkSquadS(world, x, z, "sappers");
+    squad.order = "attack"; squad.dest = { x, z: destZ };
+    const dt = 1 / 30;
+    for (let i = 0; i < 20 / dt; i++) {
+      stepSquad(world, squad, dt); squadFire(world, squad, dt);
+      for (let s = 0; s < 20; s++) stepWorld(world);
+      if (!squad.memberIds.some((id) => { const u = world.byId.get(id); return u && u.alive; })) break;
+    }
+    return squad;
+  };
+  {
+    // rifles contrast: 20s of squad fire vs the welded lattice moves nothing
+    // past the standing tolerance (Task 4's 0.000m truth, re-pinned here).
+    const worldR = makeWorld({ field: flatS, seed: 52 });
+    worldR.depotCombat = true;
+    const chunksR = mkLatticeS(worldR, "depot2", 10, true);
+    const censusR = censusDepotChunks(worldR.bodies, "depot2");
+    const squadR = mkSquadS(worldR, 0, 0, "rifles");
+    squadR.order = "defend";
+    const dtR = 1 / 30;
+    for (let i = 0; i < 20 / dtR; i++) { squadFire(worldR, squadR, dtR); for (let s = 0; s < 20; s++) stepWorld(worldR); }
+    ok("F1/4.5b: the contrast — rifle fire moves NO welded stone past tolerance", depotStandingFraction(censusR, worldR.byId) === 1, `frac=${depotStandingFraction(censusR, worldR.byId)} chunks=${chunksR.length}`);
+
+    const world = makeWorld({ field: flatS, seed: 52 });
+    world.depotCombat = true;
+    mkLatticeS(world, "depot2", 10, true);
+    const census = censusDepotChunks(world.bodies, "depot2");
+    const squad = runTeamS(world, 0, 4, 10);
+    const members = squad.memberIds.map((id) => world.byId.get(id));
+    ok("F1/4.5b: the charge consumes the planter (both sappers die to their own work)",
+      members.every((u) => !u || !u.alive), members.map((u) => u && u.alive).join(","));
+    payBounties(world);
+    ok("F1/4.5b: no bounty paid to anyone (no tdkill events)", !world.events.some((e) => e.type === "tdkill"));
+    // Task 4.5 final (Jeff's bigger-charge decision): ONE team's charges,
+    // planted at the real stopping distance, scatter welded depot stone past
+    // the 1.2m standing tolerance — the real thing, where 3,696 rifle rounds
+    // measured 0.000m and the old {r:3.4, kv:9} charge managed ~0.5m.
+    let maxD = 0;
+    for (const c of census) {
+      const b = world.byId.get(c.id);
+      const d = !b || !b.alive ? 9 : Math.hypot(b.pos.x - c.home.x, b.pos.y - c.home.y, b.pos.z - c.home.z);
+      if (d > maxD) maxD = d;
+    }
+    ok("F1/4.5b: one team scatters welded stone past the standing tolerance (>=1.2m; rifles measured 0.000m)", maxD >= DEPOT_STANDING_TOL, `maxDisp=${maxD.toFixed(3)}m`);
+  }
+
+  // (c) defend order never plants — a sapper team standing in arm's reach of
+  // the enemy depot on DEFEND holds its charges (and its lives).
+  {
+    const world = makeWorld({ field: flatS, seed: 53 });
+    world.depotCombat = true;
+    mkLatticeS(world, "depot2", 10, true);
+    const census = censusDepotChunks(world.bodies, "depot2");
+    const squad = mkSquadS(world, 0, 8.8, "sappers");
+    squad.order = "defend";
+    const dt = 1 / 30;
+    let inReachSeen = false, fuseLit = false;
+    for (let i = 0; i < 6 / dt; i++) {
+      stepSquad(world, squad, dt); squadFire(world, squad, dt);
+      for (const id of squad.memberIds) {
+        const u = world.byId.get(id);
+        if (!u || !u.alive) continue;
+        if (u._fuse != null) fuseLit = true;
+        for (const b of world.bodies) {
+          if (b.kind !== "chunk" || b.town !== "depot2") continue;
+          const dx = b.pos.x - u.pos.x, dz = b.pos.z - u.pos.z;
+          if (dx * dx + dz * dz < (b.hx + 1.3) * (b.hx + 1.3)) { inReachSeen = true; break; }
+        }
+      }
+      for (let s = 0; s < 20; s++) stepWorld(world);
+    }
+    ok("F1/4.5c: defend order never plants (men in arm's reach, no fuse ever, stone standing)",
+      inReachSeen && !fuseLit && depotStandingFraction(census, world.byId) === 1,
+      `inReach=${inReachSeen} lit=${fuseLit}`);
+  }
+
+  // (d) sappers never rifle-fire and the plant path draws NOTHING — run to
+  // just before detonation (fuse lit, no blast yet): zero rng draws.
+  {
+    const world = makeWorld({ field: flatS, seed: 54 });
+    world.depotCombat = true;
+    mkLatticeS(world, "depot2", 10, true);
+    const man = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 4, y: 0.86, z: 6, hp: 1e9 });
+    const squad = mkSquadS(world, 0, 8, "sappers");
+    squad.order = "attack"; squad.dest = { x: 0, z: 14 };
+    const rng0 = world.rng; let draws = 0; world.rng = () => { draws++; return rng0(); };
+    const dt = 1 / 30;
+    for (let i = 0; i < 1.4 / dt; i++) { stepSquad(world, squad, dt); squadFire(world, squad, dt); for (let s = 0; s < 20; s++) stepWorld(world); }
+    const lit = squad.memberIds.some((id) => { const u = world.byId.get(id); return u && u._fuse != null; });
+    ok("F1/4.5d: a charge is planted under ATTACK order (fuse lit)", lit);
+    ok("F1/4.5d: zero rng draws in the whole approach-and-plant path", draws === 0, `draws=${draws}`);
+    ok("F1/4.5d: sappers never rifle-fire (enemy man in range, untouched)", man.hp === 1e9);
+  }
+
+  // (e) stream identity on a sapperless run — pinned worldHash + draw count
+  // captured on ce446a4 BEFORE this task's code existed. Any drift means the
+  // sapper wiring perturbed existing squads' behavior or the rng stream.
+  {
+    const world = makeWorld({ field: flatS, seed: 45 });
+    world.depotCombat = true;
+    mkLatticeS(world, "depot2", 14);
+    const squad = makeSquad(1, "rifles", 1, 0, -8);
+    for (let i = 0; i < 4; i++) {
+      const u = addBody(world, { kind: "unit", team: 1, mass: 90, hx: 0.3, hy: 0.9, hz: 0.3, x: i * 1.1 - 2, y: 0.9, z: -8, hp: 100 });
+      squad.memberIds.push(u.id);
+    }
+    squad.order = "attack"; squad.dest = { x: 0, z: 8 };
+    const rng0 = world.rng; let draws = 0; world.rng = () => { draws++; return rng0(); };
+    const dt = 1 / 30;
+    for (let i = 0; i < 12 / dt; i++) { stepSquad(world, squad, dt); squadFire(world, squad, dt); for (let s = 0; s < 20; s++) stepWorld(world); }
+    ok("F1/4.5e: sapperless stream identity (pre-change pin 4000566214 / 97 draws)",
+      worldHash(world) === 4000566214 && draws === 97, `hash=${worldHash(world)} draws=${draws}`);
+  }
+
+  // (f) the enemy sapper's code path is untouched EXCEPT the shared charge
+  // spec (Task 4.5 final: SATCHEL in specs.js, both sides, Jeff's decision) —
+  // source bytes pinned (sha1 of the stepSapper slice, now spelling
+  // ...SATCHEL) AND behavior re-pinned under the bigger charge (the old
+  // {r:3.4, kv:9} pin was 2646093; the delta is the charge and only the
+  // charge — the wall-seek/fuse/plant logic bytes are identical).
+  {
+    const srcU = fs.readFileSync(new URL("../src/depot/units.js", import.meta.url), "utf8");
+    const i0 = srcU.indexOf("function stepSapper"); const j0 = srcU.indexOf("\n// ", i0);
+    const sha = createHash("sha1").update(srcU.slice(i0, j0)).digest("hex");
+    ok("F1/4.5f: enemy stepSapper source bytes unchanged (modulo the shared SATCHEL spell)", sha === "0af8b8132c1a73dc732f6947155f07a16234a741", sha);
+    const Tg = makeTerritory(120, 120); Tg.v.fill(1);
+    const world = makeWorld({ field: flatS, seed: 47 });
+    world.depotCombat = true;
+    addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.5, hy: 0.8, hz: 0.5, x: 0, y: 0.8, z: 12, hp: 100 });
+    spawnUnit(world, { x: 0, z: 0 }, "sapper");
+    world.dt = 1 / 60;
+    for (let i = 0; i < 8 * 60; i++) { stepUnits(world, straightGrid(0, 1), identFwdDir, Tg, (x, z) => ({ u: x, v: z })); stepWorld(world); }
+    ok("F1/4.5f: enemy sapper behavior re-pinned under the shared bigger charge (was 2646093 at {r:3.4,kv:9})", worldHash(world) === 2935719, `hash=${worldHash(world)}`);
+  }
+
+  // (g) twin determinism of the demolition path.
+  {
+    const runT = () => {
+      const world = makeWorld({ field: flatS, seed: 52 });
+      world.depotCombat = true;
+      mkLatticeS(world, "depot2", 10, true);
+      runTeamS(world, 0, 4, 10);
+      return worldHash(world);
+    };
+    ok("F1/4.5g: twin determinism (identical hash, twin demolition runs)", runT() === runT());
+  }
+
+  // (h) build bar: the team is purchasable through the normal squad flow —
+  // source pins on the mode map and the bar entry (JSX, not importable).
+  {
+    const srcD = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("F1/4.5h: SQUAD_MODE routes sq_sappers through the squad placement flow", /sq_sappers:\s*"sappers"/.test(srcD));
+    ok("F1/4.5h: the build bar sells the sapper team", /key:\s*"sq_sappers"/.test(srcD));
+  }
+
+  // (i) victory by breach THROUGH PLAY — the first real win. Real map, real
+  // buildTown, teams thrown at depot2 until the census breaks. Teams-to-
+  // breach is MEASURED and reported, never tuned.
+  {
+    const depotSrcW = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    const sliceFnW = (name) => {
+      const start = depotSrcW.indexOf(`\nfunction ${name}(`);
+      if (start < 0) throw new Error("F1/4.5 extract: missing function " + name);
+      const rest = depotSrcW.slice(start + 1);
+      const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
+      return rest.slice(0, m < 0 ? rest.length : m + 9);
+    };
+    const headerW = depotSrcW.slice(depotSrcW.indexOf("const GRID_CS"), depotSrcW.indexOf("function genMap"));
+    const MW = new Function(
+      "mulberry32", "MASON", "fwdUFor", "fwdDirFor", "invWFor", "addBody", "addWeld",
+      [headerW, sliceFnW("genMap"), sliceFnW("makeMap"), sliceFnW("pondAt"), sliceFnW("rockAt"),
+        sliceFnW("makeGrid"), sliceFnW("checkConnectivity"), sliceFnW("buildTown"),
+        `return { makeMap, makeGrid, buildTown, state: () => ({ ORIENT, TOWN }) };`].join("\n"),
+    )(mulberry32, MASON, fwdUFor, fwdDirFor, invWFor, addBody, addWeld);
+    MW.makeMap(5);
+    const stW = MW.state();
+    const dep2 = stW.TOWN.find((t) => t.id === "depot2");
+    const world = makeWorld({ field: { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } }, seed: 5 });
+    world.depotCombat = true;
+    MW.buildTown(world, MW.makeGrid(null), { heightAt: () => 0 });
+    const census2 = censusDepotChunks(world.bodies, "depot2");
+    const S45 = makeRunState({ waves: WAVES });
+    let teams = 0, frac = 1;
+    while (frac >= DEPOT_BREACH_FRAC && teams < 60) {
+      teams++;
+      // stage the team 8m off the depot face (canonical -z side is open
+      // ground), pointed at the lattice center.
+      const dx = dep2.x, dz = dep2.z;
+      const off = 8 + (dep2.nz * MASON.pitch) / 2;
+      const sq = makeSquad(1000 + teams, "sappers", 1, dx, dz + Math.sign(dz || 1) * off);
+      spawnSquadMembers(world, sq);
+      sq.order = "attack"; sq.dest = { x: dx, z: dz };
+      const dt = 1 / 30;
+      for (let i = 0; i < 30 / dt; i++) {
+        stepSquad(world, sq, dt); squadFire(world, sq, dt);
+        for (let s = 0; s < 20; s++) stepWorld(world);
+        if (!sq.memberIds.some((id) => { const u = world.byId.get(id); return u && u.alive; })) break;
+      }
+      frac = depotStandingFraction(census2, world.byId);
+    }
+    checkEnemyBreach(S45, frac);
+    ok("F1/4.5i: repeated teams breach the enemy depot THROUGH PLAY -> victory",
+      frac < DEPOT_BREACH_FRAC && S45.victory === true && S45.enemyBreach === true,
+      `teams=${teams} frac=${frac.toFixed(3)}`);
+    console.log(`F1/4.5 MEASURED: teams-to-breach = ${teams} (fraction ${frac.toFixed(3)})`);
+  }
+}
+// ==== end FRONT F1 Task 4.5 ==================================================
+
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
   process.exit(1);

@@ -21,6 +21,10 @@ export const SQUAD_SPECS = {           // costs are scrap; members spawn as unit
   sniper: { n: 2, cost: 45, label: "SNIPER" },
   rifles: { n: 4, cost: 20, label: "RIFLE SQUAD" },
   mg:     { n: 2, cost: 25, label: "MG TEAM" },
+  // FRONT F1 (Task 4.5): the demolition team — the exact mirror of the
+  // enemy's satchel sapper. Tools, not shooters: no rifle (squadFire skips
+  // the type), one charge per man, the charge consumes the planter.
+  sappers: { n: 2, cost: 25, label: "SAPPER TEAM" }, // provisional (F5)
 };
 
 // Task 6 (the pair): squads.js now imports arcClears/effRange/INFANTRY_ARMS
@@ -29,8 +33,11 @@ export const SQUAD_SPECS = {           // costs are scrap; members spawn as unit
 // accuracy.js): no side calls the other's export at module top level, only
 // from inside function bodies invoked long after evaluation.
 import { arcClears } from "./accuracy.js";
-import { effRange } from "./state.js";
-import { INFANTRY_ARMS } from "./specs.js";
+import { effRange, hostileStructure } from "./state.js";
+import { INFANTRY_ARMS, SATCHEL } from "./specs.js";
+// FRONT F1 (Task 4.5): the player sapper's satchel — same core explode/
+// applyDamage the enemy sapper uses (units.js stepSapper), sign-flipped.
+import { applyDamage, explode } from "../engine/core.js";
 
 export function makeSquad(id, type, team, x, z) {
   // _surveyPending: the pair's placement/re-anchor survey trigger — set here
@@ -390,14 +397,61 @@ export function squadThreatened(world, squad, members) {
 //           "defend" with anchor=dest.
 const DEFEND_SLOT_R = 3;
 const ARRIVE_TOL = 1.0;
+
+// ------------------------------------------------- the satchel (F1 Task 4.5)
+// Mirror of units.js stepSapper, sign-flipped: each sapper carries ONE
+// charge; within arm's reach (hx + 1.3) of a hostileStructure(b, 1) target —
+// enemy depot masonry now, enemy towers/walls when F3 builds them — he
+// plants: 1.5s fuse, the identical blast, and the charge consumes him
+// ("the sapper rarely survives his work"; symmetry is the law and the
+// fiction). Plant only under ATTACK order; a lit fuse burns down regardless
+// (orders don't defuse a satchel). Zero rng draws — deterministic scan
+// order, fixed fuse, fixed blast.
+function stepSapperCharges(world, squad, dt, members) {
+  for (const u of members) {
+    if (u._fuse != null) {
+      u._fuse -= dt;
+      u.v.x *= 1 - Math.min(1, 8 * dt); u.v.z *= 1 - Math.min(1, 8 * dt);
+      if (u._fuse <= 0) {
+        explode(world, u.pos.x, u.pos.y, u.pos.z, { ...SATCHEL, attacker: "player" }); // THE shared charge (specs.js) — both sides, one spec
+        applyDamage(world, u, 1e9, { attacker: "player" });
+      }
+      continue;
+    }
+    if (squad.order !== "attack") continue; // no charge use on defend
+    for (const t2 of world.bodies) {
+      if (!hostileStructure(t2, 1)) continue;
+      const dx = t2.pos.x - u.pos.x, dz = t2.pos.z - u.pos.z;
+      if (dx * dx + dz * dz < (t2.hx + 1.3) * (t2.hx + 1.3)) { u._fuse = 1.5; u.flashT = world.t; break; }
+    }
+  }
+}
+
 export function stepSquad(world, squad, dt) {
   const members = squad.memberIds.map((id) => world.byId.get(id)).filter((u) => u && u.alive);
   if (!members.length) return;
+  if (squad.type === "sappers") stepSapperCharges(world, squad, dt, members);
 
   if (squad.order === "attack" && squad.dest) {
     const cx = squad.anchor.x, cz = squad.anchor.z;
     const dToDest = Math.hypot(squad.dest.x - cx, squad.dest.z - cz);
-    if (dToDest <= ARRIVE_TOL) {
+    // F1 Task 4.5: a sapper squad's ATTACK completes when the charges are
+    // spent, not when the virtual anchor touches the dest — the anchor
+    // arriving (it walks through masonry; men don't) must not flip the squad
+    // to defend while a live man still carries his satchel, or the second
+    // charge is forever wasted (found by the through-play breach measurement:
+    // one charge per team detonated, the other man stood at the wall
+    // holding his). The enemy sapper has no such flip — he marches until his
+    // charge is in the wall. Symmetry restored; other squad types unchanged.
+    const chargesCarried = squad.type === "sappers" && members.some((u) => u._fuse == null);
+    if (dToDest <= ARRIVE_TOL && chargesCarried) {
+      // hold the anchor at the dest WITHOUT the leg machinery (its leg-
+      // arrival rng draw must never fire per-tick); members below keep
+      // seeking their formation slots — clearSlot pushes those to the
+      // nearest clear ground, which at a depot dest is right at the walls,
+      // i.e. into arm's reach.
+      squad._legTarget = null;
+    } else if (dToDest <= ARRIVE_TOL) {
       squad.order = "defend";
       squad.anchor = { x: squad.dest.x, z: squad.dest.z };
       squad.dest = null;
@@ -462,6 +516,7 @@ export function stepSquad(world, squad, dt) {
 
     const n = members.length;
     members.forEach((u, i) => {
+      if (u._fuse != null) return; // a planting sapper holds his ground (fuse drives him)
       const slot = slotFor(squad, i, n);
       u.goal = clearSlot(world, slot.x, slot.z, memberClear(u)); // never march a man into masonry
       u.settled = false; // pair poses (renderer) only ever read true while holding
@@ -503,6 +558,7 @@ export function stepSquad(world, squad, dt) {
     });
   }
   members.forEach((u) => {
+    if (u._fuse != null) return; // a planting sapper holds his ground (fuse drives him)
     u.goal = u._slotGoal || slotFor(squad, squad.memberIds.indexOf(u.id), members.length);
     // the pair's directed ground outranks the formation micro-slot
     if (u.role === "spotter" && squad._spotGoal) u.goal = squad._spotGoal;

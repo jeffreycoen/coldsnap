@@ -957,7 +957,7 @@ export default function DepotGame({ onExit }) {
       // ---------------------------------------------- squads (Phase 5 Task 3)
       // Build-bar mode keys -> squad type. Prefixed (sq_mg vs mg) because the
       // MG TOWER already owns the bare "mg" mode key.
-      const SQUAD_MODE = { sq_sniper: "sniper", sq_rifles: "rifles", sq_mg: "mg" };
+      const SQUAD_MODE = { sq_sniper: "sniper", sq_rifles: "rifles", sq_mg: "mg", sq_sappers: "sappers" };
       // Infantry/sandbag placement checks: same validatePlacement gate as
       // towers (occupied/ice/held/afford) — men don't claim the grid cell
       // (no cell.blocked write, no connectivity re-check: bodies, not
@@ -1005,7 +1005,9 @@ export default function DepotGame({ onExit }) {
           const muzzle = { x: wp.x, y: y + 1.24, z: wp.z }; // ground + 0.74 seat + 0.5 squadFire muzzle
           poly = reachPolygon(world, null, muzzle, arms, 1, invW);
         } else {
-          ringR = arms.range;
+          // sappers carry no arms entry (no rifle) — no reach preview at all;
+          // their reach is their feet.
+          ringR = arms ? arms.range : 0;
         }
         S.pending = { gx, gz, mode, squad: type, wp, y, poly, ringR, color: 0xffd27a, cost: SQUAD_SPECS[type].cost, armedAt: world.t + PENDING_ARM_S }; // amber: a green fan vanishes into the held-terrain wash
       };
@@ -1843,6 +1845,9 @@ export default function DepotGame({ onExit }) {
     { key: "sq_sniper", label: "SNIPER", icon: "✛", cost: SQUAD_SPECS.sniper.cost },
     { key: "sq_rifles", label: "RIFLES", icon: "∴", cost: SQUAD_SPECS.rifles.cost },
     { key: "sq_mg", label: "MG TEAM", icon: "≣", cost: SQUAD_SPECS.mg.cost },
+    // F1 Task 4.5: the demolition team — the only player weapon that moves
+    // reinforced depot masonry (rifles measured at zero).
+    { key: "sq_sappers", label: "SAPPERS", icon: "✸", cost: SQUAD_SPECS.sappers.cost },
     // icon reflects pending orientation (sandbagOrient): ▬ (long x) vs ▮ (long z)
     { key: "sandbag", label: "SANDBAG", icon: hud.sandbagOrient ? "▮" : "▬", cost: SANDBAG_COST },
   ];

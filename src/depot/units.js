@@ -17,7 +17,7 @@ import { arcClears } from "./accuracy.js";
 // stand-point scorer — the same documented-safe deferred cycle accuracy.js
 // and state.js already share (no top-level cross calls).
 import { exposureAt, surveyHighGround, bestStandPoint } from "./squads.js";
-import { ENEMY_SPECS, ENEMY_FIRE, TANK, INFANTRY_ARMS } from "./specs.js";
+import { ENEMY_SPECS, ENEMY_FIRE, TANK, INFANTRY_ARMS, SATCHEL } from "./specs.js";
 
 // ---------------------------------------------------------------- spawning
 export function spawnUnit(world, sp, tag) {
@@ -445,7 +445,7 @@ function stepSapper(world, u, dt) {
     u._fuse -= dt;
     u.v.x *= 1 - Math.min(1, 8 * dt); u.v.z *= 1 - Math.min(1, 8 * dt);
     if (u._fuse <= 0) {
-      explode(world, u.pos.x, u.pos.y, u.pos.z, { r: 3.4, kv: 9, dmg: 150, crater: 0.6, hitStruct: true, attacker: "enemy" });
+      explode(world, u.pos.x, u.pos.y, u.pos.z, { ...SATCHEL, attacker: "enemy" });
       applyDamage(world, u, 1e9, { attacker: "enemy" });
     }
     return true;

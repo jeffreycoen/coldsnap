@@ -243,6 +243,7 @@ export function hostileStructure(b, team) {
 
 const INFANTRY_BLAST_R = 0.3, INFANTRY_KV = 0.5;
 export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })) {
+  if (squad.type === "sappers") return; // F1 Task 4.5: tools, not shooters — sappers never rifle-fire (draws nothing)
   const spec = INFANTRY_ARMS[squad.type];
   if (!spec) return;
   const stationary = squad.order === "defend" || (squad.order === "attack" && squad._pauseT > 0);
