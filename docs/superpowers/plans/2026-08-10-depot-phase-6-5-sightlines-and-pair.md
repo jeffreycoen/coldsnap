@@ -80,6 +80,8 @@ export function marchArc(world, muzzle, target, spec, hit) { /* extracted loop *
 
 **Files:** `src/depot/state.js` (towerShot), `scripts/depot-test.mjs`, parity check.
 
+**STATUS: ON HOLD (Jeff, 2026-08-11).** Implementation blocked: the rocket's aim wobble (acc 0.340, tuned for flat fire) lands lobbed salvos 30-80m off target — flagged DPS 2.4592 flat → 0.0000 lobbed. Wobble sweep on the pinned fixture: 0.100→0.53, 0.030→1.02, 0.020→3.12 (+27% vs flat baseline). Fix requires an accuracy retune (~0.025-0.030 band), which is a balance decision. Jeff chose HOLD — skip this task, continue 4-6, revisit later. Original decision below stands when resumed.
+
 **Decision (Jeff, 2026-08-10: make it lob):** rockets fire the HIGH arc — `towerShot` sets `high` for mortar AND rocket. The spec already says lofted (salvo weapon, blast radius 3.4, crater); making the rounds actually lob matches the classification, lets it genuinely fire over hills, and its acquisition contract becomes true. Alternative (rejected unless Jeff prefers): reclassify `occl:"arc"` — keeps flat fire but a salvo weapon that can't shoot over anything loses its role vs the gun tower.
 
 ```js
