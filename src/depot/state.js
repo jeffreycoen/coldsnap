@@ -425,13 +425,15 @@ export const DEPOT_BREACH_FRAC = 0.58; // standing fraction below this -> LOSS
 export const DEPOT_CENSUS_HZ = 1; // census cadence — NOT per frame
 
 // censusDepotChunks: called once at buildTown time. bodies is world.bodies
-// (or any array of chunk-like {id, kind, town, pos}) — picks out the depot's
-// own chunks (b.town === "depot") and records id + home (x, y, z) at build
+// (or any array of chunk-like {id, kind, town, pos}) — picks out one town's
+// own chunks (b.town === townId) and records id + home (x, y, z) at build
 // time, before anything's had a chance to move. Pure, no world/rng deps.
-export function censusDepotChunks(bodies) {
+// FRONT F1: townId parameter — "depot" (default, today's callers) or
+// "depot2" (the enemy depot's lattice).
+export function censusDepotChunks(bodies, townId = "depot") {
   const out = [];
   for (const b of bodies) {
-    if (b.kind !== "chunk" || b.town !== "depot") continue;
+    if (b.kind !== "chunk" || b.town !== townId) continue;
     out.push({ id: b.id, home: { x: b.pos.x, y: b.pos.y, z: b.pos.z } });
   }
   return out;
@@ -469,6 +471,20 @@ export function checkDepotBreach(S, fraction) {
   return false;
 }
 
+// checkEnemyBreach (FRONT F1): the OTHER loss track's mirror — their depot
+// below the standing threshold ends the war in the Bureau's favor. Same
+// idempotence contract as checkDepotBreach; whichever fires first wins and
+// the other's guard keeps it from overwriting the outcome.
+export function checkEnemyBreach(S, fraction) {
+  if (S.gameOver || S.victory) return false;
+  if (fraction < DEPOT_BREACH_FRAC) { // same threshold both sides (symmetry; provisional, F5)
+    S.victory = true;
+    S.enemyBreach = true;
+    return true;
+  }
+  return false;
+}
+
 // stepDepotCensus: the ~1Hz gate. Accumulates dt on S.depotCensusAcc and only
 // invokes computeFraction (the caller's — usually
 // depotStandingFraction(census, world.byId) — actual work) once the
@@ -480,9 +496,15 @@ export function stepDepotCensus(S, dt, computeFraction) {
   S.depotCensusAcc = (S.depotCensusAcc || 0) + dt;
   if (S.depotCensusAcc < 1 / DEPOT_CENSUS_HZ) return false;
   S.depotCensusAcc -= 1 / DEPOT_CENSUS_HZ;
-  const fraction = computeFraction();
-  S.depotStanding = fraction;
-  checkDepotBreach(S, fraction);
+  // FRONT F1: computeFraction may return {player, enemy} (both depots) or a
+  // bare number (legacy player-only callers) — one gate, two readings.
+  const f = computeFraction();
+  const player = typeof f === "number" ? f : f.player;
+  const enemy = typeof f === "number" ? 1 : f.enemy;
+  S.depotStanding = player;
+  S.enemyStanding = enemy;
+  checkDepotBreach(S, player);
+  checkEnemyBreach(S, enemy);
   return true;
 }
 
@@ -597,8 +619,20 @@ export function checkWin(S, WAVES, snap = {}) {
 
 // End-of-run dispatch copy — same teletyped card style as the between-wave
 // stall dispatch, reused for the WIN/LOSS end card. Pure + deterministic.
-export function makeEndDispatch({ victory, kills, wave, totalWaves, attrition = false, spent = false, ledgerLoss = false, breach = false }) {
+export function makeEndDispatch({ victory, kills, wave, totalWaves, attrition = false, spent = false, ledgerLoss = false, breach = false, enemyBreach = false }) {
   const wo = "WO-9999";
+  // FRONT F1: the victory-breach card outranks the generic victory branches —
+  // rubble at their end is THE ending, not a bookkeeping verdict.
+  if (victory && enemyBreach) {
+    return {
+      wo,
+      lines: [
+        "THE OPPOSING DEPOT IS BREACHED.",
+        "The position opposite is rubble. The field belongs to the Bureau.",
+        `${kills} CONFIRMED. FIELD ORDER CLOSED.`,
+      ],
+    };
+  }
   if (!victory && breach) {
     return {
       wo,
@@ -855,8 +889,8 @@ export function advance(S, WAVES, snap = {}) {
 export const HUD0 = {
   fps: 0, wave: 1, lives: 20, enemies: 0, resources: 120, walls: 0, towers: 0, kills: 0,
   totalWaves: 50, between: true, countdown: 8, phase: PHASE.BUILD, dispatch: null, lastDispatch: null,
-  started: false, gameOver: false, victory: false, attrition: false, ledgerLoss: false, spent: false, breach: false,
+  started: false, gameOver: false, victory: false, attrition: false, ledgerLoss: false, spent: false, breach: false, enemyBreach: false,
   mode: "wall", sellMode: false, sandbagOrient: 0, paused: false, speed: 1, inspect: null, toasts: [],
-  pending: null, fogOn: true, discipline: "careful", depotStanding: 1,
+  pending: null, fogOn: true, discipline: "careful", depotStanding: 1, enemyStanding: 1,
   squadSel: null, squadFlag: null,
 };

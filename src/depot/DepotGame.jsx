@@ -664,6 +664,9 @@ export default function DepotGame({ onExit }) {
       // bar — census taken once here (ids + home world positions), read back
       // at ~1Hz via stepDepotCensus below against world.byId (live pos/alive).
       const depotCensus = censusDepotChunks(world.bodies);
+      // FRONT F1: the enemy depot's own census — same snapshot moment, read
+      // back through the same 1Hz gate (no second timer).
+      const depotCensus2 = censusDepotChunks(world.bodies, "depot2");
       // Territory (Phase 4 Task 2): who holds the ground. Cells over the
       // same playable rim the renderer clips to (halfU 29 / halfV 57, see
       // makeRenderer's rim opt above) — reuse rather than reinvent extents.
@@ -1326,7 +1329,7 @@ export default function DepotGame({ onExit }) {
         return evs;
       };
 
-      window.__DEPOT__ = () => ({ t: world.t, scrap: S.resources, lives: S.lives, kills: S.kills, wave: S.ws.waveIdx + 1, bodies: world.bodies.length, fps: S.fps, paused: S.paused, speed: S.speed, phase: S.phase, reg: { ...S.reg }, depotStanding: S.depotStanding != null ? S.depotStanding : 1, breach: !!S.breach, withdrew: S.ws.withdrew || 0 });
+      window.__DEPOT__ = () => ({ t: world.t, scrap: S.resources, lives: S.lives, kills: S.kills, wave: S.ws.waveIdx + 1, bodies: world.bodies.length, fps: S.fps, paused: S.paused, speed: S.speed, phase: S.phase, reg: { ...S.reg }, depotStanding: S.depotStanding != null ? S.depotStanding : 1, breach: !!S.breach, enemyStanding: S.enemyStanding != null ? S.enemyStanding : 1, enemyBreach: !!S.enemyBreach, withdrew: S.ws.withdrew || 0 });
       window.__DEPOTACK__ = () => { if (S.doAdvance) S.doAdvance(); };
       window.__DEPOTBUILD__ = (gx, gz, mode) => buildAt(gx, gz, mode || "wall");
       window.__DEPOTSPAWN__ = (n) => { for (let i = 0; i < (n || 1); i++) spawnEnemy(world, SPAWN_POINTS[S.spawnRR++ % SPAWN_POINTS.length]); };
@@ -1659,7 +1662,10 @@ export default function DepotGame({ onExit }) {
           // of the sim clock, so it doesn't run while paused/pre-start/
           // post-game. Fraction is exposed on hud for the smoke test; there
           // is deliberately no health-bar UI — the building is the readout.
-          stepDepotCensus(S, sdt, () => depotStandingFraction(depotCensus, world.byId));
+          stepDepotCensus(S, sdt, () => ({
+            player: depotStandingFraction(depotCensus, world.byId),
+            enemy: depotStandingFraction(depotCensus2, world.byId),
+          }));
           R.consume(evs);
           A.setListener(S.focus.x, S.focus.z, 46 / Math.max(0.6, S.zoom));
           A.consume(evs);
@@ -1730,8 +1736,9 @@ export default function DepotGame({ onExit }) {
               totalWaves: WAVES.length, between: S.ws.betweenWaves, countdown: Math.max(0, Math.ceil(S.ws.countdown)),
               phase: S.phase, dispatch: S.dispatch, lastDispatch: S.lastDispatch,
               started: S.started, gameOver: S.gameOver, victory: S.victory,
-              attrition: S.attrition, spent: S.spent, ledgerLoss: S.ledgerLoss, breach: S.breach,
+              attrition: S.attrition, spent: S.spent, ledgerLoss: S.ledgerLoss, breach: S.breach, enemyBreach: S.enemyBreach,
               depotStanding: S.depotStanding != null ? S.depotStanding : 1,
+              enemyStanding: S.enemyStanding != null ? S.enemyStanding : 1,
               mode: S.mode, sellMode: S.sellMode, sandbagOrient: S.sandbagOrient || 0,
               paused: S.paused, speed: S.speed,
               muted: A.muted, fogOn: S.fogOn, discipline: S.discipline, seed: MAP_SEED,
@@ -2002,7 +2009,7 @@ export default function DepotGame({ onExit }) {
 
       {(hud.gameOver || hud.victory) && !fatal && (
         <Dispatch
-          dispatch={makeEndDispatch({ victory: hud.victory, kills: hud.kills, wave: hud.wave, totalWaves: hud.totalWaves, attrition: hud.attrition, spent: hud.spent, ledgerLoss: hud.ledgerLoss, breach: hud.breach })}
+          dispatch={makeEndDispatch({ victory: hud.victory, kills: hud.kills, wave: hud.wave, totalWaves: hud.totalWaves, attrition: hud.attrition, spent: hud.spent, ledgerLoss: hud.ledgerLoss, breach: hud.breach, enemyBreach: hud.enemyBreach })}
           gating={false}
           outcome={hud.victory ? "win" : "loss"}
           label="RETURN TO BASE"

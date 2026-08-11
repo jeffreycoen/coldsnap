@@ -5,7 +5,7 @@ import {
   PHASE, makeRunState, startWave, tryStall, advance,
   regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, shooterFire, squadFire, nextSpawnTag,
   fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed,
-  censusDepotChunks, depotStandingFraction, checkDepotBreach, stepDepotCensus,
+  censusDepotChunks, depotStandingFraction, checkDepotBreach, checkEnemyBreach, stepDepotCensus,
   spawnSquadMembers, spawnSandbag, SANDBAG_COST, pruneSquads,
   DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, DEPOT_CENSUS_HZ,
 } from "../src/depot/state.js";
@@ -2089,6 +2089,121 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     const Sc2 = { depotCensusAcc: 0, gameOver: false, victory: false };
     stepDepotCensus(Sc2, 0.01, () => { calls2++; return 1; });
     ok("census does not fire on a sub-threshold tick", calls2 === 0);
+  }
+}
+
+// --- FRONT F1 Task 2: both depots can fall. The enemy depot ("depot2") gets
+// its own census reading and a victory-signed breach mirror; one 1Hz gate
+// carries both fractions ({player, enemy}) and both breach checks.
+{
+  const { hcs, pitch, mass } = MASON;
+  const buildLattice = (townId, nx = 5, ny = 2, nz = 5) => {
+    const world = makeWorld({ field: { heightAt: () => 0, dirty: false, carve: () => {} }, seed: 1 });
+    const chunks = [];
+    for (let ix = 0; ix < nx; ix++) for (let iy = 0; iy <= ny; iy++) for (let iz = 0; iz < nz; iz++) {
+      const c = addBody(world, {
+        kind: "chunk", team: 0, mass, hx: hcs, hy: hcs, hz: hcs,
+        x: (ix - (nx - 1) / 2) * pitch, y: hcs + 0.02 + iy * pitch, z: (iz - (nz - 1) / 2) * pitch,
+        friction: 0.65, restitution: 0.02,
+      });
+      c.sleeping = true; c.town = townId; c.gpos = [ix, iy, iz];
+      chunks.push(c);
+    }
+    return { world, chunks };
+  };
+  // one world holding BOTH lattices — the townId filter must separate them.
+  const both = makeWorld({ field: { heightAt: () => 0, dirty: false, carve: () => {} }, seed: 1 });
+  const mk = (townId, x0) => {
+    const out = [];
+    for (let ix = 0; ix < 3; ix++) for (let iy = 0; iy <= 1; iy++) for (let iz = 0; iz < 3; iz++) {
+      const c = addBody(both, {
+        kind: "chunk", team: 0, mass, hx: hcs, hy: hcs, hz: hcs,
+        x: x0 + ix * pitch, y: hcs + 0.02 + iy * pitch, z: iz * pitch,
+        friction: 0.65, restitution: 0.02,
+      });
+      c.sleeping = true; c.town = townId; out.push(c);
+    }
+    return out;
+  };
+  const pChunks = mk("depot", -20), eChunks = mk("depot2", 20);
+  const pCensus = censusDepotChunks(both.bodies);
+  const pCensusExplicit = censusDepotChunks(both.bodies, "depot");
+  const eCensus = censusDepotChunks(both.bodies, "depot2");
+  ok("censusDepotChunks default townId stays 'depot' (today's callers honest)", pCensus.length === pChunks.length && pCensus.length === pCensusExplicit.length);
+  ok("censusDepotChunks('depot2') picks only the enemy lattice", eCensus.length === eChunks.length);
+  ok("the two censuses share no ids", !pCensus.some((c) => eCensus.some((d) => d.id === c.id)));
+
+  // scripted demolition of depot2: displace past DEPOT_STANDING_TOL (the
+  // census's own standing rule) until the fraction crosses the line.
+  const demolish = (chunks, n) => { for (let i = 0; i < n; i++) chunks[i].pos = { x: chunks[i].pos.x, y: chunks[i].pos.y + DEPOT_STANDING_TOL + 5, z: chunks[i].pos.z }; };
+  demolish(eChunks, Math.ceil(eChunks.length * (1 - DEPOT_BREACH_FRAC)) + 1);
+  const eFrac = depotStandingFraction(eCensus, both.byId);
+  ok(`depot2 demolition drives its fraction below ${DEPOT_BREACH_FRAC}`, eFrac < DEPOT_BREACH_FRAC, `frac=${eFrac}`);
+  ok("player census unmoved by depot2 demolition", depotStandingFraction(pCensus, both.byId) === 1);
+
+  // checkEnemyBreach: victory-signed mirror.
+  const Sv = makeRunState({ waves: WAVES });
+  Sv.started = true;
+  const won = checkEnemyBreach(Sv, eFrac);
+  ok("checkEnemyBreach fires below the shared threshold", won === true);
+  ok("checkEnemyBreach sets victory (not gameOver)", Sv.victory === true && !Sv.gameOver);
+  ok("checkEnemyBreach flags enemyBreach", Sv.enemyBreach === true);
+  ok("checkEnemyBreach is idempotent once victory is set", checkEnemyBreach(Sv, 0) === false);
+  ok("a fully-standing enemy depot never trips checkEnemyBreach", checkEnemyBreach({ gameOver: false, victory: false }, 1) === false);
+
+  // whichever breach fires first wins — the other never overwrites (both orders).
+  const Sa = makeRunState({ waves: WAVES }); Sa.started = true;
+  checkDepotBreach(Sa, 0.1); checkEnemyBreach(Sa, 0.1);
+  ok("player breach first: enemy breach never overwrites (loss stands)", Sa.gameOver === true && Sa.breach === true && !Sa.victory && !Sa.enemyBreach);
+  const Sz = makeRunState({ waves: WAVES }); Sz.started = true;
+  checkEnemyBreach(Sz, 0.1); checkDepotBreach(Sz, 0.1);
+  ok("enemy breach first: player breach never overwrites (victory stands)", Sz.victory === true && Sz.enemyBreach === true && !Sz.gameOver && !Sz.breach);
+
+  // one gate, two readings: stepDepotCensus's compute returns {player, enemy};
+  // the gate stores both and calls both breach checks — still ~1Hz.
+  {
+    let calls = 0;
+    const Sc = { depotCensusAcc: 0, gameOver: false, victory: false };
+    for (let i = 0; i < 10; i++) stepDepotCensus(Sc, 0.25, () => { calls++; return { player: 0.9, enemy: 0.8 }; });
+    ok("combined census still gated to ~1Hz (10x 0.25s -> 2 calls)", calls === 2, `calls=${calls}`);
+    ok("gate stores both fractions (S.depotStanding + S.enemyStanding)", Sc.depotStanding === 0.9 && Sc.enemyStanding === 0.8);
+    const Sw = { depotCensusAcc: 0, gameOver: false, victory: false };
+    stepDepotCensus(Sw, 1.01, () => ({ player: 0.9, enemy: 0.2 }));
+    ok("gate routes the enemy fraction into checkEnemyBreach (victory)", Sw.victory === true && Sw.enemyBreach === true && !Sw.gameOver);
+    const Sl2 = { depotCensusAcc: 0, gameOver: false, victory: false };
+    stepDepotCensus(Sl2, 1.01, () => ({ player: 0.2, enemy: 0.9 }));
+    ok("gate routes the player fraction into checkDepotBreach (loss)", Sl2.gameOver === true && Sl2.breach === true && !Sl2.victory);
+  }
+
+  // the victory end card sits ABOVE the generic victory branches.
+  const winCard = makeEndDispatch({ victory: true, enemyBreach: true, kills: 9, wave: 12, totalWaves: 50, attrition: true });
+  ok("victory-breach card leads with the opposing-depot line", winCard.lines[0] === "THE OPPOSING DEPOT IS BREACHED.");
+  ok("victory-breach card carries the rubble line", winCard.lines.includes("The position opposite is rubble. The field belongs to the Bureau."));
+  ok("victory-breach card outranks attrition copy", !winCard.lines.some((l) => l.includes("COMBAT-INEFFECTIVE")));
+  ok("victory-breach card closes the field order with the kill count", winCard.lines.some((l) => l === "9 CONFIRMED. FIELD ORDER CLOSED."));
+  // player-breach loss card re-pinned, unchanged.
+  const lossCard = makeEndDispatch({ victory: false, breach: true, kills: 4, wave: 3, totalWaves: 50 });
+  ok("player breach loss card unchanged", lossCard.lines[0] === "THE DEPOT IS BREACHED.");
+
+  // twin determinism: two identical scripted demolition runs through the
+  // gate produce identical fraction/flag traces (pure path, zero rng draws).
+  {
+    const runOnce = () => {
+      const f = buildLattice("depot2");
+      const c = censusDepotChunks(f.world.bodies, "depot2");
+      const S = { depotCensusAcc: 0, gameOver: false, victory: false };
+      const trace = [];
+      for (let step = 0; step < 30; step++) {
+        if (step % 3 === 0 && Math.floor(step / 3) < f.chunks.length) {
+          const ch = f.chunks[Math.floor(step / 3)];
+          ch.pos = { x: ch.pos.x + 10, y: ch.pos.y, z: ch.pos.z };
+        }
+        stepDepotCensus(S, 0.5, () => ({ player: 1, enemy: depotStandingFraction(c, f.world.byId) }));
+        trace.push(`${S.depotStanding},${S.enemyStanding},${!!S.victory},${!!S.enemyBreach}`);
+      }
+      return trace.join("|");
+    };
+    ok("twin determinism: identical demolition scripts -> identical census traces", runOnce() === runOnce());
   }
 }
 
