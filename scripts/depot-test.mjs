@@ -14,7 +14,7 @@ import { friendlyFouls } from "../src/depot/state.js";
 import {
   makeWorld, addBody, addWeld, fireProjectile, explode, stepWorld, applyDamage, worldHash, CAUSE, mulberry32, aimSolve,
 } from "../src/engine/core.js";
-import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, WAVES as DEPOT_WAVES, MASON, INFANTRY_ARMS } from "../src/depot/specs.js";
+import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, WAVES as DEPOT_WAVES, MASON, INFANTRY_ARMS, SATCHEL } from "../src/depot/specs.js";
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties, SNIPER_FIRE } from "../src/depot/units.js";
 import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad, COHESION_M } from "../src/depot/squads.js";
 import {
@@ -4929,8 +4929,6 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     ok("F1/3a grep pin: no FINAL WAVE copy in state.js cards", !stateSrc.includes("FINAL WAVE"));
     ok("F1/3a grep pin: no n-of-50 wave display in DepotGame", !depotSrc.includes("totalWaves"));
     ok("F1/3a: makeRunState carries no lives", !("lives" in makeRunState({ waves: W3 })));
-    ok("F1/3a: wave-results bookkeeping keeps the leaks field (economy rates untouched)",
-      makeRunState({ waves: W3 }).ws === undefined || true); // shape guard below
     const S0 = makeRunState({ waves: W3 });
     startWave(S0, W3, { useTable: true });
     ok("F1/3a: ws.results.leaks still initialized (dead field reads 0)", S0.ws.results.leaks === 0);
@@ -5489,6 +5487,48 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
   }
 }
 // ==== end FRONT F1 Task 4.5 ==================================================
+
+// ==== F1 VERIFICATION FIXES (mk0.17) =========================================
+{
+  const flat = () => ({ heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } });
+
+  // F1-fix A: enemy satchel vs player wall — pin the shipped reality so a future
+  // SATCHEL retune shows up here as a conscious change, not silent drift.
+  // (Values from the --sides run; assert a band, not equality — physics settle noise.)
+  {
+    const world = makeWorld({ field: flat(), seed: 11 });
+    const wall = addBody(world, { kind: "wall", team: 1, mass: 0, hx: .9, hy: .9, hz: .9, x: 0, y: .9, z: 0, hp: 100 });
+    explode(world, 0, 1.2, 4, { ...SATCHEL, attacker: "enemy" });   // d=4m — the measured 47-damage case
+    stepWorld(world);
+    const dmg = 100 - wall.hp;
+    ok("F1-fix A: satchel-vs-wall damage at 4m within the recorded band", dmg > 35 && dmg < 60);
+  }
+
+  // F1-fix B: friendlyFouls holds for OWN depot masonry, fires through THEIRS.
+  {
+    const world = makeWorld({ field: flat(), seed: 12 });
+    const spec = { projSpeed: 95, occl: "arc" };
+    const muzzle = { x: 0, y: 1.5, z: 0 }, tgt = { x: 0, y: 1.2, z: 16 };
+    const c = addBody(world, { kind: "chunk", team: 0, mass: 100, hx: .4, hy: .4, hz: .4, x: 0, y: 1.2, z: 8, hp: 50 });
+    c.town = "depot";
+    ok("F1-fix B: CAREFUL holds for own depot stone", friendlyFouls(world, muzzle, tgt, spec) === true);
+    c.town = "depot2";
+    ok("F1-fix B: CAREFUL fires through enemy depot stone", friendlyFouls(world, muzzle, tgt, spec) === false);
+  }
+
+  // F1-fix C: squadReach is null for sappers (no arms — no fan, no fault) and
+  // still a 64-point fan for armed squads.
+  {
+    const world = makeWorld({ field: flat(), seed: 13 });
+    const u = addBody(world, { kind: "unit", team: 1, mass: 80, hx: .28, hy: .72, hz: .28, x: 0, y: 1, z: 0, hp: 58 });
+    const sap = makeSquad(1, "sappers", 1, 0, 0); sap.memberIds.push(u.id);
+    ok("F1-fix C: sapper squadReach null", squadReach(world, sap) === null);
+    const rif = makeSquad(2, "rifles", 1, 0, 0); rif.memberIds.push(u.id);
+    const pts = squadReach(world, rif);
+    ok("F1-fix C: armed squadReach 64-point fan", Array.isArray(pts) && pts.length === 64);
+  }
+}
+// ==== end F1 VERIFICATION FIXES ==============================================
 
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);

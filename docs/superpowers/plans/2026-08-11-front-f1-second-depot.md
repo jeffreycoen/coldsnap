@@ -207,6 +207,22 @@ export function hostileStructure(b, team) {
 - [ ] **Step 1 — failing asserts:** a sapper team ordered onto depot2 plants and detonates (charge events observed, planter dies, no bounty paid to anyone); stones displace past DEPOT_STANDING_TOL (the thing rifles measurably cannot do — pin the contrast); repeated teams drive standing fraction below DEPOT_BREACH_FRAC → victory by breach THROUGH PLAY (the first real win); defend order never plants; no draws added (stream identity vs pre-change on a sapperless run); symmetric check — the enemy sapper's behavior byte-unchanged; twin determinism.
 - [ ] **Step 2:** verify fail → **Step 3:** implement → **Step 4:** gates → **Step 5:** Commit "FRONT F1: the sapper team — the war becomes winnable (mk0.14)" with MK bump → PUSH + report incl. teams-to-breach count (measured, not tuned).
 
+**Side-measurements (recorded mk0.17, `node scripts/measure-satchel.mjs --sides` — reproducible in-tree):**
+
+```
+SATCHEL SIDE-MEASUREMENTS — old {r:3.4, kv:9} → shipped {r:5, kv:45} (chest-height charge, one step)
+  WALL  (hp 100): d=1m 113.6 → 123.5 | d=2m 79.5 → 98.6 | d=3m 44.8 → 73.3 | d=4m 10.1 → 48 | d=5m 0 → 22.7 | d=6m 0 → 0
+  TOWER (hp 130): d=1m 118 → 125.9 | d=2m 88.1 → 103.3 | d=3m 57.7 → 80.4 | d=4m 27.2 → 57.4 | d=5m 0 → 34.4 | d=6m 0 → 11.4
+  UNIT  (hp 58) : lethal radius 2.5m → 3.5m; shove |v| at d=0.5: 7.5 → 39.7 m/s
+  SPLASH d=1m: old [planter DIES, friend DIES] → new [planter DIES, friend DIES]
+  SPLASH d=2m: old [planter DIES, friend DIES] → new [planter DIES, friend DIES]
+  SPLASH d=3m: old [planter DIES, friend lives] → new [planter DIES, friend DIES]
+  SPLASH d=4m: old [planter DIES, friend lives] → new [planter DIES, friend lives]
+```
+
+- Declared post-ship: a sapper squad on ATTACK does not settle to defend while a charge is carried (second charge was wasted otherwise).
+- Task 3's "hp drops" asserts measure displacement (stones have no hp) — deviation recorded here, not just in test comments.
+
 ### Task 5: closer — probe + smoke + stale docs + Jeff plays
 
 **Files:** `scripts/economy-probe.mjs`, `scripts/smoke.mjs`, `src/depot/state.js` (stale comment), `2026-08-09-depot-roadmap.md` (note), `scripts/depot-test.mjs`.

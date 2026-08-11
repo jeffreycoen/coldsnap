@@ -129,6 +129,69 @@ function teamsToBreachPlay(spec, cap = 30) {
   return { teams, frac, breached: frac < DEPOT_BREACH_FRAC, stones: census.length };
 }
 
+// --sides: the four side-measurements the Task 4.5 amendment required.
+// Old {r:3.4, kv:9} vs shipped SATCHEL {r:5, kv:45}, chest-height charge:
+//  1. WALL (hp 100, kind "wall"):  hp damage at d = 1..6m  → kill range + damage reach
+//  2. TOWER (hp 130, kind "tower"): hp damage at d = 1..6m
+//  3. UNIT (hp 58, kind "unit"):   lethal radius (binary-search d where hp<=0) + shove |v| at d=0.5
+//  4. OWN-TEAM SPLASH: planter + a friendly member at d = 1..4m → who dies
+// Each cell: fresh world, one explode() with the spec under test, read hp/v after one step.
+// Print old → new per cell. These are the recorded numbers from the mk0.14 report —
+// the harness makes them reproducible instead of historical.
+function sidesRun() {
+  const OLD = { r: 3.4, kv: 9 };
+  const NEW = { r: SATCHEL.r, kv: SATCHEL.kv };
+  const full = (s) => ({ ...s, dmg: 150, crater: 0.6, hitStruct: true, attacker: "player" });
+  const oneShot = (spec, mk) => {           // mk(world) -> body; blast at (0, 1.2, d) is set by mk
+    const world = makeWorld({ field: flat, seed: 11 });
+    world.depotCombat = true;
+    const b = mk(world);
+    return { world, b };
+  };
+  const structDmg = (spec, kind, hp, hy, d) => {
+    const { world, b } = oneShot(spec, (w) =>
+      addBody(w, { kind, team: 1, mass: 0, hx: 0.9, hy, hz: 0.9, x: 0, y: hy, z: 0, hp }));
+    explode(world, 0, 1.2, d, full(spec));
+    stepWorld(world);
+    return hp - b.hp;
+  };
+  const unitProbe = (spec, d) => {
+    const { world, b } = oneShot(spec, (w) =>
+      addBody(w, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 0, hp: 58 }));
+    explode(world, 0, 1.2, d, full(spec));
+    stepWorld(world);
+    return { hp: b.hp, v: Math.hypot(b.v.x, b.v.y, b.v.z) };
+  };
+  const lethalRadius = (spec) => {          // largest d (0.01m grid) where the unit still dies
+    let lo = 0, hi = 12;
+    for (let i = 0; i < 24; i++) {
+      const mid = (lo + hi) / 2;
+      if (unitProbe(spec, mid).hp <= 0) lo = mid; else hi = mid;
+    }
+    return lo;
+  };
+  const splash = (spec, d) => {             // planter at the charge, friend at d
+    const world = makeWorld({ field: flat, seed: 11 });
+    world.depotCombat = true;
+    const planter = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 0, hp: 58 });
+    const friend = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: d, hp: 58 });
+    explode(world, 0, 1.2, 0, full(spec));
+    stepWorld(world);
+    return { planter: planter.hp <= 0, friend: friend.hp <= 0 };
+  };
+  const fmt = (n) => (Math.round(n * 10) / 10).toString();
+  console.log(`SATCHEL SIDE-MEASUREMENTS — old {r:${OLD.r}, kv:${OLD.kv}} → shipped {r:${NEW.r}, kv:${NEW.kv}} (chest-height charge, one step)`);
+  for (const [label, kind, hp, hy] of [["WALL  (hp 100)", "wall", 100, 0.9], ["TOWER (hp 130)", "tower", 130, 1.5]]) {
+    const cells = [];
+    for (let d = 1; d <= 6; d++) cells.push(`d=${d}m ${fmt(structDmg(OLD, kind, hp, hy, d))} → ${fmt(structDmg(NEW, kind, hp, hy, d))}`);
+    console.log(`  ${label}: ${cells.join(" | ")}`);
+  }
+  console.log(`  UNIT  (hp 58) : lethal radius ${fmt(lethalRadius(OLD))}m → ${fmt(lethalRadius(NEW))}m; shove |v| at d=0.5: ${fmt(unitProbe(OLD, 0.5).v)} → ${fmt(unitProbe(NEW, 0.5).v)} m/s`);
+  const who = (s) => (s.planter ? "planter DIES" : "planter lives") + ", " + (s.friend ? "friend DIES" : "friend lives");
+  for (let d = 1; d <= 4; d++) console.log(`  SPLASH d=${d}m: old [${who(splash(OLD, d))}] → new [${who(splash(NEW, d))}]`);
+}
+if (process.argv.includes("--sides")) { sidesRun(); process.exit(0); }
+
 const argSpecs = process.argv.slice(2).map((s) => { const [r, kv, cap] = s.split(",").map(Number); return { r, kv, cap }; });
 const specs = argSpecs.length ? argSpecs
   : [3.4, 5, 6.5, 8].flatMap((r) => [24, 48, 90].map((kv) => ({ r, kv })));
