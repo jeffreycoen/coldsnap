@@ -6329,6 +6329,122 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
 }
 // ==== end mk0.27 =============================================================
 
+// ==== mk0.28: MOVE, ATTACK, DEFEND ===========================================
+// ATTACK used to mean both "go there" and "fight your way there". They split:
+// MOVE travels double-time and holds fire until arrival; ATTACK advances cover
+// to cover exactly as before. Arrival flips both to defend.
+{
+  console.log("\n[mk0.28: the MOVE order]");
+  const flatMv = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+  const mkMoveSquad = (world, order, dest, x = 0, z = 0) => {
+    const squad = makeSquad(1, "rifles", 1, x, z);
+    for (let i = 0; i < SQUAD_SPECS.rifles.n; i++) {
+      const u = addBody(world, { kind: "unit", team: 1, mass: 90, hx: 0.3, hy: 0.9, hz: 0.3, x: x + i * 0.6, y: 0.9, z, hp: 100 });
+      squad.memberIds.push(u.id);
+    }
+    squad.order = order; squad.dest = dest;
+    return squad;
+  };
+
+  // (a) a MOVE squad crosses a threatened field without firing a shot; the
+  // ATTACK twin over the same ground does fire.
+  {
+    const runCross = (order) => {
+      const world = makeWorld({ field: flatMv, seed: 84 });
+      world.depotCombat = true;
+      const squad = mkMoveSquad(world, order, { x: 0, z: 40 });
+      // enemies right beside the path — a threatened crossing either way
+      for (const z of [10, 18, 26]) addBody(world, { kind: "unit", team: 2, mass: 400, hx: 0.26, hy: 0.86, hz: 0.26, x: 3, y: 0.86, z, hp: 1e9 });
+      let rounds = 0, arriveT = null;
+      const seen = new Set();
+      const dt = 1 / 30;
+      for (let i = 0; i < 30 / dt; i++) {
+        stepSquad(world, squad, dt);
+        // count only the march itself — arrival flips the squad to defend,
+        // and a defending squad firing is the whole point of arriving.
+        const enRoute = squad.order === order;
+        if (!enRoute && arriveT == null) arriveT = i * dt;
+        squadFire(world, squad, dt);
+        for (const p of world.projectiles) {
+          if (seen.has(p)) continue;
+          seen.add(p);
+          if (enRoute) rounds++;
+        }
+        for (let s = 0; s < 5; s++) stepWorld(world);
+      }
+      return { rounds, order: squad.order, anchor: squad.anchor, arriveT };
+    };
+    const mv = runCross("move"), at = runCross("attack");
+    ok("mk0.28/a: a MOVE squad fires nothing en route", mv.rounds === 0, `rounds=${mv.rounds}`);
+    ok("mk0.28/a: the ATTACK twin over the same ground does fire", at.rounds > 0, `rounds=${at.rounds}`);
+    ok("mk0.28/a: MOVE arrives and flips to defend", mv.order === "defend", `order=${mv.order} anchor=(${mv.anchor.x.toFixed(1)},${mv.anchor.z.toFixed(1)})`);
+    ok("mk0.28/a: MOVE gets there faster than the fighting advance",
+      mv.arriveT != null && (at.arriveT == null || mv.arriveT < at.arriveT),
+      `move=${mv.arriveT == null ? "never" : mv.arriveT.toFixed(1) + "s"} attack=${at.arriveT == null ? "never" : at.arriveT.toFixed(1) + "s"}`);
+  }
+
+  // (b) the RNG contract: MOVE reuses the double-time path exactly, so its
+  // draw stream is identical to an UNTHREATENED attack over the same legs —
+  // one draw per leg, unconditionally, no more and no fewer.
+  {
+    const drawsFor = (order) => {
+      const world = makeWorld({ field: flatMv, seed: 85 });
+      const squad = mkMoveSquad(world, order, { x: 0, z: 30 });
+      const rng0 = world.rng; let draws = 0;
+      world.rng = () => { draws++; return rng0(); };
+      const dt = 1 / 30;
+      for (let i = 0; i < 30 / dt; i++) { stepSquad(world, squad, dt); for (let s = 0; s < 3; s++) stepWorld(world); }
+      return { draws, order: squad.order };
+    };
+    const dMove = drawsFor("move"), dAtk = drawsFor("attack");
+    ok("mk0.28/b: MOVE draws exactly as an unthreatened ATTACK of equal legs (stream identity)",
+      dMove.draws === dAtk.draws && dMove.draws > 0, `move=${dMove.draws} attack=${dAtk.draws}`);
+    ok("mk0.28/b: both arrive", dMove.order === "defend" && dAtk.order === "defend");
+  }
+
+  // (c) twin determinism of the MOVE path.
+  {
+    const runMv = () => {
+      const world = makeWorld({ field: flatMv, seed: 86 });
+      world.depotCombat = true;
+      const squad = mkMoveSquad(world, "move", { x: 6, z: 24 });
+      addBody(world, { kind: "unit", team: 2, mass: 400, hx: 0.26, hy: 0.86, hz: 0.26, x: 2, y: 0.86, z: 12, hp: 1e9 });
+      const dt = 1 / 30;
+      for (let i = 0; i < 20 / dt; i++) { stepSquad(world, squad, dt); squadFire(world, squad, dt); for (let s = 0; s < 5; s++) stepWorld(world); }
+      return worldHash(world);
+    };
+    ok("mk0.28/c: twin determinism of the MOVE path", runMv() === runMv());
+  }
+
+  // (d) the fire gate itself: squadFire skips a moving squad outright.
+  {
+    const world = makeWorld({ field: flatMv, seed: 87 });
+    world.depotCombat = true;
+    const squad = mkMoveSquad(world, "move", { x: 0, z: 30 });
+    squad._pauseT = 2; // even mid-pause, a MOVE squad keeps its weapons quiet
+    addBody(world, { kind: "unit", team: 2, mass: 400, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 8, hp: 1e9 });
+    const dt = 1 / 30;
+    for (let i = 0; i < 10 / dt; i++) { squadFire(world, squad, dt); for (let s = 0; s < 5; s++) stepWorld(world); }
+    ok("mk0.28/d: squadFire never fires a MOVE squad, pause or no pause", world.projectiles.length === 0);
+  }
+
+  // (e) the UI: three chips, and buttons a thumb can hit (>= 44px of touch
+  // height on the order chips and the ✓/✗ pair).
+  {
+    const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("mk0.28/e: a MOVE chip exists beside ATTACK and DEFEND",
+      /data-squad-move/.test(src) && /data-squad-attack/.test(src) && /data-squad-defend/.test(src));
+    ok("mk0.28/e: orderSquad understands MOVE", /kind === "move"/.test(src));
+    ok("mk0.28/e: the ground tap resolves a MOVE order too", /orderMode === "move"|"attack" \|\| S\.orderMode === "move"/.test(src));
+    ok("mk0.28/e: a big-tap button style exists with a >= 44px minimum height",
+      /btnBig:/.test(src) && /minHeight:\s*44/.test(src));
+    ok("mk0.28/e: the order chips and the ✓/✗ pair use it",
+      (src.match(/P\.btnBig/g) || []).length >= 5);
+  }
+}
+// ==== end mk0.28 =============================================================
+
+
 
 
 

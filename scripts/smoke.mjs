@@ -1081,6 +1081,47 @@ try {
     ok("depot squads: tap on a member selects the squad (DEFEND|ATTACK chips)", chips);
     await shot("task3-squad-selected.png");
 
+    // mk0.28: three orders now — MOVE | ATTACK | DEFEND — and every one of
+    // them is a real touch target (>= 44px tall, the phone guideline).
+    if (chips) {
+      const chipBox = await page.evaluate(() => {
+        const out = {};
+        for (const k of ["move", "attack", "defend"]) {
+          const el = document.querySelector(`[data-squad-${k}]`);
+          out[k] = el ? Math.round(el.getBoundingClientRect().height) : null;
+        }
+        const c = document.querySelector("[data-pending-confirm]");
+        out.confirm = c ? Math.round(c.getBoundingClientRect().height) : null;
+        return out;
+      });
+      ok(`depot squads: MOVE | ATTACK | DEFEND chips all present [${JSON.stringify(chipBox)}]`,
+        chipBox.move != null && chipBox.attack != null && chipBox.defend != null);
+      ok(`depot squads: order chips are >= 44px of touch height [${JSON.stringify(chipBox)}]`,
+        chipBox.move >= 44 && chipBox.attack >= 44 && chipBox.defend >= 44);
+    }
+
+    // mk0.28: the MOVE order itself — chip, ground tap, and the squad walks
+    // there under its own order (not "attack").
+    if (chips) {
+      await sleep(450);
+      await page.click("[data-squad-move]");
+      const ccm = await canvasCenter();
+      const tapPtM = await page.evaluate((c) => window.__DEPOTGROUNDAT__(c.x - 120, c.y), ccm);
+      await page.mouse.click(ccm.x - 120, ccm.y);
+      const moved = await page.waitForFunction((d) => {
+        const q = (window.__DEPOTSQUADS__() || [])[0];
+        if (!q) return false;
+        return (q.order === "move" && !!q.dest) || Math.hypot(q.anchor.x - d.x, q.anchor.z - d.z) < 2.5;
+      }, { timeout: 15000, polling: 200 }, tapPtM).then(() => true).catch(() => false);
+      const qm = (await page.evaluate(() => window.__DEPOTSQUADS__()))[0];
+      ok(`depot squads: MOVE order takes the ground tap [order=${qm && qm.order} dest=${JSON.stringify(qm && qm.dest)} tap=${JSON.stringify(tapPtM)}]`, moved);
+      const arrivedM = await page.waitForFunction((d) => {
+        const q = (window.__DEPOTSQUADS__() || [])[0];
+        return !!q && Math.hypot(q.anchor.x - d.x, q.anchor.z - d.z) < 2.5;
+      }, { timeout: 30000, polling: 300 }, tapPtM).then(() => true).catch(() => false);
+      ok("depot squads: a MOVE squad reaches the ordered ground", arrivedM);
+    }
+
     // ATTACK -> next ground tap = dest. The dest tap is OFF-CENTER (140px
     // sideways) with the camera parked on the squad — no camera travel involved,
     // so the tap lands a guaranteed few meters from the anchor and the

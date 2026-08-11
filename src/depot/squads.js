@@ -451,7 +451,11 @@ export function stepSquad(world, squad, dt) {
   if (!members.length) return;
   if (squad.type === "sappers") stepSapperCharges(world, squad, dt, members);
 
-  if (squad.order === "attack" && squad.dest) {
+  // mk0.28: MOVE rides the identical leg machine as ATTACK — same anchor
+  // advance, same one-draw-per-leg contract — with the threat read forced
+  // false, i.e. the existing unthreatened double-time path, unconditionally.
+  // (Fire discipline is squadFire's job: a MOVE squad keeps quiet en route.)
+  if ((squad.order === "attack" || squad.order === "move") && squad.dest) {
     const cx = squad.anchor.x, cz = squad.anchor.z;
     const dToDest = Math.hypot(squad.dest.x - cx, squad.dest.z - cz);
     // F1 Task 4.5: a sapper squad's ATTACK completes when the charges are
@@ -487,7 +491,7 @@ export function stepSquad(world, squad, dt) {
       // no rng), then advance the squad anchor toward it.
       if (!squad._legTarget) {
         // LEG BOUNDARY: threat state re-evaluated here only (not per-tick).
-        squad._threatened = squadThreatened(world, squad, members);
+        squad._threatened = squad.order === "move" ? false : squadThreatened(world, squad, members);
         if (squad._threatened) {
           const bearing = defaultThreatBearing(world, squad, { x: cx, z: cz });
           squad._legTarget = coverHop(world, { x: cx, z: cz }, squad.dest, bearing);

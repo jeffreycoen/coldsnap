@@ -273,8 +273,11 @@ export function hostileStructure(b, team) {
 const INFANTRY_BLAST_R = 0.3, INFANTRY_KV = 0.5;
 export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })) {
   if (squad.type === "sappers") return; // F1 Task 4.5: tools, not shooters — sappers never rifle-fire (draws nothing)
+  if (squad.order === "move") return;   // mk0.28: MOVE travels, it does not fight (draws nothing)
   const spec = INFANTRY_ARMS[squad.type];
   if (!spec) return;
+  // mk0.28: "move" is never a firing order — the men double-time with
+  // weapons quiet, pause or no pause, until arrival flips them to defend.
   const stationary = squad.order === "defend" || (squad.order === "attack" && squad._pauseT > 0);
   if (!stationary) return;
   const enemyTeam = squad.team === 1 ? 2 : 1;

@@ -619,9 +619,13 @@ const P = {
   top: { position: "absolute", top: 0, left: 0, right: 0, display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: "linear-gradient(rgba(10,13,18,0.88), rgba(10,13,18,0))", zIndex: 4, fontSize: 12, flexWrap: "wrap" },
   panel: { position: "absolute", background: "rgba(14,18,24,0.88)", border: "1px solid #48515f", borderRadius: 8, padding: 10, fontSize: 12, zIndex: 5 },
   btn: { background: "#1a212b", border: "1px solid #48515f", color: "#e6ebf1", borderRadius: 6, padding: "4px 10px", fontFamily: "inherit", fontSize: 12, cursor: "pointer" },
+  // mk0.28: the in-world taps (squad order chips, the ✓/✗ confirm pair) are
+  // the ones a thumb has to find mid-game — ~1.5x the chrome button, and at
+  // least the 44px touch target every phone guideline asks for.
+  btnBig: { background: "#1a212b", border: "1px solid #48515f", color: "#e6ebf1", borderRadius: 8, padding: "10px 16px", fontFamily: "inherit", fontSize: 15, lineHeight: "20px", minHeight: 44, minWidth: 44, cursor: "pointer" },
   stat: { display: "flex", alignItems: "center", gap: 4, padding: "3px 8px", background: "rgba(20,26,34,0.75)", border: "1px solid #303a48", borderRadius: 6 },
   bar: { position: "absolute", left: 0, right: 0, bottom: 0, display: "flex", gap: 6, padding: "8px 8px calc(8px + env(safe-area-inset-bottom, 0px))", justifyContent: "center", background: "linear-gradient(rgba(10,13,18,0), rgba(10,13,18,0.9))", zIndex: 4, flexWrap: "wrap" },
-  slot: { display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minWidth: 52, padding: "6px 6px", background: "#1a212b", border: "1px solid #48515f", borderRadius: 8, fontSize: 11, cursor: "pointer" },
+  slot: { display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minWidth: 64, minHeight: 52, padding: "8px 10px", background: "#1a212b", border: "1px solid #48515f", borderRadius: 8, fontSize: 12, cursor: "pointer" }, // mk0.28: wider/taller build slots — bottom bar, thumb reach
   ovl: { position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(10,13,18,0.72)", zIndex: 8, textAlign: "center", padding: 20 },
   toastWrap: { position: "absolute", top: 54, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, zIndex: 6, pointerEvents: "none" },
   toast: { background: "rgba(14,18,24,0.92)", border: "1px solid #ffb45e", color: "#ffd9a0", borderRadius: 6, padding: "4px 12px", fontSize: 12 },
@@ -1037,8 +1041,10 @@ export default function DepotGame({ onExit }) {
           sq.order = "defend"; sq.dest = null; sq._legTarget = null; sq._pauseT = 0; sq._threatSig = undefined;
           sq._surveyPending = true; // DEFEND re-anchor: the pair re-surveys (6.5 Task 6)
           S.orderMode = null;
-        } else if (kind === "attack") {
-          S.orderMode = "attack";
+        } else if (kind === "attack" || kind === "move") {
+          // mk0.28: both aiming orders arm the same "tap the ground" flow —
+          // the chip only decides whether the men fight their way there.
+          S.orderMode = kind;
         }
       };
       const sellAt = (gx, gz) => {
@@ -1140,9 +1146,9 @@ export default function DepotGame({ onExit }) {
         if (!p) { S.inspectId = null; return; }
         // Squad order flow: an armed ATTACK consumes this ground tap as the
         // destination (flag marker renders at dest until arrival).
-        if (S.orderMode === "attack") {
+        if (S.orderMode === "attack" || S.orderMode === "move") {
           const osq = selectedSquad();
-          if (osq) { osq.order = "attack"; osq.dest = { x: p.x, z: p.z }; osq._legTarget = null; osq._pauseT = 0; }
+          if (osq) { osq.order = S.orderMode; osq.dest = { x: p.x, z: p.z }; osq._legTarget = null; osq._pauseT = 0; }
           S.orderMode = null;
           return;
         }
@@ -1761,7 +1767,7 @@ export default function DepotGame({ onExit }) {
               squadSel: (() => {
                 const sq = S.selSquadId != null ? S.squads.find((q) => q.id === S.selSquadId) : null;
                 if (!sq || !S.squadScreen) return null;
-                return { id: sq.id, label: SQUAD_SPECS[sq.type].label, order: sq.order, x: S.squadScreen.x, y: S.squadScreen.y, armed: world.t >= S.selArmedAt, aiming: S.orderMode === "attack" };
+                return { id: sq.id, label: SQUAD_SPECS[sq.type].label, order: sq.order, x: S.squadScreen.x, y: S.squadScreen.y, armed: world.t >= S.selArmedAt, aiming: S.orderMode === "attack", aimingMove: S.orderMode === "move" };
               })(),
               squadFlag: S.flagScreen ? { x: S.flagScreen.x, y: S.flagScreen.y } : null,
               pending: S.pending && S.pendingScreen ? {
@@ -1942,12 +1948,12 @@ export default function DepotGame({ onExit }) {
       {hud.pending && (
         <div style={{ position: "absolute", left: hud.pending.x, top: hud.pending.y, transform: "translate(-50%, -50%)", zIndex: 7, display: "flex", gap: 6, pointerEvents: "auto" }}>
           <button data-pending-confirm
-            style={{ ...P.btn, borderColor: "#4aff8c", color: "#4aff8c", opacity: hud.pending.armed ? 1 : 0.5, fontWeight: "bold", fontSize: 16, padding: "2px 10px" }}
+            style={{ ...P.btnBig, borderColor: "#4aff8c", color: "#4aff8c", opacity: hud.pending.armed ? 1 : 0.5, fontWeight: "bold" }}
             onClick={() => stateRef.current && stateRef.current.confirmPending()}>
             ✓ ◆{hud.pending.cost}
           </button>
           <button data-pending-cancel
-            style={{ ...P.btn, borderColor: "#ff6b5e", color: "#ff6b5e", fontWeight: "bold", fontSize: 16, padding: "2px 10px" }}
+            style={{ ...P.btnBig, borderColor: "#ff6b5e", color: "#ff6b5e", fontWeight: "bold" }}
             onClick={() => stateRef.current && stateRef.current.clearPending()}>
             ✗
           </button>
@@ -1957,15 +1963,18 @@ export default function DepotGame({ onExit }) {
       {hud.squadSel && (
         <div style={{ position: "absolute", left: hud.squadSel.x, top: hud.squadSel.y, transform: "translate(-50%, -100%)", zIndex: 7, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, pointerEvents: "auto" }}>
           <div style={{ fontSize: 10, letterSpacing: 1, color: "#7dffa8", background: "rgba(14,18,24,0.85)", padding: "1px 6px", borderRadius: 4 }}>
-            {hud.squadSel.label}{hud.squadSel.aiming ? " — TAP GROUND" : ""}
+            {hud.squadSel.label}{hud.squadSel.aiming || hud.squadSel.aimingMove ? " — TAP GROUND" : ""}
           </div>
           <div style={{ display: "flex", gap: 6 }}>
-            <button data-squad-defend
-              style={{ ...P.btn, borderColor: hud.squadSel.order === "defend" ? "#7dffa8" : "#48515f", color: "#7dffa8", opacity: hud.squadSel.armed ? 1 : 0.5 }}
-              onClick={() => stateRef.current && stateRef.current.orderSquad("defend")}>DEFEND</button>
+            <button data-squad-move
+              style={{ ...P.btnBig, borderColor: hud.squadSel.aimingMove || hud.squadSel.order === "move" ? "#7fd7ff" : "#48515f", color: "#7fd7ff", opacity: hud.squadSel.armed ? 1 : 0.5 }}
+              onClick={() => stateRef.current && stateRef.current.orderSquad("move")}>MOVE</button>
             <button data-squad-attack
-              style={{ ...P.btn, borderColor: hud.squadSel.aiming ? "#ff6b5e" : "#48515f", color: "#ff6b5e", opacity: hud.squadSel.armed ? 1 : 0.5 }}
+              style={{ ...P.btnBig, borderColor: hud.squadSel.aiming ? "#ff6b5e" : "#48515f", color: "#ff6b5e", opacity: hud.squadSel.armed ? 1 : 0.5 }}
               onClick={() => stateRef.current && stateRef.current.orderSquad("attack")}>ATTACK</button>
+            <button data-squad-defend
+              style={{ ...P.btnBig, borderColor: hud.squadSel.order === "defend" ? "#7dffa8" : "#48515f", color: "#7dffa8", opacity: hud.squadSel.armed ? 1 : 0.5 }}
+              onClick={() => stateRef.current && stateRef.current.orderSquad("defend")}>DEFEND</button>
           </div>
         </div>
       )}
