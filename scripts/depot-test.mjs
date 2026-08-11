@@ -4316,6 +4316,153 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
 }
 // ==== end SIGHTLINES 6.5 Task 2 ==============================================
 
+// ==== SIGHTLINES 6.5 Task 4: no round passes through a structure ============
+// Audit #5 + cosmetic: shooterFire only carried hitStruct when the caller
+// remembered to set it. Rifleman unit-target rounds (units.js), squadFire
+// rounds, and tower rounds flew with hitStruct undefined — core.js's hit scan
+// skips wall/rock/tower for such rounds, so a scattered round could pass
+// clean through masonry and kill a soldier behind it. Fix: shooterFire
+// defaults hitStruct true unless the caller sets hitOnly (structure-only
+// shots keep their exact behavior). Grenadier/rifleman collision becomes
+// identical. Task 5 (folded): squadReach threads the member's id into
+// reachPolygon as selfId.
+{
+  console.log("\n[sightlines-6.5 task 4: no round passes through a structure]");
+  const flat = () => ({ heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } });
+  // deliberate scatter seed: acc > 0 so the round is a real scattered round,
+  // but the wall spans the whole scatter cone — every seed's round must eat it.
+  const rifleLike = { kind: "mg", projSpeed: 70, dmg: 5, dirDmg: 4.5, blastR: 0.6, kv: 1.0, crater: 0, acc: 0.02, cd: 1.5, range: 30 };
+
+  // (a) a round fired at a unit with a wall edge clipping the flight path
+  // stops at the wall: the wall takes the hit, the man behind it takes none.
+  // Pre-fix: the round ghosts through (no hitStruct) and wounds him.
+  {
+    const world = makeWorld({ field: flat(), seed: 11 });
+    world.depotCombat = true;
+    const sh = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 0, hp: 58 });
+    const wall = addBody(world, { kind: "wall", team: 1, mass: 0, hx: 3, hy: 4, hz: 0.3, x: 0, y: 4, z: 8, hp: 5000 });
+    const tgt = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.3, hy: 0.9, hz: 0.3, x: 0, y: 0.9, z: 16, hp: 3000 });
+    tgt.v = { x: 0, y: 0, z: 0 };
+    const muzzle = { x: 0, y: 1.24, z: 0 };
+    const hp0 = tgt.hp, whp0 = wall.hp;
+    for (let i = 0; i < 6; i++) {
+      shooterFire(world, sh, muzzle, tgt, rifleLike, { attacker: "player", owner: sh.id, muzzleStep: 0 });
+      for (let s = 0; s < 60; s++) stepWorld(world);
+    }
+    ok("task4(a): rounds at a unit stop at the wall clipping the path (wall takes hits)", wall.hp < whp0, `wallDmg=${(whp0 - wall.hp).toFixed(2)}`);
+    ok("task4(a): the man behind the wall is untouched", tgt.hp === hp0, `tgtDmg=${(hp0 - tgt.hp).toFixed(2)}`);
+  }
+
+  // (b) no attacker pay for player self-hits: a PLAYER round eating the
+  // player's own wall stamps lastHit.attacker "player" — and DepotGame's
+  // event drain books structureDmg ONLY on lastHit.attacker === "enemy"
+  // (source pin), so the attacker is never paid for the player's own fire.
+  {
+    const world = makeWorld({ field: flat(), seed: 11 });
+    world.depotCombat = true;
+    const sh = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 0, hp: 58 });
+    const wall = addBody(world, { kind: "wall", team: 1, mass: 0, hx: 3, hy: 4, hz: 0.3, x: 0, y: 4, z: 8, hp: 5000 });
+    const tgt = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.3, hy: 0.9, hz: 0.3, x: 0, y: 0.9, z: 16, hp: 3000 });
+    tgt.v = { x: 0, y: 0, z: 0 };
+    const whp0 = wall.hp;
+    for (let i = 0; i < 6 && wall.hp === whp0; i++) {
+      shooterFire(world, sh, { x: 0, y: 1.24, z: 0 }, tgt, rifleLike, { attacker: "player", owner: sh.id, muzzleStep: 0 });
+      for (let s = 0; s < 60; s++) stepWorld(world);
+    }
+    ok("task4(b): player round into own wall stamps lastHit.attacker player",
+      wall.hp < whp0 && wall.lastHit && wall.lastHit.attacker === "player",
+      `dmg=${(whp0 - wall.hp).toFixed(2)} attacker=${wall.lastHit && wall.lastHit.attacker}`);
+    const depotSrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("task4(b): DepotGame's event drain books structureDmg only for attacker enemy (source pin)",
+      depotSrc.includes(`b.lastHit.attacker === "enemy"`));
+  }
+
+  // (c) open-ground damage parity: with no structure anywhere, hitStruct is
+  // inert — a round with it and a round without land identically. Identical
+  // to 4 decimals (in fact exact).
+  {
+    const run = (hitStruct) => {
+      const world = makeWorld({ field: flat(), seed: 7 });
+      world.depotCombat = true;
+      const tgt = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.3, hy: 0.9, hz: 0.3, x: 0, y: 0.9, z: 14, hp: 3000 });
+      tgt.v = { x: 0, y: 0, z: 0 };
+      const hp0 = tgt.hp;
+      for (let i = 0; i < 8; i++) {
+        fireProjectile(world, { x: 0, y: 1.24, z: 0 }, { x: 0, y: 0.02, z: 1 }, 70,
+          { kind: "mg", r: 0.6, kv: 1.0, dmg: 5, dirDmg: 4.5, crater: 0, noImpact: true, attacker: "player", hitStruct });
+        for (let s = 0; s < 40; s++) stepWorld(world);
+        tgt.pos.x = 0; tgt.pos.z = 14; tgt.v.x = 0; tgt.v.y = 0; tgt.v.z = 0;
+      }
+      return hp0 - tgt.hp;
+    };
+    const withFlag = run(true), without = run(undefined);
+    ok("task4(c): open-ground damage parity — hitStruct inert without structures (4 decimals)",
+      withFlag > 0 && withFlag.toFixed(4) === without.toFixed(4), `with=${withFlag.toFixed(4)} without=${without.toFixed(4)}`);
+  }
+
+  // (d) grenadier == rifleman collision settings: both enemy arms firing at
+  // a UNIT target hand core.js identical collision flags (hitStruct true,
+  // no hitOnly). Inspect the actual projectiles shooterFire creates.
+  {
+    const lastFlags = (opts) => {
+      const world = makeWorld({ field: flat(), seed: 3 });
+      world.depotCombat = true;
+      const sh = addBody(world, { kind: "unit", team: 2, mass: 84, hx: 0.26, hy: 0.92, hz: 0.26, x: 0, y: 0.92, z: 0, hp: 66 });
+      const tgt = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 12, hp: 58 });
+      tgt.v = { x: 0, y: 0, z: 0 };
+      shooterFire(world, sh, { x: 0, y: 1.4, z: 0 }, tgt, ENEMY_FIRE.rifle, { ...opts, owner: sh.id });
+      const p = world.projectiles[world.projectiles.length - 1];
+      return { hitStruct: !!p.spec.hitStruct, hitOnly: p.spec.hitOnly };
+    };
+    const riflemanF = lastFlags({ attacker: "enemy" });                    // units.js:306 unit-target branch
+    const grenF = lastFlags({ high: true, attacker: "enemy", hitStruct: true }); // units.js:389 grenadier branch
+    ok("task4(d): grenadier and rifleman rounds carry identical collision settings",
+      riflemanF.hitStruct === true && grenF.hitStruct === true &&
+      riflemanF.hitOnly === undefined && grenF.hitOnly === undefined,
+      JSON.stringify({ riflemanF, grenF }));
+    // structure-only shots keep their exact behavior: hitOnly callers untouched
+    const structF = lastFlags({ attacker: "enemy", hitOnly: "structure", hitStruct: true });
+    ok("task4(d): hitOnly structure shots keep their exact flags", structF.hitOnly === "structure");
+  }
+
+  // (e) twin determinism: the wall-clipping firefight hashes identical.
+  {
+    const run = () => {
+      const world = makeWorld({ field: flat(), seed: 13 });
+      world.depotCombat = true;
+      const sh = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 0, hp: 58 });
+      addBody(world, { kind: "wall", team: 1, mass: 0, hx: 1.2, hy: 4, hz: 0.3, x: 1.0, y: 4, z: 8, hp: 5000 });
+      const tgt = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.3, hy: 0.9, hz: 0.3, x: 0, y: 0.9, z: 16, hp: 3000 });
+      tgt.v = { x: 0, y: 0, z: 0 };
+      for (let i = 0; i < 8; i++) {
+        shooterFire(world, sh, { x: 0, y: 1.24, z: 0 }, tgt, rifleLike, { attacker: "player", owner: sh.id, muzzleStep: 0 });
+        for (let s = 0; s < 40; s++) stepWorld(world);
+        tgt.pos.x = 0; tgt.pos.z = 16;
+      }
+      return worldHash(world);
+    };
+    ok("task4(e): twin determinism through the wall-clipping firefight", run() === run());
+  }
+
+  // (f) Task 5 folded in: squadReach threads the member's own id into
+  // reachPolygon as selfId (source pin) + output on a clean fixture is a
+  // real polygon (the thread was harmless — his own body never masked him
+  // at the muzzle before, and must not now).
+  {
+    const accSrc = fs.readFileSync(new URL("../src/depot/accuracy.js", import.meta.url), "utf8");
+    ok("task4(f): squadReach threads selfId into reachPolygon (source pin)",
+      /squadReach[\s\S]{0,600}reachPolygon\(world, T, muzzle, INFANTRY_ARMS\[squad\.type\], squad\.team, toUV, u\.id\)/.test(accSrc));
+    const world = makeWorld({ field: flat(), seed: 2 });
+    world.depotCombat = true;
+    const u = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 0, hp: 58 });
+    const squad = { memberIds: [u.id], type: "rifles", team: 1 };
+    const poly = squadReach(world, squad);
+    ok("task4(f): squadReach still returns a real reach polygon with selfId threaded",
+      poly != null && poly.length > 8, `pts=${poly && poly.length}`);
+  }
+}
+// ==== end SIGHTLINES 6.5 Task 4 ==============================================
+
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
   process.exit(1);

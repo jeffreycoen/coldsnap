@@ -145,7 +145,12 @@ export function shooterFire(world, shooter, muzzle, target, spec, opts = {}) {
       {
         kind: spec.kind, r: spec.blastR, kv: spec.kv, dmg: spec.dmg, dirDmg: spec.dirDmg, crater: spec.crater,
         noImpact: true, attacker, delay: si * volleyDelay, windF: spec.windF,
-        hitStruct: opts.hitStruct, hitOnly: opts.hitOnly, owner: opts.owner,
+        // No round passes through a structure (sightlines 6.5 Task 4):
+        // every shooterFire round carries hitStruct unless the caller set
+        // hitOnly (structure-only shots keep their exact behavior). A
+        // unit-target round may now physically eat a wall/rock/tower edge
+        // en route — the blast lands where the round stops.
+        hitStruct: opts.hitOnly ? opts.hitStruct : true, hitOnly: opts.hitOnly, owner: opts.owner,
       });
   }
 }
@@ -155,7 +160,10 @@ export function shooterFire(world, shooter, muzzle, target, spec, opts = {}) {
 export function towerShot(world, tower, target, spec) {
   const muzzle = { x: tower.pos.x, y: tower.pos.y + tower.hy + 0.45, z: tower.pos.z };
   const high = tower.towerType === "mortar";
-  shooterFire(world, tower, muzzle, target, spec, { high, attacker: "player" });
+  // owner: now that every shooterFire round carries hitStruct (Task 4), a
+  // tower's own hull is a shootable structure to its own muzzle-adjacent
+  // round — thread the uniform muzzle-clearing immunity (self-hit law).
+  shooterFire(world, tower, muzzle, target, spec, { high, attacker: "player", owner: tower.id });
 }
 
 // squadFire(world, squad, dt, T, toUV): infantry trigger pull, one call per
