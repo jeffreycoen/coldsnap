@@ -1998,7 +1998,7 @@ export default function DepotGame({ onExit }) {
       {!hud.started && !fatal && (
         <div style={P.ovl}>
           <div style={{ fontSize: 26, letterSpacing: 4, color: "#9fdcff" }}>COLDSNAP</div>
-          <div style={{ fontSize: 13, letterSpacing: 8, color: "#ffd27a", marginBottom: 14 }}>DEPOT</div>
+          <div style={{ fontSize: 13, letterSpacing: 8, color: "#ffd27a", marginBottom: 14 }}>WINTER FRONT</div>
           <div style={{ fontSize: 12, opacity: 0.85, maxWidth: 420, lineHeight: 1.6, marginBottom: 18 }}>
             They come out of the southern treeline for the depot. Wall their road, gun the choke points.
             Rock is free cover. The frozen ponds carry them faster — and you cannot build on ice.

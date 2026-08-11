@@ -57,8 +57,8 @@ export default function StartScreen({ onPlay, onSandbox, onCampaign, onControls,
         </div>
 
         <button data-menu="depot" style={option({ borderColor: "#6a8a9a" })} onClick={onDepot}>
-          <div style={{ color: "#9fd4e4", fontSize: 15, letterSpacing: 2 }}>▶ COLDSNAP DEPOT</div>
-          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>Hold the line through wind and scatter. Read the flags — nothing here shoots straight for free.</div>
+          <div style={{ color: "#9fd4e4", fontSize: 15, letterSpacing: 2 }}>▶ WINTER FRONT</div>
+          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>Two depots, one valley. Break theirs before they break yours — nothing here shoots straight for free.</div>
         </button>
 
         <button data-menu="towerdef" style={option({ borderColor: "#4e7a5a" })} onClick={onTowerDef}>
