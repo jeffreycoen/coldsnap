@@ -17,7 +17,7 @@ import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, WAVES, MASON, INFANTRY_ARMS } fr
 import { windAt } from "./wind.js";
 import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, executeWithdrawal, WAVE_TIMEOUT, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, pruneSquads } from "./state.js";
 import { SQUAD_SPECS, makeSquad, stepSquad } from "./squads.js";
-import { reachPolygon, arcClears, squadReach } from "./accuracy.js";
+import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, checkLeaks, payBounties } from "./units.js";
 import { makeRegiment, payTown } from "./economy.js";
 import { makeTerritory, stepTerritory, holderAt, canBuild, fogStateFor, valueAt, EMIT } from "./territory.js";
@@ -1348,7 +1348,13 @@ export default function DepotGame({ onExit }) {
       // the intended build cell without racing the render loop's tween.
       window.__DEPOTGETFOCUS__ = () => ({ x: S.focus.x, z: S.focus.z });
       window.__DEPOTHOLD__ = (x, z) => { const c = invW(x, z); return holderAt(T, c.u, c.v); };
-      window.__DEPOTSELREACH__ = () => (S.selReach ? { id: S.selReach.id, n: S.selReach.pts.length, cx: +S.selReach.cx.toFixed(2), cz: +S.selReach.cz.toFixed(2), maxR: +Math.max(...S.selReach.pts.map((p) => Math.hypot(p.x - S.selReach.cx, p.z - S.selReach.cz))).toFixed(2) } : null);
+      window.__DEPOTSELREACH__ = () => {
+        // Task 2b: reports whichever fan is live — selected squad first,
+        // else the inspected tower's cached fan (kind flags the source).
+        const r = S.selReach || (S.inspectReach && S.inspectReach.pts ? S.inspectReach : null);
+        if (!r) return null;
+        return { id: r.id, kind: r === S.selReach ? "squad" : "tower", n: r.pts.length, cx: +r.cx.toFixed(2), cz: +r.cz.toFixed(2), maxR: +Math.max(...r.pts.map((p) => Math.hypot(p.x - r.cx, p.z - r.cz))).toFixed(2) };
+      };
       // debug harness (Task 2): the nearest buildable+held cell to the depot
       // flag. Build rights now gate placement on holderAt===1 — the depot's
       // own emitter greens ground near itself, but the smoke test's original
@@ -1491,12 +1497,23 @@ export default function DepotGame({ onExit }) {
           } else S.hover = null;
           if (S.inspectId) {
             const ib = world.byId.get(S.inspectId);
-            if (!ib) S.inspectId = null;
+            if (!ib) { S.inspectId = null; S.inspectReach = null; }
             else {
               const ispec = ib.kind === "tower" ? TOWER_SPECS[ib.towerType] : null;
-              S.hover = { x: ib.pos.x, z: ib.pos.z, valid: true, range: ispec ? ispec.range : 0 };
+              if (ispec && ib.towerType !== "frost") {
+                // Task 2b: an inspected GUN tower shows its true reach fan
+                // (towerReachCached: real muzzle, fog-independent, computed
+                // once per selection — static body). Frost keeps its aura
+                // ring below (it is not a gun); walls keep no fan.
+                if (!S.inspectReach) S.inspectReach = {};
+                towerReachCached(S.inspectReach, world, ib, ispec, invW);
+                S.hover = { x: ib.pos.x, z: ib.pos.z, valid: true, range: 0 };
+              } else {
+                S.inspectReach = null;
+                S.hover = { x: ib.pos.x, z: ib.pos.z, valid: true, range: ispec ? ispec.range : 0 };
+              }
             }
-          }
+          } else S.inspectReach = null;
           // Selected squad: ring overlay at the anchor via the EXISTING hover
           // overlay API (read-only use — renderer belongs to a parallel
           // task). Ring radius = the squad's own weapon range.
@@ -1516,13 +1533,14 @@ export default function DepotGame({ onExit }) {
             if (nLive) { sqCx /= nLive; sqCz /= nLive; }
             else { sqCx = selSq.anchor.x; sqCz = selSq.anchor.z; }
           }
-          if (selSq && selSq.type === "sniper") {
-            // Sniper selection shows the TRUE reach fan — squadReach fires
+          if (selSq) {
+            // Every selected squad shows the TRUE reach fan (Task 2b: the
+            // sniper's path, generalized to rifles/mg) — squadReach fires
             // from the member's head (pos.y + 0.5, squadFire's own muzzle),
             // elevation-scaled and terrain/solid-clipped, fog-independent
             // like the placement preview (null territory: what he COULD
             // see). The old flat spec.range ring read from the anchor's
-            // ground and under-sold every elevated or crest-line sniper.
+            // ground and under-sold every elevated or crest-line shooter.
             // 1Hz refresh: defend micro-shuffles and attack legs move him.
             if (!S.selReach || S.selReach.id !== selSq.id || world.t - S.selReach.t > 1) {
               const u0 = selSq.memberIds.map((id) => world.byId.get(id)).find((u) => u && u.alive);
@@ -1530,10 +1548,7 @@ export default function DepotGame({ onExit }) {
               S.selReach = pts ? { id: selSq.id, t: world.t, pts, cx: u0.pos.x, cz: u0.pos.z } : null;
             }
             S.hover = { x: sqCx, z: sqCz, valid: true, range: 0 };
-          } else {
-            S.selReach = null;
-            if (selSq) S.hover = { x: sqCx, z: sqCz, valid: true, range: INFANTRY_ARMS[selSq.type].range };
-          }
+          } else S.selReach = null;
           const ws = S.ws;
           if (S.started && !S.gameOver && !S.victory) {
             if (S.phase === PHASE.BUILD) {
@@ -1608,7 +1623,10 @@ export default function DepotGame({ onExit }) {
             R.overlay.setPending(true, P0.wp.x, P0.y, P0.wp.z, P0.poly, P0.ringR, P0.color);
           } else R.overlay.setPending(false);
           if (R.overlay.setReach) {
-            if (S.selReach) R.overlay.setReach(true, S.selReach.cx, field.heightAt(S.selReach.cx, S.selReach.cz), S.selReach.cz, S.selReach.pts, 0xffd27a);
+            // One overlay slot, one look: squad fan wins if a squad is
+            // selected, else the inspected tower's cached fan (Task 2b).
+            const fan = S.selReach || (S.inspectReach && S.inspectReach.pts ? S.inspectReach : null);
+            if (fan) R.overlay.setReach(true, fan.cx, field.heightAt(fan.cx, fan.cz), fan.cz, fan.pts, 0xffd27a);
             else R.overlay.setReach(false);
           }
           R.render(dt, S.focus, AIM_OFF, 0);

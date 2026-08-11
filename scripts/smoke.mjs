@@ -1225,6 +1225,16 @@ try {
       chips4 = await page.waitForFunction(() => !!document.querySelector("[data-squad-attack]"), { timeout: 1500, polling: 100 }).then(() => true).catch(() => false);
     }
     ok("depot task4: squad selected (ATTACK chip up)", chips4);
+    // Task 2b: a selected RIFLES squad now shows the true reach fan (the
+    // sniper's selReach path, generalized) — the state hook must report a
+    // 64-point squad fan while the chips are up.
+    if (chips4) {
+      const fan4 = await page.waitForFunction(() => {
+        const r = window.__DEPOTSELREACH__ && window.__DEPOTSELREACH__();
+        return r && r.kind === "squad" && r.n === 64 && r.maxR > 5 ? r : null;
+      }, { timeout: 3000, polling: 100 }).then((h) => h.jsonValue()).catch(() => null);
+      ok("depot task2b: selected rifles squad reports a 64-point reach fan", !!fan4, fan4 ? `maxR=${fan4.maxR}` : "no fan");
+    }
     if (chips4) {
       const dest4 = { x: sq4.anchor.x + (en4.x - sq4.anchor.x) * 0.55, z: sq4.anchor.z + (en4.z - sq4.anchor.z) * 0.55 };
       await page.click("[data-squad-attack]");

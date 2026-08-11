@@ -9,7 +9,7 @@ import {
   spawnSquadMembers, spawnSandbag, SANDBAG_COST, pruneSquads,
   DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, DEPOT_CENSUS_HZ,
 } from "../src/depot/state.js";
-import { reachPolygon, arcClears, squadReach } from "../src/depot/accuracy.js";
+import { reachPolygon, arcClears, squadReach, towerReachCached } from "../src/depot/accuracy.js";
 import { friendlyFouls } from "../src/depot/state.js";
 import {
   makeWorld, addBody, addWeld, fireProjectile, explode, stepWorld, applyDamage, worldHash, CAUSE, mulberry32, aimSolve,
@@ -3668,6 +3668,100 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
   {
     const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     ok("SNIPER-REACH wiring: DepotGame selection uses squadReach for the sniper", /squadReach\(/.test(src));
+  }
+}
+
+// ==== SEL-REACH (Task 2b): universal selection LOS — every selected shooter
+// shows its true fan. Inspected gun towers get a reachPolygon fan from their
+// real muzzle (pos.y + hy + 0.45, towerShot's own formula), computed ONCE at
+// select (static body — towerReachCached); selected rifles/mg squads join the
+// sniper on the squadReach fan. Render-only: zero sim impact, zero rng draws.
+{
+  const mkField = (heightAt) => ({ heightAt, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } });
+  const flat = mkField(() => 0);
+  const mkTower = (w, type, x, z) => {
+    const spec = TOWER_SPECS[type];
+    return addBody(w, { kind: "tower", team: 1, mass: 0, hx: spec.hx, hy: spec.hy, hz: spec.hz, x, y: spec.hy, z, hp: spec.hp || 100, towerType: type });
+  };
+
+  // (a) flat-ground tower fan: max radius ~ the muzzle's effRange (the fan
+  // derives from the real muzzle + spec, not a decorative ring).
+  {
+    const w = makeWorld({ field: flat, seed: 41 });
+    const tw = mkTower(w, "mg", 0, 0);
+    const spec = TOWER_SPECS.mg;
+    const muzzle = { x: 0, y: tw.pos.y + tw.hy + 0.45, z: 0 };
+    const expect = effRange(w, muzzle, spec);
+    const cache = {};
+    const pts = towerReachCached(cache, w, tw, spec);
+    const maxR = Math.max(...pts.map((p) => Math.hypot(p.x, p.z)));
+    ok("SEL-REACH tower: flat-ground fan max radius ~ muzzle effRange", Math.abs(maxR - expect) < 1.5, `maxR=${maxR.toFixed(2)} effR=${expect.toFixed(2)}`);
+    ok("SEL-REACH tower: fan is a 64-ray polygon", pts.length === 64);
+  }
+
+  // (b) computed ONCE per selection: the cache keys on tower id — repeated
+  // per-frame calls never recompute; a different tower does.
+  {
+    const w = makeWorld({ field: flat, seed: 42 });
+    const t1 = mkTower(w, "mg", 0, 0), t2 = mkTower(w, "gun", 20, 0);
+    let calls = 0;
+    const counting = (...args) => { calls++; return reachPolygon(...args); };
+    const cache = {};
+    towerReachCached(cache, w, t1, TOWER_SPECS.mg, undefined, counting);
+    towerReachCached(cache, w, t1, TOWER_SPECS.mg, undefined, counting);
+    towerReachCached(cache, w, t1, TOWER_SPECS.mg, undefined, counting);
+    ok("SEL-REACH cache: three frames of the same selection compute once", calls === 1, `calls=${calls}`);
+    towerReachCached(cache, w, t2, TOWER_SPECS.gun, undefined, counting);
+    ok("SEL-REACH cache: selecting a different tower recomputes", calls === 2, `calls=${calls}`);
+  }
+
+  // (c) the tower's own body must not self-block its fan (selfId threaded
+  // through reachPolygon -> arcClears, the friendlyFouls fix's shape).
+  {
+    const w = makeWorld({ field: flat, seed: 43 });
+    const tw = mkTower(w, "gun", 0, 0);
+    const pts = towerReachCached({}, w, tw, TOWER_SPECS.gun);
+    const minR = Math.min(...pts.map((p) => Math.hypot(p.x, p.z)));
+    ok("SEL-REACH selfId: tower's own box never clips its own fan", minR > TOWER_SPECS.gun.range * 0.8, `minR=${minR.toFixed(2)}`);
+  }
+
+  // (d) squad fan present for ALL THREE squad types (rifles/mg lose the flat
+  // ring, join the sniper on squadReach).
+  for (const type of ["sniper", "rifles", "mg"]) {
+    const w = makeWorld({ field: flat, seed: 44 });
+    const sq = makeSquad(1, type, 1, 0, 0);
+    spawnSquadMembers(w, sq);
+    const pts = squadReach(w, sq);
+    const maxR = pts ? Math.max(...pts.map((p) => Math.hypot(p.x, p.z))) : 0;
+    ok(`SEL-REACH squads: ${type} squad fan present and reaches`, !!pts && pts.length === 64 && maxR > INFANTRY_ARMS[type].range * 0.9, `maxR=${maxR.toFixed(2)}`);
+  }
+
+  // (e) render-only: twin firefights, one with selections interleaved
+  // (squadReach + towerReachCached every second), hash identical.
+  {
+    const run = (withSel) => {
+      const w = makeWorld({ field: flat, seed: 45 });
+      const tw = mkTower(w, "mg", -6, 0);
+      const sq = makeSquad(1, "rifles", 1, 0, 0);
+      spawnSquadMembers(w, sq);
+      addBody(w, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 12, hp: 500 });
+      const dt = 1 / 30, cache = {};
+      for (let i = 0; i < 10 / dt; i++) {
+        squadFire(w, sq, dt);
+        stepWorld(w);
+        if (withSel && i % 30 === 0) { squadReach(w, sq); towerReachCached(cache, w, tw, TOWER_SPECS.mg); }
+      }
+      return worldHash(w);
+    };
+    ok("SEL-REACH render-only: twin determinism with selections interleaved", run(false) === run(true));
+  }
+
+  // (f) wiring: DepotGame's inspect path draws towers via towerReachCached;
+  // the rifles/mg flat-ring fallback is gone (every selected squad fans).
+  {
+    const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("SEL-REACH wiring: DepotGame inspect uses towerReachCached", /towerReachCached\(/.test(src));
+    ok("SEL-REACH wiring: rifles/mg flat selection ring removed", !/range: INFANTRY_ARMS\[selSq\.type\]\.range/.test(src));
   }
 }
 

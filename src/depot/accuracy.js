@@ -161,7 +161,7 @@ export function scatterSigma(world, muzzle, aim, spec) {
 //     as every other T caller in this codebase (state.js's own doc comment).
 // Recomputed on selection only (DepotGame.jsx), not per frame.
 const REACH_N = 64, REACH_STEP = 0.9, TARGET_H = 1.2;
-export function reachPolygon(world, T, muzzle, spec, team, toUV = (x, z) => ({ u: x, v: z })) {
+export function reachPolygon(world, T, muzzle, spec, team, toUV = (x, z) => ({ u: x, v: z }), selfId) {
   const effR = effRange(world, muzzle, spec);
   const pts = [];
   for (let i = 0; i < REACH_N; i++) {
@@ -183,7 +183,7 @@ export function reachPolygon(world, T, muzzle, spec, team, toUV = (x, z) => ({ u
       // on arcClears in this file). Do not ALSO straight-line test solids
       // here for "arc" specs — arcClears already covers them along the arc,
       // and double-testing would reject reachable ground the round clears.
-      if (!arcClears(world, muzzle, { x: qx, y: qy, z: qz }, spec)) break;
+      if (!arcClears(world, muzzle, { x: qx, y: qy, z: qz }, spec, selfId)) break;
       if (T) { const c = toUV(px, pz); if (!fieldReaches(T, c.u, c.v, team)) break; } // fog boundary
       last = d;
     }
@@ -206,6 +206,26 @@ export function squadReach(world, squad, T = null, toUV = (x, z) => ({ u: x, v: 
     return reachPolygon(world, T, muzzle, INFANTRY_ARMS[squad.type], squad.team, toUV);
   }
   return null;
+}
+
+// Inspected-tower reach fan (Task 2b): the same fan the placement preview
+// draws, from the STANDING tower's real muzzle (pos.y + hy + 0.45 —
+// towerShot's own formula, state.js:156). Static body => computed ONCE per
+// selection: `cache` is a plain object owned by the caller, keyed on
+// tower.id — repeated per-frame calls return the cached polygon; selecting a
+// different tower recomputes. selfId threads the tower's own id so its own
+// box never clips its own fan (the friendlyFouls fix's shape). Fog-independent
+// (T null: what the gun COULD reach — the established preview rule; live fire
+// stays fog-gated in stepTowers). `compute` is injectable for the test's
+// call-count guard only.
+export function towerReachCached(cache, world, tower, spec, toUV = (x, z) => ({ u: x, v: z }), compute = reachPolygon) {
+  if (cache.id !== tower.id || !cache.pts) {
+    const muzzle = { x: tower.pos.x, y: tower.pos.y + tower.hy + 0.45, z: tower.pos.z };
+    cache.id = tower.id;
+    cache.cx = tower.pos.x; cache.cz = tower.pos.z;
+    cache.pts = compute(world, null, muzzle, spec, tower.team || 1, toUV, tower.id);
+  }
+  return cache.pts;
 }
 
 export function applyScatter(world, dir, sigma) {
