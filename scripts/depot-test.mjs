@@ -6054,6 +6054,132 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
 }
 // ==== end mk0.23 TROOP IDENTITY ==============================================
 
+// ==== F1.5 TASK 2 / mk0.25: THE ROCKET RETUNE ================================
+// The held 6.5 Task 3 change, closed: rocket towers fire the HIGH arc like
+// mortars, and the aim wobble (acc 0.340, tuned for flat fire) is retuned to
+// 0.021 so lobbed damage matches the pinned FLAT baseline (2.4592 hp/s vs the
+// soft fixture, 20s window). Sweep recorded in the F1.5 artillery plan.
+{
+  console.log("\n[F1.5 task 2 (mk0.25): rockets lob]");
+  const flatR = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+
+  // (a) the spec + the gate.
+  ok("F1.5/2a: rocket wobble retuned into the lobbed band (0.020-0.035)",
+    TOWER_SPECS.rocket.acc >= 0.020 && TOWER_SPECS.rocket.acc <= 0.035, `acc=${TOWER_SPECS.rocket.acc}`);
+
+  const mkRocket = (world, x, z) => {
+    const spec = TOWER_SPECS.rocket;
+    const g = world.field.heightAt(x, z);
+    const t = addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: spec.hy, hz: 0.8, x, y: g + spec.hy, z, hp: spec.hp });
+    t.towerType = "rocket";
+    return t;
+  };
+
+  // (b) rounds leave STEEP — towerShot's `high` now covers rocket.
+  {
+    const world = makeWorld({ field: flatR, seed: 71 });
+    world.depotCombat = true;
+    const tower = mkRocket(world, 0, 0);
+    const target = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 14, hp: 1e9 });
+    towerShot(world, tower, target, TOWER_SPECS.rocket);
+    const pitches = world.projectiles.map((p) => Math.asin(p.v.y / Math.hypot(p.v.x, p.v.y, p.v.z)));
+    ok("F1.5/2b: rocket salvo leaves lofted (every round pitch > 0.6 rad)",
+      pitches.length > 0 && pitches.every((q) => q > 0.6),
+      `rounds=${pitches.length} minPitch=${pitches.length ? Math.min(...pitches).toFixed(3) : "-"}`);
+    ok("F1.5/2b: volley still 4 rounds at 0.12s spacing",
+      world.projectiles.length === 4 && TOWER_SPECS.rocket.volley === 4);
+  }
+
+  // (c) over the ridge: a rocket tower with a hill between it and the target.
+  // Flat fire buries every round in the near face (pre-change: 0 damage); the
+  // lob clears the crest and lands on the man behind (the held task's assert).
+  {
+    const H = 7;
+    const world = makeWorld({ seed: 72 });
+    const f = world.field;
+    for (let j = 0; j < f.n; j++) for (let i = 0; i < f.n; i++) {
+      const x = i * f.cs - f.half;
+      f.h[f.idx(i, j)] = Math.abs(x) <= 3 ? H : 0;
+    }
+    world.depotCombat = true;
+    const tower = mkRocket(world, -9, 0);
+    const target = addBody(world, { kind: "unit", team: 2, mass: 400, hx: 0.26, hy: 0.86, hz: 0.26, x: 9, y: f.heightAt(9, 0) + 0.86, z: 0, hp: 1e9 });
+    const dt = 1 / 30;
+    let fireCd = 0;
+    for (let i = 0; i < 40 / dt; i++) {
+      fireCd -= dt;
+      if (fireCd <= 0) { towerShot(world, tower, target, TOWER_SPECS.rocket); fireCd = TOWER_SPECS.rocket.fireRate; }
+      for (let s = 0; s < 5; s++) stepWorld(world);
+    }
+    ok("F1.5/2c: rocket tower lands salvo damage on a ridge-masked target",
+      target.hp < 1e9, `dmg=${(1e9 - target.hp).toFixed(2)}`);
+  }
+
+  // (d) the parity band: lobbed DPS vs the pinned soft fixture, 12 seeds x
+  // ~5 salvo pulls (>=200 rounds), within +/-10% of the flat baseline 2.4592.
+  {
+    const BASELINE = 2.4592;
+    const dpsAt = (seed) => {
+      const world = makeWorld({ field: flatR, seed });
+      world.depotCombat = true;
+      const spec = TOWER_SPECS.rocket;
+      const tower = mkRocket(world, 0, 0);
+      const target = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 10, hp: 1e9 });
+      const dt = 1 / 30, dur = 20;
+      const hp0 = target.hp;
+      let fireCd = 0;
+      for (let i = 0; i < dur / dt; i++) {
+        fireCd -= dt;
+        if (fireCd <= 0) { towerShot(world, tower, target, spec); fireCd = spec.fireRate; }
+        for (let s = 0; s < 5; s++) stepWorld(world);
+      }
+      return (hp0 - target.hp) / dur;
+    };
+    let sum = 0;
+    for (let seed = 1; seed <= 12; seed++) sum += dpsAt(seed);
+    const mean = sum / 12;
+    ok("F1.5/2d: lobbed rocket DPS within +/-10% of the flat baseline 2.4592",
+      Math.abs(mean / BASELINE - 1) <= 0.10, `dps=${mean.toFixed(4)} baseline=${BASELINE}`);
+  }
+
+  // (e) a flat, close target still gets hit (the near lob solve exists).
+  {
+    const world = makeWorld({ field: flatR, seed: 73 });
+    world.depotCombat = true;
+    const tower = mkRocket(world, 0, 0);
+    const target = addBody(world, { kind: "unit", team: 2, mass: 400, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 6, hp: 1e9 });
+    const dt = 1 / 30;
+    let fireCd = 0;
+    for (let i = 0; i < 30 / dt; i++) {
+      fireCd -= dt;
+      if (fireCd <= 0) { towerShot(world, tower, target, TOWER_SPECS.rocket); fireCd = TOWER_SPECS.rocket.fireRate; }
+      for (let s = 0; s < 5; s++) stepWorld(world);
+    }
+    ok("F1.5/2e: close flat target still takes rocket damage", target.hp < 1e9, `dmg=${(1e9 - target.hp).toFixed(2)}`);
+  }
+
+  // (f) twin determinism of the lobbed rocket path.
+  {
+    const runR = () => {
+      const world = makeWorld({ field: flatR, seed: 74 });
+      world.depotCombat = true;
+      const tower = mkRocket(world, 0, 0);
+      const target = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 12, hp: 1e9 });
+      const dt = 1 / 30;
+      let fireCd = 0;
+      for (let i = 0; i < 12 / dt; i++) {
+        fireCd -= dt;
+        if (fireCd <= 0) { towerShot(world, tower, target, TOWER_SPECS.rocket); fireCd = TOWER_SPECS.rocket.fireRate; }
+        for (let s = 0; s < 5; s++) stepWorld(world);
+      }
+      return worldHash(world);
+    };
+    ok("F1.5/2f: twin determinism of the lobbed rocket path", runR() === runR());
+  }
+}
+// ==== end F1.5 TASK 2 ========================================================
+
+
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
   process.exit(1);

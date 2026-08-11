@@ -159,7 +159,7 @@ export function shooterFire(world, shooter, muzzle, target, spec, opts = {}) {
 // export (depot-test.mjs and DepotGame.jsx's stepTowers call it by name).
 export function towerShot(world, tower, target, spec) {
   const muzzle = { x: tower.pos.x, y: tower.pos.y + tower.hy + 0.45, z: tower.pos.z };
-  const high = tower.towerType === "mortar";
+  const high = tower.towerType === "mortar" || tower.towerType === "rocket";
   // owner: now that every shooterFire round carries hitStruct (Task 4), a
   // tower's own hull is a shootable structure to its own muzzle-adjacent
   // round — thread the uniform muzzle-clearing immunity (self-hit law).
