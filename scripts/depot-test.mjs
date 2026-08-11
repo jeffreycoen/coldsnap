@@ -5,7 +5,7 @@ import {
   PHASE, makeRunState, startWave, tryStall, advance,
   regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, shooterFire, squadFire, nextSpawnTag,
   fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed,
-  censusDepotChunks, depotStandingFraction, checkDepotBreach, checkEnemyBreach, stepDepotCensus,
+  censusDepotChunks, depotStandingFraction, checkDepotBreach, checkEnemyBreach, stepDepotCensus, hostileStructure,
   spawnSquadMembers, spawnSandbag, SANDBAG_COST, pruneSquads,
   DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, DEPOT_CENSUS_HZ,
 } from "../src/depot/state.js";
@@ -5081,6 +5081,159 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
   }
 }
 // ==== end FRONT F1 Task 3 ====================================================
+
+// ==== FRONT F1 Task 4: rifles bite stone (the offense exists) ================
+// hostileStructure is the one shared definition of "enemy structure";
+// squadFire falls back to it ONLY when the unit scan comes up empty.
+{
+  const flatF4 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+  const { hcs, pitch, mass } = MASON;
+  const mkLattice = (world, townId, z0, welds = false) => {
+    const chunks = [];
+    for (let ix = 0; ix < 3; ix++) for (let iy = 0; iy <= 2; iy++) {
+      const c = addBody(world, { kind: "chunk", team: 0, mass, hx: hcs, hy: hcs, hz: hcs,
+        x: (ix - 1) * pitch, y: hcs + 0.02 + iy * pitch, z: z0, friction: 0.65, restitution: 0.02 });
+      c.sleeping = true; c.town = townId; c.gpos = [ix, iy, 0]; chunks.push(c);
+    }
+    if (welds) {
+      const key = (a, b) => a + "," + b;
+      const map = new Map(chunks.map((c) => [key(c.gpos[0], c.gpos[1]), c]));
+      for (const c of chunks) for (const d of [[1, 0], [0, 1]]) {
+        const o = map.get(key(c.gpos[0] + d[0], c.gpos[1] + d[1]));
+        if (o) addWeld(world, c, o, MASON.breakF * 1.5); // the depot weld (buildTown)
+      }
+    }
+    return chunks;
+  };
+  const mkSquad4 = (world, x, z, type = "rifles") => {
+    const squad = makeSquad(1, type, 1, x, z);
+    for (let i = 0; i < SQUAD_SPECS[type].n; i++) {
+      const u = addBody(world, { kind: "unit", team: 1, mass: 90, hx: 0.3, hy: 0.9, hz: 0.3, x: x + i * 1.1 - 2, y: 0.9, z, hp: 100 });
+      squad.memberIds.push(u.id);
+    }
+    squad.order = "defend";
+    return squad;
+  };
+
+  // (a) hostileStructure — the set itself, both signs.
+  {
+    const world = makeWorld({ field: flatF4, seed: 44 });
+    const dep = mkLattice(world, "depot", 30)[0];
+    const dep2 = mkLattice(world, "depot2", -30)[0];
+    const wall1 = addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.5, hy: 0.8, hz: 0.5, x: 5, y: 0.8, z: 0, hp: 100 });
+    const wall2 = addBody(world, { kind: "wall", team: 2, mass: 0, hx: 0.5, hy: 0.8, hz: 0.5, x: -5, y: 0.8, z: 0, hp: 100 });
+    ok("F1/4a: team 1 may bite depot2 masonry + enemy walls (F3-ready), never its own",
+      hostileStructure(dep2, 1) && hostileStructure(wall2, 1) && !hostileStructure(dep, 1) && !hostileStructure(wall1, 1));
+    ok("F1/4a: team 2 may bite depot masonry + player walls, never its own",
+      hostileStructure(dep, 2) && hostileStructure(wall1, 2) && !hostileStructure(dep2, 2) && !hostileStructure(wall2, 2));
+    dep2.alive = false;
+    ok("F1/4a: dead bodies never in the set", !hostileStructure(dep2, 1));
+  }
+
+  // (b) an ordered squad in range of depot2, no units in reach: fires, and
+  // the stone takes the rounds (impact events on the lattice; weld-free
+  // fixture so displacement shows). Zero rng draws besides applyScatter's 2
+  // per shot — pinned by twin determinism in (f).
+  {
+    const world = makeWorld({ field: flatF4, seed: 45 });
+    world.depotCombat = true;
+    const chunks = mkLattice(world, "depot2", 10);
+    const home = chunks.map((c) => ({ id: c.id, x: c.pos.x, y: c.pos.y, z: c.pos.z }));
+    const squad = mkSquad4(world, 0, 0);
+    const dt = 1 / 30;
+    for (let i = 0; i < 10 / dt; i++) { squadFire(world, squad, dt); for (let s = 0; s < 20; s++) stepWorld(world); }
+    const moved = home.filter((h) => { const b = world.byId.get(h.id); return !b || Math.hypot(b.pos.x - h.x, b.pos.y - h.y, b.pos.z - h.z) > 0.05; }).length;
+    ok("F1/4b: with no man in reach the squad bites stone (depot2 stones shoved)", moved > 0, `moved=${moved}/${chunks.length}`);
+    // owner threading: no member ever detonates a round on his own hitbox —
+    // across the whole 10s (well over 200 rounds squad-wide) every member
+    // stands untouched at full hp.
+    const selfHit = squad.memberIds.some((id) => { const u = world.byId.get(id); return !u || !u.alive || u.hp < 100; });
+    ok("F1/4b: owner threaded — zero self-hits across the volley run", !selfHit);
+  }
+
+  // (c) a live enemy unit re-entering range immediately outranks the stone.
+  {
+    const world = makeWorld({ field: flatF4, seed: 46 });
+    world.depotCombat = true;
+    mkLattice(world, "depot2", 10);
+    const squad = mkSquad4(world, 0, 0);
+    const man = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 6, hp: 1e9 });
+    const dt = 1 / 30;
+    for (let i = 0; i < 6 / dt; i++) { squadFire(world, squad, dt); for (let s = 0; s < 20; s++) stepWorld(world); }
+    ok("F1/4b: a man in reach outranks the stone (unit takes the fire)", man.hp < 1e9, `dmg=${(1e9 - man.hp).toFixed(2)}`);
+  }
+
+  // (d) the law: structure fire NEVER fog-gates (both signs); unit fire
+  // always does. A territory field reading "unheld" everywhere for the
+  // shooter must not stop stone shots — and must stop man shots.
+  {
+    // Real territory grids, saturated for the OTHER side: Tred (field -1
+    // everywhere) reads "unheld" for team 1; Tgreen (+1) for team 2.
+    const Tred = makeTerritory(120, 120); Tred.v.fill(-1);
+    const Tgreen = makeTerritory(120, 120); Tgreen.v.fill(1);
+    const world = makeWorld({ field: flatF4, seed: 47 });
+    world.depotCombat = true;
+    const T = Tred;
+    ok("F1/4d fixture: red-saturated territory reads unheld for team 1", fogStateFor(T, 0, 10, 1) === "unheld");
+    const chunks = mkLattice(world, "depot2", 10);
+    const home = chunks.map((c) => ({ id: c.id, x: c.pos.x, y: c.pos.y, z: c.pos.z }));
+    const man = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: -6, y: 0.86, z: 6, hp: 1e9 });
+    const squad = mkSquad4(world, 0, 0);
+    const dt = 1 / 30;
+    for (let i = 0; i < 8 / dt; i++) { squadFire(world, squad, dt, T); for (let s = 0; s < 20; s++) stepWorld(world); }
+    ok("F1/4d: unit fire fog-gates (unheld field, man untouched)", man.hp === 1e9, `dmg=${(1e9 - man.hp).toFixed(2)}`);
+    const moved = home.filter((h) => { const b = world.byId.get(h.id); return !b || Math.hypot(b.pos.x - h.x, b.pos.y - h.y, b.pos.z - h.z) > 0.05; }).length;
+    ok("F1/4d: structure fire never fog-gates (stone still bitten under unheld field)", moved > 0, `moved=${moved}`);
+    // enemy sign: stepRifleman's structure path under a green-saturated
+    // field (unheld for team 2) —
+    // the parked-enemy fixture in Task 3 (F1/3a2) already proves team 2's
+    // structure fire without any field; assert the sign here WITH one.
+    const world2 = makeWorld({ field: flatF4, seed: 48 });
+    world2.depotCombat = true;
+    const chunks2 = mkLattice(world2, "depot", 20);
+    const home2 = chunks2.map((c) => ({ id: c.id, x: c.pos.x, y: c.pos.y, z: c.pos.z }));
+    const e = spawnUnit(world2, { x: 0, z: 8 }, "");
+    e.pos.x = 0; e.pos.z = 8;
+    world2.dt = 1 / 60;
+    for (let i = 0; i < 15 * 60; i++) { stepUnits(world2, straightGrid(0, 1), identFwdDir, Tgreen, (x, z) => ({ u: x, v: z })); stepWorld(world2); }
+    const moved2 = home2.filter((h) => { const b = world2.byId.get(h.id); return !b || Math.hypot(b.pos.x - h.x, b.pos.y - h.y, b.pos.z - h.z) > 0.05; }).length;
+    ok("F1/4d: enemy structure fire never fog-gates either (depot bitten under unheld field)", moved2 > 0, `moved=${moved2}`);
+  }
+
+  // (e) unit-target damage parity: the structure fallback must not perturb
+  // the man-shooting path — open-ground fixture pinned to 4 decimals
+  // against the pre-change measurement (46.3061, captured 2026-08-11 on
+  // eafeca7 before 4b landed).
+  {
+    const runP = () => {
+      const world = makeWorld({ field: flatF4, seed: 11 });
+      world.depotCombat = true;
+      const squad = mkSquad4(world, 0, 0);
+      const target = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 10, hp: 1e9 });
+      const dt = 1 / 30;
+      for (let i = 0; i < 10 / dt; i++) { squadFire(world, squad, dt); for (let s = 0; s < 20; s++) stepWorld(world); }
+      return { dmg: (1e9 - target.hp).toFixed(4), hash: worldHash(world) };
+    };
+    const a = runP(), b = runP();
+    ok("F1/4e: unit-target damage parity to 4 decimals (pre-change pin 46.3061)", a.dmg === "46.3061", `dmg=${a.dmg}`);
+    ok("F1/4f: twin determinism (identical hash, twin runs)", a.hash === b.hash, `${a.hash} vs ${b.hash}`);
+  }
+
+  // (f2) twin determinism of the stone-biting path itself.
+  {
+    const runS = () => {
+      const world = makeWorld({ field: flatF4, seed: 45 });
+      world.depotCombat = true;
+      mkLattice(world, "depot2", 10);
+      const squad = mkSquad4(world, 0, 0);
+      const dt = 1 / 30;
+      for (let i = 0; i < 6 / dt; i++) { squadFire(world, squad, dt); for (let s = 0; s < 20; s++) stepWorld(world); }
+      return worldHash(world);
+    };
+    ok("F1/4f: twin determinism of the structure-fire path", runS() === runS());
+  }
+}
+// ==== end FRONT F1 Task 4 ====================================================
 
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);

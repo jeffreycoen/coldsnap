@@ -263,7 +263,7 @@ export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })
     if (u.fireCd > 0) continue;
     const muzzle = { x: u.pos.x, y: u.pos.y + 0.5, z: u.pos.z };
     const eR = effRange(world, muzzle, spec);
-    let best = null, bd = eR * eR;
+    let best = null, bd = eR * eR, bestIsStruct = false;
     for (const e of world.bodies) {
       if ((e.kind !== "unit" && e.kind !== "vehicle") || !e.alive || e.team !== enemyTeam) continue;
       const dx = e.pos.x - u.pos.x, dz = e.pos.z - u.pos.z;
@@ -274,9 +274,26 @@ export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })
       if (!arcClears(world, muzzle, e.pos, spec, u.id)) continue;
       bd = d2; best = e;
     }
+    if (!best) {
+      // FRONT F1 (4b): no man in reach — bite stone. Nearest hostile
+      // structure in range, LOS by the real arc (selfId), NEVER fog-gated
+      // (structure law). Unit targets keep absolute priority: this scan
+      // runs only on an empty unit scan. Deterministic pick — nearest, ties
+      // by body id order (the scan order gives this). Zero rng draws.
+      let bs = eR * eR;
+      for (const s of world.bodies) {
+        if (!hostileStructure(s, squad.team)) continue;
+        const dx = s.pos.x - u.pos.x, dz = s.pos.z - u.pos.z, d2 = dx * dx + dz * dz;
+        if (d2 >= bs) continue;
+        if (!arcClears(world, muzzle, s.pos, spec, u.id)) continue;
+        bs = d2; best = s; bestIsStruct = true;
+      }
+    }
     if (!best) continue;
     u.fireCd = spec.fireRate;
-    shooterFire(world, u, muzzle, best, fspec, { attacker, volleyDelay: spec.burstGap, muzzleStep: 0, owner: u.id });
+    shooterFire(world, u, muzzle, best, fspec, bestIsStruct
+      ? { attacker, volleyDelay: spec.burstGap, muzzleStep: 0, owner: u.id, hitStruct: true, hitOnly: "structure" }
+      : { attacker, volleyDelay: spec.burstGap, muzzleStep: 0, owner: u.id });
   }
 }
 
