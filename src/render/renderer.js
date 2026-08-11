@@ -689,7 +689,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const AND_LIVE = mkPal({ dom: 0xdde3ea, sec: 0x9aa6b2, acc: 0xc0cbd6, skin: 0xeef2f6, gun: 0x2a2e34 });
   const AND_DEAD = mkPal({ dom: 0x6d747c, sec: 0x474d54, acc: 0x596069, skin: 0x8b929a, gun: 0x14171a });
   const _swq = new THREE.Quaternion(), _bq = new THREE.Quaternion(), _AXX = new THREE.Vector3(1, 0, 0);
-  // ---- mk0.22 troop identity (DEPOT-gated, see src/render/troopkit.js) ----
+  // ---- mk0.23 troop identity (DEPOT-gated, see src/render/troopkit.js) ----
   // The barrel quaternion: the rifle's preRot baked as Rz*Ry*Rx (exactly the
   // order buildInfPools applies it to the geometry), so a prop marked
   // aim:"barrel" rides the real barrel axis instead of an eyeballed tilt.
@@ -1429,8 +1429,8 @@ export function makeRenderer(canvas, world0, opts = {}) {
       // this identification, by design.
       const pairLook = world.depotCombat && b.alive && !fogSil && (b.role === "spotter" || b.role === "sniper");
       const crouch = pairLook && b.role === "sniper" && b.settled ? 0.7 : 1;
-      // mk0.22 troop identity: pure function of team/utype/tag/role/dress —
-      // no rng, no world.t. Outside DEPOT it returns the pre-mk0.22 look and
+      // mk0.23 troop identity: pure function of team/utype/tag/role/dress —
+      // no rng, no world.t. Outside DEPOT it returns the pre-mk0.23 look and
       // zero-scale props, so every other mode draws byte-identically.
       const KIT = troopKit(b, !!world.depotCombat, fogSil);
       const bw = KIT.bw, bh = KIT.bh;

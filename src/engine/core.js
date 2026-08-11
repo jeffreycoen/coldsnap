@@ -1943,6 +1943,17 @@ export const INFANTRY = {
     { key: "armL", box: [0.12, 0.44, 0.16], ty: -0.22, off: [-0.3, 0.28, 0], role: "dom", swing: 1, swingK: 0.9 },
     { key: "armR", box: [0.12, 0.44, 0.16], ty: -0.22, off: [0.3, 0.28, 0], role: "dom", swing: -1, swingK: 0.9 },
     { key: "rifle", box: [0.05, 0.05, 0.9], preRot: [0.9, 0.2, 0.25], off: [-0.1, 0.19, -0.26], role: "gun" },
+    // DIVERGENCE from the frozen demo (guarded, mk0.23 troop identity): three
+    // spare PROP slots every con-table man carries. Deliberately plain 0.1m
+    // cubes with NO preRot and NO off of their own — the renderer supplies
+    // both per role (scope + long barrel, satchel, mortar tube, MG receiver +
+    // the two bipod legs) from src/render/troopkit.js. They are INERT outside
+    // DEPOT: troopKit's non-depot path writes them at ZERO scale, so the
+    // demo, sandbox, tower defense and campaign render exactly as before —
+    // the cost is 3 extra instanced draw calls, nothing on screen.
+    { key: "prop", box: [0.1, 0.1, 0.1], off: [0, 0, 0], role: "gun" },
+    { key: "prop2", box: [0.1, 0.1, 0.1], off: [0, 0, 0], role: "gun" },
+    { key: "prop3", box: [0.1, 0.1, 0.1], off: [0, 0, 0], role: "gun" },
   ],
   gren: [
     { key: "legL", box: [0.17, 0.56, 0.22], ty: -0.28, off: [-0.13, -0.12, 0], role: "dom", swing: 1, swingK: 1 },

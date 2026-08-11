@@ -9,6 +9,8 @@ import {
   spawnSquadMembers, spawnSandbag, SANDBAG_COST, pruneSquads,
   DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, DEPOT_CENSUS_HZ, standingStructure,
 } from "../src/depot/state.js";
+import { troopKit, barrelBasis, RIFLE_PREROT, RIFLE_OFF, RIFLE_LEN } from "../src/render/troopkit.js";
+import { INFANTRY } from "../src/engine/core.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "../src/depot/accuracy.js";
 import { friendlyFouls } from "../src/depot/state.js";
 import {
@@ -5933,6 +5935,124 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
   }
 }
 // ==== end SAPPER SIEGE FIX ===================================================
+
+
+// ==== mk0.23 TROOP IDENTITY (render kit) =====================================
+// The look is a PURE function of team/utype/tag/role — pin every unit type on
+// both sides, and pin that nothing outside DEPOT changes at all.
+{
+  const mk = (o) => ({ team: 2, alive: true, ...o });
+  const nProps = (k) => k.props.filter(Boolean).length;
+
+  // --- non-DEPOT parity: the frozen demo / sandbox / TD / campaign look
+  for (const b of [mk({ team: 1, utype: "rifles" }), mk({ tag: "heavy" }), mk({ tag: "fast" }),
+                   mk({ utype: "gren" }), mk({ team: 1, utype: "mg", role: "gunner" })]) {
+    const k = troopKit(b, false);
+    ok(`kit: non-DEPOT ${b.utype || b.tag || "conscript"} is untouched (base palette, no bulk, rifle 1, zero props)`,
+      k.pal === (b.utype === "gren" ? "gren" : "con") && k.bw === 1 && k.bh === 1 && k.rifle === 1 && nProps(k) === 0);
+  }
+
+  // --- coat = side (DEPOT only)
+  ok("kit: player infantry wear the warm rust coat", troopKit(mk({ team: 1, utype: "rifles" }), true).pal === "con");
+  ok("kit: enemy infantry wear the cold slate coat", troopKit(mk({ tag: "" }), true).pal === "gren");
+  ok("kit: the enemy grenadier is unchanged (already slate)", troopKit(mk({ utype: "gren" }), true).pal === "gren");
+
+  // --- bulk
+  {
+    const h = troopKit(mk({ tag: "heavy" }), true), f = troopKit(mk({ tag: "fast" }), true), c = troopKit(mk({ tag: "" }), true);
+    ok("kit: the breaker is 1.35x wide / 1.15x tall", h.bw === 1.35 && h.bh === 1.15);
+    ok("kit: the runner is 0.9x slim", f.bw === 0.9 && f.bh === 1);
+    ok("kit: the conscript keeps his own frame", c.bw === 1 && c.bh === 1);
+  }
+
+  // --- weapon slot per role, both sides
+  const cases = [
+    ["player rifleman", mk({ team: 1, utype: "rifles" }), 1, 0],
+    ["enemy conscript", mk({ tag: "" }), 1, 0],
+    ["enemy runner", mk({ tag: "fast" }), 1, 0],
+    ["player sniper", mk({ team: 1, utype: "sniper", role: "sniper" }), 1, 2],
+    ["enemy marksman", mk({ tag: "sniper", role: "sniper", dress: "android" }), 1, 2],
+    ["player sapper", mk({ team: 1, utype: "sappers" }), 0, 1],
+    ["enemy sapper", mk({ tag: "sapper" }), 0, 1],
+    ["mortar man", mk({ team: 1, utype: "mortars" }), 0, 1],
+    ["MG gunner", mk({ team: 1, utype: "mg", role: "gunner" }), 0.8, 3],
+    ["MG loader", mk({ team: 1, utype: "mg", role: "loader" }), 0, 0],
+    ["enemy breaker", mk({ tag: "heavy" }), 0, 0],
+  ];
+  for (const [name, b, rifle, np] of cases) {
+    const k = troopKit(b, true);
+    ok(`kit: ${name} carries rifle=${rifle} props=${np}`, k.rifle === rifle && nProps(k) === np, `got rifle=${k.rifle} props=${nProps(k)}`);
+  }
+  // the spotter is owned by the pair look, not the kit
+  for (const b of [mk({ team: 1, utype: "sniper", role: "spotter" }), mk({ tag: "sniper", role: "spotter", dress: "android" })]) {
+    const k = troopKit(b, true);
+    ok("kit: the spotter is untouched by the kit (the pair look owns him)", k.rifle === 1 && nProps(k) === 0);
+  }
+
+  // --- the sniper's scope really is ON the barrel, and the long barrel butts
+  // onto the muzzle: both derived from the rifle's baked preRot, not eyeballed
+  {
+    const { fwd, up } = barrelBasis(RIFLE_PREROT);
+    const len = (v) => Math.hypot(v[0], v[1], v[2]);
+    ok("kit: barrelBasis is orthonormal", Math.abs(len(fwd) - 1) < 1e-9 && Math.abs(len(up) - 1) < 1e-9 &&
+      Math.abs(fwd[0] * up[0] + fwd[1] * up[1] + fwd[2] * up[2]) < 1e-9);
+    const [scope, longb] = troopKit(mk({ team: 1, utype: "sniper", role: "sniper" }), true).props;
+    const rel = (p) => [p[0] - RIFLE_OFF[0], p[1] - RIFLE_OFF[1], p[2] - RIFLE_OFF[2]];
+    const along = (p) => { const r = rel(p); return r[0] * fwd[0] + r[1] * fwd[1] + r[2] * fwd[2]; };
+    const off = (p) => { const r = rel(p); return r[0] * up[0] + r[1] * up[1] + r[2] * up[2]; };
+    const side = (p) => { const r = rel(p), a = along(p), o = off(p);
+      return Math.hypot(r[0] - a * fwd[0] - o * up[0], r[1] - a * fwd[1] - o * up[1], r[2] - a * fwd[2] - o * up[2]); };
+    ok("kit: the scope sits ON the barrel axis (no lateral drift), clear of it by its own radius",
+      side(scope.off) < 1e-9 && Math.abs(off(scope.off) - 0.055) < 1e-9 && Math.abs(along(scope.off)) < RIFLE_LEN / 2,
+      `side=${side(scope.off)} off=${off(scope.off)} along=${along(scope.off)}`);
+    ok("kit: the scope is aimed down the barrel, not tilted by hand", scope.aim === "barrel" && !scope.tilt);
+    ok("kit: the long barrel butts onto the muzzle end and extends the reach",
+      side(longb.off) < 1e-9 && longb.aim === "barrel" && along(longb.off) < -RIFLE_LEN / 2, `along=${along(longb.off)}`);
+    ok("kit: the scoped rifle itself is never sheared (uniform scale only)",
+      troopKit(mk({ team: 1, utype: "sniper", role: "sniper" }), true).rifle === 1);
+  }
+
+  // --- the MG bipod is TWO legs, splayed, not a flat slab
+  {
+    const [rec, legL, legR] = troopKit(mk({ team: 1, utype: "mg", role: "gunner" }), true).props;
+    ok("kit: the MG receiver rides the barrel", rec.aim === "barrel");
+    ok("kit: the bipod is two separate legs, mirrored about the gun centreline",
+      !!legL && !!legR && legL.tilt[0] === 2 && legR.tilt[0] === 2 && legL.tilt[1] === -legR.tilt[1] && legL.tilt[1] !== 0);
+    ok("kit: the two legs splay to opposite sides and hang below the muzzle",
+      Math.sign(legL.off[0] - legR.off[0]) === -1 && legL.off[1] === legR.off[1] && legL.off[1] < 0.45);
+    ok("kit: each leg is a slender upright, not a slab", legL.s[1] > 5 * legL.s[0] && legL.s[0] === legL.s[2]);
+    ok("kit: the MG gun is short (uniform scale, no shear)", troopKit(mk({ team: 1, utype: "mg", role: "gunner" }), true).rifle < 1);
+  }
+
+  // --- fog: bulk survives the seam by design, everything else does not
+  {
+    const h = troopKit(mk({ tag: "heavy" }), true, true), s = troopKit(mk({ team: 1, utype: "sniper", role: "sniper" }), true, true);
+    ok("kit: STATED DECISION — the breaker's bulk shows through the fog seam", h.bw === 1.35 && h.bh === 1.15);
+    ok("kit: the fog seam takes every prop and weapon back to the generic man-shape",
+      nProps(h) === 0 && nProps(s) === 0 && h.rifle === 1 && s.rifle === 1);
+  }
+
+  // --- determinism: same body in, same look out; no hidden state
+  {
+    const b = mk({ team: 1, utype: "mg", role: "gunner" });
+    const a1 = JSON.stringify(troopKit(b, true)), a2 = JSON.stringify(troopKit(b, true));
+    ok("kit: troopKit is pure (identical output for identical body)", a1 === a2);
+  }
+
+  // --- the part table's spare slots are real and inert
+  ok("kit: INFANTRY.con carries three spare prop slots",
+    ["prop", "prop2", "prop3"].every((k) => INFANTRY.con.some((p) => p.key === k)));
+  ok("kit: the grenadier table gained nothing", !INFANTRY.gren.some((p) => /^prop/.test(p.key)));
+  ok("kit: the MG team spawns as gunner + loader", (() => {
+    const world = makeWorld(11);
+    world.field = { heightAt: () => 0 };
+    const sq = makeSquad(9, "mg", 1, 0, 0);
+    spawnSquadMembers(world, sq);
+    const roles = sq.memberIds.map((id) => world.byId.get(id).role);
+    return roles[0] === "gunner" && roles[1] === "loader";
+  })());
+}
+// ==== end mk0.23 TROOP IDENTITY ==============================================
 
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);

@@ -329,6 +329,12 @@ export function spawnSquadMembers(world, squad) {
     // carries the rifle; member 1 carries binoculars and NEVER fires until
     // converted (squadFire's role skip below).
     if (squad.type === "sniper") u.role = i === 0 ? "sniper" : "spotter";
+    // mk0.23 troop identity: the MG team reads as gun + loader — member 0
+    // carries the weapon, member 1 carries nothing. RENDER-ONLY roles: no
+    // sim path branches on "gunner"/"loader" (only "sniper"/"spotter" are
+    // read by squadFire, accuracy and units.js), and the one side effect —
+    // squads.js setting u.settled for any roled man — is itself sim-inert.
+    if (squad.type === "mg") u.role = i === 0 ? "gunner" : "loader";
     squad.memberIds.push(u.id);
   }
 }
