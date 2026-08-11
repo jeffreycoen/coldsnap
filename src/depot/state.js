@@ -8,7 +8,7 @@ import { planWave, MIN_WAVE_FLOOR } from "./ai.js";
 import { STIPEND, payResults, combatIneffective, bookValue } from "./economy.js";
 import { composeIntel, openingIntel } from "./intel.js";
 import { TOWER_SPECS, ENEMY_SPECS, TANK, INFANTRY_ARMS } from "./specs.js";
-import { fogStateFor } from "./territory.js";
+import { fogStateForContested } from "./territory.js";
 
 // Targeting gate, symmetric: a shooter of `team` (1 = player tower, 2 =
 // attacker rifleman/grenadier/tank) may only acquire a target at canonical
@@ -22,9 +22,13 @@ import { fogStateFor } from "./territory.js";
 // the map's un-rotated frame, same as the renderer's rim — while body
 // positions live in rotated WORLD space; callers convert via invW (DEPOT's
 // world-to-canonical transform) before calling this.
+// F1.6 BRIDGE (mk0.26): the read is fogStateForContested, not fogStateFor —
+// contested ground (within one cell of the boundary) is engageable by both
+// sides, so men at contact are not mutually weapon-proof. Reverts to plain
+// fogStateFor when vision B3 lands (see territory.js's deletion marker).
 export function fieldReaches(T, x, z, team) {
   if (!T) return true;
-  return fogStateFor(T, x, z, team) !== "unheld";
+  return fogStateForContested(T, x, z, team) !== "unheld";
 }
 
 // Elevation-scaled acquisition range — the single symmetric rule both towers

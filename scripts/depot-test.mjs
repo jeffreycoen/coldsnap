@@ -1688,7 +1688,11 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     // spec.range on otherwise-flat open ground.
     const halfU = 29, halfV = 57;
     const T = makeTerritory(halfU, halfV);
-    for (let i = 0; i < 200; i++) stepTerritory(T, [{ x: 15, z: 0, w: EMIT.tower.w, r: 3, sign: -1 }], 0.05);
+    // r 14 (was 3): under the F1.6 contested-ground bridge (mk0.26) every
+    // cell of a 3m pocket sits within one cell of its own boundary, so the
+    // whole pocket is engageable frontier and nothing clips. A real held
+    // zone has an interior — that is what a fog clip means now.
+    for (let i = 0; i < 200; i++) stepTerritory(T, [{ x: 15, z: 0, w: EMIT.tower.w, r: 14, sign: -1 }], 0.05);
     const foggedPoly = reachPolygon(flatWorld(), T, muzzle, spec, 1);
     const foggedDist = Math.hypot(foggedPoly[0].x - muzzle.x, foggedPoly[0].z - muzzle.z);
     ok("reachPolygon: fog boundary clips rays well short of open-flat full range", foggedDist < spec.range - 3, foggedDist);
@@ -2827,7 +2831,7 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
     const flatWorld = { field: { heightAt: () => 0 }, bodies: [] };
     const muzzle = { x: 0, y: 2.45, z: 0 };
     const T = makeTerritory(29, 57);
-    for (let i = 0; i < 200; i++) stepTerritory(T, [{ x: 15, z: 0, w: EMIT.tower.w, r: 3, sign: -1 }], 0.05);
+    for (let i = 0; i < 200; i++) stepTerritory(T, [{ x: 15, z: 0, w: EMIT.tower.w, r: 14, sign: -1 }], 0.05); // r 14: see the F1.6 note on the reachPolygon fog clip above
     const clipped = Math.hypot(reachPolygon(flatWorld, T, muzzle, spec, 1)[0].x - muzzle.x, reachPolygon(flatWorld, T, muzzle, spec, 1)[0].z - muzzle.z);
     const declipped = Math.hypot(reachPolygon(flatWorld, null, muzzle, spec, 1)[0].x - muzzle.x, reachPolygon(flatWorld, null, muzzle, spec, 1)[0].z - muzzle.z);
     ok("preview declip: fog-frontier preview extends beyond the territory boundary", declipped > clipped + 3 && declipped > spec.range - 1.5, `${declipped.toFixed(1)} vs clipped ${clipped.toFixed(1)}`);
@@ -6178,6 +6182,111 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
   }
 }
 // ==== end F1.5 TASK 2 ========================================================
+
+// ==== F1.6 BRIDGE / mk0.26: CONTESTED GROUND IS SHOOTABLE GROUND =============
+// The reported defect: a man standing on his own side's ground one cell past
+// the boundary was weapon-proof — fieldReaches read "unheld" for the shooter,
+// so neither side could acquire the other at contact. The bridge: a cell is
+// engageable if the shooter's side reads it held/seam OR any 4-neighbour at
+// cell pitch does. One cell of grace across the boundary, symmetric by
+// construction. Deep behind the enemy line stays dark (fog still real).
+{
+  console.log("\n[F1.6 bridge (mk0.26): contested ground]");
+  const { fogStateForContested } = await import("../src/depot/territory.js");
+  const flatC = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+
+  // A split field: green for z < 0, red for z > 0. Boundary at z = 0, cs = 2.
+  const mkSplit = () => {
+    const T = makeTerritory(120, 120);
+    for (let iz = 0; iz < T.nz; iz++) {
+      const wz = -T.halfV + (iz + 0.5) * T.cs;
+      for (let ix = 0; ix < T.nx; ix++) T.v[iz * T.nx + ix] = wz < 0 ? 1 : -1;
+    }
+    return T;
+  };
+  const T = mkSplit();
+
+  // (a) the raw read, both signs.
+  ok("F1.6/a: one cell past the boundary is engageable by the player (was unheld)",
+    fieldReaches(T, 0, 1, 1) === true, `raw=${fogStateFor(T, 0, 1, 1)} contested=${fogStateForContested(T, 0, 1, 1)}`);
+  ok("F1.6/a: mirror — one cell past the boundary is engageable by the attacker",
+    fieldReaches(T, 0, -1, 2) === true, `raw=${fogStateFor(T, 0, -1, 2)} contested=${fogStateForContested(T, 0, -1, 2)}`);
+  ok("F1.6/a: two cells deep in red stays dark to the player (fog still real)",
+    fieldReaches(T, 0, 5, 1) === false, `contested=${fogStateForContested(T, 0, 5, 1)}`);
+  ok("F1.6/a: two cells deep in green stays dark to the attacker",
+    fieldReaches(T, 0, -5, 2) === false, `contested=${fogStateForContested(T, 0, -5, 2)}`);
+  ok("F1.6/a: held ground still reads held (unchanged)",
+    fogStateForContested(T, 0, -9, 1) === "held" && fogStateForContested(T, 0, 9, 2) === "held");
+  ok("F1.6/a: a saturated enemy field is still fully dark (no grace anywhere)",
+    (() => { const Tred = makeTerritory(120, 120); Tred.v.fill(-1);
+      return fieldReaches(Tred, 0, 0, 1) === false && fieldReaches(Tred, 30, -30, 1) === false; })());
+  ok("F1.6/a: symmetric by construction — the grace band is the same width both ways",
+    fieldReaches(T, 0, 1, 1) === fieldReaches(T, 0, -1, 2) && fieldReaches(T, 0, 5, 1) === fieldReaches(T, 0, -5, 2));
+
+  // (b) the reported case, live: a player squad on green fires at an enemy
+  // standing one cell into red. Pre-change: zero damage.
+  {
+    const world = makeWorld({ field: flatC, seed: 81 });
+    world.depotCombat = true;
+    const squad = makeSquad(1, "rifles", 1, 0, -6);
+    for (let i = 0; i < SQUAD_SPECS.rifles.n; i++) {
+      const u = addBody(world, { kind: "unit", team: 1, mass: 90, hx: 0.3, hy: 0.9, hz: 0.3, x: i * 0.8, y: 0.9, z: -6, hp: 100 });
+      squad.memberIds.push(u.id);
+    }
+    squad.order = "defend";
+    const man = addBody(world, { kind: "unit", team: 2, mass: 400, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 1, hp: 1e9 });
+    const deep = addBody(world, { kind: "unit", team: 2, mass: 400, hx: 0.26, hy: 0.86, hz: 0.26, x: 12, y: 0.86, z: 7, hp: 1e9 });
+    const dt = 1 / 30;
+    for (let i = 0; i < 10 / dt; i++) { squadFire(world, squad, dt, T); for (let s = 0; s < 20; s++) stepWorld(world); }
+    ok("F1.6/b: the man at the front line takes fire (pre-change: weapon-proof)",
+      man.hp < 1e9, `dmg=${(1e9 - man.hp).toFixed(2)}`);
+    ok("F1.6/b: the man two cells deep in red is still untouchable",
+      deep.hp === 1e9, `dmg=${(1e9 - deep.hp).toFixed(2)}`);
+  }
+
+  // (c) the mirror, live: an enemy rifleman shoots a player man standing one
+  // cell into green — their guns get the same grace as ours.
+  {
+    const world = makeWorld({ field: flatC, seed: 82 });
+    world.depotCombat = true;
+    const man = addBody(world, { kind: "unit", team: 1, mass: 400, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: -1, hp: 1e9 });
+    const e = spawnUnit(world, { x: 0, z: 6 }, "");
+    e.pos.x = 0; e.pos.z = 6;
+    world.dt = 1 / 60;
+    for (let i = 0; i < 10 * 60; i++) { stepUnits(world, straightGrid(0, -1), identFwdDir, T, (x, z) => ({ u: x, v: z })); stepWorld(world); }
+    ok("F1.6/c: mirror — the enemy rifleman can shoot a player man at the line",
+      man.hp < 1e9, `dmg=${(1e9 - man.hp).toFixed(2)}`);
+  }
+
+  // (d) the deletion marker: vision B3 must delete this bridge, so the marker
+  // is pinned by grep here.
+  {
+    const terrSrc = fs.readFileSync(new URL("../src/depot/territory.js", import.meta.url), "utf8");
+    ok("F1.6/d: fogStateForContested carries its DIES-WITH-VISION-B3 deletion marker",
+      /DIES when vision B3 lands/.test(terrSrc.replace(/\n\s*\/\/\s*/g, " ")) && /marked for deletion/.test(terrSrc.replace(/\n\s*\/\/\s*/g, " ")));
+  }
+
+  // (e) twin determinism across the contested read.
+  {
+    const runC = () => {
+      const world = makeWorld({ field: flatC, seed: 83 });
+      world.depotCombat = true;
+      const squad = makeSquad(1, "rifles", 1, 0, -6);
+      for (let i = 0; i < SQUAD_SPECS.rifles.n; i++) {
+        const u = addBody(world, { kind: "unit", team: 1, mass: 90, hx: 0.3, hy: 0.9, hz: 0.3, x: i * 0.8, y: 0.9, z: -6, hp: 100 });
+        squad.memberIds.push(u.id);
+      }
+      squad.order = "defend";
+      addBody(world, { kind: "unit", team: 2, mass: 400, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 1, hp: 1e9 });
+      const dt = 1 / 30;
+      for (let i = 0; i < 8 / dt; i++) { squadFire(world, squad, dt, T); for (let s = 0; s < 20; s++) stepWorld(world); }
+      return worldHash(world);
+    };
+    ok("F1.6/e: twin determinism through the contested-ground firefight", runC() === runC());
+  }
+}
+// ==== end F1.6 BRIDGE ========================================================
+
 
 
 if (fails.length) {

@@ -85,6 +85,27 @@ export function fogStateFor(T, x, z, team) {
 }
 export function fogStateAt(T, x, z) { return fogStateFor(T, x, z, 1); }
 
+// fogStateForContested — the F1.6-BRIDGE targeting read (mk0.26). DIES when
+// vision B3 lands: that phase replaces ground-control targeting with "you
+// shoot what your side can SEE", and this function is marked for deletion
+// there (delete it, and revert fieldReaches to plain fogStateFor).
+//
+// Why it exists: at a zone boundary each side's own emission makes its own
+// ground "unheld" for the other, so men standing at contact were mutually
+// weapon-proof. A cell is engageable if the shooter's side reads it held/
+// seam OR any of its 4-neighbours at cell pitch does — one cell of grace
+// across the boundary, symmetric by construction. Deep behind the enemy
+// line stays dark. UNIT targeting only; structure fire is never gated at
+// all (standing law), and the RENDER fog keeps the old read until vision.
+export function fogStateForContested(T, x, z, team) {
+  if (fogStateFor(T, x, z, team) !== "unheld") return "held";
+  const cs = T.cs;
+  if (fogStateFor(T, x + cs, z, team) !== "unheld" || fogStateFor(T, x - cs, z, team) !== "unheld" ||
+      fogStateFor(T, x, z + cs, team) !== "unheld" || fogStateFor(T, x, z - cs, team) !== "unheld") return "seam";
+  return "unheld";
+}
+
+
 // valueAt: the RAW field value (-1..+1, unflipped — always the player's
 // sign convention) at a world/canonical (x,z). Used by the renderer's area
 // wash (Task 3), which needs continuous field strength for its alpha ramp,
