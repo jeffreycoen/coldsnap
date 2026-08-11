@@ -3,6 +3,7 @@
 // imports the single-file version got from its own top-of-file scope.
 import * as THREE from "three";
 import { POOL, INFANTRY, BAYER4, snapCam, ICE_CREEP, ICE_CREEP_T } from "../engine/core.js";
+import { troopKit, RIFLE_PREROT } from "./troopkit.js";
 
 // ==================================================================== render
 const PAL = { bisonBlue: 0x33619c, scoutRed: 0x8a4a44, snow: 0xe9edf2, uiRed: 0xd8433a }; // player is blue steel; the enemy wears the red now
@@ -688,8 +689,32 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const AND_LIVE = mkPal({ dom: 0xdde3ea, sec: 0x9aa6b2, acc: 0xc0cbd6, skin: 0xeef2f6, gun: 0x2a2e34 });
   const AND_DEAD = mkPal({ dom: 0x6d747c, sec: 0x474d54, acc: 0x596069, skin: 0x8b929a, gun: 0x14171a });
   const _swq = new THREE.Quaternion(), _bq = new THREE.Quaternion(), _AXX = new THREE.Vector3(1, 0, 0);
+  // ---- mk0.22 troop identity (DEPOT-gated, see src/render/troopkit.js) ----
+  // The barrel quaternion: the rifle's preRot baked as Rz*Ry*Rx (exactly the
+  // order buildInfPools applies it to the geometry), so a prop marked
+  // aim:"barrel" rides the real barrel axis instead of an eyeballed tilt.
+  const _rifleSpec = INFANTRY.con.find((p) => p.key === "rifle");
+  const _pr = (_rifleSpec && _rifleSpec.preRot) || RIFLE_PREROT;
+  const RIFLE_Q = new THREE.Quaternion();
+  {
+    const qa = new THREE.Quaternion(), qb = new THREE.Quaternion();
+    RIFLE_Q.setFromAxisAngle(new THREE.Vector3(0, 0, 1), _pr[2]);
+    qa.setFromAxisAngle(new THREE.Vector3(0, 1, 0), _pr[1]);
+    qb.setFromAxisAngle(_AXX, _pr[0]);
+    RIFLE_Q.multiply(qa).multiply(qb);
+  }
+  const PROP_KEYS = { prop: 0, prop2: 1, prop3: 2 };
+  const _TILT_AX = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)];
   const chunkGeo = new THREE.BoxGeometry(1.2, 1.2, 1.2);
-  const chunkMesh = pool(chunkGeo, toon(0xa6b2c0), 1800, true); // 865 stones live now (keep 84 + walls 240 + hangar 115 + warehouse 146 + houses 280); headroom for the TD town (~700) + collapse rubble
+  // CHUNK_CAP (Jeff, 2026-08-11): the draw cap and the pool are ONE constant,
+  // doubled from the old 1000 cap after FRONT F1's enemy depot pushed boot
+  // chunks to 1154 and silently un-drew sandbags + 154 town stones (the loop
+  // guard and this allocation had drifted apart). If the map ever exceeds
+  // this again, the on-screen stones counter (DepotGame HUD) shows it
+  // saturating — that readout is the alarm.
+  const CHUNK_CAP = 2000;
+  let chunkStats = { drawn: 0, cap: CHUNK_CAP, total: 0 };
+  const chunkMesh = pool(chunkGeo, toon(0xa6b2c0), CHUNK_CAP, true);
   chunkMesh.receiveShadow = true;
   // mech walker links: plain instanced steel boxes (rig art comes later)
   const mechMesh = pool(new THREE.BoxGeometry(1, 1, 1), toon(0xffffff), 40, true);
@@ -1404,12 +1429,33 @@ export function makeRenderer(canvas, world0, opts = {}) {
       // this identification, by design.
       const pairLook = world.depotCombat && b.alive && !fogSil && (b.role === "spotter" || b.role === "sniper");
       const crouch = pairLook && b.role === "sniper" && b.settled ? 0.7 : 1;
+      // mk0.22 troop identity: pure function of team/utype/tag/role/dress —
+      // no rng, no world.t. Outside DEPOT it returns the pre-mk0.22 look and
+      // zero-scale props, so every other mode draws byte-identically.
+      const KIT = troopKit(b, !!world.depotCombat, fogSil);
+      const bw = KIT.bw, bh = KIT.bh;
+      const kitPal = KIT.pal;
       for (let pi = 0; pi < spec.length; pi++) {
-        const p = spec[pi], o = p.off;
-        const oy = o[1] * crouch - (crouch < 1 ? 0.06 : 0);
-        const px = b.pos.x + R[0] * o[0] + R[3] * oy + R[6] * o[2];
-        const py = b.pos.y + R[1] * o[0] + R[4] * oy + R[7] * o[2];
-        const pz = b.pos.z + R[2] * o[0] + R[5] * oy + R[8] * o[2];
+        const p = spec[pi];
+        let o = p.off, ksx = 1, ksy = 1, ksz = 1, tilt = null, aim = null;
+        const propI = PROP_KEYS[p.key];
+        if (propI !== undefined) {
+          const pr = KIT.props[propI];
+          // inert slot: a degenerate instance (this is the whole reason the
+          // spare slots are free everywhere but DEPOT)
+          if (!pr) { writeInst(pools[pi], idx, b.pos.x, b.pos.y, b.pos.z, b.q, 0, 0, 0); continue; }
+          o = pr.off; ksx = pr.s[0]; ksy = pr.s[1]; ksz = pr.s[2];
+          tilt = pr.tilt || null; aim = pr.aim || null;
+        } else if (p.key === "rifle") { ksx = ksy = ksz = KIT.rifle; }
+        // bulk scales the RIG (offsets + body part scale). Props keep their
+        // own literal scale: an aim:"barrel" prop must stay UNIFORMLY scaled
+        // or the baked rotation shears it — and no bulked unit carries one.
+        const bpx = propI !== undefined ? 1 : bw, bpy = propI !== undefined ? 1 : bh;
+        const ox = o[0] * (propI !== undefined ? 1 : bw), oz = o[2] * (propI !== undefined ? 1 : bw);
+        const oy = o[1] * (propI !== undefined ? 1 : bh) * crouch - (crouch < 1 ? 0.06 : 0);
+        const px = b.pos.x + R[0] * ox + R[3] * oy + R[6] * oz;
+        const py = b.pos.y + R[1] * ox + R[4] * oy + R[7] * oz;
+        const pz = b.pos.z + R[2] * ox + R[5] * oy + R[8] * oz;
         let q = b.q;
         if (p.swing) {
           _bq.set(b.q.x, b.q.y, b.q.z, b.q.w);
@@ -1420,6 +1466,11 @@ export function makeRenderer(canvas, world0, opts = {}) {
           _bq.multiply(_swq);
           q = _bq;
         }
+        // a prop that must sit ON the barrel takes the rifle's REAL preRot
+        // quaternion (RIFLE_Q, composed from the same table entry the pool
+        // geometry bakes); a free prop takes its own unit-local axis tilt
+        if (aim === "barrel") { _bq.set(b.q.x, b.q.y, b.q.z, b.q.w); _bq.multiply(RIFLE_Q); q = _bq; }
+        else if (tilt) { _bq.set(b.q.x, b.q.y, b.q.z, b.q.w); _swq.setFromAxisAngle(_TILT_AX[tilt[0]], tilt[1]); _bq.multiply(_swq); q = _bq; }
         if (pairLook && b.role === "spotter" && p.key === "rifle") {
           if (b.settled) {
             // the rifle slot doubles as the binoculars: a stub at the eyes
@@ -1430,14 +1481,14 @@ export function makeRenderer(canvas, world0, opts = {}) {
           } else {
             writeInst(pools[pi], idx, px, py, pz, q, 0, 0, 0); // no rifle on the march either
           }
-          if (pools[pi].setColorAt) pools[pi].setColorAt(idx, fogSil ? SIL_C : (b.dress === "android" ? (b.alive ? AND_LIVE : AND_DEAD) : (b.alive ? INF_LIVE : INF_DEAD)[isG ? "gren" : "con"]).gun);
+          if (pools[pi].setColorAt) pools[pi].setColorAt(idx, fogSil ? SIL_C : (b.dress === "android" ? (b.alive ? AND_LIVE : AND_DEAD) : (b.alive ? INF_LIVE : INF_DEAD)[kitPal]).gun);
           continue;
         }
-        writeInst(pools[pi], idx, px, py, pz, q, 1, 1, 1);
+        writeInst(pools[pi], idx, px, py, pz, q, bpx * ksx, bpy * ksy, bpx * ksz);
         if (pools[pi].setColorAt) {
           if (fogSil) pools[pi].setColorAt(idx, SIL_C);
           else {
-            const pal = b.dress === "android" ? (b.alive ? AND_LIVE : AND_DEAD) : (b.alive ? INF_LIVE : INF_DEAD)[isG ? "gren" : "con"];
+            const pal = b.dress === "android" ? (b.alive ? AND_LIVE : AND_DEAD) : (b.alive ? INF_LIVE : INF_DEAD)[kitPal];
             pools[pi].setColorAt(idx, pal[p.role]);
           }
         }
@@ -1462,11 +1513,12 @@ export function makeRenderer(canvas, world0, opts = {}) {
     // chunks
     let ki = 0;
     for (const b of world.bodies) {
-      if (b.kind !== "chunk" || ki >= 1000) continue;
+      if (b.kind !== "chunk" || ki >= CHUNK_CAP) continue;
       writeInst(chunkMesh, ki, b.pos.x, b.pos.y, b.pos.z, b.q, b.hx / 0.6, b.hy / 0.6, b.hz / 0.6);
       ki++;
     }
     chunkMesh.count = ki; chunkMesh.instanceMatrix.needsUpdate = true;
+    chunkStats = { drawn: ki, cap: CHUNK_CAP, total: world.bodies.reduce((n, b) => n + (b.kind === "chunk" ? 1 : 0), 0) };
     // mech links (kind filter lesson: name EVERY kind explicitly)
     let torsoB = null;
     let mi = 0;
@@ -1845,5 +1897,5 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // never calls this and keeps the shipped look exactly
   function setGrade(g) { postMat.uniforms.uGrade.value = Math.max(-1, Math.min(1, g || 0)); }
   const project = (x, y, z) => { const v = new THREE.Vector3(x, y, z); v.project(cam); return { x: v.x, y: v.y }; };
-  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, overlay, setDressing, rotateStep, updateTerritory, setFog, getFogDebug, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
+  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, overlay, setDressing, rotateStep, updateTerritory, setFog, getFogDebug, chunkStats: () => chunkStats, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
 }

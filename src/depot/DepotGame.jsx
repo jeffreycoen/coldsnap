@@ -1730,6 +1730,7 @@ export default function DepotGame({ onExit }) {
             S.toasts = S.toasts.filter((t) => nowS - t.t < 2.2);
             setHud({
               fps: S.fps, wave: S.ws.waveIdx + 1, enemies: en,
+              stones: R.chunkStats ? `${R.chunkStats().drawn}/${R.chunkStats().cap}` : "",
               resources: Math.floor(S.resources), walls: nw, towers: nt, kills: S.kills,
               between: S.ws.betweenWaves, countdown: Math.max(0, Math.ceil(S.ws.countdown)),
               phase: S.phase, dispatch: S.dispatch, lastDispatch: S.lastDispatch,
@@ -1897,7 +1898,7 @@ export default function DepotGame({ onExit }) {
         {onExit && (
           <button style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px" }} onClick={onExit}>⏏ MENU</button>
         )}
-        <div style={{ ...P.stat, opacity: 0.65 }}>{hud.fps} fps · {MK}</div>
+        <div style={{ ...P.stat, opacity: 0.65 }}>{hud.fps} fps · {hud.stones || "0/0"} · {MK}</div>
       </div>
 
       {hud.toasts && hud.toasts.length > 0 && (
