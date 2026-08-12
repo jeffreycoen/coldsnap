@@ -25,7 +25,15 @@ function Typed({ text, cps = 45, style }) {
 // outcome (optional, end-of-run cards only): "win" | "loss". Renders an
 // explicit verdict banner above the teletyped body — the spent-offensive
 // early WIN read as a defeat when the card carried no verdict at all.
-export default function Dispatch({ dispatch, gating, onAcknowledge, label, outcome }) {
+//
+// floating (P1 Task 2): the bell's intel card is NOT a modal — the war does
+// not stop for a page of prose. With this set the scrim is gone entirely (a
+// full-inset scrim eats every combat tap behind it), the card parks in a
+// corner, and only the card's own box takes pointer events.
+// armed (P1 Task 2): an external, WORLD-time arm gate (state.js's
+// PENDING_ARM_S law, evaluated by the frame loop). It is ANDed with the card's
+// own 500ms modal guard, never replaces it — both laws hold at once.
+export default function Dispatch({ dispatch, gating, onAcknowledge, label, outcome, floating, armed: armedExt }) {
   const [armed, setArmed] = useState(false);
 
   useEffect(() => {
@@ -35,10 +43,11 @@ export default function Dispatch({ dispatch, gating, onAcknowledge, label, outco
   }, [dispatch]);
 
   if (!dispatch) return null;
+  const ready = armed && (armedExt === undefined || armedExt);
 
   return (
-    <div style={S.scrim}>
-      <div style={S.card} data-dispatch-wo={dispatch.wo}>
+    <div style={floating ? S.float : S.scrim}>
+      <div style={floating ? { ...S.card, ...S.cardFloat } : S.card} data-dispatch-wo={dispatch.wo}>
         <div style={S.head}>
           <span style={{ color: "#7fd7ff", letterSpacing: 2 }}>FIELD DISPATCH</span>
           <span style={{ opacity: 0.6 }}>{dispatch.wo}</span>
@@ -54,9 +63,9 @@ export default function Dispatch({ dispatch, gating, onAcknowledge, label, outco
           ))}
         </div>
         <button
-          style={{ ...S.ack, opacity: armed ? 1 : 0.4, cursor: armed ? "pointer" : "default" }}
-          disabled={!armed}
-          onClick={() => { if (armed) onAcknowledge(); }}
+          style={{ ...S.ack, opacity: ready ? 1 : 0.4, cursor: ready ? "pointer" : "default" }}
+          disabled={!ready}
+          onClick={() => { if (ready) onAcknowledge(); }}
         >
           {label || (gating ? "ACKNOWLEDGE" : "CLOSE")}
         </button>
@@ -67,6 +76,11 @@ export default function Dispatch({ dispatch, gating, onAcknowledge, label, outco
 
 const S = {
   scrim: { position: "absolute", inset: 0, background: "rgba(6,10,16,0.72)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 20 },
+  // floating: parked under the top bar, left side (the manifest takes the
+  // right). No inset box and pointerEvents "none" on the wrapper, so every
+  // pixel that is not the card itself still belongs to the battle underneath.
+  float: { position: "absolute", top: 52, left: 10, zIndex: 6, pointerEvents: "none" },
+  cardFloat: { width: "min(330px, 44vw)", padding: "12px 14px", pointerEvents: "auto", opacity: 0.96 },
   card: { width: "min(420px, 86vw)", background: "#0d1420", border: "1px solid #2c3846", borderRadius: 6, padding: "16px 18px", boxShadow: "0 10px 40px rgba(0,0,0,0.5)" },
   verdict: { fontSize: 13, letterSpacing: 3, textAlign: "center", border: "1px solid", borderRadius: 4, padding: "6px 0", marginBottom: 12, fontFamily: "monospace" },
   head: { display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 12, borderBottom: "1px solid #2c3846", paddingBottom: 8 },

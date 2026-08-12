@@ -4,7 +4,9 @@
 //   node scripts/depot-test.mjs
 import {
   makeRunState, stepBell, fireBell, withdrawDue, executeWithdrawal,
-  BELL_PERIOD_S, BELL_SCRAP, TIER_BELLS, ENEMY_TIERS, enemyTierState, ASSAULT_TIMEOUT,
+  BELL_PERIOD_S, BELL_SCRAP, TIER_BELLS, ENEMY_TIERS, enemyTierState, enemyTierOf, ASSAULT_TIMEOUT,
+  MANIFEST_DRAWS, FOE_DRAWS, makeManifestState, makeFoeState, manifestPool, foePool,
+  drawOffers, drawFoePick, pickManifest, isUnlocked, tierOpenCount,
   regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, squadFire,
   fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed,
   PENDING_EDGE_PAD, pendingButtonsVisible, canvasTapConsumesPending,
@@ -98,14 +100,24 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
 }
 
 // --- tier caps: what a bell's assault may contain
+// mk0.41 re-pin: enemyTierState is PICK-driven now (a tag needs a pick AND its
+// bell), so every read here passes an explicit pick list. `allPicked` is the
+// ceiling read — "if they had picked everything, what would this bell allow?"
+// — which is exactly what the old bell-only signature used to answer.
 {
-  ok("conscripts are never gated", enemyTierState(0).tags.includes(""));
-  ok("nothing but conscripts before the first tier bell", enemyTierState(TIER_BELLS[0] - 1).tags.length === 1);
+  const allPicked = ENEMY_TIERS.flat();
+  ok("conscripts are never gated", enemyTierState(0, allPicked).tags.includes(""));
+  ok("nothing but conscripts before the first tier bell", enemyTierState(TIER_BELLS[0] - 1, allPicked).tags.length === 1);
+  ok("no picks, no tags: an attacker that has picked nothing marches conscripts", enemyTierState(99, []).tags.length === 1);
   for (let i = 0; i < ENEMY_TIERS.length; i++) {
-    const justBefore = enemyTierState(TIER_BELLS[i] - 1).tags;
-    const atBell = enemyTierState(TIER_BELLS[i]).tags;
+    const justBefore = enemyTierState(TIER_BELLS[i] - 1, allPicked).tags;
+    const atBell = enemyTierState(TIER_BELLS[i], allPicked).tags;
     ok(`tier ${i + 1} is shut before bell ${TIER_BELLS[i]}`, ENEMY_TIERS[i].every((t) => !justBefore.includes(t)));
     ok(`tier ${i + 1} opens at bell ${TIER_BELLS[i]}`, ENEMY_TIERS[i].every((t) => atBell.includes(t)));
+    // the bell is a CEILING even against a corrupt pick list: a tag picked
+    // ahead of its bell still cannot field.
+    ok(`tier ${i + 1} stays shut before its bell even if picked early`,
+      enemyTierState(TIER_BELLS[i] - 1, ENEMY_TIERS[i]).tags.length === 1);
   }
   // and planWave honours the cap: 40 seeded musters at bell 1 field nothing
   // from tiers 2 or 3, however rich the regiment.
@@ -113,7 +125,7 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
   let leaked = 0, fieldedAny = 0;
   for (let seed = 1; seed <= 40; seed++) {
     const reg = { heads: 400, tanks: 10, heads0: 400, tanks0: 10, scrap: 900 };
-    const { buys } = planWave(reg, { mgs: 8, walls: 8, squads: 3 }, 1, mulberry32(seed * 31), enemyTierState(1).tags);
+    const { buys } = planWave(reg, { mgs: 8, walls: 8, squads: 3 }, 1, mulberry32(seed * 31), enemyTierState(1, allPicked).tags);
     if (buys.some((b) => gated.includes(b.type))) leaked++;
     if (buys.reduce((n, b) => n + b.n, 0) > 0) fieldedAny++;
   }
@@ -129,7 +141,133 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
     return n;
   };
   ok("tier caps do not change planWave's draw count",
-    drawsFor(enemyTierState(1).tags) === 4 && drawsFor(null) === 4);
+    drawsFor(enemyTierState(1, allPicked).tags) === 4 && drawsFor(null) === 4);
+}
+
+// --- the manifest (P1 Task 2): two ladders, one bell, fixed draw counts
+{
+  console.log("\n[the manifest]");
+  const allPicked = ENEMY_TIERS.flat();
+
+  // (a) the player starts with START and nothing else.
+  {
+    const M = makeManifestState();
+    ok("manifest: a fresh run starts on wall/sandbag/rifles",
+      M.unlocked.length === 3 && isUnlocked(M, "wall") && isUnlocked(M, "sandbag") && isUnlocked(M, "sq_rifles"),
+      M.unlocked.join(","));
+    ok("manifest: nothing is offered before the first bell", M.offers.length === 0 && M.cardUp === false);
+    ok("manifest: no tier is open at bell 0", tierOpenCount(0) === 0 && manifestPool(M.unlocked, 0).length === 0);
+  }
+
+  // (b) the pool: this tier's items plus every earlier tier's leftovers.
+  {
+    const M = makeManifestState();
+    const p1 = manifestPool(M.unlocked, 1);
+    ok("manifest: bell 1 offers tier 1 only", p1.length === 3 && p1.every((k) => ["mg", "sq_mg", "frost"].includes(k)), p1.join(","));
+    M.unlocked.push("mg");
+    ok("manifest: a picked item leaves the pool", manifestPool(M.unlocked, 1).indexOf("mg") < 0);
+    const p3 = manifestPool(M.unlocked, 3);
+    ok("manifest: the passed-over item waits for another truck", p3.length === 5 && p3.includes("frost") && p3.includes("gun"), p3.join(","));
+    ok("manifest: tier 3 is shut until its bell", manifestPool(M.unlocked, 4).indexOf("rocket") < 0);
+    ok("manifest: tier 3 opens at its bell", manifestPool(M.unlocked, 5).indexOf("rocket") >= 0);
+  }
+
+  // (c) DRAW-COUNT LAW: fixed draws per bell whatever the pool holds.
+  {
+    const counted = (seed) => { let n = 0; const r = mulberry32(seed); return { rng: () => { n++; return r(); }, n: () => n }; };
+    for (const pool of [[], ["a"], ["a", "b"], ["a", "b", "c", "d", "e", "f", "g", "h", "i"]]) {
+      const c = counted(5);
+      drawOffers(pool, c.rng);
+      ok(`manifest: ${pool.length}-item pool still spends exactly ${MANIFEST_DRAWS} draws`, c.n() === MANIFEST_DRAWS, `${c.n()}`);
+      const f = counted(6);
+      drawFoePick(pool, f.rng);
+      ok(`foe pick: ${pool.length}-item pool still spends exactly ${FOE_DRAWS} draw`, f.n() === FOE_DRAWS, `${f.n()}`);
+    }
+    // and the offers themselves are sane across 200 seeds: 2-3, distinct, in-pool.
+    let badN = 0, dupe = 0, foreign = 0;
+    const pool = ["mg", "sq_mg", "frost", "gun", "sq_sniper", "sq_mortars"];
+    for (let seed = 1; seed <= 200; seed++) {
+      const o = drawOffers(pool, mulberry32(seed));
+      if (o.length < 2 || o.length > 3) badN++;
+      if (new Set(o).size !== o.length) dupe++;
+      if (o.some((k) => !pool.includes(k))) foreign++;
+    }
+    ok("manifest: 200 seeded offers are all 2-3 items", badN === 0, `${badN} bad`);
+    ok("manifest: 200 seeded offers never repeat an item", dupe === 0, `${dupe} dupes`);
+    ok("manifest: 200 seeded offers never invent an item", foreign === 0, `${foreign} foreign`);
+    // a thin pool clamps rather than padding: one item left means one offer.
+    ok("manifest: a one-item pool offers exactly that item", drawOffers(["frost"], mulberry32(3)).join(",") === "frost");
+    ok("manifest: an empty pool offers nothing", drawOffers([], mulberry32(3)).length === 0);
+    ok("foe pick: an empty pool picks nothing", drawFoePick([], mulberry32(3)) === null);
+  }
+
+  // (d) the pick: one item, only from what this bell offered.
+  {
+    const M = makeManifestState();
+    M.offers = ["mg", "frost"]; M.cardUp = true;
+    ok("manifest: an item that was never offered cannot be taken", pickManifest(M, "rocket") === false && M.unlocked.length === 3);
+    ok("manifest: the pick joins the unlocked set", pickManifest(M, "frost") === true && isUnlocked(M, "frost"));
+    ok("manifest: taking one crate closes the card and clears the offer", M.cardUp === false && M.offers.length === 0);
+    ok("manifest: a second pick off the same bell is refused", pickManifest(M, "mg") === false && M.unlocked.length === 4);
+  }
+
+  // (e) a skipped bell is a skipped pick — no banking, but nothing is lost:
+  // the unpicked items are still in the pool the next bell draws from.
+  {
+    const S2 = makeRunState();
+    S2.started = true; S2.reg = fatReg();
+    const rng = mulberry32(41);
+    fireBell(S2, { reg: S2.reg, snap: {}, rng, t: BELL_PERIOD_S });
+    const first = S2.manifest.offers.slice();
+    ok("manifest: the bell raises an offer", first.length >= 2 && S2.manifest.cardUp === true, first.join(","));
+    fireBell(S2, { reg: S2.reg, snap: {}, rng, t: 2 * BELL_PERIOD_S });
+    ok("manifest: an unread offer is overwritten at the next bell, not banked",
+      S2.manifest.offerBell === 2 && S2.manifest.unlocked.length === 3, `${S2.manifest.offerBell}/${S2.manifest.unlocked.length}`);
+    ok("manifest: the passed-over items are still on offer", S2.manifest.offers.every((k) => manifestPool(["wall", "sandbag", "sq_rifles"], 2).includes(k)));
+  }
+
+  // (f) the enemy's mirror: one pick per bell, never ahead of its tier's bell.
+  {
+    const S3 = makeRunState();
+    S3.started = true; S3.reg = fatReg();
+    const rng = mulberry32(42);
+    let early = 0, jumped = 0, prev = 0;
+    for (let b = 1; b <= 12; b++) {
+      S3.reg.scrap += 400; S3.reg.heads += 200;
+      fireBell(S3, { reg: S3.reg, snap: {}, rng, t: b * BELL_PERIOD_S });
+      if (S3.foe.unlocked.length - prev > 1) jumped++;
+      prev = S3.foe.unlocked.length;
+      for (const tag of S3.foe.unlocked) if (b < TIER_BELLS[enemyTierOf(tag)]) early++;
+      // the live cap can never contain a tag whose bell has not come
+      for (const tag of enemyTierState(S3.bell, S3.foe.unlocked).tags) {
+        if (tag !== "" && S3.bell < TIER_BELLS[enemyTierOf(tag)]) early++;
+      }
+      // ...nor a tag the assault itself was never given
+      if (S3.ws.mixBag.some((t) => !enemyTierState(S3.bell, S3.foe.unlocked).tags.includes(t))) early++;
+    }
+    ok("foe pick: never more than one new item per bell", jumped === 0, `${jumped}`);
+    ok("foe pick: nothing fields ahead of its tier's bell across 12 bells", early === 0, `${early}`);
+    ok("foe pick: the ladder actually climbs", S3.foe.unlocked.length >= 5, S3.foe.unlocked.join(","));
+    ok("foe pick: the picks are all real enemy tags", S3.foe.unlocked.every((t) => allPicked.includes(t)));
+    ok("foe pick: the same item is never picked twice", new Set(S3.foe.unlocked).size === S3.foe.unlocked.length);
+  }
+
+  // (g) the sequence: the cards go up, and the assault does NOT wait on them.
+  {
+    const S4 = makeRunState();
+    S4.started = true; S4.reg = fatReg();
+    ok("bell sequence: a fresh run has no cards up", S4.intelUp === false && S4.manifest.cardUp === false);
+    fireBell(S4, { reg: S4.reg, snap: {}, rng: mulberry32(43), t: BELL_PERIOD_S });
+    ok("bell sequence: the bell raises the intel card", S4.intelUp === true);
+    ok("bell sequence: both cards arm on the trailing-tap law",
+      S4.intelArmedAt === BELL_PERIOD_S + PENDING_ARM_S && S4.manifest.armedAt === BELL_PERIOD_S + PENDING_ARM_S);
+    ok("bell sequence: the assault musters with both cards still up",
+      S4.manifest.cardUp === true && S4.ws.spawnQueue > 0, `${S4.ws.spawnQueue}`);
+    ok("bell sequence: the income landed before the muster spent it",
+      S4.resources === makeRunState().resources + BELL_SCRAP, `${S4.resources}`);
+    ok("bell sequence: the intel card carries the bell's dispatch",
+      !!S4.lastDispatch && S4.lastDispatch.lines[0].includes("MUSTER BELL 1"));
+  }
 }
 
 // --- the withdrawal clock (kept from the wave machine)
@@ -618,13 +756,20 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   ok("fireBell: ws.results accumulator reset", S.ws.results &&
     S.ws.results.structureDmg === 0 && S.ws.results.leaks === 0);
   ok("fireBell: spawn queue holds the muster planWave bought", S.ws.spawnQueue > 0, S.ws.spawnQueue);
+  // mk0.41 re-pin: the cap is what THEIR PICKS (plus the bell) allow, not the
+  // whole tier — read it off the run's own foe state.
   ok("fireBell: the muster only fields tier-open tags",
-    S.ws.mixBag.every((t) => enemyTierState(1).tags.includes(t)), JSON.stringify([...new Set(S.ws.mixBag)]));
+    S.ws.mixBag.every((t) => enemyTierState(1, S.foe.unlocked).tags.includes(t)), JSON.stringify([...new Set(S.ws.mixBag)]));
   // The prediction has to be taken off the SAME books the bell hands planWave
   // — i.e. after the stipend the bell pays — or the counts can't match.
+  // mk0.41 re-pin: the bell now spends MANIFEST_DRAWS + FOE_DRAWS off the same
+  // stream BEFORE the muster (and, at bell 1, zero intel draws — openingIntel
+  // takes no rng), so the prediction burns exactly those first.
   const regP = makeRegiment(mulberry32(7));
   regP.scrap += STIPEND;
-  const predicted = planWave(regP, BASE_SNAP, 1, mulberry32(8), enemyTierState(1).tags);
+  const rngP = mulberry32(8);
+  for (let i = 0; i < MANIFEST_DRAWS + FOE_DRAWS; i++) rngP();
+  const predicted = planWave(regP, BASE_SNAP, 1, rngP, enemyTierState(1, S.foe.unlocked).tags);
   ok("fireBell: spawnQueue matches planWave's total buys off the post-stipend books",
     S.ws.spawnQueue === totalUnits(predicted.buys), `${S.ws.spawnQueue} vs ${totalUnits(predicted.buys)}`);
 }
@@ -1790,7 +1935,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   {
     const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     // the frame snapshot is the setHud({...}) that also carries mode/sellMode
-    const snap = src.match(/setHud\(\{[\s\S]{0,2800}?\}\);\n\s+\}\n/); // window widened (mk0.29 added endCard to the same snapshot)
+    const snap = src.match(/setHud\(\{[\s\S]{0,3600}?\}\);\n\s+\}\n/); // window widened (mk0.29 added endCard; mk0.41 added the manifest mirror)
     ok("sandbag-rot: frame hud snapshot carries sandbagOrient (no clobber)",
       !!snap && snap[0].includes("mode: S.mode") && snap[0].includes("sandbagOrient: S.sandbagOrient"));
     const { HUD0 } = await import("../src/depot/state.js");

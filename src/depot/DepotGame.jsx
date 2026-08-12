@@ -16,7 +16,7 @@ import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS } from "./specs.js";
 import { windAt } from "./wind.js";
-import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, pruneSquads } from "./state.js";
+import { makeAssaultState, HUD0, BELL_PERIOD_S, BELL_SCRAP, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, pruneSquads, makeManifestState, makeFoeState, pickManifest } from "./state.js";
 import { SQUAD_SPECS, makeSquad, stepSquad } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
@@ -635,8 +635,35 @@ const P = {
   slot: { display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minWidth: 64, minHeight: 52, padding: "8px 10px", background: "#1a212b", border: "1px solid #48515f", borderRadius: 8, fontSize: 12, cursor: "pointer" }, // mk0.28: wider/taller build slots — bottom bar, thumb reach
   ovl: { position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(10,13,18,0.72)", zIndex: 8, textAlign: "center", padding: 20 },
   toastWrap: { position: "absolute", top: 54, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, zIndex: 6, pointerEvents: "none" },
+  // The manifest card's parking spot: top-right, under the top bar, mirroring
+  // the intel card's top-left (Dispatch.jsx's `float`). pointerEvents none on
+  // the wrapper — only the card box itself takes taps, so the battle behind it
+  // keeps every pixel it isn't actually covering.
+  cardWrap: { position: "absolute", top: 52, right: 10, zIndex: 6, pointerEvents: "none" },
   toast: { background: "rgba(14,18,24,0.92)", border: "1px solid #ffb45e", color: "#ffd9a0", borderRadius: 6, padding: "4px 12px", fontSize: 12 },
 };
+
+// The build palette, in bar order — every buildable the match can ever offer.
+// Keys are the mode keys tapAt/setMode dispatch on and, since P1 Task 2, the
+// exact keys specs.js's PLAYER_START/PLAYER_TIERS ladder is written in, so the
+// unlocked filter below is a plain membership test.
+const PALETTE = [
+  { key: "wall", label: "WALL", icon: "▦", cost: 5 },
+  ...TOWER_ORDER.map((k) => ({ key: k, label: TOWER_SPECS[k].label, icon: TOWER_SPECS[k].icon, cost: TOWER_SPECS[k].cost })),
+  // Squads (Phase 5 Task 3): mode keys prefixed sq_ — the MG tower owns "mg"
+  { key: "sq_sniper", label: "SNIPER", icon: "✛", cost: SQUAD_SPECS.sniper.cost },
+  { key: "sq_rifles", label: "RIFLES", icon: "∴", cost: SQUAD_SPECS.rifles.cost },
+  { key: "sq_mg", label: "MG TEAM", icon: "≣", cost: SQUAD_SPECS.mg.cost },
+  // F1 Task 4.5: the demolition team — the only player weapon that moves
+  // reinforced depot masonry (rifles measured at zero).
+  { key: "sq_sappers", label: "SAPPERS", icon: "✸", cost: SQUAD_SPECS.sappers.cost },
+  // F1.5 Task 1: the mortar team — selection shows squadReach's lofted
+  // near-circle fan (accuracy.js handles occl "lofted" already).
+  { key: "sq_mortars", label: "MORTAR TEAM", icon: "◎", cost: SQUAD_SPECS.mortars.cost },
+  { key: "sandbag", label: "SANDBAG", icon: "▬", cost: SANDBAG_COST },
+];
+const PALETTE_BY_KEY = Object.fromEntries(PALETTE.map((p) => [p.key, p]));
+const PALETTE_LABEL = Object.fromEntries(PALETTE.map((p) => [p.key, p.label]));
 
 export default function DepotGame({ onExit }) {
   const canvasRef = useRef(null);
@@ -870,6 +897,13 @@ export default function DepotGame({ onExit }) {
         // The clock (P1 Task 1): bellAt is the absolute SIM-clock stamp the
         // next bell is due at, bellT the readout stepBell derives from it.
         bell: 0, bellT: BELL_PERIOD_S, bellAt: BELL_PERIOD_S, lastDispatch: null,
+        // The two ladders (P1 Task 2). manifest holds what the player has
+        // unlocked (START only, at mount) plus this bell's live offer; foe
+        // holds the attacker's own picks, which feed the assault's tier cap.
+        // Both start EMPTY of any card: a fresh mount is bell 0, nothing rung,
+        // nothing on screen.
+        manifest: makeManifestState(), foe: makeFoeState(),
+        intelUp: false, intelArmedAt: 0,
         // Opens on the depot, not the middle of the field. TOWN[i].x/z for
         // the depot entry ({id:"depot", x:0, z:52, ...} in genMap) are
         // already WORLD-space — genMap's T() helper runs every town entry
@@ -1313,8 +1347,33 @@ export default function DepotGame({ onExit }) {
         const paid = payTown(townUV, T);
         S.resources += paid.player;
         if (S.reg) S.reg.scrap += paid.regiment;
+        // fireBell runs the whole sequence and raises both cards; the assault
+        // it musters marches regardless of whether either is ever read.
         fireBell(S, { reg: S.reg, snap: buildSnapshot(), rng: world.rng, t: world.t });
         toast("BELL " + S.bell + " — THEY MARCH");
+        // The income's ledger line: the bell's flat cycle scrap plus whatever
+        // the town paid this bell (green ground only) — one honest number.
+        toast("◆ +" + Math.round(BELL_SCRAP + paid.player) + " — CYCLE PAY");
+      };
+      // --- the bell's cards (Task 2). Nothing here touches the sim: they are
+      // presentation state, armed on WORLD time via the same trailing-tap law
+      // the ✓/✗ confirm pair lives under (PENDING_ARM_S), and they never gate
+      // anything. The manifest chip re-opens a dismissed card until the NEXT
+      // bell overwrites the offer.
+      S.ackIntel = () => { S.intelUp = false; };
+      S.openManifest = () => {
+        const M = S.manifest;
+        if (!M || M.offers.length === 0) return;
+        M.cardUp = true;
+        M.armedAt = world.t + PENDING_ARM_S;
+      };
+      S.dismissManifest = () => { if (S.manifest) S.manifest.cardUp = false; };
+      S.pickManifest = (key) => {
+        const M = S.manifest;
+        if (!M || world.t < M.armedAt) { toast("HOLD — ARMING"); return; }
+        if (!pickManifest(M, key)) return;
+        const item = PALETTE_LABEL[key] || key;
+        toast(item + " — ON THE MANIFEST");
       };
       const spawnOne = () => {
         const ws = S.ws;
@@ -1451,6 +1510,13 @@ export default function DepotGame({ onExit }) {
         // without waiting out the period.
         S.bellAt = world.t;
       };
+      window.__DEPOTMANIFEST__ = () => ({
+        unlocked: S.manifest.unlocked.slice(), offers: S.manifest.offers.slice(),
+        offerBell: S.manifest.offerBell, cardUp: !!S.manifest.cardUp,
+        armed: world.t >= S.manifest.armedAt, intelUp: !!S.intelUp,
+        foe: S.foe.unlocked.slice(),
+      });
+      window.__DEPOTPICK__ = (key) => { S.pickManifest(key); return S.manifest.unlocked.slice(); };
       window.__DEPOTEND__ = (victory) => {
         // debug harness: force the run into its end state for screenshotting
         // the WIN/LOSS end card without simming 50 waves — pattern matches
@@ -1872,6 +1938,15 @@ export default function DepotGame({ onExit }) {
               stones: R.chunkStats ? `${R.chunkStats().drawn}/${R.chunkStats().cap}` : "",
               resources: Math.floor(S.resources), walls: nw, towers: nt, kills: S.kills,
               lastDispatch: S.lastDispatch,
+              // The manifest's mirror. Both cards arm on WORLD time (the
+              // trailing-tap law), so the armed flag is computed here on the
+              // hud tick exactly the way the pending ✓ already is.
+              unlocked: S.manifest.unlocked.slice(),
+              manifest: S.manifest.offers.length > 0 ? {
+                up: !!S.manifest.cardUp, armed: world.t >= S.manifest.armedAt,
+                bell: S.manifest.offerBell, offers: S.manifest.offers.slice(),
+              } : null,
+              intel: S.intelUp && S.lastDispatch ? { armed: world.t >= S.intelArmedAt } : null,
               started: S.started, gameOver: S.gameOver, victory: S.victory,
               endCard: endCardReady(S, world.t),   // mk0.29: the card waits out the collapse
               breach: S.breach, enemyBreach: S.enemyBreach,
@@ -1941,7 +2016,7 @@ export default function DepotGame({ onExit }) {
         canvas.removeEventListener("touchstart", blockTouch);
         window.removeEventListener("keydown", kd);
         window.removeEventListener("keyup", ku);
-        for (const k of ["__DEPOT__", "__DEPOTBELL__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTTHIN__", "__DEPOTEND__", "__DEPOTFOCUS__", "__DEPOTGETFOCUS__", "__DEPOTSETT__", "__DEPOTFLAGS__", "__DEPOTHOLD__", "__DEPOTFINDBUILDABLE__", "__DEPOTFINDRISE__", "__DEPOTFINDNEARROCK__", "__DEPOTFOGDBG__", "__DEPOTFOGAT__", "__DEPOTENEMYPOS__", "__DEPOTSQUADS__", "__DEPOTSANDBAGS__", "__DEPOTGROUNDAT__", "__DEPOTSCREENAT__", "__DEPOTPENDING__"]) delete window[k];
+        for (const k of ["__DEPOT__", "__DEPOTBELL__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTTHIN__", "__DEPOTEND__", "__DEPOTFOCUS__", "__DEPOTGETFOCUS__", "__DEPOTSETT__", "__DEPOTFLAGS__", "__DEPOTHOLD__", "__DEPOTFINDBUILDABLE__", "__DEPOTFINDRISE__", "__DEPOTFINDNEARROCK__", "__DEPOTFOGDBG__", "__DEPOTFOGAT__", "__DEPOTENEMYPOS__", "__DEPOTSQUADS__", "__DEPOTSANDBAGS__", "__DEPOTGROUNDAT__", "__DEPOTSCREENAT__", "__DEPOTPENDING__", "__DEPOTMANIFEST__", "__DEPOTPICK__"]) delete window[k];
         A.dispose();
         if (R) R.dispose();
         stateRef.current = null;
@@ -1995,22 +2070,14 @@ export default function DepotGame({ onExit }) {
   };
   const sellInspected = () => { const S = stateRef.current; if (S && S.inspectId && S.sellById) S.sellById(S.inspectId); };
 
-  const palette = [
-    { key: "wall", label: "WALL", icon: "▦", cost: 5 },
-    ...TOWER_ORDER.map((k) => ({ key: k, label: TOWER_SPECS[k].label, icon: TOWER_SPECS[k].icon, cost: TOWER_SPECS[k].cost })),
-    // Squads (Phase 5 Task 3): mode keys prefixed sq_ — the MG tower owns "mg"
-    { key: "sq_sniper", label: "SNIPER", icon: "✛", cost: SQUAD_SPECS.sniper.cost },
-    { key: "sq_rifles", label: "RIFLES", icon: "∴", cost: SQUAD_SPECS.rifles.cost },
-    { key: "sq_mg", label: "MG TEAM", icon: "≣", cost: SQUAD_SPECS.mg.cost },
-    // F1 Task 4.5: the demolition team — the only player weapon that moves
-    // reinforced depot masonry (rifles measured at zero).
-    { key: "sq_sappers", label: "SAPPERS", icon: "✸", cost: SQUAD_SPECS.sappers.cost },
-    // F1.5 Task 1: the mortar team — selection shows squadReach's lofted
-    // near-circle fan (accuracy.js handles occl "lofted" already).
-    { key: "sq_mortars", label: "MORTAR TEAM", icon: "◎", cost: SQUAD_SPECS.mortars.cost },
+  // The bar shows the UNLOCKED set and nothing else (P1 Task 2): a locked
+  // item does not render at all — no greyed teasers, because the manifest
+  // card IS the reveal. PALETTE's own order is preserved, so an item always
+  // arrives in the same slot position it will keep for the rest of the match.
+  const unlocked = hud.unlocked || [];
+  const palette = PALETTE.filter((p) => unlocked.indexOf(p.key) >= 0)
     // icon reflects pending orientation (sandbagOrient): ▬ (long x) vs ▮ (long z)
-    { key: "sandbag", label: "SANDBAG", icon: hud.sandbagOrient ? "▮" : "▬", cost: SANDBAG_COST },
-  ];
+    .map((p) => (p.key === "sandbag" ? { ...p, icon: hud.sandbagOrient ? "▮" : "▬" } : p));
 
   return (
     <div style={P.root}>
@@ -2023,6 +2090,15 @@ export default function DepotGame({ onExit }) {
           BELL {hud.bell} · {clockStr(hud.bellT)}
         </div>
         <div style={P.stat}>☠ {hud.enemies}</div>
+        {/* The dismissed manifest waits here — and only until the next bell,
+            which re-pools the offer. A skipped bell is a skipped pick. */}
+        {hud.manifest && !hud.manifest.up && !hud.gameOver && !hud.victory && (
+          <div data-manifest-chip style={{ ...P.stat, cursor: "pointer", borderColor: "#ffd27a", color: "#ffd27a" }}
+            title="the convoy is still waiting on your pick"
+            onClick={() => { const S = stateRef.current; if (S && S.openManifest) S.openManifest(); }}>
+            ⛊ MANIFEST
+          </div>
+        )}
         {hud.started && !hud.victory && !hud.gameOver && (
           <>
             <button style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.paused ? "#ffd27a" : "#48515f", color: hud.paused ? "#ffd27a" : "#e6ebf1" }}
@@ -2066,15 +2142,64 @@ export default function DepotGame({ onExit }) {
         </div>
       )}
 
-      {/* The bell's dispatch never gates the war — it is on the bell chip to
-          re-read, and nothing waits for it. Task 2 gives it its own card in
-          the bell sequence. */}
+      {/* THE INTEL CARD — first thing in the bell sequence. Floating, so it
+          cannot eat a combat tap; dismissible; and the assault it precedes
+          marches whether or not it is ever read. The bell chip re-reads it
+          (as a proper modal) any time after. */}
+      {hud.intel && hud.lastDispatch && !rereadDispatch && !hud.gameOver && !hud.victory && (
+        <Dispatch
+          dispatch={hud.lastDispatch}
+          gating={false}
+          floating
+          armed={hud.intel.armed}
+          label="ACKNOWLEDGE"
+          onAcknowledge={() => { const S = stateRef.current; if (S && S.ackIntel) S.ackIntel(); }}
+        />
+      )}
+
+      {/* Re-read: the bell chip's modal copy of the same dispatch. */}
       {rereadDispatch && hud.lastDispatch && (
         <Dispatch
           dispatch={hud.lastDispatch}
           gating={false}
           onAcknowledge={() => setRereadDispatch(false)}
         />
+      )}
+
+      {/* THE MANIFEST CARD — the convoy's offer. Same floating idiom as the
+          intel card (no scrim, corner-parked, only the card box takes taps),
+          pick buttons armed on world time. LATER dismisses it to the top-bar
+          chip; the next bell overwrites the offer either way. */}
+      {hud.manifest && hud.manifest.up && !hud.gameOver && !hud.victory && (
+        <div style={P.cardWrap}>
+          <div data-manifest-card style={{ ...P.panel, position: "static", pointerEvents: "auto", borderColor: "#ffd27a", width: "min(300px, 44vw)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 10, borderBottom: "1px solid #2c3846", paddingBottom: 8 }}>
+              <span style={{ color: "#ffd27a", letterSpacing: 2 }}>CONVOY MANIFEST</span>
+              <span style={{ opacity: 0.6 }}>BELL {hud.manifest.bell}</span>
+            </div>
+            <div style={{ fontSize: 11, opacity: 0.8, marginBottom: 10, lineHeight: 1.5 }}>
+              One crate comes off the truck. The rest go back on.
+            </div>
+            {hud.manifest.offers.map((key) => {
+              const it = PALETTE_BY_KEY[key];
+              if (!it) return null;
+              return (
+                <button key={key} data-manifest-offer={key}
+                  style={{ ...P.btnBig, width: "100%", marginBottom: 6, display: "flex", alignItems: "center", gap: 10, textAlign: "left", opacity: hud.manifest.armed ? 1 : 0.5 }}
+                  onClick={() => { const S = stateRef.current; if (S && S.pickManifest) S.pickManifest(key); }}>
+                  <span style={{ fontSize: 18 }}>{it.icon}</span>
+                  <span style={{ flex: 1 }}>{it.label}</span>
+                  <span style={{ color: "#ffd27a", fontSize: 12 }}>◆{it.cost}</span>
+                </button>
+              );
+            })}
+            <button data-manifest-later
+              style={{ ...P.btn, width: "100%", marginTop: 4, opacity: 0.75 }}
+              onClick={() => { const S = stateRef.current; if (S && S.dismissManifest) S.dismissManifest(); }}>
+              LATER
+            </button>
+          </div>
+        </div>
       )}
 
       {hud.pending && (

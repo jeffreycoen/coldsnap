@@ -7,7 +7,7 @@ import { scatterSigma, applyScatter, arcClears, marchArc } from "./accuracy.js";
 import { planWave, MIN_WAVE_FLOOR, spawnDelayFor } from "./ai.js";
 import { STIPEND, payResults, combatIneffective, bookValue } from "./economy.js";
 import { composeIntel, openingIntel } from "./intel.js";
-import { TOWER_SPECS, ENEMY_SPECS, TANK, INFANTRY_ARMS } from "./specs.js";
+import { TOWER_SPECS, ENEMY_SPECS, TANK, INFANTRY_ARMS, PLAYER_START, PLAYER_TIERS } from "./specs.js";
 import { fogStateForContested } from "./territory.js";
 
 // Targeting gate, symmetric: a shooter of `team` (1 = player tower, 2 =
@@ -637,14 +637,102 @@ export const ENEMY_TIERS = [
   ["sniper", "tank"],   // tier 3 — marksmen, armour
 ];
 
-// enemyTierState(bell) -> { bell, tags }: every tag an assault at this bell
-// may contain. Pure, no rng — the gate is the bell index and nothing else.
-export function enemyTierState(bell) {
+// ---------------------------------------------------------------- the ladder
+// THE RULE, both sides, one sentence: a tier's BELL is a ceiling and a PICK is
+// the key — an item needs both. Nothing may be offered before its tier's bell,
+// so no enemy tag can ever field earlier than TIER_BELLS says (Task 1's
+// contract, unchanged); and an open tier still yields only ONE item per bell to
+// each side, so the two ladders climb at the same rate and almost never in the
+// same order. enemyTierState reads the pick list and re-applies the bell gate
+// on top of it, so a corrupt/ahead-of-schedule pick list cannot leak a tag
+// early even if something upstream mis-fills it.
+export function tierOpenCount(bell) {
+  let n = 0;
+  for (let i = 0; i < TIER_BELLS.length; i++) if (bell >= TIER_BELLS[i]) n++;
+  return n;
+}
+export function enemyTierOf(tag) {
+  for (let i = 0; i < ENEMY_TIERS.length; i++) if (ENEMY_TIERS[i].indexOf(tag) >= 0) return i;
+  return -1;
+}
+
+// enemyTierState(bell, unlocked) -> { bell, tags }: every tag an assault at
+// this bell may contain. `unlocked` is the attacker's own pick list (S.foe.
+// unlocked); an empty/omitted list means they have picked nothing yet, so the
+// assault is conscripts only. Pure, no rng.
+export function enemyTierState(bell, unlocked = []) {
   const tags = [""];
-  for (let i = 0; i < ENEMY_TIERS.length; i++) {
-    if (bell >= TIER_BELLS[i]) for (const t of ENEMY_TIERS[i]) tags.push(t);
+  for (const t of unlocked) {
+    const tier = enemyTierOf(t);
+    if (tier >= 0 && bell >= TIER_BELLS[tier] && tags.indexOf(t) < 0) tags.push(t);
   }
   return { bell, tags };
+}
+
+// ------------------------------------------------------------- the manifest
+// The convoy. At every bell the player is offered 2-3 items off the open tiers
+// and takes ONE; the enemy picks one from its own mirrored table (specs.js
+// carries both ladders written side by side).
+//
+// DRAW-COUNT LAW: both draw sites consume a FIXED number of world.rng values
+// per bell — MANIFEST_DRAWS (4) and FOE_DRAWS (1) — no matter how big the pool
+// is or whether anything is left in it at all. Every value is drawn up front
+// and then clamped/spliced, never drawn-if; an exhausted ladder still burns its
+// draws so two clients on the same seed stay in step forever.
+export const MANIFEST_DRAWS = 4;   // 1 count roll + 3 index rolls
+export const FOE_DRAWS = 1;        // 1 index roll
+
+export function makeManifestState() {
+  return { unlocked: PLAYER_START.slice(), offers: [], offerBell: 0, cardUp: false, armedAt: 0 };
+}
+export function makeFoeState() {
+  return { unlocked: [] };
+}
+
+// The pool: everything in an OPEN tier the side has not taken yet — which is
+// exactly "this tier's items plus every earlier tier's leftovers", since a
+// passed-over item is never removed from anything.
+function ladderPool(tiers, unlocked, bell) {
+  const open = Math.min(tierOpenCount(bell), tiers.length);
+  const pool = [];
+  for (let i = 0; i < open; i++) for (const k of tiers[i]) if (unlocked.indexOf(k) < 0) pool.push(k);
+  return pool;
+}
+export function manifestPool(unlocked, bell) { return ladderPool(PLAYER_TIERS, unlocked, bell); }
+export function foePool(unlocked, bell) { return ladderPool(ENEMY_TIERS, unlocked, bell); }
+
+// drawOffers(pool, rng) -> 0-3 distinct keys. Exactly MANIFEST_DRAWS draws.
+export function drawOffers(pool, rng) {
+  const d = [rng(), rng(), rng(), rng()];
+  const want = d[0] < 0.5 ? 2 : 3;
+  const rest = pool.slice();
+  const out = [];
+  for (let i = 0; i < 3 && out.length < want && rest.length > 0; i++) {
+    const j = Math.min(rest.length - 1, Math.floor(d[i + 1] * rest.length));
+    out.push(rest.splice(j, 1)[0]); // splice, so the three rolls can never collide
+  }
+  return out;
+}
+
+// drawFoePick(pool, rng) -> one key or null. Exactly FOE_DRAWS draws.
+export function drawFoePick(pool, rng) {
+  const d = rng();
+  if (pool.length === 0) return null;
+  return pool[Math.min(pool.length - 1, Math.floor(d * pool.length))];
+}
+
+// The pick itself. One per bell, and only from what THIS bell offered — a card
+// left open past the next bell has already had its offers overwritten, so a
+// stale tap cannot buy a stale item. Returns whether anything moved.
+export function pickManifest(M, key) {
+  if (!M || M.offers.indexOf(key) < 0) return false;
+  M.unlocked.push(key);
+  M.offers = [];
+  M.cardUp = false;
+  return true;
+}
+export function isUnlocked(M, key) {
+  return !!M && M.unlocked.indexOf(key) >= 0;
 }
 
 // The in-flight assault's ledger: what is still walking out of the spawn
@@ -675,6 +763,11 @@ export function makeRunState({ startResources = 120 } = {}) {
     // at; bellT is the readout derived from it (see stepBell).
     bell: 0, bellT: BELL_PERIOD_S, bellAt: BELL_PERIOD_S,
     lastDispatch: null,
+    // The two ladders (Task 2). manifest = the player's unlocked set + the
+    // convoy's live offer; foe = the attacker's own pick list, which feeds
+    // enemyTierState's cap.
+    manifest: makeManifestState(), foe: makeFoeState(),
+    intelUp: false, intelArmedAt: 0,
     zoom: 1, acc: 0, t: 0, fps: 60, fpsAcc: 0, fpsN: 0,
     hover: null, pointer: null, toasts: [],
     hudT: 0, keys: {}, sellById: null,
@@ -839,40 +932,75 @@ export function stepBell(S, worldT) {
 
 // fireBell(S, opts) — THE BELL. opts: { reg (the attacker's live regiment —
 // makeRegiment output, mutated in place by planWave), snap (buildSnapshot),
-// rng (world.rng), t (world.t, for the spawn-done stamp on an empty muster) }.
+// rng (world.rng), t (world.t — the card arm stamps and the spawn-done stamp
+// on an empty muster) }.
 //
-// Fixed order, and the order is the design:
+// Fixed order, and the order is the design — it is the order the player reads
+// it in, top to bottom:
 //   1. the cycle that just ended pays out — the attacker banks what its
 //      assault took off the player (payResults);
-//   2. TASK 2 HOOK (see below) — intel report, income, manifest;
-//   3. the muster — planWave composes the assault under THIS bell's tier cap;
-//   4. the bureau's read of that muster, onto the re-readable dispatch.
+//   2. the intel report — what the desk learned about the LAST muster;
+//   3. the cycle's income — the player's scrap and the attacker's stipend;
+//   4. the manifest — the convoy's 2-3 offers, one of which the player takes;
+//   5. the enemy's own pick, then the muster — planWave composes the assault
+//      under the cap their picks (and the bell) allow;
+//   6. the bureau's read of that muster, onto the re-readable dispatch.
 //
 // Nothing waits: an assault still standing on the field when the bell rings is
-// simply joined by the next one, and no card gates the muster.
+// simply joined by the next one, and NO card gates the muster — steps 2 and 4
+// only raise cards; step 5 marches whether or not they are ever read.
 export function fireBell(S, opts = {}) {
   const { reg = null, snap = null, rng = null, t = null } = opts;
   const ws = S.ws;
   const prevWithdrew = ws.withdrew || 0;
+  const nowT = t == null ? 0 : t;
 
   // 1. the closing cycle's results
   if (reg && ws.results) payResults(reg, ws.results);
 
-  // 2. ===== TASK 2 HOOK =====================================================
-  // The intel report -> income -> manifest sequence is inserted HERE, before
-  // the muster below, so the cards describe the assault about to march.
-  // Task 1 grants the cycle's income in the hook's place (the stipend and the
-  // player's cycle scrap that the retired stall used to pay) — without it the
-  // regiment cannot afford a muster and the war starves. Task 2 owns moving
-  // this grant into the sequence proper.
+  // The bell index advances here: bell 1 is the first bell of a match, and
+  // everything below — tier gates, offers, the muster — reads THIS bell.
+  S.bell++;
+
+  // 2. the intel report. Intel delay buffer: the plan that governed the
+  // PREVIOUS assault (still sitting in S.pendingPlan from the prior bell) is
+  // the one-bell-old source composeIntel reads; the muster below replaces it.
+  // The handoff is hoisted out of the muster so the card can be composed
+  // before the assault it precedes is planned. First bell of a run: no plan
+  // history, so it gets the opening strength estimate instead (no rng draws).
+  S.intelPlan = S.pendingPlan || null;
+  let intelLines = [];
+  if (rng && reg) {
+    if (S.bell === 1) intelLines = [openingIntel(reg)];
+    else intelLines = composeIntel(S.intelPlan, reg, rng);
+  }
+  S.intelUp = true;
+  S.intelArmedAt = nowT + PENDING_ARM_S;
+
+  // 3. the income — the player's cycle scrap and the attacker's stipend, both
+  // BEFORE the muster so the regiment can spend what it was just paid.
   S.resources += BELL_SCRAP;
   if (reg) reg.scrap += STIPEND;
-  // =========================================================================
 
-  // 3. the muster. The bell index advances FIRST: bell 1 is the first bell of
-  // a match, and TIER_BELLS is read against the bell whose assault this is.
-  S.bell++;
-  const tier = enemyTierState(S.bell);
+  // 4. the manifest. A skipped bell is a skipped pick: last bell's offers are
+  // overwritten here whether or not they were read, and the unpicked items are
+  // still in the pool, so nothing is lost and nothing banks.
+  if (rng) {
+    if (!S.manifest) S.manifest = makeManifestState();
+    const M = S.manifest;
+    M.offers = drawOffers(manifestPool(M.unlocked, S.bell), rng);
+    M.offerBell = S.bell;
+    M.cardUp = M.offers.length > 0;
+    M.armedAt = nowT + PENDING_ARM_S;
+  }
+
+  // 5. the enemy's pick, then the muster.
+  if (rng) {
+    if (!S.foe) S.foe = makeFoeState();
+    const pick = drawFoePick(foePool(S.foe.unlocked, S.bell), rng);
+    if (pick != null) S.foe.unlocked.push(pick);
+  }
+  const tier = enemyTierState(S.bell, S.foe ? S.foe.unlocked : []);
   let units = 0, mix = [];
   if (reg && rng) {
     // Muster-time solvency snapshot, BEFORE planWave spends the scrap — the
@@ -882,13 +1010,6 @@ export function fireBell(S, opts = {}) {
     const plan = planWave(reg, snap || {}, S.bell, rng, tier.tags);
     units = plan.buys.reduce((s, b) => s + b.n, 0);
     mix = plan.buys.map((b) => [b.type, b.n]);
-    // Intel delay buffer: the plan that governed the PREVIOUS assault (still
-    // sitting in S.pendingPlan from the prior bell) becomes the one-bell-old
-    // source composeIntel reads now; this bell's fresh plan takes its place
-    // and won't surface as intel until the bell after this one. First bell of
-    // a run: intelPlan stays null (no history yet), so plan-keyed intel
-    // families stay silent.
-    S.intelPlan = S.pendingPlan || null;
     S.pendingPlan = plan;
   }
   ws.fielded = units;
@@ -905,7 +1026,7 @@ export function fireBell(S, opts = {}) {
   ws.withdrew = 0;
   ws.results = { structureDmg: 0, towerKills: 0, wallKills: 0, buildingKills: 0, leaks: 0 };
 
-  // 4. the bureau's read. A broken or starved regiment does not END the war —
+  // 6. the bureau's read. A broken or starved regiment does not END the war —
   // it just can't defend its depot. Each observation is a one-time dispatch
   // line (digit-free bureau voice), spliced onto the card below.
   const observations = [];
@@ -923,15 +1044,8 @@ export function fireBell(S, opts = {}) {
       observations.push("Three musters called and none fielded. The offensive opposite is judged spent.");
     }
   }
-  // Intel: the one-bell-old plan plus the live regiment read. rng is optional
-  // so callers/tests without a world rng get no intel lines rather than a
-  // crash. The first bell gets the opening strength estimate instead — there
-  // is no plan history yet for composeIntel to report on.
-  let intelLines = [];
-  if (rng && reg) {
-    if (S.bell === 1) intelLines = [openingIntel(reg)];
-    else intelLines = composeIntel(S.intelPlan, reg, rng);
-  }
+  // The card carries the intel composed at step 2 — the dispatch is written
+  // last only because the observations above have to be in it.
   const d = makeDispatch(S.bell, intelLines);
   for (const line of observations) d.lines.splice(d.lines.length - 1, 0, line);
   // Truthful withdrawal line: appears ONLY when the assault that just ended
@@ -991,4 +1105,8 @@ export const HUD0 = {
   mode: "wall", sellMode: false, sandbagOrient: 0, paused: false, speed: 1, inspect: null, toasts: [],
   pending: null, fogOn: true, discipline: "careful", depotStanding: 1, enemyStanding: 1,
   squadSel: null, squadFlag: null,
+  // The manifest's React mirror. unlocked seeds from PLAYER_START so the very
+  // first render — before the hud tick has run once — already draws the right
+  // build bar instead of a full palette that flickers down to three slots.
+  unlocked: PLAYER_START.slice(), manifest: null, intel: null,
 };

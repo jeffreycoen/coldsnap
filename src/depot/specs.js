@@ -83,6 +83,33 @@ export const ENEMY_FIRE = {
 // assault from a table any more: ai.js's planWave is the only composer, sized
 // by the bell index and rostered by state.js's enemyTierState tier caps.
 
+// ------------------------------------------------------------ THE TWO LADDERS
+// P1 Task 2 (mk0.41). Both sides climb the SAME bells (state.js's TIER_BELLS,
+// [1, 3, 5]) — the symmetry is the design, so the two columns are written here
+// together where a reader can check one against the other:
+//
+//              PLAYER (build-menu keys)          ENEMY (ENEMY_SPECS tags)
+//   START      wall · sandbag · sq_rifles        "" conscripts (never gated)
+//   TIER 1     mg · sq_mg · frost                fast (runner) · heavy (breaker)
+//   TIER 2     gun · sq_sniper · sq_mortars      gren · sapper
+//   TIER 3     mortar · rocket · sq_sappers      sniper (marksman) · tank
+//
+// The enemy column is a READING of state.js's ENEMY_TIERS, not a second copy:
+// the live gate stays where Task 1 put it and nothing here is consulted for
+// enemy composition. Only the player column is data.
+//
+// Keys are DepotGame.jsx's palette mode keys exactly — bare keys are
+// TOWER_SPECS types, sq_* are squad placement modes (SQUAD_SPECS types with
+// the sq_ prefix the MG TOWER/MG TEAM name collision forced) — so the build
+// menu's unlocked filter is a plain membership test with no translation table
+// in between. // provisional (F5)
+export const PLAYER_START = ["wall", "sandbag", "sq_rifles"];
+export const PLAYER_TIERS = [
+  ["mg", "sq_mg", "frost"],
+  ["gun", "sq_sniper", "sq_mortars"],
+  ["mortar", "rocket", "sq_sappers"],
+];
+
 export const MASON = { hcs: 0.40, pitch: 0.83, mass: 100, breakF: 8.0e4 };
 
 // FRONT F1 Task 4.5 — THE satchel charge, one spec for both sides (the enemy
