@@ -23,7 +23,7 @@ import { INFANTRY } from "../src/engine/core.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "../src/depot/accuracy.js";
 import { friendlyFouls } from "../src/depot/state.js";
 import {
-  makeWorld, addBody, addWeld, fireProjectile, stepWorld, applyDamage, worldHash, CAUSE, mulberry32, aimSolve,
+  makeWorld, makeField, addBody, addWeld, fireProjectile, stepWorld, applyDamage, worldHash, CAUSE, mulberry32, aimSolve,
 } from "../src/engine/core.js";
 import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, MASON, INFANTRY_ARMS, PLAYER_START, PLAYER_TIERS } from "../src/depot/specs.js";
 import { stepUnits, spawnUnit, payBounties, SNIPER_FIRE } from "../src/depot/units.js";
@@ -34,7 +34,7 @@ import {
 import { planWave, MIN_WAVE_FLOOR, snapSquads } from "../src/depot/ai.js";
 import { composeIntel, openingIntel } from "../src/depot/intel.js";
 import { makeTerritory, stepTerritory, holderAt, fogStateAt, valueAt, canBuild, DECAY_TAU, EMIT } from "../src/depot/territory.js";
-import { SIGHT, eyeOf, canSee, makeSight, seenAt, stepSight } from "../src/depot/sight.js";
+import { SIGHT, eyeOf, canSee, fillMaps, gridEye, makeSight, seenAt, stepSight } from "../src/depot/sight.js";
 import { fwdUFor, fwdDirFor, invWFor, clampToRimFor } from "../src/depot/orient.js";
 import { washAlpha, WASH_SEAM, WASH_MAX_A } from "../src/render/renderer.js";
 import fs from "node:fs";
@@ -3324,14 +3324,28 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 // ==== end mk0.60 =============================================================
 
 // ==== VISION T1: sight =======================================================
-// The eye itself (mk0.70). sight.js is pure geometry and inert this task —
-// nothing in the game imports it yet, so every assert below runs against
-// hand-built fixture worlds. ORIENT 0 here, so the world<->canonical
-// transforms DepotGame hands stepSight (invW/fwdU) are the identity.
+// The eye itself (mk0.70), re-pinned to cell resolution at mk0.71. sight.js is
+// pure geometry and inert — nothing in the game imports it yet, so every
+// assert below runs against hand-built fixture worlds. ORIENT 0 here, so the
+// world<->canonical transforms DepotGame hands stepSight (invW/fwdU) are the
+// identity.
+//
+// mk0.71 re-pin: canSee no longer walks the world in meters asking bodies —
+// it marches the swept cell maps. Every canSee assert therefore builds the
+// maps first (fillMaps) and names the target as the CELL a spot falls in.
+// The meanings are unchanged; the fixture coordinates are unchanged too (each
+// already sits on a cell center, and each blocker already owns its own cell).
 {
   const idUV = (x, z) => ({ u: x, v: z });   // DepotGame's invW at ORIENT 0
   const idW = (u, v) => ({ x: u, z: v });    // DepotGame's fwdU at ORIENT 0
   const flatField = { heightAt: () => 0, dirty: false };
+  // sees(world, eye, tx, tz): the mk0.70 canSee question, asked the mk0.71 way.
+  const sees = (world, eye, tx, tz) => {
+    const SG = makeSight(makeTerritory(29, 57));
+    fillMaps(world, SG, idUV, idW);
+    return canSee(SG, gridEye(SG, eye, idUV),
+      Math.floor((tx + SG.halfU) / SG.cs), Math.floor((tz + SG.halfV) / SG.cs));
+  };
 
   // (a) range — an eye sees clear ground inside its reach and nothing past it.
   {
@@ -3339,8 +3353,8 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     const eye = eyeOf({ kind: "unit", pos: { x: 0, y: 0, z: 0 } });
     ok("VISION T1(a): a plain infantryman's eye carries SIGHT.unit and sits 0.5m up",
       eye.r === SIGHT.unit && eye.y === 0.5);
-    ok("VISION T1(a): clear open ground 20m off is seen", canSee(flat, eye, 0, 20) === true);
-    ok("VISION T1(a): the same open ground 30m off is past the eye's reach", canSee(flat, eye, 0, 30) === false);
+    ok("VISION T1(a): clear open ground 20m off is seen", sees(flat, eye, 0, 20) === true);
+    ok("VISION T1(a): the same open ground 30m off is past the eye's reach", sees(flat, eye, 0, 30) === false);
     ok("VISION T1(a): a spotter's glasses reach farther than a sniper's scope, which reaches farther than a rifleman",
       SIGHT.spotter > SIGHT.sniper && SIGHT.sniper > SIGHT.unit);
     ok("VISION T1(a): a spotter body gets the spotter's reach",
@@ -3356,8 +3370,8 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   {
     const ridge = { field: { heightAt: (x, z) => (Math.abs(z - 10) < 1.5 ? 6 : 0) }, bodies: [] };
     const eye = eyeOf({ kind: "unit", pos: { x: 0, y: 0, z: 0 } });
-    ok("VISION T1(b): a ridge standing between eye and spot blocks the view", canSee(ridge, eye, 0, 20) === false);
-    ok("VISION T1(b): the same distance the other way, with no ridge, stays clear", canSee(ridge, eye, 0, -20) === true);
+    ok("VISION T1(b): a ridge standing between eye and spot blocks the view", sees(ridge, eye, 0, 20) === false);
+    ok("VISION T1(b): the same distance the other way, with no ridge, stays clear", sees(ridge, eye, 0, -20) === true);
   }
 
   // (c) a three-course wall blocks a man on the ground; a raised eye sees over.
@@ -3366,15 +3380,15 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     spawnWallCourses(world, 0, 0, 8, 0);   // broad across x, thin across z, at z=8
     const low = { x: 0, y: 0.5, z: 0, r: SIGHT.unit };            // a man on the ground
     const high = { x: 0, y: 3.5, z: 0, r: SIGHT.unit };           // the same man 3m higher
-    ok("VISION T1(c): a wall blocks a man standing on the ground behind it", canSee(world, low, 0, 16) === false);
-    ok("VISION T1(c): an eye raised 3m looks straight over the same wall", canSee(world, high, 0, 16) === true);
+    ok("VISION T1(c): a wall blocks a man standing on the ground behind it", sees(world, low, 0, 16) === false);
+    ok("VISION T1(c): an eye raised 3m looks straight over the same wall", sees(world, high, 0, 16) === true);
   }
 
   // (d) a spot on a hill is seen from below when nothing stands in the way.
   {
     const hill = { field: { heightAt: (x, z) => Math.max(0, Math.min(4, (z - 14) * 2)) }, bodies: [] };
     const eye = eyeOf({ kind: "unit", pos: { x: 0, y: 0, z: 0 } });
-    ok("VISION T1(d): a spot on the hillside is seen from the flat below it", canSee(hill, eye, 0, 18) === true);
+    ok("VISION T1(d): a spot on the hillside is seen from the flat below it", sees(hill, eye, 0, 18) === true);
   }
 
   // (e) the team map: only team-2 eyes stand in the far corner, so the corner
@@ -3437,6 +3451,98 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     let lit = 0;
     for (let i = 0; i < SG.seen1.length; i++) lit += SG.seen1[i] + SG.seen2[i];
     ok("VISION T1(h): a field of walls and sandbags and nothing else is all dark, both sides", lit === 0, `${lit} lit cells`);
+  }
+
+  // (i) THE CLOCK (mk0.71). mk0.70's exact-box ray asked every body in the
+  // world at every step of every line and cost 2,284ms per recompute at the
+  // mid-fight census — 570x its budget. This rebuilds that same census
+  // headless (the real 121x121 @2m field carrying buildDepotTerrain's base
+  // relief, ~1,190 bodies, 120 troops, both flags, six towers) and fails if
+  // one recompute ever again costs more than three times the 4ms budget.
+  {
+    const field = makeField(121, 2.0, 11);
+    {
+      const r = mulberry32(11);
+      const { n, cs, h, half } = field;
+      for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+        const x = i * cs - half, z = j * cs - half;
+        const stepUp = (v0, w, h2) => { const t = Math.min(1, Math.max(0, (z - v0) / w + 0.5)); return h2 * t * t * (3 - 2 * t); };
+        let y = 2.0
+          + Math.sin(x * 0.075 + 1.3) * 0.42
+          + Math.cos(z * 0.061 - 0.6) * 0.38
+          + Math.sin((x + z) * 0.032) * 0.30
+          + (r() - 0.5) * 0.06
+          + stepUp(-18, 10, 1.8) + stepUp(6, 10, 2.0) + stepUp(30, 10, 2.2);
+        const over = Math.max(0, Math.abs(x) - 29, Math.abs(z) - 57);
+        if (over > 0) y = Math.max(-6, y - over * over * 0.55);
+        h[j * n + i] = y;
+      }
+    }
+    const gy = (x, z) => field.heightAt(x, z);
+    const world = makeWorld({ field, seed: 11 });
+    const r = mulberry32(99);
+    // town masonry — ten hollow lattices, the bulk of the census
+    const towns = [
+      { x: 0, z: 49, nx: 9, nz: 8, ny: 5 }, { x: 0, z: -51, nx: 9, nz: 8, ny: 5 },
+      { x: -14, z: 20, nx: 6, nz: 5, ny: 4 }, { x: 12, z: 24, nx: 5, nz: 4, ny: 4 },
+      { x: -8, z: -6, nx: 8, nz: 4, ny: 3 }, { x: 16, z: -2, nx: 4, nz: 4, ny: 3 },
+      { x: -18, z: 36, nx: 5, nz: 6, ny: 5 }, { x: 10, z: 40, nx: 7, nz: 6, ny: 5 },
+      { x: -12, z: -28, nx: 6, nz: 5, ny: 4 }, { x: 14, z: -34, nx: 5, nz: 4, ny: 4 },
+    ];
+    let chunks = 0;
+    outer:
+    for (const t of towns) {
+      const base = gy(t.x, t.z);
+      for (let ky = 0; ky < t.ny; ky++) for (let kz = 0; kz < t.nz; kz++) for (let kx = 0; kx < t.nx; kx++) {
+        if (ky > 0 && kx > 0 && kx < t.nx - 1 && kz > 0 && kz < t.nz - 1) continue; // hollow: walls only
+        if (chunks >= 1120) break outer;
+        const b = addBody(world, {
+          kind: "chunk", team: 0, mass: MASON.mass, hx: MASON.hcs, hy: MASON.hcs, hz: MASON.hcs,
+          x: t.x + (kx - (t.nx - 1) / 2) * MASON.pitch,
+          y: base + MASON.hcs + ky * MASON.pitch,
+          z: t.z + (kz - (t.nz - 1) / 2) * MASON.pitch, hp: 40,
+        });
+        b.sleeping = true; chunks++;
+      }
+    }
+    let rocks = 0;
+    for (const bz of [-17, 7, 31]) for (let x = -25; x <= 25; x += 5.5) {
+      if (rocks >= 40) break;
+      const z = bz + (r() - 0.5) * 2.5, rad = 3.4 + r() * 1.2, hh = 3.0 + r() * 0.9;
+      addBody(world, { kind: "rock", team: 0, mass: 0, hx: rad * 0.55, hy: hh * 0.8, hz: rad * 0.55, x, y: gy(x, z) - hh * 0.2, z, hp: 400 });
+      rocks++;
+    }
+    for (let i = 0; i < 15; i++) {
+      const x = -26 + r() * 52, z = -50 + r() * 100;
+      addBody(world, { kind: "tree", team: 0, mass: 260, hx: 0.28, hy: 1.6, hz: 0.28, x, y: gy(x, z) + 1.62, z, hp: 70 }).sleeping = true;
+    }
+    addBody(world, { kind: "flag", team: 1, mass: 0, hx: 0.1, hy: 0.1, hz: 0.1, x: 0, y: gy(0, 49) + 6, z: 49, hp: 10 });
+    addBody(world, { kind: "flag", team: 2, mass: 0, hx: 0.1, hy: 0.1, hz: 0.1, x: 0, y: gy(0, -51) + 6, z: -51, hp: 10 });
+    for (let i = 0; i < 6; i++) {
+      const x = -10 + i * 4, z = 40 + (i % 2) * 3;
+      addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: 1.2, hz: 0.8, x, y: gy(x, z) + 1.2, z, hp: 120 });
+    }
+    const put = (team, x, z) => addBody(world, { kind: "unit", team, mass: 80, hx: 0.3, hy: 0.9, hz: 0.3, x, y: gy(x, z) + 0.9, z, hp: 40 });
+    for (let c = 0; c < 3; c++) for (let i = 0; i < 34 && c * 34 + i < 100; i++) {
+      put(2, -18 + c * 16 + (r() - 0.5) * 5, -24 + (i % 12) * 1.4 + (r() - 0.5) * 3);
+    }
+    for (let i = 0; i < 20; i++) put(1, -14 + (r() - 0.5) * 24, 34 + (r() - 0.5) * 8);
+
+    const SG = makeSight(makeTerritory(29, 57));
+    stepSight(world, SG, idUV, idW);          // warm
+    let best = Infinity;
+    for (let rep = 0; rep < 5; rep++) {
+      const t0 = process.hrtime.bigint();
+      stepSight(world, SG, idUV, idW);
+      const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+      if (ms < best) best = ms;               // fastest of five: noise-proof, still catches any real regression
+    }
+    const troops = world.bodies.filter((b) => b.kind === "unit").length;
+    let lit1 = 0, lit2 = 0;
+    for (let i = 0; i < SG.seen1.length; i++) { lit1 += SG.seen1[i]; lit2 += SG.seen2[i]; }
+    ok("VISION T1(i): one recompute at the mid-fight census stays inside three times its 4ms budget",
+      best < 12, `${best.toFixed(2)} ms — ${world.bodies.length} bodies, ${troops} troops`);
+    ok("VISION T1(i): and that recompute really lit the map for both sides", lit1 > 0 && lit2 > 0, `${lit1}/${lit2}`);
   }
 }
 // ==== end VISION T1 ==========================================================

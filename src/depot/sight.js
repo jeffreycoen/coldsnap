@@ -3,7 +3,16 @@
 // on a living body; a spot is seen if a straight line from the eye to the
 // spot (at man height) clears the terrain and every solid thing in between.
 // Elevation is the whole trick: a higher eye's line passes over low cover.
-import { solidBlocksPoint } from "./accuracy.js";
+//
+// mk0.71 — THE FAST EYE. mk0.70's ray asked every body in the world at every
+// step of every sight line: the cost probe measured 2,284ms per recompute
+// against a 4ms budget. The world is now swept ONCE per recompute into two
+// flat maps over the sight grid — the ground's height per cell, and the top
+// of the tallest solid standing in the cell — and a sight line marches cell
+// by cell reading two numbers per step, touching no body at all. Blocking is
+// therefore MAP-RESOLUTION: a solid blocks its whole 2m cell. That is coarser
+// than mk0.70's exact box test, still deterministic, and the accepted trade
+// (Vision plan, Task 1b).
 
 // How far each kind of eye sees (meters). Wider than any gun it guides —
 // a gun must never out-range its own eyes. // all provisional (F5)
@@ -27,51 +36,106 @@ export function eyeOf(b) {
 // TARGET_H: a spot is "seen" at man height, not at the dirt — the same 1.2m
 // convention the reach preview uses (accuracy.js TARGET_H).
 export const SIGHT_TARGET_H = 1.2;
-const STEP = 0.9; // sample spacing along the line — losGraze's own stride
 
-// canSee: march the straight eye→spot line; terrain above the line blocks,
-// a solid box on the line blocks (the eye's own body excluded via selfId).
-export function canSee(world, eye, tx, tz, selfId) {
-  const dx = tx - eye.x, dz = tz - eye.z;
-  const d = Math.hypot(dx, dz);
-  if (d > eye.r) return false;
-  if (d < STEP) return true;                       // point-blank: no tested span
-  const ty = world.field.heightAt(tx, tz) + SIGHT_TARGET_H;
-  for (let s = STEP; s < d - STEP; s += STEP) {
-    const t = s / d;
-    const x = eye.x + dx * t, z = eye.z + dz * t, y = eye.y + (ty - eye.y) * t;
-    if (world.field.heightAt(x, z) > y) return false;       // the ground rises into the line
-    if (solidBlocksPoint(world, x, y, z, selfId)) return false; // something solid stands in it
-  }
-  return true;
-}
-
-// makeSight(T): two byte maps over the territory grid — seen1[i]=1 where
-// team 1 sees cell i, seen2 likewise. Derived state: never saved, rebuilt
-// on resume by the first recompute.
+// makeSight(T): the maps over the territory grid.
+//   seen1[i]/seen2[i] — 1 where that team sees cell i
+//   gnd[i]            — the ground's height at cell i's center
+//   occ[i]            — the top of the tallest solid standing in cell i
+//                       (-Infinity when the cell holds none)
+// All derived state: never saved, rebuilt on resume by the first recompute.
 export function makeSight(T) {
   return { nx: T.nx, nz: T.nz, cs: T.cs, halfU: T.halfU, halfV: T.halfV,
-           seen1: new Uint8Array(T.nx * T.nz), seen2: new Uint8Array(T.nx * T.nz) };
+           seen1: new Uint8Array(T.nx * T.nz), seen2: new Uint8Array(T.nx * T.nz),
+           gnd: new Float32Array(T.nx * T.nz), occ: new Float32Array(T.nx * T.nz) };
 }
 export function seenAt(SG, x, z, team) {
   const ix = Math.floor((x + SG.halfU) / SG.cs), iz = Math.floor((z + SG.halfV) / SG.cs);
   if (ix < 0 || ix >= SG.nx || iz < 0 || iz >= SG.nz) return false;
   return (team === 2 ? SG.seen2 : SG.seen1)[iz * SG.nx + ix] === 1;
 }
-// stepSight(world, SG, toUV, toWorld): full recompute. Deterministic —
-// bodies iterate in world order; no dice. toUV/toWorld are DEPOT's own
-// world↔canonical transforms (invW/fwdU), passed in like everywhere else.
+
+// The static-solid kind/mobility rule, mirrored from accuracy.js's
+// solidBlocksPoint: masonry chunks and trees block even though physics lets
+// them move; everything else must be immovable to block. Units and vehicles
+// are never in the set, so men never blind each other.
+const SOLID = new Set(["rock", "wall", "tower", "tree", "chunk"]);
+// fillMaps: one sweep of the world into gnd/occ. gnd is refilled every
+// recompute too (terrain only re-carves on craters, but the fill is cheap and
+// always true); occ must be, because walls fall and rubble moves.
+export function fillMaps(world, SG, toUV, toWorld) {
+  for (let iz = 0; iz < SG.nz; iz++) for (let ix = 0; ix < SG.nx; ix++) {
+    const w = toWorld(-SG.halfU + (ix + 0.5) * SG.cs, -SG.halfV + (iz + 0.5) * SG.cs);
+    SG.gnd[iz * SG.nx + ix] = world.field.heightAt(w.x, w.z);
+  }
+  SG.occ.fill(-Infinity);
+  for (const b of world.bodies) {
+    if (!b.alive || !SOLID.has(b.kind)) continue;
+    if (b.invM > 0 && b.kind !== "chunk" && b.kind !== "tree") continue; // solidBlocksPoint's own mobility rule
+    const c = toUV(b.pos.x, b.pos.z);
+    const rr = Math.max(b.hx, b.hz);                    // conservative footprint under rotation
+    const top = b.pos.y + b.hy;
+    const ix0 = Math.max(0, Math.floor((c.u - rr + SG.halfU) / SG.cs));
+    const ix1 = Math.min(SG.nx - 1, Math.floor((c.u + rr + SG.halfU) / SG.cs));
+    const iz0 = Math.max(0, Math.floor((c.v - rr + SG.halfV) / SG.cs));
+    const iz1 = Math.min(SG.nz - 1, Math.floor((c.v + rr + SG.halfV) / SG.cs));
+    for (let iz = iz0; iz <= iz1; iz++) for (let ix = ix0; ix <= ix1; ix++) {
+      const i = iz * SG.nx + ix;
+      if (top > SG.occ[i]) SG.occ[i] = top;
+    }
+  }
+}
+
+// gridEye(SG, e, toUV): the eye placed in the grid's own frame — canonical
+// meters (u, v) plus the cell indices (iu, iv) every march starts from,
+// computed once per eye instead of once per cell tested.
+export function gridEye(SG, e, toUV) {
+  const c = toUV(e.x, e.z);
+  return { u: c.u, v: c.v, y: e.y, r: e.r, selfId: e.selfId,
+           iu: Math.floor((c.u + SG.halfU) / SG.cs), iv: Math.floor((c.v + SG.halfV) / SG.cs) };
+}
+
+// canSee(SG, eye, tu, tv): can this eye see the center of cell (tu, tv)?
+// Marches the index-space line, longest axis stepped one cell at a time, and
+// compares the line's height against the ground and the tallest solid in each
+// intermediate cell. The eye's own cell and the target's own cell are never
+// tested — an eye is not blocked by the wall it stands on, and a target is
+// seen AT its cell, not through it.
+export function canSee(SG, eye, tu, tv) {
+  const du = tu - eye.iu, dv = tv - eye.iv;
+  const n = Math.max(Math.abs(du), Math.abs(dv));
+  if (n * SG.cs > eye.r + SG.cs) return false;          // coarse reject, in cells
+  const cu = -SG.halfU + (tu + 0.5) * SG.cs, cv = -SG.halfV + (tv + 0.5) * SG.cs;
+  if (Math.hypot(cu - eye.u, cv - eye.v) > eye.r) return false;   // the true reach, in meters
+  const ty = SG.gnd[tv * SG.nx + tu] + SIGHT_TARGET_H;
+  for (let k = 1; k < n; k++) {
+    const t = k / n;
+    // clamped: an eye shoved past the rim would otherwise round to a negative
+    // column and read the previous row's cells.
+    const iu = Math.min(SG.nx - 1, Math.max(0, Math.round(eye.iu + du * t)));
+    const iv = Math.min(SG.nz - 1, Math.max(0, Math.round(eye.iv + dv * t)));
+    const i = iv * SG.nx + iu;
+    const y = eye.y + (ty - eye.y) * t;
+    if (SG.gnd[i] > y || SG.occ[i] > y) return false;
+  }
+  return true;
+}
+
+// stepSight(world, SG, toUV, toWorld): full recompute — sweep the maps, then
+// light every cell each side's eyes can reach. Deterministic: bodies iterate
+// in world order, no dice. toUV/toWorld are DEPOT's own world<->canonical
+// transforms (invW/fwdU), passed in like everywhere else.
 export function stepSight(world, SG, toUV, toWorld) {
   SG.seen1.fill(0); SG.seen2.fill(0);
+  fillMaps(world, SG, toUV, toWorld);
   // one eye per occupied cell per team — the tallest wins the cell
   const eyes1 = new Map(), eyes2 = new Map();
   for (const b of world.bodies) {
     if (!b.alive) continue;
     const isEye = b.kind === "unit" || b.kind === "vehicle" || b.kind === "tower" || b.kind === "flag";
     if (!isEye || (b.team !== 1 && b.team !== 2)) continue;
-    const e = eyeOf(b); e.selfId = b.id;
-    const c = toUV(e.x, e.z);
-    const key = Math.floor((c.u + SG.halfU) / SG.cs) + (Math.floor((c.v + SG.halfV) / SG.cs) * SG.nx);
+    const raw = eyeOf(b); raw.selfId = b.id;
+    const e = gridEye(SG, raw, toUV);
+    const key = e.iv * SG.nx + e.iu;
     const m = b.team === 2 ? eyes2 : eyes1;
     const prev = m.get(key);
     if (!prev || e.y > prev.y) m.set(key, e);
@@ -79,15 +143,11 @@ export function stepSight(world, SG, toUV, toWorld) {
   const sweep = (eyes, seen) => {
     for (const e of eyes.values()) {
       const cellR = Math.ceil(e.r / SG.cs);
-      const c = toUV(e.x, e.z);
-      const cx = Math.floor((c.u + SG.halfU) / SG.cs), cz = Math.floor((c.v + SG.halfV) / SG.cs);
-      for (let iz = Math.max(0, cz - cellR); iz <= Math.min(SG.nz - 1, cz + cellR); iz++) {
-        for (let ix = Math.max(0, cx - cellR); ix <= Math.min(SG.nx - 1, cx + cellR); ix++) {
+      for (let iz = Math.max(0, e.iv - cellR); iz <= Math.min(SG.nz - 1, e.iv + cellR); iz++) {
+        for (let ix = Math.max(0, e.iu - cellR); ix <= Math.min(SG.nx - 1, e.iu + cellR); ix++) {
           const i = iz * SG.nx + ix;
           if (seen[i]) continue;                       // another eye already lit it
-          const u = -SG.halfU + (ix + 0.5) * SG.cs, v = -SG.halfV + (iz + 0.5) * SG.cs;
-          const w = toWorld(u, v);
-          if (canSee(world, e, w.x, w.z, e.selfId)) seen[i] = 1;
+          if (canSee(SG, e, ix, iz)) seen[i] = 1;
         }
       }
     }
