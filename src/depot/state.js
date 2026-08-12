@@ -104,10 +104,15 @@ export function canvasTapConsumesPending(pending, screen, rect) {
   return !!pending && pendingButtonsVisible(screen, rect);
 }
 
-// Wall build cost — mirrors DepotGame.jsx's buildAt (`const cost = spec ? spec.cost : 5`).
-// specs.js has no wall entry (walls aren't a TOWER_SPECS type), so this is
-// the single source of truth the book-value verdict below reads.
-const WALL_COST = 5;
+// Wall build cost. specs.js has no wall entry (walls aren't a TOWER_SPECS
+// type), so this is the single source of truth — EXPORTED as of mk0.50 so
+// DepotGame.jsx's buildAt fallback and build-palette label read it instead of
+// carrying their own copies of the number (three literals, one price: a
+// desync waiting to happen the moment one of them moves).
+// P1.5 Task 1 (mk0.50, Jeff): 5 -> 8, part of the +~50% interim raise across
+// every player price. See SQUAD_SPECS (squads.js) for the asymmetry note that
+// governs the whole raise. // provisional (F5)
+export const WALL_COST = 8;
 
 
 // One trigger pull, general shooter core: 2-pass lead solve against
@@ -374,14 +379,17 @@ export function spawnSquadMembers(world, squad) {
   }
 }
 
-// Sandbag: instant (wall-exempt) 3-scrap cover — a single STATIC sleeping
+// Sandbag: instant (wall-exempt) cover at SANDBAG_COST scrap — a single STATIC sleeping
 // chunk body tagged b.sandbag. Static (mass 0 -> invM 0) on purpose:
 // squads.js's exposureAt filters out dynamic bodies (invM > 0), so a massy
 // sandbag would never read as cover; core.js's projectile hit scan exempts
 // chunk-kind from its invM-0 skip (~:691), so rounds still hit it and its
 // 60hp still matters. DepotGame's territory emitter builder adds it under
 // EMIT.wall (green influence, wall-weight).
-export const SANDBAG_COST = 3;
+// P1.5 Task 1 (mk0.50, Jeff): 3 -> 5 with the rest of the player's prices
+// (+~50%, integers). The comment above still describes the body; only the
+// price moved. // provisional (F5)
+export const SANDBAG_COST = 5;
 // orient (0|1) swaps hx/hz — axis-aligned bodies only, no rotation matrices.
 // Orientation is player input, like placement coords: placement-state only,
 // sim/determinism untouched (multiplayer-safe by the same argument).
@@ -621,7 +629,11 @@ export function stepDepotCensus(S, dt, computeFraction) {
 // assault. It runs on SIM time (world.t, advanced by DepotGame.jsx's
 // fixed-step accumulator); wall clock and React state are both forbidden here
 // by the same law the rest of this file lives under.
-export const BELL_PERIOD_S = 120;   // provisional (F5)
+// P1.5 Task 1 (mk0.50, Jeff): the cycle tightens 120 -> 90. The bell is the
+// only clock the war runs on, so every downstream stamp (card arms, spawn
+// pacing, the withdrawal window) moves with it for free — nothing else in the
+// file reads a hard 120.
+export const BELL_PERIOD_S = 90;   // provisional (F5)
 
 // Bell index at which the enemy's tiers 1/2/3 open. Bell 1 is the FIRST bell
 // of a match, so tier 1 marches with the opening assault. // provisional (F5)
@@ -974,7 +986,14 @@ export function fireBell(S, opts = {}) {
     if (S.bell === 1) intelLines = [openingIntel(reg)];
     else intelLines = composeIntel(S.intelPlan, reg, rng);
   }
-  S.intelUp = true;
+  // P1.5 Task 1 (mk0.50, Jeff): the intel card no longer AUTO-RAISES. The
+  // report is still composed every bell and still written to S.lastDispatch
+  // below — the bell chip in the top bar re-reads it any time — but it stops
+  // putting itself in front of the player at the exact moment the assault
+  // steps off. The manifest card still raises itself (it is a decision, not a
+  // report). intelArmedAt is still stamped so the re-read path and the save
+  // round-trip keep their shape; nothing raises on it now.
+  S.intelUp = false;
   S.intelArmedAt = nowT + PENDING_ARM_S;
 
   // 3. the income — the player's cycle scrap and the attacker's stipend, both

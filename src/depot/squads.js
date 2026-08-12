@@ -14,20 +14,37 @@
 // stepSquad's attack leg-pause dwell time (documented at the call site) —
 // exactly one draw per attack leg, per the brief.
 
+// ---------------------------------------------------------- THE PRICE RAISE
+// P1.5 Task 1 (mk0.50, Jeff): every PLAYER price rises ~50%, rounded to
+// integers — squads here, TOWER_SPECS in specs.js, WALL_COST and SANDBAG_COST
+// in state.js. Scrap income did not move, so a bell buys about two thirds of
+// what it used to.
+//
+// THE KNOWING ASYMMETRY, written down rather than tuned around: the enemy's
+// internal buying prices (ENEMY_SPECS.bounty, TANK.bounty) and its stipend are
+// DELIBERATELY NOT RAISED with these. For this interim the two sides no longer
+// pay the same for the same thing — the enemy's regiment fields more per scrap
+// than the player does. That breaks the standing cost-symmetry law on purpose
+// and temporarily; the mercenary market is the feature that repairs it (both
+// sides will buy off one priced market). Two live consequences to expect in
+// play: the enemy assault feels richer than it did at mk0.43, and the sniper
+// pair's price (68) no longer equals ENEMY_SPECS.sniper.bounty (45), which
+// used to be a mirror. Neither is a bug — this comment is the record.
 export const SQUAD_SPECS = {           // costs are scrap; members spawn as unit bodies (team param)
   // The pair (sightlines 6.5 Task 6): a sniper squad is TWO men — sniper +
-  // spotter. 45 scrap (30 sniper + half a rifles squad for the spotter),
-  // provisional like every price (balance pass owns them).
-  sniper: { n: 2, cost: 45, label: "SNIPER" },
-  rifles: { n: 4, cost: 20, label: "RIFLE SQUAD" },
-  mg:     { n: 2, cost: 25, label: "MG TEAM" },
+  // spotter. Was 45 (30 sniper + half a rifles squad for the spotter), and the
+  // mirror of the enemy marksman's 45 bounty; 68 breaks that mirror per the
+  // asymmetry note above. // provisional (F5)
+  sniper: { n: 2, cost: 68, label: "SNIPER" },
+  rifles: { n: 4, cost: 30, label: "RIFLE SQUAD" },  // provisional (F5)
+  mg:     { n: 2, cost: 38, label: "MG TEAM" },      // provisional (F5)
   // FRONT F1 (Task 4.5): the demolition team — the exact mirror of the
   // enemy's satchel sapper. Tools, not shooters: no rifle (squadFire skips
   // the type), one charge per man, the charge consumes the planter.
-  sappers: { n: 2, cost: 25, label: "SAPPER TEAM" }, // provisional (F5)
+  sappers: { n: 2, cost: 38, label: "SAPPER TEAM" }, // provisional (F5)
   // F1.5 Task 1: the mortar team — two men and a tube, the player mirror of
   // the enemy grenadier's lob (INFANTRY_ARMS.mortars).
-  mortars: { n: 2, cost: 30, label: "MORTAR TEAM" }, // provisional (F5)
+  mortars: { n: 2, cost: 45, label: "MORTAR TEAM" }, // provisional (F5)
 };
 
 // Task 6 (the pair): squads.js now imports arcClears/effRange/INFANTRY_ARMS
@@ -359,7 +376,11 @@ function seekGoal(world, u, dt) {
 function slotFor(squad, idx, n) {
   // formation slots around the anchor: a small ring, spread evenly.
   const az = (idx / Math.max(1, n)) * Math.PI * 2;
-  const r = n <= 1 ? 0 : 2.4;
+  // P1.5 Task 1 (mk0.50, Jeff): 2.4 -> 1.5. A tighter ring — men read as one
+  // body instead of four loose walkers. Pure geometry: no draws, no ordering,
+  // and the defend micro-slot search (DEFEND_SLOT_R around each slot) rides on
+  // top of it unchanged. // provisional (F5)
+  const r = n <= 1 ? 0 : 1.5;
   return { x: squad.anchor.x + Math.sin(az) * r, z: squad.anchor.z + Math.cos(az) * r };
 }
 

@@ -16,13 +16,13 @@ import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS } from "./specs.js";
 import { windAt } from "./wind.js";
-import { makeAssaultState, HUD0, BELL_PERIOD_S, BELL_SCRAP, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, pruneSquads, makeManifestState, makeFoeState, pickManifest } from "./state.js";
+import { makeAssaultState, HUD0, BELL_PERIOD_S, BELL_SCRAP, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, pruneSquads, makeManifestState, makeFoeState, pickManifest } from "./state.js";
 import { SQUAD_SPECS, makeSquad, stepSquad } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
 import { makeRegiment, payTown } from "./economy.js";
 import { makeTerritory, stepTerritory, holderAt, canBuild, fogStateFor, valueAt, EMIT } from "./territory.js";
-import { fwdUFor, fwdDirFor, invWFor } from "./orient.js";
+import { fwdUFor, fwdDirFor, invWFor, clampToRimFor } from "./orient.js";
 import { SAVE_KEY, serializeFront, burnFront, restoreBodies, restoreWelds, restoreCensus, restoreSquads } from "./save.js";
 import Dispatch from "./Dispatch.jsx";
 
@@ -37,6 +37,15 @@ let ORIENT = 0;
 const fwdU = (u, v) => fwdUFor(ORIENT, u, v);
 const fwdDir = (du, dv) => fwdDirFor(ORIENT, du, dv);
 const invW = (x, z) => invWFor(ORIENT, x, z);
+// THE PLAYABLE RIM, once. buildDepotTerrain's falloff box is 29x57 in
+// canonical (u, v) — beyond it there is no ground to stand on, only the
+// painted horizon. world.inRim, the renderer's rim descriptor and the order
+// clamp below all read THESE two numbers so they cannot drift apart.
+const RIM_HALF_U = 29, RIM_HALF_V = 57;
+// P1.5 Task 1 (mk0.50): an off-map destination tap becomes the nearest point
+// still on the field. The transform itself is orient.js's (pure, testable);
+// this is the same thin ORIENT-binding wrapper fwdU/invW are.
+const clampToRim = (x, z) => clampToRimFor(ORIENT, x, z, RIM_HALF_U, RIM_HALF_V);
 let OBJ_POS = { x: 0, z: 49 };
 let SPAWN_POINTS = [], PONDS = [], ROCKS = [], TOWN = [], ROADS = [], PASSES = [], BANDS = [], MAP_SEED = 0, SPAWN_U = [];
 
@@ -656,7 +665,9 @@ const P = {
 // exact keys specs.js's PLAYER_START/PLAYER_TIERS ladder is written in, so the
 // unlocked filter below is a plain membership test.
 const PALETTE = [
-  { key: "wall", label: "WALL", icon: "▦", cost: 5 },
+  // The wall price lives in state.js (WALL_COST) — the bar label and buildAt's
+  // fallback both read it, so the number exists once (mk0.50).
+  { key: "wall", label: "WALL", icon: "▦", cost: WALL_COST },
   ...TOWER_ORDER.map((k) => ({ key: k, label: TOWER_SPECS[k].label, icon: TOWER_SPECS[k].icon, cost: TOWER_SPECS[k].cost })),
   // Squads (Phase 5 Task 3): mode keys prefixed sq_ — the MG tower owns "mg"
   { key: "sq_sniper", label: "SNIPER", icon: "✛", cost: SQUAD_SPECS.sniper.cost },
@@ -800,7 +811,7 @@ export default function DepotGame({ onExit, resume = null }) {
       // importing mode-local map state. Pure functions of the static map —
       // twin worlds read identically (determinism-safe).
       world.pondAt = (x, z) => !!pondAt(x, z);
-      world.inRim = (x, z) => { const c = invW(x, z); return Math.abs(c.u) <= 29 && Math.abs(c.v) <= 57; };
+      world.inRim = (x, z) => { const c = invW(x, z); return Math.abs(c.u) <= RIM_HALF_U && Math.abs(c.v) <= RIM_HALF_V; };
       // town / censuses / rocks: laid fresh, or lifted back off the save.
       let town, depotCensus, depotCensus2, rocksLive, resBodies = null;
       if (RES) {
@@ -953,7 +964,7 @@ export default function DepotGame({ onExit, resume = null }) {
         // playable rim (matches buildDepotTerrain's falloff box, 29x57
         // canonical): ground/grid/decals beyond it get no geometry to
         // paint on (see renderer.js). TD/campaign/demo pass no rim.
-        rim: { halfU: 29, halfV: 57, toCanonical: invW, toWorld: fwdU },
+        rim: { halfU: RIM_HALF_U, halfV: RIM_HALF_V, toCanonical: invW, toWorld: fwdU },
         // Phase 4 Task 4: grid-line faction tint + three-state fog. sample()
         // (WORLD space) drives per-frame enemy visibility/silhouette gating;
         // sampleUV (CANONICAL space, matches T's own grid) drives the 4Hz
@@ -1127,7 +1138,7 @@ export default function DepotGame({ onExit, resume = null }) {
           if (!canBuild(T, c0.u, c0.v)) { toast("GROUND NOT HELD"); return; }
         }
         const spec = mode === "wall" ? null : TOWER_SPECS[mode];
-        const cost = spec ? spec.cost : 5;
+        const cost = spec ? spec.cost : WALL_COST; // walls: no TOWER_SPECS row, state.js owns the price
         if (S.resources < cost) { toast("NO SCRAP"); return; }
         cell.blocked = true;
         if (!checkConnectivity(grid, SPAWN_POINTS, objG.gx, objG.gz)) {
@@ -1399,7 +1410,13 @@ export default function DepotGame({ onExit, resume = null }) {
         // destination (flag marker renders at dest until arrival).
         if (S.orderMode === "attack" || S.orderMode === "move") {
           const osq = selectedSquad();
-          if (osq) { osq.order = S.orderMode; osq.dest = { x: p.x, z: p.z }; osq._legTarget = null; osq._pauseT = 0; }
+          // OFF-MAP CLAMP (mk0.50): the tap ray hits the painted ground well
+          // past the playable rim, and a squad ordered out there walks off the
+          // field and never arrives. This is THE site where a ground tap
+          // becomes a dest — any future order that does the same (BUILD)
+          // routes through here, so the clamp lives here and nowhere else.
+          const d = clampToRim(p.x, p.z);
+          if (osq) { osq.order = S.orderMode; osq.dest = { x: d.x, z: d.z }; osq._legTarget = null; osq._pauseT = 0; }
           S.orderMode = null;
           return;
         }
@@ -2424,6 +2441,15 @@ export default function DepotGame({ onExit, resume = null }) {
             </div>
             <div style={{ fontSize: 11, opacity: 0.8, marginBottom: 10, lineHeight: 1.5 }}>
               One crate comes off the truck. The rest go back on.
+              {/* The teaching line, first truck only (mk0.50). Deterministic on
+                  the bell index — bell 1 is the first bell of any match, so
+                  nothing is stored, nothing is flagged, and a resumed save
+                  shows it again only if it resumed to bell 1. */}
+              {hud.manifest.bell === 1 && (
+                <div data-manifest-teach style={{ marginTop: 6, color: "#ffd27a", opacity: 0.9 }}>
+                  Pick one reinforcement — the convoy returns each bell.
+                </div>
+              )}
             </div>
             {hud.manifest.offers.map((key) => {
               const it = PALETTE_BY_KEY[key];

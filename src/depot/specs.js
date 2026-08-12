@@ -15,12 +15,18 @@
 // them (INFANTRY_ARMS.mortars 3.0 -> 6.0, ENEMY_FIRE.lob.cd 3.0 -> 6.0).
 // Damage, blast, accuracy and wind are UNTOUCHED — only the wait between
 // shells. This is a pace preview, so all four numbers stay provisional (F5).
+// P1.5 Task 1 (mk0.50, Jeff) — TOWER PRICES +~50%, integers: mg 15->23,
+// gun 25->38, mortar 35->53, rocket 50->75, frost 20->30. Only `cost` moved;
+// range/damage/cadence/accuracy are all untouched. Enemy bounties below are
+// DELIBERATELY not raised alongside these — the interim cost asymmetry is
+// documented in full at SQUAD_SPECS (src/depot/squads.js) and the mercenary
+// market is what repairs it. All five prices provisional (F5).
 export const TOWER_SPECS = {
-  mg:     { range: 15, fireRate: 0.17, projSpeed: 95, dmg: 5, dirDmg: 3.4, blastR: 0.3, kv: 0.5, cost: 15, hp: 80,  crater: 0, label: "MG",     icon: "⊞", kind: "mg",    hy: 1.0, acc: 0.090, windF: 0.06, windComp: 0,   blurb: "Fast, cheap, short reach", occl: "arc" },
-  gun:    { range: 19, fireRate: 1.05, projSpeed: 58, dmg: 25, blastR: 2.3, kv: 8,   cost: 25, hp: 130, crater: 0.55, label: "GUN",    icon: "⚑", kind: "shell", hy: 1.5, acc: 0.07, windF: 0.9,  windComp: 0.6, blurb: "Flat-trajectory workhorse", occl: "arc" },
-  mortar: { range: 26, fireRate: 4.6 /* halved cadence (C0 T4) // provisional (F5) */,  projSpeed: 33, dmg: 38, blastR: 3.8, kv: 10,  cost: 35, hp: 95,  crater: 0.8, label: "MORTAR", icon: "◎", kind: "shell", hy: 0.8, acc: 0.020, windF: 0.04, windComp: 0.6, blurb: "Arcs over walls, big blast", occl: "lofted" },
-  rocket: { range: 23, fireRate: 8.8 /* halved cadence (C0 T4) // provisional (F5) */,  projSpeed: 30, dmg: 27, blastR: 3.4, kv: 9,   cost: 50, hp: 110, volley: 4, crater: 0.7, label: "ROCKET", icon: "▲", kind: "shell", hy: 1.2, acc: 0.021, windF: 1.3  /* lobbed retune (mk0.25): swept 0.020-0.035 vs the pinned flat baseline 2.4592, curve in the F1.5 artillery plan // provisional (F5) */, windComp: 0.5, blurb: "Four-round salvo, slow reload", occl: "lofted" },
-  frost:  { range: 12, fireRate: 0,    projSpeed: 0,  dmg: 0,  blastR: 0,   kv: 0,   cost: 20, hp: 85,  label: "FROST",  icon: "❄", kind: "mg",    slow: 0.42, hy: 1.35, blurb: "Halves their pace in radius" },
+  mg:     { range: 15, fireRate: 0.17, projSpeed: 95, dmg: 5, dirDmg: 3.4, blastR: 0.3, kv: 0.5, cost: 23, hp: 80,  crater: 0, label: "MG",     icon: "⊞", kind: "mg",    hy: 1.0, acc: 0.090, windF: 0.06, windComp: 0,   blurb: "Fast, cheap, short reach", occl: "arc" },
+  gun:    { range: 19, fireRate: 1.05, projSpeed: 58, dmg: 25, blastR: 2.3, kv: 8,   cost: 38, hp: 130, crater: 0.55, label: "GUN",    icon: "⚑", kind: "shell", hy: 1.5, acc: 0.07, windF: 0.9,  windComp: 0.6, blurb: "Flat-trajectory workhorse", occl: "arc" },
+  mortar: { range: 26, fireRate: 4.6 /* halved cadence (C0 T4) // provisional (F5) */,  projSpeed: 33, dmg: 38, blastR: 3.8, kv: 10,  cost: 53, hp: 95,  crater: 0.8, label: "MORTAR", icon: "◎", kind: "shell", hy: 0.8, acc: 0.020, windF: 0.04, windComp: 0.6, blurb: "Arcs over walls, big blast", occl: "lofted" },
+  rocket: { range: 23, fireRate: 8.8 /* halved cadence (C0 T4) // provisional (F5) */,  projSpeed: 30, dmg: 27, blastR: 3.4, kv: 9,   cost: 75, hp: 110, volley: 4, crater: 0.7, label: "ROCKET", icon: "▲", kind: "shell", hy: 1.2, acc: 0.021, windF: 1.3  /* lobbed retune (mk0.25): swept 0.020-0.035 vs the pinned flat baseline 2.4592, curve in the F1.5 artillery plan // provisional (F5) */, windComp: 0.5, blurb: "Four-round salvo, slow reload", occl: "lofted" },
+  frost:  { range: 12, fireRate: 0,    projSpeed: 0,  dmg: 0,  blastR: 0,   kv: 0,   cost: 30, hp: 85,  label: "FROST",  icon: "❄", kind: "mg",    slow: 0.42, hy: 1.35, blurb: "Halves their pace in radius" },
 };
 export const TOWER_ORDER = ["mg", "gun", "mortar", "rocket", "frost"];
 
@@ -38,6 +44,9 @@ export const ENEMY_SPECS = {
   // — so bounty (the buy price ai.js spends) rises 30 -> 45, mirroring the
   // player's own 45-scrap pair. Kill payout stays symmetric: units.js splits
   // the 45 across the two bodies (30 sniper + 15 spotter) at spawn.
+  // MIRROR BROKEN, INTERIM (P1.5 Task 1, mk0.50): the player's pair now costs
+  // 68 and this bounty stays 45 — see the asymmetry note at SQUAD_SPECS
+  // (src/depot/squads.js). Deliberate, temporary, market-repaired.
   // RE-DRESSED (C0 T4, mk0.33 — Jeff): dress "android" DELETED. They are
   // ordinary men in the enemy's cold slate coat now, not silver machines;
   // troopkit's coat-is-side rule palettes them by team with no dress field at

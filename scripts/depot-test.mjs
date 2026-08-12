@@ -12,7 +12,7 @@ import {
   PENDING_EDGE_PAD, pendingButtonsVisible, canvasTapConsumesPending,
   END_CARD_DELAY_S, stampEnd, endCardReady,
   censusDepotChunks, depotStandingFraction, checkDepotBreach, checkEnemyBreach, stepDepotCensus,
-  spawnSquadMembers, spawnSandbag, SANDBAG_COST, pruneSquads,
+  spawnSquadMembers, spawnSandbag, SANDBAG_COST, WALL_COST, pruneSquads,
   DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, DEPOT_CENSUS_HZ,
 } from "../src/depot/state.js";
 import { troopKit, barrelBasis, RIFLE_PREROT, RIFLE_OFF, RIFLE_LEN } from "../src/render/troopkit.js";
@@ -31,7 +31,7 @@ import {
 import { planWave, MIN_WAVE_FLOOR, snapSquads } from "../src/depot/ai.js";
 import { composeIntel, openingIntel } from "../src/depot/intel.js";
 import { makeTerritory, stepTerritory, holderAt, fogStateAt, valueAt, canBuild, DECAY_TAU, EMIT } from "../src/depot/territory.js";
-import { fwdUFor, fwdDirFor, invWFor } from "../src/depot/orient.js";
+import { fwdUFor, fwdDirFor, invWFor, clampToRimFor } from "../src/depot/orient.js";
 import { washAlpha, WASH_SEAM, WASH_MAX_A } from "../src/render/renderer.js";
 import fs from "node:fs";
 
@@ -258,10 +258,17 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
     S4.started = true; S4.reg = fatReg();
     ok("bell sequence: a fresh run has no cards up", S4.intelUp === false && S4.manifest.cardUp === false);
     fireBell(S4, { reg: S4.reg, snap: {}, rng: mulberry32(43), t: BELL_PERIOD_S });
-    ok("bell sequence: the bell raises the intel card", S4.intelUp === true);
+    // RE-PINNED mk0.50 (was: "the bell raises the intel card", intelUp true).
+    // The intel card no longer auto-raises — the report is still composed and
+    // still parked on S.lastDispatch for the bell chip to re-read.
+    ok("bell sequence: the bell does NOT raise the intel card (mk0.50)", S4.intelUp === false);
+    ok("bell sequence: the un-raised intel report is still composed and re-readable",
+      !!S4.lastDispatch && S4.lastDispatch.lines.length > 0);
     ok("bell sequence: both cards arm on the trailing-tap law",
       S4.intelArmedAt === BELL_PERIOD_S + PENDING_ARM_S && S4.manifest.armedAt === BELL_PERIOD_S + PENDING_ARM_S);
-    ok("bell sequence: the assault musters with both cards still up",
+    // RE-PINNED mk0.50: "both cards" is now the manifest alone — the muster
+    // still does not wait on it, which is the assert that matters.
+    ok("bell sequence: the assault musters with the manifest card still up",
       S4.manifest.cardUp === true && S4.ws.spawnQueue > 0, `${S4.ws.spawnQueue}`);
     ok("bell sequence: the income landed before the muster spent it",
       S4.resources === makeRunState().resources + BELL_SCRAP, `${S4.resources}`);
@@ -1718,7 +1725,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     ok("spawnSandbag: brief dims + hp 60", b.hx === 0.9 && b.hy === 0.45 && b.hz === 0.35 && b.hp === 60,
       `hx=${b.hx} hy=${b.hy} hz=${b.hz} hp=${b.hp}`);
     ok("spawnSandbag: static + sleeping", b.invM === 0 && b.sleeping === true);
-    ok("spawnSandbag: costs 3 scrap (SANDBAG_COST)", SANDBAG_COST === 3);
+    ok("spawnSandbag: costs 5 scrap (SANDBAG_COST — re-pinned from 3, mk0.50)", SANDBAG_COST === 5);
     // cover integration: a man behind the sandbag line reads less exposed
     // than one on open ground, against a threat beyond the bags.
     const behind = exposureAt(world, 2, 3.8, 0); // threatBearing 0 = +z, bag interposed
@@ -1862,7 +1869,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     ok("squad placement: unheld ground refused", !v1.ok && v1.msg === "GROUND NOT HELD");
     const v2 = validatePlacement({ blocked: false, ice: false, held: true, resources: 2, cost: SANDBAG_COST });
     ok("sandbag placement: unaffordable refused", !v2.ok && v2.msg === "NO SCRAP");
-    const v3 = validatePlacement({ blocked: false, ice: false, held: true, resources: 50, cost: SQUAD_SPECS.sniper.cost }); // 50 >= the pair's 45
+    const v3 = validatePlacement({ blocked: false, ice: false, held: true, resources: 100, cost: SQUAD_SPECS.sniper.cost }); // re-pinned mk0.50: 100 >= the pair's 68 (was 50 >= 45)
     ok("squad placement: held + funded passes", v3.ok === true);
   }
 
@@ -2308,8 +2315,9 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 
   // (a) pair spawns 2 both sides at 45
   {
-    ok("pair(a): SQUAD_SPECS.sniper fields two men at 45 scrap",
-      SQUAD_SPECS.sniper && SQUAD_SPECS.sniper.n === 2 && SQUAD_SPECS.sniper.cost === 45, JSON.stringify(SQUAD_SPECS.sniper));
+    // RE-PINNED mk0.50: the pair costs 68, not 45 (the +~50% interim raise).
+    ok("pair(a): SQUAD_SPECS.sniper fields two men at 68 scrap (re-pinned from 45, mk0.50)",
+      SQUAD_SPECS.sniper && SQUAD_SPECS.sniper.n === 2 && SQUAD_SPECS.sniper.cost === 68, JSON.stringify(SQUAD_SPECS.sniper));
     const world = makeWorld({ field: flatF(), seed: 61 });
     const sq = makeSquad(1, "sniper", 1, 0, 0);
     spawnSquadMembers(world, sq);
@@ -2317,7 +2325,12 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     ok("pair(a): player pair spawns sniper + spotter roles",
       members.length === 2 && members.some((u) => u.role === "sniper") && members.some((u) => u.role === "spotter"),
       JSON.stringify(members.map((u) => u.role)));
-    ok("pair(a): ENEMY_SPECS.sniper priced at 45 (bounty mirrors the pair price)", ENEMY_SPECS.sniper.bounty === 45, ENEMY_SPECS.sniper.bounty);
+    // RE-PINNED mk0.50 (value unchanged, claim changed): the bounty stays 45
+    // while the player's pair went to 68 — the interim cost asymmetry, on the
+    // record at SQUAD_SPECS. This assert now pins the enemy price ALONE.
+    ok("pair(a): ENEMY_SPECS.sniper still priced at 45 (mirror deliberately broken, mk0.50)", ENEMY_SPECS.sniper.bounty === 45, ENEMY_SPECS.sniper.bounty);
+    ok("pair(a): the interim asymmetry is exactly that — player pair dearer than the enemy's",
+      SQUAD_SPECS.sniper.cost > ENEMY_SPECS.sniper.bounty, `${SQUAD_SPECS.sniper.cost} vs ${ENEMY_SPECS.sniper.bounty}`);
     const w2 = makeWorld({ field: flatF(), seed: 62 });
     const sn = spawnUnit(w2, { x: 0, z: 10 }, "sniper");
     const pairBodies = w2.bodies.filter((b) => b.kind === "unit" && b.team === 2);
@@ -2856,6 +2869,122 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 }
 // ==== end mk0.29 =============================================================
+
+// ==== P1.5 TASK 1 — the tuning batch (mk0.50) ================================
+// Seven changes, all Jeff-ratified numbers. The asserts below are the pins for
+// the six that are product changes (the seventh was a measurement run).
+{
+  console.log("\n[mk0.50: the tuning batch]");
+
+  // (1) the bell tightens. Everything downstream is expressed in BELL_PERIOD_S
+  // already (the asserts above all do their bell math off the constant), so
+  // this is the one place the literal is pinned.
+  ok("mk0.50/1: BELL_PERIOD_S is 90 (re-pinned from 120)", BELL_PERIOD_S === 90, BELL_PERIOD_S);
+
+  // (2) the formation tightens. Behavioural, not a source grep: a 4-man squad
+  // under orders puts every man's goal on a 1.5m ring around the anchor. Flat
+  // empty world, so clearSlot passes each slot through untouched.
+  {
+    const world = makeWorld({ field: { heightAt: () => 0, dirty: false, cs: 2, half: 40, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } }, seed: 77 });
+    const sq = makeSquad(1, "rifles", 1, 0, 0);
+    spawnSquadMembers(world, sq);
+    sq.order = "move"; sq.dest = { x: 0, z: 30 };
+    stepSquad(world, sq, 1 / 60);
+    const radii = sq.memberIds.map((id) => {
+      const u = world.byId.get(id);
+      return Math.hypot(u.goal.x - sq.anchor.x, u.goal.z - sq.anchor.z);
+    });
+    const tight = radii.every((r) => Math.abs(r - 1.5) < 1e-6);
+    ok("mk0.50/2: formation slots sit on a 1.5m ring (re-pinned from 2.4)", tight, radii.map((r) => r.toFixed(3)).join(","));
+  }
+
+  // (3) the interim price raise, +~50% on every PLAYER price, integers.
+  {
+    ok("mk0.50/3: squad prices raised (sniper 68, rifles 30, mg 38, sappers 38, mortars 45)",
+      SQUAD_SPECS.sniper.cost === 68 && SQUAD_SPECS.rifles.cost === 30 && SQUAD_SPECS.mg.cost === 38
+      && SQUAD_SPECS.sappers.cost === 38 && SQUAD_SPECS.mortars.cost === 45,
+      JSON.stringify(Object.fromEntries(Object.entries(SQUAD_SPECS).map(([k, v]) => [k, v.cost]))));
+    ok("mk0.50/3: tower prices raised (mg 23, gun 38, mortar 53, rocket 75, frost 30)",
+      TOWER_SPECS.mg.cost === 23 && TOWER_SPECS.gun.cost === 38 && TOWER_SPECS.mortar.cost === 53
+      && TOWER_SPECS.rocket.cost === 75 && TOWER_SPECS.frost.cost === 30,
+      JSON.stringify(Object.fromEntries(Object.entries(TOWER_SPECS).map(([k, v]) => [k, v.cost]))));
+    ok("mk0.50/3: WALL_COST 8 and SANDBAG_COST 5", WALL_COST === 8 && SANDBAG_COST === 5, `${WALL_COST}/${SANDBAG_COST}`);
+    ok("mk0.50/3: every raised price is an integer",
+      [...Object.values(SQUAD_SPECS).map((s) => s.cost), ...Object.values(TOWER_SPECS).map((s) => s.cost), WALL_COST, SANDBAG_COST]
+        .every((c) => Number.isInteger(c)));
+    // The wall price exists ONCE now — DepotGame's palette row and buildAt
+    // fallback both read state.js's constant instead of a bare 5.
+    const wsrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("mk0.50/3: DepotGame reads WALL_COST instead of carrying its own literal",
+      /icon: "▦", cost: WALL_COST/.test(wsrc) && /spec \? spec\.cost : WALL_COST/.test(wsrc));
+    // The knowing asymmetry is documented where the raise is, not just in the
+    // plan — a reader who finds a rich enemy finds the reason.
+    const sqsrc = fs.readFileSync(new URL("../src/depot/squads.js", import.meta.url), "utf8");
+    ok("mk0.50/3: the interim cost asymmetry is written down beside the raised prices",
+      /ASYMMETRY/.test(sqsrc) && /mercenary market/.test(sqsrc));
+    ok("mk0.50/3: enemy bounties were NOT raised with them",
+      ENEMY_SPECS.heavy.bounty === 12 && ENEMY_SPECS.gren.bounty === 8 && ENEMY_SPECS.sapper.bounty === 7
+      && ENEMY_SPECS.fast.bounty === 5 && ENEMY_SPECS[""].bounty === 4 && TANK.bounty === 25);
+  }
+
+  // (4) the intel card stops auto-raising — pinned at the fireBell asserts
+  // above; here we only confirm the report itself survives every bell, which
+  // is what the bell chip re-reads.
+  {
+    const S = makeRunState();
+    S.started = true; S.reg = fatReg();
+    let composed = 0;
+    for (let b = 1; b <= 3; b++) {
+      S.reg.scrap += 200;
+      fireBell(S, { reg: S.reg, snap: {}, rng: mulberry32(50 + b), t: b * BELL_PERIOD_S });
+      if (S.lastDispatch && S.lastDispatch.lines.length > 0) composed++;
+      if (S.intelUp !== false) composed = -99;
+    }
+    ok("mk0.50/4: the report is composed every bell and the card never raises itself", composed === 3, composed);
+  }
+
+  // (5) the first-manifest teaching line: bell 1 only, deterministic on the
+  // bell index, nothing stored.
+  {
+    const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("mk0.50/5: the teaching line renders on bell 1 only",
+      /hud\.manifest\.bell === 1 &&/.test(src) && /Pick one reinforcement — the convoy returns each bell\./.test(src));
+    ok("mk0.50/5: it is bell-index deterministic — no flag, no storage",
+      !/taughtManifest|seenManifest|firstManifestShown/.test(src));
+  }
+
+  // (6) the off-map clamp. The rim is axis-aligned in CANONICAL space only, so
+  // the clamp is proved at all four orientations — a world-space clamp would
+  // pass at ORIENT 0 and cut corners at the other three.
+  {
+    const HU = 29, HV = 57;
+    const inRim = (ORIENT, p) => { const c = invWFor(ORIENT, p.x, p.z); return Math.abs(c.u) <= HU + 1e-9 && Math.abs(c.v) <= HV + 1e-9; };
+    let allIn = true, untouched = true, cornerOK = true;
+    for (let ORIENT = 0; ORIENT < 4; ORIENT++) {
+      for (const far of [{ x: 0, z: 400 }, { x: -400, z: 0 }, { x: 250, z: -250 }, { x: 0, z: -400 }, { x: 400, z: 400 }]) {
+        if (!inRim(ORIENT, clampToRimFor(ORIENT, far.x, far.z, HU, HV))) allIn = false;
+      }
+      // a point already on the field comes back bit-identical
+      const on = fwdUFor(ORIENT, 10, -20);
+      const back = clampToRimFor(ORIENT, on.x, on.z, HU, HV);
+      if (back.x !== on.x || back.z !== on.z) untouched = false;
+      // corner honesty: only the axis that was out of bounds moves
+      const one = fwdUFor(ORIENT, 200, 13); // u far out, v legal
+      const clamped = clampToRimFor(ORIENT, one.x, one.z, HU, HV);
+      const cl = invWFor(ORIENT, clamped.x, clamped.z);
+      if (Math.abs(cl.u - HU) > 1e-9 || Math.abs(cl.v - 13) > 1e-9) cornerOK = false;
+    }
+    ok("mk0.50/6: an off-map tap clamps inside the rim at every orientation", allIn);
+    ok("mk0.50/6: a destination already on the field is returned untouched", untouched);
+    ok("mk0.50/6: only the out-of-bounds axis moves (canonical clamp, not a world-space box)", cornerOK);
+    const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("mk0.50/6: the order flow clamps at the ONE site where a tap becomes a dest",
+      /const d = clampToRim\(p\.x, p\.z\);/.test(src) && /osq\.dest = \{ x: d\.x, z: d\.z \}/.test(src));
+    ok("mk0.50/6: the rim half-extents exist once (inRim and the clamp share them)",
+      /const RIM_HALF_U = 29, RIM_HALF_V = 57;/.test(src) && !/halfU: 29, halfV: 57/.test(src));
+  }
+}
+// ==== end mk0.50 =============================================================
 
 
 

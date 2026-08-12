@@ -32,3 +32,25 @@ export function invWFor(ORIENT, x, z) {
     : ORIENT === 2 ? { u: -x, v: -z }
     : { u: -z, v: x };
 }
+
+// P1.5 Task 1 (mk0.50) — THE OFF-MAP CLAMP. Takes a WORLD (x, z) and returns
+// the nearest point inside the playable rim, also in world coords.
+//
+// It lives here, with the other transforms, for the reason this module exists
+// at all: the rim is an AXIS-ALIGNED box in canonical (u, v) and a ROTATED one
+// in world coords, so clamping world x/z directly would slice the corners off
+// at three of the four orientations — the same coordinate-space class of bug
+// the header above describes. Clamping in canonical space and transforming
+// back is correct at every orientation, and pure/importable so a headless test
+// can prove that rather than assume it.
+//
+// halfU/halfV are the caller's rim half-extents — DepotGame passes exactly the
+// numbers its world.inRim tests against, so a clamped point always satisfies
+// inRim (the bound is inclusive on both).
+export function clampToRimFor(ORIENT, x, z, halfU, halfV) {
+  const c = invWFor(ORIENT, x, z);
+  const u = Math.max(-halfU, Math.min(halfU, c.u));
+  const v = Math.max(-halfV, Math.min(halfV, c.v));
+  if (u === c.u && v === c.v) return { x, z }; // already on the field — untouched
+  return fwdUFor(ORIENT, u, v);
+}
