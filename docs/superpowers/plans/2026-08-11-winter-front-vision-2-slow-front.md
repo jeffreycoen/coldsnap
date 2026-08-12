@@ -58,6 +58,10 @@ The radial doubles as the teaching surface: when the manifest delivers something
 
 One squad fix rides along: a squad now waits only a few seconds for a straggler before advancing — no more whole squads frozen by one man wedged in rubble.
 
+## 3a. Possession *(added 2026-08-12)*
+
+**Anything on your side can be taken over and driven.** TAKE CONTROL is an entry on every friendly radial — squads, towers, and eventually heroes. Possessing a squad makes you its leader: the stick drives the formation and the fire button volleys it at your aim, members holding formation around you. Possessing a tower is manning the gun: manual aim, manual trigger, doctrine at your thumb. The front keeps fighting under its standing orders while you drive; release (or a bell save) returns you to command view. The enemy needs no mirror rule — their brain already drives their units; possession is you doing for one what it does for all. Heroes, when they arrive, are not a special control scheme — they are simply the best bodies to possess.
+
 ## 4. The Units
 
 **Engineers and sappers become two different teams.** Engineers arrive early: tap a line on the ground and they walk it building sandbags; later they repair masonry and build **bridges**. Sappers arrive later with the satchels — and bridges and dams are on their target list. Build it, hold it, blow it.
@@ -101,13 +105,14 @@ Terrain grows teeth:
 3. *(added 2026-08-12)* **Polish I** — Playtest I's directives: 90s bell, tighter formations, interim cost raise, intel card withdrawn (machinery kept), first-manifest teaching line, off-map order clamp, walls as visible 3-stacks and sandbags as 1 with weld seams shown, weapon-voice identity, minimal engineer v1 + seeded depot sandbags.
 4. **Vision** *(moved ahead of Command, 2026-08-12 — the territory targeting gate is the feel problem playtesting surfaced)* — sight-based targeting; one fan.
 5. **Command** — the radial and the first order set; tower doctrine.
-6. **The Front** — 80m width, building variety, forests, third road — with the sim-side perf work the baseline demands riding alongside.
-7. **Engineers & Arms** — the full engineer kit (repair, walls, bridges-ready), sappers as their own unlock, rocket teams.
-8. **Water** — real ice, the stream, basins, bridges.
-9. **The Dam** — lakes, the surge, the terraform.
-10. **The Enemy Front** — build-brain, deeper doctrine, the assault rhythm matured.
-11. **Heroes** — tanks/ace/Bison pilotable with enemy mirrors; **the mech last**, once its walk (M3/M4) is done on its parallel track.
-12. **Balance** — the held F5 pass runs once the front's shape settles, and builds the **mercenary market** (§2a) as its centerpiece; every cost and income in this document is provisional until then.
+6. *(added 2026-08-12)* **Possession** — TAKE CONTROL on every friendly radial: squads driven as one (stick = formation anchor, button = volley at your aim), towers as manual fire-control; pilot camera + contextual ability buttons built once, reused by every type including the later heroes. Bison drive/twin-stick precedents in core.js + the sandbox are the reading list's heart.
+7. **The Front** — 80m width, building variety, forests, third road — with the sim-side perf work the baseline demands riding alongside.
+8. **Engineers & Arms** — the full engineer kit (repair, walls, bridges-ready), sappers as their own unlock, rocket teams.
+9. **Water** — real ice, the stream, basins, bridges.
+10. **The Dam** — lakes, the surge, the terraform.
+11. **The Enemy Front** — build-brain, deeper doctrine, the assault rhythm matured.
+12. **Heroes** — tanks/ace/Bison pilotable with enemy mirrors; **the mech last**, once its walk (M3/M4) is done on its parallel track.
+13. **Balance** — the held F5 pass runs once the front's shape settles, and builds the **mercenary market** (§2a) as its centerpiece; every cost and income in this document is provisional until then.
 
 Each phase ships playable and bumps the version a tenth. Every phase gets its own approved plan before work starts.
 
