@@ -16,8 +16,8 @@ import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS } from "./specs.js";
 import { windAt } from "./wind.js";
-import { makeAssaultState, HUD0, BELL_PERIOD_S, BELL_SCRAP, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest } from "./state.js";
-import { SQUAD_SPECS, makeSquad, stepSquad } from "./squads.js";
+import { makeAssaultState, HUD0, BELL_PERIOD_S, BELL_SCRAP, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest } from "./state.js";
+import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
 import { makeRegiment, payTown } from "./economy.js";
@@ -593,9 +593,15 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
   // so player squads fog-gate on the SAME field towers do (team 1).
   if (S && S.squads) {
     S.squads = pruneSquads(world, S.squads);
-    if (S.selSquadId != null && !S.squads.some((q) => q.id === S.selSquadId)) { S.selSquadId = null; S.orderMode = null; }
+    if (S.selSquadId != null && !S.squads.some((q) => q.id === S.selSquadId)) { S.selSquadId = null; S.orderMode = null; S.buildPt0 = null; }
     for (const sq of S.squads) {
       stepSquad(world, sq, world.dt);
+      // P1.5 T4: the two-point build line, driven straight after the squad's
+      // own movement so the accumulator reads THIS tick's anchor. It lives in
+      // the game layer (S.stepBuildLine, installed by the mount effect below)
+      // because it spends scrap and places bodies — both barred from
+      // squads.js by that module's law. Squads with no job cost one test.
+      if (sq._build && S.stepBuildLine) S.stepBuildLine(sq);
       squadFire(world, sq, world.dt, T, invW);
       for (const id of sq.memberIds) {
         const u = world.byId.get(id);
@@ -686,6 +692,9 @@ const PALETTE = [
   // F1.5 Task 1: the mortar team — selection shows squadReach's lofted
   // near-circle fan (accuracy.js handles occl "lofted" already).
   { key: "sq_mortars", label: "MORTAR TEAM", icon: "◎", cost: SQUAD_SPECS.mortars.cost },
+  // P1.5 T4: the engineer team — in the starting kit, so this slot is on the
+  // bar from the first frame of every match.
+  { key: "sq_engineers", label: "ENGINEERS", icon: "⚒", cost: SQUAD_SPECS.engineers.cost },
   { key: "sandbag", label: "SANDBAG", icon: "▬", cost: SANDBAG_COST },
 ];
 const PALETTE_BY_KEY = Object.fromEntries(PALETTE.map((p) => [p.key, p]));
@@ -950,6 +959,59 @@ export default function DepotGame({ onExit, resume = null }) {
             treeAt(jx, jz);
           }
         }
+        // P1.5 T4 (mk0.60) — THE DEPOT COMES WITH COVER. Four to six sandbags
+        // ringed on the player depot at map-build time, so a fresh front opens
+        // with something to lie behind instead of bare ground.
+        //
+        // Drawn off a DEDICATED map-seed stream (the same mulberry32(MAP_SEED ^
+        // k) pattern the treeline above uses) and never world.rng: the world
+        // stream's draw counts are a determinism contract and this feature must
+        // not appear in them at all. Draw count is fixed at 1 + 2 per bag
+        // whatever the vetting rejects, so the stream is stable too.
+        //
+        // Vetting is clearSlot's rule (squads.js's own static-solid test, at a
+        // bag's own half-extent plus a man's clearance) plus the grid's verdict
+        // — a blocked cell is the depot footprint or a rock, ice is water — plus
+        // road and objective clearance. Each bag gets a fan of candidates around
+        // its drawn spot (four radii out, then the same four either side of the
+        // azimuth) because the depot's own approach road and mound reject a lot
+        // of the ring; a bag that clears none of the twelve is simply dropped.
+        const bagR = mulberry32(MAP_SEED ^ 0x5ba6);
+        const depotT = TOWN.find((t) => t.depot && t.team !== 2);
+        if (depotT) {
+          const roadClear = (x, z) => {
+            let best = 1e9;
+            for (const route of ROADS) for (let i = 0; i < route.length - 1; i++) {
+              const a2 = route[i], b2 = route[i + 1];
+              const rdx = b2[0] - a2[0], rdz = b2[1] - a2[1];
+              const tt = Math.max(0, Math.min(1, ((x - a2[0]) * rdx + (z - a2[1]) * rdz) / (rdx * rdx + rdz * rdz || 1)));
+              best = Math.min(best, Math.hypot(x - (a2[0] + rdx * tt), z - (a2[1] + rdz * tt)));
+            }
+            return best;
+          };
+          const nBags = 4 + Math.floor(bagR() * 3);
+          for (let i = 0; i < nBags; i++) {
+            const az0 = ((i + 0.5) / nBags) * Math.PI * 2 + (bagR() - 0.5) * 0.5;
+            const r0 = 6.4 + bagR() * 1.6;
+            let placed = false;
+            for (let swing = 0; swing < 3 && !placed; swing++) {
+              const az = az0 + [0, 0.38, -0.38][swing];
+              for (let nudge = 0; nudge < 4; nudge++) {
+                const rr = r0 + nudge * 1.3;
+                const bx = depotT.x + Math.sin(az) * rr, bz = depotT.z + Math.cos(az) * rr;
+                const cell = grid.cellAt(bx, bz);
+                if (!cell || cell.blocked || cell.ice) continue;
+                if (Math.hypot(bx - OBJ_POS.x, bz - OBJ_POS.z) < 3) continue;
+                if (roadClear(bx, bz) < 3) continue;
+                if (slotBlockedPublic(world, bx, bz, SANDBAG_HX + 0.35)) continue;
+                // laid ACROSS the radius, so the ring reads as cover facing out
+                spawnSandbag(world, bx, bz, Math.abs(Math.cos(az)) >= Math.abs(Math.sin(az)) ? 0 : 1);
+                placed = true;
+                break;
+              }
+            }
+          }
+        }
       }
       const objG = grid.worldToGrid(OBJ_POS.x, OBJ_POS.z);
       computeFlowField(grid, objG.gx, objG.gz);
@@ -1037,7 +1099,9 @@ export default function DepotGame({ onExit, resume = null }) {
         // Squads (Phase 5 Task 3): live squad rosters + selection/order UI
         // state. selArmedAt mirrors pending's 350ms trailing-tap guard so
         // the tap that selected a squad can't double-fire an order chip.
-        squads: [], nextSquadId: 1, selSquadId: null, selArmedAt: 0, orderMode: null,
+        // buildPt0 (mk0.60): the FIRST of a build order's two taps, held here
+        // until the second lands. Null whenever no build order is half-given.
+        squads: [], nextSquadId: 1, selSquadId: null, selArmedAt: 0, orderMode: null, buildPt0: null,
         hudT: 0, keys: {}, sellById: null, audio: A,
         // The attacker's economy — seeded off the run's own rng stream, not
         // an unseeded generator, so ?seed= replays reproduce the same
@@ -1225,7 +1289,7 @@ export default function DepotGame({ onExit, resume = null }) {
       // ---------------------------------------------- squads (Phase 5 Task 3)
       // Build-bar mode keys -> squad type. Prefixed (sq_mg vs mg) because the
       // MG TOWER already owns the bare "mg" mode key.
-      const SQUAD_MODE = { sq_sniper: "sniper", sq_rifles: "rifles", sq_mg: "mg", sq_sappers: "sappers", sq_mortars: "mortars" };
+      const SQUAD_MODE = { sq_sniper: "sniper", sq_rifles: "rifles", sq_mg: "mg", sq_sappers: "sappers", sq_mortars: "mortars", sq_engineers: "engineers" };
       // Infantry/sandbag placement checks: same validatePlacement gate as
       // towers (occupied/ice/held/afford) — men don't claim the grid cell
       // (no cell.blocked write, no connectivity re-check: bodies, not
@@ -1302,12 +1366,224 @@ export default function DepotGame({ onExit, resume = null }) {
           if (n) sq.anchor = { x: cx / n, z: cz / n };
           sq.order = "defend"; sq.dest = null; sq._legTarget = null; sq._pauseT = 0; sq._threatSig = undefined;
           sq._surveyPending = true; // DEFEND re-anchor: the pair re-surveys (6.5 Task 6)
-          S.orderMode = null;
+          sq._build = null;         // mk0.60: a new order abandons the line where it stands
+          S.orderMode = null; S.buildPt0 = null;
         } else if (kind === "attack" || kind === "move") {
           // mk0.28: both aiming orders arm the same "tap the ground" flow —
           // the chip only decides whether the men fight their way there.
-          S.orderMode = kind;
+          S.orderMode = kind; S.buildPt0 = null;
+        } else if (kind === "build_bags" || kind === "build_walls") {
+          // mk0.60: engineers only. The chip arms a TWO-tap flow (start, then
+          // end); re-tapping the armed chip before the second point cancels it
+          // cleanly, which is the only way out of a half-given order.
+          if (sq.type !== "engineers") return;
+          if (S.orderMode === kind) { S.orderMode = null; S.buildPt0 = null; return; }
+          S.orderMode = kind; S.buildPt0 = null;
         }
+      };
+
+      // =================================== THE TWO-POINT BUILD LINE (P1.5 T4)
+      // Tap where the line starts, tap where it ends. The squad walks to the
+      // start, lays end-to-end along the line, and digs in at the far end.
+      //
+      // GEOMETRY, stated once because it is the whole design constraint: the
+      // build grid's pitch is GRID_CS (2.0m) and BOTH pieces are 1.8m along
+      // their long axis (a bag is 1.8 x 0.9 x 0.7; a wall course is a 1.8m-wide
+      // face, WALL_HALF 0.9 / WALL_THIN 0.35). So a straight run lays pieces
+      // 2.0m apart that are each 1.8m long: end-to-end bar a 0.2m joint at every
+      // cell boundary — exactly the joint a hand-built line already has, since
+      // both go through the same grid. The pitch is the constraint, not the
+      // piece, and closing it would mean re-pitching every buildable in the game.
+      //
+      // ONE ROTATION FOR THE WHOLE LINE (Jeff, 2026-08-12 — this supersedes the
+      // per-step "staircase" rotation the brief described). The engine's boxes
+      // are axis-aligned and there is no rotated collider in this codebase, so
+      // a line gets the CLOSEST LOGICAL ROTATION to its overall start->end
+      // direction — its dominant axis, computed once at order time — and every
+      // piece on the line is laid at that one angle. Most orders are drawn
+      // axis-aligned anyway; on an off-axis order the cell path still walks the
+      // true segment (4-connected, so consecutive cells always share an EDGE),
+      // which puts the uniformly-rotated pieces into parallel offset runs where
+      // the path sidesteps. That offset is accepted: a line of pieces all facing
+      // the same way reads as one work, and alternating them at every sidestep
+      // reads as scatter.
+      //
+      // NO RNG ANYWHERE IN HERE. Cell order is Bresenham, the advance is a
+      // projection of the squad anchor onto the line (a distance accumulator by
+      // another name), and every rejection is a deterministic test.
+      // Two numbers, and they are set against each other rather than guessed.
+      // The formation ring is 1.5m (squads.js slotFor), a piece is 0.9m from
+      // its centre to its end, a man is 0.28m — so a man standing on the line
+      // beside the anchor physically overlaps a piece within 1.18m of him, and
+      // has 0.32m of daylight at his slot. LAY_AHEAD therefore puts each piece
+      // down 4.5m in front of the anchor (3.0m clear of the leading man, who
+      // can never be more than the ring's 1.5m ahead of it), and LAY_MAN_PAD is
+      // a 0.15m safety margin on the hard overlap rather than the 0.35m slot
+      // pad — at 0.35 the formation's own men blocked every cell of a line run
+      // along their ring axis, and half a straight order laid nothing (measured,
+      // staging run, mk0.60: 4 of 8 bags).
+      const LAY_AHEAD = 4.5;      // m — a piece goes down this far in FRONT of the anchor
+      const LINE_MAX_CELLS = 64;  // a hard ceiling on one order's line
+      const LAY_MAN_PAD = 0.15;   // m — margin on top of a hard man-vs-piece overlap
+      // lineCells: the grid cells a start->end segment runs through, in order.
+      // Bresenham with ONE axis moved per step (never the diagonal shortcut the
+      // stock algorithm takes) — that is what makes the staircase.
+      const lineCells = (a, b) => {
+        const g0 = grid.worldToGrid(a.x, a.z), g1 = grid.worldToGrid(b.x, b.z);
+        let x = g0.gx, z = g0.gz;
+        const dx = Math.abs(g1.gx - x), dz = Math.abs(g1.gz - z);
+        const sx = g1.gx >= x ? 1 : -1, sz = g1.gz >= z ? 1 : -1;
+        let err = dx - dz, guard = 0;
+        const out = [{ gx: x, gz: z }];
+        while ((x !== g1.gx || z !== g1.gz) && guard++ < LINE_MAX_CELLS) {
+          const stepX = z === g1.gz ? true : x === g1.gx ? false : 2 * err > -dz;
+          if (stepX) { err -= dz; x += sx; } else { err += dx; z += sz; }
+          out.push({ gx: x, gz: z });
+        }
+        return out;
+      };
+      // The footprint a piece will occupy, given its orientation. Bags and wall
+      // courses share one shape family (mk0.54/mk0.55) so this is one rule.
+      const pieceHalf = (kind, orient) => {
+        const long = kind === "walls" ? WALL_HALF : SANDBAG_HX;   // 0.9 either way
+        const thin = kind === "walls" ? WALL_THIN : SANDBAG_HZ;   // 0.35 either way
+        return orient === 1 ? { hx: thin, hz: long } : { hx: long, hz: thin };
+      };
+      const startBuildLine = (sq, kind, a, b) => {
+        const dxw = b.x - a.x, dzw = b.z - a.z;
+        const len = Math.hypot(dxw, dzw);
+        const ux = len > 1e-6 ? dxw / len : 0, uz = len > 1e-6 ? dzw / len : 1;
+        const cells = lineCells(a, b);
+        // THE LINE'S ONE ROTATION: the closest logical rotation to the whole
+        // start->end direction — its dominant axis. |dx| vs |dz| in WORLD space
+        // is the exact convention sandbagOrientAt/wallOrientAt already use, so
+        // the two can never disagree and no ORIENT reasoning is needed here.
+        // null only for a degenerate (zero-length) order, which then falls back
+        // to the auto-continue convention.
+        const orient = len > 1e-6 ? (Math.abs(dxw) >= Math.abs(dzw) ? 0 : 1) : null;
+        const rows = cells.map((c) => {
+          const wp = grid.gridToWorld(c.gx, c.gz);
+          return { gx: c.gx, gz: c.gz, x: wp.x, z: wp.z, t: (wp.x - a.x) * ux + (wp.z - a.z) * uz };
+        });
+        sq._build = { kind, orient, ax: a.x, az: a.z, ux, uz, len, rows, i: 0, laid: 0, skipped: 0, dry: false, phase: "toStart" };
+        sq.order = "build";
+        sq.dest = { x: a.x, z: a.z };
+        sq._legTarget = null; sq._pauseT = 0; sq._cohesionHoldT = 0; sq._threatSig = undefined;
+        toast((kind === "walls" ? "WALL" : "BAG") + " LINE — " + rows.length + " SECTIONS");
+      };
+      // One piece. Returns "laid" | "skip" | "dry". Placement runs the REAL
+      // spawners and the REAL gate (validatePlacement, the same four checks the
+      // build menu makes) — a cell that is occupied, iced or unheld is skipped,
+      // never double-filled; running out of scrap stops the line for good.
+      const layPieceAt = (job, row) => {
+        if (!grid.inBounds(row.gx, row.gz)) return "skip";
+        const cell = grid.cells[grid.idx(row.gx, row.gz)];
+        const c0 = invW(row.x, row.z);
+        const cost = job.kind === "walls" ? WALL_FIELD_COST : SANDBAG_FIELD_COST;
+        const v = validatePlacement({
+          blocked: !!(cell.blocked || cell.wallId), ice: !!cell.ice,
+          held: canBuild(T, c0.u, c0.v), resources: S.resources, cost,
+        });
+        if (!v.ok) return v.msg === "NO SCRAP" ? "dry" : "skip";
+        // The LINE's rotation, not the cell's: every piece on one order faces
+        // the same way. The auto-continue conventions are the fallback for a
+        // degenerate order only — they must never override the line's angle, or
+        // a run laid beside an older line would turn to match the wrong thing.
+        const orient = job.orient != null ? job.orient
+          : job.kind === "walls" ? wallOrientAt(world, row.x, row.z, ORIENT % 2)
+            : sandbagOrientAt(world, row.x, row.z, S.sandbagOrient || 0);
+        // Never lay a piece around a living man. A static body spawned over a
+        // dynamic one gets him depenetration-ejected, and the impact classifier
+        // reads that ejection as a lethal slam (the masonry-slam hazard
+        // squads.js's clearSlot exists for). A gap in the line is cheaper than a
+        // dead engineer, so an occupied cell is skipped for good rather than
+        // retried — retrying would deadlock behind the squad's own trailing man.
+        const ph = pieceHalf(job.kind, orient);
+        for (const u of world.bodies) {
+          if (u.kind !== "unit" || !u.alive) continue;
+          if (Math.abs(u.pos.x - row.x) <= ph.hx + u.hx + LAY_MAN_PAD &&
+              Math.abs(u.pos.z - row.z) <= ph.hz + u.hz + LAY_MAN_PAD) return "skip";
+        }
+        if (job.kind === "walls") {
+          // A wall claims the cell, so it owes the same road the build menu
+          // owes: a line that seals the map off is refused cell by cell.
+          cell.blocked = true;
+          if (!checkConnectivity(grid, SPAWN_POINTS, objG.gx, objG.gz)) { cell.blocked = false; return "skip"; }
+          const b = spawnWallCourses(world, row.x, field.heightAt(row.x, row.z), row.z, orient)[0];
+          cell.wallId = b.id;
+          recomputeFlow();
+        } else {
+          spawnSandbag(world, row.x, row.z, orient);
+        }
+        S.resources -= cost;
+        return "laid";
+      };
+      // The driver, once per sim tick per squad carrying a job.
+      S.stepBuildLine = (sq) => {
+        const job = sq._build;
+        if (!job) return;
+        if (job.phase === "toStart") {
+          // squads.js flips a finished leg to "defend" — that arrival IS the
+          // handoff. The men are on the start point; now the dest becomes the
+          // far end and the laying begins.
+          if (sq.order === "build" && sq.dest) return;
+          job.phase = "laying";
+          sq.order = "build";
+          sq.dest = { x: job.ax + job.ux * job.len, z: job.az + job.uz * job.len };
+          sq._legTarget = null; sq._pauseT = 0; sq._cohesionHoldT = 0; sq._threatSig = undefined;
+          return;
+        }
+        // THE ACCUMULATOR: how far along the start->end line the squad anchor
+        // has travelled, as a projection — a pure function of the anchor, with
+        // no clock and no rng in it.
+        const t = (sq.anchor.x - job.ax) * job.ux + (sq.anchor.z - job.az) * job.uz;
+        const arrived = sq.order !== "build"; // squads.js dug them in at the far end
+        if (!job.dry && !(sq._pauseT > 0)) {
+          while (job.i < job.rows.length) {
+            const row = job.rows[job.i];
+            if (!arrived && row.t > t + LAY_AHEAD) break;
+            const r = layPieceAt(job, row);
+            if (r === "dry") { job.dry = true; toast("NO SCRAP — THE LINE STOPS HERE"); break; }
+            job.i++;
+            if (r === "laid") {
+              job.laid++;
+              // A WALL IS A COMMITMENT: the squad stands still while it goes up.
+              // squad._pauseT is the attack-leg dwell field, reused verbatim —
+              // squads.js holds the anchor and issues no new leg, and no rng is
+              // touched by either side of the arrangement.
+              if (job.kind === "walls" && !arrived) { sq._pauseT = WALL_LAY_PAUSE_S; break; }
+            } else job.skipped++;
+          }
+        }
+        if (arrived || job.i >= job.rows.length) {
+          if (arrived) sq._build = null; // the line is finished and so is the order
+        }
+      };
+      // The order flow's ground taps, in one place. tapAt calls this with the
+      // point its ray hit; the debug harness calls it with a world point
+      // directly, so both drive the identical code.
+      const consumeOrderTap = (p) => {
+        const om = S.orderMode;
+        if (!om) return false;
+        const osq = selectedSquad();
+        // OFF-MAP CLAMP (mk0.50): the tap ray hits the painted ground well past
+        // the playable rim, and a squad ordered out there walks off the field
+        // and never arrives. BOTH points of a build order clamp through here
+        // too — this is THE site where a ground tap becomes a destination.
+        const d = clampToRim(p.x, p.z);
+        if (om === "attack" || om === "move") {
+          if (osq) { osq.order = om; osq.dest = { x: d.x, z: d.z }; osq._legTarget = null; osq._pauseT = 0; osq._build = null; }
+          S.orderMode = null;
+          return true;
+        }
+        if (om === "build_bags" || om === "build_walls") {
+          if (!osq || osq.type !== "engineers") { S.orderMode = null; S.buildPt0 = null; return true; }
+          if (!S.buildPt0) { S.buildPt0 = { x: d.x, z: d.z }; toast("LINE START — TAP THE FAR END"); return true; }
+          startBuildLine(osq, om === "build_walls" ? "walls" : "bags", S.buildPt0, d);
+          S.buildPt0 = null; S.orderMode = null;
+          return true;
+        }
+        return false;
       };
       const sellAt = (gx, gz) => {
         if (!grid.inBounds(gx, gz)) return;
@@ -1421,25 +1697,15 @@ export default function DepotGame({ onExit, resume = null }) {
         if (S.pending) clearPending();
         const p = groundPoint(cx, cy);
         if (!p) { S.inspectId = null; return; }
-        // Squad order flow: an armed ATTACK consumes this ground tap as the
-        // destination (flag marker renders at dest until arrival).
-        if (S.orderMode === "attack" || S.orderMode === "move") {
-          const osq = selectedSquad();
-          // OFF-MAP CLAMP (mk0.50): the tap ray hits the painted ground well
-          // past the playable rim, and a squad ordered out there walks off the
-          // field and never arrives. This is THE site where a ground tap
-          // becomes a dest — any future order that does the same (BUILD)
-          // routes through here, so the clamp lives here and nowhere else.
-          const d = clampToRim(p.x, p.z);
-          if (osq) { osq.order = S.orderMode; osq.dest = { x: d.x, z: d.z }; osq._legTarget = null; osq._pauseT = 0; }
-          S.orderMode = null;
-          return;
-        }
+        // Squad order flow: an armed ATTACK/MOVE consumes this ground tap as the
+        // destination (flag marker renders at dest until arrival); an armed
+        // BUILD consumes TWO — the line's start, then its far end (mk0.60).
+        if (consumeOrderTap(p)) return;
         // Tap on a squad member selects his squad; tap elsewhere while one
         // is selected deselects (and consumes the tap — no accidental build).
         const tappedSquad = squadAtPoint(p);
-        if (tappedSquad) { S.selSquadId = tappedSquad.id; S.selArmedAt = world.t + PENDING_ARM_S; S.orderMode = null; S.inspectId = null; return; }
-        if (S.selSquadId != null) { S.selSquadId = null; S.orderMode = null; return; }
+        if (tappedSquad) { S.selSquadId = tappedSquad.id; S.selArmedAt = world.t + PENDING_ARM_S; S.orderMode = null; S.buildPt0 = null; S.inspectId = null; return; }
+        if (S.selSquadId != null) { S.selSquadId = null; S.orderMode = null; S.buildPt0 = null; return; }
         const g = grid.worldToGrid(p.x, p.z);
         if (!grid.inBounds(g.gx, g.gz)) { S.inspectId = null; return; }
         const cell2 = grid.cells[grid.idx(g.gx, g.gz)];
@@ -1816,6 +2082,40 @@ export default function DepotGame({ onExit, resume = null }) {
           members: sq.memberIds.map((mid) => { const u = world.byId.get(mid); return u && { role: u.role || null, x: +u.pos.x.toFixed(2), z: +u.pos.z.toFixed(2), settled: !!u.settled, alive: u.alive }; }),
         };
       };
+      window.__DEPOTCELL__ = (x, z) => {
+        // debug harness: the grid's verdict on one world point — the same four
+        // facts validatePlacement asks about, so a staging run can choose ground
+        // that is actually buildable instead of walking a line into a ridge.
+        const g = grid.worldToGrid(x, z);
+        if (!grid.inBounds(g.gx, g.gz)) return null;
+        const cell = grid.cells[grid.idx(g.gx, g.gz)];
+        const wp = grid.gridToWorld(g.gx, g.gz), c0 = invW(wp.x, wp.z);
+        return { gx: g.gx, gz: g.gz, x: +wp.x.toFixed(2), z: +wp.z.toFixed(2),
+          blocked: !!(cell.blocked || cell.wallId), ice: !!cell.ice, held: canBuild(T, c0.u, c0.v) };
+      };
+      window.__DEPOTSQUAD__ = (type, x, z) => {
+        // debug harness (P1.5 T4): field ANY squad type at a world point,
+        // cost-free — __DEPOTPAIR__ generalised, so a staging run can put an
+        // engineer team on the ground without driving the placement UI.
+        if (!SQUAD_SPECS[type]) return null;
+        const sq = makeSquad(S.nextSquadId++, type, 1, x, z);
+        spawnSquadMembers(world, sq);
+        S.squads.push(sq);
+        return sq.id;
+      };
+      window.__DEPOTORDER__ = (id, kind, pts) => {
+        // debug harness (P1.5 T4): give a squad an order through the REAL order
+        // path — S.orderSquad arms the chip, consumeOrderTap eats the ground
+        // points (one for ATTACK/MOVE, two for a build line). Only the camera
+        // raycast is skipped; every clamp, gate and arming rule still applies.
+        const sq = S.squads.find((q) => q.id === id);
+        if (!sq) return null;
+        S.selSquadId = id; S.selArmedAt = 0; S.orderMode = null; S.buildPt0 = null;
+        S.orderSquad(kind);
+        for (const p of (pts || [])) consumeOrderTap(p);
+        return { order: sq.order, dest: sq.dest, armed: S.orderMode, pt0: S.buildPt0,
+          build: sq._build ? { kind: sq._build.kind, cells: sq._build.rows.length, phase: sq._build.phase, orient: sq._build.orient } : null };
+      };
       window.__DEPOTFOCUS__ = (x, z, zoom) => {
         // debug harness: point the camera at a world point (e.g. a tree) so
         // smoke-test screenshots can frame a specific body tightly
@@ -1928,6 +2228,13 @@ export default function DepotGame({ onExit, resume = null }) {
         anchor: { x: +sq.anchor.x.toFixed(2), z: +sq.anchor.z.toFixed(2) },
         dest: sq.dest ? { x: +sq.dest.x.toFixed(2), z: +sq.dest.z.toFixed(2) } : null,
         sel: S.selSquadId === sq.id, ordering: S.selSquadId === sq.id && S.orderMode === "attack",
+        // P1.5 T4: the live build job, if any — kind, how far down the cell list
+        // the laying has got, what actually went down and what was skipped.
+        build: sq._build ? {
+          kind: sq._build.kind, phase: sq._build.phase, cells: sq._build.rows.length,
+          i: sq._build.i, laid: sq._build.laid, skipped: sq._build.skipped, dry: !!sq._build.dry,
+          pause: +(sq._pauseT || 0).toFixed(2), orient: sq._build.orient,
+        } : null,
         members: sq.memberIds.map((id) => {
           const u = world.byId.get(id);
           return u ? { id, x: +u.pos.x.toFixed(2), z: +u.pos.z.toFixed(2), alive: u.alive } : null;
@@ -2240,7 +2547,12 @@ export default function DepotGame({ onExit, resume = null }) {
               squadSel: (() => {
                 const sq = S.selSquadId != null ? S.squads.find((q) => q.id === S.selSquadId) : null;
                 if (!sq || !S.squadScreen) return null;
-                return { id: sq.id, label: SQUAD_SPECS[sq.type].label, order: sq.order, x: S.squadScreen.x, y: S.squadScreen.y, armed: world.t >= S.selArmedAt, aiming: S.orderMode === "attack", aimingMove: S.orderMode === "move" };
+                return { id: sq.id, label: SQUAD_SPECS[sq.type].label, order: sq.order, x: S.squadScreen.x, y: S.squadScreen.y, armed: world.t >= S.selArmedAt, aiming: S.orderMode === "attack", aimingMove: S.orderMode === "move",
+                  // P1.5 T4: the BUILD chips exist for engineer squads and no
+                  // other type, so the row is per-squad-type by construction.
+                  engineer: sq.type === "engineers",
+                  building: S.orderMode === "build_bags" ? "bags" : S.orderMode === "build_walls" ? "walls" : null,
+                  buildStart: !!S.buildPt0 };
               })(),
               squadFlag: S.flagScreen ? { x: S.flagScreen.x, y: S.flagScreen.y } : null,
               pending: S.pending && S.pendingScreen ? {
@@ -2297,7 +2609,7 @@ export default function DepotGame({ onExit, resume = null }) {
         canvas.removeEventListener("touchstart", blockTouch);
         window.removeEventListener("keydown", kd);
         window.removeEventListener("keyup", ku);
-        for (const k of ["__DEPOT__", "__DEPOTBELL__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTTHIN__", "__DEPOTEND__", "__DEPOTFOCUS__", "__DEPOTGETFOCUS__", "__DEPOTSETT__", "__DEPOTFLAGS__", "__DEPOTHOLD__", "__DEPOTFINDBUILDABLE__", "__DEPOTFINDRISE__", "__DEPOTFINDNEARROCK__", "__DEPOTFOGDBG__", "__DEPOTFOGAT__", "__DEPOTENEMYPOS__", "__DEPOTSQUADS__", "__DEPOTSANDBAGS__", "__DEPOTGROUNDAT__", "__DEPOTSCREENAT__", "__DEPOTPENDING__", "__DEPOTMANIFEST__", "__DEPOTPICK__", "__DEPOTSAVE__", "__DEPOTGRIDAT__"]) delete window[k];
+        for (const k of ["__DEPOT__", "__DEPOTBELL__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTTHIN__", "__DEPOTEND__", "__DEPOTFOCUS__", "__DEPOTGETFOCUS__", "__DEPOTSETT__", "__DEPOTFLAGS__", "__DEPOTHOLD__", "__DEPOTFINDBUILDABLE__", "__DEPOTFINDRISE__", "__DEPOTFINDNEARROCK__", "__DEPOTFOGDBG__", "__DEPOTFOGAT__", "__DEPOTENEMYPOS__", "__DEPOTSQUADS__", "__DEPOTSANDBAGS__", "__DEPOTGROUNDAT__", "__DEPOTSCREENAT__", "__DEPOTPENDING__", "__DEPOTMANIFEST__", "__DEPOTPICK__", "__DEPOTSAVE__", "__DEPOTGRIDAT__", "__DEPOTSQUAD__", "__DEPOTORDER__", "__DEPOTCELL__"]) delete window[k];
         A.dispose();
         if (R) R.dispose();
         stateRef.current = null;
@@ -2319,7 +2631,7 @@ export default function DepotGame({ onExit, resume = null }) {
       setHud((h) => ({ ...h, sandbagOrient: S.sandbagOrient }));
       return;
     }
-    S.mode = m; S.sellMode = false; S.inspectId = null; S.pending = null; S.selSquadId = null; S.orderMode = null;
+    S.mode = m; S.sellMode = false; S.inspectId = null; S.pending = null; S.selSquadId = null; S.orderMode = null; S.buildPt0 = null;
     setHud((h) => ({ ...h, mode: m, sellMode: false }));
   };
   const toggleSell = () => {
@@ -2506,8 +2818,24 @@ export default function DepotGame({ onExit, resume = null }) {
       {hud.squadSel && (
         <div style={{ position: "absolute", left: hud.squadSel.x, top: hud.squadSel.y, transform: "translate(-50%, -100%)", zIndex: 7, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, pointerEvents: "auto" }}>
           <div style={{ fontSize: 10, letterSpacing: 1, color: "#7dffa8", background: "rgba(14,18,24,0.85)", padding: "1px 6px", borderRadius: 4 }}>
-            {hud.squadSel.label}{hud.squadSel.aiming || hud.squadSel.aimingMove ? " — TAP GROUND" : ""}
+            {hud.squadSel.label}
+            {hud.squadSel.building
+              ? (hud.squadSel.buildStart ? " — TAP THE FAR END" : " — TAP THE LINE START")
+              : hud.squadSel.aiming || hud.squadSel.aimingMove ? " — TAP GROUND" : ""}
           </div>
+          {/* P1.5 T4: the two-point build chips — engineer squads only. Their
+              own row above MOVE/ATTACK/DEFEND, so the order chips a rifle squad
+              has never move under the thumb when an engineer team is picked. */}
+          {hud.squadSel.engineer && (
+            <div style={{ display: "flex", gap: 6 }}>
+              <button data-squad-build-bags
+                style={{ ...P.btnBig, borderColor: hud.squadSel.building === "bags" ? "#ffd27a" : "#48515f", color: "#ffd27a", opacity: hud.squadSel.armed ? 1 : 0.5 }}
+                onClick={() => stateRef.current && stateRef.current.orderSquad("build_bags")}>▬ BAGS</button>
+              <button data-squad-build-walls
+                style={{ ...P.btnBig, borderColor: hud.squadSel.building === "walls" ? "#ffd27a" : "#48515f", color: "#ffd27a", opacity: hud.squadSel.armed ? 1 : 0.5 }}
+                onClick={() => stateRef.current && stateRef.current.orderSquad("build_walls")}>▦ WALLS</button>
+            </div>
+          )}
           <div style={{ display: "flex", gap: 6 }}>
             <button data-squad-move
               style={{ ...P.btnBig, borderColor: hud.squadSel.aimingMove || hud.squadSel.order === "move" ? "#7fd7ff" : "#48515f", color: "#7fd7ff", opacity: hud.squadSel.armed ? 1 : 0.5 }}

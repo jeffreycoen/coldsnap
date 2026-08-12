@@ -108,7 +108,8 @@ export const ENEMY_FIRE = {
 // together where a reader can check one against the other:
 //
 //              PLAYER (build-menu keys)          ENEMY (ENEMY_SPECS tags)
-//   START      wall · sandbag · sq_rifles        "" conscripts (never gated)
+//   START      wall · sandbag · sq_rifles ·      "" conscripts (never gated)
+//              sq_engineers
 //   TIER 1     mg · sq_mg · frost                fast (runner) · heavy (breaker)
 //   TIER 2     gun · sq_sniper · sq_mortars      gren · sapper
 //   TIER 3     mortar · rocket · sq_sappers      sniper (marksman) · tank
@@ -122,7 +123,12 @@ export const ENEMY_FIRE = {
 // the sq_ prefix the MG TOWER/MG TEAM name collision forced) — so the build
 // menu's unlocked filter is a plain membership test with no translation table
 // in between. // provisional (F5)
-export const PLAYER_START = ["wall", "sandbag", "sq_rifles"];
+// P1.5 Task 4 (mk0.60): the ENGINEER TEAM joins the starting kit — every match
+// now opens with rifles AND engineers, so the two-point build order is on the
+// bar from bell 0 and never has to be won off the convoy. The enemy column is
+// untouched: engineers build, they do not fight, so nothing on the other side
+// mirrors them (the sapper split is the "Engineers & Arms" phase's business).
+export const PLAYER_START = ["wall", "sandbag", "sq_rifles", "sq_engineers"];
 export const PLAYER_TIERS = [
   ["mg", "sq_mg", "frost"],
   ["gun", "sq_sniper", "sq_mortars"],

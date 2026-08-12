@@ -14,7 +14,7 @@ import { MK } from "../version.js";
 export const PHASES = [
   { name: "Cleanup", status: "DONE", desc: "Test purge, cohesion fix, permanent smears, the Pi performance baseline." },
   { name: "The Bell", status: "DONE", desc: "The 90-second muster bell: income, intel, reinforcement picks, saves at every toll." },
-  { name: "Polish I", status: "IN PROGRESS", desc: "Playtest fixes: tuning, wall masonry, the weapon voices and soundboard. Engineers still to come." },
+  { name: "Polish I", status: "IN PROGRESS", desc: "Playtest fixes: tuning, wall masonry, weapon voices, soundboard, engineers. Awaiting the phase playtest." },
   { name: "Vision", status: "AHEAD", desc: "You can only shoot what your side can see. Sight replaces territory as the targeting rule." },
   { name: "Command", status: "AHEAD", desc: "The radial order menu: patrol, take cover, attack structures, and more." },
   { name: "Possession", status: "AHEAD", desc: "Take direct control of any friendly unit or tower and drive it yourself." },

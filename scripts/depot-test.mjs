@@ -13,6 +13,7 @@ import {
   END_CARD_DELAY_S, stampEnd, endCardReady,
   censusDepotChunks, depotStandingFraction, checkDepotBreach, checkEnemyBreach, stepDepotCensus,
   spawnSquadMembers, spawnSandbag, SANDBAG_COST, WALL_COST, pruneSquads,
+  SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S,
   DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, DEPOT_CENSUS_HZ,
   spawnWallCourses, stepWallSupport, wallCourseHp,
   WALL_HP, WALL_COURSES, WALL_H, WALL_HALF, WALL_THIN, wallOrientAt, WALL_COURSE_PITCH, WALL_COURSE_HY, WALL_WELD_BREAK_F, WALL_UPPER_GROUP,
@@ -24,7 +25,7 @@ import { friendlyFouls } from "../src/depot/state.js";
 import {
   makeWorld, addBody, addWeld, fireProjectile, stepWorld, applyDamage, worldHash, CAUSE, mulberry32, aimSolve,
 } from "../src/engine/core.js";
-import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, MASON, INFANTRY_ARMS } from "../src/depot/specs.js";
+import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, MASON, INFANTRY_ARMS, PLAYER_START, PLAYER_TIERS } from "../src/depot/specs.js";
 import { stepUnits, spawnUnit, payBounties, SNIPER_FIRE } from "../src/depot/units.js";
 import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad } from "../src/depot/squads.js";
 import {
@@ -154,8 +155,11 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
   // (a) the player starts with START and nothing else.
   {
     const M = makeManifestState();
-    ok("manifest: a fresh run starts on wall/sandbag/rifles",
-      M.unlocked.length === 3 && isUnlocked(M, "wall") && isUnlocked(M, "sandbag") && isUnlocked(M, "sq_rifles"),
+    // re-pinned mk0.60: the ENGINEER TEAM joins the starting kit (was 3 items,
+    // wall/sandbag/rifles), so every match now opens with the build order too.
+    ok("manifest: a fresh run starts on wall/sandbag/rifles/engineers",
+      M.unlocked.length === 4 && isUnlocked(M, "wall") && isUnlocked(M, "sandbag")
+      && isUnlocked(M, "sq_rifles") && isUnlocked(M, "sq_engineers"),
       M.unlocked.join(","));
     ok("manifest: nothing is offered before the first bell", M.offers.length === 0 && M.cardUp === false);
     ok("manifest: no tier is open at bell 0", tierOpenCount(0) === 0 && manifestPool(M.unlocked, 0).length === 0);
@@ -207,10 +211,10 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
   {
     const M = makeManifestState();
     M.offers = ["mg", "frost"]; M.cardUp = true;
-    ok("manifest: an item that was never offered cannot be taken", pickManifest(M, "rocket") === false && M.unlocked.length === 3);
+    ok("manifest: an item that was never offered cannot be taken", pickManifest(M, "rocket") === false && M.unlocked.length === 4);
     ok("manifest: the pick joins the unlocked set", pickManifest(M, "frost") === true && isUnlocked(M, "frost"));
     ok("manifest: taking one crate closes the card and clears the offer", M.cardUp === false && M.offers.length === 0);
-    ok("manifest: a second pick off the same bell is refused", pickManifest(M, "mg") === false && M.unlocked.length === 4);
+    ok("manifest: a second pick off the same bell is refused", pickManifest(M, "mg") === false && M.unlocked.length === 5);
   }
 
   // (e) a skipped bell is a skipped pick — no banking, but nothing is lost:
@@ -224,8 +228,8 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
     ok("manifest: the bell raises an offer", first.length >= 2 && S2.manifest.cardUp === true, first.join(","));
     fireBell(S2, { reg: S2.reg, snap: {}, rng, t: 2 * BELL_PERIOD_S });
     ok("manifest: an unread offer is overwritten at the next bell, not banked",
-      S2.manifest.offerBell === 2 && S2.manifest.unlocked.length === 3, `${S2.manifest.offerBell}/${S2.manifest.unlocked.length}`);
-    ok("manifest: the passed-over items are still on offer", S2.manifest.offers.every((k) => manifestPool(["wall", "sandbag", "sq_rifles"], 2).includes(k)));
+      S2.manifest.offerBell === 2 && S2.manifest.unlocked.length === 4, `${S2.manifest.offerBell}/${S2.manifest.unlocked.length}`); // 4 re-pinned mk0.60: START gained sq_engineers
+    ok("manifest: the passed-over items are still on offer", S2.manifest.offers.every((k) => manifestPool(["wall", "sandbag", "sq_rifles", "sq_engineers"], 2).includes(k)));
   }
 
   // (f) the enemy's mirror: one pick per bell, never ahead of its tier's bell.
@@ -3171,6 +3175,153 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 }
 // ==== end mk0.52 =============================================================
+
+// ==== mk0.60: ENGINEERS, THE TWO-POINT BUILD =================================
+// P1.5 Task 4. The order machine's half lives here (squads.js/state.js are
+// headless); the LINE ITSELF — rasterisation, costs, placement — lives in the
+// game layer, so what can be asserted offline is the module contract plus the
+// source shape of the game-layer rules that must not silently drift.
+{
+  console.log("\n[mk0.60: engineers, the two-point build]");
+  const flat = { heightAt: () => 0, dirty: false, cs: 2, half: 40, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+
+  // (1) the team itself: two men, 30 scrap, and no weapon anywhere in the stack.
+  ok("mk0.60/1: SQUAD_SPECS.engineers is a two-man team at 30 scrap",
+    SQUAD_SPECS.engineers && SQUAD_SPECS.engineers.n === 2 && SQUAD_SPECS.engineers.cost === 30
+    && SQUAD_SPECS.engineers.label === "ENGINEER TEAM", JSON.stringify(SQUAD_SPECS.engineers));
+  ok("mk0.60/1: engineers carry no arms entry at all (like sappers)",
+    !INFANTRY_ARMS.engineers && !INFANTRY_ARMS.sappers);
+
+  // (2) the starting kit grew by one — and only by one.
+  ok("mk0.60/2: PLAYER_START now fields engineers from bell 0 (re-pinned from 3 items)",
+    PLAYER_START.length === 4 && PLAYER_START.includes("sq_engineers")
+    && PLAYER_START.includes("wall") && PLAYER_START.includes("sandbag") && PLAYER_START.includes("sq_rifles"),
+    PLAYER_START.join(","));
+  ok("mk0.60/2: the engineer team is NOT on the convoy's ladder (it is never offered twice)",
+    PLAYER_TIERS.every((tier) => tier.indexOf("sq_engineers") < 0));
+
+  // (3) the field discount, and the pause.
+  ok("mk0.60/3: field bags 3 (menu 5), field walls 5 (menu 8)",
+    SANDBAG_FIELD_COST === 3 && WALL_FIELD_COST === 5 && SANDBAG_COST === 5 && WALL_COST === 8,
+    `${SANDBAG_FIELD_COST}/${SANDBAG_COST} ${WALL_FIELD_COST}/${WALL_COST}`);
+  ok("mk0.60/3: the field always undercuts the menu", SANDBAG_FIELD_COST < SANDBAG_COST && WALL_FIELD_COST < WALL_COST);
+  ok("mk0.60/3: a wall costs the squad ~1.5s standing still", WALL_LAY_PAUSE_S === 1.5, WALL_LAY_PAUSE_S);
+
+  // (4) squadFire: an engineer never pulls a trigger, and a BUILDING squad of
+  // any type keeps quiet — neither path draws.
+  {
+    const world = makeWorld({ field: flat, seed: 91 });
+    const eng = makeSquad(1, "engineers", 1, 0, 0);
+    spawnSquadMembers(world, eng);
+    // a live enemy right on top of them, so silence cannot be an empty scan
+    addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 2, y: 0.88, z: 0, hp: 58 });
+    const before = world.bodies.length;
+    eng.order = "defend";
+    for (let i = 0; i < 60; i++) squadFire(world, eng, 1 / 60);
+    ok("mk0.60/4: an engineer team never fires (no round ever leaves it)", world.bodies.length === before, `${world.bodies.length} vs ${before}`);
+    const rif = makeSquad(2, "rifles", 1, 0, 0);
+    spawnSquadMembers(world, rif);
+    rif.order = "build"; rif.dest = { x: 0, z: 20 };
+    const before2 = world.bodies.length;
+    for (let i = 0; i < 60; i++) squadFire(world, rif, 1 / 60);
+    ok("mk0.60/4: order 'build' is a quiet order, exactly as 'move' is", world.bodies.length === before2, `${world.bodies.length} vs ${before2}`);
+  }
+
+  // (5) stepSquad rides MOVE's machine for BUILD — it does not fork it. Same
+  // travel, same arrival-into-defend (which is the dig-in), threat read forced
+  // false, and the one-draw-per-leg contract untouched.
+  {
+    const mk = (order) => {
+      const world = makeWorld({ field: flat, seed: 93 });
+      const sq = makeSquad(1, "engineers", 1, 0, 0);
+      spawnSquadMembers(world, sq);
+      sq.order = order; sq.dest = { x: 0, z: 26 };
+      let draws = 0;
+      const raw = world.rng;
+      world.rng = () => { draws++; return raw(); };
+      let arrivedAt = -1;
+      for (let i = 0; i < 3000; i++) {
+        stepSquad(world, sq, 1 / 60);
+        stepWorld(world);
+        if (sq.order === "defend" && arrivedAt < 0) { arrivedAt = i; break; }
+      }
+      return { draws, arrivedAt, anchor: { x: sq.anchor.x, z: sq.anchor.z } };
+    };
+    const mv = mk("move"), bd = mk("build");
+    ok("mk0.60/5: a BUILD squad travels and arrives exactly as a MOVE squad does",
+      bd.arrivedAt > 0 && bd.arrivedAt === mv.arrivedAt, `build=${bd.arrivedAt} move=${mv.arrivedAt}`);
+    ok("mk0.60/5: arrival flips the order to defend — the men dig in at the far end",
+      Math.abs(bd.anchor.z - 26) < 1.01, bd.anchor.z.toFixed(2));
+    ok("mk0.60/5: BUILD spends the identical number of rng draws MOVE does (no new draws)",
+      bd.draws === mv.draws, `build=${bd.draws} move=${mv.draws}`);
+    // ...and the threat read really is forced false: a squad surrounded by
+    // enemies still double-times, so its leg count (and draw count) is unmoved.
+    const world = makeWorld({ field: flat, seed: 93 });
+    const sq = makeSquad(1, "engineers", 1, 0, 0);
+    spawnSquadMembers(world, sq);
+    for (let k = 0; k < 6; k++) addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: -4 + k, y: 0.88, z: 3, hp: 58 });
+    sq.order = "build"; sq.dest = { x: 0, z: 26 };
+    stepSquad(world, sq, 1 / 60);
+    ok("mk0.60/5: under fire a BUILD leg still reads unthreatened (MOVE's rule)", sq._threatened === false, String(sq._threatened));
+  }
+
+  // (6) the game layer's rules, by source shape — the line machinery needs a
+  // live world/grid/territory to run, so what is pinned here is that the rules
+  // the brief fixed are actually written where they are claimed to be.
+  {
+    const dsrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("mk0.60/6: the build chips are engineer-only, at the order site and in the chip row",
+      /if \(sq\.type !== "engineers"\) return;/.test(dsrc) && /engineer: sq\.type === "engineers"/.test(dsrc)
+      && /hud\.squadSel\.engineer && \(/.test(dsrc));
+    ok("mk0.60/6: the two taps are start-then-end, and a re-tap of the armed chip cancels",
+      /if \(!S\.buildPt0\) \{ S\.buildPt0 = \{ x: d\.x, z: d\.z \}/.test(dsrc)
+      && /if \(S\.orderMode === kind\) \{ S\.orderMode = null; S\.buildPt0 = null; return; \}/.test(dsrc));
+    ok("mk0.60/6: BOTH build points clamp to the rim through the one clamp site",
+      /const d = clampToRim\(p\.x, p\.z\);/.test(dsrc) && (dsrc.match(/clampToRim\(p\.x, p\.z\)/g) || []).length === 1);
+    ok("mk0.60/6: the cell walk steps ONE axis at a time (consecutive cells share an EDGE)",
+      /const stepX = z === g1\.gz \? true : x === g1\.gx \? false : 2 \* err > -dz;/.test(dsrc));
+    // Jeff, 2026-08-12: ONE rotation for the whole line — the dominant axis of
+    // start->end, decided once at order time. NOT per-step; and the
+    // auto-continue conventions must never override it.
+    ok("mk0.60/6: one rotation per line, taken from the order's dominant axis",
+      /const orient = len > 1e-6 \? \(Math\.abs\(dxw\) >= Math\.abs\(dzw\) \? 0 : 1\) : null;/.test(dsrc)
+      && /const orient = job\.orient != null \? job\.orient/.test(dsrc));
+    ok("mk0.60/6: no per-cell rotation survives anywhere in the line machinery",
+      !/row\.orient/.test(dsrc));
+    ok("mk0.60/6: placement runs the real spawners and the real gate",
+      /spawnWallCourses\(world, row\.x, field\.heightAt\(row\.x, row\.z\), row\.z, orient\)/.test(dsrc)
+      && /spawnSandbag\(world, row\.x, row\.z, orient\)/.test(dsrc)
+      && /const v = validatePlacement\(\{\n\s+blocked: !!\(cell\.blocked \|\| cell\.wallId\), ice: !!cell\.ice,\n\s+held: canBuild\(T, c0\.u, c0\.v\), resources: S\.resources, cost,/.test(dsrc));
+    ok("mk0.60/6: an occupied cell is SKIPPED, scrap running dry stops the line",
+      /return v\.msg === "NO SCRAP" \? "dry" : "skip";/.test(dsrc) && /job\.dry = true;/.test(dsrc));
+    ok("mk0.60/6: a wall lay holds the squad on squad._pauseT, the existing dwell field",
+      /sq\._pauseT = WALL_LAY_PAUSE_S;/.test(dsrc));
+    ok("mk0.60/6: the seeded depot bags draw off a MAP-seed stream, never world.rng",
+      /mulberry32\(MAP_SEED \^ 0x5ba6\)/.test(dsrc) && /const nBags = 4 \+ Math\.floor\(bagR\(\) \* 3\);/.test(dsrc));
+    ok("mk0.60/6: the engineer team is on the build bar",
+      /key: "sq_engineers", label: "ENGINEERS"/.test(dsrc) && /sq_engineers: "engineers"/.test(dsrc));
+    // the geometry the line is built on, written down where a reader will look
+    ok("mk0.60/6: the piece-vs-pitch geometry and the one-rotation rule are documented",
+      /GEOMETRY, stated once/.test(dsrc) && /ONE ROTATION FOR THE WHOLE LINE/.test(dsrc));
+    const ssrc = fs.readFileSync(new URL("../src/depot/save.js", import.meta.url), "utf8");
+    ok("mk0.60/6: the half-laid line is reset-on-resume, and says so",
+      /THE BUILD LINE IS DELIBERATELY NOT SAVED/.test(ssrc));
+  }
+
+  // (7) the piece-vs-pitch arithmetic itself: both pieces are 1.8m along their
+  // long axis on a 2.0m grid, so a straight run is end-to-end bar a 0.2m joint.
+  {
+    const world = makeWorld({ field: flat, seed: 95 });
+    const bag = spawnSandbag(world, 0, 0, 0);
+    const wall = spawnWallCourses(world, 6, 0, 0, 0)[0];
+    ok("mk0.60/7: bag and wall course share one long axis — 1.8m — on a 2.0m pitch",
+      bag.hx * 2 === 1.8 && wall.hx * 2 === 1.8, `${bag.hx * 2}/${wall.hx * 2}`);
+    ok("mk0.60/7: consecutive cells therefore leave a 0.2m joint, nothing wider",
+      Math.abs(2.0 - bag.hx * 2 - 0.2) < 1e-9);
+  }
+}
+// ==== end mk0.60 =============================================================
+
 
 
 

@@ -45,6 +45,13 @@ export const SQUAD_SPECS = {           // costs are scrap; members spawn as unit
   // F1.5 Task 1: the mortar team — two men and a tube, the player mirror of
   // the enemy grenadier's lob (INFANTRY_ARMS.mortars).
   mortars: { n: 2, cost: 45, label: "MORTAR TEAM" }, // provisional (F5)
+  // P1.5 Task 4 (mk0.60): THE ENGINEER TEAM. Two men with shovels. Like the
+  // sappers they are tools, not shooters — squadFire skips the type, and
+  // INFANTRY_ARMS has no `engineers` row to give them, so they carry no
+  // weapon at any level of the stack. What they do instead is the two-point
+  // BUILD order (DepotGame.jsx): walk a line and lay bags or walls along it.
+  // Every match starts with a team (PLAYER_START, specs.js). // provisional (F5)
+  engineers: { n: 2, cost: 30, label: "ENGINEER TEAM" },
 };
 
 // Task 6 (the pair): squads.js now imports arcClears/effRange/INFANTRY_ARMS
@@ -425,6 +432,10 @@ export function squadThreatened(world, squad, members) {
 //           each cover leg (rng ONCE per leg draws the dwell time — the
 //           brief's one draw per attack leg); on arrival order becomes
 //           "defend" with anchor=dest.
+//   move / build: the identical leg machine with the threat read forced
+//           false (mk0.28 / mk0.60). Both arrive the same way attack does —
+//           order flips to "defend" — which is how an engineer line ends
+//           with the men dug in behind it.
 const DEFEND_SLOT_R = 3;
 const ARRIVE_TOL = 1.0;
 
@@ -482,7 +493,15 @@ export function stepSquad(world, squad, dt) {
   // advance, same one-draw-per-leg contract — with the threat read forced
   // false, i.e. the existing unthreatened double-time path, unconditionally.
   // (Fire discipline is squadFire's job: a MOVE squad keeps quiet en route.)
-  if ((squad.order === "attack" || squad.order === "move") && squad.dest) {
+  // mk0.60: BUILD is the same order again — MOVE's semantics verbatim, not a
+  // fork. To this module "build" means only "travel quietly and dig in on
+  // arrival"; WHAT gets laid along the way, what it costs and where it lands
+  // is the game layer's business (DepotGame's stepBuildLine), because economy
+  // and placement are barred from this file by its module law. The only thing
+  // the game layer does to a build squad's movement is set squad._pauseT to
+  // hold it at a wall — the SAME dwell field an attack leg-pause uses, so the
+  // hold rides existing machinery and adds no rng draw of its own.
+  if ((squad.order === "attack" || squad.order === "move" || squad.order === "build") && squad.dest) {
     const cx = squad.anchor.x, cz = squad.anchor.z;
     const dToDest = Math.hypot(squad.dest.x - cx, squad.dest.z - cz);
     // F1 Task 4.5: a sapper squad's ATTACK completes when the charges are
@@ -521,7 +540,7 @@ export function stepSquad(world, squad, dt) {
       if (!squad._legTarget) {
         // LEG BOUNDARY: threat state re-evaluated here only (not per-tick).
         squad._cohesionHoldT = 0; // fresh leg, fresh cohesion hold budget
-        squad._threatened = squad.order === "move" ? false : squadThreatened(world, squad, members);
+        squad._threatened = (squad.order === "move" || squad.order === "build") ? false : squadThreatened(world, squad, members);
         if (squad._threatened) {
           const bearing = defaultThreatBearing(world, squad, { x: cx, z: cz });
           squad._legTarget = coverHop(world, { x: cx, z: cz }, squad.dest, bearing);

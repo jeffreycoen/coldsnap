@@ -196,6 +196,17 @@ export function serializeFront(ctx) {
   const terr = new Array(T.v.length);
   for (let i = 0; i < terr.length; i++) terr[i] = r4(T.v[i]);
 
+  // The squad serializer is generic over the squad object: every plain scalar
+  // field rides along without this file knowing what it is.
+  //
+  // THE BUILD LINE IS DELIBERATELY NOT SAVED (P1.5 T4, mk0.60, ratified as
+  // "reset on resume"). A half-laid line's job (sq._build) is a mixed
+  // object — kind string, per-cell rows — so plainValue drops it, and that IS
+  // the chosen behaviour rather than an oversight. What survives is everything
+  // that matters: the pieces already laid are ordinary bodies in the file, and
+  // the squad comes back still ordered "build" with its dest, so the men finish
+  // the walk and dig in at the far end exactly as they would have. They just
+  // stop laying — the order is forgotten, the work is not.
   const squads = S.squads.map((sq) => {
     const o = { members: sq.memberIds.map((id) => (idx.has(id) ? idx.get(id) : -1)).filter((i) => i >= 0) };
     for (const key in sq) {

@@ -114,6 +114,21 @@ export function canvasTapConsumesPending(pending, screen, rect) {
 // governs the whole raise. // provisional (F5)
 export const WALL_COST = 8;
 
+// ----------------------------------------------------- what the field costs
+// P1.5 Task 4 (mk0.60, Jeff): an ENGINEER TEAM laying a line in the field pays
+// less per piece than the build menu does. The menu price buys a thing that
+// appears fully formed wherever you point; the field price buys a thing two men
+// have to walk to and put down under whatever is shooting at them, and a wall
+// costs them ~1.5s standing still per course-stack on top of that. Ratified as
+// bags 3 (menu 5) and walls 5 (menu 8). Both provisional (F5); neither is read
+// by the build menu, which keeps WALL_COST/SANDBAG_COST.
+export const SANDBAG_FIELD_COST = 3;   // provisional (F5)
+export const WALL_FIELD_COST = 5;      // provisional (F5)
+// Seconds the squad stands still at each wall it lays — the commitment. Rides
+// squad._pauseT, the attack-leg dwell field (squads.js), so it costs no new
+// machinery and no rng draw. // provisional (F5)
+export const WALL_LAY_PAUSE_S = 1.5;
+
 // ================================================================== masonry
 // P1.5 Task 2 (mk0.52, Jeff): A BUILT WALL IS THREE COURSES.
 //
@@ -481,7 +496,9 @@ export function hostileStructure(b, team) {
 const INFANTRY_BLAST_R = 0.3, INFANTRY_KV = 0.5;
 export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })) {
   if (squad.type === "sappers") return; // F1 Task 4.5: tools, not shooters — sappers never rifle-fire (draws nothing)
+  if (squad.type === "engineers") return; // P1.5 T4: same rule, same reason — shovels, not rifles (draws nothing)
   if (squad.order === "move") return;   // mk0.28: MOVE travels, it does not fight (draws nothing)
+  if (squad.order === "build") return;  // mk0.60: a building squad keeps quiet, exactly as a moving one does (draws nothing)
   const spec = INFANTRY_ARMS[squad.type];
   if (!spec) return;
   // mk0.28: "move" is never a firing order — the men double-time with
