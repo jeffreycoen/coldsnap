@@ -14,6 +14,7 @@ The project owner directs design, reviews every plan, and is the sole playtester
 - One plan document per phase. No parts, no split audiences — the owner reads all of it, so it is written once, plainly.
 - **Atomic steps with code:** each step names the exact file and line anchor and contains the actual code (or assert) to be added or changed, in execution order, failing-asserts-first where tests exist. Plain-language sentence above each step saying what it does. Agents execute plans; they do not design from intent.
 - The owner approves the plan **before any code**. No open design questions may enter a plan.
+- **All code that may be affected is read in full before thinking about the plan** — reading comes before design, not at dispatch.
 - **Every amendment is served for review before any agent dispatches on it.** Approval of the original does not carry to the amendment.
 - **Decisions are served interactively** (the question tool, one decision per question, with a stated lean) — never buried in prose, never lettered/numbered option matrices.
 - "No code yet" covers the whole message it appears in.
