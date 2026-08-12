@@ -670,8 +670,12 @@ export default function DepotGame({ onExit }) {
   // platform/autosave.js: the default writes nothing, so a saved choice can
   // never be clobbered before the async restore lands, and only a real toggle
   // saves.
-  const fps30Ref = useRef(isTouch);
-  const [fps30, setFps30] = useState(isTouch);
+  // Default 60 EVERYWHERE (Jeff, 2026-08-12, off the C0 baseline): the Pi
+  // measurement showed 30fps buys nothing under load — the loop is physics-
+  // bound and only the drawn frames halve — so 30 is an opt-in battery/
+  // thermal saver, not a default. Saved choices still restore over this.
+  const fps30Ref = useRef(false);
+  const [fps30, setFps30] = useState(false);
   useEffect(() => {
     let live = true;
     (async () => {
