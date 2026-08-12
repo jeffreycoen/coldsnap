@@ -375,6 +375,12 @@ export function shooterFire(world, shooter, muzzle, target, spec, opts = {}) {
     fireProjectile(world, { x: muzzle.x, y: muzzle.y + si * muzzleStep, z: muzzle.z }, dir, spec.projSpeed,
       {
         kind: spec.kind, r: spec.blastR, kv: spec.kv, dmg: spec.dmg, dirDmg: spec.dirDmg, crater: spec.crater,
+        // P1.5 Task 3 (mk0.56): WHICH GUN this is, carried through to the
+        // muzzle event so audio can tell a sniper from a rifle from an MG
+        // (every infantry arm is kind:"mg"; four different tubes are
+        // kind:"shell"). Sound only — nothing mechanical reads it, and it is
+        // undefined for any spec table that has not been tagged.
+        weapon: spec.weapon,
         noImpact: true, attacker, delay: si * volleyDelay, windF: spec.windF,
         // No round passes through a structure (sightlines 6.5 Task 4):
         // every shooterFire round carries hitStruct unless the caller set

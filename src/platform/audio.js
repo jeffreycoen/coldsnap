@@ -188,6 +188,57 @@ export function makeGameAudio() {
     rocket: (x, z, mass = 1) => { noise(x, z, { f0: 380, f1: 1600, type: "bandpass", q: 1.4, dur: 0.4, gain: 0.22 * mass, wet: 0.35 }); },
     mortar: (x, z, mass = 1) => { tone(x, z, { f0: 128, f1: 52, type: "sine", dur: 0.2, gain: 0.3 * mass, atk: 0.01 }); noise(x, z, { f0: 520, dur: 0.14, gain: 0.15 * mass, delay: 0.015, wet: 0.4 }); },
   };
+  // WEAPON VOICES (P1.5 Task 3, mk0.56). MUZZLE above is keyed on what the
+  // ROUND is (kind) and is the only thing the frozen demo, tower defense, the
+  // campaign and the mech ever produce — it is left exactly as it was so all
+  // of those keep the sounds they shipped with. This second table is keyed on
+  // WHICH GUN fired (the `weapon` tag WINTER FRONT's specs carry, threaded
+  // through shooterFire and core.js's muzzle event), and consume() prefers it
+  // when the tag is present. Four tubes fire kind:"shell" and every infantry
+  // arm is kind:"mg", so without this table a sniper, a rifle and an MG burst
+  // were literally the same sound.
+  const WEAPON = {
+    // A sniper's crack is DRY up close — a whipcrack with almost no body —
+    // and it is the echo that carries: at a distance the report arrives half
+    // as a bang and half as the map answering it. So the direct sound
+    // attenuates as everything does (att, inside chain), while the echo taps
+    // scale UP with range instead of down, capped so a shot across the whole
+    // map does not out-shout a shot at your feet.
+    sniper: (x, z, mass = 1) => {
+      noise(x, z, { f0: 2200, type: "highpass", dur: 0.032, gain: 0.19 * mass, wet: 0.12 });
+      noise(x, z, { f0: 700, type: "bandpass", q: 1.6, dur: 0.06, gain: 0.09 * mass, delay: 0.008, wet: 0.18 });
+      const far = Math.min(1, dist(x, z) / Math.max(1, listener.range));
+      const ring = Math.min(0.44, 0.08 + far * 0.42); // inverted attenuation, capped
+      echoes(x, z, (ex, ez, dly, k) => noise(ex, ez, { f0: 1500, f1: 380, dur: 0.16 + far * 0.26, gain: ring * k * 2.2, delay: dly, wet: 0.65, dark: 0.5 }));
+    },
+    // A rifle is the same light infantry report, pitched well ABOVE the
+    // sniper's crack (2200 -> 3300 on the snap) so the two never blur: the
+    // heavier weapon is the deeper one, as it should be.
+    rifle: (x, z, mass = 1) => {
+      noise(x, z, { f0: 3300, type: "highpass", dur: 0.026 + mass * 0.01, gain: 0.115 + mass * 0.04, wet: 0.2 });
+      if (mass > 1.5) noise(x, z, { f0: 1350, type: "bandpass", q: 1.2, dur: 0.045 + mass * 0.018, gain: 0.07 * mass, delay: 0.012, wet: 0.3 });
+    },
+    // An MG fires a BURST, and the coalescer hands the whole burst over as one
+    // event group — so mass is not "how loud", it is HOW MANY. Undo the
+    // sqrt (n = mass²) and lay the rounds back out as separate taps at a real
+    // machine-gun cadence (~950 rpm) instead of stacking them into one fat
+    // shot. That is the ratatata.
+    mg: (x, z, mass = 1) => {
+      const n = Math.max(2, Math.min(8, Math.round(mass * mass)));
+      const gap = 0.063;
+      tone(x, z, { f0: 150, f1: 62, type: "sine", dur: 0.05, gain: 0.1, atk: 0.006 });
+      for (let i = 0; i < n; i++) {
+        noise(x, z, { f0: 2000, type: "highpass", dur: 0.02, gain: 0.105, delay: i * gap, wet: 0.16 });
+        noise(x, z, { f0: 620, type: "bandpass", q: 1.4, dur: 0.03, gain: 0.05, delay: i * gap + 0.004, wet: 0.28 });
+      }
+    },
+    // The tubes keep the voices they already had — the tag only tells them
+    // apart from each other, which `kind` could not (all four are "shell").
+    mortar: (x, z, mass = 1) => MUZZLE.mortar(x, z, mass),
+    rocket: (x, z, mass = 1) => MUZZLE.rocket(x, z, mass),
+    shell:  (x, z, mass = 1) => MUZZLE.shell(x, z, mass),
+    tank:   (x, z, mass = 1) => MUZZLE.shell(x, z, mass),
+  };
   // granite/masonry: three inharmonic modes, pitch scattered per stone
   const STONE_MODES = [{ f: 840, q: 20, g: 1 }, { f: 1310, q: 26, g: 0.6 }, { f: 2140, q: 30, g: 0.35 }];
   const stoneKnock = (x, z, s = 1) => {
@@ -206,23 +257,25 @@ export function makeGameAudio() {
   // above prime (that's why bells sound minor), quint, nominal. Same modal
   // voice as granite but with far higher Q and a decay measured in seconds
   // instead of milliseconds — that difference IS the difference between a
-  // stone knock and a bell. Two strikes (the second softer, a beat behind, as
-  // a rope-swung bell answers itself) over a dark low tail.
+  // stone knock and a bell.
+  // RECAST (P1.5 Task 3, mk0.56 — Jeff): the old bell was a bright two-strike
+  // handbell. This is a BIG bell: the whole partial set drops an octave, so
+  // the hum sits at 94Hz where a tonne of bronze hums, and the second strike
+  // is gone — one hit, ringing out long and dark. "BONGGG."
   const BELL_MODES = [
-    { f: 188, q: 58, g: 0.9 },    // hum
-    { f: 376, q: 72, g: 1 },      // prime
-    { f: 452, q: 76, g: 0.55 },   // tierce
-    { f: 564, q: 68, g: 0.32 },   // quint
-    { f: 752, q: 60, g: 0.2 },    // nominal
+    { f: 94,  q: 62, g: 1 },      // hum
+    { f: 188, q: 78, g: 0.9 },    // prime
+    { f: 226, q: 82, g: 0.5 },    // tierce
+    { f: 282, q: 74, g: 0.28 },   // quint
+    { f: 376, q: 66, g: 0.16 },   // nominal
   ];
   // Non-positional: it is the garrison's own bell hanging over the listener,
   // not a thing out on the field, so it rings at the listener's coordinates
   // (the jingles' convention) and never pans or attenuates.
   const bellToll = () => {
     const x = listener.x, z = listener.z;
-    modal(x, z, BELL_MODES, 3.4, 0.34, { wet: 0.5 });
-    modal(x, z, BELL_MODES, 2.7, 0.22, { delay: 0.62, wet: 0.55 });
-    tone(x, z, { f0: 94, f1: 60, dur: 2.0, gain: 0.11, delay: 0.01, wet: 0.5, atk: 0.02 });
+    modal(x, z, BELL_MODES, 5.2, 0.40, { wet: 0.55 });
+    tone(x, z, { f0: 62, f1: 38, dur: 3.4, gain: 0.14, delay: 0.01, wet: 0.5, atk: 0.02 });
   };
   // A pre-toll: the last seconds before the bell, counted out. The same
   // partials at a whisper with a millisecond decay — the rope taking up its
@@ -245,15 +298,20 @@ export function makeGameAudio() {
   const uiTick = () => tone(listener.x, listener.z, { f0: 1180, f1: 860, type: "triangle", dur: 0.045, gain: 0.05, wet: 0.12, atk: 0.004 });
 
   // ---- event layer -----------------------------------------------------
-  // coalescing: N same-kind muzzles in one drain merge into ONE denser shot
+  // coalescing: N same-WEAPON muzzles in one drain merge into ONE denser shot
   // (mass = sqrt(N)) at their centroid — massed fire is a crackle, not a
-  // drum roll of identical ticks
+  // drum roll of identical ticks.
+  // mk0.56: the group key prefers the weapon tag over kind. It has to: every
+  // infantry arm is kind:"mg", so grouping by kind merged a sniper's single
+  // crack into the rifle chatter around him and the whole squad came out one
+  // sound. Still exactly one key per group (weapon OR kind, never both), so
+  // the group count is unchanged for anything untagged.
   const consume = (events) => {
     if (muted || !ctx) return;
     const groups = new Map();
     for (const e of events) {
       if (e.type === "muzzle" || e.type === "gmuzzle" || e.type === "weldbreak") {
-        const key = e.type + (e.kind || "") + (e.ice || "");
+        const key = e.type + (e.weapon || e.kind || "") + (e.ice || "");
         let g = groups.get(key);
         if (!g) { g = { n: 0, x: 0, z: 0, e }; groups.set(key, g); }
         g.n++; g.x += e.x; g.z += e.z;
@@ -273,7 +331,10 @@ export function makeGameAudio() {
     }
     for (const [, g] of groups) {
       const x = g.x / g.n, z = g.z / g.n, mass = Math.sqrt(g.n);
-      if (g.e.type === "muzzle") (MUZZLE[g.e.kind] || MUZZLE.shell)(x, z, mass);
+      // weapon first, kind second (mk0.56): a tagged shot gets its own gun's
+      // voice; an untagged one — the demo, tower defense, the campaign, the
+      // mech — falls through to the kind table it has always used.
+      if (g.e.type === "muzzle") ((g.e.weapon && WEAPON[g.e.weapon]) || MUZZLE[g.e.kind] || MUZZLE.shell)(x, z, mass);
       else if (g.e.type === "gmuzzle") MUZZLE.mortar(x, z, mass);
       else {
         stoneKnock(x, z, (g.e.ice ? 1.2 : 0.9) * mass);

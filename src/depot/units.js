@@ -255,6 +255,8 @@ function seekStandPoint(world, u, sp, dt) {
 // does (the INTERFACE GAP note there: INFANTRY_ARMS carries no blastR/kv
 // and core.js's explode() NaNs without them); cd aliases fireRate so the
 // rifleman fire path's cooldown code reads one field.
+// mk0.56: weapon:"sniper" rides the spread from INFANTRY_ARMS.sniper — one
+// table, both sides, so their marksman's shot has the same voice as ours.
 export const SNIPER_FIRE = { ...INFANTRY_ARMS.sniper, blastR: 0.3, kv: 0.5, cd: INFANTRY_ARMS.sniper.fireRate };
 
 // VANTAGE (small documented heuristic): a marching sniper stops for good

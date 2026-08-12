@@ -420,7 +420,18 @@ export function fireProjectile(world, from, dir, speed, spec) {
   world._trc = (world._trc || 0) + 1;
   if (spec.kind === "mg" && world._trc % 4 === 0) p.tracer = true;
   world.projectiles.push(p);
-  world.events.push({ type: "muzzle", x: from.x, y: from.y, z: from.z, dx: dir.x, dy: dir.y, dz: dir.z, kind: spec.kind || "shell" });
+  const mz = { type: "muzzle", x: from.x, y: from.y, z: from.z, dx: dir.x, dy: dir.y, dz: dir.z, kind: spec.kind || "shell" };
+  // DIVERGENCE (guarded, additive, mk0.56 weapon voices): the muzzle event
+  // also names WHICH GUN fired, when the spec says so. `kind` is what the
+  // round IS (four different tubes all fire kind:"shell"; every infantry arm
+  // is kind:"mg"), which is why the sound engine could never tell a sniper
+  // from a rifle. WINTER FRONT's spec tables (src/depot/specs.js) carry a
+  // `weapon` tag; the frozen demo's, tower defense's, the campaign's and the
+  // mech's do not — the property is not written at all there, so those events
+  // keep the exact shape they have always had and src/platform/audio.js falls
+  // back to its kind table for them. Events are never hashed either way.
+  if (spec.weapon) mz.weapon = spec.weapon;
+  world.events.push(mz);
   return p;
 }
 export function fireVolley(world, x, z, n = 6, attacker = "player") {

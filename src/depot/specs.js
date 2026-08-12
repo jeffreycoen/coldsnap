@@ -21,11 +21,21 @@
 // DELIBERATELY not raised alongside these — the interim cost asymmetry is
 // documented in full at SQUAD_SPECS (src/depot/squads.js) and the mercenary
 // market is what repairs it. All five prices provisional (F5).
+// WEAPON TAGS (P1.5 Task 3, mk0.56): every fire spec in this file carries a
+// `weapon` — WHICH GUN this is, as opposed to `kind`, which is what the round
+// physically is (a "shell" is fired by the gun tower, the mortar tower, the
+// rocket tower, a tank and a grenadier alike, and every infantry arm is
+// kind:"mg" whatever it actually is). shooterFire threads it into the
+// projectile spec, core.js's fireProjectile hangs it on the muzzle event, and
+// src/platform/audio.js gives each tag its own voice. Purely a sound label:
+// nothing mechanical reads it, and no spec's numbers moved to add it.
+// frost is deliberately untagged — it has no projectile at all (fireRate 0,
+// projSpeed 0) and never emits a muzzle event to give a voice to.
 export const TOWER_SPECS = {
-  mg:     { range: 15, fireRate: 0.17, projSpeed: 95, dmg: 5, dirDmg: 3.4, blastR: 0.3, kv: 0.5, cost: 23, hp: 80,  crater: 0, label: "MG",     icon: "⊞", kind: "mg",    hy: 1.0, acc: 0.090, windF: 0.06, windComp: 0,   blurb: "Fast, cheap, short reach", occl: "arc" },
-  gun:    { range: 19, fireRate: 1.05, projSpeed: 58, dmg: 25, blastR: 2.3, kv: 8,   cost: 38, hp: 130, crater: 0.55, label: "GUN",    icon: "⚑", kind: "shell", hy: 1.5, acc: 0.07, windF: 0.9,  windComp: 0.6, blurb: "Flat-trajectory workhorse", occl: "arc" },
-  mortar: { range: 26, fireRate: 4.6 /* halved cadence (C0 T4) // provisional (F5) */,  projSpeed: 33, dmg: 38, blastR: 3.8, kv: 10,  cost: 53, hp: 95,  crater: 0.8, label: "MORTAR", icon: "◎", kind: "shell", hy: 0.8, acc: 0.020, windF: 0.04, windComp: 0.6, blurb: "Arcs over walls, big blast", occl: "lofted" },
-  rocket: { range: 23, fireRate: 8.8 /* halved cadence (C0 T4) // provisional (F5) */,  projSpeed: 30, dmg: 27, blastR: 3.4, kv: 9,   cost: 75, hp: 110, volley: 4, crater: 0.7, label: "ROCKET", icon: "▲", kind: "shell", hy: 1.2, acc: 0.021, windF: 1.3  /* lobbed retune (mk0.25): swept 0.020-0.035 vs the pinned flat baseline 2.4592, curve in the F1.5 artillery plan // provisional (F5) */, windComp: 0.5, blurb: "Four-round salvo, slow reload", occl: "lofted" },
+  mg:     { range: 15, fireRate: 0.17, projSpeed: 95, dmg: 5, dirDmg: 3.4, blastR: 0.3, kv: 0.5, cost: 23, hp: 80,  crater: 0, label: "MG",     icon: "⊞", kind: "mg",    weapon: "mg",     hy: 1.0, acc: 0.090, windF: 0.06, windComp: 0,   blurb: "Fast, cheap, short reach", occl: "arc" },
+  gun:    { range: 19, fireRate: 1.05, projSpeed: 58, dmg: 25, blastR: 2.3, kv: 8,   cost: 38, hp: 130, crater: 0.55, label: "GUN",    icon: "⚑", kind: "shell", weapon: "shell",  hy: 1.5, acc: 0.07, windF: 0.9,  windComp: 0.6, blurb: "Flat-trajectory workhorse", occl: "arc" },
+  mortar: { range: 26, fireRate: 4.6 /* halved cadence (C0 T4) // provisional (F5) */,  projSpeed: 33, dmg: 38, blastR: 3.8, kv: 10,  cost: 53, hp: 95,  crater: 0.8, label: "MORTAR", icon: "◎", kind: "shell", weapon: "mortar", hy: 0.8, acc: 0.020, windF: 0.04, windComp: 0.6, blurb: "Arcs over walls, big blast", occl: "lofted" },
+  rocket: { range: 23, fireRate: 8.8 /* halved cadence (C0 T4) // provisional (F5) */,  projSpeed: 30, dmg: 27, blastR: 3.4, kv: 9,   cost: 75, hp: 110, volley: 4, crater: 0.7, label: "ROCKET", icon: "▲", kind: "shell", weapon: "rocket", hy: 1.2, acc: 0.021, windF: 1.3  /* lobbed retune (mk0.25): swept 0.020-0.035 vs the pinned flat baseline 2.4592, curve in the F1.5 artillery plan // provisional (F5) */, windComp: 0.5, blurb: "Four-round salvo, slow reload", occl: "lofted" },
   frost:  { range: 12, fireRate: 0,    projSpeed: 0,  dmg: 0,  blastR: 0,   kv: 0,   cost: 30, hp: 85,  label: "FROST",  icon: "❄", kind: "mg",    slow: 0.42, hy: 1.35, blurb: "Halves their pace in radius" },
 };
 export const TOWER_ORDER = ["mg", "gun", "mortar", "rocket", "frost"];
@@ -79,13 +89,13 @@ export const TANK = { mass: 3400, hx: 1.5, hy: 0.8, hz: 2.4, hp: 260, bounty: 25
 // own rifles rescale. See depot-test.mjs's "==== TASK 4A" parity assert.
 // The wall path is unaffected (dirDmg still inert there).
 export const ENEMY_FIRE = {
-  rifle: { projSpeed: 70, dmg: 5, dmgHeavy: 9, dirDmg: 4.5, kind: "mg", blastR: 0.6, kv: 1.0, crater: 0, acc: 0.090, windF: 0.06, windComp: 0, cd: 1.5, cdVar: 0.5, range: 13, occl: "arc" },
+  rifle: { projSpeed: 70, dmg: 5, dmgHeavy: 9, dirDmg: 4.5, kind: "mg", weapon: "rifle", blastR: 0.6, kv: 1.0, crater: 0, acc: 0.090, windF: 0.06, windComp: 0, cd: 1.5, cdVar: 0.5, range: 13, occl: "arc" },
   // lob cd 3.0 -> 6.0 (C0 T4, mk0.33): the grenadier's tube halves its cadence
   // alongside TOWER_SPECS.mortar and INFANTRY_ARMS.mortars — symmetry is law,
   // so their lob slows exactly as much as ours. cdVar is a separate dial and
   // was not moved. // provisional (F5)
-  lob:   { projSpeed: 28, dmg: 20, kind: "shell", blastR: 2.6, kv: 6, crater: 0.45, acc: 0.020, windF: 0.04, windComp: 0.6, cd: 6.0, cdVar: 0.6, range: 21, occl: "lofted" },
-  tank:  { projSpeed: 85, dmg: TANK.dmg, kind: "shell", blastR: TANK.blastR, kv: 8, crater: 0.5, acc: 0.070, windF: 0.9, windComp: 0.6, cd: TANK.gunCd, cdVar: 1.2, range: TANK.gunRange, occl: "arc" },
+  lob:   { projSpeed: 28, dmg: 20, kind: "shell", weapon: "mortar", blastR: 2.6, kv: 6, crater: 0.45, acc: 0.020, windF: 0.04, windComp: 0.6, cd: 6.0, cdVar: 0.6, range: 21, occl: "lofted" },
+  tank:  { projSpeed: 85, dmg: TANK.dmg, kind: "shell", weapon: "tank", blastR: TANK.blastR, kv: 8, crater: 0.5, acc: 0.070, windF: 0.9, windComp: 0.6, cd: TANK.gunCd, cdVar: 1.2, range: TANK.gunRange, occl: "arc" },
 };
 
 // The 50-row WAVES table is DELETED (P1 Task 1, mk0.40). Nothing composes an
@@ -160,7 +170,7 @@ export const SAPPER_PLANT_PAD = 0.7;
 // Infantry arms — both teams use identical values (symmetry). All fire flows
 // through shooterFire + the accuracy model; occl/windF/windComp like any shooter.
 export const INFANTRY_ARMS = {
-  sniper: { projSpeed: 120, kind: "mg", dmg: 65, dirDmg: 130, fireRate: 4.5, range: 30,
+  sniper: { projSpeed: 120, kind: "mg", weapon: "sniper", dmg: 65, dirDmg: 130, fireRate: 4.5, range: 30,
             acc: 0.006, occl: "arc", windF: 0.10, windComp: 0.8 },
   // rifles/mg dirDmg is NOT dmg (5) verbatim: a direct hit always lands its
   // full value (only obliquity-scaled), while the old blast-only law it
@@ -170,15 +180,15 @@ export const INFANTRY_ARMS = {
   // the pre-wiring baseline — dirDmg scaled down here (4.1/3.6) to bring
   // flagged DPS back within the ±10% replaces-not-adds contract (measured
   // +0.5%/-1.2%). See scripts/depot-test.mjs's squadFire DPS assert.
-  rifles: { projSpeed: 90, kind: "mg", dmg: 5, dirDmg: 4.1, fireRate: 1.3, range: 15,
+  rifles: { projSpeed: 90, kind: "mg", weapon: "rifle", dmg: 5, dirDmg: 4.1, fireRate: 1.3, range: 15,
             acc: 0.090, occl: "arc", windF: 0.06, windComp: 0.6 },
-  mg:     { projSpeed: 100, kind: "mg", dmg: 5, dirDmg: 3.6, burst: 6, burstGap: 0.17, fireRate: 2.2,
+  mg:     { projSpeed: 100, kind: "mg", weapon: "mg", dmg: 5, dirDmg: 3.6, burst: 6, burstGap: 0.17, fireRate: 2.2,
             range: 17, acc: 0.070, occl: "arc", windF: 0.06, windComp: 0.6 },
   // F1.5 Task 1: the tube comes off the tower — the player mirror of the
   // enemy grenadier's lob (ENEMY_FIRE.lob values verbatim, aim fully equal
   // per the standing law). dirDmg none: shells are blast weapons. cd ->
   // fireRate (squadFire's cooldown field), so it tracks ENEMY_FIRE.lob.cd
   // one-for-one: 3.0 -> 6.0 with the C0 T4 cadence halving. // provisional (F5)
-  mortars: { projSpeed: 28, kind: "shell", dmg: 20, blastR: 2.6, kv: 6, crater: 0.45,
+  mortars: { projSpeed: 28, kind: "shell", weapon: "mortar", dmg: 20, blastR: 2.6, kv: 6, crater: 0.45,
              fireRate: 6.0, range: 21, acc: 0.020, occl: "lofted", windF: 0.04, windComp: 0.6 },
 };
