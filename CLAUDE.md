@@ -29,6 +29,7 @@ The project owner directs design, reviews every plan, and is the sole playtester
 
 - Implementation agents are Opus 5 (`model: "opus"`). Never Opus 4.8.
 - One agent in the working tree at a time, sequential. Parallel work requires worktree isolation.
+- **Stop after every task.** A task landing is a stop: report it and wait for the owner's word before the next dispatch. Plan approval approves the plan, not an unattended run of it.
 - Every dispatch carries: a pre-verified reading list (anchors checked against live code at dispatch), trap notes, and a required read-confirmation opening the agent's report.
 - Agents verify **mechanics, never feel**. Perceptibility, look, and sound acceptance belong to the owner alone.
 
