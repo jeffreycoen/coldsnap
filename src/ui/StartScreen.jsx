@@ -93,7 +93,10 @@ export default function StartScreen({ onPlay, onSandbox, onCampaign, onControls,
           </button>
         )}
 
-        <button data-menu="depot" style={option({ borderColor: burnArmed ? "#a63c3c" : "#6a8a9a", background: burnArmed ? "rgba(92,33,27,0.85)" : undefined })} onClick={startNewFront}>
+        {/* background must never be `undefined` here: spreading it over btn's
+            background DELETES the property and the UA's light-grey default
+            button shows through (mk0.43 regression, Jeff's screenshot) */}
+        <button data-menu="depot" style={option({ borderColor: burnArmed ? "#a63c3c" : "#6a8a9a", background: burnArmed ? "rgba(92,33,27,0.85)" : COLORS.btnBg })} onClick={startNewFront}>
           <div style={{ color: burnArmed ? "#ff6b5e" : "#9fd4e4", fontSize: 15, letterSpacing: 2 }}>
             {burnArmed ? "THE FRONT BURNS — CONFIRM" : hasFront ? "▶ NEW FRONT" : "▶ WINTER FRONT"}
           </div>
