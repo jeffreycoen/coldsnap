@@ -1591,12 +1591,45 @@ export default function DepotGame({ onExit }) {
       let last = performance.now();
       let rdt = 0, frameN = 0; // draw-rate bookkeeping only — see the render gate
       const STEP = 1 / 120;
+      // mk0.35 — THE STOPWATCH (?perf=1). A measurement probe, not a feature:
+      // it brackets the fixed-step sim block and the R.render call and drops
+      // the pair into a ring buffer that scripts/diag-perf.mjs reads back.
+      // The flag is resolved ONCE, here — with no ?perf=1 in the URL every
+      // probe site below is a single already-false boolean test, nothing is
+      // allocated, nothing is sampled and window.__DEPOTPERF__ never exists.
+      // Typed arrays, never per-frame objects, so the stopwatch cannot feed
+      // the garbage collector it is trying to measure. Body/chunk counts are
+      // sampled at ~1Hz (the census cadence), not per frame.
+      const perf = new URLSearchParams(window.location.search).get("perf") === "1";
+      const PCAP = 4096; // ~68s at 60fps, ~136s at 30 — a 60s window always fits
+      let pT = null, pSimA = null, pRenA = null, pFrmA = null, pDrewA = null;
+      let pI = 0, pN = 0, pSampT = 0, pBodies = 0, pChunksDrawn = 0, pChunksTotal = 0;
+      if (perf) {
+        pT = new Float64Array(PCAP); pSimA = new Float64Array(PCAP);
+        pRenA = new Float64Array(PCAP); pFrmA = new Float64Array(PCAP);
+        pDrewA = new Uint8Array(PCAP);
+        window.__DEPOTPERF__ = () => {
+          const n = Math.min(pN, PCAP), out = [];
+          for (let k = 0; k < n; k++) {
+            const j = (pI - n + k + PCAP) % PCAP; // oldest-first
+            out.push({ t: pT[j], sim: pSimA[j], render: pRenA[j], frame: pFrmA[j], drew: !!pDrewA[j] });
+          }
+          return {
+            n, cap: PCAP, overflowed: pN > PCAP, fps30: !!S.fps30,
+            bodies: pBodies, chunksDrawn: pChunksDrawn, chunksTotal: pChunksTotal,
+            frames: out,
+          };
+        };
+        window.__DEPOTPERF__.reset = () => { pI = 0; pN = 0; };
+      }
       const frame = (now) => {
         if (disposed) return;
         raf = requestAnimationFrame(frame);
         let dt = Math.min(0.05, (now - last) / 1000);
         last = now;
         rdt += dt; frameN++;
+        const pFrame0 = perf ? performance.now() : 0;
+        let pSim = 0, pRen = 0, pDrew = 0;
         try {
           S.fpsAcc += dt; S.fpsN++;
           if (S.fpsAcc > 0.5) { S.fps = Math.round(S.fpsN / S.fpsAcc); S.fpsAcc = 0; S.fpsN = 0; }
@@ -1727,11 +1760,13 @@ export default function DepotGame({ onExit }) {
           // updateTerritory/retintTerritory/updateFogWash).
           if (terrGuard > 0 && R.updateTerritory) R.updateTerritory();
           world.events.length = 0;
+          const pSim0 = perf ? performance.now() : 0; // stopwatch: sim bracket opens
           let guard = 0;
           while (S.acc >= STEP && guard++ < 6) {
             S.acc -= STEP;
             stepDepot(world, grid, onStructureLost, town, onRuin, T, S.discipline, S);
           }
+          if (perf) pSim = performance.now() - pSim0; // ...and closes
           if (S.acc > STEP * 6) S.acc = 0;
           const evs = drainEvents();
           // Structural loss census — ~1Hz (stepDepotCensus's own accumulator
@@ -1780,7 +1815,9 @@ export default function DepotGame({ onExit }) {
           // anchors below therefore sit one frame stale at 30fps (accepted:
           // the HUD reads them on its own 0.12s tick, untouched by this).
           if (!S.fps30 || (frameN & 1) === 0) {
+            const pRen0 = perf ? performance.now() : 0; // stopwatch: draw bracket
             R.render(rdt, S.focus, AIM_OFF, 0);
+            if (perf) { pRen = performance.now() - pRen0; pDrew = 1; }
             rdt = 0;
             // ✓/✗ screen-space anchor (Task 3): rotation-proof because it's
             // recomputed from the live camera via project() — Q/E view
@@ -1866,6 +1903,22 @@ export default function DepotGame({ onExit }) {
                 };
               })(),
             });
+          }
+          if (perf) {
+            // stopwatch: one ring slot per rAF, written last so `frame` covers
+            // the whole tick. Skipped draws record render 0 with drew false —
+            // the reader averages the draw cost over drawn frames only.
+            const pNow = performance.now();
+            pSampT += dt;
+            if (pSampT >= 1) {
+              pSampT = 0;
+              pBodies = world.bodies.length;
+              const cs = R.chunkStats ? R.chunkStats() : null;
+              pChunksDrawn = cs ? cs.drawn : 0; pChunksTotal = cs ? cs.total : 0;
+            }
+            pT[pI] = pNow; pSimA[pI] = pSim; pRenA[pI] = pRen;
+            pFrmA[pI] = pNow - pFrame0; pDrewA[pI] = pDrew;
+            pI = (pI + 1) % PCAP; pN++;
           }
         } catch (err) {
           console.error("COLDSNAP DEPOT frame failed", err);
