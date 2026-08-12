@@ -641,7 +641,6 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
 }
 
 // ============================================================== component
-const FPS_KEY = "coldsnap-depot-fps"; // "30" | "60" — the draw rate, not the sim rate
 function detectTouch() {
   return (typeof window !== "undefined") && ("ontouchstart" in window || (navigator.maxTouchPoints || 0) > 0);
 }
@@ -739,31 +738,10 @@ export default function DepotGame({ onExit, resume = null }) {
   // platform/autosave.js: the default writes nothing, so a saved choice can
   // never be clobbered before the async restore lands, and only a real toggle
   // saves.
-  // Default 60 EVERYWHERE (Jeff, 2026-08-12, off the C0 baseline): the Pi
-  // measurement showed 30fps buys nothing under load — the loop is physics-
-  // bound and only the drawn frames halve — so 30 is an opt-in battery/
-  // thermal saver, not a default. Saved choices still restore over this.
-  const fps30Ref = useRef(false);
-  const [fps30, setFps30] = useState(false);
-  useEffect(() => {
-    let live = true;
-    (async () => {
-      try {
-        const r = await window.storage.get(FPS_KEY);
-        if (!live || !r || (r.value !== "30" && r.value !== "60")) return;
-        const v = r.value === "30";
-        fps30Ref.current = v; setFps30(v);
-        const S = stateRef.current; if (S) S.fps30 = v;
-      } catch (e) {}
-    })();
-    return () => { live = false; };
-  }, []);
-  const toggleFps = () => {
-    const v = !fps30Ref.current;
-    fps30Ref.current = v; setFps30(v);
-    const S = stateRef.current; if (S) S.fps30 = v;
-    try { window.storage.set(FPS_KEY, v ? "30" : "60"); } catch (e) {}
-  };
+  // The 30fps draw toggle is GONE (Jeff, 2026-08-12, off the mk0.50 evidence
+  // run): drawing is ~5ms flat in every scenario and physics is the whole
+  // cost, so halving draws bought visible stutter for ~1ms. Stale
+  // "coldsnap-depot-fps" storage keys are simply ignored.
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1030,9 +1008,6 @@ export default function DepotGame({ onExit, resume = null }) {
         mode: "wall", sellMode: false, inspectId: null,
         started: false, gameOver: false, victory: false,
         paused: false, speed: 1, fogOn, discipline,
-        // Draw rate, read by the frame loop below. Boots from the component's
-        // fps30Ref so a restored/toggled choice survives a restart (runId).
-        fps30: fps30Ref.current,
         setFog: (v) => { fogOn = v; S.fogOn = v; R.setFog(v); try { window.localStorage.setItem("coldsnap-depot-fog", v ? "1" : "0"); } catch (e) {} },
         setDiscipline: (v) => { discipline = v; S.discipline = v; try { window.localStorage.setItem("coldsnap-depot-discipline", v); } catch (e) {} },
         // The clock (P1 Task 1): bellAt is the absolute SIM-clock stamp the
@@ -1961,7 +1936,6 @@ export default function DepotGame({ onExit, resume = null }) {
       };
 
       let last = performance.now();
-      let rdt = 0, frameN = 0; // draw-rate bookkeeping only — see the render gate
       const STEP = 1 / 120;
       // mk0.35 — THE STOPWATCH (?perf=1). A measurement probe, not a feature:
       // it brackets the fixed-step sim block and the R.render call and drops
@@ -1987,7 +1961,7 @@ export default function DepotGame({ onExit, resume = null }) {
             out.push({ t: pT[j], sim: pSimA[j], render: pRenA[j], frame: pFrmA[j], drew: !!pDrewA[j] });
           }
           return {
-            n, cap: PCAP, overflowed: pN > PCAP, fps30: !!S.fps30,
+            n, cap: PCAP, overflowed: pN > PCAP,
             bodies: pBodies, chunksDrawn: pChunksDrawn, chunksTotal: pChunksTotal,
             frames: out,
           };
@@ -1999,7 +1973,6 @@ export default function DepotGame({ onExit, resume = null }) {
         raf = requestAnimationFrame(frame);
         let dt = Math.min(0.05, (now - last) / 1000);
         last = now;
-        rdt += dt; frameN++;
         const pFrame0 = perf ? performance.now() : 0;
         let pSim = 0, pRen = 0, pDrew = 0;
         try {
@@ -2184,22 +2157,12 @@ export default function DepotGame({ onExit, resume = null }) {
             if (fan) R.overlay.setReach(true, fan.cx, field.heightAt(fan.cx, fan.cz), fan.cz, fan.pts, 0xffd27a);
             else R.overlay.setReach(false);
           }
-          // mk0.34 — THE DRAW GATE. Everything above is unconditional: input,
-          // cooldowns, the 1/120 accumulator, R.consume/A.consume. Events are
-          // never dropped or deferred, so audio and particles hear every
-          // frame at either rate. Only the draw halves — with S.fps30 on
-          // (touch default) R.render and the screen-space anchors it projects
-          // run on alternate frames. rdt, not dt: renderer.js integrates
-          // debris/smoke/fire/shake/camera against the dt it is handed, so a
-          // per-frame dt at half the calls would run them at half speed —
-          // the skipped frame's time is carried into the drawn one. The
-          // anchors below therefore sit one frame stale at 30fps (accepted:
-          // the HUD reads them on its own 0.12s tick, untouched by this).
-          if (!S.fps30 || (frameN & 1) === 0) {
+          // mk0.53: the mk0.34 draw gate is gone — every frame draws (the
+          // evidence run showed physics, not drawing, owns the frame budget).
+          {
             const pRen0 = perf ? performance.now() : 0; // stopwatch: draw bracket
-            R.render(rdt, S.focus, AIM_OFF, 0);
+            R.render(dt, S.focus, AIM_OFF, 0);
             if (perf) { pRen = performance.now() - pRen0; pDrew = 1; }
-            rdt = 0;
             // ✓/✗ screen-space anchor (Task 3): rotation-proof because it's
             // recomputed from the live camera via project() — Q/E view
             // rotation or a pan moves the cell's projected point, and this
@@ -2429,10 +2392,6 @@ export default function DepotGame({ onExit, resume = null }) {
           onClick={() => { const S = stateRef.current; if (S && S.rotate) S.rotate(1); }}>⟳</button>
         <button style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.fogOn ? "#7fd7ff" : "#48515f", opacity: hud.fogOn ? 1 : 0.6 }} title="fog of war (visual only)" onClick={toggleFog}>
           FOG {hud.fogOn ? "ON" : "OFF"}
-        </button>
-        <button data-fps-toggle style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: fps30 ? "#ffd27a" : "#48515f" }}
-          title="draw rate — the fight runs at the same speed either way" onClick={toggleFps}>
-          FPS: {fps30 ? "30" : "60"}
         </button>
         <button style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.discipline === "free" ? "#ff7a7a" : "#4aff8c" }} onClick={toggleDiscipline}>
           FIRE DISCIPLINE: {hud.discipline === "free" ? "FREE" : "CAREFUL"}

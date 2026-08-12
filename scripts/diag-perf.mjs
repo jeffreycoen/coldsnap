@@ -42,7 +42,7 @@ function summarize(label, dump) {
     frames: fr.length, drawnFrames: drawn.length, elapsedS: elapsed,
     rafHz: elapsed > 0 ? fr.length / elapsed : 0,
     drawHz: elapsed > 0 ? drawn.length / elapsed : 0,
-    overflowed: dump.overflowed, fps30: dump.fps30,
+    overflowed: dump.overflowed,
     bodies: dump.bodies, chunksDrawn: dump.chunksDrawn, chunksTotal: dump.chunksTotal,
     sim: stats(fr.map((f) => f.sim)),
     render: stats(drawn.map((f) => f.render)),          // drawn frames only
@@ -57,7 +57,7 @@ function print(s) {
   console.log(`\n### ${s.label}`);
   console.log(`  window ${f2(s.elapsedS)}s · ${s.frames} rAF frames · ${s.drawnFrames} drawn` +
     `${s.overflowed ? " · RING OVERFLOWED (oldest frames lost)" : ""}`);
-  console.log(`  effective: ${f2(s.rafHz)} rAF/s, ${f2(s.drawHz)} drawn/s (fps30=${s.fps30})`);
+  console.log(`  effective: ${f2(s.rafHz)} rAF/s, ${f2(s.drawHz)} drawn/s`);
   console.log(`  bodies ${s.bodies} · chunks drawn ${s.chunksDrawn} / total ${s.chunksTotal}`);
   for (const k of ["sim", "render", "other", "frame"]) {
     console.log(`  ${k.padEnd(7)} mean ${f2(s[k].mean).padStart(7)}  p95 ${f2(s[k].p95).padStart(7)}  worst ${f2(s[k].worst).padStart(8)}  ms`);
@@ -112,15 +112,10 @@ try {
     await page.waitForFunction(() => typeof window.__DEPOTPERF__ === "function", { timeout: 30000 });
   };
 
-  const setFps = async (want30) => {
-    for (let i = 0; i < 3; i++) {
-      const cur = await page.evaluate(() => window.__DEPOTPERF__().fps30);
-      if (cur === want30) return true;
-      await page.evaluate(() => document.querySelector("[data-fps-toggle]").click());
-      await sleep(400);
-    }
-    return (await page.evaluate(() => window.__DEPOTPERF__().fps30)) === want30;
-  };
+  // mk0.53: the 30fps draw toggle was removed off this script's own evidence
+  // (physics-bound; halved draws bought stutter, not headroom). setFps is a
+  // no-op kept so older invocations don't crash.
+  const setFps = async () => true;
 
   // Measure a window: clear the ring, wait, read it back.
   const measure = async (label, seconds) => {
