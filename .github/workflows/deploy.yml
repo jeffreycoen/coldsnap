@@ -24,15 +24,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # The kept gate set (C0 purge, mk0.31 — docs/superpowers/test-manifest.md).
+      # The boot-load smoke (npm run smoke) needs a live preview server and a
+      # browser: it runs locally, not here. Measuring tools (diag-/-probe/
+      # measure-) never run in the pipeline.
       - run: npm run golden
-      - run: npm run test:aar
-      - run: npm run test:deviation
+      - run: npm run lint:depot
       - run: npm run test:predicate
       - run: npm run test:scenario
-      - run: npm run test:righting
-      - run: npm run test:campaign
-      - run: npm run test:mech
-      # test:td / test:td-render need a live preview server (browser gates) — run locally, not here
       - run: npm run test:combat
       - run: npm run test:depot
       - run: npm run test:accuracy

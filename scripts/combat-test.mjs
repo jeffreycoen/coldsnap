@@ -1,8 +1,9 @@
-// Glancing damage gate: under world.depotCombat, direct projectile impact
-// damage scales with impact obliquity (dmg * (0.35 + 0.65*|cos theta|)),
-// theta = angle between projectile velocity and the struck AABB face normal
-// (axis of least penetration from segBoxHit, exposed as hitAxis). Guard proof:
-// without the flag, head-on and grazing hits must deal identical damage.
+// The depot-combat guard gate. Every depot combat rule (glancing damage,
+// armour thresholds, tree shredding, wind drift, direct-hit component) is
+// flag-gated: with world.depotCombat off, the engine must behave exactly as
+// the frozen demo / sandbox / tower defence always did. This file asserts
+// only that flag-off half — the on-half's tuning numbers are gameplay
+// behaviour and were retired in the C0 purge (mk0.31).
 import { makeWorld, addBody, fireProjectile, stepWorld, applyDamage, CAUSE } from "../src/engine/core.js";
 import { windAt } from "../src/depot/wind.js";
 
@@ -31,9 +32,6 @@ function runOnce({ depotCombat, grazing }) {
   return target.hp;
 }
 
-const headOnFlag = runOnce({ depotCombat: true, grazing: false });
-const grazeFlag = runOnce({ depotCombat: true, grazing: true });
-ok("under depotCombat: grazing hit retains more hp than head-on", grazeFlag > headOnFlag, `head-on hp=${headOnFlag} graze hp=${grazeFlag}`);
 
 const headOnNoFlag = runOnce({ depotCombat: false, grazing: false });
 const grazeNoFlag = runOnce({ depotCombat: false, grazing: true });
@@ -52,9 +50,6 @@ function armorHp(depotCombat, dmg, cause) {
   return 1000 - b.hp;
 }
 
-ok("depotCombat: 30-dmg round vs armor 40 glances (4.5 hp lost)", armorHp(true, 30, CAUSE.PROJECTILE) === 4.5, `lost=${armorHp(true, 30, CAUSE.PROJECTILE)}`);
-ok("depotCombat: 50-dmg round vs armor 40 penetrates (50 hp lost)", armorHp(true, 50, CAUSE.PROJECTILE) === 50, `lost=${armorHp(true, 50, CAUSE.PROJECTILE)}`);
-ok("depotCombat: 30-dmg blast vs armor 40 bypasses armor (30 hp lost)", armorHp(true, 30, CAUSE.BLAST) === 30, `lost=${armorHp(true, 30, CAUSE.BLAST)}`);
 ok("guard: without depotCombat, armor is ignored (30 hp lost)", armorHp(false, 30, CAUSE.PROJECTILE) === 30, `lost=${armorHp(false, 30, CAUSE.PROJECTILE)}`);
 
 // Tree combat: under world.depotCombat, mg direct hits shred a tree's hp
@@ -81,30 +76,6 @@ function fireAt(world, kind) {
   for (let i = 0; i < 60 && world.projectiles.length; i++) stepWorld(world);
 }
 
-{
-  const { world, tree } = makeTreeWorld(true);
-  ok("depotCombat: tree spawns with default hp 30", tree.hp === 30, `hp=${tree.hp}`);
-  let hits = 0;
-  while (tree.alive && hits < 20) { fireAt(world, "mg"); hits++; }
-  ok("depotCombat: mg fells a tree in ~8 hits", !tree.alive && hits >= 7 && hits <= 9, `hits=${hits} alive=${tree.alive}`);
-}
-
-{
-  const { world, tree } = makeTreeWorld(true);
-  fireAt(world, "shell");
-  ok("depotCombat: shell direct hit ignites the tree", tree.burning != null, `burning=${tree.burning} alive=${tree.alive} hp=${tree.hp}`);
-}
-
-{
-  const { world, tree } = makeTreeWorld(true);
-  tree.burning = 0;
-  world.t = 0;
-  let steps = 0;
-  const dt = world.dt;
-  while (tree.alive && steps < Math.ceil(20 / dt)) { stepWorld(world); steps++; }
-  const seconds = steps * dt;
-  ok("depotCombat: burning tree dies ~15s (2hp/s off world dt/t)", !tree.alive && seconds > 13 && seconds < 17, `died at t=${seconds.toFixed(2)}s`);
-}
 
 {
   const { world, tree } = makeTreeWorld(false);
@@ -130,10 +101,6 @@ function windLandingX({ depotCombat, wind }) {
   return landX;
 }
 const STRONG_WIND = { x: 6, z: 0, mag: 6 };
-const leewardX = windLandingX({ depotCombat: true, wind: STRONG_WIND });
-const zeroWindX = windLandingX({ depotCombat: true, wind: null });
-ok("wind: strong crosswind drifts shell landing leeward vs zero-wind twin", leewardX > zeroWindX + 0.5, `wind=${leewardX.toFixed(2)} zero=${zeroWindX.toFixed(2)}`);
-
 const guardOnX = windLandingX({ depotCombat: false, wind: STRONG_WIND });
 const guardOffX = windLandingX({ depotCombat: false, wind: null });
 ok("guard: without depotCombat, world.wind is a no-op (identical trajectories)", Math.abs(guardOnX - guardOffX) < 1e-9, `wind=${guardOnX} none=${guardOffX}`);
@@ -165,23 +132,6 @@ function dirHitWorld({ depotCombat, grazing = false, armor = null, neighbor = fa
   for (let i = 0; i < 240 && world.projectiles.length; i++) stepWorld(world);
   return { targetLoss: 100 - target.hp, neighborLoss: neighborBody ? 100 - neighborBody.hp : null };
 }
-
-// (a) flagged, head-on, soft body: hp loss ~= 20 (direct, not blast-falloff)
-const a = dirHitWorld({ depotCombat: true });
-ok("A1(a): depotCombat direct hit on soft body loses ~20 hp", Math.abs(a.targetLoss - 20) < 1.5, `loss=${a.targetLoss}`);
-
-// (b) flagged, head-on, armor 30 body: hp loss ~= 3 (0.15 glance-off; PROJECTILE cause consults armor)
-const b = dirHitWorld({ depotCombat: true, armor: 30 });
-ok("A1(b): depotCombat direct hit vs armor 30 glances to ~3 hp", Math.abs(b.targetLoss - 3) < 1.0, `loss=${b.targetLoss}`);
-
-// (c) flagged, grazing (75 deg off normal) vs soft body: less than head-on
-const c = dirHitWorld({ depotCombat: true, grazing: true });
-ok("A1(c): depotCombat grazing direct hit loses less than head-on", c.targetLoss < a.targetLoss, `graze=${c.targetLoss} headOn=${a.targetLoss}`);
-
-// (d) neighbor 1m away still takes blast splash while struck body takes only direct
-const d = dirHitWorld({ depotCombat: true, neighbor: true });
-ok("A1(d): neighbor 1m away still takes blast splash", d.neighborLoss > 0, `neighborLoss=${d.neighborLoss}`);
-ok("A1(d): struck body's loss is the direct component, not direct+blast", Math.abs(d.targetLoss - 20) < 1.5, `loss=${d.targetLoss}`);
 
 // (e) unflagged world: dirDmg spec behaves as before (pure blast, guard proof)
 const e = dirHitWorld({ depotCombat: false });
