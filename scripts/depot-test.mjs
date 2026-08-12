@@ -2368,7 +2368,10 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   const mapSrc = [
     header,
     sliceFn("genMap"), sliceFn("makeMap"), sliceFn("pondAt"), sliceFn("rockAt"),
-    sliceFn("makeGrid"), sliceFn("checkConnectivity"), sliceFn("buildTown"),
+    // townFootprint (P1 T3): buildTown's grid-footprint loop, lifted out so
+    // the save's restore path can recompute the same cells without re-laying
+    // stone. buildTown calls it, so the extraction must carry it.
+    sliceFn("makeGrid"), sliceFn("checkConnectivity"), sliceFn("townFootprint"), sliceFn("buildTown"),
     `return { genMap, makeMap, makeGrid, checkConnectivity, buildTown, invW,
       state: () => ({ ORIENT, OBJ_POS, SPAWN_POINTS, PONDS, ROCKS, TOWN, ROADS, MAP_SEED }) };`,
   ].join("\n");

@@ -196,7 +196,10 @@ try {
     // Pinned map seed: an unpinned reload gets a random procedural map, and a
     // pinned one keeps this check reading the same ground every run.
     const depotURL = URL + (URL.includes("?") ? "&" : "?") + "seed=11";
-    await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (k.startsWith("coldsnap-depot")) localStorage.removeItem(k); });
+    // ...and the saved front (P1 T3): its key is not coldsnap-depot-prefixed,
+    // and a leftover save would turn the menu's one-tap WINTER FRONT into the
+    // two-tap NEW FRONT burn confirm.
+    await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (k.startsWith("coldsnap-depot")) localStorage.removeItem(k); localStorage.removeItem("coldsnap-front-save"); });
     await page.evaluate(() => localStorage.setItem("coldsnap-screen", "menu"));
     await page.goto(depotURL, { waitUntil: "networkidle0" });
     await clickMenu("depot");

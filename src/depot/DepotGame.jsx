@@ -23,6 +23,7 @@ import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
 import { makeRegiment, payTown } from "./economy.js";
 import { makeTerritory, stepTerritory, holderAt, canBuild, fogStateFor, valueAt, EMIT } from "./territory.js";
 import { fwdUFor, fwdDirFor, invWFor } from "./orient.js";
+import { SAVE_KEY, serializeFront, burnFront, restoreBodies, restoreWelds, restoreCensus, restoreSquads } from "./save.js";
 import Dispatch from "./Dispatch.jsx";
 
 // ============================================================== the map
@@ -410,6 +411,22 @@ export function stepTowers(world, T, discipline) {
 // ================================================================== town
 // The depot itself lives in TOWN (see genMap) — this machinery stays even
 // though village-protection payouts (Phase-later scripting) do not.
+// townFootprint(grid, t): which grid cells one TOWN entry stands on. Pulled
+// out of buildTown so the SAVE's restore path can recompute the identical
+// footprint without re-laying a single stone (the stones come back off the
+// save; only the grid bookkeeping has to be redone).
+function townFootprint(grid, t) {
+  const cells = [];
+  const hx = (t.nx * MASON.pitch) / 2, hz = (t.nz * MASON.pitch) / 2;
+  for (let gz = 0; gz < GRID_H; gz++) for (let gx = 0; gx < GRID_W; gx++) {
+    const wp = grid.gridToWorld(gx, gz);
+    if (Math.abs(wp.x - t.x) < hx + 1.0 && Math.abs(wp.z - t.z) < hz + 1.0) {
+      if (Math.hypot(wp.x - OBJ_POS.x, wp.z - OBJ_POS.z) < 5) continue;
+      cells.push(grid.idx(gx, gz));
+    }
+  }
+  return cells;
+}
 function buildTown(world, grid, field) {
   const { hcs, pitch, mass, breakF } = MASON;
   const out = [];
@@ -458,17 +475,8 @@ function buildTown(world, grid, field) {
         if (o) addWeld(world, c, o, townBreakF);
       }
     }
-    const cells = [];
-    const hx = (t.nx * pitch) / 2, hz = (t.nz * pitch) / 2;
-    for (let gz = 0; gz < GRID_H; gz++) for (let gx = 0; gx < GRID_W; gx++) {
-      const wp = grid.gridToWorld(gx, gz);
-      if (Math.abs(wp.x - t.x) < hx + 1.0 && Math.abs(wp.z - t.z) < hz + 1.0) {
-        if (Math.hypot(wp.x - OBJ_POS.x, wp.z - OBJ_POS.z) < 5) continue;
-        const c = grid.cells[grid.idx(gx, gz)];
-        c.blocked = true; c.building = t.id;
-        cells.push(grid.idx(gx, gz));
-      }
-    }
+    const cells = townFootprint(grid, t);
+    for (const ci of cells) { const c = grid.cells[ci]; c.blocked = true; c.building = t.id; }
     if (t.depot) {
       // roof-peak flag anchor: kinematic marker body, no collision role —
       // the renderer draws pole+cloth at any body with flagPole === true
@@ -665,9 +673,18 @@ const PALETTE = [
 const PALETTE_BY_KEY = Object.fromEntries(PALETTE.map((p) => [p.key, p]));
 const PALETTE_LABEL = Object.fromEntries(PALETTE.map((p) => [p.key, p.label]));
 
-export default function DepotGame({ onExit }) {
+// `resume` (P1 Task 3): a PARSED save object, or null for a fresh front. The
+// start screen does the async probe and the mark check (save.js's probeFront)
+// and hands the data down already validated, so this mount effect stays
+// synchronous — a boot that awaited storage mid-construction would be a world
+// half-built for however long the read took.
+export default function DepotGame({ onExit, resume = null }) {
   const canvasRef = useRef(null);
   const stateRef = useRef(null);
+  // Held in a ref, not read from props inside the effect, for the same reason
+  // every other loop input is: the effect must never close over a value React
+  // can change under it. Captured once, at mount.
+  const resumeRef = useRef(resume);
   const [isTouch] = useState(detectTouch);
   const [hud, setHud] = useState(HUD0);
   const [fatal, setFatal] = useState(null);
@@ -735,13 +752,46 @@ export default function DepotGame({ onExit }) {
     let raf = 0, disposed = false;
     let R = null;
     try {
+      // ------------------------------------------------------- THE BOOT ORDER
+      // RES non-null means this mount is a RESUME (P1 Task 3) — the start
+      // screen handed us a parsed save. The order below is the contract, and
+      // it is the order the save was written against; nothing in the game
+      // layer runs until every line of it has:
+      //   1. makeMap(saved seed) — ORIENT, ROCKS, PONDS, TOWN, ROADS, SPAWNS
+      //      all regrow from the seed (the map is never serialized)
+      //   2. buildDepotTerrain, THEN the saved heightfield over the top —
+      //      craters and breached ridges are what the war did to the terrain
+      //   3. the grid off that terrain, then the world, reseeded + re-clocked
+      //   4. bodies -> welds -> town bookkeeping -> censuses -> grid claims
+      //   5. territory field, squads, run state
+      //   6. flow field, renderer, smear replay
+      // Only then does the frame loop start.
+      const RES = resumeRef.current;
       const urlSeed = parseInt(new URLSearchParams(window.location.search).get("seed"), 10);
-      const seed = Number.isFinite(urlSeed) ? urlSeed : Math.floor(Date.now() % 1000000);
+      const seed = RES ? RES.map.seed
+        : Number.isFinite(urlSeed) ? urlSeed : Math.floor(Date.now() % 1000000);
       makeMap(seed);
       const field = makeField(121, 2.0, MAP_SEED);
       buildDepotTerrain(field, MAP_SEED);
+      if (RES) {
+        // The heightfield goes back OVER the freshly grown terrain — same
+        // grid, so a straight copy. Craters, the depot mound's dents, the
+        // hollow a breached ridge left: all of it lives here and nowhere else.
+        const hs = RES.field.h;
+        const n = Math.min(field.h.length, hs.length);
+        for (let i = 0; i < n; i++) field.h[i] = hs[i];
+        field.dirty = true;
+      }
       const grid = makeGrid(field);
       const world = makeWorld({ field, seed: MAP_SEED });
+      if (RES) {
+        // Law 2 (save.js): a fresh stream from the seed the save drew at the
+        // bell. A return, not a replay. world.t comes back too — every stamp
+        // in the file (spawn-done, corpse ages, card arm times, the wind) is
+        // an absolute sim-clock reading and would be nonsense against 0.
+        world.rng = mulberry32(RES.rng.seed);
+        world.t = RES.world.t;
+      }
       world._tdStruct = true;
       world.depotCombat = true; // Phase 0 combat hooks: glancing, armor, tree fire/shredding
       // The pair's survey vets (6.5 Task 6): thread the mode's pond test and
@@ -751,18 +801,77 @@ export default function DepotGame({ onExit }) {
       // twin worlds read identically (determinism-safe).
       world.pondAt = (x, z) => !!pondAt(x, z);
       world.inRim = (x, z) => { const c = invW(x, z); return Math.abs(c.u) <= 29 && Math.abs(c.v) <= 57; };
-      const town = buildTown(world, grid, field);
-      // Structural loss (Task 5): the depot's own chunk lattice IS its health
-      // bar — census taken once here (ids + home world positions), read back
-      // at ~1Hz via stepDepotCensus below against world.byId (live pos/alive).
-      const depotCensus = censusDepotChunks(world.bodies);
-      // FRONT F1: the enemy depot's own census — same snapshot moment, read
-      // back through the same 1Hz gate (no second timer).
-      const depotCensus2 = censusDepotChunks(world.bodies, "depot2");
+      // town / censuses / rocks: laid fresh, or lifted back off the save.
+      let town, depotCensus, depotCensus2, rocksLive, resBodies = null;
+      if (RES) {
+        // Step 4. Every body in the file goes back in saved order (ids are
+        // reassigned, so everything that pointed at one points at an INDEX);
+        // then the welds, by index pair, with their original joint anchors.
+        resBodies = restoreBodies(world, RES, ROCKS);
+        restoreWelds(world, RES, resBodies);
+        // The town array is bookkeeping over bodies that are already back:
+        // stones by b.town, n0 and ruined off the file, footprint cells
+        // recomputed from the regrown TOWN layout. A ruined building has
+        // already had its cells released (stepTown does that once) — restoring
+        // it blocked would wall off ground the player can walk and build on.
+        const stonesBy = new Map();
+        for (const b of resBodies) if (b.kind === "chunk" && b.town) {
+          const arr = stonesBy.get(b.town); if (arr) arr.push(b); else stonesBy.set(b.town, [b]);
+        }
+        town = TOWN.map((t) => {
+          const saved = (RES.towns || []).find((s) => s.id === t.id) || {};
+          const cells = townFootprint(grid, t);
+          const ruined = !!saved.ruined;
+          if (!ruined) for (const ci of cells) { const c = grid.cells[ci]; c.blocked = true; c.building = t.id; }
+          const stones = stonesBy.get(t.id) || [];
+          return { id: t.id, cells, stones, n0: saved.n0 != null ? saved.n0 : stones.length, ruined, x: t.x, z: t.z };
+        });
+        // The censuses keep their ORIGINAL rows (including rows whose stone is
+        // gone — see save.js's -1 rule) and their built-time homes. Re-taking
+        // a census here would stamp displaced stone as "home" and forgive
+        // every hit the depot has taken.
+        depotCensus = restoreCensus(RES.census, resBodies);
+        depotCensus2 = restoreCensus(RES.census2, resBodies);
+        // The player's own structures re-claim their grid cells (buildAt does
+        // this at build time; nothing else would).
+        for (const b of resBodies) {
+          if ((b.kind !== "wall" && b.kind !== "tower") || !b.alive) continue;
+          const g = grid.worldToGrid(b.pos.x, b.pos.z);
+          if (!grid.inBounds(g.gx, g.gz)) continue;
+          const c = grid.cells[grid.idx(g.gx, g.gz)];
+          c.blocked = true; c.wallId = b.id;
+        }
+        // Rocks: the live set is whatever rock bodies came back. A ridge that
+        // was breached during the run has no body in the file, so its cells
+        // must be released here exactly as breachRock released them — the
+        // saved heightfield already carries the hole it left.
+        rocksLive = resBodies.filter((b) => b.kind === "rock" && b.alive && b.rockRef).map((b) => b.rockRef);
+        for (const k of ROCKS) {
+          if (rocksLive.indexOf(k) >= 0) continue;
+          for (let gz = 0; gz < GRID_H; gz++) for (let gx = 0; gx < GRID_W; gx++) {
+            const wp = grid.gridToWorld(gx, gz);
+            if (Math.hypot(wp.x - k.x, wp.z - k.z) < k.r * 0.78 + 0.9) {
+              const c = grid.cells[grid.idx(gx, gz)];
+              if (c.terrain) { c.blocked = false; c.terrain = false; }
+            }
+          }
+        }
+      } else {
+        town = buildTown(world, grid, field);
+        // Structural loss (Task 5): the depot's own chunk lattice IS its health
+        // bar — census taken once here (ids + home world positions), read back
+        // at ~1Hz via stepDepotCensus below against world.byId (live pos/alive).
+        depotCensus = censusDepotChunks(world.bodies);
+        // FRONT F1: the enemy depot's own census — same snapshot moment, read
+        // back through the same 1Hz gate (no second timer).
+        depotCensus2 = censusDepotChunks(world.bodies, "depot2");
+        rocksLive = ROCKS.slice();
+      }
       // Territory (Phase 4 Task 2): who holds the ground. Cells over the
       // same playable rim the renderer clips to (halfU 29 / halfV 57, see
       // makeRenderer's rim opt above) — reuse rather than reinvent extents.
       const T = makeTerritory(29, 57);
+      if (RES && RES.terr && RES.terr.v && RES.terr.v.length === T.v.length) T.v.set(RES.terr.v);
       // town buildings' (x, z) are rotated WORLD space (same as any body);
       // territory reads canonical (u, v) — precompute once (buildings don't
       // move) rather than re-converting every stall.
@@ -804,18 +913,21 @@ export default function DepotGame({ onExit }) {
         // are spawn locations only; the enemy's permanent red is its depot flag.
         return out;
       };
-      const rocksLive = ROCKS.slice();
-      for (const k of ROCKS) {
-        const b = addBody(world, { kind: "rock", team: 0, mass: 0, hx: k.r * 0.55, hy: k.h * 0.8, hz: k.r * 0.55, x: k.x, y: field.heightAt(k.x, k.z) - k.h * 0.2, z: k.z, hp: 380 + k.r * 90 });
-        b.maxHp = b.hp; b.rockRef = k;
-      }
       const treeAt = (tx, tz) => {
         const ty = field.heightAt(tx, tz);
         const u = addBody(world, { kind: "tree", team: 0, mass: 260, hx: 0.28, hy: 1.6, hz: 0.28, x: tx, y: ty + 1.62, z: tz, hp: 70, friction: 0.5 });
         u.sleeping = true;
         return u;
       };
-      {
+      // Rocks and trees are BODIES, and bodies come off the save — a burnt
+      // treeline and a breached ridge are things the war did, not things the
+      // seed says. On a resume both blocks are skipped entirely; the fresh
+      // path below is untouched.
+      if (!RES) {
+        for (const k of ROCKS) {
+          const b = addBody(world, { kind: "rock", team: 0, mass: 0, hx: k.r * 0.55, hy: k.h * 0.8, hz: k.r * 0.55, x: k.x, y: field.heightAt(k.x, k.z) - k.h * 0.2, z: k.z, hp: 380 + k.r * 90 });
+          b.maxHp = b.hp; b.rockRef = k;
+        }
         const rT = mulberry32(MAP_SEED ^ 0x517);
         for (let tu = -26; tu <= 26; tu += 3.2) {
           const w = fwdU(tu + (rT() - 0.5) * 1.6, -54.5 + rT() * 3.2);
@@ -863,7 +975,9 @@ export default function DepotGame({ onExit }) {
         ...ROCKS.filter((k) => k.r >= 4),
         ...TOWN.map((t) => ({ x: t.x, z: t.z, r: Math.max(t.nx, t.nz) * MASON.pitch * 0.6 })),
       ]);
-      R.setDressing({ rocks: ROCKS, ponds: PONDS });
+      // rocksLive, not ROCKS: on a resume a ridge the war already breached
+      // must not be painted back onto the ground it no longer occupies.
+      R.setDressing({ rocks: rocksLive, ponds: PONDS });
       R.overlay.setObjective(OBJ_POS.x, OBJ_POS.z, field.heightAt(OBJ_POS.x, OBJ_POS.z));
       R.overlay.setBanners(SPAWN_POINTS);
       const AIM_OFF = { x: 0, z: -500 };
@@ -928,8 +1042,44 @@ export default function DepotGame({ onExit }) {
         // regiment. Mutated in place by planWave (buy-time depletion — the
         // only depletion path; a fielded unit's cost is spent at muster
         // and never returns, dead or alive) and payResults; never replaced.
-        reg: makeRegiment(world.rng),
+        // On a RESUME the saved regiment is the regiment — makeRegiment is not
+        // called at all, so the resumed run doesn't spend two draws re-rolling
+        // a formation it already has.
+        reg: RES ? { ...RES.run.reg } : makeRegiment(world.rng),
       };
+      // Step 5. The run state itself, straight off the file. The bell is the
+      // ONE deliberate exception: the countdown restarts at a full period
+      // rather than resuming a half-elapsed one (ratified — simpler, and
+      // kinder than dropping the player into a bell that rings in nine
+      // seconds). Everything else — scrap, kills, the unlocked set, the
+      // convoy's live offer, the enemy's pick list, the mustered assault's
+      // spawn queue — is exactly what it was.
+      if (RES) {
+        const r = RES.run;
+        S.resources = r.resources; S.kills = r.kills; S.spawnRR = r.spawnRR;
+        S.started = !!r.started; S.mode = r.mode; S.sandbagOrient = r.sandbagOrient || 0;
+        S.zoom = r.zoom; R.setZoom(r.zoom);
+        S.focus = { x: r.focus.x, y: field.heightAt(r.focus.x, r.focus.z), z: r.focus.z };
+        S.bell = r.bell;
+        S.bellAt = world.t + BELL_PERIOD_S; S.bellT = BELL_PERIOD_S;
+        S.depotCensusAcc = r.depotCensusAcc;
+        S.depotStanding = r.depotStanding; S.enemyStanding = r.enemyStanding;
+        S.starvedStreak = r.starvedStreak;
+        S._reportedBreak = r.reportedBreak; S._reportedSpent = r.reportedSpent;
+        S.manifest = r.manifest; S.foe = r.foe;
+        S.intelUp = r.intelUp; S.intelArmedAt = r.intelArmedAt;
+        S.lastDispatch = r.lastDispatch;
+        S.pendingPlan = r.pendingPlan; S.intelPlan = r.intelPlan;
+        S.ws = r.ws;
+        S.squads = restoreSquads(RES, resBodies);
+        S.nextSquadId = r.nextSquadId;
+        // Step 6, last: the ground remembers. Every mark where a man fell is
+        // replayed through the same paint the kill handler uses, so the snow
+        // comes back stained exactly as it was left. Scorch and tread
+        // staining are NOT in the ledger and do not come back — the accepted
+        // visual loss, stated in the plan.
+        if (R._splat && R._splat.smear) for (const m of RES.smears || []) R._splat.smear(m.u, m.v, m.s, m.x, m.z);
+      }
       stateRef.current = S;
       // id -> last-observed hp for wall/tower/building bodies, so structure
       // damage dealt (not just kills) can be attributed to the attacker
@@ -1340,6 +1490,44 @@ export default function DepotGame({ onExit }) {
       window.addEventListener("keydown", kd);
       window.addEventListener("keyup", ku);
 
+      // --- THE FRONT, KEPT (P1 Task 3) -------------------------------------
+      // One slot, written at every bell and nowhere else. saveFront draws the
+      // resumed run's seed FIRST and unconditionally — that draw is the only
+      // rng this feature spends, it happens exactly once per bell whatever
+      // else goes right or wrong below, and the draw-count law holds because
+      // saving is not optional (see save.js law 2). Serialization is
+      // synchronous into a string; the store write is fire-and-forget so the
+      // frame never awaits it.
+      let saveStat = null;
+      const saveFront = () => {
+        const rngSeed = Math.floor(world.rng() * 4294967296); // THE ONE DRAW — 1/bell, always
+        try {
+          const t0 = performance.now();
+          const json = serializeFront({
+            S, world, T, town, census: depotCensus, census2: depotCensus2,
+            rocks: ROCKS, smears: R._splat ? R._splat.log : [],
+            mapSeed: MAP_SEED, rngSeed,
+          });
+          saveStat = { ms: +(performance.now() - t0).toFixed(2), bytes: json.length, bell: S.bell };
+          // fire-and-forget, but never an unhandled rejection: a store that
+          // refuses the write (quota, a runtime that says no) must cost the
+          // frame nothing and must not surface as a page error.
+          Promise.resolve(window.storage.set(SAVE_KEY, json)).catch(() => {});
+        } catch (e) {
+          console.warn("COLDSNAP front save failed", e);
+          saveStat = { ms: -1, bytes: 0, bell: S.bell, error: String(e && e.message ? e.message : e) };
+        }
+      };
+      // A lost war does not get replayed, and a won one has nothing left to
+      // resume: the slot burns the moment the verdict lands, six seconds
+      // BEFORE the end card mounts. Idempotent — the first verdict tick owns
+      // it, same discipline as stampEnd.
+      const burnSave = () => {
+        if (S._saveBurned) return;
+        S._saveBurned = true;
+        burnFront();
+      };
+
       // THE BELL rings here and nowhere else. Town pay closes the cycle
       // alongside the assault's results (fireBell books those): green ground
       // pays the player, red ground pays the regiment, seam ground nobody.
@@ -1354,6 +1542,10 @@ export default function DepotGame({ onExit }) {
         // The income's ledger line: the bell's flat cycle scrap plus whatever
         // the town paid this bell (green ground only) — one honest number.
         toast("◆ +" + Math.round(BELL_SCRAP + paid.player) + " — CYCLE PAY");
+        // ...and the front is written down. The muster has been planned and
+        // the queue is full, but not one man has walked yet — this is the
+        // state you would want back, so this is the state that is kept.
+        saveFront();
       };
       // --- the bell's cards (Task 2). Nothing here touches the sim: they are
       // presentation state, armed on WORLD time via the same trailing-tap law
@@ -1465,6 +1657,9 @@ export default function DepotGame({ onExit }) {
       // asserts the tap-theft repairs through this).
       window.__DEPOTPENDING__ = () => (S.pending ? { armed: pendingArmed(S.pending, world.t), screen: S.pendingScreen, gx: S.pending.gx, gz: S.pending.gz } : null);
       window.__DEPOTBUILD__ = (gx, gz, mode) => buildAt(gx, gz, mode || "wall");
+      // debug harness: world point -> grid cell, so a staging script can build
+      // at a point __DEPOTFINDBUILDABLE__ handed it without driving the tap UI.
+      window.__DEPOTGRIDAT__ = (x, z) => grid.worldToGrid(x, z);
       window.__DEPOTSPAWN__ = (n) => { for (let i = 0; i < (n || 1); i++) spawnEnemy(world, SPAWN_POINTS[S.spawnRR++ % SPAWN_POINTS.length]); };
       window.__DEPOTSTART__ = () => { S.started = true; };
       window.__DEPOTSETT__ = (t) => { world.t = t; world.wind = windAt(MAP_SEED, world.t); };
@@ -1517,6 +1712,10 @@ export default function DepotGame({ onExit }) {
         foe: S.foe.unlocked.slice(),
       });
       window.__DEPOTPICK__ = (key) => { S.pickManifest(key); return S.manifest.unlocked.slice(); };
+      // debug harness (P1 T3): what the last bell's save cost and whether this
+      // mount is a resume. Reading it costs nothing; the numbers are recorded
+      // by saveFront itself, not measured on demand.
+      window.__DEPOTSAVE__ = () => ({ resumed: !!RES, burned: !!S._saveBurned, last: saveStat });
       window.__DEPOTEND__ = (victory) => {
         // debug harness: force the run into its end state for screenshotting
         // the WIN/LOSS end card without simming 50 waves — pattern matches
@@ -1661,7 +1860,7 @@ export default function DepotGame({ onExit }) {
       window.__DEPOTSANDBAGS__ = () => world.bodies.filter((b) => b.sandbag).map((b) => ({ id: b.id, x: +b.pos.x.toFixed(2), z: +b.pos.z.toFixed(2), hx: b.hx, hz: b.hz, alive: b.alive }));
       window.__DEPOTENEMYPOS__ = () => {
         const b = world.bodies.find((b2) => b2.kind === "unit" && b2.alive && b2.team === 2);
-        return b ? { x: b.pos.x, z: b.pos.z } : null;
+        return b ? { x: b.pos.x, y: b.pos.y, z: b.pos.z } : null;
       };
 
       let last = performance.now();
@@ -1714,6 +1913,9 @@ export default function DepotGame({ onExit }) {
           // of world time, and only when the card is actually up does the sim
           // stop. Orders and building are locked from the verdict itself.
           stampEnd(S, world.t);
+          // The record burns with the war, and it burns FIRST — the end card
+          // is still six world-seconds away when this runs.
+          if (S.gameOver || S.victory) burnSave();
           const cardUp = endCardReady(S, world.t);
           const sdt = S.paused || !S.started || cardUp ? 0 : dt * S.speed;
           const pan = 34 * dt / Math.max(0.5, S.zoom);
@@ -2016,7 +2218,7 @@ export default function DepotGame({ onExit }) {
         canvas.removeEventListener("touchstart", blockTouch);
         window.removeEventListener("keydown", kd);
         window.removeEventListener("keyup", ku);
-        for (const k of ["__DEPOT__", "__DEPOTBELL__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTTHIN__", "__DEPOTEND__", "__DEPOTFOCUS__", "__DEPOTGETFOCUS__", "__DEPOTSETT__", "__DEPOTFLAGS__", "__DEPOTHOLD__", "__DEPOTFINDBUILDABLE__", "__DEPOTFINDRISE__", "__DEPOTFINDNEARROCK__", "__DEPOTFOGDBG__", "__DEPOTFOGAT__", "__DEPOTENEMYPOS__", "__DEPOTSQUADS__", "__DEPOTSANDBAGS__", "__DEPOTGROUNDAT__", "__DEPOTSCREENAT__", "__DEPOTPENDING__", "__DEPOTMANIFEST__", "__DEPOTPICK__"]) delete window[k];
+        for (const k of ["__DEPOT__", "__DEPOTBELL__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTTHIN__", "__DEPOTEND__", "__DEPOTFOCUS__", "__DEPOTGETFOCUS__", "__DEPOTSETT__", "__DEPOTFLAGS__", "__DEPOTHOLD__", "__DEPOTFINDBUILDABLE__", "__DEPOTFINDRISE__", "__DEPOTFINDNEARROCK__", "__DEPOTFOGDBG__", "__DEPOTFOGAT__", "__DEPOTENEMYPOS__", "__DEPOTSQUADS__", "__DEPOTSANDBAGS__", "__DEPOTGROUNDAT__", "__DEPOTSCREENAT__", "__DEPOTPENDING__", "__DEPOTMANIFEST__", "__DEPOTPICK__", "__DEPOTSAVE__", "__DEPOTGRIDAT__"]) delete window[k];
         A.dispose();
         if (R) R.dispose();
         stateRef.current = null;

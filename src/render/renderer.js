@@ -130,6 +130,10 @@ function makeSplat(town) {
   tex.minFilter = THREE.NearestFilter; tex.magFilter = THREE.NearestFilter; tex.generateMipmaps = false;
   return {
     tex,
+    // The ledger itself, exposed read-only-by-convention so the DEPOT save
+    // (src/depot/save.js) can write the marks down and replay them through
+    // smear() on resume. Nothing here mutates it but smear() and clear().
+    log: smearLog,
     clear() { paintBase(); smearLog.length = 0; tex.needsUpdate = true; },
     // called once by callers that want the fade pass; cheap (one extra
     // 1024x1024 canvas), so only DEPOT opts into it.

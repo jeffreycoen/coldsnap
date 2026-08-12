@@ -22,6 +22,11 @@ export default function App() {
   const [campProgress, setCampProgress] = useState(0);
   const [campRecord, setCampRecord] = useState({});
   const [keymap, setKeymap] = useState(DEFAULTS);
+  // WINTER FRONT's saved run (P1 Task 3). The start screen probes storage and
+  // validates the mark, then hands the parsed save through here; null means a
+  // fresh front. Cleared on the way out so a second entry never resumes a run
+  // that has already been left.
+  const [depotResume, setDepotResume] = useState(null);
   const mapRef = useRef(DEFAULTS);
   const remapRef = useRef(null);
   const dirtyRef = useRef(false); // a user rebind outranks the async load
@@ -110,7 +115,7 @@ export default function App() {
     return <ColdsnapTD />;
   }
   if (screen === "depot") {
-    return <DepotGame onExit={() => setScreen("menu")} />;
+    return <DepotGame resume={depotResume} onExit={() => { setDepotResume(null); setScreen("menu"); }} />;
   }
   if (screen === "controls") {
     return <Controls keymap={keymap} onChange={applyKeymap} onBack={() => setScreen("menu")} />;
@@ -130,5 +135,7 @@ export default function App() {
       </div>
     );
   }
-  return <StartScreen onPlay={() => setScreen("demo")} onSandbox={() => setScreen("sandbox")} onCampaign={() => setScreen("campaign")} onControls={() => setScreen("controls")} onMech={() => setScreen("mechrange")} onTowerDef={() => setScreen("towerdef")} onDepot={() => setScreen("depot")} />;
+  return <StartScreen onPlay={() => setScreen("demo")} onSandbox={() => setScreen("sandbox")} onCampaign={() => setScreen("campaign")} onControls={() => setScreen("controls")} onMech={() => setScreen("mechrange")} onTowerDef={() => setScreen("towerdef")}
+    onDepot={() => { setDepotResume(null); setScreen("depot"); }}
+    onDepotResume={(data) => { setDepotResume(data); setScreen("depot"); }} />;
 }

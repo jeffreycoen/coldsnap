@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { COLORS, FONT, btn, detectTouch } from "./theme.js";
 import { MK } from "../version.js";
+import { probeFront, burnFront } from "../depot/save.js";
 
 // Display-only mirror of the demo's trial order for the medal star row; the
 // demo file is frozen and does not export TRIALS.
@@ -9,10 +10,23 @@ const TRIAL_IDS = ["gunnery", "roadkill", "saturation", "demolition", "deep_end"
 const medalColor = (m) =>
   !m ? COLORS.btnBorder : m.deviation ? COLORS.dim : m.medal === "GOLD" ? COLORS.gold : m.medal === "SILVER" ? COLORS.text : "#b0764a";
 
-export default function StartScreen({ onPlay, onSandbox, onCampaign, onControls, onMech, onTowerDef, onDepot }) {
+export default function StartScreen({ onPlay, onSandbox, onCampaign, onControls, onMech, onTowerDef, onDepot, onDepotResume }) {
   const [medals, setMedals] = useState(null);
   const [csMedals, setCsMedals] = useState(null);
   const [isTouch] = useState(detectTouch);
+  // THE SAVED FRONT (P1 Task 3). null until the async probe lands — the menu
+  // renders its normal self meanwhile and RESUME FRONT simply appears when
+  // (and only when) there is something to resume. Never the other way round:
+  // a button that flashes and vanishes reads as a bug.
+  const [front, setFront] = useState(null);
+  // Starting a NEW front over a saved one is destructive, so it is a two-tap
+  // decision — the campaign's own arm/disarm, five seconds of silence disarms.
+  const [burnArmed, setBurnArmed] = useState(false);
+  useEffect(() => {
+    if (!burnArmed) return;
+    const t = setTimeout(() => setBurnArmed(false), 5000);
+    return () => clearTimeout(t);
+  }, [burnArmed]);
 
   useEffect(() => {
     let live = true;
@@ -25,8 +39,21 @@ export default function StartScreen({ onPlay, onSandbox, onCampaign, onControls,
     };
     load("coldsnap-medals", setMedals);
     load("coldsnap-cs-medals", setCsMedals);
+    // probeFront burns a save from another mark itself and reports it gone —
+    // this era runs no migration machinery, so a stale front is simply told.
+    (async () => { const f = await probeFront(); if (live) setFront(f); })();
     return () => { live = false; };
   }, []);
+
+  const hasFront = !!(front && front.has);
+  const startNewFront = () => {
+    if (!hasFront) { onDepot(); return; }
+    if (!burnArmed) { setBurnArmed(true); return; }
+    setBurnArmed(false);
+    burnFront();
+    setFront({ has: false });
+    onDepot();
+  };
 
   const starRow = (m, hook) => m && (
     <div style={{ marginTop: 6, fontSize: 13 }}>
@@ -56,10 +83,34 @@ export default function StartScreen({ onPlay, onSandbox, onCampaign, onControls,
           <div data-mk style={{ opacity: 0.5, letterSpacing: 2, fontSize: 10, marginTop: 4 }}>{MK}</div>
         </div>
 
-        <button data-menu="depot" style={option({ borderColor: "#6a8a9a" })} onClick={onDepot}>
-          <div style={{ color: "#9fd4e4", fontSize: 15, letterSpacing: 2 }}>▶ WINTER FRONT</div>
-          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>Two depots, one valley. Break theirs before they break yours — nothing here shoots straight for free.</div>
+        {hasFront && (
+          <button data-menu="depot-resume" style={option({ borderColor: "#c9a04e", background: "rgba(201,160,78,0.10)" })}
+            onClick={() => onDepotResume && onDepotResume(front.data)}>
+            <div style={{ color: COLORS.gold, fontSize: 15, letterSpacing: 2 }}>▶ RESUME FRONT</div>
+            <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>
+              The front as you left it, at bell {front.bell}. Same ground, same craters, same men.
+            </div>
+          </button>
+        )}
+
+        <button data-menu="depot" style={option({ borderColor: burnArmed ? "#a63c3c" : "#6a8a9a", background: burnArmed ? "rgba(92,33,27,0.85)" : undefined })} onClick={startNewFront}>
+          <div style={{ color: burnArmed ? "#ff6b5e" : "#9fd4e4", fontSize: 15, letterSpacing: 2 }}>
+            {burnArmed ? "THE FRONT BURNS — CONFIRM" : hasFront ? "▶ NEW FRONT" : "▶ WINTER FRONT"}
+          </div>
+          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>
+            {burnArmed
+              ? "Tap again and the saved front is gone for good."
+              : hasFront
+                ? "A fresh valley. The saved front is burned when you start one."
+                : "Two depots, one valley. Break theirs before they break yours — nothing here shoots straight for free."}
+          </div>
         </button>
+
+        {front && front.stale && (
+          <div data-front-stale style={{ fontSize: 11, opacity: 0.6, marginTop: 8, letterSpacing: 1 }}>
+            THE FRONT HAS MOVED ON — a save from an older mark was discarded.
+          </div>
+        )}
 
         <button data-menu="towerdef" style={option({ borderColor: "#4e7a5a" })} onClick={onTowerDef}>
           <div style={{ color: "#8fd4a0", fontSize: 15, letterSpacing: 2 }}>▶ HOLD THE DEPOT</div>
