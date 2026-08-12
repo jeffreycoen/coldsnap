@@ -2,6 +2,8 @@
 
 *2026-08-11 — successor to `2026-08-11-depot-front-vision.md`. That document's law stands: two depots, destroy-to-win, symmetric war. This one layers pace, command, and terrain on top and re-sequences everything that remains. Every decision in here was ratified by Jeff on 2026-08-11; nothing is open.*
 
+*Amended 2026-08-12 off Playtest I (phases C0 + 1 shipped, mk0.43): starting kit gains engineers and seeded sandbags; the economy becomes the mercenary market (§2a); weapon-voice identity added to presentation; Vision phase moves ahead of Command. All amendments Jeff-ratified 2026-08-12.*
+
 ---
 
 # PART ONE — The Vision (plain language)
@@ -27,7 +29,20 @@ The enemy draws from the same tiers on the same bells — their pick can differ 
 
 The ladder, roughly: fortification first (engineers, sandbag lines), then infantry variety (MG, snipers), then artillery (mortars **or** rockets — a real choice), then sappers, then heroes.
 
+*(Amended 2026-08-12: the starting kit is walls, sandbags, a rifle squad **and an engineer team** — a minimal one at first, able only to build sandbag lines along a tapped route, so fortification is learned from minute one; the full engineer kit still arrives in its own phase. The depot also starts with a few sandbags already scattered around it — cover exists before the player builds any.)*
+
 Artillery itself slows: mortars and rockets fire **half as often**, both sides. A salvo becomes an event you watch land, not a stream.
+
+## 2a. The Mercenary Market *(added 2026-08-12)*
+
+Both armies hire from **one shared mercenary market**. Every unit and tower type has a reserve — companies available for hire — and prices ride a bonding curve on that reserve (the AMM shape): each purchase drains the pool and raises the price for the *next* buyer, on either side; reserves replenish between bells as new companies reach the front, easing prices back down. Deterministic, no dice.
+
+What this buys, beyond flavor:
+
+- Rising prices finally *mean* something — sourcing troops in a war zone is hard, and gets harder the more everyone hires.
+- The market is the performance governor in disguise: the global pool of hireable men and materiel is sized to what the engine can afford to simulate, so the game never shows a cap — just a price.
+- Spam has a cost curve. The sixth rifle squad is dear; doctrine variety pays.
+- Because the market is shared, it becomes a front of its own: buying out the sappers before the enemy can is a real, legal move — and the law of symmetry holds, since they can do it to you.
 
 ## 3. Command
 
@@ -74,21 +89,23 @@ Terrain grows teeth:
 - **30 frames per second by default on phones and tablets** (with a toggle; desktop stays at 60). The physics never changes — this only slows the pictures, and the pixel-art look wears it well. Buys battery and thermal headroom.
 - Render streamlining under the hood (details in Part Two) — measured on the Pi before and after, no guessing.
 - **Audio** for the new heartbeat: the bell, the convoy's arrival, the flood, the radial's clicks.
+- **Weapon-voice identity** *(added 2026-08-12)*: every gun sounds like itself — the bell a single deep BONGGG, the sniper a dry *crack* whose echo grows with distance, the MG a true *ratatata*, rifles pitched above the sniper. The audio engine's distance and echo model already exists; the guns just need their own voices.
 - The start screen gains **RESUME FRONT** for saved matches.
 
 ## 8. The Order of Work
 
-1. **Cleanup first**: purge the test suite down to load-checks (the scripted playtest bots go — including the flaky one, deleted rather than fixed), fix the squad-straggler freeze, run the Pi performance baseline, and land the cheap visible wins — halved artillery, red smears, human marksmen, the 30fps toggle. You get a pace preview out of the very first phase. Your outstanding playtest confirmations (sappers, sandbags, troop identity, the new orders) are this phase's acceptance record.
-2. **The Bell** — the structural heart: muster cycle replaces waves; intel/income/manifest/assault; bell saves and RESUME FRONT; loss is final.
-3. **Command** — the radial and the first order set; tower doctrine.
-4. **Vision** — the already-approved fog/targeting phase (targeting follows vision; one fan).
-5. **The Front** — 80m width, building variety, forests, third road.
-6. **Engineers & Arms** — the engineer/sapper split, sandbag lines, rocket teams.
-7. **Water** — real ice, the stream, basins, bridges.
-8. **The Dam** — lakes, the surge, the terraform.
-9. **The Enemy Front** — build-brain, deeper doctrine, the assault rhythm matured.
-10. **Heroes** — tanks/ace/Bison pilotable with enemy mirrors; **the mech last**, once its walk (M3/M4) is done on its parallel track.
-11. **Balance** — the held F5 pass runs once the front's shape settles; every cost and income in this document is provisional until then.
+1. **Cleanup** — ✅ shipped (mk0.30-0.36): test purge, squad-straggler fix, perf baseline (verdict: the game is *physics-bound* — sim-side work must precede or ride the map phase), pace preview.
+2. **The Bell** — ✅ shipped (mk0.40-0.43): muster cycle, manifest, bell saves, the bell's sound.
+3. *(added 2026-08-12)* **Polish I** — Playtest I's directives: 90s bell, tighter formations, interim cost raise, intel card withdrawn (machinery kept), first-manifest teaching line, off-map order clamp, walls as visible 3-stacks and sandbags as 1 with weld seams shown, weapon-voice identity, minimal engineer v1 + seeded depot sandbags.
+4. **Vision** *(moved ahead of Command, 2026-08-12 — the territory targeting gate is the feel problem playtesting surfaced)* — sight-based targeting; one fan.
+5. **Command** — the radial and the first order set; tower doctrine.
+6. **The Front** — 80m width, building variety, forests, third road — with the sim-side perf work the baseline demands riding alongside.
+7. **Engineers & Arms** — the full engineer kit (repair, walls, bridges-ready), sappers as their own unlock, rocket teams.
+8. **Water** — real ice, the stream, basins, bridges.
+9. **The Dam** — lakes, the surge, the terraform.
+10. **The Enemy Front** — build-brain, deeper doctrine, the assault rhythm matured.
+11. **Heroes** — tanks/ace/Bison pilotable with enemy mirrors; **the mech last**, once its walk (M3/M4) is done on its parallel track.
+12. **Balance** — the held F5 pass runs once the front's shape settles, and builds the **mercenary market** (§2a) as its centerpiece; every cost and income in this document is provisional until then.
 
 Each phase ships playable and bumps the version a tenth. Every phase gets its own approved plan before work starts.
 
@@ -154,6 +171,13 @@ Rolled into this era: a **systems reference** for implementation agents (what li
 - **Test manifest** (Jeff-reviewed doc): inventory `scripts/*.mjs` (12,340 lines) with keep/prune verdicts. Prune scripted-gameplay bots (incl. the flaky rotated-advance and fire-discipline-reload smoke sections — autopsy closed, artifacts in `/tmp/flake/`). Keep: `golden.mjs` (frozen-demo law), headless logic gates that pin engine/game *invariants* cheaply, and boot/load smoke (each surface mounts, no console errors). New-work verification = load checks + Jeff's playtest, per the standing rule.
 - **Also in cleanup**: cohesion time-cap (T2), artillery halving, smears + marksman re-dress, 30fps toggle — the pace-preview wins; Pi perf baseline (frame-time split sim/render, worst-case collapse, chunk counts); Jeff's outstanding playtest confirmations recorded.
 - **Traps standing for every phase**: `depot-lint` seeded-rng law; draw-count stability contracts; `PENDING_ARM_S`-family tap arming on any new in-world UI; version bump every deploy (`src/version.js`, +0.01/task, +0.1/phase); provisional costs stay marked `// provisional (F5)`.
+
+## T7a. The mercenary market *(added 2026-08-12 — built in the Balance phase)*
+
+- Per-item reserve pools + bonding-curve price (constant-product shape), shared by BOTH armies (one market, symmetry at its purest); reserves replenish per bell. Deterministic — the curve is pure math on the reserve, no draws.
+- The enemy pays market prices too: `planWave`'s budget spends against the same curves — its buy choices shift with prices exactly like the player's should.
+- Global reserve totals are sized against the physics budget (the C0 baseline's sim ceilings) — the market is the perf governor; no visible caps.
+- Interim until built: flat costs raised ~50% (Polish I) hold the line.
 
 ## T8. Documents
 
