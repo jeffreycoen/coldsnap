@@ -287,9 +287,15 @@ export function directPair(world, squad, members) {
 // ---------------------------------------------------------------- helpers
 const MOVE_SPEED = 3.2; // m/s — infantry march speed toward a goal point
 // Rubber-band cohesion: the attack anchor holds (this tick) while any live
-// member trails it by more than COHESION_M. Deadlock-free because seekGoal's
-// wake below keeps members marching toward their slots.
+// member trails it by more than COHESION_M. seekGoal's wake below keeps
+// members marching toward their slots, but a man wedged in terrain never
+// arrives — so the hold is time-capped (COHESION_CAP_S) rather than open.
 export const COHESION_M = 6; // m — max live-member-to-anchor distance before the anchor waits
+// The wait is BUDGETED, per leg: a legitimate 6m catch-up at MOVE_SPEED 3.2
+// takes under 2s, so 4s is that twice over. Past it the squad stops waiting —
+// a member wedged in terrain (the concave-pocket detour oscillation) trails
+// forever and would otherwise deadlock the whole squad's advance permanently.
+export const COHESION_CAP_S = 4; // s — accumulated cohesion hold per leg before the anchor advances regardless
 function seekGoal(world, u, dt) {
   if (!u.goal) return;
   const dx = u.goal.x - u.pos.x, dz = u.goal.z - u.pos.z;
@@ -474,12 +480,14 @@ export function stepSquad(world, squad, dt) {
       // nearest clear ground, which at a depot dest is right at the walls,
       // i.e. into arm's reach.
       squad._legTarget = null;
+      squad._cohesionHoldT = 0;
     } else if (dToDest <= ARRIVE_TOL) {
       squad.order = "defend";
       squad.anchor = { x: squad.dest.x, z: squad.dest.z };
       squad.dest = null;
       squad._legTarget = null;
       squad._pauseT = 0;
+      squad._cohesionHoldT = 0;     // order change: the hold budget is per leg
       squad._threatSig = undefined; // force a defend re-scan on arrival
       squad._surveyPending = true;  // DEFEND re-anchor: the pair re-surveys (6.5 Task 6)
     } else if (squad._pauseT > 0) {
@@ -491,6 +499,7 @@ export function stepSquad(world, squad, dt) {
       // no rng), then advance the squad anchor toward it.
       if (!squad._legTarget) {
         // LEG BOUNDARY: threat state re-evaluated here only (not per-tick).
+        squad._cohesionHoldT = 0; // fresh leg, fresh cohesion hold budget
         squad._threatened = squad.order === "move" ? false : squadThreatened(world, squad, members);
         if (squad._threatened) {
           const bearing = defaultThreatBearing(world, squad, { x: cx, z: cz });
@@ -523,14 +532,22 @@ export function stepSquad(world, squad, dt) {
         // outrun the squad body. If any live member trails the anchor by
         // more than COHESION_M, hold this tick (leg target unchanged; the
         // leg-arrival draw above still fires exactly once per leg, only
-        // later in wall-clock). Deadlock-free: wake-on-seek keeps members
-        // marching toward their slots.
+        // later in wall-clock).
         let trail = 0;
         for (const u of members) {
           const d = Math.hypot(u.pos.x - cx, u.pos.z - cz);
           if (d > trail) trail = d;
         }
-        if (trail <= COHESION_M) {
+        // The hold is BOUNDED (COHESION_CAP_S): wake-on-seek does not free a
+        // man wedged in a concave solid pocket, and an unbounded hold turns
+        // his wedge into a permanent squad-wide deadlock. Held time accrues
+        // per leg (plain dt, no clock); past the cap the anchor advances for
+        // the REMAINDER OF THE LEG — the accumulator keeps climbing while he
+        // trails, so the release never flickers. The stuck man keeps seeking
+        // his slot and rejoins if he frees. Zero rng draws; the leg-arrival
+        // draw above still fires exactly once per leg.
+        if (trail > COHESION_M) squad._cohesionHoldT = (squad._cohesionHoldT || 0) + dt;
+        if (trail <= COHESION_M || squad._cohesionHoldT > COHESION_CAP_S) {
           const step = Math.min(ld, MOVE_SPEED * dt);
           squad.anchor = { x: cx + (lx / ld) * step, z: cz + (lz / ld) * step };
         }
