@@ -34,6 +34,7 @@ import {
 import { planWave, MIN_WAVE_FLOOR, snapSquads } from "../src/depot/ai.js";
 import { composeIntel, openingIntel } from "../src/depot/intel.js";
 import { makeTerritory, stepTerritory, holderAt, fogStateAt, valueAt, canBuild, DECAY_TAU, EMIT } from "../src/depot/territory.js";
+import { SIGHT, eyeOf, canSee, makeSight, seenAt, stepSight } from "../src/depot/sight.js";
 import { fwdUFor, fwdDirFor, invWFor, clampToRimFor } from "../src/depot/orient.js";
 import { washAlpha, WASH_SEAM, WASH_MAX_A } from "../src/render/renderer.js";
 import fs from "node:fs";
@@ -3322,8 +3323,123 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 }
 // ==== end mk0.60 =============================================================
 
+// ==== VISION T1: sight =======================================================
+// The eye itself (mk0.70). sight.js is pure geometry and inert this task —
+// nothing in the game imports it yet, so every assert below runs against
+// hand-built fixture worlds. ORIENT 0 here, so the world<->canonical
+// transforms DepotGame hands stepSight (invW/fwdU) are the identity.
+{
+  const idUV = (x, z) => ({ u: x, v: z });   // DepotGame's invW at ORIENT 0
+  const idW = (u, v) => ({ x: u, z: v });    // DepotGame's fwdU at ORIENT 0
+  const flatField = { heightAt: () => 0, dirty: false };
 
+  // (a) range — an eye sees clear ground inside its reach and nothing past it.
+  {
+    const flat = { field: { heightAt: () => 0 }, bodies: [] };
+    const eye = eyeOf({ kind: "unit", pos: { x: 0, y: 0, z: 0 } });
+    ok("VISION T1(a): a plain infantryman's eye carries SIGHT.unit and sits 0.5m up",
+      eye.r === SIGHT.unit && eye.y === 0.5);
+    ok("VISION T1(a): clear open ground 20m off is seen", canSee(flat, eye, 0, 20) === true);
+    ok("VISION T1(a): the same open ground 30m off is past the eye's reach", canSee(flat, eye, 0, 30) === false);
+    ok("VISION T1(a): a spotter's glasses reach farther than a sniper's scope, which reaches farther than a rifleman",
+      SIGHT.spotter > SIGHT.sniper && SIGHT.sniper > SIGHT.unit);
+    ok("VISION T1(a): a spotter body gets the spotter's reach",
+      eyeOf({ kind: "unit", role: "spotter", pos: { x: 0, y: 0, z: 0 } }).r === SIGHT.spotter);
+    ok("VISION T1(a): a sniper body gets the sniper's reach",
+      eyeOf({ kind: "unit", role: "sniper", pos: { x: 0, y: 0, z: 0 } }).r === SIGHT.sniper &&
+      eyeOf({ kind: "unit", tag: "sniper", pos: { x: 0, y: 0, z: 0 } }).r === SIGHT.sniper);
+    ok("VISION T1(a): a tower's eye sits at the top of the tower, not at its feet",
+      eyeOf({ kind: "tower", hy: 1.6, pos: { x: 0, y: 9, z: 0 } }).y === 9 + 1.6 + 0.45);
+  }
 
+  // (b) a ridge between the eye and the spot blocks it.
+  {
+    const ridge = { field: { heightAt: (x, z) => (Math.abs(z - 10) < 1.5 ? 6 : 0) }, bodies: [] };
+    const eye = eyeOf({ kind: "unit", pos: { x: 0, y: 0, z: 0 } });
+    ok("VISION T1(b): a ridge standing between eye and spot blocks the view", canSee(ridge, eye, 0, 20) === false);
+    ok("VISION T1(b): the same distance the other way, with no ridge, stays clear", canSee(ridge, eye, 0, -20) === true);
+  }
+
+  // (c) a three-course wall blocks a man on the ground; a raised eye sees over.
+  {
+    const world = makeWorld({ field: flatField, seed: 1 });
+    spawnWallCourses(world, 0, 0, 8, 0);   // broad across x, thin across z, at z=8
+    const low = { x: 0, y: 0.5, z: 0, r: SIGHT.unit };            // a man on the ground
+    const high = { x: 0, y: 3.5, z: 0, r: SIGHT.unit };           // the same man 3m higher
+    ok("VISION T1(c): a wall blocks a man standing on the ground behind it", canSee(world, low, 0, 16) === false);
+    ok("VISION T1(c): an eye raised 3m looks straight over the same wall", canSee(world, high, 0, 16) === true);
+  }
+
+  // (d) a spot on a hill is seen from below when nothing stands in the way.
+  {
+    const hill = { field: { heightAt: (x, z) => Math.max(0, Math.min(4, (z - 14) * 2)) }, bodies: [] };
+    const eye = eyeOf({ kind: "unit", pos: { x: 0, y: 0, z: 0 } });
+    ok("VISION T1(d): a spot on the hillside is seen from the flat below it", canSee(hill, eye, 0, 18) === true);
+  }
+
+  // (e) the team map: only team-2 eyes stand in the far corner, so the corner
+  // is lit for team 2 and dark for team 1.
+  {
+    const T = makeTerritory(29, 57);
+    const SG = makeSight(T);
+    ok("VISION T1(e): the sight map shares the territory grid's own frame",
+      SG.nx === T.nx && SG.nz === T.nz && SG.cs === T.cs && SG.halfU === T.halfU && SG.halfV === T.halfV);
+    const world = makeWorld({ field: flatField, seed: 1 });
+    addBody(world, { kind: "unit", team: 2, mass: 80, hx: 0.3, hy: 0.9, hz: 0.3, x: 20, y: 0.9, z: 40, hp: 40 });
+    addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.3, hy: 0.9, hz: 0.3, x: -20, y: 0.9, z: -40, hp: 40 });
+    stepSight(world, SG, idUV, idW);
+    ok("VISION T1(e): the enemy corner is lit for the side standing in it", seenAt(SG, 20, 40, 2) === true);
+    ok("VISION T1(e): the same corner is dark for the side with no eyes there", seenAt(SG, 20, 40, 1) === false);
+    ok("VISION T1(e): each side sees the ground its own man stands on", seenAt(SG, -20, -40, 1) === true);
+    ok("VISION T1(e): and not the ground the other man stands on", seenAt(SG, -20, -40, 2) === false);
+    ok("VISION T1(e): a spot off the grid is never seen", seenAt(SG, 900, 900, 1) === false && seenAt(SG, -900, -900, 2) === false);
+
+    // (g) the dice never move: building the map draws nothing from world.rng.
+    let draws = 0;
+    const rng0 = world.rng;
+    world.rng = () => { draws++; return rng0(); };
+    stepSight(world, SG, idUV, idW);
+    world.rng = rng0;
+    ok("VISION T1(g): building the sight map draws nothing from the world's dice", draws === 0, `${draws} draws`);
+  }
+
+  // (f) two identical worlds produce identical maps, byte for byte.
+  {
+    const build = () => {
+      const world = makeWorld({ field: flatField, seed: 7 });
+      addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.3, hy: 0.9, hz: 0.3, x: -6, y: 0.9, z: -12, hp: 40 });
+      addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.3, hy: 0.9, hz: 0.3, x: 4, y: 0.9, z: -8, hp: 40 });
+      addBody(world, { kind: "unit", team: 2, mass: 80, hx: 0.3, hy: 0.9, hz: 0.3, x: 2, y: 0.9, z: 14, hp: 40 });
+      spawnWallCourses(world, 0, 0, 2, 0);
+      const T = makeTerritory(29, 57);
+      const SG = makeSight(T);
+      stepSight(world, SG, idUV, idW);
+      return SG;
+    };
+    const A = build(), B = build();
+    let same = A.seen1.length === B.seen1.length && A.seen2.length === B.seen2.length;
+    for (let i = 0; same && i < A.seen1.length; i++) same = A.seen1[i] === B.seen1[i] && A.seen2[i] === B.seen2[i];
+    ok("VISION T1(f): two identical worlds give identical sight maps", same);
+    let lit1 = 0, lit2 = 0;
+    for (let i = 0; i < A.seen1.length; i++) { lit1 += A.seen1[i]; lit2 += A.seen2[i]; }
+    ok("VISION T1(f): and the map is not trivially empty", lit1 > 0 && lit2 > 0, `${lit1}/${lit2}`);
+  }
+
+  // (h) walls and sandbags are never eyes (owner's rule, 2026-08-12) — they
+  // block sight, they never grant it.
+  {
+    const world = makeWorld({ field: flatField, seed: 3 });
+    for (let i = -3; i <= 3; i++) spawnWallCourses(world, i * 2, 0, 0, 0);
+    for (let i = -3; i <= 3; i++) spawnSandbag(world, i * 2, 6, 0);
+    const T = makeTerritory(29, 57);
+    const SG = makeSight(T);
+    stepSight(world, SG, idUV, idW);
+    let lit = 0;
+    for (let i = 0; i < SG.seen1.length; i++) lit += SG.seen1[i] + SG.seen2[i];
+    ok("VISION T1(h): a field of walls and sandbags and nothing else is all dark, both sides", lit === 0, `${lit} lit cells`);
+  }
+}
+// ==== end VISION T1 ==========================================================
 
 
 
