@@ -610,6 +610,7 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
 }
 
 // ============================================================== component
+const FPS_KEY = "coldsnap-depot-fps"; // "30" | "60" — the draw rate, not the sim rate
 function detectTouch() {
   return (typeof window !== "undefined") && ("ontouchstart" in window || (navigator.maxTouchPoints || 0) > 0);
 }
@@ -660,6 +661,36 @@ export default function DepotGame({ onExit }) {
     const t = setTimeout(() => setMenuArmed(false), 5000);
     return () => clearTimeout(t);
   }, [menuArmed]);
+  // mk0.34 — DRAW RATE. Touch draws every other frame by default; the sim is
+  // untouched either way (see the frame loop). The ref is what the loop boots
+  // from — the loop effect must not re-key on this, or toggling would restart
+  // the run — and the state is only the button's label. Persisted through
+  // window.storage (the artifact/Pages shim), NOT the localStorage the fog
+  // and discipline toggles use, per the settings-restore discipline in
+  // platform/autosave.js: the default writes nothing, so a saved choice can
+  // never be clobbered before the async restore lands, and only a real toggle
+  // saves.
+  const fps30Ref = useRef(isTouch);
+  const [fps30, setFps30] = useState(isTouch);
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const r = await window.storage.get(FPS_KEY);
+        if (!live || !r || (r.value !== "30" && r.value !== "60")) return;
+        const v = r.value === "30";
+        fps30Ref.current = v; setFps30(v);
+        const S = stateRef.current; if (S) S.fps30 = v;
+      } catch (e) {}
+    })();
+    return () => { live = false; };
+  }, []);
+  const toggleFps = () => {
+    const v = !fps30Ref.current;
+    fps30Ref.current = v; setFps30(v);
+    const S = stateRef.current; if (S) S.fps30 = v;
+    try { window.storage.set(FPS_KEY, v ? "30" : "60"); } catch (e) {}
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -821,6 +852,9 @@ export default function DepotGame({ onExit }) {
         mode: "wall", sellMode: false, inspectId: null,
         started: false, gameOver: false, victory: false,
         paused: false, speed: 1, fogOn, discipline,
+        // Draw rate, read by the frame loop below. Boots from the component's
+        // fps30Ref so a restored/toggled choice survives a restart (runId).
+        fps30: fps30Ref.current,
         setFog: (v) => { fogOn = v; S.fogOn = v; R.setFog(v); try { window.localStorage.setItem("coldsnap-depot-fog", v ? "1" : "0"); } catch (e) {} },
         setDiscipline: (v) => { discipline = v; S.discipline = v; try { window.localStorage.setItem("coldsnap-depot-discipline", v); } catch (e) {} },
         phase: PHASE.BUILD, dispatch: null, lastDispatch: null,
@@ -1555,12 +1589,14 @@ export default function DepotGame({ onExit }) {
       };
 
       let last = performance.now();
+      let rdt = 0, frameN = 0; // draw-rate bookkeeping only — see the render gate
       const STEP = 1 / 120;
       const frame = (now) => {
         if (disposed) return;
         raf = requestAnimationFrame(frame);
         let dt = Math.min(0.05, (now - last) / 1000);
         last = now;
+        rdt += dt; frameN++;
         try {
           S.fpsAcc += dt; S.fpsN++;
           if (S.fpsAcc > 0.5) { S.fps = Math.round(S.fpsN / S.fpsAcc); S.fpsAcc = 0; S.fpsN = 0; }
@@ -1732,40 +1768,54 @@ export default function DepotGame({ onExit }) {
             if (fan) R.overlay.setReach(true, fan.cx, field.heightAt(fan.cx, fan.cz), fan.cz, fan.pts, 0xffd27a);
             else R.overlay.setReach(false);
           }
-          R.render(dt, S.focus, AIM_OFF, 0);
-          // ✓/✗ screen-space anchor (Task 3): rotation-proof because it's
-          // recomputed from the live camera every frame via project() —
-          // Q/E view rotation or a pan moves the cell's projected point,
-          // and this just follows it, rather than being pinned once at tap
-          // time. Written to a ref-adjacent plain field on S (not React
-          // state) so it doesn't force a rerender every frame; the hud tick
-          // below (throttled to ~8Hz) is what actually pushes it to React.
-          if (S.pending) {
-            const P0 = S.pending;
-            const nd = R.project ? R.project(P0.wp.x, P0.y + 1.6, P0.wp.z) : null;
-            if (nd) {
-              const rect = canvas.getBoundingClientRect();
-              S.pendingScreen = { x: rect.left + (nd.x * 0.5 + 0.5) * rect.width, y: rect.top + (-nd.y * 0.5 + 0.5) * rect.height };
+          // mk0.34 — THE DRAW GATE. Everything above is unconditional: input,
+          // cooldowns, the 1/120 accumulator, R.consume/A.consume. Events are
+          // never dropped or deferred, so audio and particles hear every
+          // frame at either rate. Only the draw halves — with S.fps30 on
+          // (touch default) R.render and the screen-space anchors it projects
+          // run on alternate frames. rdt, not dt: renderer.js integrates
+          // debris/smoke/fire/shake/camera against the dt it is handed, so a
+          // per-frame dt at half the calls would run them at half speed —
+          // the skipped frame's time is carried into the drawn one. The
+          // anchors below therefore sit one frame stale at 30fps (accepted:
+          // the HUD reads them on its own 0.12s tick, untouched by this).
+          if (!S.fps30 || (frameN & 1) === 0) {
+            R.render(rdt, S.focus, AIM_OFF, 0);
+            rdt = 0;
+            // ✓/✗ screen-space anchor (Task 3): rotation-proof because it's
+            // recomputed from the live camera via project() — Q/E view
+            // rotation or a pan moves the cell's projected point, and this
+            // just follows it, rather than being pinned once at tap time.
+            // Written to a ref-adjacent plain field on S (not React state)
+            // so it doesn't force a rerender every frame; the hud tick
+            // below (throttled to ~8Hz) is what actually pushes it to React.
+            if (S.pending) {
+              const P0 = S.pending;
+              const nd = R.project ? R.project(P0.wp.x, P0.y + 1.6, P0.wp.z) : null;
+              if (nd) {
+                const rect = canvas.getBoundingClientRect();
+                S.pendingScreen = { x: rect.left + (nd.x * 0.5 + 0.5) * rect.width, y: rect.top + (-nd.y * 0.5 + 0.5) * rect.height };
+              } else S.pendingScreen = null;
+              // mk0.27: pan/rotate far enough and the ✓/✗ pair leaves the
+              // viewport — an invisible pending that still eats taps. Cancel
+              // it out loud the moment its anchor goes off screen.
+              if (!pendingButtonsVisible(S.pendingScreen, canvas.getBoundingClientRect())) {
+                clearPending(); S.pendingScreen = null; toast("PLACEMENT CANCELLED — MOVED OFF SCREEN");
+              }
             } else S.pendingScreen = null;
-            // mk0.27: pan/rotate far enough and the ✓/✗ pair leaves the
-            // viewport — an invisible pending that still eats taps. Cancel
-            // it out loud the moment its anchor goes off screen.
-            if (!pendingButtonsVisible(S.pendingScreen, canvas.getBoundingClientRect())) {
-              clearPending(); S.pendingScreen = null; toast("PLACEMENT CANCELLED — MOVED OFF SCREEN");
-            }
-          } else S.pendingScreen = null;
-          // Squad chip + attack-flag anchors: screen-space, recomputed from
-          // the live camera every frame (rotation/pan-proof, same rationale
-          // as pendingScreen above).
-          if (selSq && R.project) {
-            const rect2 = canvas.getBoundingClientRect();
-            const toScreen = (x, y, z) => {
-              const nd = R.project(x, y, z);
-              return nd ? { x: rect2.left + (nd.x * 0.5 + 0.5) * rect2.width, y: rect2.top + (-nd.y * 0.5 + 0.5) * rect2.height } : null;
-            };
-            S.squadScreen = toScreen(sqCx, field.heightAt(sqCx, sqCz) + 2.2, sqCz);
-            S.flagScreen = selSq.dest ? toScreen(selSq.dest.x, field.heightAt(selSq.dest.x, selSq.dest.z) + 1.6, selSq.dest.z) : null;
-          } else { S.squadScreen = null; S.flagScreen = null; }
+            // Squad chip + attack-flag anchors: screen-space, recomputed from
+            // the live camera (rotation/pan-proof, same rationale as
+            // pendingScreen above).
+            if (selSq && R.project) {
+              const rect2 = canvas.getBoundingClientRect();
+              const toScreen = (x, y, z) => {
+                const nd = R.project(x, y, z);
+                return nd ? { x: rect2.left + (nd.x * 0.5 + 0.5) * rect2.width, y: rect2.top + (-nd.y * 0.5 + 0.5) * rect2.height } : null;
+              };
+              S.squadScreen = toScreen(sqCx, field.heightAt(sqCx, sqCz) + 2.2, sqCz);
+              S.flagScreen = selSq.dest ? toScreen(selSq.dest.x, field.heightAt(selSq.dest.x, selSq.dest.z) + 1.6, selSq.dest.z) : null;
+            } else { S.squadScreen = null; S.flagScreen = null; }
+          }
           S.hudT += dt;
           if (S.hudT > 0.12) {
             S.hudT = 0;
@@ -1939,6 +1989,10 @@ export default function DepotGame({ onExit }) {
           onClick={() => { const S = stateRef.current; if (S && S.rotate) S.rotate(1); }}>⟳</button>
         <button style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.fogOn ? "#7fd7ff" : "#48515f", opacity: hud.fogOn ? 1 : 0.6 }} title="fog of war (visual only)" onClick={toggleFog}>
           FOG {hud.fogOn ? "ON" : "OFF"}
+        </button>
+        <button data-fps-toggle style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: fps30 ? "#ffd27a" : "#48515f" }}
+          title="draw rate — the fight runs at the same speed either way" onClick={toggleFps}>
+          FPS: {fps30 ? "30" : "60"}
         </button>
         <button style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.discipline === "free" ? "#ff7a7a" : "#4aff8c" }} onClick={toggleDiscipline}>
           FIRE DISCIPLINE: {hud.discipline === "free" ? "FREE" : "CAREFUL"}
