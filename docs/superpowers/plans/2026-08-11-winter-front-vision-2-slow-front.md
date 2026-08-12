@@ -44,6 +44,8 @@ What this buys, beyond flavor:
 - Spam has a cost curve. The sixth rifle squad is dear; doctrine variety pays.
 - Because the market is shared, it becomes a front of its own: buying out the sappers before the enemy can is a real, legal move — and the law of symmetry holds, since they can do it to you.
 
+Two rules settle how the shared market runs *(ratified 2026-08-12)*: purchases resolve **first-come, first-served in real time** — no turns, no priority; timing is a skill, and the enemy staggers its buying through the cycle rather than shopping in one predictable batch. And territory feeds the market through **supply, not prices**: ground you hold speeds your reserves' replenishment — supply routes, not discounts — symmetric by rule.
+
 ## 3. Command
 
 When you place a unit — or tap one — a **radial menu** opens showing everything it can do. It replaces the current chip buttons entirely. Dismiss it and the unit simply defends where it stands; the menu is depth, never a toll.
@@ -175,7 +177,8 @@ Rolled into this era: a **systems reference** for implementation agents (what li
 ## T7a. The mercenary market *(added 2026-08-12 — built in the Balance phase)*
 
 - Per-item reserve pools + bonding-curve price (constant-product shape), shared by BOTH armies (one market, symmetry at its purest); reserves replenish per bell. Deterministic — the curve is pure math on the reserve, no draws.
-- The enemy pays market prices too: `planWave`'s budget spends against the same curves — its buy choices shift with prices exactly like the player's should.
+- The enemy pays market prices too: `planWave`'s budget spends against the same curves — its buy choices shift with prices exactly like the player's should. Order of resolution is real-time FCFS (sim-time ordered, deterministic); the enemy brain staggers its purchases across the cycle (a single bell-batch would be predictably front-runnable every cycle).
+- Territory → replenishment: per-side refill rate scales with held-ground fraction (territory.js's field is the input); symmetric rule, no price asymmetry.
 - Global reserve totals are sized against the physics budget (the C0 baseline's sim ceilings) — the market is the perf governor; no visible caps.
 - Interim until built: flat costs raised ~50% (Polish I) hold the line.
 
