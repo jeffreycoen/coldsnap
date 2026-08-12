@@ -1498,6 +1498,21 @@ export default function DepotGame({ onExit, resume = null }) {
       // saving is not optional (see save.js law 2). Serialization is
       // synchronous into a string; the store write is fire-and-forget so the
       // frame never awaits it.
+      // --- THE CUE QUEUE (P1 Task 4) ---------------------------------------
+      // Audio-only events for the bell cycle. They cannot ride world.events
+      // directly: that array is wiped at the top of every frame's sim bracket
+      // (see `world.events.length = 0` in the loop) and the bell — like every
+      // UI tap — lands outside that bracket, so anything pushed there would be
+      // erased unheard. Cues queue here instead and are merged into the drained
+      // stream once per frame, downstream of the wipe, so A.consume hears each
+      // exactly once. They carry a type and nothing else: no coordinates, no
+      // randomness, no sim effect. R.consume ignores types it doesn't know.
+      const cues = [];
+      const cueN = {};   // debug tally only — see window.__DEPOTCUES__
+      const cue = (type) => { cues.push({ type }); cueN[type] = (cueN[type] || 0) + 1; };
+      // Last whole second the countdown was seen at — the pre-toll's edge.
+      let preTollSec = null;
+
       let saveStat = null;
       const saveFront = () => {
         const rngSeed = Math.floor(world.rng() * 4294967296); // THE ONE DRAW — 1/bell, always
@@ -1509,6 +1524,7 @@ export default function DepotGame({ onExit, resume = null }) {
             mapSeed: MAP_SEED, rngSeed,
           });
           saveStat = { ms: +(performance.now() - t0).toFixed(2), bytes: json.length, bell: S.bell };
+          cue("uitick"); // the record was written — the one acknowledgement it gets
           // fire-and-forget, but never an unhandled rejection: a store that
           // refuses the write (quota, a runtime that says no) must cost the
           // frame nothing and must not surface as a page error.
@@ -1532,12 +1548,17 @@ export default function DepotGame({ onExit, resume = null }) {
       // alongside the assault's results (fireBell books those): green ground
       // pays the player, red ground pays the regiment, seam ground nobody.
       const ringBell = () => {
+        cue("bell"); // the toll itself, at the ring — before anything it causes
         const paid = payTown(townUV, T);
         S.resources += paid.player;
         if (S.reg) S.reg.scrap += paid.regiment;
         // fireBell runs the whole sequence and raises both cards; the assault
         // it musters marches regardless of whether either is ever read.
         fireBell(S, { reg: S.reg, snap: buildSnapshot(), rng: world.rng, t: world.t });
+        // The convoy is heard when its card comes up, and only then — a bell
+        // whose pool had nothing left to offer raises no card and makes no
+        // truck noise.
+        if (S.manifest && S.manifest.cardUp) cue("manifest");
         toast("BELL " + S.bell + " — THEY MARCH");
         // The income's ledger line: the bell's flat cycle scrap plus whatever
         // the town paid this bell (green ground only) — one honest number.
@@ -1564,6 +1585,7 @@ export default function DepotGame({ onExit, resume = null }) {
         const M = S.manifest;
         if (!M || world.t < M.armedAt) { toast("HOLD — ARMING"); return; }
         if (!pickManifest(M, key)) return;
+        cue("uitick"); // the pick is taken
         const item = PALETTE_LABEL[key] || key;
         toast(item + " — ON THE MANIFEST");
       };
@@ -1700,11 +1722,17 @@ export default function DepotGame({ onExit, resume = null }) {
         S.ws.withdrawn = false;
         S.ws.spawnDoneT = world.t - (ASSAULT_TIMEOUT + 1);
       };
-      window.__DEPOTBELL__ = () => {
+      window.__DEPOTBELL__ = (inS = 0) => {
         // debug harness: ring the bell now — pulls the next assault forward
-        // without waiting out the period.
-        S.bellAt = world.t;
+        // without waiting out the period. An argument moves the due stamp that
+        // many SIM seconds out instead (P1 T4: reaching the pre-toll window
+        // without waiting two minutes).
+        S.bellAt = world.t + Math.max(0, inS);
       };
+      // debug harness (P1 T4): how many of each audio cue this run has raised.
+      // Audio cannot be asserted headlessly; this at least proves the cues are
+      // pushed where the design says they are.
+      window.__DEPOTCUES__ = () => ({ ...cueN });
       window.__DEPOTMANIFEST__ = () => ({
         unlocked: S.manifest.unlocked.slice(), offers: S.manifest.offers.slice(),
         offerBell: S.manifest.offerBell, cardUp: !!S.manifest.cardUp,
@@ -2002,6 +2030,18 @@ export default function DepotGame({ onExit, resume = null }) {
             // wall time and never a React value; a paused run holds the bell
             // exactly where it stood because world.t stops with it.
             if (stepBell(S, world.t)) ringBell();
+            // THE PRE-TOLL (Task 4). The last five seconds are counted out
+            // loud. Edge-triggered on the countdown crossing each whole second
+            // — ceiling-rounded exactly as the chip reads it — so it fires once
+            // per second at any frame rate, once at 30fps and once at 120, and
+            // not at all while paused (S.bellT only moves with world.t). The
+            // ring itself resets bellT upward, which is not a crossing
+            // downward, so the bell never gets a sixth tick.
+            const bellSec = Math.ceil(S.bellT);
+            if (bellSec !== preTollSec) {
+              if (preTollSec != null && bellSec < preTollSec && bellSec >= 1 && bellSec <= 5) cue("pretoll");
+              preTollSec = bellSec;
+            }
             if (ws.spawnQueue > 0) {
               ws.spawnTimer -= sdt;
               if (ws.spawnTimer <= 0) { ws.spawnTimer = ws.spawnDelay; spawnOne(); }
@@ -2038,6 +2078,9 @@ export default function DepotGame({ onExit, resume = null }) {
           if (perf) pSim = performance.now() - pSim0; // ...and closes
           if (S.acc > STEP * 6) S.acc = 0;
           const evs = drainEvents();
+          // ...and the frame's audio-only cues join the stream here, after the
+          // wipe that would have eaten them (see the cue queue above).
+          if (cues.length) { for (const c of cues) evs.push(c); cues.length = 0; }
           // Structural loss census — ~1Hz (stepDepotCensus's own accumulator
           // gate, not this per-frame call site) — gated by sdt like the rest
           // of the sim clock, so it doesn't run while paused/pre-start/

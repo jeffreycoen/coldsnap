@@ -201,6 +201,48 @@ export function makeGameAudio() {
       tone(x, z, { f0: 520, type: "square", dur: 0.14, gain: 0.05, delay: i * 0.3 + 0.15, atk: 0.02 });
     }
   };
+  // THE MUSTER BELL — struck bronze, not a chime. A real bell's partials are
+  // inharmonic and named: hum an octave under, prime, tierce a minor third
+  // above prime (that's why bells sound minor), quint, nominal. Same modal
+  // voice as granite but with far higher Q and a decay measured in seconds
+  // instead of milliseconds — that difference IS the difference between a
+  // stone knock and a bell. Two strikes (the second softer, a beat behind, as
+  // a rope-swung bell answers itself) over a dark low tail.
+  const BELL_MODES = [
+    { f: 188, q: 58, g: 0.9 },    // hum
+    { f: 376, q: 72, g: 1 },      // prime
+    { f: 452, q: 76, g: 0.55 },   // tierce
+    { f: 564, q: 68, g: 0.32 },   // quint
+    { f: 752, q: 60, g: 0.2 },    // nominal
+  ];
+  // Non-positional: it is the garrison's own bell hanging over the listener,
+  // not a thing out on the field, so it rings at the listener's coordinates
+  // (the jingles' convention) and never pans or attenuates.
+  const bellToll = () => {
+    const x = listener.x, z = listener.z;
+    modal(x, z, BELL_MODES, 3.4, 0.34, { wet: 0.5 });
+    modal(x, z, BELL_MODES, 2.7, 0.22, { delay: 0.62, wet: 0.55 });
+    tone(x, z, { f0: 94, f1: 60, dur: 2.0, gain: 0.11, delay: 0.01, wet: 0.5, atk: 0.02 });
+  };
+  // A pre-toll: the last seconds before the bell, counted out. The same
+  // partials at a whisper with a millisecond decay — the rope taking up its
+  // slack, not a strike.
+  const preToll = () => modal(listener.x, listener.z, BELL_MODES, 0.26, 0.05, { wet: 0.3 });
+  // THE CONVOY — the manifest truck arriving. A diesel idle swelling up out
+  // of nothing (slow attack: this one thing does NOT want the anti-click ramp,
+  // it wants to be heard approaching), grit over it, then the tailgate: thin
+  // sheet steel dropped on its chains, which is a modal ring with a low Q —
+  // loose metal, not granite.
+  const convoy = () => {
+    const x = listener.x, z = listener.z;
+    tone(x, z, { f0: 44, f1: 34, dur: 1.0, gain: 0.18, wet: 0.35, atk: 0.18 });
+    noise(x, z, { f0: 92, f1: 180, dur: 0.7, gain: 0.2, rate: 0.4, wet: 0.4, dark: 0.75 });
+    noise(x, z, { f0: 165, f1: 70, dur: 0.5, gain: 0.13, rate: 0.5, delay: 0.26, wet: 0.45, dark: 0.7 });
+    modal(x, z, [{ f: 205, q: 11, g: 1 }, { f: 640, q: 15, g: 0.5 }, { f: 1480, q: 18, g: 0.25 }], 0.22, 0.19, { delay: 0.7, wet: 0.45 });
+  };
+  // The interface tick: one short, soft, dry blip for a choice taken or a
+  // record written. Deliberately the quietest thing in the vocabulary.
+  const uiTick = () => tone(listener.x, listener.z, { f0: 1180, f1: 860, type: "triangle", dur: 0.045, gain: 0.05, wet: 0.12, atk: 0.004 });
 
   // ---- event layer -----------------------------------------------------
   // coalescing: N same-kind muzzles in one drain merge into ONE denser shot
@@ -222,6 +264,12 @@ export function makeGameAudio() {
       else if (e.type === "kill" && e.kind === "unit") bodyFall(e.x, e.z);
       else if (e.type === "collapse") { noise(e.x, e.z, { f0: 480, f1: 75, dur: 1.2, gain: 0.4, wet: 0.55, dark: 0.7 }); tone(e.x, e.z, { f0: 58, f1: 30, dur: 0.9, gain: 0.3, delay: 0.05 }); echoes(e.x, e.z, (ex, ez, dly, k) => noise(ex, ez, { f0: 350, f1: 80, dur: 0.5, gain: 0.3 * k, delay: dly, wet: 0.7, dark: 0.5 })); }
       else if (e.type === "strike") siren(e.x, e.z);
+      // The garrison's own cues (DEPOT's bell cycle). No coordinates: these
+      // three carry nothing but a type — they play at the listener.
+      else if (e.type === "bell") bellToll();
+      else if (e.type === "pretoll") preToll();
+      else if (e.type === "manifest") convoy();
+      else if (e.type === "uitick") uiTick();
     }
     for (const [, g] of groups) {
       const x = g.x / g.n, z = g.z / g.n, mass = Math.sqrt(g.n);
