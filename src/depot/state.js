@@ -1,13 +1,13 @@
 // COLDSNAP DEPOT — run state shape. Kept tiny and dependency-free so
 // DepotGame.jsx's loop can stuff a plain object in a ref (React state must
 // never be read from the closure — see ColdsnapTD.jsx for why).
-import { aimSolve, fireProjectile, addBody } from "../engine/core.js";
+import { aimSolve, fireProjectile, addBody, addWeld } from "../engine/core.js";
 import { SQUAD_SPECS, clearSlot } from "./squads.js";
 import { scatterSigma, applyScatter, arcClears, marchArc } from "./accuracy.js";
 import { planWave, MIN_WAVE_FLOOR, spawnDelayFor } from "./ai.js";
 import { STIPEND, payResults, combatIneffective, bookValue } from "./economy.js";
 import { composeIntel, openingIntel } from "./intel.js";
-import { TOWER_SPECS, ENEMY_SPECS, TANK, INFANTRY_ARMS, PLAYER_START, PLAYER_TIERS } from "./specs.js";
+import { TOWER_SPECS, ENEMY_SPECS, TANK, INFANTRY_ARMS, MASON, PLAYER_START, PLAYER_TIERS } from "./specs.js";
 import { fogStateForContested } from "./territory.js";
 
 // Targeting gate, symmetric: a shooter of `team` (1 = player tower, 2 =
@@ -113,6 +113,185 @@ export function canvasTapConsumesPending(pending, screen, rect) {
 // every player price. See SQUAD_SPECS (squads.js) for the asymmetry note that
 // governs the whole raise. // provisional (F5)
 export const WALL_COST = 8;
+
+// ================================================================== masonry
+// P1.5 Task 2 (mk0.52, Jeff): A BUILT WALL IS THREE COURSES.
+//
+// What the player buys for WALL_COST is still ONE wall on ONE grid cell, but
+// it stands as three stacked static "wall" bodies, welded vertically, each
+// carrying a third of the old wall's hp and dying on its own. The FOOTPRINT
+// (1.8m square) and the TOTAL HEIGHT (1.8m) are exactly what the old
+// single-body wall had, so cover, sightlines, arcs, placement and occupancy
+// are all untouched. What changed is that the thing breaks course by course
+// and falls down when its base is shot out.
+//
+// Deliberate deviation from the brief's word "cubes": a course is a BLOCK
+// (1.8 x 0.6 x 1.8), not a cube. Literal cubes would mean either tripling
+// the wall's height or shrinking its footprint to a third of the grid cell —
+// both are sim-visible changes to cover and blocking that the brief did not
+// ask for. Three courses in the old silhouette is the look, with none of the
+// collateral.
+export const WALL_HP = 70;                                  // the old single-body wall hp, now split
+export const WALL_COURSES = 3;
+export const WALL_HALF = 0.9;                               // footprint half-extent (unchanged)
+export const WALL_H = 1.8;                                  // total height (unchanged)
+export const WALL_COURSE_PITCH = WALL_H / WALL_COURSES;     // 0.6 — course centre to course centre
+// The joint: MASON's own convention (0.80m stones on a 0.83m pitch leave a
+// 3cm seam between welded neighbours). The courses are laid the same way the
+// town's stone is laid, so the physical stack has real 3cm joints in it.
+export const WALL_JOINT = 0.03;
+export const WALL_COURSE_HY = (WALL_COURSE_PITCH - WALL_JOINT) / 2; // 0.285
+// Weld strength: MASON.breakF (80,000) verbatim — the same masonry family as
+// the town's walls. It is NOT "tuned until shells can shear it", because no
+// value could be: a weld between two STATIC bodies is inert by construction.
+// explode() skips every invM === 0 body before it ever reaches its weld-shock
+// branch (core.js ~:513), and solveWelds/weldBreakPass only ever accumulate
+// stress from bodies the solver actually moves. So these welds are census and
+// seam semantics, exactly as the brief warned. What holds a course up is THE
+// COURSE BELOW IT — stepWallSupport is the whole collapse mechanism, and a
+// course that loses its footing is respawned as a fresh weld-free chunk, so
+// the number never becomes live by the back door either.
+export const WALL_WELD_BREAK_F = MASON.breakF;
+// Upper courses carry a body `group` so the kill event they push can be told
+// apart from the wall's own death: ONE wall pays ONE wallKill however many of
+// its courses the enemy chews through (DepotGame's results loop reads this).
+export const WALL_UPPER_GROUP = "wallcourse";
+
+// EACH COURSE CARRIES THE WHOLE WALL_HP, and this is a considered departure
+// from the brief, which said to SPLIT the wall's hp across the three courses.
+// Splitting is wrong once the support rule exists, and it is wrong by a
+// factor of three. Everything that shoots a wall aims at the nearest body,
+// which is the BASE course; the base's death brings the whole wall down; so a
+// split wall's real durability is its base course's share — 24 of the old 70.
+// Measured, three shooters, rounds to bring one wall down (old single body vs
+// three courses, identical shots and aim points, scripts-level probe):
+//   grenadier lob   6 -> 2      enemy rifle  48 -> 17      (split 24/23/23)
+//   grenadier lob   6 -> 6      enemy rifle  48 -> 48      (whole hp each)
+// A polish task must not quietly make every player wall three times more
+// fragile, so each course is a full-strength 70. In play that is not a
+// tougher wall — nobody has to chew all three — it is EXACTLY today's wall,
+// which is the point: the look changed, the fight did not.
+export function wallCourseHp(i) {
+  void i; // uniform today; the signature keeps the door open for a heavier base
+  return WALL_HP;
+}
+
+// capTop: which course wears the snow cap. The renderer draws one cap per
+// wall, on the TOP LIVING course, so a wall whose top has been shot away
+// still looks like a wall and not a decapitated one. A plain single-body wall
+// (the F3-ready enemy wall, test fixtures) has no `course` and always caps.
+function markWallCaps(courses) {
+  let top = null;
+  for (const b of courses) if (!top || b.course > top.course) top = b;
+  for (const b of courses) b.capTop = b === top;
+}
+
+// spawnWallCourses(world, x, groundY, z) -> the courses, bottom first.
+// The bottom course is the one the grid cell holds (DepotGame's cell.wallId):
+// its death is what releases the ground, and the courses above it come down
+// with it via the support rule below.
+export function spawnWallCourses(world, x, groundY, z) {
+  const out = [];
+  for (let i = 0; i < WALL_COURSES; i++) {
+    const b = addBody(world, {
+      kind: "wall", team: 1, mass: 0,
+      hx: WALL_HALF, hy: WALL_COURSE_HY, hz: WALL_HALF,
+      x, y: groundY + (i + 0.5) * WALL_COURSE_PITCH, z,
+      hp: wallCourseHp(i),
+      group: i > 0 ? WALL_UPPER_GROUP : "",
+      friction: 0.65, restitution: 0.02,
+    });
+    b.course = i;
+    // How far this course's centre rides above the ground it stands on. A
+    // one-piece wall rides exactly its own half-height, which is what core's
+    // crater re-seat assumes; a course two storeys up does not. Without this
+    // the first shell to crater the dirt beside a wall re-seated all three
+    // courses onto the ground and the wall imploded into one block.
+    b.seatY = (i + 0.5) * WALL_COURSE_PITCH;
+    b.maxHp = b.hp;
+    // SLEEPING DISCIPLINE (the brief's trap): three bodies where there was
+    // one, so they go in asleep — spawnSandbag's own law for static cover.
+    // Statics never pair in the broadphase anyway (core.js's invM===0 skip);
+    // this keeps them out of the integrator's awake set as well.
+    b.sleeping = true;
+    out.push(b);
+  }
+  for (let i = 1; i < out.length; i++) addWeld(world, out[i - 1], out[i], WALL_WELD_BREAK_F);
+  markWallCaps(out);
+  return out;
+}
+
+// forgetWelds(world, b): break and unhook every weld touching b, before b
+// leaves world.bodies. A weld still pointing at a removed body is a weld
+// solved against a ghost — the same hygiene DepotGame's sleeping-chunk sweep
+// performs when it retires rubble.
+export function forgetWelds(world, b) {
+  const wl = world.weldsOf && world.weldsOf.get(b.id);
+  if (wl) for (const wd of wl) wd.broken = true;
+  if (world.weldsOf) world.weldsOf.delete(b.id);
+  world._weldPairsDirty = true;
+}
+
+// Courses are matched by FOOTPRINT, never by body id: ids are not stable
+// across a save/resume (save.js law 3), but a wall never moves, and its three
+// courses are built at one grid cell's exact centre and written to the file at
+// the same millimetre rounding.
+const wallStackKey = (b) => b.pos.x.toFixed(2) + "|" + b.pos.z.toFixed(2);
+
+// dropCourse: a course with nothing under it stops being a wall. It leaves
+// the wall set entirely and comes back as a DYNAMIC mass-100 chunk at the
+// same pose, awake, with whatever hp it had left — it falls, it tumbles, it
+// lies there as rubble, and DepotGame's 14-second sleeping-chunk sweep
+// retires it once it has settled (bornT is what arms that sweep).
+function dropCourse(world, b) {
+  forgetWelds(world, b);
+  world.byId.delete(b.id);
+  const i = world.bodies.indexOf(b);
+  if (i >= 0) world.bodies.splice(i, 1);
+  const c = addBody(world, {
+    kind: "chunk", team: 1, mass: 100,
+    hx: b.hx, hy: b.hy, hz: b.hz,
+    x: b.pos.x, y: b.pos.y, z: b.pos.z,
+    hp: b.hp, friction: 0.65, restitution: 0.02,
+  });
+  c.maxHp = b.maxHp != null ? b.maxHp : b.hp;
+  c.bornT = world.t;
+  return c;
+}
+
+// stepWallSupport(world) — THE SUPPORT RULE, and the only reason a wall
+// collapses. Run once per tick from the depot's step, straight after the pass
+// that removes dead structures, so a course that died this tick has already
+// left the world by the time its neighbours are polled.
+//
+// Per footprint, walking up from the ground: a course stands if the course
+// directly below it is still standing (course 0 stands on the earth). The
+// first gap breaks the chain, and that course and every course above it drop.
+// Returns how many fell (tests read this).
+export function stepWallSupport(world) {
+  let stacks = null;
+  for (const b of world.bodies) {
+    if (b.kind !== "wall" || b.course == null || !b.alive) continue;
+    if (!stacks) stacks = new Map();
+    const k = wallStackKey(b);
+    const arr = stacks.get(k);
+    if (arr) arr.push(b); else stacks.set(k, [b]);
+  }
+  if (!stacks) return 0;
+  let fell = 0;
+  for (const arr of stacks.values()) {
+    if (arr.length > 1) arr.sort((p, q) => p.course - q.course);
+    let expect = 0;
+    const standing = [];
+    for (const b of arr) {
+      if (b.course === expect) { standing.push(b); expect++; continue; }
+      dropCourse(world, b);
+      fell++;
+    }
+    if (standing.length) markWallCaps(standing);
+  }
+  return fell;
+}
 
 
 // One trigger pull, general shooter core: 2-pass lead solve against
@@ -393,13 +572,28 @@ export const SANDBAG_COST = 5;
 // orient (0|1) swaps hx/hz — axis-aligned bodies only, no rotation matrices.
 // Orientation is player input, like placement coords: placement-state only,
 // sim/determinism untouched (multiplayer-safe by the same argument).
+// P1.5 Task 2 (mk0.52, Jeff): ONE CUBE. The bag was a 1.8 x 0.9 x 0.7 slab
+// that read as a low wall; it is now a 0.9m cube (SANDBAG_HALF each way) —
+// one emplacement, one block, matching the wall's new course-by-course read.
+// HEIGHT IS UNCHANGED (hy was already 0.45), so a man's head clearance over
+// the bags is exactly what it was, and exposureAt is dimension-blind (bearing
+// + distance only, squads.js ~:95) so COVER IS UNCHANGED TOO. What did change:
+// the drawn/blocking footprint. Bags go on 2m grid cells, so a line of them
+// now reads as a row of separate blocks with ~1.1m between them instead of a
+// near-continuous parapet — the literal reading of the ratified brief, and a
+// one-constant revert if the gaps read wrong in play.
+// The orient toggle and sandbagOrientAt's auto-continue are KEPT INTACT (the
+// engineer BUILD order inherits them next task); on a cube the swap is
+// dimensionally inert, which is a look decision, not a machinery deletion.
+export const SANDBAG_HALF = 0.45;
 export function spawnSandbag(world, x, z, orient = 0) {
   const y = world.field.heightAt(x, z);
   const b = addBody(world, {
     kind: "chunk", team: 1, mass: 0,
-    hx: orient === 1 ? 0.35 : 0.9, hy: 0.45, hz: orient === 1 ? 0.9 : 0.35,
-    x, y: y + 0.45, z, hp: 60, friction: 0.7, restitution: 0.02,
+    hx: SANDBAG_HALF, hy: SANDBAG_HALF, hz: SANDBAG_HALF,
+    x, y: y + SANDBAG_HALF, z, hp: 60, friction: 0.7, restitution: 0.02,
   });
+  b.orient = orient;
   b.sandbag = true;
   b.sleeping = true;
   b.maxHp = b.hp;

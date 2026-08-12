@@ -1088,9 +1088,21 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // frost aura rings under live frost towers
   const frostRingMesh = pool(new THREE.RingGeometry(0.72, 1.0, 40), new THREE.MeshBasicMaterial({ color: 0x8fd8ff, transparent: true, opacity: 0.14, depthWrite: false }), 16, false);
   frostRingMesh.layers.set(1);
-  // player walls (tower defense): stone block + a cap of snow, instanced
-  const wallMesh = pool(new THREE.BoxGeometry(1.8, 1.8, 1.8), toon(0x8e97a4), 256, true);
+  // player walls (tower defense): stone block + a cap of snow, instanced.
+  // P1.5 T2 (mk0.52): a WINTER FRONT wall stands as three welded courses, so
+  // the block pool holds three instances per wall (256 walls still draw) while
+  // the cap pool stays one per wall — the snow rides the top living course.
+  const WALL_INST = 768;
+  const wallMesh = pool(new THREE.BoxGeometry(1.8, 1.8, 1.8), toon(0x8e97a4), WALL_INST, true);
   const wallCapMesh = pool(new THREE.BoxGeometry(1.86, 0.22, 1.86), toon(0xeef4fa), 256, false);
+  // THE SEAMS. The outline post-pass draws an edge wherever depth or normal
+  // jumps between neighbouring pixels, so courses (and sandbags laid shoulder
+  // to shoulder) only read as separate blocks if there is a gap between them
+  // to find. These insets shrink what is DRAWN — the bodies keep their true
+  // size, so cover, sightlines, arcs and occupancy are untouched. The vertical
+  // inset is the one that matters: it opens the 0.6m course pitch to a ~0.11m
+  // visible joint, wide enough to survive the retro downsample.
+  const SEAM_XZ = 0.05, SEAM_Y = 0.045, SEAM_BAG = 0.04;
   // trees (tower defense): snow-laden pine — trunk + canopy pools, colored
   // per body (alive dark spruce, dead winter-kill brown); pose comes from
   // the BODY, so a blasted tree lies where physics dropped it
@@ -1363,17 +1375,22 @@ export function makeRenderer(canvas, world0, opts = {}) {
     }
     frostRingMesh.count = fri; frostRingMesh.instanceMatrix.needsUpdate = true;
     for (const [id, g] of towerGroups) if (!world.byId.has(id)) { scene.remove(g); towerGroups.delete(id); }
-    // player walls (tower defense)
-    let wi = 0;
+    // player walls (tower defense). P1.5 T2: every course is its own body and
+    // draws as its own inset block, so the outline finds the joints between
+    // them. The snow cap goes on the TOP LIVING course only — b.capTop is
+    // stamped by the depot's support pass (state.js), and a plain single-body
+    // wall has no course and never sets it, so it caps as it always did.
+    let wi = 0, wci = 0;
     for (const b of world.bodies) {
-      if (b.kind !== "wall" || wi >= 256) continue;
+      if (b.kind !== "wall" || wi >= WALL_INST) continue;
       const hurtW = b.maxHp ? Math.max(0.75, b.hp / b.maxHp) : 1;
-      writeInst(wallMesh, wi, b.pos.x, b.pos.y, b.pos.z, b.q, b.hx / 0.9 * hurtW, b.hy / 0.9, b.hz / 0.9 * hurtW);
-      writeInst(wallCapMesh, wi, b.pos.x, b.pos.y + b.hy + 0.08, b.pos.z, b.q, 1, 1, 1);
+      const dx = Math.max(0.05, b.hx - SEAM_XZ), dy = Math.max(0.05, b.hy - SEAM_Y), dz = Math.max(0.05, b.hz - SEAM_XZ);
+      writeInst(wallMesh, wi, b.pos.x, b.pos.y, b.pos.z, b.q, dx / 0.9 * hurtW, dy / 0.9, dz / 0.9 * hurtW);
+      if (b.capTop !== false && wci < 256) { writeInst(wallCapMesh, wci, b.pos.x, b.pos.y + dy + 0.08, b.pos.z, b.q, 1, 1, 1); wci++; }
       wi++;
     }
     wallMesh.count = wi; wallMesh.instanceMatrix.needsUpdate = true;
-    wallCapMesh.count = wi; wallCapMesh.instanceMatrix.needsUpdate = true;
+    wallCapMesh.count = wci; wallCapMesh.instanceMatrix.needsUpdate = true;
     // trees (tower defense); DEPOT (world.depotCombat) adds burning
     // flame/char progression — inert without the flag, existing TD path
     // (alive green / felled TREE_DEAD) is untouched.
@@ -1548,7 +1565,11 @@ export function makeRenderer(canvas, world0, opts = {}) {
     let ki = 0;
     for (const b of world.bodies) {
       if (b.kind !== "chunk" || ki >= CHUNK_CAP) continue;
-      writeInst(chunkMesh, ki, b.pos.x, b.pos.y, b.pos.z, b.q, b.hx / 0.6, b.hy / 0.6, b.hz / 0.6);
+      // Sandbags get the wall's seam treatment (P1.5 T2) — bags laid in a line
+      // are drawn a hair inside their bodies so the outline reads each block.
+      // Town/depot masonry is untouched: its 3cm laying pitch already does it.
+      const bs = b.sandbag ? SEAM_BAG : 0;
+      writeInst(chunkMesh, ki, b.pos.x, b.pos.y, b.pos.z, b.q, (b.hx - bs) / 0.6, (b.hy - bs) / 0.6, (b.hz - bs) / 0.6);
       ki++;
     }
     chunkMesh.count = ki; chunkMesh.instanceMatrix.needsUpdate = true;

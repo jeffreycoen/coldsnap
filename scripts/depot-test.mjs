@@ -14,6 +14,8 @@ import {
   censusDepotChunks, depotStandingFraction, checkDepotBreach, checkEnemyBreach, stepDepotCensus,
   spawnSquadMembers, spawnSandbag, SANDBAG_COST, WALL_COST, pruneSquads,
   DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, DEPOT_CENSUS_HZ,
+  spawnWallCourses, stepWallSupport, wallCourseHp,
+  WALL_HP, WALL_COURSES, WALL_H, WALL_HALF, WALL_COURSE_PITCH, WALL_COURSE_HY, WALL_WELD_BREAK_F, WALL_UPPER_GROUP,
 } from "../src/depot/state.js";
 import { troopKit, barrelBasis, RIFLE_PREROT, RIFLE_OFF, RIFLE_LEN } from "../src/render/troopkit.js";
 import { INFANTRY } from "../src/engine/core.js";
@@ -1714,15 +1716,18 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
       sn.memberIds.length === 2 && roles.includes("sniper") && roles.includes("spotter"), JSON.stringify(roles));
   }
 
-  // --- spawnSandbag: single static sleeping chunk, tagged b.sandbag, brief
-  // dims (hx .9, hy .45, hz .35), hp 60. Static (mass 0 -> invM 0) so
-  // squads.js's exposureAt (which filters invM > 0) reads it as cover, and
-  // core.js's hit scan still hits it (chunk-kind exemption, core.js ~:691).
+  // --- spawnSandbag: single static sleeping chunk, tagged b.sandbag, hp 60.
+  // Dims RE-PINNED mk0.52 (P1.5 T2): the 1.8 x 0.9 x 0.7 slab is now a 0.9m
+  // CUBE (0.45 every way). Height is unchanged, and exposureAt is dimension-
+  // blind, so cover is unchanged — only the footprint moved. Static (mass 0
+  // -> invM 0) so squads.js's exposureAt (which filters invM > 0) reads it as
+  // cover, and core.js's hit scan still hits it (chunk-kind exemption, ~:691).
   {
     const world = makeWorld({ field: flatField, seed: 3 });
     const b = spawnSandbag(world, 2, 5);
     ok("spawnSandbag: chunk body tagged b.sandbag", b.kind === "chunk" && b.sandbag === true);
-    ok("spawnSandbag: brief dims + hp 60", b.hx === 0.9 && b.hy === 0.45 && b.hz === 0.35 && b.hp === 60,
+    ok("spawnSandbag: one 0.9m cube + hp 60 (re-pinned from .9/.45/.35, mk0.52)",
+      b.hx === 0.45 && b.hy === 0.45 && b.hz === 0.45 && b.hp === 60,
       `hx=${b.hx} hy=${b.hy} hz=${b.hz} hp=${b.hp}`);
     ok("spawnSandbag: static + sleeping", b.invM === 0 && b.sleeping === true);
     ok("spawnSandbag: costs 5 scrap (SANDBAG_COST — re-pinned from 3, mk0.50)", SANDBAG_COST === 5);
@@ -1899,15 +1904,21 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   const flatF = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
   const { sandbagOrientAt } = await import("../src/depot/state.js");
 
-  // (a) orientation param swaps dims — axis-aligned bodies only, no rotation.
+  // (a) orientation. RE-PINNED mk0.52 (P1.5 T2): the bag is a cube now, so the
+  // hx/hz swap is dimensionally inert — the machinery is kept (the engineer
+  // BUILD order inherits it) and the chosen orientation is recorded on the
+  // body, which is what these pins now read. The old dim asserts described a
+  // slab that no longer exists.
   {
     const world = makeWorld({ field: flatF, seed: 7 });
     const b0 = spawnSandbag(world, 0, 0, 0);
-    ok("sandbag-rot: orient 0 keeps hx .9 / hz .35", b0.hx === 0.9 && b0.hz === 0.35, `hx=${b0.hx} hz=${b0.hz}`);
+    ok("sandbag-rot: orient 0 is a cube, recorded on the body (re-pinned from hx .9 / hz .35, mk0.52)",
+      b0.hx === 0.45 && b0.hz === 0.45 && b0.orient === 0, `hx=${b0.hx} hz=${b0.hz} orient=${b0.orient}`);
     const b1 = spawnSandbag(world, 10, 0, 1);
-    ok("sandbag-rot: orient 1 swaps to hx .35 / hz .9", b1.hx === 0.35 && b1.hz === 0.9, `hx=${b1.hx} hz=${b1.hz}`);
+    ok("sandbag-rot: orient 1 is the same cube, orientation still recorded (re-pinned from hx .35 / hz .9, mk0.52)",
+      b1.hx === 0.45 && b1.hz === 0.45 && b1.orient === 1, `hx=${b1.hx} hz=${b1.hz} orient=${b1.orient}`);
     const bd = spawnSandbag(world, 20, 0);
-    ok("sandbag-rot: orient defaults to 0", bd.hx === 0.9 && bd.hz === 0.35);
+    ok("sandbag-rot: orient defaults to 0", bd.orient === 0 && bd.hx === 0.45 && bd.hz === 0.45);
   }
 
   // (b) auto-continue: placing within ~2.2m of an existing bag orients
@@ -2985,6 +2996,179 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 }
 // ==== end mk0.50 =============================================================
+
+// ==== P1.5 TASK 2 — the masonry look (mk0.52) ================================
+// A built wall stands as three welded courses that break one at a time, and a
+// course with nothing under it falls. Nothing about the wall's footprint,
+// height, price or cover moved — only how it comes apart.
+{
+  console.log("\n[mk0.52: the masonry look]");
+  const flatF = { heightAt: () => 0, dirty: false, cs: 2, half: 40, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+  const wallsOf = (w) => w.bodies.filter((b) => b.kind === "wall");
+  const chunksOf = (w) => w.bodies.filter((b) => b.kind === "chunk");
+
+  // (a) THE STACK. Three bodies where there was one, same silhouette.
+  {
+    const world = makeWorld({ field: flatF, seed: 5 });
+    const cs = spawnWallCourses(world, 0, 0, 0);
+    ok("mk0.52/a: a wall is THREE kind-\"wall\" bodies (was one)",
+      cs.length === WALL_COURSES && WALL_COURSES === 3 && wallsOf(world).length === 3);
+    ok("mk0.52/a: courses are numbered bottom-up", cs.map((b) => b.course).join(",") === "0,1,2");
+    ok("mk0.52/a: the FOOTPRINT is the old wall's, unchanged",
+      cs.every((b) => b.hx === WALL_HALF && b.hz === WALL_HALF && b.hx === 0.9));
+    // total silhouette: bottom face of course 0 to top face of course 2
+    const lo = cs[0].pos.y - cs[0].hy, hi = cs[2].pos.y + cs[2].hy;
+    ok("mk0.52/a: the wall still stands 1.8m, within one masonry joint",
+      Math.abs(lo) < 0.02 && Math.abs(hi - WALL_H) < 0.02, `lo=${lo.toFixed(3)} hi=${hi.toFixed(3)}`);
+    ok("mk0.52/a: courses sit on a 0.6m pitch with a real joint between them",
+      Math.abs(cs[1].pos.y - cs[0].pos.y - WALL_COURSE_PITCH) < 1e-9
+      && Math.abs((cs[1].pos.y - cs[1].hy) - (cs[0].pos.y + cs[0].hy) - 0.03) < 1e-9,
+      `hy=${WALL_COURSE_HY}`);
+    // NOT a split (the brief's word): with the support rule, everything aims
+    // at the base course and the base's death drops the wall, so a split wall
+    // is a third as durable. Measured 6 -> 2 grenadier rounds and 48 -> 17
+    // rifle rounds; whole-hp courses measure 6 -> 6 and 48 -> 48, i.e. exactly
+    // today's wall. The look changed, the fight did not.
+    ok("mk0.52/a: every course carries the WHOLE 70hp wall, so the wall is as hard to drop as it ever was",
+      cs.every((b) => b.hp === WALL_HP) && WALL_HP === 70 && wallCourseHp(0) === 70 && wallCourseHp(2) === 70,
+      cs.map((b) => b.hp).join("/"));
+    ok("mk0.52/a: every course carries its own maxHp", cs.every((b) => b.maxHp === b.hp));
+    // sleeping discipline (the brief's trap): three static bodies where there
+    // was one, all asleep at birth like spawnSandbag's cover.
+    ok("mk0.52/a: courses spawn STATIC and ASLEEP", cs.every((b) => b.invM === 0 && b.sleeping === true));
+    ok("mk0.52/a: two vertical welds at MASON strength",
+      world.welds.length === 2 && world.welds.every((w) => w.breakF === WALL_WELD_BREAK_F && w.breakF === MASON.breakF),
+      `${world.welds.length} welds @ ${world.welds[0] && world.welds[0].breakF}`);
+    ok("mk0.52/a: the upper courses are grouped so ONE wall pays ONE wallKill",
+      cs[0].group === "" && cs[1].group === WALL_UPPER_GROUP && cs[2].group === WALL_UPPER_GROUP);
+    ok("mk0.52/a: the snow cap rides the TOP course", cs[2].capTop === true && cs[0].capTop === false && cs[1].capTop === false);
+  }
+
+  // (b) THE SUPPORT RULE. Shoot the base out and the wall comes down — this
+  // is the ONLY collapse mechanism (static-static welds are solver-inert).
+  {
+    const world = makeWorld({ field: flatF, seed: 5 });
+    const cs = spawnWallCourses(world, 0, 0, 0);
+    ok("mk0.52/b: an intact wall drops nothing", stepWallSupport(world) === 0 && wallsOf(world).length === 3);
+    // the live path kills a course and the death pass removes it before the
+    // support pass runs; reproduce exactly that.
+    applyDamage(world, cs[0], 1e9, { attacker: "enemy" });
+    world.byId.delete(cs[0].id); world.bodies.splice(world.bodies.indexOf(cs[0]), 1);
+    const fell = stepWallSupport(world);
+    ok("mk0.52/b: base shot out -> BOTH courses above come down", fell === 2 && wallsOf(world).length === 0, `fell=${fell}`);
+    const rubble = chunksOf(world);
+    ok("mk0.52/b: they come down as DYNAMIC mass-100 chunks, awake",
+      rubble.length === 2 && rubble.every((c) => c.mass === 100 && c.invM > 0 && c.sleeping === false), `${rubble.length} chunks`);
+    ok("mk0.52/b: rubble is stamped for the 14-second sweep (bornT)", rubble.every((c) => c.bornT === world.t));
+    ok("mk0.52/b: the fallen courses keep the hp they had left", rubble.every((c) => c.hp === WALL_HP));
+    ok("mk0.52/b: nothing is left welded to a body that has gone", world.welds.every((w) => w.broken));
+    // and they really fall: no support, gravity, they end up lower than they stood.
+    const y0 = rubble.map((c) => c.pos.y);
+    for (let i = 0; i < 240; i++) stepWorld(world);
+    ok("mk0.52/b: and they FALL — both end up below where they stood",
+      rubble.every((c, i) => c.pos.y < y0[i] - 0.3), rubble.map((c) => c.pos.y.toFixed(2)).join(","));
+  }
+
+  // (c) A MIDDLE course dies: the top falls, the bottom keeps standing and
+  // takes the cap over.
+  {
+    const world = makeWorld({ field: flatF, seed: 5 });
+    const cs = spawnWallCourses(world, 0, 0, 0);
+    applyDamage(world, cs[1], 1e9, { attacker: "enemy" });
+    world.byId.delete(cs[1].id); world.bodies.splice(world.bodies.indexOf(cs[1]), 1);
+    const fell = stepWallSupport(world);
+    const left = wallsOf(world);
+    ok("mk0.52/c: middle course out -> only the top falls", fell === 1 && left.length === 1 && left[0].course === 0, `fell=${fell} left=${left.length}`);
+    ok("mk0.52/c: the surviving bottom course takes the snow cap", left[0].capTop === true);
+    ok("mk0.52/c: the ground keeps its wall — the cell's course is still alive", left[0].alive === true && left[0].hp === WALL_HP);
+  }
+
+  // (d) A TOP course dies and the wall just stands shorter — no cascade.
+  {
+    const world = makeWorld({ field: flatF, seed: 5 });
+    const cs = spawnWallCourses(world, 0, 0, 0);
+    applyDamage(world, cs[2], 1e9, { attacker: "enemy" });
+    world.byId.delete(cs[2].id); world.bodies.splice(world.bodies.indexOf(cs[2]), 1);
+    ok("mk0.52/d: losing the top course drops nothing else", stepWallSupport(world) === 0 && wallsOf(world).length === 2);
+    ok("mk0.52/d: the cap moves down to the new top course",
+      wallsOf(world).find((b) => b.course === 1).capTop === true && wallsOf(world).find((b) => b.course === 0).capTop === false);
+  }
+
+  // (e) Two walls on two footprints don't confuse each other's courses —
+  // stacks are keyed by FOOTPRINT (ids do not survive a save).
+  {
+    const world = makeWorld({ field: flatF, seed: 5 });
+    const a = spawnWallCourses(world, 0, 0, 0);
+    spawnWallCourses(world, 6, 0, 0);
+    world.byId.delete(a[0].id); world.bodies.splice(world.bodies.indexOf(a[0]), 1);
+    const fell = stepWallSupport(world);
+    ok("mk0.52/e: one wall collapsing leaves its neighbour standing",
+      fell === 2 && wallsOf(world).filter((b) => b.pos.x === 6).length === 3, `fell=${fell}`);
+  }
+
+  // (f) The consumers of kind "wall". Every one of them was read and either
+  // left alone (it works per body and wants to) or taught the difference.
+  {
+    const wsrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    const usrc = fs.readFileSync(new URL("../src/depot/units.js", import.meta.url), "utf8");
+    ok("mk0.52/f: buildAt lays courses instead of one block", /spawnWallCourses\(world, wp\.x, y, wp\.z\)\[0\]/.test(wsrc));
+    ok("mk0.52/f: the support pass runs in stepDepot, after the dead are cleared",
+      /structureLost[\s\S]{0,700}stepWallSupport\(world\)/.test(wsrc));
+    ok("mk0.52/f: selling takes the whole stack, matched by footprint not id",
+      /const stack = b\.kind === "wall"/.test(wsrc) && /wg\.gx === gx && wg\.gz === gz/.test(wsrc));
+    ok("mk0.52/f: resume re-claims the cell with the BOTTOM course", /if \(b\.course > 0\) continue;/.test(wsrc));
+    ok("mk0.52/f: one territory emitter per wall, not per course", /b\.kind === "wall" && b\.team === 1 && b\.alive && !b\.course/.test(wsrc));
+    ok("mk0.52/f: the counters count walls, not courses",
+      /if \(b\.kind === "wall"\) \{ if \(!b\.course\) walls\+\+; continue; \}/.test(wsrc) && /if \(b\.kind === "wall"\) \{ if \(!b\.course\) nw\+\+; \}/.test(wsrc));
+    ok("mk0.52/f: one wall pays one wallKill", /e\.kind === "wall" && e\.group !== WALL_UPPER_GROUP/.test(wsrc));
+    ok("mk0.52/f: a course leaves a THIRD of the rubble (27 stones per wall, as before)",
+      /ny: b\.kind === "tower" \? 4 : \(b\.course != null \? 1 : 3\)/.test(wsrc));
+    ok("mk0.52/f: the breaker's ram works the BASE course only", /str\.kind === "wall" && str\.course > 0/.test(usrc));
+  }
+
+  // (h) The crater re-seat. core.js drops static structures onto the ground
+  // when a shell craters beside them so nothing floats over its own hole; it
+  // assumed every structure rides exactly its own half-height. Courses do not,
+  // and without the seatY generalisation the first crater beside a wall
+  // imploded all three courses into one block at ground level (found in
+  // staging, not in theory).
+  {
+    let carvedBy = 0;
+    const craterF = { heightAt: () => -carvedBy, dirty: false, cs: 2, half: 40, carve: () => { carvedBy = 0.55; }, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+    const world = makeWorld({ field: craterF, seed: 5 });
+    const cs = spawnWallCourses(world, 0, 0, 0);
+    ok("mk0.52/h: a course records how high it rides above its ground",
+      cs.map((b) => b.seatY).join("/") === "0.3/0.8999999999999999/1.5" || cs.every((b, i) => Math.abs(b.seatY - (i + 0.5) * WALL_COURSE_PITCH) < 1e-9),
+      cs.map((b) => b.seatY).join("/"));
+    // a real shell, cratering right beside the wall
+    fireProjectile(world, { x: 1.6, y: 3, z: 0 }, { x: 0, y: -1, z: 0 }, 40,
+      { kind: "shell", r: 2.3, kv: 8, dmg: 5, crater: 0.55, noImpact: true, attacker: "enemy" });
+    for (let i = 0; i < 200 && world.projectiles.length; i++) stepWorld(world);
+    const ys = cs.map((b) => b.pos.y);
+    ok("mk0.52/h: after the crater the courses are still STACKED, not collapsed into one block",
+      Math.abs(ys[1] - ys[0] - WALL_COURSE_PITCH) < 1e-6 && Math.abs(ys[2] - ys[1] - WALL_COURSE_PITCH) < 1e-6,
+      ys.map((y) => y.toFixed(3)).join(","));
+    ok("mk0.52/h: and they followed the ground down into the crater",
+      Math.abs(ys[0] - (-0.55 + WALL_COURSE_PITCH / 2)) < 1e-6, ys[0].toFixed(3));
+    const csrc = fs.readFileSync(new URL("../src/engine/core.js", import.meta.url), "utf8");
+    ok("mk0.52/h: the core re-seat is a guarded ADDITIVE divergence — no seatY, no change",
+      /s\.seatY != null \? s\.seatY : s\.hy/.test(csrc));
+  }
+
+  // (g) The seams are a RENDER inset — the bodies keep their true size, so
+  // nothing about cover, sightlines or occupancy moved with the look.
+  {
+    const rsrc = fs.readFileSync(new URL("../src/render/renderer.js", import.meta.url), "utf8");
+    ok("mk0.52/g: walls and sandbags draw inset so the outline finds the joints",
+      /const SEAM_XZ = 0\.05, SEAM_Y = 0\.045, SEAM_BAG = 0\.04;/.test(rsrc)
+      && /b\.hx - SEAM_XZ/.test(rsrc) && /b\.sandbag \? SEAM_BAG : 0/.test(rsrc));
+    ok("mk0.52/g: the block pool holds three instances per wall (256 walls still draw)",
+      /const WALL_INST = 768;/.test(rsrc) && /wi >= WALL_INST/.test(rsrc));
+    ok("mk0.52/g: one snow cap per wall, on the top living course",
+      /b\.capTop !== false && wci < 256/.test(rsrc));
+  }
+}
+// ==== end mk0.52 =============================================================
 
 
 

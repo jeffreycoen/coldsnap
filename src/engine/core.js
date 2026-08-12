@@ -638,11 +638,19 @@ export function explode(world, x, y, z, spec) {
     // static structures do not follow the heightfield down — re-seat any near
     // the carve so nothing floats over its own crater (tower defense; inert
     // in worlds without wall/tower bodies)
+    // DIVERGENCE (guarded, additive): s.seatY is how far this structure's
+    // CENTRE rides above the ground it stands on. A one-piece wall or tower
+    // sits exactly its own half-height up, which is what the bare s.hy form
+    // assumed and still does when seatY is absent — byte-identical for the
+    // frozen demo and tower defense. WINTER FRONT's walls stand as three
+    // stacked courses (src/depot/state.js), and each of them rides its own
+    // height: without this, one crater beside a wall re-seated all three
+    // courses onto the ground and the wall imploded into a single block.
     const seatR = spec.crater * 2.4 + 1.5;
     for (const s of world.bodies) {
       if (s.kind !== "wall" && s.kind !== "tower") continue;
       if (Math.hypot(s.pos.x - x, s.pos.z - z) > seatR) continue;
-      s.pos.y = world.field.heightAt(s.pos.x, s.pos.z) + s.hy;
+      s.pos.y = world.field.heightAt(s.pos.x, s.pos.z) + (s.seatY != null ? s.seatY : s.hy);
     }
   }
 }

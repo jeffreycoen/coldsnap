@@ -597,6 +597,12 @@ export function stepBreakerRam(world) {
     const unit = a.tag === "heavy" ? a : b.tag === "heavy" ? b : null;
     const str = unit === a ? b : a;
     if (unit && unit.alive && (str.kind === "wall" || str.kind === "tower") && str.alive) {
+      // P1.5 T2: a player wall is three stacked courses and a breaker is tall
+      // enough to be in contact with two of them at once — every contact
+      // POINT deals ram damage, so charging the same wall would deal roughly
+      // double what it dealt as one body. He works the BASE: only course 0
+      // takes the ram, and when the base goes the courses above fall on him.
+      if (str.kind === "wall" && str.course > 0) continue;
       const sp = Math.hypot(unit.v.x, unit.v.z);
       if (sp > 0.8) { applyDamage(world, str, sp * world.dt * 16, { attacker: "enemy" }); str.hitT = world.t; }
     }

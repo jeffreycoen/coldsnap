@@ -16,7 +16,7 @@ import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS } from "./specs.js";
 import { windAt } from "./wind.js";
-import { makeAssaultState, HUD0, BELL_PERIOD_S, BELL_SCRAP, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, pruneSquads, makeManifestState, makeFoeState, pickManifest } from "./state.js";
+import { makeAssaultState, HUD0, BELL_PERIOD_S, BELL_SCRAP, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, spawnWallCourses, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest } from "./state.js";
 import { SQUAD_SPECS, makeSquad, stepSquad } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
@@ -610,12 +610,20 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
   for (let i = world.bodies.length - 1; i >= 0; i--) {
     const b = world.bodies[i];
     if ((b.kind === "wall" || b.kind === "tower") && !b.alive) {
-      shatterStructure(world, b, { ny: b.kind === "tower" ? 4 : 3 });
-      world.events.push({ type: "structureLost", id: b.id, kind: b.kind });
+      // A wall COURSE is a third of a wall, so it breaks into a third of the
+      // rubble (one 3x3 layer instead of three) — a three-course wall coming
+      // down leaves exactly the 27 stones the old single-body wall left.
+      shatterStructure(world, b, { ny: b.kind === "tower" ? 4 : (b.course != null ? 1 : 3) });
+      world.events.push({ type: "structureLost", id: b.id, kind: b.kind, course: b.course != null ? b.course : -1 });
+      forgetWelds(world, b);
       world.byId.delete(b.id); world.bodies.splice(i, 1);
       if (onStructureLost) onStructureLost(b);
     }
   }
+  // THE SUPPORT RULE (P1.5 T2): straight after the dead structures are gone,
+  // so a course that lost its footing this tick finds nothing under it and
+  // comes down for real. Game-layer only — the engine knows nothing about it.
+  stepWallSupport(world);
   payBounties(world);
   for (let i = world.bodies.length - 1; i >= 0; i--) {
     const b = world.bodies[i];
@@ -847,6 +855,11 @@ export default function DepotGame({ onExit, resume = null }) {
         // this at build time; nothing else would).
         for (const b of resBodies) {
           if ((b.kind !== "wall" && b.kind !== "tower") || !b.alive) continue;
+          // A wall's upper courses share the bottom course's cell (P1.5 T2) —
+          // cell.wallId must come back pointing at the BOTTOM one, exactly as
+          // buildAt set it, or a shot-off top course would release the ground
+          // under a wall that is still standing.
+          if (b.course > 0) continue;
           const g = grid.worldToGrid(b.pos.x, b.pos.z);
           if (!grid.inBounds(g.gx, g.gz)) continue;
           const c = grid.cells[grid.idx(g.gx, g.gz)];
@@ -911,7 +924,10 @@ export default function DepotGame({ onExit, resume = null }) {
           // rule gives it slow-radius/2 (~6). EMIT.tower.r stays as the
           // fallback for any tower missing the cache.
           if (b.kind === "tower" && b.team === 1 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.tower.w, r: (b.effRange != null ? b.effRange : TOWER_SPECS[b.towerType].range) / 2, sign: 1 }); }
-          else if (b.kind === "wall" && b.team === 1 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.wall.w, r: EMIT.wall.r, sign: 1 }); }
+          // ONE emitter per WALL, not per course (P1.5 T2): the bottom course
+          // carries it, so three stacked bodies push the same green influence
+          // one body used to.
+          else if (b.kind === "wall" && b.team === 1 && b.alive && !b.course) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.wall.w, r: EMIT.wall.r, sign: 1 }); }
           // FRONT F1: flags emit their OWN team's influence at homeland
           // strength — the enemy depot IS the enemy anchor now.
           else if (b.kind === "flag") { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.depot.w, r: EMIT.depot.r, sign: b.team === 2 ? -1 : 1 }); }
@@ -1109,7 +1125,8 @@ export default function DepotGame({ onExit, resume = null }) {
         // field, so this split changes nothing about wave-planning pressure.
         let mortars = 0, mgs = 0, guns = 0, rockets = 0, frosts = 0, walls = 0, elevSum = 0, elevN = 0;
         for (const b of world.bodies) {
-          if (b.kind === "wall") { walls++; continue; }
+          // WALLS, not courses (P1.5 T2): three would treble planWave's read and playerBookValue.
+          if (b.kind === "wall") { if (!b.course) walls++; continue; }
           if (b.kind !== "tower") continue;
           if (b.towerType === "mortar") mortars++;
           else if (b.towerType === "mg") mgs++;
@@ -1161,7 +1178,11 @@ export default function DepotGame({ onExit, resume = null }) {
           // muzzle and under-computed the elevation bonus.
           b.effRange = effRange(world, { x: b.pos.x, y: b.pos.y + b.hy + 0.45, z: b.pos.z }, spec);
         } else {
-          b = addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.9, hy: 0.9, hz: 0.9, x: wp.x, y: y + 0.9, z: wp.z, hp: 70 });
+          // P1.5 T2: one wall, three welded courses (state.js owns the
+          // dimensions, the hp split and the weld). The CELL owns all three;
+          // cell.wallId is the BOTTOM course, because its death is what
+          // releases the ground and brings the rest down.
+          b = spawnWallCourses(world, wp.x, y, wp.z)[0];
         }
         b.maxHp = b.hp;
         cell.wallId = b.id;
@@ -1316,9 +1337,24 @@ export default function DepotGame({ onExit, resume = null }) {
         if (!id || !world.byId.has(id)) { toast("NOTHING HERE"); return; }
         const b = world.byId.get(id);
         const refund = b.kind === "tower" ? Math.floor(TOWER_SPECS[b.towerType].cost * 0.6) : 3;
-        world.byId.delete(id);
-        const bi = world.bodies.indexOf(b);
-        if (bi >= 0) world.bodies.splice(bi, 1);
+        // ONE cell, ONE structure — and since P1.5 T2 a wall is three courses
+        // standing on that cell, so selling takes the whole stack. Matched by
+        // FOOTPRINT (which cell each body stands on), never by id: ids do not
+        // survive a save/resume, a wall never moves, and this is exactly the
+        // rule the restore path re-claims cells by.
+        const stack = b.kind === "wall"
+          ? world.bodies.filter((w) => {
+            if (w.kind !== "wall") return false;
+            const wg = grid.worldToGrid(w.pos.x, w.pos.z);
+            return wg.gx === gx && wg.gz === gz;
+          })
+          : [b];
+        for (const s of stack) {
+          forgetWelds(world, s);
+          world.byId.delete(s.id);
+          const bi = world.bodies.indexOf(s);
+          if (bi >= 0) world.bodies.splice(bi, 1);
+        }
         cell.wallId = null; cell.blocked = false;
         S.resources += refund;
         recomputeFlow();
@@ -1679,7 +1715,11 @@ export default function DepotGame({ onExit, resume = null }) {
           } else if (e.type === "kill") {
             if (e.attacker === "enemy" && S.ws.results) {
               if (e.kind === "tower") S.ws.results.towerKills++;
-              else if (e.kind === "wall") S.ws.results.wallKills++;
+              // ONE wall pays ONE wallKill (P1.5 T2). A wall stands as three
+              // courses and the enemy can chew through more than one of them;
+              // the upper two carry WALL_UPPER_GROUP on the body, which rides
+              // out on the kill event, so only the wall's own death pays.
+              else if (e.kind === "wall" && e.group !== WALL_UPPER_GROUP) S.ws.results.wallKills++;
               else if (e.kind === "building") S.ws.results.buildingKills++;
             }
           }
@@ -1704,6 +1744,18 @@ export default function DepotGame({ onExit, resume = null }) {
       window.__DEPOTSETT__ = (t) => { world.t = t; world.wind = windAt(MAP_SEED, world.t); };
       window.__DEPOTFLAGS__ = () => world.bodies.filter((b) => b.flagPole).map((b) => ({ id: b.id, kind: b.kind, x: +b.pos.x.toFixed(2), y: +b.pos.y.toFixed(2), z: +b.pos.z.toFixed(2) }));
       window.__DEPOTTREES__ = () => world.bodies.filter((b) => b.kind === "tree").map((b) => ({ id: b.id, x: +b.pos.x.toFixed(2), z: +b.pos.z.toFixed(2), y: +b.pos.y.toFixed(2), hp: +b.hp.toFixed(1), alive: b.alive, burning: b.burning }));
+      // P1.5 T2 staging harness: the live wall courses, the welds holding them
+      // and the loose rubble — so a save/resume run can prove three courses,
+      // two welds and a half-dead wall all came back, and a collapse run can
+      // watch the uppers leave the wall set.
+      window.__DEPOTWALLS__ = () => ({
+        courses: world.bodies.filter((b) => b.kind === "wall").map((b) => ({
+          course: b.course != null ? b.course : -1, hp: +b.hp.toFixed(1), maxHp: b.maxHp, cap: !!b.capTop,
+          x: +b.pos.x.toFixed(2), y: +b.pos.y.toFixed(2), z: +b.pos.z.toFixed(2),
+        })),
+        welds: world.welds.filter((w) => !w.broken && w.a.kind === "wall" && w.b.kind === "wall").length,
+        fallen: world.bodies.filter((b) => b.kind === "chunk" && !b.town && !b.sandbag && b.invM > 0 && b.mass === 100 && b.hy > 0.2).length,
+      });
       window.__DEPOTMG__ = (tx, ty, tz) => {
         // debug harness: fire a single mg round at a point (a tree, typically)
         // from 3m out — used for smoke-testing tree shredding under
@@ -2188,7 +2240,7 @@ export default function DepotGame({ onExit, resume = null }) {
             let en = 0, nw = 0, nt = 0;
             for (const b of world.bodies) {
               if (b.kind === "unit" && b.alive && b.team === 2) en++;
-              else if (b.kind === "wall") nw++;
+              else if (b.kind === "wall") { if (!b.course) nw++; } // the HUD counts WALLS, not courses (P1.5 T2)
               else if (b.kind === "tower") nt++;
             }
             const nowS = performance.now() / 1000;
