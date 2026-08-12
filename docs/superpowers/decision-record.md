@@ -76,8 +76,9 @@
 - Manifest/intel card layout wrinkles at 960px and narrow phones.
 
 **Open/owed:**
-- Owner playtests owed: Polish I batch AND Vision phase (one session can cover both).
-- Halt-and-fight fix task: ruled, not yet planned/dispatched.
+- PLAYTEST VERDICT (owner, 2026-08-12): Polish I, Vision, and the halt-and-fight fix (mk0.74) all passed — "seems okay." Both phases CLOSED. Next phase: Command (radial orders).
+- Mid-march stall: squads freeze short of their destination near masonry before any contact (pre-existing pathing, cohesion/detour family) — surfaced again in the mk0.74 staging runs; unranked by the owner.
+- Rifle lethality at halt range: halted squads engage at maximum reach where scatter eats shots (zero kills in a 16s staged exchange); feel call, unranked.
 - Renderer stale comment (renderer.js:955-957 says targeting reads territory — false since mk0.72); fix rides the next task that may touch that file.
 - Cohesion-deadlock autopsy fix fork (time-cap shipped C0; the smoke-bot modes B fixes were judged moot under load-only testing).
 - Economy probe script calls the gate ungated (flagged mk0.72, out of scope).
