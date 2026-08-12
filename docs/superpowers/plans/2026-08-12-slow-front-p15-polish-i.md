@@ -12,9 +12,9 @@ Everything you asked for after playing mk0.43, in four deploys.
 
 **Task 2 — The masonry look (mk0.51).** Walls become a visible **stack of three welded cubes** — real courses that break one at a time, and when a lower course is shot out, the ones above come down for real. Sandbags become a **single cube**. Both show their **weld seams** so construction reads at a glance. Body-count implications are checked against the perf baseline before it ships.
 
-**Task 3 — The weapon voices (mk0.52).** The bell becomes a single deep **BONGGG**. The sniper rifle a dry **crack** whose echo grows with the distance the shot traveled. The MG a proper **ratatata**. Rifles sit pitched above the sniper. Under the hood, every shot now carries which weapon fired it — today they all sound alike because the sounds literally can't tell them apart.
+**Task 3 — The weapon voices (mk0.56).** *(mark shifted: Task 2's look iterations consumed mk0.52-0.55)* The bell becomes a single deep **BONGGG**. The sniper rifle a dry **crack** whose echo grows with the distance the shot traveled. The MG a proper **ratatata**. Rifles sit pitched above the sniper. Under the hood, every shot now carries which weapon fired it — today they all sound alike because the sounds literally can't tell them apart.
 
-**Task 4 — The engineers arrive (mk0.53).** Every match now starts with **rifles and an engineer team**, and a few sandbags already seeded around the depot. Engineers v1 do exactly one thing: a **BUILD order** — tap a destination and they walk toward it laying a sandbag line as they go, cheaper per bag than the instant build-menu bag but paid for in time and exposure. Repair, walls, and bridges stay in their full phase later.
+**Task 4 — The engineers arrive (mk0.57).** Every match now starts with **rifles and an engineer team**, and a few sandbags already seeded around the depot. Engineers v1 do exactly one thing: a **BUILD order** — tap a destination and they walk toward it laying a sandbag line as they go, cheaper per bag than the instant build-menu bag but paid for in time and exposure. Repair, walls, and bridges stay in their full phase later. This task also **evens the map**: your depot and the enemy's now sit the same distance from center — right now yours is 6m closer to your own map edge, which is why the enemy starts holding more ground.
 
 **What you do:** approve; then playtest the batch — the 90-second rhythm, formation feel, prices, the wall/sandbag look, all four sounds, and an engineer line built under fire. Every number is a one-line change for your verdicts.
 
@@ -55,7 +55,7 @@ Everything you asked for after playing mk0.43, in four deploys.
 
 **Traps:** static-static welds are solver-inert (fine — they're the census/seam semantics, not physics springs); the support rule is the real collapse mechanism. Save round-trip: build a wall, save, resume, verify three courses + welds + a half-dead wall restores (staging, not a test). The boot smoke must stay green.
 
-## Task 3 — Weapon voices (mk0.52)
+## Task 3 — Weapon voices (mk0.56)
 
 1. **Weapon identity plumbing:** every fire spec gains a `weapon` tag ("rifle" | "mg" | "sniper" | "mortar" | "rocket" | "shell" | "tank" …) — `INFANTRY_ARMS`, `TOWER_SPECS`, `ENEMY_FIRE`, `SNIPER_FIRE`. `shooterFire` passes it into the projectile spec; the muzzle event carries it. The muzzle event is pushed by core's `fireProjectile` — an **additive guarded divergence**: the event gains `weapon: spec.weapon` (undefined for demo specs — byte-identical events there; events are unhashed; golden must stay green and you run it).
 2. **Voices** (`src/platform/audio.js`, the module's idiom — humanize, attack ramps, voice cap):
@@ -68,9 +68,9 @@ Everything you asked for after playing mk0.43, in four deploys.
 
 **Reading list:** this plan; `src/platform/audio.js` whole (vocabulary + MUZZLE + coalescing + echoes/att); `src/engine/core.js:416-425` (fireProjectile's muzzle event — the divergence site; read the surrounding divergence-comment idiom and match it); `src/depot/state.js` shooterFire; `src/depot/specs.js` + `src/depot/units.js` SNIPER_FIRE; `scripts/golden.mjs` (you run it and it must pass).
 
-**Traps:** the muzzle-coalescing groups by `e.kind` today (`audio.js:213-216`) — it must group by weapon now or a sniper crack merges into rifle chatter; keep group keys count-stable. Nobody will have heard these — flag that Jeff's ear is the acceptance, same as P1 T4.
+**Traps:** the muzzle-coalescing groups by `e.kind` today (`audio.js:248-277`, key built at `:256`) — it must group by weapon now or a sniper crack merges into rifle chatter; keep group keys count-stable. Nobody will have heard these — flag that Jeff's ear is the acceptance, same as P1 T4.
 
-## Task 4 — Engineers, minimal (mk0.53)
+## Task 4 — Engineers, minimal (mk0.57)
 
 1. `SQUAD_SPECS.engineers` (`squads.js`): n 2, cost ~30 (provisional), label "ENGINEER TEAM". They never fire (`squadFire` skips like sappers — tools, not shooters).
 2. **Starting kit:** P1 T2's START set gains `sq_engineers`; the spawn/menu UI shows it from bell 0.
@@ -81,6 +81,7 @@ Everything you asked for after playing mk0.43, in four deploys.
    - No rng anywhere in this machinery; distance-accumulator on the anchor, deterministic.
 4. **Seeded depot sandbags:** at map build, ~4-6 bags ringed around the player depot at seeded positions using the MAP-SEED rng stream (`genMap`'s `r()` pattern — NOT `world.rng`; keep world-stream draw counts untouched), vetted by `clearSlot`-style clearance against the depot footprint and roads.
 5. Save: verify the "build" order + engineer squads round-trip through save/resume (the serializer is generic over squads — verify, don't assume; the bag-spacing accumulator must serialize or reset harmlessly — pick reset-on-resume and document).
+6. **Depot symmetrization** (folded in from the Playtest I territory diagnosis): the player depot sits at canonical +52 while the enemy sits at -46 (rim ±57) — the midline lands at +3 and the player's homeland emitter disc is clipped by the rim. Move the player depot to **+46** so both sit at ±46. Everything anchored to the depot moves with it: road terminus, `OBJ_POS`, the seeded sandbag ring (item 4). Reverify road connectivity end-to-end and `depot2Foul`/placement clearance around the new position. Territory at match start should read visually even — one staged screenshot (internal sanity).
 
 **Reading list:** this plan; `src/depot/squads.js` whole (module laws, stepSquad's move/attack machine, SQUAD_SPECS); `src/depot/state.js` (spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST); `src/depot/DepotGame.jsx` — squad chips/order flow, stepDepot, genMap/buildDepotTerrain (seeding site), squad placement UI + P1 T2's menu filtering; `src/depot/save.js` (squad serialization); `scripts/depot-test.mjs` — squad-roster and menu pins re-pinned honestly.
 
