@@ -3,18 +3,24 @@
 // stepTowers logic, mirrored here), real tower/wall bodies, real regiment
 // economy (ai.js planWave + economy.js payResults/bookValue). No DOM/three.js.
 //
-// Runs 50-wave sims x N seeds x 3 canned defenses (none/median/strong),
-// reports waves survived, regiment remaining, both ledgers, verdict.
+// Runs 50-BELL sims x N seeds x 3 canned defenses (none/median/strong),
+// reports bells survived, regiment remaining, both ledgers, verdict.
+//
+// RE-BASELINE NEEDED (P1 Task 1, mk0.40): this probe used to run one wave at
+// a time and end each wave on clearance. The bell cycle has no clearance gate
+// — every cell now sims a full BELL_PERIOD_S per bell, so runtimes are much
+// longer and every historical number in the balance reports predates the
+// change. Treat old baselines as void until F5 re-measures.
 //
 //   node scripts/economy-probe.mjs
 import {
   makeWorld, addBody, addWeld, stepWorld, mulberry32,
 } from "../src/engine/core.js";
-import { TOWER_SPECS, WAVES, MASON } from "../src/depot/specs.js";
+import { TOWER_SPECS, MASON } from "../src/depot/specs.js";
 import { stepUnits, spawnUnit, stepBreakerRam } from "../src/depot/units.js";
 import { towerShot, fieldReaches, effRange, friendlyFouls, censusDepotChunks, depotStandingFraction, stepDepotCensus, checkDepotBreach } from "../src/depot/state.js";
 import {
-  makeRunState, startWave, tryStall, advance, checkLoss, checkWin, nextSpawnTag, PHASE,
+  makeRunState, fireBell, withdrawDue, checkLoss, checkWin, nextSpawnTag, BELL_PERIOD_S,
   squadFire, spawnSquadMembers, spawnSandbag, SANDBAG_COST, pruneSquads, executeWithdrawal,
 } from "../src/depot/state.js";
 import { SQUAD_SPECS, makeSquad, stepSquad } from "../src/depot/squads.js";
@@ -474,7 +480,7 @@ function runSim(seed, defense, maxSteps = 26000) {
   world.dt = 1 / 30; // dt batching — coarser than the game's 1/120, plenty stable for economy probing
 
   const rng = mulberry32(seed);
-  const S = makeRunState({ waves: WAVES, startResources: 120, startLives: 20 });
+  const S = makeRunState({ startResources: 120 });
   S.started = true;
   S.reg = makeRegiment(rng);
   const occupied = new Map();
@@ -503,18 +509,28 @@ function runSim(seed, defense, maxSteps = 26000) {
   // solvent waves, per run.
   let wavesFought = 0, withdrawnWaves = 0, withdrewUnits = 0, emptySolventWaves = 0;
 
-  while (!S.gameOver && !S.victory) {
+  const RUN_BELLS = 50; // the probe's run length, in bells
+  while (!S.gameOver && !S.victory && S.bell < RUN_BELLS) {
     if (defense !== "none") refreshDefense(world, S, occupied, plan, defense === "strong", T, squadsRef.v);
 
+    // Town pay closes the cycle, exactly where DepotGame's ringBell puts it.
+    const townPaid = payTown(townBuildings, T);
+    S.resources += townPaid.player;
+    S.reg.scrap += townPaid.regiment;
+
     const snap = buildSnapshot(world);
-    startWave(S, WAVES, { reg: S.reg, snap, rng });
+    fireBell(S, { reg: S.reg, snap, rng, t: world.t });
     const ws = S.ws;
     wavesFought++;
-    // Rule (f) sample: a wave that musters ZERO units while the regiment
-    // could still afford a token muster is a bug signal, not economy.
+    // Rule (f) sample: a muster that fields ZERO units while the regiment
+    // could still afford a token one is a bug signal, not economy.
     if ((ws.fielded || 0) === 0 && (ws.musterScrap ?? 0) >= MIN_WAVE_FLOOR) emptySolventWaves++;
-    let steps = 0, spawnTimer = 0, stalled = false;
-    while (!S.gameOver) {
+    // The bell period IS the cycle: the next assault comes on the clock,
+    // cleared field or not. No stall gate, no forced clear — the loop below
+    // simply runs the period out (or ends early on a breach).
+    const bellEnd = world.t + BELL_PERIOD_S;
+    let spawnTimer = 0, steps = 0;
+    while (!S.gameOver && !S.victory && world.t < bellEnd) {
       if (ws.spawnQueue > 0) {
         spawnTimer -= world.dt;
         if (spawnTimer <= 0) {
@@ -522,7 +538,7 @@ function runSim(seed, defense, maxSteps = 26000) {
           const tag = nextSpawnTag(S);
           spawnUnit(world, SPAWN, tag);
           ws.spawnQueue--;
-          // Wave-timeout clock starts when the LAST queued unit spawns —
+          // Withdrawal clock starts when the LAST queued unit spawns —
           // mirrors DepotGame.jsx's spawn driver (ws.spawnDoneT stamp).
           if (ws.spawnQueue <= 0) ws.spawnDoneT = world.t;
         }
@@ -530,47 +546,15 @@ function runSim(seed, defense, maxSteps = 26000) {
       const structHp = stepOnce._structHp || (stepOnce._structHp = new Map());
       stepOnce(world, S, ws, structHp, T, terrAcc, depotCensus, diag, squadsRef);
       steps++;
-      if (ws.spawnQueue <= 0) {
-        // Waves end by annihilation OR the clock (WAVE_TIMEOUT): tryStall
-        // raises withdrawPending at timeout, executeWithdrawal sweeps the
-        // survivors home (manpower returns to the regiment, no bounty) —
-        // the exact shipped sequence (DepotGame.jsx wave branch).
-        if (ws.withdrawPending) executeWithdrawal(S, world);
-        // Stall gate counts INFANTRY only — the exact shipped check
-        // (DepotGame.jsx wave branch: kind==="unit"). A surviving tank does
-        // NOT hold the wave open in the real game; it keeps rolling and is
-        // despawned by the probe's tank-escape workaround below (flagged in
-        // the report — the shipped game has no tank leak path at all).
-        let live = 0;
-        for (const b of world.bodies) if (b.kind === "unit" && b.alive && b.team === 2) live++;
-        if (tryStall(S, WAVES, live, rng, world)) { stalled = true; break; }
-      }
-      if (steps > maxSteps) {
-        // Forced clear: survivors wedged so hard even the withdrawal clock
-        // couldn't end the wave (shouldn't happen post-timeout — counted
-        // and reported as an anomaly). Wiped with no bounty/results.
-        for (const b of world.bodies) {
-          if (b.alive && ((b.kind === "unit" && b.team === 2) || (b.kind === "vehicle" && b.team === 2))) {
-            b.alive = false; b._paid = true;
-          }
-        }
-        forcedClears++;
-        break;
-      }
+      // A spent assault breaks contact on its own clock (manpower returns to
+      // the regiment, no bounty) — the exact shipped sequence.
+      if (withdrawDue(S, world.t)) executeWithdrawal(S, world);
+      if (steps > maxSteps) { forcedClears++; break; } // runaway guard only
     }
     if (S.gameOver) break;
-    stepOnce._structHp = new Map(); // fresh attribution map per wave
-    if (!stalled) tryStall(S, WAVES, 0, rng, world); // forced-clear path books its results
+    stepOnce._structHp = new Map(); // fresh attribution map per bell
     if (ws.withdrew > 0) { withdrawnWaves++; withdrewUnits += ws.withdrew; }
-    const townPaid = payTown(townBuildings, T);
-    S.resources += townPaid.player;
-    S.reg.scrap += townPaid.regiment;
-    if (forcedClears > 6) { stalemate = true; break; } // truly wedged run — bail out
-    wavesCleared = ws.waveIdx + 1;
-    if (S.victory) break; // attrition win flips at tryStall
-    const advanced = advance(S, WAVES, buildSnapshot(world));
-    if (!advanced) break;
-    if (S.phase === PHASE.BUILD && S.ws.waveIdx >= WAVES.length) break;
+    wavesCleared = S.bell;
   }
 
   const finalSnap = buildSnapshot(world);
@@ -586,7 +570,7 @@ function runSim(seed, defense, maxSteps = 26000) {
 
   return {
     seed, defense, wavesCleared, verdict,
-    lives: S.lives, resources: Math.round(S.resources),
+    resources: Math.round(S.resources),
     regHeads: S.reg.heads, regTanks: S.reg.tanks, regScrap: Math.round(S.reg.scrap),
     playerBV: Math.round(playerBV), attackerBV: Math.round(attackerBV),
     finalSnap, stalemate, depotStanding: S.depotStanding != null ? S.depotStanding : 1, diag,
@@ -615,7 +599,7 @@ for (const defense of CELLS) {
   console.log(`\n=== defense: ${defense} (${SEEDS} seeds, ${elapsed.toFixed(1)}s) ===`);
   for (const r of rows) {
     const diagStr = DIAG_ON ? `  [fired=${r.diag.fired} held=${r.diag.held} noTarget=${r.diag.noTarget}]` : "";
-    console.log(`seed ${String(r.seed).padStart(2)}: wave ${String(r.wavesCleared).padStart(2)}/50  ${r.verdict.padEnd(16)} lives=${r.lives}  reg(heads=${r.regHeads} tanks=${r.regTanks} scrap=${r.regScrap})  playerBV=${r.playerBV} attackerBV=${r.attackerBV}  depot=${r.depotStanding.toFixed(2)}  wd=${r.withdrawnWaves}/${r.wavesFought}${r.forcedClears ? ` FORCED=${r.forcedClears}` : ""}${diagStr}`);
+    console.log(`seed ${String(r.seed).padStart(2)}: bell ${String(r.wavesCleared).padStart(2)}/50  ${r.verdict.padEnd(16)} reg(heads=${r.regHeads} tanks=${r.regTanks} scrap=${r.regScrap})  playerBV=${r.playerBV} attackerBV=${r.attackerBV}  depot=${r.depotStanding.toFixed(2)}  wd=${r.withdrawnWaves}/${r.wavesFought}${r.forcedClears ? ` FORCED=${r.forcedClears}` : ""}${diagStr}`);
   }
   const avgWave = rows.reduce((s, r) => s + r.wavesCleared, 0) / rows.length;
   const wins = rows.filter((r) => r.verdict.startsWith("WIN")).length;

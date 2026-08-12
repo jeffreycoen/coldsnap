@@ -1,8 +1,10 @@
-// Headless test for the depot wave phase machine: build -> wave -> stall ->
-// advance -> wave 2. Drives src/depot/state.js directly, no DOM/three.js.
+// Headless test for the depot bell cycle: the clock runs, the bell musters an
+// assault under its tier cap, spent assaults withdraw. Drives
+// src/depot/state.js directly, no DOM/three.js.
 //   node scripts/depot-test.mjs
 import {
-  PHASE, makeRunState, startWave, tryStall, advance,
+  makeRunState, stepBell, fireBell, withdrawDue, executeWithdrawal,
+  BELL_PERIOD_S, BELL_SCRAP, TIER_BELLS, ENEMY_TIERS, enemyTierState, ASSAULT_TIMEOUT,
   regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, squadFire,
   fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed,
   PENDING_EDGE_PAD, pendingButtonsVisible, canvasTapConsumesPending,
@@ -18,7 +20,7 @@ import { friendlyFouls } from "../src/depot/state.js";
 import {
   makeWorld, addBody, addWeld, fireProjectile, stepWorld, applyDamage, worldHash, CAUSE, mulberry32, aimSolve,
 } from "../src/engine/core.js";
-import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, WAVES as DEPOT_WAVES, MASON, INFANTRY_ARMS } from "../src/depot/specs.js";
+import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, MASON, INFANTRY_ARMS } from "../src/depot/specs.js";
 import { stepUnits, spawnUnit, payBounties, SNIPER_FIRE } from "../src/depot/units.js";
 import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad } from "../src/depot/squads.js";
 import {
@@ -50,145 +52,152 @@ const ok = (name, cond, detail) => {
   if (!cond) fails.push(name);
 };
 
-const WAVES = [
-  { units: 3, delay: 1 },
-  { units: 4, delay: 0.8 },
-  { units: 5, delay: 0.7 },
-];
+// A regiment fat enough to muster every bell, and a seeded stream — the bell
+// cycle has no static table to drive any more, so every fixture that wants an
+// assault wires a real attacker economy.
+const fatReg = () => ({ heads: 400, tanks: 10, heads0: 400, tanks0: 10, scrap: 400 });
 
-const S = makeRunState({ waves: WAVES });
+const S = makeRunState();
 S.started = true;
+S.reg = fatReg();
+const rngS = mulberry32(4242);
 
-// --- initial phase is build
-ok("starts in build phase", S.phase === PHASE.BUILD, S.phase);
-ok("dispatch starts empty", S.dispatch === null);
+// --- the clock: bellT counts down off SIM time, the bell fires at zero
+ok("starts before the first bell", S.bell === 0 && S.bellT === BELL_PERIOD_S, `${S.bell}/${S.bellT}`);
+ok("lastDispatch starts empty", S.lastDispatch === null);
+ok("clock does not fire early", stepBell(S, BELL_PERIOD_S - 1) === false);
+ok("bellT is the remaining sim seconds", Math.abs(S.bellT - 1) < 1e-9, S.bellT);
+ok("clock fires at the period", stepBell(S, BELL_PERIOD_S) === true);
+ok("bellT resets to a full period", S.bellT === BELL_PERIOD_S);
+ok("clock does not fire twice for one period", stepBell(S, BELL_PERIOD_S + 1) === false);
 
-// --- build -> wave
-startWave(S, WAVES);
-ok("startWave moves to wave phase", S.phase === PHASE.WAVE, S.phase);
-ok("spawn queue loaded from wave 0", S.ws.spawnQueue === 3, S.ws.spawnQueue);
+// --- the bell musters an assault
+fireBell(S, { reg: S.reg, snap: {}, rng: rngS, t: BELL_PERIOD_S });
+ok("first bell is bell 1", S.bell === 1, S.bell);
+ok("the bell arms a spawn queue", S.ws.spawnQueue > 0, S.ws.spawnQueue);
+ok("the bell resets the results accumulator", S.ws.results && S.ws.results.structureDmg === 0);
+ok("the bell files a re-readable dispatch", !!S.lastDispatch && S.lastDispatch.lines.length > 0);
+ok("dispatch copy names the bell", S.lastDispatch.lines[0].includes("MUSTER BELL 1"), S.lastDispatch.lines[0]);
 
-// tryStall must not fire while queue is nonempty or enemies are alive
-let fired = tryStall(S, WAVES, 0);
-ok("tryStall no-ops while spawn queue nonempty", fired === false && S.phase === PHASE.WAVE);
-S.ws.spawnQueue = 0;
-fired = tryStall(S, WAVES, 2);
-ok("tryStall no-ops while enemies alive", fired === false && S.phase === PHASE.WAVE);
+// --- the next bell comes on schedule whether or not the field is clear
+const queuedBefore = S.ws.spawnQueue;
+fireBell(S, { reg: S.reg, snap: {}, rng: rngS, t: 2 * BELL_PERIOD_S });
+ok("a second bell fires with the first assault still walking", S.bell === 2 && queuedBefore > 0);
+ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
 
-// --- wave -> stall
-fired = tryStall(S, WAVES, 0);
-ok("tryStall fires once queue empty and no enemies alive", fired === true);
-ok("phase is stall", S.phase === PHASE.STALL, S.phase);
-ok("dispatch card populated", !!S.dispatch && Array.isArray(S.dispatch.lines) && S.dispatch.lines.length > 0);
-ok("dispatch copy mentions WAVE 1 CLEARED", S.dispatch.lines[0].includes("WAVE 1 CLEARED"), S.dispatch.lines[0]);
-ok("lastDispatch mirrors dispatch (for wave-chip re-read)", S.lastDispatch === S.dispatch);
+// --- income lands on the bell (the retired stall's grant, moved onto the clock)
+{
+  const I = makeRunState();
+  I.started = true;
+  I.reg = fatReg();
+  const before = I.resources, regBefore = I.reg.scrap;
+  fireBell(I, { reg: I.reg, snap: {}, rng: mulberry32(1), t: BELL_PERIOD_S });
+  ok("bell pays the player's cycle scrap", I.resources === before + BELL_SCRAP, `${I.resources} vs ${before + BELL_SCRAP}`);
+  ok("bell pays the regiment's stipend before the muster spends it",
+    I.reg.scrap <= regBefore + STIPEND, `${I.reg.scrap}`);
+}
 
-// sim keeps ticking during stall — nothing in the phase machine blocks that
-// (no spawn calls happen because DepotGame's loop only calls spawnOne while
-// phase === wave; verified here by confirming stall doesn't re-arm spawnQueue)
-ok("stall leaves spawn queue drained", S.ws.spawnQueue === 0);
+// --- tier caps: what a bell's assault may contain
+{
+  ok("conscripts are never gated", enemyTierState(0).tags.includes(""));
+  ok("nothing but conscripts before the first tier bell", enemyTierState(TIER_BELLS[0] - 1).tags.length === 1);
+  for (let i = 0; i < ENEMY_TIERS.length; i++) {
+    const justBefore = enemyTierState(TIER_BELLS[i] - 1).tags;
+    const atBell = enemyTierState(TIER_BELLS[i]).tags;
+    ok(`tier ${i + 1} is shut before bell ${TIER_BELLS[i]}`, ENEMY_TIERS[i].every((t) => !justBefore.includes(t)));
+    ok(`tier ${i + 1} opens at bell ${TIER_BELLS[i]}`, ENEMY_TIERS[i].every((t) => atBell.includes(t)));
+  }
+  // and planWave honours the cap: 40 seeded musters at bell 1 field nothing
+  // from tiers 2 or 3, however rich the regiment.
+  const gated = ENEMY_TIERS[1].concat(ENEMY_TIERS[2]);
+  let leaked = 0, fieldedAny = 0;
+  for (let seed = 1; seed <= 40; seed++) {
+    const reg = { heads: 400, tanks: 10, heads0: 400, tanks0: 10, scrap: 900 };
+    const { buys } = planWave(reg, { mgs: 8, walls: 8, squads: 3 }, 1, mulberry32(seed * 31), enemyTierState(1).tags);
+    if (buys.some((b) => gated.includes(b.type))) leaked++;
+    if (buys.reduce((n, b) => n + b.n, 0) > 0) fieldedAny++;
+  }
+  ok("tier cap holds through planWave (40 seeds at bell 1, no tier-2/3 tags)", leaked === 0, `${leaked} leaks`);
+  ok("a capped muster still fields men", fieldedAny === 40, `${fieldedAny}/40`);
+  // draw-count stability: the cap clamps what the draws buy, never how many
+  // draws happen — a capped and an uncapped plan consume the same stream.
+  const drawsFor = (tags) => {
+    let n = 0;
+    const r = mulberry32(77);
+    const counted = () => { n++; return r(); };
+    planWave({ heads: 400, tanks: 10, heads0: 400, tanks0: 10, scrap: 900 }, { mgs: 8 }, 1, counted, tags);
+    return n;
+  };
+  ok("tier caps do not change planWave's draw count",
+    drawsFor(enemyTierState(1).tags) === 4 && drawsFor(null) === 4);
+}
 
-// advance() is a no-op outside stall
-const preAdvancePhase = S.phase;
-S.phase = PHASE.BUILD;
-ok("advance no-ops outside stall", advance(S, WAVES) === false && S.phase === PHASE.BUILD);
-S.phase = preAdvancePhase;
-
-// --- stall -> advance -> build (wave 2 armed)
-const resourcesBefore = S.resources;
-fired = advance(S, WAVES);
-ok("advance() fires from stall", fired === true);
-ok("phase returns to build", S.phase === PHASE.BUILD, S.phase);
-ok("waveIdx incremented to wave 2", S.ws.waveIdx === 1, S.ws.waveIdx);
-ok("dispatch cleared (gating card gone)", S.dispatch === null);
-ok("lastDispatch still holds wave 1's card for re-read", S.lastDispatch && S.lastDispatch.lines[0].includes("WAVE 1 CLEARED"));
-ok("resource bonus applied on advance", S.resources === resourcesBefore + 12, S.resources);
-ok("countdown reset for the build phase", S.ws.countdown === 8);
-
-// --- build -> wave 2
-startWave(S, WAVES);
-ok("startWave arms wave 2's spawn queue", S.ws.spawnQueue === 4, S.ws.spawnQueue);
-ok("phase is wave again", S.phase === PHASE.WAVE, S.phase);
-
-// --- clear the last table row -> the war continues (FRONT F1: waves cycle)
-S.ws.waveIdx = WAVES.length - 1;
-S.ws.spawnQueue = 0;
-S.phase = PHASE.WAVE;
-tryStall(S, WAVES, 0);
-ok("last-row wave clear enters stall", S.phase === PHASE.STALL);
-ok("no FINAL WAVE copy on the last-row card", !S.dispatch.lines.some((l) => l.includes("FINAL WAVE")), JSON.stringify(S.dispatch.lines));
-advance(S, WAVES);
-ok("advancing past the last table row sets NO victory (only a breach ends the run)", S.victory === false && S.gameOver === false);
+// --- the withdrawal clock (kept from the wave machine)
+{
+  const W = makeRunState();
+  W.started = true;
+  W.ws.spawnQueue = 0;
+  W.ws.spawnDoneT = 100;
+  ok("withdrawal not due before the timeout", withdrawDue(W, 100 + ASSAULT_TIMEOUT) === false);
+  ok("withdrawal due after the timeout", withdrawDue(W, 101 + ASSAULT_TIMEOUT) === true);
+  ok("withdrawal is raised once per assault", withdrawDue(W, 200 + ASSAULT_TIMEOUT) === false);
+  ok("a still-spawning assault never withdraws",
+    (() => { const X = makeRunState(); X.ws.spawnQueue = 3; X.ws.spawnDoneT = 0; return withdrawDue(X, 1e6); })() === false);
+}
 
 // ===================================================== end states (FRONT F1)
 // checkLoss keeps only the stubbed regiment hook — with the stub false it
 // can never fire; the depot's masonry (checkDepotBreach) is the loss track.
 {
-  const W50 = Array.from({ length: 50 }, (_, i) => ({ units: 12 + i * 2, delay: 0.9 }));
-  const L = makeRunState({ waves: W50 });
+  const L = makeRunState();
   L.started = true;
-  L.ws.waveIdx = 4;
   ok("regimentDestroyed stub is always false", regimentDestroyed(L) === false);
   ok("checkLoss never fires without the regiment stub (lives retired)", checkLoss(L) === false && L.gameOver === false);
   ok("checkLoss does not set victory", L.victory === false);
 }
 
-// FRONT F1: the book-value verdict is retired as an ending. Rich or poor,
-// clearing the last table row ends nothing — advance() never calls checkWin.
+// FRONT F1: the book-value verdict is retired as an ending. Rich or poor, no
+// number of bells ends the run — nothing in the cycle calls checkWin.
 // checkWin itself stays exported (the probe reads it) with its old verdict.
 {
-  const W50 = Array.from({ length: 50 }, (_, i) => ({ units: 12 + i * 2, delay: 0.9 }));
-  const G = makeRunState({ waves: W50, startResources: 999999 });
+  const snap = { mortars: 2, mgs: 3, guns: 2, frosts: 1, walls: 10 };
+  const G = makeRunState({ startResources: 999999 });
   G.started = true;
   G.reg = { heads: 60, tanks: 1, heads0: 400, tanks0: 10, scrap: 20 };
-  G.ws.waveIdx = W50.length - 1;
-  G.ws.spawnQueue = 0;
-  G.phase = PHASE.WAVE;
-  tryStall(G, W50, 0);
-  const snap = { mortars: 2, mgs: 3, guns: 2, frosts: 1, walls: 10 };
-  advance(G, W50, snap);
-  ok("rich player past the table end: NO ledger win", G.victory === false && G.gameOver === false);
-  const B = makeRunState({ waves: W50, startResources: 0 });
+  const rngG = mulberry32(3);
+  for (let i = 0; i < 6; i++) fireBell(G, { reg: G.reg, snap, rng: rngG, t: (i + 1) * BELL_PERIOD_S });
+  ok("rich player, six bells deep: NO ledger win", G.victory === false && G.gameOver === false);
+  const B = makeRunState({ startResources: 0 });
   B.started = true;
   B.reg = { heads: 300, tanks: 10, heads0: 400, tanks0: 10, scrap: 500 };
-  B.ws.waveIdx = W50.length - 1;
-  B.ws.spawnQueue = 0;
-  B.phase = PHASE.WAVE;
-  tryStall(B, W50, 0);
-  advance(B, W50, {});
-  ok("poor player past the table end: NO ledger loss", B.victory === false && B.gameOver === false && B.ledgerLoss !== true);
+  const rngB = mulberry32(4);
+  for (let i = 0; i < 6; i++) fireBell(B, { reg: B.reg, snap: {}, rng: rngB, t: (i + 1) * BELL_PERIOD_S });
+  ok("poor player, six bells deep: NO ledger loss", B.victory === false && B.gameOver === false && B.ledgerLoss !== true);
   // the retired function still answers when the probe calls it directly
-  const Sw = makeRunState({ waves: W50, startResources: 999999 });
+  const Sw = makeRunState({ startResources: 999999 });
   ok("checkWin (retired, probe-only) still returns its book verdict when called directly",
-    checkWin(Sw, W50, snap) === true && Sw.victory === true);
+    checkWin(Sw, snap) === true && Sw.victory === true);
 }
 
 // FRONT F1: a combat-ineffective regiment no longer ends the run — the
-// bureau observes it once on the dispatch card and the war continues.
+// bureau observes it once on the bell's dispatch and the war continues.
 {
-  const W50 = Array.from({ length: 50 }, (_, i) => ({ units: 12 + i * 2, delay: 0.9 }));
-  const A = makeRunState({ waves: W50, startResources: 0 });
+  const A = makeRunState({ startResources: 0 });
   A.started = true;
-  A.ws.waveIdx = 10;
   A.reg = { heads: 10, tanks: 0, heads0: 400, tanks0: 10, scrap: 0 }; // < 12% heads0, 0 tanks -> ineffective
-  A.ws.spawnQueue = 0;
-  A.phase = PHASE.WAVE;
-  const fired = tryStall(A, W50, 0);
-  ok("attrition retired: tryStall still fires on regiment break", fired === true);
+  fireBell(A, { reg: A.reg, snap: {}, rng: mulberry32(5), t: BELL_PERIOD_S });
+  ok("attrition retired: the bell still files its dispatch on a broken regiment", !!A.lastDispatch);
   ok("attrition retired: run does NOT end", A.victory === false && A.gameOver === false);
 }
 
 // intact, above-threshold regiment mid-run never draws the observation.
 {
-  const W50 = Array.from({ length: 50 }, (_, i) => ({ units: 12 + i * 2, delay: 0.9 }));
-  const N = makeRunState({ waves: W50 });
+  const N = makeRunState();
   N.started = true;
-  N.ws.waveIdx = 10;
   N.reg = { heads: 300, tanks: 5, heads0: 400, tanks0: 10, scrap: 0 };
-  N.ws.spawnQueue = 0;
-  N.phase = PHASE.WAVE;
-  tryStall(N, W50, 0);
-  ok("intact regiment mid-run: no break observation, no ending", N.victory === false && !N.dispatch.lines.some((l) => /combat-ineffective/i.test(l)));
+  fireBell(N, { reg: N.reg, snap: {}, rng: mulberry32(6), t: BELL_PERIOD_S });
+  ok("intact regiment mid-run: no break observation, no ending",
+    N.victory === false && !N.lastDispatch.lines.some((l) => /combat-ineffective/i.test(l)));
 }
 
 // bounty bug: killing a TANK (kind: "vehicle") must pay its bounty (25),
@@ -209,128 +218,107 @@ ok("advancing past the last table row sets NO victory (only a breach ends the ru
   ok("bounty is paid only once (b._paid guard)", world.events.length === before2);
 }
 
-// economic-paralysis victory: 3 CONSECUTIVE stalls where the attacker
-// couldn't afford a minimum wave (reg.scrap < MIN_WAVE_FLOOR) end the run
-// early as a WIN — "the offensive is spent" — independent of combatIneffective.
+// The starved-muster streak: 3 CONSECUTIVE bells where the attacker cannot
+// afford a minimum muster (musterScrap < MIN_WAVE_FLOOR) and fields nobody
+// earn a one-time "the offensive is spent" observation — not an ending.
+// A starved fixture needs an EMPTY head pool as well as empty scrap: the bell
+// pays the stipend before the muster, and a stipend alone buys conscripts.
+const starvedReg = () => ({ heads: 0, tanks: 1, heads0: 400, tanks0: 10, scrap: 0 });
+const bellsOf = (S, reg, n, scrapEach, rng, snap = {}) => {
+  for (let i = 0; i < n; i++) {
+    reg.scrap = scrapEach;
+    fireBell(S, { reg, snap, rng, t: (S.bell + 1) * BELL_PERIOD_S });
+  }
+};
 {
-  const W50 = Array.from({ length: 50 }, (_, i) => ({ units: 12 + i * 2, delay: 0.9 }));
-  const P = makeRunState({ waves: W50, startResources: 0 });
+  const P = makeRunState({ startResources: 0 });
   P.started = true;
-  P.ws.waveIdx = 5;
-  // heads/tanks well above the attrition threshold — this must NOT be an
-  // attrition win, only a starvation one.
-  P.reg = { heads: 300, tanks: 5, heads0: 400, tanks0: 10, scrap: MIN_WAVE_FLOOR - 1 };
-  P.ws.spawnQueue = 0;
-  P.phase = PHASE.WAVE;
-  tryStall(P, W50, 0);
-  ok("starved stall 1/3: no observation yet", P.victory !== true && !P.dispatch.lines.some((l) => /spent/i.test(l)));
-  P.phase = PHASE.WAVE; P.ws.spawnQueue = 0;
-  tryStall(P, W50, 0);
-  ok("starved stall 2/3: still none", P.victory !== true && !P.dispatch.lines.some((l) => /spent/i.test(l)));
-  P.phase = PHASE.WAVE; P.ws.spawnQueue = 0;
-  tryStall(P, W50, 0);
-  ok("starved stall 3/3: FRONT F1 — no win, only a one-time spent observation", P.victory !== true && P.gameOver !== true && P.dispatch.lines.some((l) => /spent/i.test(l)), JSON.stringify(P.dispatch.lines));
+  P.reg = starvedReg();
+  const rng = mulberry32(21);
+  bellsOf(P, P.reg, 1, 0, rng);
+  ok("starved bell 1/3: no observation yet", P.victory !== true && !P.lastDispatch.lines.some((l) => /spent/i.test(l)));
+  bellsOf(P, P.reg, 1, 0, rng);
+  ok("starved bell 2/3: still none", P.victory !== true && !P.lastDispatch.lines.some((l) => /spent/i.test(l)));
+  bellsOf(P, P.reg, 1, 0, rng);
+  ok("starved bell 3/3: no win, only a one-time spent observation",
+    P.victory !== true && P.gameOver !== true && P.lastDispatch.lines.some((l) => /spent/i.test(l)), JSON.stringify(P.lastDispatch.lines));
 }
 
-// only 2 consecutive starved stalls: no trigger.
+// only 2 consecutive starved bells: no trigger.
 {
-  const W50 = Array.from({ length: 50 }, (_, i) => ({ units: 12 + i * 2, delay: 0.9 }));
-  const P2 = makeRunState({ waves: W50, startResources: 0 });
+  const P2 = makeRunState({ startResources: 0 });
   P2.started = true;
-  P2.ws.waveIdx = 5;
-  P2.reg = { heads: 300, tanks: 5, heads0: 400, tanks0: 10, scrap: MIN_WAVE_FLOOR - 1 };
-  P2.ws.spawnQueue = 0;
-  P2.phase = PHASE.WAVE;
-  tryStall(P2, W50, 0);
-  P2.phase = PHASE.WAVE; P2.ws.spawnQueue = 0;
-  tryStall(P2, W50, 0);
-  ok("2 starved stalls: no ending, no spent observation", P2.victory !== true && P2.gameOver !== true && !P2.dispatch.lines.some((l) => /spent/i.test(l)));
+  P2.reg = starvedReg();
+  bellsOf(P2, P2.reg, 2, 0, mulberry32(22));
+  ok("2 starved bells: no ending, no spent observation",
+    P2.victory !== true && P2.gameOver !== true && !P2.lastDispatch.lines.some((l) => /spent/i.test(l)));
 }
 
-// a solvent stall resets the consecutive counter.
+// a solvent bell resets the consecutive counter.
 {
-  const W50 = Array.from({ length: 50 }, (_, i) => ({ units: 12 + i * 2, delay: 0.9 }));
-  const P3 = makeRunState({ waves: W50, startResources: 0 });
+  const P3 = makeRunState({ startResources: 0 });
   P3.started = true;
-  P3.ws.waveIdx = 5;
-  P3.reg = { heads: 300, tanks: 5, heads0: 400, tanks0: 10, scrap: MIN_WAVE_FLOOR - 1 };
-  P3.ws.spawnQueue = 0;
-  P3.phase = PHASE.WAVE;
-  tryStall(P3, W50, 0); // starved 1
-  P3.phase = PHASE.WAVE; P3.ws.spawnQueue = 0;
-  P3.reg.scrap = MIN_WAVE_FLOOR - 1;
-  tryStall(P3, W50, 0); // starved 2
-  P3.phase = PHASE.WAVE; P3.ws.spawnQueue = 0;
-  P3.reg.scrap = MIN_WAVE_FLOOR + 500; // solvent — resets streak
-  tryStall(P3, W50, 0);
-  P3.phase = PHASE.WAVE; P3.ws.spawnQueue = 0;
-  P3.reg.scrap = MIN_WAVE_FLOOR - 1;
-  tryStall(P3, W50, 0); // starved 1 again post-reset
-  P3.phase = PHASE.WAVE; P3.ws.spawnQueue = 0;
-  P3.reg.scrap = MIN_WAVE_FLOOR - 1;
-  tryStall(P3, W50, 0); // starved 2 again
-  ok("solvent stall resets streak: no win after only 2 post-reset", P3.victory !== true, P3.starvedStreak);
+  P3.reg = starvedReg();
+  const rng = mulberry32(23);
+  bellsOf(P3, P3.reg, 2, 0, rng);              // starved 1, 2
+  P3.reg.heads = 400;
+  bellsOf(P3, P3.reg, 1, MIN_WAVE_FLOOR + 500, rng); // fields troops — resets
+  P3.reg.heads = 0;
+  bellsOf(P3, P3.reg, 2, 0, rng);              // starved 1, 2 again
+  ok("solvent bell resets streak: no spent line after only 2 post-reset",
+    !P3.lastDispatch.lines.some((l) => /spent/i.test(l)), P3.starvedStreak);
 }
 
 // ================================================== spent misfire (Jeff's repro)
 // The starved check must read the attacker's MUSTER-TIME solvency, not the
-// post-buy scrap planWave leaves behind. A wave that actually fielded troops
+// post-buy scrap planWave leaves behind. A bell that actually fielded troops
 // can NEVER count as starved, no matter how broke the regiment is after
-// buying it — otherwise every well-spent wave increments the streak and the
-// run ends early after 3 perfectly normal waves.
+// buying it — otherwise every well-spent muster increments the streak.
 {
-  const W50 = Array.from({ length: 50 }, (_, i) => ({ units: 12 + i * 2, delay: 0.9 }));
   const rng = mulberry32(1234);
-  // (a) Jeff's repro: 4 consecutive waves that field real troops. planWave
+  // (a) Jeff's repro: 4 consecutive bells that field real troops. planWave
   // spends scrap down at muster, so post-buy reg.scrap is routinely under
   // MIN_WAVE_FLOOR — the streak must stay 0 and the run must continue.
-  const J = makeRunState({ waves: W50, startResources: 0 });
+  const J = makeRunState({ startResources: 0 });
   J.started = true;
   J.reg = { heads: 400, tanks: 0, heads0: 400, tanks0: 0, scrap: MIN_WAVE_FLOOR + 2 };
   for (let w = 0; w < 4; w++) {
     J.reg.scrap = MIN_WAVE_FLOOR + 2; // solvent at muster, nearly all spent by planWave
-    startWave(J, W50, { reg: J.reg, snap: {}, rng });
-    ok(`repro wave ${w + 1} fields troops`, J.ws.spawnQueue > 0, J.ws.spawnQueue);
-    J.ws.spawnQueue = 0;
-    tryStall(J, W50, 0, rng);
-    ok(`repro wave ${w + 1}: post-spend scrap under floor yet streak stays 0`,
+    fireBell(J, { reg: J.reg, snap: {}, rng, t: (w + 1) * BELL_PERIOD_S });
+    ok(`repro bell ${w + 1} fields troops`, J.ws.spawnQueue > 0, J.ws.spawnQueue);
+    ok(`repro bell ${w + 1}: post-spend scrap under floor yet streak stays 0`,
       J.starvedStreak === 0, `streak=${J.starvedStreak} scrap=${J.reg.scrap}`);
-    advance(J, W50, {});
   }
-  ok("repro: run continues past 4 fielded waves — no spent misfire", J.victory !== true && J.gameOver !== true);
+  ok("repro: run continues past 4 fielded bells — no spent misfire", J.victory !== true && J.gameOver !== true);
 
-  // (b) genuinely starved: 3 consecutive musters where the attacker cannot
-  // afford the floor AND fields zero units -> early WIN, spent flag set.
-  const G = makeRunState({ waves: W50, startResources: 0 });
+  // (b) genuinely starved: 3 consecutive musters that cannot afford the floor
+  // AND field zero units -> the one-time spent observation, no ending.
+  const G = makeRunState({ startResources: 0 });
   G.started = true;
-  G.reg = { heads: 400, tanks: 0, heads0: 400, tanks0: 0, scrap: 0 };
+  G.reg = starvedReg();
   for (let w = 0; w < 3; w++) {
     G.reg.scrap = 0;
-    startWave(G, W50, { reg: G.reg, snap: {}, rng });
-    ok(`starved wave ${w + 1} fields nothing`, G.ws.spawnQueue === 0, G.ws.spawnQueue);
-    tryStall(G, W50, 0, rng);
-    if (w < 2) advance(G, W50, {});
+    fireBell(G, { reg: G.reg, snap: {}, rng, t: (w + 1) * BELL_PERIOD_S });
+    ok(`starved bell ${w + 1} fields nothing`, G.ws.spawnQueue === 0, G.ws.spawnQueue);
   }
-  ok("3 empty musters: FRONT F1 — no ending", G.victory !== true && G.gameOver !== true);
-  ok("3 empty musters: the bureau observes the offensive spent", G.dispatch.lines.some((l) => /spent/i.test(l)), JSON.stringify(G.dispatch.lines));
+  ok("3 empty musters: no ending", G.victory !== true && G.gameOver !== true);
+  ok("3 empty musters: the bureau observes the offensive spent", G.lastDispatch.lines.some((l) => /spent/i.test(l)), JSON.stringify(G.lastDispatch.lines));
 
-  // (c) a fielded wave between two starved ones resets the counter.
-  const R = makeRunState({ waves: W50, startResources: 0 });
+  // (c) a fielded bell between two starved ones resets the counter.
+  const R = makeRunState({ startResources: 0 });
   R.started = true;
-  R.reg = { heads: 400, tanks: 0, heads0: 400, tanks0: 0, scrap: 0 };
-  const cycle = (scrap) => {
-    R.reg.scrap = scrap;
-    startWave(R, W50, { reg: R.reg, snap: {}, rng });
-    R.ws.spawnQueue = 0;
-    tryStall(R, W50, 0, rng);
-    advance(R, W50, {});
+  R.reg = starvedReg();
+  const cycle = (scrap, heads) => {
+    R.reg.scrap = scrap; R.reg.heads = heads;
+    fireBell(R, { reg: R.reg, snap: {}, rng, t: (R.bell + 1) * BELL_PERIOD_S });
   };
-  cycle(0); // starved 1
-  cycle(MIN_WAVE_FLOOR + 40); // fields troops — resets
-  ok("fielded wave resets starved streak", R.starvedStreak === 0, R.starvedStreak);
-  cycle(0); // starved 1 again
-  cycle(0); // starved 2
-  ok("reset held: only 2 starved since the fielded wave, run continues", R.victory !== true, R.starvedStreak);
+  cycle(0, 0); // starved 1
+  cycle(MIN_WAVE_FLOOR + 40, 400); // fields troops — resets
+  ok("fielded bell resets starved streak", R.starvedStreak === 0, R.starvedStreak);
+  cycle(0, 0); // starved 1 again
+  cycle(0, 0); // starved 2
+  ok("reset held: only 2 starved since the fielded bell, no spent line",
+    !R.lastDispatch.lines.some((l) => /spent/i.test(l)), R.starvedStreak);
 }
 
 // FRONT F1: the only victory card is the enemy-breach card, whatever flags ride along.
@@ -551,7 +539,10 @@ function scriptedWaveRun(seed) {
   ok("ENEMY_SPECS carries the full roster (conscript/runner/breaker/grenadier/sapper)", ["", "fast", "heavy", "gren", "sapper"].every((k) => ENEMY_SPECS[k]));
   ok("ENEMY_SPECS bounty === TD price (spot check: heavy 12, gren 8, sapper 7, fast 5)", ENEMY_SPECS.heavy.bounty === 12 && ENEMY_SPECS.gren.bounty === 8 && ENEMY_SPECS.sapper.bounty === 7 && ENEMY_SPECS.fast.bounty === 5);
   ok("TANK bounty === TD price (25)", TANK.bounty === 25);
-  ok("later waves reach the new unit types (mix present somewhere in the table)", DEPOT_WAVES.some((w) => w.mix && w.mix.some((m) => m[0] === "tank")));
+  // (DELETED, P1 T1 mk0.40: "later waves reach the new unit types" pinned the
+  // static WAVES table's seeded mixes. The table is gone — nothing seeds a
+  // roster any more. The reachability it guarded now lives in the tier-cap
+  // asserts at the top of this file.)
 
   // folded here from the retired TASK 4C block (C0 purge, mk0.31): the enemy
   // marksman's price and armament pins belong with the rest of the mirror.
@@ -616,59 +607,53 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 
 // --- Task 4: economy wired into the loop ----------------------------------
 
-// startWave(S, WAVES, {reg, snap, rng}) generates from planWave instead of
-// the static table — spawnQueue/mixBag match the plan's buys exactly.
+// fireBell(S, {reg, snap, rng}) composes the assault from planWave —
+// spawnQueue/mixBag match the plan's buys exactly.
 {
-  const S = makeRunState({ waves: WAVES });
+  const S = makeRunState();
   S.started = true;
   const reg = makeRegiment(mulberry32(7));
-  const rng = mulberry32(8);
-  const plan = planWave({ ...reg }, BASE_SNAP, 0, mulberry32(8)); // same stream, unconsumed reg, to predict shape
-  startWave(S, WAVES, { reg, snap: BASE_SNAP, rng });
-  ok("startWave(reg): spawnQueue matches planWave's total buys",
-    S.ws.spawnQueue === totalUnits(plan.buys), `${S.ws.spawnQueue} vs ${totalUnits(plan.buys)}`);
-  ok("startWave(reg): phase advances to wave", S.phase === PHASE.WAVE);
-  ok("startWave(reg): ws.results accumulator reset", S.ws.results &&
+  fireBell(S, { reg, snap: BASE_SNAP, rng: mulberry32(8), t: BELL_PERIOD_S });
+  ok("fireBell: bell index advances to 1", S.bell === 1);
+  ok("fireBell: ws.results accumulator reset", S.ws.results &&
     S.ws.results.structureDmg === 0 && S.ws.results.leaks === 0);
+  ok("fireBell: spawn queue holds the muster planWave bought", S.ws.spawnQueue > 0, S.ws.spawnQueue);
+  ok("fireBell: the muster only fields tier-open tags",
+    S.ws.mixBag.every((t) => enemyTierState(1).tags.includes(t)), JSON.stringify([...new Set(S.ws.mixBag)]));
+  // The prediction has to be taken off the SAME books the bell hands planWave
+  // — i.e. after the stipend the bell pays — or the counts can't match.
+  const regP = makeRegiment(mulberry32(7));
+  regP.scrap += STIPEND;
+  const predicted = planWave(regP, BASE_SNAP, 1, mulberry32(8), enemyTierState(1).tags);
+  ok("fireBell: spawnQueue matches planWave's total buys off the post-stipend books",
+    S.ws.spawnQueue === totalUnits(predicted.buys), `${S.ws.spawnQueue} vs ${totalUnits(predicted.buys)}`);
 }
 
-// startWave with useTable (or no reg) keeps the old static-table behavior —
-// the escape hatch existing/older tests rely on.
+// payResults at the bell: the CLOSING assault's accumulated results (structure
+// damage + structure kills + leaks) land on reg.scrap via the RESULTS table
+// exactly, before the next muster spends anything.
 {
-  const S = makeRunState({ waves: WAVES });
+  const S = makeRunState();
   S.started = true;
-  startWave(S, WAVES, { useTable: true });
-  ok("startWave useTable: falls back to the static table", S.ws.spawnQueue === WAVES[0].units);
-}
-
-// payResults at stall: the wave's accumulated results (structure damage +
-// structure kills + leaks) land on reg.scrap via the RESULTS table exactly.
-{
-  const S = makeRunState({ waves: WAVES });
-  S.started = true;
-  S.reg = { heads: 300, tanks: 8, heads0: 300, tanks0: 8, scrap: 60 };
-  startWave(S, WAVES, { useTable: true });
+  S.reg = { heads: 0, tanks: 0, heads0: 300, tanks0: 8, scrap: 60 };
   S.ws.results = { structureDmg: 100, towerKills: 2, wallKills: 3, buildingKills: 1, leaks: 2 };
-  S.ws.spawnQueue = 0;
   const scrapBefore = S.reg.scrap;
-  const fired = tryStall(S, WAVES, 0);
+  fireBell(S, { reg: S.reg, snap: {}, rng: mulberry32(9), t: BELL_PERIOD_S });
+  // heads 0 -> the muster buys nothing, so the books show results + stipend.
   const expected = scrapBefore + 100 * RESULTS.structureDmg + 2 * RESULTS.towerKill
-    + 3 * RESULTS.wallKill + 1 * RESULTS.buildingKill + 2 * RESULTS.leak;
-  ok("tryStall pays results into reg.scrap", fired && Math.abs(S.reg.scrap - expected) < 1e-9,
+    + 3 * RESULTS.wallKill + 1 * RESULTS.buildingKill + 2 * RESULTS.leak + STIPEND;
+  ok("fireBell pays the closing assault's results into reg.scrap", Math.abs(S.reg.scrap - expected) < 1e-9,
     `${S.reg.scrap} vs ${expected}`);
 }
 
-// STIPEND paid at advance().
+// STIPEND paid at the bell (moved off the retired stall's advance()).
 {
-  const S = makeRunState({ waves: WAVES });
+  const S = makeRunState();
   S.started = true;
-  S.reg = { heads: 300, tanks: 8, heads0: 300, tanks0: 8, scrap: 60 };
-  startWave(S, WAVES, { useTable: true });
-  S.ws.spawnQueue = 0;
-  tryStall(S, WAVES, 0);
+  S.reg = { heads: 0, tanks: 0, heads0: 300, tanks0: 8, scrap: 60 };
   const before = S.reg.scrap;
-  advance(S, WAVES);
-  ok("advance() pays STIPEND into reg.scrap", S.reg.scrap === before + STIPEND, `${S.reg.scrap} vs ${before + STIPEND}`);
+  fireBell(S, { reg: S.reg, snap: {}, rng: mulberry32(10), t: BELL_PERIOD_S });
+  ok("the bell pays STIPEND into reg.scrap", S.reg.scrap === before + STIPEND, `${S.reg.scrap} vs ${before + STIPEND}`);
 }
 
 // Regiment depletion happens ONLY at muster (planWave's buys), never at
@@ -1300,7 +1285,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   ok("a displaced-but-alive stone does not count as standing (demolition semantics)",
     demoFraction <= 0.5 + 1e-9, `fraction=${demoFraction}`);
 
-  const Sb = makeRunState({ waves: WAVES });
+  const Sb = makeRunState();
   Sb.started = true;
   const breached = checkDepotBreach(Sb, demoFraction);
   ok("checkDepotBreach fires when standing fraction crosses the line", breached === true);
@@ -1316,7 +1301,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 
   // FRONT F1: the lives track is gone — checkLoss (regiment stub only)
   // never fires, and a fully-standing depot never trips the breach.
-  const Sl = makeRunState({ waves: WAVES });
+  const Sl = makeRunState();
   Sl.started = true;
   ok("checkLoss without the regiment stub never fires (lives retired)", checkLoss(Sl) === false && Sl.gameOver === false && !Sl.breach);
   ok("a fully-standing depot (1.0) never trips checkDepotBreach", checkDepotBreach({ gameOver: false, victory: false }, 1) === false);
@@ -1390,7 +1375,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   ok("player census unmoved by depot2 demolition", depotStandingFraction(pCensus, both.byId) === 1);
 
   // checkEnemyBreach: victory-signed mirror.
-  const Sv = makeRunState({ waves: WAVES });
+  const Sv = makeRunState();
   Sv.started = true;
   const won = checkEnemyBreach(Sv, eFrac);
   ok("checkEnemyBreach fires below the shared threshold", won === true);
@@ -1400,10 +1385,10 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   ok("a fully-standing enemy depot never trips checkEnemyBreach", checkEnemyBreach({ gameOver: false, victory: false }, 1) === false);
 
   // whichever breach fires first wins — the other never overwrites (both orders).
-  const Sa = makeRunState({ waves: WAVES }); Sa.started = true;
+  const Sa = makeRunState(); Sa.started = true;
   checkDepotBreach(Sa, 0.1); checkEnemyBreach(Sa, 0.1);
   ok("player breach first: enemy breach never overwrites (loss stands)", Sa.gameOver === true && Sa.breach === true && !Sa.victory && !Sa.enemyBreach);
-  const Sz = makeRunState({ waves: WAVES }); Sz.started = true;
+  const Sz = makeRunState(); Sz.started = true;
   checkEnemyBreach(Sz, 0.1); checkDepotBreach(Sz, 0.1);
   ok("enemy breach first: player breach never overwrites (victory stands)", Sz.victory === true && Sz.enemyBreach === true && !Sz.gameOver && !Sz.breach);
 
@@ -1618,22 +1603,21 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     ok("pruneSquads: fully dead squad is deleted", squads.length === 0);
   }
 
-  // --- persistence: a squad survives a wave -> stall -> advance cycle (the
-  // phase machine touches no unit bodies; nothing in the stall path culls
-  // team-1 members).
+  // --- persistence: a squad survives a full bell cycle (the bell touches no
+  // unit bodies; nothing in the muster path culls team-1 members).
   {
     const world = makeWorld({ field: flatField, seed: 5 });
     const sq = makeSquad(1, "mg", 1, 0, 10);
     spawnSquadMembers(world, sq);
-    const S3 = makeRunState({ waves: [{ units: 2, delay: 1 }, { units: 2, delay: 1 }] });
+    const S3 = makeRunState();
     S3.started = true;
-    startWave(S3, [{ units: 2, delay: 1 }, { units: 2, delay: 1 }]);
-    S3.ws.spawnQueue = 0;
-    tryStall(S3, [{ units: 2, delay: 1 }, { units: 2, delay: 1 }], 0);
+    S3.reg = { heads: 400, tanks: 4, heads0: 400, tanks0: 4, scrap: 200 };
+    const rng3 = mulberry32(55);
+    fireBell(S3, { reg: S3.reg, snap: {}, rng: rng3, t: BELL_PERIOD_S });
     for (let i = 0; i < 120; i++) { stepSquad(world, sq, 1 / 60); squadFire(world, sq, 1 / 60); stepWorld(world); }
-    advance(S3, [{ units: 2, delay: 1 }, { units: 2, delay: 1 }]);
+    fireBell(S3, { reg: S3.reg, snap: {}, rng: rng3, t: 2 * BELL_PERIOD_S });
     const alive = sq.memberIds.filter((id) => { const u = world.byId.get(id); return u && u.alive; }).length;
-    ok("persistence: full squad roster alive through stall -> advance", alive === SQUAD_SPECS.mg.n, `alive=${alive}`);
+    ok("persistence: full squad roster alive across two bells", alive === SQUAD_SPECS.mg.n, `alive=${alive}`);
   }
 
   // ------------------------------------------------ SWEEP ASSERT (risk 1)
@@ -2347,10 +2331,9 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 // ==== end FRONT F1 Task 1 ====================================================
 
 // ==== FRONT F1 Task 3: the only ending =======================================
-// The two breaches are the ONLY run-enders. Leaks/lives retire; waves cycle
-// past the table; attrition/spent become one-time dispatch observations.
+// The two breaches are the ONLY run-enders. Leaks/lives retire; the bell
+// cycles forever; attrition/spent become one-time dispatch observations.
 {
-  const W3 = [{ units: 3, delay: 1 }, { units: 4, delay: 0.8 }, { units: 5, delay: 0.7 }];
 
   // (a) leaks retired at the source: units.js exports no checkLeaks, the
   // world removal path is gone, DepotGame neither imports nor calls it, and
@@ -2365,9 +2348,10 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     ok("F1/3a grep pin: no heart chip in DepotGame", !depotSrc.includes("♥"));
     ok("F1/3a grep pin: no FINAL WAVE copy in state.js cards", !stateSrc.includes("FINAL WAVE"));
     ok("F1/3a grep pin: no n-of-50 wave display in DepotGame", !depotSrc.includes("totalWaves"));
-    ok("F1/3a: makeRunState carries no lives", !("lives" in makeRunState({ waves: W3 })));
-    const S0 = makeRunState({ waves: W3 });
-    startWave(S0, W3, { useTable: true });
+    ok("F1/3a: makeRunState carries no lives", !("lives" in makeRunState()));
+    const S0 = makeRunState();
+    S0.reg = { heads: 0, tanks: 0, heads0: 400, tanks0: 10, scrap: 0 };
+    fireBell(S0, { reg: S0.reg, snap: {}, rng: mulberry32(1), t: BELL_PERIOD_S });
     ok("F1/3a: ws.results.leaks still initialized (dead field reads 0)", S0.ws.results.leaks === 0);
   }
 
@@ -2413,106 +2397,91 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     ok("F1/3a2: his structure fire physically works the masonry (stones shoved off home)", moved > 0, `moved=${moved}/${chunks.length}`);
   }
 
-  // (b) waves cycle: the run advances past the table's end with waves still
-  // spawning — composition clamps at the last row, no victory fires.
+  // (b) the bell cycles forever: 60 bells deep the muster still fields men
+  // and nothing has ended the run.
   {
-    const S = makeRunState({ waves: W3 });
+    const S = makeRunState();
     S.started = true;
-    S.ws.waveIdx = W3.length - 1;
-    S.ws.spawnQueue = 0;
-    S.phase = PHASE.WAVE;
-    tryStall(S, W3, 0);
-    ok("F1/3c: last-row stall carries no FINAL WAVE copy", !S.dispatch.lines.some((l) => l.includes("FINAL WAVE")), JSON.stringify(S.dispatch.lines));
-    advance(S, W3, {});
-    ok("F1/3c: advancing past the table's end sets NO victory and returns to build",
-      S.victory === false && S.gameOver === false && S.phase === PHASE.BUILD, `victory=${S.victory}`);
-    ok("F1/3c: waveIdx runs past the table", S.ws.waveIdx === W3.length);
-    startWave(S, W3, { useTable: true });
-    ok("F1/3c: wave past the end clamps to the last table row", S.ws.spawnQueue === W3[W3.length - 1].units, S.ws.spawnQueue);
-    // deep cycle: 60 waves in, still spawning, still no ending
-    for (let w = 0; w < 57; w++) {
-      S.ws.spawnQueue = 0; S.phase = PHASE.WAVE;
-      tryStall(S, W3, 0);
-      advance(S, W3, {});
-      startWave(S, W3, { useTable: true });
+    S.reg = { heads: 4000, tanks: 40, heads0: 4000, tanks0: 40, scrap: 200 };
+    const rng = mulberry32(303);
+    for (let w = 0; w < 60; w++) {
+      S.reg.scrap += 60; // a steady income so the deep run keeps mustering
+      fireBell(S, { reg: S.reg, snap: {}, rng, t: (w + 1) * BELL_PERIOD_S });
     }
-    ok("F1/3c: wave 60+ still spawns from the clamped row, run alive",
-      S.ws.waveIdx >= 60 && S.ws.spawnQueue === W3[W3.length - 1].units && !S.victory && !S.gameOver,
-      `idx=${S.ws.waveIdx}`);
+    ok("F1/3c: bell 60 still musters, run alive",
+      S.bell === 60 && S.ws.spawnQueue > 0 && !S.victory && !S.gameOver,
+      `bell=${S.bell} queue=${S.ws.spawnQueue}`);
+    ok("F1/3c: no FINAL WAVE copy on any bell card", !S.lastDispatch.lines.some((l) => l.includes("FINAL WAVE")));
   }
 
   // (c) forced combatIneffective sets NO victory; its dispatch line appears
   // exactly once (the bureau reports; the guns finish it).
   {
-    const S = makeRunState({ waves: W3 });
+    const S = makeRunState();
     S.started = true;
     S.reg = { heads: 10, tanks: 0, heads0: 400, tanks0: 10, scrap: 0 }; // ineffective
-    S.ws.spawnQueue = 0; S.phase = PHASE.WAVE;
-    tryStall(S, W3, 0);
+    const rng = mulberry32(404);
+    fireBell(S, { reg: S.reg, snap: {}, rng, t: BELL_PERIOD_S });
     ok("F1/3b: combat-ineffective regiment sets NO victory", S.victory === false && S.gameOver === false);
-    const line1 = S.dispatch.lines.find((l) => /combat-ineffective/i.test(l));
-    ok("F1/3b: the observation line appears at the stall", !!line1, JSON.stringify(S.dispatch.lines));
+    const line1 = S.lastDispatch.lines.find((l) => /combat-ineffective/i.test(l));
+    ok("F1/3b: the observation line appears at the bell", !!line1, JSON.stringify(S.lastDispatch.lines));
     ok("F1/3b: observation is digit-free bureau voice", line1 && !/\d/.test(line1), line1);
-    advance(S, W3, {});
-    S.ws.spawnQueue = 0; S.phase = PHASE.WAVE;
-    tryStall(S, W3, 0);
-    ok("F1/3b: the observation appears only once (second stall silent)",
-      !S.dispatch.lines.some((l) => /combat-ineffective/i.test(l)), JSON.stringify(S.dispatch.lines));
+    fireBell(S, { reg: S.reg, snap: {}, rng, t: 2 * BELL_PERIOD_S });
+    ok("F1/3b: the observation appears only once (second bell silent)",
+      !S.lastDispatch.lines.some((l) => /combat-ineffective/i.test(l)), JSON.stringify(S.lastDispatch.lines));
   }
 
   // (c2) three starved musters: NO victory; a one-time spent observation.
   {
-    const S = makeRunState({ waves: W3 });
+    const S = makeRunState();
     S.started = true;
-    S.reg = { heads: 300, tanks: 5, heads0: 400, tanks0: 10, scrap: MIN_WAVE_FLOOR - 1 };
-    for (let i = 0; i < 3; i++) { S.reg.scrap = MIN_WAVE_FLOOR - 1; S.ws.spawnQueue = 0; S.phase = PHASE.WAVE; tryStall(S, W3, 0); if (i < 2) advance(S, W3, {}); }
-    ok("F1/3b: three starved stalls set NO victory (spent retired as an ending)",
+    S.reg = starvedReg();
+    const rng = mulberry32(505);
+    for (let i = 0; i < 3; i++) { S.reg.scrap = 0; fireBell(S, { reg: S.reg, snap: {}, rng, t: (i + 1) * BELL_PERIOD_S }); }
+    ok("F1/3b: three starved musters set NO victory (spent retired as an ending)",
       S.victory === false && S.gameOver === false, `victory=${S.victory} spent=${S.spent}`);
     ok("F1/3b: spent observation line appears once, digit-free",
-      S.dispatch.lines.some((l) => /spent/i.test(l) && !/\d/.test(l)), JSON.stringify(S.dispatch.lines));
-    advance(S, W3, {});
-    S.ws.spawnQueue = 0; S.phase = PHASE.WAVE; tryStall(S, W3, 0);
-    ok("F1/3b: spent observation not repeated", !S.dispatch.lines.some((l) => /spent/i.test(l)), JSON.stringify(S.dispatch.lines));
+      S.lastDispatch.lines.some((l) => /spent/i.test(l) && !/\d/.test(l)), JSON.stringify(S.lastDispatch.lines));
+    S.reg.scrap = 0;
+    fireBell(S, { reg: S.reg, snap: {}, rng, t: 4 * BELL_PERIOD_S });
+    ok("F1/3b: spent observation not repeated", !S.lastDispatch.lines.some((l) => /spent/i.test(l)), JSON.stringify(S.lastDispatch.lines));
   }
 
   // (d) exhaustive: the only two enders are the two breaches. Force every
   // retired condition — regiment stub, ledger/book-value, attrition, spent —
   // and assert no end; then the two breaches still end it.
   {
-    const S = makeRunState({ waves: W3 });
+    const S = makeRunState();
     S.started = true;
     S.reg = { heads: 5, tanks: 0, heads0: 400, tanks0: 10, scrap: 0 }; // ineffective AND broke
     ok("F1/3b: checkLoss without breach never fires (regiment stub only)", checkLoss(S) === false && !S.gameOver);
-    S.ws.waveIdx = W3.length - 1; S.ws.spawnQueue = 0; S.phase = PHASE.WAVE;
-    tryStall(S, W3, 0);   // attrition + spent conditions live here
-    advance(S, W3, {});   // past the table end — old checkWin territory
+    const rng = mulberry32(606);
+    for (let i = 0; i < 4; i++) { S.reg.scrap = 0; fireBell(S, { reg: S.reg, snap: {}, rng, t: (i + 1) * BELL_PERIOD_S }); }
     ok("F1/3d: no retired condition ends the run",
       !S.victory && !S.gameOver && !S.breach && !S.enemyBreach, `v=${S.victory} go=${S.gameOver}`);
     checkEnemyBreach(S, 0.1);
     ok("F1/3d: enemy breach still ends it (victory)", S.victory === true && S.enemyBreach === true);
-    const S2 = makeRunState({ waves: W3 });
+    const S2 = makeRunState();
     checkDepotBreach(S2, 0.1);
     ok("F1/3d: player breach still ends it (loss)", S2.gameOver === true && S2.breach === true);
   }
 
-  // (e) twin determinism: two identical drives through the cycling phase
-  // machine produce identical dispatch/flag traces (pure path, zero draws).
+  // (e) twin determinism: two identical drives through the bell cycle produce
+  // identical dispatch/flag traces from the same seeded stream.
   {
     const drive = () => {
-      const S = makeRunState({ waves: W3 });
+      const S = makeRunState();
       S.started = true;
-      S.reg = { heads: 10, tanks: 0, heads0: 400, tanks0: 10, scrap: 0 };
+      S.reg = { heads: 400, tanks: 8, heads0: 400, tanks0: 8, scrap: 120 };
+      const rng = mulberry32(909);
       const trace = [];
       for (let w = 0; w < 8; w++) {
-        startWave(S, W3, { useTable: true });
-        S.ws.spawnQueue = 0;
-        tryStall(S, W3, 0);
-        trace.push(JSON.stringify([S.ws.waveIdx, S.dispatch && S.dispatch.lines, S.victory, S.gameOver]));
-        advance(S, W3, {});
+        fireBell(S, { reg: S.reg, snap: {}, rng, t: (w + 1) * BELL_PERIOD_S });
+        trace.push(JSON.stringify([S.bell, S.ws.spawnQueue, S.lastDispatch.lines, S.victory, S.gameOver]));
       }
       return trace.join("|");
     };
-    ok("F1/3e: twin determinism through the cycling phase machine", drive() === drive());
+    ok("F1/3e: twin determinism through the bell cycle", drive() === drive());
   }
 }
 // ==== end FRONT F1 Task 3 ====================================================

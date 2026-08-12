@@ -4,7 +4,7 @@
 import { aimSolve, fireProjectile, addBody } from "../engine/core.js";
 import { SQUAD_SPECS, clearSlot } from "./squads.js";
 import { scatterSigma, applyScatter, arcClears, marchArc } from "./accuracy.js";
-import { planWave, MIN_WAVE_FLOOR } from "./ai.js";
+import { planWave, MIN_WAVE_FLOOR, spawnDelayFor } from "./ai.js";
 import { STIPEND, payResults, combatIneffective, bookValue } from "./economy.js";
 import { composeIntel, openingIntel } from "./intel.js";
 import { TOWER_SPECS, ENEMY_SPECS, TANK, INFANTRY_ARMS } from "./specs.js";
@@ -56,7 +56,7 @@ export function effRange(world, muzzle, spec) {
 // ---------------------------------------------------------- pending placement
 // Task 3's confirm-before-build flow, factored into pure/headless-testable
 // pieces so depot-test.mjs can drive the state machine without React/DOM —
-// same split as the PHASE machine above. DepotGame.jsx's canBuildAt/
+// same split as the bell cycle below. DepotGame.jsx's canBuildAt/
 // startPending/confirmPending are thin wrappers around these.
 //
 // validatePlacement: same four checks buildAt makes (occupied, ice, held,
@@ -109,7 +109,6 @@ export function canvasTapConsumesPending(pending, screen, rect) {
 // the single source of truth the book-value verdict below reads.
 const WALL_COST = 5;
 
-export const PHASE = { BUILD: "build", WAVE: "wave", STALL: "stall" };
 
 // One trigger pull, general shooter core: 2-pass lead solve against
 // `target`'s velocity, then fire spec.volley (or 1) shots. sigma is
@@ -617,49 +616,85 @@ export function stepDepotCensus(S, dt, computeFraction) {
   return true;
 }
 
-export function makeWaveState() {
-  return { waveIdx: 0, spawnQueue: 0, spawnTimer: 0, spawnDelay: 1, active: false, betweenWaves: true, countdown: 8, mixBag: [], results: null, fielded: 0, musterScrap: null, spawnDoneT: null, withdrawPending: false, withdrew: 0 };
+// ------------------------------------------------------------------ the bell
+// THE MUSTER BELL — the war's shared clock, and the only thing that brings an
+// assault. It runs on SIM time (world.t, advanced by DepotGame.jsx's
+// fixed-step accumulator); wall clock and React state are both forbidden here
+// by the same law the rest of this file lives under.
+export const BELL_PERIOD_S = 120;   // provisional (F5)
+
+// Bell index at which the enemy's tiers 1/2/3 open. Bell 1 is the FIRST bell
+// of a match, so tier 1 marches with the opening assault. // provisional (F5)
+export const TIER_BELLS = [1, 3, 5];
+
+// The enemy's ladder: ENEMY_SPECS tags (plus "tank", TANK's own row) by tier.
+// Conscripts ("") are never gated — they are what a regiment has before it
+// has anything. Task 2 writes the player's mirrored table in specs.js against
+// these exact three rows; both sides climb on the same bells.
+export const ENEMY_TIERS = [
+  ["fast", "heavy"],    // tier 1 — runners, breakers
+  ["gren", "sapper"],   // tier 2 — grenadiers, sappers
+  ["sniper", "tank"],   // tier 3 — marksmen, armour
+];
+
+// enemyTierState(bell) -> { bell, tags }: every tag an assault at this bell
+// may contain. Pure, no rng — the gate is the bell index and nothing else.
+export function enemyTierState(bell) {
+  const tags = [""];
+  for (let i = 0; i < ENEMY_TIERS.length; i++) {
+    if (bell >= TIER_BELLS[i]) for (const t of ENEMY_TIERS[i]) tags.push(t);
+  }
+  return { bell, tags };
 }
 
-// Wave timeout: seconds of world-time after spawning completes before the
-// survivors break contact and withdraw in order. Task 7's balance probe may
-// tune this; rule (e) there treats heavy withdrawal (>20% of waves) as a
-// stuck-unit bug signal, not a dial.
-export const WAVE_TIMEOUT = 75;
+// The in-flight assault's ledger: what is still walking out of the spawn
+// points, and what it has taken off the player since it mustered. One assault
+// is live at a time; the next bell overwrites this whether the last one is
+// spent or not.
+export function makeAssaultState() {
+  return { spawnQueue: 0, spawnTimer: 0, spawnDelay: 1, mixBag: [], results: null, fielded: 0, musterScrap: null, spawnDoneT: null, withdrawn: false, withdrew: 0 };
+}
 
-export function makeRunState({ waves, startResources = 120 }) {
+// Seconds of SIM time after an assault finishes spawning before its survivors
+// break contact and withdraw in order.
+export const ASSAULT_TIMEOUT = 75;
+
+// Player scrap granted at each bell — the retired stall's +12, moved onto the
+// clock so the cycle still pays. // provisional (F5)
+export const BELL_SCRAP = 12;
+
+export function makeRunState({ startResources = 120 } = {}) {
   return {
     resources: startResources, kills: 0,
-    ws: makeWaveState(), spawnRR: 0,
+    ws: makeAssaultState(), spawnRR: 0,
     mode: "wall", sellMode: false, inspectId: null,
     started: false, gameOver: false, victory: false, attrition: false, ledgerLoss: false,
     starvedStreak: 0, spent: false,
     paused: false, speed: 1,
-    phase: PHASE.BUILD,
-    dispatch: null, lastDispatch: null,
-    totalWaves: waves.length,
+    // The clock. bellAt is the absolute SIM-clock stamp the next bell is due
+    // at; bellT is the readout derived from it (see stepBell).
+    bell: 0, bellT: BELL_PERIOD_S, bellAt: BELL_PERIOD_S,
+    lastDispatch: null,
     zoom: 1, acc: 0, t: 0, fps: 60, fpsAcc: 0, fpsN: 0,
     hover: null, pointer: null, toasts: [],
     hudT: 0, keys: {}, sellById: null,
   };
 }
 
-// Bureau placeholder copy for the between-wave stall card. Pure + deterministic
-// (no RNG — depot-lint forbids it) — waveIdx is the index of the wave that
-// just died, totalWaves is WAVES.length. intelLines (already composed by the
-// caller — composeIntel/openingIntel run their own seeded rng draws before
-// this is called) are appended under the CLEARED header.
-export function makeDispatch(waveIdx, totalWaves, intelLines = []) {
-  const wo = "WO-" + String(1000 + waveIdx).padStart(4, "0");
-  // FRONT F1: open-ended copy — the war runs until a depot falls, so the
-  // card never counts down to a final wave (totalWaves kept in the signature
-  // for callers; deliberately unread).
+// Bureau copy for the bell's dispatch. Pure + deterministic (no RNG —
+// depot-lint forbids it): `bell` is the bell that just rang. intelLines
+// (already composed by the caller — composeIntel/openingIntel run their own
+// seeded rng draws before this is called) sit under the header. The card no
+// longer gates anything — nothing stops the war for a page of prose — so it
+// closes on an end-of-transmission line rather than an instruction.
+export function makeDispatch(bell, intelLines = []) {
+  const wo = "WO-" + String(1000 + bell).padStart(4, "0");
   return {
     wo,
     lines: [
-      `WAVE ${waveIdx + 1} CLEARED. HOLD.`,
+      `MUSTER BELL ${bell}. THE COLUMN IS MOVING.`,
       ...intelLines,
-      "ACKNOWLEDGE TO CONTINUE.",
+      "END OF TRANSMISSION.",
     ],
   };
 }
@@ -731,10 +766,10 @@ export function checkLoss(S) {
   return false;
 }
 
-// FRONT F1: RETIRED AS AN ENDING — advance() no longer calls this (waves
-// cycle; the only enders are the two breaches). Kept exported because the
-// economy probe still reads the book-value verdict; F5 may delete it.
-export function checkWin(S, WAVES, snap = {}) {
+// FRONT F1: RETIRED AS AN ENDING — nothing in the cycle calls this (the only
+// enders are the two breaches). Kept exported because the economy probe still
+// reads the book-value verdict; F5 may delete it.
+export function checkWin(S, snap = {}) {
   if (playerBookValue(S, snap) >= attackerBookValue(S)) {
     S.victory = true;
   } else {
@@ -770,17 +805,15 @@ export function makeEndDispatch({ victory, kills = 0 }) {
   };
 }
 
-// Phase machine — the single source of truth for build/wave/stall transitions.
+// The bell cycle — the single source of truth for when an assault marches.
 // Kept dependency-free (no world/render refs) so it is headless-testable from
 // scripts/depot-test.mjs and so DepotGame.jsx's frame loop and the offline
 // test drive the exact same code path.
 
-// Begin spawning the next queued wave. Caller (DepotGame) is responsible for
-// any presentation side effects (toasts) — this only mutates state.
-// Ported from ColdsnapTD.jsx's startWave: w.mix (an array of [tag, count]
-// pairs) expands into a bag of tags, then a fixed-stride-7 shuffle
-// interleaves types instead of clumping them. Deterministic — no RNG (the
-// stride is a constant), so this needs no world.rng() plumbing.
+// A wave's mix ([tag, count] pairs) expands into a bag of tags, then a
+// fixed-stride-7 shuffle interleaves types instead of clumping them.
+// Deterministic — no RNG (the stride is a constant), so this needs no
+// world.rng() plumbing.
 function buildMixBag(mix) {
   const bag = [];
   for (const m of mix) for (let i = 0; i < m[1]; i++) bag.push(m[0]);
@@ -789,132 +822,145 @@ function buildMixBag(mix) {
   while (bag.length) { i = (i + 7) % bag.length; out.push(bag.splice(i, 1)[0]); }
   return out;
 }
-// opts: { useTable (escape hatch — old static-table behavior, no regiment
-//         needed, kept for tests that don't wire an attacker economy),
-//         reg (the attacker's live regiment — makeRegiment output, mutated
-//         in place by planWave), snap (buildSnapshot), rng (world.rng) }.
-// useTable, or no reg supplied, falls back to the static WAVES[waveIdx]
-// entry exactly as before. Otherwise the wave is generated fresh from
-// planWave(reg, snap, waveIdx, rng) — reg.heads/tanks/scrap deplete at buy
-// time (ai.js's contract), so a depleted regiment naturally fields a
-// smaller/weaker wave. Always resets ws.results, the accumulator DepotGame
-// fills with this wave's structure-damage/kill/leak events for payResults
-// at stall.
-export function startWave(S, WAVES, opts = {}) {
-  const { useTable = false, reg = null, snap = null, rng = null } = opts;
+
+// stepBell(S, worldT): the clock, and only the clock. Returns true on the
+// tick the bell is due; the caller rings it (fireBell) so this stays free of
+// world and rng dependencies. bellAt is an absolute SIM-clock stamp, not a
+// per-frame subtraction, so the period cannot drift with frame length — and
+// because world.t only advances while the sim steps, a paused or unstarted
+// run holds the bell exactly where it was.
+export function stepBell(S, worldT) {
+  S.bellT = Math.max(0, S.bellAt - worldT);
+  if (worldT < S.bellAt) return false;
+  S.bellAt = worldT + BELL_PERIOD_S;
+  S.bellT = BELL_PERIOD_S;
+  return true;
+}
+
+// fireBell(S, opts) — THE BELL. opts: { reg (the attacker's live regiment —
+// makeRegiment output, mutated in place by planWave), snap (buildSnapshot),
+// rng (world.rng), t (world.t, for the spawn-done stamp on an empty muster) }.
+//
+// Fixed order, and the order is the design:
+//   1. the cycle that just ended pays out — the attacker banks what its
+//      assault took off the player (payResults);
+//   2. TASK 2 HOOK (see below) — intel report, income, manifest;
+//   3. the muster — planWave composes the assault under THIS bell's tier cap;
+//   4. the bureau's read of that muster, onto the re-readable dispatch.
+//
+// Nothing waits: an assault still standing on the field when the bell rings is
+// simply joined by the next one, and no card gates the muster.
+export function fireBell(S, opts = {}) {
+  const { reg = null, snap = null, rng = null, t = null } = opts;
   const ws = S.ws;
-  // FRONT F1: waves cycle — the index clamps at the last table row and the
-  // war runs until a depot falls. // provisional (F2 replaces waves wholesale)
-  const w = WAVES[Math.min(ws.waveIdx, WAVES.length - 1)];
-  let units, delay, mix;
-  if (useTable || !reg) {
-    units = w.units;
-    delay = w.delay;
-    mix = w.mix;
-  } else {
-    // Muster-time solvency snapshot, BEFORE planWave spends the scrap —
-    // tryStall's starved check reads this, never the post-buy balance
-    // (which is routinely near zero after a perfectly healthy muster).
+  const prevWithdrew = ws.withdrew || 0;
+
+  // 1. the closing cycle's results
+  if (reg && ws.results) payResults(reg, ws.results);
+
+  // 2. ===== TASK 2 HOOK =====================================================
+  // The intel report -> income -> manifest sequence is inserted HERE, before
+  // the muster below, so the cards describe the assault about to march.
+  // Task 1 grants the cycle's income in the hook's place (the stipend and the
+  // player's cycle scrap that the retired stall used to pay) — without it the
+  // regiment cannot afford a muster and the war starves. Task 2 owns moving
+  // this grant into the sequence proper.
+  S.resources += BELL_SCRAP;
+  if (reg) reg.scrap += STIPEND;
+  // =========================================================================
+
+  // 3. the muster. The bell index advances FIRST: bell 1 is the first bell of
+  // a match, and TIER_BELLS is read against the bell whose assault this is.
+  S.bell++;
+  const tier = enemyTierState(S.bell);
+  let units = 0, mix = [];
+  if (reg && rng) {
+    // Muster-time solvency snapshot, BEFORE planWave spends the scrap — the
+    // starved check below reads this, never the post-buy balance (which is
+    // routinely near zero after a perfectly healthy muster).
     ws.musterScrap = reg.scrap;
-    const plan = planWave(reg, snap || {}, ws.waveIdx, rng);
-    const { buys } = plan;
-    units = buys.reduce((s, b) => s + b.n, 0);
-    delay = w.delay;
-    mix = buys.map((b) => [b.type, b.n]);
-    // Intel delay buffer: the plan that governed the PREVIOUS wave (still
-    // sitting in S.pendingPlan from the prior startWave call) becomes the
-    // one-wave-old source composeIntel reads at the next stall; this wave's
-    // fresh plan takes pendingPlan's place and won't surface as intel until
-    // the wave after this one clears. First wave of a run: intelPlan stays
-    // null (no history yet), so plan-keyed intel families stay silent.
+    const plan = planWave(reg, snap || {}, S.bell, rng, tier.tags);
+    units = plan.buys.reduce((s, b) => s + b.n, 0);
+    mix = plan.buys.map((b) => [b.type, b.n]);
+    // Intel delay buffer: the plan that governed the PREVIOUS assault (still
+    // sitting in S.pendingPlan from the prior bell) becomes the one-bell-old
+    // source composeIntel reads now; this bell's fresh plan takes its place
+    // and won't surface as intel until the bell after this one. First bell of
+    // a run: intelPlan stays null (no history yet), so plan-keyed intel
+    // families stay silent.
     S.intelPlan = S.pendingPlan || null;
     S.pendingPlan = plan;
   }
   ws.fielded = units;
   ws.spawnQueue = units;
-  ws.spawnDelay = delay;
+  ws.spawnDelay = spawnDelayFor(S.bell);
   ws.spawnTimer = 0;
-  ws.active = true;
-  ws.betweenWaves = false;
-  ws.mixBag = mix && mix.length ? buildMixBag(mix) : [];
-  ws.spawnDoneT = null;
-  ws.withdrawPending = false;
+  ws.mixBag = mix.length ? buildMixBag(mix) : [];
+  // The withdrawal clock starts when the last man is on the field (DepotGame's
+  // spawn driver stamps it). An empty muster has no last man, so it stamps
+  // now — otherwise stragglers from the previous assault could never break
+  // contact.
+  ws.spawnDoneT = units > 0 ? null : t;
+  ws.withdrawn = false;
   ws.withdrew = 0;
   ws.results = { structureDmg: 0, towerKills: 0, wallKills: 0, buildingKills: 0, leaks: 0 };
-  S.phase = PHASE.WAVE;
-}
 
-// Next spawn tag for this tick: pulled from the wave's mix bag if the wave
-// has one, "" (conscript) otherwise. Caller pops S.ws.spawnQueue itself.
-export function nextSpawnTag(S) {
-  const ws = S.ws;
-  return ws.mixBag.length ? ws.mixBag.pop() : "";
-}
-
-// Called once per tick while phase === "wave". When the spawn queue is
-// drained and no enemies remain alive, flips to "stall" and populates the
-// dispatch card. Returns true if the transition happened this call.
-export function tryStall(S, WAVES, liveEnemies, rng = null, world = null) {
-  if (S.phase !== PHASE.WAVE) return false;
-  if (S.ws.spawnQueue > 0) return false;
-  // Waves end by annihilation OR the clock: WAVE_TIMEOUT seconds of
-  // world-time (never wall clock) after the last queued unit spawned
-  // (ws.spawnDoneT, stamped by DepotGame's spawn driver), survivors break
-  // contact. The sweep itself (executeWithdrawal) is the caller's job —
-  // this only raises the flag; the stall completes on a later call once
-  // the field is actually clear.
-  const timedOut = world && S.ws.spawnDoneT != null &&
-    (world.t - S.ws.spawnDoneT) > WAVE_TIMEOUT;
-  if (liveEnemies > 0 && timedOut) { S.ws.withdrawPending = true; return false; }
-  if (liveEnemies > 0) return false;
-  S.ws.active = false;
-  S.phase = PHASE.STALL;
-  // The attacker cashes in this wave's results (structure damage dealt,
-  // structure kills, leaks) before the dispatch card is drawn — the next
-  // wave's planWave call reads reg.scrap as left by this.
-  if (S.reg && S.ws.results) payResults(S.reg, S.ws.results);
-  // FRONT F1: a broken or starved regiment no longer ENDS the war — it just
-  // can't defend its depot. The bureau notes it once; the guns finish it.
-  // Each observation is a one-time dispatch line composed at this stall
-  // (digit-free bureau voice), spliced onto the card below.
+  // 4. the bureau's read. A broken or starved regiment does not END the war —
+  // it just can't defend its depot. Each observation is a one-time dispatch
+  // line (digit-free bureau voice), spliced onto the card below.
   const observations = [];
-  if (S.reg && !S._reportedBreak && combatIneffective(S.reg)) {
-    S._reportedBreak = true; // one-time dispatch line, composed at this stall
+  if (reg && !S._reportedBreak && combatIneffective(reg)) {
+    S._reportedBreak = true; // one-time dispatch line
     observations.push("The formation opposite is judged combat-ineffective. The guns will say the rest.");
   }
-  // Starvation is still tracked (same muster-time solvency rule as before:
-  // ws.musterScrap snapshotted by startWave BEFORE planWave spends, a
-  // fielded wave always resets the streak) — but three starved stalls now
-  // only earn a report, not a victory.
-  if (S.reg) {
-    const starved = (S.ws.fielded || 0) === 0 && (S.ws.musterScrap ?? S.reg.scrap) < MIN_WAVE_FLOOR;
+  // Starvation keeps its muster-time solvency rule: a muster that fielded
+  // anything always resets the streak.
+  if (reg) {
+    const starved = (ws.fielded || 0) === 0 && (ws.musterScrap ?? reg.scrap) < MIN_WAVE_FLOOR;
     S.starvedStreak = starved ? (S.starvedStreak || 0) + 1 : 0;
     if (S.starvedStreak >= 3 && !S._reportedSpent) {
       S._reportedSpent = true; // one-time dispatch line
       observations.push("Three musters called and none fielded. The offensive opposite is judged spent.");
     }
   }
-  // Intel: one-wave-old plan (S.intelPlan, buffered by startWave) plus the
-  // live regiment read. rng is optional so callers/tests without a world
-  // rng (useTable runs) get no intel lines rather than a crash. Wave 0's
-  // stall gets the opening strength estimate instead — there's no plan
-  // history yet for composeIntel to report on.
+  // Intel: the one-bell-old plan plus the live regiment read. rng is optional
+  // so callers/tests without a world rng get no intel lines rather than a
+  // crash. The first bell gets the opening strength estimate instead — there
+  // is no plan history yet for composeIntel to report on.
   let intelLines = [];
-  if (rng) {
-    if (S.ws.waveIdx === 0 && S.reg) intelLines = [openingIntel(S.reg)];
-    else intelLines = composeIntel(S.intelPlan, S.reg, rng);
+  if (rng && reg) {
+    if (S.bell === 1) intelLines = [openingIntel(reg)];
+    else intelLines = composeIntel(S.intelPlan, reg, rng);
   }
-  const d = makeDispatch(S.ws.waveIdx, WAVES.length, intelLines);
-  // One-time bureau observations (combat-ineffective / spent) slot above the
-  // ACKNOWLEDGE line — reports, not verdicts.
+  const d = makeDispatch(S.bell, intelLines);
   for (const line of observations) d.lines.splice(d.lines.length - 1, 0, line);
-  // Truthful withdrawal line: appears ONLY when at least one unit actually
-  // withdrew (never on annihilated waves), and stays digit-free.
-  if (S.ws.withdrew > 0) {
+  // Truthful withdrawal line: appears ONLY when the assault that just ended
+  // actually broke contact (never on annihilated ones), and stays digit-free.
+  if (prevWithdrew > 0) {
     d.lines.splice(d.lines.length - 1, 0, "Contact broken off. The remainder withdrew in order.");
   }
-  S.dispatch = d;
   S.lastDispatch = d;
+  return d;
+}
+
+// Next spawn tag for this tick: pulled from the assault's mix bag if it has
+// one, "" (conscript) otherwise. Caller pops S.ws.spawnQueue itself.
+export function nextSpawnTag(S) {
+  const ws = S.ws;
+  return ws.mixBag.length ? ws.mixBag.pop() : "";
+}
+
+// withdrawDue(S, worldT): a spent assault breaks contact. True on the single
+// tick ASSAULT_TIMEOUT seconds of SIM time (never wall clock) have passed
+// since the last queued man spawned (ws.spawnDoneT, stamped by DepotGame's
+// spawn driver); the sweep itself is executeWithdrawal's job. Raised once per
+// assault — the next muster clears ws.withdrawn. The bell is indifferent to
+// all of it: the next assault comes on schedule either way.
+export function withdrawDue(S, worldT) {
+  const ws = S.ws;
+  if (ws.withdrawn || ws.spawnQueue > 0 || ws.spawnDoneT == null) return false;
+  if (worldT - ws.spawnDoneT <= ASSAULT_TIMEOUT) return false;
+  ws.withdrawn = true;
   return true;
 }
 
@@ -935,31 +981,12 @@ export function executeWithdrawal(S, world) {
   }
   if (S.reg) { S.reg.heads += inf; S.reg.tanks += tanks; }
   S.ws.withdrew = inf + tanks;
-  S.ws.withdrawPending = false;
   return { inf, tanks };
 }
 
-// THE single entry point that moves the run out of a stall. A future
-// multiplayer build swaps the ACKNOWLEDGE button for a network-ready gate
-// that calls this same function once all players are ready.
-export function advance(S, WAVES, snap = {}) {
-  if (S.phase !== PHASE.STALL) return false;
-  const ws = S.ws;
-  ws.waveIdx++;
-  S.dispatch = null;
-  // FRONT F1: no table-end ending — the index runs on (startWave clamps the
-  // row) and only a breach ends the run.
-  S.resources += 12;
-  if (S.reg) S.reg.scrap += STIPEND;
-  ws.betweenWaves = true;
-  ws.countdown = 8;
-  S.phase = PHASE.BUILD;
-  return true;
-}
-
 export const HUD0 = {
-  fps: 0, wave: 1, enemies: 0, resources: 120, walls: 0, towers: 0, kills: 0,
-  between: true, countdown: 8, phase: PHASE.BUILD, dispatch: null, lastDispatch: null,
+  fps: 0, bell: 1, bellT: BELL_PERIOD_S, enemies: 0, resources: 120, walls: 0, towers: 0, kills: 0,
+  lastDispatch: null,
   started: false, gameOver: false, victory: false, breach: false, enemyBreach: false,
   mode: "wall", sellMode: false, sandbagOrient: 0, paused: false, speed: 1, inspect: null, toasts: [],
   pending: null, fogOn: true, discipline: "careful", depotStanding: 1, enemyStanding: 1,

@@ -140,14 +140,14 @@ try {
     if (!okFps) console.log(`!! could not reach ${rate} — the numbers below are at the other rate`);
     await page.evaluate(() => window.__DEPOTSTART__());
 
-    // (a) QUIET — the run is live but nothing is fighting. Wave 1 is drained
-    // the instant the build countdown expires and never acknowledged, so the
-    // phase parks in "stall": the world keeps stepping with an empty field.
-    await page.waitForFunction(() => window.__DEPOT__().phase !== "build", { timeout: 30000, polling: 100 }).catch(() => {});
+    // (a) QUIET — the run is live but nothing is fighting. The first bell is
+    // rung early and its assault drained at once, so the world keeps stepping
+    // with an empty field for the rest of the period.
+    await page.evaluate(() => window.__DEPOTBELL__());
+    await page.waitForFunction(() => window.__DEPOT__().bell >= 1, { timeout: 30000, polling: 100 }).catch(() => {});
     await page.evaluate(() => window.__DEPOTTHIN__());
-    await page.waitForFunction(() => window.__DEPOT__().phase === "stall", { timeout: 30000, polling: 100 }).catch(() => {});
     const quietState = await page.evaluate(() => window.__DEPOT__());
-    console.log(`\n[${rate}] QUIET staged — phase ${quietState.phase}, wave ${quietState.wave}, bodies ${quietState.bodies}, kills ${quietState.kills}`);
+    console.log(`\n[${rate}] QUIET staged — bell ${quietState.bell}, bodies ${quietState.bodies}, kills ${quietState.kills}`);
     await measure(`${rate} / QUIET`, WINDOW_S);
 
     // (b) HEAVY — a real two-sided fight, staged through the hooks the game
@@ -164,14 +164,13 @@ try {
         }
       }, flag);
     }
-    await page.evaluate(() => window.__DEPOTACK__());
     await sleep(500);
     await page.evaluate(() => { window.__DEPOTSPAWN__(60); });
     await sleep(4000);
     await page.evaluate(() => { window.__DEPOTSPAWN__(60); });
     await sleep(6000);
     const heavyState = await page.evaluate(() => window.__DEPOT__());
-    console.log(`\n[${rate}] HEAVY staged — phase ${heavyState.phase}, bodies ${heavyState.bodies}, depotStanding ${f2(heavyState.depotStanding)}`);
+    console.log(`\n[${rate}] HEAVY staged — bell ${heavyState.bell}, bodies ${heavyState.bodies}, depotStanding ${f2(heavyState.depotStanding)}`);
     await measure(`${rate} / HEAVY`, WINDOW_S);
     const heavyAfter = await page.evaluate(() => window.__DEPOT__());
     console.log(`[${rate}] HEAVY ended — bodies ${heavyAfter.bodies}, kills ${heavyAfter.kills}, ` +

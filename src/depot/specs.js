@@ -79,20 +79,9 @@ export const ENEMY_FIRE = {
   tank:  { projSpeed: 85, dmg: TANK.dmg, kind: "shell", blastR: TANK.blastR, kv: 8, crater: 0.5, acc: 0.070, windF: 0.9, windComp: 0.6, cd: TANK.gunCd, cdVar: 1.2, range: TANK.gunRange, occl: "arc" },
 };
 
-// 50-wave ramp: unit count and spawn delay scale linearly with wave index,
-// same shape as Phase 0/1. The AI brain replaces this table wholesale in
-// Task 3/4 — for now the new unit types are seeded into later waves' mixes
-// so they're reachable; earlier waves stay conscript-only (mix undefined ==
-// all conscripts, same as before).
-export const WAVES = Array.from({ length: 50 }, (_, i) => {
-  const w = { units: 12 + i * 2, delay: Math.max(0.18, 0.9 - i * 0.014) };
-  if (i === 2) w.mix = [["", 14], ["fast", 8]];
-  else if (i === 4) w.mix = [["", 16], ["heavy", 4], ["gren", 4]];
-  else if (i === 6) w.mix = [["", 18], ["sapper", 6]];
-  else if (i === 8) w.mix = [["fast", 16], ["heavy", 8], ["tank", 2]];
-  else if (i >= 10 && i % 3 === 0) w.mix = [["", 10], ["fast", 8], ["heavy", 8], ["gren", 6], ["sapper", 4], ["tank", 2]];
-  return w;
-});
+// The 50-row WAVES table is DELETED (P1 Task 1, mk0.40). Nothing composes an
+// assault from a table any more: ai.js's planWave is the only composer, sized
+// by the bell index and rostered by state.js's enemyTierState tier caps.
 
 export const MASON = { hcs: 0.40, pitch: 0.83, mass: 100, breakF: 8.0e4 };
 

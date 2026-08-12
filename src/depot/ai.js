@@ -1,8 +1,11 @@
 // src/depot/ai.js — the attacker's buy brain. One fixed doctrine, blended
 // counter-weights (never a pure counter), tank-push/surge banking. Pure:
-// (regiment, buildSnapshot, waveIdx, rng) -> {buys, banked}. Mutates reg
+// (regiment, buildSnapshot, bell, rng, tags) -> {buys, banked}. Mutates reg
 // (heads/tanks/scrap depletion IS the purchase — see brief) but takes no
 // other state; identical inputs (incl. rng stream) yield identical output.
+// Since P1 Task 1 this is the ONLY composer of an assault — the static WAVES
+// table is gone; size comes from the bell index and roster from the tier caps
+// state.js's enemyTierState hands in.
 import { ENEMY_SPECS, TANK } from "./specs.js";
 
 // Infantry types this brain shops from (ENEMY_SPECS keys, minus the boss).
@@ -11,12 +14,19 @@ const cost = (type) => (type === "tank" ? TANK.bounty : ENEMY_SPECS[type].bounty
 
 const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
 
-// waveBudget(waveIdx) — baseline scrap-spend ramp: ~20 at wave 0, ~120 by
-// wave 50. Curve shape is tunable (Phase 3 Task 7 probe adjusts it); export
-// kept so callers/tests can reference the same baseline the brain uses.
-export function waveBudget(waveIdx) {
-  const w = Math.max(0, waveIdx);
+// bellBudget(bell) — baseline scrap-spend ramp: ~20 at the first bell, ~120
+// by bell 50. Curve shape is tunable (F5 owns it); export kept so callers/
+// tests can reference the same baseline the brain uses.
+export function bellBudget(bell) {
+  const w = Math.max(0, bell);
   return 20 + 100 * Math.pow(Math.min(w, 50) / 50, 0.85) + Math.max(0, w - 50) * 0.6;
+}
+
+// spawnDelayFor(bell) — seconds between men leaving the spawn points. Same
+// ramp the deleted WAVES table carried (0.9s at the first bell, floored at
+// 0.18s), now read off the bell index. // provisional (F5)
+export function spawnDelayFor(bell) {
+  return Math.max(0.18, 0.9 - Math.max(0, bell) * 0.014);
 }
 
 // MIN_WAVE_FLOOR — the smallest muster still worth calling: 4 bare
@@ -78,9 +88,21 @@ function computeShares(snap, jitter) {
   return shares;
 }
 
-// Spend `budget` scrap across infantry types by share, respecting reg.heads
-// and reg.scrap; appends/merges into `buys`. Never goes negative.
-function buyInfantryMix(shares, budget, reg, buys) {
+// Shares restricted to the tier-open types, renormalized so a capped roster
+// still spends its whole budget (an early bell puts everything into
+// conscripts rather than banking the runners' share). Pure, no draws — the
+// jitter that shaped `shares` was drawn before any of this.
+function tierShares(shares, types) {
+  let sum = 0;
+  for (const t of types) sum += shares[t];
+  const out = {};
+  for (const t of types) out[t] = sum > 0 ? shares[t] / sum : 1 / types.length;
+  return out;
+}
+
+// Spend `budget` scrap across `types` by share, respecting reg.heads and
+// reg.scrap; appends/merges into `buys`. Never goes negative.
+function buyInfantryMix(shares, types, budget, reg, buys) {
   const spend = Math.max(0, Math.min(budget, reg.scrap));
   let spent = 0;
   const take = (type, n) => {
@@ -92,7 +114,7 @@ function buyInfantryMix(shares, budget, reg, buys) {
     const existing = buys.find((b) => b.type === type);
     if (existing) existing.n += n; else buys.push({ type, n });
   };
-  for (const type of INF_TYPES) {
+  for (const type of types) {
     if (spent >= spend || reg.heads <= 0) break;
     const c = cost(type);
     const alloc = spend * shares[type];
@@ -104,7 +126,7 @@ function buyInfantryMix(shares, budget, reg, buys) {
   // or nobody at all — while the regiment is solvent. Roll the combined
   // remainder into the cheapest affordable types (cost-ascending) so any
   // budget >= one conscript's cost always fields something.
-  for (const type of INF_TYPES.slice().sort((a, b) => cost(a) - cost(b))) {
+  for (const type of types.slice().sort((a, b) => cost(a) - cost(b))) {
     if (reg.heads <= 0) break;
     const c = cost(type);
     take(type, Math.min(Math.floor((spend - spent) / c), reg.heads, Math.floor(reg.scrap / c)));
@@ -136,33 +158,48 @@ function buyTanks(n, reg, buys) {
   return take;
 }
 
-// planWave(reg, snap, waveIdx, rng) -> {buys:[{type,n}], banked}
+// planWave(reg, snap, bell, rng, tags) -> {buys:[{type,n}], banked}
 // Exactly 4 rng() draws, ALWAYS, on every branch — multiplayer contract:
 // both clients must consume the identical rng stream length regardless of
-// which path (bank/erupt/normal) this wave takes, or later waves desync.
+// which path (bank/erupt/normal) this assault takes, or later bells desync.
 //   draw 1: spend jitter        draw 2: share jitter
 //   draw 3: thin-screen / tank-push size roll   draw 4: reserved (escort mix)
-export function planWave(reg, snap, waveIdx, rng) {
+// All four are drawn up front, before any branch reads them, so the tier cap
+// clamps what the draws BUY and never how many draws happen — the same
+// draw-then-clamp discipline the rest of the depot lives under.
+//
+// tags: the tier cap (state.js's enemyTierState().tags) — every ENEMY_SPECS
+// tag this bell's assault may contain, "tank" included. null/omitted means
+// ungated (probes and fixtures that don't model the ladder).
+export function planWave(reg, snap, bell, rng, tags = null) {
   const jitterSpend = 0.85 + rng() * 0.15; // 1
   const jitterShare = rng();               // 2
   const sizeRoll = rng();                  // 3
   rng();                                   // 4 — reserved, kept for stream parity
 
-  const baseline = waveBudget(waveIdx);
-  const shares = computeShares(snap, jitterShare);
+  const allow = tags ? (t) => tags.indexOf(t) >= 0 : () => true;
+  const infTypes = INF_TYPES.filter(allow);
+  const tanksOpen = allow("tank");
+  const snipersOpen = allow("sniper");
+
+  const baseline = bellBudget(bell);
+  const shares = tierShares(computeShares(snap, jitterShare), infTypes);
   const sig = signals(snap);
   const dominant = dominantCounter(sig);
+  // tankPref rides on the signal, not the share table — read it before the
+  // renormalization above drops it.
+  const tankPref = sig.mg;
 
   const buys = [];
   let banked = false;
 
   // Marksman counter-weight: modest and deterministic (NO rng draw — the
-  // 4-draw stream contract stays intact). At >=2 live player squads, from
-  // wave 4 on, one sniper goes forward per wave, provided the buy leaves
-  // at least a token muster's scrap behind. Banking waves skip it (a thin
-  // screen doesn't carry a scope). 3+ squads reads as saturation and is
-  // still one sniper — they're 30 scrap of regiment head each.
-  const sniperWanted = snapSquads(snap) >= 2 && waveIdx >= 4 &&
+  // 4-draw stream contract stays intact). At >=2 live player squads, once
+  // the marksman's tier is open, one sniper goes forward per bell, provided
+  // the buy leaves at least a token muster's scrap behind. Banking bells skip
+  // it (a thin screen doesn't carry a scope). 3+ squads reads as saturation
+  // and is still one sniper — they're 45 scrap of regiment head each.
+  const sniperWanted = snipersOpen && snapSquads(snap) >= 2 &&
     reg.scrap >= cost("sniper") + MIN_WAVE_FLOOR ? 1 : 0;
 
   const bankThreshold = 1.8 * baseline;
@@ -170,7 +207,7 @@ export function planWave(reg, snap, waveIdx, rng) {
     const goal = dominant === "mg" ? "tankPush" : "surge";
     const tankC = cost("tank");
     const surgeThreshold = 2.2 * baseline;
-    const tankPushReady = reg.tanks >= 2 && reg.scrap >= 2 * tankC;
+    const tankPushReady = tanksOpen && reg.tanks >= 2 && reg.scrap >= 2 * tankC;
     // Saturated wall pressure (a fully fortified position, signals.wall at
     // its clamp01 ceiling) reads as desperate — the doctrine skips the
     // patient 2.2x surge wait and throws whatever's banked at the wire now.
@@ -185,32 +222,31 @@ export function planWave(reg, snap, waveIdx, rng) {
       const want = 2 + Math.floor(sizeRoll * 3); // 2..4
       buyTanks(want, reg, buys);
       const screenBudget = Math.min(reg.scrap, baseline);
-      buyInfantryMix(shares, screenBudget, reg, buys);
+      buyInfantryMix(shares, infTypes, screenBudget, reg, buys);
       banked = false;
     } else if (erupt) {
       if (sniperWanted) buySnipers(sniperWanted, reg, buys);
       const spend = reg.scrap * jitterSpend;
-      buyInfantryMix(shares, spend, reg, buys);
+      buyInfantryMix(shares, infTypes, spend, reg, buys);
       banked = false;
     } else {
       // not yet affordable: bank, buy a thin screen only. Floored at 2
-      // conscripts (playtest fix): the computed budget at early-wave
-      // baselines quantized to zero bodies, making a "banking" wave an
-      // ABSENT wave — instant stall clear. A banking wave is thin, never
-      // absent.
+      // conscripts (playtest fix): the computed budget at early-bell
+      // baselines quantized to zero bodies, making a "banking" bell an
+      // ABSENT assault. A banking bell is thin, never absent.
       const screenBudget = Math.min(reg.scrap, Math.max(baseline * 0.25 * (0.5 + sizeRoll * 0.5), 2 * cost("")));
-      buyInfantryMix(shares, screenBudget, reg, buys);
+      buyInfantryMix(shares, infTypes, screenBudget, reg, buys);
       banked = true;
     }
   } else {
     // mg pressure buys a tank first (reserving its cost) before the
-    // infantry mix spends down the rest of the wave's budget.
+    // infantry mix spends down the rest of the bell's budget.
     if (sniperWanted) buySnipers(sniperWanted, reg, buys);
-    if (shares.tankPref > 0.3 && reg.tanks > 0 && reg.scrap >= cost("tank")) {
+    if (tanksOpen && tankPref > 0.3 && reg.tanks > 0 && reg.scrap >= cost("tank")) {
       buyTanks(1, reg, buys);
     }
     const spend = Math.min(reg.scrap, baseline * jitterSpend);
-    buyInfantryMix(shares, spend, reg, buys);
+    buyInfantryMix(shares, infTypes, spend, reg, buys);
     banked = false;
   }
 

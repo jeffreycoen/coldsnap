@@ -14,9 +14,9 @@ import {
 } from "../engine/core.js";
 import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
-import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, WAVES, MASON, INFANTRY_ARMS } from "./specs.js";
+import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS } from "./specs.js";
 import { windAt } from "./wind.js";
-import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, executeWithdrawal, WAVE_TIMEOUT, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, pruneSquads } from "./state.js";
+import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, pruneSquads } from "./state.js";
 import { SQUAD_SPECS, makeSquad, stepSquad } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
@@ -535,8 +535,14 @@ function stepEnemies(world, grid, T) {
   stepUnits(world, grid, fwdDir, T, invW);
 }
 
-// ==================================================================waves
-function makeDepotWaveState() { return makeWaveState(); }
+// ================================================================assaults
+function makeDepotAssaultState() { return makeAssaultState(); }
+// Bell countdown readout: m:ss, ceiling-rounded so the chip reads 0:01 for
+// the whole final second rather than blinking 0:00 early.
+function clockStr(s) {
+  const t = Math.max(0, Math.ceil(s || 0));
+  return Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0");
+}
 function spawnEnemy(world, sp, tag) {
   return spawnUnit(world, sp, tag);
 }
@@ -852,7 +858,7 @@ export default function DepotGame({ onExit }) {
 
       const S = {
         resources: 120, kills: 0,
-        ws: makeDepotWaveState(), spawnRR: 0,
+        ws: makeDepotAssaultState(), spawnRR: 0,
         mode: "wall", sellMode: false, inspectId: null,
         started: false, gameOver: false, victory: false,
         paused: false, speed: 1, fogOn, discipline,
@@ -861,7 +867,9 @@ export default function DepotGame({ onExit }) {
         fps30: fps30Ref.current,
         setFog: (v) => { fogOn = v; S.fogOn = v; R.setFog(v); try { window.localStorage.setItem("coldsnap-depot-fog", v ? "1" : "0"); } catch (e) {} },
         setDiscipline: (v) => { discipline = v; S.discipline = v; try { window.localStorage.setItem("coldsnap-depot-discipline", v); } catch (e) {} },
-        phase: PHASE.BUILD, dispatch: null, lastDispatch: null,
+        // The clock (P1 Task 1): bellAt is the absolute SIM-clock stamp the
+        // next bell is due at, bellT the readout stepBell derives from it.
+        bell: 0, bellT: BELL_PERIOD_S, bellAt: BELL_PERIOD_S, lastDispatch: null,
         // Opens on the depot, not the middle of the field. TOWN[i].x/z for
         // the depot entry ({id:"depot", x:0, z:52, ...} in genMap) are
         // already WORLD-space — genMap's T() helper runs every town entry
@@ -1298,9 +1306,15 @@ export default function DepotGame({ onExit }) {
       window.addEventListener("keydown", kd);
       window.addEventListener("keyup", ku);
 
-      const startWave = () => {
-        phaseStartWave(S, WAVES, { reg: S.reg, snap: buildSnapshot(), rng: world.rng });
-        toast("WAVE " + (S.ws.waveIdx + 1));
+      // THE BELL rings here and nowhere else. Town pay closes the cycle
+      // alongside the assault's results (fireBell books those): green ground
+      // pays the player, red ground pays the regiment, seam ground nobody.
+      const ringBell = () => {
+        const paid = payTown(townUV, T);
+        S.resources += paid.player;
+        if (S.reg) S.reg.scrap += paid.regiment;
+        fireBell(S, { reg: S.reg, snap: buildSnapshot(), rng: world.rng, t: world.t });
+        toast("BELL " + S.bell + " — THEY MARCH");
       };
       const spawnOne = () => {
         const ws = S.ws;
@@ -1308,23 +1322,11 @@ export default function DepotGame({ onExit }) {
         const sp = SPAWN_POINTS[S.spawnRR++ % SPAWN_POINTS.length];
         spawnEnemy(world, sp, tag);
         ws.spawnQueue--;
-        // Wave clock starts at spawn-completion, not wave start — a slow,
-        // long wave gets its full assault window; only the aftermath is
-        // clamped (tryStall's WAVE_TIMEOUT clause reads this).
+        // The withdrawal clock starts at spawn-completion, not at the bell —
+        // a long assault gets its full window; only the aftermath is clamped
+        // (withdrawDue's ASSAULT_TIMEOUT clause reads this).
         if (ws.spawnQueue <= 0) ws.spawnDoneT = world.t;
       };
-      const sendNow = () => { const ws = S.ws; if (S.started && S.phase === PHASE.BUILD && ws.betweenWaves && !S.gameOver && !S.victory) { ws.countdown = 0; } };
-      S.sendNow = sendNow;
-      // THE single entry point out of a stall — the ACKNOWLEDGE button calls
-      // this and nothing else. A network-ready multiplayer gate replaces the
-      // button later without touching this function.
-      const doAdvance = () => {
-        if (phaseAdvance(S, WAVES, buildSnapshot())) {
-          if (S.victory) toast("THE DEPOT HOLDS");
-          else toast("WAVE CLEAR +12");
-        }
-      };
-      S.doAdvance = doAdvance;
 
       const breachRock = (b) => {
         const k = b.rockRef;
@@ -1399,11 +1401,10 @@ export default function DepotGame({ onExit }) {
         return evs;
       };
 
-      window.__DEPOT__ = () => ({ t: world.t, scrap: S.resources, kills: S.kills, wave: S.ws.waveIdx + 1, bodies: world.bodies.length, fps: S.fps, paused: S.paused, speed: S.speed, phase: S.phase, reg: { ...S.reg }, depotStanding: S.depotStanding != null ? S.depotStanding : 1, breach: !!S.breach, enemyStanding: S.enemyStanding != null ? S.enemyStanding : 1, enemyBreach: !!S.enemyBreach, withdrew: S.ws.withdrew || 0, endedAt: S.endedAt != null ? S.endedAt : null, endCard: endCardReady(S, world.t) });
+      window.__DEPOT__ = () => ({ t: world.t, scrap: S.resources, kills: S.kills, bell: S.bell, bellT: S.bellT, bodies: world.bodies.length, fps: S.fps, paused: S.paused, speed: S.speed, reg: { ...S.reg }, depotStanding: S.depotStanding != null ? S.depotStanding : 1, breach: !!S.breach, enemyStanding: S.enemyStanding != null ? S.enemyStanding : 1, enemyBreach: !!S.enemyBreach, withdrew: S.ws.withdrew || 0, endedAt: S.endedAt != null ? S.endedAt : null, endCard: endCardReady(S, world.t) });
       // mk0.27 debug harness: the live pending + its screen anchor (smoke
       // asserts the tap-theft repairs through this).
       window.__DEPOTPENDING__ = () => (S.pending ? { armed: pendingArmed(S.pending, world.t), screen: S.pendingScreen, gx: S.pending.gx, gz: S.pending.gz } : null);
-      window.__DEPOTACK__ = () => { if (S.doAdvance) S.doAdvance(); };
       window.__DEPOTBUILD__ = (gx, gz, mode) => buildAt(gx, gz, mode || "wall");
       window.__DEPOTSPAWN__ = (n) => { for (let i = 0; i < (n || 1); i++) spawnEnemy(world, SPAWN_POINTS[S.spawnRR++ % SPAWN_POINTS.length]); };
       window.__DEPOTSTART__ = () => { S.started = true; };
@@ -1430,20 +1431,25 @@ export default function DepotGame({ onExit }) {
           { kind: "shell", r: 2.3, kv: 8, dmg: 25, crater: 0.55, noImpact: true, attacker: "player" });
       };
       window.__DEPOTTHIN__ = () => {
-        // debug harness: instantly drain the current wave — zero the spawn
-        // queue and kill every live enemy — so tests can force wave -> stall
-        // without waiting real time for a full wave to walk/leak (smoke.mjs
-        // uses this to stay inside its budget under swiftshader).
+        // debug harness: instantly clear the field — zero the spawn queue and
+        // kill every live enemy — so tests can empty an assault without
+        // waiting real time for it to walk (smoke.mjs uses this to stay
+        // inside its budget under swiftshader).
         S.ws.spawnQueue = 0;
         for (const b of world.bodies) if (b.kind === "unit" && b.team === 2 && b.alive) applyDamage(world, b, 1e6, { cause: "BLAST", attacker: "player" });
       };
       window.__DEPOTWEDGE__ = () => {
-        // debug harness: wedge the current wave — drain the spawn queue and
-        // backdate the wave clock past WAVE_TIMEOUT so the next tick times
-        // out and every live enemy withdraws (smoke.mjs drives the Task 6
-        // withdrawal path with this instead of waiting 75 real seconds).
+        // debug harness: wedge the current assault — drain the spawn queue and
+        // backdate its clock past ASSAULT_TIMEOUT so the next tick times out
+        // and every live enemy withdraws (instead of waiting 75 real seconds).
         S.ws.spawnQueue = 0;
-        S.ws.spawnDoneT = world.t - (WAVE_TIMEOUT + 1);
+        S.ws.withdrawn = false;
+        S.ws.spawnDoneT = world.t - (ASSAULT_TIMEOUT + 1);
+      };
+      window.__DEPOTBELL__ = () => {
+        // debug harness: ring the bell now — pulls the next assault forward
+        // without waiting out the period.
+        S.bellAt = world.t;
       };
       window.__DEPOTEND__ = (victory) => {
         // debug harness: force the run into its end state for screenshotting
@@ -1724,33 +1730,24 @@ export default function DepotGame({ onExit }) {
           } else S.selReach = null;
           const ws = S.ws;
           if (S.started && !S.gameOver && !S.victory) {
-            if (S.phase === PHASE.BUILD) {
-              ws.countdown -= sdt;
-              if (ws.countdown <= 0) startWave(); // FRONT F1: waves cycle — no table-end gate
-            } else if (S.phase === PHASE.WAVE) {
-              if (ws.spawnQueue > 0) {
-                ws.spawnTimer -= sdt;
-                if (ws.spawnTimer <= 0) { ws.spawnTimer = ws.spawnDelay; spawnOne(); }
-              } else {
-                // Timed-out wave: survivors withdraw in order BEFORE the
-                // live count, so the same tick's tryStall sees a clear
-                // field and stalls with ws.withdrew already booked. Silent
-                // exit — no kill events, no bounty, no smears; heads/tanks
-                // return to the regiment inside executeWithdrawal.
-                if (S.ws.withdrawPending) executeWithdrawal(S, world);
-                let live = 0;
-                for (const b of world.bodies) if (b.kind === "unit" && b.alive && b.team === 2) live++;
-                if (tryStall(S, WAVES, live, world.rng, world)) {
-                  const paid = payTown(townUV, T);
-                  S.resources += paid.player;
-                  if (S.reg) S.reg.scrap += paid.regiment;
-                  toast("WAVE " + (ws.waveIdx + 1) + " CLEARED");
-                }
-              }
+            // THE CLOCK. Read off world.t — the fixed-step sim clock — never
+            // wall time and never a React value; a paused run holds the bell
+            // exactly where it stood because world.t stops with it.
+            if (stepBell(S, world.t)) ringBell();
+            if (ws.spawnQueue > 0) {
+              ws.spawnTimer -= sdt;
+              if (ws.spawnTimer <= 0) { ws.spawnTimer = ws.spawnDelay; spawnOne(); }
+            } else if (withdrawDue(S, world.t)) {
+              // A spent assault breaks contact on its own clock. Silent exit
+              // — no kill events, no bounty, no smears; heads/tanks return to
+              // the regiment inside executeWithdrawal. The bell is unmoved by
+              // it: the next assault comes on schedule regardless.
+              const w = executeWithdrawal(S, world);
+              if (w.inf + w.tanks > 0) toast("THEY BREAK CONTACT");
             }
-            // phase === "stall": sim keeps ticking (idle world) — no spawns,
-            // no countdown, until ACKNOWLEDGE calls doAdvance().
-            if (S.started && !S.gameOver && !S.victory) S.resources += 2.2 * sdt;
+            // Between bells nothing pauses: build, orders and combat with
+            // whatever is still standing all run straight through.
+            S.resources += 2.2 * sdt;
           }
           S.acc += sdt;
           terrAcc += sdt;
@@ -1869,11 +1866,12 @@ export default function DepotGame({ onExit }) {
             const nowS = performance.now() / 1000;
             S.toasts = S.toasts.filter((t) => nowS - t.t < 2.2);
             setHud({
-              fps: S.fps, wave: S.ws.waveIdx + 1, enemies: en,
+              // The bell being counted down TO — S.bell is the one that last
+              // rang, so the top bar names the next one.
+              fps: S.fps, bell: S.bell + 1, bellT: S.bellT, enemies: en,
               stones: R.chunkStats ? `${R.chunkStats().drawn}/${R.chunkStats().cap}` : "",
               resources: Math.floor(S.resources), walls: nw, towers: nt, kills: S.kills,
-              between: S.ws.betweenWaves, countdown: Math.max(0, Math.ceil(S.ws.countdown)),
-              phase: S.phase, dispatch: S.dispatch, lastDispatch: S.lastDispatch,
+              lastDispatch: S.lastDispatch,
               started: S.started, gameOver: S.gameOver, victory: S.victory,
               endCard: endCardReady(S, world.t),   // mk0.29: the card waits out the collapse
               breach: S.breach, enemyBreach: S.enemyBreach,
@@ -1943,7 +1941,7 @@ export default function DepotGame({ onExit }) {
         canvas.removeEventListener("touchstart", blockTouch);
         window.removeEventListener("keydown", kd);
         window.removeEventListener("keyup", ku);
-        for (const k of ["__DEPOT__", "__DEPOTACK__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTTHIN__", "__DEPOTEND__", "__DEPOTFOCUS__", "__DEPOTGETFOCUS__", "__DEPOTSETT__", "__DEPOTFLAGS__", "__DEPOTHOLD__", "__DEPOTFINDBUILDABLE__", "__DEPOTFINDRISE__", "__DEPOTFINDNEARROCK__", "__DEPOTFOGDBG__", "__DEPOTFOGAT__", "__DEPOTENEMYPOS__", "__DEPOTSQUADS__", "__DEPOTSANDBAGS__", "__DEPOTGROUNDAT__", "__DEPOTSCREENAT__", "__DEPOTPENDING__"]) delete window[k];
+        for (const k of ["__DEPOT__", "__DEPOTBELL__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTTHIN__", "__DEPOTEND__", "__DEPOTFOCUS__", "__DEPOTGETFOCUS__", "__DEPOTSETT__", "__DEPOTFLAGS__", "__DEPOTHOLD__", "__DEPOTFINDBUILDABLE__", "__DEPOTFINDRISE__", "__DEPOTFINDNEARROCK__", "__DEPOTFOGDBG__", "__DEPOTFOGAT__", "__DEPOTENEMYPOS__", "__DEPOTSQUADS__", "__DEPOTSANDBAGS__", "__DEPOTGROUNDAT__", "__DEPOTSCREENAT__", "__DEPOTPENDING__"]) delete window[k];
         A.dispose();
         if (R) R.dispose();
         stateRef.current = null;
@@ -2019,17 +2017,12 @@ export default function DepotGame({ onExit }) {
       <canvas key={runId} ref={canvasRef} style={P.cv} />
       <div style={P.top}>
         <div style={P.stat}><span style={{ color: "#ffd27a" }}>◆</span>{hud.resources}</div>
-        <div style={{ ...P.stat, cursor: hud.lastDispatch ? "pointer" : "default" }}
+        <div data-bell style={{ ...P.stat, cursor: hud.lastDispatch ? "pointer" : "default" }}
           onClick={() => { if (hud.lastDispatch) setRereadDispatch(true); }}
           title={hud.lastDispatch ? "re-read last dispatch" : undefined}>
-          W {hud.wave}
+          BELL {hud.bell} · {clockStr(hud.bellT)}
         </div>
         <div style={P.stat}>☠ {hud.enemies}</div>
-        {hud.started && hud.between && !hud.gameOver && !hud.victory && (
-          <button style={{ ...P.btn, borderColor: "#4aff8c", color: "#4aff8c", padding: isTouch ? "5px 10px" : "4px 10px" }} onClick={() => { const S = stateRef.current; if (S && S.sendNow) S.sendNow(); }}>
-            SEND {hud.countdown}s
-          </button>
-        )}
         {hud.started && !hud.victory && !hud.gameOver && (
           <>
             <button style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.paused ? "#ffd27a" : "#48515f", color: hud.paused ? "#ffd27a" : "#e6ebf1" }}
@@ -2073,21 +2066,16 @@ export default function DepotGame({ onExit }) {
         </div>
       )}
 
-      {(() => {
-        const gating = hud.phase === PHASE.STALL && !!hud.dispatch;
-        const active = gating ? hud.dispatch : (rereadDispatch ? hud.lastDispatch : null);
-        if (!active) return null;
-        return (
-          <Dispatch
-            dispatch={active}
-            gating={gating}
-            onAcknowledge={() => {
-              if (gating) { const S = stateRef.current; if (S && S.doAdvance) S.doAdvance(); }
-              setRereadDispatch(false);
-            }}
-          />
-        );
-      })()}
+      {/* The bell's dispatch never gates the war — it is on the bell chip to
+          re-read, and nothing waits for it. Task 2 gives it its own card in
+          the bell sequence. */}
+      {rereadDispatch && hud.lastDispatch && (
+        <Dispatch
+          dispatch={hud.lastDispatch}
+          gating={false}
+          onAcknowledge={() => setRereadDispatch(false)}
+        />
+      )}
 
       {hud.pending && (
         <div style={{ position: "absolute", left: hud.pending.x, top: hud.pending.y, transform: "translate(-50%, -50%)", zIndex: 7, display: "flex", gap: 6, pointerEvents: "auto" }}>
