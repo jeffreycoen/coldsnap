@@ -700,6 +700,24 @@ export function regimentDestroyed(S) {
 // (checkDepotBreach sets gameOver directly). What remains here is the
 // stubbed regiment-destroyed hook, kept so a future player-side regiment
 // wipe still has its single loss gate. Idempotent, headless-testable.
+// --- the ending's dignity (mk0.29) ------------------------------------------
+// A breach used to slam the dispatch card up the same instant the depot's
+// standing fraction crossed the line: the collapse the player just caused
+// happened behind a scrim. Now the verdict stamps the world clock, the world
+// keeps simming and rendering, and the card mounts END_CARD_DELAY_S later.
+// Deterministic (a world-clock stamp, no rng, no wall clock), idempotent (the
+// first verdict tick owns the stamp).
+export const END_CARD_DELAY_S = 6;   // provisional feel number — Jeff tunes by play
+export function stampEnd(S, nowT) {
+  if ((S.gameOver || S.victory) && S.endedAt == null) S.endedAt = nowT;
+  return S.endedAt;
+}
+export function endCardReady(S, nowT, delay = END_CARD_DELAY_S) {
+  if (!S.gameOver && !S.victory) return false;
+  if (S.endedAt == null) return false;
+  return nowT - S.endedAt >= delay;
+}
+
 export function checkLoss(S) {
   if (S.gameOver || S.victory) return false;
   if (regimentDestroyed(S)) {

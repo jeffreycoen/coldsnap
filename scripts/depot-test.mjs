@@ -6,6 +6,7 @@ import {
   regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, shooterFire, squadFire, nextSpawnTag,
   fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed,
   PENDING_EDGE_PAD, pendingButtonsVisible, canvasTapConsumesPending,
+  END_CARD_DELAY_S, stampEnd, endCardReady,
   censusDepotChunks, depotStandingFraction, checkDepotBreach, checkEnemyBreach, stepDepotCensus, hostileStructure,
   spawnSquadMembers, spawnSandbag, SANDBAG_COST, pruneSquads,
   DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, DEPOT_CENSUS_HZ, standingStructure,
@@ -3433,7 +3434,7 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
   {
     const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     // the frame snapshot is the setHud({...}) that also carries mode/sellMode
-    const snap = src.match(/setHud\(\{[\s\S]{0,2400}?\}\);\n\s+\}\n/);
+    const snap = src.match(/setHud\(\{[\s\S]{0,2800}?\}\);\n\s+\}\n/); // window widened (mk0.29 added endCard to the same snapshot)
     ok("sandbag-rot: frame hud snapshot carries sandbagOrient (no clobber)",
       !!snap && snap[0].includes("mode: S.mode") && snap[0].includes("sandbagOrient: S.sandbagOrient"));
     const { HUD0 } = await import("../src/depot/state.js");
@@ -6443,6 +6444,63 @@ const seqRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
   }
 }
 // ==== end mk0.28 =============================================================
+
+// ==== mk0.29: THE ENDING'S DIGNITY + SAFE EXITS ==============================
+// Three repairs: the end card's RETURN TO BASE button actually leaves; the
+// card waits ~6s after the breach so the collapse can play out; and the
+// in-game MENU button arms before it drops you out of a live battle.
+{
+  console.log("\n[mk0.29: the ending's dignity]");
+
+  // (a) the stamp + the gate.
+  ok("mk0.29/a: the end card waits about six seconds", END_CARD_DELAY_S >= 4 && END_CARD_DELAY_S <= 10, `delay=${END_CARD_DELAY_S}`);
+  {
+    const S = { gameOver: false, victory: false };
+    stampEnd(S, 100);
+    ok("mk0.29/a: no verdict, no stamp", S.endedAt == null);
+    S.gameOver = true;
+    stampEnd(S, 100);
+    ok("mk0.29/a: the verdict stamps the world clock once", S.endedAt === 100);
+    stampEnd(S, 140);
+    ok("mk0.29/a: later ticks never re-stamp", S.endedAt === 100);
+    ok("mk0.29/a: the card is held back while the collapse plays",
+      endCardReady(S, 100) === false && endCardReady(S, 100 + END_CARD_DELAY_S - 0.01) === false);
+    ok("mk0.29/a: the card arrives once the delay is served",
+      endCardReady(S, 100 + END_CARD_DELAY_S) === true);
+    ok("mk0.29/a: no verdict, no card", endCardReady({ endedAt: 5 }, 1e9) === false);
+  }
+
+  // (b) both verdicts stamp, from either breach.
+  {
+    const loss = { gameOver: false, victory: false };
+    checkDepotBreach(loss, 0.1); stampEnd(loss, 12.5);
+    ok("mk0.29/b: our depot falling stamps the ending", loss.gameOver === true && loss.endedAt === 12.5);
+    const win = { gameOver: false, victory: false };
+    checkEnemyBreach(win, 0.1); stampEnd(win, 30);
+    ok("mk0.29/b: their depot falling stamps it too", win.victory === true && win.endedAt === 30);
+    ok("mk0.29/b: neither card shows immediately",
+      endCardReady(loss, 12.5) === false && endCardReady(win, 30) === false);
+  }
+
+  // (c) the wiring: the world keeps simming through the delay, orders and
+  // building lock at the verdict, and the end dispatch is a STABLE object —
+  // that last one is the dead-button bug: a fresh dispatch object every HUD
+  // tick re-ran Dispatch's arming effect, so RETURN TO BASE never armed.
+  {
+    const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("mk0.29/c: the end dispatch is memoized (the arming effect stops resetting)",
+      /useMemo\([^)]*\n?[^;]*makeEndDispatch/.test(src) || /const endDispatch = useMemo/.test(src));
+    ok("mk0.29/c: the card mount waits on the delay gate", /hud\.endCard/.test(src));
+    ok("mk0.29/c: the sim keeps running until the card is up",
+      /const cardUp = /.test(src) && /S\.paused \|\| !S\.started \|\| cardUp/.test(src));
+    ok("mk0.29/c: orders lock at the verdict", /orderSquad = \(kind\) => \{[^}]*gameOver/.test(src.replace(/\n/g, " ")));
+    ok("mk0.29/c: building locks at the verdict", /setMode = \(m\) => \{[^}]*gameOver/.test(src.replace(/\n/g, " ")));
+    ok("mk0.29/c: the MENU button arms before it leaves the field",
+      /data-menu-exit/.test(src) && /LEAVE THE FIELD\?/.test(src) && /menuArmed/.test(src));
+  }
+}
+// ==== end mk0.29 =============================================================
+
 
 
 

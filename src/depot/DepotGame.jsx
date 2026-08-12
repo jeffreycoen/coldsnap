@@ -6,7 +6,7 @@
 // Every gameplay rng call runs through world.rng() (mulberry32, seeded with
 // the map) — the JS built-in unseeded generator is forbidden here — so runs
 // replay exactly from ?seed=.
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { MK } from "../version.js";
 import {
   makeField, makeWorld, addBody, addWeld, stepWorld, fireProjectile,
@@ -16,7 +16,7 @@ import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, WAVES, MASON, INFANTRY_ARMS } from "./specs.js";
 import { windAt } from "./wind.js";
-import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, executeWithdrawal, WAVE_TIMEOUT, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, pruneSquads } from "./state.js";
+import { PHASE, makeWaveState, HUD0, startWave as phaseStartWave, nextSpawnTag, tryStall, executeWithdrawal, WAVE_TIMEOUT, advance as phaseAdvance, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, pruneSquads } from "./state.js";
 import { SQUAD_SPECS, makeSquad, stepSquad } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
@@ -640,6 +640,26 @@ export default function DepotGame({ onExit }) {
   const [runId, setRunId] = useState(0);
   const [rereadDispatch, setRereadDispatch] = useState(false);
   const restart = () => { setFatal(null); setHud({ ...HUD0 }); setRunId((r) => r + 1); };
+  // mk0.29 — THE DEAD BUTTON, diagnosed: makeEndDispatch() was called inline
+  // in the render, so every HUD tick (~8Hz) handed Dispatch a brand-new
+  // object. Dispatch's arming effect keys on [dispatch] and re-arms over
+  // 500ms, so the timer restarted every 120ms and RETURN TO BASE never armed
+  // — permanently disabled, exactly as it played. Memoized on the values the
+  // card actually shows, so the reference is stable and the arm completes.
+  // (The between-wave card was always fine: its dispatch is a stable object
+  // carried on state.)
+  const endDispatch = useMemo(
+    () => (hud.gameOver || hud.victory ? makeEndDispatch({ victory: hud.victory, kills: hud.kills }) : null),
+    [hud.gameOver, hud.victory, hud.kills],
+  );
+  // mk0.29 — leaving a live battle is a two-tap decision (the NEW CAMPAIGN
+  // pattern): first tap arms, five seconds of silence disarms.
+  const [menuArmed, setMenuArmed] = useState(false);
+  useEffect(() => {
+    if (!menuArmed) return;
+    const t = setTimeout(() => setMenuArmed(false), 5000);
+    return () => clearTimeout(t);
+  }, [menuArmed]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1032,6 +1052,7 @@ export default function DepotGame({ onExit }) {
       // double-fire a chip. DEFEND digs in where the men stand (anchor =
       // live-member centroid); ATTACK arms the next ground tap as dest.
       S.orderSquad = (kind) => {
+        if (S.gameOver || S.victory) return;   // mk0.29: the war is over — no more orders
         const sq = selectedSquad();
         if (!sq || world.t < S.selArmedAt) return;
         if (kind === "defend") {
@@ -1340,7 +1361,7 @@ export default function DepotGame({ onExit }) {
         return evs;
       };
 
-      window.__DEPOT__ = () => ({ t: world.t, scrap: S.resources, kills: S.kills, wave: S.ws.waveIdx + 1, bodies: world.bodies.length, fps: S.fps, paused: S.paused, speed: S.speed, phase: S.phase, reg: { ...S.reg }, depotStanding: S.depotStanding != null ? S.depotStanding : 1, breach: !!S.breach, enemyStanding: S.enemyStanding != null ? S.enemyStanding : 1, enemyBreach: !!S.enemyBreach, withdrew: S.ws.withdrew || 0 });
+      window.__DEPOT__ = () => ({ t: world.t, scrap: S.resources, kills: S.kills, wave: S.ws.waveIdx + 1, bodies: world.bodies.length, fps: S.fps, paused: S.paused, speed: S.speed, phase: S.phase, reg: { ...S.reg }, depotStanding: S.depotStanding != null ? S.depotStanding : 1, breach: !!S.breach, enemyStanding: S.enemyStanding != null ? S.enemyStanding : 1, enemyBreach: !!S.enemyBreach, withdrew: S.ws.withdrew || 0, endedAt: S.endedAt != null ? S.endedAt : null, endCard: endCardReady(S, world.t) });
       // mk0.27 debug harness: the live pending + its screen anchor (smoke
       // asserts the tap-theft repairs through this).
       window.__DEPOTPENDING__ = () => (S.pending ? { armed: pendingArmed(S.pending, world.t), screen: S.pendingScreen, gx: S.pending.gx, gz: S.pending.gz } : null);
@@ -1543,7 +1564,13 @@ export default function DepotGame({ onExit }) {
         try {
           S.fpsAcc += dt; S.fpsN++;
           if (S.fpsAcc > 0.5) { S.fps = Math.round(S.fpsN / S.fpsAcc); S.fpsAcc = 0; S.fpsN = 0; }
-          const sdt = S.paused || !S.started || S.gameOver || S.victory ? 0 : dt * S.speed;
+          // mk0.29 (savor the fall): the verdict no longer freezes the world.
+          // It stamps the clock; the collapse plays out for END_CARD_DELAY_S
+          // of world time, and only when the card is actually up does the sim
+          // stop. Orders and building are locked from the verdict itself.
+          stampEnd(S, world.t);
+          const cardUp = endCardReady(S, world.t);
+          const sdt = S.paused || !S.started || cardUp ? 0 : dt * S.speed;
           const pan = 34 * dt / Math.max(0.5, S.zoom);
           // screen-relative like touch drag: W = screen-up whatever the Q/E yaw
           const cb = R.camBasis;
@@ -1757,6 +1784,7 @@ export default function DepotGame({ onExit }) {
               between: S.ws.betweenWaves, countdown: Math.max(0, Math.ceil(S.ws.countdown)),
               phase: S.phase, dispatch: S.dispatch, lastDispatch: S.lastDispatch,
               started: S.started, gameOver: S.gameOver, victory: S.victory,
+              endCard: endCardReady(S, world.t),   // mk0.29: the card waits out the collapse
               breach: S.breach, enemyBreach: S.enemyBreach,
               depotStanding: S.depotStanding != null ? S.depotStanding : 1,
               enemyStanding: S.enemyStanding != null ? S.enemyStanding : 1,
@@ -1822,6 +1850,7 @@ export default function DepotGame({ onExit }) {
 
   const setMode = (m) => {
     const S = stateRef.current; if (!S) return;
+    if (S.gameOver || S.victory) return;   // mk0.29: the war is over — nothing left to build
     // Re-tap SANDBAG while already in sandbag mode: cycle pending
     // orientation 90 degrees (two states). Placement-state only.
     if (m === "sandbag" && S.mode === "sandbag" && !S.sellMode) {
@@ -1918,7 +1947,11 @@ export default function DepotGame({ onExit }) {
           {hud.muted ? "🔇" : "🔊"}
         </button>
         {onExit && (
-          <button style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px" }} onClick={onExit}>⏏ MENU</button>
+          <button data-menu-exit
+            style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: menuArmed ? "#ff6b5e" : "#48515f", color: menuArmed ? "#ff6b5e" : "#e6ebf1" }}
+            onClick={() => { if (menuArmed) { setMenuArmed(false); onExit(); } else setMenuArmed(true); }}>
+            {menuArmed ? "LEAVE THE FIELD?" : "⏏ MENU"}
+          </button>
         )}
         <div style={{ ...P.stat, opacity: 0.65 }}>{hud.fps} fps · {hud.stones || "0/0"} · {MK}</div>
       </div>
@@ -2036,9 +2069,9 @@ export default function DepotGame({ onExit }) {
         </div>
       )}
 
-      {(hud.gameOver || hud.victory) && !fatal && (
+      {(hud.gameOver || hud.victory) && hud.endCard && !fatal && (
         <Dispatch
-          dispatch={makeEndDispatch({ victory: hud.victory, kills: hud.kills })}
+          dispatch={endDispatch}
           gating={false}
           outcome={hud.victory ? "win" : "loss"}
           label="RETURN TO BASE"

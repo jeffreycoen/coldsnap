@@ -1322,8 +1322,48 @@ try {
       ok("depot task4: enemy rifles found a man (a member is down under fire)", down4);
     }
   }
-  await page.keyboard.press("Escape");
-  await page.waitForFunction(() => document.querySelector('[data-menu="depot"]'), { timeout: 10000 });
+  // mk0.29: leaving a live battle takes two taps — first arms ("LEAVE THE
+  // FIELD?"), the second actually leaves. A stray thumb on ⏏ must not throw
+  // away a run.
+  {
+    const menuLabel = () => page.evaluate(() => { const b = document.querySelector("[data-menu-exit]"); return b ? b.textContent.trim() : null; });
+    ok(`depot mk0.29: the MENU button starts disarmed [${await menuLabel()}]`, /MENU/.test((await menuLabel()) || ""));
+    await page.click("[data-menu-exit]");
+    const armedLabel = await menuLabel();
+    ok(`depot mk0.29: one tap arms it instead of leaving [${armedLabel}]`,
+      /LEAVE THE FIELD/.test(armedLabel || "") && (await page.evaluate(() => typeof window.__DEPOT__ === "function")));
+  }
+
+  // mk0.29: the end card waits ~6s of world time after the breach (the
+  // collapse plays out), and its RETURN TO BASE button actually works — it
+  // was permanently disabled by an arming effect that reset every HUD tick.
+  {
+    await page.evaluate(() => window.__DEPOTEND__(false));
+    await sleep(600);
+    const early = await page.evaluate(() => !!document.querySelector("[data-dispatch-wo]"));
+    ok("depot mk0.29: the end card does not slam up at the verdict", !early);
+    // NOTE: the delay is WORLD time, and under swiftshader the world clock
+    // runs at roughly a third of wall time — 6 world-seconds is ~20s of
+    // waiting here. Generous timeout, not a race.
+    const cardUp = await page.waitForFunction(() => !!document.querySelector("[data-dispatch-wo]"), { timeout: 60000, polling: 200 }).then(() => true).catch(() => false);
+    ok("depot mk0.29: the end card arrives after the delay", cardUp);
+    if (cardUp) {
+      await sleep(700); // the card's own 500ms arming window
+      const btn = await page.evaluate(() => {
+        const b = [...document.querySelectorAll("button")].find((x) => /RETURN TO BASE/.test(x.textContent));
+        return b ? { disabled: b.disabled, opacity: getComputedStyle(b).opacity } : null;
+      });
+      ok(`depot mk0.29: RETURN TO BASE is armed (the dead-button fix) [${JSON.stringify(btn)}]`, !!btn && btn.disabled === false);
+      await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find((x) => /RETURN TO BASE/.test(x.textContent)); if (b) b.click(); });
+      const left = await page.waitForFunction(() => !!document.querySelector('[data-menu="depot"]'), { timeout: 10000, polling: 200 }).then(() => true).catch(() => false);
+      ok("depot mk0.29: RETURN TO BASE actually returns to base", left);
+    }
+  }
+
+  if (await page.evaluate(() => typeof window.__DEPOT__ === "function")) {
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => document.querySelector('[data-menu="depot"]'), { timeout: 10000 });
+  }
   ok("depot task4: ESC returns to menu", true);
   }
 
