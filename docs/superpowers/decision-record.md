@@ -58,6 +58,7 @@
 ## Heroes (late phases)
 
 - Late-bell manifest arrivals: tanks, ace snipers, the Bison, the mech as the crown. Directly pilotable (twin-stick), front fights on meanwhile. Full symmetry: enemy late bells field their own, AI-driven; mech-vs-mech endgame is the poster. Mech playable mode rides the mech track (M4).
+- **Mech track state (migrated from memory 2026-08-12; verify against branches before acting):** biped walker M1–M4 on main; `hip-yaw` branch re-tuned (lateral-sway pump fixed: tSS ×1.21, kCapture 1.3 baked in buildMech; 0.44 m/s at command 0.5, 0/6 falls, gates green) — branch NOT merged, awaiting the owner's playtest. Servo stiffness/latch/raibert measured flat, don't re-sweep. Gait truths: ensemble-sweep everything, single runs lie; launches vs cruise need separate gain sets. Harnesses: `scripts/yaw-{sweep,diag,trace}.mjs`.
 
 ## Sound
 
