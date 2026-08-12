@@ -22,6 +22,7 @@ import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accurac
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
 import { makeRegiment, payTown } from "./economy.js";
 import { makeTerritory, stepTerritory, holderAt, canBuild, fogStateFor, valueAt, EMIT } from "./territory.js";
+import { makeSight, stepSight } from "./sight.js";
 import { fwdUFor, fwdDirFor, invWFor, clampToRimFor } from "./orient.js";
 import { SAVE_KEY, serializeFront, burnFront, restoreBodies, restoreWelds, restoreCensus, restoreSquads } from "./save.js";
 import Dispatch from "./Dispatch.jsx";
@@ -381,11 +382,14 @@ export function stepTowers(world, T, discipline) {
       if (dx * dx + dz * dz > eR * eR) best = null;
     }
     // Targeting gate (symmetric with the attacker's own check in units.js):
-    // a tower may only acquire/keep a target where the PLAYER field reaches
-    // it, AND where its own round's flight path (arc for mg/gun, muzzle
+    // a tower may only acquire/keep a target OUR SIDE CAN SEE (VISION
+    // mk0.72 — fieldReaches reads the sight map now, not ground control),
+    // AND where its own round's flight path (arc for mg/gun, muzzle
     // climb-out only for mortar/rocket) actually clears the terrain — a
-    // sticky target that has walked into fog, or that a rock has since risen
-    // between, is dropped right here so "next rescan" is immediate.
+    // sticky target that has walked into dead ground, or that a rock has
+    // since risen between, is dropped right here so "next rescan" is
+    // immediate. The tower is itself an eye (sight.js SIGHT.tower), and a
+    // tall one: it often sees ground its own guns cannot reach.
     if (best) { const c = invW(best.pos.x, best.pos.z); if (!fieldReaches(T, c.u, c.v, 1)) best = null; }
     if (best && !arcClears(world, muzzle, best.pos, spec, b.id)) best = null;
     b.scanCd = (b.scanCd || 0) - dt;
@@ -883,6 +887,11 @@ export default function DepotGame({ onExit, resume = null }) {
       // makeRenderer's rim opt above) — reuse rather than reinvent extents.
       const T = makeTerritory(29, 57);
       if (RES && RES.terr && RES.terr.v && RES.terr.v.length === T.v.length) T.v.set(RES.terr.v);
+      // VISION (mk0.72): who can SEE what, on the territory grid's own frame
+      // and carried on the territory object — so every function already
+      // handed T gets sight for free. Purely derived: nothing saves it, and a
+      // resumed run rebuilds it on the first territory tick below.
+      T.sight = makeSight(T);
       // town buildings' (x, z) are rotated WORLD space (same as any body);
       // territory reads canonical (u, v) — precompute once (buildings don't
       // move) rather than re-converting every stall.
@@ -2127,6 +2136,16 @@ export default function DepotGame({ onExit, resume = null }) {
       // the intended build cell without racing the render loop's tween.
       window.__DEPOTGETFOCUS__ = () => ({ x: S.focus.x, z: S.focus.z });
       window.__DEPOTHOLD__ = (x, z) => { const c = invW(x, z); return holderAt(T, c.u, c.v); };
+      // VISION (mk0.72): the sight census — how many cells each side can see
+      // right now. Sight is derived and never saved, so this is also the
+      // resume check: after a reload the count comes back on the first
+      // territory tick, from nothing but the bodies on the field.
+      window.__DEPOTSIGHT__ = () => {
+        const a = T.sight.seen1, b = T.sight.seen2;
+        let lit1 = 0, lit2 = 0;
+        for (let i = 0; i < a.length; i++) { lit1 += a[i]; lit2 += b[i]; }
+        return { cells: a.length, lit1, lit2 };
+      };
       window.__DEPOTSELREACH__ = () => {
         // Task 2b: reports whichever fan is live — selected squad first,
         // else the inspected tower's cached fan (kind flags the source).
@@ -2417,6 +2436,11 @@ export default function DepotGame({ onExit, resume = null }) {
             terrAcc -= TERR_STEP;
             stepTerritory(T, buildEmitters(), TERR_STEP);
           }
+          // Sight rides the same 4Hz clock the territory field does. ONE
+          // recompute per frame, after the catch-up loop rather than inside
+          // it: a recompute reads only the world's current bodies, so running
+          // it twice in a row would burn the time and give the same map.
+          if (terrGuard > 0) stepSight(world, T.sight, invW, fwdU);
           // grid-line retint + terrain fog wash: same 4Hz cadence as the
           // territory field itself, not per frame (see renderer.js
           // updateTerritory/retintTerritory/updateFogWash).

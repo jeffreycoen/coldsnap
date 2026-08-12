@@ -138,18 +138,12 @@ function stepTank(world, grid, t, dt, fwdDir, T, toUV = (x, z) => ({ u: x, v: z 
     // FRONT F1 (4c): the shared hostile-structure set — behavior identical
     // to the old inline tower|wall filter except depot masonry joins it.
     if (!hostileStructure(s, 2)) continue;
-    // NOTE: deliberately NO fieldReaches gate here (unlike stepRifleman/
-    // stepGrenadier below, and unlike a tank's own unit-vs-unit case). A
-    // tower's own emission (EMIT.tower, territory.js) keeps the ground right
-    // around itself pinned "held" for team 1 for as long as it's alive — so
-    // team 2's flipped read is permanently "unheld" at the tower's own
-    // position, and the gate silently vetoes every acquisition attempt no
-    // matter how close or how long a tank sits in range (found via
-    // scripts/depot-test.mjs's tank-vs-tower fixture: field stayed "unheld"
-    // for 60s of simulated siege with the tank parked on top of the tower).
-    // TD's reference tank driver (ColdsnapTD.jsx :597-615) never had a
-    // territory gate on structure fire at all — direct-fire counter-battery
-    // range + line-of-sight (arcClears, right below) is the correct gate.
+    // VISION (mk0.72): structures obey the one law too — you shoot what your
+    // side sees. The old no-gate carve-out died with the ground gate that
+    // caused it (a tower's own emission pinned its own ground untargetable
+    // for team 2 forever); a visible wall is simply visible.
+    const c = toUV(s.pos.x, s.pos.z);
+    if (!fieldReaches(T, c.u, c.v, 2)) continue;
     const dx = s.pos.x - t.pos.x, dz = s.pos.z - t.pos.z, d2 = dx * dx + dz * dz;
     if (d2 < td && arcClears(world, muzzle, s.pos, fspec, t.id)) { td = d2; tgt = s; }
   }
@@ -169,9 +163,9 @@ function stepTank(world, grid, t, dt, fwdDir, T, toUV = (x, z) => ({ u: x, v: z 
 
 // ---------------------------------------------------- anti-personnel pass
 // A player soldier inside `urgency` of effective range is a more urgent
-// target than any wall — IF our field reaches him (the unit-vs-unit law:
-// fog gates men, never masonry). fieldReaches is read with the ATTACKER's
-// sign (team 2); arcClears threads the shooter's own id (self-hit law).
+// target than any wall — IF our side can SEE him (VISION mk0.72: one law,
+// men and masonry alike). fieldReaches is read with the ATTACKER's own team
+// (2); arcClears threads the shooter's own id (self-hit law).
 function nearestPlayerUnit(world, u, muzzle, fspec, R2, urgency, T, toUV) {
   let best = null, bd = R2 * urgency * urgency; // (urgency*R)^2
   for (const s of world.bodies) {
@@ -185,8 +179,8 @@ function nearestPlayerUnit(world, u, muzzle, fspec, R2, urgency, T, toUV) {
 }
 
 // Sticky-target revalidation for a UNIT target: alive, still team 1, still
-// in range, still fog-reachable (units revalidate WITH the field gate every
-// tick — structures deliberately without, see the notes below), LOS clear.
+// in range, still SEEN by our side (revalidated every tick — structures now
+// revalidate the same way, VISION mk0.72), LOS clear.
 function unitTargetValid(world, u, muzzle, tgt, fspec, R2, T, toUV) {
   if (!tgt || !tgt.alive || tgt.kind !== "unit" || tgt.team !== 1) return false;
   const dx = tgt.pos.x - u.pos.x, dz = tgt.pos.z - u.pos.z;
@@ -291,20 +285,17 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u
   let R2 = (u._effR != null ? u._effR : fspec.range) ** 2;
   let tgt = u.tgtId ? world.byId.get(u.tgtId) : null;
   if (tgt && tgt.kind === "unit") {
-    // sticky UNIT target: revalidate WITH the fog gate each tick (unit-vs-
-    // unit law) — structures below stay field-free, as today.
+    // sticky UNIT target: revalidate on sight each tick — and so does the
+    // structure branch below, since mk0.72 (one law).
     if (!unitTargetValid(world, u, muzzle, tgt, fspec, R2, T, toUV)) tgt = null;
   } else if (tgt) {
     const dx = tgt.pos.x - u.pos.x, dz = tgt.pos.z - u.pos.z;
-    // NOTE: deliberately NO fieldReaches gate on structure fire here (see
-    // stepTank's comment above, and the identical fix there) — a wall or
-    // tower's own territory emission keeps the ground around itself pinned
-    // "held" for team 1 for as long as it's alive, so team 2's flipped read
-    // never leaves "unheld" no matter how close or how long the rifleman
-    // sits in range. Direct-fire range + arcClears LOS is the correct gate
-    // for structure fire, not ground control. Unit-vs-unit targeting is
-    // unaffected and correctly keeps its own field gate (see below).
-    if (!hostileStructure(tgt, 2) || dx * dx + dz * dz > R2 || !arcClears(world, muzzle, tgt.pos, fspec, u.id)) tgt = null;
+    // VISION (mk0.72): a sticky STRUCTURE target revalidates on sight now,
+    // exactly as a unit target does above. The old no-gate carve-out died
+    // with the ground gate that caused it (see stepTank).
+    const c = toUV(tgt.pos.x, tgt.pos.z);
+    if (!hostileStructure(tgt, 2) || dx * dx + dz * dz > R2 || !fieldReaches(T, c.u, c.v, 2) ||
+        !arcClears(world, muzzle, tgt.pos, fspec, u.id)) tgt = null;
   }
   if (!tgt && u.scanCd <= 0) {
     // seq, not id: b.id is a module-global counter (differs across worlds
@@ -320,6 +311,9 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u
       // FRONT F1 (4c): shared hostile-structure set — identical to the old
       // inline tower|wall filter except depot masonry joins it.
       if (!hostileStructure(s, 2)) continue;
+      // VISION (mk0.72): masonry is gated on sight like everything else.
+      const c = toUV(s.pos.x, s.pos.z);
+      if (!fieldReaches(T, c.u, c.v, 2)) continue;
       const dx = s.pos.x - u.pos.x, dz = s.pos.z - u.pos.z, d2 = dx * dx + dz * dz;
       if (d2 < td && arcClears(world, muzzle, s.pos, fspec, u.id)) { td = d2; tgt = s; }
     }
@@ -385,18 +379,17 @@ function stepGrenadier(world, u, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, 
   let R2 = (u._effR != null ? u._effR : fspec.range) ** 2;
   let tgt = u.tgtId ? world.byId.get(u.tgtId) : null;
   if (tgt && tgt.kind === "unit") {
-    // sticky UNIT target: fog-gated revalidation every tick (same law as
+    // sticky UNIT target: sight-gated revalidation every tick (same law as
     // stepRifleman above).
     if (!unitTargetValid(world, u, muzzle, tgt, fspec, R2, T, toUV)) tgt = null;
   } else if (tgt) {
     const dx = tgt.pos.x - u.pos.x, dz = tgt.pos.z - u.pos.z;
-    // NOTE: deliberately NO fieldReaches gate on structure fire here — same
-    // rationale as stepTank/stepRifleman above: a wall or tower's own
-    // territory emission keeps the ground around itself pinned "held" for
-    // team 1 for as long as it's alive, so team 2's flipped read never
-    // leaves "unheld". Direct-fire range + arcClears LOS is the correct
-    // gate; unit-vs-unit targeting keeps its own field gate elsewhere.
-    if (!hostileStructure(tgt, 2) || dx * dx + dz * dz > R2 || !arcClears(world, muzzle, tgt.pos, fspec, u.id)) tgt = null;
+    // VISION (mk0.72): sticky structure targets revalidate on sight, same as
+    // the riflemen's. His tube may no longer drop shells on masonry nobody
+    // on his side can see — the loudest change this gate makes.
+    const c = toUV(tgt.pos.x, tgt.pos.z);
+    if (!hostileStructure(tgt, 2) || dx * dx + dz * dz > R2 || !fieldReaches(T, c.u, c.v, 2) ||
+        !arcClears(world, muzzle, tgt.pos, fspec, u.id)) tgt = null;
   }
   if (!tgt && u.scanCd <= 0) {
     // seq, not id: b.id is a module-global counter (differs across worlds
@@ -411,6 +404,9 @@ function stepGrenadier(world, u, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, 
     for (const b of world.bodies) {
       // FRONT F1 (4c): shared hostile-structure set (depot masonry joins).
       if (!hostileStructure(b, 2)) continue;
+      // VISION (mk0.72): sight gates the lob too.
+      const c = toUV(b.pos.x, b.pos.z);
+      if (!fieldReaches(T, c.u, c.v, 2)) continue;
       const dx = b.pos.x - u.pos.x, dz = b.pos.z - u.pos.z, d2 = dx * dx + dz * dz;
       if (d2 < td && arcClears(world, muzzle, b.pos, fspec, u.id)) { td = d2; tgt = b; }
     }
@@ -469,6 +465,9 @@ function stepSapper(world, u, dt) {
     // SIEGE FIX (mk0.21): STANDING masonry only, and CONTACT range — the
     // identical filter and the identical shared pad the player's sappers use
     // (squads.js stepSapperCharges). Symmetry is the law.
+    // VISION (mk0.72): the plant stays UNGATED, stated as a rule rather than
+    // left as an accident — he plants at arm's length against the stone, so
+    // the planter IS an eye standing on the spot. Nothing to look up.
     if (!standingStructure(t2)) continue;
     const dx2 = t2.pos.x - u.pos.x, dz2 = t2.pos.z - u.pos.z;
     const reach2 = t2.hx + SAPPER_PLANT_PAD;

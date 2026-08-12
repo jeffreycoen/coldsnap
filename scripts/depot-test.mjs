@@ -996,46 +996,59 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     ok("canBuild allowed on green ground", canBuild(T2, x0, z0) === true);
   }
 
-  // acquisition gate: a target sitting on ground the player field does NOT
-  // reach (i.e. red/attacker-held — fogStateAt === "unheld") is not
-  // acquired; a friendly presence contesting that same ground (pushing it
-  // off "unheld", to seam or better) makes it acquirable. Symmetric for the
-  // attacker via the sign-flipped team===2 read.
+  // acquisition gate, VISION era (mk0.72). RE-PINNED from ground control to
+  // SIGHT: a shooter may acquire a target only where his own side has eyes.
+  // Territory still paints the ground and still gates building — it no longer
+  // gates a single shot, so mk0.26's one-cell contested-ground bridge is gone
+  // (men at contact now see each other by plain geometry instead).
   {
-    const target = { pos: { x: 22, z: 0 } };
-    // enemy-held ground at the target: a lone enemy emitter drives it red
-    const T = makeTerritory(halfU, halfV);
-    for (let i = 0; i < 100; i++) stepTerritory(T, [{ x: 22, z: 0, w: EMIT.tower.w, r: EMIT.tower.r, sign: -1 }], 0.05); // 5s
-    ok("acquisition blocked on ground the player field doesn't reach (red)", fieldReaches(T, target.pos.x, target.pos.z, 1) === false);
-    // a friendly unit contests the same ground, canceling the enemy hold
-    // back to seam — no longer "unheld", so it's acquirable again
-    const T3 = makeTerritory(halfU, halfV);
-    const contested = [
-      { x: 22, z: 0, w: EMIT.tower.w, r: EMIT.tower.r, sign: -1 },
-      { x: 22, z: 0, w: EMIT.tower.w, r: EMIT.tower.r, sign: 1 },
-    ];
-    for (let i = 0; i < 100; i++) stepTerritory(T3, contested, 0.05); // 5s
-    ok("acquisition allowed once a friendly presence contests the ground", fieldReaches(T3, target.pos.x, target.pos.z, 1) === true);
+    const idUV = (x, z) => ({ u: x, v: z });   // DepotGame's invW at ORIENT 0
+    const idW = (u, v) => ({ x: u, z: v });    // DepotGame's fwdU at ORIENT 0
+    const flatF = { heightAt: () => 0, dirty: false };
+    const put = (w, team, x, z) => addBody(w, { kind: "unit", team, mass: 80, hx: 0.3, hy: 0.9, hz: 0.3, x, y: 0.9, z, hp: 40 });
 
-    // symmetric: an attacker rifleman vs a tower sitting in PLAYER-held fog
-    // (green ground) must be blocked for the attacker, allowed for the
-    // player — team===2 reads the sign-flipped field.
-    const towerTarget = { pos: { x: 0, z: 0 } };
-    const Tgreen = makeTerritory(halfU, halfV);
-    for (let i = 0; i < 100; i++) stepTerritory(Tgreen, [{ x: 0, z: 0, w: EMIT.tower.w, r: EMIT.tower.r, sign: 1 }], 0.05);
-    ok("attacker acquisition blocked in player-held fog (mirrored check)", fieldReaches(Tgreen, towerTarget.pos.x, towerTarget.pos.z, 2) === false);
-    ok("player acquisition allowed in its own held fog", fieldReaches(Tgreen, towerTarget.pos.x, towerTarget.pos.z, 1) === true);
-    // and the mirror image: red ground blocks the player, not the attacker
-    const Tred = makeTerritory(halfU, halfV);
-    for (let i = 0; i < 100; i++) stepTerritory(Tred, [{ x: 0, z: 0, w: EMIT.tower.w, r: EMIT.tower.r, sign: -1 }], 0.05);
-    ok("player acquisition blocked on red ground", fieldReaches(Tred, towerTarget.pos.x, towerTarget.pos.z, 1) === false);
-    ok("attacker acquisition allowed on its own (red) ground", fieldReaches(Tred, towerTarget.pos.x, towerTarget.pos.z, 2) === true);
+    // one man a side, 40m apart down the long axis of the field (well inside
+    // the grid) — past SIGHT.unit (24), so neither can see where the other
+    // stands.
+    {
+      const T = makeTerritory(halfU, halfV);
+      T.sight = makeSight(T);
+      const world = makeWorld({ field: flatF, seed: 1 });
+      put(world, 1, 0, 0);
+      put(world, 2, 0, 40);
+      stepSight(world, T.sight, idUV, idW);
+      ok("acquisition blocked on ground our side has no eyes on", fieldReaches(T, 0, 40, 1) === false);
+      ok("our side sees the ground our own man stands on", fieldReaches(T, 0, 0, 1) === true);
+      ok("the attacker sees the ground his own man stands on", fieldReaches(T, 0, 40, 2) === true);
+      ok("and the attacker does not see the ground ours stands on", fieldReaches(T, 0, 0, 2) === false);
+      // walk a second man up the field: the far ground lights, and the shot
+      // opens with it — the whole law of the phase, in one assert.
+      put(world, 1, 0, 30);
+      stepSight(world, T.sight, idUV, idW);
+      ok("acquisition allowed once a friendly eye can see that ground", fieldReaches(T, 0, 40, 1) === true);
+    }
+
+    // ground control no longer gates: deep enemy-held ground a friendly eye
+    // stands on is shootable. Under the old gate this read "unheld" and
+    // vetoed every acquisition.
+    {
+      const T = makeTerritory(halfU, halfV);
+      for (let i = 0; i < 100; i++) stepTerritory(T, [{ x: 0, z: 0, w: EMIT.tower.w, r: EMIT.tower.r, sign: -1 }], 0.05); // 5s red
+      ok("territory still paints that ground enemy-held", holderAt(T, 0, 0) === 2);
+      T.sight = makeSight(T);
+      const world = makeWorld({ field: flatF, seed: 2 });
+      put(world, 1, 0, 0);
+      stepSight(world, T.sight, idUV, idW);
+      ok("enemy-held ground our own eye sees is shootable (ground control no longer gates)", fieldReaches(T, 0, 0, 1) === true);
+    }
   }
 
-  // no-territory calls stay ungated (existing tests that build a world
-  // without wiring territory must keep passing)
+  // the two escape hatches, unchanged: a world with no territory wired, and a
+  // territory with no sight map on it, are both ungated — every bare fixture
+  // in this file depends on it.
   {
     ok("fieldReaches with no T is always true (ungated)", fieldReaches(null, 0, 0, 1) === true);
+    ok("fieldReaches with a territory carrying no sight map is ungated too", fieldReaches(makeTerritory(halfU, halfV), 0, 0, 1) === true);
   }
 
   // Phase 3 economics unaffected: massacre-at-the-wall still pays results —
@@ -1101,14 +1114,30 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     const cFar = invWFor(ORIENT, farWorld.x, farWorld.z);
     ok("orientation 1: canBuild refused far from the emitter", canBuild(T, cFar.u, cFar.v) === false);
 
-    // (c) targeting gate, both directions
-    ok("orientation 1: player field reaches a target at the tower's own position", fieldReaches(T, c.u, c.v, 1) === true);
-    ok("orientation 1: attacker field (mirrored) does NOT reach player-held ground", fieldReaches(T, c.u, c.v, 2) === false);
-    // drive the far cell red (enemy-held) and re-check both sides
+    // (c) targeting gate, both directions. RE-PINNED to sight (mk0.72): the
+    // gate reads the sight map now, so the same world->canonical conversion
+    // is exercised through stepSight's own transforms (fwdUFor/invWFor at
+    // ORIENT 1, not the identity) — the regression guard this block exists
+    // for is stronger under sight than it was under territory.
+    const oUV = (x, z) => invWFor(ORIENT, x, z);
+    const oW = (u, v) => fwdUFor(ORIENT, u, v);
+    const flatF = { heightAt: () => 0, dirty: false };
+    const putO = (w, team, x, z) => addBody(w, { kind: "unit", team, mass: 80, hx: 0.3, hy: 0.9, hz: 0.3, x, y: 0.9, z, hp: 40 });
+    const Tsee = makeTerritory(halfU, halfV);
+    Tsee.sight = makeSight(Tsee);
+    const wSee = makeWorld({ field: flatF, seed: 21 });
+    putO(wSee, 1, worldPos.x, worldPos.z);      // our man stands at the world point
+    stepSight(wSee, Tsee.sight, oUV, oW);
+    ok("orientation 1: our side sees the canonical cell our own man stands on", fieldReaches(Tsee, c.u, c.v, 1) === true);
+    ok("orientation 1: the attacker has no eyes there", fieldReaches(Tsee, c.u, c.v, 2) === false);
+    // the far cell, with only an attacker standing on it
     const T2 = makeTerritory(halfU, halfV);
-    for (let i = 0; i < 100; i++) stepTerritory(T2, [{ x: cFar.u, z: cFar.v, w: EMIT.tower.w, r: EMIT.tower.r, sign: -1 }], 0.05);
-    ok("orientation 1: player field blocked on enemy-held ground", fieldReaches(T2, cFar.u, cFar.v, 1) === false);
-    ok("orientation 1: attacker field reaches its own (red) ground", fieldReaches(T2, cFar.u, cFar.v, 2) === true);
+    T2.sight = makeSight(T2);
+    const wSee2 = makeWorld({ field: flatF, seed: 22 });
+    putO(wSee2, 2, farWorld.x, farWorld.z);
+    stepSight(wSee2, T2.sight, oUV, oW);
+    ok("orientation 1: our side is blind on ground only the attacker stands on", fieldReaches(T2, cFar.u, cFar.v, 1) === false);
+    ok("orientation 1: the attacker sees his own ground", fieldReaches(T2, cFar.u, cFar.v, 2) === true);
   }
 }
 
@@ -1158,22 +1187,24 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     ok("reachPolygon: ray toward a wall fixture stops short of it", eastDist < 10.5 && eastDist > 0, eastDist);
     ok("reachPolygon: ray away from the wall reaches full range, unaffected", westDist > spec.range - 1.5, westDist);
 
-    // fog boundary clip: territory.js's default (uncontested) state reads
-    // as reachable by either side (fieldReaches with no T, or neutral
-    // ground, is true) — the boundary this clips at is enemy-HELD ground.
-    // Drive a strong enemy emitter due east of the muzzle so team-1's field
-    // does not reach it; every ray toward it must clip well short of
-    // spec.range on otherwise-flat open ground.
+    // sight boundary clip. RE-PINNED (mk0.72): the boundary reachPolygon
+    // clips at is the edge of what our side can SEE, not the edge of the
+    // ground it holds — territory emitters no longer clip anything. The
+    // sight map is stamped by hand here (lit only west of x=8) because this
+    // is a reachPolygon test, not a sight test: it needs a boundary at a
+    // known place, and stepSight's own answers are pinned in VISION T1.
     const halfU = 29, halfV = 57;
     const T = makeTerritory(halfU, halfV);
-    // r 14 (was 3): under the F1.6 contested-ground bridge (mk0.26) every
-    // cell of a 3m pocket sits within one cell of its own boundary, so the
-    // whole pocket is engageable frontier and nothing clips. A real held
-    // zone has an interior — that is what a fog clip means now.
-    for (let i = 0; i < 200; i++) stepTerritory(T, [{ x: 15, z: 0, w: EMIT.tower.w, r: 14, sign: -1 }], 0.05);
+    T.sight = makeSight(T);
+    for (let iz = 0; iz < T.sight.nz; iz++) for (let ix = 0; ix < T.sight.nx; ix++) {
+      const u = -T.sight.halfU + (ix + 0.5) * T.sight.cs;
+      if (u < 8) T.sight.seen1[iz * T.sight.nx + ix] = 1;
+    }
     const foggedPoly = reachPolygon(flatWorld(), T, muzzle, spec, 1);
     const foggedDist = Math.hypot(foggedPoly[0].x - muzzle.x, foggedPoly[0].z - muzzle.z);
-    ok("reachPolygon: fog boundary clips rays well short of open-flat full range", foggedDist < spec.range - 3, foggedDist);
+    const westSeen = Math.hypot(foggedPoly[32].x - muzzle.x, foggedPoly[32].z - muzzle.z);
+    ok("reachPolygon: the sight boundary clips rays well short of open-flat full range", foggedDist < spec.range - 3, foggedDist);
+    ok("reachPolygon: a ray into ground we do see reaches full range", westSeen > spec.range - 1.5, westSeen);
   }
 
   // --- arcClears (Phase 4.1 Task 1): the round's true flight path, not a
@@ -3546,6 +3577,126 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 }
 // ==== end VISION T1 ==========================================================
+
+// ==== VISION T2: one law — you shoot what you see ============================
+// mk0.72. fieldReaches (state.js) is the one gate every shot passes through,
+// and it now reads the sight map instead of the ground-control field. These
+// asserts drive the two ends of that law: a tower that must wait for eyes,
+// and enemy fire that may no longer bombard masonry nobody on its side sees.
+// ORIENT 0 throughout, so the world<->canonical transforms are the identity.
+{
+  const idUV = (x, z) => ({ u: x, v: z });
+  const idW = (u, v) => ({ x: u, z: v });
+
+  // (a) THE TOWER WAITS FOR EYES. A ridge stands between a mortar tower and
+  // an attacker beyond it. The tower's shell arcs over the ridge happily
+  // (lofted fire ignores terrain), so nothing but sight can stop the
+  // acquisition — and nothing on our side can see that ground until a man
+  // walks over the crest.
+  {
+    // the ridge: 6m tall, one cell deep, running across the map at z=10
+    const ridgeF = { heightAt: (x, z) => (Math.abs(z - 10) < 1.5 ? 6 : 0), dirty: false };
+    const spec = { kind: "mortar", projSpeed: 33, occl: "lofted", range: 30, fireRate: 1 };
+    const world = makeWorld({ field: ridgeF, seed: 71 });
+    const tower = addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: 1.2, hz: 0.8, x: 0, y: 1.2, z: 0, hp: 120 });
+    const foe = addBody(world, { kind: "unit", team: 2, mass: 80, hx: 0.3, hy: 0.9, hz: 0.3, x: 0, y: 0.9, z: 20, hp: 40 });
+    const T = makeTerritory(29, 57);
+    T.sight = makeSight(T);
+    // stepTowers' own scan loop, mirrored (it lives in DepotGame.jsx, which
+    // this headless file cannot import — the same mirroring the fire
+    // discipline fixture above uses).
+    const acquires = () => {
+      const muzzle = { x: tower.pos.x, y: tower.pos.y + tower.hy + 0.45, z: tower.pos.z };
+      const eR = effRange(world, muzzle, spec);
+      let best = null, bd = eR * eR;
+      for (const e of world.bodies) {
+        if ((e.kind !== "unit" && e.kind !== "vehicle") || !e.alive || e.team !== 2) continue;
+        const c = idUV(e.pos.x, e.pos.z);
+        if (!fieldReaches(T, c.u, c.v, 1)) continue;
+        const dx = e.pos.x - tower.pos.x, dz = e.pos.z - tower.pos.z, d2 = dx * dx + dz * dz;
+        if (d2 < bd && arcClears(world, muzzle, e.pos, spec, tower.id)) { bd = d2; best = e; }
+      }
+      return best;
+    };
+    stepSight(world, T.sight, idUV, idW);
+    ok("VISION T2(a): the tower's own eye cannot see over the ridge", fieldReaches(T, 0, 20, 1) === false);
+    ok("VISION T2(a): so it does not acquire the man standing behind it", acquires() === null);
+    // a rifleman walks over the crest — now our side has eyes on that ground
+    addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.3, hy: 0.9, hz: 0.3, x: 0, y: 0.9, z: 12, hp: 40 });
+    stepSight(world, T.sight, idUV, idW);
+    ok("VISION T2(a): a man over the crest lights that ground for the whole side", fieldReaches(T, 0, 20, 1) === true);
+    ok("VISION T2(a): and the next scan acquires", acquires() === foe);
+  }
+
+  // (b) NO BOMBARDING WHAT NOBODY SEES. An enemy grenadier lobs over a ridge
+  // at a player wall. Lofted fire ignores terrain entirely, so before this
+  // phase he shelled masonry his side had never laid eyes on; now he holds
+  // until one of his own can see it.
+  // DEVIATION from the plan's wording ("an enemy rifleman"): a rifleman
+  // cannot show this law. His gun reaches 13m and his eyes reach 24m, and
+  // his shot already needs a clear flight path — so anything he can shoot he
+  // can already see, and the gate is a no-op on him. The grenadier's lobbed
+  // fire is where the law actually bites, and it is the same gate, in the
+  // same shape, in the same file.
+  {
+    // ridge as above but finite across x, so a flanking eye can see past it
+    const ridgeF = { heightAt: (x, z) => (Math.abs(z - 10) < 1.5 && Math.abs(x) < 6 ? 6 : 0), dirty: false };
+    const world = makeWorld({ field: ridgeF, seed: 72 });
+    const gren = addBody(world, { kind: "unit", team: 2, mass: 80, hx: 0.3, hy: 0.9, hz: 0.3, x: 0, y: 0.9, z: 0, hp: 40 });
+    gren.tag = "gren"; gren.utype = "gren"; gren.wph = 0;
+    const wall = addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.9, hy: 0.9, hz: 0.9, x: 0, y: 0.9, z: 18, hp: 70 });
+    const T = makeTerritory(29, 57);
+    T.sight = makeSight(T);
+    stepSight(world, T.sight, idUV, idW);
+    ok("VISION T2(b): the attacker's side cannot see the wall behind the ridge", fieldReaches(T, 0, 18, 2) === false);
+    for (let i = 0; i < 30; i++) stepUnits(world, straightGrid(0, 1), identFwdDir, T, idUV);
+    ok("VISION T2(b): so the grenadier takes no target", gren.tgtId == null);
+    ok("VISION T2(b): and nothing is fired at it", world.projectiles.length === 0);
+    // one of theirs comes round the flank, far enough off that his own rifle
+    // never reaches the wall — he brings eyes, nothing else
+    addBody(world, { kind: "unit", team: 2, mass: 80, hx: 0.3, hy: 0.9, hz: 0.3, x: 20, y: 0.9, z: 8, hp: 40 });
+    stepSight(world, T.sight, idUV, idW);
+    ok("VISION T2(b): the flanker sees the wall for his whole side", fieldReaches(T, 0, 18, 2) === true);
+    for (let i = 0; i < 30; i++) stepUnits(world, straightGrid(0, 1), identFwdDir, T, idUV);
+    ok("VISION T2(b): the grenadier takes the wall the moment his side can see it", gren.tgtId === wall.id);
+    ok("VISION T2(b): and the shell is away", world.projectiles.length > 0);
+  }
+
+  // (c) the contested-boundary and orientation fixtures are re-pinned in
+  // place, up in the Phase 4 Task 2 block — one law, one set of asserts.
+
+  // (d) THE SAVE CARRIES NOTHING NEW. Sight is derived state: the file never
+  // holds it, and a resumed run rebuilds it on the first territory tick
+  // because the map is made where the territory is made.
+  {
+    const saveSrc = fs.readFileSync(new URL("../src/depot/save.js", import.meta.url), "utf8");
+    ok("VISION T2(d): save.js stores no sight at all (derived, rebuilt on resume)", !/\bsight\b/i.test(saveSrc));
+    const gameSrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("VISION T2(d): the sight map is made where the territory is made", /T\.sight\s*=\s*makeSight\(T\)/.test(gameSrc));
+    ok("VISION T2(d): and it recomputes on the territory clock", /stepSight\(world,\s*T\.sight/.test(gameSrc));
+  }
+
+  // (e) THE GATE ITSELF, AND THE CARVE-OUTS THAT DIED. Structure fire used to
+  // skip the gate entirely because a wall's own territory emission made it
+  // permanently untargetable — a pathology sight does not have.
+  {
+    const stateSrc = fs.readFileSync(new URL("../src/depot/state.js", import.meta.url), "utf8");
+    ok("VISION T2(e): fieldReaches reads the sight map", /seenAt\(T\.sight,\s*x,\s*z,\s*team\)/.test(stateSrc));
+    ok("VISION T2(e): and no longer imports the ground-control bridge", !/fogStateForContested/.test(stateSrc));
+    const terrSrc = fs.readFileSync(new URL("../src/depot/territory.js", import.meta.url), "utf8");
+    ok("VISION T2(e): the contested-ground bridge is deleted", !/export function fogStateForContested/.test(terrSrc));
+    ok("VISION T2(e): ownership, build rights and the wash are untouched",
+      /export function fogStateFor\(/.test(terrSrc) && /export function valueAt\(/.test(terrSrc) &&
+      /export function holderAt\(/.test(terrSrc) && /export function canBuild\(/.test(terrSrc));
+    const unitsSrc = fs.readFileSync(new URL("../src/depot/units.js", import.meta.url), "utf8");
+    ok("VISION T2(e): no enemy shooter claims an ungated structure scan any more", !/NO fieldReaches/.test(unitsSrc));
+    ok("VISION T2(e): all seven enemy acquisition paths gate on sight",
+      (unitsSrc.match(/fieldReaches\(T,/g) || []).length === 7, (unitsSrc.match(/fieldReaches\(T,/g) || []).length);
+    ok("VISION T2(e): the sapper's contact plant stays ungated (he IS the eye, at arm's length)",
+      /stepSapper/.test(unitsSrc) && !/fieldReaches[\s\S]{0,200}SAPPER_PLANT_PAD/.test(unitsSrc));
+  }
+}
+// ==== end VISION T2 ==========================================================
 
 
 

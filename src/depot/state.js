@@ -8,27 +8,27 @@ import { planWave, MIN_WAVE_FLOOR, spawnDelayFor } from "./ai.js";
 import { STIPEND, payResults, combatIneffective, bookValue } from "./economy.js";
 import { composeIntel, openingIntel } from "./intel.js";
 import { TOWER_SPECS, ENEMY_SPECS, TANK, INFANTRY_ARMS, MASON, PLAYER_START, PLAYER_TIERS } from "./specs.js";
-import { fogStateForContested } from "./territory.js";
+import { seenAt } from "./sight.js";
 
-// Targeting gate, symmetric: a shooter of `team` (1 = player tower, 2 =
-// attacker rifleman/grenadier/tank) may only acquire a target at canonical
-// (u, v) position (x, z) if THEIR OWN field reaches it — fogStateFor mirrors
-// the read per team, so a tower checks the player field and an attacker
-// checks the sign-flipped one. "unheld" blocks acquisition; "seam" and
-// "held" both allow it. No T wired (some tests construct a world without
-// territory) -> ungated, so existing asserts that don't care about ground
-// control keep passing. Takes explicit (x, z) rather than a body/target
-// object because territory.js's coordinate system is CANONICAL (u, v) —
-// the map's un-rotated frame, same as the renderer's rim — while body
-// positions live in rotated WORLD space; callers convert via invW (DEPOT's
-// world-to-canonical transform) before calling this.
-// F1.6 BRIDGE (mk0.26): the read is fogStateForContested, not fogStateFor —
-// contested ground (within one cell of the boundary) is engageable by both
-// sides, so men at contact are not mutually weapon-proof. Reverts to plain
-// fogStateFor when vision B3 lands (see territory.js's deletion marker).
+// Targeting gate, symmetric, VISION era (mk0.72): a shooter of `team` (1 =
+// player tower/squad, 2 = attacker rifleman/grenadier/tank) may only acquire
+// a target its OWN SIDE SEES. Ground control no longer gates any shot — sight
+// does, and it gates every shot the same way, structures included. The map is
+// the union of what that side's eyes can see (sight.js), rebuilt on the
+// territory clock and carried on the territory object as T.sight.
+// (x, z) is CANONICAL (u, v) — the map's un-rotated frame, same as the
+// renderer's rim — while body positions live in rotated WORLD space; callers
+// convert via invW (DEPOT's world-to-canonical transform) before calling
+// this, exactly as they always have.
+// Two escape hatches, unchanged in spirit from the old ungated contract: no T
+// wired (many fixtures construct a world without territory) -> ungated; a T
+// with no sight map on it -> ungated too.
+// mk0.26's one-cell contested-ground bridge is gone with the old gate: men at
+// contact now see each other by plain geometry, which is the same playable
+// result for a lot less machinery.
 export function fieldReaches(T, x, z, team) {
-  if (!T) return true;
-  return fogStateForContested(T, x, z, team) !== "unheld";
+  if (!T || !T.sight) return true;
+  return seenAt(T.sight, x, z, team);
 }
 
 // Elevation-scaled acquisition range — the single symmetric rule both towers
@@ -534,13 +534,17 @@ export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })
     }
     if (!best) {
       // FRONT F1 (4b): no man in reach — bite stone. Nearest hostile
-      // structure in range, LOS by the real arc (selfId), NEVER fog-gated
-      // (structure law). Unit targets keep absolute priority: this scan
-      // runs only on an empty unit scan. Deterministic pick — nearest, ties
-      // by body id order (the scan order gives this). Zero rng draws.
+      // structure in range, LOS by the real arc (selfId), and — since VISION
+      // (mk0.72) — gated on SIGHT like every other shot: a squad may only
+      // work masonry its own side can see. Unit targets keep absolute
+      // priority: this scan runs only on an empty unit scan. Deterministic
+      // pick — nearest, ties by body id order (the scan order gives this).
+      // Zero rng draws.
       let bs = eR * eR;
       for (const s of world.bodies) {
         if (!hostileStructure(s, squad.team)) continue;
+        const cs = toUV(s.pos.x, s.pos.z);
+        if (!fieldReaches(T, cs.u, cs.v, squad.team)) continue;
         const dx = s.pos.x - u.pos.x, dz = s.pos.z - u.pos.z, d2 = dx * dx + dz * dz;
         if (d2 >= bs) continue;
         if (!arcClears(world, muzzle, s.pos, spec, u.id)) continue;
