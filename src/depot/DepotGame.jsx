@@ -16,7 +16,7 @@ import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS } from "./specs.js";
 import { windAt } from "./wind.js";
-import { makeAssaultState, HUD0, BELL_PERIOD_S, BELL_SCRAP, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, spawnWallCourses, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest } from "./state.js";
+import { makeAssaultState, HUD0, BELL_PERIOD_S, BELL_SCRAP, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest } from "./state.js";
 import { SQUAD_SPECS, makeSquad, stepSquad } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
@@ -1157,7 +1157,11 @@ export default function DepotGame({ onExit, resume = null }) {
           // dimensions, the hp split and the weld). The CELL owns all three;
           // cell.wallId is the BOTTOM course, because its death is what
           // releases the ground and brings the rest down.
-          b = spawnWallCourses(world, wp.x, y, wp.z)[0];
+          // mk0.55: walls are thin faces now — default broadside to the
+          // enemy's advance (canonical v is the advance axis, so the long
+          // axis lies along canonical u: world x when ORIENT is even, world
+          // z when odd), and a wall built next to a wall continues its line.
+          b = spawnWallCourses(world, wp.x, y, wp.z, wallOrientAt(world, wp.x, wp.z, ORIENT % 2))[0];
         }
         b.maxHp = b.hp;
         cell.wallId = b.id;

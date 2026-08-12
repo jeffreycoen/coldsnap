@@ -1397,18 +1397,26 @@ export function makeRenderer(canvas, world0, opts = {}) {
         writeInst(wallMesh, wi, b.pos.x, b.pos.y, b.pos.z, b.q, dx / 0.9 * hurtW, dy / 0.9, dz / 0.9 * hurtW);
         wi++;
       } else {
-        // 3x3 blocks over the course's square footprint; block half-extent
-        // minus seam so every boundary is a visible joint. Damage shrink
-        // applies per block, so a chewed course visibly thins.
-        const step = (b.hx * 2) / WALL_BLOCKS;
+        // mk0.55 (Jeff: "this is 3x3x3, not 3x3x1"): a course draws as 3
+        // blocks in a ROW along its LONG axis — the wall is a FACE, one
+        // block deep, matching its thin collider. Damage shrink applies per
+        // block, so a chewed course visibly thins.
+        const alongX = b.hx >= b.hz;
+        const long = alongX ? b.hx : b.hz, thin = alongX ? b.hz : b.hx;
+        const step = (long * 2) / WALL_BLOCKS;
         const bh = Math.max(0.04, step / 2 - SEAM_XZ);
-        for (let ix = 0; ix < WALL_BLOCKS && wi < WALL_INST; ix++) for (let iz = 0; iz < WALL_BLOCKS && wi < WALL_INST; iz++) {
-          const ox = -b.hx + (ix + 0.5) * step, oz = -b.hz + (iz + 0.5) * step;
-          writeInst(wallMesh, wi, b.pos.x + ox, b.pos.y, b.pos.z + oz, b.q, bh / 0.9 * hurtW, dy / 0.9, bh / 0.9 * hurtW);
+        const bt = Math.max(0.04, thin - SEAM_XZ);
+        for (let k = 0; k < WALL_BLOCKS && wi < WALL_INST; k++) {
+          const o = -long + (k + 0.5) * step;
+          const px = b.pos.x + (alongX ? o : 0), pz = b.pos.z + (alongX ? 0 : o);
+          writeInst(wallMesh, wi, px, b.pos.y, pz, b.q,
+            (alongX ? bh : bt) / 0.9 * hurtW, dy / 0.9, (alongX ? bt : bh) / 0.9 * hurtW);
           wi++;
         }
       }
-      if (b.capTop !== false && wci < 256) { writeInst(wallCapMesh, wci, b.pos.x, b.pos.y + dy + 0.08, b.pos.z, b.q, 1, 1, 1); wci++; }
+      // cap follows the course's own footprint (a thin wall wears a thin
+      // snow cap; the single-body TD wall still gets the classic full slab)
+      if (b.capTop !== false && wci < 256) { writeInst(wallCapMesh, wci, b.pos.x, b.pos.y + dy + 0.08, b.pos.z, b.q, (b.hx + 0.03) / 0.93, 1, (b.hz + 0.03) / 0.93); wci++; }
     }
     wallMesh.count = wi; wallMesh.instanceMatrix.needsUpdate = true;
     wallCapMesh.count = wci; wallCapMesh.instanceMatrix.needsUpdate = true;

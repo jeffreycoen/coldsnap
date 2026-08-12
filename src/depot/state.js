@@ -186,22 +186,41 @@ function markWallCaps(courses) {
   for (const b of courses) b.capTop = b === top;
 }
 
-// spawnWallCourses(world, x, groundY, z) -> the courses, bottom first.
+// mk0.55 (Jeff, correcting mk0.54's 3x3x3 cube): A WALL IS A FACE — 3 wide,
+// 3 tall, ONE block deep (1.8 x 1.8 x 0.7). The collider matches the look:
+// courses are thin slabs whose long axis runs across the enemy's approach by
+// default (orient, same convention as sandbags: 0 = long axis along world x)
+// and auto-continues along a built line (wallOrientAt below). The footprint's
+// grid CELL is still fully owned — occupancy and placement are untouched.
+export const WALL_THIN = 0.35;          // depth half-extent — the sandbag family's own depth
+export function wallOrientAt(world, x, z, defaultOrient) {
+  let best = null, bestD2 = 2.2 * 2.2;
+  for (const b of world.bodies) {
+    if (b.kind !== "wall" || !b.alive) continue;
+    const dx = b.pos.x - x, dz = b.pos.z - z, d2 = dx * dx + dz * dz;
+    if (d2 > 1e-6 && d2 <= bestD2) { bestD2 = d2; best = b; }
+  }
+  if (!best) return defaultOrient;
+  return Math.abs(best.pos.x - x) >= Math.abs(best.pos.z - z) ? 0 : 1;
+}
+
+// spawnWallCourses(world, x, groundY, z, orient) -> the courses, bottom first.
 // The bottom course is the one the grid cell holds (DepotGame's cell.wallId):
 // its death is what releases the ground, and the courses above it come down
 // with it via the support rule below.
-export function spawnWallCourses(world, x, groundY, z) {
+export function spawnWallCourses(world, x, groundY, z, orient = 0) {
   const out = [];
   for (let i = 0; i < WALL_COURSES; i++) {
     const b = addBody(world, {
       kind: "wall", team: 1, mass: 0,
-      hx: WALL_HALF, hy: WALL_COURSE_HY, hz: WALL_HALF,
+      hx: orient === 1 ? WALL_THIN : WALL_HALF, hy: WALL_COURSE_HY, hz: orient === 1 ? WALL_HALF : WALL_THIN,
       x, y: groundY + (i + 0.5) * WALL_COURSE_PITCH, z,
       hp: wallCourseHp(i),
       group: i > 0 ? WALL_UPPER_GROUP : "",
       friction: 0.65, restitution: 0.02,
     });
     b.course = i;
+    b.orient = orient; // saved with the body (generic scalar sweep); the renderer reads the dims, not this
     // How far this course's centre rides above the ground it stands on. A
     // one-piece wall rides exactly its own half-height, which is what core's
     // crater re-seat assumes; a course two storeys up does not. Without this

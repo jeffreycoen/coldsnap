@@ -15,7 +15,7 @@ import {
   spawnSquadMembers, spawnSandbag, SANDBAG_COST, WALL_COST, pruneSquads,
   DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, DEPOT_CENSUS_HZ,
   spawnWallCourses, stepWallSupport, wallCourseHp,
-  WALL_HP, WALL_COURSES, WALL_H, WALL_HALF, WALL_COURSE_PITCH, WALL_COURSE_HY, WALL_WELD_BREAK_F, WALL_UPPER_GROUP,
+  WALL_HP, WALL_COURSES, WALL_H, WALL_HALF, WALL_THIN, wallOrientAt, WALL_COURSE_PITCH, WALL_COURSE_HY, WALL_WELD_BREAK_F, WALL_UPPER_GROUP,
 } from "../src/depot/state.js";
 import { troopKit, barrelBasis, RIFLE_PREROT, RIFLE_OFF, RIFLE_LEN } from "../src/render/troopkit.js";
 import { INFANTRY } from "../src/engine/core.js";
@@ -3008,8 +3008,16 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     ok("mk0.52/a: a wall is THREE kind-\"wall\" bodies (was one)",
       cs.length === WALL_COURSES && WALL_COURSES === 3 && wallsOf(world).length === 3);
     ok("mk0.52/a: courses are numbered bottom-up", cs.map((b) => b.course).join(",") === "0,1,2");
-    ok("mk0.52/a: the FOOTPRINT is the old wall's, unchanged",
-      cs.every((b) => b.hx === WALL_HALF && b.hz === WALL_HALF && b.hx === 0.9));
+    ok("mk0.55/a: a course is a thin face — long axis 0.9, one block deep (Jeff: 3x3x1)",
+      cs.every((b) => Math.max(b.hx, b.hz) === WALL_HALF && Math.min(b.hx, b.hz) === WALL_THIN));
+    ok("mk0.55/a: orient 1 swaps the face to run along z",
+      (() => { const w2 = makeWorld({ field: flatF, seed: 5 });
+        const c2 = spawnWallCourses(w2, 0, 0, 0, 1);
+        return c2.every((b) => b.hz === WALL_HALF && b.hx === WALL_THIN); })());
+    ok("mk0.55/a: wallOrientAt continues a neighbouring wall's line",
+      (() => { const w3 = makeWorld({ field: flatF, seed: 6 });
+        spawnWallCourses(w3, 0, 0, 0, 0);
+        return wallOrientAt(w3, 2, 0, 1) === 0 && wallOrientAt(w3, 30, 30, 1) === 1; })());
     // total silhouette: bottom face of course 0 to top face of course 2
     const lo = cs[0].pos.y - cs[0].hy, hi = cs[2].pos.y + cs[2].hy;
     ok("mk0.52/a: the wall still stands 1.8m, within one masonry joint",
@@ -3105,7 +3113,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   {
     const wsrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     const usrc = fs.readFileSync(new URL("../src/depot/units.js", import.meta.url), "utf8");
-    ok("mk0.52/f: buildAt lays courses instead of one block", /spawnWallCourses\(world, wp\.x, y, wp\.z\)\[0\]/.test(wsrc));
+    ok("mk0.55/f: buildAt lays oriented courses (auto-continue, broadside default)", /spawnWallCourses\(world, wp\.x, y, wp\.z, wallOrientAt\(world, wp\.x, wp\.z, ORIENT % 2\)\)\[0\]/.test(wsrc));
     ok("mk0.52/f: the support pass runs in stepDepot, after the dead are cleared",
       /structureLost[\s\S]{0,700}stepWallSupport\(world\)/.test(wsrc));
     ok("mk0.52/f: selling takes the whole stack, matched by footprint not id",
