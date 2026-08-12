@@ -79,6 +79,47 @@ function makeSplat(town) {
     cx.strokeRect(uu(-8.6), vv2(19.4), 17.2 * W2U, 17.2 * W2U);
   };
   paintBase();
+  // ---- kill smears: painted once, then REPLAYED after every fade ----------
+  // PERMANENT MEANS PERMANENT (C0 T4): the DEPOT decal-fade re-blends the
+  // clean base over the whole canvas every few seconds, which would grey a
+  // smear out along with the scorch it was meant to outlive. So every smear's
+  // parameters go into this ledger and get repainted at full strength at the
+  // end of each fade pass. The ledger is unbounded on purpose — a mark left
+  // where a man fell never expires — and is only ever cleared by clear() (a
+  // range reset repaints the base; a fresh world starts on clean snow).
+  // Inert for every caller that never arms the fade (TD/campaign/demo push
+  // nothing here beyond the array they already never read).
+  const smearLog = [];
+  // The paint body, shared by the live smear() and the fade replay. Shape is
+  // derived from the WORLD position (wx, wz) so identical runs paint identical
+  // ground; the replay hands back the stored values rather than re-deriving
+  // anything, so a repaint is byte-for-byte the same streak. fillRect only —
+  // the jsdom e2e canvas stub has no paths.
+  const paintSmear = (u, v, style, wx, wz) => {
+    let s = (Math.imul(Math.round(wx * 8) | 0, 374761393) ^ Math.imul(Math.round(wz * 8) | 0, 668265263)) | 0;
+    const rnd = () => { s = Math.imul(s ^ (s >>> 15), 2246822519) | 0; return ((s >>> 8) & 0xffff) / 0x10000; };
+    const ang = rnd() * Math.PI * 2, len = 10 + rnd() * 7;
+    const dx = Math.cos(ang), dy = Math.sin(ang);
+    cx.globalAlpha = 1;
+    cx.fillStyle = style === "human" ? "rgba(206,22,16,0.9)" : "rgba(22,24,28,0.85)";
+    for (let i = 0; i < len; i++) {
+      const w = Math.max(1, Math.round(3.6 * (1 - i / len) + rnd()));
+      cx.fillRect(Math.round(u + dx * i - w / 2), Math.round(v + dy * i - w / 2), w, w);
+    }
+    if (style === "human") {
+      cx.fillStyle = "rgba(228,48,30,0.85)"; // spray droplets past the streak
+      for (let i = 0; i < 5; i++) cx.fillRect(Math.round(u + (rnd() - 0.5) * len * 1.7), Math.round(v + (rnd() - 0.5) * len * 1.7), 1, 1);
+    } else {
+      // silver has to READ against scorch marks: bright dashes down the
+      // streak, not lone pixels — spilled machinery, unmistakably not soot
+      cx.fillStyle = "rgba(216,224,234,0.95)";
+      for (let i = 0; i < 9; i++) {
+        const t = rnd() * len;
+        cx.fillRect(Math.round(u + dx * t + (rnd() - 0.5) * 3), Math.round(v + dy * t + (rnd() - 0.5) * 3), 2, 2);
+      }
+      for (let i = 0; i < 4; i++) cx.fillRect(Math.round(u + dx * rnd() * len * 1.4 + (rnd() - 0.5) * 5), Math.round(v + dy * rnd() * len * 1.4 + (rnd() - 0.5) * 5), 1, 1);
+    }
+  };
   // clean-base snapshot for the fade pass (DEPOT only, see fade() below):
   // a second canvas holding the untouched ground art, redrawn over the live
   // canvas at low alpha so old scorch/tread/smear staining greys out toward
@@ -89,7 +130,7 @@ function makeSplat(town) {
   tex.minFilter = THREE.NearestFilter; tex.magFilter = THREE.NearestFilter; tex.generateMipmaps = false;
   return {
     tex,
-    clear() { paintBase(); tex.needsUpdate = true; },
+    clear() { paintBase(); smearLog.length = 0; tex.needsUpdate = true; },
     // called once by callers that want the fade pass; cheap (one extra
     // 1024x1024 canvas), so only DEPOT opts into it.
     armFade() {
@@ -108,6 +149,15 @@ function makeSplat(town) {
       cx.globalAlpha = alpha;
       cx.drawImage(baseCv, 0, 0);
       cx.globalAlpha = 1;
+      // ...then put the kill smears back, at full strength, exactly as they
+      // were first painted. Scorch and treads keep greying out; the marks
+      // where men fell do not. Cost is one repaint per fade tick (every few
+      // seconds), never per frame — and the counter is NOT touched, since no
+      // new man died.
+      for (let i = 0; i < smearLog.length; i++) {
+        const m = smearLog[i];
+        paintSmear(m.u, m.v, m.style, m.wx, m.wz);
+      }
       tex.needsUpdate = true;
     },
     // DEPOT-only: grid-line faction tint, region-batched on territory change.
@@ -169,36 +219,16 @@ function makeSplat(town) {
       cx.beginPath(); cx.arc(u, v, rPx, 0, Math.PI * 2); cx.fill();
       tex.needsUpdate = true;
     },
-    // DIVERGENCE from the demo: kill smears. A campaign body tagged with
-    // smearStyle leaves a permanent mark where it died — humans a bright
-    // scarlet streak, androids a dark spill flecked with silver. fillRect
-    // only (the jsdom e2e canvas stub has no paths), shape derived from the
-    // world position so identical runs paint identical ground.
+    // DIVERGENCE from the demo: kill smears. Any body tagged with smearStyle
+    // leaves a permanent mark where it died — humans a bright scarlet streak,
+    // androids a dark spill flecked with silver. Campaign bodies carry the tag
+    // from their scenario dress; from C0 T4 every DEPOT infantryman on both
+    // sides carries it too. The paint itself lives in paintSmear above; this
+    // wrapper is the one that counts the death and logs it for the fade replay.
     smears: 0,
     smear(u, v, style, wx, wz) {
-      let s = (Math.imul(Math.round(wx * 8) | 0, 374761393) ^ Math.imul(Math.round(wz * 8) | 0, 668265263)) | 0;
-      const rnd = () => { s = Math.imul(s ^ (s >>> 15), 2246822519) | 0; return ((s >>> 8) & 0xffff) / 0x10000; };
-      const ang = rnd() * Math.PI * 2, len = 10 + rnd() * 7;
-      const dx = Math.cos(ang), dy = Math.sin(ang);
-      cx.globalAlpha = 1;
-      cx.fillStyle = style === "human" ? "rgba(206,22,16,0.9)" : "rgba(22,24,28,0.85)";
-      for (let i = 0; i < len; i++) {
-        const w = Math.max(1, Math.round(3.6 * (1 - i / len) + rnd()));
-        cx.fillRect(Math.round(u + dx * i - w / 2), Math.round(v + dy * i - w / 2), w, w);
-      }
-      if (style === "human") {
-        cx.fillStyle = "rgba(228,48,30,0.85)"; // spray droplets past the streak
-        for (let i = 0; i < 5; i++) cx.fillRect(Math.round(u + (rnd() - 0.5) * len * 1.7), Math.round(v + (rnd() - 0.5) * len * 1.7), 1, 1);
-      } else {
-        // silver has to READ against scorch marks: bright dashes down the
-        // streak, not lone pixels — spilled machinery, unmistakably not soot
-        cx.fillStyle = "rgba(216,224,234,0.95)";
-        for (let i = 0; i < 9; i++) {
-          const t = rnd() * len;
-          cx.fillRect(Math.round(u + dx * t + (rnd() - 0.5) * 3), Math.round(v + dy * t + (rnd() - 0.5) * 3), 2, 2);
-        }
-        for (let i = 0; i < 4; i++) cx.fillRect(Math.round(u + dx * rnd() * len * 1.4 + (rnd() - 0.5) * 5), Math.round(v + dy * rnd() * len * 1.4 + (rnd() - 0.5) * 5), 1, 1);
-      }
+      paintSmear(u, v, style, wx, wz);
+      smearLog.push({ u, v, style, wx, wz }); // so the fade pass can put it back
       this.smears++;
       tex.needsUpdate = true;
     },

@@ -557,8 +557,11 @@ function scriptedWaveRun(seed) {
   // marksman's price and armament pins belong with the rest of the mirror.
   {
     const sp = ENEMY_SPECS.sniper;
-    ok("4C spec: ENEMY_SPECS.sniper fielded (speed 2.9, hp 44, bounty 45 = the pair price, android dress)",
-      !!sp && sp.speed === 2.9 && sp.hp === 44 && sp.bounty === 45 && sp.dress === "android", JSON.stringify(sp));
+    // dress re-pinned (C0 T4, mk0.33): the marksman pair lost `dress:
+    // "android"` — they are ordinary men in the enemy slate coat now, so the
+    // spec must carry NO dress field at all and let troopkit palette them.
+    ok("4C spec: ENEMY_SPECS.sniper fielded (speed 2.9, hp 44, bounty 45 = the pair price, no dress — ordinary men)",
+      !!sp && sp.speed === 2.9 && sp.hp === 44 && sp.bounty === 45 && sp.dress === undefined, JSON.stringify(sp));
     ok("4C spec: enemy sniper fires INFANTRY_ARMS.sniper verbatim (acc/windF/windComp/dirDmg/range pin)",
       SNIPER_FIRE.acc === INFANTRY_ARMS.sniper.acc && SNIPER_FIRE.windF === INFANTRY_ARMS.sniper.windF &&
       SNIPER_FIRE.windComp === INFANTRY_ARMS.sniper.windComp && SNIPER_FIRE.dirDmg === INFANTRY_ARMS.sniper.dirDmg &&

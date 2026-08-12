@@ -9,11 +9,17 @@
 // tower-mg DPS +45.4% over the pre-wiring baseline; rescaled to 3.4 to land
 // within the +/-10% replaces-not-adds contract (measured -1.2%). See
 // scripts/depot-test.mjs's towerShot DPS assert.
+// SLOW FRONT C0 Task 4 (mk0.33) — ARTILLERY CADENCE HALVED, Jeff-ratified.
+// Every tube on the map reloads twice as slowly: mortar fireRate 2.3 -> 4.6,
+// rocket 4.4 -> 8.8, and by the symmetry law the infantry mirrors move with
+// them (INFANTRY_ARMS.mortars 3.0 -> 6.0, ENEMY_FIRE.lob.cd 3.0 -> 6.0).
+// Damage, blast, accuracy and wind are UNTOUCHED — only the wait between
+// shells. This is a pace preview, so all four numbers stay provisional (F5).
 export const TOWER_SPECS = {
   mg:     { range: 15, fireRate: 0.17, projSpeed: 95, dmg: 5, dirDmg: 3.4, blastR: 0.3, kv: 0.5, cost: 15, hp: 80,  crater: 0, label: "MG",     icon: "⊞", kind: "mg",    hy: 1.0, acc: 0.090, windF: 0.06, windComp: 0,   blurb: "Fast, cheap, short reach", occl: "arc" },
   gun:    { range: 19, fireRate: 1.05, projSpeed: 58, dmg: 25, blastR: 2.3, kv: 8,   cost: 25, hp: 130, crater: 0.55, label: "GUN",    icon: "⚑", kind: "shell", hy: 1.5, acc: 0.07, windF: 0.9,  windComp: 0.6, blurb: "Flat-trajectory workhorse", occl: "arc" },
-  mortar: { range: 26, fireRate: 2.3,  projSpeed: 33, dmg: 38, blastR: 3.8, kv: 10,  cost: 35, hp: 95,  crater: 0.8, label: "MORTAR", icon: "◎", kind: "shell", hy: 0.8, acc: 0.020, windF: 0.04, windComp: 0.6, blurb: "Arcs over walls, big blast", occl: "lofted" },
-  rocket: { range: 23, fireRate: 4.4,  projSpeed: 30, dmg: 27, blastR: 3.4, kv: 9,   cost: 50, hp: 110, volley: 4, crater: 0.7, label: "ROCKET", icon: "▲", kind: "shell", hy: 1.2, acc: 0.021, windF: 1.3  /* lobbed retune (mk0.25): swept 0.020-0.035 vs the pinned flat baseline 2.4592, curve in the F1.5 artillery plan // provisional (F5) */, windComp: 0.5, blurb: "Four-round salvo, slow reload", occl: "lofted" },
+  mortar: { range: 26, fireRate: 4.6 /* halved cadence (C0 T4) // provisional (F5) */,  projSpeed: 33, dmg: 38, blastR: 3.8, kv: 10,  cost: 35, hp: 95,  crater: 0.8, label: "MORTAR", icon: "◎", kind: "shell", hy: 0.8, acc: 0.020, windF: 0.04, windComp: 0.6, blurb: "Arcs over walls, big blast", occl: "lofted" },
+  rocket: { range: 23, fireRate: 8.8 /* halved cadence (C0 T4) // provisional (F5) */,  projSpeed: 30, dmg: 27, blastR: 3.4, kv: 9,   cost: 50, hp: 110, volley: 4, crater: 0.7, label: "ROCKET", icon: "▲", kind: "shell", hy: 1.2, acc: 0.021, windF: 1.3  /* lobbed retune (mk0.25): swept 0.020-0.035 vs the pinned flat baseline 2.4592, curve in the F1.5 artillery plan // provisional (F5) */, windComp: 0.5, blurb: "Four-round salvo, slow reload", occl: "lofted" },
   frost:  { range: 12, fireRate: 0,    projSpeed: 0,  dmg: 0,  blastR: 0,   kv: 0,   cost: 20, hp: 85,  label: "FROST",  icon: "❄", kind: "mg",    slow: 0.42, hy: 1.35, blurb: "Halves their pace in radius" },
 };
 export const TOWER_ORDER = ["mg", "gun", "mortar", "rocket", "frost"];
@@ -32,7 +38,13 @@ export const ENEMY_SPECS = {
   // — so bounty (the buy price ai.js spends) rises 30 -> 45, mirroring the
   // player's own 45-scrap pair. Kill payout stays symmetric: units.js splits
   // the 45 across the two bodies (30 sniper + 15 spotter) at spawn.
-  sniper: { mass: 82,  hx: 0.26, hy: 0.86, hz: 0.26, hp: 44,  bounty: 45, speed: 2.9, gain: 14, label: "marksman", dress: "android" },
+  // RE-DRESSED (C0 T4, mk0.33 — Jeff): dress "android" DELETED. They are
+  // ordinary men in the enemy's cold slate coat now, not silver machines;
+  // troopkit's coat-is-side rule palettes them by team with no dress field at
+  // all. units.js's spotter copies dress from this same spec, so the one
+  // deletion re-dresses the whole pair. Campaign androids are unaffected —
+  // that dress lives on scenario bodies (src/game/scenario.js), not here.
+  sniper: { mass: 82,  hx: 0.26, hy: 0.86, hz: 0.26, hp: 44,  bounty: 45, speed: 2.9, gain: 14, label: "marksman" },
 };
 
 // Wave armor: an engine vehicle on the engine's own tread physics (see
@@ -59,7 +71,11 @@ export const TANK = { mass: 3400, hx: 1.5, hy: 0.8, hz: 2.4, hp: 260, bounty: 25
 // The wall path is unaffected (dirDmg still inert there).
 export const ENEMY_FIRE = {
   rifle: { projSpeed: 70, dmg: 5, dmgHeavy: 9, dirDmg: 4.5, kind: "mg", blastR: 0.6, kv: 1.0, crater: 0, acc: 0.090, windF: 0.06, windComp: 0, cd: 1.5, cdVar: 0.5, range: 13, occl: "arc" },
-  lob:   { projSpeed: 28, dmg: 20, kind: "shell", blastR: 2.6, kv: 6, crater: 0.45, acc: 0.020, windF: 0.04, windComp: 0.6, cd: 3.0, cdVar: 0.6, range: 21, occl: "lofted" },
+  // lob cd 3.0 -> 6.0 (C0 T4, mk0.33): the grenadier's tube halves its cadence
+  // alongside TOWER_SPECS.mortar and INFANTRY_ARMS.mortars — symmetry is law,
+  // so their lob slows exactly as much as ours. cdVar is a separate dial and
+  // was not moved. // provisional (F5)
+  lob:   { projSpeed: 28, dmg: 20, kind: "shell", blastR: 2.6, kv: 6, crater: 0.45, acc: 0.020, windF: 0.04, windComp: 0.6, cd: 6.0, cdVar: 0.6, range: 21, occl: "lofted" },
   tank:  { projSpeed: 85, dmg: TANK.dmg, kind: "shell", blastR: TANK.blastR, kv: 8, crater: 0.5, acc: 0.070, windF: 0.9, windComp: 0.6, cd: TANK.gunCd, cdVar: 1.2, range: TANK.gunRange, occl: "arc" },
 };
 
@@ -135,8 +151,9 @@ export const INFANTRY_ARMS = {
             range: 17, acc: 0.070, occl: "arc", windF: 0.06, windComp: 0.6 },
   // F1.5 Task 1: the tube comes off the tower — the player mirror of the
   // enemy grenadier's lob (ENEMY_FIRE.lob values verbatim, aim fully equal
-  // per the standing law). dirDmg none: shells are blast weapons. cd 3.0 ->
-  // fireRate 3.0 (squadFire's cooldown field). // provisional (F5)
+  // per the standing law). dirDmg none: shells are blast weapons. cd ->
+  // fireRate (squadFire's cooldown field), so it tracks ENEMY_FIRE.lob.cd
+  // one-for-one: 3.0 -> 6.0 with the C0 T4 cadence halving. // provisional (F5)
   mortars: { projSpeed: 28, kind: "shell", dmg: 20, blastR: 2.6, kv: 6, crater: 0.45,
-             fireRate: 3.0, range: 21, acc: 0.020, occl: "lofted", windF: 0.04, windComp: 0.6 },
+             fireRate: 6.0, range: 21, acc: 0.020, occl: "lofted", windF: 0.04, windComp: 0.6 },
 };

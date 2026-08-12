@@ -357,6 +357,10 @@ export function spawnSquadMembers(world, squad) {
     const u = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28,
       x: p.x, y: world.field.heightAt(p.x, p.z) + 0.74, z: p.z, hp: 58, friction: 0.5 });
     u.utype = squad.type; u.squadId = squad.id; u.dress = "human"; // player side reads human
+    // SMEARS ON (C0 T4, mk0.33): every man who falls leaves a permanent red
+    // mark in the snow. smearStyle is render-only — the renderer's kill
+    // handler reads it off the corpse; nothing in the sim branches on it.
+    u.smearStyle = "human";
     // The pair (6.5 Task 6): a sniper squad is sniper + spotter. Member 0
     // carries the rifle; member 1 carries binoculars and NEVER fires until
     // converted (squadFire's role skip below).

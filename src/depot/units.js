@@ -30,6 +30,12 @@ export function spawnUnit(world, sp, tag) {
   });
   u.tag = tag || ""; u.bounty = spec.bounty;
   if (spec.dress) u.dress = spec.dress;
+  // SMEARS ON (C0 T4, mk0.33): every enemy infantryman — conscript, runner,
+  // breaker, grenadier, sapper, marksman — leaves a permanent red mark where
+  // he dies. Set on the unit path only; spawnTank returns above, so armour
+  // never smears (these are infantry marks). Render-only: the renderer's kill
+  // handler reads it off the corpse, no sim path branches on it.
+  u.smearStyle = "human";
   u.brave = true;
   if (tag === "gren") u.utype = "gren";
   u.wph = world.rng() * 6.28;
@@ -47,6 +53,7 @@ export function spawnUnit(world, sp, tag) {
     });
     s.tag = "sniper"; s.role = "spotter"; s.bounty = 15;
     if (spec.dress) s.dress = spec.dress;
+    s.smearStyle = "human";                 // the spotter falls like any man
     s.brave = true;
     s.wph = u.wph + 1.7;                    // derived, not drawn
     s.pairId = u.id; u.pairId = s.id;
