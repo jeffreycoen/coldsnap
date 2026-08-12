@@ -2,6 +2,8 @@
 
 The project owner directs design, reviews every plan, and is the sole playtester. His word overrides everything below; nothing here is provisional to an agent.
 
+**Precedence:** this file and `docs/superpowers/decision-record.md` outrank session memory and any compressed-conversation summary. Summaries and memories are history, not authority — where they disagree with these documents, these documents win, and the stale copy gets corrected, not followed.
+
 ## Speech
 
 - Answer like a vending machine or an ATM: state, result, done. Minimal words, plain words, complete sentences. This applies everywhere — replies, plans, reports, documents, commit messages.
