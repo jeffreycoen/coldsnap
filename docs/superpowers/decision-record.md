@@ -25,10 +25,14 @@
 - Sight is derived state: never saved, rebuilt on resume, zero rng, cell maps recomputed at the territory tick.
 - **Fire rule (owner, 2026-08-12): a squad under ATTACK that sees enemies in range halts and fights, then resumes the advance. MOVE stays quiet.** (Ruled after the mk0.73 diagnosis: attack-order squads never counted as stationary, so they never fired — the fix task implements this.)
 
-## Orders and command (Command phase, ahead)
+## Orders and command (Command phase, next — scope ratified 2026-08-12)
 
-- Radial order menu on placement and on tap replaces the chip row; defend-here is the intrinsic default.
-- Order vocabulary discussed: patrol, take cover, hold fire/ambush, attack structures, fall back, escort, suppress/barrage, directed demolition. Tower doctrine: priority/focus/hold/careful/sector/barrage.
+- Radial order menu on placement and on tap replaces the chip row; defend-here is the intrinsic default. Covers SQUADS AND TOWERS this phase — one interaction language.
+- Squad radial v1: MOVE, ATTACK, DEFEND carry over; new orders are PATROL (two taps, there and back, forever, fighting per halt-and-fight) and ATTACK STRUCTURES (prefer walls/towers over men). Type-specific orders = existing only (engineers' BUILD BAGS/WALLS migrate into their radial); no new type-specific orders this phase.
+- HOLD FIRE is CUT (owner): "they can ambush with line of sight obstructed by walls" — ambush emerges from the sight system, no mechanism.
+- Tower radial v1: per-tower CAREFUL/FREE (replaces the global toggle) + SELL (moves off the inspect panel). Focus-fire and the rest of the doctrine vocabulary (priority/hold/sector/barrage) wait.
+- Possession phase later adds TAKE CONTROL to every radial — the radial's slot geometry reserves room.
+- Vocabulary still on the shelf for later phases: take cover, fall back, escort, suppress/barrage, directed demolition, mortar barrage (noting barrage cuts against the sight law).
 - Engineers' BUILD is two-point: tap start, tap end, lay end-to-end, dig in at the end. One rotation per line — the closest logical rotation to the line's overall direction, no per-step staircase. Field bags 3, field walls 5 with a lay pause.
 
 ## Possession (its own phase, after Command)
