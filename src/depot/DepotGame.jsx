@@ -22,7 +22,7 @@ import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accurac
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
 import { makeRegiment, payTown } from "./economy.js";
 import { makeTerritory, stepTerritory, holderAt, canBuild, fogStateFor, valueAt, EMIT } from "./territory.js";
-import { makeSight, stepSight } from "./sight.js";
+import { makeSight, stepSight, seenAt } from "./sight.js";
 import { fwdUFor, fwdDirFor, invWFor, clampToRimFor } from "./orient.js";
 import { SAVE_KEY, serializeFront, burnFront, restoreBodies, restoreWelds, restoreCensus, restoreSquads } from "./save.js";
 import Dispatch from "./Dispatch.jsx";
@@ -1030,18 +1030,21 @@ export default function DepotGame({ onExit, resume = null }) {
         // canonical): ground/grid/decals beyond it get no geometry to
         // paint on (see renderer.js). TD/campaign/demo pass no rim.
         rim: { halfU: RIM_HALF_U, halfV: RIM_HALF_V, toCanonical: invW, toWorld: fwdU },
-        // Phase 4 Task 4: grid-line faction tint + three-state fog. sample()
-        // (WORLD space) drives per-frame enemy visibility/silhouette gating;
-        // sampleUV (CANONICAL space, matches T's own grid) drives the 4Hz
-        // splat-line retint + terrain fog wash via R.updateTerritory().
+        // Grid-line faction tint + fog. sample() (WORLD space) drives
+        // per-frame enemy visibility and the terrain fog cast; sampleUV
+        // (CANONICAL space, matches T's own grid) drives the 4Hz splat-line
+        // retint + terrain fog wash via R.updateTerritory().
         territory: {
           T,
           toWorld: fwdU,
-          sample: (x, z) => { const c = invW(x, z); return fogStateFor(T, c.u, c.v, 1); },
-          sampleUV: (u, v) => fogStateFor(T, u, v, 1),
-          // Task 3: raw signed field strength (world space), feeding the
-          // area-wash alpha ramp — sample()/sampleUV() only return the
-          // tri-state bucket, not enough for a continuous fade.
+          // VISION (mk0.73): what the screen hides now follows what your side
+          // SEES, not what it holds. Binary — a spot is seen or it is not, so
+          // the renderer's "seam" silhouette branch never fires again.
+          sample: (x, z) => { const c = invW(x, z); return seenAt(T.sight, c.u, c.v, 1) ? "held" : "unheld"; },
+          sampleUV: (u, v) => fogStateFor(T, u, v, 1),   // grid tint: ownership, unchanged
+          // Raw signed field strength (world space), feeding the area-wash
+          // alpha ramp — the ground wash still shows who HOLDS the ground,
+          // which is also what build rights read.
           sampleVal: (x, z) => { const c = invW(x, z); return valueAt(T, c.u, c.v); },
         },
       });
@@ -1059,8 +1062,8 @@ export default function DepotGame({ onExit, resume = null }) {
       const AIM_OFF = { x: 0, z: -500 };
       // FOG toggle: visuals only (see renderer.js setFog) — default ON,
       // persisted with the same localStorage-key pattern CampaignRunner uses
-      // for "coldsnap-camp-deployed". Targeting (fogStateFor in units.js /
-      // state.js) is untouched by this flag.
+      // for "coldsnap-camp-deployed". Targeting (fieldReaches in state.js,
+      // a sight read since mk0.72) is untouched by this flag.
       let fogOn = true;
       try { fogOn = window.localStorage.getItem("coldsnap-depot-fog") !== "0"; } catch (e) {}
       R.setFog(fogOn);
