@@ -598,7 +598,33 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
   if (S && S.squads) {
     S.squads = pruneSquads(world, S.squads);
     if (S.selSquadId != null && !S.squads.some((q) => q.id === S.selSquadId)) { S.selSquadId = null; S.orderMode = null; S.buildPt0 = null; }
+    // VISION T4 (mk0.74, owner's ruling): an attacking squad that SEES an
+    // enemy in weapon reach halts and fights — the halt is the squad's own
+    // leg-pause field held open, so the fire rule and the leg machinery are
+    // untouched and no rng is drawn. MOVE and BUILD stay quiet; sappers
+    // never halt for men (their attack is the charge, not the rifle).
+    // Throttled like every scan in this codebase; deterministic.
+    const ENGAGE_CHECK_S = 0.2, ENGAGE_HOLD_S = 0.35;
+    const engageCheck = (sq) => {
+      if (sq.order !== "attack" || sq.type === "sappers" || sq.type === "engineers") return;
+      sq._engageCd = (sq._engageCd || 0) - world.dt;
+      if (sq._engageCd > 0) return;
+      sq._engageCd = ENGAGE_CHECK_S;
+      const arms = INFANTRY_ARMS[sq.type];
+      if (!arms) return;
+      const R2 = arms.range * arms.range;
+      for (const e of world.bodies) {
+        if ((e.kind !== "unit" && e.kind !== "vehicle") || !e.alive || e.team !== 2) continue;
+        const dx = e.pos.x - sq.anchor.x, dz = e.pos.z - sq.anchor.z;
+        if (dx * dx + dz * dz > R2) continue;
+        const c = invW(e.pos.x, e.pos.z);
+        if (!fieldReaches(T, c.u, c.v, 1)) continue;
+        sq._pauseT = Math.max(sq._pauseT || 0, ENGAGE_HOLD_S);  // hold the halt open
+        return;
+      }
+    };
     for (const sq of S.squads) {
+      engageCheck(sq);
       stepSquad(world, sq, world.dt);
       // P1.5 T4: the two-point build line, driven straight after the squad's
       // own movement so the accumulator reads THIS tick's anchor. It lives in

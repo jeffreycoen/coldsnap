@@ -430,6 +430,9 @@ export function towerShot(world, tower, target, spec) {
 // "attack" mid-leg-pause (squad._pauseT > 0). stepSquad already holds every
 // member still in both cases (defend: slot-seek settles; attack pause: no
 // new goal is issued), so this is a squad-level gate, not per-member.
+// VISION T4: the game layer holds an attacking squad's pause open while a
+// seen enemy is in reach (DepotGame's engageCheck), so halt-and-fight rides
+// this same gate.
 //
 // Per member: a body-local cooldown (u.fireCd, mirrors tower b.fireCd)
 // gates the trigger pull; target acquisition is the EXACT tower stack

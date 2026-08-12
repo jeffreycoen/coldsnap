@@ -3698,6 +3698,175 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 }
 // ==== end VISION T2 ==========================================================
 
+// ==== VISION T4: halt and fight ==============================================
+// mk0.74. The owner's playtest ruling: an attacking squad that SEES an enemy
+// in weapon reach halts and fights until it's dead or gone, then resumes.
+// MOVE stays quiet; sappers never halt for men. The halt lives in
+// DepotGame.jsx's stepDepot (engageCheck, called just before stepSquad each
+// tick) — game-layer code this headless file cannot import, so it is
+// mirrored here verbatim, the same convention VISION T1/T2's tower- and
+// stepDepot-scan mirrors already use. ORIENT 0, so world<->canonical is the
+// identity; territory + sight are built and stepped every tick, same as
+// VISION T2's fixtures.
+{
+  const idUV = (x, z) => ({ u: x, v: z });
+  const idW = (u, v) => ({ x: u, z: v });
+  const flat = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+
+  // mirrors DepotGame.jsx's stepDepot engageCheck, byte-for-byte in logic.
+  const ENGAGE_CHECK_S = 0.2, ENGAGE_HOLD_S = 0.35;
+  const makeEngageCheck = (world, T, invW) => (sq) => {
+    if (sq.order !== "attack" || sq.type === "sappers" || sq.type === "engineers") return;
+    sq._engageCd = (sq._engageCd || 0) - world.dt;
+    if (sq._engageCd > 0) return;
+    sq._engageCd = ENGAGE_CHECK_S;
+    const arms = INFANTRY_ARMS[sq.type];
+    if (!arms) return;
+    const R2 = arms.range * arms.range;
+    for (const e of world.bodies) {
+      if ((e.kind !== "unit" && e.kind !== "vehicle") || !e.alive || e.team !== 2) continue;
+      const dx = e.pos.x - sq.anchor.x, dz = e.pos.z - sq.anchor.z;
+      if (dx * dx + dz * dz > R2) continue;
+      const c = invW(e.pos.x, e.pos.z);
+      if (!fieldReaches(T, c.u, c.v, 1)) continue;
+      sq._pauseT = Math.max(sq._pauseT || 0, ENGAGE_HOLD_S);
+      return;
+    }
+  };
+
+  // fixture: a rifle squad at the origin ordered ATTACK to (0,30), an enemy
+  // conscript 8m off the path at (8,12) — inside the rifle's 15m reach and
+  // its 24m sight the moment territory+sight are stepped.
+  const mkFixture = (order, seed = 12) => {
+    const world = makeWorld({ field: flat, seed });
+    world.dt = 1 / 60;
+    const sq = makeSquad(1, "rifles", 1, 0, 0);
+    spawnSquadMembers(world, sq);
+    sq.order = order; sq.dest = { x: 0, z: 30 };
+    const foe = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 8, y: 0.86, z: 12, hp: 58 });
+    const T = makeTerritory(29, 57);
+    T.sight = makeSight(T);
+    return { world, sq, foe, T };
+  };
+
+  // (a) ATTACK past the conscript halts within a second and fires. Pinned
+  // to fail before the change (zero muzzles, anchor sails past 3m in the
+  // first second) and pass after.
+  {
+    const { world, sq, T } = mkFixture("attack");
+    const engageCheck = makeEngageCheck(world, T, idUV);
+    let muzzles = 0, anchorAt1s = null;
+    for (let i = 0; i < 60; i++) {
+      stepSight(world, T.sight, idUV, idW);
+      engageCheck(sq);
+      const before = world.projectiles.length;
+      stepSquad(world, sq, world.dt);
+      squadFire(world, sq, world.dt, T, idUV);
+      if (world.projectiles.length > before) muzzles += world.projectiles.length - before;
+      stepWorld(world);
+      if (i === 59) anchorAt1s = sq.anchor.z;
+    }
+    ok("VISION T4(a): the squad halts within a second (anchor well short of the 3.2m unhalted march)",
+      anchorAt1s < 1.0, `anchor.z=${anchorAt1s.toFixed(2)}`);
+    ok("VISION T4(a): and it fires on the seen conscript (muzzle events)", muzzles > 0, `muzzles=${muzzles}`);
+  }
+
+  // (b) the conscript dies, the squad resumes, arrives, and digs in.
+  {
+    const { world, sq, foe, T } = mkFixture("attack");
+    const engageCheck = makeEngageCheck(world, T, idUV);
+    let killedAt = -1, arrivedAt = -1;
+    for (let i = 0; i < 3000; i++) {
+      stepSight(world, T.sight, idUV, idW);
+      engageCheck(sq);
+      stepSquad(world, sq, world.dt);
+      squadFire(world, sq, world.dt, T, idUV);
+      stepWorld(world);
+      if (killedAt < 0 && i === 120) { applyDamage(world, foe, 1e9, { attacker: "player" }); killedAt = i; }
+      if (arrivedAt < 0 && sq.order === "defend") { arrivedAt = i; break; }
+    }
+    ok("VISION T4(b): killing the conscript by hand lets the squad resume and arrive",
+      arrivedAt > killedAt && Math.abs(sq.anchor.z - 30) < 1.01, `arrived=${arrivedAt} anchor.z=${sq.anchor.z.toFixed(2)}`);
+    ok("VISION T4(b): arrival flips the order to defend", sq.order === "defend");
+  }
+
+  // (c) MOVE stays silent the whole way — stop short of arrival (order
+  // flips to defend on arrival and a defending squad rightly opens fire;
+  // that's untouched, unrelated behavior, not what this ruling governs).
+  {
+    const { world, sq, T } = mkFixture("move");
+    const engageCheck = makeEngageCheck(world, T, idUV);
+    let muzzles = 0;
+    for (let i = 0; i < 690; i++) {
+      stepSight(world, T.sight, idUV, idW);
+      engageCheck(sq);
+      const before = world.projectiles.length;
+      stepSquad(world, sq, world.dt);
+      squadFire(world, sq, world.dt, T, idUV);
+      if (world.projectiles.length > before) muzzles += world.projectiles.length - before;
+      stepWorld(world);
+    }
+    ok("VISION T4(c): a MOVE squad stays silent the whole way", muzzles === 0, `muzzles=${muzzles}`);
+    ok("VISION T4(c): (still travelling, not yet dug in — the silence is the road, not the halt)", sq.order === "move");
+  }
+
+  // (d) a SAPPER squad under ATTACK never halts for men.
+  {
+    const { world, foe, T } = mkFixture("attack");
+    const sap = makeSquad(2, "sappers", 1, 0, 0);
+    spawnSquadMembers(world, sap);
+    sap.order = "attack"; sap.dest = { x: 0, z: 30 };
+    const engageCheck = makeEngageCheck(world, T, idUV);
+    stepSight(world, T.sight, idUV, idW);
+    for (let i = 0; i < 30; i++) engageCheck(sap);
+    ok("VISION T4(d): engageCheck never touches a sapper squad's pause, enemy in reach or not",
+      !sap._pauseT, `_pauseT=${sap._pauseT}`);
+  }
+
+  // (e) dice stability: the halt draws nothing. Isolated from squadFire
+  // (whose own scatter draws legitimately scale with how much a squad
+  // fires, unrelated to this law) — stepSquad + engageCheck only, so the
+  // ONLY rng site in play is stepSquad's one-per-leg dwell draw. With
+  // enemy and without, old (no engageCheck) and new (with engageCheck)
+  // draw identically: the halt adds zero draws, and the pre-existing
+  // with/without-enemy offset (today's truth: threatened cover-hop legs
+  // are shorter than double-time legs, so leg counts already differ) is
+  // unchanged by adding it.
+  {
+    const drawsFor = (withEnemy, withHalt) => {
+      const world = makeWorld({ field: flat, seed: 12 });
+      world.dt = 1 / 60;
+      const sq = makeSquad(1, "rifles", 1, 0, 0);
+      spawnSquadMembers(world, sq);
+      sq.order = "attack"; sq.dest = { x: 0, z: 30 };
+      let foe = null;
+      if (withEnemy) foe = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 8, y: 0.86, z: 12, hp: 1e9 });
+      const T = makeTerritory(29, 57);
+      T.sight = makeSight(T);
+      const engageCheck = makeEngageCheck(world, T, idUV);
+      let draws = 0;
+      const raw = world.rng;
+      world.rng = () => { draws++; return raw(); };
+      for (let i = 0; i < 6000; i++) {
+        stepSight(world, T.sight, idUV, idW);
+        if (withHalt) engageCheck(sq);
+        stepSquad(world, sq, world.dt);
+        stepWorld(world);
+        if (i === 120 && foe) foe.alive = false; // release the engagement so movement resumes either way
+        if (sq.order === "defend") break;
+      }
+      return draws;
+    };
+    const eOldNo = drawsFor(true, false), eOldYes = drawsFor(true, true);
+    const noEOldNo = drawsFor(false, false), noEOldYes = drawsFor(false, true);
+    ok("VISION T4(e): with an enemy on the path, the halt draws exactly what the leg machine already drew",
+      eOldNo === eOldYes, `no-halt=${eOldNo} with-halt=${eOldYes}`);
+    ok("VISION T4(e): with no enemy at all, the halt (a no-op scan) still draws nothing extra",
+      noEOldNo === noEOldYes, `no-halt=${noEOldNo} with-halt=${noEOldYes}`);
+  }
+}
+// ==== end VISION T4 ==========================================================
+
 
 
 
