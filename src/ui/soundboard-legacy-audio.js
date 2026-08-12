@@ -1,3 +1,17 @@
+// ui/soundboard-legacy-audio.js — A FROZEN SNAPSHOT of src/platform/audio.js
+// exactly as it shipped at mk0.57, kept for one purpose: the soundboard's
+// OLD/NEW buttons, so Jeff can hear the sound he had against the sound he has.
+//
+// LAWS OF THIS FILE:
+//   * It is NEVER edited. It is a photograph, not a copy under maintenance.
+//   * It is NEVER imported by game code — only src/ui/SoundBoard.jsx touches
+//     it. Every mode (demo, tower defense, campaign, mech, WINTER FRONT)
+//     imports src/platform/audio.js and nothing else.
+//   * It builds its OWN AudioContext, so the legacy engine and the production
+//     engine run side by side in the same page without sharing a graph.
+// Everything below this header is byte-for-byte the mk0.57 module, with the
+// single exception of the export name (makeGameAudio -> makeLegacyGameAudio).
+//
 // platform/audio.js — the shared COLDSNAP sound engine. Procedural WebAudio,
 // no asset files (artifact/Pages builds stay self-contained).
 //
@@ -18,25 +32,14 @@
 // masonry and granite clap back — that contrast is the map's acoustic
 // signature. Every instance is humanized: ±12% pitch/length/gain and a few
 // ms of onset jitter, with 3-8ms attack ramps so nothing clicks like a pad.
-//
-// mk0.58 RETUNE. The muster bell, the three infantry arms and the wind bed
-// were rebuilt against published acoustics — bell partial ratios and strike
-// note, forensic gunshot structure, wind turbulence spectra, and the ISO 226
-// equal-loudness contours that say what any of it costs to hear. The spec of
-// record, with every number's citation and every gap left open rather than
-// guessed, is docs/superpowers/2026-08-12-sound-profiles-reference.md; the
-// section numbers in the comments below point into its PART TWO. The MUZZLE
-// table (keyed on what the ROUND is) is deliberately untouched, so the demo,
-// tower defense, the campaign and the mech keep the sounds they shipped with.
-export function makeGameAudio() {
+export function makeLegacyGameAudio() {
   let ctx = null, muted = false, master = null, comp = null, verb = null, verbGain = null;
-  let bellBus = null, noiseBuf = null;
+  let noiseBuf = null;
   const listener = { x: 0, z: 0, range: 60 };
   let reflectors = [];                    // [{x, z, r}] — big acoustic faces
   let voices = 0;
   const VOICE_CAP = 26;
   const C_SND = 343;                      // m/s
-  const MASTER_G = 0.8;
 
   const ensure = () => {
     try {
@@ -46,18 +49,8 @@ export function makeGameAudio() {
         ctx = new AC();
         comp = ctx.createDynamicsCompressor();
         comp.threshold.value = -18; comp.ratio.value = 6; comp.knee.value = 12;
-        master = ctx.createGain(); master.gain.value = MASTER_G;
+        master = ctx.createGain(); master.gain.value = 0.8;
         master.connect(comp).connect(ctx.destination);
-        // THE BELL'S OWN DOOR (mk0.58). Everything in the game goes out
-        // through `master` into the compressor, and that compressor's job —
-        // 250ms of recovery after every explosion — was quietly holding the
-        // muster bell down for the whole five seconds it tried to ring. So
-        // the bell leaves by a second bus that never meets the compressor,
-        // and instead of the mix ducking the bell, the toll ducks the mix
-        // (see duckMix). Same 0.8 trim, so nothing else about the balance
-        // moves. Nothing but bellToll/preToll is ever routed here.
-        bellBus = ctx.createGain(); bellBus.gain.value = MASTER_G;
-        bellBus.connect(ctx.destination);
         const n = Math.floor(ctx.sampleRate * 2);
         noiseBuf = ctx.createBuffer(1, n, ctx.sampleRate);
         const d = noiseBuf.getChannelData(0);
@@ -94,9 +87,7 @@ export function makeGameAudio() {
   // one output chain per one-shot: air lowpass -> dry gain -> pan -> master,
   // with a wet split into the shared reverb. Returns the node to connect to
   // and the resolved start time (arrival delay + humanize jitter).
-  // `out` picks the bus this voice leaves by: the shared (compressed) master
-  // unless the caller hands over the bell bus.
-  const chain = (x, z, baseGain, { wet = 0.35, delay = 0, dark = 1, out = null } = {}) => {
+  const chain = (x, z, baseGain, { wet = 0.35, delay = 0, dark = 1 } = {}) => {
     const d = dist(x, z);
     const t0 = ctx.currentTime + delay + d / C_SND + Math.random() * 0.02;
     const near = Math.min(1, d / (listener.range * 1.6));
@@ -105,7 +96,7 @@ export function makeGameAudio() {
     const dry = ctx.createGain(); dry.gain.value = baseGain * att(d) * (1 - wet * near * 0.8);
     let tail = dry;
     if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = panOf(x); dry.connect(p); tail = p; }
-    tail.connect(out || master);
+    tail.connect(master);
     const wetG = ctx.createGain(); wetG.gain.value = baseGain * att(d) * wet * (0.4 + near * 0.9);
     air.connect(dry); air.connect(wetG); wetG.connect(verb);
     return { node: air, t0, d };
@@ -114,11 +105,7 @@ export function makeGameAudio() {
   // ---- one-shot builders ----------------------------------------------
   const done = (src, t1) => { voices++; src.onended = () => { voices--; }; src.stop(t1); };
   const ATK = 0.005; // attack ramp: pads click, munitions don't
-  // `atk` (mk0.58) lets a caller ask for a faster onset than the anti-click
-  // default — a muzzle blast is over in three milliseconds, so a five
-  // millisecond ramp would BE the whole event. The onset jitter scales with
-  // it, which leaves every pre-mk0.58 caller (atk = ATK) bit-for-bit as it was.
-  const noise = (x, z, { f0 = 800, f1 = null, type = "lowpass", q = 1, dur = 0.1, gain = 0.2, rate = 1, delay = 0, wet = 0.35, dark = 1, atk = ATK }) => {
+  const noise = (x, z, { f0 = 800, f1 = null, type = "lowpass", q = 1, dur = 0.1, gain = 0.2, rate = 1, delay = 0, wet = 0.35, dark = 1 }) => {
     if (muted || !ctx || voices >= VOICE_CAP) return;
     try {
       dur = vary(dur); gain = vary(gain); f0 = vary(f0);
@@ -129,8 +116,8 @@ export function makeGameAudio() {
       if (f1 != null) f.frequency.exponentialRampToValueAtTime(Math.max(20, vary(f1)), t0 + dur);
       const env = ctx.createGain();
       env.gain.setValueAtTime(0.0001, t0);
-      env.gain.linearRampToValueAtTime(1, t0 + atk + Math.random() * Math.min(0.004, atk * 0.8));
-      env.gain.setTargetAtTime(0.0001, t0 + atk, dur / 3); // convex settle, not a gate
+      env.gain.linearRampToValueAtTime(1, t0 + ATK + Math.random() * 0.004);
+      env.gain.setTargetAtTime(0.0001, t0 + ATK, dur / 3); // convex settle, not a gate
       src.connect(f).connect(env).connect(node);
       src.start(t0);
       done(src, t0 + dur + 0.15);
@@ -194,63 +181,6 @@ export function makeGameAudio() {
     taps.sort((a, b2) => b2.k - a.k);
     for (const tp of taps.slice(0, 3)) fire(tp.x, tp.z, tp.delay, Math.min(0.5, tp.k * 3));
   };
-  // A SHOT (mk0.58 retune — docs/superpowers/2026-08-12-sound-profiles-reference.md
-  // §3.3). Forensic acoustics says a small-arms report is two events, not one:
-  // the MUZZLE BLAST — the gas explosion at the barrel, under 5 ms long, peak
-  // energy between 500 and 1000 Hz — and the CRACK, the bullet's shockwave,
-  // above 2 kHz and under a third of a millisecond. The blast is the body of
-  // the sound; the crack is the edge on it. Up to mk0.57 we shipped the edge
-  // and nothing else, which is exactly why a sniper, a rifle and an MG were
-  // three hisses with the corner moved.
-  // Four layers, all riding ONE noise source through parallel branches, so a
-  // whole shot costs a single voice (the old MG burst cost seventeen):
-  //   A  blast body   — a wide band plus a tonal core at the same centre
-  //   B  barrel echo  — layer A again 0.8 ms later at -6 dB (the pulse
-  //                     reflecting back down the bore, a measured feature)
-  //   C  crack        — a 1-2 ms highpassed edge on top, never the whole shot
-  //   D  ground bounce— the whole report again ~2 ms later, -4 dB and dark:
-  //                     every shot outdoors arrives twice. echoes() cannot do
-  //                     this (it skips every tap under 45 ms, by design), so
-  //                     the bounce is built here rather than by loosening a
-  //                     floor that exists to stop map echoes phasing.
-  // `gain` is a PRE-FILTER level: a bandpass at 550 Hz throws most of a noise
-  // buffer away, so these read above 1 and still land quieter than the old
-  // snaps did in peak.
-  const shot = (x, z, { f = 700, bdur = 0.003, gain = 1, crack = 0.3, cdur = 0.0016, delay = 0, wet = 0.18, mass = 1 }) => {
-    if (muted || !ctx || voices >= VOICE_CAP) return;
-    try {
-      const { node, t0 } = chain(x, z, vary(gain) * (0.72 + 0.28 * mass), { wet, delay });
-      const src = ctx.createBufferSource(); src.buffer = noiseBuf;
-      src.playbackRate.value = vary(1, 0.06);
-      src.loop = true; src.loopStart = Math.random() * 1.2;
-      const cf = vary(f, 0.06), bd = vary(bdur), cd = vary(cdur);
-      const branch = (type, freq, q, atk, tau, amp) => {
-        const flt = ctx.createBiquadFilter(); flt.type = type; flt.frequency.value = freq; flt.Q.value = q;
-        const env = ctx.createGain();
-        env.gain.setValueAtTime(0.0001, t0);
-        env.gain.linearRampToValueAtTime(amp, t0 + atk);
-        env.gain.setTargetAtTime(0.0001, t0 + atk, tau);
-        src.connect(flt).connect(env);
-        return env;
-      };
-      const A = ctx.createGain(); A.gain.value = 1;          // the blast
-      branch("bandpass", cf, 1.0, 0.0008, bd / 3, 1).connect(A);
-      branch("bandpass", cf, 3.5, 0.0008, bd / 3, 1.5).connect(A);
-      const AC = ctx.createGain(); AC.gain.value = 1;        // blast + crack
-      A.connect(AC);
-      branch("highpass", 2200, 1, 0.0003, cd / 3, crack).connect(AC);
-      AC.connect(node);
-      const dB = ctx.createDelay(0.05); dB.delayTime.value = 0.0008;
-      const gB = ctx.createGain(); gB.gain.value = 0.5;
-      A.connect(dB).connect(gB).connect(node);
-      const dG = ctx.createDelay(0.05); dG.delayTime.value = 0.0015 + Math.random() * 0.0015;
-      const lpG = ctx.createBiquadFilter(); lpG.type = "lowpass"; lpG.frequency.value = 4000;
-      const gG = ctx.createGain(); gG.gain.value = 0.63;
-      AC.connect(dG).connect(lpG).connect(gG).connect(node);
-      src.start(t0);
-      done(src, t0 + bd + 0.08);
-    } catch (e) {}
-  };
 
   // ---- the vocabulary --------------------------------------------------
   const explosion = (x, z, r = 2, echo = true) => {
@@ -282,41 +212,39 @@ export function makeGameAudio() {
   // arm is kind:"mg", so without this table a sniper, a rifle and an MG burst
   // were literally the same sound.
   const WEAPON = {
-    // RETUNED mk0.58. The three arms no longer differ by where a hiss is cut
-    // off — they differ by the SIZE and PITCH of the blast, which is what
-    // actually separates real guns: heavier means a lower, longer blast.
-    // Levels are set against the reference measurement in the research doc
-    // (§2.2/§3.3): the sniper stays exactly where it was, and the rifle and
-    // the MG come up by the +4.0 dB the doc's equal-loudness table says you
-    // owe a sound when you move its weight from 3 kHz down to 700 Hz.
-    //
-    // A sniper's report is the heavy one: blast centred 550 Hz, 4.5 ms long.
-    // Its echo behaviour is untouched — at a distance the report arrives half
-    // as a bang and half as the map answering it, so the direct sound
-    // attenuates as everything does while the echo taps scale UP with range,
-    // capped so a shot across the whole map does not out-shout one at your feet.
+    // A sniper's crack is DRY up close — a whipcrack with almost no body —
+    // and it is the echo that carries: at a distance the report arrives half
+    // as a bang and half as the map answering it. So the direct sound
+    // attenuates as everything does (att, inside chain), while the echo taps
+    // scale UP with range instead of down, capped so a shot across the whole
+    // map does not out-shout a shot at your feet.
     sniper: (x, z, mass = 1) => {
-      shot(x, z, { f: 550, bdur: 0.0045, gain: 1.46, crack: 0.30, cdur: 0.0020, wet: 0.12, mass });
+      noise(x, z, { f0: 2200, type: "highpass", dur: 0.032, gain: 0.19 * mass, wet: 0.12 });
+      noise(x, z, { f0: 700, type: "bandpass", q: 1.6, dur: 0.06, gain: 0.09 * mass, delay: 0.008, wet: 0.18 });
       const far = Math.min(1, dist(x, z) / Math.max(1, listener.range));
       const ring = Math.min(0.44, 0.08 + far * 0.42); // inverted attenuation, capped
       echoes(x, z, (ex, ez, dly, k) => noise(ex, ez, { f0: 1500, f1: 380, dur: 0.16 + far * 0.26, gain: ring * k * 2.2, delay: dly, wet: 0.65, dark: 0.5 }));
     },
-    // A rifle is the light arm: the blast sits higher (850 Hz) and is shorter
-    // (2.5 ms), and the crack on top is thinner. Same family as the sniper,
-    // smaller in every dimension — which is how the two stay told apart even
-    // when they arrive at the same loudness.
-    rifle: (x, z, mass = 1) => shot(x, z, { f: 850, bdur: 0.0025, gain: 1.22, crack: 0.24, cdur: 0.0016, wet: 0.18, mass }),
+    // A rifle is the same light infantry report, pitched well ABOVE the
+    // sniper's crack (2200 -> 3300 on the snap) so the two never blur: the
+    // heavier weapon is the deeper one, as it should be.
+    rifle: (x, z, mass = 1) => {
+      noise(x, z, { f0: 3300, type: "highpass", dur: 0.026 + mass * 0.01, gain: 0.115 + mass * 0.04, wet: 0.2 });
+      if (mass > 1.5) noise(x, z, { f0: 1350, type: "bandpass", q: 1.2, dur: 0.045 + mass * 0.018, gain: 0.07 * mass, delay: 0.012, wet: 0.3 });
+    },
     // An MG fires a BURST, and the coalescer hands the whole burst over as one
     // event group — so mass is not "how loud", it is HOW MANY. Undo the
     // sqrt (n = mass²) and lay the rounds back out as separate taps at a real
-    // machine-gun cadence (~950 rpm). mk0.58: the tap is now the light blast
-    // rather than a bare hiss, and THE RATE IS THE GUN'S IDENTITY — so every
-    // tap is the same shot, unscaled by mass, and only the count changes.
+    // machine-gun cadence (~950 rpm) instead of stacking them into one fat
+    // shot. That is the ratatata.
     mg: (x, z, mass = 1) => {
       const n = Math.max(2, Math.min(8, Math.round(mass * mass)));
       const gap = 0.063;
       tone(x, z, { f0: 150, f1: 62, type: "sine", dur: 0.05, gain: 0.1, atk: 0.006 });
-      for (let i = 0; i < n; i++) shot(x, z, { f: 800, bdur: 0.0020, gain: 1.15, crack: 0.18, cdur: 0.0013, delay: i * gap, wet: 0.16 });
+      for (let i = 0; i < n; i++) {
+        noise(x, z, { f0: 2000, type: "highpass", dur: 0.02, gain: 0.105, delay: i * gap, wet: 0.16 });
+        noise(x, z, { f0: 620, type: "bandpass", q: 1.4, dur: 0.03, gain: 0.05, delay: i * gap + 0.004, wet: 0.28 });
+      }
     },
     // The tubes keep the voices they already had — the tag only tells them
     // apart from each other, which `kind` could not (all four are "shell").
@@ -338,158 +266,35 @@ export function makeGameAudio() {
       tone(x, z, { f0: 520, type: "square", dur: 0.14, gain: 0.05, delay: i * 0.3 + 0.15, atk: 0.02 });
     }
   };
-  // THE MUSTER BELL — REBUILT mk0.58 to the research doc's §2.3 target.
-  //
-  // What was wrong: the mk0.56 bell put its whole partial set (94-376 Hz) an
-  // octave and a half below where a bell is readable, left out the top two
-  // partials the ear needs, and had the loudness order upside down — the hum
-  // loudest, the nominal quietest, the exact reverse of what a struck bell
-  // does. It was also not really ringing: it was hiss squeezed through five
-  // filters so narrow (1.5 Hz at the hum) that almost nothing came through,
-  // measured twelve decibels below a single sniper crack. What weight it had
-  // came from a 62 Hz sine that an unsealed earbud throws away.
-  //
-  // What this is: the tuned ratios 1 : 2 : 2.4 : 3 : 4 : 6 : 8 anchored so the
-  // NOMINAL lands at 500 Hz — the bottom of the published 500-1500 Hz window
-  // in which the ear builds a bell's strike note out of the top three
-  // partials — which puts the hum at 125 Hz, still a bell of roughly three
-  // tonnes. The tierce is the loudest partial (as on a real bell struck at
-  // the soundbow), the quint is nearly silent (it has a node there), the hum
-  // is present but not dominant, and the two missing uppers are back. Each
-  // partial gets its OWN decay: the hum rings for nine seconds and carries
-  // the depth, the bright middle dies in two or three and carries the arrival.
-  //
-  // It is rendered once into a buffer rather than played through filters,
-  // because an impulse-struck resonator IS a sum of decaying sinusoids and a
-  // filter bank at the Q this needs (500-1000) is not something to trust to
-  // a browser's biquads. One bake, held for the session, taken lazily on the
-  // first bell cue of the run — which is a PRE-toll, five seconds ahead of the
-  // strike, so the toll itself is always free. Measured at 100 ms of main
-  // thread on a Raspberry Pi under headless Chromium (three frames at 30 fps),
-  // and 0 ms on every cue after. Per-toll variation is playback RATE within ±0.3%
-  // (about 5 cents — half the ear's 10-cent resolution, and it moves the
-  // whole stack together so the tuned ratios survive) plus gain. That is the
-  // right amount: a bell is a tuned instrument and two strikes of the same
-  // hammer really are near-identical. The old code detuned every partial
-  // independently by up to ±133 cents, which scrambled the very relationships
-  // that make a bell a bell.
-  const BELL_PARTIALS = [
-    { f: 125,  g: 0.45, t60: 9.0 },   // hum — the long tail, the "deep"
-    { f: 250,  g: 0.55, t60: 5.0 },   // prime
-    { f: 300,  g: 1.00, t60: 4.6 },   // tierce — the loudest partial
-    { f: 375,  g: 0.12, t60: 3.5 },   // quint — nearly silent, by design
-    { f: 500,  g: 0.90, t60: 3.0 },   // nominal      \
-    { f: 750,  g: 0.70, t60: 2.6 },   // superquint    > the strike note
-    { f: 1000, g: 0.50, t60: 2.2 },   // octave nominal/
-    { f: 1290, g: 0.22, t60: 1.3 },   // I-7 — rim bite
+  // THE MUSTER BELL — struck bronze, not a chime. A real bell's partials are
+  // inharmonic and named: hum an octave under, prime, tierce a minor third
+  // above prime (that's why bells sound minor), quint, nominal. Same modal
+  // voice as granite but with far higher Q and a decay measured in seconds
+  // instead of milliseconds — that difference IS the difference between a
+  // stone knock and a bell.
+  // RECAST (P1.5 Task 3, mk0.56 — Jeff): the old bell was a bright two-strike
+  // handbell. This is a BIG bell: the whole partial set drops an octave, so
+  // the hum sits at 94Hz where a tonne of bronze hums, and the second strike
+  // is gone — one hit, ringing out long and dark. "BONGGG."
+  const BELL_MODES = [
+    { f: 94,  q: 62, g: 1 },      // hum
+    { f: 188, q: 78, g: 0.9 },    // prime
+    { f: 226, q: 82, g: 0.5 },    // tierce
+    { f: 282, q: 74, g: 0.28 },   // quint
+    { f: 376, q: 66, g: 0.16 },   // nominal
   ];
-  const BELL_S = 6.0;          // buffer length: past 4.5 tau on the longest partial
-  const BELL_LOW = 85;         // support weight only — nothing load-bearing under 150 Hz
-  const BELL_GAIN = 0.20;      // measured: ~7 dB over a sniper crack, loudness-weighted
-  const PRETOLL_GAIN = 0.016;
-  const BELL_KNOCK = 0.018;    // where the hammer transient has finished
-  let bellBuf = null;
-  const renderBell = () => {
-    const sr = ctx.sampleRate, n = Math.floor(sr * BELL_S);
-    const buf = ctx.createBuffer(1, n, sr);
-    const d = buf.getChannelData(0);
-    const acc = new Float64Array(n);
-    // one exponentially decaying sinusoid, run as a two-tap recurrence so a
-    // six-second render costs a multiply per sample instead of a sin(), and
-    // stopped at its own T60 — past that the partial is 60 dB down and every
-    // further sample is work spent on silence
-    const ring = (f, g, t60) => {
-      const w = 2 * Math.PI * f / sr, k = 2 * Math.cos(w), ph = Math.random() * Math.PI * 2;
-      let y1 = Math.sin(ph - w), y2 = Math.sin(ph - 2 * w), e = g;
-      const dec = Math.exp(-6.908 / (sr * t60));   // T60 = 60 dB down
-      const end = Math.min(n, Math.ceil(sr * t60));
-      for (let i = 0; i < end; i++) { const y = k * y1 - y2; y2 = y1; y1 = y; acc[i] += y * e; e *= dec; }
-    };
-    for (const p of BELL_PARTIALS) ring(p.f, p.g, p.t60);
-    let pk = 0;
-    for (let i = 0; i < n; i++) pk = Math.max(pk, Math.abs(acc[i]));
-    ring(BELL_LOW, 0.316 * pk, 4.0);              // -10 dB under the partials
-    pk = 0;
-    for (let i = 0; i < n; i++) pk = Math.max(pk, Math.abs(acc[i]));
-    const inv = 1 / (pk || 1);
-    for (let i = 0; i < n; i++) acc[i] *= inv;    // partial sum now peaks at 1
-    // THE HAMMER. A chimed bell is one clean impact: a hard bright knock,
-    // 4 ms of broadband noise rolled off below ~1.8 kHz, six decibels over
-    // the partials and gone inside fifteen. It costs almost nothing in
-    // loudness terms (the ear needs no correction up there) and it is the
-    // entire difference between a tone fading up and a bell ARRIVING.
-    const m = Math.floor(sr * 0.02), a = 1 / (1 + 2 * Math.PI * 1800 / sr);
-    const kn = new Float64Array(m);
-    let x1 = 0, h1 = 0, u1 = 0, z1 = 0, kpk = 0;
-    for (let i = 0; i < m; i++) {
-      const w0 = Math.random() * 2 - 1;
-      const h = a * (h1 + w0 - x1); x1 = w0; h1 = h;
-      const zz = a * (z1 + h - u1); u1 = h; z1 = zz;
-      const t = i / sr;
-      kn[i] = zz * (t < 0.0004 ? t / 0.0004 : Math.exp(-(t - 0.0004) / 0.0016));
-      kpk = Math.max(kpk, Math.abs(kn[i]));
-    }
-    const ks = 2 / (kpk || 1);
-    for (let i = 0; i < m; i++) acc[i] += kn[i] * ks;
-    // ramp the last 250 ms to true zero: the old bell was hard-cut while
-    // still 28 dB above nothing, which is an audible chop
-    const fade = Math.floor(sr * 0.25);
-    for (let i = 0; i < n; i++) d[i] = acc[i] * (i > n - fade ? (n - i) / fade : 1);
-    return buf;
-  };
-  // Duck the whole mix under the toll instead of letting the compressor duck
-  // the toll: -4 dB, 200 ms down, held while the bell arrives, 1.5 s back up.
-  const duckMix = (t0) => {
-    if (!master) return;
-    try {
-      const g = master.gain, lo = MASTER_G * Math.pow(10, -4 / 20);
-      g.cancelScheduledValues(t0);
-      g.setValueAtTime(g.value, t0);
-      g.linearRampToValueAtTime(lo, t0 + 0.2);
-      g.setValueAtTime(lo, t0 + 0.8);
-      g.linearRampToValueAtTime(MASTER_G, t0 + 2.3);
-    } catch (e) {}
-  };
   // Non-positional: it is the garrison's own bell hanging over the listener,
   // not a thing out on the field, so it rings at the listener's coordinates
-  // (the jingles' convention) and never pans or attenuates. It is also the
-  // one voice EXEMPT from VOICE_CAP: a single machine-gun burst used to be
-  // able to claim enough of the 26 slots that a toll landing mid-firefight
-  // was not quiet, it was never played at all.
+  // (the jingles' convention) and never pans or attenuates.
   const bellToll = () => {
-    if (muted || !ctx) return;
-    try {
-      if (!bellBuf) bellBuf = renderBell();
-      const { node, t0 } = chain(listener.x, listener.z, vary(BELL_GAIN, 0.05), { wet: 0.4, out: bellBus });
-      const src = ctx.createBufferSource();
-      src.buffer = bellBuf;
-      src.playbackRate.value = vary(1, 0.003);
-      src.connect(node);
-      src.start(t0);
-      done(src, t0 + BELL_S + 0.05);
-      duckMix(t0);
-    } catch (e) {}
+    const x = listener.x, z = listener.z;
+    modal(x, z, BELL_MODES, 5.2, 0.40, { wet: 0.55 });
+    tone(x, z, { f0: 62, f1: 38, dur: 3.4, gain: 0.14, delay: 0.01, wet: 0.5, atk: 0.02 });
   };
-  // A pre-toll: the last seconds before the bell, counted out. The same bell,
-  // started PAST the hammer and cut off in a quarter second — the rope taking
-  // up its slack, not a strike. It never ducks the mix and stays a whisper.
-  const preToll = () => {
-    if (muted || !ctx) return;
-    try {
-      if (!bellBuf) bellBuf = renderBell();
-      const { node, t0 } = chain(listener.x, listener.z, vary(PRETOLL_GAIN, 0.08), { wet: 0.3, out: bellBus });
-      const src = ctx.createBufferSource();
-      src.buffer = bellBuf;
-      src.playbackRate.value = vary(1, 0.003);
-      const env = ctx.createGain();
-      env.gain.setValueAtTime(0.0001, t0);
-      env.gain.linearRampToValueAtTime(1, t0 + 0.004);
-      env.gain.setTargetAtTime(0.0001, t0 + 0.004, 0.075);
-      src.connect(env).connect(node);
-      src.start(t0, BELL_KNOCK);
-      done(src, t0 + 0.45);
-    } catch (e) {}
-  };
+  // A pre-toll: the last seconds before the bell, counted out. The same
+  // partials at a whisper with a millisecond decay — the rope taking up its
+  // slack, not a strike.
+  const preToll = () => modal(listener.x, listener.z, BELL_MODES, 0.26, 0.05, { wet: 0.3 });
   // THE CONVOY — the manifest truck arriving. A diesel idle swelling up out
   // of nothing (slow attack: this one thing does NOT want the anti-click ramp,
   // it wants to be heard approaching), grit over it, then the tailgate: thin
@@ -578,22 +383,7 @@ export function makeGameAudio() {
     if (fv != null) L.filt.frequency.value += (fv - L.filt.frequency.value) * k;
   };
   const knockCd = new Map();
-  let knockBudget = 0;
-  // WIND (mk0.58 retune, research doc §4.3). Two published facts killed the
-  // old bed. Wind noise is BROADBAND AND FALLING — a slope, heaviest down low
-  // and thinning upward — not the single 240-380 Hz band we had. And wind's
-  // loudness wanders on every timescale at once with the biggest swings the
-  // slowest, which a lone 48-second sine wave is not: over any listening
-  // window that is a constant, and a constant is what Jeff heard as static.
-  // So: three bands making the slope, worked by three summed random drifts.
-  const WIND_BASE = 0.020;              // rumble level; body -6 dB, air -14 dB
-  let wSurge = 0, wGust = 0, wFlut = 0;
-  // one Ornstein-Uhlenbeck step: a random walk pulled back toward zero on the
-  // given timescale, unit standard deviation, clamped so a gust stays a gust
-  const drift = (v, tau, dt) => {
-    const k = Math.min(1, dt / tau);
-    return Math.max(-1, Math.min(1, v * (1 - k) + (Math.random() * 2 - 1) * 1.732 * Math.sqrt(2 * k)));
-  };
+  let knockBudget = 0, windPh = 0;
   // incoming whistles: one per falling ballistic round (mortar shells,
   // strike rockets). Keyed on the projectile OBJECT — it lives until impact.
   const whistles = new Map();
@@ -638,19 +428,11 @@ export function makeGameAudio() {
     if (!ctx || muted) return;
     stepWhistles(world, dt);
     const seen = new Set();
-    // wind bed: a falling slope worked by a slow surge (tens of seconds), a
-    // gust (a few seconds) and a fast flutter, summed. Gusts BRIGHTEN as well
-    // as swell — a gustier flow puts its energy into the smaller, faster
-    // scales — so the air band rises while the rumble band gives a little back.
-    wSurge = drift(wSurge, 35, dt);
-    wGust = drift(wGust, 4, dt);
-    wFlut = drift(wFlut, 0.3, dt);
-    const wLvl = Math.pow(10, Math.max(-12, Math.min(9, wSurge * 6 + wGust * 4 + wFlut * 1.5)) / 20);
-    const wBri = wSurge * 2 + wGust * 4 + wFlut * 3;
-    seen.add("wind-lo"); seen.add("wind-mid"); seen.add("wind-hi");
-    setLoop(getLoop("wind-lo", 180, "lowpass", 1), WIND_BASE * wLvl * Math.pow(10, -wBri / 40), 165 + wBri * 4, dt);
-    setLoop(getLoop("wind-mid", 450, "bandpass", 0.7), WIND_BASE * 0.5 * wLvl, 450 + wBri * 18, dt);
-    setLoop(getLoop("wind-hi", 1200, "highpass", 1), WIND_BASE * 0.2 * wLvl * Math.pow(10, wBri / 20), 1200, dt);
+    // wind bed: a quiet, slowly breathing bandpass — the glue between shots
+    windPh += dt * (0.13 + Math.sin(windPh * 0.37) * 0.02);
+    seen.add("wind");
+    const W = getLoop("wind", 300, "bandpass", 0.35);
+    setLoop(W, 0.011 + 0.008 * (0.5 + 0.5 * Math.sin(windPh)), 240 + 140 * (0.5 + 0.5 * Math.sin(windPh * 0.61 + 1.7)), dt);
     // vehicle engines
     for (const b of world.bodies) {
       if (b.kind !== "vehicle" || !b.alive) continue;
@@ -728,7 +510,7 @@ export function makeGameAudio() {
     setReflectors(list) { reflectors = list || []; },
     setMuted(m) { muted = m; if (m) stopAll(); },
     get muted() { return muted; },
-    dispose() { stopAll(); try { if (ctx) ctx.close(); } catch (e) {} ctx = null; bellBuf = null; },
+    dispose() { stopAll(); try { if (ctx) ctx.close(); } catch (e) {} ctx = null; },
     // UI jingles (campaign): kept so score/feedback cues stay distinct from sim audio
     jingleTrial() { tone(listener.x, listener.z, { f0: 523, f1: 784, type: "square", dur: 0.14, gain: 0.14, atk: 0.02 }); tone(listener.x, listener.z, { f0: 784, f1: 1046, type: "square", dur: 0.2, gain: 0.14, delay: 0.13, atk: 0.02 }); },
     jingleHook() { tone(listener.x, listener.z, { f0: 200, f1: 900, type: "sawtooth", dur: 0.4, gain: 0.12, atk: 0.02 }); },
