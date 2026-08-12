@@ -1,6 +1,8 @@
 # SLOW FRONT — Phase 2: Vision (mk0.70)
 
-*2026-08-12. One plan, one audience. Every design decision in here was ratified by the owner today; nothing is open. Three tasks, sequential, sole agent each: mk0.70, mk0.71, mk0.72. All numbers marked provisional are tuned by the owner's playtests.*
+*2026-08-12. One plan, one audience. Every design decision in here was ratified by the owner today; nothing is open. Four tasks, sequential, sole agent each: mk0.70, mk0.71, mk0.72, mk0.73. All numbers marked provisional are tuned by the owner's playtests.*
+
+*AMENDED after Task 1 landed: its cost probe measured the plan's original see/not-see test at 2,284ms per recompute against a 4ms budget — the test asked every body in the world at every step of every sight line. Task 1b (mk0.71) replaces the ray's inner loop with two flat per-cell maps swept once per recompute; the gate swap and the look shift to mk0.72/mk0.73.*
 
 ## What this phase does
 
@@ -130,7 +132,82 @@ export function stepSight(world, SG, toUV, toWorld) {
 
 ---
 
-## Task 2 — One law: you shoot what you see (mk0.71)
+## Task 1b — The fast eye (mk0.71): cell maps instead of body walks
+
+Same answers, a thousandth of the work. Once per recompute, sweep the world ONCE into two flat maps over the sight grid — the ground's height at each cell, and the top of the tallest solid standing in each cell. A sight line then marches cell by cell reading two numbers per step, touching no body at all. Blocking becomes map-resolution (a solid blocks its whole 2m cell) — coarser than the exact box test, deterministic, and stated here as the accepted trade.
+
+**Step 1b.1 — re-pin the T1 tests honestly.** The 22 `VISION T1` asserts keep their meanings (a-h all still hold at cell resolution) but their fixture geometry must place blockers and eyes in distinct cells; re-pin coordinates where the old sub-cell placements straddle boundaries. Report every re-pin old→new. Add: (i) a recompute at the probe's 120-troop body count measures under 4ms headless on the Pi (a real timing assert with a generous 3× ceiling, so CI catches a future regression of this exact kind).
+
+**Step 1b.2 — the maps.** In `src/depot/sight.js`, extend `makeSight` and add the sweep:
+
+```js
+// two flat maps, swept fresh each recompute:
+//   gnd[i]  — the ground's height at cell i's center
+//   occ[i]  — the top of the tallest solid standing in cell i (-Infinity when empty)
+// A sight line reads these instead of asking bodies. gnd is filled once
+// (terrain only re-carves on craters; per-recompute fill is still cheap and
+// always true), occ every recompute (walls fall, rubble moves).
+export function makeSight(T) {
+  return { nx: T.nx, nz: T.nz, cs: T.cs, halfU: T.halfU, halfV: T.halfV,
+           seen1: new Uint8Array(T.nx * T.nz), seen2: new Uint8Array(T.nx * T.nz),
+           gnd: new Float32Array(T.nx * T.nz), occ: new Float32Array(T.nx * T.nz) };
+}
+const SOLID = new Set(["rock", "wall", "tower", "tree", "chunk"]); // accuracy.js's own set
+export function fillMaps(world, SG, toUV, toWorld) {
+  for (let iz = 0; iz < SG.nz; iz++) for (let ix = 0; ix < SG.nx; ix++) {
+    const w = toWorld(-SG.halfU + (ix + 0.5) * SG.cs, -SG.halfV + (iz + 0.5) * SG.cs);
+    SG.gnd[iz * SG.nx + ix] = world.field.heightAt(w.x, w.z);
+  }
+  SG.occ.fill(-Infinity);
+  for (const b of world.bodies) {
+    if (!b.alive || !SOLID.has(b.kind)) continue;
+    if (b.invM > 0 && b.kind !== "chunk" && b.kind !== "tree") continue; // solidBlocksPoint's own mobility rule
+    const c = toUV(b.pos.x, b.pos.z);
+    const rr = Math.max(b.hx, b.hz);                    // conservative footprint under rotation
+    const top = b.pos.y + b.hy;
+    const ix0 = Math.max(0, Math.floor((c.u - rr + SG.halfU) / SG.cs));
+    const ix1 = Math.min(SG.nx - 1, Math.floor((c.u + rr + SG.halfU) / SG.cs));
+    const iz0 = Math.max(0, Math.floor((c.v - rr + SG.halfV) / SG.cs));
+    const iz1 = Math.min(SG.nz - 1, Math.floor((c.v + rr + SG.halfV) / SG.cs));
+    for (let iz = iz0; iz <= iz1; iz++) for (let ix = ix0; ix <= ix1; ix++) {
+      const i = iz * SG.nx + ix;
+      if (top > SG.occ[i]) SG.occ[i] = top;
+    }
+  }
+}
+```
+
+**Step 1b.3 — the march reads maps.** Replace `canSee`'s inner loop and `stepSight`'s sweep: the line from eye to cell center is walked at cell pitch in CANONICAL space, comparing the line's height against `max(gnd[i] , occ[i])` at each intermediate cell. The eye's own cell and the target's own cell are never tested (an eye is not blocked by the wall it stands on; a target is seen at its own cell, not through it). `stepSight` calls `fillMaps` once, then sweeps eyes exactly as before with the map-marching `canSee`. The exact-box `canSee` signature survives (tests and Task 2's callers see no API change); `solidBlocksPoint` import goes away.
+
+```js
+export function canSee(SG, eye, eu, ev, tu, tv) {
+  // eye: {y, r, iu, iv} with grid indices precomputed by the sweep; (tu,tv)
+  // the target cell's indices. Marches the index-space line, longest axis
+  // stepped 1 cell at a time (the same integer walk the engineer line uses).
+  const du = tu - eye.iu, dv = tv - eye.iv;
+  const n = Math.max(Math.abs(du), Math.abs(dv));
+  if (n * SG.cs > eye.r + SG.cs) return false;
+  const ty = SG.gnd[tv * SG.nx + tu] + SIGHT_TARGET_H;
+  for (let k = 1; k < n; k++) {
+    const t = k / n;
+    const iu = Math.round(eye.iu + du * t), iv = Math.round(eye.iv + dv * t);
+    const i = iv * SG.nx + iu;
+    const y = eye.y + (ty - eye.y) * t;
+    if (SG.gnd[i] > y || SG.occ[i] > y) return false;
+  }
+  return true;
+}
+```
+
+(The agent reconciles the exact signature/precompute against the T1 code as landed — the plan's shape is binding, variable spelling is not. Range check stays true to `eye.r` in meters; the `n * SG.cs` pre-cut above is the coarse reject, the true meter distance check from T1 remains.)
+
+**Step 1b.4 — re-measure.** The same probe, same 120-troop census: report ms per recompute. Budget 4ms. If it still misses, STOP and report — no further design on the fly.
+
+**Gates (ONLY these):** parse · lint:depot · test:depot (re-pins listed) · build after bump to mk0.71 · SMOKE_ONLY=depot smoke. Module stays inert. Commit "(mk0.71)", push, CI green.
+
+---
+
+## Task 2 — One law: you shoot what you see (mk0.72)
 
 The shared gate that every shot already passes through switches from ground-control to sight, and the special cases die. This is the behavior task; the look is Task 3.
 
@@ -176,11 +253,11 @@ Import `seenAt` from `./sight.js`; delete the `fogStateForContested` import (`st
 
 **Step 2.6 — the tower's sticky-target line.** `src/depot/DepotGame.jsx:389-398` already routes through `fieldReaches` — no code change, but re-read both call sites after 2.3 and confirm the comment at :383-388 still tells the truth; amend its wording (territory → sight) so the file does not lie.
 
-**Gates (ONLY these):** parse · lint:depot · test:depot (2.1's asserts now green; full re-pin list in report) · build after bump to mk0.71 · SMOKE_ONLY=depot smoke · resume round-trip staged check (save at a bell, reload, confirm sight rebuilds and no error). Commit "(mk0.71)", push, CI green.
+**Gates (ONLY these):** parse · lint:depot · test:depot (2.1's asserts now green; full re-pin list in report) · build after bump to mk0.72 · SMOKE_ONLY=depot smoke · resume round-trip staged check (save at a bell, reload, confirm sight rebuilds and no error). Commit "(mk0.72)", push, CI green.
 
 ---
 
-## Task 3 — The look follows the eyes (mk0.72)
+## Task 3 — The look follows the eyes (mk0.73)
 
 Enemies your side cannot see are not drawn, and the screen's fog becomes a picture of sight. One file's sampler changes; the renderer itself is untouched.
 
@@ -207,13 +284,13 @@ The renderer already does the rest with no edits: `renderer.js:1491-1492` skips 
 
 **Step 3.4 — Pi cost verification.** With sight live, one `?perf=1` probe run at a staged 120-troop fight (the C0 method): report sim ms with sight against the C0/T4-era baseline. Over budget → flip the pre-authorized dial (`SIGHT_EVERY 2`) and report both numbers.
 
-**Gates (ONLY these):** parse · lint:depot · test:depot · build after bump to mk0.72 · SMOKE_ONLY=depot smoke (re-pinned fog assert green). Commit "(mk0.72)", push, CI green.
+**Gates (ONLY these):** parse · lint:depot · test:depot · build after bump to mk0.73 · SMOKE_ONLY=depot smoke (re-pinned fog assert green). Commit "(mk0.73)", push, CI green.
 
 ---
 
 ## Sequencing and close
 
-T1 → T2 → T3, sole agent each, CI-green between, every dispatch carrying this plan as its brief plus read-confirmation on: this plan; `sight.js` (T2/T3); `territory.js`; `accuracy.js:27-52` (`solidBlocksPoint`) and `:194-223` (`reachPolygon` — its fog-boundary line at `:217` rides `fieldReaches` and needs no edit, verify only); `units.js` (all four shooter sites); `state.js:29-55` + squadFire; `DepotGame.jsx` territory/renderer-interface/stepTowers regions; `save.js` laws header; `scripts/depot-test.mjs` — grep `fieldReaches|fogStateForContested|reachPolygon` (37 hits at writing) before editing.
+T1 → T1b → T2 → T3, sole agent each, CI-green between, every dispatch carrying this plan as its brief plus read-confirmation on: this plan; `sight.js` (T2/T3); `territory.js`; `accuracy.js:27-52` (`solidBlocksPoint`) and `:194-223` (`reachPolygon` — its fog-boundary line at `:217` rides `fieldReaches` and needs no edit, verify only); `units.js` (all four shooter sites); `state.js:29-55` + squadFire; `DepotGame.jsx` territory/renderer-interface/stepTowers regions; `save.js` laws header; `scripts/depot-test.mjs` — grep `fieldReaches|fogStateForContested|reachPolygon` (37 hits at writing) before editing.
 
 Phase closes on the owner's playtest: sight replacing territory in the fight's feel — snipers as eyes, dark flanks as real danger, towers watching far ground — with the ownership wash and build rules unmoved.
 
