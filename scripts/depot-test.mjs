@@ -1717,17 +1717,14 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 
   // --- spawnSandbag: single static sleeping chunk, tagged b.sandbag, hp 60.
-  // Dims RE-PINNED mk0.52 (P1.5 T2): the 1.8 x 0.9 x 0.7 slab is now a 0.9m
-  // CUBE (0.45 every way). Height is unchanged, and exposureAt is dimension-
-  // blind, so cover is unchanged — only the footprint moved. Static (mass 0
-  // -> invM 0) so squads.js's exposureAt (which filters invM > 0) reads it as
-  // cover, and core.js's hit scan still hits it (chunk-kind exemption, ~:691).
+  // Dims REVERTED mk0.54 (Jeff rejected the mk0.52 cube on sight): the bag is
+  // the original 1.8 x 0.9 x 0.7 slab again — the bag IS the game's brick.
   {
     const world = makeWorld({ field: flatField, seed: 3 });
     const b = spawnSandbag(world, 2, 5);
     ok("spawnSandbag: chunk body tagged b.sandbag", b.kind === "chunk" && b.sandbag === true);
-    ok("spawnSandbag: one 0.9m cube + hp 60 (re-pinned from .9/.45/.35, mk0.52)",
-      b.hx === 0.45 && b.hy === 0.45 && b.hz === 0.45 && b.hp === 60,
+    ok("spawnSandbag: the original slab + hp 60 (reverted from the mk0.52 cube)",
+      b.hx === 0.9 && b.hy === 0.45 && b.hz === 0.35 && b.hp === 60,
       `hx=${b.hx} hy=${b.hy} hz=${b.hz} hp=${b.hp}`);
     ok("spawnSandbag: static + sleeping", b.invM === 0 && b.sleeping === true);
     ok("spawnSandbag: costs 5 scrap (SANDBAG_COST — re-pinned from 3, mk0.50)", SANDBAG_COST === 5);
@@ -1904,21 +1901,18 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   const flatF = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
   const { sandbagOrientAt } = await import("../src/depot/state.js");
 
-  // (a) orientation. RE-PINNED mk0.52 (P1.5 T2): the bag is a cube now, so the
-  // hx/hz swap is dimensionally inert — the machinery is kept (the engineer
-  // BUILD order inherits it) and the chosen orientation is recorded on the
-  // body, which is what these pins now read. The old dim asserts described a
-  // slab that no longer exists.
+  // (a) orientation — REVERTED mk0.54 with the bag's true dims: the hx/hz
+  // swap is dimensional again, exactly as it was before mk0.52.
   {
     const world = makeWorld({ field: flatF, seed: 7 });
     const b0 = spawnSandbag(world, 0, 0, 0);
-    ok("sandbag-rot: orient 0 is a cube, recorded on the body (re-pinned from hx .9 / hz .35, mk0.52)",
-      b0.hx === 0.45 && b0.hz === 0.45 && b0.orient === 0, `hx=${b0.hx} hz=${b0.hz} orient=${b0.orient}`);
+    ok("sandbag-rot: orient 0 lays the slab along x (reverted, mk0.54)",
+      b0.hx === 0.9 && b0.hz === 0.35 && b0.orient === 0, `hx=${b0.hx} hz=${b0.hz} orient=${b0.orient}`);
     const b1 = spawnSandbag(world, 10, 0, 1);
-    ok("sandbag-rot: orient 1 is the same cube, orientation still recorded (re-pinned from hx .35 / hz .9, mk0.52)",
-      b1.hx === 0.45 && b1.hz === 0.45 && b1.orient === 1, `hx=${b1.hx} hz=${b1.hz} orient=${b1.orient}`);
+    ok("sandbag-rot: orient 1 lays the slab along z (reverted, mk0.54)",
+      b1.hx === 0.35 && b1.hz === 0.9 && b1.orient === 1, `hx=${b1.hx} hz=${b1.hz} orient=${b1.orient}`);
     const bd = spawnSandbag(world, 20, 0);
-    ok("sandbag-rot: orient defaults to 0", bd.orient === 0 && bd.hx === 0.45 && bd.hz === 0.45);
+    ok("sandbag-rot: orient defaults to 0", bd.orient === 0 && bd.hx === 0.9 && bd.hz === 0.35);
   }
 
   // (b) auto-continue: placing within ~2.2m of an existing bag orients
@@ -3162,8 +3156,8 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     ok("mk0.52/g: walls and sandbags draw inset so the outline finds the joints",
       /const SEAM_XZ = 0\.05, SEAM_Y = 0\.045, SEAM_BAG = 0\.04;/.test(rsrc)
       && /b\.hx - SEAM_XZ/.test(rsrc) && /b\.sandbag \? SEAM_BAG : 0/.test(rsrc));
-    ok("mk0.52/g: the block pool holds three instances per wall (256 walls still draw)",
-      /const WALL_INST = 768;/.test(rsrc) && /wi >= WALL_INST/.test(rsrc));
+    ok("mk0.54/g: the block pool holds 27 instances per wall (3x3 per course, ~85 walls fully drawn)",
+      /const WALL_INST = 2304;/.test(rsrc) && /wi >= WALL_INST/.test(rsrc) && /WALL_BLOCKS = 3/.test(rsrc));
     ok("mk0.52/g: one snow cap per wall, on the top living course",
       /b\.capTop !== false && wci < 256/.test(rsrc));
   }

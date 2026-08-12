@@ -572,26 +572,18 @@ export const SANDBAG_COST = 5;
 // orient (0|1) swaps hx/hz — axis-aligned bodies only, no rotation matrices.
 // Orientation is player input, like placement coords: placement-state only,
 // sim/determinism untouched (multiplayer-safe by the same argument).
-// P1.5 Task 2 (mk0.52, Jeff): ONE CUBE. The bag was a 1.8 x 0.9 x 0.7 slab
-// that read as a low wall; it is now a 0.9m cube (SANDBAG_HALF each way) —
-// one emplacement, one block, matching the wall's new course-by-course read.
-// HEIGHT IS UNCHANGED (hy was already 0.45), so a man's head clearance over
-// the bags is exactly what it was, and exposureAt is dimension-blind (bearing
-// + distance only, squads.js ~:95) so COVER IS UNCHANGED TOO. What did change:
-// the drawn/blocking footprint. Bags go on 2m grid cells, so a line of them
-// now reads as a row of separate blocks with ~1.1m between them instead of a
-// near-continuous parapet — the literal reading of the ratified brief, and a
-// one-constant revert if the gaps read wrong in play.
-// The orient toggle and sandbagOrientAt's auto-continue are KEPT INTACT (the
-// engineer BUILD order inherits them next task); on a cube the swap is
-// dimensionally inert, which is a look decision, not a machinery deletion.
-export const SANDBAG_HALF = 0.45;
+// mk0.54 (Jeff, reverting mk0.52's cube): THE BAG IS THE SHAPE. The original
+// 1.8 x 0.9 x 0.7 slab is the game's brick — the mk0.52 "one cube" reading of
+// the brief turned it into a die and Jeff rejected it on sight. Old dims are
+// back exactly (orient swaps hx/hz as before); walls are now built as three
+// of THESE stacked (see buildAt) — one shape family for everything bagged.
+export const SANDBAG_HX = 0.9, SANDBAG_HY = 0.45, SANDBAG_HZ = 0.35;
 export function spawnSandbag(world, x, z, orient = 0) {
   const y = world.field.heightAt(x, z);
   const b = addBody(world, {
     kind: "chunk", team: 1, mass: 0,
-    hx: SANDBAG_HALF, hy: SANDBAG_HALF, hz: SANDBAG_HALF,
-    x, y: y + SANDBAG_HALF, z, hp: 60, friction: 0.7, restitution: 0.02,
+    hx: orient === 1 ? SANDBAG_HZ : SANDBAG_HX, hy: SANDBAG_HY, hz: orient === 1 ? SANDBAG_HX : SANDBAG_HZ,
+    x, y: y + SANDBAG_HY, z, hp: 60, friction: 0.7, restitution: 0.02,
   });
   b.orient = orient;
   b.sandbag = true;

@@ -1089,10 +1089,15 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const frostRingMesh = pool(new THREE.RingGeometry(0.72, 1.0, 40), new THREE.MeshBasicMaterial({ color: 0x8fd8ff, transparent: true, opacity: 0.14, depthWrite: false }), 16, false);
   frostRingMesh.layers.set(1);
   // player walls (tower defense): stone block + a cap of snow, instanced.
-  // P1.5 T2 (mk0.52): a WINTER FRONT wall stands as three welded courses, so
-  // the block pool holds three instances per wall (256 walls still draw) while
-  // the cap pool stays one per wall — the snow rides the top living course.
-  const WALL_INST = 768;
+  // mk0.54 (Jeff: "a wall should just be 3 stacks of 3 blocks"): each course
+  // BODY draws as a 3x3 grid of blocks, so a full wall is a 3-wide, 3-tall
+  // block face from every side — the same masonry language as the town and
+  // the depots, at wall scale. Render-only: the course bodies and the support
+  // rule are untouched. 27 instances per wall; the pool covers ~85 fully
+  // drawn walls (beyond that extra walls stop drawing blocks — the same
+  // saturating-cap idiom as CHUNK_CAP, and far beyond any real build order).
+  const WALL_INST = 2304;
+  const WALL_BLOCKS = 3; // per course, per horizontal axis
   const wallMesh = pool(new THREE.BoxGeometry(1.8, 1.8, 1.8), toon(0x8e97a4), WALL_INST, true);
   const wallCapMesh = pool(new THREE.BoxGeometry(1.86, 0.22, 1.86), toon(0xeef4fa), 256, false);
   // THE SEAMS. The outline post-pass draws an edge wherever depth or normal
@@ -1375,19 +1380,35 @@ export function makeRenderer(canvas, world0, opts = {}) {
     }
     frostRingMesh.count = fri; frostRingMesh.instanceMatrix.needsUpdate = true;
     for (const [id, g] of towerGroups) if (!world.byId.has(id)) { scene.remove(g); towerGroups.delete(id); }
-    // player walls (tower defense). P1.5 T2: every course is its own body and
-    // draws as its own inset block, so the outline finds the joints between
-    // them. The snow cap goes on the TOP LIVING course only — b.capTop is
-    // stamped by the depot's support pass (state.js), and a plain single-body
-    // wall has no course and never sets it, so it caps as it always did.
+    // player walls (tower defense). mk0.54: every course BODY draws as a 3x3
+    // grid of inset blocks (Jeff: "3 stacks of 3 blocks") so the outline pass
+    // finds a joint at every block boundary — the town's masonry look at wall
+    // scale. The snow cap still spans the whole TOP LIVING course — b.capTop
+    // is stamped by the depot's support pass (state.js); a plain single-body
+    // wall has no course, never sets it, and draws as one block as it always
+    // did (the F3-ready enemy wall and TD keep their exact old look).
     let wi = 0, wci = 0;
     for (const b of world.bodies) {
       if (b.kind !== "wall" || wi >= WALL_INST) continue;
       const hurtW = b.maxHp ? Math.max(0.75, b.hp / b.maxHp) : 1;
-      const dx = Math.max(0.05, b.hx - SEAM_XZ), dy = Math.max(0.05, b.hy - SEAM_Y), dz = Math.max(0.05, b.hz - SEAM_XZ);
-      writeInst(wallMesh, wi, b.pos.x, b.pos.y, b.pos.z, b.q, dx / 0.9 * hurtW, dy / 0.9, dz / 0.9 * hurtW);
+      const dy = Math.max(0.05, b.hy - SEAM_Y);
+      if (b.course == null) {
+        const dx = Math.max(0.05, b.hx - SEAM_XZ), dz = Math.max(0.05, b.hz - SEAM_XZ);
+        writeInst(wallMesh, wi, b.pos.x, b.pos.y, b.pos.z, b.q, dx / 0.9 * hurtW, dy / 0.9, dz / 0.9 * hurtW);
+        wi++;
+      } else {
+        // 3x3 blocks over the course's square footprint; block half-extent
+        // minus seam so every boundary is a visible joint. Damage shrink
+        // applies per block, so a chewed course visibly thins.
+        const step = (b.hx * 2) / WALL_BLOCKS;
+        const bh = Math.max(0.04, step / 2 - SEAM_XZ);
+        for (let ix = 0; ix < WALL_BLOCKS && wi < WALL_INST; ix++) for (let iz = 0; iz < WALL_BLOCKS && wi < WALL_INST; iz++) {
+          const ox = -b.hx + (ix + 0.5) * step, oz = -b.hz + (iz + 0.5) * step;
+          writeInst(wallMesh, wi, b.pos.x + ox, b.pos.y, b.pos.z + oz, b.q, bh / 0.9 * hurtW, dy / 0.9, bh / 0.9 * hurtW);
+          wi++;
+        }
+      }
       if (b.capTop !== false && wci < 256) { writeInst(wallCapMesh, wci, b.pos.x, b.pos.y + dy + 0.08, b.pos.z, b.q, 1, 1, 1); wci++; }
-      wi++;
     }
     wallMesh.count = wi; wallMesh.instanceMatrix.needsUpdate = true;
     wallCapMesh.count = wci; wallCapMesh.instanceMatrix.needsUpdate = true;
