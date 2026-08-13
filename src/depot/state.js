@@ -527,26 +527,37 @@ export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })
     if (u.fireCd > 0) continue;
     const muzzle = { x: u.pos.x, y: u.pos.y + 0.5, z: u.pos.z };
     const eR = effRange(world, muzzle, spec);
-    let best = null, bd = eR * eR, bestIsStruct = false;
-    for (const e of world.bodies) {
-      if ((e.kind !== "unit" && e.kind !== "vehicle") || !e.alive || e.team !== enemyTeam) continue;
-      const dx = e.pos.x - u.pos.x, dz = e.pos.z - u.pos.z;
-      const d2 = dx * dx + dz * dz;
-      if (d2 >= bd) continue;
-      const c = toUV(e.pos.x, e.pos.z);
-      if (!fieldReaches(T, c.u, c.v, squad.team)) continue;
-      if (!arcClears(world, muzzle, e.pos, spec, u.id)) continue;
-      bd = d2; best = e;
-    }
-    if (!best) {
-      // FRONT F1 (4b): no man in reach — bite stone. Nearest hostile
-      // structure in range, LOS by the real arc (selfId), and — since VISION
-      // (mk0.72) — gated on SIGHT like every other shot: a squad may only
-      // work masonry its own side can see. Unit targets keep absolute
-      // priority: this scan runs only on an empty unit scan. Deterministic
-      // pick — nearest, ties by body id order (the scan order gives this).
-      // Zero rng draws.
-      let bs = eR * eR;
+    // COMMAND T4 (mk0.86): the two scans below are today's code, MOVED into
+    // named closures, not rewritten — squad.prefStruct (the pie's STRUCTURES
+    // toggle) only reorders which one runs first. The automatic fallback to
+    // the other scan on an empty result is unconditional either way: a
+    // wall-breaker squad never stands idle with no wall in reach, and a
+    // normal squad never ignores the man in front of it just because a wall
+    // exists somewhere in range. Sight gating (VISION, mk0.72) is untouched
+    // on both paths.
+    const scanUnits = () => {
+      let best = null, bd = eR * eR;
+      for (const e of world.bodies) {
+        if ((e.kind !== "unit" && e.kind !== "vehicle") || !e.alive || e.team !== enemyTeam) continue;
+        const dx = e.pos.x - u.pos.x, dz = e.pos.z - u.pos.z;
+        const d2 = dx * dx + dz * dz;
+        if (d2 >= bd) continue;
+        const c = toUV(e.pos.x, e.pos.z);
+        if (!fieldReaches(T, c.u, c.v, squad.team)) continue;
+        if (!arcClears(world, muzzle, e.pos, spec, u.id)) continue;
+        bd = d2; best = e;
+      }
+      return best;
+    };
+    // FRONT F1 (4b): no man in reach — bite stone. Nearest hostile
+    // structure in range, LOS by the real arc (selfId), and — since VISION
+    // (mk0.72) — gated on SIGHT like every other shot: a squad may only
+    // work masonry its own side can see. Unit targets keep absolute
+    // priority: this scan runs only on an empty unit scan. Deterministic
+    // pick — nearest, ties by body id order (the scan order gives this).
+    // Zero rng draws.
+    const scanStructs = () => {
+      let best = null, bs = eR * eR;
       for (const s of world.bodies) {
         if (!hostileStructure(s, squad.team)) continue;
         const cs = toUV(s.pos.x, s.pos.z);
@@ -554,8 +565,17 @@ export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })
         const dx = s.pos.x - u.pos.x, dz = s.pos.z - u.pos.z, d2 = dx * dx + dz * dz;
         if (d2 >= bs) continue;
         if (!arcClears(world, muzzle, s.pos, spec, u.id)) continue;
-        bs = d2; best = s; bestIsStruct = true;
+        bs = d2; best = s;
       }
+      return best;
+    };
+    let best = null, bestIsStruct = false;
+    if (squad.prefStruct) {
+      best = scanStructs(); bestIsStruct = !!best;
+      if (!best) { best = scanUnits(); }
+    } else {
+      best = scanUnits();
+      if (!best) { best = scanStructs(); bestIsStruct = !!best; }
     }
     if (!best) continue;
     u.fireCd = spec.fireRate;

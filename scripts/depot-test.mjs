@@ -1984,7 +1984,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   {
     const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     // the frame snapshot is the setHud({...}) that also carries mode/sellMode
-    const snap = src.match(/setHud\(\{[\s\S]{0,6000}?\}\);\n\s+\}\n/); // window widened (mk0.29 added endCard; mk0.41 added the manifest mirror; mk0.80 added the tower radial; mk0.82 added showPie to both; mk0.84 added linePending, re-pinned 5000->6000)
+    const snap = src.match(/setHud\(\{[\s\S]{0,7000}?\}\);\n\s+\}\n/); // window widened (mk0.29 added endCard; mk0.41 added the manifest mirror; mk0.80 added the tower radial; mk0.82 added showPie to both; mk0.84 added linePending, re-pinned 5000->6000; mk0.86 added structOk/structFirst, re-pinned 6000->7000)
     ok("sandbag-rot: frame hud snapshot carries sandbagOrient (no clobber)",
       !!snap && snap[0].includes("mode: S.mode") && snap[0].includes("sandbagOrient: S.sandbagOrient"));
     const { HUD0 } = await import("../src/depot/state.js");
@@ -4218,6 +4218,127 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 }
 // ==== end COMMAND T3 ==========================================================
+
+// ==== COMMAND T4: attack structures ==========================================
+// mk0.86. A pie toggle (STRUCTURES, armed types only — an INFANTRY_ARMS row,
+// not engineers/sappers) sets squad.prefStruct: on, squadFire's structure
+// scan runs FIRST with the man-scan as the automatic fallback when no
+// structure is in reach; off, today's man-first order (structure scan still
+// the automatic fallback, unchanged). The two scans are today's code, moved
+// into named closures (state.js's squadFire: scanUnits/scanStructs) — sight
+// gating (VISION, mk0.72) is unedited on both paths.
+{
+  const idUV = (x, z) => ({ u: x, v: z });
+  const idW = (u, v) => ({ x: u, z: v });
+  const flat = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+
+  // fixture: a rifle squad (DEFEND, the default order) at the origin, an
+  // enemy man 5m off on the +x bearing and an enemy wall 8m off on the
+  // PERPENDICULAR +z bearing (no LOS overlap between the two candidate
+  // targets), both well inside the rifle's 15m reach the moment sight comes
+  // up.
+  const mkFixture = (prefStruct, withWall = true) => {
+    const world = makeWorld({ field: flat, seed: 21 });
+    world.dt = 1 / 60;
+    const sq = makeSquad(1, "rifles", 1, 0, 0);
+    spawnSquadMembers(world, sq);
+    sq.prefStruct = prefStruct;
+    const man = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 5, y: 0.86, z: 0, hp: 58 });
+    let wall = null;
+    if (withWall) {
+      wall = addBody(world, {
+        kind: "wall", team: 2, mass: 0, hx: WALL_HALF, hy: WALL_COURSE_HY, hz: WALL_THIN,
+        x: 0, y: WALL_COURSE_HY, z: 8, hp: 100, friction: 0.65, restitution: 0.02,
+      });
+      wall.maxHp = wall.hp;
+      wall.sleeping = true;
+    }
+    const T = makeTerritory(29, 29);
+    T.sight = makeSight(T);
+    return { world, sq, man, wall, T };
+  };
+
+  // (a) flag set, man AND wall both in sight/reach: the wall's hp drops
+  // first (structure preferred).
+  {
+    const { world, sq, man, wall, T } = mkFixture(true, true);
+    const manHp0 = man.hp, wallHp0 = wall.hp;
+    let firstDrop = null;
+    for (let i = 0; i < 600 && !firstDrop; i++) {
+      stepSight(world, T.sight, idUV, idW);
+      squadFire(world, sq, world.dt, T, idUV);
+      stepWorld(world);
+      if (wall.hp < wallHp0) firstDrop = "wall";
+      else if (man.hp < manHp0) firstDrop = "man";
+    }
+    ok("COMMAND T4(a): STRUCTURES on — the wall's hp drops first",
+      firstDrop === "wall", `first=${firstDrop} wall.hp=${wall.hp.toFixed(2)} man.hp=${man.hp}`);
+    ok("COMMAND T4(a): the man is untouched while the wall is worked",
+      man.hp === manHp0, `man.hp=${man.hp}`);
+  }
+
+  // (b) same fixture, flag off: the man dies first — today's priority,
+  // pinned.
+  {
+    const { world, sq, man, wall, T } = mkFixture(false, true);
+    const manHp0 = man.hp, wallHp0 = wall.hp;
+    let firstDrop = null;
+    for (let i = 0; i < 600 && !firstDrop; i++) {
+      stepSight(world, T.sight, idUV, idW);
+      squadFire(world, sq, world.dt, T, idUV);
+      stepWorld(world);
+      if (man.hp < manHp0) firstDrop = "man";
+      else if (wall.hp < wallHp0) firstDrop = "wall";
+    }
+    ok("COMMAND T4(b): STRUCTURES off — the man's hp drops first (today's priority, pinned)",
+      firstDrop === "man", `first=${firstDrop} wall.hp=${wall.hp} man.hp=${man.hp.toFixed(2)}`);
+    ok("COMMAND T4(b): the wall is untouched while the man is worked",
+      wall.hp === wallHp0, `wall.hp=${wall.hp}`);
+  }
+
+  // (c) the flag survives a save/resume — a plain boolean on the squad,
+  // same convention COMMAND T1(c)/T3(e) pin for tower.discipline/patrol.
+  {
+    const field = makeField(9, 2.0, 1);
+    const world = makeWorld({ field, seed: 1 });
+    const sq = makeSquad(1, "rifles", 1, 0, 5);
+    spawnSquadMembers(world, sq);
+    sq.prefStruct = true;
+    const T = makeTerritory(5, 5);
+    const S = {
+      bell: 0, resources: 0, kills: 0, spawnRR: 0, started: false, mode: "wall", sandbagOrient: 0,
+      nextSquadId: 2, zoom: 1, focus: { x: 0, z: 0 }, depotCensusAcc: 0, depotStanding: 1, enemyStanding: 1,
+      starvedStreak: 0, _reportedBreak: false, _reportedSpent: false,
+      manifest: {}, foe: {}, intelUp: false, intelArmedAt: 0, lastDispatch: null,
+      pendingPlan: null, intelPlan: null, ws: {}, reg: {}, squads: [sq],
+    };
+    const json = serializeFront({ S, world, T, town: [], census: [], census2: [], rocks: [], smears: [], mapSeed: 1, rngSeed: 1 });
+    const parsed = parseFront(json);
+    ok("COMMAND T4(c): the save round-trip parses back", parsed.ok, parsed.reason);
+    const world2 = makeWorld({ field: makeField(9, 2.0, 1), seed: 1 });
+    const bodies2 = parsed.ok ? restoreBodies(world2, parsed.data, []) : [];
+    const squads2 = parsed.ok ? restoreSquads(parsed.data, bodies2) : [];
+    const sq2 = squads2[0];
+    ok("COMMAND T4(c): prefStruct rides the round-trip", !!sq2 && sq2.prefStruct === true, sq2 && sq2.prefStruct);
+  }
+
+  // (d) flag set, NO structure in reach: the squad still fights men — the
+  // fallback is automatic, nobody stands idle.
+  {
+    const { world, sq, man, T } = mkFixture(true, false);
+    const manHp0 = man.hp;
+    let dropped = false;
+    for (let i = 0; i < 600 && !dropped; i++) {
+      stepSight(world, T.sight, idUV, idW);
+      squadFire(world, sq, world.dt, T, idUV);
+      stepWorld(world);
+      if (man.hp < manHp0) dropped = true;
+    }
+    ok("COMMAND T4(d): STRUCTURES on but no structure in reach — the squad still fights the man (automatic fallback)",
+      dropped, `man.hp=${man.hp}`);
+  }
+}
+// ==== end COMMAND T4 ==========================================================
 
 
 

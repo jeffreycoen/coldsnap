@@ -1486,6 +1486,18 @@ export default function DepotGame({ onExit, resume = null }) {
           S.orderMode = kind; S.buildPt0 = null;
         }
       };
+      // COMMAND T4 (mk0.86): STRUCTURES — an instant toggle, like DEFEND: it
+      // flips squad.prefStruct and the wedge's act closes the pie AND
+      // deselects (call site does the deselect, same as DEFEND's). Armed
+      // types only (an INFANTRY_ARMS row) — engineers and sappers never get
+      // the wedge. squadFire (state.js) reads the flag every tick; it rides
+      // a save as a plain boolean (save.js's generic squad serializer).
+      S.toggleStructFirst = () => {
+        const sq = selectedSquad();
+        if (!sq || world.t < S.selArmedAt) return;
+        if (!INFANTRY_ARMS[sq.type]) return;
+        sq.prefStruct = !sq.prefStruct;
+      };
 
       // =================================== THE TWO-POINT BUILD LINE (P1.5 T4)
       // Tap where the line starts, tap where it ends. The squad walks to the
@@ -2822,6 +2834,12 @@ export default function DepotGame({ onExit, resume = null }) {
                   // on).
                   patrolOk: sq.type !== "engineers" && sq.type !== "sappers",
                   aimingPatrol: S.orderMode === "patrol",
+                  // COMMAND T4 (mk0.86): STRUCTURES rides every armed squad
+                  // type (an INFANTRY_ARMS row) — not engineers, not sappers,
+                  // same population PATROL offers the wedge to. structFirst
+                  // is the wedge's lit state.
+                  structOk: !!INFANTRY_ARMS[sq.type],
+                  structFirst: !!sq.prefStruct,
                   // COMMAND T2 (mk0.84): the squad stays selected while its
                   // line is up for confirmation — the center chip says so.
                   linePending: !!S.linePending };
@@ -3144,6 +3162,13 @@ export default function DepotGame({ onExit, resume = null }) {
         // squad walks it forever. Every type except engineers and sappers.
         if (sq.patrolOk) {
           slots.push({ key: "patrol", icon: "⇄", label: "PATROL", color: "#7fd7ff", on: sq.aimingPatrol || sq.order === "patrol", act: () => stateRef.current && stateRef.current.orderSquad("patrol") });
+        }
+        // COMMAND T4 (mk0.86): STRUCTURES — instant toggle, armed types
+        // only (an INFANTRY_ARMS row; not engineers, not sappers). Lit when
+        // on. Its act also fully deselects, the DEFEND/SELL/CAREFUL-FREE
+        // rule for instant pie actions.
+        if (sq.structOk) {
+          slots.push({ key: "structures", icon: "▨", label: "STRUCTURES", color: "#c9a0ff", on: sq.structFirst, act: () => { const S = stateRef.current; if (S) { S.toggleStructFirst(); S.selSquadId = null; } } });
         }
         if (sq.engineer) {
           slots.push(

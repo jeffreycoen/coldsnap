@@ -35,6 +35,7 @@
 - Possession phase later adds TAKE CONTROL to every radial — the radial's slot geometry reserves room.
 - Vocabulary still on the shelf for later phases: take cover, fall back, escort, suppress/barrage, directed demolition, mortar barrage (noting barrage cuts against the sight law).
 - Engineers' BUILD is two-point: tap start, tap end, lay end-to-end, dig in at the end. One rotation per line — the closest logical rotation to the line's overall direction, no per-step staircase. Field bags 3, field walls 5 with a lay pause.
+- SHIPPED (overnight run, 2026-08-13): Command phase mk0.80-0.86 — the pie live for squads and towers, proposed-line confirm on every two-point order, patrol and attack-structures in the vocabulary. Phase awaits the owner's playtest.
 
 ## Possession (its own phase, after Command)
 
