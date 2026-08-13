@@ -1895,7 +1895,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
       if (wind) {
         const heading = Math.atan2(wind.z, wind.x);
         const mag = wind.mag || 0;
-        const amp = Math.min(0.55, 0.12 + mag * 0.09); // ripple amplitude scales with wind strength
+        const amp = Math.min(0.55, mag * 0.13); // no floor: dead calm = limp cloth // provisional (F5)
         const stiff = 2.2 + mag * 0.9; // stronger wind = faster flutter (looser stiffness reads as quicker snap)
         for (const b of world.bodies) {
           if (!b.flagPole || fi >= 24) continue;

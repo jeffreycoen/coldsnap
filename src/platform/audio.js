@@ -645,7 +645,12 @@ export function makeGameAudio() {
     wSurge = drift(wSurge, 35, dt);
     wGust = drift(wGust, 4, dt);
     wFlut = drift(wFlut, 0.3, dt);
-    const wLvl = Math.pow(10, Math.max(-12, Math.min(9, wSurge * 6 + wGust * 4 + wFlut * 1.5)) / 20);
+    // WIND TOGGLE (mk0.96): the bed follows the GAME's wind. A depot world
+    // carries world.wind — dead calm (mag 0, the toggle off) silences the
+    // bed entirely and a real gale brings it up. Worlds with no wind field
+    // (sandbox, campaign, demo, mech) keep the old ambient bed exactly.
+    const wScale = world.wind ? Math.min(1, (world.wind.mag || 0) / 3.5) : 1; // provisional (F5)
+    const wLvl = Math.pow(10, Math.max(-12, Math.min(9, wSurge * 6 + wGust * 4 + wFlut * 1.5)) / 20) * wScale;
     const wBri = wSurge * 2 + wGust * 4 + wFlut * 3;
     seen.add("wind-lo"); seen.add("wind-mid"); seen.add("wind-hi");
     setLoop(getLoop("wind-lo", 180, "lowpass", 1), WIND_BASE * wLvl * Math.pow(10, -wBri / 40), 165 + wBri * 4, dt);

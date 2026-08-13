@@ -4895,6 +4895,18 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     /world\.wind = S\.windOn === false \? \{ x: 0, z: 0, mag: 0 \} : windAt\(MAP_SEED, world\.t\);/.test(gameSrc));
   ok("WIND TOGGLE source pin: no other stepDepot-path windAt assignment exists",
     (gameSrc.match(/world\.wind = windAt/g) || []).length === 1); // the __DEPOTSETT__ debug hook only
+  // mk0.96 (Task 6): OFF must also be QUIET and STILL — the audible bed and
+  // the flag cloth follow the same world.wind the mechanics read.
+  ok("WIND TOGGLE source pin: the audio wind bed is scaled by the real wind (world.wind.mag)",
+    /const wScale = world\.wind \? Math\.min\(1, \(world\.wind\.mag \|\| 0\) \/ 3\.5\) : 1;/.test(
+      fs.readFileSync(new URL("../src/platform/audio.js", import.meta.url), "utf8")));
+  {
+    const rendSrc = fs.readFileSync(new URL("../src/render/renderer.js", import.meta.url), "utf8");
+    ok("WIND TOGGLE source pin: flag ripple has no floor — dead calm means limp cloth",
+      /const amp = Math\.min\(0\.55, mag \* 0\.13\);/.test(rendSrc) && !/0\.12 \+ mag \* 0\.09/.test(rendSrc));
+  }
+  ok("FIRE FEEDBACK source pin: the FIRE button's held state routes through setFireHeld",
+    /const setFireHeld = \(v\) => \{/.test(fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8")));
 }
 // ==== end WIND TOGGLE =======================================================
 

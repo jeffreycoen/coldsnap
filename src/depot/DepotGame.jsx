@@ -831,6 +831,9 @@ export default function DepotGame({ onExit, resume = null }) {
   // POSSESSION T4 (mk0.93): the right stick's own knob ref — same discipline
   // as joyKnobRef, a separate DOM element and a separate live drag state.
   const joyRKnobRef = useRef(null);
+  // FIRE FEEDBACK (mk0.96): the FIRE button's own ref — setFireHeld paints
+  // its held state straight to the DOM.
+  const fireBtnRef = useRef(null);
   // Held in a ref, not read from props inside the effect, for the same reason
   // every other loop input is: the effect must never close over a value React
   // can change under it. Captured once, at mount.
@@ -3222,6 +3225,17 @@ export default function DepotGame({ onExit, resume = null }) {
     S.setWind(!S.windOn);
     setHud((h) => ({ ...h, windOn: S.windOn }));
   };
+  // FIRE FEEDBACK (mk0.96): the held state, and the LOOK of the held state,
+  // set in one place — direct DOM writes (the joystick knob's discipline, no
+  // React state in the hot path). A hold the browser cancels pops the button
+  // dark the instant it dies, so a silent drop is visible.
+  const setFireHeld = (v) => {
+    const S = stateRef.current; if (S) S.fireHeld = v;
+    if (fireBtnRef.current) {
+      fireBtnRef.current.style.background = v ? "#ff6b5e" : "#2a1418";
+      fireBtnRef.current.style.color = v ? "#1a0d0f" : "#ff6b5e";
+    }
+  };
   const sellInspected = () => { const S = stateRef.current; if (S && S.inspectId && S.sellById) S.sellById(S.inspectId); };
 
   // POSSESSION (P4 T1, mk0.90): the touch stick. Depot-styled port of the
@@ -3342,11 +3356,11 @@ export default function DepotGame({ onExit, resume = null }) {
           sandbox's own trigger. Sets S.fireHeld; the sim bracket (frame loop)
           is what actually attempts a volley, at most once per sim tick. */}
       {hud.possessed && (
-        <button data-possess-fire
+        <button data-possess-fire ref={fireBtnRef}
           style={{ ...P.btnBig, position: "absolute", right: 132, bottom: 16, zIndex: 7, width: 64, height: 64, borderRadius: "50%", borderColor: "#ff6b5e", color: "#ff6b5e", fontWeight: "bold", background: "#2a1418", touchAction: "none" }}
-          onPointerDown={(e) => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); const S = stateRef.current; if (S) S.fireHeld = true; }}
-          onPointerUp={(e) => { e.stopPropagation(); const S = stateRef.current; if (S) S.fireHeld = false; }}
-          onPointerCancel={(e) => { e.stopPropagation(); const S = stateRef.current; if (S) S.fireHeld = false; }}>
+          onPointerDown={(e) => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); setFireHeld(true); }}
+          onPointerUp={(e) => { e.stopPropagation(); setFireHeld(false); }}
+          onPointerCancel={(e) => { e.stopPropagation(); setFireHeld(false); }}>
           FIRE
         </button>
       )}
