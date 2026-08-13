@@ -307,6 +307,19 @@ The seeded-sandbag block below it (its own `bagR` stream) is untouched.
 ```
 …the flame pool (line 1136) becomes `pool(new THREE.PlaneGeometry(0.9, 1.5), fireMat, TREE_CAP, false)`, and the draw-loop guard (line 1509) becomes `if (b.kind !== "tree" || tri >= TREE_CAP) continue;`.
 
+## AMENDMENT 1 (owner's ruling, 2026-08-13) — the sixth site
+
+*Found at dispatch: the renderer holds a SIXTH bare `144` the plan missed — the flame-sprite bound inside the tree draw loop (`tfi < 144`, live line 1538), which caps how many burning trees show flames in one frame. The owner ruled: the bound follows the pool it indexes — it joins TREE_CAP, six sites total. And the Step 1 test pin was too narrow to catch a missed site, so it hardens.*
+
+**Step A1-1.** `src/render/renderer.js` line 1538: `if (world.depotCombat && b.burning != null && b.alive && tfi < TREE_CAP) {` — the sixth TREE_CAP site.
+
+**Step A1-2.** The T5(d) pool pin in the Step 1 block is REPLACED by this stronger pair (no bare 144 can survive anywhere in the renderer):
+```js
+  const rsrc5 = fs.readFileSync(new URL("../src/render/renderer.js", import.meta.url), "utf8");
+  ok("T5(d): the tree pool is one constant at 360", /const TREE_CAP = 360;/.test(rsrc5));
+  ok("T5(d): no bare 144 survives in the renderer (all six sites read TREE_CAP)", !/144/.test(rsrc5));
+```
+
 **Step 6 — green, bump, build, smoke.** `npm run lint:depot` · `npm run test:depot` fully green (zero re-pins) · `src/version.js` → `"mk1.04"` · `npm run build` AFTER the bump · `SMOKE_ONLY=depot npm run smoke`.
 
 **Gates (ONLY these):** parse changed files · `npm run lint:depot` · `npm run test:depot` (Step 1 red-first, then green; zero re-pins) · `npm run build` after the bump · `SMOKE_ONLY=depot` smoke. Allowed files: `src/depot/DepotGame.jsx`, `src/render/renderer.js`, `scripts/depot-test.mjs`, `src/version.js`. Commit `"copses, forests, and the high ground (mk1.04)"`, push, CI green, STOP. The owner checks the deployed site across seeds: at least one wooded hill on every map, forests you can hide a squad in (and burn), the treeline still on the rim, snipers and towers on hills reaching farther.
