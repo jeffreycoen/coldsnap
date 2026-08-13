@@ -16,10 +16,7 @@
 
 **Task 3 — The stream and the bridge** — POPULATED BELOW (mk1.02).
 
-**Task 4 — Buildings of the proving grounds** *(skeleton)*
-- Per-template shape hooks in the town builder (beyond the uniform lattice).
-- Port the proven forms: slab-roof hangar, warehouse columns, drive-through, freestanding field walls.
-- Chunk budget measured under worst-case collapse on the Pi.
+**Task 4 — Buildings of the proving grounds** — POPULATED BELOW (mk1.03).
 
 **Task 5 — Copses and forests** *(skeleton)*
 - Copse/forest placement in generation.
@@ -28,6 +25,331 @@
 **Task 6 — The measurement close** *(skeleton)*
 - Full-density Pi baseline on the new map: frame split, collapse worst case, sight recompute.
 - Re-pin perf numbers; owner playtest closes the phase.
+
+---
+
+# TASK 4 — Buildings of the proving grounds (mk1.03)
+
+**What it does.** The town builder stops knowing one shape. It learns the proving grounds' proven forms: the drive-through hangar whose roof is ONE rigid 800-kilogram slab welded to the top two wall courses (shear the ring and the whole roof pancakes at once), the warehouse whose granular roof stands on two interior columns (shoot the columns and it comes down honestly), and freestanding field walls — masonry screens infantry fight from. Wide existing buildings get the same interior columns. Field walls block the movement grid: the assault paths around them, and they are real cover and real chokepoints. The chunk pool rises 2000 → 3000 to hold the denser town; the boot stone count is measured in the suite and the collapse cost is measured on the Pi.
+
+**Rulings folded in (owner, 2026-08-13):** field walls BLOCK the grid; walls lie AXIS-ALIGNED; big forms draw **2–4 per map**; wide existing templates (6+ stones) are RETROFITTED with columns; the stone cap is RAISED (2000 → 3000, the Pi measurement is the judge). The depot lattice itself is deliberately NOT columned — the fortress fight is tuned as it stands. The roofless yard is not columned — no roof to hold.
+
+**Feel changes that ship for the owner's eyes:** hangars you can walk or drive through, with roofs that pancake in one piece when the walls go; warehouses and wide houses that collapse when their columns are shot out; field walls scattered across the front as cover; assaults bending around them.
+
+**Suggested model:** Sonnet — all code specified below.
+
+**Required reading (re-verify anchors at dispatch):**
+- `src/depot/DepotGame.jsx` — 30–56 (map state), 58–218 (genMap; the TPL list at 153–159, benches 176–199, ruins 200–208 — edits land here), 219–250 (makeMap, read-only), 525–619 (townFootprint/buildTown/stepTown — the heart of the task), 1038–1110 (boot: buildTown call + censuses, read-only), 2477–2500 (debug hooks; the new hook lands beside `__DEPOTFLAGS__` at ~2488), 3295 (hook cleanup list).
+- `src/engine/core.js` — 2172–2320 (the pattern source: cover walls, hangar + slab, warehouse columns, houses). FROZEN — read-only.
+- `src/render/renderer.js` — 745–760 (CHUNK_CAP), 1675–1690 (the chunk draw loop, read-only).
+- `src/depot/state.js` — 875–935 (census machinery, read-only — bench buildings are never censused).
+- `src/depot/save.js` — 50–130 (verify only: bodies serialize per-body `hx/hy/hz`, so the slab rides a save like any chunk; no edits).
+- `scripts/depot-test.mjs` — 1–70 (harness), 2407–2437 (the extraction pattern), 5490–5608 (the T3 block + tail; T4 lands before the tail).
+- `src/version.js`.
+
+**Trap notes:**
+- genMap runs on its OWN map-seed stream — draw counts there change freely; `depot-lint` still forbids `Math.random`.
+- Big forms are placed BEFORE the bench buildings (landmarks first, benches fill around them), and the `bid` id counter hoists above both loops. Nothing pins building ids.
+- ACCEPTED SEEDS SHIFT: more blocked ground means makeMap's retry may accept a later attempt on some seeds. Every existing sweep asserts properties, not layouts — **EXPECTED RE-PINS: none.** Any old assert moving is a defect: STOP and report.
+- The slab joins the building's stone list AFTER the weld map is built — its sentinel grid position `[-1, t.ny, -1]` must never enter the neighbor lookups. It DOES join `stones`/`n0`, so a pancaked roof counts toward the building's ruin — intended.
+- The drive doors bind to the LONG axis by comparing the entry's live dimensions — never store an axis on the template; both the genMap swap and the ORIENT rotation swap `nx/nz` under it.
+- Column positions are DERIVED from the post-swap dimensions at build time (the warehouse thirds rule) — never stored coordinates, same reason.
+- `door: -1` is the no-door convention (matches no column); the ORIENT swap's `Math.min(t.door, t.nx - 1)` keeps −1 at −1. A field wall is one stone thick, so the standard door carve can never fire on it anyway.
+- makeMap falls through with its LAST attempt if all 24 retries foul — pre-existing behavior; the new blockers raise the odds slightly. Not this task's to fix. If any sweep shows a disconnected accepted map, STOP and report.
+- If the T4(a) stone-budget assert reads over 2900, STOP and report — the cap decision goes back to the owner.
+
+## Steps, in execution order
+
+**Step 1 — failing asserts first.** Insert the FRONT-T4 block before the tail summary (`if (fails.length) {`). `npm run test:depot` shows the block red — the T4(a) counts read zero and the T4(g) source pins are absent; blocks (b)–(e) skip themselves while no form exists. Record the exact reds.
+
+```js
+// ==== FRONT T4: buildings of the proving grounds =============================
+// mk1.03 (The Front, Task 4). The town builder learns the proven forms:
+// slab-roof drive-through hangars, columned warehouses, columns in the wide
+// templates, freestanding field walls that block the grid. The chunk pool
+// rises to 3000; the boot stone count is measured right here.
+{
+  console.log("\n[front t4: buildings of the proving grounds]");
+  const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  const sliceFn4 = (name) => {
+    const start = src.indexOf(`\nfunction ${name}(`);
+    if (start < 0) throw new Error("T4 extract: missing function " + name);
+    const rest = src.slice(start + 1);
+    const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
+    return rest.slice(0, m < 0 ? rest.length : m + 9);
+  };
+  const header4 = src.slice(src.indexOf("const GRID_CS"), src.indexOf("function genMap"));
+  const mapSrc4 = [
+    header4,
+    sliceFn4("genMap"), sliceFn4("makeMap"), sliceFn4("streamAt"), sliceFn4("pondAt"), sliceFn4("rockAt"),
+    sliceFn4("makeGrid"), sliceFn4("checkConnectivity"), sliceFn4("townFootprint"), sliceFn4("buildTown"),
+    `return { makeMap, makeGrid, buildTown, invW, state: () => ({ ORIENT, TOWN, MAP_SEED }) };`,
+  ].join("\n");
+  const mkMapT4 = () => new Function(
+    "mulberry32", "MASON", "fwdUFor", "fwdDirFor", "invWFor", "addBody", "addWeld", mapSrc4,
+  )(mulberry32, MASON, fwdUFor, fwdDirFor, invWFor, addBody, addWeld);
+  const flatF4 = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+
+  // (a) the sweep: 2-4 big forms and 2-5 field walls on every seed; both big
+  // kinds appear across the sweep; the worst boot stone count stays under
+  // the raised pool with rubble headroom.
+  let bigLo = 99, bigHi = 0, wallLo = 99, wallHi = 0, sawHangar = 0, sawWarehouse = 0;
+  let worstStones = 0, worstSeed = 0, hangarSeed = 0, warehouseSeed = 0, wallSeed = 0;
+  for (let s = 1; s <= 40; s++) {
+    const Mi = mkMapT4(); Mi.makeMap(s * 769);
+    const st = Mi.state();
+    const bigs = st.TOWN.filter((t) => /^(hangar|warehouse)/.test(t.id));
+    const walls = st.TOWN.filter((t) => /^fwall/.test(t.id));
+    bigLo = Math.min(bigLo, bigs.length); bigHi = Math.max(bigHi, bigs.length);
+    wallLo = Math.min(wallLo, walls.length); wallHi = Math.max(wallHi, walls.length);
+    if (bigs.some((t) => t.slab)) { sawHangar++; if (!hangarSeed) hangarSeed = s * 769; }
+    if (bigs.some((t) => t.cols && !t.slab)) { sawWarehouse++; if (!warehouseSeed) warehouseSeed = s * 769; }
+    if (walls.length && !wallSeed) wallSeed = s * 769;
+    const world = makeWorld({ field: flatF4, seed: 5 });
+    Mi.buildTown(world, Mi.makeGrid(null), flatF4);
+    const stones = world.bodies.filter((b) => b.kind === "chunk").length;
+    if (stones > worstStones) { worstStones = stones; worstSeed = s * 769; }
+  }
+  ok("T4(a): every seed draws 2-4 big forms", bigLo >= 2 && bigHi <= 4, `${bigLo}-${bigHi}`);
+  ok("T4(a): every seed draws 2-5 field walls", wallLo >= 2 && wallHi <= 5, `${wallLo}-${wallHi}`);
+  ok("T4(a): both big kinds appear across the sweep", sawHangar >= 5 && sawWarehouse >= 5, `hangar ${sawHangar}/40, warehouse ${sawWarehouse}/40`);
+  ok("T4(a): worst boot stone count stays under the 3000 pool with rubble headroom", worstStones <= 2900, `${worstStones} stones (seed ${worstSeed})`);
+
+  // (b) the hangar: one 800kg slab welded to the top two courses, no
+  // granular roof, drive doors open at ground level through both end walls.
+  if (hangarSeed) {
+    const Mi = mkMapT4(); Mi.makeMap(hangarSeed);
+    const hg = Mi.state().TOWN.find((t) => t.slab);
+    const world = makeWorld({ field: flatF4, seed: 5 });
+    Mi.buildTown(world, Mi.makeGrid(null), flatF4);
+    const mine = world.bodies.filter((b) => b.kind === "chunk" && b.town === hg.id);
+    const slabs = mine.filter((b) => b.mass === 800);
+    ok("T4(b): the hangar carries exactly one rigid slab", slabs.length === 1, `${slabs.length}`);
+    const slab = slabs[0];
+    const welds = world.welds.filter((w) => !w.broken && (w.a === slab || w.b === slab)).length;
+    ok("T4(b): the slab hangs on the top two courses (10+ welds)", welds >= 10, `${welds}`);
+    ok("T4(b): no granular roof course on a slab building", mine.every((b) => b === slab || b.gpos[1] < hg.ny));
+    const driveZ = hg.nz >= hg.nx;
+    const doorway = mine.filter((b) => b.gpos[1] === 0 && (driveZ
+      ? (b.gpos[2] === 0 || b.gpos[2] === hg.nz - 1) && b.gpos[0] >= 1 && b.gpos[0] <= hg.nx - 2
+      : (b.gpos[0] === 0 || b.gpos[0] === hg.nx - 1) && b.gpos[2] >= 1 && b.gpos[2] <= hg.nz - 2));
+    ok("T4(b): the drive doors are open at ground level on both ends", doorway.length === 0, `${doorway.length} stones in the doorway`);
+  }
+
+  // (c) the warehouse: two interior columns, full height, distinct sites.
+  if (warehouseSeed) {
+    const Mi = mkMapT4(); Mi.makeMap(warehouseSeed);
+    const wh = Mi.state().TOWN.find((t) => t.cols && !t.slab && /^warehouse/.test(t.id));
+    const world = makeWorld({ field: flatF4, seed: 5 });
+    Mi.buildTown(world, Mi.makeGrid(null), flatF4);
+    const mine = world.bodies.filter((b) => b.kind === "chunk" && b.town === wh.id);
+    const interior = mine.filter((b) => b.gpos[1] < wh.ny &&
+      b.gpos[0] > 0 && b.gpos[0] < wh.nx - 1 && b.gpos[2] > 0 && b.gpos[2] < wh.nz - 1);
+    ok("T4(c): the warehouse stands two interior columns, full height", interior.length === 2 * wh.ny, `${interior.length} vs ${2 * wh.ny}`);
+    const sites = new Set(interior.map((b) => b.gpos[0] + "," + b.gpos[2]));
+    ok("T4(c): the columns stand at two distinct sites", sites.size === 2, [...sites].join(" | "));
+  }
+
+  // (d) a field wall: L x H stones, one thick, no roof, and it CLAIMS its
+  // ground — the blocked cell carries the wall's building id.
+  if (wallSeed) {
+    const Mi = mkMapT4(); Mi.makeMap(wallSeed);
+    const fw = Mi.state().TOWN.find((t) => /^fwall/.test(t.id));
+    const world = makeWorld({ field: flatF4, seed: 5 });
+    const g = Mi.makeGrid(null);
+    Mi.buildTown(world, g, flatF4);
+    const mine = world.bodies.filter((b) => b.kind === "chunk" && b.town === fw.id);
+    const L = Math.max(fw.nx, fw.nz);
+    ok("T4(d): a field wall is L x H stones, one thick, no roof", mine.length === L * fw.ny, `${mine.length} vs ${L * fw.ny}`);
+    const gc = g.worldToGrid(fw.x, fw.z);
+    const cell = g.inBounds(gc.gx, gc.gz) ? g.cells[g.idx(gc.gx, gc.gz)] : null;
+    ok("T4(d): the wall claims its ground (blocked cell, building id)", !!cell && cell.blocked === true && cell.building === fw.id, cell && String(cell.building));
+  }
+
+  // (e) the slab STANDS: wake the whole hangar and run five sim seconds —
+  // the welded plate must not sag or shear on a quiet field.
+  if (hangarSeed) {
+    const Mi = mkMapT4(); Mi.makeMap(hangarSeed);
+    const hg = Mi.state().TOWN.find((t) => t.slab);
+    const world = makeWorld({ field: flatF4, seed: 5 });
+    Mi.buildTown(world, Mi.makeGrid(null), flatF4);
+    const mine = world.bodies.filter((b) => b.kind === "chunk" && b.town === hg.id);
+    const slab = mine.find((b) => b.mass === 800);
+    const homes = mine.map((b) => ({ b, x: b.pos.x, y: b.pos.y, z: b.pos.z }));
+    const y0 = slab.pos.y;
+    for (const b of mine) b.sleeping = false;
+    for (let i = 0; i < 600; i++) stepWorld(world);
+    ok("T4(e): the woken slab holds its height over 5 sim seconds", Math.abs(slab.pos.y - y0) < 0.25, (slab.pos.y - y0).toFixed(3));
+    const moved = homes.filter((h) => Math.hypot(h.b.pos.x - h.x, h.b.pos.y - h.y, h.b.pos.z - h.z) > 0.3).length;
+    ok("T4(e): the woken hangar keeps its stones (under 5% drift)", moved <= mine.length * 0.05, `${moved}/${mine.length}`);
+  }
+
+  // (f) determinism: same seed, identical town
+  {
+    const A = mkMapT4(); A.makeMap(7717);
+    const B = mkMapT4(); B.makeMap(7717);
+    ok("T4(f): twin determinism — identical TOWN", JSON.stringify(A.state().TOWN) === JSON.stringify(B.state().TOWN));
+  }
+
+  // (g) source pins: the hooks and the raised cap exist where claimed
+  ok("T4(g): the wide templates and the warehouse carry the cols flag (5 sites)",
+    (src.match(/cols: true/g) || []).length === 5);
+  ok("T4(g): the drive doors bind to the long axis by live dimensions",
+    /const driveZ = t\.drive && t\.nz >= t\.nx;/.test(src));
+  ok("T4(g): the town debug hook exists", /__DEPOTTOWN__/.test(src));
+  const rsrc4 = fs.readFileSync(new URL("../src/render/renderer.js", import.meta.url), "utf8");
+  ok("T4(g): the chunk pool is raised to 3000", /const CHUNK_CAP = 3000;/.test(rsrc4));
+}
+// ==== end FRONT T4 ===========================================================
+```
+
+**Step 2 — the wide templates gain columns.** `src/depot/DepotGame.jsx`, the TPL list (line 153). Four entries gain `cols: true` — every roofed template 6+ stones on a side; the 5×4 house, croft, watch, granary, shed, and the roofless yard stay bare:
+```js
+  const TPL = [
+    { t: "croft", nx: 4, nz: 3, ny: 3 }, { t: "house", nx: 6, nz: 5, ny: 4, cols: true },
+    { t: "house", nx: 5, nz: 4, ny: 4 }, { t: "long", nx: 8, nz: 4, ny: 3, cols: true },
+    { t: "watch", nx: 2, nz: 2, ny: 8 }, { t: "granary", nx: 3, nz: 3, ny: 7 },
+    { t: "yard", nx: 6, nz: 5, ny: 2, roof: false }, { t: "shed", nx: 4, nz: 4, ny: 3 },
+    { t: "chapel", nx: 5, nz: 6, ny: 5, cols: true }, { t: "keep", nx: 7, nz: 6, ny: 5, cols: true },
+  ];
+```
+
+**Step 3 — genMap draws the big forms and the field walls.** Three edits, all inside genMap:
+
+(3a) The big forms go down FIRST, before the benches — insert between the `depotFoul` line (175) and the benches array (177), and this block owns `let bid = 0;` now (delete the old `let bid = 0;` at line 180):
+```js
+  // T4: THE BIG FORMS (owner's ruling: 2-4 per map) — the proving grounds'
+  // slab-roof drive-through hangar and columned warehouse, placed before the
+  // benches so the landmarks go down first and the benches fill around them.
+  // The shape flags (slab/drive/cols) are read by buildTown.
+  const BIG = [
+    { t: "hangar", nx: 9, nz: 10, ny: 5, slab: true, drive: true },
+    { t: "warehouse", nx: 8, nz: 6, ny: 4, cols: true },
+  ];
+  let bid = 0;
+  const nBig = 2 + Math.floor(r() * 3);
+  for (let k = 0, placed = 0; k < 120 && placed < nBig; k++) {
+    const tpl = BIG[Math.floor(r() * BIG.length)];
+    const swap = r() < 0.5;
+    const nx = swap ? tpl.nz : tpl.nx, nz = swap ? tpl.nx : tpl.nz;
+    const x = -48 + r() * 96;
+    const z = -44 + r() * 84;
+    const rad = Math.max(nx, nz) * MASON.pitch / 2 + 2;
+    if (passes.flat().some((g) => Math.abs(x - g.x) < rad + 4 && Math.abs(z - g.z) < 12)) continue;
+    if (spawns.some((sp) => Math.hypot(x - sp.x, z - sp.z) < rad + 4)) continue;
+    if (ponds.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 3)) continue;
+    if (rocks.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 1.5)) continue;
+    if (roadDist(x, z) < rad + 3) continue;
+    if (town.some((q) => Math.hypot(x - q.x, z - q.z) < rad + Math.max(q.nx, q.nz) * MASON.pitch / 2 + 2.5)) continue;
+    if (Math.abs(z - streamV) < rad + 9) continue;
+    town.push({ id: tpl.t + bid++, x, z, nx, nz, ny: tpl.ny,
+      door: tpl.drive ? -1 : (r() < 0.5 ? 0 : nx - 1),
+      slab: tpl.slab, drive: tpl.drive, cols: tpl.cols });
+    placed++;
+  }
+```
+
+(3b) The bench loop's push (line 196) carries the template's flag through:
+```js
+      town.push({ id: tpl.t + bid++, x, z, nx, nz, ny: tpl.ny, door: r() < 0.5 ? 0 : nx - 1, roof: tpl.roof, ruin: decay || undefined, cols: tpl.cols });
+```
+
+(3c) The field walls go down after the old ruins (insert after line 208, before the `T` transform):
+```js
+  // T4: FIELD WALLS (owner's rulings: they block the grid; axis-aligned) —
+  // freestanding masonry screens, 3-8 stones long, 2-4 courses, one stone
+  // thick. Town entries like any building: footprint claim, ruin bookkeeping.
+  const nWalls = 2 + Math.floor(r() * 4);
+  for (let k = 0, placed = 0; k < 90 && placed < nWalls; k++) {
+    const L = 3 + Math.floor(r() * 6), H = 2 + Math.floor(r() * 3);
+    const swap = r() < 0.5;
+    const nx = swap ? 1 : L, nz = swap ? L : 1;
+    const x = -50 + r() * 100;
+    const z = -44 + r() * 84;
+    const rad = L * MASON.pitch / 2 + 1;
+    if (passes.flat().some((g) => Math.abs(x - g.x) < rad + 4 && Math.abs(z - g.z) < 8)) continue;
+    if (spawns.some((sp) => Math.hypot(x - sp.x, z - sp.z) < rad + 3)) continue;
+    if (ponds.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 2)) continue;
+    if (rocks.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 1.5)) continue;
+    if (roadDist(x, z) < rad + 2.5) continue;
+    if (town.some((q) => Math.hypot(x - q.x, z - q.z) < rad + Math.max(q.nx, q.nz) * MASON.pitch / 2 + 2)) continue;
+    if (Math.abs(z - streamV) < rad + 9) continue;
+    town.push({ id: "fwall" + placed, x, z, nx, nz, ny: H, door: -1, roof: false });
+    placed++;
+  }
+```
+
+**Step 4 — buildTown learns the shapes.** `src/depot/DepotGame.jsx`, the lattice loop (lines 544–556). The loop head gains the derived column test, and the skip chain gains three lines (slab roof, drive doors) — everything else in the loop stays byte-identical:
+```js
+  for (const t of TOWN) {
+    const grid3 = [], base = field.heightAt(t.x, t.z) + hcs + 0.02;
+    // T4: interior columns — derived from the LIVE (rotation-swapped) dims,
+    // the proving grounds' warehouse rule: a third in from each end, mirrored.
+    // Derived, never stored: both swaps rotate the building under the rule.
+    const colAt = t.cols
+      ? (() => {
+          const c1x = Math.floor(t.nx / 3), c1z = Math.floor(t.nz / 3);
+          const c2x = t.nx - 1 - c1x, c2z = t.nz - 1 - c1z;
+          return (ix, iz) => (ix === c1x && iz === c1z) || (ix === c2x && iz === c2z);
+        })()
+      : () => false;
+    // T4: drive doors run down the LONG axis — derived from live dims too.
+    const driveZ = t.drive && t.nz >= t.nx;
+    for (let ix = 0; ix < t.nx; ix++) for (let iy = 0; iy <= t.ny; iy++) for (let iz = 0; iz < t.nz; iz++) {
+      const perim = ix === 0 || ix === t.nx - 1 || iz === 0 || iz === t.nz - 1;
+      const corner = (ix <= 1 || ix >= t.nx - 2) && (iz <= 1 || iz >= t.nz - 2);
+      if (iy < t.ny && !perim && !colAt(ix, iz)) continue;
+      if (iy === t.ny && (t.roof === false || t.slab)) continue; // T4: a slab replaces the granular roof below
+      if (ix === t.door && (iz === 1 || iz === 2) && iy <= 2) continue;
+      // T4: drive-through — doors carved through BOTH end walls of the long
+      // axis, full width bar the corners, every course but the top lintel.
+      if (t.drive && iy < t.ny - 1 && (driveZ
+        ? (iz === 0 || iz === t.nz - 1) && ix >= 1 && ix <= t.nx - 2
+        : (ix === 0 || ix === t.nx - 1) && iz >= 1 && iz <= t.nz - 2)) continue;
+      if (t.depot && iy === t.ny && perim && !corner && (ix + iz) % 2) continue;
+      if (t.ruin && ((ix * 31 + iy * 17 + iz * 7) % 100) / 100 < t.ruin && iy > 0) continue;
+```
+Then THE SLAB — inserted after the weld loop (after line 591's closing brace) and before the footprint claim (line 592), so its sentinel grid position never enters the neighbor map:
+```js
+    // T4: THE SLAB — one rigid 800kg roof plate, sized inside the wall ring
+    // with the standard ~2cm joint, welded to the top two courses (the
+    // proving grounds' proven form: 1-hop convergence, pancakes whole when
+    // the ring shears). It joins stones/n0 so a fallen roof counts as ruin.
+    if (t.slab) {
+      const shx = ((t.nx - 1) / 2) * pitch - hcs - 0.02;
+      const shz = ((t.nz - 1) / 2) * pitch - hcs - 0.02;
+      const slab = addBody(world, {
+        kind: "chunk", team: 0, mass: 800, hx: shx, hy: 0.2, hz: shz,
+        x: t.x, y: base + (t.ny - 1) * pitch + 0.2, z: t.z,
+        friction: 0.65, restitution: 0.02,
+      });
+      slab.sleeping = true; slab.town = t.id; slab.gpos = [-1, t.ny, -1];
+      for (const c of grid3) if (c.gpos[1] >= t.ny - 2) addWeld(world, slab, c, townBreakF);
+      grid3.push(slab);
+    }
+```
+
+**Step 5 — the town debug hook.** Beside `__DEPOTFLAGS__` (line ~2488) — the Pi capture aims by it:
+```js
+      window.__DEPOTTOWN__ = () => TOWN.map((t) => ({ id: t.id, x: +t.x.toFixed(2), z: +t.z.toFixed(2), nx: t.nx, nz: t.nz, ny: t.ny, slab: !!t.slab, cols: !!t.cols }));
+```
+And `"__DEPOTTOWN__"` joins the cleanup delete list (line 3295).
+
+**Step 6 — the chunk pool rises.** `src/render/renderer.js` line 749–755 — the cap becomes 3000 and the comment tells the new truth (keep the mk-history sentences, append):
+```js
+  // T4 (mk1.03, owner's ruling): 2000 -> 3000. The proving-grounds forms
+  // (2-4 big buildings, columns in the wide templates, field walls) push a
+  // dense seed's boot stones past the old pool. The Pi collapse capture is
+  // the judge of the raised cap; the stones counter stays the alarm.
+  const CHUNK_CAP = 3000;
+```
+The pool allocation, draw loop, and HUD counter all read this one constant — nothing else changes.
+
+**Step 7 — green, bump, build, smoke.** `npm run lint:depot` · `npm run test:depot` fully green (zero re-pins) · `src/version.js` → `"mk1.03"` · `npm run build` AFTER the bump · `SMOKE_ONLY=depot npm run smoke`.
+
+**Step 8 — the Pi collapse capture.** Write `.superpowers/diag-t4-collapse.mjs` (untracked scratch, the body-lists capture's pattern): serve the built bundle (`npm run preview`), drive headful Chromium at `?seed=<S>&perf=1` where S is a T4(a) sweep seed carrying a hangar (report which). `__DEPOTSTART__()`, 10 seconds idle, snapshot `__DEPOTPERF__` (baseline). Find the hangar via `__DEPOTTOWN__()`, fire 40 `__DEPOTSHELL__` rounds walked along its two long walls over ~6 seconds, run 12 more seconds, snapshot again. Report baseline vs collapse-window mean, median, and worst `sim` ms, plus the stones counter at peak. **STOP-and-report before commit if the collapse-window median sim exceeds 16ms** — the cap ruling goes back to the owner with the numbers.
+
+**Gates (ONLY these):** parse changed files · `npm run lint:depot` · `npm run test:depot` (Step 1 red-first, then green; zero re-pins) · `npm run build` after the bump · `SMOKE_ONLY=depot` smoke · the Step 8 Pi capture (numbers in the report). Allowed files: `src/depot/DepotGame.jsx`, `src/render/renderer.js`, `scripts/depot-test.mjs`, `src/version.js` (plus the untracked `.superpowers/diag-t4-collapse.mjs`). Commit `"buildings of the proving grounds: slabs, columns, field walls (mk1.03)"`, push, CI green, STOP. The owner checks the deployed site across seeds: hangars with open drive-throughs, a shelled hangar's roof pancaking in one piece, a warehouse dropping when its columns go, field walls as cover with the assault bending around them.
 
 ---
 
