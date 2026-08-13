@@ -712,14 +712,24 @@ const P = {
 // arc over the anchor; the next phase docks TAKE CONTROL into the same
 // ring, which is why the geometry is data, not layout.
 function RadialMenu({ cx, cy, label, slots, armed }) {
-  const N = slots.length, RAD = 78;
-  const span = Math.min(2.4, 0.7 * Math.max(1, N - 1));
+  // mk0.81 (owner: "radial menus don't have button overlaps"): slots are
+  // spaced by each button's WIDTH along the arc, not by a fixed angle — the
+  // ring's radius grows until every label fits with margin, so buttons can
+  // never collide whatever their text. Width is estimated from the label
+  // (monospace ~7.2px/char + padding); the arc is capped at ~150° overhead.
+  const GAP = 12, MAXSPAN = 2.6;
+  const widths = slots.map((s) => s.label.length * 7.2 + 26 + GAP);
+  const total = widths.reduce((a, b) => a + b, 0);
+  const RAD = Math.max(88, (total * 1.12) / MAXSPAN);
+  const span = total / RAD;
   const a0 = -Math.PI / 2 - span / 2;
+  let acc = 0;
   return (
     <div style={{ position: "absolute", left: 0, top: 0, zIndex: 7, pointerEvents: "none" }}>
       <div style={{ position: "absolute", left: cx, top: cy + 26, transform: "translate(-50%,0)", fontSize: 10, letterSpacing: 1, color: "#7dffa8", background: "rgba(14,18,24,0.85)", padding: "1px 6px", borderRadius: 4 }}>{label}</div>
       {slots.map((s, i) => {
-        const a = N === 1 ? -Math.PI / 2 : a0 + (span * i) / (N - 1);
+        const a = a0 + (acc + widths[i] / 2) / RAD;
+        acc += widths[i];
         const x = cx + Math.cos(a) * RAD, y = cy + Math.sin(a) * RAD;
         return (
           <button key={s.key} data-radial={s.key}
