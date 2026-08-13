@@ -501,7 +501,10 @@ export function stepSquad(world, squad, dt) {
   // the game layer does to a build squad's movement is set squad._pauseT to
   // hold it at a wall — the SAME dwell field an attack leg-pause uses, so the
   // hold rides existing machinery and adds no rng draw of its own.
-  if ((squad.order === "attack" || squad.order === "move" || squad.order === "build") && squad.dest) {
+  // COMMAND T3 (mk0.85): patrol rides the identical leg machine too — a
+  // squad that never arrives, only turns around (the ARRIVE_TOL branch
+  // below), so the same dest-driven advance carries it both ways.
+  if ((squad.order === "attack" || squad.order === "move" || squad.order === "build" || squad.order === "patrol") && squad.dest) {
     const cx = squad.anchor.x, cz = squad.anchor.z;
     const dToDest = Math.hypot(squad.dest.x - cx, squad.dest.z - cz);
     // F1 Task 4.5: a sapper squad's ATTACK completes when the charges are
@@ -519,6 +522,14 @@ export function stepSquad(world, squad, dt) {
       // seeking their formation slots — clearSlot pushes those to the
       // nearest clear ground, which at a depot dest is right at the walls,
       // i.e. into arm's reach.
+      squad._legTarget = null;
+      squad._cohesionHoldT = 0;
+    } else if (dToDest <= ARRIVE_TOL && squad.order === "patrol") {
+      // COMMAND T3 (mk0.85): a patrol never arrives — it turns around. The
+      // far end becomes the destination and the legs carry on; the leg
+      // machinery (and its one arrival draw per leg) is untouched.
+      const goingToB = Math.hypot(squad.dest.x - squad._patB.x, squad.dest.z - squad._patB.z) < 0.5;
+      squad.dest = goingToB ? { x: squad._patA.x, z: squad._patA.z } : { x: squad._patB.x, z: squad._patB.z };
       squad._legTarget = null;
       squad._cohesionHoldT = 0;
     } else if (dToDest <= ARRIVE_TOL) {

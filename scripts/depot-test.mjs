@@ -37,7 +37,7 @@ import { makeTerritory, stepTerritory, holderAt, fogStateAt, valueAt, canBuild, 
 import { SIGHT, eyeOf, canSee, fillMaps, gridEye, makeSight, seenAt, stepSight } from "../src/depot/sight.js";
 import { fwdUFor, fwdDirFor, invWFor, clampToRimFor } from "../src/depot/orient.js";
 import { washAlpha, WASH_SEAM, WASH_MAX_A } from "../src/render/renderer.js";
-import { serializeFront, parseFront, restoreBodies } from "../src/depot/save.js";
+import { serializeFront, parseFront, restoreBodies, restoreSquads } from "../src/depot/save.js";
 import fs from "node:fs";
 
 // identity fwdDir (DepotGame.jsx's ORIENT-aware transform, ORIENT===0 case)
@@ -3988,7 +3988,15 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   // path end to end without a screen to tap the confirm button on.
   const orderBody = (dsrc.match(/window\.__DEPOTORDER__ = \(id, kind, pts\) => \{[\s\S]*?\n      window\.__DEPOTFOCUS__ = \(x, z, zoom\) => \{/) || [""])[0];
   ok("COMMAND T2(c): __DEPOTORDER__ auto-accepts a proposed line (S.acceptLine())",
-    /if \(S\.linePending\) S\.acceptLine\(\);/.test(orderBody));
+    /if \(S\.linePending\) \{ S\.linePending\.armedAt = world\.t; S\.acceptLine\(\); \}/.test(orderBody));
+  // AUDIT FIX (mk0.85): the mk0.84 auto-accept no-opped — the pending's
+  // armedAt was set THIS tick to world.t + PENDING_ARM_S, so acceptLine's
+  // own pendingArmed(lp, world.t) gate always failed and silently swallowed
+  // the accept. Staging has no trailing tap to guard against, so the fix
+  // backdates the arm before accepting. Pinned directly, not just via (c)'s
+  // re-pin above.
+  ok("COMMAND T2(c) AUDIT FIX (mk0.85): __DEPOTORDER__ backdates armedAt before accepting a staged line",
+    /S\.linePending\.armedAt = world\.t/.test(orderBody));
 
   // (d) the renderer overlay carries setLinePreview — the game-layer-only
   // furniture the brief said this file may grow (setReach's family).
@@ -4021,6 +4029,195 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 }
 // ==== end COMMAND T2 ==========================================================
+
+// ==== COMMAND T3: patrol ======================================================
+// mk0.85. Two taps propose a route through Task 2's proposed-line confirm
+// (kind "patrol": discs + dashed line, no ghost pieces — linePieces already
+// returns [] for "patrol"). Accept and the squad walks A->B->A forever,
+// fighting per the halt-and-fight rule (VISION T4, mk0.74). The order fields
+// are set directly on the fixtures below — the tap interface (S.orderSquad,
+// consumeOrderTap, acceptLine's patrol arm) is DepotGame.jsx game-layer code,
+// already pinned by (f) and by Task 2's COMMAND T2 pins.
+{
+  const idUV = (x, z) => ({ u: x, v: z });
+  const idW = (u, v) => ({ x: u, z: v });
+  const flat = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+
+  // (a) the loop is real: starting off the line, the squad is observed near
+  // A, then later near B (it turned around), then later near A again —
+  // three sampled epochs, order-independent of exact timing (watches for
+  // the anchor crossing near-A/near-B thresholds in sequence, generous tick
+  // budget) rather than predicting arrival ticks.
+  {
+    const world = makeWorld({ field: flat, seed: 5 });
+    world.dt = 1 / 60;
+    const sq = makeSquad(1, "rifles", 1, 0, 10);
+    spawnSquadMembers(world, sq);
+    sq.order = "patrol"; sq._patA = { x: 0, z: 0 }; sq._patB = { x: 0, z: 30 }; sq.dest = { x: 0, z: 0 };
+    let sawA = false, sawB = false, sawA2 = false;
+    for (let i = 0; i < 6000 && !sawA2; i++) {
+      stepSquad(world, sq, world.dt);
+      stepWorld(world);
+      if (!sawA && sq.anchor.z < 2) sawA = true;
+      else if (sawA && !sawB && sq.anchor.z > 25) sawB = true;
+      else if (sawB && !sawA2 && sq.anchor.z < 2) sawA2 = true;
+    }
+    ok("COMMAND T3(a): the patrol reaches the near end (A)", sawA);
+    ok("COMMAND T3(a): later it is observed near the far end (B) — it turned around", sawB);
+    ok("COMMAND T3(a): later still it is back near A — the loop is real and endless", sawA2);
+  }
+
+  // (b) an enemy beside the patrol line gets fired on and the anchor holds
+  // while he lives — halt-and-fight (VISION T4, mk0.74) applies to patrol.
+  // Mirrors VISION T4(a)'s idiom exactly, order "patrol" in place of
+  // "attack" — engageCheck (DepotGame.jsx, game-layer) is mirrored here,
+  // updated for COMMAND T3's patrol gate (3.3); squadFire and stepSquad are
+  // the real imports, already carrying the state.js/squads.js edits.
+  const ENGAGE_CHECK_S = 0.2, ENGAGE_HOLD_S = 0.35;
+  const makeEngageCheck = (world, T, invW) => (sq) => {
+    if ((sq.order !== "attack" && sq.order !== "patrol") || sq.type === "sappers" || sq.type === "engineers") return;
+    sq._engageCd = (sq._engageCd || 0) - world.dt;
+    if (sq._engageCd > 0) return;
+    sq._engageCd = ENGAGE_CHECK_S;
+    const arms = INFANTRY_ARMS[sq.type];
+    if (!arms) return;
+    const R2 = arms.range * arms.range;
+    for (const e of world.bodies) {
+      if ((e.kind !== "unit" && e.kind !== "vehicle") || !e.alive || e.team !== 2) continue;
+      const dx = e.pos.x - sq.anchor.x, dz = e.pos.z - sq.anchor.z;
+      if (dx * dx + dz * dz > R2) continue;
+      const c = invW(e.pos.x, e.pos.z);
+      if (!fieldReaches(T, c.u, c.v, 1)) continue;
+      sq._pauseT = Math.max(sq._pauseT || 0, ENGAGE_HOLD_S);
+      return;
+    }
+  };
+  {
+    const world = makeWorld({ field: flat, seed: 12 });
+    world.dt = 1 / 60;
+    const sq = makeSquad(1, "rifles", 1, 0, 0);
+    spawnSquadMembers(world, sq);
+    sq.order = "patrol"; sq._patA = { x: 0, z: 0 }; sq._patB = { x: 0, z: 30 }; sq.dest = { x: 0, z: 30 };
+    addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 8, y: 0.86, z: 12, hp: 58 });
+    const T = makeTerritory(29, 57);
+    T.sight = makeSight(T);
+    const engageCheck = makeEngageCheck(world, T, idUV);
+    let muzzles = 0, anchorAt1s = null;
+    for (let i = 0; i < 60; i++) {
+      stepSight(world, T.sight, idUV, idW);
+      engageCheck(sq);
+      const before = world.projectiles.length;
+      stepSquad(world, sq, world.dt);
+      squadFire(world, sq, world.dt, T, idUV);
+      if (world.projectiles.length > before) muzzles += world.projectiles.length - before;
+      stepWorld(world);
+      if (i === 59) anchorAt1s = sq.anchor.z;
+    }
+    ok("COMMAND T3(b): a patrol halts within a second of seeing an enemy in reach (anchor well short of the 3.2m unhalted march)",
+      anchorAt1s < 1.0, `anchor.z=${anchorAt1s.toFixed(2)}`);
+    ok("COMMAND T3(b): and fires on him (muzzle events)", muzzles > 0, `muzzles=${muzzles}`);
+  }
+
+  // (c) MOVE and BUILD squads still never fire — pinned unchanged.
+  {
+    const mkQuiet = (order) => {
+      const world = makeWorld({ field: flat, seed: 3 });
+      const sq = makeSquad(1, "rifles", 1, 0, 0);
+      spawnSquadMembers(world, sq);
+      sq.order = order; sq.dest = { x: 0, z: 30 };
+      addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 2, y: 0.86, z: 0, hp: 58 });
+      const T = makeTerritory(29, 57);
+      T.sight = makeSight(T);
+      stepSight(world, T.sight, idUV, idW);
+      squadFire(world, sq, 1 / 60, T, idUV);
+      return world.projectiles.length;
+    };
+    ok("COMMAND T3(c): a MOVE squad still never fires", mkQuiet("move") === 0);
+    ok("COMMAND T3(c): a BUILD squad still never fires", mkQuiet("build") === 0);
+  }
+
+  // (d) dice law: patrol reuses attack's leg machine verbatim (squads.js
+  // :543, unedited) — the same 30m double-time crossing draws the same
+  // number of times whichever order carries it. Twin run: an ATTACK squad
+  // and a PATROL squad crossing the identical A->B path, no enemies (so
+  // both double-time straight at MOVE_SPEED, no threatened cover-hop, no
+  // dwell) — draws land exactly at each 9m leg boundary (HOP_R*1.5) and
+  // nowhere else; the final partial leg settles inside ARRIVE_TOL before any
+  // ld<0.3 draw site is reached, so 30m draws exactly 3 times (9/18/27m).
+  {
+    const drawsFor = (order) => {
+      const world = makeWorld({ field: flat, seed: 9 });
+      world.dt = 1 / 60;
+      const sq = makeSquad(1, "rifles", 1, 0, 0);
+      spawnSquadMembers(world, sq);
+      sq.order = order;
+      if (order === "patrol") { sq._patA = { x: 0, z: 0 }; sq._patB = { x: 0, z: 30 }; }
+      sq.dest = { x: 0, z: 30 };
+      let draws = 0;
+      const raw = world.rng;
+      world.rng = () => { draws++; return raw(); };
+      for (let i = 0; i < 6000; i++) {
+        stepSquad(world, sq, world.dt);
+        stepWorld(world);
+        if (order === "attack" && sq.order === "defend") break;         // arrived, no turnaround
+        if (order === "patrol" && Math.abs(sq.dest.z - 30) > 0.5) break; // turned around: A->B leg done
+      }
+      return draws;
+    };
+    const attackDraws = drawsFor("attack"), patrolDraws = drawsFor("patrol");
+    ok("COMMAND T3(d): a patrol crossing the same ground draws exactly what an attack draws (shared leg machine, no extra rng)",
+      attackDraws === patrolDraws && attackDraws > 0, `attack=${attackDraws} patrol=${patrolDraws}`);
+    ok("COMMAND T3(d): and that count is exactly the number of legs (3 nine-metre hops over 30m; the final partial leg settles inside ARRIVE_TOL before any draw)",
+      patrolDraws === 3, `patrol=${patrolDraws}`);
+  }
+
+  // (e) save/resume: a patrolling squad comes back patrolling — order, both
+  // endpoints and the current destination all ride (plain scalars through
+  // save.js's generic squad serializer, same convention COMMAND T1(c) pins
+  // for tower.discipline).
+  {
+    const field = makeField(9, 2.0, 1);
+    const world = makeWorld({ field, seed: 1 });
+    const sq = makeSquad(1, "rifles", 1, 0, 5);
+    spawnSquadMembers(world, sq);
+    sq.order = "patrol"; sq._patA = { x: 0, z: 0 }; sq._patB = { x: 0, z: 30 }; sq.dest = { x: 0, z: 30 };
+    const T = makeTerritory(5, 5);
+    const S = {
+      bell: 0, resources: 0, kills: 0, spawnRR: 0, started: false, mode: "wall", sandbagOrient: 0,
+      nextSquadId: 2, zoom: 1, focus: { x: 0, z: 0 }, depotCensusAcc: 0, depotStanding: 1, enemyStanding: 1,
+      starvedStreak: 0, _reportedBreak: false, _reportedSpent: false,
+      manifest: {}, foe: {}, intelUp: false, intelArmedAt: 0, lastDispatch: null,
+      pendingPlan: null, intelPlan: null, ws: {}, reg: {}, squads: [sq],
+    };
+    const json = serializeFront({ S, world, T, town: [], census: [], census2: [], rocks: [], smears: [], mapSeed: 1, rngSeed: 1 });
+    const parsed = parseFront(json);
+    ok("COMMAND T3(e): the save round-trip parses back", parsed.ok, parsed.reason);
+    const world2 = makeWorld({ field: makeField(9, 2.0, 1), seed: 1 });
+    const bodies2 = parsed.ok ? restoreBodies(world2, parsed.data, []) : [];
+    const squads2 = parsed.ok ? restoreSquads(parsed.data, bodies2) : [];
+    const sq2 = squads2[0];
+    ok("COMMAND T3(e): a patrolling squad comes back patrolling",
+      !!sq2 && sq2.order === "patrol", sq2 && sq2.order);
+    ok("COMMAND T3(e): both endpoints ride the round-trip",
+      !!sq2 && sq2._patA && sq2._patA.x === 0 && sq2._patA.z === 0 && sq2._patB && sq2._patB.x === 0 && sq2._patB.z === 30,
+      sq2 && JSON.stringify([sq2._patA, sq2._patB]));
+    ok("COMMAND T3(e): the current destination rides the round-trip",
+      !!sq2 && sq2.dest && sq2.dest.x === 0 && sq2.dest.z === 30, sq2 && JSON.stringify(sq2.dest));
+  }
+
+  // (f) pin — acceptLine's patrol arm sets _patA/_patB/order/dest. Source
+  // regex, the same convention COMMAND T2(a)/(b) use for this JSX-only file.
+  {
+    const dsrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    const acceptBody = (dsrc.match(/const acceptLine = \(\) => \{[\s\S]*?\n      const rejectLine = \(\) => \{/) || [""])[0];
+    ok("COMMAND T3(f): acceptLine's patrol arm sets _patA, _patB, order and dest",
+      /sq\._patA = \{ x: lp\.a\.x, z: lp\.a\.z \};/.test(acceptBody) &&
+      /sq\._patB = \{ x: lp\.b\.x, z: lp\.b\.z \};/.test(acceptBody) &&
+      /sq\.order = "patrol";/.test(acceptBody) &&
+      /sq\.dest = \{ x: lp\.a\.x, z: lp\.a\.z \};/.test(acceptBody));
+  }
+}
+// ==== end COMMAND T3 ==========================================================
 
 
 

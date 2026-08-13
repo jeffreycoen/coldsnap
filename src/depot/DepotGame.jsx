@@ -610,7 +610,9 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
     // Throttled like every scan in this codebase; deterministic.
     const ENGAGE_CHECK_S = 0.2, ENGAGE_HOLD_S = 0.35;
     const engageCheck = (sq) => {
-      if (sq.order !== "attack" || sq.type === "sappers" || sq.type === "engineers") return;
+      // COMMAND T3 (mk0.85): a patrol that sees an enemy in reach halts and
+      // fights exactly as an attack does — same hold, same fields.
+      if ((sq.order !== "attack" && sq.order !== "patrol") || sq.type === "sappers" || sq.type === "engineers") return;
       sq._engageCd = (sq._engageCd || 0) - world.dt;
       if (sq._engageCd > 0) return;
       sq._engageCd = ENGAGE_CHECK_S;
@@ -1474,6 +1476,14 @@ export default function DepotGame({ onExit, resume = null }) {
           if (sq.type !== "engineers") return;
           if (S.orderMode === kind) { S.orderMode = null; S.buildPt0 = null; return; }
           S.orderMode = kind; S.buildPt0 = null;
+        } else if (kind === "patrol") {
+          // COMMAND T3 (mk0.85): the same two-tap flow the build orders use —
+          // no type restriction here (the pie only offers the wedge to
+          // squads that aren't engineers or sappers; consumeOrderTap's
+          // patrol branch trusts that, same as 2.4's build branch did with
+          // its engineer guard).
+          if (S.orderMode === kind) { S.orderMode = null; S.buildPt0 = null; return; }
+          S.orderMode = kind; S.buildPt0 = null;
         }
       };
 
@@ -1608,7 +1618,16 @@ export default function DepotGame({ onExit, resume = null }) {
         S.linePending = null;
         R.overlay.setLinePreview(false);
         if (sq) {
-          if (lp.kind === "patrol") { /* Task 3 fills this arm */ }
+          if (lp.kind === "patrol") {
+            // COMMAND T3 (mk0.85): accept arms the loop — the near end (A)
+            // becomes the first destination, and stepSquad's turnaround
+            // branch carries the squad back and forth forever from here.
+            sq._patA = { x: lp.a.x, z: lp.a.z };
+            sq._patB = { x: lp.b.x, z: lp.b.z };
+            sq.order = "patrol";
+            sq.dest = { x: lp.a.x, z: lp.a.z };   // walk to the near end first
+            sq._legTarget = null; sq._pauseT = 0; sq._cohesionHoldT = 0; sq._build = null;
+          }
           else startBuildLine(sq, lp.kind, lp.a, lp.b);
         }
         S.selSquadId = null; S.orderMode = null; S.buildPt0 = null;
@@ -1733,6 +1752,19 @@ export default function DepotGame({ onExit, resume = null }) {
           // COMMAND T2 (mk0.84): the second tap PROPOSES — S.linePending goes
           // up, the squad stays selected, and nothing walks until acceptLine.
           S.linePending = { kind: om === "build_walls" ? "walls" : "bags", sq: osq.id,
+            a: { x: S.buildPt0.x, z: S.buildPt0.z }, b: { x: d.x, z: d.z },
+            moving: null, armedAt: world.t + PENDING_ARM_S };
+          S.buildPt0 = null; S.orderMode = null;
+          refreshLinePreview();
+          return true;
+        }
+        if (om === "patrol") {
+          // COMMAND T3 (mk0.85): same shape as the build branch above, kind
+          // "patrol", no engineer guard — every squad type the pie offers
+          // this wedge to (not engineers, not sappers) rides it.
+          if (!osq) { S.orderMode = null; S.buildPt0 = null; S.selSquadId = null; return true; }
+          if (!S.buildPt0) { S.buildPt0 = { x: d.x, z: d.z }; toast("PATROL START — TAP THE FAR END"); return true; }
+          S.linePending = { kind: "patrol", sq: osq.id,
             a: { x: S.buildPt0.x, z: S.buildPt0.z }, b: { x: d.x, z: d.z },
             moving: null, armedAt: world.t + PENDING_ARM_S };
           S.buildPt0 = null; S.orderMode = null;
@@ -2297,7 +2329,13 @@ export default function DepotGame({ onExit, resume = null }) {
         // COMMAND T2 (mk0.84): the debug path auto-accepts what a human tap
         // would still have to confirm — staging keeps driving the real order
         // path end to end without a screen to tap the ✓ on.
-        if (S.linePending) S.acceptLine();
+        // AUDIT FIX (mk0.85): acceptLine gates on pendingArmed, and the
+        // pending was created THIS tick with armedAt = world.t + PENDING_ARM_S
+        // — the old auto-accept always missed its own arming window and
+        // silently no-opped. The arming guard protects a human's trailing
+        // tap; the staging path has no trailing tap, so backdate the arm,
+        // then accept.
+        if (S.linePending) { S.linePending.armedAt = world.t; S.acceptLine(); } // staging has no trailing tap — backdate the arm, then accept
         return { order: sq.order, dest: sq.dest, armed: S.orderMode, pt0: S.buildPt0,
           build: sq._build ? { kind: sq._build.kind, cells: sq._build.rows.length, phase: sq._build.phase, orient: sq._build.orient } : null };
       };
@@ -2778,6 +2816,12 @@ export default function DepotGame({ onExit, resume = null }) {
                   engineer: sq.type === "engineers",
                   building: S.orderMode === "build_bags" ? "bags" : S.orderMode === "build_walls" ? "walls" : null,
                   buildStart: !!S.buildPt0,
+                  // COMMAND T3 (mk0.85): PATROL rides every squad type
+                  // except engineers and sappers (tools, not shooters — the
+                  // wedge would order them to walk a line they never fight
+                  // on).
+                  patrolOk: sq.type !== "engineers" && sq.type !== "sappers",
+                  aimingPatrol: S.orderMode === "patrol",
                   // COMMAND T2 (mk0.84): the squad stays selected while its
                   // line is up for confirmation — the center chip says so.
                   linePending: !!S.linePending };
@@ -3095,6 +3139,12 @@ export default function DepotGame({ onExit, resume = null }) {
           { key: "move", icon: "→", label: "MOVE", color: "#7fd7ff", on: sq.aimingMove || sq.order === "move", act: () => stateRef.current && stateRef.current.orderSquad("move") },
           { key: "attack", icon: "⚑", label: "ATTACK", color: "#ff6b5e", on: sq.aiming, act: () => stateRef.current && stateRef.current.orderSquad("attack") },
         ];
+        // COMMAND T3 (mk0.85): PATROL — two taps propose a route through the
+        // same proposed-line confirm the build orders use; accept and the
+        // squad walks it forever. Every type except engineers and sappers.
+        if (sq.patrolOk) {
+          slots.push({ key: "patrol", icon: "⇄", label: "PATROL", color: "#7fd7ff", on: sq.aimingPatrol || sq.order === "patrol", act: () => stateRef.current && stateRef.current.orderSquad("patrol") });
+        }
         if (sq.engineer) {
           slots.push(
             { key: "build_bags", icon: "▬", label: "BAGS", color: "#ffd27a", on: sq.building === "bags", act: () => stateRef.current && stateRef.current.orderSquad("build_bags") },
@@ -3107,6 +3157,10 @@ export default function DepotGame({ onExit, resume = null }) {
         const status = sq.linePending ? " — ACCEPT OR ADJUST THE LINE"
           : sq.building
           ? (sq.buildStart ? " — TAP THE FAR END" : " — TAP THE LINE START")
+          // COMMAND T3 (mk0.85): patrol's two-tap status rides the same
+          // S.buildPt0 field the build orders' status does.
+          : sq.aimingPatrol
+          ? (sq.buildStart ? " — TAP THE FAR END" : " — TAP THE PATROL START")
           : sq.aiming || sq.aimingMove ? " — TAP GROUND" : "";
         // COMMAND 1b (mk0.82): pie open -> the wedge disc; pie closed but
         // still selected (an aiming order armed) -> the center label chip

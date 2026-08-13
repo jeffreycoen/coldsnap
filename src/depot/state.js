@@ -506,7 +506,10 @@ export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })
   if (!spec) return;
   // mk0.28: "move" is never a firing order — the men double-time with
   // weapons quiet, pause or no pause, until arrival flips them to defend.
-  const stationary = squad.order === "defend" || (squad.order === "attack" && squad._pauseT > 0);
+  // COMMAND T3 (mk0.85): patrol fires exactly like attack — quiet on the
+  // march, live at a halt (leg-pause dwell or the engageCheck hold).
+  const stationary = squad.order === "defend" ||
+    ((squad.order === "attack" || squad.order === "patrol") && squad._pauseT > 0);
   if (!stationary) return;
   const enemyTeam = squad.team === 1 ? 2 : 1;
   const attacker = squad.team === 1 ? "player" : "enemy";
