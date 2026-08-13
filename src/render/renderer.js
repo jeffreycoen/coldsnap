@@ -752,7 +752,11 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // guard and this allocation had drifted apart). If the map ever exceeds
   // this again, the on-screen stones counter (DepotGame HUD) shows it
   // saturating — that readout is the alarm.
-  const CHUNK_CAP = 2000;
+  // T4 (mk1.03, owner's ruling): 2000 -> 3000. The proving-grounds forms
+  // (2-4 big buildings, columns in the wide templates, field walls) push a
+  // dense seed's boot stones past the old pool. The Pi collapse capture is
+  // the judge of the raised cap; the stones counter stays the alarm.
+  const CHUNK_CAP = 3000;
   let chunkStats = { drawn: 0, cap: CHUNK_CAP, total: 0 };
   const chunkMesh = pool(chunkGeo, toon(0xa6b2c0), CHUNK_CAP, true);
   chunkMesh.receiveShadow = true;

@@ -151,11 +151,11 @@ function genMap(seed) {
     ponds.push({ x, z, r: rad, level: 0 });
   }
   const TPL = [
-    { t: "croft", nx: 4, nz: 3, ny: 3 }, { t: "house", nx: 6, nz: 5, ny: 4 },
-    { t: "house", nx: 5, nz: 4, ny: 4 }, { t: "long", nx: 8, nz: 4, ny: 3 },
+    { t: "croft", nx: 4, nz: 3, ny: 3 }, { t: "house", nx: 6, nz: 5, ny: 4, cols: true },
+    { t: "house", nx: 5, nz: 4, ny: 4 }, { t: "long", nx: 8, nz: 4, ny: 3, cols: true },
     { t: "watch", nx: 2, nz: 2, ny: 8 }, { t: "granary", nx: 3, nz: 3, ny: 7 },
     { t: "yard", nx: 6, nz: 5, ny: 2, roof: false }, { t: "shed", nx: 4, nz: 4, ny: 3 },
-    { t: "chapel", nx: 5, nz: 6, ny: 5 }, { t: "keep", nx: 7, nz: 6, ny: 5 },
+    { t: "chapel", nx: 5, nz: 6, ny: 5, cols: true }, { t: "keep", nx: 7, nz: 6, ny: 5, cols: true },
   ];
   // T2: both depots at their DRAWN positions — same lattice, same template.
   const town = [
@@ -173,11 +173,39 @@ function genMap(seed) {
     ponds.some((q) => Math.hypot(d.x - q.x, d.z - q.z) < q.r + dHalfDiag) ||
     rocks.some((q) => Math.hypot(d.x - q.x, d.z - q.z) < q.r + dHalfDiag);
   const depotFoul = dFoul(town[0], false) || dFoul(town[1], true);
+  // T4: THE BIG FORMS (owner's ruling: 2-4 per map) — the proving grounds'
+  // slab-roof drive-through hangar and columned warehouse, placed before the
+  // benches so the landmarks go down first and the benches fill around them.
+  // The shape flags (slab/drive/cols) are read by buildTown.
+  const BIG = [
+    { t: "hangar", nx: 9, nz: 10, ny: 5, slab: true, drive: true },
+    { t: "warehouse", nx: 8, nz: 6, ny: 4, cols: true },
+  ];
+  let bid = 0;
+  const nBig = 2 + Math.floor(r() * 3);
+  for (let k = 0, placed = 0; k < 120 && placed < nBig; k++) {
+    const tpl = BIG[Math.floor(r() * BIG.length)];
+    const swap = r() < 0.5;
+    const nx = swap ? tpl.nz : tpl.nx, nz = swap ? tpl.nx : tpl.nz;
+    const x = -48 + r() * 96;
+    const z = -44 + r() * 84;
+    const rad = Math.max(nx, nz) * MASON.pitch / 2 + 2;
+    if (passes.flat().some((g) => Math.abs(x - g.x) < rad + 4 && Math.abs(z - g.z) < 12)) continue;
+    if (spawns.some((sp) => Math.hypot(x - sp.x, z - sp.z) < rad + 4)) continue;
+    if (ponds.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 3)) continue;
+    if (rocks.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 1.5)) continue;
+    if (roadDist(x, z) < rad + 3) continue;
+    if (town.some((q) => Math.hypot(x - q.x, z - q.z) < rad + Math.max(q.nx, q.nz) * MASON.pitch / 2 + 2.5)) continue;
+    if (Math.abs(z - streamV) < rad + 9) continue;
+    town.push({ id: tpl.t + bid++, x, z, nx, nz, ny: tpl.ny,
+      door: tpl.drive ? -1 : (r() < 0.5 ? 0 : nx - 1),
+      slab: tpl.slab, drive: tpl.drive, cols: tpl.cols });
+    placed++;
+  }
   // T2: benches between consecutive bands, plus the last band to depot ground.
   const benches = [];
   for (let i = 0; i + 1 < bands.length; i++) benches.push([bands[i] + 8, bands[i + 1] - 7]);
   benches.push([bands[bands.length - 1] + 8, depotDepth - 8]);
-  let bid = 0;
   for (let bi = 0; bi < benches.length; bi++) {
     const want = 2 + Math.floor(r() * 4);
     for (let k = 0, placed = 0; k < 90 && placed < want; k++) {
@@ -193,7 +221,7 @@ function genMap(seed) {
       if (town.some((q) => Math.hypot(x - q.x, z - q.z) < rad + Math.max(q.nx, q.nz) * MASON.pitch / 2 + 2.5)) continue;
       if (Math.abs(z - streamV) < rad + 9) continue; // T3: bench buildings stay clear of the stream
       const decay = r() < 0.2 ? 0.12 + r() * 0.3 : 0;
-      town.push({ id: tpl.t + bid++, x, z, nx, nz, ny: tpl.ny, door: r() < 0.5 ? 0 : nx - 1, roof: tpl.roof, ruin: decay || undefined });
+      town.push({ id: tpl.t + bid++, x, z, nx, nz, ny: tpl.ny, door: r() < 0.5 ? 0 : nx - 1, roof: tpl.roof, ruin: decay || undefined, cols: tpl.cols });
       placed++;
     }
   }
@@ -204,6 +232,27 @@ function genMap(seed) {
     if (town.some((q) => Math.hypot(x - q.x, z - q.z) < 10)) continue;
     if (Math.abs(z - streamV) < 9) continue; // T3: old ruins stay clear of the stream
     town.push({ id: "oldruin" + placed, x, z, nx: 4, nz: 4, ny: 3, door: 0, ruin: 0.5 });
+    placed++;
+  }
+  // T4: FIELD WALLS (owner's rulings: they block the grid; axis-aligned) —
+  // freestanding masonry screens, 3-8 stones long, 2-4 courses, one stone
+  // thick. Town entries like any building: footprint claim, ruin bookkeeping.
+  const nWalls = 2 + Math.floor(r() * 4);
+  for (let k = 0, placed = 0; k < 90 && placed < nWalls; k++) {
+    const L = 3 + Math.floor(r() * 6), H = 2 + Math.floor(r() * 3);
+    const swap = r() < 0.5;
+    const nx = swap ? 1 : L, nz = swap ? L : 1;
+    const x = -50 + r() * 100;
+    const z = -44 + r() * 84;
+    const rad = L * MASON.pitch / 2 + 1;
+    if (passes.flat().some((g) => Math.abs(x - g.x) < rad + 4 && Math.abs(z - g.z) < 8)) continue;
+    if (spawns.some((sp) => Math.hypot(x - sp.x, z - sp.z) < rad + 3)) continue;
+    if (ponds.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 2)) continue;
+    if (rocks.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 1.5)) continue;
+    if (roadDist(x, z) < rad + 2.5) continue;
+    if (town.some((q) => Math.hypot(x - q.x, z - q.z) < rad + Math.max(q.nx, q.nz) * MASON.pitch / 2 + 2)) continue;
+    if (Math.abs(z - streamV) < rad + 9) continue;
+    town.push({ id: "fwall" + placed, x, z, nx, nz, ny: H, door: -1, roof: false });
     placed++;
   }
   const T = (o) => { const w = fwdU(o.x, o.z); o.x = w.x; o.z = w.z; return o; };
@@ -546,12 +595,29 @@ function buildTown(world, grid, field) {
   const out = [];
   for (const t of TOWN) {
     const grid3 = [], base = field.heightAt(t.x, t.z) + hcs + 0.02;
+    // T4: interior columns — derived from the LIVE (rotation-swapped) dims,
+    // the proving grounds' warehouse rule: a third in from each end, mirrored.
+    // Derived, never stored: both swaps rotate the building under the rule.
+    const colAt = t.cols
+      ? (() => {
+          const c1x = Math.floor(t.nx / 3), c1z = Math.floor(t.nz / 3);
+          const c2x = t.nx - 1 - c1x, c2z = t.nz - 1 - c1z;
+          return (ix, iz) => (ix === c1x && iz === c1z) || (ix === c2x && iz === c2z);
+        })()
+      : () => false;
+    // T4: drive doors run down the LONG axis — derived from live dims too.
+    const driveZ = t.drive && t.nz >= t.nx;
     for (let ix = 0; ix < t.nx; ix++) for (let iy = 0; iy <= t.ny; iy++) for (let iz = 0; iz < t.nz; iz++) {
       const perim = ix === 0 || ix === t.nx - 1 || iz === 0 || iz === t.nz - 1;
       const corner = (ix <= 1 || ix >= t.nx - 2) && (iz <= 1 || iz >= t.nz - 2);
-      if (iy < t.ny && !perim) continue;
-      if (iy === t.ny && t.roof === false) continue;
+      if (iy < t.ny && !perim && !colAt(ix, iz)) continue;
+      if (iy === t.ny && (t.roof === false || t.slab)) continue; // T4: a slab replaces the granular roof below
       if (ix === t.door && (iz === 1 || iz === 2) && iy <= 2) continue;
+      // T4: drive-through — doors carved through BOTH end walls of the long
+      // axis, full width bar the corners, every course but the top lintel.
+      if (t.drive && iy < t.ny - 1 && (driveZ
+        ? (iz === 0 || iz === t.nz - 1) && ix >= 1 && ix <= t.nx - 2
+        : (ix === 0 || ix === t.nx - 1) && iz >= 1 && iz <= t.nz - 2)) continue;
       if (t.depot && iy === t.ny && perim && !corner && (ix + iz) % 2) continue;
       if (t.ruin && ((ix * 31 + iy * 17 + iz * 7) % 100) / 100 < t.ruin && iy > 0) continue;
       const c = addBody(world, {
@@ -588,6 +654,22 @@ function buildTown(world, grid, field) {
         const o = map.get(key(g[0] + d[0], g[1] + d[1], g[2] + d[2]));
         if (o) addWeld(world, c, o, townBreakF);
       }
+    }
+    // T4: THE SLAB — one rigid 800kg roof plate, sized inside the wall ring
+    // with the standard ~2cm joint, welded to the top two courses (the
+    // proving grounds' proven form: 1-hop convergence, pancakes whole when
+    // the ring shears). It joins stones/n0 so a fallen roof counts as ruin.
+    if (t.slab) {
+      const shx = ((t.nx - 1) / 2) * pitch - hcs - 0.02;
+      const shz = ((t.nz - 1) / 2) * pitch - hcs - 0.02;
+      const slab = addBody(world, {
+        kind: "chunk", team: 0, mass: 800, hx: shx, hy: 0.2, hz: shz,
+        x: t.x, y: base + (t.ny - 1) * pitch + 0.2, z: t.z,
+        friction: 0.65, restitution: 0.02,
+      });
+      slab.sleeping = true; slab.town = t.id; slab.gpos = [-1, t.ny, -1];
+      for (const c of grid3) if (c.gpos[1] >= t.ny - 2) addWeld(world, slab, c, townBreakF);
+      grid3.push(slab);
     }
     const cells = townFootprint(grid, t);
     for (const ci of cells) { const c = grid.cells[ci]; c.blocked = true; c.building = t.id; }
@@ -2486,6 +2568,7 @@ export default function DepotGame({ onExit, resume = null }) {
       window.__DEPOTSTART__ = () => { S.started = true; };
       window.__DEPOTSETT__ = (t) => { world.t = t; world.wind = windAt(MAP_SEED, world.t); };
       window.__DEPOTFLAGS__ = () => world.bodies.filter((b) => b.flagPole).map((b) => ({ id: b.id, kind: b.kind, x: +b.pos.x.toFixed(2), y: +b.pos.y.toFixed(2), z: +b.pos.z.toFixed(2) }));
+      window.__DEPOTTOWN__ = () => TOWN.map((t) => ({ id: t.id, x: +t.x.toFixed(2), z: +t.z.toFixed(2), nx: t.nx, nz: t.nz, ny: t.ny, slab: !!t.slab, cols: !!t.cols }));
       window.__DEPOTTREES__ = () => world.bodies.filter((b) => b.kind === "tree").map((b) => ({ id: b.id, x: +b.pos.x.toFixed(2), z: +b.pos.z.toFixed(2), y: +b.pos.y.toFixed(2), hp: +b.hp.toFixed(1), alive: b.alive, burning: b.burning }));
       // P1.5 T2 staging harness: the live wall courses, the welds holding them
       // and the loose rubble — so a save/resume run can prove three courses,
@@ -3292,7 +3375,7 @@ export default function DepotGame({ onExit, resume = null }) {
         canvas.removeEventListener("touchstart", blockTouch);
         window.removeEventListener("keydown", kd);
         window.removeEventListener("keyup", ku);
-        for (const k of ["__DEPOT__", "__DEPOTBELL__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTTHIN__", "__DEPOTEND__", "__DEPOTFOCUS__", "__DEPOTGETFOCUS__", "__DEPOTSETT__", "__DEPOTFLAGS__", "__DEPOTHOLD__", "__DEPOTFINDBUILDABLE__", "__DEPOTFINDRISE__", "__DEPOTFINDNEARROCK__", "__DEPOTFOGDBG__", "__DEPOTFOGAT__", "__DEPOTENEMYPOS__", "__DEPOTSQUADS__", "__DEPOTSANDBAGS__", "__DEPOTGROUNDAT__", "__DEPOTSCREENAT__", "__DEPOTPENDING__", "__DEPOTMANIFEST__", "__DEPOTPICK__", "__DEPOTSAVE__", "__DEPOTGRIDAT__", "__DEPOTSQUAD__", "__DEPOTORDER__", "__DEPOTCELL__"]) delete window[k];
+        for (const k of ["__DEPOT__", "__DEPOTBELL__", "__DEPOTBUILD__", "__DEPOTSPAWN__", "__DEPOTSTART__", "__DEPOTTREES__", "__DEPOTMG__", "__DEPOTSHELL__", "__DEPOTTHIN__", "__DEPOTEND__", "__DEPOTFOCUS__", "__DEPOTGETFOCUS__", "__DEPOTSETT__", "__DEPOTFLAGS__", "__DEPOTTOWN__", "__DEPOTHOLD__", "__DEPOTFINDBUILDABLE__", "__DEPOTFINDRISE__", "__DEPOTFINDNEARROCK__", "__DEPOTFOGDBG__", "__DEPOTFOGAT__", "__DEPOTENEMYPOS__", "__DEPOTSQUADS__", "__DEPOTSANDBAGS__", "__DEPOTGROUNDAT__", "__DEPOTSCREENAT__", "__DEPOTPENDING__", "__DEPOTMANIFEST__", "__DEPOTPICK__", "__DEPOTSAVE__", "__DEPOTGRIDAT__", "__DEPOTSQUAD__", "__DEPOTORDER__", "__DEPOTCELL__"]) delete window[k];
         A.dispose();
         if (R) R.dispose();
         stateRef.current = null;

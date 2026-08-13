@@ -5601,6 +5601,145 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 }
 // ==== end FRONT T3 ===========================================================
 
+// ==== FRONT T4: buildings of the proving grounds =============================
+// mk1.03 (The Front, Task 4). The town builder learns the proven forms:
+// slab-roof drive-through hangars, columned warehouses, columns in the wide
+// templates, freestanding field walls that block the grid. The chunk pool
+// rises to 3000; the boot stone count is measured right here.
+{
+  console.log("\n[front t4: buildings of the proving grounds]");
+  const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  const sliceFn4 = (name) => {
+    const start = src.indexOf(`\nfunction ${name}(`);
+    if (start < 0) throw new Error("T4 extract: missing function " + name);
+    const rest = src.slice(start + 1);
+    const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
+    return rest.slice(0, m < 0 ? rest.length : m + 9);
+  };
+  const header4 = src.slice(src.indexOf("const GRID_CS"), src.indexOf("function genMap"));
+  const mapSrc4 = [
+    header4,
+    sliceFn4("genMap"), sliceFn4("makeMap"), sliceFn4("streamAt"), sliceFn4("pondAt"), sliceFn4("rockAt"),
+    sliceFn4("makeGrid"), sliceFn4("checkConnectivity"), sliceFn4("townFootprint"), sliceFn4("buildTown"),
+    `return { makeMap, makeGrid, buildTown, invW, state: () => ({ ORIENT, TOWN, MAP_SEED }) };`,
+  ].join("\n");
+  const mkMapT4 = () => new Function(
+    "mulberry32", "MASON", "fwdUFor", "fwdDirFor", "invWFor", "addBody", "addWeld", mapSrc4,
+  )(mulberry32, MASON, fwdUFor, fwdDirFor, invWFor, addBody, addWeld);
+  const flatF4 = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+
+  // (a) the sweep: 2-4 big forms and 2-5 field walls on every seed; both big
+  // kinds appear across the sweep; the worst boot stone count stays under
+  // the raised pool with rubble headroom.
+  let bigLo = 99, bigHi = 0, wallLo = 99, wallHi = 0, sawHangar = 0, sawWarehouse = 0;
+  let worstStones = 0, worstSeed = 0, hangarSeed = 0, warehouseSeed = 0, wallSeed = 0;
+  for (let s = 1; s <= 40; s++) {
+    const Mi = mkMapT4(); Mi.makeMap(s * 769);
+    const st = Mi.state();
+    const bigs = st.TOWN.filter((t) => /^(hangar|warehouse)/.test(t.id));
+    const walls = st.TOWN.filter((t) => /^fwall/.test(t.id));
+    bigLo = Math.min(bigLo, bigs.length); bigHi = Math.max(bigHi, bigs.length);
+    wallLo = Math.min(wallLo, walls.length); wallHi = Math.max(wallHi, walls.length);
+    if (bigs.some((t) => t.slab)) { sawHangar++; if (!hangarSeed) hangarSeed = s * 769; }
+    if (bigs.some((t) => t.cols && !t.slab)) { sawWarehouse++; if (!warehouseSeed) warehouseSeed = s * 769; }
+    if (walls.length && !wallSeed) wallSeed = s * 769;
+    const world = makeWorld({ field: flatF4, seed: 5 });
+    Mi.buildTown(world, Mi.makeGrid(null), flatF4);
+    const stones = world.bodies.filter((b) => b.kind === "chunk").length;
+    if (stones > worstStones) { worstStones = stones; worstSeed = s * 769; }
+  }
+  ok("T4(a): every seed draws 2-4 big forms", bigLo >= 2 && bigHi <= 4, `${bigLo}-${bigHi}`);
+  ok("T4(a): every seed draws 2-5 field walls", wallLo >= 2 && wallHi <= 5, `${wallLo}-${wallHi}`);
+  ok("T4(a): both big kinds appear across the sweep", sawHangar >= 5 && sawWarehouse >= 5, `hangar ${sawHangar}/40, warehouse ${sawWarehouse}/40`);
+  ok("T4(a): worst boot stone count stays under the 3000 pool with rubble headroom", worstStones <= 2900, `${worstStones} stones (seed ${worstSeed})`);
+
+  // (b) the hangar: one 800kg slab welded to the top two courses, no
+  // granular roof, drive doors open at ground level through both end walls.
+  if (hangarSeed) {
+    const Mi = mkMapT4(); Mi.makeMap(hangarSeed);
+    const hg = Mi.state().TOWN.find((t) => t.slab);
+    const world = makeWorld({ field: flatF4, seed: 5 });
+    Mi.buildTown(world, Mi.makeGrid(null), flatF4);
+    const mine = world.bodies.filter((b) => b.kind === "chunk" && b.town === hg.id);
+    const slabs = mine.filter((b) => b.mass === 800);
+    ok("T4(b): the hangar carries exactly one rigid slab", slabs.length === 1, `${slabs.length}`);
+    const slab = slabs[0];
+    const welds = world.welds.filter((w) => !w.broken && (w.a === slab || w.b === slab)).length;
+    ok("T4(b): the slab hangs on the top two courses (10+ welds)", welds >= 10, `${welds}`);
+    ok("T4(b): no granular roof course on a slab building", mine.every((b) => b === slab || b.gpos[1] < hg.ny));
+    const driveZ = hg.nz >= hg.nx;
+    const doorway = mine.filter((b) => b.gpos[1] === 0 && (driveZ
+      ? (b.gpos[2] === 0 || b.gpos[2] === hg.nz - 1) && b.gpos[0] >= 1 && b.gpos[0] <= hg.nx - 2
+      : (b.gpos[0] === 0 || b.gpos[0] === hg.nx - 1) && b.gpos[2] >= 1 && b.gpos[2] <= hg.nz - 2));
+    ok("T4(b): the drive doors are open at ground level on both ends", doorway.length === 0, `${doorway.length} stones in the doorway`);
+  }
+
+  // (c) the warehouse: two interior columns, full height, distinct sites.
+  if (warehouseSeed) {
+    const Mi = mkMapT4(); Mi.makeMap(warehouseSeed);
+    const wh = Mi.state().TOWN.find((t) => t.cols && !t.slab && /^warehouse/.test(t.id));
+    const world = makeWorld({ field: flatF4, seed: 5 });
+    Mi.buildTown(world, Mi.makeGrid(null), flatF4);
+    const mine = world.bodies.filter((b) => b.kind === "chunk" && b.town === wh.id);
+    const interior = mine.filter((b) => b.gpos[1] < wh.ny &&
+      b.gpos[0] > 0 && b.gpos[0] < wh.nx - 1 && b.gpos[2] > 0 && b.gpos[2] < wh.nz - 1);
+    ok("T4(c): the warehouse stands two interior columns, full height", interior.length === 2 * wh.ny, `${interior.length} vs ${2 * wh.ny}`);
+    const sites = new Set(interior.map((b) => b.gpos[0] + "," + b.gpos[2]));
+    ok("T4(c): the columns stand at two distinct sites", sites.size === 2, [...sites].join(" | "));
+  }
+
+  // (d) a field wall: L x H stones, one thick, no roof, and it CLAIMS its
+  // ground — the blocked cell carries the wall's building id.
+  if (wallSeed) {
+    const Mi = mkMapT4(); Mi.makeMap(wallSeed);
+    const fw = Mi.state().TOWN.find((t) => /^fwall/.test(t.id));
+    const world = makeWorld({ field: flatF4, seed: 5 });
+    const g = Mi.makeGrid(null);
+    Mi.buildTown(world, g, flatF4);
+    const mine = world.bodies.filter((b) => b.kind === "chunk" && b.town === fw.id);
+    const L = Math.max(fw.nx, fw.nz);
+    ok("T4(d): a field wall is L x H stones, one thick, no roof", mine.length === L * fw.ny, `${mine.length} vs ${L * fw.ny}`);
+    const gc = g.worldToGrid(fw.x, fw.z);
+    const cell = g.inBounds(gc.gx, gc.gz) ? g.cells[g.idx(gc.gx, gc.gz)] : null;
+    ok("T4(d): the wall claims its ground (blocked cell, building id)", !!cell && cell.blocked === true && cell.building === fw.id, cell && String(cell.building));
+  }
+
+  // (e) the slab STANDS: wake the whole hangar and run five sim seconds —
+  // the welded plate must not sag or shear on a quiet field.
+  if (hangarSeed) {
+    const Mi = mkMapT4(); Mi.makeMap(hangarSeed);
+    const hg = Mi.state().TOWN.find((t) => t.slab);
+    const world = makeWorld({ field: flatF4, seed: 5 });
+    Mi.buildTown(world, Mi.makeGrid(null), flatF4);
+    const mine = world.bodies.filter((b) => b.kind === "chunk" && b.town === hg.id);
+    const slab = mine.find((b) => b.mass === 800);
+    const homes = mine.map((b) => ({ b, x: b.pos.x, y: b.pos.y, z: b.pos.z }));
+    const y0 = slab.pos.y;
+    for (const b of mine) b.sleeping = false;
+    for (let i = 0; i < 600; i++) stepWorld(world);
+    ok("T4(e): the woken slab holds its height over 5 sim seconds", Math.abs(slab.pos.y - y0) < 0.25, (slab.pos.y - y0).toFixed(3));
+    const moved = homes.filter((h) => Math.hypot(h.b.pos.x - h.x, h.b.pos.y - h.y, h.b.pos.z - h.z) > 0.3).length;
+    ok("T4(e): the woken hangar keeps its stones (under 5% drift)", moved <= mine.length * 0.05, `${moved}/${mine.length}`);
+  }
+
+  // (f) determinism: same seed, identical town
+  {
+    const A = mkMapT4(); A.makeMap(7717);
+    const B = mkMapT4(); B.makeMap(7717);
+    ok("T4(f): twin determinism — identical TOWN", JSON.stringify(A.state().TOWN) === JSON.stringify(B.state().TOWN));
+  }
+
+  // (g) source pins: the hooks and the raised cap exist where claimed
+  ok("T4(g): the wide templates and the warehouse carry the cols flag (5 sites)",
+    (src.match(/cols: true/g) || []).length === 5);
+  ok("T4(g): the drive doors bind to the long axis by live dimensions",
+    /const driveZ = t\.drive && t\.nz >= t\.nx;/.test(src));
+  ok("T4(g): the town debug hook exists", /__DEPOTTOWN__/.test(src));
+  const rsrc4 = fs.readFileSync(new URL("../src/render/renderer.js", import.meta.url), "utf8");
+  ok("T4(g): the chunk pool is raised to 3000", /const CHUNK_CAP = 3000;/.test(rsrc4));
+}
+// ==== end FRONT T4 ===========================================================
+
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
   process.exit(1);
