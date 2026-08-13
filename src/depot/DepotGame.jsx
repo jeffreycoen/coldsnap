@@ -16,7 +16,7 @@ import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS } from "./specs.js";
 import { windAt } from "./wind.js";
-import { makeAssaultState, HUD0, BELL_PERIOD_S, BELL_SCRAP, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest } from "./state.js";
+import { makeAssaultState, HUD0, BELL_PERIOD_S, BELL_SCRAP, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest } from "./state.js";
 import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
@@ -1192,6 +1192,7 @@ export default function DepotGame({ onExit, resume = null }) {
         // (S.pieOpen = false) but an aiming order keeps the squad selected
         // so the ground stays tappable — see consumeOrderTap.
         squads: [], nextSquadId: 1, selSquadId: null, selArmedAt: 0, orderMode: null, buildPt0: null, pieOpen: false,
+        linePending: null, // COMMAND T2 (mk0.84): the proposed line, awaiting accept/reject
         hudT: 0, keys: {}, sellById: null, audio: A,
         // The attacker's economy — seeded off the run's own rng stream, not
         // an unseeded generator, so ?seed= replays reproduce the same
@@ -1565,6 +1566,59 @@ export default function DepotGame({ onExit, resume = null }) {
         sq._legTarget = null; sq._pauseT = 0; sq._cohesionHoldT = 0; sq._threatSig = undefined;
         toast((kind === "walls" ? "WALL" : "BAG") + " LINE — " + rows.length + " SECTIONS");
       };
+      // COMMAND T2 (mk0.84): THE PROPOSED LINE. The second tap of a
+      // two-point order proposes; nothing walks until the owner of the tap
+      // accepts. Ghost pieces skip exactly the cells laying would skip
+      // (scrap aside — that is walk-time), so the preview never lies.
+      const LINE_END_R = 2.5;   // m — a tap this close to an endpoint disc picks it up
+      const linePieces = (kind, a, b) => {
+        if (kind === "patrol") return [];
+        const orient = Math.abs(b.x - a.x) >= Math.abs(b.z - a.z) ? 0 : 1;
+        const ph = pieceHalf(kind, orient);
+        const hy = kind === "walls" ? 0.9 : SANDBAG_HY;
+        const out = [];
+        for (const c of lineCells(a, b)) {
+          if (!grid.inBounds(c.gx, c.gz)) continue;
+          const cell = grid.cells[grid.idx(c.gx, c.gz)];
+          const wp = grid.gridToWorld(c.gx, c.gz), c0 = invW(wp.x, wp.z);
+          if (cell.blocked || cell.wallId || cell.ice || !canBuild(T, c0.u, c0.v)) continue; // an honest gap
+          out.push({ x: wp.x, z: wp.z, y: field.heightAt(wp.x, wp.z) + hy, hx: ph.hx, hy, hz: ph.hz });
+        }
+        return out;
+      };
+      const refreshLinePreview = () => {
+        const lp = S.linePending;
+        if (!lp) { R.overlay.setLinePreview(false); return; }
+        const pieces = linePieces(lp.kind, lp.a, lp.b);
+        lp.count = pieces.length;
+        lp.cost = lp.kind === "walls" ? pieces.length * WALL_FIELD_COST
+                : lp.kind === "bags" ? pieces.length * SANDBAG_FIELD_COST : 0;
+        R.overlay.setLinePreview(true, {
+          a: { x: lp.a.x, z: lp.a.z, y: field.heightAt(lp.a.x, lp.a.z) },
+          b: { x: lp.b.x, z: lp.b.z, y: field.heightAt(lp.b.x, lp.b.z) },
+          pieces,
+          color: lp.kind === "walls" ? 0x9fdcff : lp.kind === "patrol" ? 0x7fd7ff : 0xffd27a,
+        });
+      };
+      const acceptLine = () => {
+        const lp = S.linePending;
+        if (!lp) return;
+        if (!pendingArmed(lp, world.t)) { toast("HOLD — ARMING"); return; }
+        const sq = S.squads.find((q) => q.id === lp.sq);
+        S.linePending = null;
+        R.overlay.setLinePreview(false);
+        if (sq) {
+          if (lp.kind === "patrol") { /* Task 3 fills this arm */ }
+          else startBuildLine(sq, lp.kind, lp.a, lp.b);
+        }
+        S.selSquadId = null; S.orderMode = null; S.buildPt0 = null;
+      };
+      const rejectLine = () => {
+        S.linePending = null;
+        R.overlay.setLinePreview(false);
+        S.selSquadId = null; S.orderMode = null; S.buildPt0 = null;
+      };
+      S.acceptLine = acceptLine; S.rejectLine = rejectLine;
       // One piece. Returns "laid" | "skip" | "dry". Placement runs the REAL
       // spawners and the REAL gate (validatePlacement, the same four checks the
       // build menu makes) — a cell that is occupied, iced or unheld is skipped,
@@ -1676,11 +1730,13 @@ export default function DepotGame({ onExit, resume = null }) {
         if (om === "build_bags" || om === "build_walls") {
           if (!osq || osq.type !== "engineers") { S.orderMode = null; S.buildPt0 = null; S.selSquadId = null; return true; }
           if (!S.buildPt0) { S.buildPt0 = { x: d.x, z: d.z }; toast("LINE START — TAP THE FAR END"); return true; }
-          startBuildLine(osq, om === "build_walls" ? "walls" : "bags", S.buildPt0, d);
+          // COMMAND T2 (mk0.84): the second tap PROPOSES — S.linePending goes
+          // up, the squad stays selected, and nothing walks until acceptLine.
+          S.linePending = { kind: om === "build_walls" ? "walls" : "bags", sq: osq.id,
+            a: { x: S.buildPt0.x, z: S.buildPt0.z }, b: { x: d.x, z: d.z },
+            moving: null, armedAt: world.t + PENDING_ARM_S };
           S.buildPt0 = null; S.orderMode = null;
-          // COMMAND 1b (mk0.82): second tap completes the build order —
-          // release the squad exactly as MOVE/ATTACK do above.
-          S.selSquadId = null;
+          refreshLinePreview();
           return true;
         }
         return false;
@@ -1804,6 +1860,22 @@ export default function DepotGame({ onExit, resume = null }) {
         if (S.pending) clearPending();
         const p = groundPoint(cx, cy);
         if (!p) { S.inspectId = null; return; }
+        // COMMAND T2 (mk0.84): while a proposed line is up, ground taps belong
+        // to it — tap an endpoint disc to pick it up, tap ground to re-place a
+        // picked-up endpoint. Accept/reject (the buttons) are the only exits;
+        // a stray tap can never fire the order or steal the selection.
+        if (S.linePending) {
+          const lp = S.linePending;
+          if (lp.moving) {
+            const m = clampToRim(p.x, p.z);
+            lp[lp.moving] = { x: m.x, z: m.z };
+            lp.moving = null;
+            lp.armedAt = world.t + PENDING_ARM_S;
+            refreshLinePreview();
+          } else if (Math.hypot(p.x - lp.a.x, p.z - lp.a.z) < LINE_END_R) { lp.moving = "a"; toast("TAP THE NEW START"); }
+          else if (Math.hypot(p.x - lp.b.x, p.z - lp.b.z) < LINE_END_R) { lp.moving = "b"; toast("TAP THE NEW END"); }
+          return;
+        }
         // Squad order flow: an armed ATTACK/MOVE consumes this ground tap as the
         // destination (flag marker renders at dest until arrival); an armed
         // BUILD consumes TWO — the line's start, then its far end (mk0.60).
@@ -2222,6 +2294,10 @@ export default function DepotGame({ onExit, resume = null }) {
         S.selSquadId = id; S.selArmedAt = 0; S.orderMode = null; S.buildPt0 = null;
         S.orderSquad(kind);
         for (const p of (pts || [])) consumeOrderTap(p);
+        // COMMAND T2 (mk0.84): the debug path auto-accepts what a human tap
+        // would still have to confirm — staging keeps driving the real order
+        // path end to end without a screen to tap the ✓ on.
+        if (S.linePending) S.acceptLine();
         return { order: sq.order, dest: sq.dest, armed: S.orderMode, pt0: S.buildPt0,
           build: sq._build ? { kind: sq._build.kind, cells: sq._build.rows.length, phase: sq._build.phase, orient: sq._build.orient } : null };
       };
@@ -2619,6 +2695,16 @@ export default function DepotGame({ onExit, resume = null }) {
                 clearPending(); S.pendingScreen = null; toast("PLACEMENT CANCELLED — MOVED OFF SCREEN");
               }
             } else S.pendingScreen = null;
+            // COMMAND T2 (mk0.84): the proposed line's END point only — the
+            // buttons live there. Same screen-space recipe as pendingScreen,
+            // but going off-screen HIDES the buttons WITHOUT cancelling the
+            // pending (the line is big; panning around it is normal work).
+            if (S.linePending && R.project) {
+              const lp = S.linePending;
+              const rect4 = canvas.getBoundingClientRect();
+              const nd4 = R.project(lp.b.x, field.heightAt(lp.b.x, lp.b.z) + 1.2, lp.b.z);
+              S.lineScreen = nd4 ? { x: rect4.left + (nd4.x * 0.5 + 0.5) * rect4.width, y: rect4.top + (-nd4.y * 0.5 + 0.5) * rect4.height } : null;
+            } else S.lineScreen = null;
             // Squad chip + attack-flag anchors: screen-space, recomputed from
             // the live camera (rotation/pan-proof, same rationale as
             // pendingScreen above).
@@ -2691,9 +2777,19 @@ export default function DepotGame({ onExit, resume = null }) {
                   // other type, so the row is per-squad-type by construction.
                   engineer: sq.type === "engineers",
                   building: S.orderMode === "build_bags" ? "bags" : S.orderMode === "build_walls" ? "walls" : null,
-                  buildStart: !!S.buildPt0 };
+                  buildStart: !!S.buildPt0,
+                  // COMMAND T2 (mk0.84): the squad stays selected while its
+                  // line is up for confirmation — the center chip says so.
+                  linePending: !!S.linePending };
               })(),
               squadFlag: S.flagScreen ? { x: S.flagScreen.x, y: S.flagScreen.y } : null,
+              // COMMAND T2 (mk0.84): the proposed line's accept/reject pair —
+              // survives the end point going off-screen (buttons just hide).
+              linePending: S.linePending && S.lineScreen ? {
+                x: S.lineScreen.x, y: S.lineScreen.y,
+                cost: S.linePending.cost, count: S.linePending.count,
+                armed: pendingArmed(S.linePending, world.t), kind: S.linePending.kind,
+              } : null,
               pending: S.pending && S.pendingScreen ? {
                 x: S.pendingScreen.x, y: S.pendingScreen.y,
                 cost: S.pending.cost, armed: pendingArmed(S.pending, world.t),
@@ -2788,11 +2884,16 @@ export default function DepotGame({ onExit, resume = null }) {
       setHud((h) => ({ ...h, sandbagOrient: S.sandbagOrient }));
       return;
     }
+    // COMMAND T2 (mk0.84): switching build-menu mode with a line still up
+    // clears it through the same door ✗ uses (rejectLine also disposes the
+    // renderer's preview group) — it never lingers behind the new mode.
+    if (S.linePending && S.rejectLine) S.rejectLine();
     S.mode = m; S.sellMode = false; S.inspectId = null; S.pending = null; S.selSquadId = null; S.orderMode = null; S.buildPt0 = null;
     setHud((h) => ({ ...h, mode: m, sellMode: false }));
   };
   const toggleSell = () => {
     const S = stateRef.current; if (!S) return;
+    if (S.linePending && S.rejectLine) S.rejectLine();
     S.sellMode = !S.sellMode; S.inspectId = null; S.pending = null;
     setHud((h) => ({ ...h, sellMode: S.sellMode }));
   };
@@ -2964,6 +3065,21 @@ export default function DepotGame({ onExit, resume = null }) {
         </div>
       )}
 
+      {hud.linePending && (
+        <div style={{ position: "absolute", left: hud.linePending.x, top: hud.linePending.y, transform: "translate(-50%, -50%)", zIndex: 7, display: "flex", gap: 6, pointerEvents: "auto" }}>
+          <button data-line-accept
+            style={{ ...P.btnBig, borderColor: "#4aff8c", color: "#4aff8c", opacity: hud.linePending.armed ? 1 : 0.5, fontWeight: "bold" }}
+            onClick={() => stateRef.current && stateRef.current.acceptLine()}>
+            {hud.linePending.kind === "patrol" ? "✓ PATROL" : `✓ UP TO ◆${hud.linePending.cost}`}
+          </button>
+          <button data-line-reject
+            style={{ ...P.btnBig, borderColor: "#ff6b5e", color: "#ff6b5e", fontWeight: "bold" }}
+            onClick={() => stateRef.current && stateRef.current.rejectLine()}>
+            ✗
+          </button>
+        </div>
+      )}
+
       {hud.squadSel && (() => {
         const sq = hud.squadSel;
         // COMMAND T1 (mk0.80): DEFEND, MOVE, ATTACK — engineers additionally
@@ -2985,7 +3101,11 @@ export default function DepotGame({ onExit, resume = null }) {
             { key: "build_walls", icon: "▦", label: "WALLS", color: "#ffd27a", on: sq.building === "walls", act: () => stateRef.current && stateRef.current.orderSquad("build_walls") },
           );
         }
-        const status = sq.building
+        // COMMAND T2 (mk0.84): a proposed line up takes over the status —
+        // it outranks the building/aiming lines below since S.orderMode is
+        // already null by the time S.linePending goes up.
+        const status = sq.linePending ? " — ACCEPT OR ADJUST THE LINE"
+          : sq.building
           ? (sq.buildStart ? " — TAP THE FAR END" : " — TAP THE LINE START")
           : sq.aiming || sq.aimingMove ? " — TAP GROUND" : "";
         // COMMAND 1b (mk0.82): pie open -> the wedge disc; pie closed but

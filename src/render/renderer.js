@@ -1165,6 +1165,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
   let hoverPad = null, hoverRing = null, hoverFill = null, objMark = null;
   let pendingPad = null, pendingFill = null, pendingEdge = null, pendingAuraRing = null, pendingAuraFill = null;
   let reachFill = null, reachEdge = null;
+  let lineGroup = null; // COMMAND T2 (mk0.84): the proposed line's group, rebuilt on endpoint taps only.
   const overlay = {
     // ghost build cursor: pad snapped to a cell (cs meters), ring/fill at range r
     setHover(on, x, z, y, r, okFlag, cs) {
@@ -1286,6 +1287,40 @@ export function makeRenderer(canvas, world0, opts = {}) {
       reachEdge.geometry.setAttribute("position", new THREE.BufferAttribute(edgeArr, 3));
       reachFill.material.color.setHex(color || 0xffd27a);
       reachEdge.material.color.setHex(color || 0xffd27a);
+    },
+    // COMMAND T2 (mk0.84): the proposed line — endpoint discs, a dashed
+    // path, one ghost box per piece the order would lay. Rebuilt only on
+    // endpoint taps, never per frame.
+    setLinePreview(on, spec) {
+      if (lineGroup) {
+        scene.remove(lineGroup);
+        lineGroup.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+        lineGroup = null;
+      }
+      if (!on || !spec) return;
+      lineGroup = new THREE.Group();
+      const disc = (pt, color) => {
+        const m = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 0.18, 24),
+          new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthWrite: false }));
+        m.position.set(pt.x, pt.y + 0.1, pt.z);
+        lineGroup.add(m);
+      };
+      disc(spec.a, 0x4aff8c);                               // start: green
+      disc(spec.b, 0xffd27a);                               // end: amber — where the buttons live
+      const lg = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(spec.a.x, spec.a.y + 0.25, spec.a.z),
+        new THREE.Vector3(spec.b.x, spec.b.y + 0.25, spec.b.z)]);
+      const line = new THREE.Line(lg, new THREE.LineDashedMaterial({ color: spec.color || 0xffd27a, dashSize: 0.8, gapSize: 0.5, transparent: true, opacity: 0.9 }));
+      line.computeLineDistances();
+      lineGroup.add(line);
+      for (const g of spec.pieces || []) {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(g.hx * 2, g.hy * 2, g.hz * 2),
+          new THREE.MeshBasicMaterial({ color: spec.color || 0xffd27a, transparent: true, opacity: 0.3, depthWrite: false }));
+        m.position.set(g.x, g.y, g.z);
+        lineGroup.add(m);
+      }
+      lineGroup.traverse((o) => o.layers && o.layers.set(1));
+      scene.add(lineGroup);
     },
     // spawn banners: red cloth on a pole at each entry point
     setBanners(pts) {

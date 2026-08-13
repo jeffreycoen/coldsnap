@@ -1984,7 +1984,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   {
     const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     // the frame snapshot is the setHud({...}) that also carries mode/sellMode
-    const snap = src.match(/setHud\(\{[\s\S]{0,5000}?\}\);\n\s+\}\n/); // window widened (mk0.29 added endCard; mk0.41 added the manifest mirror; mk0.80 added the tower radial; mk0.82 added showPie to both)
+    const snap = src.match(/setHud\(\{[\s\S]{0,6000}?\}\);\n\s+\}\n/); // window widened (mk0.29 added endCard; mk0.41 added the manifest mirror; mk0.80 added the tower radial; mk0.82 added showPie to both; mk0.84 added linePending, re-pinned 5000->6000)
     ok("sandbag-rot: frame hud snapshot carries sandbagOrient (no clobber)",
       !!snap && snap[0].includes("mode: S.mode") && snap[0].includes("sandbagOrient: S.sandbagOrient"));
     const { HUD0 } = await import("../src/depot/state.js");
@@ -3311,8 +3311,13 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     ok("mk0.60/6: the two taps are start-then-end, and a re-tap of the armed chip cancels",
       /if \(!S\.buildPt0\) \{ S\.buildPt0 = \{ x: d\.x, z: d\.z \}/.test(dsrc)
       && /if \(S\.orderMode === kind\) \{ S\.orderMode = null; S\.buildPt0 = null; return; \}/.test(dsrc));
+    // re-pinned COMMAND T2 (mk0.84): a second clamp site joined the first —
+    // re-placing a picked-up endpoint of a proposed line clamps the same way
+    // (tapAt's S.linePending block). Both taps of the ORIGINAL two-point
+    // order still go through the one `const d = ...` site; the count moved
+    // from 1 to 2 honestly, not loosened.
     ok("mk0.60/6: BOTH build points clamp to the rim through the one clamp site",
-      /const d = clampToRim\(p\.x, p\.z\);/.test(dsrc) && (dsrc.match(/clampToRim\(p\.x, p\.z\)/g) || []).length === 1);
+      /const d = clampToRim\(p\.x, p\.z\);/.test(dsrc) && (dsrc.match(/clampToRim\(p\.x, p\.z\)/g) || []).length === 2);
     ok("mk0.60/6: the cell walk steps ONE axis at a time (consecutive cells share an EDGE)",
       /const stepX = z === g1\.gz \? true : x === g1\.gx \? false : 2 \* err > -dz;/.test(dsrc));
     // Jeff, 2026-08-12: ONE rotation for the whole line — the dominant axis of
@@ -3951,6 +3956,71 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 }
 // ==== end COMMAND T1 ==========================================================
+
+// ==== COMMAND T2: the proposed line ==========================================
+// mk0.84. Two-point build orders no longer fire on the second tap — they
+// propose. The order machinery (consumeOrderTap's build branch, acceptLine,
+// __DEPOTORDER__'s auto-accept) lives in DepotGame.jsx — JSX, not importable
+// headlessly — so its shape is pinned by source regex, the same convention
+// COMMAND T1 and mk0.60/6 already use. The ghost-piece filter is mirrored
+// over a hand grid, the same convention VISION T4's scan mirrors use.
+{
+  const dsrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+
+  // (a) the second tap PROPOSES: consumeOrderTap's build branch creates
+  // S.linePending and never calls startBuildLine itself (only acceptLine
+  // does, gated on accept — see (b)).
+  const cotBody = (dsrc.match(/const consumeOrderTap = \(p\) => \{[\s\S]*?\n      const sellAt = \(gx, gz\) => \{/) || [""])[0];
+  ok("COMMAND T2(a): consumeOrderTap's build branch creates S.linePending",
+    /S\.linePending = \{ kind: om === "build_walls" \? "walls" : "bags", sq: osq\.id,/.test(cotBody));
+  ok("COMMAND T2(a): consumeOrderTap itself never calls startBuildLine (only acceptLine does)",
+    cotBody.length > 0 && !/startBuildLine\(/.test(cotBody));
+
+  // (b) acceptLine: the only path that calls startBuildLine, and it nulls
+  // S.selSquadId (the deselect the owner's rule requires on accept).
+  const acceptBody = (dsrc.match(/const acceptLine = \(\) => \{[\s\S]*?\n      const rejectLine = \(\) => \{/) || [""])[0];
+  ok("COMMAND T2(b): acceptLine exists and calls startBuildLine",
+    /else startBuildLine\(sq, lp\.kind, lp\.a, lp\.b\);/.test(acceptBody));
+  ok("COMMAND T2(b): acceptLine nulls S.selSquadId (full deselect on accept)",
+    /S\.selSquadId = null; S\.orderMode = null; S\.buildPt0 = null;/.test(acceptBody));
+
+  // (c) __DEPOTORDER__ auto-accepts — staging keeps driving the real order
+  // path end to end without a screen to tap the confirm button on.
+  const orderBody = (dsrc.match(/window\.__DEPOTORDER__ = \(id, kind, pts\) => \{[\s\S]*?\n      window\.__DEPOTFOCUS__ = \(x, z, zoom\) => \{/) || [""])[0];
+  ok("COMMAND T2(c): __DEPOTORDER__ auto-accepts a proposed line (S.acceptLine())",
+    /if \(S\.linePending\) S\.acceptLine\(\);/.test(orderBody));
+
+  // (d) the renderer overlay carries setLinePreview — the game-layer-only
+  // furniture the brief said this file may grow (setReach's family).
+  const rsrc = fs.readFileSync(new URL("../src/render/renderer.js", import.meta.url), "utf8");
+  ok("COMMAND T2(d): renderer.js overlay carries setLinePreview",
+    /setLinePreview\(on, spec\) \{/.test(rsrc));
+
+  // (e) mirror — linePieces's cell filter (DepotGame.jsx, inside the COMMAND
+  // T2 block) skips exactly the cells layPieceAt would skip: blocked,
+  // occupied, iced, unheld — so a gap in the preview is a gap in the wall.
+  // Mirrored here over a hand grid, kept in lockstep with the source line:
+  //   if (cell.blocked || cell.wallId || cell.ice || !canBuild(T, c0.u, c0.v)) continue; // an honest gap
+  ok("COMMAND T2(e): the source predicate matches the mirror line-for-line",
+    /if \(cell\.blocked \|\| cell\.wallId \|\| cell\.ice \|\| !canBuild\(T, c0\.u, c0\.v\)\) continue; \/\/ an honest gap/.test(dsrc));
+  {
+    const handGrid = [
+      { blocked: false, wallId: null, ice: false, held: true },   // laid
+      { blocked: true, wallId: null, ice: false, held: true },    // gap: blocked
+      { blocked: false, wallId: "w1", ice: false, held: true },   // gap: occupied (a wall stands there)
+      { blocked: false, wallId: null, ice: true, held: true },    // gap: iced
+      { blocked: false, wallId: null, ice: false, held: false },  // gap: unheld ground
+      { blocked: false, wallId: null, ice: false, held: true },   // laid
+    ];
+    // mirror of: cell.blocked || cell.wallId || cell.ice || !canBuild(...)
+    const isGap = (c) => !!(c.blocked || c.wallId || c.ice || !c.held);
+    const laid = handGrid.filter((c) => !isGap(c));
+    const gaps = handGrid.filter(isGap);
+    ok("COMMAND T2(e) mirror: honest gaps land exactly on blocked/occupied/iced/unheld cells, nowhere else",
+      laid.length === 2 && gaps.length === 4, `${laid.length} laid / ${gaps.length} gaps`);
+  }
+}
+// ==== end COMMAND T2 ==========================================================
 
 
 
