@@ -1,6 +1,6 @@
 # SLOW FRONT — Phase 3: Command (mk0.80-0.82)
 
-*2026-08-12. One plan, one audience. Scope ratified by the owner today (decision record, "Orders and command"): a radial order menu for squads AND towers replaces the chip row and the order half of the inspect panel; new orders are PATROL and ATTACK STRUCTURES; engineers' build lines migrate into their radial; per-tower fire discipline replaces the global toggle; hold-fire is cut. Three tasks, sequential, one Sonnet 5 agent each, a stop after every landing: mk0.80/0.81 the radial (shipped; 0.81 = the spacing fix), mk0.82 the pie rework, mk0.83 patrol, mk0.84 attack-structures. The next phase (Possession) adds a TAKE CONTROL button to every radial — the layout leaves room.*
+*2026-08-12. One plan, one audience. Scope ratified by the owner today (decision record, "Orders and command"): a radial order menu for squads AND towers replaces the chip row and the order half of the inspect panel; new orders are PATROL and ATTACK STRUCTURES; engineers' build lines migrate into their radial; per-tower fire discipline replaces the global toggle; hold-fire is cut. Three tasks, sequential, one Sonnet 5 agent each, a stop after every landing: mk0.80-0.83 the radial and the pie (shipped), mk0.84 the proposed line, mk0.85 patrol, mk0.86 attack-structures. The next phase (Possession) adds a TAKE CONTROL button to every radial — the layout leaves room.*
 
 **Laws binding every task:** no new dice anywhere (the one leg-arrival draw in the squad machine is the only rng and it is untouched); engine/demo/renderer files untouched (the radial is game-layer interface — plain buttons, existing screen-anchor machinery); `__DEPOTORDER__` keeps driving the real order path; run ONLY the gates listed; every deviation its own labeled bullet; stop after landing.
 
@@ -134,23 +134,192 @@ function RadialMenu({ cx, cy, label, slots, armed }) {
 
 ---
 
-## Task 2 — Patrol (mk0.83)
+## Task 2 — The proposed line (mk0.84) — suggested model: Sonnet (every step carries its code)
 
-Two taps: the squad walks the line, turns around, walks it back, forever — fighting whatever it sees on the way, by the halt-and-fight rule.
+*Amendment, 2026-08-12 (owner): two-point orders no longer fire on the second tap. The proposed line renders first — endpoint discs, a dashed path, one ghost footprint per piece with honest gaps on unbuildable cells — with armed accept/reject buttons at the end point. Tap an endpoint disc to pick it up and re-place it. Nothing walks until accept. This task builds the machinery on the engineers' build lines; patrol rides it in Task 3.*
 
-**Step 2.1 — failing tests first.** `scripts/depot-test.mjs`, new block `==== COMMAND T2: patrol` (fixture idiom of the VISION blocks): (a) a squad ordered PATROL between A and B reaches A, then is later observed nearer B, then later nearer A again (three sampled epochs — the loop is real and endless); (b) an enemy placed beside the patrol line gets fired on (muzzle events appear) and the anchor holds while he lives — halt-and-fight applies to patrol; (c) MOVE and BUILD squads still never fire (pin unchanged behavior); (d) dice law: a patrol running N legs draws exactly N leg-arrival draws and nothing else (twin-run count); (e) save/resume: a patrolling squad comes back patrolling — order, both endpoints, current destination all ride (they are plain scalars; assert the round-trip through serialize/restore the way the T4 build-line test did).
+**Required reading (agent, before any code; anchors re-verified at dispatch):** this plan whole; `CLAUDE.md`; `src/depot/DepotGame.jsx` — the build-line machinery (`startBuildLine`/`lineCells`/`pieceHalf`/`layPieceAt`, ~:1490-1599), `consumeOrderTap` (~:1603+), `tapAt` (~:1725+, the pending-resolution block), the projection block (beside `S.pendingScreen`), the hud tick, the pie render sites, `__DEPOTORDER__`; `src/render/renderer.js` :1161-1300 (the overlay object — the pattern `setLinePreview` joins); `scripts/depot-test.mjs` — grep `startBuildLine|linePending|data-line|setLinePreview` plus the mk0.60 build-line pins, every hit read.
 
-**Step 2.2 — the order machine learns the loop.** `src/depot/squads.js` `stepSquad` (:504): `"patrol"` joins the dest-driven orders:
+**Step 2.1 — failing pins first.** `scripts/depot-test.mjs`, new block `==== COMMAND T2: the proposed line` (source pins + a lockstep mirror, the file's convention for closures it cannot import): (a) pin — `consumeOrderTap`'s build branch creates `S.linePending` and does NOT call `startBuildLine` (regex: the branch body contains `S.linePending = {` and not `startBuildLine(`); (b) pin — an `acceptLine` function exists that calls `startBuildLine` and nulls `S.selSquadId`; (c) pin — `__DEPOTORDER__` auto-accepts (`S.acceptLine()` inside it) so staging keeps working; (d) pin — `renderer.js` overlay carries `setLinePreview`; (e) mirror — the piece filter (blocked/iced/unheld cells make gaps) reproduced over a hand grid, updated in lockstep and labeled as a mirror. Run: all five fail, then green.
+
+**Step 2.2 — the renderer learns one preview.** `src/render/renderer.js`, overlay object (:1168, beside `setReach`) — this file is editable here: the overlay section is game furniture (it already grew `setReach` for a depot phase); nothing hashed or demo-frozen is touched. Declare `let lineGroup = null;` with the other lazy nulls (:1165-1167) and add:
+
+```js
+    // COMMAND T2 (mk0.84): the proposed line — endpoint discs, a dashed
+    // path, one ghost box per piece the order would lay. Rebuilt only on
+    // endpoint taps, never per frame.
+    setLinePreview(on, spec) {
+      if (lineGroup) {
+        scene.remove(lineGroup);
+        lineGroup.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+        lineGroup = null;
+      }
+      if (!on || !spec) return;
+      lineGroup = new THREE.Group();
+      const disc = (pt, color) => {
+        const m = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 0.18, 24),
+          new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthWrite: false }));
+        m.position.set(pt.x, pt.y + 0.1, pt.z);
+        lineGroup.add(m);
+      };
+      disc(spec.a, 0x4aff8c);                               // start: green
+      disc(spec.b, 0xffd27a);                               // end: amber — where the buttons live
+      const lg = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(spec.a.x, spec.a.y + 0.25, spec.a.z),
+        new THREE.Vector3(spec.b.x, spec.b.y + 0.25, spec.b.z)]);
+      const line = new THREE.Line(lg, new THREE.LineDashedMaterial({ color: spec.color || 0xffd27a, dashSize: 0.8, gapSize: 0.5, transparent: true, opacity: 0.9 }));
+      line.computeLineDistances();
+      lineGroup.add(line);
+      for (const g of spec.pieces || []) {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(g.hx * 2, g.hy * 2, g.hz * 2),
+          new THREE.MeshBasicMaterial({ color: spec.color || 0xffd27a, transparent: true, opacity: 0.3, depthWrite: false }));
+        m.position.set(g.x, g.y, g.z);
+        lineGroup.add(m);
+      }
+      lineGroup.traverse((o) => o.layers && o.layers.set(1));
+      scene.add(lineGroup);
+    },
+```
+
+**Step 2.3 — the pending line.** `src/depot/DepotGame.jsx`, beside the build-line machinery (after `startBuildLine`, ~:1511): the pending state, the honest piece list, and accept/reject. The ghost list skips every cell the layer would skip — blocked, iced, unheld — so a gap in the preview is a gap in the wall, known before a scrap is spent.
+
+```js
+      // COMMAND T2 (mk0.84): THE PROPOSED LINE. The second tap of a
+      // two-point order proposes; nothing walks until the owner of the tap
+      // accepts. Ghost pieces skip exactly the cells laying would skip
+      // (scrap aside — that is walk-time), so the preview never lies.
+      const LINE_END_R = 2.5;   // m — a tap this close to an endpoint disc picks it up
+      const linePieces = (kind, a, b) => {
+        if (kind === "patrol") return [];
+        const orient = Math.abs(b.x - a.x) >= Math.abs(b.z - a.z) ? 0 : 1;
+        const ph = pieceHalf(kind, orient);
+        const hy = kind === "walls" ? 0.9 : SANDBAG_HY;
+        const out = [];
+        for (const c of lineCells(a, b)) {
+          if (!grid.inBounds(c.gx, c.gz)) continue;
+          const cell = grid.cells[grid.idx(c.gx, c.gz)];
+          const wp = grid.gridToWorld(c.gx, c.gz), c0 = invW(wp.x, wp.z);
+          if (cell.blocked || cell.wallId || cell.ice || !canBuild(T, c0.u, c0.v)) continue; // an honest gap
+          out.push({ x: wp.x, z: wp.z, y: field.heightAt(wp.x, wp.z) + hy, hx: ph.hx, hy, hz: ph.hz });
+        }
+        return out;
+      };
+      const refreshLinePreview = () => {
+        const lp = S.linePending;
+        if (!lp) { R.overlay.setLinePreview(false); return; }
+        const pieces = linePieces(lp.kind, lp.a, lp.b);
+        lp.count = pieces.length;
+        lp.cost = lp.kind === "walls" ? pieces.length * WALL_FIELD_COST
+                : lp.kind === "bags" ? pieces.length * SANDBAG_FIELD_COST : 0;
+        R.overlay.setLinePreview(true, {
+          a: { x: lp.a.x, z: lp.a.z, y: field.heightAt(lp.a.x, lp.a.z) },
+          b: { x: lp.b.x, z: lp.b.z, y: field.heightAt(lp.b.x, lp.b.z) },
+          pieces,
+          color: lp.kind === "walls" ? 0x9fdcff : lp.kind === "patrol" ? 0x7fd7ff : 0xffd27a,
+        });
+      };
+      const acceptLine = () => {
+        const lp = S.linePending;
+        if (!lp) return;
+        if (!pendingArmed(lp, world.t)) { toast("HOLD — ARMING"); return; }
+        const sq = S.squads.find((q) => q.id === lp.sq);
+        S.linePending = null;
+        R.overlay.setLinePreview(false);
+        if (sq) {
+          if (lp.kind === "patrol") { /* Task 3 fills this arm */ }
+          else startBuildLine(sq, lp.kind, lp.a, lp.b);
+        }
+        S.selSquadId = null; S.orderMode = null; S.buildPt0 = null;
+      };
+      const rejectLine = () => {
+        S.linePending = null;
+        R.overlay.setLinePreview(false);
+        S.selSquadId = null; S.orderMode = null; S.buildPt0 = null;
+      };
+      S.acceptLine = acceptLine; S.rejectLine = rejectLine;
+```
+
+**Step 2.4 — the second tap proposes.** `consumeOrderTap`'s build branch: the second tap creates the pending instead of starting the line (the first-tap arm and the engineer guard stay as they are; the guard's bail-out keeps its mk0.82 deselect):
+
+```js
+          if (!S.buildPt0) { S.buildPt0 = { x: d.x, z: d.z }; toast("LINE START — TAP THE FAR END"); return true; }
+          S.linePending = { kind: om === "build_walls" ? "walls" : "bags", sq: osq.id,
+            a: { x: S.buildPt0.x, z: S.buildPt0.z }, b: { x: d.x, z: d.z },
+            moving: null, armedAt: world.t + PENDING_ARM_S };
+          S.buildPt0 = null; S.orderMode = null;
+          refreshLinePreview();
+          return true;
+```
+
+**Step 2.5 — taps belong to the line while it is up.** `tapAt`, immediately after the placement-pending block (:1734-1735) and BEFORE `consumeOrderTap`:
+
+```js
+        // COMMAND T2: while a proposed line is up, ground taps belong to it —
+        // tap an endpoint disc to pick it up, tap ground to re-place a
+        // picked-up endpoint. Accept/reject (the buttons) are the only exits;
+        // a stray tap can never fire the order or steal the selection.
+        if (S.linePending) {
+          const lp = S.linePending;
+          if (lp.moving) {
+            const m = clampToRim(p.x, p.z);
+            lp[lp.moving] = { x: m.x, z: m.z };
+            lp.moving = null;
+            lp.armedAt = world.t + PENDING_ARM_S;
+            refreshLinePreview();
+          } else if (Math.hypot(p.x - lp.a.x, p.z - lp.a.z) < LINE_END_R) { lp.moving = "a"; toast("TAP THE NEW START"); }
+          else if (Math.hypot(p.x - lp.b.x, p.z - lp.b.z) < LINE_END_R) { lp.moving = "b"; toast("TAP THE NEW END"); }
+          return;
+        }
+```
+
+**Step 2.6 — the buttons.** In the frame's projection block (beside `S.pendingScreen`): project the END point into `S.lineScreen` (`R.project(lp.b.x, heightAt+1.2, lp.b.z)`, same recipe); when the projection is off-screen the buttons hide but the pending SURVIVES (unlike placement — the line is big, panning around it is normal work). Hud tick carries `linePending: S.linePending && S.lineScreen ? { x, y, cost, count, armed: pendingArmed(S.linePending, world.t), kind } : null`. JSX, beside the placement ✓/✗ pair, same styles:
+
+```jsx
+      {hud.linePending && (
+        <div style={{ position: "absolute", left: hud.linePending.x, top: hud.linePending.y, transform: "translate(-50%, -50%)", zIndex: 7, display: "flex", gap: 6, pointerEvents: "auto" }}>
+          <button data-line-accept
+            style={{ ...P.btnBig, borderColor: "#4aff8c", color: "#4aff8c", opacity: hud.linePending.armed ? 1 : 0.5, fontWeight: "bold" }}
+            onClick={() => stateRef.current && stateRef.current.acceptLine()}>
+            {hud.linePending.kind === "patrol" ? "✓ PATROL" : `✓ UP TO ◆${hud.linePending.cost}`}
+          </button>
+          <button data-line-reject
+            style={{ ...P.btnBig, borderColor: "#ff6b5e", color: "#ff6b5e", fontWeight: "bold" }}
+            onClick={() => stateRef.current && stateRef.current.rejectLine()}>
+            ✗
+          </button>
+        </div>
+      )}
+```
+
+The selected squad's center chip reads " — ACCEPT OR ADJUST THE LINE" while a pending exists (one more branch in the `hud.squadSel` label logic).
+
+**Step 2.7 — staging keeps working.** `__DEPOTORDER__`: after the `pts` loop, one line — `if (S.linePending) S.acceptLine();` with a comment saying the debug path auto-accepts what a human confirms. Existing mk0.60 build-line staging then behaves exactly as before.
+
+**Behavior stated plainly:** the second tap now shows the work instead of starting it — green disc at the start, amber at the end, ghost pieces with honest gaps, a cost that says "up to" because skipped cells never charge. Tap a disc, tap new ground, and the line follows. Accept and the squad marches; reject and everything clears. The engineers cannot be mis-tapped into a march anymore.
+
+**Gates (ONLY these):** parse changed files · `npm run lint:depot` · `npm run test:depot` (2.1 green; re-pins old→new) · build AFTER bumping `src/version.js` to "mk0.84" · `SMOKE_ONLY=depot` smoke. Allowed files: `DepotGame.jsx`, `renderer.js` (overlay object only), `version.js`, `depot-test.mjs`. Commit "(mk0.84)", push, CI green, STOP.
+
+---
+
+## Task 3 — Patrol (mk0.85) — suggested model: Sonnet (order-machine code fully written here)
+
+Two taps propose the route (Task 2's machinery, kind "patrol"); accept and the squad walks the line, turns around, walks it back, forever — fighting whatever it sees, by the halt-and-fight rule.
+
+**Required reading (agent, before any code; anchors re-verified at dispatch):** this plan whole; `CLAUDE.md`; `src/depot/squads.js` — module laws header, `stepSquad` whole (:487-651, the leg machine and its one-draw law), `squadThreatened`; `src/depot/state.js` — `squadFire` (:497-565, both gates); `src/depot/DepotGame.jsx` — `engageCheck`, `S.orderSquad`, `consumeOrderTap`, `acceptLine` (Task 2's, with the empty patrol arm), the pie slot lists; `src/depot/save.js` :199-219 (the generic squad serializer — why `_patA`/`_patB` ride); `scripts/depot-test.mjs` — the VISION T4 halt-and-fight block (the fixture idiom 3.1 mirrors) and grep `order.*patrol|_patA`.
+
+**Step 3.1 — failing tests first.** `scripts/depot-test.mjs`, new block `==== COMMAND T3: patrol` (fixture idiom of the VISION blocks; the order fields are set directly on the squad — the interface path is Task 2's, already pinned): (a) a squad with `order:"patrol"`, `_patA`/`_patB` set and `dest` at A reaches A, then is later observed nearer B, then later nearer A again (three sampled epochs — the loop is real and endless); (b) an enemy placed beside the patrol line gets fired on (muzzle events appear) and the anchor holds while he lives — halt-and-fight applies to patrol; (c) MOVE and BUILD squads still never fire (pin unchanged behavior); (d) dice law: a patrol running N legs draws exactly N leg-arrival draws and nothing else (twin-run count); (e) save/resume: a patrolling squad comes back patrolling — order, both endpoints, current destination all ride (plain scalars through the generic squad serializer; assert the round-trip); (f) pin — `acceptLine`'s patrol arm sets `_patA`/`_patB`/`order`/`dest` (source regex).
+
+**Step 3.2 — the order machine learns the loop.** `src/depot/squads.js` `stepSquad` (:504): `"patrol"` joins the dest-driven orders:
 
 ```js
   if ((squad.order === "attack" || squad.order === "move" || squad.order === "build" || squad.order === "patrol") && squad.dest) {
 ```
 
-and the ARRIVAL branch (:524, the `dToDest <= ARRIVE_TOL` else-if) splits: patrol swaps ends instead of digging in. Insert BEFORE the existing defend-flip, which then no longer sees patrol arrivals:
+and the ARRIVAL branch (:524 region) gains the turnaround BEFORE the defend-flip (which then no longer sees patrol arrivals):
 
 ```js
     } else if (dToDest <= ARRIVE_TOL && squad.order === "patrol") {
-      // COMMAND T2 (mk0.81): a patrol never arrives — it turns around. The
+      // COMMAND T3 (mk0.85): a patrol never arrives — it turns around. The
       // far end becomes the destination and the legs carry on; the leg
       // machinery (and its one arrival draw per leg) is untouched.
       const goingToB = Math.hypot(squad.dest.x - squad._patB.x, squad.dest.z - squad._patB.z) < 0.5;
@@ -159,46 +328,44 @@ and the ARRIVAL branch (:524, the `dToDest <= ARRIVE_TOL` else-if) splits: patro
       squad._cohesionHoldT = 0;
 ```
 
-The threat read at the leg boundary (:543) already treats everything that is not move/build as real — patrol inherits attack's cover-hop legs and dwell behavior with zero changes there. Verify, don't edit.
+The threat read at the leg boundary (:543) already treats everything that is not move/build as real — patrol inherits attack's cover-hop legs and dwell with zero changes there. Verify, don't edit.
 
-**Step 2.3 — patrol fires.** `src/depot/state.js` `squadFire`: the quiet-order gate (:500-501) does NOT gain patrol (it stays a fighting order), and the stationary gate (:506) admits it:
+**Step 3.3 — patrol fires.** `src/depot/state.js` `squadFire`: the quiet-order gate (:500-501) does NOT gain patrol; the stationary gate (:506) admits it:
 
 ```js
   const stationary = squad.order === "defend" ||
     ((squad.order === "attack" || squad.order === "patrol") && squad._pauseT > 0);
 ```
 
-`src/depot/DepotGame.jsx` `engageCheck` (:609): `if ((sq.order !== "attack" && sq.order !== "patrol") || ...` — a patrol that sees an enemy in reach halts and fights exactly as an attack does.
+`src/depot/DepotGame.jsx` `engageCheck`: `if ((sq.order !== "attack" && sq.order !== "patrol") || ...` — a patrol that sees an enemy in reach halts and fights exactly as an attack does.
 
-**Step 2.4 — the radial arms it.** `S.orderSquad` (:1397): `"patrol"` arms a two-tap flow exactly as the build orders do (reuse `S.buildPt0` as the first-point holder — rename it `S.pt0` ONLY if every touch point is renamed in the same commit; otherwise leave the name). `consumeOrderTap` (:1617 region) gains:
+**Step 3.4 — the radial and the accept arm.** `S.orderSquad` gains `"patrol"` arming the same two-tap flow the build orders use (first tap → `S.buildPt0` + toast "PATROL START — TAP THE FAR END"); `consumeOrderTap` gains the patrol branch creating `S.linePending` with kind `"patrol"` (same shape as 2.4, no engineer guard — every squad type except engineers and sappers offers the wedge). `acceptLine`'s patrol arm (Task 2 left it empty):
 
 ```js
-        if (om === "patrol") {
-          if (!osq) { S.orderMode = null; S.buildPt0 = null; return true; }
-          if (!S.buildPt0) { S.buildPt0 = { x: d.x, z: d.z }; toast("PATROL START — TAP THE FAR END"); return true; }
-          osq._patA = { x: S.buildPt0.x, z: S.buildPt0.z };
-          osq._patB = { x: d.x, z: d.z };
-          osq.order = "patrol";
-          osq.dest = { x: osq._patA.x, z: osq._patA.z };   // walk to the near end first
-          osq._legTarget = null; osq._pauseT = 0; osq._cohesionHoldT = 0; osq._build = null;
-          S.buildPt0 = null; S.orderMode = null;
-          return true;
-        }
+          if (lp.kind === "patrol") {
+            sq._patA = { x: lp.a.x, z: lp.a.z };
+            sq._patB = { x: lp.b.x, z: lp.b.z };
+            sq.order = "patrol";
+            sq.dest = { x: lp.a.x, z: lp.a.z };   // walk to the near end first
+            sq._legTarget = null; sq._pauseT = 0; sq._cohesionHoldT = 0; sq._build = null;
+          }
 ```
 
-(Both taps already rim-clamp through `d`.) The radial gains slot PATROL (`data-radial="patrol"`, all squad types except engineers and sappers — engineers build, sappers charge; center label reads "TAP THE PATROL START"/"FAR END" via the same `building`-style hud fields). A new order of any kind clears `_patA/_patB` is NOT needed — they are inert unless order is "patrol" (state, not behavior; say so in a comment).
+Pie slot PATROL (`data-radial="patrol"`, icon ⇄, color the MOVE blue) on every squad type except engineers and sappers; center chip statuses "TAP THE PATROL START"/"TAP THE FAR END" ride the same fields the build statuses use. `_patA`/`_patB` are inert unless the order is "patrol" — state, not behavior (comment says so).
 
-**Gates (ONLY these):** parse · lint:depot · test:depot (2.1 green, re-pins old→new) · build AFTER bump to "mk0.83" · SMOKE_ONLY=depot smoke. Commit "(mk0.83)", push, CI green, STOP.
+**Gates (ONLY these):** parse · lint:depot · test:depot (3.1 green, re-pins old→new) · build AFTER bump to "mk0.85" · SMOKE_ONLY=depot smoke. Commit "(mk0.85)", push, CI green, STOP.
 
 ---
 
-## Task 3 — Attack structures (mk0.84)
+## Task 4 — Attack structures (mk0.86) — suggested model: Sonnet (a priority flip with the code written here)
 
-A toggle on the radial: this squad prefers walls and towers over men — the wall-breaker escort order.
+A toggle on the pie: this squad prefers walls and towers over men — the wall-breaker escort order.
 
-**Step 3.1 — failing tests first.** `==== COMMAND T3: attack structures`: (a) a defending squad with the flag set, an enemy man AND an enemy-side wall both in sight and reach — the wall's hp drops first (structure preferred); (b) same fixture, flag off — the man dies first (today's priority, pinned); (c) the flag survives a save/resume (plain boolean on the squad — assert); (d) with the flag set and NO structure in reach, the squad still fights men (the fallback is automatic, nobody stands idle).
+**Required reading (agent, before any code; anchors re-verified at dispatch):** this plan whole; `CLAUDE.md`; `src/depot/state.js` — `squadFire` whole (:497-565: the two scans being split, the INTERFACE GAP and SPEC CONTRADICTION notes around them — they must survive the move verbatim); `src/depot/specs.js` `INFANTRY_ARMS` (the type gate); `src/depot/DepotGame.jsx` — the pie slot lists and instant-action closures (DEFEND's deselect is the model), `selectedSquad`/`S.selArmedAt`; `src/depot/save.js` squad serializer (why `prefStruct` rides); `scripts/depot-test.mjs` — grep `squadFire|hostileStructure` fixtures, every hit read.
 
-**Step 3.2 — the priority flip.** `src/depot/state.js` `squadFire` (:524-549): the two scans become explicit and the order between them reads the flag. The code inside each scan is today's, moved, not rewritten:
+**Step 4.1 — failing tests first.** `==== COMMAND T4: attack structures`: (a) a defending squad with the flag set, an enemy man AND an enemy-side wall both in sight and reach — the wall's hp drops first (structure preferred); (b) same fixture, flag off — the man dies first (today's priority, pinned); (c) the flag survives a save/resume (plain boolean on the squad — assert); (d) with the flag set and NO structure in reach, the squad still fights men (the fallback is automatic, nobody stands idle).
+
+**Step 4.2 — the priority flip.** `src/depot/state.js` `squadFire` (:524-549): the two scans become explicit and the order between them reads the flag. The code inside each scan is today's, moved, not rewritten:
 
 ```js
     const scanUnits = () => { /* today's unit loop (:525-534), verbatim */ };
@@ -215,7 +382,7 @@ A toggle on the radial: this squad prefers walls and towers over men — the wal
 
 (The scans close over `u`, `muzzle`, `eR` exactly as the inline code does; keep the `bd`/`bs` bookkeeping inside each. Sight gating on both paths is already in place since mk0.72 — no gate changes.)
 
-**Step 3.3 — the radial toggle.** Slot STRUCTURES on every armed squad's radial (types with an `INFANTRY_ARMS` row — not engineers, not sappers), `data-radial="structures"`, lit when on:
+**Step 4.3 — the pie toggle.** Slot STRUCTURES on every armed squad's pie (types with an `INFANTRY_ARMS` row — not engineers, not sappers), `data-radial="structures"`, lit when on, instant action (closes the pie AND deselects, like DEFEND):
 
 ```js
       S.toggleStructFirst = () => {
@@ -226,14 +393,14 @@ A toggle on the radial: this squad prefers walls and towers over men — the wal
       };
 ```
 
-hud.squadSel carries `structFirst: !!sq.prefStruct` and `armed: ...` as today; the slot's `on`/color read it.
+hud.squadSel carries `structFirst: !!sq.prefStruct`; the wedge's lit state reads it.
 
-**Step 3.4 — the record.** `docs/superpowers/decision-record.md`, "Orders and command": append one dated line — Command phase shipped mk0.80-0.82, radial live for squads and towers, patrol and attack-structures in the vocabulary, phase awaiting the owner's playtest.
+**Step 4.4 — the record.** `docs/superpowers/decision-record.md`, "Orders and command": append one dated line — Command phase shipped mk0.80-0.86, the pie live for squads and towers, proposed-line confirm on every two-point order, patrol and attack-structures in the vocabulary, phase awaiting the owner's playtest.
 
-**Gates (ONLY these):** parse · lint:depot · test:depot (3.1 green) · build AFTER bump to "mk0.84" · SMOKE_ONLY=depot smoke. Commit "(mk0.84)", push, CI green, STOP.
+**Gates (ONLY these):** parse · lint:depot · test:depot (4.1 green) · build AFTER bump to "mk0.86" · SMOKE_ONLY=depot smoke. Commit "(mk0.86)", push, CI green, STOP.
 
 ---
 
 ## Close
 
-Phase closes on the owner's playtest: the ring on every squad and tower, placement opening it, patrol routes held under fire, a wall-breaker squad ignoring men, per-tower discipline. Deferred by scope (on the shelf, decision record): take cover, fall back, escort, suppress/barrage, directed demolition, focus-fire, the rest of the tower doctrine.
+Phase closes on the owner's playtest: the pie on every squad and tower, placement opening it, proposed lines accepted or adjusted before anyone walks, patrol routes held under fire, a wall-breaker squad ignoring men, per-tower discipline. Deferred by scope (on the shelf, decision record): take cover, fall back, escort, suppress/barrage, directed demolition, focus-fire, the rest of the tower doctrine.

@@ -15,6 +15,7 @@ The project owner directs design, reviews every plan, and is the sole playtester
 
 - One plan document per phase. No parts, no split audiences — the owner reads all of it, so it is written once, plainly.
 - **Atomic steps with code:** each step names the exact file and line anchor and contains the actual code (or assert) to be added or changed, in execution order, failing-asserts-first where tests exist. Plain-language sentence above each step saying what it does. Agents execute plans; they do not design from intent.
+- **Every task carries its required-reading list in the plan** (files and regions the agent must read before code), re-verified against live anchors at dispatch.
 - The owner approves the plan **before any code**. No open design questions may enter a plan.
 - **All code that may be affected is read in full before thinking about the plan** — reading comes before design, not at dispatch.
 - **Pause between the design questions and the writing** — questions answered, then stop; the owner says when the plan gets written. Every time.
