@@ -44,6 +44,7 @@
 - Any friendly unit, squad, or tower is takeover-able — TAKE CONTROL on every radial. Twin-stick; squads driven as one (stick = formation anchor, fire = volley at aim); towers = manual fire control with doctrine buttons. The front fights on under standing orders; a bell save mid-possession releases to command view. Enemy needs no mirror.
 - SHIPPED (overnight run, 2026-08-13): Possession phase mk0.90-0.92 — take control on every squad and tower pie, twin-stick squad drive, volley at the aim, manual tower fire. Awaits the owner's playtest and his rulings on the queued questions (possessed squad pace; volleys beyond weapon range under far eyes).
 - SHIPPED (2026-08-13): Task 4, mk0.93 — the steered reticle, per the twin-stick reticle ruling above.
+- PLAYTEST VERDICT (owner, 2026-08-13): the possession phase plays well through mk0.99 — "this looks to be working... this phase is good." Phase CLOSED. Squad pace, tower safety-off and reticle speed stand as shipped (provisional F5 dials remain provisional).
 - THE RED CARRIED RETICLE (owner, 2026-08-13, after playing mk0.93): the reticle draws as a RED circle (its own renderer ring, not the build ghost's square). The reticle is CARRIED: released, it keeps its distance and direction from the unit — walking moves it with the unit; the right stick steers the offset. Sight-circle and seen-ground bounds unchanged; ground going dark under it still drops it home to the unit.
 - REVERSAL (owner, 2026-08-13, same playtest): the bell no longer releases possession — "a bell save mid-possession releases to command view" (mk0.90, line above) is struck. The bell rings, the save is written (still never recording a possession), and the player keeps driving.
 
@@ -88,7 +89,7 @@
 - Manifest/intel card layout wrinkles at 960px and narrow phones.
 
 **Open/owed:**
-- CURRENT (2026-08-13): prod mk0.99. Shipped this arc: mk0.95 wind toggle; mk0.96 wind finish + FIRE pressed-state; mk0.97 the sharpened hand (possessed spread ×0.25, snap-lead, cover as bonus both sides, firing line, hold-the-shot); mk0.98 stone stands (infantry can't wake welded masonry, stick stops at buildings, bar hides while possessed); mk0.99 killing rifles (rifle 15 / MG 8 both sides, hit flinch+flash). Phase closes on the owner's playtest. Next phase: The Front.
+- CURRENT (2026-08-13): prod mk0.99. POSSESSION PHASE CLOSED (owner's verdict, above). Next phase: THE FRONT (map phase) — design questions before any plan; its Task 1 commit carries the roadmap flip (Possession → DONE, The Front → IN PROGRESS) per the fold-in convention.
 - Owner rulings still open: tower friendly-fire safety off while possessed (ratify by play); possessed squad pace (~2.1 m/s sustained, rear man on the 6m band) — accept or possessed members outpace the anchor.
 - PLAYTEST VERDICT (owner, 2026-08-12): Polish I, Vision, and the halt-and-fight fix (mk0.74) all passed — "seems okay." Both phases CLOSED. Next phase: Command (radial orders).
 - Mid-march stall: squads freeze short of their destination near masonry before any contact (pre-existing pathing, cohesion/detour family) — surfaced again in the mk0.74 staging runs; unranked by the owner.
