@@ -28,7 +28,7 @@
 
 **Task 6 — The weld scan sleeps too** *(skeleton)*
 - The per-tick walk over every weld skips what sleeps — the collision books' cousin.
-- Same engine gates; before/after measured alongside Task 4's numbers.
+- Same engine gates; before/after measured alongside Task 5's numbers.
 
 **Task 7 — The front door** *(skeleton)*
 - The site opens straight into Winter Front's start screen; one small tech-demos link to a second page.
