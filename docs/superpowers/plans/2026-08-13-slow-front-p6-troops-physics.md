@@ -14,10 +14,10 @@
 
 **Task 3 — Only engineers build** — POPULATED BELOW (mk1.12).
 
-**Task 4 — The bell market** *(skeleton)*
-- Prices re-set at every bell from what stands on the field, men plus masonry, against the physics budget.
-- Flat when empty, double at half-full, capped near 4x. Both sides pay the same table.
-- The build bar and manifest show the live prices.
+**Task 4 — The bell market** *(skeleton; revised by the owner, 2026-08-13)*
+- Prices PER TYPE: each type's price rises with how many of that type stand on the field, both armies' stock counted together — one shared market, both sides pay the same table.
+- Income becomes a flat 1 scrap per second, both sides, replacing the old trickle and the flat bell payout; the ground-holding town payout stays as the only bonus.
+- The build bar and manifest show the live prices. Curve anchors per type are provisional dials.
 
 **Task 5 — The body lists, resurrected** *(skeleton)*
 - The archived typed-pools spec (THE FRONT plan, bottom), re-landed as written.
