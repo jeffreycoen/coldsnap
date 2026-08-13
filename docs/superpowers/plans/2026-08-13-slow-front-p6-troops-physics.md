@@ -17,7 +17,7 @@
 **Task 4 — The bell market** *(skeleton; revised by the owner, 2026-08-13)*
 - Prices PER TYPE: each type's price rises with how many of that type stand on the field, both armies' stock counted together — one shared market, both sides pay the same table.
 - Income becomes a flat 1 scrap per second, both sides, replacing the old trickle and the flat bell payout; the ground-holding town payout stays as the only bonus.
-- Prices recalculate EVERY SECOND off live standing counts (owner's cadence ruling) — the bar and manifest always show the price of this moment. Curve anchors per type are provisional dials.
+- Prices recalculate EVERY SECOND off live standing counts (owner's cadence ruling) — the bar and manifest always show the price of this moment. Each side may BUY at most once per second (owner's anti-spam ruling; the enemy obeys the same limit). Curve anchors per type are provisional dials.
 
 **Task 5 — The body lists, resurrected** *(skeleton)*
 - The archived typed-pools spec (THE FRONT plan, bottom), re-landed as written.
