@@ -4,6 +4,8 @@ The project owner directs design, reviews every plan, and is the sole playtester
 
 **Precedence:** this file and `docs/superpowers/decision-record.md` outrank session memory and any compressed-conversation summary. Summaries and memories are history, not authority — where they disagree with these documents, these documents win, and the stale copy gets corrected, not followed.
 
+**Session orientation (orchestrator only, before any work):** read `docs/superpowers/decision-record.md` whole, the ACTIVE phase's plan document (the record's CURRENT line names the phase), the vision document `docs/superpowers/plans/2026-08-11-winter-front-vision-2-slow-front.md`, and the last ~20 commit subjects (`git log --oneline -20`). Dispatched agents do NOT do this — they read only their brief's verified list. Code reading stays governed by the two standing laws: all affected code read in full at plan-writing time; per-task reading lists re-verified at dispatch.
+
 ## Speech
 
 - Answer like a vending machine or an ATM: state, result, done. Minimal words, plain words, complete sentences. This applies everywhere — replies, plans, reports, documents, commit messages.
