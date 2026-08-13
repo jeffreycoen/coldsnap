@@ -366,6 +366,10 @@ export function stepTowers(world, T, discipline) {
   const dt = world.dt;
   for (const b of world.bodies) {
     if (b.kind !== "tower" || !b.alive) continue;
+    // COMMAND T1 (mk0.80): fire discipline is per tower now — the radial
+    // sets b.discipline; the old argument is the fallback for bodies that
+    // predate the field (old saves, bare fixtures).
+    const disc = b.discipline || discipline || "careful";
     const spec = TOWER_SPECS[b.towerType] || TOWER_SPECS.gun;
     if (spec.fireRate <= 0) continue;
     b.fireCd = (b.fireCd || 0) - dt;
@@ -411,7 +415,7 @@ export function stepTowers(world, T, discipline) {
     // tower/town chunk holds the trigger pull (cadence still resets — keeps
     // the target, retries next cadence; target movement usually clears it).
     // Enemy fire (units.js) never runs this check.
-    if (discipline !== "free" && friendlyFouls(world, muzzle, best.pos, spec, b.id)) {
+    if (disc !== "free" && friendlyFouls(world, muzzle, best.pos, spec, b.id)) {
       b.fireCd = spec.fireRate;
       continue;
     }
@@ -702,6 +706,30 @@ const P = {
   cardWrap: { position: "absolute", top: 52, right: 10, zIndex: 6, pointerEvents: "none" },
   toast: { background: "rgba(14,18,24,0.92)", border: "1px solid #ffb45e", color: "#ffd9a0", borderRadius: 6, padding: "4px 12px", fontSize: 12 },
 };
+
+// COMMAND (mk0.80): THE RADIAL. One ring of orders around the selected
+// thing — squads and towers speak the same language. Slots fan across the
+// arc over the anchor; the next phase docks TAKE CONTROL into the same
+// ring, which is why the geometry is data, not layout.
+function RadialMenu({ cx, cy, label, slots, armed }) {
+  const N = slots.length, RAD = 78;
+  const span = Math.min(2.4, 0.7 * Math.max(1, N - 1));
+  const a0 = -Math.PI / 2 - span / 2;
+  return (
+    <div style={{ position: "absolute", left: 0, top: 0, zIndex: 7, pointerEvents: "none" }}>
+      <div style={{ position: "absolute", left: cx, top: cy + 26, transform: "translate(-50%,0)", fontSize: 10, letterSpacing: 1, color: "#7dffa8", background: "rgba(14,18,24,0.85)", padding: "1px 6px", borderRadius: 4 }}>{label}</div>
+      {slots.map((s, i) => {
+        const a = N === 1 ? -Math.PI / 2 : a0 + (span * i) / (N - 1);
+        const x = cx + Math.cos(a) * RAD, y = cy + Math.sin(a) * RAD;
+        return (
+          <button key={s.key} data-radial={s.key}
+            style={{ ...P.btnBig, position: "absolute", left: x, top: y, transform: "translate(-50%,-50%)", pointerEvents: "auto", padding: "8px 12px", fontSize: 12, borderColor: s.on ? s.color : "#48515f", color: s.color, opacity: armed ? 1 : 0.5 }}
+            onClick={s.act}>{s.label}</button>
+        );
+      })}
+    </div>
+  );
+}
 
 // The build palette, in bar order — every buildable the match can ever offer.
 // Keys are the mode keys tapAt/setMode dispatch on and, since P1 Task 2, the
@@ -1348,6 +1376,10 @@ export default function DepotGame({ onExit, resume = null }) {
         const sq = makeSquad(S.nextSquadId++, type, 1, v.wp.x, v.wp.z);
         spawnSquadMembers(world, sq);
         S.squads.push(sq);
+        // COMMAND T1 (mk0.80): a placed squad comes up already selected with
+        // its radial open — defend-here is already its standing order (the
+        // intrinsic default, no tap needed).
+        S.selSquadId = sq.id; S.selArmedAt = world.t + PENDING_ARM_S;
         S.resources -= SQUAD_SPECS[type].cost;
       };
       // Sandbag: instant, wall-exempt (brief) — same reasoning as walls: a
@@ -1661,6 +1693,13 @@ export default function DepotGame({ onExit, resume = null }) {
         S.inspectId = null;
       };
       S.sellById = sellById;
+      // COMMAND T1 (mk0.80): per-tower fire discipline toggle — the tower
+      // radial's CAREFUL/FREE slot. Mirrors stepTowers's own fallback chain.
+      S.setTowerDiscipline = (id) => {
+        const b = world.byId.get(id);
+        if (!b || b.kind !== "tower") return;
+        b.discipline = (b.discipline || discipline || "careful") === "careful" ? "free" : "careful";
+      };
       S.confirmPending = confirmPending;
       S.clearPending = clearPending;
       S.rotate = (d) => R.rotateStep(d);
@@ -2560,6 +2599,17 @@ export default function DepotGame({ onExit, resume = null }) {
               S.squadScreen = toScreen(sqCx, field.heightAt(sqCx, sqCz) + 2.2, sqCz);
               S.flagScreen = selSq.dest ? toScreen(selSq.dest.x, field.heightAt(selSq.dest.x, selSq.dest.z) + 1.6, selSq.dest.z) : null;
             } else { S.squadScreen = null; S.flagScreen = null; }
+            // Tower radial anchor (COMMAND T1, mk0.80): the same screen-space
+            // convention as the squad chip anchor above — projected off the
+            // tower's top from the live camera every frame, rotation/pan-proof.
+            if (S.inspectId && R.project) {
+              const ib2 = world.byId.get(S.inspectId);
+              if (ib2 && ib2.kind === "tower") {
+                const rect3 = canvas.getBoundingClientRect();
+                const nd3 = R.project(ib2.pos.x, ib2.pos.y + ib2.hy + 1.2, ib2.pos.z);
+                S.towerScreen = nd3 ? { x: rect3.left + (nd3.x * 0.5 + 0.5) * rect3.width, y: rect3.top + (-nd3.y * 0.5 + 0.5) * rect3.height } : null;
+              } else S.towerScreen = null;
+            } else S.towerScreen = null;
           }
           S.hudT += dt;
           if (S.hudT > 0.12) {
@@ -2623,6 +2673,23 @@ export default function DepotGame({ onExit, resume = null }) {
                   hp: Math.max(0, Math.ceil(b.hp)), maxHp: b.maxHp,
                   refund: b.kind === "tower" ? Math.floor(ispec.cost * 0.6) : 3,
                   blurb: ispec ? ispec.blurb : "Bends their road.",
+                };
+              })(),
+              // COMMAND T1 (mk0.80): the tower radial — CAREFUL/FREE toggle
+              // (frost towers have no gun, so they skip that slot) and SELL,
+              // for the inspected tower only. Walls keep their inspect
+              // behavior untouched (no radial).
+              towerRadial: (() => {
+                if (!S.inspectId || !S.towerScreen) return null;
+                const b = world.byId.get(S.inspectId);
+                if (!b || b.kind !== "tower") return null;
+                const ispec = TOWER_SPECS[b.towerType];
+                return {
+                  id: b.id, x: S.towerScreen.x, y: S.towerScreen.y,
+                  label: ispec.label,
+                  discipline: b.discipline || discipline || "careful",
+                  refund: Math.floor(ispec.cost * 0.6),
+                  frost: b.towerType === "frost",
                 };
               })(),
             });
@@ -2709,11 +2776,6 @@ export default function DepotGame({ onExit, resume = null }) {
     S.setFog(!S.fogOn);
     setHud((h) => ({ ...h, fogOn: S.fogOn }));
   };
-  const toggleDiscipline = () => {
-    const S = stateRef.current; if (!S || !S.setDiscipline) return;
-    S.setDiscipline(S.discipline === "careful" ? "free" : "careful");
-    setHud((h) => ({ ...h, discipline: S.discipline }));
-  };
   const sellInspected = () => { const S = stateRef.current; if (S && S.inspectId && S.sellById) S.sellById(S.inspectId); };
 
   // The bar shows the UNLOCKED set and nothing else (P1 Task 2): a locked
@@ -2761,9 +2823,6 @@ export default function DepotGame({ onExit, resume = null }) {
           onClick={() => { const S = stateRef.current; if (S && S.rotate) S.rotate(1); }}>⟳</button>
         <button style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.fogOn ? "#7fd7ff" : "#48515f", opacity: hud.fogOn ? 1 : 0.6 }} title="fog of war (visual only)" onClick={toggleFog}>
           FOG {hud.fogOn ? "ON" : "OFF"}
-        </button>
-        <button style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.discipline === "free" ? "#ff7a7a" : "#4aff8c" }} onClick={toggleDiscipline}>
-          FIRE DISCIPLINE: {hud.discipline === "free" ? "FREE" : "CAREFUL"}
         </button>
         <button style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", opacity: hud.muted ? 0.5 : 1 }} onClick={toggleMute}>
           {hud.muted ? "🔇" : "🔊"}
@@ -2868,40 +2927,27 @@ export default function DepotGame({ onExit, resume = null }) {
         </div>
       )}
 
-      {hud.squadSel && (
-        <div style={{ position: "absolute", left: hud.squadSel.x, top: hud.squadSel.y, transform: "translate(-50%, -100%)", zIndex: 7, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, pointerEvents: "auto" }}>
-          <div style={{ fontSize: 10, letterSpacing: 1, color: "#7dffa8", background: "rgba(14,18,24,0.85)", padding: "1px 6px", borderRadius: 4 }}>
-            {hud.squadSel.label}
-            {hud.squadSel.building
-              ? (hud.squadSel.buildStart ? " — TAP THE FAR END" : " — TAP THE LINE START")
-              : hud.squadSel.aiming || hud.squadSel.aimingMove ? " — TAP GROUND" : ""}
-          </div>
-          {/* P1.5 T4: the two-point build chips — engineer squads only. Their
-              own row above MOVE/ATTACK/DEFEND, so the order chips a rifle squad
-              has never move under the thumb when an engineer team is picked. */}
-          {hud.squadSel.engineer && (
-            <div style={{ display: "flex", gap: 6 }}>
-              <button data-squad-build-bags
-                style={{ ...P.btnBig, borderColor: hud.squadSel.building === "bags" ? "#ffd27a" : "#48515f", color: "#ffd27a", opacity: hud.squadSel.armed ? 1 : 0.5 }}
-                onClick={() => stateRef.current && stateRef.current.orderSquad("build_bags")}>▬ BAGS</button>
-              <button data-squad-build-walls
-                style={{ ...P.btnBig, borderColor: hud.squadSel.building === "walls" ? "#ffd27a" : "#48515f", color: "#ffd27a", opacity: hud.squadSel.armed ? 1 : 0.5 }}
-                onClick={() => stateRef.current && stateRef.current.orderSquad("build_walls")}>▦ WALLS</button>
-            </div>
-          )}
-          <div style={{ display: "flex", gap: 6 }}>
-            <button data-squad-move
-              style={{ ...P.btnBig, borderColor: hud.squadSel.aimingMove || hud.squadSel.order === "move" ? "#7fd7ff" : "#48515f", color: "#7fd7ff", opacity: hud.squadSel.armed ? 1 : 0.5 }}
-              onClick={() => stateRef.current && stateRef.current.orderSquad("move")}>MOVE</button>
-            <button data-squad-attack
-              style={{ ...P.btnBig, borderColor: hud.squadSel.aiming ? "#ff6b5e" : "#48515f", color: "#ff6b5e", opacity: hud.squadSel.armed ? 1 : 0.5 }}
-              onClick={() => stateRef.current && stateRef.current.orderSquad("attack")}>ATTACK</button>
-            <button data-squad-defend
-              style={{ ...P.btnBig, borderColor: hud.squadSel.order === "defend" ? "#7dffa8" : "#48515f", color: "#7dffa8", opacity: hud.squadSel.armed ? 1 : 0.5 }}
-              onClick={() => stateRef.current && stateRef.current.orderSquad("defend")}>DEFEND</button>
-          </div>
-        </div>
-      )}
+      {hud.squadSel && (() => {
+        const sq = hud.squadSel;
+        // COMMAND T1 (mk0.80): DEFEND, MOVE, ATTACK — engineers additionally
+        // get BAGS and WALLS. Same S.orderSquad actions, same order-state
+        // colors the old chip row used.
+        const slots = [
+          { key: "defend", label: "DEFEND", color: "#7dffa8", on: sq.order === "defend", act: () => stateRef.current && stateRef.current.orderSquad("defend") },
+          { key: "move", label: "MOVE", color: "#7fd7ff", on: sq.aimingMove || sq.order === "move", act: () => stateRef.current && stateRef.current.orderSquad("move") },
+          { key: "attack", label: "ATTACK", color: "#ff6b5e", on: sq.aiming, act: () => stateRef.current && stateRef.current.orderSquad("attack") },
+        ];
+        if (sq.engineer) {
+          slots.push(
+            { key: "build_bags", label: "▬ BAGS", color: "#ffd27a", on: sq.building === "bags", act: () => stateRef.current && stateRef.current.orderSquad("build_bags") },
+            { key: "build_walls", label: "▦ WALLS", color: "#ffd27a", on: sq.building === "walls", act: () => stateRef.current && stateRef.current.orderSquad("build_walls") },
+          );
+        }
+        const status = sq.building
+          ? (sq.buildStart ? " — TAP THE FAR END" : " — TAP THE LINE START")
+          : sq.aiming || sq.aimingMove ? " — TAP GROUND" : "";
+        return <RadialMenu cx={sq.x} cy={sq.y} label={sq.label + status} slots={slots} armed={sq.armed} />;
+      })()}
       {hud.squadFlag && (
         <div data-squad-flag style={{ position: "absolute", left: hud.squadFlag.x, top: hud.squadFlag.y, transform: "translate(-50%, -100%)", zIndex: 6, pointerEvents: "none", color: "#ff6b5e", fontSize: 18 }}>⚑</div>
       )}
@@ -2913,12 +2959,37 @@ export default function DepotGame({ onExit, resume = null }) {
               <div style={{ color: "#7fd7ff", letterSpacing: 1 }}>{hud.inspect.label}</div>
               <div style={{ fontSize: 10, opacity: 0.8 }}>HP {hud.inspect.hp}/{hud.inspect.maxHp} · {hud.inspect.blurb}</div>
             </div>
-            <button style={{ ...P.btn, borderColor: "#ffb45e", color: "#ffb45e" }} onClick={sellInspected}>
-              SELL ◆{hud.inspect.refund}
-            </button>
+            {/* COMMAND T1 (mk0.80): SELL moved into the tower radial below —
+                walls keep today's inspect behavior untouched (no radial). */}
+            {!hud.towerRadial && (
+              <button style={{ ...P.btn, borderColor: "#ffb45e", color: "#ffb45e" }} onClick={sellInspected}>
+                SELL ◆{hud.inspect.refund}
+              </button>
+            )}
           </div>
         </div>
       )}
+      {hud.towerRadial && (() => {
+        const tr = hud.towerRadial;
+        const slots = [];
+        if (!tr.frost) {
+          slots.push({
+            key: "discipline",
+            label: tr.discipline === "free" ? "FREE" : "CAREFUL",
+            color: tr.discipline === "free" ? "#ff7a7a" : "#4aff8c",
+            on: true,
+            act: () => stateRef.current && stateRef.current.setTowerDiscipline(tr.id),
+          });
+        }
+        slots.push({
+          key: "sell",
+          label: `SELL ◆${tr.refund}`,
+          color: "#ffb45e",
+          on: true,
+          act: () => stateRef.current && stateRef.current.sellById(tr.id),
+        });
+        return <RadialMenu cx={tr.x} cy={tr.y} label={tr.label} slots={slots} armed={true} />;
+      })()}
 
       {hud.started && !hud.gameOver && !hud.victory && (
         <div style={P.bar}>

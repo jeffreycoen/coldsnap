@@ -37,6 +37,7 @@ import { makeTerritory, stepTerritory, holderAt, fogStateAt, valueAt, canBuild, 
 import { SIGHT, eyeOf, canSee, fillMaps, gridEye, makeSight, seenAt, stepSight } from "../src/depot/sight.js";
 import { fwdUFor, fwdDirFor, invWFor, clampToRimFor } from "../src/depot/orient.js";
 import { washAlpha, WASH_SEAM, WASH_MAX_A } from "../src/render/renderer.js";
+import { serializeFront, parseFront, restoreBodies } from "../src/depot/save.js";
 import fs from "node:fs";
 
 // identity fwdDir (DepotGame.jsx's ORIENT-aware transform, ORIENT===0 case)
@@ -1983,7 +1984,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   {
     const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     // the frame snapshot is the setHud({...}) that also carries mode/sellMode
-    const snap = src.match(/setHud\(\{[\s\S]{0,3600}?\}\);\n\s+\}\n/); // window widened (mk0.29 added endCard; mk0.41 added the manifest mirror)
+    const snap = src.match(/setHud\(\{[\s\S]{0,4600}?\}\);\n\s+\}\n/); // window widened (mk0.29 added endCard; mk0.41 added the manifest mirror; mk0.80 added the tower radial)
     ok("sandbag-rot: frame hud snapshot carries sandbagOrient (no clobber)",
       !!snap && snap[0].includes("mode: S.mode") && snap[0].includes("sandbagOrient: S.sandbagOrient"));
     const { HUD0 } = await import("../src/depot/state.js");
@@ -3302,9 +3303,11 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   // the brief fixed are actually written where they are claimed to be.
   {
     const dsrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("mk0.60/6: the build chips are engineer-only, at the order site and in the chip row",
+    ok("mk0.60/6: the build chips are engineer-only, at the order site and in the radial",
       /if \(sq\.type !== "engineers"\) return;/.test(dsrc) && /engineer: sq\.type === "engineers"/.test(dsrc)
-      && /hud\.squadSel\.engineer && \(/.test(dsrc));
+      // COMMAND T1 (mk0.80) re-pin: the chip row's `hud.squadSel.engineer && (`
+      // JSX guard became the radial's `if (sq.engineer) {` slot push.
+      && /if \(sq\.engineer\) \{/.test(dsrc));
     ok("mk0.60/6: the two taps are start-then-end, and a re-tap of the armed chip cancels",
       /if \(!S\.buildPt0\) \{ S\.buildPt0 = \{ x: d\.x, z: d\.z \}/.test(dsrc)
       && /if \(S\.orderMode === kind\) \{ S\.orderMode = null; S\.buildPt0 = null; return; \}/.test(dsrc));
@@ -3866,6 +3869,88 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 }
 // ==== end VISION T4 ==========================================================
+
+// ==== COMMAND T1: per-tower discipline =======================================
+// mk0.80. stepTowers (DepotGame.jsx :365) starts reading b.discipline first,
+// falling back to its own argument only when the field is absent (old saves,
+// bare fixtures). stepTowers lives in DepotGame.jsx — JSX, not importable
+// headlessly — so its gate is mirrored here, the same convention the fire
+// discipline fixture above (and the VISION T4/scan mirrors) already use. The
+// mirror below is written to match stepTowers's gate LINE FOR LINE; it is
+// intentionally updated in lockstep with :414 in the same task (1.2), which
+// is why (a) fails before 1.2 and passes after — see the report.
+{
+  const gunSpec = { kind: "gun", projSpeed: 58, occl: "arc", volley: 1, acc: 0.02, blastR: 0, kv: 1, dmg: 1, fireRate: 0.2 };
+  const makeFixture = () => {
+    const world = makeWorld({ field: { heightAt: () => 0, dirty: false }, seed: 1 });
+    const tower = addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: 1, hz: 0.8, x: 0, y: 1, z: 0, hp: 80 });
+    addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.9, hy: 0.9, hz: 0.9, x: 8, y: 0.9, z: 0, hp: 70 });
+    const target = addBody(world, { kind: "unit", team: 2, mass: 90, hx: 0.4, hy: 0.9, hz: 0.4, x: 16, y: 0.9, z: 0, hp: 30 });
+    target.v = { x: 0, y: 0, z: 0 };
+    return { world, tower, target };
+  };
+  // mirrors stepTowers's gate (DepotGame.jsx :414) — post-1.2:
+  //   const disc = b.discipline || discipline || "careful";
+  //   if (disc !== "free" && friendlyFouls(...)) hold; else fire.
+  const runCadence = (towerDiscipline, fallbackDiscipline, spec, pulls = 5) => {
+    const { world, tower, target } = makeFixture();
+    if (towerDiscipline != null) tower.discipline = towerDiscipline;
+    const muzzle = { x: tower.pos.x, y: tower.pos.y + tower.hy + 0.45, z: tower.pos.z };
+    for (let i = 0; i < pulls; i++) {
+      // mirrors stepTowers's gate (DepotGame.jsx :414) post-1.2 — the
+      // fail-first probe (pre-1.2: `fallbackDiscipline || "careful"`, which
+      // ignores b.discipline) is recorded in the task report.
+      const disc = tower.discipline || fallbackDiscipline || "careful";
+      if (disc === "free" || !friendlyFouls(world, muzzle, target.pos, spec)) {
+        towerShot(world, tower, target, spec);
+      }
+    }
+    return world.projectiles.length;
+  };
+
+  // (a) per-tower field wins: a "free" tower fires through the friendly wall
+  // while a "careful" tower in the identical situation holds — proves the
+  // field is read PER TOWER, not off one shared argument.
+  ok("COMMAND T1(a): a tower with discipline \"free\" fires through the friendly wall",
+    runCadence("free", "careful", gunSpec) > 0);
+  ok("COMMAND T1(a): a tower with discipline \"careful\" holds in the same situation",
+    runCadence("careful", "free", gunSpec) === 0);
+
+  // (b) compatibility contract: no discipline field on the body — the
+  // fallback argument (stepTowers's old parameter) decides, exactly as
+  // before this task.
+  ok("COMMAND T1(b): no discipline field + fallback \"free\" fires (old-argument behavior preserved)",
+    runCadence(null, "free", gunSpec) > 0);
+  ok("COMMAND T1(b): no discipline field + fallback \"careful\" holds (old-argument behavior preserved)",
+    runCadence(null, "careful", gunSpec) === 0);
+
+  // (c) save/resume round-trip: discipline is a plain string on the tower
+  // body — save.js's generic per-body sweep (BODY_HANDLED doesn't list it)
+  // carries it through serializeFront -> parseFront -> restoreBodies with no
+  // special-case code anywhere in save.js.
+  {
+    const field = makeField(9, 2.0, 1);
+    const world = makeWorld({ field, seed: 1 });
+    addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: 1, hz: 0.8, x: 0, y: 1, z: 0, hp: 80 }).discipline = "free";
+    const T = makeTerritory(5, 5);
+    const S = {
+      bell: 0, resources: 0, kills: 0, spawnRR: 0, started: false, mode: "wall", sandbagOrient: 0,
+      nextSquadId: 1, zoom: 1, focus: { x: 0, z: 0 }, depotCensusAcc: 0, depotStanding: 1, enemyStanding: 1,
+      starvedStreak: 0, _reportedBreak: false, _reportedSpent: false,
+      manifest: {}, foe: {}, intelUp: false, intelArmedAt: 0, lastDispatch: null,
+      pendingPlan: null, intelPlan: null, ws: {}, reg: {}, squads: [],
+    };
+    const json = serializeFront({ S, world, T, town: [], census: [], census2: [], rocks: [], smears: [], mapSeed: 1, rngSeed: 1 });
+    const parsed = parseFront(json);
+    ok("COMMAND T1(c): the save round-trip parses back", parsed.ok, parsed.reason);
+    const world2 = makeWorld({ field: makeField(9, 2.0, 1), seed: 1 });
+    const bodies2 = parsed.ok ? restoreBodies(world2, parsed.data, []) : [];
+    const tower2 = bodies2.find((b) => b.kind === "tower");
+    ok("COMMAND T1(c): tower.discipline rides the save/resume round-trip",
+      !!tower2 && tower2.discipline === "free", tower2 && tower2.discipline);
+  }
+}
+// ==== end COMMAND T1 ==========================================================
 
 
 
