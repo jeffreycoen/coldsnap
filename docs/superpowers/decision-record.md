@@ -99,6 +99,7 @@
 
 **Open/owed:**
 - PLAYTEST VERDICT (owner, 2026-08-13): "this phase is good" — THE FRONT is CLOSED at mk1.05 (six tasks, mk1.00–mk1.05).
+- REVERSAL (owner, 2026-08-13): the SINGLES UNIT MODEL is SHELVED — "let's keep the squad setup for now." Squads stay the unit model; the n:1 experiment leaves the P6 queue and returns only on the owner's word.
 - CURRENT (2026-08-13): prod mk1.05. THE FRONT CLOSED (owner's verdict, above). Next phase: TROOPS & PHYSICS (P6) — design questions before any plan; its Task 1 commit carries the roadmap flip (The Front → DONE, Troops & Physics → IN PROGRESS) per the fold-in convention. P6's queue: the singles unit model (sniper pair kept), the selection UI, combat re-tuning, the body-lists resurrection (quieter measurement protocol first), the bell-market pricing (design ratified above), the weld-scan sleep skip, and squad path-routing around water (polish ledger).
 - Owner rulings still open: tower friendly-fire safety off while possessed (ratify by play); possessed squad pace (~2.1 m/s sustained, rear man on the 6m band) — accept or possessed members outpace the anchor.
 - PLAYTEST VERDICT (owner, 2026-08-12): Polish I, Vision, and the halt-and-fight fix (mk0.74) all passed — "seems okay." Both phases CLOSED. Next phase: Command (radial orders).
