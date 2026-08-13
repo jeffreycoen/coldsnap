@@ -7,7 +7,7 @@ import {
   BELL_PERIOD_S, BELL_SCRAP, TIER_BELLS, ENEMY_TIERS, enemyTierState, enemyTierOf, ASSAULT_TIMEOUT,
   MANIFEST_DRAWS, FOE_DRAWS, makeManifestState, makeFoeState, manifestPool, foePool,
   drawOffers, drawFoePick, pickManifest, isUnlocked, tierOpenCount,
-  regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, squadFire, possessedVolley,
+  regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, squadFire, possessedVolley, possessedTowerFire,
   fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed,
   PENDING_EDGE_PAD, pendingButtonsVisible, canvasTapConsumesPending,
   END_CARD_DELAY_S, stampEnd, endCardReady,
@@ -1984,7 +1984,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   {
     const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     // the frame snapshot is the setHud({...}) that also carries mode/sellMode
-    const snap = src.match(/setHud\(\{[\s\S]{0,7000}?\}\);\n\s+\}\n/); // window widened (mk0.29 added endCard; mk0.41 added the manifest mirror; mk0.80 added the tower radial; mk0.82 added showPie to both; mk0.84 added linePending, re-pinned 5000->6000; mk0.86 added structOk/structFirst, re-pinned 6000->7000)
+    const snap = src.match(/setHud\(\{[\s\S]{0,7500}?\}\);\n\s+\}\n/); // window widened (mk0.29 added endCard; mk0.41 added the manifest mirror; mk0.80 added the tower radial; mk0.82 added showPie to both; mk0.84 added linePending, re-pinned 5000->6000; mk0.86 added structOk/structFirst, re-pinned 6000->7000; mk0.92 added canPossess + the tower branch of hud.possessed, re-pinned 7000->7500)
     ok("sandbag-rot: frame hud snapshot carries sandbagOrient (no clobber)",
       !!snap && snap[0].includes("mode: S.mode") && snap[0].includes("sandbagOrient: S.sandbagOrient"));
     const { HUD0 } = await import("../src/depot/state.js");
@@ -4598,8 +4598,145 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
       /blastR: spec\.blastR != null \? spec\.blastR : INFANTRY_BLAST_R/.test(volleyBody) &&
       /kv: spec\.kv != null \? spec\.kv : INFANTRY_KV/.test(volleyBody));
   }
+
+  // mk0.91 audit item A (possession hygiene, drift audit): a stale aim or a
+  // FIRE flag stuck by a mid-hold bell release can never carry into the next
+  // possession — S.takeControl and S.releasePossession both clear the
+  // trigger state (S.possessAim = null; S.fireHeld = false;).
+  {
+    const gameSrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    const takeControlBody = (gameSrc.match(/S\.takeControl = \(\) => \{[\s\S]*?\n      \};/) || [""])[0];
+    const releaseBody = (gameSrc.match(/S\.releasePossession = \(\) => \{[\s\S]*?\n      \};/) || [""])[0];
+    ok("POSSESSION T2 audit item A source pin: S.takeControl clears possessAim/fireHeld",
+      /S\.possessAim = null; S\.fireHeld = false;/.test(takeControlBody), takeControlBody.length);
+    ok("POSSESSION T2 audit item A source pin: S.releasePossession clears possessAim/fireHeld",
+      /S\.possessAim = null; S\.fireHeld = false;/.test(releaseBody), releaseBody.length);
+  }
 }
 // ==== end POSSESSION T2 =======================================================
+
+// ==== POSSESSION T3: manual fire control — the possessed tower =============
+// mk0.92 (Phase 4 Task 3). possessedTowerFire (state.js) is one trigger pull
+// on the tower's own real spec/cooldown/muzzle, at the owner's aim — through
+// towerShot, exactly like the tower's own auto-fire. Sight-gated at the aim
+// cell. stepTowers (DepotGame.jsx) gains a possession guard that skips
+// acquisition/fire outright for the possessed body; DepotGame.jsx is JSX and
+// cannot be imported headlessly, so (a)/(e) are source pins / mirrors — the
+// same convention COMMAND T1 and VISION T2(a)'s tower fixtures already use.
+{
+  const flatField = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+  const idUV = (x, z) => ({ u: x, v: z });
+  const idW = (u, v) => ({ x: u, z: v });
+  const muzzlesOf = (world) => world.events.filter((e) => e.type === "muzzle");
+  const makeTower = (world, type = "gun") => {
+    const spec = TOWER_SPECS[type];
+    const b = addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: spec.hy, hz: 0.8, x: 0, y: 1 + spec.hy, z: 0, hp: spec.hp });
+    b.towerType = type;
+    return b;
+  };
+
+  // (a) source pin: stepTowers takes a possessedId argument and its guard —
+  // the loop's first body line after the kind/alive filter — skips straight
+  // past the possessed tower, no acquisition, no fire.
+  {
+    const gameSrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    const stepTowersBody = (gameSrc.match(/export function stepTowers\([\s\S]*?\n\}/) || [""])[0];
+    ok("POSSESSION T3(a) source pin: stepTowers takes a possessedId argument",
+      /export function stepTowers\(world, T, discipline, possessedId\)/.test(gameSrc));
+    ok("POSSESSION T3(a) source pin: the guard skips the possessed body — no acquisition, no fire",
+      /if \(possessedId === b\.id\) \{ b\.fireCd = \(b\.fireCd \|\| 0\) - dt; continue; \}/.test(stepTowersBody), stepTowersBody.length);
+  }
+
+  // (b) mirror+pin: a gun tower fires its real spec at the aim, honoring its
+  // own cooldown — a second pull 0.1s later (fireRate 1.05s) finds it cold.
+  {
+    const world = makeWorld({ field: flatField, seed: 31 });
+    const tower = makeTower(world, "gun");
+    world.events.length = 0;
+    const fired1 = possessedTowerFire(world, tower, { x: 10, z: 0 }, null);
+    const muzzles1 = muzzlesOf(world);
+    ok("POSSESSION T3(b): possessedTowerFire fires the tower's real spec at the aim",
+      fired1 === true && muzzles1.length === 1, `fired=${fired1} muzzles=${muzzles1.length}`);
+    ok("POSSESSION T3(b): the muzzle carries weapon:\"shell\" (TOWER_SPECS.gun)",
+      !!muzzles1[0] && muzzles1[0].weapon === "shell", muzzles1[0] && muzzles1[0].weapon);
+    tower.fireCd -= 0.1;
+    world.events.length = 0;
+    const fired2 = possessedTowerFire(world, tower, { x: 10, z: 0 }, null);
+    ok("POSSESSION T3(b): a second pull 0.1s later (fireRate 1.05s) is refused — the cooldown holds",
+      fired2 === false && muzzlesOf(world).length === 0, `fired2=${fired2}`);
+  }
+
+  // (c) the sight law holds at the aim cell: a dark cell refuses outright;
+  // the identical aim in a seen cell fires normally (the control).
+  {
+    const world = makeWorld({ field: flatField, seed: 32 });
+    const tower = makeTower(world, "gun");
+    const T = makeTerritory(29, 57);
+    T.sight = makeSight(T);
+    for (let iz = 0; iz < T.sight.nz; iz++) for (let ix = 0; ix < T.sight.nx; ix++) {
+      const u = -T.sight.halfU + (ix + 0.5) * T.sight.cs;
+      if (u < 8) T.sight.seen1[iz * T.sight.nx + ix] = 1;
+    }
+    world.events.length = 0;
+    const firedDark = possessedTowerFire(world, tower, { x: 20, z: 0 }, T, idUV);
+    ok("POSSESSION T3(c): a dark aim cell (unseen) refuses — zero muzzles",
+      firedDark === false && muzzlesOf(world).length === 0, `fired=${firedDark}`);
+    world.events.length = 0;
+    const firedLit = possessedTowerFire(world, tower, { x: 0, z: 0 }, T, idUV);
+    ok("POSSESSION T3(c) control: the identical tower, aim in a SEEN cell, fires normally",
+      firedLit === true && muzzlesOf(world).length === 1, `fired=${firedLit}`);
+  }
+
+  // (d) source pin: frost offers no possession — the tower pie's possess
+  // wedge is gated on canPossess, itself gated on spec.fireRate > 0 (frost's
+  // is 0 — no gun to man).
+  {
+    const gameSrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("POSSESSION T3(d) source pin: the tower radial's canPossess field gates on spec.fireRate > 0",
+      /canPossess: ispec\.fireRate > 0/.test(gameSrc));
+    ok("POSSESSION T3(d) source pin: the possess wedge only pushes when canPossess",
+      /if \(tr\.canPossess\) \{[\s\S]{0,200}key: "possess"/.test(gameSrc));
+  }
+
+  // (e) release restores auto-fire: stepTowers' own guard + scan/acquire
+  // loop, mirrored (JSX, not importable headlessly — the same convention
+  // VISION T2(a)'s tower fixture uses), the guard LINE FOR LINE the one
+  // pinned in (a). While possessed the guard skips acquisition outright;
+  // released, the very next scan acquires the enemy in range exactly as an
+  // unpossessed tower would.
+  {
+    const spec = TOWER_SPECS.gun;
+    const world = makeWorld({ field: flatField, seed: 33 });
+    const tower = makeTower(world, "gun");
+    const foe = addBody(world, { kind: "unit", team: 2, mass: 80, hx: 0.3, hy: 0.9, hz: 0.3, x: 10, y: 0.9, z: 0, hp: 40 });
+    const T = makeTerritory(29, 57);
+    T.sight = makeSight(T);
+    stepSight(world, T.sight, idUV, idW);
+    const scan = (possessedId) => {
+      // mirrors stepTowers' guard (DepotGame.jsx, pinned above) + scan loop
+      // (:365-410) — possessedId set skips acquisition entirely, same as
+      // the real function.
+      if (possessedId === tower.id) return tower.targetId || null;
+      const muzzle = { x: tower.pos.x, y: tower.pos.y + tower.hy + 0.45, z: tower.pos.z };
+      const eR = effRange(world, muzzle, spec);
+      let best = null, bd = eR * eR;
+      for (const e of world.bodies) {
+        if ((e.kind !== "unit" && e.kind !== "vehicle") || !e.alive || e.team !== 2) continue;
+        const c = idUV(e.pos.x, e.pos.z);
+        if (!fieldReaches(T, c.u, c.v, 1)) continue;
+        const dx = e.pos.x - tower.pos.x, dz = e.pos.z - tower.pos.z, d2 = dx * dx + dz * dz;
+        if (d2 < bd && arcClears(world, muzzle, e.pos, spec, tower.id)) { bd = d2; best = e; }
+      }
+      tower.targetId = best ? best.id : tower.targetId;
+      return best ? best.id : null;
+    };
+    ok("POSSESSION T3(e): possessed, the tower does not acquire even with the enemy in range",
+      scan(tower.id) == null, `target=${scan(tower.id)}`);
+    ok("POSSESSION T3(e): released, the very next scan acquires the enemy",
+      scan(undefined) === foe.id, `target=${scan(undefined)}`);
+  }
+}
+// ==== end POSSESSION T3 =======================================================
 
 
 

@@ -623,6 +623,23 @@ export function possessedVolley(world, squad, aim, T, toUV = (x, z) => ({ u: x, 
   return fired;
 }
 
+// POSSESSION (P4 T3, mk0.92): a possessed tower is manual fire control —
+// the real spec, the real cooldown, the real muzzle, your aim. Sight-gated
+// at the aim like every shot.
+export function possessedTowerFire(world, tower, aim, T, toUV = (x, z) => ({ u: x, v: z })) {
+  const spec = TOWER_SPECS[tower.towerType];
+  if (!spec || spec.fireRate <= 0) return false;
+  tower.fireCd = tower.fireCd || 0;
+  if (tower.fireCd > 0) return false;
+  const c = toUV(aim.x, aim.z);
+  if (!fieldReaches(T, c.u, c.v, 1)) return false;
+  const tgt = { pos: { x: aim.x, y: world.field.heightAt(aim.x, aim.z) + 0.9, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: 0.9 };
+  tower.fireCd = spec.fireRate;
+  tower.flashT = world.t;
+  towerShot(world, tower, tgt, spec);
+  return true;
+}
+
 // ------------------------------------------------------------ squad wiring
 // spawnSquadMembers(world, squad): a squad's members spawn as ORDINARY
 // team-1 "unit" bodies (brief's sketch, adapted to addBody's real shape) so

@@ -16,7 +16,7 @@ import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS } from "./specs.js";
 import { windAt } from "./wind.js";
-import { makeAssaultState, HUD0, BELL_PERIOD_S, BELL_SCRAP, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest } from "./state.js";
+import { makeAssaultState, HUD0, BELL_PERIOD_S, BELL_SCRAP, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest } from "./state.js";
 import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic, drivePossessedSquad } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
@@ -362,10 +362,14 @@ function checkConnectivity(grid, spawns, objGx, objGz) {
 }
 
 // ================================================================ towers
-export function stepTowers(world, T, discipline) {
+export function stepTowers(world, T, discipline, possessedId) {
   const dt = world.dt;
   for (const b of world.bodies) {
     if (b.kind !== "tower" || !b.alive) continue;
+    // POSSESSION (P4 T3, mk0.92): a possessed tower stops auto-acquiring —
+    // the owner's aim is its aim now (possessedTowerFire, called from the
+    // frame loop). Cooldown still decays here; nothing else runs.
+    if (possessedId === b.id) { b.fireCd = (b.fireCd || 0) - dt; continue; }
     // COMMAND T1 (mk0.80): fire discipline is per tower now — the radial
     // sets b.discipline; the old argument is the fallback for bodies that
     // predate the field (old saves, bare fixtures).
@@ -665,7 +669,14 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
       }
     }
   }
-  stepTowers(world, T, discipline);
+  // POSSESSION (P4 T3, mk0.92): a possessed tower killed out from under the
+  // owner frees the trigger automatically — nothing left to fire, same rule
+  // T1 gives a wiped-out possessed squad.
+  if (S.possess && S.possess.kind === "tower") {
+    const ptw = world.byId.get(S.possess.id);
+    if (!ptw || !ptw.alive) S.releasePossession();
+  }
+  stepTowers(world, T, discipline, S.possess && S.possess.kind === "tower" ? S.possess.id : undefined);
   world.wind = windAt(MAP_SEED, world.t);
   stepWorld(world);
   stepBreakerRam(world); // heavies (breakers) ram walls/towers — TD's ColdsnapTD.jsx :964-972
@@ -1542,13 +1553,31 @@ export default function DepotGame({ onExit, resume = null }) {
         sq.order = "defend"; sq.dest = null; sq._legTarget = null; sq._pauseT = 0; sq._build = null; sq._threatSig = undefined;
         S.possess = { kind: "squad", id: sq.id };
         S.possessInput = { vx: 0, vz: 0 };
+        // POSSESSION HYGIENE (mk0.91 audit item A): a stale aim or a FIRE
+        // flag stuck by a mid-hold bell release can never carry into the
+        // next possession — cleared on every take, same as on release.
+        S.possessAim = null; S.fireHeld = false;
         S.selSquadId = null; S.orderMode = null; S.buildPt0 = null; S.linePending = null;
         R.overlay.setLinePreview(false);
       };
+      // POSSESSION (P4 T3, mk0.92): TAKE CONTROL on a tower — gun towers
+      // only (the tower pie's possess slot is gated on spec.fireRate > 0;
+      // frost has none). No stick, no selection to clear beyond inspect.
+      S.takeControlTower = (id) => {
+        const b = world.byId.get(id);
+        if (!b || b.kind !== "tower") return;
+        S.possess = { kind: "tower", id: b.id };
+        S.possessAim = null; S.fireHeld = false;
+        S.inspectId = null; S.pieOpen = false;
+      };
       S.releasePossession = () => {
         if (!S.possess) return;
-        const sq = S.squads.find((q) => q.id === S.possess.id);
+        const wasSquad = S.possess.kind === "squad";
+        const sq = wasSquad ? S.squads.find((q) => q.id === S.possess.id) : null;
         S.possess = null; S.possessInput = null;
+        // POSSESSION HYGIENE (mk0.91 audit item A): see S.takeControl above —
+        // the same stale-trigger clear, on every release.
+        S.possessAim = null; S.fireHeld = false;
         if (sq) {
           // released where you left them: dig in — the intrinsic default
           sq.order = "defend"; sq.dest = null; sq._legTarget = null; sq._threatSig = undefined;
@@ -2624,7 +2653,7 @@ export default function DepotGame({ onExit, resume = null }) {
             S.focus.z = Math.max(-EXT.z, Math.min(EXT.z, S.focus.z));
             S.focus.y = field.heightAt(S.focus.x, S.focus.z);
           }
-          if (S.possess) {
+          if (S.possess && S.possess.kind === "squad") {
             // The stick, camera-relative (the sandbox's own twin-stick math,
             // ContractSandbox.jsx :508-513): joystick wins if it's live,
             // WASD/arrows otherwise. The camera locks to the squad — no pan,
@@ -2644,6 +2673,12 @@ export default function DepotGame({ onExit, resume = null }) {
             };
             const psq = S.squads.find((q) => q.id === S.possess.id);
             if (psq) { S.focus.x = psq.anchor.x; S.focus.z = psq.anchor.z; S.focus.y = field.heightAt(S.focus.x, S.focus.z); }
+          } else if (S.possess && S.possess.kind === "tower") {
+            // POSSESSION (P4 T3, mk0.92): towers don't walk — no stick, no
+            // possessInput. Camera locks to the tower exactly as it does to
+            // a possessed squad.
+            const ptw = world.byId.get(S.possess.id);
+            if (ptw) { S.focus.x = ptw.pos.x; S.focus.z = ptw.pos.z; S.focus.y = field.heightAt(S.focus.x, S.focus.z); }
           }
           if (!isTouch && S.pointer && S.started && !S.gameOver && !S.victory && !S.pending) {
             const p = groundPoint(S.pointer.x, S.pointer.y);
@@ -2773,6 +2808,14 @@ export default function DepotGame({ onExit, resume = null }) {
               const psq = S.squads.find((q) => q.id === S.possess.id);
               if (psq) possessedVolley(world, psq, S.possessAim, T, invW);
             }
+            // POSSESSION (P4 T3, mk0.92): a possessed tower's trigger — same
+            // one-attempt-per-tick flag, real spec, real cooldown, through
+            // possessedTowerFire. Discipline note: friendlyFouls is NOT
+            // consulted while possessed — your trigger, your responsibility.
+            if (S.fireHeld && S.possess && S.possess.kind === "tower" && S.possessAim) {
+              const ptw = world.byId.get(S.possess.id);
+              if (ptw) possessedTowerFire(world, ptw, S.possessAim, T, invW);
+            }
           }
           if (perf) pSim = performance.now() - pSim0; // ...and closes
           if (S.acc > STEP * 6) S.acc = 0;
@@ -2793,11 +2836,12 @@ export default function DepotGame({ onExit, resume = null }) {
           A.setListener(S.focus.x, S.focus.z, 46 / Math.max(0.6, S.zoom));
           A.consume(evs);
           A.tick(world, dt);
-          if (S.possess && S.possess.kind === "squad" && S.possessAim) {
-            // POSSESSION (P4 T2, mk0.91): the aim ring rides the SAME hover
-            // overlay every other ghost/reach ring uses — green while your
-            // side sees the aim cell, red while it's dark, sight-gated the
-            // identical way the shot itself will be (fieldReaches/seenAt).
+          if (S.possess && S.possessAim) {
+            // POSSESSION (P4 T2/T3, mk0.91/mk0.92): the aim ring rides the
+            // SAME hover overlay every other ghost/reach ring uses — green
+            // while your side sees the aim cell, red while it's dark,
+            // sight-gated the identical way the shot itself will be
+            // (fieldReaches/seenAt). Squad and tower share the one ring.
             const cAim = invW(S.possessAim.x, S.possessAim.z);
             const seen = T && T.sight ? seenAt(T.sight, cAim.u, cAim.v, 1) : true;
             R.overlay.setHover(true, S.possessAim.x, S.possessAim.z, field.heightAt(S.possessAim.x, S.possessAim.z), 0, seen, 1.2);
@@ -2950,11 +2994,14 @@ export default function DepotGame({ onExit, resume = null }) {
                   linePending: !!S.linePending };
               })(),
               squadFlag: S.flagScreen ? { x: S.flagScreen.x, y: S.flagScreen.y } : null,
-              // POSSESSION (P4 T1, mk0.90): the stick/RELEASE button/POSSESSED
-              // chip all key off this — null the instant the squad is gone.
-              possessed: S.possess && S.possess.kind === "squad"
-                ? (() => { const psq = S.squads.find((q) => q.id === S.possess.id); return psq ? { label: SQUAD_SPECS[psq.type].label } : null; })()
-                : null,
+              // POSSESSION (P4 T1/T3, mk0.90/mk0.92): the RELEASE button/
+              // POSSESSED chip key off this — null the instant the squad or
+              // tower is gone. The stick (data-joy) additionally checks
+              // kind !== "tower" — towers don't walk.
+              possessed: !S.possess ? null
+                : S.possess.kind === "squad"
+                ? (() => { const psq = S.squads.find((q) => q.id === S.possess.id); return psq ? { kind: "squad", label: SQUAD_SPECS[psq.type].label } : null; })()
+                : (() => { const ptw = world.byId.get(S.possess.id); return ptw && ptw.kind === "tower" ? { kind: "tower", label: TOWER_SPECS[ptw.towerType].label } : null; })(),
               // COMMAND T2 (mk0.84): the proposed line's accept/reject pair —
               // survives the end point going off-screen (buttons just hide).
               linePending: S.linePending && S.lineScreen ? {
@@ -2994,6 +3041,9 @@ export default function DepotGame({ onExit, resume = null }) {
                   discipline: b.discipline || discipline || "careful",
                   refund: Math.floor(ispec.cost * 0.6),
                   frost: b.towerType === "frost",
+                  // POSSESSION (P4 T3, mk0.92): TAKE CONTROL — gun towers
+                  // only. Frost's fireRate is 0 (no gun to man).
+                  canPossess: ispec.fireRate > 0,
                   showPie: !!S.pieOpen,   // COMMAND 1b (mk0.82)
                 };
               })(),
@@ -3136,7 +3186,8 @@ export default function DepotGame({ onExit, resume = null }) {
           POSSESSED — {hud.possessed.label}
         </div>
       )}
-      {hud.possessed && (
+      {/* POSSESSION (P4 T3, mk0.92): no stick for towers — they don't walk. */}
+      {hud.possessed && hud.possessed.kind !== "tower" && (
         <div data-joy
           style={{ position: "absolute", left: 92 - 70, bottom: 128 - 70, width: 140, height: 140, zIndex: 7, touchAction: "none" }}
           onPointerDown={(e) => {
@@ -3416,6 +3467,18 @@ export default function DepotGame({ onExit, resume = null }) {
             color: tr.discipline === "free" ? "#ff7a7a" : "#4aff8c",
             on: true,
             act: () => { const S = stateRef.current; if (S) { S.setTowerDiscipline(tr.id); S.inspectId = null; } },
+          });
+        }
+        // POSSESSION (P4 T3, mk0.92): TAKE CONTROL — same wedge as the squad
+        // pie, gated on canPossess (gun towers only; frost has none).
+        if (tr.canPossess) {
+          slots.push({
+            key: "possess",
+            icon: "✥",
+            label: "TAKE CONTROL",
+            color: "#7dffa8",
+            on: false,
+            act: () => { const S = stateRef.current; if (S) S.takeControlTower(tr.id); },
           });
         }
         slots.push({
