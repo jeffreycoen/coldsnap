@@ -17,7 +17,7 @@
 **Task 4 — The bell market** *(skeleton; revised by the owner, 2026-08-13)*
 - Prices PER TYPE: each type's price rises with how many of that type stand on the field, both armies' stock counted together — one shared market, both sides pay the same table.
 - Income becomes a flat 1 scrap per second, both sides, replacing the old trickle and the flat bell payout; the ground-holding town payout stays as the only bonus.
-- The build bar and manifest show the live prices. Curve anchors per type are provisional dials.
+- Prices recalculate EVERY SECOND off live standing counts (owner's cadence ruling) — the bar and manifest always show the price of this moment. Curve anchors per type are provisional dials.
 
 **Task 5 — The body lists, resurrected** *(skeleton)*
 - The archived typed-pools spec (THE FRONT plan, bottom), re-landed as written.
@@ -107,6 +107,18 @@
 }
 // ==== end P6 T3 ==============================================================
 ```
+
+## AMENDMENT 1 (owner's ruling, 2026-08-13) — the re-pin list grows to seven
+
+*Found in execution: the plan's deletions cast four more test-side shadows than its three named re-pins. All ruled, all test-only; the implementation stands as landed:*
+
+**A1-4.** The same-bell second-pick test (depot-test ~218): its hardcoded `M.unlocked.length === 5` (old 4-item start plus one pick) becomes `=== 3`.
+
+**A1-5.** The unread-offer test (~231–233): its `unlocked.length === 4` becomes `=== 2`, and its literal start-kit array `["wall", "sandbag", "sq_rifles", "sq_engineers"]` becomes `["sq_rifles", "sq_engineers"]`.
+
+**A1-6.** The sandbag-orientation UI sub-block (~1967–1994) is PRUNED whole — it pins the bar re-tap toggle, the bar icon cycle, and the hover-ghost orientation read, all of which this task deletes. Orientation itself survives inside the engineer lines (sandbagOrientAt and its tests elsewhere are untouched).
+
+**A1-7.** Two pins re-aim at what still exists: the mk0.50/3 WALL_COST pin (~2964) now asserts buildAt's fallback (`/spec \? spec\.cost : WALL_COST/`) instead of the deleted bar row; the POSSESSION T5(b) ring pin (~4892) — which passed by a character-distance accident the hover-branch collapse disturbed — now asserts the ACTUAL guard: `/if \(!S\.possess && S\.hover\)/` (the possessed frame never paints the build hover).
 
 **Step 2 — the starting kit.** `src/depot/specs.js` (~line 136), with the ladder comment corrected in place (the START row of the two-ladders table loses wall · sandbag too):
 ```js
