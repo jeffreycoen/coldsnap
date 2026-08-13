@@ -88,7 +88,7 @@
 - Manifest/intel card layout wrinkles at 960px and narrow phones.
 
 **Open/owed:**
-- CURRENT (2026-08-13): prod mk0.93. Possession Task 5 — playtest fixes (red carried reticle, bell keeps possession), mk0.94 — plan APPROVED; the owner directed Fable to implement it inline. Phase closes on his playtest after it ships. Next phase: The Front.
+- CURRENT (2026-08-13): prod mk0.94. Possession Tasks 4 and 5 SHIPPED (steered reticle; red carried reticle + bell keeps possession). Phase closes on the owner's playtest. Next phase: The Front.
 - Owner rulings still open: tower friendly-fire safety off while possessed (ratify by play); possessed squad pace (~2.1 m/s sustained, rear man on the 6m band) — accept or possessed members outpace the anchor.
 - PLAYTEST VERDICT (owner, 2026-08-12): Polish I, Vision, and the halt-and-fight fix (mk0.74) all passed — "seems okay." Both phases CLOSED. Next phase: Command (radial orders).
 - Mid-march stall: squads freeze short of their destination near masonry before any contact (pre-existing pathing, cohesion/detour family) — surfaced again in the mk0.74 staging runs; unranked by the owner.
