@@ -27,7 +27,7 @@ import {
 } from "../src/engine/core.js";
 import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, MASON, INFANTRY_ARMS, PLAYER_START, PLAYER_TIERS } from "../src/depot/specs.js";
 import { stepUnits, spawnUnit, payBounties, SNIPER_FIRE } from "../src/depot/units.js";
-import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad } from "../src/depot/squads.js";
+import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad, drivePossessedSquad } from "../src/depot/squads.js";
 import {
   makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue,
 } from "../src/depot/economy.js";
@@ -4339,6 +4339,125 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 }
 // ==== end COMMAND T4 ==========================================================
+
+// ==== POSSESSION T1: take control — the possessed squad walks ================
+// mk0.90 (Phase 4 Task 1). drivePossessedSquad (squads.js) walks a squad's
+// anchor by the stick vector at MOVE_SPEED and reissues member formation
+// goals every tick — no orders, no rng, no fire. The command loop
+// (DepotGame.jsx stepDepot) skips a possessed squad entirely; RELEASE and
+// the bell (ringBell) hand it back to standing orders. Possession itself
+// never rides a save (S.possess is not read by serializeFront). DepotGame.jsx
+// is JSX, not importable headlessly — its shape is pinned by source regex,
+// the convention COMMAND T1-T4 already use.
+{
+  const flatField = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+  const dsrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+
+  // (a) mirror+pin: driving a squad straight for 2 sim-seconds moves the
+  // anchor ~6.4m (MOVE_SPEED 3.2 * 2s), and every live member holds within
+  // the formation ring (+tolerance) of it — the ring closes on the anchor
+  // as it walks, exactly as DEFEND's own micro-slots do.
+  {
+    const world = makeWorld({ field: flatField, seed: 5 });
+    const sq = makeSquad(1, "rifles", 1, 0, 0);
+    spawnSquadMembers(world, sq);
+    const dt = world.dt;
+    const steps = Math.round(2 / dt);
+    for (let i = 0; i < steps; i++) { drivePossessedSquad(world, sq, 0, 1, dt); stepWorld(world); }
+    ok("POSSESSION T1(a): the anchor moves ~6.4m (MOVE_SPEED*2s) driving straight for 2 sim-seconds",
+      Math.abs(sq.anchor.z - 6.4) < 0.1, `anchor=(${sq.anchor.x.toFixed(2)},${sq.anchor.z.toFixed(2)})`);
+    let maxD = 0;
+    for (const id of sq.memberIds) {
+      const u = world.byId.get(id);
+      const d = Math.hypot(u.pos.x - sq.anchor.x, u.pos.z - sq.anchor.z);
+      if (d > maxD) maxD = d;
+    }
+    // 4.44m measured, cohesion-clamped (see squads.js's plan-deviation
+    // comment on drivePossessedSquad): the trailing member's own top speed
+    // equals the anchor's, so the rubber band (COHESION_M=6) is what bounds
+    // him, not the 1.5m ring alone. Tolerance set above the measured value,
+    // below the COHESION_M ceiling.
+    ok("POSSESSION T1(a): every live member holds within the formation ring (+tolerance) of the walking anchor",
+      maxD < 5.5, `maxD=${maxD.toFixed(2)}`);
+  }
+
+  // (b) source pin: stepDepot's squad loop skips a possessed squad entirely
+  // (no engageCheck, no stepSquad, no squadFire — the stick drives it
+  // instead) as the loop's FIRST line, and a squad whose members all die
+  // while possessed releases automatically right after pruneSquads.
+  {
+    const stepDepotBody = (dsrc.match(/function stepDepot\(world, grid, onStructureLost, town, onRuin, T, discipline, S\) \{[\s\S]*?\n\}/) || [""])[0];
+    const guardIdx = stepDepotBody.indexOf('if (S.possess && S.possess.kind === "squad" && sq.id === S.possess.id) {');
+    const engageIdx = stepDepotBody.indexOf("engageCheck(sq);");
+    ok("POSSESSION T1(b): stepDepot's squad loop carries a possession guard",
+      guardIdx >= 0, stepDepotBody.length);
+    ok("POSSESSION T1(b): the guard is the loop's first line — it runs before engageCheck",
+      guardIdx >= 0 && engageIdx >= 0 && guardIdx < engageIdx, `guard=${guardIdx} engage=${engageIdx}`);
+    const pruneIdx = stepDepotBody.indexOf("S.squads = pruneSquads(world, S.squads);");
+    const autoRelIdx = stepDepotBody.indexOf('if (S.possess && S.possess.kind === "squad" && !S.squads.some((q) => q.id === S.possess.id)) S.releasePossession();');
+    ok("POSSESSION T1(b): a wiped-out possessed squad auto-releases, wired right after pruneSquads",
+      pruneIdx >= 0 && autoRelIdx >= 0 && autoRelIdx > pruneIdx && autoRelIdx - pruneIdx < 200,
+      `prune=${pruneIdx} autoRel=${autoRelIdx}`);
+  }
+
+  // (c) possession never serializes: S.possess is not part of serializeFront's
+  // whitelisted run{} fields, and a save taken with possession live carries
+  // no "possess" key anywhere in its JSON.
+  {
+    const field = makeField(9, 2.0, 1);
+    const world = makeWorld({ field, seed: 1 });
+    const T = makeTerritory(5, 5);
+    const S = {
+      bell: 0, resources: 0, kills: 0, spawnRR: 0, started: false, mode: "wall", sandbagOrient: 0,
+      nextSquadId: 1, zoom: 1, focus: { x: 0, z: 0 }, depotCensusAcc: 0, depotStanding: 1, enemyStanding: 1,
+      starvedStreak: 0, _reportedBreak: false, _reportedSpent: false,
+      manifest: {}, foe: {}, intelUp: false, intelArmedAt: 0, lastDispatch: null,
+      pendingPlan: null, intelPlan: null, ws: {}, reg: {}, squads: [],
+      possess: { kind: "squad", id: 1 }, possessInput: { vx: 0, vz: 1 }, // live at save time
+    };
+    const json = serializeFront({ S, world, T, town: [], census: [], census2: [], rocks: [], smears: [], mapSeed: 1, rngSeed: 1 });
+    ok("POSSESSION T1(c): serializeFront never writes a \"possess\" key anywhere in the saved JSON",
+      !json.includes("possess"), json.includes("possess") ? "LEAKED" : "clean");
+    const dsaveSrc = fs.readFileSync(new URL("../src/depot/save.js", import.meta.url), "utf8");
+    ok("POSSESSION T1(c) source pin: save.js's run{} writer never reads S.possess",
+      !/S\.possess/.test(dsaveSrc));
+  }
+
+  // (d) source pin: ringBell releases possession, and does so BEFORE
+  // saveFront — the ratified rule that no save ever carries a possession.
+  {
+    const ringBellBody = (dsrc.match(/const ringBell = \(\) => \{[\s\S]*?\n      \};/) || [""])[0];
+    ok("POSSESSION T1(d): ringBell's first line releases any live possession",
+      /^const ringBell = \(\) => \{\s*\n\s*if \(S\.possess\) S\.releasePossession\(\);/.test(ringBellBody), ringBellBody.slice(0, 80));
+    const relIdx = ringBellBody.indexOf("S.releasePossession();");
+    const saveIdx = ringBellBody.indexOf("saveFront();");
+    ok("POSSESSION T1(d): the release runs before saveFront",
+      relIdx >= 0 && saveIdx >= 0 && relIdx < saveIdx, `rel=${relIdx} save=${saveIdx}`);
+  }
+
+  // (e) zero new rng draws while driving: player input is not a replayed
+  // stream — the drive path itself never touches world.rng, with or without
+  // an enemy standing nearby.
+  {
+    const dt = 1 / 120;
+    const steps = Math.round(2 / dt);
+    const drive = (withEnemy) => {
+      const world = makeWorld({ field: flatField, seed: 7 });
+      const sq = makeSquad(1, "rifles", 1, 0, 0);
+      spawnSquadMembers(world, sq);
+      if (withEnemy) addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 5, y: 0.88, z: 5, hp: 58 });
+      let draws = 0;
+      const raw = world.rng;
+      world.rng = () => { draws++; return raw(); };
+      for (let i = 0; i < steps; i++) drivePossessedSquad(world, sq, 0, 1, dt);
+      return draws;
+    };
+    const drawsNoEnemy = drive(false), drawsWithEnemy = drive(true);
+    ok("POSSESSION T1(e): drivePossessedSquad draws ZERO rng, with or without an enemy nearby, and the counts match",
+      drawsNoEnemy === 0 && drawsWithEnemy === 0, `noEnemy=${drawsNoEnemy} withEnemy=${drawsWithEnemy}`);
+  }
+}
+// ==== end POSSESSION T1 =======================================================
 
 
 

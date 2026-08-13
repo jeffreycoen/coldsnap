@@ -17,7 +17,7 @@ import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS } from "./specs.js";
 import { windAt } from "./wind.js";
 import { makeAssaultState, HUD0, BELL_PERIOD_S, BELL_SCRAP, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest } from "./state.js";
-import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic } from "./squads.js";
+import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic, drivePossessedSquad } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
 import { makeRegiment, payTown } from "./economy.js";
@@ -601,6 +601,9 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
   // so player squads fog-gate on the SAME field towers do (team 1).
   if (S && S.squads) {
     S.squads = pruneSquads(world, S.squads);
+    // POSSESSION (P4 T1, mk0.90): every man in a possessed squad dying frees
+    // the stick automatically — nothing left to drive.
+    if (S.possess && S.possess.kind === "squad" && !S.squads.some((q) => q.id === S.possess.id)) S.releasePossession();
     if (S.selSquadId != null && !S.squads.some((q) => q.id === S.selSquadId)) { S.selSquadId = null; S.orderMode = null; S.buildPt0 = null; }
     // VISION T4 (mk0.74, owner's ruling): an attacking squad that SEES an
     // enemy in weapon reach halts and fights — the halt is the squad's own
@@ -630,6 +633,17 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
       }
     };
     for (const sq of S.squads) {
+      if (S.possess && S.possess.kind === "squad" && sq.id === S.possess.id) {
+        // POSSESSION: the stick owns this squad — no engage check, no order
+        // machine, no auto-fire (T2 gives the trigger). Input is the frame's
+        // snapshot; the drive runs at the fixed step like all movement.
+        const pi = S.possessInput || { vx: 0, vz: 0 };
+        drivePossessedSquad(world, sq, pi.vx, pi.vz, world.dt);
+        const cl = clampToRim(sq.anchor.x, sq.anchor.z);
+        sq.anchor = { x: cl.x, z: cl.z };
+        for (const id of sq.memberIds) { const u = world.byId.get(id); if (u && u.alive) uprightMember(u, world.dt); }
+        continue;
+      }
       engageCheck(sq);
       stepSquad(world, sq, world.dt);
       // P1.5 T4: the two-point build line, driven straight after the squad's
@@ -788,6 +802,11 @@ const PALETTE_LABEL = Object.fromEntries(PALETTE.map((p) => [p.key, p.label]));
 export default function DepotGame({ onExit, resume = null }) {
   const canvasRef = useRef(null);
   const stateRef = useRef(null);
+  // POSSESSION (P4 T1, mk0.90): the knob's screen position is pushed
+  // straight to the DOM from the pointer handlers below — not React state —
+  // the same discipline ContractSandbox.jsx's own joystick uses, so a drag
+  // never queues a re-render.
+  const joyKnobRef = useRef(null);
   // Held in a ref, not read from props inside the effect, for the same reason
   // every other loop input is: the effect must never close over a value React
   // can change under it. Captured once, at mount.
@@ -1194,6 +1213,10 @@ export default function DepotGame({ onExit, resume = null }) {
         // (S.pieOpen = false) but an aiming order keeps the squad selected
         // so the ground stays tappable — see consumeOrderTap.
         squads: [], nextSquadId: 1, selSquadId: null, selArmedAt: 0, orderMode: null, buildPt0: null, pieOpen: false,
+        // POSSESSION (P4 T1, mk0.90): { kind: "squad", id } while live, else
+        // null. possessInput is the frame's world-space stick vector; joy is
+        // the touch stick's own live drag state (DOM handlers below).
+        possess: null, possessInput: null, joy: null,
         linePending: null, // COMMAND T2 (mk0.84): the proposed line, awaiting accept/reject
         hudT: 0, keys: {}, sellById: null, audio: A,
         // The attacker's economy — seeded off the run's own rng stream, not
@@ -1497,6 +1520,30 @@ export default function DepotGame({ onExit, resume = null }) {
         if (!sq || world.t < S.selArmedAt) return;
         if (!INFANTRY_ARMS[sq.type]) return;
         sq.prefStruct = !sq.prefStruct;
+      };
+
+      // POSSESSION (P4 T1, mk0.90): TAKE CONTROL — every squad type gets the
+      // wedge. Digs the squad in where it stands (defend), hands the stick
+      // over, and clears every other selection/order UI state the way
+      // DEFEND's own instant action does.
+      S.takeControl = () => {
+        const sq = selectedSquad();
+        if (!sq || world.t < S.selArmedAt) return;
+        sq.order = "defend"; sq.dest = null; sq._legTarget = null; sq._pauseT = 0; sq._build = null; sq._threatSig = undefined;
+        S.possess = { kind: "squad", id: sq.id };
+        S.possessInput = { vx: 0, vz: 0 };
+        S.selSquadId = null; S.orderMode = null; S.buildPt0 = null; S.linePending = null;
+        R.overlay.setLinePreview(false);
+      };
+      S.releasePossession = () => {
+        if (!S.possess) return;
+        const sq = S.squads.find((q) => q.id === S.possess.id);
+        S.possess = null; S.possessInput = null;
+        if (sq) {
+          // released where you left them: dig in — the intrinsic default
+          sq.order = "defend"; sq.dest = null; sq._legTarget = null; sq._threatSig = undefined;
+          sq._surveyPending = true;
+        }
       };
 
       // =================================== THE TWO-POINT BUILD LINE (P1.5 T4)
@@ -2071,6 +2118,7 @@ export default function DepotGame({ onExit, resume = null }) {
       // alongside the assault's results (fireBell books those): green ground
       // pays the player, red ground pays the regiment, seam ground nobody.
       const ringBell = () => {
+        if (S.possess) S.releasePossession(); // POSSESSION (P4 T1, mk0.90): a bell save never carries a possession
         cue("bell"); // the toll itself, at the ring — before anything it causes
         const paid = payTown(townUV, T);
         S.resources += paid.player;
@@ -2549,13 +2597,38 @@ export default function DepotGame({ onExit, resume = null }) {
           const cb = R.camBasis;
           const ul = Math.hypot(cb.up.x, cb.up.z) || 1, rl = Math.hypot(cb.right.x, cb.right.z) || 1;
           const ux = cb.up.x / ul, uz = cb.up.z / ul, rx = cb.right.x / rl, rz = cb.right.z / rl;
-          if (S.keys.w || S.keys.arrowup) { S.focus.x += ux * pan; S.focus.z += uz * pan; }
-          if (S.keys.s || S.keys.arrowdown) { S.focus.x -= ux * pan; S.focus.z -= uz * pan; }
-          if (S.keys.a || S.keys.arrowleft) { S.focus.x -= rx * pan * 0.8; S.focus.z -= rz * pan * 0.8; }
-          if (S.keys.d || S.keys.arrowright) { S.focus.x += rx * pan * 0.8; S.focus.z += rz * pan * 0.8; }
-          S.focus.x = Math.max(-EXT.x, Math.min(EXT.x, S.focus.x));
-          S.focus.z = Math.max(-EXT.z, Math.min(EXT.z, S.focus.z));
-          S.focus.y = field.heightAt(S.focus.x, S.focus.z);
+          // POSSESSION (P4 T1, mk0.90): while possessed, WASD drives the
+          // squad, NOT the camera — the pan block is gated off entirely.
+          if (!S.possess) {
+            if (S.keys.w || S.keys.arrowup) { S.focus.x += ux * pan; S.focus.z += uz * pan; }
+            if (S.keys.s || S.keys.arrowdown) { S.focus.x -= ux * pan; S.focus.z -= uz * pan; }
+            if (S.keys.a || S.keys.arrowleft) { S.focus.x -= rx * pan * 0.8; S.focus.z -= rz * pan * 0.8; }
+            if (S.keys.d || S.keys.arrowright) { S.focus.x += rx * pan * 0.8; S.focus.z += rz * pan * 0.8; }
+            S.focus.x = Math.max(-EXT.x, Math.min(EXT.x, S.focus.x));
+            S.focus.z = Math.max(-EXT.z, Math.min(EXT.z, S.focus.z));
+            S.focus.y = field.heightAt(S.focus.x, S.focus.z);
+          }
+          if (S.possess) {
+            // The stick, camera-relative (the sandbox's own twin-stick math,
+            // ContractSandbox.jsx :508-513): joystick wins if it's live,
+            // WASD/arrows otherwise. The camera locks to the squad — no pan,
+            // no drift; a touch drag one finger off the stick still nudges
+            // it (pointermove below), but it snaps back here next frame.
+            const cb2 = R.camBasis;
+            const fl = Math.hypot(cb2.up.x, cb2.up.z) || 1, rl2 = Math.hypot(cb2.right.x, cb2.right.z) || 1;
+            let st = 0, ss = 0;
+            if (S.joy && S.joy.active) { st = S.joy.t; ss = S.joy.s; }
+            else {
+              st = (S.keys.w || S.keys.arrowup ? 1 : 0) + (S.keys.s || S.keys.arrowdown ? -1 : 0);
+              ss = (S.keys.d || S.keys.arrowright ? 1 : 0) + (S.keys.a || S.keys.arrowleft ? -1 : 0);
+            }
+            S.possessInput = {
+              vx: (cb2.right.x / rl2) * ss + (cb2.up.x / fl) * st,
+              vz: (cb2.right.z / rl2) * ss + (cb2.up.z / fl) * st,
+            };
+            const psq = S.squads.find((q) => q.id === S.possess.id);
+            if (psq) { S.focus.x = psq.anchor.x; S.focus.z = psq.anchor.z; S.focus.y = field.heightAt(S.focus.x, S.focus.z); }
+          }
           if (!isTouch && S.pointer && S.started && !S.gameOver && !S.victory && !S.pending) {
             const p = groundPoint(S.pointer.x, S.pointer.y);
             if (p) {
@@ -2845,6 +2918,11 @@ export default function DepotGame({ onExit, resume = null }) {
                   linePending: !!S.linePending };
               })(),
               squadFlag: S.flagScreen ? { x: S.flagScreen.x, y: S.flagScreen.y } : null,
+              // POSSESSION (P4 T1, mk0.90): the stick/RELEASE button/POSSESSED
+              // chip all key off this — null the instant the squad is gone.
+              possessed: S.possess && S.possess.kind === "squad"
+                ? (() => { const psq = S.squads.find((q) => q.id === S.possess.id); return psq ? { label: SQUAD_SPECS[psq.type].label } : null; })()
+                : null,
               // COMMAND T2 (mk0.84): the proposed line's accept/reject pair —
               // survives the end point going off-screen (buttons just hide).
               linePending: S.linePending && S.lineScreen ? {
@@ -2978,6 +3056,36 @@ export default function DepotGame({ onExit, resume = null }) {
   };
   const sellInspected = () => { const S = stateRef.current; if (S && S.inspectId && S.sellById) S.sellById(S.inspectId); };
 
+  // POSSESSION (P4 T1, mk0.90): the touch stick. Depot-styled port of the
+  // sandbox's own joystick (ContractSandbox.jsx :365-380, :429-437) — radius
+  // 56, deadzone 0.15, knob clamped to the radius and following the finger.
+  // Unlike the sandbox's stick (a decorative pair with pointerEvents:none,
+  // driven by a window-level proximity test) this one is its OWN real DOM
+  // hit target, sitting above the canvas: a pointerdown on it never reaches
+  // the canvas's pan/tap handlers at all (sibling elements, not ancestor/
+  // descendant — the browser's own hit-test already settles it), and
+  // setPointerCapture below pins every subsequent move/up to it too, so a
+  // drag that strays off the knob still can't leak to the canvas underneath.
+  const JOY_R = 56;
+  const joyDz = (v) => (Math.abs(v) < 0.15 ? 0 : (v - Math.sign(v) * 0.15) / 0.85);
+  const moveJoy = (e) => {
+    const S = stateRef.current;
+    if (!S || !S.joy || !S.joy.active) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    let dx = e.clientX - cx, dy = e.clientY - cy;
+    const L = Math.hypot(dx, dy);
+    if (L > JOY_R) { dx *= JOY_R / L; dy *= JOY_R / L; }
+    if (joyKnobRef.current) { joyKnobRef.current.style.left = 70 + dx - 22 + "px"; joyKnobRef.current.style.top = 70 + dy - 22 + "px"; }
+    S.joy.t = joyDz(-dy / JOY_R);
+    S.joy.s = joyDz(dx / JOY_R);
+  };
+  const releaseJoy = () => {
+    const S = stateRef.current;
+    if (S) S.joy = { active: false, t: 0, s: 0 };
+    if (joyKnobRef.current) { joyKnobRef.current.style.left = "48px"; joyKnobRef.current.style.top = "48px"; }
+  };
+
   // The bar shows the UNLOCKED set and nothing else (P1 Task 2): a locked
   // item does not render at all — no greyed teasers, because the manifest
   // card IS the reveal. PALETTE's own order is preserved, so an item always
@@ -2990,6 +3098,37 @@ export default function DepotGame({ onExit, resume = null }) {
   return (
     <div style={P.root}>
       <canvas key={runId} ref={canvasRef} style={P.cv} />
+      {/* POSSESSION (P4 T1, mk0.90) ------------------------------------- */}
+      {hud.possessed && (
+        <div data-possessed-chip style={{ position: "absolute", top: 8, left: "50%", transform: "translateX(-50%)", zIndex: 6, background: "rgba(14,18,24,0.88)", border: "1px solid #7dffa8", color: "#7dffa8", borderRadius: 6, padding: "3px 12px", fontSize: 12, letterSpacing: 1, pointerEvents: "none" }}>
+          POSSESSED — {hud.possessed.label}
+        </div>
+      )}
+      {hud.possessed && (
+        <div data-joy
+          style={{ position: "absolute", left: 92 - 70, bottom: 128 - 70, width: 140, height: 140, zIndex: 7, touchAction: "none" }}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            e.currentTarget.setPointerCapture(e.pointerId);
+            const S = stateRef.current; if (!S) return;
+            S.joy = { active: true, t: 0, s: 0 };
+            moveJoy(e);
+          }}
+          onPointerMove={(e) => { e.stopPropagation(); moveJoy(e); }}
+          onPointerUp={(e) => { e.stopPropagation(); releaseJoy(); }}
+          onPointerCancel={(e) => { e.stopPropagation(); releaseJoy(); }}
+        >
+          <div style={{ position: "absolute", left: 70 - 56, top: 70 - 56, width: 112, height: 112, borderRadius: "50%", border: "2px solid rgba(125,255,168,0.55)", background: "rgba(20,24,30,0.35)", pointerEvents: "none" }} />
+          <div ref={joyKnobRef} style={{ position: "absolute", left: 48, top: 48, width: 44, height: 44, borderRadius: "50%", background: "rgba(125,255,168,0.75)", border: "2px solid #7dffa8", pointerEvents: "none" }} />
+        </div>
+      )}
+      {hud.possessed && (
+        <button data-possess-release
+          style={{ ...P.btnBig, position: "absolute", right: 16, bottom: 16, zIndex: 7, borderColor: "#ffb45e", color: "#ffb45e", fontWeight: "bold" }}
+          onClick={() => stateRef.current && stateRef.current.releasePossession()}>
+          RELEASE
+        </button>
+      )}
       <div style={P.top}>
         <div style={P.stat}><span style={{ color: "#ffd27a" }}>◆</span>{hud.resources}</div>
         <div data-bell style={{ ...P.stat, cursor: hud.lastDispatch ? "pointer" : "default" }}
@@ -3156,6 +3295,10 @@ export default function DepotGame({ onExit, resume = null }) {
           { key: "defend", icon: "∴", label: "DEFEND", color: "#7dffa8", on: sq.order === "defend", act: () => { const S = stateRef.current; if (S) { S.orderSquad("defend"); S.selSquadId = null; } } },
           { key: "move", icon: "→", label: "MOVE", color: "#7fd7ff", on: sq.aimingMove || sq.order === "move", act: () => stateRef.current && stateRef.current.orderSquad("move") },
           { key: "attack", icon: "⚑", label: "ATTACK", color: "#ff6b5e", on: sq.aiming, act: () => stateRef.current && stateRef.current.orderSquad("attack") },
+          // POSSESSION (P4 T1, mk0.90): TAKE CONTROL — every squad type,
+          // instant like DEFEND (deselects on choose; the pie itself closes
+          // via RadialMenu's onChoose regardless).
+          { key: "possess", icon: "✥", label: "TAKE CONTROL", color: "#7dffa8", on: false, act: () => { const S = stateRef.current; if (S) S.takeControl(); } },
         ];
         // COMMAND T3 (mk0.85): PATROL — two taps propose a route through the
         // same proposed-line confirm the build orders use; accept and the

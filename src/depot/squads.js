@@ -660,3 +660,42 @@ export function stepSquad(world, squad, dt) {
     seekGoal(world, u, dt);
   });
 }
+
+// POSSESSION (P4 T1, mk0.90): the owner's hands on one squad. The stick is
+// a world-space direction; the anchor walks it at the squads' own march
+// speed; members hold the formation ring exactly as defend does. Movement
+// only — no orders, no rng, no fire (the trigger is the game layer's, T2).
+//
+// PLAN DEVIATION, load-bearing (found running the T1(a) fixture, not
+// guessed): the anchor's own top speed is MOVE_SPEED, identical to a
+// member's seekGoal top speed — so a member whose ring slot starts BEHIND
+// the direction of travel is a pure pursuer chasing a target fleeing at his
+// own max speed. That never closes; measured on a straight 8s drive it
+// trails at a roughly constant ~1m/s and never stops opening — "men holding
+// formation" would silently break on any drive longer than a couple of
+// seconds. The existing rubber-band law (COHESION_M, stepSquad's attack
+// leg) already exists to hold an anchor for exactly this — reused verbatim
+// here, without its leg-pause/rng dwell (there are no legs under the stick,
+// and the brief's zero-new-rng law binds this path): the anchor simply does
+// not advance on a tick where any live member already trails it by more
+// than COHESION_M, and resumes the instant he closes back inside it.
+export function drivePossessedSquad(world, squad, vx, vz, dt) {
+  const mag = Math.hypot(vx, vz);
+  if (mag > 1) { vx /= mag; vz /= mag; }
+  const members = squad.memberIds.map((id) => world.byId.get(id)).filter((u) => u && u.alive);
+  let trail = 0;
+  for (const u of members) {
+    const d = Math.hypot(u.pos.x - squad.anchor.x, u.pos.z - squad.anchor.z);
+    if (d > trail) trail = d;
+  }
+  if (trail <= COHESION_M) {
+    squad.anchor = { x: squad.anchor.x + vx * MOVE_SPEED * dt, z: squad.anchor.z + vz * MOVE_SPEED * dt };
+  }
+  const n = members.length;
+  members.forEach((u, i) => {
+    const s = slotFor(squad, i, n);
+    u.goal = clearSlot(world, s.x, s.z, (u.hx || 0.3) + 0.35);
+    u.settled = false;
+    seekGoal(world, u, dt);
+  });
+}
