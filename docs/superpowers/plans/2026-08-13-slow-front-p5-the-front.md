@@ -20,9 +20,237 @@
 
 **Task 5 — Copses, forests, and the high ground** — POPULATED BELOW (mk1.04).
 
-**Task 6 — The measurement close** *(skeleton)*
-- Full-density Pi baseline on the new map: frame split, collapse worst case, sight recompute.
-- Re-pin perf numbers; owner playtest closes the phase.
+**Task 6 — The measurement close: sleeping stone leaves the collision books** — POPULATED BELOW (mk1.05).
+
+---
+
+# TASK 6 — The measurement close: sleeping stone leaves the collision books (mk1.05)
+
+**What it does.** Two things, measured before and after. First, the owner's optimization: today every physics tick files EVERY body — including two thousand sleeping stones — into the collision lookup, then walks pairs inside each cell to skip the sleeping ones. This task gives the lookup two tiers: sleeping and zero-mass bodies are filed ONCE (when they fall asleep) and stay on the books until they wake; only moving bodies are re-filed each tick; a cell holding nothing but sleeping stone does no pair work at all. Second, the phase's closing measurement: the full-density Pi numbers, captured on the SAME scenario before and after the change, become the phase baseline. The owner's playtest then closes THE FRONT.
+
+**Why the physics stays byte-identical (the design's whole law).** The solver's results depend on the exact order it meets contacts. The two-tier lookup replays that order exactly: bodies carry a birth number, both tiers keep their lists in birth order, and the pair walk merges the two lists back into the single sequence the old code produced. Every pair the old code tested is tested; every pair it skipped is skipped. The ONE difference: a contact between a sleeping stone and a zero-mass body (a rock, a wall) is no longer generated — that contact wrote nothing to anything (the sleeping side never accepts an impulse, the zero-mass side multiplies every impulse by zero), so no position, no velocity, and no hash can move. The proof gates are absolute: `golden.mjs` (the frozen demo's own engine against this one, bit-identical trajectories), the full depot suite with ZERO re-pins, and a new heavy keystone whose world hash and draw count are pinned BEFORE the change and must not move after it.
+
+**Frozen-law note:** this is a `core.js` engine change. The law is guarded divergence with golden green — this change is stronger than guarded: behavior-identical by construction, and golden is the referee.
+
+**Feel changes:** none. That is the point — same war, cheaper ticks. The owner's acceptance is the before/after numbers and his closing playtest.
+
+**Suggested model:** Sonnet — the engine change is specified verbatim below; the agent executes and measures.
+
+**Required reading (re-verify anchors at dispatch):**
+- `src/engine/core.js` — 152–183 (makeBody + wake; new fields land in makeBody, the unfile helper lands after wake), 1343–1444 (collectContacts — the whole function, replaced in part), 1445–1550 (prepContacts/solveContacts, read-only context), 1841–1856 (stepStatus corpse removal — one line lands here), 1891–1949 (stepWorld + worldHash, read-only).
+- `scripts/golden.mjs` — whole (the parity referee; run-only, never edited).
+- `src/depot/save.js` — 50–70 (the serialized field list; verify `_filed`/`_cells` are NOT in it — bodies save clean).
+- `scripts/depot-test.mjs` — 1–70 (harness), the FRONT T5 block + tail (the T6 block lands before the tail).
+- `src/version.js`.
+
+**Trap notes:**
+- BYTE-IDENTICAL is the contract. If ANY existing assert — depot suite or golden — moves, the implementation is wrong. STOP and report; never re-pin. EXPECTED RE-PINS: none.
+- The one stated delta (sleeping-vs-zero-mass contacts vanish) is invisible everywhere: impulse writes are gated by sleep on one side and multiplied by zero inverse mass on the other; the hash reads positions only; the demo holds no unpinned zero-mass bodies, so golden cannot even see it.
+- `_filed`/`_cells` are initialized in makeBody (object-shape stability) and are NOT serialized (save.js copies a fixed field list — verify at dispatch).
+- `wake()` does NOT unfile — the next tick's filing pass does. A body woken mid-tick was already merged into this tick's pair walk, exactly as today.
+- Engine-side corpse removal (stepStatus) unfiles explicitly. Game-layer removals (sold walls, cleaned rubble, breached rocks) have no hook — the pair walk validates every filed entry by identity (`world.byId.get(id) === body`) and lazily prunes ghosts. A ghost in a never-probed cell is harmless residue.
+- The corpse rule (`dead unit older than 4 seconds`) must be applied in the merge too — a filed sleeping corpse crosses that line while still on the books, and today's code excluded it that same tick.
+- The old `world._grid` dies with this change; verify at dispatch that only collectContacts reads it (grep `_grid`).
+- The keystone fixture is heavy (a real map's town, ~2,000 bodies, 1,200 steps) — it adds seconds to the suite. Accepted: it is the behavior lock.
+- No rng anywhere in this change; `depot-lint` does not scan core.js regardless.
+- FULL smoke, not `SMOKE_ONLY=depot` — the engine is shared by every surface (demo, sandbox, tower defense, campaign, mech, depot).
+- The Pi capture's ship rule is the body-lists lesson: means and medians are the measure, tails are reported but never gate.
+
+## Steps, in execution order
+
+**Step 0 — the BEFORE capture (on the mk1.04 tree, before any edit).** Write `.superpowers/diag-t6-perf.mjs` (untracked; the T4 capture's pattern): built bundle via `npm run preview`, headful Chromium at `?seed=2307&perf=1` (the T4 capture's hangar seed). `__DEPOTSTART__()`. Window A: 20 seconds idle, snapshot `__DEPOTPERF__`. Window B: `__DEPOTSPAWN__(40)`, then 6 `__DEPOTSHELL__` rounds into the hangar's walls (via `__DEPOTTOWN__`), run 20 seconds, snapshot. Two repeats. Record mean and median `sim` and `frame` per window per repeat. These four windows are the BEFORE.
+
+**Step 1 — the keystone, pinned before the change.** Insert the FRONT-T6 block before the tail summary. Run `npm run test:depot` once: the block prints `[t6 keystone] hash=H draws=D` and its two source pins are RED (core.js untouched). Copy the printed values into `T6_HASH`/`T6_DRAWS`, rerun: keystone asserts green, source pins still red. Record H, D, and the red list.
+
+```js
+// ==== FRONT T6: the keystone and the quiet books =============================
+// mk1.05 (The Front, Task 6). The broadphase learns two tiers (sleeping and
+// zero-mass bodies file once and stay filed); the physics must not move by
+// one bit. This block pins a heavy real-map battle's exact world hash and
+// draw count BEFORE the engine change — the change must reproduce both.
+{
+  console.log("\n[front t6: the keystone and the quiet books]");
+  const T6_HASH = 0;   // filled at Step 1 from the printed capture
+  const T6_DRAWS = 0;  // filled at Step 1 from the printed capture
+  const src6 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  const sliceFn6 = (name) => {
+    const start = src6.indexOf(`\nfunction ${name}(`);
+    if (start < 0) throw new Error("T6 extract: missing function " + name);
+    const rest = src6.slice(start + 1);
+    const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
+    return rest.slice(0, m < 0 ? rest.length : m + 9);
+  };
+  const header6 = src6.slice(src6.indexOf("const GRID_CS"), src6.indexOf("function genMap"));
+  const mapSrc6 = [
+    header6,
+    sliceFn6("genMap"), sliceFn6("makeMap"), sliceFn6("streamAt"), sliceFn6("planTrees"),
+    sliceFn6("pondAt"), sliceFn6("rockAt"),
+    sliceFn6("makeGrid"), sliceFn6("checkConnectivity"), sliceFn6("townFootprint"), sliceFn6("buildTown"),
+    sliceFn6("buildDepotTerrain"),
+    `return { makeMap, makeGrid, buildTown, buildDepotTerrain, invW, fwdU,
+      state: () => ({ ORIENT, TOWN, MAP_SEED }) };`,
+  ].join("\n");
+  const M6 = new Function(
+    "mulberry32", "MASON", "fwdUFor", "fwdDirFor", "invWFor", "addBody", "addWeld", mapSrc6,
+  )(mulberry32, MASON, fwdUFor, fwdDirFor, invWFor, addBody, addWeld);
+
+  M6.makeMap(4242);
+  const st6 = M6.state();
+  const field6 = makeField(121, 2.0, st6.MAP_SEED);
+  M6.buildDepotTerrain(field6, st6.MAP_SEED);
+  const world = makeWorld({ field: field6, seed: 4242 });
+  world._tdStruct = true; world.depotCombat = true;
+  M6.buildTown(world, M6.makeGrid(null), field6);
+  let draws = 0; const raw6 = world.rng;
+  world.rng = () => { draws++; return raw6(); };
+  // the battle: a squad marching through town, eight conscripts on a straight
+  // flow, six shells into the biggest building — collapse, contacts, corpses.
+  const big6 = st6.TOWN.filter((t) => !t.depot).sort((a, b) => b.nx * b.nz - a.nx * a.nz)[0];
+  const sq6 = makeSquad(1, "rifles", 1, big6.x - 20, big6.z);
+  spawnSquadMembers(world, sq6);
+  sq6.order = "move"; sq6.dest = { x: big6.x + 20, z: big6.z };
+  for (let i = 0; i < 8; i++) spawnUnit(world, { x: big6.x - 24 + i * 2, z: big6.z - 18 }, "");
+  for (let s = 0; s < 6; s++) {
+    const from = { x: big6.x - 12, y: field6.heightAt(big6.x, big6.z) + 6, z: big6.z + (s - 2.5) * 1.2 };
+    fireProjectile(world, from, { x: 0.86, y: -0.5, z: 0 }, 60,
+      { kind: "shell", r: 3.2, kv: 12, dmg: 55, crater: 0.6, hitStruct: true, attacker: "player" });
+  }
+  for (let i = 0; i < 1200; i++) {
+    stepSquad(world, sq6, 1 / 120);
+    stepUnits(world, straightGrid(0, 1), identFwdDir, null, (x, z) => ({ u: x, v: z }));
+    stepWorld(world);
+  }
+  const h6 = worldHash(world);
+  console.log(`[t6 keystone] hash=${h6} draws=${draws}`);
+  ok("T6: the keystone battle broke real welds (the fixture fights)", world.welds.filter((w) => w.broken).length > 20, `${world.welds.filter((w) => w.broken).length} broken`);
+  ok("T6 KEYSTONE: world hash identical before and after the quiet books", h6 === T6_HASH, `${h6} vs pinned ${T6_HASH}`);
+  ok("T6 KEYSTONE: draw count identical before and after", draws === T6_DRAWS, `${draws} vs pinned ${T6_DRAWS}`);
+  // source pins: the two-tier books exist where claimed
+  const csrc6 = fs.readFileSync(new URL("../src/engine/core.js", import.meta.url), "utf8");
+  ok("T6: the persistent tier exists in the engine", /the sleeping stone is already on the books/.test(csrc6));
+  ok("T6: the unfile helper exists beside wake", /function unfileBody\(world, b\)/.test(csrc6));
+}
+// ==== end FRONT T6 ===========================================================
+```
+Note: `stepUnits` is called with a null territory and an identity converter — the enemy scan paths that read territory are sight-gated in the game layer, not here; the T1(c) archived block used the same shape. If `stepUnits` throws on a null territory at execution, STOP and report (do not improvise a fixture change).
+
+**Step 2 — the engine change.** `src/engine/core.js`, four edits:
+
+(2a) makeBody (line 168's block) gains two fields, after `home: null,`:
+```js
+    home: null,
+    _filed: false, _cells: null, // T6 (mk1.05): the broadphase's persistent tier (see collectContacts)
+```
+
+(2b) After `wake` (line 182), the unfile helper:
+```js
+// T6 (mk1.05): pull a body off the persistent broadphase books (see
+// collectContacts). Called by the filing pass when a filed body has woken,
+// and by the engine's own corpse removal. Game-layer removals have no hook —
+// the pair walk validates filed entries by identity and prunes ghosts lazily.
+function unfileBody(world, b) {
+  if (!b._filed) return;
+  const bp = world._bp;
+  if (bp && b._cells) for (const key of b._cells) {
+    const cell = bp.get(key);
+    if (!cell) continue;
+    const i = cell.stat.indexOf(b);
+    if (i >= 0) cell.stat.splice(i, 1);
+  }
+  b._filed = false; b._cells = null;
+}
+```
+
+(2c) collectContacts: the filing pass and the pair walk are replaced. The comment block, `cell = 6.0`, weld-pair cache, `weldedAsleep`/`wakeExempt`, and the ENTIRE pair-check body (from `if (a.sleeping && b.sleeping) continue;` through the shove tagging) stay VERBATIM — only the storage around them changes:
+```js
+  // broadphase: uniform grid over XZ, TWO TIERS (T6, mk1.05). Sleeping and
+  // zero-mass bodies file ONCE (stat, sorted by birth order) and stay on the
+  // books until they wake or die; moving bodies re-file each step (dyn,
+  // epoch-stamped). The pair walk merges the tiers back into birth order,
+  // so the solver meets the identical contact sequence the one-tier grid
+  // produced — byte-identical physics, proven by golden and the T6 keystone.
+  const cell = 6.0;
+  if (!world._bp) { world._bp = new Map(); world._bpEpoch = 0; }
+  const grid = world._bp, epoch = ++world._bpEpoch;
+  for (let i = 0; i < bodies.length; i++) {
+    const b = bodies[i];
+    if (b.pinned) continue;
+    if (b.kind === "unit" && !b.alive && world.t - (b.deadT || 0) > 4) continue;
+    const still = b.sleeping || b.invM === 0;
+    if (still && b._filed) continue; // T6: the sleeping stone is already on the books
+    if (!still && b._filed) unfileBody(world, b); // woke since it was filed
+    const r = Math.max(b.hx, b.hy, b.hz);
+    const x0 = Math.floor((b.pos.x - r) / cell), x1 = Math.floor((b.pos.x + r) / cell);
+    const z0 = Math.floor((b.pos.z - r) / cell), z1 = Math.floor((b.pos.z + r) / cell);
+    if (still) b._cells = [];
+    for (let gx = x0; gx <= x1; gx++) for (let gz = z0; gz <= z1; gz++) {
+      const key = gx * 73856093 ^ gz * 19349663;
+      let c = grid.get(key);
+      if (!c) { c = { stat: [], dyn: [], epoch: 0 }; grid.set(key, c); }
+      if (still) {
+        let k = c.stat.length; // sorted insert by seq — the merge replays body-array order
+        while (k > 0 && c.stat[k - 1].seq > b.seq) k--;
+        c.stat.splice(k, 0, b);
+        b._cells.push(key);
+      } else {
+        if (c.epoch !== epoch) { c.dyn.length = 0; c.epoch = epoch; }
+        c.dyn.push(b);
+      }
+    }
+    if (still) b._filed = true;
+  }
+```
+…the weld-pair cache and `weldedAsleep`/`wakeExempt` blocks stay exactly where they are, then the pair walk:
+```js
+  const seen = new Set();
+  const merged = _bpMerged;
+  for (const c of grid.values()) {
+    const dyn = c.epoch === epoch ? c.dyn : null;
+    if (!dyn || !dyn.length) continue; // a cell of only sleeping stone does no work at all
+    const stat = c.stat;
+    merged.length = 0;
+    let si = 0, di = 0;
+    while (si < stat.length || di < dyn.length) {
+      let pick;
+      if (di >= dyn.length || (si < stat.length && stat[si].seq < dyn[di].seq)) {
+        pick = stat[si++];
+        // lazy ghost pruning: the game layer removes bodies with no hook here
+        if (world.byId.get(pick.id) !== pick) { si--; stat.splice(si, 1); continue; }
+        // the corpse rule, same as the filing pass above
+        if (pick.kind === "unit" && !pick.alive && world.t - (pick.deadT || 0) > 4) continue;
+      } else pick = dyn[di++];
+      merged.push(pick);
+    }
+    if (merged.length < 2) continue;
+    for (let i = 0; i < merged.length; i++) for (let j = i + 1; j < merged.length; j++) {
+      let a = merged[i], b = merged[j];
+      // both on the books = both sleeping and/or both zero-mass: the old walk
+      // skipped both-sleeping and both-zero-mass below; the mixed case wrote
+      // nothing to anything — dropped, the one stated (inert) delta.
+      if (a._filed && b._filed) continue;
+      if (a.sleeping && b.sleeping) continue;
+      ...everything from here through the shove tagging stays VERBATIM...
+    }
+  }
+```
+with one module-scope scratch added beside `_scratchOut`:
+```js
+const _bpMerged = [];
+```
+
+(2d) stepStatus's corpse removal (line 1853, before `world.byId.delete(b.id)`):
+```js
+      unfileBody(world, b); // T6: the engine's own removals leave the books clean
+      world.byId.delete(b.id); world.bodies.splice(i, 1);
+```
+
+**Step 3 — the proof gates.** `npm run test:depot` — everything green: the keystone's pinned hash and draw count UNMOVED, zero re-pins anywhere, the two T6 source pins now green. Then `npm run golden` — bit-identical demo parity. Then `npm run lint:depot`.
+
+**Step 4 — bump, build, full smoke.** `src/version.js` → `"mk1.05"` · `npm run build` AFTER the bump · `npm run smoke` (FULL — every surface rides this engine).
+
+**Step 5 — the AFTER capture and the phase baseline.** Rerun `.superpowers/diag-t6-perf.mjs` on the new build, two repeats, same seed, same windows. SHIP RULE: window A and window B mean `sim` at or below the BEFORE means; medians reported alongside; tails reported, never gating. If either mean regresses, STOP and report — no third strategy without the owner. The AFTER numbers are recorded in the report as THE FRONT's full-density baseline (frame split sim/render, idle and under assault-plus-collapse).
+
+**Gates (ONLY these):** parse changed files · `npm run lint:depot` · `npm run test:depot` (keystone pinned pre-change, green post-change, zero re-pins) · `npm run golden` · `npm run build` after the bump · `npm run smoke` (full) · the Step 0/Step 5 Pi captures with the ship rule. Allowed files: `src/engine/core.js`, `scripts/depot-test.mjs`, `src/version.js` (plus the untracked `.superpowers/diag-t6-perf.mjs`). Commit `"sleeping stone leaves the collision books (mk1.05)"`, push, CI green, STOP. Then the owner's playtest closes THE FRONT.
 
 ---
 
