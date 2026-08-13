@@ -707,37 +707,39 @@ const P = {
   toast: { background: "rgba(14,18,24,0.92)", border: "1px solid #ffb45e", color: "#ffd9a0", borderRadius: 6, padding: "4px 12px", fontSize: 12 },
 };
 
-// COMMAND (mk0.80): THE RADIAL. One ring of orders around the selected
-// thing — squads and towers speak the same language. Slots fan across the
-// arc over the anchor; the next phase docks TAKE CONTROL into the same
-// ring, which is why the geometry is data, not layout.
-function RadialMenu({ cx, cy, label, slots, armed }) {
-  // mk0.81 (owner: "radial menus don't have button overlaps"): slots are
-  // spaced by each button's WIDTH along the arc, not by a fixed angle — the
-  // ring's radius grows until every label fits with margin, so buttons can
-  // never collide whatever their text. Width is estimated from the label
-  // (monospace ~7.2px/char + padding); the arc is capped at ~150° overhead.
-  const GAP = 12, MAXSPAN = 2.6;
-  const widths = slots.map((s) => s.label.length * 7.2 + 26 + GAP);
-  const total = widths.reduce((a, b) => a + b, 0);
-  const RAD = Math.max(88, (total * 1.12) / MAXSPAN);
-  const span = total / RAD;
-  const a0 = -Math.PI / 2 - span / 2;
-  let acc = 0;
+// COMMAND 1b (mk0.82): THE PIE. One disc of wedges around the selected
+// thing. Equal sectors, twelve o'clock first, hole in the middle so the
+// unit stays visible. Choosing ANY wedge closes the pie (the owner's rule:
+// the screen must be free for the follow-up taps an order needs) — every
+// wedge's onClick runs its action, then onChoose (the call site sets
+// S.pieOpen = false there), one mechanism for every slot rather than
+// repeating a close in each act.
+function RadialMenu({ cx, cy, label, slots, armed, onChoose }) {
+  const N = slots.length, R0 = 36, R1 = 104;
+  const wedge = (i) => {
+    const a0 = -Math.PI / 2 + (i - 0.5) * (2 * Math.PI / N);
+    const a1 = a0 + 2 * Math.PI / N;
+    const p = (r, a) => `${cx + Math.cos(a) * r},${cy + Math.sin(a) * r}`;
+    const large = (2 * Math.PI / N) > Math.PI ? 1 : 0;
+    return `M ${p(R0, a0)} A ${R0} ${R0} 0 ${large} 1 ${p(R0, a1)} L ${p(R1, a1)} A ${R1} ${R1} 0 ${large} 0 ${p(R1, a0)} Z`;
+  };
   return (
-    <div style={{ position: "absolute", left: 0, top: 0, zIndex: 7, pointerEvents: "none" }}>
-      <div style={{ position: "absolute", left: cx, top: cy + 26, transform: "translate(-50%,0)", fontSize: 10, letterSpacing: 1, color: "#7dffa8", background: "rgba(14,18,24,0.85)", padding: "1px 6px", borderRadius: 4 }}>{label}</div>
+    <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", zIndex: 7, pointerEvents: "none", overflow: "visible" }}>
       {slots.map((s, i) => {
-        const a = a0 + (acc + widths[i] / 2) / RAD;
-        acc += widths[i];
-        const x = cx + Math.cos(a) * RAD, y = cy + Math.sin(a) * RAD;
+        const mid = -Math.PI / 2 + i * (2 * Math.PI / N);
+        const lx = cx + Math.cos(mid) * 72, ly = cy + Math.sin(mid) * 72;
         return (
-          <button key={s.key} data-radial={s.key}
-            style={{ ...P.btnBig, position: "absolute", left: x, top: y, transform: "translate(-50%,-50%)", pointerEvents: "auto", padding: "8px 12px", fontSize: 12, borderColor: s.on ? s.color : "#48515f", color: s.color, opacity: armed ? 1 : 0.5 }}
-            onClick={s.act}>{s.label}</button>
+          <g key={s.key} data-radial={s.key} style={{ pointerEvents: "auto", cursor: "pointer" }} onClick={() => { s.act(); onChoose && onChoose(); }} opacity={armed ? 1 : 0.5}>
+            <path d={wedge(i)} fill={s.on ? s.color : "rgba(14,18,24,0.88)"} fillOpacity={s.on ? 0.28 : 0.88} stroke={s.on ? s.color : "#48515f"} strokeWidth="1.5" />
+            <text x={lx} y={ly - 4} textAnchor="middle" fontSize="15" fill={s.color} style={{ userSelect: "none" }}>{s.icon || ""}</text>
+            <text x={lx} y={ly + 12} textAnchor="middle" fontSize="10" letterSpacing="1" fill={s.color} fontFamily="inherit" style={{ userSelect: "none" }}>{s.label}</text>
+          </g>
         );
       })}
-    </div>
+      <foreignObject x={cx - 60} y={cy + R1 + 6} width="120" height="40" style={{ pointerEvents: "none", overflow: "visible" }}>
+        <div style={{ textAlign: "center", fontSize: 10, letterSpacing: 1, color: "#7dffa8" }}>{label}</div>
+      </foreignObject>
+    </svg>
   );
 }
 
@@ -1177,7 +1179,11 @@ export default function DepotGame({ onExit, resume = null }) {
         // the tap that selected a squad can't double-fire an order chip.
         // buildPt0 (mk0.60): the FIRST of a build order's two taps, held here
         // until the second lands. Null whenever no build order is half-given.
-        squads: [], nextSquadId: 1, selSquadId: null, selArmedAt: 0, orderMode: null, buildPt0: null,
+        // pieOpen (COMMAND 1b, mk0.82): true while the wedge disc is on
+        // screen around the selected squad/tower; a wedge tap closes it
+        // (S.pieOpen = false) but an aiming order keeps the squad selected
+        // so the ground stays tappable — see consumeOrderTap.
+        squads: [], nextSquadId: 1, selSquadId: null, selArmedAt: 0, orderMode: null, buildPt0: null, pieOpen: false,
         hudT: 0, keys: {}, sellById: null, audio: A,
         // The attacker's economy — seeded off the run's own rng stream, not
         // an unseeded generator, so ?seed= replays reproduce the same
@@ -1389,7 +1395,7 @@ export default function DepotGame({ onExit, resume = null }) {
         // COMMAND T1 (mk0.80): a placed squad comes up already selected with
         // its radial open — defend-here is already its standing order (the
         // intrinsic default, no tap needed).
-        S.selSquadId = sq.id; S.selArmedAt = world.t + PENDING_ARM_S;
+        S.selSquadId = sq.id; S.selArmedAt = world.t + PENDING_ARM_S; S.pieOpen = true;
         S.resources -= SQUAD_SPECS[type].cost;
       };
       // Sandbag: instant, wall-exempt (brief) — same reasoning as walls: a
@@ -1654,13 +1660,19 @@ export default function DepotGame({ onExit, resume = null }) {
         if (om === "attack" || om === "move") {
           if (osq) { osq.order = om; osq.dest = { x: d.x, z: d.z }; osq._legTarget = null; osq._pauseT = 0; osq._build = null; }
           S.orderMode = null;
+          // COMMAND 1b (mk0.82): the order's final ground tap landed — the
+          // squad is released (deselected), same as an instant order.
+          S.selSquadId = null;
           return true;
         }
         if (om === "build_bags" || om === "build_walls") {
-          if (!osq || osq.type !== "engineers") { S.orderMode = null; S.buildPt0 = null; return true; }
+          if (!osq || osq.type !== "engineers") { S.orderMode = null; S.buildPt0 = null; S.selSquadId = null; return true; }
           if (!S.buildPt0) { S.buildPt0 = { x: d.x, z: d.z }; toast("LINE START — TAP THE FAR END"); return true; }
           startBuildLine(osq, om === "build_walls" ? "walls" : "bags", S.buildPt0, d);
           S.buildPt0 = null; S.orderMode = null;
+          // COMMAND 1b (mk0.82): second tap completes the build order —
+          // release the squad exactly as MOVE/ATTACK do above.
+          S.selSquadId = null;
           return true;
         }
         return false;
@@ -1791,13 +1803,15 @@ export default function DepotGame({ onExit, resume = null }) {
         // Tap on a squad member selects his squad; tap elsewhere while one
         // is selected deselects (and consumes the tap — no accidental build).
         const tappedSquad = squadAtPoint(p);
-        if (tappedSquad) { S.selSquadId = tappedSquad.id; S.selArmedAt = world.t + PENDING_ARM_S; S.orderMode = null; S.buildPt0 = null; S.inspectId = null; return; }
-        if (S.selSquadId != null) { S.selSquadId = null; S.orderMode = null; S.buildPt0 = null; return; }
+        // COMMAND 1b (mk0.82): tapping a squad (selecting it, or re-tapping
+        // the one already selected) opens/reopens the pie.
+        if (tappedSquad) { S.selSquadId = tappedSquad.id; S.selArmedAt = world.t + PENDING_ARM_S; S.orderMode = null; S.buildPt0 = null; S.inspectId = null; S.pieOpen = true; return; }
+        if (S.selSquadId != null) { S.selSquadId = null; S.orderMode = null; S.buildPt0 = null; S.pieOpen = false; return; }
         const g = grid.worldToGrid(p.x, p.z);
         if (!grid.inBounds(g.gx, g.gz)) { S.inspectId = null; return; }
         const cell2 = grid.cells[grid.idx(g.gx, g.gz)];
         if (S.sellMode) { S.inspectId = null; sellAt(g.gx, g.gz); return; }
-        if (cell2.wallId && world.byId.has(cell2.wallId)) { S.inspectId = cell2.wallId; return; }
+        if (cell2.wallId && world.byId.has(cell2.wallId)) { S.inspectId = cell2.wallId; S.pieOpen = true; return; }
         S.inspectId = null;
         if (S.mode === "wall") { buildAt(g.gx, g.gz, "wall"); return; } // walls exempt: instant, as today
         if (S.mode === "sandbag") { placeSandbagAt(g.gx, g.gz); return; } // sandbags: instant, wall-exempt (brief)
@@ -2661,6 +2675,10 @@ export default function DepotGame({ onExit, resume = null }) {
                 const sq = S.selSquadId != null ? S.squads.find((q) => q.id === S.selSquadId) : null;
                 if (!sq || !S.squadScreen) return null;
                 return { id: sq.id, label: SQUAD_SPECS[sq.type].label, order: sq.order, x: S.squadScreen.x, y: S.squadScreen.y, armed: world.t >= S.selArmedAt, aiming: S.orderMode === "attack", aimingMove: S.orderMode === "move",
+                  // COMMAND 1b (mk0.82): the pie is up only while S.pieOpen —
+                  // a wedge tap closes it but (for aiming orders) keeps the
+                  // squad selected, so the status chip renders on its own.
+                  showPie: !!S.pieOpen,
                   // P1.5 T4: the BUILD chips exist for engineer squads and no
                   // other type, so the row is per-squad-type by construction.
                   engineer: sq.type === "engineers",
@@ -2700,6 +2718,7 @@ export default function DepotGame({ onExit, resume = null }) {
                   discipline: b.discipline || discipline || "careful",
                   refund: Math.floor(ispec.cost * 0.6),
                   frost: b.towerType === "frost",
+                  showPie: !!S.pieOpen,   // COMMAND 1b (mk0.82)
                 };
               })(),
             });
@@ -2942,21 +2961,31 @@ export default function DepotGame({ onExit, resume = null }) {
         // COMMAND T1 (mk0.80): DEFEND, MOVE, ATTACK — engineers additionally
         // get BAGS and WALLS. Same S.orderSquad actions, same order-state
         // colors the old chip row used.
+        // COMMAND 1b (mk0.82): DEFEND is instant — its act also fully
+        // deselects (S.selSquadId = null), the same rule SELL/CAREFUL-FREE
+        // follow on the tower pie. MOVE/ATTACK/BAGS/WALLS stay selected —
+        // they arm S.orderMode and consumeOrderTap's ground tap(s) finish
+        // them (and deselect there, at completion).
         const slots = [
-          { key: "defend", label: "DEFEND", color: "#7dffa8", on: sq.order === "defend", act: () => stateRef.current && stateRef.current.orderSquad("defend") },
-          { key: "move", label: "MOVE", color: "#7fd7ff", on: sq.aimingMove || sq.order === "move", act: () => stateRef.current && stateRef.current.orderSquad("move") },
-          { key: "attack", label: "ATTACK", color: "#ff6b5e", on: sq.aiming, act: () => stateRef.current && stateRef.current.orderSquad("attack") },
+          { key: "defend", icon: "∴", label: "DEFEND", color: "#7dffa8", on: sq.order === "defend", act: () => { const S = stateRef.current; if (S) { S.orderSquad("defend"); S.selSquadId = null; } } },
+          { key: "move", icon: "→", label: "MOVE", color: "#7fd7ff", on: sq.aimingMove || sq.order === "move", act: () => stateRef.current && stateRef.current.orderSquad("move") },
+          { key: "attack", icon: "⚑", label: "ATTACK", color: "#ff6b5e", on: sq.aiming, act: () => stateRef.current && stateRef.current.orderSquad("attack") },
         ];
         if (sq.engineer) {
           slots.push(
-            { key: "build_bags", label: "▬ BAGS", color: "#ffd27a", on: sq.building === "bags", act: () => stateRef.current && stateRef.current.orderSquad("build_bags") },
-            { key: "build_walls", label: "▦ WALLS", color: "#ffd27a", on: sq.building === "walls", act: () => stateRef.current && stateRef.current.orderSquad("build_walls") },
+            { key: "build_bags", icon: "▬", label: "BAGS", color: "#ffd27a", on: sq.building === "bags", act: () => stateRef.current && stateRef.current.orderSquad("build_bags") },
+            { key: "build_walls", icon: "▦", label: "WALLS", color: "#ffd27a", on: sq.building === "walls", act: () => stateRef.current && stateRef.current.orderSquad("build_walls") },
           );
         }
         const status = sq.building
           ? (sq.buildStart ? " — TAP THE FAR END" : " — TAP THE LINE START")
           : sq.aiming || sq.aimingMove ? " — TAP GROUND" : "";
-        return <RadialMenu cx={sq.x} cy={sq.y} label={sq.label + status} slots={slots} armed={sq.armed} />;
+        // COMMAND 1b (mk0.82): pie open -> the wedge disc; pie closed but
+        // still selected (an aiming order armed) -> the center label chip
+        // alone, so the ground stays fully tappable for the follow-up taps.
+        return sq.showPie
+          ? <RadialMenu cx={sq.x} cy={sq.y} label={sq.label + status} slots={slots} armed={sq.armed} onChoose={() => { const S = stateRef.current; if (S) S.pieOpen = false; }} />
+          : <div style={{ position: "absolute", left: sq.x, top: sq.y + 26, transform: "translate(-50%,0)", fontSize: 10, letterSpacing: 1, color: "#7dffa8", background: "rgba(14,18,24,0.85)", padding: "1px 6px", borderRadius: 4, zIndex: 7, pointerEvents: "none" }}>{sq.label + status}</div>;
       })()}
       {hud.squadFlag && (
         <div data-squad-flag style={{ position: "absolute", left: hud.squadFlag.x, top: hud.squadFlag.y, transform: "translate(-50%, -100%)", zIndex: 6, pointerEvents: "none", color: "#ff6b5e", fontSize: 18 }}>⚑</div>
@@ -2982,23 +3011,30 @@ export default function DepotGame({ onExit, resume = null }) {
       {hud.towerRadial && (() => {
         const tr = hud.towerRadial;
         const slots = [];
+        // COMMAND 1b (mk0.82): both tower actions are instant — each act
+        // also fully deselects (S.inspectId = null). sellById already nulls
+        // it internally; the discipline flip does so explicitly here.
         if (!tr.frost) {
           slots.push({
             key: "discipline",
+            icon: tr.discipline === "free" ? "●" : "◐",
             label: tr.discipline === "free" ? "FREE" : "CAREFUL",
             color: tr.discipline === "free" ? "#ff7a7a" : "#4aff8c",
             on: true,
-            act: () => stateRef.current && stateRef.current.setTowerDiscipline(tr.id),
+            act: () => { const S = stateRef.current; if (S) { S.setTowerDiscipline(tr.id); S.inspectId = null; } },
           });
         }
         slots.push({
           key: "sell",
+          icon: "◆",
           label: `SELL ◆${tr.refund}`,
           color: "#ffb45e",
           on: true,
           act: () => stateRef.current && stateRef.current.sellById(tr.id),
         });
-        return <RadialMenu cx={tr.x} cy={tr.y} label={tr.label} slots={slots} armed={true} />;
+        return tr.showPie
+          ? <RadialMenu cx={tr.x} cy={tr.y} label={tr.label} slots={slots} armed={true} onChoose={() => { const S = stateRef.current; if (S) S.pieOpen = false; }} />
+          : null;
       })()}
 
       {hud.started && !hud.gameOver && !hud.victory && (

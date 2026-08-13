@@ -1984,7 +1984,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   {
     const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     // the frame snapshot is the setHud({...}) that also carries mode/sellMode
-    const snap = src.match(/setHud\(\{[\s\S]{0,4600}?\}\);\n\s+\}\n/); // window widened (mk0.29 added endCard; mk0.41 added the manifest mirror; mk0.80 added the tower radial)
+    const snap = src.match(/setHud\(\{[\s\S]{0,5000}?\}\);\n\s+\}\n/); // window widened (mk0.29 added endCard; mk0.41 added the manifest mirror; mk0.80 added the tower radial; mk0.82 added showPie to both)
     ok("sandbag-rot: frame hud snapshot carries sandbagOrient (no clobber)",
       !!snap && snap[0].includes("mode: S.mode") && snap[0].includes("sandbagOrient: S.sandbagOrient"));
     const { HUD0 } = await import("../src/depot/state.js");
