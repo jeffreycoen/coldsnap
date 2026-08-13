@@ -676,6 +676,85 @@ function lineSlotFor(squad, idx, n, aim) {
 
 ---
 
+## Task 8 — Stone stands: infantry can't knock buildings over (mk0.98) — suggested model: Sonnet (all code below)
+
+*Amendment, 2026-08-13, the owner's ruling after mk0.96 play: a rifle squad walked into a town building and toppled it. That must never happen. Scope ruled (all three): (1) infantry can never wake standing masonry — the categorical physics fix, both sides; (2) the possessed stick stops at buildings the way it stops at the map rim; (3) the build bar hides while possessed (its buttons sit under the joysticks today). Dispatches only after Task 7 lands — one agent in the tree.*
+
+**Why it happens (diagnosis, pinned):** town stones are 100 kg welded chunks, asleep — and a sleeping stone is immovable until woken. The engine's wake rule lets ANY body moving faster than a slow walk wake the whole welded island on touch; an 80 kg rifleman qualifies. Once awake, men shove stones (comparable masses), and a wedged man's depenetration spike shears the mortar joints; freed stones tumble. Possession makes it easy because the stick drives the anchor straight through building footprints.
+
+**The law this task writes:** a sleeping chunk that still holds an unbroken weld ignores contact-wake from any body under 200 kg, under the depot combat flag only. Men lean, stone stands. Blasts and satchels wake unconditionally (explode's own path, untouched); breakers (340 kg) and tanks (3,400 kg) still wake and ram; severed rubble (no live weld) still kicks around underfoot. The frozen demo takes no depot flag, so its behavior is byte-identical — the golden gate proves it.
+
+**Required reading (agent, before any code; anchors re-verified at dispatch):** this plan whole; `CLAUDE.md`; `src/engine/core.js` :1341-1426 (collectContacts — the wake lines are ~:1407-1408), :401-413 (weldNeighbors/wakeIsland), :1874-1922 (stepWorld's shape), the DIVERGENCE comment conventions throughout; `src/depot/DepotGame.jsx` — stepDepot's possessed-squad branch (the drive + rim clamp), `makeGrid`/`worldToGrid`, the build-bar JSX (`{hud.started && !hud.gameOver && !hud.victory && (` near the bottom); `src/depot/state.js` spawnWallCourses (welded walls exist — kind "wall", statics, out of this path's scope); `scripts/depot-test.mjs` — POSSESSION blocks, the fixture idioms (makeWorld/addBody/addWeld/stepWorld are importable).
+
+**Step 8.1 — failing tests first.** `scripts/depot-test.mjs`, new block `==== POSSESSION T8: stone stands`:
+
+(a) the law: a depot-flagged world (`world.depotCombat = true`), two 100 kg chunks welded and asleep, an 82 kg unit driven into them at march speed (set his velocity each step, `stepWorld` ~120 steps) → both stones STILL SLEEPING, positions unmoved to 1 mm, weld unbroken.
+(b) heavy still rams: the identical fixture with a 340 kg body → the stones wake.
+(c) rubble still kicks: a single UNWELDED sleeping chunk brushed by the same 82 kg unit → wakes (the exemption keys on the live weld, not on kind).
+(d) the demo is untouched: the same two-stone fixture WITHOUT `world.depotCombat` → the man wakes the island exactly as before (the guard's own control).
+(e) source pin: the possessed anchor's building clamp exists in `DepotGame.jsx` — the branch captures the pre-drive anchor and reverts when the clamped cell is `blocked || wallId`.
+(f) source pin: the build bar renders only when `!hud.possessed` (regex on the bar's condition).
+
+**Step 8.2 — the wake gate, in core.js** (a guarded divergence inside `collectContacts`, hoisted above the pair loop; comment in the file's own DIVERGENCE voice):
+
+```js
+  // DIVERGENCE (guarded, mk0.98): INFANTRY CAN'T KNOCK MASONRY OVER. Under
+  // depotCombat a sleeping chunk that still holds a live weld ignores
+  // contact-wake from bodies under 200kg — men lean on a building and it
+  // stands. Blasts wake unconditionally (explode's path, untouched);
+  // breakers/tanks (mass >= 200) still wake and ram; severed rubble (no
+  // live weld) still kicks around underfoot. No flag, no change: the
+  // frozen demo path is byte-identical (golden proves it).
+  const weldedAsleep = (s) => {
+    const wl = world.weldsOf && world.weldsOf.get(s.id);
+    if (wl) for (const wd of wl) if (!wd.broken) return true;
+    return false;
+  };
+  const wakeExempt = (s, mover) =>
+    world.depotCombat && s.kind === "chunk" && mover.mass < 200 && weldedAsleep(s);
+```
+
+...and the two wake lines gain the exemption:
+
+```js
+        if (a.sleeping && V.len2(b.v) > 0.6 && !(a.kind === "wreck" && b.mass < 200) && !wakeExempt(a, b)) { if (a.kind === "chunk") wake(a); else wakeIsland(world, a); }
+        if (b.sleeping && V.len2(a.v) > 0.6 && !(b.kind === "wreck" && a.mass < 200) && !wakeExempt(b, a)) { if (b.kind === "chunk") wake(b); else wakeIsland(world, b); }
+```
+
+(The solver already treats a sleeping body as an immovable anchor — `applyImpulse` skips sleeping sides and both-sleeping welds never enter the active list — so never waking IS the whole fix: the man gets pushed off, the stone takes nothing.)
+
+**Step 8.3 — the stick stops at buildings.** `DepotGame.jsx`, the possessed-squad branch in `stepDepot`: capture the anchor before the drive, and after the rim clamp refuse any move that lands in a blocked cell:
+
+```js
+        const a0 = { x: sq.anchor.x, z: sq.anchor.z };
+        const pi = S.possessInput || { vx: 0, vz: 0 };
+        drivePossessedSquad(world, sq, pi.vx, pi.vz, world.dt, S.reticle);
+        const cl = clampToRim(sq.anchor.x, sq.anchor.z);
+        // MASONRY (T8, mk0.98): a building footprint (or a rock, or a wall
+        // line) refuses the anchor the way the rim does — the formation can
+        // never be driven into a lattice it would have to shove through.
+        // The whole tick's move reverts (no slide); the stick just stops.
+        const gA = grid.worldToGrid(cl.x, cl.z);
+        const cellA = grid.inBounds(gA.gx, gA.gz) ? grid.cells[grid.idx(gA.gx, gA.gz)] : null;
+        sq.anchor = cellA && (cellA.blocked || cellA.wallId) ? a0 : { x: cl.x, z: cl.z };
+```
+
+(Stated consequence, accepted: your own wall line also stops the stick — a possessed squad crosses at a gap, not through its own masonry. The `S.reticle` argument is Task 7's; if Task 7 has not landed when this dispatches, the drive call is still 5-arg — the agent adapts to the live call and reports which form it found.)
+
+**Step 8.4 — the bar hides while possessed.** The build-bar JSX condition gains one clause:
+
+```jsx
+      {hud.started && !hud.gameOver && !hud.victory && !hud.possessed && (
+```
+
+The bar (and the SELL slot inside it) vanishes the moment a possession begins and returns on release — the joysticks own the bottom of the screen while you drive.
+
+**Behavior stated plainly:** men can lean on, crowd against, and fight around every building on the map and not one stone moves — only ordnance, satchels, breakers and armour move masonry, on both sides. The stick stops dead at a building's edge instead of dragging the squad into it. While possessed, the build bar is gone and the sticks have the bottom of the screen to themselves.
+
+**Gates (ONLY these):** parse changed files · `npm run lint:depot` · `npm run test:depot` (8.1 green; re-pins old→new) · `npm run golden` (core.js touched — the frozen-demo parity proof) · `npm run test:combat` (the depot-flag guard's second witness) · build AFTER bumping `src/version.js` to "mk0.98" · `SMOKE_ONLY=depot` smoke. Allowed files: `core.js`, `DepotGame.jsx`, `depot-test.mjs`, `version.js`. Commit "(mk0.98)", push, CI green, STOP.
+
+---
+
 ## Close
 
 Phase code-complete = the owner's playtest gates everything: possession feel, stick feel, reticle feel, volley feel, tower gunnery — none of it is verifiable by machine and none is accepted until he plays it. Roadmap flips Command → DONE, Possession → IN PROGRESS at T1 (fold into its commit: `src/ui/Roadmap.jsx` Command "One ring of orders around every squad and tower — shipped." / Possession "Take direct control of any squad or tower and drive it yourself."). Deferred to later phases by ratified scope: vehicle possession (Heroes), possession of walls (never ruled in), doctrine buttons while possessed, any enemy mirror (ruled out).
