@@ -10,32 +10,177 @@
 
 **Task 1 — The path that walks around** — POPULATED BELOW (mk1.10).
 
-**Task 2 — Stone doesn't murder pedestrians** *(skeleton)*
-- The physics rule: standing, sleeping, welded masonry can never slam a living walking man dead.
-- Falling stone kills exactly as today. Engine change under the Task 6 gates: golden, keystone, zero re-pins, one named delta.
+**Task 2 — Stone doesn't murder pedestrians** — POPULATED BELOW (mk1.11).
 
-**Task 3 — The bell market** *(skeleton)*
+**Task 3 — Only engineers build** *(skeleton; owner's ruling, 2026-08-13)*
+- Walls and sandbags leave the build bar — laid only by engineer squads walking their two-point lines.
+- Towers keep direct placement; the seeded depot sandbags stay.
+- Every tutorial/copy line that says "tap to build a wall" follows the truth.
+
+**Task 4 — The bell market** *(skeleton)*
 - Prices re-set at every bell from what stands on the field, men plus masonry, against the physics budget.
 - Flat when empty, double at half-full, capped near 4x. Both sides pay the same table.
 - The build bar and manifest show the live prices.
 
-**Task 4 — The body lists, resurrected** *(skeleton)*
+**Task 5 — The body lists, resurrected** *(skeleton)*
 - The archived typed-pools spec (THE FRONT plan, bottom), re-landed as written.
-- Measured with Task 6's protocol: means and medians, two repeats, tails reported never gating.
+- Measured with THE FRONT Task 6's protocol: means and medians, two repeats, tails reported never gating.
 
-**Task 5 — The weld scan sleeps too** *(skeleton)*
+**Task 6 — The weld scan sleeps too** *(skeleton)*
 - The per-tick walk over every weld skips what sleeps — the collision books' cousin.
 - Same engine gates; before/after measured alongside Task 4's numbers.
 
-**Task 6 — The front door** *(skeleton)*
+**Task 7 — The front door** *(skeleton)*
 - The site opens straight into Winter Front's start screen; one small tech-demos link to a second page.
 - Every line of site copy audited against what the game is now — stale wording dies.
 
-**Task 7 — The README** *(skeleton)*
+**Task 8 — The README** *(skeleton)*
 - Showcase first: screenshots from the deployed game, the bold true claims.
 - The technical section beneath, for engineers who keep reading.
 
 **Close** — the owner's playtest closes the phase.
+
+---
+
+# TASK 2 — Stone doesn't murder pedestrians (mk1.11)
+
+**What it does.** Ends the wall kill. Today the engine ejects a body that ends up overlapping stone, and the impact classifier reads a hard ejection as a lethal slam — a man squeezed against a standing building by his own formation dies to a wall that never moved (the owner lost one this way). The new rule, in one sentence: A SLEEPING STONE IS NOT A WEAPON. Under depot combat, a chunk that is asleep — a standing wall face, settled rubble — can neither deal the lethal ejection slam to a living man nor count as burying him. Everything that actually moves keeps killing exactly as today: falling and flying masonry (the falling-stone clock is reset the moment a chunk sleeps, so those paths never see a sleeping stone anyway), and genuine burial (the classifier itself keeps any stone truly bearing on a man AWAKE — that line already exists — so a pinning pile is never asleep and never exempt).
+
+**Why the guard is "sleeping" and not "standing welded":** sleeping is the physically honest test — an asleep body has zero velocity by definition, so any contact force against it is pure position correction, not a blow. It also covers settled loose rubble a man walks across, which could eject-kill exactly like a wall. The owner's intent — walking into stone must not kill — is the rule; sleeping is its exact mechanical form.
+
+**Frozen-law note:** engine change in `core.js`'s impact classifier, GUARDED on `world.depotCombat` like every depot divergence — the demo, tower defense, campaign, and sandbox are byte-identical, and golden stays green by construction. The ONE world that legitimately changes is the depot — so the T6 keystone's pinned hash and draw count MAY move: that re-pin is EXPECTED, NAMED, and reported old→new. It is this task's delta made visible. Any OTHER assert moving is a defect — STOP.
+
+**Feel changes:** men stop dying at walls. Nothing else.
+
+**Suggested model:** Sonnet — the edit is three lines plus a comment, specified verbatim; the tests are the work.
+
+**Required reading (re-verify anchors at dispatch):**
+- `src/engine/core.js` — 1641–1707 (classifyImpacts, the whole function — the edit site), 1708–1760 (stepStatus head: the burial clock and the `other.sleepT = 0` line's consumer, read-only), 1857–1889 (stepSleep, read-only — why sleeping means motionless).
+- `scripts/golden.mjs` — whole (run-only; its worlds never set depotCombat — verify that, it is what keeps golden green).
+- `scripts/depot-test.mjs` — 1–70, the FRONT T6 block (the keystone whose pins may move), the P6 T1 block + tail (the new block lands before the tail).
+- `src/version.js`.
+
+**Trap notes:**
+- The guard is `world.depotCombat && other.kind === "chunk" && other.sleeping && victim.kind === "unit"` — vehicles ramming walls, the demo, and every ungated world keep today's behavior byte-for-byte.
+- The COLLAPSE branch needs NO edit: it requires a live falling clock (`fallingSince > 0`), and the "chunks settle" line already clears that the moment a chunk sleeps.
+- The burial exemption removes the `other.sleepT = 0` reset for sleeping stones — harmless: they are already asleep, and stones genuinely bearing on a man were never asleep in the first place.
+- EXPECTED RE-PINS: exactly one PAIR may move — the T6 keystone's `T6_HASH`/`T6_DRAWS` (a man surviving a wall in that battle changes everything downstream of him, deterministically). If they move, re-pin old→new and REPORT both values. If they do NOT move, that is also fine (the fixture may contain no such death) — report that. Any other assert moving is a STOP.
+- Red-first discipline for the (a) fixture: if the embedded man SURVIVES before the fix (the fixture too weak to trigger the old kill), that is a STOP-and-report, not a fixture tweak.
+- FULL `npm run smoke` — engine change, every surface rides it.
+
+## Steps, in execution order
+
+**Step 1 — failing asserts first.** Insert the P6-T2 block before the tail summary; `npm run test:depot` shows (a) red (the embedded man dies under today's rule) and the (d) source pin red; (b) green already (falling stone kills both before and after — record it as green-first, that is its job). Record the exact reds.
+
+```js
+// ==== P6 T2: stone doesn't murder pedestrians ===============================
+// mk1.11 (Troops & Physics, Task 2). A sleeping stone is not a weapon: under
+// depot combat the ejection out of a standing wall (or settled rubble) can
+// no longer slam a living man dead, and a sleeping stone never counts as
+// burying him. Falling stone kills exactly as before — (b) proves it.
+{
+  console.log("\n[p6 t2: stone doesn't murder pedestrians]");
+  const flatT2 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+
+  // one welded, sleeping two-stone stack — a standing wall face
+  const buildStack = (world, x, z) => {
+    const lo = addBody(world, { kind: "chunk", team: 0, mass: 100, hx: 0.4, hy: 0.4, hz: 0.4, x, y: 0.42, z, friction: 0.65, restitution: 0.02 });
+    const hi = addBody(world, { kind: "chunk", team: 0, mass: 100, hx: 0.4, hy: 0.4, hz: 0.4, x, y: 1.25, z, friction: 0.65, restitution: 0.02 });
+    addWeld(world, lo, hi, 8.0e4);
+    lo.sleeping = true; hi.sleeping = true;
+    return { lo, hi };
+  };
+
+  // (a) THE WALL KILL DIES: a man pressed into a sleeping wall by his own
+  // side's shoving (deterministic pushes, the cohesion squeeze in miniature)
+  // is ejected but NOT killed. RED before the fix — he dies today.
+  {
+    const world = makeWorld({ field: flatT2, seed: 9 });
+    world.depotCombat = true;
+    buildStack(world, 0, 5);
+    const man = addBody(world, { kind: "unit", team: 1, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 4.5, hp: 58, friction: 0.55 });
+    for (let i = 0; i < 360; i++) {
+      if (i < 180 && i % 24 === 0 && man.alive) { man.v.z = 3.0; } // the squeeze, re-applied
+      stepWorld(world);
+    }
+    ok("T2(a): the man pressed into a sleeping wall SURVIVES", man.alive === true, `alive=${man.alive} hp=${man.alive ? man.hp.toFixed(0) : "dead"}`);
+  }
+
+  // (a2) settled loose rubble is exempt the same way (no weld, still asleep)
+  {
+    const world = makeWorld({ field: flatT2, seed: 9 });
+    world.depotCombat = true;
+    const r1 = addBody(world, { kind: "chunk", team: 0, mass: 100, hx: 0.4, hy: 0.4, hz: 0.4, x: 0, y: 0.42, z: 5, friction: 0.65, restitution: 0.02 });
+    r1.sleeping = true;
+    const man = addBody(world, { kind: "unit", team: 1, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 4.5, hp: 58, friction: 0.55 });
+    for (let i = 0; i < 360; i++) {
+      if (i < 180 && i % 24 === 0 && man.alive) { man.v.z = 3.0; }
+      stepWorld(world);
+    }
+    ok("T2(a2): the man pressed into sleeping rubble SURVIVES", man.alive === true, `alive=${man.alive}`);
+  }
+
+  // (b) FALLING STONE STILL KILLS (green before AND after — the guard's
+  // honesty check): a freed chunk dropped on a man's head stays lethal.
+  {
+    const world = makeWorld({ field: flatT2, seed: 9 });
+    world.depotCombat = true;
+    const man = addBody(world, { kind: "unit", team: 1, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 5, hp: 58, friction: 0.55 });
+    const rock = addBody(world, { kind: "chunk", team: 0, mass: 100, hx: 0.4, hy: 0.4, hz: 0.4, x: 0, y: 7, z: 5, friction: 0.65, restitution: 0.02 });
+    rock.fallingSince = world.t; // severed mid-collapse, exactly as weldBreakPass stamps it
+    for (let i = 0; i < 600 && man.alive; i++) stepWorld(world);
+    ok("T2(b): falling stone still kills (green first, green after)", man.alive === false, `alive=${man.alive}`);
+  }
+
+  // (c) the demo path is untouched: same squeeze, depotCombat OFF — the man
+  // dies today and keeps dying (byte-identical ungated worlds; golden's law).
+  {
+    const world = makeWorld({ field: flatT2, seed: 9 });
+    buildStack(world, 0, 5);
+    const man = addBody(world, { kind: "unit", team: 1, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 4.5, hp: 58, friction: 0.55 });
+    for (let i = 0; i < 360; i++) {
+      if (i < 180 && i % 24 === 0 && man.alive) { man.v.z = 3.0; }
+      stepWorld(world);
+    }
+    ok("T2(c): the ungated world keeps today's behavior (he still dies there)", man.alive === false, `alive=${man.alive}`);
+  }
+
+  // (d) source pin: the guard exists, gated, in the classifier
+  const csrcT2 = fs.readFileSync(new URL("../src/engine/core.js", import.meta.url), "utf8");
+  ok("T2(d): the sleeping-stone guard exists in classifyImpacts",
+    /SLEEPING STONE IS\s*\n?\s*\/\/ NOT A WEAPON|SLEEPING STONE IS NOT A WEAPON/.test(csrcT2) && /inertStone/.test(csrcT2));
+}
+// ==== end P6 T2 ==============================================================
+```
+Note on (c): if the ungated man SURVIVES today (the fixture squeeze too weak even for the old rule), (a) will not be red either — that is the red-first STOP; report it rather than strengthening the squeeze on your own authority.
+
+**Step 2 — the engine edit.** `src/engine/core.js`, classifyImpacts. Directly after `const dv = pn * victim.invM;` (line 1659):
+```js
+    // DIVERGENCE (guarded, mk1.11 — the owner's ruling): A SLEEPING STONE IS
+    // NOT A WEAPON. Under depotCombat, a chunk that is ASLEEP — a standing
+    // wall face, settled rubble — can neither slam a living man dead (the
+    // depenetration ejection read as lethal IMPACT below) nor count as
+    // burying him. It has no motion to kill with. Everything that moves is
+    // untouched: falling stone's clock (fallingSince) is cleared the moment
+    // a chunk sleeps, and a stone genuinely BEARING on a man is kept awake
+    // by the burial line itself — a pinning pile is never asleep.
+    const inertStone = world.depotCombat && other && other.kind === "chunk" && other.sleeping && victim.kind === "unit";
+```
+The burial line (1670–1673) gains the guard in its condition:
+```js
+    if (victim.kind === "unit" && other && other.kind === "chunk" && pn > 5 && !inertStone &&
+```
+And the final lethal-IMPACT branch (1692) gains it:
+```js
+    } else if (dv > (other && other.kind === "ice" ? 24 : 8) && !inertStone) {
+```
+Nothing else in the function moves.
+
+**Step 3 — the proof gates.** `npm run test:depot`: the T2 block fully green; the T6 keystone MAY go red on its two pins — if so, rerun to confirm the new printed values are stable, re-pin `T6_HASH`/`T6_DRAWS` to them, and REPORT old→new for both (the one named, expected re-pin). Everything else green, zero other re-pins. Then `npm run golden` — green (the guard is gated; golden's worlds never set depotCombat — verified in reading). Then `npm run lint:depot`.
+
+**Step 4 — bump, build, full smoke.** `src/version.js` → `"mk1.11"` · `npm run build` AFTER the bump · `npm run smoke` (FULL — engine change).
+
+**Gates (ONLY these):** parse changed files · `npm run lint:depot` · `npm run test:depot` (Step 1 red-first, then green; the keystone pair is the only allowed re-pin, reported old→new) · `npm run golden` · `npm run build` after the bump · `npm run smoke` (full). Allowed files: `src/engine/core.js`, `scripts/depot-test.mjs`, `src/version.js`. Commit `"stone doesn't murder pedestrians (mk1.11)"`, push, CI green, STOP. The owner plays normally — the test is that nobody mysteriously dies at a wall again.
 
 ---
 
