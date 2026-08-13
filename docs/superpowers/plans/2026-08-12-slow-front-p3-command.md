@@ -1,6 +1,6 @@
 # SLOW FRONT — Phase 3: Command (mk0.80-0.82)
 
-*2026-08-12. One plan, one audience. Scope ratified by the owner today (decision record, "Orders and command"): a radial order menu for squads AND towers replaces the chip row and the order half of the inspect panel; new orders are PATROL and ATTACK STRUCTURES; engineers' build lines migrate into their radial; per-tower fire discipline replaces the global toggle; hold-fire is cut. Three tasks, sequential, one Sonnet 5 agent each, a stop after every landing: mk0.80 the radial, mk0.81 patrol, mk0.82 attack-structures. The next phase (Possession) adds a TAKE CONTROL button to every radial — the layout leaves room.*
+*2026-08-12. One plan, one audience. Scope ratified by the owner today (decision record, "Orders and command"): a radial order menu for squads AND towers replaces the chip row and the order half of the inspect panel; new orders are PATROL and ATTACK STRUCTURES; engineers' build lines migrate into their radial; per-tower fire discipline replaces the global toggle; hold-fire is cut. Three tasks, sequential, one Sonnet 5 agent each, a stop after every landing: mk0.80/0.81 the radial (shipped; 0.81 = the spacing fix), mk0.82 the pie rework, mk0.83 patrol, mk0.84 attack-structures. The next phase (Possession) adds a TAKE CONTROL button to every radial — the layout leaves room.*
 
 **Laws binding every task:** no new dice anywhere (the one leg-arrival draw in the squad machine is the only rng and it is untouched); engine/demo/renderer files untouched (the radial is game-layer interface — plain buttons, existing screen-anchor machinery); `__DEPOTORDER__` keeps driving the real order path; run ONLY the gates listed; every deviation its own labeled bullet; stop after landing.
 
@@ -81,7 +81,60 @@ function RadialMenu({ cx, cy, label, slots, armed }) {
 
 ---
 
-## Task 2 — Patrol (mk0.81)
+## Task 1b — The pie (mk0.82)
+
+*Amendment, 2026-08-12, after the owner's live check of mk0.80/0.81: "the options should be pie shaped. also, after selecting what to do it should go away so i can select parts of the screen." The floating rectangles are replaced by a true pie — one disc of wedges around the selected thing — and choosing any action closes it.*
+
+**Step 1b.1 — the shape.** `RadialMenu` in `DepotGame.jsx` is rewritten as an SVG pie: a disc centered on the anchor, divided into N equal wedges, first wedge centered at twelve o'clock. Inner radius 36 (a hole — the unit stays visible through it), outer radius 104. Each wedge is one SVG path (a filled sector with the panel background and border colors the game already uses); its icon and short label sit horizontally at the wedge's middle angle, radius ~72. A wedge that is a lit toggle (a tower on FREE, structures on) fills with its accent color at low opacity. Only the wedge paths take pointer events — the hole and the space between menus never eat a tap.
+
+```jsx
+// COMMAND 1b (mk0.82): THE PIE. One disc of wedges around the selected
+// thing. Equal sectors, twelve o'clock first, hole in the middle so the
+// unit stays visible. Choosing ANY wedge closes the pie (the owner's rule:
+// the screen must be free for the follow-up taps an order needs).
+function RadialMenu({ cx, cy, label, slots, armed }) {
+  const N = slots.length, R0 = 36, R1 = 104;
+  const wedge = (i) => {
+    const a0 = -Math.PI / 2 + (i - 0.5) * (2 * Math.PI / N);
+    const a1 = a0 + 2 * Math.PI / N;
+    const p = (r, a) => `${cx + Math.cos(a) * r},${cy + Math.sin(a) * r}`;
+    const large = (2 * Math.PI / N) > Math.PI ? 1 : 0;
+    return `M ${p(R0, a0)} A ${R0} ${R0} 0 ${large} 1 ${p(R0, a1)} L ${p(R1, a1)} A ${R1} ${R1} 0 ${large} 0 ${p(R1, a0)} Z`;
+  };
+  return (
+    <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", zIndex: 7, pointerEvents: "none", overflow: "visible" }}>
+      {slots.map((s, i) => {
+        const mid = -Math.PI / 2 + i * (2 * Math.PI / N);
+        const lx = cx + Math.cos(mid) * 72, ly = cy + Math.sin(mid) * 72;
+        return (
+          <g key={s.key} data-radial={s.key} style={{ pointerEvents: "auto", cursor: "pointer" }} onClick={s.act} opacity={armed ? 1 : 0.5}>
+            <path d={wedge(i)} fill={s.on ? s.color : "rgba(14,18,24,0.88)"} fillOpacity={s.on ? 0.28 : 0.88} stroke={s.on ? s.color : "#48515f"} strokeWidth="1.5" />
+            <text x={lx} y={ly - 4} textAnchor="middle" fontSize="15" fill={s.color} style={{ userSelect: "none" }}>{s.icon || ""}</text>
+            <text x={lx} y={ly + 12} textAnchor="middle" fontSize="10" letterSpacing="1" fill={s.color} fontFamily="inherit" style={{ userSelect: "none" }}>{s.label}</text>
+          </g>
+        );
+      })}
+      <foreignObject x={cx - 60} y={cy + R1 + 6} width="120" height="40" style={{ pointerEvents: "none", overflow: "visible" }}>
+        <div style={{ textAlign: "center", fontSize: 10, letterSpacing: 1, color: "#7dffa8" }}>{label}</div>
+      </foreignObject>
+    </svg>
+  );
+}
+```
+
+(Slot shape gains `icon` — reuse the palette icons where one exists: ▦ walls, ▬ bags, ⚑ attack, ∴ defend; plain text where none does. The agent picks sensible glyphs from the palette table and reports them.)
+
+**Step 1b.2 — choosing closes the pie.** New interface rule, one mechanism: every slot's `act` runs the order and then closes the menu. Instant actions (DEFEND, SELL, CAREFUL/FREE, later STRUCTURES) also deselect completely — `S.selSquadId = null` / `S.inspectId = null`. Aiming actions (MOVE, ATTACK, BAGS, WALLS, later PATROL) close the pie but KEEP the selection and its armed `S.orderMode` — the small center label chip stays following the squad ("TAP GROUND", "TAP THE LINE START"), the ground is fully tappable, and `consumeOrderTap` finishes the order exactly as today. After the order's final ground tap lands, the squad deselects (one line at the end of `consumeOrderTap`'s each completing branch: `S.selSquadId = null;`). Implementation: the pie renders only while `hud.squadSel.showPie` / `hud.towerRadial.showPie` — a new `S.pieOpen` flag set true on selection/placement, false on any slot tap; re-tapping the selected squad re-opens it.
+
+**Step 1b.3 — re-pins.** The mk0.80 test pins that anchor on the radial's source (the engineer-guard regex re-pinned at mk0.80) are re-verified against the rewrite and re-pinned honestly old→new if the surrounding text moved. Smoke has no radial selectors (verified at mk0.80).
+
+**Behavior stated plainly:** tap a squad — a pie opens around it; tap a wedge — the pie vanishes; if the order needs ground taps, the little status chip stays on the squad and the whole screen is tappable; when the order is complete the squad deselects. Tap the squad again any time to reopen the pie.
+
+**Gates (ONLY these):** parse changed files · `npm run lint:depot` · `npm run test:depot` (re-pins old→new) · build AFTER bumping `src/version.js` to "mk0.82" · `SMOKE_ONLY=depot` smoke. Commit "(mk0.82)", push, CI green, STOP.
+
+---
+
+## Task 2 — Patrol (mk0.83)
 
 Two taps: the squad walks the line, turns around, walks it back, forever — fighting whatever it sees on the way, by the halt-and-fight rule.
 
@@ -135,11 +188,11 @@ The threat read at the leg boundary (:543) already treats everything that is not
 
 (Both taps already rim-clamp through `d`.) The radial gains slot PATROL (`data-radial="patrol"`, all squad types except engineers and sappers — engineers build, sappers charge; center label reads "TAP THE PATROL START"/"FAR END" via the same `building`-style hud fields). A new order of any kind clears `_patA/_patB` is NOT needed — they are inert unless order is "patrol" (state, not behavior; say so in a comment).
 
-**Gates (ONLY these):** parse · lint:depot · test:depot (2.1 green, re-pins old→new) · build AFTER bump to "mk0.81" · SMOKE_ONLY=depot smoke. Commit "(mk0.81)", push, CI green, STOP.
+**Gates (ONLY these):** parse · lint:depot · test:depot (2.1 green, re-pins old→new) · build AFTER bump to "mk0.83" · SMOKE_ONLY=depot smoke. Commit "(mk0.83)", push, CI green, STOP.
 
 ---
 
-## Task 3 — Attack structures (mk0.82)
+## Task 3 — Attack structures (mk0.84)
 
 A toggle on the radial: this squad prefers walls and towers over men — the wall-breaker escort order.
 
@@ -177,7 +230,7 @@ hud.squadSel carries `structFirst: !!sq.prefStruct` and `armed: ...` as today; t
 
 **Step 3.4 — the record.** `docs/superpowers/decision-record.md`, "Orders and command": append one dated line — Command phase shipped mk0.80-0.82, radial live for squads and towers, patrol and attack-structures in the vocabulary, phase awaiting the owner's playtest.
 
-**Gates (ONLY these):** parse · lint:depot · test:depot (3.1 green) · build AFTER bump to "mk0.82" · SMOKE_ONLY=depot smoke. Commit "(mk0.82)", push, CI green, STOP.
+**Gates (ONLY these):** parse · lint:depot · test:depot (3.1 green) · build AFTER bump to "mk0.84" · SMOKE_ONLY=depot smoke. Commit "(mk0.84)", push, CI green, STOP.
 
 ---
 
