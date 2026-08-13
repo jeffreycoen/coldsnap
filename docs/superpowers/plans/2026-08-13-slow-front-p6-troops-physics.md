@@ -199,6 +199,32 @@
 // ==== end P6 T1 ==============================================================
 ```
 
+## AMENDMENT 1 (owner's ruling, 2026-08-13) — two test-side corrections
+
+*Found in execution: (1) the Step 1 extraction pulls `buildTown`'s source but omits it from the return list — every other extraction block in the suite lists it; fixtures (b)/(c) crashed. (2) The causeway assert looked for a waypoint near the crossing, but routes keep only TURNING points — a straight run through the causeway leaves no waypoint there (measured 6/10; the routing itself cannot cross anywhere else, water is blocked ground). Both are defects in the plan's own test code; Steps 2–5 stand as landed.*
+
+**Step A1-1.** The extraction's return line gains `buildTown`:
+```js
+      `return { makeMap, makeGrid, buildTown, planRoute, stepSquadRouting, streamAt, invW, fwdU,
+        state: () => ({ ORIENT, TOWN, STREAM, MAP_SEED }) };`,
+```
+
+**Step A1-2.** The (a) fixture's per-route check is REPLACED — sample along the route's SEGMENTS (from the anchor through every waypoint) at half-meter steps; a sample inside the stream's v-band within the causeway's u-band is the crossing:
+```js
+      let okX = false;
+      let px = a.x, pz = a.z;
+      for (const p of route.pts) {
+        const segL = Math.hypot(p.x - px, p.z - pz);
+        for (let sd = 0; sd <= segL; sd += 0.5) {
+          const c = Mi.invW(px + (p.x - px) * (sd / (segL || 1)), pz + (p.z - pz) * (sd / (segL || 1)));
+          if (Math.abs(c.v - st.STREAM.v) < 3 && Math.abs(c.u - st.STREAM.bridgeU) < 3.5) { okX = true; break; }
+        }
+        if (okX) break;
+        px = p.x; pz = p.z;
+      }
+```
+(the surrounding loop and the `crossed === 10` assert stand unchanged).
+
 **Step 2 — planRoute and stepSquadRouting.** `src/depot/DepotGame.jsx`, both module-level, inserted directly after `checkConnectivity` (after line 592):
 ```js
 // P6 T1: THE ROUTE. Squads march the same grid the enemy trusts. planRoute
