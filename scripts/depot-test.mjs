@@ -4,7 +4,7 @@
 //   node scripts/depot-test.mjs
 import {
   makeRunState, stepBell, fireBell, withdrawDue, executeWithdrawal,
-  BELL_PERIOD_S, BELL_SCRAP, TIER_BELLS, ENEMY_TIERS, enemyTierState, enemyTierOf, ASSAULT_TIMEOUT,
+  BELL_PERIOD_S, TIER_BELLS, ENEMY_TIERS, enemyTierState, enemyTierOf, ASSAULT_TIMEOUT,
   MANIFEST_DRAWS, FOE_DRAWS, makeManifestState, makeFoeState, manifestPool, foePool,
   drawOffers, drawFoePick, pickManifest, isUnlocked, tierOpenCount,
   regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, squadFire, possessedVolley, possessedTowerFire,
@@ -100,7 +100,7 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
   I.reg = fatReg();
   const before = I.resources, regBefore = I.reg.scrap;
   fireBell(I, { reg: I.reg, snap: {}, rng: mulberry32(1), t: BELL_PERIOD_S });
-  ok("bell pays the player's cycle scrap", I.resources === before + BELL_SCRAP, `${I.resources} vs ${before + BELL_SCRAP}`);
+  ok("the bell pays nothing; income is the clock (re-pinned mk1.13)", I.resources === before, `${I.resources} vs ${before}`);
   ok("bell pays the regiment's stipend before the muster spends it",
     I.reg.scrap <= regBefore + STIPEND, `${I.reg.scrap}`);
 }
@@ -277,8 +277,8 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
     // still does not wait on it, which is the assert that matters.
     ok("bell sequence: the assault musters with the manifest card still up",
       S4.manifest.cardUp === true && S4.ws.spawnQueue > 0, `${S4.ws.spawnQueue}`);
-    ok("bell sequence: the income landed before the muster spent it",
-      S4.resources === makeRunState().resources + BELL_SCRAP, `${S4.resources}`);
+    ok("bell sequence: the bell pays nothing; income is the clock (re-pinned mk1.13)",
+      S4.resources === makeRunState().resources, `${S4.resources}`);
     ok("bell sequence: the intel card carries the bell's dispatch",
       !!S4.lastDispatch && S4.lastDispatch.lines[0].includes("MUSTER BELL 1"));
   }
@@ -371,11 +371,14 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
 }
 
 // The starved-muster streak: 3 CONSECUTIVE bells where the attacker cannot
-// afford a minimum muster (musterScrap < MIN_WAVE_FLOOR) and fields nobody
-// earn a one-time "the offensive is spent" observation — not an ending.
-// A starved fixture needs an EMPTY head pool as well as empty scrap: the bell
-// pays the stipend before the muster, and a stipend alone buys conscripts.
-const starvedReg = () => ({ heads: 0, tanks: 1, heads0: 400, tanks0: 10, scrap: 0 });
+// afford a minimum muster (musterScrap < MIN_WAVE_FLOOR) OR has no men and
+// no tanks left (mk1.13 AMENDMENT 1 — the 90/bell stipend alone can no
+// longer be starved of scrap, so a regiment spent of MANPOWER must also
+// count) and fields nobody earn a one-time "the offensive is spent"
+// observation — not an ending. A starved fixture needs an empty head AND
+// tank pool: the bell pays the stipend before the muster, and a stipend
+// alone buys conscripts (or, pre-mk1.13, sat under the muster floor).
+const starvedReg = () => ({ heads: 0, tanks: 0, heads0: 400, tanks0: 10, scrap: 0 });
 const bellsOf = (S, reg, n, scrapEach, rng, snap = {}) => {
   for (let i = 0; i < n; i++) {
     reg.scrap = scrapEach;
@@ -392,7 +395,7 @@ const bellsOf = (S, reg, n, scrapEach, rng, snap = {}) => {
   bellsOf(P, P.reg, 1, 0, rng);
   ok("starved bell 2/3: still none", P.victory !== true && !P.lastDispatch.lines.some((l) => /spent/i.test(l)));
   bellsOf(P, P.reg, 1, 0, rng);
-  ok("starved bell 3/3: no win, only a one-time spent observation",
+  ok("starved bell 3/3: no win, only a one-time spent observation (re-pinned mk1.13 — spent by manpower)",
     P.victory !== true && P.gameOver !== true && P.lastDispatch.lines.some((l) => /spent/i.test(l)), JSON.stringify(P.lastDispatch.lines));
 }
 
@@ -454,7 +457,7 @@ const bellsOf = (S, reg, n, scrapEach, rng, snap = {}) => {
     ok(`starved bell ${w + 1} fields nothing`, G.ws.spawnQueue === 0, G.ws.spawnQueue);
   }
   ok("3 empty musters: no ending", G.victory !== true && G.gameOver !== true);
-  ok("3 empty musters: the bureau observes the offensive spent", G.lastDispatch.lines.some((l) => /spent/i.test(l)), JSON.stringify(G.lastDispatch.lines));
+  ok("3 empty musters: the bureau observes the offensive spent (re-pinned mk1.13 — spent by manpower)", G.lastDispatch.lines.some((l) => /spent/i.test(l)), JSON.stringify(G.lastDispatch.lines));
 
   // (c) a fielded bell between two starved ones resets the counter.
   const R = makeRunState({ startResources: 0 });
@@ -674,7 +677,7 @@ function scriptedWaveRun(seed) {
     ok("bookValue: scrap + assets sums directly", bookValue({ scrap: 60, assets: 40 }) === 100);
     ok("bookValue: symmetric under swapping scrap/assets values", bookValue({ scrap: 60, assets: 40 }) === bookValue({ scrap: 40, assets: 60 }));
     ok("bookValue: zero assets reduces to scrap alone", bookValue({ scrap: 77, assets: 0 }) === 77);
-    ok("bookValue: STIPEND is a stable per-round constant", STIPEND === 14);
+    ok("bookValue: STIPEND is the 1-scrap/second clock, credited at the bell (re-pinned mk1.13)", STIPEND === 90);
   }
 }
 
@@ -2623,7 +2626,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     for (let i = 0; i < 3; i++) { S.reg.scrap = 0; fireBell(S, { reg: S.reg, snap: {}, rng, t: (i + 1) * BELL_PERIOD_S }); }
     ok("F1/3b: three starved musters set NO victory (spent retired as an ending)",
       S.victory === false && S.gameOver === false, `victory=${S.victory} spent=${S.spent}`);
-    ok("F1/3b: spent observation line appears once, digit-free",
+    ok("F1/3b: spent observation line appears once, digit-free (re-pinned mk1.13 — spent by manpower)",
       S.lastDispatch.lines.some((l) => /spent/i.test(l) && !/\d/.test(l)), JSON.stringify(S.lastDispatch.lines));
     S.reg.scrap = 0;
     fireBell(S, { reg: S.reg, snap: {}, rng, t: 4 * BELL_PERIOD_S });
@@ -2936,10 +2939,12 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
         .every((c) => Number.isInteger(c)));
     // The wall price exists ONCE — buildAt's fallback reads state.js's
     // constant instead of a bare 5 (re-pinned mk1.12 — the bar row died,
-    // the harness fallback remains).
+    // the harness fallback remains; re-aimed again mk1.13 — the spec path
+    // now reads the living market's live price, the harness fallback still
+    // pays WALL_COST flat).
     const wsrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("mk0.50/3: DepotGame reads WALL_COST instead of carrying its own literal (re-pinned mk1.12 — the bar row died, the harness fallback remains)",
-      /spec \? spec\.cost : WALL_COST/.test(wsrc));
+    ok("mk0.50/3: DepotGame reads WALL_COST instead of carrying its own literal (re-pinned mk1.13 — the spec path prices live, the harness fallback remains)",
+      /spec \? priceNow\(mode, spec\.cost\) : WALL_COST/.test(wsrc));
     // The knowing asymmetry is documented where the raise is, not just in the
     // plan — a reader who finds a rich enemy finds the reason.
     const sqsrc = fs.readFileSync(new URL("../src/depot/squads.js", import.meta.url), "utf8");
@@ -6111,6 +6116,74 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   ok("T3: the start screen stopped promising the trowel", !/Wall their road/.test(src));
 }
 // ==== end P6 T3 ==============================================================
+
+// ==== P6 T4: the living market ==============================================
+// mk1.13 (Troops & Physics, Task 4). Per-family prices off live standing
+// stock, both armies counted together; repriced every second; one buy per
+// second per side; income flat 1 scrap/second both sides. Zero rng.
+{
+  console.log("\n[p6 t4: the living market]");
+  let mkt = null;
+  try { mkt = await import("../src/depot/market.js"); } catch (e) {}
+  ok("T4: src/depot/market.js exists with the three exports",
+    !!mkt && typeof mkt.marketCounts === "function" && typeof mkt.computePrices === "function" && mkt.MARKET_CAP === 4);
+
+  if (mkt) {
+    // (a) the curve: base at zero, double at K, capped at 4x, integer prices
+    const P0 = mkt.computePrices({});
+    ok("T4(a): an empty field pays base prices", P0.player.sq_rifles === SQUAD_SPECS.rifles.cost && P0.player.gun === TOWER_SPECS.gun.cost,
+      `rifles ${P0.player.sq_rifles}, gun ${P0.player.gun}`);
+    const Pk = mkt.computePrices({ rifles: 16 });
+    ok("T4(a): K of a family doubles its price", Pk.player.sq_rifles === SQUAD_SPECS.rifles.cost * 2, `${Pk.player.sq_rifles}`);
+    const Pcap = mkt.computePrices({ rifles: 999 });
+    ok("T4(a): the cap holds at 4x", Pcap.player.sq_rifles === SQUAD_SPECS.rifles.cost * 4, `${Pcap.player.sq_rifles}`);
+
+    // (b) shared stock: enemy conscripts and player riflemen are ONE family
+    {
+      const flatM = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+      const world = makeWorld({ field: flatM, seed: 3 });
+      for (let i = 0; i < 6; i++) spawnUnit(world, { x: i * 2, z: 0 }, "");     // 6 conscripts
+      const sq = makeSquad(1, "rifles", 1, 20, 20);
+      spawnSquadMembers(world, sq);                                             // 4 riflemen
+      const counts = mkt.marketCounts(world, [sq]);
+      ok("T4(b): the rifles family counts both armies' men", counts.rifles === 10, `${counts.rifles}`);
+      const Pm = mkt.computePrices(counts);
+      ok("T4(b): both sides pay the same multiplied table",
+        Pm.player.sq_rifles === Math.max(1, Math.round(SQUAD_SPECS.rifles.cost * (1 + 10 / 16))) &&
+        Pm.foe[""] === Math.max(1, Math.round(ENEMY_SPECS[""].bounty * (1 + 10 / 16))),
+        `player ${Pm.player.sq_rifles}, foe ${Pm.foe[""]}`);
+    }
+
+    // (c) determinism: same counts, same prices, twice
+    ok("T4(c): twin determinism", JSON.stringify(mkt.computePrices({ rifles: 7, guntower: 2 })) === JSON.stringify(mkt.computePrices({ rifles: 7, guntower: 2 })));
+
+    // (d) planWave pays market prices — and its 4-draw contract holds
+    {
+      const reg = { heads: 400, tanks: 10, heads0: 400, tanks0: 10, scrap: 400 };
+      const reg2 = { heads: 400, tanks: 10, heads0: 400, tanks0: 10, scrap: 400 };
+      let draws = 0;
+      const rngW = () => { draws++; return mulberry32(77)(); };
+      const rngA = mulberry32(77), rngB = mulberry32(77);
+      const flat = planWave(reg, {}, 6, rngA);
+      const priceOf = (t) => Math.round((t === "tank" ? TANK.bounty : ENEMY_SPECS[t].bounty) * 2);
+      const priced = planWave(reg2, {}, 6, rngB, null, priceOf);
+      const nOf = (r) => r.buys.reduce((s, b) => s + b.n, 0);
+      ok("T4(d): doubled prices field a smaller assault on the same budget", nOf(priced) < nOf(flat), `${nOf(priced)} vs ${nOf(flat)}`);
+      planWave({ heads: 9, tanks: 0, heads0: 9, tanks0: 0, scrap: 9 }, {}, 1, rngW, null, priceOf);
+      ok("T4(d): the 4-draw contract holds under market prices", draws === 4, `${draws}`);
+    }
+  }
+
+  // (e) income + limit + wiring: source pins
+  const srcT4 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  const stT4 = fs.readFileSync(new URL("../src/depot/state.js", import.meta.url), "utf8");
+  ok("T4(e): the player's income is the clock — 1 scrap/second", /S\.resources \+= 1 \* sdt;/.test(srcT4) && !/S\.resources \+= 2\.2 \* sdt;/.test(srcT4));
+  ok("T4(e): the bell pays no lump", !/S\.resources \+= BELL_SCRAP;/.test(stT4));
+  ok("T4(e): one purchase per second, toasted", /THE MARKET PACES YOU/.test(srcT4) && /S\._buyAt = world\.t;/.test(srcT4));
+  ok("T4(e): purchases charge the live price", /const priceNow = /.test(srcT4));
+  ok("T4(e): the enemy stipend is the same clock", /export const STIPEND = 90;/.test(fs.readFileSync(new URL("../src/depot/economy.js", import.meta.url), "utf8")));
+}
+// ==== end P6 T4 ==============================================================
 
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);

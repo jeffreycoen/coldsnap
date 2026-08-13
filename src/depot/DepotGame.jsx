@@ -16,7 +16,8 @@ import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS } from "./specs.js";
 import { windAt } from "./wind.js";
-import { makeAssaultState, HUD0, BELL_PERIOD_S, BELL_SCRAP, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest } from "./state.js";
+import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest } from "./state.js";
+import { marketCounts, computePrices, fieldPrices } from "./market.js";
 import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic, drivePossessedSquad } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
@@ -1621,6 +1622,11 @@ export default function DepotGame({ onExit, resume = null }) {
         reticle: null, reticleOff: null, joyR: null, fireHeld: false,
         linePending: null, // COMMAND T2 (mk0.84): the proposed line, awaiting accept/reject
         hudT: 0, keys: {}, sellById: null, audio: A,
+        // THE LIVING MARKET (mk1.13): the price cache, its own 1Hz
+        // accumulator (beside the census's), and the once-a-second purchase
+        // stamp. Transient run state, never serialized — a resumed run
+        // rebuilds both within a second (no save.js edits).
+        _market: null, _marketAcc: 0, _buyAt: -9,
         // The attacker's economy — seeded off the run's own rng stream, not
         // an unseeded generator, so ?seed= replays reproduce the same
         // regiment. Mutated in place by planWave (buy-time depletion — the
@@ -1700,6 +1706,16 @@ export default function DepotGame({ onExit, resume = null }) {
       };
 
       const toast = (txt) => { S.toasts.push({ txt, t: performance.now() / 1000 }); if (S.toasts.length > 4) S.toasts.shift(); };
+      // THE LIVING MARKET (mk1.13): the live price for a bar key, falling
+      // back to the base cost whenever the market cache hasn't computed yet
+      // (the first second of a run). buyPaced is the once-a-second purchase
+      // limiter — towers and squads only (interpretation line 3: engineer
+      // line pieces are priced live but not paced).
+      const priceNow = (key, base) => (S._market && S._market.player[key] != null ? S._market.player[key] : base);
+      const buyPaced = () => {
+        if (world.t - S._buyAt < 1) { toast("THE MARKET PACES YOU — one purchase a second"); return false; }
+        return true;
+      };
 
       const recomputeFlow = () => computeFlowField(grid, objG.gx, objG.gz);
       const buildAt = (gx, gz, mode) => {
@@ -1713,7 +1729,7 @@ export default function DepotGame({ onExit, resume = null }) {
           if (!canBuild(T, c0.u, c0.v)) { toast("GROUND NOT HELD"); return; }
         }
         const spec = mode === "wall" ? null : TOWER_SPECS[mode];
-        const cost = spec ? spec.cost : WALL_COST; // walls: no TOWER_SPECS row, state.js owns the price
+        const cost = spec ? priceNow(mode, spec.cost) : WALL_COST; // walls: no TOWER_SPECS row, state.js owns the price
         if (S.resources < cost) { toast("NO SCRAP"); return; }
         cell.blocked = true;
         if (!checkConnectivity(grid, SPAWN_POINTS, objG.gx, objG.gz)) {
@@ -1721,6 +1737,7 @@ export default function DepotGame({ onExit, resume = null }) {
           toast("Leave them a road");
           return;
         }
+        if (!buyPaced()) { cell.blocked = false; return; }
         const wp = grid.gridToWorld(gx, gz);
         const y = field.heightAt(wp.x, wp.z);
         let b;
@@ -1749,6 +1766,7 @@ export default function DepotGame({ onExit, resume = null }) {
         b.maxHp = b.hp;
         cell.wallId = b.id;
         S.resources -= cost;
+        S._buyAt = world.t;
         recomputeFlow();
       };
       // Validate-only twin of buildAt's early checks (Task 3): used to gate
@@ -1765,7 +1783,7 @@ export default function DepotGame({ onExit, resume = null }) {
         const spec = TOWER_SPECS[mode];
         const v = validatePlacement({
           blocked: !!(cell.blocked || cell.wallId), ice: !!cell.ice,
-          held: canBuild(T, c0.u, c0.v), resources: S.resources, cost: spec.cost,
+          held: canBuild(T, c0.u, c0.v), resources: S.resources, cost: priceNow(mode, spec.cost),
         });
         return v.ok ? { ok: true, spec, wp } : v;
       };
@@ -1794,7 +1812,7 @@ export default function DepotGame({ onExit, resume = null }) {
           // fog-gated (stepTowers' own fieldReaches) — the guns obey what is.
           poly = reachPolygon(world, null, muzzle, spec, 1, invW);
         }
-        S.pending = { gx, gz, mode, wp, y, poly, ringR, color, cost: spec.cost, armedAt: world.t + PENDING_ARM_S };
+        S.pending = { gx, gz, mode, wp, y, poly, ringR, color, cost: priceNow(mode, spec.cost), armedAt: world.t + PENDING_ARM_S };
       };
       const confirmPending = () => {
         const p = S.pending;
@@ -1826,8 +1844,10 @@ export default function DepotGame({ onExit, resume = null }) {
         return v.ok ? { ok: true, wp } : v;
       };
       const placeSquadAt = (gx, gz, type) => {
-        const v = canPlaceInfantryAt(gx, gz, SQUAD_SPECS[type].cost);
+        const price = priceNow("sq_" + type, SQUAD_SPECS[type].cost);
+        const v = canPlaceInfantryAt(gx, gz, price);
         if (!v.ok) { toast(v.msg); return; }
+        if (!buyPaced()) return;
         const sq = makeSquad(S.nextSquadId++, type, 1, v.wp.x, v.wp.z);
         spawnSquadMembers(world, sq);
         S.squads.push(sq);
@@ -1835,7 +1855,8 @@ export default function DepotGame({ onExit, resume = null }) {
         // its radial open — defend-here is already its standing order (the
         // intrinsic default, no tap needed).
         S.selSquadId = sq.id; S.selArmedAt = world.t + PENDING_ARM_S; S.pieOpen = true;
-        S.resources -= SQUAD_SPECS[type].cost;
+        S.resources -= price;
+        S._buyAt = world.t;
       };
       // Squad placement rides the tower pending-confirm flow. Sniper preview
       // is the reachPolygon fan with INFANTRY_ARMS.sniper, fog-INDEPENDENT
@@ -1856,7 +1877,7 @@ export default function DepotGame({ onExit, resume = null }) {
           // their reach is their feet.
           ringR = arms ? arms.range : 0;
         }
-        S.pending = { gx, gz, mode, squad: type, wp, y, poly, ringR, color: 0xffd27a, cost: SQUAD_SPECS[type].cost, armedAt: world.t + PENDING_ARM_S }; // amber: a green fan vanishes into the held-terrain wash
+        S.pending = { gx, gz, mode, squad: type, wp, y, poly, ringR, color: 0xffd27a, cost: priceNow(mode, SQUAD_SPECS[type].cost), armedAt: world.t + PENDING_ARM_S }; // amber: a green fan vanishes into the held-terrain wash
       };
       // Selection: tap within 1.6m of any live member selects his squad.
       const squadAtPoint = (p) => {
@@ -2103,8 +2124,9 @@ export default function DepotGame({ onExit, resume = null }) {
         if (!lp) { R.overlay.setLinePreview(false); return; }
         const pieces = linePieces(lp.kind, lp.a, lp.b);
         lp.count = pieces.length;
-        lp.cost = lp.kind === "walls" ? pieces.length * WALL_FIELD_COST
-                : lp.kind === "bags" ? pieces.length * SANDBAG_FIELD_COST : 0;
+        const fpPrev = S._market ? fieldPrices(S._market.counts, WALL_FIELD_COST, SANDBAG_FIELD_COST) : { wall: WALL_FIELD_COST, bag: SANDBAG_FIELD_COST };
+        lp.cost = lp.kind === "walls" ? pieces.length * fpPrev.wall
+                : lp.kind === "bags" ? pieces.length * fpPrev.bag : 0;
         R.overlay.setLinePreview(true, {
           a: { x: lp.a.x, z: lp.a.z, y: field.heightAt(lp.a.x, lp.a.z) },
           b: { x: lp.b.x, z: lp.b.z, y: field.heightAt(lp.b.x, lp.b.z) },
@@ -2148,7 +2170,8 @@ export default function DepotGame({ onExit, resume = null }) {
         if (!grid.inBounds(row.gx, row.gz)) return "skip";
         const cell = grid.cells[grid.idx(row.gx, row.gz)];
         const c0 = invW(row.x, row.z);
-        const cost = job.kind === "walls" ? WALL_FIELD_COST : SANDBAG_FIELD_COST;
+        const fp = S._market ? fieldPrices(S._market.counts, WALL_FIELD_COST, SANDBAG_FIELD_COST) : { wall: WALL_FIELD_COST, bag: SANDBAG_FIELD_COST };
+        const cost = job.kind === "walls" ? fp.wall : fp.bag;
         const v = validatePlacement({
           blocked: !!(cell.blocked || cell.wallId), ice: !!cell.ice,
           held: canBuild(T, c0.u, c0.v), resources: S.resources, cost,
@@ -2435,7 +2458,7 @@ export default function DepotGame({ onExit, resume = null }) {
         if (cell2.wallId && world.byId.has(cell2.wallId)) { S.inspectId = cell2.wallId; S.pieOpen = true; return; }
         S.inspectId = null;
         if (SQUAD_MODE[S.mode]) {
-          const v = canPlaceInfantryAt(g.gx, g.gz, SQUAD_SPECS[SQUAD_MODE[S.mode]].cost);
+          const v = canPlaceInfantryAt(g.gx, g.gz, priceNow(S.mode, SQUAD_SPECS[SQUAD_MODE[S.mode]].cost));
           if (!v.ok) { toast(v.msg); return; }
           startPendingSquad(g.gx, g.gz, S.mode, v.wp);
           return;
@@ -2577,16 +2600,22 @@ export default function DepotGame({ onExit, resume = null }) {
         S.resources += paid.player;
         if (S.reg) S.reg.scrap += paid.regiment;
         // fireBell runs the whole sequence and raises both cards; the assault
-        // it musters marches regardless of whether either is ever read.
-        fireBell(S, { reg: S.reg, snap: buildSnapshot(), rng: world.rng, t: world.t });
+        // it musters marches regardless of whether either is ever read. The
+        // regiment's own muster now pays the living market's price for
+        // every type it buys (mk1.13) — the same table the player's bar
+        // reads, off the cache this frame's market accumulator last filled.
+        fireBell(S, {
+          reg: S.reg, snap: buildSnapshot(), rng: world.rng, t: world.t,
+          priceOf: (t) => (S._market ? S._market.foe[t === "tank" ? "tank" : t] : undefined),
+        });
         // The convoy is heard when its card comes up, and only then — a bell
         // whose pool had nothing left to offer raises no card and makes no
         // truck noise.
         if (S.manifest && S.manifest.cardUp) cue("manifest");
         toast("BELL " + S.bell + " — THEY MARCH");
-        // The income's ledger line: the bell's flat cycle scrap plus whatever
-        // the town paid this bell (green ground only) — one honest number.
-        toast("◆ +" + Math.round(BELL_SCRAP + paid.player) + " — CYCLE PAY");
+        // The income's ledger line: the bell pays nothing itself now (income
+        // is the clock) — only the ground the town actually held.
+        if (paid.player > 0) toast("◆ +" + Math.round(paid.player) + " — GROUND HELD");
         // ...and the front is written down. The muster has been planned and
         // the queue is full, but not one man has walked yet — this is the
         // state you would want back, so this is the state that is kept.
@@ -3217,7 +3246,7 @@ export default function DepotGame({ onExit, resume = null }) {
             }
             // Between bells nothing pauses: build, orders and combat with
             // whatever is still standing all run straight through.
-            S.resources += 2.2 * sdt;
+            S.resources += 1 * sdt; // mk1.13 (owner): income is the clock — 1 scrap/second, both sides
           }
           S.acc += sdt;
           terrAcc += sdt;
@@ -3272,6 +3301,12 @@ export default function DepotGame({ onExit, resume = null }) {
             player: depotStandingFraction(depotCensus, world.byId),
             enemy: depotStandingFraction(depotCensus2, world.byId),
           }));
+          // THE LIVING MARKET (mk1.13): its own 1Hz accumulator, sdt-gated
+          // like the census above (a paused game freezes prices) — kept
+          // separate from stepDepotCensus's accumulator (different
+          // consumers) per the brief.
+          S._marketAcc += sdt;
+          if (S._marketAcc >= 1) { S._marketAcc -= 1; S._market = computePrices(marketCounts(world, S.squads)); }
           R.consume(evs);
           A.setListener(S.focus.x, S.focus.z, 46 / Math.max(0.6, S.zoom));
           A.consume(evs);
@@ -3377,6 +3412,9 @@ export default function DepotGame({ onExit, resume = null }) {
               stones: R.chunkStats ? `${R.chunkStats().drawn}/${R.chunkStats().cap}` : "",
               resources: Math.floor(S.resources), walls: nw, towers: nt, kills: S.kills,
               lastDispatch: S.lastDispatch,
+              // THE LIVING MARKET (mk1.13): the bar and the manifest read
+              // prices off this same cache, out to the render each hud tick.
+              prices: S._market ? { ...S._market.player } : null,
               // The manifest's mirror. Both cards arm on WORLD time (the
               // trailing-tap law), so the armed flag is computed here on the
               // hud tick exactly the way the pending ✓ already is.
@@ -3814,7 +3852,7 @@ export default function DepotGame({ onExit, resume = null }) {
                   onClick={() => { const S = stateRef.current; if (S && S.pickManifest) S.pickManifest(key); }}>
                   <span style={{ fontSize: 18 }}>{it.icon}</span>
                   <span style={{ flex: 1 }}>{it.label}</span>
-                  <span style={{ color: "#ffd27a", fontSize: 12 }}>◆{it.cost}</span>
+                  <span style={{ color: "#ffd27a", fontSize: 12 }}>◆{hud.prices?.[key] ?? it.cost}</span>
                 </button>
               );
             })}
@@ -3979,14 +4017,15 @@ export default function DepotGame({ onExit, resume = null }) {
         <div style={P.bar}>
           {palette.map((p) => {
             const sel = !hud.sellMode && hud.mode === p.key;
-            const afford = hud.resources >= p.cost;
+            const priceP = hud.prices?.[p.key] ?? p.cost;
+            const afford = hud.resources >= priceP;
             return (
               <div key={p.key} data-tower-key={p.key}
                 style={{ ...P.slot, borderColor: sel ? "#4aff8c" : "#48515f", opacity: afford ? 1 : 0.45, minWidth: isTouch ? 56 : 52 }}
                 onClick={() => setMode(p.key)}>
                 <div style={{ fontSize: 16 }}>{p.icon}</div>
                 <div>{p.label}</div>
-                <div style={{ color: "#ffd27a" }}>◆{p.cost}</div>
+                <div style={{ color: "#ffd27a" }}>◆{priceP}</div>
               </div>
             );
           })}

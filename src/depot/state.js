@@ -1119,10 +1119,6 @@ export function makeAssaultState() {
 // break contact and withdraw in order.
 export const ASSAULT_TIMEOUT = 75;
 
-// Player scrap granted at each bell — the retired stall's +12, moved onto the
-// clock so the cycle still pays. // provisional (F5)
-export const BELL_SCRAP = 12;
-
 export function makeRunState({ startResources = 120 } = {}) {
   return {
     resources: startResources, kills: 0,
@@ -1322,7 +1318,7 @@ export function stepBell(S, worldT) {
 // simply joined by the next one, and NO card gates the muster — steps 2 and 4
 // only raise cards; step 5 marches whether or not they are ever read.
 export function fireBell(S, opts = {}) {
-  const { reg = null, snap = null, rng = null, t = null } = opts;
+  const { reg = null, snap = null, rng = null, t = null, priceOf = null } = opts;
   const ws = S.ws;
   const prevWithdrew = ws.withdrew || 0;
   const nowT = t == null ? 0 : t;
@@ -1356,9 +1352,10 @@ export function fireBell(S, opts = {}) {
   S.intelUp = false;
   S.intelArmedAt = nowT + PENDING_ARM_S;
 
-  // 3. the income — the player's cycle scrap and the attacker's stipend, both
-  // BEFORE the muster so the regiment can spend what it was just paid.
-  S.resources += BELL_SCRAP;
+  // 3. the income — the player's income is the clock (1 scrap/second, the
+  // frame loop); the bell pays only what the held ground earns (payTown,
+  // applied by the caller). The attacker's stipend still lands here, BEFORE
+  // the muster, so the regiment can spend what it was just paid.
   if (reg) reg.scrap += STIPEND;
 
   // 4. the manifest. A skipped bell is a skipped pick: last bell's offers are
@@ -1386,7 +1383,7 @@ export function fireBell(S, opts = {}) {
     // starved check below reads this, never the post-buy balance (which is
     // routinely near zero after a perfectly healthy muster).
     ws.musterScrap = reg.scrap;
-    const plan = planWave(reg, snap || {}, S.bell, rng, tier.tags);
+    const plan = planWave(reg, snap || {}, S.bell, rng, tier.tags, priceOf);
     units = plan.buys.reduce((s, b) => s + b.n, 0);
     mix = plan.buys.map((b) => [b.type, b.n]);
     S.pendingPlan = plan;
@@ -1416,7 +1413,11 @@ export function fireBell(S, opts = {}) {
   // Starvation keeps its muster-time solvency rule: a muster that fielded
   // anything always resets the streak.
   if (reg) {
-    const starved = (ws.fielded || 0) === 0 && (ws.musterScrap ?? reg.scrap) < MIN_WAVE_FLOOR;
+    // mk1.13 AMENDMENT 1 (owner): spent is spent — a regiment with no men
+    // is as done as one with no money; the scrap path stays for form though
+    // the clock stipend keeps it funded.
+    const starved = (ws.fielded || 0) === 0 &&
+      ((ws.musterScrap ?? reg.scrap) < MIN_WAVE_FLOOR || (reg.heads <= 0 && reg.tanks <= 0));
     S.starvedStreak = starved ? (S.starvedStreak || 0) + 1 : 0;
     if (S.starvedStreak >= 3 && !S._reportedSpent) {
       S._reportedSpent = true; // one-time dispatch line

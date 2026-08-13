@@ -28,7 +28,7 @@ export function makeRegiment(rng) {
   return { heads, tanks, heads0: heads, tanks0: tanks, scrap: 60 };
 }
 
-export const STIPEND = 14; // per round
+export const STIPEND = 90; // mk1.13 (owner): 1 scrap/second × the 90-second bell — the identical clock the player lives on, credited where the regiment spends
 
 export const RESULTS = {
   // uncapped by decision (Jeff)
