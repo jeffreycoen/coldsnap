@@ -1,12 +1,12 @@
 # SLOW FRONT — Phase 4: Possession (mk0.90-0.93)
 
-*Written 2026-08-13. Tasks 1-3 executed under the owner's standing authorization; Task 4 added after his playtest of mk0.92. Every design point is a ratified decision-record ruling or the sandbox's established twin-stick convention. All feel acceptance is the owner's playtest. Sequential Sonnet dispatches, Fable drift audit after each.*
+*Written 2026-08-13. Tasks 1-3 executed under the owner's standing authorization; Task 4 added after his playtest of mk0.92. Every design point is a ratified decision-record ruling or the sandbox's established twin-stick convention. All feel acceptance is the owner's playtest. Sequential Sonnet dispatches. (Drift audits after each task RETIRED by the owner, 2026-08-13 — gates + CI are the verification; audits only on the owner's request.)*
 
 **The ruling this phase implements (decision record, "Possession"):** any friendly squad or tower is takeover-able — TAKE CONTROL on every pie. Twin-stick: the stick drives a squad as one body (stick = formation anchor; fire = squad volley at the aim), towers become manual fire control. The front fights on under standing orders; a bell save mid-possession releases to command view. The enemy needs no mirror. Vehicles wait for the Heroes phase (none exist player-side yet).
 
 **Established conventions reused, not invented:** the sandbox's virtual joystick (radius 56, bottom-left, camera-relative drive, deadzone 0.15), its tap-aims / FIRE-button-shoots split, its touch snap-assist, WASD as the keyboard stick. The sight law binds possessed fire exactly as it binds every shot: you shoot only what your side sees.
 
-**Laws binding every task:** zero new dice (possessed shots draw scatter like any shot — player input is not a replayed stream; the SEEDED streams and their counts are untouched); engine/demo/renderer files untouched (the joystick is game-layer interface; camera follow rides `S.focus`, which the game layer already owns); possession is transient — never serialized, released before every save; run ONLY the gates listed; every deviation its own bullet; a Fable audit gates each advance.
+**Laws binding every task:** zero new dice (possessed shots draw scatter like any shot — player input is not a replayed stream; the SEEDED streams and their counts are untouched); engine/demo/renderer files untouched (the joystick is game-layer interface; camera follow rides `S.focus`, which the game layer already owns); possession is transient — never serialized, released before every save; run ONLY the gates listed; every deviation its own bullet. (The per-task Fable audit is RETIRED — owner, 2026-08-13.)
 
 ---
 
@@ -491,6 +491,188 @@ Nothing else in the bell path changes; the release-on-death guards stay.
 **Behavior stated plainly:** the reticle is a red circle. Push it out with the right stick and let go — it stays that far from the unit, in that direction, and walks with you. It still cannot leave the unit's sight circle or sit on unseen ground; ground that goes dark under it drops it back to the unit. The bell rings, the round changes, the save is written — and you are still driving.
 
 **Gates (ONLY these):** parse changed files · `npm run lint:depot` · `npm run test:depot` (5.1 green; every re-pin old→new) · `npm run golden` (renderer touched — the additive-divergence guard) · build AFTER bumping `src/version.js` to "mk0.94" · `SMOKE_ONLY=depot` smoke. Allowed files: `sight.js`, `DepotGame.jsx`, `renderer.js`, `depot-test.mjs`, `version.js`. Commit "(mk0.94)", push, CI green, STOP for audit.
+
+---
+
+## Task 6 — Wind finish and trigger feedback (mk0.96) — suggested model: Sonnet (all code below)
+
+*Amendment, 2026-08-13, the owner's rulings after mk0.95: the WIND toggle must silence the wind you hear and still the flags, not just the mechanics; the FIRE button must show it is held so a hold the phone cancels is visible the moment it dies. Two-task sequencing ratified (this, then the aim overhaul).*
+
+**Required reading (agent, before any code; anchors re-verified at dispatch):** this plan whole; `CLAUDE.md`; `src/platform/audio.js` :580-660 (the wind bed: WIND_BASE, wSurge/wGust/wFlut, the three setLoop lines — the bed never reads `world.wind` today) and :31-50 (module shape); `src/render/renderer.js` :1891-1923 (the flag block — the amp line's 0.12 floor is the defect) and :1-10; `src/depot/DepotGame.jsx` — FIRE button JSX (~:3344-3352), the joyKnobRef direct-DOM discipline (~:826-833, :3237-3255), stepDepot's wind gate (~:680-684); `scripts/depot-test.mjs` WIND TOGGLE block (~:4880) and the source-pin idiom.
+
+**Step 6.1 — failing tests first.** `scripts/depot-test.mjs`, extend the WIND TOGGLE block:
+
+```js
+  ok("WIND TOGGLE source pin: the audio wind bed is scaled by the real wind (world.wind.mag)",
+    /const wScale = world\.wind \? Math\.min\(1, \(world\.wind\.mag \|\| 0\) \/ 3\.5\) : 1;/.test(
+      fs.readFileSync(new URL("../src/platform/audio.js", import.meta.url), "utf8")));
+  {
+    const rendSrc = fs.readFileSync(new URL("../src/render/renderer.js", import.meta.url), "utf8");
+    ok("WIND TOGGLE source pin: flag ripple has no floor — dead calm means limp cloth",
+      /const amp = Math\.min\(0\.55, mag \* 0\.13\);/.test(rendSrc) && !/0\.12 \+ mag \* 0\.09/.test(rendSrc));
+  }
+  ok("FIRE FEEDBACK source pin: the FIRE button's held state routes through setFireHeld",
+    /const setFireHeld = \(v\) => \{/.test(fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8")));
+```
+
+**Step 6.2 — the bed follows the wind.** `src/platform/audio.js`, in `tick`, where `wLvl` is computed (the three drift lines stay — they are the bed's CHARACTER; the new factor is its PERMISSION):
+
+```js
+    // WIND TOGGLE (mk0.96): the bed follows the GAME's wind. A depot world
+    // carries world.wind — dead calm (mag 0, the toggle off) silences the
+    // bed entirely and a real gale brings it up. Worlds with no wind field
+    // (sandbox, campaign, demo, mech) keep the old ambient bed exactly.
+    const wScale = world.wind ? Math.min(1, (world.wind.mag || 0) / 3.5) : 1; // provisional (F5)
+    const wLvl = Math.pow(10, Math.max(-12, Math.min(9, wSurge * 6 + wGust * 4 + wFlut * 1.5)) / 20) * wScale;
+```
+
+**Step 6.3 — the flag goes limp.** `src/render/renderer.js` :1898, replace the amp line:
+
+```js
+        const amp = Math.min(0.55, mag * 0.13); // no floor: dead calm = limp cloth // provisional (F5)
+```
+
+(At a typical live wind of ~3 m/s this is within a hair of the old look; only calm changes. Renderer change → the golden gate rides this task's gates.)
+
+**Step 6.4 — the FIRE button shows its state.** `src/depot/DepotGame.jsx`: a `fireBtnRef` beside `joyRKnobRef`, and one helper beside `toggleWind` (direct DOM writes, the joystick knob's own discipline — no React state in the hot path):
+
+```js
+  const fireBtnRef = useRef(null);
+  const setFireHeld = (v) => {
+    const S = stateRef.current; if (S) S.fireHeld = v;
+    if (fireBtnRef.current) {
+      fireBtnRef.current.style.background = v ? "#ff6b5e" : "#2a1418";
+      fireBtnRef.current.style.color = v ? "#1a0d0f" : "#ff6b5e";
+    }
+  };
+```
+
+The button gains `ref={fireBtnRef}` and its three handlers become: pointerdown `{ e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); setFireHeld(true); }`, pointerup and pointercancel `{ e.stopPropagation(); setFireHeld(false); }`. A hold the phone cancels now visibly pops the button back — the silent-death tell the owner asked for.
+
+**Behavior stated plainly:** WIND OFF is silence and limp flags; WIND ON breathes with the actual gusts. FIRE lights up while your finger truly holds it and goes dark the instant the browser drops the hold.
+
+**Gates (ONLY these):** parse changed files · `npm run lint:depot` · `npm run test:depot` (6.1 green) · `npm run golden` (renderer touched) · build AFTER bumping `src/version.js` to "mk0.96" · `SMOKE_ONLY=depot` smoke. Allowed files: `audio.js`, `renderer.js`, `DepotGame.jsx`, `depot-test.mjs`, `version.js`. Sound acceptance is the owner's ear on the live site (the toggle is its own A/B). Commit "(mk0.96)", push, CI green, STOP for audit.
+
+---
+
+## Task 7 — The sharpened hand: possessed accuracy, lead, cover, fire discipline (mk0.97) — suggested model: Sonnet (all code below)
+
+*Amendment, 2026-08-13, the owner's rulings: possessed fire spreads ×0.25; the reticle near a live enemy aims at the man (real speed, real height — lead); cover becomes a bonus, both sides (graze exempts the muzzle's first 2.5 m; braced shooters tighten ×0.85); a possessed squad forms a firing line perpendicular to the aim; any shooter whose teammate stands in the corridor HOLDS the shot. Damage-per-second pins are expected to move — every re-pin reported old→new, its own bullet.*
+
+**Laws binding this task:** zero new rng draws anywhere (every helper below is deterministic; applyScatter keeps its exact two draws per shot); engine/demo/renderer untouched; enemy shooters keep the shared model, so the cover changes reach them symmetrically (aim fully equal) while the ×0.25 and the lead are possession-only (your hands); mortars' lob is EXEMPT from the corridor check (arcing over your own men is its purpose).
+
+**Required reading (agent, before any code; anchors re-verified at dispatch):** this plan whole; `CLAUDE.md`; `docs/superpowers/decision-record.md` "Possession"; `src/depot/state.js` — possessedVolley :602-624, possessedTowerFire :629-641, squadFire :500-595, shooterFire :351-408, fieldReaches :29-32; `src/depot/accuracy.js` whole (SOLID_KINDS :27, losGraze :147-167, scatterSigma :169-176, applyScatter :264-279); `src/depot/squads.js` — slotFor :383-392, drivePossessedSquad :665-711 (the cohesion deviation note), clearSlot :176-186; `src/depot/DepotGame.jsx` — the possessed drive call :640-655, the sim-tick triggers :2885-2902; `src/depot/specs.js` INFANTRY_ARMS :178-200 + TOWER_SPECS :34-40; `scripts/depot-test.mjs` — POSSESSION T1-T5 blocks, and grep `DPS` (every damage-per-second assert that may re-pin).
+
+**Step 7.1 — failing tests first.** `scripts/depot-test.mjs`, new block `==== POSSESSION T7: the sharpened hand`:
+
+(a) the constants exist and are pinned: `POSSESS_ACC === 0.25`, `POSSESS_SNAP_R === 2` (imported from state.js — real imports, no mirrors).
+(b) possessed spread: flat world, seeded; 4-man rifle squad, aim 20 m; run 15 volleys (advancing cooldowns), collect every muzzle event's direction, compute each shot's angle off the ideal muzzle→aim line; assert the MEAN angle < 0.035 rad (the ×0.25 hand) — and a control through `squadFire` at an enemy at the same range on the same seed asserts its mean > 0.06 (the machine stays loose).
+(c) lead: an enemy walking laterally at 3 m/s, reticle ON him — the fired azimuth deviates from his CURRENT bearing in the direction of his motion (lead is live); the same shot with him standing still fires straight at him.
+(d) snap respects the sight law: the enemy within 2 m of the reticle but on a cell team 1 does not see → the volley aims at the GROUND point (no snap; source of truth: the muzzle direction matches the ground solution).
+(e) cover is a bonus now: `losGraze` with a sandbag 1 m from the muzzle returns 0 (the exemption); with the same bag at mid-path returns > 0 (real grazing still costs); `bracedAt` true beside a sandbag, and `scatterSigma` there = base × 0.85.
+(f) the firing line: `drivePossessedSquad` WITH an aim → the four members' goals are collinear within tolerance on the axis perpendicular to anchor→aim, spaced ~1.5 m; WITHOUT an aim the ring holds (T1(a) stays green untouched).
+(g) check fire: 2-man rifle fixture, mate standing dead on the muzzle→aim line 3 m out → `possessedVolley` fires 1 muzzle, and the held man's `fireCd` is NOT consumed (he fires the instant the lane clears); mate stepped 1.5 m aside → 2 muzzles.
+(h) mortars exempt: the same blocked geometry with a mortar team → both tubes fire (occl "lofted").
+(i) auto squads inherit the discipline: `squadFire` with a mate in the corridor holds that man's shot the same way.
+
+**Step 7.2 — the constants and the snap, in state.js** (beside possessedVolley):
+
+```js
+// POSSESSION T7 (mk0.97): THE SHARPENED HAND. Under the owner's control a
+// shooter is deliberate: spread tightens to a quarter of the machine's
+// (possession-only — auto-fire keeps the loose suppressive model), and a
+// reticle resting on or near a live enemy aims at the MAN — his body, his
+// speed, his height — through shooterFire's existing lead solve. The snap
+// obeys the sight law: a man on unseen ground is not snapped to.
+export const POSSESS_ACC = 0.25;   // spread multiplier under player control // provisional (F5)
+export const POSSESS_SNAP_R = 2;   // m — reticle-to-enemy snap radius // provisional (F5)
+export function snapTargetNear(world, aim, T, toUV, r = POSSESS_SNAP_R) {
+  let best = null, bd = r * r;
+  for (const b of world.bodies) {
+    if ((b.kind !== "unit" && b.kind !== "vehicle") || !b.alive || b.team !== 2) continue;
+    const dx = b.pos.x - aim.x, dz = b.pos.z - aim.z, d2 = dx * dx + dz * dz;
+    if (d2 >= bd) continue;
+    const c = toUV(b.pos.x, b.pos.z);
+    if (!fieldReaches(T, c.u, c.v, 1)) continue;   // you snap only to what your side sees
+    bd = d2; best = b;
+  }
+  return best;
+}
+```
+
+**Step 7.3 — check fire, in state.js** (beside snapTargetNear; closed-form segment distance, no sampling, no draws):
+
+```js
+// THE CORRIDOR (T7): a living teammate inside MATE_R of the muzzle->aim
+// line means this man HOLDS his shot — cooldown untouched, so he fires the
+// instant the lane clears. Lofted specs (mortars) never check: arcing over
+// your own men is the tube's whole purpose.
+export const MATE_R = 0.5;   // m — corridor half-width // provisional (F5)
+export function mateBlocks(world, squad, shooter, muzzle, aimPos) {
+  const dx = aimPos.x - muzzle.x, dz = aimPos.z - muzzle.z;
+  const d2 = dx * dx + dz * dz;
+  if (d2 < 1e-9) return false;
+  for (const id of squad.memberIds) {
+    if (id === shooter.id) continue;
+    const m = world.byId.get(id);
+    if (!m || !m.alive) continue;
+    const t = ((m.pos.x - muzzle.x) * dx + (m.pos.z - muzzle.z) * dz) / d2;
+    if (t <= 0.02 || t >= 1) continue;
+    const px = muzzle.x + dx * t, pz = muzzle.z + dz * t;
+    if (Math.hypot(m.pos.x - px, m.pos.z - pz) < MATE_R + (m.hx || 0.28)) return true;
+  }
+  return false;
+}
+```
+
+**Step 7.4 — the possessed triggers sharpen.** `possessedVolley`: the fspec gains `acc: spec.acc * POSSESS_ACC`; after the sight gate, `const live = snapTargetNear(world, aim, T, toUV);` and the target becomes `const tgt = live || { pos: {...ground...}, v: {0,0,0}, hy: 0.9 };` (the live BODY rides shooterFire exactly as squadFire's targets do — real velocity, real height); the member loop gains, before the cooldown is set: `if (fspec.occl !== "lofted" && mateBlocks(world, squad, u, muzzle, tgt.pos)) continue;`. `possessedTowerFire`: `towerShot(world, tower, tgt, { ...spec, acc: spec.acc * POSSESS_ACC })` with the same snap for `tgt` (towers have no squadmates — no corridor check).
+
+**Step 7.5 — auto squads inherit the discipline.** `squadFire`'s member loop, after a target is chosen and before `u.fireCd = spec.fireRate`: `if (fspec.occl !== "lofted" && mateBlocks(world, squad, u, muzzle, best.pos)) continue;` — the held man's cooldown is untouched, same rule. (Enemy waves are not squads — no roster, no check; stated, not hidden.)
+
+**Step 7.6 — cover becomes a bonus, in accuracy.js.** `losGraze`: the sample loop starts past the muzzle exemption —
+
+```js
+const GRAZE_MUZZLE_EXEMPT = 2.5; // m — your own parapet is a rest, not an obstruction // provisional (F5)
+  for (let s = Math.max(GRAZE_STEP, GRAZE_MUZZLE_EXEMPT); s < len - GRAZE_STEP; s += GRAZE_STEP) {
+```
+
+and beside it the brace (same static-solid set, XZ proximity to the muzzle):
+
+```js
+const BRACE_R = 1.2, BRACE_K = 0.85; // provisional (F5)
+export function bracedAt(world, x, z) {
+  for (const b of world.bodies) {
+    if (!b.alive || !SOLID_KINDS.has(b.kind)) continue;
+    if (b.invM > 0 && b.kind !== "chunk" && b.kind !== "tree") continue;
+    if (Math.abs(x - b.pos.x) <= b.hx + BRACE_R && Math.abs(z - b.pos.z) <= b.hz + BRACE_R) return true;
+  }
+  return false;
+}
+```
+
+`scatterSigma`'s return becomes `spec.acc * range * elev * graze * (bracedAt(world, muzzle.x, muzzle.z) ? BRACE_K : 1);` — symmetric: every shooter on both sides who stands at cover shoots tighter, and nobody is punished for his own parapet again.
+
+**Step 7.7 — the firing line, in squads.js.** Beside `slotFor`:
+
+```js
+// POSSESSION T7 (mk0.97): under the stick with a live aim, the squad shakes
+// out into a FIRING LINE perpendicular to the aim — nobody stands behind
+// anybody, so the corridor hold above almost never fires. Ring spacing kept
+// (1.5m). Pure geometry, no draws.
+function lineSlotFor(squad, idx, n, aim) {
+  const dx = aim.x - squad.anchor.x, dz = aim.z - squad.anchor.z;
+  const d = Math.hypot(dx, dz) || 1;
+  const px = -dz / d, pz = dx / d;
+  const o = (idx - (n - 1) / 2) * 1.5;
+  return { x: squad.anchor.x + px * o, z: squad.anchor.z + pz * o };
+}
+```
+
+`drivePossessedSquad(world, squad, vx, vz, dt, aim)` — the new LAST argument defaults undefined (every existing caller and the T1 pins stay exact); the member loop's slot becomes `const s = aim ? lineSlotFor(squad, i, n, aim) : slotFor(squad, i, n);`. `DepotGame.jsx`'s possessed branch threads it: `drivePossessedSquad(world, sq, pi.vx, pi.vz, world.dt, S.reticle);`.
+
+**Behavior stated plainly:** take control and the men fan into a line facing your reticle. Park the reticle on a walking enemy and they lead him — and mostly hit him, because your hands are four times steadier than the machine's. A man behind sandbags shoots tighter, not wider, on both sides of the war. Nobody fires through the back of the man in front; he waits his half-second and the line sorts itself out. Mortars still lob over everyone's heads, yours included.
+
+**Gates (ONLY these):** parse changed files · `npm run lint:depot` · `npm run test:depot` (7.1 green; EVERY damage-per-second re-pin old→new, each its own bullet) · build AFTER bumping `src/version.js` to "mk0.97" · `SMOKE_ONLY=depot` smoke. Allowed files: `state.js`, `accuracy.js`, `squads.js`, `DepotGame.jsx`, `depot-test.mjs`, `version.js`. Feel acceptance (hit rates, line look, hold cadence) is the owner's playtest alone. Commit "(mk0.97)", push, CI green, STOP for audit.
 
 ---
 
