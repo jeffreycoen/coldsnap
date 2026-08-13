@@ -297,9 +297,10 @@ The seeded-sandbag block below it (its own `bagR` stream) is untouched.
 
 **Step 5 — the tree pool rises behind one constant.** `src/render/renderer.js`. Above the tree pools (line 1124), add the constant; the five 144 literals read it:
 ```js
-  // T5 (mk1.04, owner's ruling): copses + rare forests — the pool rises
-  // 144 -> 360 behind ONE constant (trunk, canopy, canopy colors, flames,
-  // and the draw-loop guard all read it; a missed site silently truncates).
+  // T5 (mk1.04, owner's ruling): copses + rare forests — the tree pool
+  // rises behind ONE constant (trunk, canopy, canopy colors, flames, and
+  // both loop guards read it; a missed site silently truncates). The old
+  // cap was a set of bare literals; the suite forbids them returning.
   const TREE_CAP = 360;
   const treeTrunkMesh = pool(new THREE.BoxGeometry(0.3, 1.4, 0.3), toon(0x4a3626), TREE_CAP, true);
   const treeCanopyMesh = pool(new THREE.ConeGeometry(1.05, 2.6, 6), toon(0xffffff), TREE_CAP, true);
@@ -319,6 +320,10 @@ The seeded-sandbag block below it (its own `bagR` stream) is untouched.
   ok("T5(d): the tree pool is one constant at 360", /const TREE_CAP = 360;/.test(rsrc5));
   ok("T5(d): no bare 144 survives in the renderer (all six sites read TREE_CAP)", !/144/.test(rsrc5));
 ```
+
+## AMENDMENT 2 (owner's ruling, 2026-08-13) — the comment yields to the pin
+
+*Found in execution: Step 5's specified comment carried the old and new pool numbers in digits, and Amendment 1's no-144-anywhere pin caught its own plan's comment. The owner ruled: the comment rewords, the strong pin stays. Step 5's comment block above is corrected in place (no digits); nothing else changes.*
 
 **Step 6 — green, bump, build, smoke.** `npm run lint:depot` · `npm run test:depot` fully green (zero re-pins) · `src/version.js` → `"mk1.04"` · `npm run build` AFTER the bump · `SMOKE_ONLY=depot npm run smoke`.
 
