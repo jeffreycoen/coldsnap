@@ -12,15 +12,9 @@
 
 **Task 1 — The square frame** — POPULATED BELOW (mk1.00).
 
-**Task 2 — The wilder map** *(skeleton)*
-- Rewrite generation for the square: random road count, freer band/bench layout, more variance per seed.
-- Depot geometry lands here: evened depots, randomized-but-spaced placement.
-- Acceptance predicate grows with the randomness (connectivity both ways, depot spacing, retry loop).
+**Task 2 — The wilder map** — POPULATED BELOW (mk1.01).
 
-**Task 3 — The stream and the bridge** *(skeleton)*
-- Carved channel, unwalkable water cells, drawn water. No drowning — obstacle only.
-- One bridge: walkable deck cells over the channel.
-- Connectivity counts the bridge; flow field re-reads if it drops.
+**Task 3 — The stream and the bridge** — POPULATED BELOW (mk1.02).
 
 **Task 4 — Buildings of the proving grounds** *(skeleton)*
 - Per-template shape hooks in the town builder (beyond the uniform lattice).
@@ -34,6 +28,672 @@
 **Task 6 — The measurement close** *(skeleton)*
 - Full-density Pi baseline on the new map: frame split, collapse worst case, sight recompute.
 - Re-pin perf numbers; owner playtest closes the phase.
+
+---
+
+# TASK 3 — The stream and the bridge (mk1.02)
+
+**What it does.** Every map gets ONE stream: a meandering channel crossing the full width in a drawn gap between the rock bands, carved into the terrain with a flat water surface, and ONE crossing. Water is an OBSTACLE, not a killer — no drowning this phase. Both sides obey it the same way: the enemy's flow field routes around water cells automatically; player squads refuse water ground through the same slot-vetting family that already refuses masonry, and a squad ordered into a leg that fords holds at the bank. Building on water is refused. The assault funnels at the crossing — the chokepoint is the point.
+
+**Two scope decisions, stated for the owner's review:**
+- **The crossing is a CAUSEWAY (built-up earth), not a suspended deck.** A hovering deck needs new render geometry and deck bodies; the earthen crossing is honest to the terrain system and ships now. Engineer-built and sapper-blown bridges are the Water phase's, per the vision — so the skeleton line "flow field re-reads if it drops" is RULED OUT here: this crossing is permanent terrain.
+- **An order whose destination lies ACROSS the water is refused only when the tap lands ON water** ("OPEN WATER — find the crossing"). A destination on far land is accepted; the squad advances to the bank and HOLDS there (the anchor never fords). Crossing is played as two orders through the causeway. Squad path-routing around water is TROOPS & PHYSICS (P6) work; the bank-hold is the honest interim, and it goes on the polish ledger.
+
+**Feel changes that ship for the owner's eyes:** one stream per seed, full-width, meandering, with visible water; a single earthen crossing; assaults funneling over it; squads that stand at the bank instead of wading.
+
+**Suggested model:** Sonnet — all code specified below.
+
+**Required reading (re-verify anchors at dispatch):**
+- `src/depot/DepotGame.jsx` — 30–52 (module state; `let STREAM` lands by line 51), 53–190 (genMap/makeMap), 192–274 (buildDepotTerrain), 299–320 (makeGrid), 935–950 (world threading — pondAt/inRim), 1078–1153 (trees/bags, read-only), 1190–1215 (setDressing call), 1900–1935 (consumeOrderTap; the clamp site at 1921), 2325–2335 (breachRock's setDressing).
+- `src/depot/squads.js` — 156–190 (slotBlocked/clearSlot), 560–620 (the leg advance; anchor write at 613–616).
+- `src/render/renderer.js` — 1131–1162 (setDressing).
+- `src/depot/units.js` — 479–560 (read-only: the march is grid-driven; water cells route automatically).
+- `scripts/depot-test.mjs` — 1–70, the FRONT T1/T2 extraction blocks, tail.
+- `src/version.js`.
+
+**Trap notes:**
+- Water is NOT a body. Enemy movement obeys it through the grid; player squads only through the two squads.js edits below; the POSSESSED squad already obeys it for free (the mk0.98 anchor clamp rejects `cell.blocked`, and water cells are blocked) — verify, do not edit.
+- All stream math is CANONICAL (u, v), transformed exactly like every other drawn feature; `streamAt` takes WORLD coords and converts via `invW`.
+- The stream lives on the map-seed stream — draw counts there are free. The one squads.js edit near the leg machine adds ZERO rng draws (the bank-hold suppresses the anchor write only; the one-draw-per-leg contract is untouched because a held leg never reaches its arrival draw).
+- Ponds and their ice are UNTOUCHED — the stream is its own system (water level 0.78, bed 0.2, both absolute; base terrain minimum ≈0.9 keeps the plane inside the banks).
+- Renderer change is DEPOT-gated by data: `setDressing` only builds ribbons when `spec.streams` is supplied; TD/campaign/sandbox pass none and render byte-identically.
+- The save regrows the stream from the seed (pure genMap); the carve rides the heightfield exactly like craters. No save edits; the mark bump burns old saves.
+- `streamV` is capped to ±22 so the channel (≤ meander 3 + width 4 + bank 3) can never touch a depot pad (edge ≥ 31.3) — safety by construction.
+- The F1/T1/T2 extraction sweeps re-run the LIVE makeMap and their own grid copies now include stream blocking; their connectivity asserts must keep passing (makeMap's retry guarantees accepted maps connect). A sweep failure is a STOP-and-report.
+- Placement wording: water cells get their own refusal ("NO GROUND — open water") at the three placement gates; the generic OCCUPIED path must not be the answer a river gives.
+- EXPECTED RE-PINS: none. Any old assert moving is a defect — STOP and report.
+
+## Steps, in execution order
+
+**Step 1 — failing asserts first.** Insert the FRONT-T3 block before the tail summary; `npm run test:depot` shows the block red (streamAt missing from the extraction, source pins absent), everything else green. Record the exact reds.
+
+```js
+// ==== FRONT T3: the stream and the causeway =================================
+// mk1.02 (The Front, Task 3). One stream per map: full-width, carved, water
+// at 0.78 over a 0.2 bed, ONE causeway crossing at bridgeU. Water blocks the
+// grid (both sides' movement) and the squads' slot family; orders tapped on
+// water are refused; nothing drowns.
+{
+  console.log("\n[front t3: the stream and the causeway]");
+  const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  // extraction: the T1/T2 pattern, plus streamAt and the STREAM module state.
+  let M3ok = true, mkMapT3 = null;
+  try {
+    const sliceFn3 = (name) => {
+      const start = src.indexOf(`\nfunction ${name}(`);
+      if (start < 0) throw new Error("T3 extract: missing function " + name);
+      const rest = src.slice(start + 1);
+      const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
+      return rest.slice(0, m < 0 ? rest.length : m + 9);
+    };
+    const header3 = src.slice(src.indexOf("const GRID_CS"), src.indexOf("function genMap"));
+    if (!/let STREAM = null;/.test(header3)) throw new Error("T3: STREAM state not in header");
+    const mapSrc3 = [
+      header3,
+      sliceFn3("genMap"), sliceFn3("makeMap"), sliceFn3("streamAt"), sliceFn3("pondAt"), sliceFn3("rockAt"),
+      sliceFn3("makeGrid"), sliceFn3("checkConnectivity"), sliceFn3("townFootprint"), sliceFn3("buildTown"),
+      sliceFn3("buildDepotTerrain"),
+      `return { makeMap, makeGrid, checkConnectivity, buildDepotTerrain, streamAt, invW,
+        state: () => ({ ORIENT, OBJ_POS, SPAWN_POINTS, ROCKS, PONDS, TOWN, ROADS, BANDS, STREAM, MAP_SEED }) };`,
+    ].join("\n");
+    mkMapT3 = () => new Function(
+      "mulberry32", "MASON", "fwdUFor", "fwdDirFor", "invWFor", "addBody", "addWeld", mapSrc3,
+    )(mulberry32, MASON, fwdUFor, fwdDirFor, invWFor, addBody, addWeld);
+  } catch (e) { M3ok = false; }
+  ok("T3: the map module extracts with streamAt and STREAM state", M3ok);
+
+  if (M3ok) {
+    // (a) every seed carries a full-width stream inside the safe band
+    let has = 0, safe = 0, blockedMid = 0, openCauseway = 0;
+    for (let s = 1; s <= 20; s++) {
+      const Mi = mkMapT3(); Mi.makeMap(s * 331);
+      const st = Mi.state();
+      if (!st.STREAM) continue;
+      has++;
+      if (Math.abs(st.STREAM.v) <= 22.01 && st.STREAM.pts[0].u === -60 && st.STREAM.pts[st.STREAM.pts.length - 1].u === 60) safe++;
+      // (b) the grid: mid-channel cells block; the causeway stays open
+      const g = Mi.makeGrid(null);
+      // a centerline point at least 12m from the causeway
+      const P = st.STREAM.pts.find((q) => Math.abs(q.u - st.STREAM.bridgeU) > 12);
+      if (P) {
+        const wMid = fwdUFor(st.ORIENT, P.u, P.v);
+        const gm = g.worldToGrid(wMid.x, wMid.z);
+        if (g.inBounds(gm.gx, gm.gz) && g.cells[g.idx(gm.gx, gm.gz)].blocked) blockedMid++;
+      } else blockedMid++; // no point that far out is a geometry fluke, not a fail
+      const wCw = fwdUFor(st.ORIENT, st.STREAM.bridgeU, st.STREAM.v);
+      const gc = g.worldToGrid(wCw.x, wCw.z);
+      if (g.inBounds(gc.gx, gc.gz) && !g.cells[g.idx(gc.gx, gc.gz)].blocked) openCauseway++;
+    }
+    ok("T3(a): every seed carries a stream", has === 20, `${has}/20`);
+    ok("T3(a): the stream spans the full width inside |v| <= 22", safe === 20, `${safe}/20`);
+    ok("T3(b): mid-channel grid cells are blocked", blockedMid === 20, `${blockedMid}/20`);
+    ok("T3(b): the causeway cell stays open", openCauseway === 20, `${openCauseway}/20`);
+
+    // (c) the carve: bed below the waterline mid-channel, causeway above it
+    {
+      const Mi = mkMapT3(); Mi.makeMap(4242);
+      const st = Mi.state();
+      const field = makeField(121, 2.0, st.MAP_SEED);
+      Mi.buildDepotTerrain(field, st.MAP_SEED);
+      const P = st.STREAM.pts.find((q) => Math.abs(q.u - st.STREAM.bridgeU) > 12) || st.STREAM.pts[0];
+      const wMid = fwdUFor(st.ORIENT, P.u, P.v);
+      const wCw = fwdUFor(st.ORIENT, st.STREAM.bridgeU, st.STREAM.v);
+      ok("T3(c): mid-channel bed sits below the 0.78 waterline", field.heightAt(wMid.x, wMid.z) < 0.75, field.heightAt(wMid.x, wMid.z).toFixed(2));
+      ok("T3(c): the causeway crown sits above the waterline", field.heightAt(wCw.x, wCw.z) > 0.85, field.heightAt(wCw.x, wCw.z).toFixed(2));
+    }
+
+    // (d) determinism: same seed, identical stream
+    {
+      const A = mkMapT3(); A.makeMap(7717);
+      const B = mkMapT3(); B.makeMap(7717);
+      ok("T3(d): twin determinism — identical STREAM", JSON.stringify(A.state().STREAM) === JSON.stringify(B.state().STREAM));
+    }
+  }
+
+  // (e) squads refuse water ground: the slot family reads world.streamAt
+  {
+    const flatF3 = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+    const world = makeWorld({ field: flatF3, seed: 5 });
+    world.streamAt = (x, z) => z > 10 && z < 14;
+    ok("T3(e): slotBlocked refuses a water point", slotBlockedPublic(world, 0, 12, 0.6) === true);
+    ok("T3(e): dry ground is still a slot", slotBlockedPublic(world, 0, 5, 0.6) === false);
+    // (f) the anchor never fords: a MOVE across the stubbed water holds at the bank
+    const sq = makeSquad(1, "rifles", 1, 0, 0);
+    spawnSquadMembers(world, sq);
+    sq.order = "move"; sq.dest = { x: 0, z: 30 };
+    for (let i = 0; i < 2400; i++) { stepSquad(world, sq, 1 / 60); stepWorld(world); }
+    ok("T3(f): the anchor holds at the bank (never enters the water band)", sq.anchor.z < 10.5, sq.anchor.z.toFixed(2));
+    ok("T3(f): the order survives the hold (still travelling, not silently completed)", sq.order === "move", sq.order);
+  }
+
+  // (g) source pins: the game layer's water rules exist where claimed
+  ok("T3(g): a ground order tapped on water is refused with the open-water toast",
+    /if \(streamAt\(d\.x, d\.z\)\) \{ toast\("OPEN WATER — find the crossing"\); return true; \}/.test(src));
+  ok("T3(g): buildAt refuses open water in its own words",
+    /NO GROUND — open water/.test(src));
+  ok("T3(g): the world threads streamAt beside pondAt/inRim",
+    /world\.streamAt = \(x, z\) => streamAt\(x, z\);/.test(src));
+  const rsrc3 = fs.readFileSync(new URL("../src/render/renderer.js", import.meta.url), "utf8");
+  ok("T3(g): setDressing builds water ribbons when streams are supplied",
+    /spec\.streams \|\| \[\]/.test(rsrc3));
+  const sqsrc3 = fs.readFileSync(new URL("../src/depot/squads.js", import.meta.url), "utf8");
+  ok("T3(g): slotBlocked's water line exists in squads.js",
+    /world\.streamAt && world\.streamAt\(x, z\)/.test(sqsrc3));
+}
+// ==== end FRONT T3 ===========================================================
+```
+
+**Step 2 — genMap draws the stream.** `src/depot/DepotGame.jsx`. First, module state beside the other map globals (line 51's list):
+```js
+let STREAM = null; // T3: { pts:[{u,v}...], w, v, bridgeU } — canonical, regrown from seed
+```
+Then inside genMap, AFTER the spawns block and BEFORE the roads block, insert:
+```js
+  // THE STREAM (T3, mk1.02): one per map — full width, meandering, in a
+  // drawn gap clear of the bands, capped |v|<=22 so it can never touch a
+  // depot pad. ONE causeway crossing at bridgeU. Canonical space throughout.
+  let streamV = (bands[0] + bands[1]) / 2;   // fallback: between the first two bands
+  for (let i = 0; i < 20; i++) {
+    const v = -22 + r() * 44;
+    if (bands.every((b) => Math.abs(v - b) >= 8)) { streamV = v; break; }
+  }
+  const streamW = 2.2 + r() * 1.8;           // half-width: a 4.4-8m channel // provisional (F5)
+  const bridgeU = (r() - 0.5) * 90;
+  const streamPts = [];
+  for (let u = -60; u <= 60; u += 10) streamPts.push({ u, v: streamV + (r() - 0.5) * 6 });
+  const stream = { pts: streamPts, w: streamW, v: streamV, bridgeU };
+```
+The roads loop gains the causeway waypoint (roads cross water nowhere else) — replace the loop body:
+```js
+  for (let ri = 0; ri < nRoads; ri++) {
+    const pts = [[spawns[ri % spawns.length].x, GRID_OZ + 2]];
+    let bridged = false;
+    for (const band of passes) {
+      const g = band[Math.floor(r() * band.length)];
+      if (!bridged && g.z > streamV) { pts.push([bridgeU, streamV]); bridged = true; }
+      pts.push([g.x, g.z]);
+    }
+    if (!bridged) pts.push([bridgeU, streamV]);
+    pts.push([objU, objV]);
+    roads.push(pts);
+  }
+```
+Clearances — one added line in each of four existing reject chains (coarse v-band tests; the meander is ±3 and the channel ≤4, so 9–10m covers it):
+- rocks (in the band loop): `if (Math.abs(z - streamV) < 9) continue;`
+- ponds: `if (Math.abs(z - streamV) < rad + 10) continue;`
+- bench buildings: `if (Math.abs(z - streamV) < rad + 9) continue;`
+- old ruins: `if (Math.abs(z - streamV) < 9) continue;`
+The return gains `stream` (the pts stay CANONICAL — deliberately NOT run through T(); every consumer converts via invW like territory does).
+
+**Step 3 — the module knows the stream.** After makeGrid (near line 320), add the distance test:
+```js
+// T3: is this WORLD point open water? Canonical distance to the stream
+// centerline, minus the causeway exemption. The one water test everything
+// reads — grid blocking, squad slots, order taps, placement.
+function streamAt(x, z) {
+  if (!STREAM) return false;
+  const c = invW(x, z);
+  if (Math.abs(c.u - STREAM.bridgeU) < 3) return false; // the causeway
+  const P = STREAM.pts;
+  let best = 1e9;
+  for (let i = 0; i + 1 < P.length; i++) {
+    const a = P[i], b = P[i + 1];
+    const du = b.u - a.u, dv = b.v - a.v;
+    const t = Math.max(0, Math.min(1, ((c.u - a.u) * du + (c.v - a.v) * dv) / (du * du + dv * dv)));
+    best = Math.min(best, Math.hypot(c.u - (a.u + du * t), c.v - (a.v + dv * t)));
+  }
+  return best < STREAM.w;
+}
+```
+makeMap assigns it with the other globals, BEFORE `makeGrid(null)` runs: add `STREAM = m.stream;` to the assignment block. makeGrid's cell classification gains the water branch (line 318):
+```js
+    if (rockAt(wp.x, wp.z)) { c.blocked = true; c.terrain = true; }
+    else if (streamAt(wp.x, wp.z)) { c.blocked = true; c.water = true; }
+    else if (pondAt(wp.x, wp.z)) c.ice = true;
+```
+
+**Step 4 — the terrain carves.** In buildDepotTerrain, between the slope-relax passes and the road-flatten block (so banks stay banks and the causeway ramps smooth):
+```js
+  // T3: THE STREAM. Carved after the relax (banks stay banks), before the
+  // roads (the causeway ramp smooths). Bed at 0.2, water at 0.78 — absolute
+  // levels; base terrain never dips below ~0.9, so the plane stays banked.
+  if (STREAM) {
+    const P = STREAM.pts, W = STREAM.w;
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      const x = i * cs - half, z = j * cs - half;
+      const c = invW(x, z);
+      let dS = 1e9;
+      for (let k2 = 0; k2 + 1 < P.length; k2++) {
+        const a = P[k2], b = P[k2 + 1];
+        const du = b.u - a.u, dv = b.v - a.v;
+        const t = Math.max(0, Math.min(1, ((c.u - a.u) * du + (c.v - a.v) * dv) / (du * du + dv * dv)));
+        dS = Math.min(dS, Math.hypot(c.u - (a.u + du * t), c.v - (a.v + dv * t)));
+      }
+      if (dS >= W + 3) continue;
+      const k = j * n + i;
+      const target = dS < W ? 0.2 : 0.2 + ((dS - W) / 3) * (h[k] - 0.2);
+      // the causeway: untouched within 3m of the crossing, full carve by 6m
+      const cw = Math.min(1, Math.max(0, (Math.abs(c.u - STREAM.bridgeU) - 3) / 3));
+      const carved = h[k] * (1 - cw) + Math.min(h[k], target) * cw;
+      if (carved < h[k]) h[k] = carved;
+    }
+  }
+```
+
+**Step 5 — squads refuse the water.** `src/depot/squads.js`, two edits:
+
+(5a) `slotBlocked` (line 168) gains a first line — this one line covers clearSlot, every goal vetting, and seekGoal's look-ahead fan, because they all funnel through it:
+```js
+function slotBlocked(world, x, z, clear) {
+  if (world.streamAt && world.streamAt(x, z)) return true; // T3: open water is never a slot
+  for (const b of pool) {
+```
+(the loop line stays exactly as it is today — the T1 pool machinery was reverted; the loop reads `world.bodies`).
+
+(5b) The leg machine's anchor write (line 613–616) — the anchor never fords; a leg into water holds at the bank (no new draws: a held leg never reaches its arrival draw):
+```js
+        if (trail <= COHESION_M || squad._cohesionHoldT > COHESION_CAP_S) {
+          const step = Math.min(ld, MOVE_SPEED * dt);
+          const nx2 = cx + (lx / ld) * step, nz2 = cz + (lz / ld) * step;
+          // T3: the anchor never fords — a leg into open water holds at the bank.
+          if (!(world.streamAt && world.streamAt(nx2, nz2))) squad.anchor = { x: nx2, z: nz2 };
+        }
+```
+
+**Step 6 — the game layer's water rules.** `src/depot/DepotGame.jsx`:
+
+(6a) Thread the test beside pondAt/inRim (after line 942):
+```js
+      world.streamAt = (x, z) => streamAt(x, z);
+```
+(6b) Order taps on water are refused — immediately after `const d = clampToRim(p.x, p.z);` in consumeOrderTap (line 1921):
+```js
+        // T3: open water takes no orders — the river is ground for nobody.
+        if (streamAt(d.x, d.z)) { toast("OPEN WATER — find the crossing"); return true; }
+```
+(6c) Placement speaks the truth — three guards, each a first-line check of the target cell: in `buildAt` and in `canPlaceInfantryAt` (and `canBuildAt`) before their existing checks:
+```js
+        if (cell.water) { toast("NO GROUND — open water"); return; }             // buildAt
+        if (cell.water) return { ok: false, msg: "NO GROUND — open water" };     // canBuildAt / canPlaceInfantryAt
+```
+(6d) The water ribbons — computed once at boot beside the dressing call (line ~1207), and passed at BOTH setDressing sites (boot and breachRock):
+```js
+      // T3: the stream's visible water — the canonical centerline sampled at
+      // 2m, split at the causeway, widened, world-transformed, at 0.78.
+      const streamRibs = [];
+      if (STREAM) {
+        let run = [];
+        const flush = () => { if (run.length >= 2) streamRibs.push({ pts: run, w: STREAM.w + 1 }); run = []; };
+        for (let u = -60; u <= 60; u += 2) {
+          if (Math.abs(u - STREAM.bridgeU) < 3) { flush(); continue; }
+          const i2 = Math.max(0, Math.min(STREAM.pts.length - 2, Math.floor((u + 60) / 10)));
+          const a = STREAM.pts[i2], b = STREAM.pts[i2 + 1];
+          const t = Math.max(0, Math.min(1, (u - a.u) / (b.u - a.u || 1)));
+          const w = fwdU(u, a.v + (b.v - a.v) * t);
+          run.push({ x: w.x, y: 0.78, z: w.z });
+        }
+        flush();
+      }
+      R.setDressing({ rocks: rocksLive, ponds: PONDS, streams: streamRibs });
+```
+(breachRock's call at line 2331 becomes `R.setDressing({ rocks: rocksLive, ponds: PONDS, streams: streamRibs });` — hoist `streamRibs` so both sites see it).
+
+**Step 7 — the renderer draws the water.** `src/render/renderer.js`, inside `setDressing` (line 1136), after the ponds loop:
+```js
+    // T3 (DEPOT-gated by data): stream water — a flat ribbon strip per run,
+    // built from the centerline points, at the level the game supplies.
+    for (const s of spec.streams || []) {
+      const n2 = s.pts.length;
+      if (n2 < 2) continue;
+      const pos = new Float32Array(n2 * 2 * 3);
+      for (let i = 0; i < n2; i++) {
+        const p = s.pts[i];
+        const q0 = s.pts[Math.max(0, i - 1)], q1 = s.pts[Math.min(n2 - 1, i + 1)];
+        let dx = q1.x - q0.x, dz = q1.z - q0.z;
+        const L = Math.hypot(dx, dz) || 1;
+        const px = (-dz / L) * s.w, pz = (dx / L) * s.w;
+        pos.set([p.x + px, p.y, p.z + pz, p.x - px, p.y, p.z - pz], i * 6);
+      }
+      const idx = [];
+      for (let i = 0; i + 1 < n2; i++) idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      geo.setIndex(idx);
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x2b4a5c, transparent: true, opacity: 0.82, depthWrite: false }));
+      m.layers.set(1);
+      dressG.add(m);
+    }
+```
+
+**Step 8 — green, bump, build, smoke.** `npm run lint:depot` · `npm run test:depot` fully green (zero re-pins) · `src/version.js` → `"mk1.02"` · `npm run build` AFTER the bump · `SMOKE_ONLY=depot npm run smoke` (preview server as before; a smoke failure is a STOP-and-report).
+
+**Gates (ONLY these):** parse changed files · `npm run lint:depot` · `npm run test:depot` (Step 1 red-first, then green; zero re-pins) · `npm run build` after the bump · `SMOKE_ONLY=depot` smoke. Allowed files: `src/depot/DepotGame.jsx`, `src/depot/squads.js`, `src/render/renderer.js`, `scripts/depot-test.mjs`, `src/version.js`. Commit `"the stream: one river, one crossing, nobody fords (mk1.02)"`, push, CI green, STOP. The owner checks the deployed site across seeds: the stream's meander and water, the single causeway, assaults funneling over it, a squad refusing to ford, "OPEN WATER" on a water tap.
+
+## AMENDMENT 3 (owner's ruling, 2026-08-13) — the grid grows to the full rim
+
+*Found in execution: T3(b)'s mid-channel probe deterministically samples the stream's u = −60 rim endpoint, and the flow grid covered rim-minus-1m (59×59, the inherited inset convention) — the probed cell was off-grid on every seed. The owner rejected a test-side fix and ruled: WIDEN THE GRID TO THE FULL RIM. The 1m inset dies; the flow/build grid covers every meter of playable ground; the stream's full-rim extent stands; the T3 probes work unchanged.*
+
+**Step A3-1.** `src/depot/DepotGame.jsx` line 32: `const GRID_CS = 2.0, GRID_W = 60, GRID_H = 60;` (cell centers at ±59, cell edges exactly on the ±60 rim). Correct the Task 1-era comment beside it — the inset convention is gone.
+
+**Step A3-2.** One re-pin in FRONT T1 (report old→new): the grid-size source-pin `GRID_W = 59, GRID_H = 59` (with its "rim minus the 1m inset" wording) becomes `GRID_W = 60, GRID_H = 60` ("the grid covers the full rim, Amendment 3").
+
+**Step A3-3.** Everything else follows automatically (`GRID_OX/OZ` derive; territory/sight/rim clamp were never inset-coupled) — verify by running the full suite; any OTHER moved assert is a STOP-and-report.
+
+**Polish ledger (this task's deferrals):** squad path-routing AROUND water to a far-side destination (today: bank-hold, crossing is two orders) — TROOPS & PHYSICS (P6); a timber-deck bridge look — Water phase.
+
+---
+
+# TASK 2 — The wilder map (mk1.01)
+
+**What it does.** Map generation stops being three fixed bands, two owed roads, and two depots nailed to the center line. Every seed now draws: how many rock bands (2–4) and where; how many passes cut each band (1–3); how many spawns feed the enemy edge (2–4); how many roads exist at all (0–3 — roads are terrain and looks, the march runs the flow field). THE DEPOTS WANDER AND ARE EVENED: both are placed per seed at a mirrored depth from the map center (40–50m, so each sits the identical distance from its own rim — the known depot asymmetry closes by construction) with independent side-to-side positions, never the same way twice. Their v-separation is ≥80m by construction, so spacing needs no luck. The objective, roads, terrain mound, seeded cover, territory flags, connectivity checks, and the save all follow the drawn positions. The acceptance predicate grows with the randomness; the retry loop widens.
+
+**Feel changes that ship for the owner's eyes:** no two seeds share a skeleton anymore — band count, pass count, road count (including roadless fronts), spawn count, and both depot positions all vary; the two depots always sit equally deep in their own ground.
+
+**Suggested model:** Sonnet — the generation code is specified verbatim below; the agent executes.
+
+**Required reading (re-verify anchors at dispatch):**
+- `src/depot/DepotGame.jsx` — 30–52 (frame constants), 53–190 (genMap/makeMap — the whole region this task replaces), 192–274 (buildDepotTerrain), 430–515 (townFootprint/buildTown, read-only), 1078–1153 (trees + seeded bags), 1236–1246 (camera focus reads TOWN, read-only).
+- `src/depot/save.js` — 9–36 (the three laws; the map regrows from seed — no edits).
+- `src/depot/units.js` — 479–560 (flow-field march; read-only, confirms no depot-position dependency).
+- `scripts/depot-test.mjs` — 2407–2535 (FRONT F1 block — two re-pins land here), 5340–5480 (FRONT T1 block + tail; the new T2 block lands before the summary).
+- `src/version.js`.
+
+**Trap notes:**
+- genMap runs on its OWN seeded stream — draw counts there may change freely; the draw-count law binds only `world.rng`. `depot-lint` still forbids `Math.random`.
+- The march needs no edits: enemies follow the flow field to `OBJ_POS`; tanks/riflemen/grenadiers target by the shared hostile-structure set. Confirm by reading, change nothing in `units.js`.
+- The save regrows the map from `MAP_SEED` — the new generation is deterministic per seed, so resume needs no edits. The mark bump (mk1.01) burns old saves by itself.
+- The seeded depot sandbags, camera opening focus, territory flag emitters, and audio reflectors all read `TOWN` — they follow the wandering depots automatically. Verify, do not edit.
+- `SPAWN_U` is stored but has no live consumer (the old anchor emitters died in F1) — keep the field, spend no effort on it.
+- EXPECTED RE-PINS, exactly three (report each old→new): (1) the F1 depot2-at-(0,−46) assert becomes the evened-depth pin; (2) the two hardcoded door points `fwdUFor(..., 0, -51)` (test lines 2519 and 5411) become derived from the returned depot2 position; (3) FRONT T1's spawn-spread pin (`span > 60`) becomes `span > 34` — a legal 2-spawn seed spans as little as 35m (centers ±22.5m, jitter ±5). Any OTHER old assert moving is a defect: STOP and report.
+- The F1 sweep's clearance asserts must keep passing on the wilder geometry — a sweep failure is a STOP-and-report, not a re-pin.
+- Smoke runs on a pinned seed and polls its ground through the live hooks (`__DEPOTFINDBUILDABLE__`, `__DEPOTSCREENAT__`) — it should absorb the moved depot. A smoke failure is a STOP-and-report.
+- `benches` can degenerate when the last band sits close to the depot ground — the existing `Math.max(2, ...)` in the bench draw already guards it; keep it.
+
+## Steps, in execution order
+
+**Step 1 — failing asserts first.** Three test edits, then `npm run test:depot`: the two re-pins and most of the new T2 block go red (current generation is fixed-shape); the spacing and connectivity sub-asserts may already pass — record exactly which.
+
+(1a) Re-pin F1/1a (line 2445) — the fixed position becomes the evening law. Insert a `depot1` lookup beside the existing `depot2` one and replace the assert:
+```js
+  const depot1 = st.TOWN.find((t) => t.id === "depot");
+  {
+    const c1 = depot1 ? invWFor(st.ORIENT, depot1.x, depot1.z) : { u: 9e9, v: 9e9 };
+    const c2 = depot2 ? invWFor(st.ORIENT, depot2.x, depot2.z) : { u: 9e9, v: 9e9 };
+    ok("F1/1a (re-pinned mk1.01): the depots are EVENED — mirrored depth, 40-50m from center",
+      Math.abs(c1.v + c2.v) < 0.01 && c1.v >= 40 && c1.v <= 50.01, `v1=${c1.v} v2=${c2.v}`);
+```
+(the 9×7×6 template pin below it stays byte-identical).
+
+(1b) Re-pin the two hardcoded door points. Line 2519:
+```js
+      const c2s = invWFor(sti.ORIENT, d2.x, d2.z);
+      const doorW = fwdUFor(sti.ORIENT, c2s.u, c2s.v - 5); // 5m behind depot2's own center — derived, not owed
+```
+Line 5411 (FRONT T1 block), same shape:
+```js
+    const d2t = st.TOWN.find((t) => t.id === "depot2");
+    const c2t = invWFor(st.ORIENT, d2t.x, d2t.z);
+    const dw = fwdUFor(st.ORIENT, c2t.u, c2t.v - 5);
+```
+
+(1b-2) Re-pin FRONT T1's spawn-spread assert (the wilder map legally draws 2 spawns; minimum legal span is 35m):
+```js
+    ok("FRONT T1 (re-pinned mk1.01): the spawn line spreads across the square (span > 34m at the 2-spawn minimum)", spawnSpread === 10, `${spawnSpread}/10`);
+```
+with the collector line above it re-pinned to `if (Math.max(...us) - Math.min(...us) > 34) spawnSpread++;`
+
+(1c) Insert the FRONT-T2 block before the final failure summary (after the FRONT T1 block). It copies the T1 extraction pattern (own scoped `sliceFn`/extractor, returning `{ ORIENT, OBJ_POS, SPAWN_POINTS, ROCKS, PONDS, TOWN, ROADS, BANDS, MAP_SEED }` — note ROADS/BANDS/PONDS join the returned state) and asserts, over 40 seeds (`s * 613`):
+```js
+  const roadCounts = new Set(), bandCounts = new Set(), spawnCounts = new Set();
+  let evened = 0, spaced = 0, clear = 0; const u1s = [];
+  for (let s = 1; s <= 40; s++) {
+    const Mi = mkMapT2(); Mi.makeMap(s * 613);
+    const st = Mi.state();
+    roadCounts.add(st.ROADS.length); bandCounts.add(st.BANDS.length); spawnCounts.add(st.SPAWN_POINTS.length);
+    const d1 = st.TOWN.find((t) => t.id === "depot"), d2 = st.TOWN.find((t) => t.id === "depot2");
+    const c1 = invWFor(st.ORIENT, d1.x, d1.z), c2 = invWFor(st.ORIENT, d2.x, d2.z);
+    if (Math.abs(c1.v + c2.v) < 0.01 && c1.v >= 40 && c1.v <= 50.01) evened++;
+    if (Math.hypot(d1.x - d2.x, d1.z - d2.z) >= 70) spaced++;
+    u1s.push(c1.u);
+    const depotClear = (d) =>
+      !st.PONDS.some((q) => Math.hypot(d.x - q.x, d.z - q.z) < q.r + Math.hypot(9, 7) * MASON.pitch / 2) &&
+      !st.ROCKS.some((k) => Math.hypot(d.x - k.x, d.z - k.z) < 12);
+    if (depotClear(d1) && depotClear(d2)) clear++;
+  }
+  ok("T2: road count varies — at least 3 distinct values in 0-3 across 40 seeds", roadCounts.size >= 3, [...roadCounts].join(","));
+  ok("T2: band count varies within 2-4", bandCounts.size >= 2 && Math.min(...bandCounts) >= 2 && Math.max(...bandCounts) <= 4, [...bandCounts].join(","));
+  ok("T2: spawn count varies within 2-4", spawnCounts.size >= 2 && Math.min(...spawnCounts) >= 2 && Math.max(...spawnCounts) <= 4, [...spawnCounts].join(","));
+  ok("T2: every seed's depots are EVENED (mirrored depth, 40-50m)", evened === 40, `${evened}/40`);
+  ok("T2: every seed's depots sit >= 70m apart", spaced === 40, `${spaced}/40`);
+  ok("T2: the player depot wanders side to side (u spread > 30m over 40 seeds)", Math.max(...u1s) - Math.min(...u1s) > 30, (Math.max(...u1s) - Math.min(...u1s)).toFixed(1));
+  ok("T2: both depots clear of ponds and rocks on every seed", clear === 40, `${clear}/40`);
+  // determinism: the wilder map is still a pure function of its seed
+  {
+    const A = mkMapT2(); A.makeMap(7717);
+    const B = mkMapT2(); B.makeMap(7717);
+    ok("T2: twin determinism — same seed, identical town/roads/bands",
+      JSON.stringify([A.state().TOWN, A.state().ROADS, A.state().BANDS]) === JSON.stringify([B.state().TOWN, B.state().ROADS, B.state().BANDS]));
+  }
+```
+(Connectivity both ways stays covered by the F1 sweep and the FRONT T1 sweep, which run the live generation — no duplicate here.)
+
+**Step 2 — genMap, replaced whole.** `src/depot/DepotGame.jsx` — replace the entire `genMap` function (lines 53–158) with the following. Everything not commented as new keeps today's logic verbatim; the sections are reordered only where the depots must be drawn first.
+```js
+function genMap(seed) {
+  const r = mulberry32(seed);
+  // THE DEPOTS FIRST (T2, mk1.01): both drawn per seed at MIRRORED DEPTH —
+  // the same distance from their own rim by construction, which closes the
+  // old placement asymmetry (record: player 8m from rim, enemy 14). Their
+  // side-to-side positions are independent, so no two wars share a front.
+  // v-separation is >= 80m by construction; spacing needs no retry luck.
+  const depotDepth = 40 + r() * 10;      // provisional (F5)
+  const depotU1 = (r() - 0.5) * 70;      // the player's depot, canonical u
+  const depotU2 = (r() - 0.5) * 70;      // the enemy's
+  const objU = depotU1, objV = depotDepth - 3; // the objective sits 3m field-side of the player depot
+  // THE BANDS (T2): 2-4 rock bands, evenly seeded across the middle ground,
+  // each jittered — the fixed three-band skeleton is gone.
+  const nBands = 2 + Math.floor(r() * 3);
+  const bands = [];
+  for (let i = 0; i < nBands; i++) bands.push(-28 + (i + 0.5) * (58 / nBands) + (r() - 0.5) * 10);
+  // THE PASSES (T2): 1-3 gaps per band, drawn anywhere across the width.
+  const passes = bands.map((z) => {
+    const n = 1 + Math.floor(r() * 3);
+    const out = [];
+    for (let i = 0; i < n; i++) out.push({ x: -50 + r() * 100, z });
+    return out;
+  });
+  const rocks = [];
+  for (let bi = 0; bi < bands.length; bi++) {
+    const density = 0.35 + r() * 0.65;
+    for (let x = -55; x <= 55; x += 5.5 + r() * 3) {
+      if (r() > density) continue;
+      const z = bands[bi] + (r() - 0.5) * 2.5;
+      if (passes[bi].some((g) => Math.abs(x - g.x) < 6.5)) continue;
+      // T2: a wandering depot can meet a band — rocks keep 12m off both
+      if (Math.hypot(x - depotU1, z - depotDepth) < 12 || Math.hypot(x - depotU2, z + depotDepth) < 12) continue;
+      rocks.push({ x, z, r: 3.4 + r() * 1.2, h: 3.0 + r() * 0.9 });
+    }
+  }
+  // THE SPAWNS (T2): 2-4, spread across the enemy edge with jitter.
+  const nSpawn = 2 + Math.floor(r() * 3);
+  const spawns = [];
+  for (let i = 0; i < nSpawn; i++) spawns.push({ x: -45 + (i + 0.5) * (90 / nSpawn) + (r() - 0.5) * 10, z: GRID_OZ + 2 });
+  // THE ROADS (T2): 0-3 — a front owes nobody a road. Each drawn road runs
+  // spawn -> one pass per band -> the objective. Roads are terrain and looks;
+  // the march runs the flow field either way.
+  const nRoads = Math.floor(r() * 4);
+  const roads = [];
+  for (let ri = 0; ri < nRoads; ri++) {
+    const pts = [[spawns[ri % spawns.length].x, GRID_OZ + 2]];
+    for (const band of passes) { const g = band[Math.floor(r() * band.length)]; pts.push([g.x, g.z]); }
+    pts.push([objU, objV]);
+    roads.push(pts);
+  }
+  const roadDist = (x, z) => {
+    let best = 1e9;
+    for (const route of roads) for (let i = 0; i < route.length - 1; i++) {
+      const a = route[i], b2 = route[i + 1];
+      const dx = b2[0] - a[0], dz = b2[1] - a[1];
+      const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / (dx * dx + dz * dz)));
+      best = Math.min(best, Math.hypot(x - (a[0] + dx * t), z - (a[1] + dz * t)));
+    }
+    return best;
+  };
+  const ponds = [];
+  const nP = 1 + Math.floor(r() * 4);
+  for (let i = 0; i < 30 && ponds.length < nP; i++) {
+    const x = -50 + r() * 100, z = -12 + r() * 48, rad = 5.5 + r() * 2.5;
+    if (passes.flat().some((g) => Math.abs(x - g.x) < 9 && Math.abs(z - g.z) < 14)) continue;
+    if (roadDist(x, z) < rad + 6) continue;
+    // T2: clear of BOTH depots (the old check knew one fixed objective)
+    if (Math.hypot(x - depotU1, z - depotDepth) < 16 || Math.hypot(x - depotU2, z + depotDepth) < 16) continue;
+    if (ponds.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 6)) continue;
+    ponds.push({ x, z, r: rad, level: 0 });
+  }
+  const TPL = [
+    { t: "croft", nx: 4, nz: 3, ny: 3 }, { t: "house", nx: 6, nz: 5, ny: 4 },
+    { t: "house", nx: 5, nz: 4, ny: 4 }, { t: "long", nx: 8, nz: 4, ny: 3 },
+    { t: "watch", nx: 2, nz: 2, ny: 8 }, { t: "granary", nx: 3, nz: 3, ny: 7 },
+    { t: "yard", nx: 6, nz: 5, ny: 2, roof: false }, { t: "shed", nx: 4, nz: 4, ny: 3 },
+    { t: "chapel", nx: 5, nz: 6, ny: 5 }, { t: "keep", nx: 7, nz: 6, ny: 5 },
+  ];
+  // T2: both depots at their DRAWN positions — same lattice, same template.
+  const town = [
+    { id: "depot", x: depotU1, z: depotDepth, nx: 9, nz: 7, ny: 6, door: 4, depot: true },
+    { id: "depot2", x: depotU2, z: -depotDepth, nx: 9, nz: 7, ny: 6, door: 4, depot: true, team: 2 },
+  ];
+  // T2: BOTH depots run the foul check the enemy's alone used to run —
+  // except the ROAD clause, which checks depot2 only (AMENDMENT 2): every
+  // drawn road terminates AT the player depot by design (its own supply
+  // road), so road proximity is a foul for the enemy's ground alone.
+  const dHalfDiag = Math.hypot(9, 7) * MASON.pitch / 2;
+  const dFoul = (d, roadChecked) =>
+    (roadChecked && roadDist(d.x, d.z) <= dHalfDiag + 2) ||
+    spawns.some((sp) => Math.hypot(d.x - sp.x, d.z - sp.z) < dHalfDiag + 2) ||
+    ponds.some((q) => Math.hypot(d.x - q.x, d.z - q.z) < q.r + dHalfDiag) ||
+    rocks.some((q) => Math.hypot(d.x - q.x, d.z - q.z) < q.r + dHalfDiag);
+  const depotFoul = dFoul(town[0], false) || dFoul(town[1], true);
+  // T2: benches between consecutive bands, plus the last band to depot ground.
+  const benches = [];
+  for (let i = 0; i + 1 < bands.length; i++) benches.push([bands[i] + 8, bands[i + 1] - 7]);
+  benches.push([bands[bands.length - 1] + 8, depotDepth - 8]);
+  let bid = 0;
+  for (let bi = 0; bi < benches.length; bi++) {
+    const want = 2 + Math.floor(r() * 4);
+    for (let k = 0, placed = 0; k < 90 && placed < want; k++) {
+      const tpl = TPL[Math.floor(r() * TPL.length)];
+      const swap = r() < 0.5;
+      const nx = swap ? tpl.nz : tpl.nx, nz = swap ? tpl.nx : tpl.nz;
+      const x = -52 + r() * 104;
+      const z = benches[bi][0] + r() * Math.max(2, benches[bi][1] - benches[bi][0]);
+      const rad = Math.max(nx, nz) * MASON.pitch / 2 + 2;
+      if (passes.flat().some((g) => Math.abs(x - g.x) < rad + 4 && Math.abs(z - g.z) < 12)) continue;
+      if (ponds.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 3)) continue;
+      if (rocks.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 1.5)) continue;
+      if (town.some((q) => Math.hypot(x - q.x, z - q.z) < rad + Math.max(q.nx, q.nz) * MASON.pitch / 2 + 2.5)) continue;
+      const decay = r() < 0.2 ? 0.12 + r() * 0.3 : 0;
+      town.push({ id: tpl.t + bid++, x, z, nx, nz, ny: tpl.ny, door: r() < 0.5 ? 0 : nx - 1, roof: tpl.roof, ruin: decay || undefined });
+      placed++;
+    }
+  }
+  const nRuin = Math.floor(r() * 3);
+  for (let k = 0, placed = 0; k < 14 && placed < nRuin; k++) {
+    const x = -50 + r() * 100, z = -depotDepth + r() * 20;
+    if (spawns.some((sp) => Math.hypot(x - sp.x, z - sp.z) < 10)) continue;
+    if (town.some((q) => Math.hypot(x - q.x, z - q.z) < 10)) continue;
+    town.push({ id: "oldruin" + placed, x, z, nx: 4, nz: 4, ny: 3, door: 0, ruin: 0.5 });
+    placed++;
+  }
+  const T = (o) => { const w = fwdU(o.x, o.z); o.x = w.x; o.z = w.z; return o; };
+  for (const k of rocks) T(k);
+  for (const q of ponds) T(q);
+  for (const t of town) { T(t); if (ORIENT % 2) { const nx0 = t.nx; t.nx = t.nz; t.nz = nx0; t.door = Math.min(t.door, t.nx - 1); } }
+  const spawnU = spawns.map((sp) => sp.x);
+  for (const sp of spawns) T(sp);
+  for (const band of passes) for (const g of band) T(g);
+  for (const route of roads) for (const pt of route) { const w = fwdU(pt[0], pt[1]); pt[0] = w.x; pt[1] = w.z; }
+  return { seed, bands, passes, rocks, ponds, spawns, spawnU, town, roads, depotFoul, objU, objV, depotU1, depotU2, depotDepth };
+}
+```
+
+**Step 3 — makeMap follows the drawn depot.** Replace `makeMap` (now directly after genMap) with:
+```js
+function makeMap(seed) {
+  for (let attempt = 0; attempt < 24; attempt++) {   // T2: wilder maps foul more — a deeper retry pocket
+    const sd = seed + attempt * 7919;
+    ORIENT = sd % 4;
+    const m = genMap(sd);
+    OBJ_POS = fwdU(m.objU, m.objV);                  // T2: the objective follows the DRAWN depot, set after genMap
+    MAP_SEED = sd; BANDS = m.bands; PASSES = m.passes; ROCKS = m.rocks;
+    PONDS = m.ponds; SPAWN_POINTS = m.spawns; TOWN = m.town; ROADS = m.roads;
+    SPAWN_U = m.spawnU;
+    const g = makeGrid(null);
+    for (const t of TOWN) {
+      const hx = (t.nx * MASON.pitch) / 2, hz = (t.nz * MASON.pitch) / 2;
+      for (let gz = 0; gz < GRID_H; gz++) for (let gx = 0; gx < GRID_W; gx++) {
+        const wp = g.gridToWorld(gx, gz);
+        if (Math.abs(wp.x - t.x) < hx + 1.0 && Math.abs(wp.z - t.z) < hz + 1.0) {
+          if (Math.hypot(wp.x - OBJ_POS.x, wp.z - OBJ_POS.z) < 5) continue;
+          g.cells[g.idx(gx, gz)].blocked = true;
+        }
+      }
+    }
+    const og = g.worldToGrid(OBJ_POS.x, OBJ_POS.z);
+    // T2: the enemy doorway derives from the DRAWN depot2 — 5m behind its center.
+    const d2door = fwdU(m.depotU2, -m.depotDepth - 5);
+    const dg = g.worldToGrid(d2door.x, d2door.z);
+    // T2: the grown predicate — town minimum, no depot foul, explicit spacing
+    // (guaranteed by construction, asserted anyway), both connectivities.
+    if (TOWN.length >= 6 && !m.depotFoul &&
+        Math.hypot(m.depotU1 - m.depotU2, 2 * m.depotDepth) >= 70 &&
+        checkConnectivity(g, SPAWN_POINTS, og.gx, og.gz) &&
+        checkConnectivity(g, SPAWN_POINTS, dg.gx, dg.gz)) return;
+  }
+}
+```
+Also delete the now-dead pre-genMap `OBJ_POS = fwdU(0, 49);` line (it moved after genMap) and correct the F1-era comments above `town` in genMap's old body (they described canonical (0, −46) — gone with the replacement).
+
+**Step 4 — the terrain follows.** `buildDepotTerrain`:
+
+(4a) The band lift generalizes to any band count (line 204):
+```js
+    let y = 2.0
+      + Math.sin(x * 0.075 + 1.3) * 0.42
+      + Math.cos(z * 0.061 - 0.6) * 0.38
+      + Math.sin((x + z) * 0.032) * 0.30
+      + (r() - 0.5) * 0.06;
+    for (let bi = 0; bi < BANDS.length; bi++) y += stepUp(BANDS[bi] - 1, 10, 1.8 + 0.2 * (bi % 3));
+```
+(`stepUp` reads `cuv.v` via the closure exactly as before; only the fixed three-term sum dies.)
+
+(4b) Both depots get the same raised pad — the town flatten loop (lines 221–230) gains a depot lift, and the OBJ-specific mound block (lines 231–239, `if (d < 9)`) is DELETED:
+```js
+  for (const t of TOWN) {
+    const rad = Math.hypot(t.nx, t.nz) * MASON.pitch / 2 + (t.depot ? 4.0 : 2.0);
+    const ph = h[Math.round((t.z + half) / cs) * n + Math.round((t.x + half) / cs)] + (t.depot ? 0.5 : 0);
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      const x = i * cs - half, z = j * cs - half;
+      const d = Math.hypot(x - t.x, z - t.z);
+      if (d >= rad) continue;
+      h[j * n + i] += (ph - h[j * n + i]) * Math.min(1, (rad - d) / 1.8);
+    }
+  }
+```
+The old mound's fixed height (the sum of all three band lifts + 0.5) assumed the player depot stood beyond every band; a wandering depot takes local ground + 0.5 instead — evened, both sides.
+
+**Step 5 — trees respect the wandering depots.** In the mount effect: the treeline loop (line 1084) and the clump inner loop (line 1093-ish) each gain one rejection beside their existing ones:
+```js
+          if (TOWN.some((t) => t.depot && Math.hypot(w.x - t.x, w.z - t.z) < 10)) continue;
+```
+(clump version tests `jx, jz` instead of `w.x, w.z`).
+
+**Step 6 — green, bump, build, smoke.** `npm run lint:depot` · `npm run test:depot` fully green (the two named re-pins, nothing else moved) · `src/version.js` → `"mk1.01"` · `npm run build` AFTER the bump · `SMOKE_ONLY=depot npm run smoke` (start the preview server as Task 1's run did).
+
+**Gates (ONLY these):** parse changed files · `npm run lint:depot` · `npm run test:depot` (Step 1 red-first, then green; two named re-pins reported old→new) · `npm run build` after the bump · `SMOKE_ONLY=depot` smoke. Allowed files: `src/depot/DepotGame.jsx`, `scripts/depot-test.mjs`, `src/version.js`. Commit `"the wilder map: depots wander evened, roads drawn not owed (mk1.01)"`, push, CI green, STOP. The owner checks the deployed site live across several `?seed=` values: varying band/road/spawn counts, roadless seeds, the depots off the center line and equally deep on both sides.
+
+## AMENDMENT 2 (2026-08-13) — a depot's own road is not a foul
+
+*Found in execution: Step 2's foul check ran the ROAD clause on both depots while every drawn road terminates 3m from the player depot's center — inside its own ~6.7m foul radius. Every seed with a road was therefore rejected, and all accepted maps came out roadless (the T2 road-variance assert caught it: `roadCounts = {0}` across 40 seeds). The fix follows the fiction: a supply road is supposed to reach the player's depot. The road-proximity clause now checks the ENEMY depot only; spawns, ponds, and rocks still check both. The Step 2 genMap block above is corrected in place (`dFoul(d, roadChecked)`); no other step changes.*
 
 ---
 
