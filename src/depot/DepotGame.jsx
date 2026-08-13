@@ -1150,9 +1150,6 @@ function RadialMenu({ cx, cy, label, slots, armed, onChoose }) {
 // exact keys specs.js's PLAYER_START/PLAYER_TIERS ladder is written in, so the
 // unlocked filter below is a plain membership test.
 const PALETTE = [
-  // The wall price lives in state.js (WALL_COST) — the bar label and buildAt's
-  // fallback both read it, so the number exists once (mk0.50).
-  { key: "wall", label: "WALL", icon: "▦", cost: WALL_COST },
   ...TOWER_ORDER.map((k) => ({ key: k, label: TOWER_SPECS[k].label, icon: TOWER_SPECS[k].icon, cost: TOWER_SPECS[k].cost })),
   // Squads (Phase 5 Task 3): mode keys prefixed sq_ — the MG tower owns "mg"
   { key: "sq_sniper", label: "SNIPER", icon: "✛", cost: SQUAD_SPECS.sniper.cost },
@@ -1167,7 +1164,6 @@ const PALETTE = [
   // P1.5 T4: the engineer team — in the starting kit, so this slot is on the
   // bar from the first frame of every match.
   { key: "sq_engineers", label: "ENGINEERS", icon: "⚒", cost: SQUAD_SPECS.engineers.cost },
-  { key: "sandbag", label: "SANDBAG", icon: "▬", cost: SANDBAG_COST },
 ];
 const PALETTE_BY_KEY = Object.fromEntries(PALETTE.map((p) => [p.key, p]));
 const PALETTE_LABEL = Object.fromEntries(PALETTE.map((p) => [p.key, p.label]));
@@ -1570,7 +1566,7 @@ export default function DepotGame({ onExit, resume = null }) {
       const S = {
         resources: 120, kills: 0,
         ws: makeDepotAssaultState(), spawnRR: 0,
-        mode: "wall", sellMode: false, inspectId: null,
+        mode: null, sellMode: false, inspectId: null,
         started: false, gameOver: false, victory: false,
         paused: false, speed: 1, fogOn, discipline, windOn,
         setFog: (v) => { fogOn = v; S.fogOn = v; R.setFog(v); try { window.localStorage.setItem("coldsnap-depot-fog", v ? "1" : "0"); } catch (e) {} },
@@ -1840,16 +1836,6 @@ export default function DepotGame({ onExit, resume = null }) {
         // intrinsic default, no tap needed).
         S.selSquadId = sq.id; S.selArmedAt = world.t + PENDING_ARM_S; S.pieOpen = true;
         S.resources -= SQUAD_SPECS[type].cost;
-      };
-      // Sandbag: instant, wall-exempt (brief) — same reasoning as walls: a
-      // ring/confirm pair on a 3-scrap bag is meaningless.
-      const placeSandbagAt = (gx, gz) => {
-        const v = canPlaceInfantryAt(gx, gz, SANDBAG_COST);
-        if (!v.ok) { toast(v.msg); return; }
-        // AUTO-CONTINUE: adjacent (2.2m) to an existing bag -> orient along
-        // the line to it; isolated line starts use the bar toggle.
-        spawnSandbag(world, v.wp.x, v.wp.z, sandbagOrientAt(world, v.wp.x, v.wp.z, S.sandbagOrient || 0));
-        S.resources -= SANDBAG_COST;
       };
       // Squad placement rides the tower pending-confirm flow. Sniper preview
       // is the reachPolygon fan with INFANTRY_ARMS.sniper, fog-INDEPENDENT
@@ -2448,17 +2434,17 @@ export default function DepotGame({ onExit, resume = null }) {
         if (S.sellMode) { S.inspectId = null; sellAt(g.gx, g.gz); return; }
         if (cell2.wallId && world.byId.has(cell2.wallId)) { S.inspectId = cell2.wallId; S.pieOpen = true; return; }
         S.inspectId = null;
-        if (S.mode === "wall") { buildAt(g.gx, g.gz, "wall"); return; } // walls exempt: instant, as today
-        if (S.mode === "sandbag") { placeSandbagAt(g.gx, g.gz); return; } // sandbags: instant, wall-exempt (brief)
         if (SQUAD_MODE[S.mode]) {
           const v = canPlaceInfantryAt(g.gx, g.gz, SQUAD_SPECS[SQUAD_MODE[S.mode]].cost);
           if (!v.ok) { toast(v.msg); return; }
           startPendingSquad(g.gx, g.gz, S.mode, v.wp);
           return;
         }
-        const v = canBuildAt(g.gx, g.gz, S.mode);
-        if (!v.ok) { toast(v.msg); return; }
-        startPending(g.gx, g.gz, S.mode, v);
+        if (S.mode && TOWER_SPECS[S.mode]) {
+          const v = canBuildAt(g.gx, g.gz, S.mode);
+          if (!v.ok) { toast(v.msg); return; }
+          startPending(g.gx, g.gz, S.mode, v);
+        }
       };
 
       const pointers = new Map();
@@ -3298,13 +3284,7 @@ export default function DepotGame({ onExit, resume = null }) {
             S.reticle ? S.reticle.x : 0, S.reticle ? S.reticle.z : 0,
             S.reticle ? field.heightAt(S.reticle.x, S.reticle.z) : 0);
           if (!S.possess && S.hover) {
-            // Sandbag ghost: oriented footprint read LIVE each frame — the
-            // toggle (and auto-continue near an existing line) re-renders the
-            // preview immediately, never a cached orientation.
-            const pad = S.mode === "sandbag" && !S.sellMode && !S.inspectId && S.selSquadId == null
-              ? (sandbagOrientAt(world, S.hover.x, S.hover.z, S.sandbagOrient || 0) === 1 ? { x: 0.7, z: 1.8 } : { x: 1.8, z: 0.7 })
-              : GRID_CS;
-            R.overlay.setHover(true, S.hover.x, S.hover.z, field.heightAt(S.hover.x, S.hover.z), S.hover.range, S.hover.valid, pad);
+            R.overlay.setHover(true, S.hover.x, S.hover.z, field.heightAt(S.hover.x, S.hover.z), S.hover.range, S.hover.valid, GRID_CS);
           }
           else R.overlay.setHover(false);
           if (S.pending) {
@@ -3550,13 +3530,6 @@ export default function DepotGame({ onExit, resume = null }) {
   const setMode = (m) => {
     const S = stateRef.current; if (!S) return;
     if (S.gameOver || S.victory) return;   // mk0.29: the war is over — nothing left to build
-    // Re-tap SANDBAG while already in sandbag mode: cycle pending
-    // orientation 90 degrees (two states). Placement-state only.
-    if (m === "sandbag" && S.mode === "sandbag" && !S.sellMode) {
-      S.sandbagOrient = ((S.sandbagOrient || 0) + 1) % 2;
-      setHud((h) => ({ ...h, sandbagOrient: S.sandbagOrient }));
-      return;
-    }
     // COMMAND T2 (mk0.84): switching build-menu mode with a line still up
     // clears it through the same door ✗ uses (rejectLine also disposes the
     // renderer's preview group) — it never lingers behind the new mode.
@@ -3659,9 +3632,7 @@ export default function DepotGame({ onExit, resume = null }) {
   // card IS the reveal. PALETTE's own order is preserved, so an item always
   // arrives in the same slot position it will keep for the rest of the match.
   const unlocked = hud.unlocked || [];
-  const palette = PALETTE.filter((p) => unlocked.indexOf(p.key) >= 0)
-    // icon reflects pending orientation (sandbagOrient): ▬ (long x) vs ▮ (long z)
-    .map((p) => (p.key === "sandbag" ? { ...p, icon: hud.sandbagOrient ? "▮" : "▬" } : p));
+  const palette = PALETTE.filter((p) => unlocked.indexOf(p.key) >= 0);
 
   return (
     <div style={P.root}>
@@ -4033,7 +4004,7 @@ export default function DepotGame({ onExit, resume = null }) {
           <div style={{ fontSize: 26, letterSpacing: 4, color: "#9fdcff" }}>COLDSNAP</div>
           <div style={{ fontSize: 13, letterSpacing: 8, color: "#ffd27a", marginBottom: 14 }}>WINTER FRONT</div>
           <div style={{ fontSize: 12, opacity: 0.85, maxWidth: 420, lineHeight: 1.6, marginBottom: 18 }}>
-            They come out of the southern treeline for the depot. Wall their road, gun the choke points.
+            They come out of the southern treeline for the depot. Gun the choke points; your engineers dig the lines.
             Rock is free cover. The frozen ponds carry them faster — and you cannot build on ice.
             {isTouch ? " Drag to pan, pinch to zoom, tap to build. Tap a tower to inspect it." : " WASD pans, wheel zooms, Q/E rotates, click builds. Click a tower to inspect it."}
           </div>

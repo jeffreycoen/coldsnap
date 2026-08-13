@@ -158,11 +158,9 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
   // (a) the player starts with START and nothing else.
   {
     const M = makeManifestState();
-    // re-pinned mk0.60: the ENGINEER TEAM joins the starting kit (was 3 items,
-    // wall/sandbag/rifles), so every match now opens with the build order too.
-    ok("manifest: a fresh run starts on wall/sandbag/rifles/engineers",
-      M.unlocked.length === 4 && isUnlocked(M, "wall") && isUnlocked(M, "sandbag")
-      && isUnlocked(M, "sq_rifles") && isUnlocked(M, "sq_engineers"),
+    ok("manifest: the starting kit is rifles + engineers (re-pinned mk1.12 — only engineers build)",
+      M.unlocked.length === 2 && isUnlocked(M, "sq_rifles") && isUnlocked(M, "sq_engineers")
+      && !isUnlocked(M, "wall") && !isUnlocked(M, "sandbag"),
       M.unlocked.join(","));
     ok("manifest: nothing is offered before the first bell", M.offers.length === 0 && M.cardUp === false);
     ok("manifest: no tier is open at bell 0", tierOpenCount(0) === 0 && manifestPool(M.unlocked, 0).length === 0);
@@ -214,10 +212,10 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
   {
     const M = makeManifestState();
     M.offers = ["mg", "frost"]; M.cardUp = true;
-    ok("manifest: an item that was never offered cannot be taken", pickManifest(M, "rocket") === false && M.unlocked.length === 4);
+    ok("manifest: an item that was never offered cannot be taken", pickManifest(M, "rocket") === false && M.unlocked.length === 2);
     ok("manifest: the pick joins the unlocked set", pickManifest(M, "frost") === true && isUnlocked(M, "frost"));
     ok("manifest: taking one crate closes the card and clears the offer", M.cardUp === false && M.offers.length === 0);
-    ok("manifest: a second pick off the same bell is refused", pickManifest(M, "mg") === false && M.unlocked.length === 5);
+    ok("manifest: a second pick off the same bell is refused", pickManifest(M, "mg") === false && M.unlocked.length === 3);
   }
 
   // (e) a skipped bell is a skipped pick — no banking, but nothing is lost:
@@ -231,8 +229,8 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
     ok("manifest: the bell raises an offer", first.length >= 2 && S2.manifest.cardUp === true, first.join(","));
     fireBell(S2, { reg: S2.reg, snap: {}, rng, t: 2 * BELL_PERIOD_S });
     ok("manifest: an unread offer is overwritten at the next bell, not banked",
-      S2.manifest.offerBell === 2 && S2.manifest.unlocked.length === 4, `${S2.manifest.offerBell}/${S2.manifest.unlocked.length}`); // 4 re-pinned mk0.60: START gained sq_engineers
-    ok("manifest: the passed-over items are still on offer", S2.manifest.offers.every((k) => manifestPool(["wall", "sandbag", "sq_rifles", "sq_engineers"], 2).includes(k)));
+      S2.manifest.offerBell === 2 && S2.manifest.unlocked.length === 2, `${S2.manifest.offerBell}/${S2.manifest.unlocked.length}`); // 2 re-pinned mk1.12: START is rifles + engineers only
+    ok("manifest: the passed-over items are still on offer", S2.manifest.offers.every((k) => manifestPool(["sq_rifles", "sq_engineers"], 2).includes(k)));
   }
 
   // (f) the enemy's mirror: one pick per bell, never ahead of its tier's bell.
@@ -1966,35 +1964,11 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     ok("sandbag-rot: beyond 2.2m is a line start (toggle wins)", sandbagOrientAt(world, 3.0, 0, 1) === 1);
   }
 
-  // (c) UI toggle: tapping SANDBAG while already in sandbag mode cycles the
-  // pending orientation (two states) and the bar icon reflects it — source
-  // asserts (DepotGame closures), same pattern as sweep/emitters above.
-  {
-    const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("sandbag-rot: sandbag button re-tap cycles orientation", /sandbagOrient[\s\S]{0,80}\+ 1\) % 2/.test(src));
-    ok("sandbag-rot: bar icon reflects orientation (▬ vs ▮)", src.includes("▮") && /sandbagOrient[^\n]{0,120}▮|▮[^\n]{0,120}sandbagOrient/.test(src));
-    ok("sandbag-rot: placement routes through sandbagOrientAt", src.includes("sandbagOrientAt("));
-  }
-
-  // (d) toggle applies IMMEDIATELY (regression: the 8Hz frame setHud rebuilt
-  // the whole hud object WITHOUT sandbagOrient, clobbering the toggle's icon
-  // flip back to ▬ within 120ms). The frame-loop hud snapshot must carry
-  // sandbagOrient, HUD0 must seed it, and the hover ghost must read the LIVE
-  // toggle (via sandbagOrientAt at the hover cell) every frame, not a cached
-  // copy.
-  {
-    const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    // the frame snapshot is the setHud({...}) that also carries mode/sellMode
-    const snap = src.match(/setHud\(\{[\s\S]{0,7500}?\}\);\n\s+\}\n/); // window widened (mk0.29 added endCard; mk0.41 added the manifest mirror; mk0.80 added the tower radial; mk0.82 added showPie to both; mk0.84 added linePending, re-pinned 5000->6000; mk0.86 added structOk/structFirst, re-pinned 6000->7000; mk0.92 added canPossess + the tower branch of hud.possessed, re-pinned 7000->7500)
-    ok("sandbag-rot: frame hud snapshot carries sandbagOrient (no clobber)",
-      !!snap && snap[0].includes("mode: S.mode") && snap[0].includes("sandbagOrient: S.sandbagOrient"));
-    const { HUD0 } = await import("../src/depot/state.js");
-    ok("sandbag-rot: HUD0 seeds sandbagOrient", HUD0.sandbagOrient === 0);
-    // hover ghost: per-frame oriented footprint from live toggle state
-    ok("sandbag-rot: hover ghost reads live orientation via sandbagOrientAt",
-      /setHover[\s\S]{0,400}sandbagOrientAt\(world, S\.hover\.x, S\.hover\.z, S\.sandbagOrient/.test(src) ||
-      /sandbagOrientAt\(world, S\.hover\.x, S\.hover\.z, S\.sandbagOrient[\s\S]{0,400}setHover/.test(src));
-  }
+  // (c)/(d) UI-toggle pins PRUNED (mk1.12, Amendment 1 A1-6): the bar re-tap
+  // cycle, the bar icon swap, and the hover-ghost orientation read were all
+  // deleted in Task 3 — sandbag placement has no player-facing door any
+  // more. sandbagOrientAt itself (the engineer line's own orientation call)
+  // is untouched and stays pinned in (a)/(b) above.
 }
 
 // ==== SNAP-SQUADS ============================================================
@@ -2960,11 +2934,12 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     ok("mk0.50/3: every raised price is an integer",
       [...Object.values(SQUAD_SPECS).map((s) => s.cost), ...Object.values(TOWER_SPECS).map((s) => s.cost), WALL_COST, SANDBAG_COST]
         .every((c) => Number.isInteger(c)));
-    // The wall price exists ONCE now — DepotGame's palette row and buildAt
-    // fallback both read state.js's constant instead of a bare 5.
+    // The wall price exists ONCE — buildAt's fallback reads state.js's
+    // constant instead of a bare 5 (re-pinned mk1.12 — the bar row died,
+    // the harness fallback remains).
     const wsrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("mk0.50/3: DepotGame reads WALL_COST instead of carrying its own literal",
-      /icon: "▦", cost: WALL_COST/.test(wsrc) && /spec \? spec\.cost : WALL_COST/.test(wsrc));
+    ok("mk0.50/3: DepotGame reads WALL_COST instead of carrying its own literal (re-pinned mk1.12 — the bar row died, the harness fallback remains)",
+      /spec \? spec\.cost : WALL_COST/.test(wsrc));
     // The knowing asymmetry is documented where the raise is, not just in the
     // plan — a reader who finds a rich enemy finds the reason.
     const sqsrc = fs.readFileSync(new URL("../src/depot/squads.js", import.meta.url), "utf8");
@@ -3231,10 +3206,10 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   ok("mk0.60/1: engineers carry no arms entry at all (like sappers)",
     !INFANTRY_ARMS.engineers && !INFANTRY_ARMS.sappers);
 
-  // (2) the starting kit grew by one — and only by one.
-  ok("mk0.60/2: PLAYER_START now fields engineers from bell 0 (re-pinned from 3 items)",
-    PLAYER_START.length === 4 && PLAYER_START.includes("sq_engineers")
-    && PLAYER_START.includes("wall") && PLAYER_START.includes("sandbag") && PLAYER_START.includes("sq_rifles"),
+  // (2) the starting kit: rifles + engineers only — masonry is engineer work.
+  ok("mk0.60/2 (re-pinned mk1.12): PLAYER_START is rifles + engineers — masonry is engineer work",
+    PLAYER_START.length === 2 && PLAYER_START.includes("sq_engineers") && PLAYER_START.includes("sq_rifles")
+    && !PLAYER_START.includes("wall") && !PLAYER_START.includes("sandbag"),
     PLAYER_START.join(","));
   ok("mk0.60/2: the engineer team is NOT on the convoy's ladder (it is never offered twice)",
     PLAYER_TIERS.every((tier) => tier.indexOf("sq_engineers") < 0));
@@ -4891,8 +4866,8 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   const rendSrc = fs.readFileSync(new URL("../src/render/renderer.js", import.meta.url), "utf8");
   ok("POSSESSION T5(a) source pin: the renderer owns a setReticle overlay drawn in the established red",
     /setReticle\(on, x, z, y\)/.test(rendSrc) && /0xff6b5e/.test(String(rendSrc.match(/setReticle\(on, x, z, y\) \{[\s\S]*?\n    \},/) || "")));
-  ok("POSSESSION T5(b) source pin: the possessed ring renders through setReticle, not the build ghost's setHover",
-    /R\.overlay\.setReticle\(/.test(gameSrc) && !/S\.possess && S\.reticle[\s\S]{0,400}setHover/.test(gameSrc));
+  ok("possessed frames never paint the build hover (re-pinned mk1.12 — the old pin was a character-distance accident)",
+    /R\.overlay\.setReticle\(/.test(gameSrc) && /if \(!S\.possess && S\.hover\)/.test(gameSrc));
   ok("POSSESSION T5(c) source pin: the build hover never paints while possessed",
     /!S\.possess && S\.hover/.test(gameSrc));
 }
@@ -6116,6 +6091,26 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     /SLEEPING STONE IS\s*\n?\s*\/\/ NOT A WEAPON|SLEEPING STONE IS NOT A WEAPON/.test(csrcT2) && /inertStone/.test(csrcT2));
 }
 // ==== end P6 T2 ==============================================================
+
+// ==== P6 T3: only engineers build ===========================================
+// mk1.12 (Troops & Physics, Task 3). Walls and sandbags leave the bar and
+// the starting kit — engineer lines are the only door to masonry. Towers
+// keep direct placement; the seeded depot bags stay; the harness's buildAt
+// door stays for staging.
+{
+  console.log("\n[p6 t3: only engineers build]");
+  const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  ok("T3: the bar has no wall slot", !/key: "wall", label: "WALL"/.test(src));
+  ok("T3: the bar has no sandbag slot", !/key: "sandbag", label: "SANDBAG"/.test(src));
+  ok("T3: no build mode is selected by default", /mode: null, sellMode: false/.test(src));
+  ok("T3: the ground tap guards the tower path on a live mode", /if \(S\.mode && TOWER_SPECS\[S\.mode\]\)/.test(src));
+  ok("T3: the engineer line machinery is untouched (both spawners live)",
+    /spawnWallCourses\(world, row\.x/.test(src) && /spawnSandbag\(world, row\.x, row\.z, orient\);/.test(src));
+  ok("T3: the seeded depot bags are untouched", /spawnSandbag\(world, bx, bz,/.test(src));
+  ok("T3: the harness door stays (buildAt via __DEPOTBUILD__)", /__DEPOTBUILD__ = \(gx, gz, mode\) => buildAt\(gx, gz, mode \|\| "wall"\)/.test(src));
+  ok("T3: the start screen stopped promising the trowel", !/Wall their road/.test(src));
+}
+// ==== end P6 T3 ==============================================================
 
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
