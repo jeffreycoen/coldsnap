@@ -6047,6 +6047,76 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 }
 // ==== end P6 T1 ==============================================================
 
+// ==== P6 T2: stone doesn't murder pedestrians ===============================
+// mk1.11 (Troops & Physics, Task 2). A sleeping stone is not a weapon: under
+// depot combat the ejection out of a standing wall (or settled rubble) can
+// no longer slam a living man dead, and a sleeping stone never counts as
+// burying him. Falling stone kills exactly as before — (b) proves it.
+{
+  console.log("\n[p6 t2: stone doesn't murder pedestrians]");
+  const flatT2 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+
+  // one welded, sleeping three-course stack — a standing wall face
+  const buildStack = (world, x, z) => {
+    const lo = addBody(world, { kind: "chunk", team: 0, mass: 100, hx: 0.4, hy: 0.4, hz: 0.4, x, y: 0.42, z, friction: 0.65, restitution: 0.02 });
+    const mid = addBody(world, { kind: "chunk", team: 0, mass: 100, hx: 0.4, hy: 0.4, hz: 0.4, x, y: 1.25, z, friction: 0.65, restitution: 0.02 });
+    const hi = addBody(world, { kind: "chunk", team: 0, mass: 100, hx: 0.4, hy: 0.4, hz: 0.4, x, y: 2.08, z, friction: 0.65, restitution: 0.02 });
+    addWeld(world, lo, mid, 8.0e4); addWeld(world, mid, hi, 8.0e4);
+    lo.sleeping = true; mid.sleeping = true; hi.sleeping = true;
+    return { lo, mid, hi };
+  };
+
+  // (a) THE WALL KILL DIES: a man pressed into a sleeping wall by his own
+  // side's shoving (deterministic pushes, the cohesion squeeze in miniature)
+  // is ejected but NOT killed. RED before the fix — he dies today.
+  {
+    const world = makeWorld({ field: flatT2, seed: 9 });
+    world.depotCombat = true;
+    buildStack(world, 0, 5);
+    const man = addBody(world, { kind: "unit", team: 1, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 4.5, hp: 58, friction: 0.55 });
+    for (let i = 0; i < 360; i++) {
+      if (i < 180 && i % 24 === 0 && man.alive) { man.v.z = 3.0; } // the squeeze, re-applied
+      stepWorld(world);
+    }
+    ok("T2(a): the man pressed into a sleeping wall SURVIVES", man.alive === true, `alive=${man.alive} hp=${man.alive ? man.hp.toFixed(0) : "dead"}`);
+  }
+
+  // (a2) settled loose rubble is exempt the same way (same three stones,
+  // no welds, still asleep — a settled pile a man is pressed against)
+  {
+    const world = makeWorld({ field: flatT2, seed: 9 });
+    world.depotCombat = true;
+    const r1 = addBody(world, { kind: "chunk", team: 0, mass: 100, hx: 0.4, hy: 0.4, hz: 0.4, x: 0, y: 0.42, z: 5, friction: 0.65, restitution: 0.02 });
+    const r2 = addBody(world, { kind: "chunk", team: 0, mass: 100, hx: 0.4, hy: 0.4, hz: 0.4, x: 0, y: 1.25, z: 5, friction: 0.65, restitution: 0.02 });
+    const r3 = addBody(world, { kind: "chunk", team: 0, mass: 100, hx: 0.4, hy: 0.4, hz: 0.4, x: 0, y: 2.08, z: 5, friction: 0.65, restitution: 0.02 });
+    r1.sleeping = true; r2.sleeping = true; r3.sleeping = true;
+    const man = addBody(world, { kind: "unit", team: 1, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 4.5, hp: 58, friction: 0.55 });
+    for (let i = 0; i < 360; i++) {
+      if (i < 180 && i % 24 === 0 && man.alive) { man.v.z = 3.0; }
+      stepWorld(world);
+    }
+    ok("T2(a2): sleeping loose rubble never killed him and still doesn't (wake exemption needs a live weld)", man.alive === true, `alive=${man.alive}`);
+  }
+
+  // (b) FALLING STONE STILL KILLS (green before AND after — the guard's
+  // honesty check): a freed chunk dropped on a man's head stays lethal.
+  {
+    const world = makeWorld({ field: flatT2, seed: 9 });
+    world.depotCombat = true;
+    const man = addBody(world, { kind: "unit", team: 1, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 5, hp: 58, friction: 0.55 });
+    const rock = addBody(world, { kind: "chunk", team: 0, mass: 100, hx: 0.4, hy: 0.4, hz: 0.4, x: 0, y: 7, z: 5, friction: 0.65, restitution: 0.02 });
+    rock.fallingSince = world.t; // severed mid-collapse, exactly as weldBreakPass stamps it
+    for (let i = 0; i < 600 && man.alive; i++) stepWorld(world);
+    ok("T2(b): falling stone still kills (green first, green after)", man.alive === false, `alive=${man.alive}`);
+  }
+
+  // (d) source pin: the guard exists, gated, in the classifier
+  const csrcT2 = fs.readFileSync(new URL("../src/engine/core.js", import.meta.url), "utf8");
+  ok("T2(d): the sleeping-stone guard exists in classifyImpacts",
+    /SLEEPING STONE IS\s*\n?\s*\/\/ NOT A WEAPON|SLEEPING STONE IS NOT A WEAPON/.test(csrcT2) && /inertStone/.test(csrcT2));
+}
+// ==== end P6 T2 ==============================================================
+
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
   process.exit(1);

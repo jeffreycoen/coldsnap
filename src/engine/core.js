@@ -1710,6 +1710,15 @@ function classifyImpacts(world) {
   const best = new Map(); // victimId -> {dmg, info}
   for (const { victim, other, pn } of agg.values()) {
     const dv = pn * victim.invM;
+    // DIVERGENCE (guarded, mk1.11 — the owner's ruling): A SLEEPING STONE IS
+    // NOT A WEAPON. Under depotCombat, a chunk that is ASLEEP — a standing
+    // wall face, settled rubble — can neither slam a living man dead (the
+    // depenetration ejection read as lethal IMPACT below) nor count as
+    // burying him. It has no motion to kill with. Everything that moves is
+    // untouched: falling stone's clock (fallingSince) is cleared the moment
+    // a chunk sleeps, and a stone genuinely BEARING on a man is kept awake
+    // by the burial line itself — a pinning pile is never asleep.
+    const inertStone = world.depotCombat && other && other.kind === "chunk" && other.sleeping && victim.kind === "unit";
     if (victim.kind === "unit" && other && other.mass > 200 && dv > 1.2) victim.hitT = world.t; // staggered by vehicles/heavy debris; squadmate shoulder-checks don't floor you
     if (victim.kind === "unit" && other && other.kind === "chunk" && other.fallingSince > 0 && world.t - other.fallingSince < 6 && dv > 0.8) victim.hitT = world.t; // flying masonry floors you at any weight
     if (victim.kind === "unit" && other && (other.kind === "vehicle" || other.kind === "mechfoot") && other.pos.y > victim.pos.y + 0.2 && pn > 60) {
@@ -1720,7 +1729,7 @@ function classifyImpacts(world) {
       // fast-forward the corpse's de-solidify clock so the tank settles in ~0.3s
       victim.deadT = Math.min(victim.deadT || world.t, world.t - 3.7);
     }
-    if (victim.kind === "unit" && other && other.kind === "chunk" && pn > 5 &&
+    if (victim.kind === "unit" && other && other.kind === "chunk" && pn > 5 && !inertStone &&
         (victim.R[4] < 0.6 ? other.pos.y > victim.pos.y + 0.2 : other.pos.y > victim.pos.y + victim.hy * 0.55)) {
       victim.buriedNow = true; victim.buriedBy = other.group; // downed: anything on top pins; standing: only head-zone loads count (a shoulder-lean is not a grave)
       other.sleepT = 0; // a stone doesn't doze off on a living man — the pin, and its contacts, persist
@@ -1742,7 +1751,7 @@ function classifyImpacts(world) {
       const att = other.driver === "player" || other.mechRef ? "player" : world.t - other.lastPlayerTouch < 3.5 ? "player" : "world";
       dmg = dv * 18;
       info = { cause: CAUSE.CRUSH, attacker: att, killerId: other.id };
-    } else if (dv > (other && other.kind === "ice" ? 24 : 8)) {
+    } else if (dv > (other && other.kind === "ice" ? 24 : 8) && !inertStone) {
       // DIVERGENCE from the frozen demo (#6d): a live sheet bucking underfoot
       // is not a lethal slam — the welded lattice seesaws under walkers (a
       // motion that could not exist before #6a) and levered plates spiked
