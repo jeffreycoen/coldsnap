@@ -1166,7 +1166,19 @@ export function makeRenderer(canvas, world0, opts = {}) {
   let pendingPad = null, pendingFill = null, pendingEdge = null, pendingAuraRing = null, pendingAuraFill = null;
   let reachFill = null, reachEdge = null;
   let lineGroup = null; // COMMAND T2 (mk0.84): the proposed line's group, rebuilt on endpoint taps only.
+  let retRing = null; // POSSESSION T5 (mk0.94): the possessed reticle's red circle
   const overlay = {
+    // POSSESSION T5 (mk0.94): the possessed reticle — its own red ring, not
+    // the build ghost. Lazy like everything here; the game layer drives it
+    // only while a possession is live.
+    setReticle(on, x, z, y) {
+      if (!retRing) {
+        retRing = new THREE.Mesh(new THREE.RingGeometry(0.82, 1.0, 44), new THREE.MeshBasicMaterial({ color: 0xff6b5e, transparent: true, opacity: 0.85, depthWrite: false }));
+        retRing.rotation.x = -Math.PI / 2; retRing.layers.set(1); scene.add(retRing);
+      }
+      retRing.visible = !!on;
+      if (on) { retRing.position.set(x, y + 0.1, z); retRing.scale.set(1.2, 1.2, 1); }
+    },
     // ghost build cursor: pad snapped to a cell (cs meters), ring/fill at range r
     setHover(on, x, z, y, r, okFlag, cs) {
       if (!hoverPad) {

@@ -1237,13 +1237,15 @@ export default function DepotGame({ onExit, resume = null }) {
         // null. possessInput is the frame's world-space stick vector; joy is
         // the touch stick's own live drag state (DOM handlers below).
         possess: null, possessInput: null, joy: null,
-        // POSSESSION T4 (mk0.93): THE STEERED RETICLE. reticle is the
-        // persistent ground point the right stick steers (touch) or the
-        // mouse positions (desktop) — bounded to the possessed unit's own
-        // sight circle on seen ground; the old tap-aim field is gone. joyR
-        // is the right stick's own live drag state; fireHeld mirrors the FIRE
+        // POSSESSION T4/T5 (mk0.93/0.94): THE CARRIED RETICLE. reticleOff is
+        // the reticle's offset from the possessed unit — the right stick
+        // steers it (touch), the mouse sets it (desktop), and walking
+        // carries it; reticle is the derived world point the guns and the
+        // red ring read, recomputed every possessed frame. Both bounded to
+        // the unit's own sight circle on seen ground. joyR is the right
+        // stick's own live drag state; fireHeld mirrors the FIRE
         // button/pointer state — true while held, read once per sim tick.
-        reticle: null, joyR: null, fireHeld: false,
+        reticle: null, reticleOff: null, joyR: null, fireHeld: false,
         linePending: null, // COMMAND T2 (mk0.84): the proposed line, awaiting accept/reject
         hudT: 0, keys: {}, sellById: null, audio: A,
         // The attacker's economy — seeded off the run's own rng stream, not
@@ -1579,15 +1581,15 @@ export default function DepotGame({ onExit, resume = null }) {
         sq.order = "defend"; sq.dest = null; sq._legTarget = null; sq._pauseT = 0; sq._build = null; sq._threatSig = undefined;
         S.possess = { kind: "squad", id: sq.id };
         S.possessInput = { vx: 0, vz: 0 };
-        // POSSESSION HYGIENE (mk0.91 audit item A, carried to T4): a stale
-        // reticle or a FIRE flag stuck by a mid-hold bell release can never
-        // carry into the next possession — cleared on every take, same as
-        // on release; the reticle is then freshly seeded inside the unit's
-        // own sight circle (a fixed +4 world offset — reclampReticle
-        // legalizes any seed).
+        // POSSESSION HYGIENE (mk0.91 audit item A, carried to T4/T5): a
+        // stale reticle or a FIRE flag stuck by a mid-hold bell release can
+        // never carry into the next possession — cleared on every take, same
+        // as on release; the offset is then freshly seeded 4m ahead
+        // (reclampReticle legalizes any seed) and the world point derived.
         S.fireHeld = false;
         const pc0 = possessCenter();
-        S.reticle = pc0 ? reclampReticle(T.sight, 1, pc0, possessSightR(), { x: pc0.x, z: pc0.z + 4 }, invW) : null;
+        S.reticleOff = pc0 ? reclampReticle(T.sight, 1, pc0, possessSightR(), { dx: 0, dz: 4 }, invW) : null;
+        S.reticle = pc0 && S.reticleOff ? { x: pc0.x + S.reticleOff.dx, z: pc0.z + S.reticleOff.dz } : null;
         S.selSquadId = null; S.orderMode = null; S.buildPt0 = null; S.linePending = null;
         R.overlay.setLinePreview(false);
       };
@@ -1600,7 +1602,8 @@ export default function DepotGame({ onExit, resume = null }) {
         S.possess = { kind: "tower", id: b.id };
         S.fireHeld = false;
         const pc1 = possessCenter();
-        S.reticle = pc1 ? reclampReticle(T.sight, 1, pc1, possessSightR(), { x: pc1.x, z: pc1.z + 4 }, invW) : null;
+        S.reticleOff = pc1 ? reclampReticle(T.sight, 1, pc1, possessSightR(), { dx: 0, dz: 4 }, invW) : null;
+        S.reticle = pc1 && S.reticleOff ? { x: pc1.x + S.reticleOff.dx, z: pc1.z + S.reticleOff.dz } : null;
         S.inspectId = null; S.pieOpen = false;
       };
       S.releasePossession = () => {
@@ -1608,10 +1611,11 @@ export default function DepotGame({ onExit, resume = null }) {
         const wasSquad = S.possess.kind === "squad";
         const sq = wasSquad ? S.squads.find((q) => q.id === S.possess.id) : null;
         S.possess = null; S.possessInput = null;
-        // POSSESSION HYGIENE (mk0.91 audit item A, carried to T4): the same
-        // stale-trigger clear, on every release — the reticle dies with the
-        // possession, fireHeld can't stick from a mid-hold bell release.
-        S.reticle = null; S.fireHeld = false;
+        // POSSESSION HYGIENE (mk0.91 audit item A, carried to T4/T5): the
+        // same stale-trigger clear, on every release — the reticle and its
+        // offset die with the possession, fireHeld can't stick from a
+        // mid-hold bell release.
+        S.reticle = null; S.reticleOff = null; S.fireHeld = false;
         if (sq) {
           // released where you left them: dig in — the intrinsic default
           sq.order = "defend"; sq.dest = null; sq._legTarget = null; sq._threatSig = undefined;
@@ -2196,7 +2200,10 @@ export default function DepotGame({ onExit, resume = null }) {
       // alongside the assault's results (fireBell books those): green ground
       // pays the player, red ground pays the regiment, seam ground nobody.
       const ringBell = () => {
-        if (S.possess) S.releasePossession(); // POSSESSION (P4 T1, mk0.90): a bell save never carries a possession
+        // POSSESSION T5 (mk0.94), REVERSING the mk0.90 rule by the owner's
+        // playtest ruling: the bell does NOT release possession — the round
+        // changes under your hands. The save it writes still never carries
+        // one (serializeFront never reads S.possess; pinned by T1(c)/(d)).
         cue("bell"); // the toll itself, at the ring — before anything it causes
         const paid = payTown(townUV, T);
         S.resources += paid.player;
@@ -2714,18 +2721,20 @@ export default function DepotGame({ onExit, resume = null }) {
             if (ptw) { S.focus.x = ptw.pos.x; S.focus.z = ptw.pos.z; S.focus.y = field.heightAt(S.focus.x, S.focus.z); }
           }
           if (S.possess) {
-            // POSSESSION T4 (mk0.93): THE STEERED RETICLE. The right stick
-            // wins if it's live (steerReticle — deflection is velocity, it
-            // stays put on release), same precedence the left stick uses
-            // (S.joy.active above); otherwise the mouse IS the reticle, the
+            // POSSESSION T4/T5 (mk0.93/0.94): THE CARRIED RETICLE. The right
+            // stick wins if it's live (steerReticle — deflection is
+            // velocity, the OFFSET holds on release, so walking carries the
+            // reticle with the unit), same precedence the left stick uses
+            // (S.joy.active above); otherwise the mouse sets the offset, the
             // sandbox's own convention (ContractSandbox.jsx :413-419/:530) —
-            // positional, not velocity. Either way the reticle is dragged
-            // back inside the possessed unit's live sight circle every
-            // frame (reclampReticle) — the unit walks, the reticle follows;
-            // its ground can go dark and it falls home to the unit's cell.
+            // positional, not velocity. Either way the offset is bounded to
+            // the possessed unit's live sight circle every frame
+            // (reclampReticle); its ground can go dark and it falls home to
+            // the unit's cell. The world point the guns and the red ring
+            // read is derived last.
             const rc = possessCenter();
             const rR = possessSightR();
-            if (rc && S.reticle) {
+            if (rc && S.reticleOff) {
               if (S.joyR && S.joyR.active) {
                 const cb3 = R.camBasis;
                 const fl3 = Math.hypot(cb3.up.x, cb3.up.z) || 1, rl3 = Math.hypot(cb3.right.x, cb3.right.z) || 1;
@@ -2733,12 +2742,13 @@ export default function DepotGame({ onExit, resume = null }) {
                   vx: (cb3.right.x / rl3) * S.joyR.s + (cb3.up.x / fl3) * S.joyR.t,
                   vz: (cb3.right.z / rl3) * S.joyR.s + (cb3.up.z / fl3) * S.joyR.t,
                 };
-                S.reticle = steerReticle(T.sight, 1, rc, rR, S.reticle, rv.vx, rv.vz, dt, invW);
+                S.reticleOff = steerReticle(T.sight, 1, rc, rR, S.reticleOff, rv.vx, rv.vz, dt, invW);
               } else if (!isTouch && S.pointer) {
                 const gp = groundPoint(S.pointer.x, S.pointer.y);
-                if (gp) S.reticle = gp;
+                if (gp) S.reticleOff = { dx: gp.x - rc.x, dz: gp.z - rc.z };
               }
-              S.reticle = reclampReticle(T.sight, 1, rc, rR, S.reticle, invW);
+              S.reticleOff = reclampReticle(T.sight, 1, rc, rR, S.reticleOff, invW);
+              S.reticle = { x: rc.x + S.reticleOff.dx, z: rc.z + S.reticleOff.dz };
             }
           }
           if (!isTouch && S.pointer && S.started && !S.gameOver && !S.victory && !S.pending) {
@@ -2897,15 +2907,14 @@ export default function DepotGame({ onExit, resume = null }) {
           A.setListener(S.focus.x, S.focus.z, 46 / Math.max(0.6, S.zoom));
           A.consume(evs);
           A.tick(world, dt);
-          if (S.possess && S.reticle) {
-            // POSSESSION T4 (mk0.93): the reticle ring rides the SAME hover
-            // overlay every other ghost/reach ring uses — always GREEN now.
-            // The reticle cannot exist on dark ground by construction
-            // (steerReticle/reclampReticle enforce that every frame), so the
-            // red state dies with the old tap-aim field. Squad and tower share the ring.
-            R.overlay.setHover(true, S.reticle.x, S.reticle.z, field.heightAt(S.reticle.x, S.reticle.z), 0, true, 1.2);
-          }
-          else if (S.hover) {
+          // POSSESSION T5 (mk0.94): the reticle draws through its own red
+          // ring (the owner's ruling — a red circle, not the build ghost's
+          // square), and the build hover never paints while possessed.
+          // Squad and tower share the ring.
+          R.overlay.setReticle(!!(S.possess && S.reticle),
+            S.reticle ? S.reticle.x : 0, S.reticle ? S.reticle.z : 0,
+            S.reticle ? field.heightAt(S.reticle.x, S.reticle.z) : 0);
+          if (!S.possess && S.hover) {
             // Sandbag ghost: oriented footprint read LIVE each frame — the
             // toggle (and auto-continue near an existing line) re-renders the
             // preview immediately, never a cached orientation.

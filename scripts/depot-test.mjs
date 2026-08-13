@@ -4463,16 +4463,16 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
       !/S\.possess/.test(dsaveSrc));
   }
 
-  // (d) source pin: ringBell releases possession, and does so BEFORE
-  // saveFront — the ratified rule that no save ever carries a possession.
+  // (d) source pin, REVERSED by the owner's mk0.93 playtest ruling (T5,
+  // mk0.94): the bell no longer releases possession — you keep the unit
+  // through the round change. The save it writes still carries no
+  // possession: T1(c) above proves that with a live possession at save time.
   {
     const ringBellBody = (dsrc.match(/const ringBell = \(\) => \{[\s\S]*?\n      \};/) || [""])[0];
-    ok("POSSESSION T1(d): ringBell's first line releases any live possession",
-      /^const ringBell = \(\) => \{\s*\n\s*if \(S\.possess\) S\.releasePossession\(\);/.test(ringBellBody), ringBellBody.slice(0, 80));
-    const relIdx = ringBellBody.indexOf("S.releasePossession();");
-    const saveIdx = ringBellBody.indexOf("saveFront();");
-    ok("POSSESSION T1(d): the release runs before saveFront",
-      relIdx >= 0 && saveIdx >= 0 && relIdx < saveIdx, `rel=${relIdx} save=${saveIdx}`);
+    ok("POSSESSION T1(d): ringBell no longer releases possession — the bell keeps your hands on the unit",
+      ringBellBody.length > 0 && !ringBellBody.includes("releasePossession"), ringBellBody.slice(0, 80));
+    ok("POSSESSION T1(d): the bell still writes the save",
+      ringBellBody.includes("saveFront();"));
   }
 
   // (e) zero new rng draws while driving: player input is not a replayed
@@ -4612,11 +4612,11 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     const gameSrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     const takeControlBody = (gameSrc.match(/S\.takeControl = \(\) => \{[\s\S]*?\n      \};/) || [""])[0];
     const releaseBody = (gameSrc.match(/S\.releasePossession = \(\) => \{[\s\S]*?\n      \};/) || [""])[0];
-    ok("POSSESSION T4 audit item A source pin (re-pinned from T2): S.takeControl clears fireHeld and seeds a fresh S.reticle",
-      /S\.fireHeld = false;/.test(takeControlBody) && /S\.reticle = pc0 \? reclampReticle\(T\.sight, 1, pc0, possessSightR\(\), \{ x: pc0\.x, z: pc0\.z \+ 4 \}, invW\) : null;/.test(takeControlBody),
+    ok("POSSESSION T4 audit item A source pin (re-pinned from T2): S.takeControl clears fireHeld and seeds a fresh offset reticle",
+      /S\.fireHeld = false;/.test(takeControlBody) && /S\.reticleOff = pc0 \? reclampReticle\(T\.sight, 1, pc0, possessSightR\(\), \{ dx: 0, dz: 4 \}, invW\) : null;/.test(takeControlBody),
       takeControlBody.length);
-    ok("POSSESSION T4 audit item A source pin (re-pinned from T2): S.releasePossession clears reticle/fireHeld",
-      /S\.reticle = null; S\.fireHeld = false;/.test(releaseBody), releaseBody.length);
+    ok("POSSESSION T4 audit item A source pin (re-pinned from T2): S.releasePossession clears reticle/offset/fireHeld",
+      /S\.reticle = null; S\.reticleOff = null; S\.fireHeld = false;/.test(releaseBody), releaseBody.length);
   }
 }
 // ==== end POSSESSION T2 =======================================================
@@ -4775,10 +4775,10 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   // second of stick tilt — a flat, fully-lit sight map, 1s at full tilt.
   {
     const T = litTerritory();
-    const r = steerReticle(T.sight, 1, { x: 0, z: 0 }, 50, { x: 0, z: 0 }, 0, 1, 1, idUV);
-    ok("POSSESSION T4(a): steerReticle moves RETICLE_SPEED (14) m in 1s at full tilt",
-      RETICLE_SPEED === 14 && Math.abs(r.x - 0) < 0.01 && Math.abs(r.z - 14) < 0.01,
-      `r=(${r.x.toFixed(2)},${r.z.toFixed(2)})`);
+    const r = steerReticle(T.sight, 1, { x: 0, z: 0 }, 50, { dx: 0, dz: 0 }, 0, 1, 1, idUV);
+    ok("POSSESSION T4(a): steerReticle moves the offset RETICLE_SPEED (14) m in 1s at full tilt",
+      RETICLE_SPEED === 14 && Math.abs(r.dx - 0) < 0.01 && Math.abs(r.dz - 14) < 0.01,
+      `r=(${(r.dx ?? NaN).toFixed(2)},${(r.dz ?? NaN).toFixed(2)})`);
   }
 
   // (b) the sight-circle clamp holds: steering hard away for 3s from a 24m
@@ -4786,14 +4786,14 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   {
     const T = litTerritory();
     const center = { x: 0, z: 0 }, radius = 24;
-    let cur = { x: 0, z: 0 };
+    let cur = { dx: 0, dz: 0 };
     let worstD = 0;
     for (let i = 0; i < 30; i++) {
       cur = steerReticle(T.sight, 1, center, radius, cur, 1, 0, 0.1, idUV);
-      const d = Math.hypot(cur.x - center.x, cur.z - center.z);
+      const d = Math.hypot(cur.dx ?? NaN, cur.dz ?? NaN);
       if (d > worstD) worstD = d;
     }
-    const finalD = Math.hypot(cur.x - center.x, cur.z - center.z);
+    const finalD = Math.hypot(cur.dx ?? NaN, cur.dz ?? NaN);
     ok("POSSESSION T4(b): steering hard away for 3s never carries the reticle past the 24m sight circle",
       worstD <= radius + 1e-6, `worstD=${worstD.toFixed(4)}`);
     ok("POSSESSION T4(b): the reticle sits ON the circle at the end of the 3s steer",
@@ -4805,20 +4805,27 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   // last (lit) position, unchanged.
   {
     const T = bandTerritory(-29, 8);
-    const cur = { x: 0, z: 0 };
+    const cur = { dx: 0, dz: 0 };
     const r = steerReticle(T.sight, 1, { x: 0, z: 0 }, 50, cur, 1, 0, 1, idUV);
     ok("POSSESSION T4(c): steering into an unseen cell leaves the reticle exactly where it was",
-      r.x === cur.x && r.z === cur.z, `r=(${r.x},${r.z})`);
+      r.dx === cur.dx && r.dz === cur.dz, `r=(${r.dx},${r.dz})`);
   }
 
-  // (d) reclampReticle drags a left-behind reticle back inside the circle as
-  // the possessed unit's center moves — fully lit map, no sight refusal in
-  // play, just the walk-drag geometry.
+  // (d) the carry law (T5, mk0.94, replacing the old drag-behind test): the
+  // reticle is an OFFSET from the unit — a lit, in-circle offset survives
+  // the walk unchanged (the reticle is carried), and an oversized one is
+  // pulled to the circle's edge, direction kept.
   {
     const T = litTerritory();
-    const r = reclampReticle(T.sight, 1, { x: 20, z: 0 }, 10, { x: 0, z: 0 }, idUV);
-    ok("POSSESSION T4(d): reclampReticle drags a left-behind reticle to the edge of the moved circle",
-      Math.abs(r.x - 10) < 0.01 && Math.abs(r.z - 0) < 0.01, `r=(${r.x.toFixed(2)},${r.z.toFixed(2)})`);
+    const off = reclampReticle(T.sight, 1, { x: 20, z: 0 }, 10, { dx: 0, dz: 8 }, idUV);
+    ok("POSSESSION T4(d): a lit, in-circle offset survives the walk unchanged — the reticle is carried",
+      Math.abs(off.dx - 0) < 0.01 && Math.abs(off.dz - 8) < 0.01, `off=(${(off.dx ?? NaN).toFixed(2)},${(off.dz ?? NaN).toFixed(2)})`);
+    // (center at the origin: a center of x=20 would put the clamped point at
+    // u=30, off the 29-wide sight map — out-of-bounds reads as dark and the
+    // offset would fall home, testing the map edge instead of the clamp)
+    const far = reclampReticle(T.sight, 1, { x: 0, z: 0 }, 10, { dx: 25, dz: 0 }, idUV);
+    ok("POSSESSION T4(d): an oversized offset is pulled to the circle's edge, direction kept",
+      Math.abs(far.dx - 10) < 0.01 && Math.abs(far.dz - 0) < 0.01, `far=(${(far.dx ?? NaN).toFixed(2)},${(far.dz ?? NaN).toFixed(2)})`);
   }
 
   // (e) stranded-on-dark falls back to the center: the reclamped point on
@@ -4827,9 +4834,9 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   // center — the unit's own eye lights it).
   {
     const T = bandTerritory(-2, 2);
-    const r = reclampReticle(T.sight, 1, { x: 0, z: 0 }, 10, { x: 50, z: 0 }, idUV);
-    ok("POSSESSION T4(e): a reclamp that would land on dark ground falls all the way back to the unit's own center",
-      r.x === 0 && r.z === 0, `r=(${r.x},${r.z})`);
+    const r = reclampReticle(T.sight, 1, { x: 0, z: 0 }, 10, { dx: 50, dz: 0 }, idUV);
+    ok("POSSESSION T4(e): a reclamp that would land on dark ground falls all the way back to the unit",
+      r.dx === 0 && r.dz === 0, `r=(${r.dx},${r.dz})`);
   }
 
   // (f) source pin: both fire paths read S.reticle, and possessAim appears
@@ -4851,13 +4858,32 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     ok("POSSESSION T4(g) source pin: DepotGame.jsx imports steerReticle/reclampReticle from sight.js",
       /import \{[^}]*steerReticle[^}]*reclampReticle[^}]*\} from "\.\/sight\.js"/.test(gameSrc) ||
       /import \{[^}]*reclampReticle[^}]*steerReticle[^}]*\} from "\.\/sight\.js"/.test(gameSrc));
-    ok("POSSESSION T4(g) source pin: the frame loop calls steerReticle(...) to steer the reticle",
-      /S\.reticle = steerReticle\(T\.sight, 1, rc, rR, S\.reticle, rv\.vx, rv\.vz, dt, invW\);/.test(gameSrc));
-    ok("POSSESSION T4(g) source pin: the frame loop calls reclampReticle(...) for the walk-drag",
-      /S\.reticle = reclampReticle\(T\.sight, 1, rc, rR, S\.reticle, invW\);/.test(gameSrc));
+    ok("POSSESSION T4(g) source pin: the frame loop steers the OFFSET through steerReticle",
+      /S\.reticleOff = steerReticle\(T\.sight, 1, rc, rR, S\.reticleOff, rv\.vx, rv\.vz, dt, invW\);/.test(gameSrc));
+    ok("POSSESSION T4(g) source pin: the walk-carry runs through reclampReticle and derives the world point",
+      /S\.reticleOff = reclampReticle\(T\.sight, 1, rc, rR, S\.reticleOff, invW\);/.test(gameSrc) &&
+      /S\.reticle = \{ x: rc\.x \+ S\.reticleOff\.dx, z: rc\.z \+ S\.reticleOff\.dz \};/.test(gameSrc));
   }
 }
 // ==== end POSSESSION T4 =======================================================
+
+// ==== POSSESSION T5: the red carried reticle, the bell keeps your hands =====
+// mk0.94 (Phase 4 Task 5, playtest amendment). The reticle is an offset from
+// the unit — walking carries it — and draws as its own red ring, not the
+// build ghost's square. The bell no longer ends possession (reversal pinned
+// in T1(d) above). JSX/renderer wiring pinned by source regex, T1-T3's own
+// convention.
+{
+  const gameSrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  const rendSrc = fs.readFileSync(new URL("../src/render/renderer.js", import.meta.url), "utf8");
+  ok("POSSESSION T5(a) source pin: the renderer owns a setReticle overlay drawn in the established red",
+    /setReticle\(on, x, z, y\)/.test(rendSrc) && /0xff6b5e/.test(String(rendSrc.match(/setReticle\(on, x, z, y\) \{[\s\S]*?\n    \},/) || "")));
+  ok("POSSESSION T5(b) source pin: the possessed ring renders through setReticle, not the build ghost's setHover",
+    /R\.overlay\.setReticle\(/.test(gameSrc) && !/S\.possess && S\.reticle[\s\S]{0,400}setHover/.test(gameSrc));
+  ok("POSSESSION T5(c) source pin: the build hover never paints while possessed",
+    /!S\.possess && S\.hover/.test(gameSrc));
+}
+// ==== end POSSESSION T5 =====================================================
 
 
 
