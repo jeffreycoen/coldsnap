@@ -98,7 +98,8 @@
 - Manifest/intel card layout wrinkles at 960px and narrow phones.
 
 **Open/owed:**
-- CURRENT (2026-08-13): prod mk1.05. THE FRONT's six tasks are ALL SHIPPED (mk1.00–mk1.05, ship lines above); the phase awaits the owner's playtest to close. Next phase after his verdict: TROOPS & PHYSICS (P6) — its deferral list lives in the phase plan and the P6 lines above.
+- PLAYTEST VERDICT (owner, 2026-08-13): "this phase is good" — THE FRONT is CLOSED at mk1.05 (six tasks, mk1.00–mk1.05).
+- CURRENT (2026-08-13): prod mk1.05. THE FRONT CLOSED (owner's verdict, above). Next phase: TROOPS & PHYSICS (P6) — design questions before any plan; its Task 1 commit carries the roadmap flip (The Front → DONE, Troops & Physics → IN PROGRESS) per the fold-in convention. P6's queue: the singles unit model (sniper pair kept), the selection UI, combat re-tuning, the body-lists resurrection (quieter measurement protocol first), the bell-market pricing (design ratified above), the weld-scan sleep skip, and squad path-routing around water (polish ledger).
 - Owner rulings still open: tower friendly-fire safety off while possessed (ratify by play); possessed squad pace (~2.1 m/s sustained, rear man on the 6m band) — accept or possessed members outpace the anchor.
 - PLAYTEST VERDICT (owner, 2026-08-12): Polish I, Vision, and the halt-and-fight fix (mk0.74) all passed — "seems okay." Both phases CLOSED. Next phase: Command (radial orders).
 - Mid-march stall: squads freeze short of their destination near masonry before any contact (pre-existing pathing, cohesion/detour family) — surfaced again in the mk0.74 staging runs; unranked by the owner.
