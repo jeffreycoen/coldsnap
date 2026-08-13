@@ -168,6 +168,22 @@
 }
 // ==== end P6 T4 ==============================================================
 ```
+## AMENDMENT 1 (owner's ruling, 2026-08-13) — spent means no men too
+
+*Found in execution: the 90-per-bell stipend makes scrap-paralysis unreachable, which killed the "offensive spent" intel observation and its three fixtures (they empty the regiment's MEN, and relied on the old stipend sitting under the muster floor). And the mk1.12-re-pinned WALL_COST test pins the exact cost line Step 4d rewrites. Rulings:*
+
+**Step A1-1.** `src/depot/state.js`, the starved detector (~1416): the condition gains the manpower path —
+```js
+  const starved = ws.fielded === 0 && (ws.musterScrap < MIN_WAVE_FLOOR || (S.reg && S.reg.heads <= 0 && S.reg.tanks <= 0));
+```
+(match the live variable names at the site; the shape is: fielded nobody AND (scrap under the floor OR no men and no tanks left). The comment beside it says: "spent is spent — a regiment with no men is as done as one with no money; the scrap path stays for form though the clock stipend keeps it funded.")
+
+**Step A1-2.** The three fixtures (~395, ~457, ~2626) re-pin to the manpower path: their setups already zero the heads — they now also zero the tanks where they don't, and their assert texts gain "(re-pinned mk1.13 — spent by manpower)". Their assertions' SHAPE (one observation, once, digit-free) is unchanged.
+
+**Step A1-3.** The mk0.50/3 WALL_COST pin (~2941) regex becomes `/spec \? priceNow\(mode, spec\.cost\) : WALL_COST/`, text noting the mk1.13 re-aim (the live price rides the spec path; the harness fallback still pays WALL_COST).
+
+*The expected re-pin count for this task is now EIGHT (the four named plus these four: three fixtures and the WALL_COST pin).*
+
 **Step 2 — the module.** Create `src/depot/market.js`:
 ```js
 // COLDSNAP DEPOT — market.js: the living market (mk1.13, owner's rulings).
