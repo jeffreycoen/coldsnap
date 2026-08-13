@@ -5849,6 +5849,75 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 }
 // ==== end FRONT T5 ===========================================================
 
+// ==== FRONT T6: the keystone and the quiet books =============================
+// mk1.05 (The Front, Task 6). The broadphase learns two tiers (sleeping and
+// zero-mass bodies file once and stay filed); the physics must not move by
+// one bit. This block pins a heavy real-map battle's exact world hash and
+// draw count BEFORE the engine change — the change must reproduce both.
+{
+  console.log("\n[front t6: the keystone and the quiet books]");
+  const T6_HASH = 2061472628;   // filled at Step 1 from the printed capture
+  const T6_DRAWS = 551;  // filled at Step 1 from the printed capture
+  const src6 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  const sliceFn6 = (name) => {
+    const start = src6.indexOf(`\nfunction ${name}(`);
+    if (start < 0) throw new Error("T6 extract: missing function " + name);
+    const rest = src6.slice(start + 1);
+    const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
+    return rest.slice(0, m < 0 ? rest.length : m + 9);
+  };
+  const header6 = src6.slice(src6.indexOf("const GRID_CS"), src6.indexOf("function genMap"));
+  const mapSrc6 = [
+    header6,
+    sliceFn6("genMap"), sliceFn6("makeMap"), sliceFn6("streamAt"), sliceFn6("planTrees"),
+    sliceFn6("pondAt"), sliceFn6("rockAt"),
+    sliceFn6("makeGrid"), sliceFn6("checkConnectivity"), sliceFn6("townFootprint"), sliceFn6("buildTown"),
+    sliceFn6("buildDepotTerrain"),
+    `return { makeMap, makeGrid, buildTown, buildDepotTerrain, invW, fwdU,
+      state: () => ({ ORIENT, TOWN, MAP_SEED }) };`,
+  ].join("\n");
+  const M6 = new Function(
+    "mulberry32", "MASON", "fwdUFor", "fwdDirFor", "invWFor", "addBody", "addWeld", mapSrc6,
+  )(mulberry32, MASON, fwdUFor, fwdDirFor, invWFor, addBody, addWeld);
+
+  M6.makeMap(4242);
+  const st6 = M6.state();
+  const field6 = makeField(121, 2.0, st6.MAP_SEED);
+  M6.buildDepotTerrain(field6, st6.MAP_SEED);
+  const world = makeWorld({ field: field6, seed: 4242 });
+  world._tdStruct = true; world.depotCombat = true;
+  M6.buildTown(world, M6.makeGrid(null), field6);
+  let draws = 0; const raw6 = world.rng;
+  world.rng = () => { draws++; return raw6(); };
+  // the battle: a squad marching through town, eight conscripts on a straight
+  // flow, six shells into the biggest building — collapse, contacts, corpses.
+  const big6 = st6.TOWN.filter((t) => !t.depot).sort((a, b) => b.nx * b.nz - a.nx * a.nz)[0];
+  const sq6 = makeSquad(1, "rifles", 1, big6.x - 20, big6.z);
+  spawnSquadMembers(world, sq6);
+  sq6.order = "move"; sq6.dest = { x: big6.x + 20, z: big6.z };
+  for (let i = 0; i < 8; i++) spawnUnit(world, { x: big6.x - 24 + i * 2, z: big6.z - 18 }, "");
+  for (let s = 0; s < 6; s++) {
+    const from = { x: big6.x - 12, y: field6.heightAt(big6.x, big6.z) + 6, z: big6.z + (s - 2.5) * 1.2 };
+    fireProjectile(world, from, { x: 0.86, y: -0.5, z: 0 }, 60,
+      { kind: "shell", r: 3.2, kv: 12, dmg: 55, crater: 0.6, hitStruct: true, attacker: "player" });
+  }
+  for (let i = 0; i < 1200; i++) {
+    stepSquad(world, sq6, 1 / 120);
+    stepUnits(world, straightGrid(0, 1), identFwdDir, null, (x, z) => ({ u: x, v: z }));
+    stepWorld(world);
+  }
+  const h6 = worldHash(world);
+  console.log(`[t6 keystone] hash=${h6} draws=${draws}`);
+  ok("T6: the keystone battle broke real welds (the fixture fights)", world.welds.filter((w) => w.broken).length > 20, `${world.welds.filter((w) => w.broken).length} broken`);
+  ok("T6 KEYSTONE: world hash identical before and after the quiet books", h6 === T6_HASH, `${h6} vs pinned ${T6_HASH}`);
+  ok("T6 KEYSTONE: draw count identical before and after", draws === T6_DRAWS, `${draws} vs pinned ${T6_DRAWS}`);
+  // source pins: the two-tier books exist where claimed
+  const csrc6 = fs.readFileSync(new URL("../src/engine/core.js", import.meta.url), "utf8");
+  ok("T6: the persistent tier exists in the engine", /the sleeping stone is already on the books/.test(csrc6));
+  ok("T6: the unfile helper exists beside wake", /function unfileBody\(world, b\)/.test(csrc6));
+}
+// ==== end FRONT T6 ===========================================================
+
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
   process.exit(1);

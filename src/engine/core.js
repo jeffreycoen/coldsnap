@@ -173,6 +173,7 @@ export function makeBody(o) {
     driver: o.driver || null, group: o.group || "",
     friction: o.friction != null ? o.friction : 0.6, restitution: o.restitution != null ? o.restitution : 0.05,
     home: null,
+    _filed: false, _cells: null, // T6 (mk1.05): the broadphase's persistent tier (see collectContacts)
   };
   qToR(b.q, b.R);
   invInertiaWorld(b.R, b.invIb, b.invIw);
@@ -180,6 +181,21 @@ export function makeBody(o) {
 }
 function bodySpeed2(b) { return V.len2(b.v); }
 function wake(b) { if (b.sleeping) { b.sleeping = false; } b.sleepT = 0; }
+// T6 (mk1.05): pull a body off the persistent broadphase books (see
+// collectContacts). Called by the filing pass when a filed body has woken,
+// and by the engine's own corpse removal. Game-layer removals have no hook —
+// the pair walk validates filed entries by identity and prunes ghosts lazily.
+function unfileBody(world, b) {
+  if (!b._filed) return;
+  const bp = world._bp;
+  if (bp && b._cells) for (const key of b._cells) {
+    const cell = bp.get(key);
+    if (!cell) continue;
+    const i = cell.stat.indexOf(b);
+    if (i >= 0) cell.stat.splice(i, 1);
+  }
+  b._filed = false; b._cells = null;
+}
 
 // -------------------------------------------------------------- SAT (boxes)
 // qu3e-style: face axes of A and B + 9 edge crosses, face-clip manifold.
@@ -1342,29 +1358,45 @@ export function recoverBison(world) {
 
 // ------------------------------------------------------------------ solver
 const _scratchOut = new Array(8);
+const _bpMerged = [];
 function collectContacts(world) {
   const bodies = world.bodies, contacts = world.contacts;
   contacts.length = 0;
-  // broadphase: uniform grid over XZ — persistent + epoch-stamped, so steady
-  // state allocates nothing (fresh Maps/arrays per step were feeding the GC
-  // pauses that read as random 60ms spikes)
+  // broadphase: uniform grid over XZ, TWO TIERS (T6, mk1.05). Sleeping and
+  // zero-mass bodies file ONCE (stat, sorted by birth order) and stay on the
+  // books until they wake or die; moving bodies re-file each step (dyn,
+  // epoch-stamped). The pair walk merges the tiers back into birth order,
+  // so the solver meets the identical contact sequence the one-tier grid
+  // produced — byte-identical physics, proven by golden and the T6 keystone.
   const cell = 6.0;
-  if (!world._grid) { world._grid = new Map(); world._gridEpoch = 0; }
-  const grid = world._grid, epoch = ++world._gridEpoch;
+  if (!world._bp) { world._bp = new Map(); world._bpEpoch = 0; }
+  const grid = world._bp, epoch = ++world._bpEpoch;
   for (let i = 0; i < bodies.length; i++) {
     const b = bodies[i];
     if (b.pinned) continue;
     if (b.kind === "unit" && !b.alive && world.t - (b.deadT || 0) > 4) continue;
+    const still = b.sleeping || b.invM === 0;
+    if (still && b._filed) continue; // T6: the sleeping stone is already on the books
+    if (!still && b._filed) unfileBody(world, b); // woke since it was filed
     const r = Math.max(b.hx, b.hy, b.hz);
     const x0 = Math.floor((b.pos.x - r) / cell), x1 = Math.floor((b.pos.x + r) / cell);
     const z0 = Math.floor((b.pos.z - r) / cell), z1 = Math.floor((b.pos.z + r) / cell);
+    if (still) b._cells = [];
     for (let gx = x0; gx <= x1; gx++) for (let gz = z0; gz <= z1; gz++) {
       const key = gx * 73856093 ^ gz * 19349663;
-      let arr = grid.get(key);
-      if (!arr) { arr = []; arr.epoch = epoch; grid.set(key, arr); }
-      else if (arr.epoch !== epoch) { arr.length = 0; arr.epoch = epoch; }
-      arr.push(b);
+      let c = grid.get(key);
+      if (!c) { c = { stat: [], dyn: [], epoch: 0 }; grid.set(key, c); }
+      if (still) {
+        let k = c.stat.length; // sorted insert by seq — the merge replays body-array order
+        while (k > 0 && c.stat[k - 1].seq > b.seq) k--;
+        c.stat.splice(k, 0, b);
+        b._cells.push(key);
+      } else {
+        if (c.epoch !== epoch) { c.dyn.length = 0; c.epoch = epoch; }
+        c.dyn.push(b);
+      }
     }
+    if (still) b._filed = true;
   }
   // welded-pair exclusion set: static between weld changes, cached (rebuilding
   // from 1600 welds at 120Hz was pure per-step garbage)
@@ -1389,10 +1421,31 @@ function collectContacts(world) {
   const wakeExempt = (s, mover) =>
     world.depotCombat && s.kind === "chunk" && mover.mass < 200 && weldedAsleep(s);
   const seen = new Set();
-  for (const arr of grid.values()) {
-    if (arr.epoch !== epoch || arr.length < 2) continue;
-    for (let i = 0; i < arr.length; i++) for (let j = i + 1; j < arr.length; j++) {
-      let a = arr[i], b = arr[j];
+  const merged = _bpMerged;
+  for (const c of grid.values()) {
+    const dyn = c.epoch === epoch ? c.dyn : null;
+    if (!dyn || !dyn.length) continue; // a cell of only sleeping stone does no work at all
+    const stat = c.stat;
+    merged.length = 0;
+    let si = 0, di = 0;
+    while (si < stat.length || di < dyn.length) {
+      let pick;
+      if (di >= dyn.length || (si < stat.length && stat[si].seq < dyn[di].seq)) {
+        pick = stat[si++];
+        // lazy ghost pruning: the game layer removes bodies with no hook here
+        if (world.byId.get(pick.id) !== pick) { si--; stat.splice(si, 1); continue; }
+        // the corpse rule, same as the filing pass above
+        if (pick.kind === "unit" && !pick.alive && world.t - (pick.deadT || 0) > 4) continue;
+      } else pick = dyn[di++];
+      merged.push(pick);
+    }
+    if (merged.length < 2) continue;
+    for (let i = 0; i < merged.length; i++) for (let j = i + 1; j < merged.length; j++) {
+      let a = merged[i], b = merged[j];
+      // both on the books = both sleeping and/or both zero-mass: the old walk
+      // skipped both-sleeping and both-zero-mass below; the mixed case wrote
+      // nothing to anything — dropped, the one stated (inert) delta.
+      if (a._filed && b._filed) continue;
       if (a.sleeping && b.sleeping) continue;
       if (a.invM === 0 && b.invM === 0) continue;
       if (a.kind === "anchor" || b.kind === "anchor") continue; // rim pins are pure weld posts — the tank drives THROUGH the shore line, it doesn't park on it
@@ -1850,6 +1903,7 @@ function stepStatus(world) {
         if (Math.abs(o.pos.x - b.pos.x) > o.hx + b.hx + 0.3 || Math.abs(o.pos.z - b.pos.z) > o.hz + b.hz + 0.3) continue;
         wake(o);
       }
+      unfileBody(world, b); // T6: the engine's own removals leave the books clean
       world.byId.delete(b.id); world.bodies.splice(i, 1);
     }
   }
