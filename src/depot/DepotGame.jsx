@@ -54,6 +54,7 @@ const clampToRim = (x, z) => clampToRimFor(ORIENT, x, z, RIM_HALF_U, RIM_HALF_V)
 let OBJ_POS = { x: 0, z: 49 };
 let SPAWN_POINTS = [], PONDS = [], ROCKS = [], TOWN = [], ROADS = [], PASSES = [], BANDS = [], MAP_SEED = 0, SPAWN_U = [];
 let STREAM = null; // T3: { pts:[{u,v}...], w, v, bridgeU } — canonical, regrown from seed
+let HILLS = []; // T5: [{u, v, r, h}...] — canonical, regrown from seed
 
 function genMap(seed) {
   const r = mulberry32(seed);
@@ -149,6 +150,20 @@ function genMap(seed) {
     if (ponds.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 6)) continue;
     if (Math.abs(z - streamV) < rad + 10) continue; // T3: ponds stay clear of the stream
     ponds.push({ x, z, r: rad, level: 0 });
+  }
+  // T5: THE HIGH GROUND (owner's rulings: 1-3 hills, never zero; overlook
+  // allowed — only the stream, ponds and roads push a hill away). Canonical
+  // coords like the stream; buildDepotTerrain lifts them in its own frame.
+  const hills = [];
+  const nHills = 1 + Math.floor(r() * 3);
+  for (let k = 0, placed = 0; k < 60 && placed < nHills; k++) {
+    const hu = -48 + r() * 96, hv = -46 + r() * 88;
+    const hr = 10 + r() * 5, hh = 3 + r() * 2;
+    if (Math.abs(hv - streamV) < hr + 10) continue;
+    if (ponds.some((q) => Math.hypot(hu - q.x, hv - q.z) < q.r + hr * 0.7 + 4)) continue;
+    if (roadDist(hu, hv) < hr * 0.7 + 4) continue;
+    hills.push({ u: hu, v: hv, r: hr, h: hh });
+    placed++;
   }
   const TPL = [
     { t: "croft", nx: 4, nz: 3, ny: 3 }, { t: "house", nx: 6, nz: 5, ny: 4, cols: true },
@@ -263,7 +278,7 @@ function genMap(seed) {
   for (const sp of spawns) T(sp);
   for (const band of passes) for (const g of band) T(g);
   for (const route of roads) for (const pt of route) { const w = fwdU(pt[0], pt[1]); pt[0] = w.x; pt[1] = w.z; }
-  return { seed, bands, passes, rocks, ponds, spawns, spawnU, town, roads, depotFoul, objU, objV, depotU1, depotU2, depotDepth, stream };
+  return { seed, bands, passes, rocks, ponds, spawns, spawnU, town, roads, depotFoul, objU, objV, depotU1, depotU2, depotDepth, stream, hills };
 }
 function makeMap(seed) {
   for (let attempt = 0; attempt < 24; attempt++) {   // T2: wilder maps foul more — a deeper retry pocket
@@ -273,7 +288,7 @@ function makeMap(seed) {
     OBJ_POS = fwdU(m.objU, m.objV);                  // T2: the objective follows the DRAWN depot, set after genMap
     MAP_SEED = sd; BANDS = m.bands; PASSES = m.passes; ROCKS = m.rocks;
     PONDS = m.ponds; SPAWN_POINTS = m.spawns; TOWN = m.town; ROADS = m.roads;
-    SPAWN_U = m.spawnU; STREAM = m.stream;
+    SPAWN_U = m.spawnU; STREAM = m.stream; HILLS = m.hills;
     const g = makeGrid(null);
     for (const t of TOWN) {
       const hx = (t.nx * MASON.pitch) / 2, hz = (t.nz * MASON.pitch) / 2;
@@ -311,6 +326,11 @@ function buildDepotTerrain(field, seed = 11) {
       + Math.sin((x + z) * 0.032) * 0.30
       + (r() - 0.5) * 0.06;
     for (let bi = 0; bi < BANDS.length; bi++) y += stepUp(BANDS[bi] - 1, 10, 1.8 + 0.2 * (bi % 3));
+    // T5: the high ground — the proving grounds' bump form, per drawn hill.
+    for (const hb of HILLS) {
+      const dh = ((cuv.u - hb.u) * (cuv.u - hb.u) + (cuv.v - hb.v) * (cuv.v - hb.v)) / (hb.r * hb.r);
+      y += hb.h * Math.exp(-dh);
+    }
     const over = Math.max(0, Math.abs(cuv.u) - RIM_HALF_U, Math.abs(cuv.v) - RIM_HALF_V);
     if (over > 0) y = Math.max(-6, y - over * over * 0.55);
     for (const k of ROCKS) {
@@ -440,6 +460,74 @@ function streamAt(x, z) {
     best = Math.min(best, Math.hypot(c.u - (a.u + du * t), c.v - (a.v + dv * t)));
   }
   return best < STREAM.w;
+}
+// T5: THE TREE PLAN — every tree a fresh boot plants, as data: the rim
+// treeline, a copse on every hill's flanks, 2-5 drawn copses, 0-2 forests.
+// Pure function of the regrown map on its own map-seed stream, so the test
+// suite plans the exact trees the game plants. World coordinates out.
+function planTrees() {
+  const rT = mulberry32(MAP_SEED ^ 0x517);
+  const out = [];
+  const roadD = (x, z) => {
+    let best = 1e9;
+    for (const route of ROADS) for (let i = 0; i + 1 < route.length; i++) {
+      const a = route[i], b = route[i + 1];
+      const dx = b[0] - a[0], dz = b[1] - a[1];
+      const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / (dx * dx + dz * dz || 1)));
+      best = Math.min(best, Math.hypot(x - (a[0] + dx * t), z - (a[1] + dz * t)));
+    }
+    return best;
+  };
+  const clearAt = (x, z) => {
+    if (rockAt(x, z) || pondAt(x, z) || streamAt(x, z)) return false;
+    if (SPAWN_POINTS.some((sp) => Math.hypot(x - sp.x, z - sp.z) < 4.5)) return false;
+    if (roadD(x, z) < 3.5) return false;
+    const c = invW(x, z);
+    if (Math.abs(c.u) > 58 || Math.abs(c.v) > 58) return false;
+    for (const t of TOWN) {
+      if (Math.abs(x - t.x) < (t.nx * MASON.pitch) / 2 + 1.5 &&
+          Math.abs(z - t.z) < (t.nz * MASON.pitch) / 2 + 1.5) return false;
+    }
+    return true;
+  };
+  // the rim treeline — the old edge dressing, kept (draws before tests, as before)
+  for (let tu = -56; tu <= 56; tu += 3.2) {
+    const w = fwdU(tu + (rT() - 0.5) * 1.6, -54.5 + rT() * 3.2);
+    if (clearAt(w.x, w.z)) out.push({ x: w.x, z: w.z });
+  }
+  // a copse on every hill's flanks (the owner's wooded hills) — these RETRY
+  // until planted (free stream) so a hill is never bald by bad luck.
+  for (const hb of HILLS) {
+    const n = 6 + Math.floor(rT() * 4);
+    for (let i = 0, got = 0; i < 24 && got < n; i++) {
+      const a = rT() * 6.28, rr = hb.r * (0.35 + rT() * 0.75);
+      const w = fwdU(hb.u + Math.cos(a) * rr, hb.v + Math.sin(a) * rr);
+      if (clearAt(w.x, w.z)) { out.push({ x: w.x, z: w.z }); got++; }
+    }
+  }
+  // drawn copses: 2-5, anywhere clear on the map
+  const nCop = 2 + Math.floor(rT() * 4);
+  for (let c = 0; c < nCop; c++) {
+    const cu = -52 + rT() * 104, cv = -52 + rT() * 104;
+    const n = 5 + Math.floor(rT() * 5);
+    for (let i = 0; i < n; i++) {
+      const a = rT() * 6.28, rr = 1.5 + rT() * 4.5;
+      const w = fwdU(cu + Math.cos(a) * rr, cv + Math.sin(a) * rr);
+      if (clearAt(w.x, w.z)) out.push({ x: w.x, z: w.z });
+    }
+  }
+  // rare forests: 0-2, 20-40 trees
+  const nFor = Math.floor(rT() * 3);
+  for (let f = 0; f < nFor; f++) {
+    const fu = -48 + rT() * 96, fv = -48 + rT() * 96;
+    const n = 20 + Math.floor(rT() * 21);
+    for (let i = 0; i < n; i++) {
+      const a = rT() * 6.28, rr = 2 + rT() * 9;
+      const w = fwdU(fu + Math.cos(a) * rr, fv + Math.sin(a) * rr);
+      if (clearAt(w.x, w.z)) out.push({ x: w.x, z: w.z });
+    }
+  }
+  return out;
 }
 function computeFlowField(grid, objGx, objGz) {
   const { cells } = grid;
@@ -1256,25 +1344,10 @@ export default function DepotGame({ onExit, resume = null }) {
           const b = addBody(world, { kind: "rock", team: 0, mass: 0, hx: k.r * 0.55, hy: k.h * 0.8, hz: k.r * 0.55, x: k.x, y: field.heightAt(k.x, k.z) - k.h * 0.2, z: k.z, hp: 380 + k.r * 90 });
           b.maxHp = b.hp; b.rockRef = k;
         }
-        const rT = mulberry32(MAP_SEED ^ 0x517);
-        for (let tu = -56; tu <= 56; tu += 3.2) {
-          const w = fwdU(tu + (rT() - 0.5) * 1.6, -54.5 + rT() * 3.2);
-          if (SPAWN_POINTS.some((sp) => Math.hypot(w.x - sp.x, w.z - sp.z) < 4.5)) continue;
-          if (rockAt(w.x, w.z)) continue;
-          if (TOWN.some((t) => t.depot && Math.hypot(w.x - t.x, w.z - t.z) < 10)) continue;
-          treeAt(w.x, w.z);
-        }
-        const clumps = [];
-        for (let c = 0, nC = 1 + Math.floor(rT() * 4); c < nC; c++) { const w = fwdU(-50 + rT() * 100, -46 + rT() * 24); clumps.push([w.x, w.z, 5 + Math.floor(rT() * 3)]); }
-        for (const [cx, cz, n2] of clumps) {
-          for (let i = 0; i < n2; i++) {
-            const a = rT() * 6.28, rr = 1.5 + rT() * 4;
-            const jx = cx + Math.cos(a) * rr, jz = cz + Math.sin(a) * rr;
-            if (rockAt(jx, jz) || pondAt(jx, jz)) continue;
-            if (TOWN.some((t) => t.depot && Math.hypot(jx - t.x, jz - t.z) < 10)) continue;
-            treeAt(jx, jz);
-          }
-        }
+        // T5: the whole tree plan, planted (planTrees carries the treeline,
+        // the hill copses, the drawn copses and the forests — one function,
+        // shared with the test suite).
+        for (const p of planTrees()) treeAt(p.x, p.z);
         // P1.5 T4 (mk0.60) — THE DEPOT COMES WITH COVER. Four to six sandbags
         // ringed on the player depot at map-build time, so a fresh front opens
         // with something to lie behind instead of bare ground.

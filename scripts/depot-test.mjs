@@ -5740,6 +5740,115 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 }
 // ==== end FRONT T4 ===========================================================
 
+// ==== FRONT T5: copses, forests, and the high ground ========================
+// mk1.04 (The Front, Task 5). Every seed draws 1-3 hills (always at least
+// one), each carrying a copse; plus 2-5 copses and 0-2 forests anywhere.
+// All planting lives in planTrees (pure, map-seed stream) so this block
+// plans the exact trees the game plants. Tree pool 144 -> 360.
+{
+  console.log("\n[front t5: copses, forests, and the high ground]");
+  const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  let M5ok = true, mkMapT5 = null;
+  try {
+    const sliceFn5 = (name) => {
+      const start = src.indexOf(`\nfunction ${name}(`);
+      if (start < 0) throw new Error("T5 extract: missing function " + name);
+      const rest = src.slice(start + 1);
+      const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
+      return rest.slice(0, m < 0 ? rest.length : m + 9);
+    };
+    const header5 = src.slice(src.indexOf("const GRID_CS"), src.indexOf("function genMap"));
+    if (!/let HILLS = \[\];/.test(header5)) throw new Error("T5: HILLS state not in header");
+    const mapSrc5 = [
+      header5,
+      sliceFn5("genMap"), sliceFn5("makeMap"), sliceFn5("streamAt"), sliceFn5("planTrees"),
+      sliceFn5("pondAt"), sliceFn5("rockAt"),
+      sliceFn5("makeGrid"), sliceFn5("checkConnectivity"), sliceFn5("townFootprint"), sliceFn5("buildTown"),
+      sliceFn5("buildDepotTerrain"),
+      `return { makeMap, makeGrid, buildDepotTerrain, planTrees, streamAt, pondAt, rockAt, invW, fwdU,
+        state: () => ({ ORIENT, TOWN, ROADS, PONDS, ROCKS, SPAWN_POINTS, STREAM, HILLS, MAP_SEED }) };`,
+    ].join("\n");
+    mkMapT5 = () => new Function(
+      "mulberry32", "MASON", "fwdUFor", "fwdDirFor", "invWFor", "addBody", "addWeld", mapSrc5,
+    )(mulberry32, MASON, fwdUFor, fwdDirFor, invWFor, addBody, addWeld);
+  } catch (e) { M5ok = false; }
+  ok("T5: the map module extracts with HILLS state and planTrees", M5ok);
+
+  if (M5ok) {
+    // (a) the sweep: hills and trees inside their ruled bounds on every seed
+    let hillLo = 99, hillHi = 0, hillShape = 0, hillStream = 0, nHillsTotal = 0;
+    let treeLo = 9999, treeHi = 0, treeFoul = 0, woodedHills = 0, worstTreeSeed = 0;
+    for (let s = 1; s <= 40; s++) {
+      const Mi = mkMapT5(); Mi.makeMap(s * 907);
+      const st = Mi.state();
+      hillLo = Math.min(hillLo, st.HILLS.length); hillHi = Math.max(hillHi, st.HILLS.length);
+      nHillsTotal += st.HILLS.length;
+      for (const hb of st.HILLS) {
+        if (hb.h >= 3 && hb.h <= 5.01 && hb.r >= 10 && hb.r <= 15.01) hillShape++;
+        if (Math.abs(hb.v - st.STREAM.v) >= hb.r + 9.9) hillStream++;
+      }
+      const plan = Mi.planTrees();
+      if (plan.length > treeHi) { treeHi = plan.length; worstTreeSeed = s * 907; }
+      treeLo = Math.min(treeLo, plan.length);
+      for (const p of plan) {
+        const c = Mi.invW(p.x, p.z);
+        const onBuilding = st.TOWN.some((t) =>
+          Math.abs(p.x - t.x) < (t.nx * MASON.pitch) / 2 + 1.4 &&
+          Math.abs(p.z - t.z) < (t.nz * MASON.pitch) / 2 + 1.4);
+        if (Mi.rockAt(p.x, p.z) || Mi.pondAt(p.x, p.z) || Mi.streamAt(p.x, p.z) ||
+            onBuilding || Math.abs(c.u) > 58.01 || Math.abs(c.v) > 58.01) treeFoul++;
+      }
+      for (const hb of st.HILLS) {
+        const hw = Mi.fwdU(hb.u, hb.v);
+        const near = plan.filter((p) => Math.hypot(p.x - hw.x, p.z - hw.z) < hb.r * 1.6).length;
+        if (near >= 3) woodedHills++;
+      }
+    }
+    ok("T5(a): every seed draws 1-3 hills, never zero", hillLo >= 1 && hillHi <= 3, `${hillLo}-${hillHi}`);
+    ok("T5(a): every hill is demo-sized (h 3-5, r 10-15)", hillShape === nHillsTotal, `${hillShape}/${nHillsTotal}`);
+    ok("T5(a): every hill keeps its flank off the stream", hillStream === nHillsTotal, `${hillStream}/${nHillsTotal}`);
+    ok("T5(a): tree counts stay inside the budget (25-340 per seed)", treeLo >= 25 && treeHi <= 340, `${treeLo}-${treeHi} (worst seed ${worstTreeSeed})`);
+    ok("T5(a): no planned tree stands in rock, water, a building, or off the rim", treeFoul === 0, `${treeFoul} fouls`);
+    ok("T5(a): every hill is wooded (3+ trees on its flanks)", woodedHills === nHillsTotal, `${woodedHills}/${nHillsTotal}`);
+
+    // (b) the terrain rises: a hill's summit stands proud of its surroundings
+    {
+      const Mi = mkMapT5(); Mi.makeMap(907);
+      const st = Mi.state();
+      const field = makeField(121, 2.0, st.MAP_SEED);
+      Mi.buildDepotTerrain(field, st.MAP_SEED);
+      const hb = st.HILLS[0];
+      const hw = Mi.fwdU(hb.u, hb.v);
+      const peak = field.heightAt(hw.x, hw.z);
+      let ringMin = 1e9;
+      for (let a = 0; a < 8; a++) {
+        const rw = Mi.fwdU(hb.u + Math.cos(a * 0.785) * hb.r * 2.5, hb.v + Math.sin(a * 0.785) * hb.r * 2.5);
+        const cu = Mi.invW(rw.x, rw.z);
+        if (Math.abs(cu.u) > 58 || Math.abs(cu.v) > 58) continue; // ring points past the rim tell nothing
+        ringMin = Math.min(ringMin, field.heightAt(rw.x, rw.z));
+      }
+      ok("T5(b): the hill stands proud of the ground around it (1.8m+)", peak - ringMin > 1.8, (peak - ringMin).toFixed(2));
+    }
+
+    // (c) determinism: same seed, identical hills and identical tree plan
+    {
+      const A = mkMapT5(); A.makeMap(7717);
+      const B = mkMapT5(); B.makeMap(7717);
+      ok("T5(c): twin determinism — identical HILLS and tree plan",
+        JSON.stringify(A.state().HILLS) === JSON.stringify(B.state().HILLS) &&
+        JSON.stringify(A.planTrees()) === JSON.stringify(B.planTrees()));
+    }
+  }
+
+  // (d) source pins: the hooks exist where claimed
+  ok("T5(d): buildDepotTerrain lifts the drawn hills", /hb\.h \* Math\.exp\(-dh\)/.test(src));
+  ok("T5(d): the boot plants the plan and nothing else", /for \(const p of planTrees\(\)\) treeAt\(p\.x, p\.z\);/.test(src));
+  const rsrc5 = fs.readFileSync(new URL("../src/render/renderer.js", import.meta.url), "utf8");
+  ok("T5(d): the tree pool is one constant at 360", /const TREE_CAP = 360;/.test(rsrc5));
+  ok("T5(d): no bare 144 survives in the renderer (all six sites read TREE_CAP)", !/144/.test(rsrc5));
+}
+// ==== end FRONT T5 ===========================================================
+
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
   process.exit(1);

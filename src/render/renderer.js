@@ -1121,9 +1121,14 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // trees (tower defense): snow-laden pine — trunk + canopy pools, colored
   // per body (alive dark spruce, dead winter-kill brown); pose comes from
   // the BODY, so a blasted tree lies where physics dropped it
-  const treeTrunkMesh = pool(new THREE.BoxGeometry(0.3, 1.4, 0.3), toon(0x4a3626), 144, true);
-  const treeCanopyMesh = pool(new THREE.ConeGeometry(1.05, 2.6, 6), toon(0xffffff), 144, true);
-  treeCanopyMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(144 * 3).fill(1), 3);
+  // T5 (mk1.04, owner's ruling): copses + rare forests — the tree pool
+  // rises behind ONE constant (trunk, canopy, canopy colors, flames, and
+  // both loop guards read it; a missed site silently truncates). The old
+  // cap was a set of bare literals; the suite forbids them returning.
+  const TREE_CAP = 360;
+  const treeTrunkMesh = pool(new THREE.BoxGeometry(0.3, 1.4, 0.3), toon(0x4a3626), TREE_CAP, true);
+  const treeCanopyMesh = pool(new THREE.ConeGeometry(1.05, 2.6, 6), toon(0xffffff), TREE_CAP, true);
+  treeCanopyMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(TREE_CAP * 3).fill(1), 3);
   treeCanopyMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
   const TREE_LIVE = new THREE.Color(0x2e5240), TREE_DEAD = new THREE.Color(0x594a38);
   const TREE_CHARRED = new THREE.Color(0x1c1712);
@@ -1133,7 +1138,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // tree (indexed 1:1 with the tree loop below so no id map is needed).
   // Flicker is derived from world.t + the tree's own position, never
   // Math.random (house rule: renderer never rolls its own dice).
-  const treeFlameMesh = pool(new THREE.PlaneGeometry(0.9, 1.5), fireMat, 144, false); treeFlameMesh.layers.set(1);
+  const treeFlameMesh = pool(new THREE.PlaneGeometry(0.9, 1.5), fireMat, TREE_CAP, false); treeFlameMesh.layers.set(1);
   // map dressing (tower defense): rock prisms + frozen-pond discs, built once
   const dressG = new THREE.Group();
   scene.add(dressG);
@@ -1506,7 +1511,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
     let tri = 0, tfi = 0;
     const windSway = world.wind; // tree lean/oscillation only exists when a wind field is present
     for (const b of world.bodies) {
-      if (b.kind !== "tree" || tri >= 144) continue;
+      if (b.kind !== "tree" || tri >= TREE_CAP) continue;
       const R2b = b.R;
       const cx = b.pos.x + R2b[3] * b.hy * 0.85, cy = b.pos.y + R2b[4] * b.hy * 0.85, cz = b.pos.z + R2b[5] * b.hy * 0.85;
       let treeQ = b.q;
@@ -1535,7 +1540,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
           treeCanopyMesh.setColorAt(tri, b.alive ? TREE_LIVE : TREE_DEAD);
         }
       }
-      if (world.depotCombat && b.burning != null && b.alive && tfi < 144) {
+      if (world.depotCombat && b.burning != null && b.alive && tfi < TREE_CAP) {
         // flicker phase keyed off the tree's own position (deterministic,
         // no Math.random) so each burning tree licks independently
         const phase = (b.pos.x * 3.1 + b.pos.z * 1.7);
