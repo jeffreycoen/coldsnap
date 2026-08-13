@@ -7,7 +7,7 @@ import {
   BELL_PERIOD_S, BELL_SCRAP, TIER_BELLS, ENEMY_TIERS, enemyTierState, enemyTierOf, ASSAULT_TIMEOUT,
   MANIFEST_DRAWS, FOE_DRAWS, makeManifestState, makeFoeState, manifestPool, foePool,
   drawOffers, drawFoePick, pickManifest, isUnlocked, tierOpenCount,
-  regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, squadFire,
+  regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, squadFire, possessedVolley,
   fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed,
   PENDING_EDGE_PAD, pendingButtonsVisible, canvasTapConsumesPending,
   END_CARD_DELAY_S, stampEnd, endCardReady,
@@ -27,7 +27,7 @@ import {
 } from "../src/engine/core.js";
 import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, MASON, INFANTRY_ARMS, PLAYER_START, PLAYER_TIERS } from "../src/depot/specs.js";
 import { stepUnits, spawnUnit, payBounties, SNIPER_FIRE } from "../src/depot/units.js";
-import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad, drivePossessedSquad } from "../src/depot/squads.js";
+import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad, drivePossessedSquad, COHESION_M } from "../src/depot/squads.js";
 import {
   makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue,
 } from "../src/depot/economy.js";
@@ -3316,8 +3316,12 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     // (tapAt's S.linePending block). Both taps of the ORIGINAL two-point
     // order still go through the one `const d = ...` site; the count moved
     // from 1 to 2 honestly, not loosened.
-    ok("mk0.60/6: BOTH build points clamp to the rim through the one clamp site",
-      /const d = clampToRim\(p\.x, p\.z\);/.test(dsrc) && (dsrc.match(/clampToRim\(p\.x, p\.z\)/g) || []).length === 2);
+    // re-pinned POSSESSION T2 (mk0.91): a THIRD site joined the same call
+    // shape — the possessed-squad aim tap (tapAt's `if (S.possess) {
+    // S.possessAim = clampToRim(p.x, p.z); ... }`, ahead of the line/order
+    // flow). Count moved 2 -> 3, honestly, same rim-clamp, one more caller.
+    ok("mk0.60/6: build points AND the possession aim clamp to the rim through the same clamp shape",
+      /const d = clampToRim\(p\.x, p\.z\);/.test(dsrc) && (dsrc.match(/clampToRim\(p\.x, p\.z\)/g) || []).length === 3);
     ok("mk0.60/6: the cell walk steps ONE axis at a time (consecutive cells share an EDGE)",
       /const stepX = z === g1\.gz \? true : x === g1\.gx \? false : 2 \* err > -dz;/.test(dsrc));
     // Jeff, 2026-08-12: ONE rotation for the whole line — the dominant axis of
@@ -4381,6 +4385,40 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
       maxD < 5.5, `maxD=${maxD.toFixed(2)}`);
   }
 
+  // (a2) mk0.90 drift audit item B: the rubber-band clamp, actually
+  // exercised over a longer drive (2s wasn't enough to show a runaway) —
+  // sampled once per sim-second across a straight 6s drive, the rear
+  // member's distance from the anchor must never exceed COHESION_M + 1.5m
+  // (the cap itself, plus slack for the ring radius / catch-up lag). FAILS
+  // against the plan's original UNCLAMPED drivePossessedSquad (Phase 4's
+  // Step 1.2 code, verbatim — no rubber band, no cap, the anchor simply
+  // never waits): verified by reverting squads.js's band+cap to that literal
+  // code and re-running this assertion (the trail opens past COHESION_M+1.5m
+  // inside the 6s window and keeps climbing), then re-applying the shipped
+  // band+cap.
+  {
+    const world = makeWorld({ field: flatField, seed: 11 });
+    const sq = makeSquad(1, "rifles", 1, 0, 0);
+    spawnSquadMembers(world, sq);
+    const dt = world.dt;
+    const stepsPerSec = Math.round(1 / dt);
+    let worstTrail = 0;
+    const samples = [];
+    for (let sec = 1; sec <= 6; sec++) {
+      for (let i = 0; i < stepsPerSec; i++) { drivePossessedSquad(world, sq, 0, 1, dt); stepWorld(world); }
+      let maxD = 0;
+      for (const id of sq.memberIds) {
+        const u = world.byId.get(id);
+        const d = Math.hypot(u.pos.x - sq.anchor.x, u.pos.z - sq.anchor.z);
+        if (d > maxD) maxD = d;
+      }
+      samples.push(maxD.toFixed(2));
+      if (maxD > worstTrail) worstTrail = maxD;
+    }
+    ok("POSSESSION T1(a2) [mk0.90 audit item B]: the rear member never trails the anchor past COHESION_M+1.5m over a straight 6s drive",
+      worstTrail < COHESION_M + 1.5, `worst=${worstTrail.toFixed(2)} samples/sec=[${samples.join(",")}]`);
+  }
+
   // (b) source pin: stepDepot's squad loop skips a possessed squad entirely
   // (no engageCheck, no stepSquad, no squadFire — the stick drives it
   // instead) as the loop's FIRST line, and a squad whose members all die
@@ -4458,6 +4496,110 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 }
 // ==== end POSSESSION T1 =======================================================
+
+// ==== POSSESSION T2: the trigger — volley at the aim =========================
+// mk0.91 (Phase 4 Task 2). possessedVolley (state.js) is one trigger pull:
+// every living armed member off cooldown fires once at a synthetic ground
+// target through shooterFire, exactly like squadFire's own trigger pull —
+// same scatter/lead/wind, same sight law (fieldReaches at the aim cell).
+// Spotters (and any type with no INFANTRY_ARMS row — engineers, sappers)
+// never fire.
+{
+  const flatField = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+  const idUV = (x, z) => ({ u: x, v: z }); // DepotGame's invW at ORIENT 0
+  const muzzlesOf = (world) => world.events.filter((e) => e.type === "muzzle");
+
+  // (a) mirror+pin: a 4-man rifle squad volleys once each at an aim 10m off.
+  {
+    const world = makeWorld({ field: flatField, seed: 21 });
+    const sq = makeSquad(1, "rifles", 1, 0, 0);
+    spawnSquadMembers(world, sq);
+    world.events.length = 0;
+    const fired = possessedVolley(world, sq, { x: 10, z: 0 }, null);
+    const muzzles = muzzlesOf(world);
+    ok("POSSESSION T2(a): possessedVolley fires one shooterFire per living armed member at the aim",
+      fired === 4 && muzzles.length === 4, `fired=${fired} muzzles=${muzzles.length}`);
+    ok("POSSESSION T2(a): every muzzle carries weapon:\"rifle\"",
+      muzzles.every((m) => m.weapon === "rifle"), muzzles.map((m) => m.weapon).join(","));
+  }
+
+  // (b) the sight law holds: an aim in a cell team 1 does not see draws zero
+  // muzzles; the identical aim in a cell it does see fires normally (the
+  // control). Sight map hand-stamped (lit only west of x=8), same convention
+  // reachPolygon's own sight-boundary test uses.
+  {
+    const world = makeWorld({ field: flatField, seed: 22 });
+    const sq = makeSquad(1, "rifles", 1, 0, 0);
+    spawnSquadMembers(world, sq);
+    const T = makeTerritory(29, 57);
+    T.sight = makeSight(T);
+    for (let iz = 0; iz < T.sight.nz; iz++) for (let ix = 0; ix < T.sight.nx; ix++) {
+      const u = -T.sight.halfU + (ix + 0.5) * T.sight.cs;
+      if (u < 8) T.sight.seen1[iz * T.sight.nx + ix] = 1;
+    }
+    world.events.length = 0;
+    const firedDark = possessedVolley(world, sq, { x: 20, z: 0 }, T, idUV);
+    ok("POSSESSION T2(b): a dark aim cell (unseen) draws zero muzzles",
+      firedDark === 0 && muzzlesOf(world).length === 0, `fired=${firedDark}`);
+    world.events.length = 0;
+    const firedLit = possessedVolley(world, sq, { x: 0, z: 0 }, T, idUV);
+    ok("POSSESSION T2(b) control: the identical squad, aim in a SEEN cell, fires normally",
+      firedLit === 4, `fired=${firedLit}`);
+  }
+
+  // (c) spotters and unarmed types never fire: a sniper pair volleys once
+  // (the spotter never pulls a trigger), and an engineer squad — no
+  // INFANTRY_ARMS row — refuses outright.
+  {
+    const world = makeWorld({ field: flatField, seed: 23 });
+    const sniperSq = makeSquad(1, "sniper", 1, 0, 0);
+    spawnSquadMembers(world, sniperSq);
+    world.events.length = 0;
+    const firedSniper = possessedVolley(world, sniperSq, { x: 10, z: 0 }, null);
+    const muzzlesSniper = muzzlesOf(world);
+    ok("POSSESSION T2(c): a sniper pair volleys ONCE, not twice — the spotter never fires",
+      firedSniper === 1 && muzzlesSniper.length === 1, `fired=${firedSniper} muzzles=${muzzlesSniper.length}`);
+    ok("POSSESSION T2(c): the one muzzle is the sniper's (weapon:\"sniper\")",
+      !!muzzlesSniper[0] && muzzlesSniper[0].weapon === "sniper");
+
+    const engSq = makeSquad(2, "engineers", 1, 0, 0);
+    spawnSquadMembers(world, engSq);
+    world.events.length = 0;
+    const firedEng = possessedVolley(world, engSq, { x: 10, z: 0 }, null);
+    ok("POSSESSION T2(c): engineers carry no INFANTRY_ARMS row — the volley refuses, zero muzzles",
+      firedEng === 0 && muzzlesOf(world).length === 0, `fired=${firedEng}`);
+  }
+
+  // (d) per-member cooldowns are honored: a second pull 0.1s later (the
+  // game layer's own decay, u.fireCd -= dt, mirrored here) finds every man
+  // still on cooldown — zero muzzles.
+  {
+    const world = makeWorld({ field: flatField, seed: 24 });
+    const sq = makeSquad(1, "rifles", 1, 0, 0);
+    spawnSquadMembers(world, sq);
+    world.events.length = 0;
+    const fired1 = possessedVolley(world, sq, { x: 10, z: 0 }, null);
+    for (const id of sq.memberIds) { const u = world.byId.get(id); u.fireCd -= 0.1; }
+    world.events.length = 0;
+    const fired2 = possessedVolley(world, sq, { x: 10, z: 0 }, null);
+    ok("POSSESSION T2(d): per-member cooldowns are honored — 0.1s after a full volley (fireRate 1.3s), nobody is off cooldown yet",
+      fired1 === 4 && fired2 === 0, `fired1=${fired1} fired2=${fired2}`);
+  }
+
+  // (e) source pin: possessedVolley reads INFANTRY_ARMS[squad.type] and
+  // shares squadFire's own blast fallbacks verbatim (INFANTRY_BLAST_R/
+  // INFANTRY_KV), not a re-derived pair of numbers.
+  {
+    const stateSrc = fs.readFileSync(new URL("../src/depot/state.js", import.meta.url), "utf8");
+    const volleyBody = (stateSrc.match(/export function possessedVolley\([\s\S]*?\n\}/) || [""])[0];
+    ok("POSSESSION T2(e) source pin: possessedVolley reads INFANTRY_ARMS[squad.type]",
+      /const spec = INFANTRY_ARMS\[squad\.type\];/.test(volleyBody), volleyBody.length);
+    ok("POSSESSION T2(e) source pin: possessedVolley shares squadFire's own blast fallbacks (INFANTRY_BLAST_R/INFANTRY_KV)",
+      /blastR: spec\.blastR != null \? spec\.blastR : INFANTRY_BLAST_R/.test(volleyBody) &&
+      /kv: spec\.kv != null \? spec\.kv : INFANTRY_KV/.test(volleyBody));
+  }
+}
+// ==== end POSSESSION T2 =======================================================
 
 
 

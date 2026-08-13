@@ -594,6 +594,35 @@ export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })
   }
 }
 
+// POSSESSION (P4 T2, mk0.91): the owner's trigger. One pull = one aimed
+// shot from every living armed member off cooldown, at a synthetic ground
+// target — through shooterFire, so scatter/lead/wind/sight law all apply
+// exactly as they do to every other shot in the game. Sight-gated at the
+// aim cell: you shoot only what your side sees. Returns muzzles fired.
+export function possessedVolley(world, squad, aim, T, toUV = (x, z) => ({ u: x, v: z })) {
+  const spec = INFANTRY_ARMS[squad.type];
+  if (!spec) return 0;
+  const c = toUV(aim.x, aim.z);
+  if (!fieldReaches(T, c.u, c.v, squad.team)) return 0;
+  const fspec = { ...spec, volley: spec.burst || 1,
+    blastR: spec.blastR != null ? spec.blastR : INFANTRY_BLAST_R,
+    kv: spec.kv != null ? spec.kv : INFANTRY_KV };
+  const tgt = { pos: { x: aim.x, y: world.field.heightAt(aim.x, aim.z) + 0.9, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: 0.9 };
+  let fired = 0;
+  for (const id of squad.memberIds) {
+    const u = world.byId.get(id);
+    if (!u || !u.alive || u.role === "spotter") continue;
+    u.fireCd = (u.fireCd || 0);
+    if (u.fireCd > 0) continue;
+    u.fireCd = spec.fireRate;
+    const muzzle = { x: u.pos.x, y: u.pos.y + 0.5, z: u.pos.z };
+    const high = spec.occl === "lofted";
+    shooterFire(world, u, muzzle, tgt, fspec, { attacker: "player", volleyDelay: spec.burstGap, muzzleStep: 0, owner: u.id, high });
+    fired++;
+  }
+  return fired;
+}
+
 // ------------------------------------------------------------ squad wiring
 // spawnSquadMembers(world, squad): a squad's members spawn as ORDINARY
 // team-1 "unit" bodies (brief's sketch, adapted to addBody's real shape) so

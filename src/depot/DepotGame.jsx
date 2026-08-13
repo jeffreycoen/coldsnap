@@ -16,7 +16,7 @@ import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS } from "./specs.js";
 import { windAt } from "./wind.js";
-import { makeAssaultState, HUD0, BELL_PERIOD_S, BELL_SCRAP, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest } from "./state.js";
+import { makeAssaultState, HUD0, BELL_PERIOD_S, BELL_SCRAP, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest } from "./state.js";
 import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic, drivePossessedSquad } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
@@ -641,7 +641,13 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
         drivePossessedSquad(world, sq, pi.vx, pi.vz, world.dt);
         const cl = clampToRim(sq.anchor.x, sq.anchor.z);
         sq.anchor = { x: cl.x, z: cl.z };
-        for (const id of sq.memberIds) { const u = world.byId.get(id); if (u && u.alive) uprightMember(u, world.dt); }
+        // POSSESSION (P4 T2, mk0.91): squadFire normally decays u.fireCd —
+        // it's skipped for a possessed squad, so the trigger (possessedVolley)
+        // does not, and the cooldown must decay somewhere or it never clears.
+        for (const id of sq.memberIds) {
+          const u = world.byId.get(id);
+          if (u && u.alive) { uprightMember(u, world.dt); u.fireCd = (u.fireCd || 0) - world.dt; }
+        }
         continue;
       }
       engageCheck(sq);
@@ -1217,6 +1223,10 @@ export default function DepotGame({ onExit, resume = null }) {
         // null. possessInput is the frame's world-space stick vector; joy is
         // the touch stick's own live drag state (DOM handlers below).
         possess: null, possessInput: null, joy: null,
+        // POSSESSION (P4 T2, mk0.91): possessAim is the last ground tap while
+        // possessed (world x/z, rim-clamped); fireHeld mirrors the FIRE
+        // button/pointer state — true while held, read once per sim tick.
+        possessAim: null, fireHeld: false,
         linePending: null, // COMMAND T2 (mk0.84): the proposed line, awaiting accept/reject
         hudT: 0, keys: {}, sellById: null, audio: A,
         // The attacker's economy — seeded off the run's own rng stream, not
@@ -1951,6 +1961,12 @@ export default function DepotGame({ onExit, resume = null }) {
         if (S.pending) clearPending();
         const p = groundPoint(cx, cy);
         if (!p) { S.inspectId = null; return; }
+        // POSSESSION (P4 T2, mk0.91): while possessed, a ground tap is an
+        // AIM, not a command — before any of the order/build/selection flow
+        // below gets a look at it. Stated deviation from the sandbox
+        // convention: no snapAim (engine-mode machinery); the seen/unseen
+        // ring below is the depot's own aim assist.
+        if (S.possess) { S.possessAim = clampToRim(p.x, p.z); return; }
         // COMMAND T2 (mk0.84): while a proposed line is up, ground taps belong
         // to it — tap an endpoint disc to pick it up, tap ground to re-place a
         // picked-up endpoint. Accept/reject (the buttons) are the only exits;
@@ -2750,6 +2766,13 @@ export default function DepotGame({ onExit, resume = null }) {
           while (S.acc >= STEP && guard++ < 6) {
             S.acc -= STEP;
             stepDepot(world, grid, onStructureLost, town, onRuin, T, S.discipline, S);
+            // POSSESSION (P4 T2, mk0.91): THE TRIGGER. At most one volley
+            // attempt per sim tick — cooldowns (possessedVolley's own
+            // u.fireCd gate) do the real limiting, not this flag.
+            if (S.fireHeld && S.possess && S.possess.kind === "squad" && S.possessAim) {
+              const psq = S.squads.find((q) => q.id === S.possess.id);
+              if (psq) possessedVolley(world, psq, S.possessAim, T, invW);
+            }
           }
           if (perf) pSim = performance.now() - pSim0; // ...and closes
           if (S.acc > STEP * 6) S.acc = 0;
@@ -2770,7 +2793,16 @@ export default function DepotGame({ onExit, resume = null }) {
           A.setListener(S.focus.x, S.focus.z, 46 / Math.max(0.6, S.zoom));
           A.consume(evs);
           A.tick(world, dt);
-          if (S.hover) {
+          if (S.possess && S.possess.kind === "squad" && S.possessAim) {
+            // POSSESSION (P4 T2, mk0.91): the aim ring rides the SAME hover
+            // overlay every other ghost/reach ring uses — green while your
+            // side sees the aim cell, red while it's dark, sight-gated the
+            // identical way the shot itself will be (fieldReaches/seenAt).
+            const cAim = invW(S.possessAim.x, S.possessAim.z);
+            const seen = T && T.sight ? seenAt(T.sight, cAim.u, cAim.v, 1) : true;
+            R.overlay.setHover(true, S.possessAim.x, S.possessAim.z, field.heightAt(S.possessAim.x, S.possessAim.z), 0, seen, 1.2);
+          }
+          else if (S.hover) {
             // Sandbag ghost: oriented footprint read LIVE each frame — the
             // toggle (and auto-continue near an existing line) re-renders the
             // preview immediately, never a cached orientation.
@@ -3127,6 +3159,18 @@ export default function DepotGame({ onExit, resume = null }) {
           style={{ ...P.btnBig, position: "absolute", right: 16, bottom: 16, zIndex: 7, borderColor: "#ffb45e", color: "#ffb45e", fontWeight: "bold" }}
           onClick={() => stateRef.current && stateRef.current.releasePossession()}>
           RELEASE
+        </button>
+      )}
+      {/* POSSESSION (P4 T2, mk0.91) — FIRE: hold-to-repeat, like the
+          sandbox's own trigger. Sets S.fireHeld; the sim bracket (frame loop)
+          is what actually attempts a volley, at most once per sim tick. */}
+      {hud.possessed && (
+        <button data-possess-fire
+          style={{ ...P.btnBig, position: "absolute", right: 132, bottom: 16, zIndex: 7, width: 64, height: 64, borderRadius: "50%", borderColor: "#ff6b5e", color: "#ff6b5e", fontWeight: "bold", background: "#2a1418", touchAction: "none" }}
+          onPointerDown={(e) => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); const S = stateRef.current; if (S) S.fireHeld = true; }}
+          onPointerUp={(e) => { e.stopPropagation(); const S = stateRef.current; if (S) S.fireHeld = false; }}
+          onPointerCancel={(e) => { e.stopPropagation(); const S = stateRef.current; if (S) S.fireHeld = false; }}>
+          FIRE
         </button>
       )}
       <div style={P.top}>

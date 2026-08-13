@@ -674,11 +674,14 @@ export function stepSquad(world, squad, dt) {
 // trails at a roughly constant ~1m/s and never stops opening — "men holding
 // formation" would silently break on any drive longer than a couple of
 // seconds. The existing rubber-band law (COHESION_M, stepSquad's attack
-// leg) already exists to hold an anchor for exactly this — reused verbatim
-// here, without its leg-pause/rng dwell (there are no legs under the stick,
-// and the brief's zero-new-rng law binds this path): the anchor simply does
-// not advance on a tick where any live member already trails it by more
-// than COHESION_M, and resumes the instant he closes back inside it.
+// leg) already exists to hold an anchor for exactly this — and, as of the
+// mk0.90 drift audit, it is now reused VERBATIM (see COHESION_CAP_S below):
+// the anchor does not advance on a tick where any live member already
+// trails it by more than COHESION_M, and resumes the instant he closes back
+// inside it — UNLESS the hold has run past COHESION_CAP_S, exactly as an
+// attack leg's own rubber-band escapes a member wedged in terrain. No
+// leg-pause/rng dwell is reused (there are no legs under the stick, and the
+// brief's zero-new-rng law binds this path) — only the hold-and-cap shape.
 export function drivePossessedSquad(world, squad, vx, vz, dt) {
   const mag = Math.hypot(vx, vz);
   if (mag > 1) { vx /= mag; vz /= mag; }
@@ -688,7 +691,14 @@ export function drivePossessedSquad(world, squad, vx, vz, dt) {
     const d = Math.hypot(u.pos.x - squad.anchor.x, u.pos.z - squad.anchor.z);
     if (d > trail) trail = d;
   }
-  if (trail <= COHESION_M) {
+  // mk0.90 drift audit (A): the time-cap escape the reused band comes with —
+  // accrues on every held tick, resets on every unheld one, and once past
+  // COHESION_CAP_S the anchor advances regardless (mirrors stepSquad's own
+  // mechanism, :600-601, adapted to reset-per-tick since the stick has no
+  // legs to reset the budget at).
+  if (trail > COHESION_M) squad._cohesionHoldT = (squad._cohesionHoldT || 0) + dt;
+  else squad._cohesionHoldT = 0;
+  if (trail <= COHESION_M || squad._cohesionHoldT > COHESION_CAP_S) {
     squad.anchor = { x: squad.anchor.x + vx * MOVE_SPEED * dt, z: squad.anchor.z + vz * MOVE_SPEED * dt };
   }
   const n = members.length;
