@@ -88,7 +88,7 @@
 - Manifest/intel card layout wrinkles at 960px and narrow phones.
 
 **Open/owed:**
-- CURRENT (2026-08-13): prod mk0.95. Possession Tasks 4 and 5 SHIPPED (steered reticle; red carried reticle + bell keeps possession). WIND toggle shipped mk0.95 (owner's accuracy-tuning request): HUD button beside FOG, default ON, OFF = dead calm for both sides through the one world.wind read; persisted like FOG. Phase closes on the owner's playtest. Open from the mk0.94 playtest: possessed-fire misses (no target lead + reticle past weapon envelope — diagnosis pinned, fix awaits ruling); FIRE button feedback/hold reliability on phone; sight-law-vs-possessed-fire ruling. Next phase: The Front.
+- CURRENT (2026-08-13): prod mk0.99. Shipped this arc: mk0.95 wind toggle; mk0.96 wind finish + FIRE pressed-state; mk0.97 the sharpened hand (possessed spread ×0.25, snap-lead, cover as bonus both sides, firing line, hold-the-shot); mk0.98 stone stands (infantry can't wake welded masonry, stick stops at buildings, bar hides while possessed); mk0.99 killing rifles (rifle 15 / MG 8 both sides, hit flinch+flash). Phase closes on the owner's playtest. Next phase: The Front.
 - Owner rulings still open: tower friendly-fire safety off while possessed (ratify by play); possessed squad pace (~2.1 m/s sustained, rear man on the 6m band) — accept or possessed members outpace the anchor.
 - PLAYTEST VERDICT (owner, 2026-08-12): Polish I, Vision, and the halt-and-fight fix (mk0.74) all passed — "seems okay." Both phases CLOSED. Next phase: Command (radial orders).
 - Mid-march stall: squads freeze short of their destination near masonry before any contact (pre-existing pathing, cohesion/detour family) — surfaced again in the mk0.74 staging runs; unranked by the owner.
