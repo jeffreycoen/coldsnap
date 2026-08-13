@@ -755,6 +755,67 @@ The bar (and the SELL slot inside it) vanishes the moment a possession begins an
 
 ---
 
+## Task 9 — Killing rifles: lethality raise and hit feedback (mk0.99) — suggested model: Sonnet (all code below)
+
+*Amendment, 2026-08-13, the owner's rulings after mk0.97 play ("bullets pass right through"): a clean rifle hit rises 4.1 → **15** on BOTH sides (four hits kill a conscript — rifles become a killing arm); the MG family rises flatter to **8** per round (MG team 3.6 → 8, MG tower 3.4 → 8 — a six-round burst ≈ one conscript); and every round that connects with a man visibly READS — he dips and flashes red for a fifth of a second, both sides. Sniper (130) and all blast weapons untouched; the blast splash component (dmg 5) is not the dial and does not move.*
+
+**Laws binding this task:** zero rng anywhere in the new code; the engine and renderer changes are guarded divergences (depot flag only — golden and the combat parity suite must pass untouched, no re-pin there); the old dirDmg calibration comments in specs.js are superseded by this ruling — annotate, don't erase.
+
+**Required reading (agent, before any code; anchors re-verified at dispatch):** this plan whole; `CLAUDE.md`; `src/depot/specs.js` — INFANTRY_ARMS :178-200, ENEMY_FIRE :91-99, TOWER_SPECS :34-40 (and their calibration comments); `src/engine/core.js` — applyDamage :801-809, stepProjectiles' dirDmg branch :739-766, the DIVERGENCE comment voice; `src/render/renderer.js` — the unit render loop :1524-1639 (palettes, setColorAt, the oy offset math, fogSil precedence), the hoisted-scratch conventions; `scripts/depot-test.mjs` — grep `4.1`, `3.6`, `4.5`, `3.4`, `dirDmg` (every pin that must re-pin), the POSSESSION T7 fixtures (angle pins — damage-blind, must stay green); `scripts/combat-test.mjs` header (why flag-off parity survives this).
+
+**Step 9.1 — failing tests first.** `scripts/depot-test.mjs`, new block `==== LETHALITY T9`:
+
+(a) spec pins, real imports: `INFANTRY_ARMS.rifles.dirDmg === 15`, `INFANTRY_ARMS.mg.dirDmg === 8`, `ENEMY_FIRE.rifle.dirDmg === 15`, `TOWER_SPECS.mg.dirDmg === 8`; sniper still 130; `INFANTRY_ARMS.rifles.dmg === 5` (the splash did not move).
+(b) time-to-kill, seeded: the possessed-volley loop that killed a 58 hp conscript at 14 m in ~15 rounds under mk0.97 now kills him in **≤ 8 rounds** (same fixture shape as T7's, cooldowns cleared between pulls; assert rounds ≤ 8 and ≥ 3 — deterministic with the pinned seed).
+(c) the stamp: `applyDamage(world, unit, 5, {cause})` with `world.depotCombat` sets `unit.dmgT === world.t`; without the flag `dmgT` stays undefined; on a wall body it stays undefined (units only).
+(d) renderer source pins: the unit loop computes `hurtK` from `b.dmgT` gated on `world.depotCombat`; the dip term (`- 0.10 * hurtK`) sits in the oy math; the flash lerp (`lerp(HIT_C, 0.7 * hurtK)`) sits in the color branch with fogSil precedence intact (silhouettes never flash — regex the branch order).
+(e) re-pin sweep: run the suite; every pre-existing pin carrying the old numbers re-pins old→new, each reported.
+
+**Step 9.2 — the numbers, in specs.js.** Four values move; each keeps its old comment and gains one line: `// mk0.99 (owner's lethality ruling): 4.1 -> 15 — rifles kill now; the ±10% replaces-not-adds calibration above is superseded.` (Wording adapted per line.)
+
+```js
+  rifles: ... dirDmg: 15, ...      // was 4.1
+  mg:     ... dirDmg: 8, ...       // was 3.6
+  // ENEMY_FIRE:
+  rifle:  ... dirDmg: 15, ...      // was 4.5 — symmetry holds, both sides rise
+  // TOWER_SPECS:
+  mg:     ... dirDmg: 8, ...       // was 3.4
+```
+
+**Step 9.3 — the stamp, in core.js** (one guarded line in `applyDamage`, after `b.lastHit = info;`):
+
+```js
+  // DIVERGENCE (guarded, mk0.99): HIT FEEDBACK STAMP — depot units remember
+  // WHEN they were last hurt so the renderer can flinch/flash them. A plain
+  // world-clock stamp; nothing in the sim reads it, no rng, no flag no change.
+  if (world.depotCombat && b.kind === "unit" && dmg > 0) b.dmgT = world.t;
+```
+
+**Step 9.4 — the flinch and the flash, in renderer.js.** Hoisted once near the palettes: `const HIT_C = new THREE.Color(0xff5230); const _hitC = new THREE.Color();`. In the unit loop, after `const KIT = troopKit(...)`:
+
+```js
+      // DIVERGENCE (guarded, mk0.99): HIT FEEDBACK — a struck man dips and
+      // flashes red for 0.18s. b.dmgT only ever exists under depotCombat
+      // (core.js applyDamage); every other mode renders byte-identical.
+      const hurtAge = world.depotCombat && b.alive && b.dmgT != null ? world.t - b.dmgT : 1;
+      const hurtK = hurtAge < 0.18 ? 1 - hurtAge / 0.18 : 0;
+```
+
+The dip: the oy line gains one term — `const oy = o[1] * (...) * crouch - (crouch < 1 ? 0.06 : 0) - 0.10 * hurtK;`. The flash: in the per-part color write, fogSil keeps absolute precedence, then:
+
+```js
+          else if (hurtK > 0) { _hitC.copy(pal[p.role]).lerp(HIT_C, 0.7 * hurtK); pools[pi].setColorAt(idx, _hitC); }
+          else pools[pi].setColorAt(idx, pal[p.role]);
+```
+
+(The spotter's binoculars branch keeps its own gun-color write — a hit spotter still dips; stated, accepted.)
+
+**Behavior stated plainly:** four clean rifle hits drop a conscript; a burst of six MG rounds does the same; the enemy's rifles hit your men just as hard — fights are short and cover is life, on both sides. Every round that lands SHOWS: the man jerks down a hand-span and glows red for a blink. What passes through hit nothing.
+
+**Gates (ONLY these):** parse changed files · `npm run lint:depot` · `npm run test:depot` (9.1 green; every re-pin old→new, its own bullet) · `npm run golden` (core + renderer touched) · `npm run test:combat` (flag-off parity witness) · build AFTER bumping `src/version.js` to "mk0.99" · `SMOKE_ONLY=depot` smoke. Allowed files: `specs.js`, `core.js`, `renderer.js`, `depot-test.mjs`, `version.js`. Feel acceptance (kill pace, flash look) is the owner's playtest alone. Commit "(mk0.99)", push, CI green, STOP.
+
+---
+
 ## Close
 
 Phase code-complete = the owner's playtest gates everything: possession feel, stick feel, reticle feel, volley feel, tower gunnery — none of it is verifiable by machine and none is accepted until he plays it. Roadmap flips Command → DONE, Possession → IN PROGRESS at T1 (fold into its commit: `src/ui/Roadmap.jsx` Command "One ring of orders around every squad and tower — shipped." / Possession "Take direct control of any squad or tower and drive it yourself."). Deferred to later phases by ratified scope: vehicle possession (Heroes), possession of walls (never ruled in), doctrine buttons while possessed, any enemy mirror (ruled out).
