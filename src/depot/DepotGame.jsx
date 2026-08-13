@@ -642,7 +642,7 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
         // machine, no auto-fire (T2 gives the trigger). Input is the frame's
         // snapshot; the drive runs at the fixed step like all movement.
         const pi = S.possessInput || { vx: 0, vz: 0 };
-        drivePossessedSquad(world, sq, pi.vx, pi.vz, world.dt);
+        drivePossessedSquad(world, sq, pi.vx, pi.vz, world.dt, S.reticle);
         const cl = clampToRim(sq.anchor.x, sq.anchor.z);
         sq.anchor = { x: cl.x, z: cl.z };
         // POSSESSION (P4 T2, mk0.91): squadFire normally decays u.fireCd —

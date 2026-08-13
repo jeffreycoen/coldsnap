@@ -8,6 +8,7 @@ import {
   MANIFEST_DRAWS, FOE_DRAWS, makeManifestState, makeFoeState, manifestPool, foePool,
   drawOffers, drawFoePick, pickManifest, isUnlocked, tierOpenCount,
   regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, squadFire, possessedVolley, possessedTowerFire,
+  POSSESS_ACC, POSSESS_SNAP_R, MATE_R, snapTargetNear, mateBlocks,
   fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed,
   PENDING_EDGE_PAD, pendingButtonsVisible, canvasTapConsumesPending,
   END_CARD_DELAY_S, stampEnd, endCardReady,
@@ -20,7 +21,7 @@ import {
 } from "../src/depot/state.js";
 import { troopKit, barrelBasis, RIFLE_PREROT, RIFLE_OFF, RIFLE_LEN } from "../src/render/troopkit.js";
 import { INFANTRY } from "../src/engine/core.js";
-import { reachPolygon, arcClears, squadReach, towerReachCached } from "../src/depot/accuracy.js";
+import { reachPolygon, arcClears, squadReach, towerReachCached, scatterSigma, losGraze, bracedAt } from "../src/depot/accuracy.js";
 import { friendlyFouls } from "../src/depot/state.js";
 import {
   makeWorld, makeField, addBody, addWeld, fireProjectile, stepWorld, applyDamage, worldHash, CAUSE, mulberry32, aimSolve,
@@ -4512,6 +4513,11 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   const muzzlesOf = (world) => world.events.filter((e) => e.type === "muzzle");
 
   // (a) mirror+pin: a 4-man rifle squad volleys once each at an aim 10m off.
+  // RE-PINNED (T7, mk0.97, 4 -> 3): the ring's rear-most man (i=2, diametrically
+  // opposite i=0 on this exact aim axis) now stands in i=0's corridor —
+  // the new mate-hold discipline holds his shot. Deterministic geometry, no
+  // rng; verified by hand (mateBlocks's own t/dist formula against the ring's
+  // fixed spawn positions), not guessed.
   {
     const world = makeWorld({ field: flatField, seed: 21 });
     const sq = makeSquad(1, "rifles", 1, 0, 0);
@@ -4519,8 +4525,8 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     world.events.length = 0;
     const fired = possessedVolley(world, sq, { x: 10, z: 0 }, null);
     const muzzles = muzzlesOf(world);
-    ok("POSSESSION T2(a): possessedVolley fires one shooterFire per living armed member at the aim",
-      fired === 4 && muzzles.length === 4, `fired=${fired} muzzles=${muzzles.length}`);
+    ok("POSSESSION T2(a): possessedVolley fires one shooterFire per living armed member at the aim (3 of 4 — the 4th is corridor-held, T7)",
+      fired === 3 && muzzles.length === 3, `fired=${fired} muzzles=${muzzles.length}`);
     ok("POSSESSION T2(a): every muzzle carries weapon:\"rifle\"",
       muzzles.every((m) => m.weapon === "rifle"), muzzles.map((m) => m.weapon).join(","));
   }
@@ -4575,6 +4581,8 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   // (d) per-member cooldowns are honored: a second pull 0.1s later (the
   // game layer's own decay, u.fireCd -= dt, mirrored here) finds every man
   // still on cooldown — zero muzzles.
+  // RE-PINNED (T7, mk0.97, fired1 4 -> 3): same corridor hold as T2(a) —
+  // the geometry is identical (same aim, same spawn ring).
   {
     const world = makeWorld({ field: flatField, seed: 24 });
     const sq = makeSquad(1, "rifles", 1, 0, 0);
@@ -4584,8 +4592,8 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     for (const id of sq.memberIds) { const u = world.byId.get(id); u.fireCd -= 0.1; }
     world.events.length = 0;
     const fired2 = possessedVolley(world, sq, { x: 10, z: 0 }, null);
-    ok("POSSESSION T2(d): per-member cooldowns are honored — 0.1s after a full volley (fireRate 1.3s), nobody is off cooldown yet",
-      fired1 === 4 && fired2 === 0, `fired1=${fired1} fired2=${fired2}`);
+    ok("POSSESSION T2(d): per-member cooldowns are honored — 0.1s after a full volley (fireRate 1.3s), nobody is off cooldown yet (3 of 4 fired — the 4th is corridor-held, T7)",
+      fired1 === 3 && fired2 === 0, `fired1=${fired1} fired2=${fired2}`);
   }
 
   // (e) source pin: possessedVolley reads INFANTRY_ARMS[squad.type] and
@@ -4910,7 +4918,270 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 }
 // ==== end WIND TOGGLE =======================================================
 
+// ==== POSSESSION T7: the sharpened hand ======================================
+// mk0.97 (Phase 4 Task 7, owner's amendment). Possessed fire sharpens: spread
+// tightens to a quarter (POSSESS_ACC), the reticle snaps to a live SEEN enemy
+// for a real lead solve (snapTargetNear), cover exempts the muzzle's first
+// 2.5m and braces tighten scatter x0.85 (both sides, symmetric), a possessed
+// squad fans into a firing line perpendicular to the aim, and any shooter
+// whose teammate stands in the corridor HOLDS fire (mateBlocks) — possessed
+// AND auto squads alike. Mortars are exempt: arcing over your own men is the
+// tube's purpose.
+{
+  const flatField = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+  const idUV = (x, z) => ({ u: x, v: z });
+  const muzzlesOf = (world) => world.events.filter((e) => e.type === "muzzle");
+  // Angle between a fired muzzle event's own direction and the straight line
+  // from that event's own (x,y,z) to a given 3D point — the "ideal" line.
+  const angleOff = (ev, tx, ty, tz) => {
+    const ix = tx - ev.x, iy = ty - ev.y, iz = tz - ev.z;
+    const il = Math.hypot(ix, iy, iz);
+    const dot = (ix / il) * ev.dx + (iy / il) * ev.dy + (iz / il) * ev.dz;
+    return Math.acos(Math.max(-1, Math.min(1, dot)));
+  };
 
+  // (a) the constants exist and are pinned — real imports, no mirrors.
+  ok("POSSESSION T7(a): POSSESS_ACC is pinned at 0.25 (the sharpened hand)",
+    POSSESS_ACC === 0.25, POSSESS_ACC);
+  ok("POSSESSION T7(a): POSSESS_SNAP_R is pinned at 2m",
+    POSSESS_SNAP_R === 2, POSSESS_SNAP_R);
+
+  // (b) possessed spread tightens to the hand (mean angle off the aim line
+  // under 0.035 rad); the machine (squadFire) stays loose (mean > 0.06 rad).
+  // AMENDMENT (14m control): rifles range is 15 and squadFire refuses beyond
+  // effRange, so the control fixture fires at 14m; the possessed fixture has
+  // no such ceiling and stays at 20m. 15 volleys, cooldowns hand-decayed
+  // between pulls (the possessed path does not decay fireCd on its own).
+  {
+    const world = makeWorld({ field: flatField, seed: 31 });
+    const sq = makeSquad(1, "rifles", 1, 0, 0);
+    spawnSquadMembers(world, sq);
+    const aim = { x: 0, z: 20 };
+    const angles = [];
+    for (let v = 0; v < 15; v++) {
+      world.events.length = 0;
+      possessedVolley(world, sq, aim, null);
+      const ty = world.field.heightAt(aim.x, aim.z) + 0.9;
+      for (const ev of muzzlesOf(world)) angles.push(angleOff(ev, aim.x, ty, aim.z));
+      for (const id of sq.memberIds) { const u = world.byId.get(id); if (u) u.fireCd = 0; }
+    }
+    const mean = angles.reduce((a, b) => a + b, 0) / angles.length;
+    ok("POSSESSION T7(b): possessed volley mean angle off the aim line is under 0.035 rad",
+      angles.length > 0 && mean < 0.035, `n=${angles.length} mean=${mean.toFixed(4)}`);
+  }
+  {
+    const world = makeWorld({ field: flatField, seed: 31 });
+    const sq = makeSquad(1, "rifles", 1, 0, 0);
+    spawnSquadMembers(world, sq);
+    const enemy = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 14, hp: 58 });
+    const angles = [];
+    for (let v = 0; v < 15; v++) {
+      world.events.length = 0;
+      squadFire(world, sq, world.dt, null);
+      for (const ev of muzzlesOf(world)) angles.push(angleOff(ev, enemy.pos.x, enemy.hy, enemy.pos.z));
+      for (const id of sq.memberIds) { const u = world.byId.get(id); if (u) u.fireCd = 0; }
+    }
+    const mean = angles.reduce((a, b) => a + b, 0) / angles.length;
+    ok("POSSESSION T7(b) control: squadFire's machine spread stays loose, mean > 0.06 rad",
+      angles.length > 0 && mean > 0.06, `n=${angles.length} mean=${mean.toFixed(4)}`);
+  }
+
+  // (c) lead is live: a snapped target's lateral motion pulls the fired
+  // azimuth ahead of his CURRENT bearing; standing still, the same shot
+  // fires straight at him. Averaged over 15 volleys (scatter is zero-mean
+  // per shot; the lead bias is not).
+  {
+    const bearingDev = (vx) => {
+      const world = makeWorld({ field: flatField, seed: 41 });
+      const sq = makeSquad(1, "rifles", 1, 0, 0);
+      spawnSquadMembers(world, sq);
+      const enemy = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 20, hp: 58 });
+      enemy.v.x = vx;
+      const devs = [];
+      for (let v = 0; v < 15; v++) {
+        world.events.length = 0;
+        possessedVolley(world, sq, { x: enemy.pos.x, z: enemy.pos.z }, null);
+        for (const ev of muzzlesOf(world)) {
+          const shotAz = Math.atan2(ev.dx, ev.dz);
+          const straightAz = Math.atan2(enemy.pos.x - ev.x, enemy.pos.z - ev.z);
+          devs.push(shotAz - straightAz);
+        }
+        for (const id of sq.memberIds) { const u = world.byId.get(id); if (u) u.fireCd = 0; }
+      }
+      return devs.reduce((a, b) => a + b, 0) / devs.length;
+    };
+    const movingDev = bearingDev(3);
+    const stillDev = bearingDev(0);
+    ok("POSSESSION T7(c): a live target leading at 3 m/s pulls the fired azimuth ahead of his current bearing",
+      movingDev > 0.015, `movingDev=${movingDev.toFixed(4)}`);
+    ok("POSSESSION T7(c): the identical shot at a standing target fires straight (near-zero mean deviation)",
+      Math.abs(stillDev) < 0.015, `stillDev=${stillDev.toFixed(4)}`);
+  }
+
+  // (d) snap respects the sight law: an enemy within snap radius but on
+  // unseen ground is not snapped — the volley aims at the GROUND point.
+  // Sight map hand-stamped exactly like T2(b): lit only west of u=8.
+  {
+    const world = makeWorld({ field: flatField, seed: 51 });
+    const sq = makeSquad(1, "rifles", 1, 0, 0);
+    spawnSquadMembers(world, sq);
+    const T = makeTerritory(29, 57);
+    T.sight = makeSight(T);
+    for (let iz = 0; iz < T.sight.nz; iz++) for (let ix = 0; ix < T.sight.nx; ix++) {
+      const u = -T.sight.halfU + (ix + 0.5) * T.sight.cs;
+      if (u < 8) T.sight.seen1[iz * T.sight.nx + ix] = 1;
+    }
+    const aim = { x: 6.3, z: 0 };
+    const enemy = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 8.0, y: 0.86, z: 1.0, hp: 58 });
+    const groundDevs = [], enemyDevs = [];
+    for (let v = 0; v < 10; v++) {
+      world.events.length = 0;
+      possessedVolley(world, sq, aim, T, idUV);
+      const gy = world.field.heightAt(aim.x, aim.z) + 0.9;
+      for (const ev of muzzlesOf(world)) {
+        groundDevs.push(angleOff(ev, aim.x, gy, aim.z));
+        enemyDevs.push(angleOff(ev, enemy.pos.x, enemy.hy, enemy.pos.z));
+      }
+      for (const id of sq.memberIds) { const u = world.byId.get(id); if (u) u.fireCd = 0; }
+    }
+    const meanGround = groundDevs.reduce((a, b) => a + b, 0) / groundDevs.length;
+    const meanEnemy = enemyDevs.reduce((a, b) => a + b, 0) / enemyDevs.length;
+    ok("POSSESSION T7(d): the enemy sits on unseen ground — the volley still aims at the ground point",
+      groundDevs.length > 0 && meanGround < 0.05, `n=${groundDevs.length} meanGround=${meanGround.toFixed(4)}`);
+    ok("POSSESSION T7(d): no snap happened — the shots sit well off the (unseen) enemy's own line",
+      meanEnemy > 0.1, `meanEnemy=${meanEnemy.toFixed(4)}`);
+  }
+
+  // (e) cover is a bonus now: losGraze exempts a solid within the muzzle's
+  // first 2.5m; a solid further down the lane still grazes; bracedAt is true
+  // beside a solid, and scatterSigma there is base x0.85 (BRACE_K), isolated
+  // from the graze term by reusing the exempt (non-grazing) solid.
+  {
+    const muzzle = { x: 0, y: 1.5, z: 0 };
+    const aim = { x: 0, y: 1.5, z: 20 };
+    const nearBag = { alive: true, kind: "chunk", pos: { x: 0.8, y: 1.5, z: 0.3 }, hx: 0.3, hy: 0.3, hz: 0.3, invM: 0 };
+    const midBag = { alive: true, kind: "chunk", pos: { x: 0.8, y: 1.5, z: 10 }, hx: 0.3, hy: 0.3, hz: 0.3, invM: 0 };
+    ok("POSSESSION T7(e): losGraze exempts a solid within the muzzle's first 2.5m",
+      losGraze({ bodies: [nearBag] }, muzzle, aim) === 0);
+    ok("POSSESSION T7(e): losGraze still grazes a solid mid-path",
+      losGraze({ bodies: [midBag] }, muzzle, aim) > 0);
+    ok("POSSESSION T7(e): bracedAt is true beside a solid",
+      bracedAt({ bodies: [nearBag] }, muzzle.x, muzzle.z) === true);
+    const spec = { acc: 0.09 };
+    const sigmaOpen = scatterSigma({ bodies: [] }, muzzle, aim, spec);
+    const sigmaBraced = scatterSigma({ bodies: [nearBag] }, muzzle, aim, spec);
+    ok("POSSESSION T7(e): scatterSigma tightens x0.85 beside a solid (BRACE_K), graze isolated by the muzzle exemption",
+      Math.abs(sigmaBraced - sigmaOpen * 0.85) < 1e-9, `open=${sigmaOpen} braced=${sigmaBraced}`);
+  }
+
+  // (f) the firing line: driving WITH an aim fans the squad perpendicular to
+  // anchor->aim, goals collinear and spaced ~1.5m (clearSlot is exact on
+  // flat, empty ground — no clearance deflection). WITHOUT an aim the ring
+  // still holds (T1(a)'s own coverage; reasserted here as a regression guard).
+  {
+    const world = makeWorld({ field: flatField, seed: 61 });
+    const sq = makeSquad(1, "rifles", 1, 0, 0);
+    spawnSquadMembers(world, sq);
+    const aim = { x: 0, z: 20 };
+    drivePossessedSquad(world, sq, 0, 0, world.dt, aim);
+    const goals = sq.memberIds.map((id) => world.byId.get(id).goal);
+    ok("POSSESSION T7(f): every member's line goal sits on the perpendicular axis (z ~ anchor.z)",
+      goals.every((g) => Math.abs(g.z - sq.anchor.z) < 1e-6), goals.map((g) => g.z.toFixed(3)).join(","));
+    const xs = goals.map((g) => g.x).sort((a, b) => a - b);
+    let spacingOk = true;
+    for (let i = 1; i < xs.length; i++) if (Math.abs((xs[i] - xs[i - 1]) - 1.5) > 1e-6) spacingOk = false;
+    ok("POSSESSION T7(f): the four goals are evenly spaced ~1.5m along that axis",
+      spacingOk, xs.map((x) => x.toFixed(3)).join(","));
+
+    const world2 = makeWorld({ field: flatField, seed: 62 });
+    const sq2 = makeSquad(1, "rifles", 1, 0, 0);
+    spawnSquadMembers(world2, sq2);
+    drivePossessedSquad(world2, sq2, 0, 0, world2.dt);
+    const g0 = world2.byId.get(sq2.memberIds[0]).goal;
+    ok("POSSESSION T7(f): without an aim, the ring formation holds (T1(a) untouched)",
+      Math.abs(g0.x) < 2 && Math.abs(g0.z) < 2, `g0=(${g0.x.toFixed(2)},${g0.z.toFixed(2)})`);
+  }
+
+  // (g) check fire: a mate standing on the muzzle->aim line 3m out holds the
+  // shooter's shot (1 muzzle, not 2), and his cooldown is untouched — he
+  // fires the instant the lane clears. Stepped 1.5m aside, both fire.
+  {
+    const mkMember = (world, sq, x, z) => {
+      const u = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28,
+        x, y: 0.74, z, hp: 58, friction: 0.5 });
+      u.utype = "rifles"; u.squadId = sq.id; u.dress = "human";
+      sq.memberIds.push(u.id);
+      return u;
+    };
+    {
+      const world = makeWorld({ field: flatField, seed: 71 });
+      const sq = makeSquad(1, "rifles", 1, 0, 0);
+      const shooter = mkMember(world, sq, 0, 0);
+      mkMember(world, sq, 0, 3);
+      world.events.length = 0;
+      possessedVolley(world, sq, { x: 0, z: 20 }, null);
+      ok("POSSESSION T7(g): a mate standing in the corridor holds the shooter's shot — 1 muzzle, not 2",
+        muzzlesOf(world).length === 1, `muzzles=${muzzlesOf(world).length}`);
+      ok("POSSESSION T7(g): the held man's cooldown is untouched — he fires the instant the lane clears",
+        (shooter.fireCd || 0) === 0, `fireCd=${shooter.fireCd}`);
+    }
+    {
+      const world = makeWorld({ field: flatField, seed: 72 });
+      const sq = makeSquad(1, "rifles", 1, 0, 0);
+      mkMember(world, sq, 0, 0);
+      mkMember(world, sq, 1.5, 3);
+      world.events.length = 0;
+      possessedVolley(world, sq, { x: 0, z: 20 }, null);
+      ok("POSSESSION T7(g): the mate stepped 1.5m aside — both fire, 2 muzzles",
+        muzzlesOf(world).length === 2, `muzzles=${muzzlesOf(world).length}`);
+    }
+  }
+
+  // (h) mortars exempt: the same blocked geometry, but INFANTRY_ARMS.mortars
+  // is occl "lofted" — the corridor check never runs. Both tubes fire.
+  {
+    const mkMortar = (world, sq, x, z) => {
+      const u = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28,
+        x, y: 0.74, z, hp: 58, friction: 0.5 });
+      u.utype = "mortars"; u.squadId = sq.id; u.dress = "human";
+      sq.memberIds.push(u.id);
+      return u;
+    };
+    const world = makeWorld({ field: flatField, seed: 73 });
+    const sq = makeSquad(1, "mortars", 1, 0, 0);
+    mkMortar(world, sq, 0, 0);
+    mkMortar(world, sq, 0, 3);
+    world.events.length = 0;
+    possessedVolley(world, sq, { x: 0, z: 20 }, null);
+    ok("POSSESSION T7(h): mortars are exempt from the corridor check — both tubes fire despite the blocked geometry",
+      muzzlesOf(world).length === 2, `muzzles=${muzzlesOf(world).length}`);
+  }
+
+  // (i) auto squads inherit the discipline: squadFire holds the shooter
+  // whose mate stands in the corridor to the acquired target, same rule.
+  {
+    const mkMember = (world, sq, x, z) => {
+      const u = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28,
+        x, y: 0.74, z, hp: 58, friction: 0.5 });
+      u.utype = "rifles"; u.squadId = sq.id; u.dress = "human";
+      sq.memberIds.push(u.id);
+      return u;
+    };
+    const world = makeWorld({ field: flatField, seed: 74 });
+    const sq = makeSquad(1, "rifles", 1, 0, 0);
+    sq.order = "defend";
+    const shooter = mkMember(world, sq, 0, 0);
+    mkMember(world, sq, 0, 3);
+    addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 14, hp: 58 });
+    world.events.length = 0;
+    squadFire(world, sq, world.dt, null);
+    ok("POSSESSION T7(i): squadFire holds the shooter whose mate stands in the corridor to the acquired target",
+      muzzlesOf(world).length === 1, `muzzles=${muzzlesOf(world).length}`);
+    ok("POSSESSION T7(i): the held man's cooldown is untouched (squadFire's own per-tick decay only)",
+      (shooter.fireCd || 0) <= 0, `fireCd=${shooter.fireCd}`);
+  }
+}
+// ==== end POSSESSION T7 ======================================================
 
 
 if (fails.length) {

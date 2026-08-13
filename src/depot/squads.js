@@ -391,6 +391,18 @@ function slotFor(squad, idx, n) {
   return { x: squad.anchor.x + Math.sin(az) * r, z: squad.anchor.z + Math.cos(az) * r };
 }
 
+// POSSESSION T7 (mk0.97): under the stick with a live aim, the squad shakes
+// out into a FIRING LINE perpendicular to the aim — nobody stands behind
+// anybody, so the corridor hold above almost never fires. Ring spacing kept
+// (1.5m). Pure geometry, no draws.
+function lineSlotFor(squad, idx, n, aim) {
+  const dx = aim.x - squad.anchor.x, dz = aim.z - squad.anchor.z;
+  const d = Math.hypot(dx, dz) || 1;
+  const px = -dz / d, pz = dx / d;
+  const o = (idx - (n - 1) / 2) * 1.5;
+  return { x: squad.anchor.x + px * o, z: squad.anchor.z + pz * o };
+}
+
 // Approach bearing used as threatBearing when the squad has no live enemy
 // context wired in yet: bearing FROM member TOWARD squad.anchor's forward
 // reference (dest if attacking, else world +z as a stable default).
@@ -682,7 +694,7 @@ export function stepSquad(world, squad, dt) {
 // attack leg's own rubber-band escapes a member wedged in terrain. No
 // leg-pause/rng dwell is reused (there are no legs under the stick, and the
 // brief's zero-new-rng law binds this path) — only the hold-and-cap shape.
-export function drivePossessedSquad(world, squad, vx, vz, dt) {
+export function drivePossessedSquad(world, squad, vx, vz, dt, aim) {
   const mag = Math.hypot(vx, vz);
   if (mag > 1) { vx /= mag; vz /= mag; }
   const members = squad.memberIds.map((id) => world.byId.get(id)).filter((u) => u && u.alive);
@@ -703,7 +715,7 @@ export function drivePossessedSquad(world, squad, vx, vz, dt) {
   }
   const n = members.length;
   members.forEach((u, i) => {
-    const s = slotFor(squad, i, n);
+    const s = aim ? lineSlotFor(squad, i, n, aim) : slotFor(squad, i, n);
     u.goal = clearSlot(world, s.x, s.z, (u.hx || 0.3) + 0.35);
     u.settled = false;
     seekGoal(world, u, dt);

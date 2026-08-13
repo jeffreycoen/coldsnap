@@ -578,6 +578,10 @@ export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })
       if (!best) { best = scanStructs(); bestIsStruct = !!best; }
     }
     if (!best) continue;
+    // T7: the corridor holds this man's shot if a live teammate stands
+    // between his muzzle and the target — cooldown untouched, same rule
+    // possessed fire follows; mortars are exempt (lofted).
+    if (fspec.occl !== "lofted" && mateBlocks(world, squad, u, muzzle, best.pos)) continue;
     u.fireCd = spec.fireRate;
     // F1.5 Task 1: lofted specs (mortars) lob — shooterFire's high aimSolve
     // branch, the exact flag the mortar TOWER's towerShot passes. Everyone
@@ -594,6 +598,48 @@ export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })
   }
 }
 
+// POSSESSION T7 (mk0.97): THE SHARPENED HAND. Under the owner's control a
+// shooter is deliberate: spread tightens to a quarter of the machine's
+// (possession-only — auto-fire keeps the loose suppressive model), and a
+// reticle resting on or near a live enemy aims at the MAN — his body, his
+// speed, his height — through shooterFire's existing lead solve. The snap
+// obeys the sight law: a man on unseen ground is not snapped to.
+export const POSSESS_ACC = 0.25;   // spread multiplier under player control // provisional (F5)
+export const POSSESS_SNAP_R = 2;   // m — reticle-to-enemy snap radius // provisional (F5)
+export function snapTargetNear(world, aim, T, toUV, r = POSSESS_SNAP_R) {
+  let best = null, bd = r * r;
+  for (const b of world.bodies) {
+    if ((b.kind !== "unit" && b.kind !== "vehicle") || !b.alive || b.team !== 2) continue;
+    const dx = b.pos.x - aim.x, dz = b.pos.z - aim.z, d2 = dx * dx + dz * dz;
+    if (d2 >= bd) continue;
+    const c = toUV(b.pos.x, b.pos.z);
+    if (!fieldReaches(T, c.u, c.v, 1)) continue;   // you snap only to what your side sees
+    bd = d2; best = b;
+  }
+  return best;
+}
+
+// THE CORRIDOR (T7): a living teammate inside MATE_R of the muzzle->aim
+// line means this man HOLDS his shot — cooldown untouched, so he fires the
+// instant the lane clears. Lofted specs (mortars) never check: arcing over
+// your own men is the tube's whole purpose.
+export const MATE_R = 0.5;   // m — corridor half-width // provisional (F5)
+export function mateBlocks(world, squad, shooter, muzzle, aimPos) {
+  const dx = aimPos.x - muzzle.x, dz = aimPos.z - muzzle.z;
+  const d2 = dx * dx + dz * dz;
+  if (d2 < 1e-9) return false;
+  for (const id of squad.memberIds) {
+    if (id === shooter.id) continue;
+    const m = world.byId.get(id);
+    if (!m || !m.alive) continue;
+    const t = ((m.pos.x - muzzle.x) * dx + (m.pos.z - muzzle.z) * dz) / d2;
+    if (t <= 0.02 || t >= 1) continue;
+    const px = muzzle.x + dx * t, pz = muzzle.z + dz * t;
+    if (Math.hypot(m.pos.x - px, m.pos.z - pz) < MATE_R + (m.hx || 0.28)) return true;
+  }
+  return false;
+}
+
 // POSSESSION (P4 T2, mk0.91): the owner's trigger. One pull = one aimed
 // shot from every living armed member off cooldown, at a synthetic ground
 // target — through shooterFire, so scatter/lead/wind/sight law all apply
@@ -604,18 +650,25 @@ export function possessedVolley(world, squad, aim, T, toUV = (x, z) => ({ u: x, 
   if (!spec) return 0;
   const c = toUV(aim.x, aim.z);
   if (!fieldReaches(T, c.u, c.v, squad.team)) return 0;
-  const fspec = { ...spec, volley: spec.burst || 1,
+  const fspec = { ...spec, acc: spec.acc * POSSESS_ACC, volley: spec.burst || 1,
     blastR: spec.blastR != null ? spec.blastR : INFANTRY_BLAST_R,
     kv: spec.kv != null ? spec.kv : INFANTRY_KV };
-  const tgt = { pos: { x: aim.x, y: world.field.heightAt(aim.x, aim.z) + 0.9, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: 0.9 };
+  // T7: the reticle snaps to a live, SEEN enemy for the real body — real
+  // velocity, real height, shooterFire's own lead solve — falling back to
+  // the synthetic ground point exactly as before when nothing is near.
+  const live = snapTargetNear(world, aim, T, toUV);
+  const tgt = live || { pos: { x: aim.x, y: world.field.heightAt(aim.x, aim.z) + 0.9, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: 0.9 };
   let fired = 0;
   for (const id of squad.memberIds) {
     const u = world.byId.get(id);
     if (!u || !u.alive || u.role === "spotter") continue;
     u.fireCd = (u.fireCd || 0);
     if (u.fireCd > 0) continue;
-    u.fireCd = spec.fireRate;
     const muzzle = { x: u.pos.x, y: u.pos.y + 0.5, z: u.pos.z };
+    // T7: the corridor — a live teammate between this muzzle and the aim
+    // holds the shot (cooldown untouched); mortars are exempt.
+    if (fspec.occl !== "lofted" && mateBlocks(world, squad, u, muzzle, tgt.pos)) continue;
+    u.fireCd = spec.fireRate;
     const high = spec.occl === "lofted";
     shooterFire(world, u, muzzle, tgt, fspec, { attacker: "player", volleyDelay: spec.burstGap, muzzleStep: 0, owner: u.id, high });
     fired++;
@@ -625,7 +678,9 @@ export function possessedVolley(world, squad, aim, T, toUV = (x, z) => ({ u: x, 
 
 // POSSESSION (P4 T3, mk0.92): a possessed tower is manual fire control —
 // the real spec, the real cooldown, the real muzzle, your aim. Sight-gated
-// at the aim like every shot.
+// at the aim like every shot. T7: acc sharpens by POSSESS_ACC and the aim
+// snaps to a live, seen enemy exactly like a possessed squad's volley —
+// towers have no squadmates, so there is no corridor check.
 export function possessedTowerFire(world, tower, aim, T, toUV = (x, z) => ({ u: x, v: z })) {
   const spec = TOWER_SPECS[tower.towerType];
   if (!spec || spec.fireRate <= 0) return false;
@@ -633,10 +688,11 @@ export function possessedTowerFire(world, tower, aim, T, toUV = (x, z) => ({ u: 
   if (tower.fireCd > 0) return false;
   const c = toUV(aim.x, aim.z);
   if (!fieldReaches(T, c.u, c.v, 1)) return false;
-  const tgt = { pos: { x: aim.x, y: world.field.heightAt(aim.x, aim.z) + 0.9, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: 0.9 };
+  const live = snapTargetNear(world, aim, T, toUV);
+  const tgt = live || { pos: { x: aim.x, y: world.field.heightAt(aim.x, aim.z) + 0.9, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: 0.9 };
   tower.fireCd = spec.fireRate;
   tower.flashT = world.t;
-  towerShot(world, tower, tgt, spec);
+  towerShot(world, tower, tgt, { ...spec, acc: spec.acc * POSSESS_ACC });
   return true;
 }
 

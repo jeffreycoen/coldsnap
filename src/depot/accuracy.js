@@ -144,6 +144,12 @@ export function arcClears(world, muzzle, target, spec, selfId) {
   return blocked === null ? false : !blocked;          // no solution -> not clear
 }
 
+// T7 (mk0.97, owner's amendment): cover is a bonus now — your own parapet
+// is a rest, not an obstruction. The sample loop starts past the muzzle
+// exemption, so a solid within GRAZE_MUZZLE_EXEMPT of the muzzle never
+// costs the shooter accuracy (real grazing further down the lane still
+// does).
+const GRAZE_MUZZLE_EXEMPT = 2.5; // m — your own parapet is a rest, not an obstruction // provisional (F5)
 export function losGraze(world, muzzle, aim) {
   // Worst (closest) pass-by of the muzzle->aim segment against static solids.
   // Cheap: point samples vs expanded AABBs of rocks/walls/towers/trees/chunks.
@@ -155,7 +161,7 @@ export function losGraze(world, muzzle, aim) {
     if (b.kind !== "rock" && b.kind !== "wall" && b.kind !== "tower" && b.kind !== "tree" && b.kind !== "chunk") continue;
     // coarse reject: box vs segment AABB
     const r = Math.max(b.hx, b.hz) + GRAZE_MARGIN;
-    for (let s = GRAZE_STEP; s < len - GRAZE_STEP; s += GRAZE_STEP) {
+    for (let s = Math.max(GRAZE_STEP, GRAZE_MUZZLE_EXEMPT); s < len - GRAZE_STEP; s += GRAZE_STEP) {
       const t = s / len, px = muzzle.x + dx * t, py = muzzle.y + dy * t, pz = muzzle.z + dz * t;
       const cx = Math.abs(px - b.pos.x) - b.hx, cy = Math.abs(py - b.pos.y) - b.hy, cz = Math.abs(pz - b.pos.z) - b.hz;
       const gap = Math.max(cx, cy, cz);                      // >0: outside by gap
@@ -166,13 +172,26 @@ export function losGraze(world, muzzle, aim) {
   return worst;
 }
 
+// T7: the brace — a shooter standing beside a solid (same static-solid set,
+// XZ proximity to the MUZZLE, not the aim) shoots tighter, not wider. Both
+// sides of the war get this, symmetric with the graze exemption above.
+const BRACE_R = 1.2, BRACE_K = 0.85; // provisional (F5)
+export function bracedAt(world, x, z) {
+  for (const b of world.bodies) {
+    if (!b.alive || !SOLID_KINDS.has(b.kind)) continue;
+    if (b.invM > 0 && b.kind !== "chunk" && b.kind !== "tree") continue;
+    if (Math.abs(x - b.pos.x) <= b.hx + BRACE_R && Math.abs(z - b.pos.z) <= b.hz + BRACE_R) return true;
+  }
+  return false;
+}
+
 export function scatterSigma(world, muzzle, aim, spec) {
   const ground = Math.hypot(aim.x - muzzle.x, aim.z - muzzle.z);
   const range = 1 + RANGE_K * Math.max(0, ground - REF_RANGE);
   // shooter above target => aim.y - muzzle.y < 0 => tighter; firing uphill => wider
   const elev = Math.min(ELEV_MAX, Math.max(ELEV_MIN, 1 + ELEV_K * (aim.y - muzzle.y)));
   const graze = 1 + GRAZE_K * losGraze(world, muzzle, aim);
-  return spec.acc * range * elev * graze;
+  return spec.acc * range * elev * graze * (bracedAt(world, muzzle.x, muzzle.z) ? BRACE_K : 1);
 }
 
 // ---------------------------------------------------------------- preview
