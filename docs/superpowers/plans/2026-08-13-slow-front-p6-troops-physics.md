@@ -12,10 +12,7 @@
 
 **Task 2 — Stone doesn't murder pedestrians** — POPULATED BELOW (mk1.11).
 
-**Task 3 — Only engineers build** *(skeleton; owner's ruling, 2026-08-13)*
-- Walls and sandbags leave the build bar — laid only by engineer squads walking their two-point lines.
-- Towers keep direct placement; the seeded depot sandbags stay.
-- Every tutorial/copy line that says "tap to build a wall" follows the truth.
+**Task 3 — Only engineers build** — POPULATED BELOW (mk1.12).
 
 **Task 4 — The bell market** *(skeleton)*
 - Prices re-set at every bell from what stands on the field, men plus masonry, against the physics budget.
@@ -39,6 +36,104 @@
 - The technical section beneath, for engineers who keep reading.
 
 **Close** — the owner's playtest closes the phase.
+
+---
+
+# TASK 3 — Only engineers build (mk1.12)
+
+**What it does.** The god hand loses its trowel. Walls and sandbags leave the build bar and the starting unlock list — masonry is laid ONLY by engineer squads walking their two-point lines, at the field costs they already pay. Towers keep direct placement exactly as today. The seeded depot sandbags (map dressing) stay. The build bar therefore opens a match showing RIFLE SQUAD and ENGINEER TEAM; no build mode is selected by default — a ground tap selects and inspects only, until the player picks a bar slot. The start-screen line that promises "wall their road" starts telling the truth.
+
+**What deliberately does NOT change:** `spawnWallCourses`/`spawnSandbag` and every engineer-line mechanism (they are the only door now); the wall inspect/sell flow (walls still exist, engineers built them); `buildAt`'s wall branch (it becomes debug-harness-only — `__DEPOTBUILD__` defaults to it and the staging scripts lean on it); `WALL_COST` (still the buildAt fallback price the harness pays); the enemy (it never built).
+
+**Feel changes that ship for the owner's eyes:** a two-slot opening bar; fortification is engineer work from the first minute — you place the team and draw lines; towers still drop from the bar as before.
+
+**Suggested model:** Sonnet — removals and three named re-pins, all specified.
+
+**Required reading (re-verify anchors at dispatch):**
+- `src/depot/DepotGame.jsx` — the PALETTE block (search `key: "wall"`), the run-state init (`mode: "wall"`), `setMode` (the sandbag re-tap orient cycle), `tapAt` (the wall/sandbag mode branches), `buildAt` + `canBuildAt` (read-only context), `placeSandbagAt` (dies), the hover-ghost sandbag branch (search `S.mode === "sandbag"`), the start overlay copy (search `Wall their road`).
+- `src/depot/specs.js` — whole (PLAYER_START at ~136 and its ladder comment).
+- `src/depot/state.js` — 1050–1075 (makeManifestState/ladderPool, read-only — the unlock machinery needs no edit).
+- `scripts/depot-test.mjs` — 1–70, 160–220 (the manifest start-kit pins), 3230–3240 (the mk0.60/2 pin), the tail.
+- `scripts/smoke.mjs` — the depot section (verify only: it never builds from the bar — confirmed at plan time).
+- `src/version.js`.
+
+**Trap notes:**
+- EXPECTED RE-PINS, exactly THREE (report each old→new): (1) the manifest start-kit pin (~line 164): four items incl. wall/sandbag → TWO items, `sq_rifles` + `sq_engineers`; (2) the `M.unlocked.length === 4` in the never-offered pick test (~line 217) → `=== 2`; (3) the mk0.60/2 PLAYER_START pin (~line 3235) → length 2, engineers + rifles, wall/sandbag ABSENT. Any OTHER moved assert is a defect — STOP.
+- `PALETTE_BY_KEY`/`PALETTE_LABEL` feed the manifest card — wall and sandbag were never manifest offers (they were start items), so nothing else reads their entries. Verify, do not chase.
+- `S.sandbagOrient` state and its save field become vestigial but harmless — leave them (the save format is not this task's business; the mark bump burns saves anyway).
+- The engineer line's own internal kind strings ("walls"/"bags") are NOT the palette keys — do not touch the line machinery.
+- Old saves carry a four-item unlocked list — irrelevant: the mark bump refuses them.
+- The default-mode change (`null`) means `tapAt`'s fall-through must never call `canBuildAt(null)` — the guard is in the specified code.
+- FULL smoke is NOT needed — no engine change; `SMOKE_ONLY=depot` as usual.
+
+## Steps, in execution order
+
+**Step 1 — failing asserts first.** Three re-pins plus the new block, then `npm run test:depot`: the three re-pinned lines and the new P6-T3 source pins are red against today's code; everything else green. Record the exact reds.
+
+(1a) Re-pin the manifest start-kit test (~line 164):
+```js
+    ok("manifest: the starting kit is rifles + engineers (re-pinned mk1.12 — only engineers build)",
+      M.unlocked.length === 2 && isUnlocked(M, "sq_rifles") && isUnlocked(M, "sq_engineers")
+      && !isUnlocked(M, "wall") && !isUnlocked(M, "sandbag"),
+      M.unlocked.join(","));
+```
+(1b) Re-pin the never-offered pick test's length (~line 217): `M.unlocked.length === 2`.
+(1c) Re-pin mk0.60/2 (~line 3235):
+```js
+  ok("mk0.60/2 (re-pinned mk1.12): PLAYER_START is rifles + engineers — masonry is engineer work",
+    PLAYER_START.length === 2 && PLAYER_START.includes("sq_engineers") && PLAYER_START.includes("sq_rifles")
+    && !PLAYER_START.includes("wall") && !PLAYER_START.includes("sandbag"),
+    PLAYER_START.join(","));
+```
+(1d) Insert the P6-T3 block before the tail summary:
+```js
+// ==== P6 T3: only engineers build ===========================================
+// mk1.12 (Troops & Physics, Task 3). Walls and sandbags leave the bar and
+// the starting kit — engineer lines are the only door to masonry. Towers
+// keep direct placement; the seeded depot bags stay; the harness's buildAt
+// door stays for staging.
+{
+  console.log("\n[p6 t3: only engineers build]");
+  const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  ok("T3: the bar has no wall slot", !/key: "wall", label: "WALL"/.test(src));
+  ok("T3: the bar has no sandbag slot", !/key: "sandbag", label: "SANDBAG"/.test(src));
+  ok("T3: no build mode is selected by default", /mode: null, sellMode: false/.test(src));
+  ok("T3: the ground tap guards the tower path on a live mode", /if \(S\.mode && TOWER_SPECS\[S\.mode\]\)/.test(src));
+  ok("T3: the engineer line machinery is untouched (both spawners live)",
+    /spawnWallCourses\(world, row\.x/.test(src) && /spawnSandbag\(world, row\.x, row\.z, orient\);/.test(src));
+  ok("T3: the seeded depot bags are untouched", /spawnSandbag\(world, bx, bz,/.test(src));
+  ok("T3: the harness door stays (buildAt via __DEPOTBUILD__)", /__DEPOTBUILD__ = \(gx, gz, mode\) => buildAt\(gx, gz, mode \|\| "wall"\)/.test(src));
+  ok("T3: the start screen stopped promising the trowel", !/Wall their road/.test(src));
+}
+// ==== end P6 T3 ==============================================================
+```
+
+**Step 2 — the starting kit.** `src/depot/specs.js` (~line 136), with the ladder comment corrected in place (the START row of the two-ladders table loses wall · sandbag too):
+```js
+export const PLAYER_START = ["sq_rifles", "sq_engineers"]; // mk1.12 (owner): masonry is engineer work — walls and sandbags come only off their lines
+```
+
+**Step 3 — the bar and the modes.** `src/depot/DepotGame.jsx`:
+
+(3a) PALETTE: delete the `{ key: "wall", ... }` entry and the `{ key: "sandbag", ... }` entry (the tower spread and every squad entry stay).
+(3b) The run-state init: `mode: "wall"` → `mode: null`.
+(3c) `setMode`: delete the sandbag re-tap orient-cycle block (the `if (m === "sandbag" && S.mode === "sandbag" ...)` early return).
+(3d) `tapAt`: delete the `if (S.mode === "wall") { buildAt(...); return; }` line and the `if (S.mode === "sandbag") { placeSandbagAt(...); return; }` line; the trailing tower path gains its guard:
+```js
+        if (S.mode && TOWER_SPECS[S.mode]) {
+          const v = canBuildAt(g.gx, g.gz, S.mode);
+          if (!v.ok) { toast(v.msg); return; }
+          startPending(g.gx, g.gz, S.mode, v);
+        }
+```
+(3e) Delete `placeSandbagAt` (its only caller died). `spawnSandbag` itself stays — engineers and the seeded ring use it.
+(3f) The hover-ghost sandbag branch (the `S.mode === "sandbag"` oriented-footprint pad) simplifies to the plain `GRID_CS` pad — the branch dies.
+(3g) The palette bar's sandbag icon-cycling map line (`p.key === "sandbag" ? { ...p, icon: ... }` in the render) dies with the entry.
+(3h) The start overlay copy: `Wall their road, gun the choke points.` → `Gun the choke points; your engineers dig the lines.` (one sentence, nothing else in the overlay moves — the full site audit is Task 7's).
+
+**Step 4 — green, bump, build, smoke.** `npm run lint:depot` · `npm run test:depot` fully green (the three named re-pins, nothing else) · `src/version.js` → `"mk1.12"` · `npm run build` AFTER the bump · `SMOKE_ONLY=depot npm run smoke`.
+
+**Gates (ONLY these):** parse changed files · `npm run lint:depot` · `npm run test:depot` (Step 1 red-first, then green; three named re-pins reported old→new) · `npm run build` after the bump · `SMOKE_ONLY=depot` smoke. Allowed files: `src/depot/DepotGame.jsx`, `src/depot/specs.js`, `scripts/depot-test.mjs`, `src/version.js`. Commit `"only engineers build: the god hand loses its trowel (mk1.12)"`, push, CI green, STOP. The owner checks the deployed site: a two-slot opening bar, fortification only through engineer lines, towers dropping from the bar as always.
 
 ---
 
