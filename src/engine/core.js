@@ -805,6 +805,10 @@ function applyDamage(world, b, dmg, info) {
   if (world.depotCombat && b.armor != null && info.cause !== CAUSE.BLAST && dmg < b.armor) dmg *= 0.15;
   b.hp -= dmg;
   b.lastHit = info;
+  // DIVERGENCE (guarded, mk0.99): HIT FEEDBACK STAMP — depot units remember
+  // WHEN they were last hurt so the renderer can flinch/flash them. A plain
+  // world-clock stamp; nothing in the sim reads it, no rng, no flag no change.
+  if (world.depotCombat && b.kind === "unit" && dmg > 0) b.dmgT = world.t;
   if (b.hp <= 0) killBody(world, b, info);
 }
 function resolveCause(world, b, info) {

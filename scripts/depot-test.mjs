@@ -5266,6 +5266,83 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 }
 // ==== end POSSESSION T8 =======================================================
 
+// ==== LETHALITY T9: killing rifles ===========================================
+// mk0.99 (Phase 4 Task 9, owner's ruling after mk0.97 play: "bullets pass
+// right through"). Rifle/mg dirDmg rise so infantry fire actually kills; a
+// struck man stamps b.dmgT so the renderer can flinch/flash him. Sniper
+// (130) and every blast weapon (the rifles' own dmg 5 splash included) are
+// untouched.
+{
+  const flatF9 = { heightAt: () => 0, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; }, carve: () => {}, dirty: false };
+
+  // (a) spec pins, real imports.
+  ok("LETHALITY T9(a): INFANTRY_ARMS.rifles.dirDmg is 15", INFANTRY_ARMS.rifles.dirDmg === 15, INFANTRY_ARMS.rifles.dirDmg);
+  ok("LETHALITY T9(a): INFANTRY_ARMS.mg.dirDmg is 8", INFANTRY_ARMS.mg.dirDmg === 8, INFANTRY_ARMS.mg.dirDmg);
+  ok("LETHALITY T9(a): ENEMY_FIRE.rifle.dirDmg is 15", ENEMY_FIRE.rifle.dirDmg === 15, ENEMY_FIRE.rifle.dirDmg);
+  ok("LETHALITY T9(a): TOWER_SPECS.mg.dirDmg is 8", TOWER_SPECS.mg.dirDmg === 8, TOWER_SPECS.mg.dirDmg);
+  ok("LETHALITY T9(a): the sniper's dirDmg (130) did not move", INFANTRY_ARMS.sniper.dirDmg === 130, INFANTRY_ARMS.sniper.dirDmg);
+  ok("LETHALITY T9(a): the rifles' blast splash component (dmg 5) did not move", INFANTRY_ARMS.rifles.dmg === 5, INFANTRY_ARMS.rifles.dmg);
+
+  // (b) time-to-kill: a possessed rifle squad at 14m now kills a 58hp
+  // conscript in <= 8 rounds (mk0.97's 4.1 dirDmg took far more). Member
+  // cooldowns cleared between pulls; each pull steps the world 40 ticks so
+  // rounds fly and land before the next pull.
+  {
+    const world = makeWorld({ field: flatF9, seed: 5 });
+    world.depotCombat = true;
+    const sq = makeSquad(1, "rifles", 1, 0, 0);
+    spawnSquadMembers(world, sq);
+    const enemy = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 14, hp: 58 });
+    const aim = { x: enemy.pos.x, z: enemy.pos.z };
+    let rounds = 0, pulls = 0;
+    while (enemy.alive && pulls < 20) {
+      rounds += possessedVolley(world, sq, aim, null);
+      for (let i = 0; i < 40; i++) stepWorld(world);
+      for (const id of sq.memberIds) { const u = world.byId.get(id); if (u) u.fireCd = 0; }
+      pulls++;
+    }
+    ok("LETHALITY T9(b): a possessed rifle squad kills a 58hp conscript at 14m in 3-8 rounds now (rifles kill)",
+      !enemy.alive && rounds >= 3 && rounds <= 8, `rounds=${rounds} pulls=${pulls} enemyAlive=${enemy.alive} hp=${enemy.hp}`);
+  }
+
+  // (c) the hit stamp: applyDamage under world.depotCombat stamps b.dmgT to
+  // world.t on any positive damage; without the flag, or on a non-unit body,
+  // dmgT stays undefined.
+  {
+    const world = makeWorld({ field: flatF9, seed: 1 });
+    world.depotCombat = true;
+    world.t = 3.5;
+    const u = addBody(world, { kind: "unit", team: 1, mass: 82, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.72, z: 0, hp: 58 });
+    applyDamage(world, u, 5, { cause: CAUSE.PROJECTILE, attacker: "player" });
+    ok("LETHALITY T9(c): applyDamage stamps b.dmgT === world.t under world.depotCombat", u.dmgT === 3.5, u.dmgT);
+
+    const world2 = makeWorld({ field: flatF9, seed: 1 });
+    const u2 = addBody(world2, { kind: "unit", team: 1, mass: 82, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.72, z: 0, hp: 58 });
+    applyDamage(world2, u2, 5, { cause: CAUSE.PROJECTILE, attacker: "player" });
+    ok("LETHALITY T9(c): without world.depotCombat, dmgT stays undefined", u2.dmgT === undefined, u2.dmgT);
+
+    const world3 = makeWorld({ field: flatF9, seed: 1 });
+    world3.depotCombat = true;
+    const wall = addBody(world3, { kind: "wall", team: 0, mass: 0, hx: 1, hy: 1, hz: 1, x: 0, y: 1, z: 0, hp: 100 });
+    applyDamage(world3, wall, 5, { cause: CAUSE.PROJECTILE, attacker: "player" });
+    ok("LETHALITY T9(c): a wall body never gets stamped (units only)", wall.dmgT === undefined, wall.dmgT);
+  }
+
+  // (d) renderer source pins: hurtK gated on world.depotCombat off b.dmgT,
+  // the dip term in the oy math, the flash lerp in the color branch keeping
+  // fogSil's absolute precedence.
+  {
+    const rendSrc = fs.readFileSync(new URL("../src/render/renderer.js", import.meta.url), "utf8");
+    ok("LETHALITY T9(d): hurtK is computed from b.dmgT, gated on world.depotCombat",
+      /const hurtAge = world\.depotCombat && b\.alive && b\.dmgT != null \? world\.t - b\.dmgT : 1;/.test(rendSrc) &&
+      /const hurtK = hurtAge < 0\.18 \? 1 - hurtAge \/ 0\.18 : 0;/.test(rendSrc));
+    ok("LETHALITY T9(d): the dip term (-0.10 * hurtK) sits in the oy math",
+      /- 0\.10 \* hurtK;/.test(rendSrc));
+    ok("LETHALITY T9(d): the flash lerp sits in the color branch, fogSil keeping first precedence",
+      /if \(fogSil\) pools\[pi\]\.setColorAt\(idx, SIL_C\);[\s\S]{0,300}hurtK > 0[\s\S]{0,150}lerp\(HIT_C, 0\.7 \* hurtK\)/.test(rendSrc));
+  }
+}
+// ==== end LETHALITY T9 ========================================================
 
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);

@@ -722,6 +722,9 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const mkPal = (o) => { const p = {}; for (const k in o) p[k] = new THREE.Color(o[k]); return p; };
   const AND_LIVE = mkPal({ dom: 0xdde3ea, sec: 0x9aa6b2, acc: 0xc0cbd6, skin: 0xeef2f6, gun: 0x2a2e34 });
   const AND_DEAD = mkPal({ dom: 0x6d747c, sec: 0x474d54, acc: 0x596069, skin: 0x8b929a, gun: 0x14171a });
+  // DIVERGENCE (guarded, mk0.99): HIT FEEDBACK palette — a struck man flashes
+  // toward this red for 0.18s (see hurtK below).
+  const HIT_C = new THREE.Color(0xff5230), _hitC = new THREE.Color();
   const _swq = new THREE.Quaternion(), _bq = new THREE.Quaternion(), _AXX = new THREE.Vector3(1, 0, 0);
   // ---- mk0.23 troop identity (DEPOT-gated, see src/render/troopkit.js) ----
   // The barrel quaternion: the rifle's preRot baked as Rz*Ry*Rx (exactly the
@@ -1560,6 +1563,11 @@ export function makeRenderer(canvas, world0, opts = {}) {
       // no rng, no world.t. Outside DEPOT it returns the pre-mk0.23 look and
       // zero-scale props, so every other mode draws byte-identically.
       const KIT = troopKit(b, !!world.depotCombat, fogSil);
+      // DIVERGENCE (guarded, mk0.99): HIT FEEDBACK — a struck man dips and
+      // flashes red for 0.18s. b.dmgT only ever exists under depotCombat
+      // (core.js applyDamage); every other mode renders byte-identical.
+      const hurtAge = world.depotCombat && b.alive && b.dmgT != null ? world.t - b.dmgT : 1;
+      const hurtK = hurtAge < 0.18 ? 1 - hurtAge / 0.18 : 0;
       const bw = KIT.bw, bh = KIT.bh;
       const kitPal = KIT.pal;
       for (let pi = 0; pi < spec.length; pi++) {
@@ -1579,7 +1587,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
         // or the baked rotation shears it — and no bulked unit carries one.
         const bpx = propI !== undefined ? 1 : bw, bpy = propI !== undefined ? 1 : bh;
         const ox = o[0] * (propI !== undefined ? 1 : bw), oz = o[2] * (propI !== undefined ? 1 : bw);
-        const oy = o[1] * (propI !== undefined ? 1 : bh) * crouch - (crouch < 1 ? 0.06 : 0);
+        const oy = o[1] * (propI !== undefined ? 1 : bh) * crouch - (crouch < 1 ? 0.06 : 0) - 0.10 * hurtK;
         const px = b.pos.x + R[0] * ox + R[3] * oy + R[6] * oz;
         const py = b.pos.y + R[1] * ox + R[4] * oy + R[7] * oz;
         const pz = b.pos.z + R[2] * ox + R[5] * oy + R[8] * oz;
@@ -1616,7 +1624,8 @@ export function makeRenderer(canvas, world0, opts = {}) {
           if (fogSil) pools[pi].setColorAt(idx, SIL_C);
           else {
             const pal = b.dress === "android" ? (b.alive ? AND_LIVE : AND_DEAD) : (b.alive ? INF_LIVE : INF_DEAD)[kitPal];
-            pools[pi].setColorAt(idx, pal[p.role]);
+            if (hurtK > 0) { _hitC.copy(pal[p.role]).lerp(HIT_C, 0.7 * hurtK); pools[pi].setColorAt(idx, _hitC); }
+            else pools[pi].setColorAt(idx, pal[p.role]);
           }
         }
       }
