@@ -174,6 +174,16 @@ Note on (c): if the ungated man SURVIVES today (the fixture squeeze too weak eve
 
 **Step A1-3.** Expectations, restated: red-first shows (a) RED (the burial clock kills him today), (a2) RED (same clock, unwelded pile), (b) GREEN (falling stone kills), (c) GREEN (the ungated man dies today — and KEEPS dying after the fix, since the guard is gated), (d) RED (no guard yet). After Step 2: all five green.
 
+## AMENDMENT 2 (owner's ruling, 2026-08-13) — golden carries the parity proof
+
+*Found in execution: fixture (c)'s premise was FALSE. The mk0.98 wake exemption ("infantry can't wake welded sleeping masonry") also keys off `world.depotCombat` — with the flag OFF, the squeeze WAKES the ungated wall, the stones shift, and the burial clock never gets its sustained bearing. The ungated man survives today for reasons that predate this task, and the fixture can never honestly pass. Rulings:*
+
+**Step A2-1.** Fixture (c) is DELETED. Ungated parity is the GOLDEN gate's job — it runs demo-versus-engine on scripted battles in this task's own gate list and proves byte-identity outright.
+
+**Step A2-2.** Fixture (a2) is restated as a GREEN-BOTH-WAYS sanity, assert text updated to say so: unwelded sleeping rubble WAKES when brushed (the wake exemption requires a live weld), so it never killed the pressed man and must keep not killing him after the fix.
+
+**Step A2-3.** Expectations, final form: red-first shows (a) RED and (d) RED; (a2) and (b) GREEN. After Step 2: all four green. The keystone pair: unmoved at this task's landing (measured — `hash=2061472628 draws=551`), no re-pin.
+
 **Step 2 — the engine edit.** `src/engine/core.js`, classifyImpacts. Directly after `const dv = pn * victim.invM;` (line 1659):
 ```js
     // DIVERGENCE (guarded, mk1.11 — the owner's ruling): A SLEEPING STONE IS
