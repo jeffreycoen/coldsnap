@@ -16,9 +16,7 @@
 
 **Task 4 — The living market** — POPULATED BELOW (mk1.13).
 
-**Task 5 — The body lists, resurrected** *(skeleton)*
-- The archived typed-pools spec (THE FRONT plan, bottom), re-landed as written.
-- Measured with THE FRONT Task 6's protocol: means and medians, two repeats, tails reported never gating.
+**Task 5 — The body lists, resurrected** — POPULATED BELOW (mk1.14).
 
 **Task 6 — The weld scan sleeps too** *(skeleton)*
 - The per-tick walk over every weld skips what sleeps — the collision books' cousin.
@@ -33,6 +31,34 @@
 - The technical section beneath, for engineers who keep reading.
 
 **Close** — the owner's playtest closes the phase.
+
+---
+
+# TASK 5 — The body lists, resurrected (mk1.14)
+
+**What it does.** Re-lands the typed body pools: once per frame, the world's body array is filtered into seven pools (solids, statics, friends, foes, each side's structure targets, the careful-fire set), and every hot combat and movement scan iterates its pool instead of walking the whole world — with its full original predicate kept, so behavior is identical by construction. This shipped once at mk0.99 to green gates, measured a reproducible −15–17% mean physics cost, and was reverted because the tail metric on the old probe was noise. THE FRONT's Task 6 built the honest measurement since (means and medians, two repeats, tails reported never gating) — that protocol is the judge this time.
+
+**The governing text is the ARCHIVED SPEC** — `docs/superpowers/plans/2026-08-13-slow-front-p5-the-front.md`, section "ARCHIVED SPEC — Body lists (implemented and reverted 2026-08-13; resurrect at TROOPS & PHYSICS, P6)", INCLUDING its Amendment 1 (the rebuild runs ONCE PER FRAME, never per sub-step — that amendment's finding is settled law now, folded in from the start). The agent executes that spec with the DELTA LIST below; where the two disagree, the delta list wins.
+
+**THE DELTA LIST (re-landing in the mk1.13 world):**
+1. NAMES: the test block is `P6 T5: body lists` (mk1.14); every assert prefix `T1(` becomes `T5(`; the module comment in `lists.js` says "ONE pass per frame (DepotGame's frame loop, before the sim catch-up loop)" from the start — the archived Amendment's A3 wording, not the original.
+2. THE REBUILD SITE: skip the archived Step 3's stepDepot placement entirely — the rebuild lands per the archived Amendment's Step A2, in the frame loop between the sim stopwatch open and the catch-up loop (live anchor: `const pSim0 = perf ? performance.now() : 0;` followed by `let guard = 0;`), guarded by `if (S.acc >= STEP)`. The lists.js import from Step 3 still lands.
+3. `slotBlocked` (squads.js): the pool line goes AFTER the T3 water line (`if (world.streamAt && ...) return true;` stays the first line) — the archived snippet predates the stream.
+4. ANCHORS: every archived line number has drifted (four map tasks and four P6 tasks landed since mk0.99). The FUNCTION NAMES are the anchors now — the eighteen consumer sites are: accuracy.js `solidBlocksPoint`/`losGraze`/`bracedAt`; squads.js `exposureAt`/`slotBlocked`/`squadThreatened`/`stepSapperCharges`; state.js `squadFire`'s two scans/`snapTargetNear`/`friendlyBlocksPoint`; units.js `stepTank`/`nearestPlayerUnit`/`stepRifleman`/`stepGrenadier`/`stepSapper`; DepotGame.jsx `stepTowers`' acquisition scan and `engageCheck`'s scan. Verify each still matches the archived snippet's SHAPE at dispatch; a site whose shape has drifted is a STOP, not an improvisation.
+5. OUT OF SCOPE, unchanged from the archive plus two new cold callers: `marketCounts` (1 Hz) and `planTrees` (boot-only) keep walking `world.bodies` — cold paths never convert.
+6. MEASUREMENT (supersedes the archived Step 0/Step 10 and the Amendment's ship rule): Step 0 BEFORE capture on the mk1.13 build with the EXISTING `.superpowers/diag-t6-perf.mjs` (seed 2307, window A 20s idle, window B 40-man assault + hangar collapse, two repeats); after everything is green and bumped, the AFTER capture, same script, two repeats. SHIP RULE: after-mean sim at or below before-mean in BOTH windows, both repeats; medians alongside; tails reported, never gating. A regression is a STOP — no third strategy without the owner.
+7. The archived Step 9's roadmap flip is DEAD (it happened at mk1.10); only the version bump remains: `src/version.js` → `"mk1.14"`, build AFTER the bump.
+8. COMMIT SUBJECT: `"body lists: the hot scans stop walking the world (mk1.14)"`.
+9. EXPECTED RE-PINS: none. The keystone battles (FRONT T6, P6 T2's fixtures) drive `stepWorld` directly — the lists never install there, the pools' keystone is this task's own zoo twin (archived T1(c), now T5(c)). Any old assert moving is a STOP.
+10. GATES (ONLY these): parse changed files · `npm run lint:depot` (lists.js is rng-free) · `npm run test:depot` (archived Step 1's block red-first as written — module missing — then fully green, zero re-pins) · `npm run build` after the bump · `SMOKE_ONLY=depot npm run smoke` · the Step 0/AFTER Pi captures with delta 6's ship rule. No golden (core.js untouched — game layer only).
+
+**Required reading (re-verify at dispatch):** the WHOLE archived spec section including its Amendment; `src/depot/accuracy.js` whole; `src/depot/squads.js` whole; `src/depot/state.js` — `squadFire` through `friendlyFouls` (the four consumer sites); `src/depot/units.js` whole; `src/depot/DepotGame.jsx` — imports, `stepTowers`, `engageCheck`, the frame-loop sim bracket; `scripts/depot-test.mjs` 1–70 + tail; `.superpowers/diag-t6-perf.mjs` (run-only); `src/version.js`.
+
+**Allowed files:** `src/depot/lists.js` (new), `src/depot/accuracy.js`, `src/depot/squads.js`, `src/depot/state.js`, `src/depot/units.js`, `src/depot/DepotGame.jsx`, `scripts/depot-test.mjs`, `src/version.js`.
+
+**Feel changes:** none — identical behavior by construction (the zoo twin proves it); the Pi numbers are the deliverable.
+
+**Suggested model:** Sonnet — the spec is archived in full; the work is careful re-anchoring plus the measurement.
 
 ---
 
