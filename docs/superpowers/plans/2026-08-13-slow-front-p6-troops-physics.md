@@ -154,6 +154,26 @@
 ```
 Note on (c): if the ungated man SURVIVES today (the fixture squeeze too weak even for the old rule), (a) will not be red either — that is the red-first STOP; report it rather than strengthening the squeeze on your own authority.
 
+## AMENDMENT 1 (owner's ruling, 2026-08-13) — the wall grows a head
+
+*Found in execution, exactly where the red-first discipline looks: the two-stone fixture wall cannot kill under today's rule — the ejection out of a shallow overlap never reaches the lethal threshold. The TRUE field killer is the BURIAL CLOCK: a real building face is three courses, its head-height stone overlaps a pressed man's head zone, `pn > 5` reads it as "bearing down", and the clock kills him in 1.1 seconds as a collapse casualty. The engine edit is UNCHANGED — `inertStone` already guards the burial line. Only the fixtures grow to match the truth.*
+
+**Step A1-1.** `buildStack` becomes a THREE-course face (the third stone is the head-height one):
+```js
+  const buildStack = (world, x, z) => {
+    const lo = addBody(world, { kind: "chunk", team: 0, mass: 100, hx: 0.4, hy: 0.4, hz: 0.4, x, y: 0.42, z, friction: 0.65, restitution: 0.02 });
+    const mid = addBody(world, { kind: "chunk", team: 0, mass: 100, hx: 0.4, hy: 0.4, hz: 0.4, x, y: 1.25, z, friction: 0.65, restitution: 0.02 });
+    const hi = addBody(world, { kind: "chunk", team: 0, mass: 100, hx: 0.4, hy: 0.4, hz: 0.4, x, y: 2.08, z, friction: 0.65, restitution: 0.02 });
+    addWeld(world, lo, mid, 8.0e4); addWeld(world, mid, hi, 8.0e4);
+    lo.sleeping = true; mid.sleeping = true; hi.sleeping = true;
+    return { lo, mid, hi };
+  };
+```
+
+**Step A1-2.** The (a2) rubble fixture becomes the SAME three stones WITHOUT welds (a settled pile a man is pressed against), all sleeping — its assert text and expectation unchanged (he survives after the fix).
+
+**Step A1-3.** Expectations, restated: red-first shows (a) RED (the burial clock kills him today), (a2) RED (same clock, unwelded pile), (b) GREEN (falling stone kills), (c) GREEN (the ungated man dies today — and KEEPS dying after the fix, since the guard is gated), (d) RED (no guard yet). After Step 2: all five green.
+
 **Step 2 — the engine edit.** `src/engine/core.js`, classifyImpacts. Directly after `const dv = pn * victim.invM;` (line 1659):
 ```js
     // DIVERGENCE (guarded, mk1.11 — the owner's ruling): A SLEEPING STONE IS
