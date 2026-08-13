@@ -4885,6 +4885,19 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 }
 // ==== end POSSESSION T5 =====================================================
 
+// ==== WIND TOGGLE (mk0.95) ==================================================
+// The owner's accuracy-tuning switch: WIND OFF must mean dead calm through
+// the ONE world.wind assignment every shooter reads — not a second wind
+// source somewhere. Source pins (JSX, T1-T3's convention).
+{
+  const gameSrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  ok("WIND TOGGLE source pin: stepDepot's one wind assignment is gated by S.windOn",
+    /world\.wind = S\.windOn === false \? \{ x: 0, z: 0, mag: 0 \} : windAt\(MAP_SEED, world\.t\);/.test(gameSrc));
+  ok("WIND TOGGLE source pin: no other stepDepot-path windAt assignment exists",
+    (gameSrc.match(/world\.wind = windAt/g) || []).length === 1); // the __DEPOTSETT__ debug hook only
+}
+// ==== end WIND TOGGLE =======================================================
+
 
 
 

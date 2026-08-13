@@ -677,7 +677,11 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
     if (!ptw || !ptw.alive) S.releasePossession();
   }
   stepTowers(world, T, discipline, S.possess && S.possess.kind === "tower" ? S.possess.id : undefined);
-  world.wind = windAt(MAP_SEED, world.t);
+  // WIND TOGGLE (mk0.95, owner's accuracy-tuning request): off = dead calm
+  // for BOTH sides' shots and shells (drift and hold-off zero out through
+  // the same world.wind every shooter reads). Deterministic either way —
+  // windAt is a pure function and the toggle draws nothing.
+  world.wind = S.windOn === false ? { x: 0, z: 0, mag: 0 } : windAt(MAP_SEED, world.t);
   stepWorld(world);
   stepBreakerRam(world); // heavies (breakers) ram walls/towers — TD's ColdsnapTD.jsx :964-972
   for (let i = world.bodies.length - 1; i >= 0; i--) {
@@ -1191,13 +1195,22 @@ export default function DepotGame({ onExit, resume = null }) {
       let discipline = "careful";
       try { const v = window.localStorage.getItem("coldsnap-depot-discipline"); if (v === "free" || v === "careful") discipline = v; } catch (e) {}
 
+      // WIND toggle (mk0.95, owner's request while tuning possessed-fire
+      // accuracy): OFF = dead calm — every shot's drift and hold-off zero
+      // out through the one world.wind read in stepDepot. Both sides feel
+      // it equally (aim fully equal, the standing law). Same persistence
+      // pattern as FOG/DISCIPLINE above. Default ON.
+      let windOn = true;
+      try { windOn = window.localStorage.getItem("coldsnap-depot-wind") !== "0"; } catch (e) {}
+
       const S = {
         resources: 120, kills: 0,
         ws: makeDepotAssaultState(), spawnRR: 0,
         mode: "wall", sellMode: false, inspectId: null,
         started: false, gameOver: false, victory: false,
-        paused: false, speed: 1, fogOn, discipline,
+        paused: false, speed: 1, fogOn, discipline, windOn,
         setFog: (v) => { fogOn = v; S.fogOn = v; R.setFog(v); try { window.localStorage.setItem("coldsnap-depot-fog", v ? "1" : "0"); } catch (e) {} },
+        setWind: (v) => { windOn = v; S.windOn = v; try { window.localStorage.setItem("coldsnap-depot-wind", v ? "1" : "0"); } catch (e) {} },
         setDiscipline: (v) => { discipline = v; S.discipline = v; try { window.localStorage.setItem("coldsnap-depot-discipline", v); } catch (e) {} },
         // The clock (P1 Task 1): bellAt is the absolute SIM-clock stamp the
         // next bell is due at, bellT the readout stepBell derives from it.
@@ -3030,7 +3043,7 @@ export default function DepotGame({ onExit, resume = null }) {
               enemyStanding: S.enemyStanding != null ? S.enemyStanding : 1,
               mode: S.mode, sellMode: S.sellMode, sandbagOrient: S.sandbagOrient || 0,
               paused: S.paused, speed: S.speed,
-              muted: A.muted, fogOn: S.fogOn, discipline: S.discipline, seed: MAP_SEED,
+              muted: A.muted, fogOn: S.fogOn, windOn: S.windOn, discipline: S.discipline, seed: MAP_SEED,
               toasts: S.toasts.map((t) => t.txt),
               squadSel: (() => {
                 const sq = S.selSquadId != null ? S.squads.find((q) => q.id === S.selSquadId) : null;
@@ -3204,6 +3217,11 @@ export default function DepotGame({ onExit, resume = null }) {
     S.setFog(!S.fogOn);
     setHud((h) => ({ ...h, fogOn: S.fogOn }));
   };
+  const toggleWind = () => {
+    const S = stateRef.current; if (!S || !S.setWind) return;
+    S.setWind(!S.windOn);
+    setHud((h) => ({ ...h, windOn: S.windOn }));
+  };
   const sellInspected = () => { const S = stateRef.current; if (S && S.inspectId && S.sellById) S.sellById(S.inspectId); };
 
   // POSSESSION (P4 T1, mk0.90): the touch stick. Depot-styled port of the
@@ -3365,6 +3383,9 @@ export default function DepotGame({ onExit, resume = null }) {
           onClick={() => { const S = stateRef.current; if (S && S.rotate) S.rotate(1); }}>⟳</button>
         <button style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.fogOn ? "#7fd7ff" : "#48515f", opacity: hud.fogOn ? 1 : 0.6 }} title="fog of war (visual only)" onClick={toggleFog}>
           FOG {hud.fogOn ? "ON" : "OFF"}
+        </button>
+        <button data-wind style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.windOn ? "#7fd7ff" : "#48515f", opacity: hud.windOn ? 1 : 0.6 }} title="wind (drift on every shot, both sides)" onClick={toggleWind}>
+          WIND {hud.windOn ? "ON" : "OFF"}
         </button>
         <button style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", opacity: hud.muted ? 0.5 : 1 }} onClick={toggleMute}>
           {hud.muted ? "🔇" : "🔊"}
