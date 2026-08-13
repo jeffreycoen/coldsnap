@@ -1162,6 +1162,29 @@ export function makeRenderer(canvas, world0, opts = {}) {
       disc.position.set(p.x, p.level + 0.06, p.z);
       dressG.add(disc);
     }
+    // T3 (DEPOT-gated by data): stream water — a flat ribbon strip per run,
+    // built from the centerline points, at the level the game supplies.
+    for (const s of spec.streams || []) {
+      const n2 = s.pts.length;
+      if (n2 < 2) continue;
+      const pos = new Float32Array(n2 * 2 * 3);
+      for (let i = 0; i < n2; i++) {
+        const p = s.pts[i];
+        const q0 = s.pts[Math.max(0, i - 1)], q1 = s.pts[Math.min(n2 - 1, i + 1)];
+        let dx = q1.x - q0.x, dz = q1.z - q0.z;
+        const L = Math.hypot(dx, dz) || 1;
+        const px = (-dz / L) * s.w, pz = (dx / L) * s.w;
+        pos.set([p.x + px, p.y, p.z + pz, p.x - px, p.y, p.z - pz], i * 6);
+      }
+      const idx = [];
+      for (let i = 0; i + 1 < n2; i++) idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      geo.setIndex(idx);
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x2b4a5c, transparent: true, opacity: 0.82, depthWrite: false }));
+      m.layers.set(1);
+      dressG.add(m);
+    }
   }
 
   // ---- build overlay (tower defense): ghost pad + range preview + objective

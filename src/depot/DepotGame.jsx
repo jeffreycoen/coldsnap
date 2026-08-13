@@ -29,7 +29,11 @@ import Dispatch from "./Dispatch.jsx";
 
 // ============================================================== the map
 // THE FRONT (mk1.00): a 120x120 SQUARE — one canonical frame, four rotations.
-const GRID_CS = 2.0, GRID_W = 59, GRID_H = 59;
+// AMENDMENT 3 (mk1.02): the flow/build grid covers the FULL rim — the old
+// 1m inset is gone. Cell centers sit at u,v = ±59; cell edges land exactly
+// on the ±60 rim, so a stream running the rim's full width has no off-grid
+// endpoint.
+const GRID_CS = 2.0, GRID_W = 60, GRID_H = 60;
 const GRID_OX = -(GRID_W * GRID_CS) / 2, GRID_OZ = -(GRID_H * GRID_CS) / 2;
 let ORIENT = 0;
 // Transform formulas live in orient.js (pure, ORIENT-explicit, headlessly
@@ -49,6 +53,7 @@ const RIM_HALF_U = 60, RIM_HALF_V = 60;
 const clampToRim = (x, z) => clampToRimFor(ORIENT, x, z, RIM_HALF_U, RIM_HALF_V);
 let OBJ_POS = { x: 0, z: 49 };
 let SPAWN_POINTS = [], PONDS = [], ROCKS = [], TOWN = [], ROADS = [], PASSES = [], BANDS = [], MAP_SEED = 0, SPAWN_U = [];
+let STREAM = null; // T3: { pts:[{u,v}...], w, v, bridgeU } — canonical, regrown from seed
 
 function genMap(seed) {
   const r = mulberry32(seed);
@@ -73,6 +78,22 @@ function genMap(seed) {
     for (let i = 0; i < n; i++) out.push({ x: -50 + r() * 100, z });
     return out;
   });
+  // THE STREAM (T3, mk1.02): one per map — full width, meandering, in a
+  // drawn gap clear of the bands, capped |v|<=22 so it can never touch a
+  // depot pad. ONE causeway crossing at bridgeU. Canonical space throughout.
+  // Drawn here (right after the bands, ahead of rocks) so every clearance
+  // chain below — rocks, spawns-adjacent ponds, benches, ruins — can read
+  // streamV; genMap's rng is its own free stream, so the draw order is ours.
+  let streamV = (bands[0] + bands[1]) / 2;   // fallback: between the first two bands
+  for (let i = 0; i < 20; i++) {
+    const v = -22 + r() * 44;
+    if (bands.every((b) => Math.abs(v - b) >= 8)) { streamV = v; break; }
+  }
+  const streamW = 2.2 + r() * 1.8;           // half-width: a 4.4-8m channel // provisional (F5)
+  const bridgeU = (r() - 0.5) * 90;
+  const streamPts = [];
+  for (let u = -60; u <= 60; u += 10) streamPts.push({ u, v: streamV + (r() - 0.5) * 6 });
+  const stream = { pts: streamPts, w: streamW, v: streamV, bridgeU };
   const rocks = [];
   for (let bi = 0; bi < bands.length; bi++) {
     const density = 0.35 + r() * 0.65;
@@ -82,6 +103,7 @@ function genMap(seed) {
       if (passes[bi].some((g) => Math.abs(x - g.x) < 6.5)) continue;
       // T2: a wandering depot can meet a band — rocks keep 12m off both
       if (Math.hypot(x - depotU1, z - depotDepth) < 12 || Math.hypot(x - depotU2, z + depotDepth) < 12) continue;
+      if (Math.abs(z - streamV) < 9) continue; // T3: rocks stay clear of the stream
       rocks.push({ x, z, r: 3.4 + r() * 1.2, h: 3.0 + r() * 0.9 });
     }
   }
@@ -96,7 +118,13 @@ function genMap(seed) {
   const roads = [];
   for (let ri = 0; ri < nRoads; ri++) {
     const pts = [[spawns[ri % spawns.length].x, GRID_OZ + 2]];
-    for (const band of passes) { const g = band[Math.floor(r() * band.length)]; pts.push([g.x, g.z]); }
+    let bridged = false;
+    for (const band of passes) {
+      const g = band[Math.floor(r() * band.length)];
+      if (!bridged && g.z > streamV) { pts.push([bridgeU, streamV]); bridged = true; }
+      pts.push([g.x, g.z]);
+    }
+    if (!bridged) pts.push([bridgeU, streamV]);
     pts.push([objU, objV]);
     roads.push(pts);
   }
@@ -119,6 +147,7 @@ function genMap(seed) {
     // T2: clear of BOTH depots (the old check knew one fixed objective)
     if (Math.hypot(x - depotU1, z - depotDepth) < 16 || Math.hypot(x - depotU2, z + depotDepth) < 16) continue;
     if (ponds.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 6)) continue;
+    if (Math.abs(z - streamV) < rad + 10) continue; // T3: ponds stay clear of the stream
     ponds.push({ x, z, r: rad, level: 0 });
   }
   const TPL = [
@@ -162,6 +191,7 @@ function genMap(seed) {
       if (ponds.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 3)) continue;
       if (rocks.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 1.5)) continue;
       if (town.some((q) => Math.hypot(x - q.x, z - q.z) < rad + Math.max(q.nx, q.nz) * MASON.pitch / 2 + 2.5)) continue;
+      if (Math.abs(z - streamV) < rad + 9) continue; // T3: bench buildings stay clear of the stream
       const decay = r() < 0.2 ? 0.12 + r() * 0.3 : 0;
       town.push({ id: tpl.t + bid++, x, z, nx, nz, ny: tpl.ny, door: r() < 0.5 ? 0 : nx - 1, roof: tpl.roof, ruin: decay || undefined });
       placed++;
@@ -172,6 +202,7 @@ function genMap(seed) {
     const x = -50 + r() * 100, z = -depotDepth + r() * 20;
     if (spawns.some((sp) => Math.hypot(x - sp.x, z - sp.z) < 10)) continue;
     if (town.some((q) => Math.hypot(x - q.x, z - q.z) < 10)) continue;
+    if (Math.abs(z - streamV) < 9) continue; // T3: old ruins stay clear of the stream
     town.push({ id: "oldruin" + placed, x, z, nx: 4, nz: 4, ny: 3, door: 0, ruin: 0.5 });
     placed++;
   }
@@ -183,7 +214,7 @@ function genMap(seed) {
   for (const sp of spawns) T(sp);
   for (const band of passes) for (const g of band) T(g);
   for (const route of roads) for (const pt of route) { const w = fwdU(pt[0], pt[1]); pt[0] = w.x; pt[1] = w.z; }
-  return { seed, bands, passes, rocks, ponds, spawns, spawnU, town, roads, depotFoul, objU, objV, depotU1, depotU2, depotDepth };
+  return { seed, bands, passes, rocks, ponds, spawns, spawnU, town, roads, depotFoul, objU, objV, depotU1, depotU2, depotDepth, stream };
 }
 function makeMap(seed) {
   for (let attempt = 0; attempt < 24; attempt++) {   // T2: wilder maps foul more — a deeper retry pocket
@@ -193,7 +224,7 @@ function makeMap(seed) {
     OBJ_POS = fwdU(m.objU, m.objV);                  // T2: the objective follows the DRAWN depot, set after genMap
     MAP_SEED = sd; BANDS = m.bands; PASSES = m.passes; ROCKS = m.rocks;
     PONDS = m.ponds; SPAWN_POINTS = m.spawns; TOWN = m.town; ROADS = m.roads;
-    SPAWN_U = m.spawnU;
+    SPAWN_U = m.spawnU; STREAM = m.stream;
     const g = makeGrid(null);
     for (const t of TOWN) {
       const hx = (t.nx * MASON.pitch) / 2, hz = (t.nz * MASON.pitch) / 2;
@@ -267,6 +298,30 @@ function buildDepotTerrain(field, seed = 11) {
       if (h[k] > cap) h[k] = cap;
     }
   }
+  // T3: THE STREAM. Carved after the relax (banks stay banks), before the
+  // roads (the causeway ramp smooths). Bed at 0.2, water at 0.78 — absolute
+  // levels; base terrain never dips below ~0.9, so the plane stays banked.
+  if (STREAM) {
+    const P = STREAM.pts, W = STREAM.w;
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      const x = i * cs - half, z = j * cs - half;
+      const c = invW(x, z);
+      let dS = 1e9;
+      for (let k2 = 0; k2 + 1 < P.length; k2++) {
+        const a = P[k2], b = P[k2 + 1];
+        const du = b.u - a.u, dv = b.v - a.v;
+        const t = Math.max(0, Math.min(1, ((c.u - a.u) * du + (c.v - a.v) * dv) / (du * du + dv * dv)));
+        dS = Math.min(dS, Math.hypot(c.u - (a.u + du * t), c.v - (a.v + dv * t)));
+      }
+      if (dS >= W + 3) continue;
+      const k = j * n + i;
+      const target = dS < W ? 0.2 : 0.2 + ((dS - W) / 3) * (h[k] - 0.2);
+      // the causeway: untouched within 3m of the crossing, full carve by 6m
+      const cw = Math.min(1, Math.max(0, (Math.abs(c.u - STREAM.bridgeU) - 3) / 3));
+      const carved = h[k] * (1 - cw) + Math.min(h[k], target) * cw;
+      if (carved < h[k]) h[k] = carved;
+    }
+  }
   const segD = (x, z, a, b) => {
     const dx = b[0] - a[0], dz = b[1] - a[1];
     const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / (dx * dx + dz * dz)));
@@ -315,9 +370,27 @@ function makeGrid(field) {
     const wp = G.gridToWorld(gx, gz);
     const c = cells[G.idx(gx, gz)];
     if (rockAt(wp.x, wp.z)) { c.blocked = true; c.terrain = true; }
+    else if (streamAt(wp.x, wp.z)) { c.blocked = true; c.water = true; }
     else if (pondAt(wp.x, wp.z)) c.ice = true;
   }
   return G;
+}
+// T3: is this WORLD point open water? Canonical distance to the stream
+// centerline, minus the causeway exemption. The one water test everything
+// reads — grid blocking, squad slots, order taps, placement.
+function streamAt(x, z) {
+  if (!STREAM) return false;
+  const c = invW(x, z);
+  if (Math.abs(c.u - STREAM.bridgeU) < 3) return false; // the causeway
+  const P = STREAM.pts;
+  let best = 1e9;
+  for (let i = 0; i + 1 < P.length; i++) {
+    const a = P[i], b = P[i + 1];
+    const du = b.u - a.u, dv = b.v - a.v;
+    const t = Math.max(0, Math.min(1, ((c.u - a.u) * du + (c.v - a.v) * dv) / (du * du + dv * dv)));
+    best = Math.min(best, Math.hypot(c.u - (a.u + du * t), c.v - (a.v + dv * t)));
+  }
+  return best < STREAM.w;
 }
 function computeFlowField(grid, objGx, objGz) {
   const { cells } = grid;
@@ -960,6 +1033,7 @@ export default function DepotGame({ onExit, resume = null }) {
       // twin worlds read identically (determinism-safe).
       world.pondAt = (x, z) => !!pondAt(x, z);
       world.inRim = (x, z) => { const c = invW(x, z); return Math.abs(c.u) <= RIM_HALF_U && Math.abs(c.v) <= RIM_HALF_V; };
+      world.streamAt = (x, z) => streamAt(x, z);
       // town / censuses / rocks: laid fresh, or lifted back off the save.
       let town, depotCensus, depotCensus2, rocksLive, resBodies = null;
       if (RES) {
@@ -1205,9 +1279,25 @@ export default function DepotGame({ onExit, resume = null }) {
         ...ROCKS.filter((k) => k.r >= 4),
         ...TOWN.map((t) => ({ x: t.x, z: t.z, r: Math.max(t.nx, t.nz) * MASON.pitch * 0.6 })),
       ]);
+      // T3: the stream's visible water — the canonical centerline sampled at
+      // 2m, split at the causeway, widened, world-transformed, at 0.78.
+      const streamRibs = [];
+      if (STREAM) {
+        let run = [];
+        const flush = () => { if (run.length >= 2) streamRibs.push({ pts: run, w: STREAM.w + 1 }); run = []; };
+        for (let u = -60; u <= 60; u += 2) {
+          if (Math.abs(u - STREAM.bridgeU) < 3) { flush(); continue; }
+          const i2 = Math.max(0, Math.min(STREAM.pts.length - 2, Math.floor((u + 60) / 10)));
+          const a = STREAM.pts[i2], b = STREAM.pts[i2 + 1];
+          const t = Math.max(0, Math.min(1, (u - a.u) / (b.u - a.u || 1)));
+          const w = fwdU(u, a.v + (b.v - a.v) * t);
+          run.push({ x: w.x, y: 0.78, z: w.z });
+        }
+        flush();
+      }
       // rocksLive, not ROCKS: on a resume a ridge the war already breached
       // must not be painted back onto the ground it no longer occupies.
-      R.setDressing({ rocks: rocksLive, ponds: PONDS });
+      R.setDressing({ rocks: rocksLive, ponds: PONDS, streams: streamRibs });
       R.overlay.setObjective(OBJ_POS.x, OBJ_POS.z, field.heightAt(OBJ_POS.x, OBJ_POS.z));
       R.overlay.setBanners(SPAWN_POINTS);
       const AIM_OFF = { x: 0, z: -500 };
@@ -1377,6 +1467,7 @@ export default function DepotGame({ onExit, resume = null }) {
       const buildAt = (gx, gz, mode) => {
         if (!grid.inBounds(gx, gz)) return;
         const cell = grid.cells[grid.idx(gx, gz)];
+        if (cell.water) { toast("NO GROUND — open water"); return; }
         if (cell.blocked || cell.wallId) { toast("OCCUPIED"); return; }
         if (cell.ice) { toast("NO GROUND — frozen water"); return; }
         {
@@ -1431,6 +1522,7 @@ export default function DepotGame({ onExit, resume = null }) {
       const canBuildAt = (gx, gz, mode) => {
         if (!grid.inBounds(gx, gz)) return { ok: false };
         const cell = grid.cells[grid.idx(gx, gz)];
+        if (cell.water) return { ok: false, msg: "NO GROUND — open water" };
         const wp = grid.gridToWorld(gx, gz), c0 = invW(wp.x, wp.z);
         const spec = TOWER_SPECS[mode];
         const v = validatePlacement({
@@ -1487,6 +1579,7 @@ export default function DepotGame({ onExit, resume = null }) {
       const canPlaceInfantryAt = (gx, gz, cost) => {
         if (!grid.inBounds(gx, gz)) return { ok: false, msg: "OFF THE FIELD" };
         const cell = grid.cells[grid.idx(gx, gz)];
+        if (cell.water) return { ok: false, msg: "NO GROUND — open water" };
         const wp = grid.gridToWorld(gx, gz), c0 = invW(wp.x, wp.z);
         const v = validatePlacement({
           blocked: !!(cell.blocked || cell.wallId), ice: !!cell.ice,
@@ -1919,6 +2012,8 @@ export default function DepotGame({ onExit, resume = null }) {
         // and never arrives. BOTH points of a build order clamp through here
         // too — this is THE site where a ground tap becomes a destination.
         const d = clampToRim(p.x, p.z);
+        // T3: open water takes no orders — the river is ground for nobody.
+        if (streamAt(d.x, d.z)) { toast("OPEN WATER — find the crossing"); return true; }
         if (om === "attack" || om === "move") {
           if (osq) { osq.order = om; osq.dest = { x: d.x, z: d.z }; osq._legTarget = null; osq._pauseT = 0; osq._build = null; }
           S.orderMode = null;
@@ -2328,7 +2423,7 @@ export default function DepotGame({ onExit, resume = null }) {
         }
         const ri = rocksLive.indexOf(k);
         if (ri >= 0) rocksLive.splice(ri, 1);
-        R.setDressing({ rocks: rocksLive, ponds: PONDS });
+        R.setDressing({ rocks: rocksLive, ponds: PONDS, streams: streamRibs });
         recomputeFlow();
         toast("THE RIDGE IS BREACHED");
       };

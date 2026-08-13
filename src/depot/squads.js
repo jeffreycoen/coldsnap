@@ -166,6 +166,7 @@ export function coverHop(world, from, dest, threatBearing) {
 // (deterministic — no rng, radii then azimuths in fixed order).
 const SLOT_CLEAR_PAD = 0.35;
 function slotBlocked(world, x, z, clear) {
+  if (world.streamAt && world.streamAt(x, z)) return true; // T3: open water is never a slot
   for (const b of world.bodies) {
     if (!b.alive || b.invM > 0) continue; // static solids only
     if (!SOLID_KINDS.has(b.kind)) continue;
@@ -612,7 +613,9 @@ export function stepSquad(world, squad, dt) {
         if (trail > COHESION_M) squad._cohesionHoldT = (squad._cohesionHoldT || 0) + dt;
         if (trail <= COHESION_M || squad._cohesionHoldT > COHESION_CAP_S) {
           const step = Math.min(ld, MOVE_SPEED * dt);
-          squad.anchor = { x: cx + (lx / ld) * step, z: cz + (lz / ld) * step };
+          const nx2 = cx + (lx / ld) * step, nz2 = cz + (lz / ld) * step;
+          // T3: the anchor never fords — a leg into open water holds at the bank.
+          if (!(world.streamAt && world.streamAt(nx2, nz2))) squad.anchor = { x: nx2, z: nz2 };
         }
       }
     }

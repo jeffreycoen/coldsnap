@@ -28,7 +28,7 @@ import {
 } from "../src/engine/core.js";
 import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, MASON, INFANTRY_ARMS, PLAYER_START, PLAYER_TIERS } from "../src/depot/specs.js";
 import { stepUnits, spawnUnit, payBounties, SNIPER_FIRE } from "../src/depot/units.js";
-import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad, drivePossessedSquad, COHESION_M } from "../src/depot/squads.js";
+import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad, drivePossessedSquad, COHESION_M, slotBlockedPublic } from "../src/depot/squads.js";
 import {
   makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue,
 } from "../src/depot/economy.js";
@@ -2423,10 +2423,11 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   const header = depotSrcF1.slice(headerStart, headerEnd);
   const mapSrc = [
     header,
-    sliceFn("genMap"), sliceFn("makeMap"), sliceFn("pondAt"), sliceFn("rockAt"),
+    sliceFn("genMap"), sliceFn("makeMap"), sliceFn("streamAt"), sliceFn("pondAt"), sliceFn("rockAt"),
     // townFootprint (P1 T3): buildTown's grid-footprint loop, lifted out so
     // the save's restore path can recompute the same cells without re-laying
     // stone. buildTown calls it, so the extraction must carry it.
+    // streamAt (T3, mk1.02): makeGrid's water branch calls it now.
     sliceFn("makeGrid"), sliceFn("checkConnectivity"), sliceFn("townFootprint"), sliceFn("buildTown"),
     `return { genMap, makeMap, makeGrid, checkConnectivity, buildTown, invW,
       state: () => ({ ORIENT, OBJ_POS, SPAWN_POINTS, PONDS, ROCKS, TOWN, ROADS, MAP_SEED }) };`,
@@ -5356,8 +5357,8 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   console.log("\n[front t1: the square frame]");
   const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   ok("FRONT T1: the rim is 60x60 (the square)", /const RIM_HALF_U = 60, RIM_HALF_V = 60;/.test(src));
-  ok("FRONT T1: the flow grid is 59x59 (rim minus the 1m inset, as before)",
-    /const GRID_CS = 2\.0, GRID_W = 59, GRID_H = 59;/.test(src));
+  ok("FRONT T1 (re-pinned mk1.02, Amendment 3): the flow grid is 60x60 — the grid covers the full rim",
+    /const GRID_CS = 2\.0, GRID_W = 60, GRID_H = 60;/.test(src));
   ok("FRONT T1: the terrain falloff reads the rim constants, not literals",
     /Math\.abs\(cuv\.u\) - RIM_HALF_U, Math\.abs\(cuv\.v\) - RIM_HALF_V/.test(src));
   ok("FRONT T1: territory is built from the rim constants",
@@ -5380,7 +5381,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   const headerT1 = src.slice(src.indexOf("const GRID_CS"), src.indexOf("function genMap"));
   const mapSrcT1 = [
     headerT1,
-    sliceFn2("genMap"), sliceFn2("makeMap"), sliceFn2("pondAt"), sliceFn2("rockAt"),
+    sliceFn2("genMap"), sliceFn2("makeMap"), sliceFn2("streamAt"), sliceFn2("pondAt"), sliceFn2("rockAt"),
     sliceFn2("makeGrid"), sliceFn2("checkConnectivity"), sliceFn2("townFootprint"), sliceFn2("buildTown"),
     `return { makeMap, makeGrid, checkConnectivity, invW,
       state: () => ({ ORIENT, OBJ_POS, SPAWN_POINTS, ROCKS, TOWN, MAP_SEED }) };`,
@@ -5444,7 +5445,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   const headerT2 = srcT2.slice(srcT2.indexOf("const GRID_CS"), srcT2.indexOf("function genMap"));
   const mapSrcT2 = [
     headerT2,
-    sliceFn3("genMap"), sliceFn3("makeMap"), sliceFn3("pondAt"), sliceFn3("rockAt"),
+    sliceFn3("genMap"), sliceFn3("makeMap"), sliceFn3("streamAt"), sliceFn3("pondAt"), sliceFn3("rockAt"),
     sliceFn3("makeGrid"), sliceFn3("checkConnectivity"), sliceFn3("townFootprint"), sliceFn3("buildTown"),
     `return { makeMap, makeGrid, checkConnectivity, invW,
       state: () => ({ ORIENT, OBJ_POS, SPAWN_POINTS, ROCKS, PONDS, TOWN, ROADS, BANDS, MAP_SEED }) };`,
@@ -5485,6 +5486,120 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 }
 // ==== end FRONT T2 ===========================================================
+
+// ==== FRONT T3: the stream and the causeway =================================
+// mk1.02 (The Front, Task 3). One stream per map: full-width, carved, water
+// at 0.78 over a 0.2 bed, ONE causeway crossing at bridgeU. Water blocks the
+// grid (both sides' movement) and the squads' slot family; orders tapped on
+// water are refused; nothing drowns.
+{
+  console.log("\n[front t3: the stream and the causeway]");
+  const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  // extraction: the T1/T2 pattern, plus streamAt and the STREAM module state.
+  let M3ok = true, mkMapT3 = null;
+  try {
+    const sliceFn3 = (name) => {
+      const start = src.indexOf(`\nfunction ${name}(`);
+      if (start < 0) throw new Error("T3 extract: missing function " + name);
+      const rest = src.slice(start + 1);
+      const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
+      return rest.slice(0, m < 0 ? rest.length : m + 9);
+    };
+    const header3 = src.slice(src.indexOf("const GRID_CS"), src.indexOf("function genMap"));
+    if (!/let STREAM = null;/.test(header3)) throw new Error("T3: STREAM state not in header");
+    const mapSrc3 = [
+      header3,
+      sliceFn3("genMap"), sliceFn3("makeMap"), sliceFn3("streamAt"), sliceFn3("pondAt"), sliceFn3("rockAt"),
+      sliceFn3("makeGrid"), sliceFn3("checkConnectivity"), sliceFn3("townFootprint"), sliceFn3("buildTown"),
+      sliceFn3("buildDepotTerrain"),
+      `return { makeMap, makeGrid, checkConnectivity, buildDepotTerrain, streamAt, invW,
+        state: () => ({ ORIENT, OBJ_POS, SPAWN_POINTS, ROCKS, PONDS, TOWN, ROADS, BANDS, STREAM, MAP_SEED }) };`,
+    ].join("\n");
+    mkMapT3 = () => new Function(
+      "mulberry32", "MASON", "fwdUFor", "fwdDirFor", "invWFor", "addBody", "addWeld", mapSrc3,
+    )(mulberry32, MASON, fwdUFor, fwdDirFor, invWFor, addBody, addWeld);
+  } catch (e) { M3ok = false; }
+  ok("T3: the map module extracts with streamAt and STREAM state", M3ok);
+
+  if (M3ok) {
+    // (a) every seed carries a full-width stream inside the safe band
+    let has = 0, safe = 0, blockedMid = 0, openCauseway = 0;
+    for (let s = 1; s <= 20; s++) {
+      const Mi = mkMapT3(); Mi.makeMap(s * 331);
+      const st = Mi.state();
+      if (!st.STREAM) continue;
+      has++;
+      if (Math.abs(st.STREAM.v) <= 22.01 && st.STREAM.pts[0].u === -60 && st.STREAM.pts[st.STREAM.pts.length - 1].u === 60) safe++;
+      // (b) the grid: mid-channel cells block; the causeway stays open
+      const g = Mi.makeGrid(null);
+      // a centerline point at least 12m from the causeway
+      const P = st.STREAM.pts.find((q) => Math.abs(q.u - st.STREAM.bridgeU) > 12);
+      if (P) {
+        const wMid = fwdUFor(st.ORIENT, P.u, P.v);
+        const gm = g.worldToGrid(wMid.x, wMid.z);
+        if (g.inBounds(gm.gx, gm.gz) && g.cells[g.idx(gm.gx, gm.gz)].blocked) blockedMid++;
+      } else blockedMid++; // no point that far out is a geometry fluke, not a fail
+      const wCw = fwdUFor(st.ORIENT, st.STREAM.bridgeU, st.STREAM.v);
+      const gc = g.worldToGrid(wCw.x, wCw.z);
+      if (g.inBounds(gc.gx, gc.gz) && !g.cells[g.idx(gc.gx, gc.gz)].blocked) openCauseway++;
+    }
+    ok("T3(a): every seed carries a stream", has === 20, `${has}/20`);
+    ok("T3(a): the stream spans the full width inside |v| <= 22", safe === 20, `${safe}/20`);
+    ok("T3(b): mid-channel grid cells are blocked", blockedMid === 20, `${blockedMid}/20`);
+    ok("T3(b): the causeway cell stays open", openCauseway === 20, `${openCauseway}/20`);
+
+    // (c) the carve: bed below the waterline mid-channel, causeway above it
+    {
+      const Mi = mkMapT3(); Mi.makeMap(4242);
+      const st = Mi.state();
+      const field = makeField(121, 2.0, st.MAP_SEED);
+      Mi.buildDepotTerrain(field, st.MAP_SEED);
+      const P = st.STREAM.pts.find((q) => Math.abs(q.u - st.STREAM.bridgeU) > 12) || st.STREAM.pts[0];
+      const wMid = fwdUFor(st.ORIENT, P.u, P.v);
+      const wCw = fwdUFor(st.ORIENT, st.STREAM.bridgeU, st.STREAM.v);
+      ok("T3(c): mid-channel bed sits below the 0.78 waterline", field.heightAt(wMid.x, wMid.z) < 0.75, field.heightAt(wMid.x, wMid.z).toFixed(2));
+      ok("T3(c): the causeway crown sits above the waterline", field.heightAt(wCw.x, wCw.z) > 0.85, field.heightAt(wCw.x, wCw.z).toFixed(2));
+    }
+
+    // (d) determinism: same seed, identical stream
+    {
+      const A = mkMapT3(); A.makeMap(7717);
+      const B = mkMapT3(); B.makeMap(7717);
+      ok("T3(d): twin determinism — identical STREAM", JSON.stringify(A.state().STREAM) === JSON.stringify(B.state().STREAM));
+    }
+  }
+
+  // (e) squads refuse water ground: the slot family reads world.streamAt
+  {
+    const flatF3 = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+    const world = makeWorld({ field: flatF3, seed: 5 });
+    world.streamAt = (x, z) => z > 10 && z < 14;
+    ok("T3(e): slotBlocked refuses a water point", slotBlockedPublic(world, 0, 12, 0.6) === true);
+    ok("T3(e): dry ground is still a slot", slotBlockedPublic(world, 0, 5, 0.6) === false);
+    // (f) the anchor never fords: a MOVE across the stubbed water holds at the bank
+    const sq = makeSquad(1, "rifles", 1, 0, 0);
+    spawnSquadMembers(world, sq);
+    sq.order = "move"; sq.dest = { x: 0, z: 30 };
+    for (let i = 0; i < 2400; i++) { stepSquad(world, sq, 1 / 60); stepWorld(world); }
+    ok("T3(f): the anchor holds at the bank (never enters the water band)", sq.anchor.z < 10.5, sq.anchor.z.toFixed(2));
+    ok("T3(f): the order survives the hold (still travelling, not silently completed)", sq.order === "move", sq.order);
+  }
+
+  // (g) source pins: the game layer's water rules exist where claimed
+  ok("T3(g): a ground order tapped on water is refused with the open-water toast",
+    /if \(streamAt\(d\.x, d\.z\)\) \{ toast\("OPEN WATER — find the crossing"\); return true; \}/.test(src));
+  ok("T3(g): buildAt refuses open water in its own words",
+    /NO GROUND — open water/.test(src));
+  ok("T3(g): the world threads streamAt beside pondAt/inRim",
+    /world\.streamAt = \(x, z\) => streamAt\(x, z\);/.test(src));
+  const rsrc3 = fs.readFileSync(new URL("../src/render/renderer.js", import.meta.url), "utf8");
+  ok("T3(g): setDressing builds water ribbons when streams are supplied",
+    /spec\.streams \|\| \[\]/.test(rsrc3));
+  const sqsrc3 = fs.readFileSync(new URL("../src/depot/squads.js", import.meta.url), "utf8");
+  ok("T3(g): slotBlocked's water line exists in squads.js",
+    /world\.streamAt && world\.streamAt\(x, z\)/.test(sqsrc3));
+}
+// ==== end FRONT T3 ===========================================================
 
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
