@@ -22,7 +22,7 @@ import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accurac
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
 import { makeRegiment, payTown } from "./economy.js";
 import { makeTerritory, stepTerritory, holderAt, canBuild, fogStateFor, valueAt, EMIT } from "./territory.js";
-import { makeSight, stepSight, seenAt } from "./sight.js";
+import { makeSight, stepSight, seenAt, eyeOf, steerReticle, reclampReticle } from "./sight.js";
 import { fwdUFor, fwdDirFor, invWFor, clampToRimFor } from "./orient.js";
 import { SAVE_KEY, serializeFront, burnFront, restoreBodies, restoreWelds, restoreCensus, restoreSquads } from "./save.js";
 import Dispatch from "./Dispatch.jsx";
@@ -824,6 +824,9 @@ export default function DepotGame({ onExit, resume = null }) {
   // the same discipline ContractSandbox.jsx's own joystick uses, so a drag
   // never queues a re-render.
   const joyKnobRef = useRef(null);
+  // POSSESSION T4 (mk0.93): the right stick's own knob ref — same discipline
+  // as joyKnobRef, a separate DOM element and a separate live drag state.
+  const joyRKnobRef = useRef(null);
   // Held in a ref, not read from props inside the effect, for the same reason
   // every other loop input is: the effect must never close over a value React
   // can change under it. Captured once, at mount.
@@ -1234,10 +1237,13 @@ export default function DepotGame({ onExit, resume = null }) {
         // null. possessInput is the frame's world-space stick vector; joy is
         // the touch stick's own live drag state (DOM handlers below).
         possess: null, possessInput: null, joy: null,
-        // POSSESSION (P4 T2, mk0.91): possessAim is the last ground tap while
-        // possessed (world x/z, rim-clamped); fireHeld mirrors the FIRE
+        // POSSESSION T4 (mk0.93): THE STEERED RETICLE. reticle is the
+        // persistent ground point the right stick steers (touch) or the
+        // mouse positions (desktop) — bounded to the possessed unit's own
+        // sight circle on seen ground; the old tap-aim field is gone. joyR
+        // is the right stick's own live drag state; fireHeld mirrors the FIRE
         // button/pointer state — true while held, read once per sim tick.
-        possessAim: null, fireHeld: false,
+        reticle: null, joyR: null, fireHeld: false,
         linePending: null, // COMMAND T2 (mk0.84): the proposed line, awaiting accept/reject
         hudT: 0, keys: {}, sellById: null, audio: A,
         // The attacker's economy — seeded off the run's own rng stream, not
@@ -1543,6 +1549,26 @@ export default function DepotGame({ onExit, resume = null }) {
         sq.prefStruct = !sq.prefStruct;
       };
 
+      // POSSESSION T4 (mk0.93): the possessed unit's own sight circle: a
+      // squad sees with its best living eye (a sniper pair's spotter reaches
+      // 46), a tower with its height. The reticle lives inside THIS circle —
+      // the owner's ruling that closes the far-eyes range question.
+      const possessCenter = () => {
+        const P = S.possess;
+        if (!P) return null;
+        if (P.kind === "tower") { const b = world.byId.get(P.id); return b ? { x: b.pos.x, z: b.pos.z } : null; }
+        const sq = S.squads.find((q) => q.id === P.id);
+        return sq ? { x: sq.anchor.x, z: sq.anchor.z } : null;
+      };
+      const possessSightR = () => {
+        const P = S.possess;
+        if (!P) return 0;
+        if (P.kind === "tower") { const b = world.byId.get(P.id); return b ? eyeOf(b).r : 0; }
+        const sq = S.squads.find((q) => q.id === P.id);
+        let r = 0;
+        if (sq) for (const id of sq.memberIds) { const u = world.byId.get(id); if (u && u.alive) r = Math.max(r, eyeOf(u).r); }
+        return r;
+      };
       // POSSESSION (P4 T1, mk0.90): TAKE CONTROL — every squad type gets the
       // wedge. Digs the squad in where it stands (defend), hands the stick
       // over, and clears every other selection/order UI state the way
@@ -1553,10 +1579,15 @@ export default function DepotGame({ onExit, resume = null }) {
         sq.order = "defend"; sq.dest = null; sq._legTarget = null; sq._pauseT = 0; sq._build = null; sq._threatSig = undefined;
         S.possess = { kind: "squad", id: sq.id };
         S.possessInput = { vx: 0, vz: 0 };
-        // POSSESSION HYGIENE (mk0.91 audit item A): a stale aim or a FIRE
-        // flag stuck by a mid-hold bell release can never carry into the
-        // next possession — cleared on every take, same as on release.
-        S.possessAim = null; S.fireHeld = false;
+        // POSSESSION HYGIENE (mk0.91 audit item A, carried to T4): a stale
+        // reticle or a FIRE flag stuck by a mid-hold bell release can never
+        // carry into the next possession — cleared on every take, same as
+        // on release; the reticle is then freshly seeded inside the unit's
+        // own sight circle (a fixed +4 world offset — reclampReticle
+        // legalizes any seed).
+        S.fireHeld = false;
+        const pc0 = possessCenter();
+        S.reticle = pc0 ? reclampReticle(T.sight, 1, pc0, possessSightR(), { x: pc0.x, z: pc0.z + 4 }, invW) : null;
         S.selSquadId = null; S.orderMode = null; S.buildPt0 = null; S.linePending = null;
         R.overlay.setLinePreview(false);
       };
@@ -1567,7 +1598,9 @@ export default function DepotGame({ onExit, resume = null }) {
         const b = world.byId.get(id);
         if (!b || b.kind !== "tower") return;
         S.possess = { kind: "tower", id: b.id };
-        S.possessAim = null; S.fireHeld = false;
+        S.fireHeld = false;
+        const pc1 = possessCenter();
+        S.reticle = pc1 ? reclampReticle(T.sight, 1, pc1, possessSightR(), { x: pc1.x, z: pc1.z + 4 }, invW) : null;
         S.inspectId = null; S.pieOpen = false;
       };
       S.releasePossession = () => {
@@ -1575,9 +1608,10 @@ export default function DepotGame({ onExit, resume = null }) {
         const wasSquad = S.possess.kind === "squad";
         const sq = wasSquad ? S.squads.find((q) => q.id === S.possess.id) : null;
         S.possess = null; S.possessInput = null;
-        // POSSESSION HYGIENE (mk0.91 audit item A): see S.takeControl above —
-        // the same stale-trigger clear, on every release.
-        S.possessAim = null; S.fireHeld = false;
+        // POSSESSION HYGIENE (mk0.91 audit item A, carried to T4): the same
+        // stale-trigger clear, on every release — the reticle dies with the
+        // possession, fireHeld can't stick from a mid-hold bell release.
+        S.reticle = null; S.fireHeld = false;
         if (sq) {
           // released where you left them: dig in — the intrinsic default
           sq.order = "defend"; sq.dest = null; sq._legTarget = null; sq._threatSig = undefined;
@@ -1990,12 +2024,11 @@ export default function DepotGame({ onExit, resume = null }) {
         if (S.pending) clearPending();
         const p = groundPoint(cx, cy);
         if (!p) { S.inspectId = null; return; }
-        // POSSESSION (P4 T2, mk0.91): while possessed, a ground tap is an
-        // AIM, not a command — before any of the order/build/selection flow
-        // below gets a look at it. Stated deviation from the sandbox
-        // convention: no snapAim (engine-mode machinery); the seen/unseen
-        // ring below is the depot's own aim assist.
-        if (S.possess) { S.possessAim = clampToRim(p.x, p.z); return; }
+        // POSSESSION T4 (mk0.93): while possessed, a ground tap is consumed
+        // and does NOTHING — the reticle is stick-and-mouse only now (the
+        // right stick steers it, the mouse positions it on desktop); a
+        // thumb tap can no longer yank the aim. The old tap-aim field is gone.
+        if (S.possess) return;
         // COMMAND T2 (mk0.84): while a proposed line is up, ground taps belong
         // to it — tap an endpoint disc to pick it up, tap ground to re-place a
         // picked-up endpoint. Accept/reject (the buttons) are the only exits;
@@ -2680,6 +2713,34 @@ export default function DepotGame({ onExit, resume = null }) {
             const ptw = world.byId.get(S.possess.id);
             if (ptw) { S.focus.x = ptw.pos.x; S.focus.z = ptw.pos.z; S.focus.y = field.heightAt(S.focus.x, S.focus.z); }
           }
+          if (S.possess) {
+            // POSSESSION T4 (mk0.93): THE STEERED RETICLE. The right stick
+            // wins if it's live (steerReticle — deflection is velocity, it
+            // stays put on release), same precedence the left stick uses
+            // (S.joy.active above); otherwise the mouse IS the reticle, the
+            // sandbox's own convention (ContractSandbox.jsx :413-419/:530) —
+            // positional, not velocity. Either way the reticle is dragged
+            // back inside the possessed unit's live sight circle every
+            // frame (reclampReticle) — the unit walks, the reticle follows;
+            // its ground can go dark and it falls home to the unit's cell.
+            const rc = possessCenter();
+            const rR = possessSightR();
+            if (rc && S.reticle) {
+              if (S.joyR && S.joyR.active) {
+                const cb3 = R.camBasis;
+                const fl3 = Math.hypot(cb3.up.x, cb3.up.z) || 1, rl3 = Math.hypot(cb3.right.x, cb3.right.z) || 1;
+                const rv = {
+                  vx: (cb3.right.x / rl3) * S.joyR.s + (cb3.up.x / fl3) * S.joyR.t,
+                  vz: (cb3.right.z / rl3) * S.joyR.s + (cb3.up.z / fl3) * S.joyR.t,
+                };
+                S.reticle = steerReticle(T.sight, 1, rc, rR, S.reticle, rv.vx, rv.vz, dt, invW);
+              } else if (!isTouch && S.pointer) {
+                const gp = groundPoint(S.pointer.x, S.pointer.y);
+                if (gp) S.reticle = gp;
+              }
+              S.reticle = reclampReticle(T.sight, 1, rc, rR, S.reticle, invW);
+            }
+          }
           if (!isTouch && S.pointer && S.started && !S.gameOver && !S.victory && !S.pending) {
             const p = groundPoint(S.pointer.x, S.pointer.y);
             if (p) {
@@ -2804,17 +2865,17 @@ export default function DepotGame({ onExit, resume = null }) {
             // POSSESSION (P4 T2, mk0.91): THE TRIGGER. At most one volley
             // attempt per sim tick — cooldowns (possessedVolley's own
             // u.fireCd gate) do the real limiting, not this flag.
-            if (S.fireHeld && S.possess && S.possess.kind === "squad" && S.possessAim) {
+            if (S.fireHeld && S.possess && S.possess.kind === "squad" && S.reticle) {
               const psq = S.squads.find((q) => q.id === S.possess.id);
-              if (psq) possessedVolley(world, psq, S.possessAim, T, invW);
+              if (psq) possessedVolley(world, psq, S.reticle, T, invW);
             }
             // POSSESSION (P4 T3, mk0.92): a possessed tower's trigger — same
             // one-attempt-per-tick flag, real spec, real cooldown, through
             // possessedTowerFire. Discipline note: friendlyFouls is NOT
             // consulted while possessed — your trigger, your responsibility.
-            if (S.fireHeld && S.possess && S.possess.kind === "tower" && S.possessAim) {
+            if (S.fireHeld && S.possess && S.possess.kind === "tower" && S.reticle) {
               const ptw = world.byId.get(S.possess.id);
-              if (ptw) possessedTowerFire(world, ptw, S.possessAim, T, invW);
+              if (ptw) possessedTowerFire(world, ptw, S.reticle, T, invW);
             }
           }
           if (perf) pSim = performance.now() - pSim0; // ...and closes
@@ -2836,15 +2897,13 @@ export default function DepotGame({ onExit, resume = null }) {
           A.setListener(S.focus.x, S.focus.z, 46 / Math.max(0.6, S.zoom));
           A.consume(evs);
           A.tick(world, dt);
-          if (S.possess && S.possessAim) {
-            // POSSESSION (P4 T2/T3, mk0.91/mk0.92): the aim ring rides the
-            // SAME hover overlay every other ghost/reach ring uses — green
-            // while your side sees the aim cell, red while it's dark,
-            // sight-gated the identical way the shot itself will be
-            // (fieldReaches/seenAt). Squad and tower share the one ring.
-            const cAim = invW(S.possessAim.x, S.possessAim.z);
-            const seen = T && T.sight ? seenAt(T.sight, cAim.u, cAim.v, 1) : true;
-            R.overlay.setHover(true, S.possessAim.x, S.possessAim.z, field.heightAt(S.possessAim.x, S.possessAim.z), 0, seen, 1.2);
+          if (S.possess && S.reticle) {
+            // POSSESSION T4 (mk0.93): the reticle ring rides the SAME hover
+            // overlay every other ghost/reach ring uses — always GREEN now.
+            // The reticle cannot exist on dark ground by construction
+            // (steerReticle/reclampReticle enforce that every frame), so the
+            // red state dies with the old tap-aim field. Squad and tower share the ring.
+            R.overlay.setHover(true, S.reticle.x, S.reticle.z, field.heightAt(S.reticle.x, S.reticle.z), 0, true, 1.2);
           }
           else if (S.hover) {
             // Sandbag ghost: oriented footprint read LIVE each frame — the
@@ -3167,6 +3226,25 @@ export default function DepotGame({ onExit, resume = null }) {
     if (S) S.joy = { active: false, t: 0, s: 0 };
     if (joyKnobRef.current) { joyKnobRef.current.style.left = "48px"; joyKnobRef.current.style.top = "48px"; }
   };
+  // POSSESSION T4 (mk0.93): the right stick — same math, own knob ref, own
+  // live state (S.joyR), mirrored from moveJoy/releaseJoy above.
+  const moveJoyR = (e) => {
+    const S = stateRef.current;
+    if (!S || !S.joyR || !S.joyR.active) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    let dx = e.clientX - cx, dy = e.clientY - cy;
+    const L = Math.hypot(dx, dy);
+    if (L > JOY_R) { dx *= JOY_R / L; dy *= JOY_R / L; }
+    if (joyRKnobRef.current) { joyRKnobRef.current.style.left = 70 + dx - 22 + "px"; joyRKnobRef.current.style.top = 70 + dy - 22 + "px"; }
+    S.joyR.t = joyDz(-dy / JOY_R);
+    S.joyR.s = joyDz(dx / JOY_R);
+  };
+  const releaseJoyR = () => {
+    const S = stateRef.current;
+    if (S) S.joyR = { active: false, t: 0, s: 0 };
+    if (joyRKnobRef.current) { joyRKnobRef.current.style.left = "48px"; joyRKnobRef.current.style.top = "48px"; }
+  };
 
   // The bar shows the UNLOCKED set and nothing else (P1 Task 2): a locked
   // item does not render at all — no greyed teasers, because the manifest
@@ -3203,6 +3281,27 @@ export default function DepotGame({ onExit, resume = null }) {
         >
           <div style={{ position: "absolute", left: 70 - 56, top: 70 - 56, width: 112, height: 112, borderRadius: "50%", border: "2px solid rgba(125,255,168,0.55)", background: "rgba(20,24,30,0.35)", pointerEvents: "none" }} />
           <div ref={joyKnobRef} style={{ position: "absolute", left: 48, top: 48, width: 44, height: 44, borderRadius: "50%", background: "rgba(125,255,168,0.75)", border: "2px solid #7dffa8", pointerEvents: "none" }} />
+        </div>
+      )}
+      {/* POSSESSION T4 (mk0.93): the right stick — steers the reticle.
+          Shown for BOTH possessed kinds (towers have no left stick, so this
+          is their whole interface). */}
+      {hud.possessed && (
+        <div data-joyr
+          style={{ position: "absolute", right: 92 - 70, bottom: 208 - 70, width: 140, height: 140, zIndex: 7, touchAction: "none" }}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            e.currentTarget.setPointerCapture(e.pointerId);
+            const S = stateRef.current; if (!S) return;
+            S.joyR = { active: true, t: 0, s: 0 };
+            moveJoyR(e);
+          }}
+          onPointerMove={(e) => { e.stopPropagation(); moveJoyR(e); }}
+          onPointerUp={(e) => { e.stopPropagation(); releaseJoyR(); }}
+          onPointerCancel={(e) => { e.stopPropagation(); releaseJoyR(); }}
+        >
+          <div style={{ position: "absolute", left: 70 - 56, top: 70 - 56, width: 112, height: 112, borderRadius: "50%", border: "2px solid rgba(125,255,168,0.55)", background: "rgba(20,24,30,0.35)", pointerEvents: "none" }} />
+          <div ref={joyRKnobRef} style={{ position: "absolute", left: 48, top: 48, width: 44, height: 44, borderRadius: "50%", background: "rgba(125,255,168,0.75)", border: "2px solid #7dffa8", pointerEvents: "none" }} />
         </div>
       )}
       {hud.possessed && (

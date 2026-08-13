@@ -34,7 +34,7 @@ import {
 import { planWave, MIN_WAVE_FLOOR, snapSquads } from "../src/depot/ai.js";
 import { composeIntel, openingIntel } from "../src/depot/intel.js";
 import { makeTerritory, stepTerritory, holderAt, fogStateAt, valueAt, canBuild, DECAY_TAU, EMIT } from "../src/depot/territory.js";
-import { SIGHT, eyeOf, canSee, fillMaps, gridEye, makeSight, seenAt, stepSight } from "../src/depot/sight.js";
+import { SIGHT, eyeOf, canSee, fillMaps, gridEye, makeSight, seenAt, stepSight, RETICLE_SPEED, steerReticle, reclampReticle } from "../src/depot/sight.js";
 import { fwdUFor, fwdDirFor, invWFor, clampToRimFor } from "../src/depot/orient.js";
 import { washAlpha, WASH_SEAM, WASH_MAX_A } from "../src/render/renderer.js";
 import { serializeFront, parseFront, restoreBodies, restoreSquads } from "../src/depot/save.js";
@@ -3316,12 +3316,14 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     // (tapAt's S.linePending block). Both taps of the ORIGINAL two-point
     // order still go through the one `const d = ...` site; the count moved
     // from 1 to 2 honestly, not loosened.
-    // re-pinned POSSESSION T2 (mk0.91): a THIRD site joined the same call
-    // shape — the possessed-squad aim tap (tapAt's `if (S.possess) {
-    // S.possessAim = clampToRim(p.x, p.z); ... }`, ahead of the line/order
-    // flow). Count moved 2 -> 3, honestly, same rim-clamp, one more caller.
-    ok("mk0.60/6: build points AND the possession aim clamp to the rim through the same clamp shape",
-      /const d = clampToRim\(p\.x, p\.z\);/.test(dsrc) && (dsrc.match(/clampToRim\(p\.x, p\.z\)/g) || []).length === 3);
+    // re-pinned POSSESSION T2 (mk0.91): a THIRD site had joined the same call
+    // shape — the possessed-squad aim tap. re-pinned POSSESSION T4 (mk0.93):
+    // that site is GONE — tapAt's possession branch no longer clamps an aim
+    // to the rim at all (a tap while possessed is consumed and does
+    // nothing; the reticle is bounded by the sight circle, not clampToRim).
+    // Count moves back 3 -> 2, honestly, one caller lost, not loosened.
+    ok("mk0.60/6: build points clamp to the rim through the same clamp shape",
+      /const d = clampToRim\(p\.x, p\.z\);/.test(dsrc) && (dsrc.match(/clampToRim\(p\.x, p\.z\)/g) || []).length === 2);
     ok("mk0.60/6: the cell walk steps ONE axis at a time (consecutive cells share an EDGE)",
       /const stepX = z === g1\.gz \? true : x === g1\.gx \? false : 2 \* err > -dz;/.test(dsrc));
     // Jeff, 2026-08-12: ONE rotation for the whole line — the dominant axis of
@@ -4599,18 +4601,22 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
       /kv: spec\.kv != null \? spec\.kv : INFANTRY_KV/.test(volleyBody));
   }
 
-  // mk0.91 audit item A (possession hygiene, drift audit): a stale aim or a
-  // FIRE flag stuck by a mid-hold bell release can never carry into the next
-  // possession — S.takeControl and S.releasePossession both clear the
-  // trigger state (S.possessAim = null; S.fireHeld = false;).
+  // mk0.91 audit item A (possession hygiene, drift audit), re-pinned
+  // POSSESSION T4 (mk0.93): a stale FIRE flag stuck by a mid-hold bell
+  // release can never carry into the next possession — S.takeControl and
+  // S.releasePossession both clear it (S.fireHeld = false). possessAim is
+  // gone; in its place S.takeControl freshly SEEDS S.reticle (inside the
+  // unit's own sight circle) instead of merely nulling it, and
+  // S.releasePossession clears it outright (S.reticle = null).
   {
     const gameSrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     const takeControlBody = (gameSrc.match(/S\.takeControl = \(\) => \{[\s\S]*?\n      \};/) || [""])[0];
     const releaseBody = (gameSrc.match(/S\.releasePossession = \(\) => \{[\s\S]*?\n      \};/) || [""])[0];
-    ok("POSSESSION T2 audit item A source pin: S.takeControl clears possessAim/fireHeld",
-      /S\.possessAim = null; S\.fireHeld = false;/.test(takeControlBody), takeControlBody.length);
-    ok("POSSESSION T2 audit item A source pin: S.releasePossession clears possessAim/fireHeld",
-      /S\.possessAim = null; S\.fireHeld = false;/.test(releaseBody), releaseBody.length);
+    ok("POSSESSION T4 audit item A source pin (re-pinned from T2): S.takeControl clears fireHeld and seeds a fresh S.reticle",
+      /S\.fireHeld = false;/.test(takeControlBody) && /S\.reticle = pc0 \? reclampReticle\(T\.sight, 1, pc0, possessSightR\(\), \{ x: pc0\.x, z: pc0\.z \+ 4 \}, invW\) : null;/.test(takeControlBody),
+      takeControlBody.length);
+    ok("POSSESSION T4 audit item A source pin (re-pinned from T2): S.releasePossession clears reticle/fireHeld",
+      /S\.reticle = null; S\.fireHeld = false;/.test(releaseBody), releaseBody.length);
   }
 }
 // ==== end POSSESSION T2 =======================================================
@@ -4737,6 +4743,121 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 }
 // ==== end POSSESSION T3 =======================================================
+
+// ==== POSSESSION T4: the steered reticle ====================================
+// mk0.93 (Phase 4 Task 4, amendment). steerReticle/reclampReticle (sight.js)
+// are pure, zero-rng ground-point helpers: the reticle moves at
+// RETICLE_SPEED per second of stick tilt, bounded to the possessed unit's
+// own sight circle on ground the side currently sees — dark ground stops it
+// dead (steer) or drags it home to the circle's center (reclamp, the walk-
+// drag path). possessAim is gone; both fire paths and the steer/reclamp
+// wiring in DepotGame.jsx are pinned by source regex (JSX, not importable
+// headlessly — the same convention T1-T3 already use).
+{
+  const idUV = (x, z) => ({ u: x, v: z }); // DepotGame's invW at ORIENT 0
+  const litTerritory = () => {
+    const T = makeTerritory(29, 57);
+    T.sight = makeSight(T);
+    T.sight.seen1.fill(1);
+    return T;
+  };
+  const bandTerritory = (loU, hiU) => {
+    const T = makeTerritory(29, 57);
+    T.sight = makeSight(T);
+    for (let iz = 0; iz < T.sight.nz; iz++) for (let ix = 0; ix < T.sight.nx; ix++) {
+      const u = -T.sight.halfU + (ix + 0.5) * T.sight.cs;
+      if (u >= loU && u <= hiU) T.sight.seen1[iz * T.sight.nx + ix] = 1;
+    }
+    return T;
+  };
+
+  // (a) mirror+pin: steerReticle moves the reticle at RETICLE_SPEED per
+  // second of stick tilt — a flat, fully-lit sight map, 1s at full tilt.
+  {
+    const T = litTerritory();
+    const r = steerReticle(T.sight, 1, { x: 0, z: 0 }, 50, { x: 0, z: 0 }, 0, 1, 1, idUV);
+    ok("POSSESSION T4(a): steerReticle moves RETICLE_SPEED (14) m in 1s at full tilt",
+      RETICLE_SPEED === 14 && Math.abs(r.x - 0) < 0.01 && Math.abs(r.z - 14) < 0.01,
+      `r=(${r.x.toFixed(2)},${r.z.toFixed(2)})`);
+  }
+
+  // (b) the sight-circle clamp holds: steering hard away for 3s from a 24m
+  // radius, the reticle sits ON the circle, never past it.
+  {
+    const T = litTerritory();
+    const center = { x: 0, z: 0 }, radius = 24;
+    let cur = { x: 0, z: 0 };
+    let worstD = 0;
+    for (let i = 0; i < 30; i++) {
+      cur = steerReticle(T.sight, 1, center, radius, cur, 1, 0, 0.1, idUV);
+      const d = Math.hypot(cur.x - center.x, cur.z - center.z);
+      if (d > worstD) worstD = d;
+    }
+    const finalD = Math.hypot(cur.x - center.x, cur.z - center.z);
+    ok("POSSESSION T4(b): steering hard away for 3s never carries the reticle past the 24m sight circle",
+      worstD <= radius + 1e-6, `worstD=${worstD.toFixed(4)}`);
+    ok("POSSESSION T4(b): the reticle sits ON the circle at the end of the 3s steer",
+      Math.abs(finalD - radius) < 0.01, `finalD=${finalD.toFixed(4)}`);
+  }
+
+  // (c) an unseen cell stops the reticle dead: hand-lit sight map, lit only
+  // west of u=8 — steering east into the dark band leaves the reticle at its
+  // last (lit) position, unchanged.
+  {
+    const T = bandTerritory(-29, 8);
+    const cur = { x: 0, z: 0 };
+    const r = steerReticle(T.sight, 1, { x: 0, z: 0 }, 50, cur, 1, 0, 1, idUV);
+    ok("POSSESSION T4(c): steering into an unseen cell leaves the reticle exactly where it was",
+      r.x === cur.x && r.z === cur.z, `r=(${r.x},${r.z})`);
+  }
+
+  // (d) reclampReticle drags a left-behind reticle back inside the circle as
+  // the possessed unit's center moves — fully lit map, no sight refusal in
+  // play, just the walk-drag geometry.
+  {
+    const T = litTerritory();
+    const r = reclampReticle(T.sight, 1, { x: 20, z: 0 }, 10, { x: 0, z: 0 }, idUV);
+    ok("POSSESSION T4(d): reclampReticle drags a left-behind reticle to the edge of the moved circle",
+      Math.abs(r.x - 10) < 0.01 && Math.abs(r.z - 0) < 0.01, `r=(${r.x.toFixed(2)},${r.z.toFixed(2)})`);
+  }
+
+  // (e) stranded-on-dark falls back to the center: the reclamped point on
+  // the circle's edge lands in the dark, so reclampReticle falls all the way
+  // home to the unit's own cell (lit only in a narrow band around the
+  // center — the unit's own eye lights it).
+  {
+    const T = bandTerritory(-2, 2);
+    const r = reclampReticle(T.sight, 1, { x: 0, z: 0 }, 10, { x: 50, z: 0 }, idUV);
+    ok("POSSESSION T4(e): a reclamp that would land on dark ground falls all the way back to the unit's own center",
+      r.x === 0 && r.z === 0, `r=(${r.x},${r.z})`);
+  }
+
+  // (f) source pin: both fire paths read S.reticle, and possessAim appears
+  // nowhere in DepotGame.jsx — it is fully replaced by the steered reticle.
+  {
+    const gameSrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("POSSESSION T4(f) source pin: the squad volley trigger reads S.reticle",
+      /possessedVolley\(world, psq, S\.reticle, T, invW\)/.test(gameSrc));
+    ok("POSSESSION T4(f) source pin: the tower fire trigger reads S.reticle",
+      /possessedTowerFire\(world, ptw, S\.reticle, T, invW\)/.test(gameSrc));
+    ok("POSSESSION T4(f) source pin: possessAim appears nowhere in DepotGame.jsx",
+      !/possessAim/.test(gameSrc));
+  }
+
+  // (g) source pin: the right-stick steer runs through steerReticle and the
+  // walk-drag through reclampReticle — no second, hand-rolled clamp.
+  {
+    const gameSrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("POSSESSION T4(g) source pin: DepotGame.jsx imports steerReticle/reclampReticle from sight.js",
+      /import \{[^}]*steerReticle[^}]*reclampReticle[^}]*\} from "\.\/sight\.js"/.test(gameSrc) ||
+      /import \{[^}]*reclampReticle[^}]*steerReticle[^}]*\} from "\.\/sight\.js"/.test(gameSrc));
+    ok("POSSESSION T4(g) source pin: the frame loop calls steerReticle(...) to steer the reticle",
+      /S\.reticle = steerReticle\(T\.sight, 1, rc, rR, S\.reticle, rv\.vx, rv\.vz, dt, invW\);/.test(gameSrc));
+    ok("POSSESSION T4(g) source pin: the frame loop calls reclampReticle(...) for the walk-drag",
+      /S\.reticle = reclampReticle\(T\.sight, 1, rc, rR, S\.reticle, invW\);/.test(gameSrc));
+  }
+}
+// ==== end POSSESSION T4 =======================================================
 
 
 

@@ -155,3 +155,31 @@ export function stepSight(world, SG, toUV, toWorld) {
   sweep(eyes1, SG.seen1);
   sweep(eyes2, SG.seen2);
 }
+
+// POSSESSION T4 (mk0.93): THE STEERED RETICLE. The right stick pushes a
+// ground reticle around the possessed unit — deflection is velocity, it
+// stays put on release — and the reticle can only exist inside the unit's
+// OWN sight circle on ground the side currently sees. Dark ground is not
+// refused; it is unreachable. Pure functions: the game layer owns the
+// state, these own the rules.
+export const RETICLE_SPEED = 14;   // m/s at full tilt // provisional (F5)
+export function steerReticle(SG, team, center, radius, cur, vx, vz, dt, toUV) {
+  let nx = cur.x + vx * RETICLE_SPEED * dt, nz = cur.z + vz * RETICLE_SPEED * dt;
+  const dx = nx - center.x, dz = nz - center.z;
+  const d = Math.hypot(dx, dz);
+  if (d > radius && d > 1e-9) { nx = center.x + (dx / d) * radius; nz = center.z + (dz / d) * radius; }
+  const c = toUV(nx, nz);
+  if (!seenAt(SG, c.u, c.v, team)) return { x: cur.x, z: cur.z };   // stopped dead at the dark
+  return { x: nx, z: nz };
+}
+// The unit walks; the reticle is world-anchored — every tick it is dragged
+// back inside the live circle, and if the ground under it has gone dark it
+// falls home to the unit's own cell (always lit by the unit's own eye).
+export function reclampReticle(SG, team, center, radius, cur, toUV) {
+  let nx = cur.x, nz = cur.z;
+  const dx = nx - center.x, dz = nz - center.z, d = Math.hypot(dx, dz);
+  if (d > radius && d > 1e-9) { nx = center.x + (dx / d) * radius; nz = center.z + (dz / d) * radius; }
+  const c = toUV(nx, nz);
+  if (seenAt(SG, c.u, c.v, team)) return { x: nx, z: nz };
+  return { x: center.x, z: center.z };
+}
