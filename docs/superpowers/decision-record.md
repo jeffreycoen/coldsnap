@@ -43,6 +43,9 @@
 
 - Any friendly unit, squad, or tower is takeover-able — TAKE CONTROL on every radial. Twin-stick; squads driven as one (stick = formation anchor, fire = volley at aim); towers = manual fire control with doctrine buttons. The front fights on under standing orders; a bell save mid-possession releases to command view. Enemy needs no mirror.
 - SHIPPED (overnight run, 2026-08-13): Possession phase mk0.90-0.92 — take control on every squad and tower pie, twin-stick squad drive, volley at the aim, manual tower fire. Awaits the owner's playtest and his rulings on the queued questions (possessed squad pace; volleys beyond weapon range under far eyes).
+- SHIPPED (2026-08-13): Task 4, mk0.93 — the steered reticle, per the twin-stick reticle ruling above.
+- THE RED CARRIED RETICLE (owner, 2026-08-13, after playing mk0.93): the reticle draws as a RED circle (its own renderer ring, not the build ghost's square). The reticle is CARRIED: released, it keeps its distance and direction from the unit — walking moves it with the unit; the right stick steers the offset. Sight-circle and seen-ground bounds unchanged; ground going dark under it still drops it home to the unit.
+- REVERSAL (owner, 2026-08-13, same playtest): the bell no longer releases possession — "a bell save mid-possession releases to command view" (mk0.90, line above) is struck. The bell rings, the save is written (still never recording a possession), and the player keeps driving.
 
 ## The Front (map phase, ahead)
 
@@ -85,7 +88,7 @@
 - Manifest/intel card layout wrinkles at 960px and narrow phones.
 
 **Open/owed:**
-- CURRENT (2026-08-13): prod mk0.92. Possession Task 4 — the steered reticle, mk0.93 — is PLANNED, SERVED, and AWAITING the owner's approval; NOT dispatched. Phase closes on his playtest after it ships. Next phase: The Front.
+- CURRENT (2026-08-13): prod mk0.93. Possession Task 5 — playtest fixes (red carried reticle, bell keeps possession), mk0.94 — plan APPROVED; the owner directed Fable to implement it inline. Phase closes on his playtest after it ships. Next phase: The Front.
 - Owner rulings still open: tower friendly-fire safety off while possessed (ratify by play); possessed squad pace (~2.1 m/s sustained, rear man on the 6m band) — accept or possessed members outpace the anchor.
 - PLAYTEST VERDICT (owner, 2026-08-12): Polish I, Vision, and the halt-and-fight fix (mk0.74) all passed — "seems okay." Both phases CLOSED. Next phase: Command (radial orders).
 - Mid-march stall: squads freeze short of their destination near masonry before any contact (pre-existing pathing, cohesion/detour family) — surfaced again in the mk0.74 staging runs; unranked by the owner.

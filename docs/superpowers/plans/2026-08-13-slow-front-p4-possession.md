@@ -289,6 +289,211 @@ Desktop maps the sandbox's own convention: the MOUSE is the reticle — each fra
 
 ---
 
+## Task 5 — Playtest fixes: the red carried reticle, the bell keeps your hands (mk0.94) — suggested model: Sonnet (all code below)
+
+*Amendment, 2026-08-13, the owner's ruling after playing mk0.93. Three changes: (1) the reticle draws as a RED circle; (2) the reticle is CARRIED — release the right stick and it keeps its distance and direction from the unit, so walking with the left stick brings it along; it no longer sits on one spot of ground; (3) the round bell no longer takes the unit away — this REVERSES the ratified "a bell save mid-possession releases to command view" rule. The save still never records a possession; you simply stay in control after it is written.*
+
+**Choices made in this plan (stated, not open):** the reticle's position is stored as an offset from the unit (`S.reticleOff`); the world point `S.reticle` is derived from it each frame, so the fire paths and the ring keep reading the same field. The red circle is a new, additive ring in the renderer (`setReticle`), drawn in the game's established red (`0xff6b5e`); renderer additions are legal as guarded additive divergences with the golden gate green. If the ground under the carried reticle goes dark, it still falls home to the unit — that rule is unchanged.
+
+**Required reading (agent, before any code; anchors re-verified at dispatch):** this plan whole; `CLAUDE.md`; `docs/superpowers/decision-record.md` "Possession"; `src/depot/sight.js` — the two T4 helpers (:156-185); `src/depot/DepotGame.jsx` — state init (~:1240), takeControl/takeControlTower/releasePossession (~:1560-1610), the frame-loop possession block (~:2700-2745), the ring render (~:2900-2910), `ringBell` (~:2198), `groundPoint`, `invW`; `src/render/renderer.js` :1160-1195 (`setHover` and the overlay's lazy-null pattern — the new ring copies it); `scripts/depot-test.mjs` — POSSESSION T1(c)/(d) (:4450-4478), audit item A (:4605-4622), the whole T4 block (:4747-4862).
+
+**Step 5.1 — failing tests first.** `scripts/depot-test.mjs`. Four edits, run after all four: the reshaped T4 asserts fail on the old world-point helper shapes, the reversed T1(d) fails on the live release line, the new T5 pins fail on absent wiring. Record the failing run, then green after implementation.
+
+(1) T4 (a)-(e) move to offset semantics — same fixtures, helpers now take and return `{dx, dz}` offsets:
+
+```js
+  // (a)
+    const r = steerReticle(T.sight, 1, { x: 0, z: 0 }, 50, { dx: 0, dz: 0 }, 0, 1, 1, idUV);
+    ok("POSSESSION T4(a): steerReticle moves the offset RETICLE_SPEED (14) m in 1s at full tilt",
+      RETICLE_SPEED === 14 && Math.abs(r.dx - 0) < 0.01 && Math.abs(r.dz - 14) < 0.01,
+      `r=(${r.dx.toFixed(2)},${r.dz.toFixed(2)})`);
+  // (b) — cur starts { dx: 0, dz: 0 }; each step:
+      cur = steerReticle(T.sight, 1, center, radius, cur, 1, 0, 0.1, idUV);
+      const d = Math.hypot(cur.dx, cur.dz);
+  //     (worstD/finalD asserts unchanged in wording; distance is now offset length)
+  // (c)
+    const cur = { dx: 0, dz: 0 };
+    const r = steerReticle(T.sight, 1, { x: 0, z: 0 }, 50, cur, 1, 0, 1, idUV);
+    ok("POSSESSION T4(c): steering into an unseen cell leaves the reticle exactly where it was",
+      r.dx === cur.dx && r.dz === cur.dz, `r=(${r.dx},${r.dz})`);
+  // (d) — the carry law replaces the old drag-behind test:
+    const T = litTerritory();
+    const off = reclampReticle(T.sight, 1, { x: 20, z: 0 }, 10, { dx: 0, dz: 8 }, idUV);
+    ok("POSSESSION T4(d): a lit, in-circle offset survives the walk unchanged — the reticle is carried",
+      Math.abs(off.dx - 0) < 0.01 && Math.abs(off.dz - 8) < 0.01, `off=(${off.dx.toFixed(2)},${off.dz.toFixed(2)})`);
+    const far = reclampReticle(T.sight, 1, { x: 20, z: 0 }, 10, { dx: 25, dz: 0 }, idUV);
+    ok("POSSESSION T4(d): an oversized offset is pulled to the circle's edge, direction kept",
+      Math.abs(far.dx - 10) < 0.01 && Math.abs(far.dz - 0) < 0.01, `far=(${far.dx.toFixed(2)},${far.dz.toFixed(2)})`);
+  // (e)
+    const r = reclampReticle(T.sight, 1, { x: 0, z: 0 }, 10, { dx: 50, dz: 0 }, idUV);
+    ok("POSSESSION T4(e): a reclamp that would land on dark ground falls all the way back to the unit",
+      r.dx === 0 && r.dz === 0, `r=(${r.dx},${r.dz})`);
+```
+
+(2) T4(g)'s two frame-loop regexes re-pin to the offset wiring (import pin unchanged):
+
+```js
+    ok("POSSESSION T4(g) source pin: the frame loop steers the OFFSET through steerReticle",
+      /S\.reticleOff = steerReticle\(T\.sight, 1, rc, rR, S\.reticleOff, rv\.vx, rv\.vz, dt, invW\);/.test(gameSrc));
+    ok("POSSESSION T4(g) source pin: the walk-carry runs through reclampReticle and derives the world point",
+      /S\.reticleOff = reclampReticle\(T\.sight, 1, rc, rR, S\.reticleOff, invW\);/.test(gameSrc) &&
+      /S\.reticle = \{ x: rc\.x \+ S\.reticleOff\.dx, z: rc\.z \+ S\.reticleOff\.dz \};/.test(gameSrc));
+```
+
+(3) T1(d) reverses — the bell keeps possession (T1(c) already proves, with a live possession at save time, that the saved record stays clean; it stands unchanged):
+
+```js
+  // (d) source pin, REVERSED by the owner's mk0.93 playtest ruling: the bell
+  // no longer releases possession — you keep the unit through the round
+  // change. The save it writes still carries no possession (T1(c) proves
+  // that with a live possession at save time).
+  {
+    const ringBellBody = (dsrc.match(/const ringBell = \(\) => \{[\s\S]*?\n      \};/) || [""])[0];
+    ok("POSSESSION T1(d): ringBell no longer releases possession — the bell keeps your hands on the unit",
+      ringBellBody.length > 0 && !ringBellBody.includes("releasePossession"), ringBellBody.slice(0, 80));
+    ok("POSSESSION T1(d): the bell still writes the save",
+      ringBellBody.includes("saveFront();"));
+  }
+```
+
+(4) Audit item A re-pins to the offset seed, and a new T5 block lands after T4:
+
+```js
+    ok("POSSESSION T4 audit item A source pin (re-pinned from T2): S.takeControl clears fireHeld and seeds a fresh offset reticle",
+      /S\.fireHeld = false;/.test(takeControlBody) && /S\.reticleOff = pc0 \? reclampReticle\(T\.sight, 1, pc0, possessSightR\(\), \{ dx: 0, dz: 4 \}, invW\) : null;/.test(takeControlBody),
+      takeControlBody.length);
+    ok("POSSESSION T4 audit item A source pin (re-pinned from T2): S.releasePossession clears reticle/offset/fireHeld",
+      /S\.reticle = null; S\.reticleOff = null; S\.fireHeld = false;/.test(releaseBody), releaseBody.length);
+```
+
+```js
+// ==== POSSESSION T5: the red carried reticle, the bell keeps your hands =====
+// mk0.94 (Phase 4 Task 5, playtest amendment). The reticle is an offset from
+// the unit — walking carries it — and draws as its own red ring, not the
+// build ghost's square. The bell no longer ends possession (reversal pinned
+// in T1(d) above). JSX/renderer wiring pinned by source regex, T1-T3's own
+// convention.
+{
+  const gameSrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  const rendSrc = fs.readFileSync(new URL("../src/render/renderer.js", import.meta.url), "utf8");
+  ok("POSSESSION T5(a) source pin: the renderer owns a setReticle overlay drawn in the established red",
+    /setReticle\(on, x, z, y\)/.test(rendSrc) && /0xff6b5e/.test(String(rendSrc.match(/setReticle\(on, x, z, y\) \{[\s\S]*?\n    \},/) || "")));
+  ok("POSSESSION T5(b) source pin: the possessed ring renders through setReticle, not the build ghost's setHover",
+    /R\.overlay\.setReticle\(/.test(gameSrc) && !/S\.possess && S\.reticle[\s\S]{0,400}setHover/.test(gameSrc));
+  ok("POSSESSION T5(c) source pin: the build hover never paints while possessed",
+    /!S\.possess && S\.hover/.test(gameSrc));
+}
+// ==== end POSSESSION T5 =====================================================
+```
+
+**Step 5.2 — the helpers go offset-native.** `src/depot/sight.js` :156-185 — replace the two T4 functions in place (`RETICLE_SPEED` and the comment block stay, comment reworded to the carry law):
+
+```js
+// POSSESSION T4/T5 (mk0.93/0.94): THE CARRIED RETICLE. The right stick
+// steers an OFFSET from the possessed unit — deflection is velocity, the
+// offset holds on release, and walking carries the reticle with the unit.
+// It can only exist inside the unit's own sight circle on ground the side
+// currently sees: dark ground stops the steer dead, and ground that goes
+// dark under a carried reticle drops it home to the unit's own cell. Pure
+// functions: the game layer owns the state, these own the rules.
+export const RETICLE_SPEED = 14;   // m/s at full tilt // provisional (F5)
+export function steerReticle(SG, team, center, radius, off, vx, vz, dt, toUV) {
+  let dx = off.dx + vx * RETICLE_SPEED * dt, dz = off.dz + vz * RETICLE_SPEED * dt;
+  const d = Math.hypot(dx, dz);
+  if (d > radius && d > 1e-9) { dx *= radius / d; dz *= radius / d; }
+  const c = toUV(center.x + dx, center.z + dz);
+  if (!seenAt(SG, c.u, c.v, team)) return { dx: off.dx, dz: off.dz };   // stopped dead at the dark
+  return { dx, dz };
+}
+export function reclampReticle(SG, team, center, radius, off, toUV) {
+  let dx = off.dx, dz = off.dz;
+  const d = Math.hypot(dx, dz);
+  if (d > radius && d > 1e-9) { dx *= radius / d; dz *= radius / d; }
+  const c = toUV(center.x + dx, center.z + dz);
+  if (seenAt(SG, c.u, c.v, team)) return { dx, dz };
+  return { dx: 0, dz: 0 };   // its ground went dark — home to the unit's own cell
+}
+```
+
+**Step 5.3 — state, seed, release.** `DepotGame.jsx`: state init gains `reticleOff: null` beside `reticle: null` (comment updated to the carry law). Both take-control closures seed the offset (the derived world point follows); the release clears all three:
+
+```js
+        S.fireHeld = false;
+        const pc0 = possessCenter();
+        S.reticleOff = pc0 ? reclampReticle(T.sight, 1, pc0, possessSightR(), { dx: 0, dz: 4 }, invW) : null;
+        S.reticle = pc0 && S.reticleOff ? { x: pc0.x + S.reticleOff.dx, z: pc0.z + S.reticleOff.dz } : null;
+```
+
+(`takeControlTower` identical with its `pc1`.) In `S.releasePossession`: `S.reticle = null; S.reticleOff = null; S.fireHeld = false;`.
+
+**Step 5.4 — the frame loop carries.** The possession block's reticle section becomes offset-native — steer moves the offset, the mouse sets it, the reclamp bounds it, and the world point is derived last (fire paths and the ring keep reading `S.reticle`, untouched):
+
+```js
+            const rc = possessCenter();
+            const rR = possessSightR();
+            if (rc && S.reticleOff) {
+              if (S.joyR && S.joyR.active) {
+                const cb3 = R.camBasis;
+                const fl3 = Math.hypot(cb3.up.x, cb3.up.z) || 1, rl3 = Math.hypot(cb3.right.x, cb3.right.z) || 1;
+                const rv = {
+                  vx: (cb3.right.x / rl3) * S.joyR.s + (cb3.up.x / fl3) * S.joyR.t,
+                  vz: (cb3.right.z / rl3) * S.joyR.s + (cb3.up.z / fl3) * S.joyR.t,
+                };
+                S.reticleOff = steerReticle(T.sight, 1, rc, rR, S.reticleOff, rv.vx, rv.vz, dt, invW);
+              } else if (!isTouch && S.pointer) {
+                const gp = groundPoint(S.pointer.x, S.pointer.y);
+                if (gp) S.reticleOff = { dx: gp.x - rc.x, dz: gp.z - rc.z };
+              }
+              S.reticleOff = reclampReticle(T.sight, 1, rc, rR, S.reticleOff, invW);
+              S.reticle = { x: rc.x + S.reticleOff.dx, z: rc.z + S.reticleOff.dz };
+            }
+```
+
+**Step 5.5 — the red circle.** `src/render/renderer.js`: `let retRing = null;` joins the overlay's lazy nulls (~:1165), and `setReticle` joins the overlay object beside `setHover` — additive, nothing existing touched:
+
+```js
+    // POSSESSION T5 (mk0.94): the possessed reticle — its own red ring, not
+    // the build ghost. Lazy like everything here; the game layer drives it
+    // only while a possession is live.
+    setReticle(on, x, z, y) {
+      if (!retRing) {
+        retRing = new THREE.Mesh(new THREE.RingGeometry(0.82, 1.0, 44), new THREE.MeshBasicMaterial({ color: 0xff6b5e, transparent: true, opacity: 0.85, depthWrite: false }));
+        retRing.rotation.x = -Math.PI / 2; retRing.layers.set(1); scene.add(retRing);
+      }
+      retRing.visible = !!on;
+      if (on) { retRing.position.set(x, y + 0.1, z); retRing.scale.set(1.2, 1.2, 1); }
+    },
+```
+
+`DepotGame.jsx` ring render: the possessed branch leaves the `setHover` chain — the reticle gets its own call every frame, and the build hover is gated off while possessed:
+
+```js
+          R.overlay.setReticle(!!(S.possess && S.reticle),
+            S.reticle ? S.reticle.x : 0, S.reticle ? S.reticle.z : 0,
+            S.reticle ? field.heightAt(S.reticle.x, S.reticle.z) : 0);
+          if (!S.possess && S.hover) {
+            // (existing sandbag-ghost / setHover body unchanged)
+```
+
+(...and the chain's final `else R.overlay.setHover(false);` stays.)
+
+**Step 5.6 — the bell keeps your hands.** `ringBell` (~:2198): DELETE the line `if (S.possess) S.releasePossession();` and replace with the comment:
+
+```js
+        // POSSESSION T5 (mk0.94), REVERSING the mk0.90 rule by the owner's
+        // playtest ruling: the bell does NOT release possession — the round
+        // changes under your hands. The save it writes still never carries
+        // one (serializeFront never reads S.possess; pinned by T1(c)/(d)).
+```
+
+Nothing else in the bell path changes; the release-on-death guards stay.
+
+**Behavior stated plainly:** the reticle is a red circle. Push it out with the right stick and let go — it stays that far from the unit, in that direction, and walks with you. It still cannot leave the unit's sight circle or sit on unseen ground; ground that goes dark under it drops it back to the unit. The bell rings, the round changes, the save is written — and you are still driving.
+
+**Gates (ONLY these):** parse changed files · `npm run lint:depot` · `npm run test:depot` (5.1 green; every re-pin old→new) · `npm run golden` (renderer touched — the additive-divergence guard) · build AFTER bumping `src/version.js` to "mk0.94" · `SMOKE_ONLY=depot` smoke. Allowed files: `sight.js`, `DepotGame.jsx`, `renderer.js`, `depot-test.mjs`, `version.js`. Commit "(mk0.94)", push, CI green, STOP for audit.
+
+---
+
 ## Close
 
 Phase code-complete = the owner's playtest gates everything: possession feel, stick feel, reticle feel, volley feel, tower gunnery — none of it is verifiable by machine and none is accepted until he plays it. Roadmap flips Command → DONE, Possession → IN PROGRESS at T1 (fold into its commit: `src/ui/Roadmap.jsx` Command "One ring of orders around every squad and tower — shipped." / Possession "Take direct control of any squad or tower and drive it yourself."). Deferred to later phases by ratified scope: vehicle possession (Heroes), possession of walls (never ruled in), doctrine buttons while possessed, any enemy mirror (ruled out).
