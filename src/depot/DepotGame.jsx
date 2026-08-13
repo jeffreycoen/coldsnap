@@ -52,8 +52,27 @@ let SPAWN_POINTS = [], PONDS = [], ROCKS = [], TOWN = [], ROADS = [], PASSES = [
 
 function genMap(seed) {
   const r = mulberry32(seed);
-  const bands = [-17 + (r() - 0.5) * 6, 7 + (r() - 0.5) * 8, 31 + (r() - 0.5) * 6];
-  const passes = bands.map((z) => [{ x: -46 + r() * 28, z }, { x: 10 + r() * 36, z }]);
+  // THE DEPOTS FIRST (T2, mk1.01): both drawn per seed at MIRRORED DEPTH —
+  // the same distance from their own rim by construction, which closes the
+  // old placement asymmetry (record: player 8m from rim, enemy 14). Their
+  // side-to-side positions are independent, so no two wars share a front.
+  // v-separation is >= 80m by construction; spacing needs no retry luck.
+  const depotDepth = 40 + r() * 10;      // provisional (F5)
+  const depotU1 = (r() - 0.5) * 70;      // the player's depot, canonical u
+  const depotU2 = (r() - 0.5) * 70;      // the enemy's
+  const objU = depotU1, objV = depotDepth - 3; // the objective sits 3m field-side of the player depot
+  // THE BANDS (T2): 2-4 rock bands, evenly seeded across the middle ground,
+  // each jittered — the fixed three-band skeleton is gone.
+  const nBands = 2 + Math.floor(r() * 3);
+  const bands = [];
+  for (let i = 0; i < nBands; i++) bands.push(-28 + (i + 0.5) * (58 / nBands) + (r() - 0.5) * 10);
+  // THE PASSES (T2): 1-3 gaps per band, drawn anywhere across the width.
+  const passes = bands.map((z) => {
+    const n = 1 + Math.floor(r() * 3);
+    const out = [];
+    for (let i = 0; i < n; i++) out.push({ x: -50 + r() * 100, z });
+    return out;
+  });
   const rocks = [];
   for (let bi = 0; bi < bands.length; bi++) {
     const density = 0.35 + r() * 0.65;
@@ -61,16 +80,26 @@ function genMap(seed) {
       if (r() > density) continue;
       const z = bands[bi] + (r() - 0.5) * 2.5;
       if (passes[bi].some((g) => Math.abs(x - g.x) < 6.5)) continue;
+      // T2: a wandering depot can meet a band — rocks keep 12m off both
+      if (Math.hypot(x - depotU1, z - depotDepth) < 12 || Math.hypot(x - depotU2, z + depotDepth) < 12) continue;
       rocks.push({ x, z, r: 3.4 + r() * 1.2, h: 3.0 + r() * 0.9 });
     }
   }
-  const spawns = [-42 + r() * 8, -4 + r() * 8, 34 + r() * 8].map((x) => ({ x, z: GRID_OZ + 2 }));
-  const roads = [0, 1].map((side) => {
-    const pts = [[spawns[side === 0 ? 0 : 2].x, GRID_OZ + 2]];
-    for (const band of passes) pts.push([band[side].x, band[side].z]);
-    pts.push([0, 49]);
-    return pts;
-  });
+  // THE SPAWNS (T2): 2-4, spread across the enemy edge with jitter.
+  const nSpawn = 2 + Math.floor(r() * 3);
+  const spawns = [];
+  for (let i = 0; i < nSpawn; i++) spawns.push({ x: -45 + (i + 0.5) * (90 / nSpawn) + (r() - 0.5) * 10, z: GRID_OZ + 2 });
+  // THE ROADS (T2): 0-3 — a front owes nobody a road. Each drawn road runs
+  // spawn -> one pass per band -> the objective. Roads are terrain and looks;
+  // the march runs the flow field either way.
+  const nRoads = Math.floor(r() * 4);
+  const roads = [];
+  for (let ri = 0; ri < nRoads; ri++) {
+    const pts = [[spawns[ri % spawns.length].x, GRID_OZ + 2]];
+    for (const band of passes) { const g = band[Math.floor(r() * band.length)]; pts.push([g.x, g.z]); }
+    pts.push([objU, objV]);
+    roads.push(pts);
+  }
   const roadDist = (x, z) => {
     let best = 1e9;
     for (const route of roads) for (let i = 0; i < route.length - 1; i++) {
@@ -87,7 +116,8 @@ function genMap(seed) {
     const x = -50 + r() * 100, z = -12 + r() * 48, rad = 5.5 + r() * 2.5;
     if (passes.flat().some((g) => Math.abs(x - g.x) < 9 && Math.abs(z - g.z) < 14)) continue;
     if (roadDist(x, z) < rad + 6) continue;
-    if (Math.hypot(x - 0, z - 49) < 16) continue;
+    // T2: clear of BOTH depots (the old check knew one fixed objective)
+    if (Math.hypot(x - depotU1, z - depotDepth) < 16 || Math.hypot(x - depotU2, z + depotDepth) < 16) continue;
     if (ponds.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 6)) continue;
     ponds.push({ x, z, r: rad, level: 0 });
   }
@@ -98,28 +128,26 @@ function genMap(seed) {
     { t: "yard", nx: 6, nz: 5, ny: 2, roof: false }, { t: "shed", nx: 4, nz: 4, ny: 3 },
     { t: "chapel", nx: 5, nz: 6, ny: 5 }, { t: "keep", nx: 7, nz: 6, ny: 5 },
   ];
-  // FRONT F1: the enemy depot — same lattice as ours (symmetry), centered on
-  // the enemy end behind the spawn line's midpoint gap. Canonical (0, -46):
-  // spawns sit at v = -54, roads run from them THROUGH the passes toward
-  // (0, 49) — at v = -46 the two roads are still near their spawn-x origins
-  // (|x| >= ~3 by construction), and the depot footprint (9*0.83/2 ≈ 3.7m
-  // half-width) needs the road-clearance check below regardless: makeMap's
-  // existing retry loop re-rolls the seed when the placement is fouled.
+  // T2: both depots at their DRAWN positions — same lattice, same template.
   const town = [
-    { id: "depot", x: 0, z: 52, nx: 9, nz: 7, ny: 6, door: 4, depot: true },
-    { id: "depot2", x: 0, z: -46, nx: 9, nz: 7, ny: 6, door: 4, depot: true, team: 2 }, // provisional (F5)
+    { id: "depot", x: depotU1, z: depotDepth, nx: 9, nz: 7, ny: 6, door: 4, depot: true },
+    { id: "depot2", x: depotU2, z: -depotDepth, nx: 9, nz: 7, ny: 6, door: 4, depot: true, team: 2 },
   ];
-  // depot2 placement clearance: fouled by a road or a spawn -> flag the map
-  // bad; makeMap's retry loop (the same one that re-rolls on failed
-  // connectivity) rolls a fresh seed. No second loop, no extra rng draws.
-  const d2 = town[1];
-  const d2HalfDiag = Math.hypot(d2.nx, d2.nz) * MASON.pitch / 2;
-  const depot2Foul =
-    roadDist(d2.x, d2.z) <= d2HalfDiag + 2 ||
-    spawns.some((sp) => Math.hypot(d2.x - sp.x, d2.z - sp.z) < d2HalfDiag + 2) ||
-    ponds.some((q) => Math.hypot(d2.x - q.x, d2.z - q.z) < q.r + d2HalfDiag) ||
-    rocks.some((q) => Math.hypot(d2.x - q.x, d2.z - q.z) < q.r + d2HalfDiag);
-  const benches = [[bands[0] + 8, bands[1] - 7], [bands[1] + 8, bands[2] - 7], [bands[2] + 8, 46]];
+  // T2: BOTH depots run the foul check the enemy's alone used to run —
+  // except the ROAD clause, which checks depot2 only (AMENDMENT 2): every
+  // drawn road terminates AT the player depot by design (its own supply
+  // road), so road proximity is a foul for the enemy's ground alone.
+  const dHalfDiag = Math.hypot(9, 7) * MASON.pitch / 2;
+  const dFoul = (d, roadChecked) =>
+    (roadChecked && roadDist(d.x, d.z) <= dHalfDiag + 2) ||
+    spawns.some((sp) => Math.hypot(d.x - sp.x, d.z - sp.z) < dHalfDiag + 2) ||
+    ponds.some((q) => Math.hypot(d.x - q.x, d.z - q.z) < q.r + dHalfDiag) ||
+    rocks.some((q) => Math.hypot(d.x - q.x, d.z - q.z) < q.r + dHalfDiag);
+  const depotFoul = dFoul(town[0], false) || dFoul(town[1], true);
+  // T2: benches between consecutive bands, plus the last band to depot ground.
+  const benches = [];
+  for (let i = 0; i + 1 < bands.length; i++) benches.push([bands[i] + 8, bands[i + 1] - 7]);
+  benches.push([bands[bands.length - 1] + 8, depotDepth - 8]);
   let bid = 0;
   for (let bi = 0; bi < benches.length; bi++) {
     const want = 2 + Math.floor(r() * 4);
@@ -141,7 +169,7 @@ function genMap(seed) {
   }
   const nRuin = Math.floor(r() * 3);
   for (let k = 0, placed = 0; k < 14 && placed < nRuin; k++) {
-    const x = -50 + r() * 100, z = -46 + r() * 20;
+    const x = -50 + r() * 100, z = -depotDepth + r() * 20;
     if (spawns.some((sp) => Math.hypot(x - sp.x, z - sp.z) < 10)) continue;
     if (town.some((q) => Math.hypot(x - q.x, z - q.z) < 10)) continue;
     town.push({ id: "oldruin" + placed, x, z, nx: 4, nz: 4, ny: 3, door: 0, ruin: 0.5 });
@@ -155,14 +183,14 @@ function genMap(seed) {
   for (const sp of spawns) T(sp);
   for (const band of passes) for (const g of band) T(g);
   for (const route of roads) for (const pt of route) { const w = fwdU(pt[0], pt[1]); pt[0] = w.x; pt[1] = w.z; }
-  return { seed, bands, passes, rocks, ponds, spawns, spawnU, town, roads, depot2Foul };
+  return { seed, bands, passes, rocks, ponds, spawns, spawnU, town, roads, depotFoul, objU, objV, depotU1, depotU2, depotDepth };
 }
 function makeMap(seed) {
-  for (let attempt = 0; attempt < 10; attempt++) {
+  for (let attempt = 0; attempt < 24; attempt++) {   // T2: wilder maps foul more — a deeper retry pocket
     const sd = seed + attempt * 7919;
     ORIENT = sd % 4;
-    OBJ_POS = fwdU(0, 49);
     const m = genMap(sd);
+    OBJ_POS = fwdU(m.objU, m.objV);                  // T2: the objective follows the DRAWN depot, set after genMap
     MAP_SEED = sd; BANDS = m.bands; PASSES = m.passes; ROCKS = m.rocks;
     PONDS = m.ponds; SPAWN_POINTS = m.spawns; TOWN = m.town; ROADS = m.roads;
     SPAWN_U = m.spawnU;
@@ -178,12 +206,13 @@ function makeMap(seed) {
       }
     }
     const og = g.worldToGrid(OBJ_POS.x, OBJ_POS.z);
-    // FRONT F1: the map must also let every spawn reach the enemy depot's
-    // doorway (canonical (0, -51), just outside depot2's door face) — the
-    // enemy must be able to defend home ground later (guards F3).
-    const d2door = fwdU(0, -51);
+    // T2: the enemy doorway derives from the DRAWN depot2 — 5m behind its center.
+    const d2door = fwdU(m.depotU2, -m.depotDepth - 5);
     const dg = g.worldToGrid(d2door.x, d2door.z);
-    if (TOWN.length >= 6 && !m.depot2Foul &&
+    // T2: the grown predicate — town minimum, no depot foul, explicit spacing
+    // (guaranteed by construction, asserted anyway), both connectivities.
+    if (TOWN.length >= 6 && !m.depotFoul &&
+        Math.hypot(m.depotU1 - m.depotU2, 2 * m.depotDepth) >= 70 &&
         checkConnectivity(g, SPAWN_POINTS, og.gx, og.gz) &&
         checkConnectivity(g, SPAWN_POINTS, dg.gx, dg.gz)) return;
   }
@@ -200,8 +229,8 @@ function buildDepotTerrain(field, seed = 11) {
       + Math.sin(x * 0.075 + 1.3) * 0.42
       + Math.cos(z * 0.061 - 0.6) * 0.38
       + Math.sin((x + z) * 0.032) * 0.30
-      + (r() - 0.5) * 0.06
-      + stepUp(BANDS[0] - 1, 10, 1.8) + stepUp(BANDS[1] - 1, 10, 2.0) + stepUp(BANDS[2] - 1, 10, 2.2);
+      + (r() - 0.5) * 0.06;
+    for (let bi = 0; bi < BANDS.length; bi++) y += stepUp(BANDS[bi] - 1, 10, 1.8 + 0.2 * (bi % 3));
     const over = Math.max(0, Math.abs(cuv.u) - RIM_HALF_U, Math.abs(cuv.v) - RIM_HALF_V);
     if (over > 0) y = Math.max(-6, y - over * over * 0.55);
     for (const k of ROCKS) {
@@ -219,22 +248,13 @@ function buildDepotTerrain(field, seed = 11) {
     h[j * n + i] = y;
   }
   for (const t of TOWN) {
-    const rad = Math.hypot(t.nx, t.nz) * MASON.pitch / 2 + 2.0;
-    const ph = h[Math.round((t.z + half) / cs) * n + Math.round((t.x + half) / cs)];
+    const rad = Math.hypot(t.nx, t.nz) * MASON.pitch / 2 + (t.depot ? 4.0 : 2.0);
+    const ph = h[Math.round((t.z + half) / cs) * n + Math.round((t.x + half) / cs)] + (t.depot ? 0.5 : 0);
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
       const x = i * cs - half, z = j * cs - half;
       const d = Math.hypot(x - t.x, z - t.z);
       if (d >= rad) continue;
       h[j * n + i] += (ph - h[j * n + i]) * Math.min(1, (rad - d) / 1.8);
-    }
-  }
-  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
-    const x = i * cs - half, z = j * cs - half;
-    const d = Math.hypot(x - OBJ_POS.x, z - OBJ_POS.z);
-    if (d < 9) {
-      const t = Math.min(1, (9 - d) / 4.5);
-      const ph = 2.0 + 1.8 + 2.0 + 2.2 + 0.5;
-      h[j * n + i] += (ph - h[j * n + i]) * t;
     }
   }
   const maxStep = Math.tan(0.52) * cs, dStep = maxStep * Math.SQRT2;
@@ -1085,6 +1105,7 @@ export default function DepotGame({ onExit, resume = null }) {
           const w = fwdU(tu + (rT() - 0.5) * 1.6, -54.5 + rT() * 3.2);
           if (SPAWN_POINTS.some((sp) => Math.hypot(w.x - sp.x, w.z - sp.z) < 4.5)) continue;
           if (rockAt(w.x, w.z)) continue;
+          if (TOWN.some((t) => t.depot && Math.hypot(w.x - t.x, w.z - t.z) < 10)) continue;
           treeAt(w.x, w.z);
         }
         const clumps = [];
@@ -1094,6 +1115,7 @@ export default function DepotGame({ onExit, resume = null }) {
             const a = rT() * 6.28, rr = 1.5 + rT() * 4;
             const jx = cx + Math.cos(a) * rr, jz = cz + Math.sin(a) * rr;
             if (rockAt(jx, jz) || pondAt(jx, jz)) continue;
+            if (TOWN.some((t) => t.depot && Math.hypot(jx - t.x, jz - t.z) < 10)) continue;
             treeAt(jx, jz);
           }
         }

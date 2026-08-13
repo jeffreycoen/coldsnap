@@ -2441,8 +2441,11 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   const depot2 = st.TOWN.find((t) => t.id === "depot2");
   ok("F1/1a: genMap places depot2 (team 2) in the town list", !!depot2 && depot2.team === 2, JSON.stringify(depot2));
   {
-    const c = depot2 ? invWFor(st.ORIENT, depot2.x, depot2.z) : { u: 9e9, v: 9e9 };
-    ok("F1/1a: depot2 sits at canonical (0, -46)", Math.abs(c.u - 0) < 0.01 && Math.abs(c.v - -46) < 0.01, `u=${c.u} v=${c.v}`);
+    const depot1 = st.TOWN.find((t) => t.id === "depot");
+    const c1 = depot1 ? invWFor(st.ORIENT, depot1.x, depot1.z) : { u: 9e9, v: 9e9 };
+    const c2 = depot2 ? invWFor(st.ORIENT, depot2.x, depot2.z) : { u: 9e9, v: 9e9 };
+    ok("F1/1a (re-pinned mk1.01): the depots are EVENED — mirrored depth, 40-50m from center",
+      Math.abs(c1.v + c2.v) < 0.01 && c1.v >= 40 && c1.v <= 50.01, `v1=${c1.v} v2=${c2.v}`);
     ok("F1/1a: depot2 shares the depot lattice template (9x7x6, door 4, depot flag)",
       !!depot2 && depot2.depot === true &&
       Math.max(depot2.nx, depot2.nz) === 9 && Math.min(depot2.nx, depot2.nz) === 7 && depot2.ny === 6,
@@ -2516,7 +2519,8 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
         }
       }
       const og = g.worldToGrid(sti.OBJ_POS.x, sti.OBJ_POS.z);
-      const doorW = fwdUFor(sti.ORIENT, 0, -51); // just outside depot2's door face
+      const c2s = invWFor(sti.ORIENT, d2.x, d2.z);
+      const doorW = fwdUFor(sti.ORIENT, c2s.u, c2s.v - 5); // 5m behind depot2's own center — derived, not owed
       const dg = g.worldToGrid(doorW.x, doorW.z);
       ok(`F1/sweep seed ${s * 101}: spawns reach the objective AND depot2's doorway`,
         Mi.checkConnectivity(g, sti.SPAWN_POINTS, og.gx, og.gz) &&
@@ -5394,7 +5398,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     if (st.ROCKS.some((k) => uOf(k) > 30) || st.TOWN.some((t) => uOf(t) > 30)) wide++;
     // the three spawns spread wider than the old +-21 band
     const us = st.SPAWN_POINTS.map((sp) => invWFor(st.ORIENT, sp.x, sp.z).u);
-    if (Math.max(...us) - Math.min(...us) > 60) spawnSpread++;
+    if (Math.max(...us) - Math.min(...us) > 34) spawnSpread++;
     // both depots reachable on the accepted map (makeMap's own gate re-run)
     const g = Mi.makeGrid(null);
     for (const t of st.TOWN) {
@@ -5408,16 +5412,79 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
       }
     }
     const og = g.worldToGrid(st.OBJ_POS.x, st.OBJ_POS.z);
-    const dw = fwdUFor(st.ORIENT, 0, -51);
+    const d2t = st.TOWN.find((t) => t.id === "depot2");
+    const c2t = invWFor(st.ORIENT, d2t.x, d2t.z);
+    const dw = fwdUFor(st.ORIENT, c2t.u, c2t.v - 5);
     const dg = g.worldToGrid(dw.x, dw.z);
     if (Mi.checkConnectivity(g, st.SPAWN_POINTS, og.gx, og.gz) &&
         Mi.checkConnectivity(g, st.SPAWN_POINTS, dg.gx, dg.gz)) connected++;
   }
   ok("FRONT T1: the square fills — generated features beyond the old rim on every seed", wide === 10, `${wide}/10`);
-  ok("FRONT T1: the spawn line spreads across the square (span > 60m)", spawnSpread === 10, `${spawnSpread}/10`);
+  ok("FRONT T1 (re-pinned mk1.01): the spawn line spreads across the square (span > 34m at the 2-spawn minimum)", spawnSpread === 10, `${spawnSpread}/10`);
   ok("FRONT T1: spawns reach the objective AND the enemy depot's door on every seed", connected === 10, `${connected}/10`);
 }
 // ==== end FRONT T1 ===========================================================
+
+// ==== FRONT T2: the wilder map ===============================================
+// mk1.01 (The Front, Task 2). Map generation stops being three fixed bands,
+// two owed roads, and two depots nailed to the center line — every seed now
+// draws band/pass/spawn/road counts and both depot positions, evened at a
+// mirrored depth. Same extraction machinery as FRONT T1's block, a fresh copy
+// scoped here, with ROADS/BANDS/PONDS joining the returned state.
+{
+  console.log("\n[front t2: the wilder map]");
+  const srcT2 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  const sliceFn3 = (name) => {
+    const start = srcT2.indexOf(`\nfunction ${name}(`);
+    if (start < 0) throw new Error("T2 extract: missing function " + name);
+    const rest = srcT2.slice(start + 1);
+    const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
+    return rest.slice(0, m < 0 ? rest.length : m + 9);
+  };
+  const headerT2 = srcT2.slice(srcT2.indexOf("const GRID_CS"), srcT2.indexOf("function genMap"));
+  const mapSrcT2 = [
+    headerT2,
+    sliceFn3("genMap"), sliceFn3("makeMap"), sliceFn3("pondAt"), sliceFn3("rockAt"),
+    sliceFn3("makeGrid"), sliceFn3("checkConnectivity"), sliceFn3("townFootprint"), sliceFn3("buildTown"),
+    `return { makeMap, makeGrid, checkConnectivity, invW,
+      state: () => ({ ORIENT, OBJ_POS, SPAWN_POINTS, ROCKS, PONDS, TOWN, ROADS, BANDS, MAP_SEED }) };`,
+  ].join("\n");
+  const mkMapT2 = () => new Function(
+    "mulberry32", "MASON", "fwdUFor", "fwdDirFor", "invWFor", "addBody", "addWeld", mapSrcT2,
+  )(mulberry32, MASON, fwdUFor, fwdDirFor, invWFor, addBody, addWeld);
+
+  const roadCounts = new Set(), bandCounts = new Set(), spawnCounts = new Set();
+  let evened = 0, spaced = 0, clear = 0; const u1s = [];
+  for (let s = 1; s <= 40; s++) {
+    const Mi = mkMapT2(); Mi.makeMap(s * 613);
+    const st = Mi.state();
+    roadCounts.add(st.ROADS.length); bandCounts.add(st.BANDS.length); spawnCounts.add(st.SPAWN_POINTS.length);
+    const d1 = st.TOWN.find((t) => t.id === "depot"), d2 = st.TOWN.find((t) => t.id === "depot2");
+    const c1 = invWFor(st.ORIENT, d1.x, d1.z), c2 = invWFor(st.ORIENT, d2.x, d2.z);
+    if (Math.abs(c1.v + c2.v) < 0.01 && c1.v >= 40 && c1.v <= 50.01) evened++;
+    if (Math.hypot(d1.x - d2.x, d1.z - d2.z) >= 70) spaced++;
+    u1s.push(c1.u);
+    const depotClear = (d) =>
+      !st.PONDS.some((q) => Math.hypot(d.x - q.x, d.z - q.z) < q.r + Math.hypot(9, 7) * MASON.pitch / 2) &&
+      !st.ROCKS.some((k) => Math.hypot(d.x - k.x, d.z - k.z) < 12);
+    if (depotClear(d1) && depotClear(d2)) clear++;
+  }
+  ok("T2: road count varies — at least 3 distinct values in 0-3 across 40 seeds", roadCounts.size >= 3, [...roadCounts].join(","));
+  ok("T2: band count varies within 2-4", bandCounts.size >= 2 && Math.min(...bandCounts) >= 2 && Math.max(...bandCounts) <= 4, [...bandCounts].join(","));
+  ok("T2: spawn count varies within 2-4", spawnCounts.size >= 2 && Math.min(...spawnCounts) >= 2 && Math.max(...spawnCounts) <= 4, [...spawnCounts].join(","));
+  ok("T2: every seed's depots are EVENED (mirrored depth, 40-50m)", evened === 40, `${evened}/40`);
+  ok("T2: every seed's depots sit >= 70m apart", spaced === 40, `${spaced}/40`);
+  ok("T2: the player depot wanders side to side (u spread > 30m over 40 seeds)", Math.max(...u1s) - Math.min(...u1s) > 30, (Math.max(...u1s) - Math.min(...u1s)).toFixed(1));
+  ok("T2: both depots clear of ponds and rocks on every seed", clear === 40, `${clear}/40`);
+  // determinism: the wilder map is still a pure function of its seed
+  {
+    const A = mkMapT2(); A.makeMap(7717);
+    const B = mkMapT2(); B.makeMap(7717);
+    ok("T2: twin determinism — same seed, identical town/roads/bands",
+      JSON.stringify([A.state().TOWN, A.state().ROADS, A.state().BANDS]) === JSON.stringify([B.state().TOWN, B.state().ROADS, B.state().BANDS]));
+  }
+}
+// ==== end FRONT T2 ===========================================================
 
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
