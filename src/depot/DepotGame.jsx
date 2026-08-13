@@ -730,14 +730,22 @@ function RadialMenu({ cx, cy, label, slots, armed, onChoose }) {
         const lx = cx + Math.cos(mid) * 72, ly = cy + Math.sin(mid) * 72;
         return (
           <g key={s.key} data-radial={s.key} style={{ pointerEvents: "auto", cursor: "pointer" }} onClick={() => { s.act(); onChoose && onChoose(); }} opacity={armed ? 1 : 0.5}>
-            <path d={wedge(i)} fill={s.on ? s.color : "rgba(14,18,24,0.88)"} fillOpacity={s.on ? 0.28 : 0.88} stroke={s.on ? s.color : "#48515f"} strokeWidth="1.5" />
-            <text x={lx} y={ly - 4} textAnchor="middle" fontSize="15" fill={s.color} style={{ userSelect: "none" }}>{s.icon || ""}</text>
-            <text x={lx} y={ly + 12} textAnchor="middle" fontSize="10" letterSpacing="1" fill={s.color} fontFamily="inherit" style={{ userSelect: "none" }}>{s.label}</text>
+            {/* mk0.83 (owner: "green text on green background is illegible"):
+                the wedge keeps its dark panel fill even when lit — the lit
+                state is the accent BORDER and a faint tint, and every label
+                paints a dark halo under itself (paintOrder stroke) so it
+                reads on any fill, any terrain. */}
+            <path d={wedge(i)} fill="rgba(14,18,24,0.88)" stroke={s.on ? s.color : "#48515f"} strokeWidth={s.on ? 2.5 : 1.5} />
+            {s.on && <path d={wedge(i)} fill={s.color} fillOpacity="0.14" stroke="none" />}
+            <text x={lx} y={ly - 4} textAnchor="middle" fontSize="15" fill={s.color} stroke="#0e1218" strokeWidth="3" paintOrder="stroke" style={{ userSelect: "none" }}>{s.icon || ""}</text>
+            <text x={lx} y={ly + 12} textAnchor="middle" fontSize="10" letterSpacing="1" fill={s.color} stroke="#0e1218" strokeWidth="3" paintOrder="stroke" fontFamily="inherit" style={{ userSelect: "none" }}>{s.label}</text>
           </g>
         );
       })}
       <foreignObject x={cx - 60} y={cy + R1 + 6} width="120" height="40" style={{ pointerEvents: "none", overflow: "visible" }}>
-        <div style={{ textAlign: "center", fontSize: 10, letterSpacing: 1, color: "#7dffa8" }}>{label}</div>
+        <div style={{ textAlign: "center" }}>
+          <span style={{ fontSize: 10, letterSpacing: 1, color: "#7dffa8", background: "rgba(14,18,24,0.85)", padding: "1px 6px", borderRadius: 4 }}>{label}</span>
+        </div>
       </foreignObject>
     </svg>
   );
