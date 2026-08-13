@@ -23,14 +23,17 @@ const TERR_TINT = {
   unheld: "rgba(150,84,76,0.55)",  // muted red (PAL.scoutRed family) — enemy/neutral-far
   seam: null,                      // no wash — the base grey line already reads as no-man's-land
 };
-function makeSplat(town) {
+function makeSplat(town, span) {
   const cv = document.createElement("canvas");
   cv.width = 1024; cv.height = 1024; // DIVERGENCE from the demo (512): block-scale grid needs the resolution
   const cx = cv.getContext("2d");
-  // grid geometry constants, lifted out of paintBase's closure so the
-  // territory retint pass (DEPOT-only, see retintTerritory below) can find
-  // the same line pixels without re-deriving the layout.
-  const W2Ug = 1024 / 188.7, U0g = 94.35, BLK = 0.83;
+  // grid geometry constants. THE FRONT (mk1.00): derived from the caller's
+  // field span when supplied (DEPOT passes its real 240m field, so the block
+  // grid finally sits at the true 0.83m pitch and lines align with world
+  // positions); the 188.7 literal is the frozen demo's field and stays the
+  // fallback so TD/campaign/sandbox render byte-identically.
+  const SPAN = span || 188.7;
+  const W2Ug = 1024 / SPAN, U0g = SPAN / 2, BLK = 0.83;
   const gridPx = (worldCoord) => (worldCoord + U0g) * W2Ug;
   const paintBase = () => {
     cx.globalAlpha = 1; cx.fillStyle = "#f2f6fa"; cx.fillRect(0, 0, 1024, 1024);
@@ -50,7 +53,7 @@ function makeSplat(town) {
       // DIVERGENCE from the demo's 4m/20m grid: cells are one masonry block
       // (0.83m PITCH) with a heavier line every 4 blocks, so terrain relief
       // reads in the same visual unit as every wall and house.
-      for (let k = Math.ceil(-92 / BLK); k * BLK <= 92; k++) {
+      for (let k = Math.ceil(-U0g / BLK); k * BLK <= U0g; k++) {
         const gp = Math.round(gridPx(k * BLK));
         cx.fillStyle = k % 4 === 0 ? "rgba(78,92,110,0.7)" : "rgba(116,130,148,0.7)"; // opaque enough to read on open snow
         cx.fillRect(gp, 0, 1, 1024);
@@ -353,7 +356,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const Wd = (F.n - 1) * F.cs;
   const terraGeo = new THREE.PlaneGeometry(Wd, Wd, F.n - 1, F.n - 1);
   terraGeo.rotateX(-Math.PI / 2);
-  const splat = makeSplat(opts.town !== false); // default keeps the demo/sandbox ground art
+  const splat = makeSplat(opts.town !== false, opts.rim ? Wd : null); // default keeps the demo/sandbox ground art
   // SCORCH DECALS LIGHTEN OVER TIME (DEPOT-only, opts.fadeDecals gated —
   // TD/campaign/demo never set it, so their splat stays byte-identical):
   // every FADE_EVERY seconds, re-blend the clean base over the whole canvas

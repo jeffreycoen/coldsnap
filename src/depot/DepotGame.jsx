@@ -28,8 +28,8 @@ import { SAVE_KEY, serializeFront, burnFront, restoreBodies, restoreWelds, resto
 import Dispatch from "./Dispatch.jsx";
 
 // ============================================================== the map
-// Same 28x56 canonical frame as HOLD THE DEPOT — one field, one depot.
-const GRID_CS = 2.0, GRID_W = 28, GRID_H = 56;
+// THE FRONT (mk1.00): a 120x120 SQUARE — one canonical frame, four rotations.
+const GRID_CS = 2.0, GRID_W = 59, GRID_H = 59;
 const GRID_OX = -(GRID_W * GRID_CS) / 2, GRID_OZ = -(GRID_H * GRID_CS) / 2;
 let ORIENT = 0;
 // Transform formulas live in orient.js (pure, ORIENT-explicit, headlessly
@@ -38,11 +38,11 @@ let ORIENT = 0;
 const fwdU = (u, v) => fwdUFor(ORIENT, u, v);
 const fwdDir = (du, dv) => fwdDirFor(ORIENT, du, dv);
 const invW = (x, z) => invWFor(ORIENT, x, z);
-// THE PLAYABLE RIM, once. buildDepotTerrain's falloff box is 29x57 in
+// THE PLAYABLE RIM, once. buildDepotTerrain's falloff box is 60x60 in
 // canonical (u, v) — beyond it there is no ground to stand on, only the
 // painted horizon. world.inRim, the renderer's rim descriptor and the order
 // clamp below all read THESE two numbers so they cannot drift apart.
-const RIM_HALF_U = 29, RIM_HALF_V = 57;
+const RIM_HALF_U = 60, RIM_HALF_V = 60;
 // P1.5 Task 1 (mk0.50): an off-map destination tap becomes the nearest point
 // still on the field. The transform itself is orient.js's (pure, testable);
 // this is the same thin ORIENT-binding wrapper fwdU/invW are.
@@ -53,18 +53,18 @@ let SPAWN_POINTS = [], PONDS = [], ROCKS = [], TOWN = [], ROADS = [], PASSES = [
 function genMap(seed) {
   const r = mulberry32(seed);
   const bands = [-17 + (r() - 0.5) * 6, 7 + (r() - 0.5) * 8, 31 + (r() - 0.5) * 6];
-  const passes = bands.map((z) => [{ x: -20 + r() * 13, z }, { x: 5 + r() * 15, z }]);
+  const passes = bands.map((z) => [{ x: -46 + r() * 28, z }, { x: 10 + r() * 36, z }]);
   const rocks = [];
   for (let bi = 0; bi < bands.length; bi++) {
     const density = 0.35 + r() * 0.65;
-    for (let x = -25; x <= 25; x += 5.5 + r() * 3) {
+    for (let x = -55; x <= 55; x += 5.5 + r() * 3) {
       if (r() > density) continue;
       const z = bands[bi] + (r() - 0.5) * 2.5;
       if (passes[bi].some((g) => Math.abs(x - g.x) < 6.5)) continue;
       rocks.push({ x, z, r: 3.4 + r() * 1.2, h: 3.0 + r() * 0.9 });
     }
   }
-  const spawns = [-18 + r() * 5, -3 + r() * 6, 13 + r() * 5].map((x) => ({ x, z: GRID_OZ + 2 }));
+  const spawns = [-42 + r() * 8, -4 + r() * 8, 34 + r() * 8].map((x) => ({ x, z: GRID_OZ + 2 }));
   const roads = [0, 1].map((side) => {
     const pts = [[spawns[side === 0 ? 0 : 2].x, GRID_OZ + 2]];
     for (const band of passes) pts.push([band[side].x, band[side].z]);
@@ -84,7 +84,7 @@ function genMap(seed) {
   const ponds = [];
   const nP = 1 + Math.floor(r() * 4);
   for (let i = 0; i < 30 && ponds.length < nP; i++) {
-    const x = -18 + r() * 36, z = -12 + r() * 48, rad = 5.5 + r() * 2.5;
+    const x = -50 + r() * 100, z = -12 + r() * 48, rad = 5.5 + r() * 2.5;
     if (passes.flat().some((g) => Math.abs(x - g.x) < 9 && Math.abs(z - g.z) < 14)) continue;
     if (roadDist(x, z) < rad + 6) continue;
     if (Math.hypot(x - 0, z - 49) < 16) continue;
@@ -127,7 +127,7 @@ function genMap(seed) {
       const tpl = TPL[Math.floor(r() * TPL.length)];
       const swap = r() < 0.5;
       const nx = swap ? tpl.nz : tpl.nx, nz = swap ? tpl.nx : tpl.nz;
-      const x = -21 + r() * 42;
+      const x = -52 + r() * 104;
       const z = benches[bi][0] + r() * Math.max(2, benches[bi][1] - benches[bi][0]);
       const rad = Math.max(nx, nz) * MASON.pitch / 2 + 2;
       if (passes.flat().some((g) => Math.abs(x - g.x) < rad + 4 && Math.abs(z - g.z) < 12)) continue;
@@ -141,7 +141,7 @@ function genMap(seed) {
   }
   const nRuin = Math.floor(r() * 3);
   for (let k = 0, placed = 0; k < 14 && placed < nRuin; k++) {
-    const x = -18 + r() * 36, z = -46 + r() * 20;
+    const x = -50 + r() * 100, z = -46 + r() * 20;
     if (spawns.some((sp) => Math.hypot(x - sp.x, z - sp.z) < 10)) continue;
     if (town.some((q) => Math.hypot(x - q.x, z - q.z) < 10)) continue;
     town.push({ id: "oldruin" + placed, x, z, nx: 4, nz: 4, ny: 3, door: 0, ruin: 0.5 });
@@ -202,7 +202,7 @@ function buildDepotTerrain(field, seed = 11) {
       + Math.sin((x + z) * 0.032) * 0.30
       + (r() - 0.5) * 0.06
       + stepUp(BANDS[0] - 1, 10, 1.8) + stepUp(BANDS[1] - 1, 10, 2.0) + stepUp(BANDS[2] - 1, 10, 2.2);
-    const over = Math.max(0, Math.abs(cuv.u) - 29, Math.abs(cuv.v) - 57);
+    const over = Math.max(0, Math.abs(cuv.u) - RIM_HALF_U, Math.abs(cuv.v) - RIM_HALF_V);
     if (over > 0) y = Math.max(-6, y - over * over * 0.55);
     for (const k of ROCKS) {
       const d = Math.hypot(x - k.x, z - k.z) / k.r;
@@ -1012,9 +1012,9 @@ export default function DepotGame({ onExit, resume = null }) {
         rocksLive = ROCKS.slice();
       }
       // Territory (Phase 4 Task 2): who holds the ground. Cells over the
-      // same playable rim the renderer clips to (halfU 29 / halfV 57, see
+      // same playable rim the renderer clips to (halfU 60 / halfV 60, see
       // makeRenderer's rim opt above) — reuse rather than reinvent extents.
-      const T = makeTerritory(29, 57);
+      const T = makeTerritory(RIM_HALF_U, RIM_HALF_V);
       if (RES && RES.terr && RES.terr.v && RES.terr.v.length === T.v.length) T.v.set(RES.terr.v);
       // VISION (mk0.72): who can SEE what, on the territory grid's own frame
       // and carried on the territory object — so every function already
@@ -1081,14 +1081,14 @@ export default function DepotGame({ onExit, resume = null }) {
           b.maxHp = b.hp; b.rockRef = k;
         }
         const rT = mulberry32(MAP_SEED ^ 0x517);
-        for (let tu = -26; tu <= 26; tu += 3.2) {
+        for (let tu = -56; tu <= 56; tu += 3.2) {
           const w = fwdU(tu + (rT() - 0.5) * 1.6, -54.5 + rT() * 3.2);
           if (SPAWN_POINTS.some((sp) => Math.hypot(w.x - sp.x, w.z - sp.z) < 4.5)) continue;
           if (rockAt(w.x, w.z)) continue;
           treeAt(w.x, w.z);
         }
         const clumps = [];
-        for (let c = 0, nC = 1 + Math.floor(rT() * 4); c < nC; c++) { const w = fwdU(-20 + rT() * 40, -46 + rT() * 24); clumps.push([w.x, w.z, 5 + Math.floor(rT() * 3)]); }
+        for (let c = 0, nC = 1 + Math.floor(rT() * 4); c < nC; c++) { const w = fwdU(-50 + rT() * 100, -46 + rT() * 24); clumps.push([w.x, w.z, 5 + Math.floor(rT() * 3)]); }
         for (const [cx, cz, n2] of clumps) {
           for (let i = 0; i < n2; i++) {
             const a = rT() * 6.28, rr = 1.5 + rT() * 4;
@@ -1155,7 +1155,7 @@ export default function DepotGame({ onExit, resume = null }) {
       computeFlowField(grid, objG.gx, objG.gz);
       R = makeRenderer(canvas, world, {
         town: false, camera: "tactical", fadeDecals: true,
-        // playable rim (matches buildDepotTerrain's falloff box, 29x57
+        // playable rim (matches buildDepotTerrain's falloff box, 60x60
         // canonical): ground/grid/decals beyond it get no geometry to
         // paint on (see renderer.js). TD/campaign/demo pass no rim.
         rim: { halfU: RIM_HALF_U, halfV: RIM_HALF_V, toCanonical: invW, toWorld: fwdU },
@@ -1177,7 +1177,7 @@ export default function DepotGame({ onExit, resume = null }) {
           sampleVal: (x, z) => { const c = invW(x, z); return valueAt(T, c.u, c.v); },
         },
       });
-      const EXT = ORIENT % 2 ? { x: 62, z: 34 } : { x: 34, z: 62 };
+      const EXT = { x: 65, z: 65 }; // square rim 60 + 5m margin; same at every rotation
       const A = makeGameAudio();
       A.setReflectors([
         ...ROCKS.filter((k) => k.r >= 4),

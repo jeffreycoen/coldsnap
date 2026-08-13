@@ -51,6 +51,9 @@
 ## The Front (map phase, ahead)
 
 - Map widens to ~80m (length stays); third road, flanks, village per bench, proving-grounds building forms.
+- SQUARE 120 (owner, 2026-08-13): the map is a 120×120 SQUARE — supersedes the ~80m widening above. Generation gets more random; road count is drawn per seed, not fixed at three; a stream with a bridge arrives THIS phase as obstacle water (no drowning — the Water phase keeps basins, ice and the rest). Depot geometry work unchanged (evened + randomized-but-spaced).
+- MAP ONLY (owner, 2026-08-13): this phase is map work only. Deferred to the next phase, TROOPS & PHYSICS (P6 by plan numbering — the owner's "how troops affect physics"): the unit-model change (most troops as singles, sniper pair kept), the selection UI (select-all-of-type, drag-box), combat re-tuning, the typed body-list perf work, and the bell-repriced simple AMM (design ratified: repriced each bell off live standing stock, units AND masonry, enemy pays the same table, no rng — supersedes the market section's real-time per-purchase pricing when it lands). Body lists were implemented to green gates and REVERTED at mk0.99 (probe's tail metric not repeatable); spec and findings archived in the phase plan.
+- The phase plan: `plans/2026-08-13-slow-front-p5-the-front.md` (map tasks 1–6, skeleton pending fill).
 - ALL depot geometry work lands here: evening the depots AND randomized-but-spaced placement (roads, objective, territory, save all follow). Known asymmetries until then: player depot sits closer to its rim; enemy opening sight 473 cells vs player 257.
 - Sim-side performance work (typed body sub-lists, solver load under collapse) must precede or ride this phase — render is not the bottleneck.
 

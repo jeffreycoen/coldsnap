@@ -3024,7 +3024,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     ok("mk0.50/6: the order flow clamps at the ONE site where a tap becomes a dest",
       /const d = clampToRim\(p\.x, p\.z\);/.test(src) && /osq\.dest = \{ x: d\.x, z: d\.z \}/.test(src));
     ok("mk0.50/6: the rim half-extents exist once (inRim and the clamp share them)",
-      /const RIM_HALF_U = 29, RIM_HALF_V = 57;/.test(src) && !/halfU: 29, halfV: 57/.test(src));
+      /const RIM_HALF_U = 60, RIM_HALF_V = 60;/.test(src) && !/halfU: 29, halfV: 57/.test(src));
   }
 }
 // ==== end mk0.50 =============================================================
@@ -5343,6 +5343,81 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 }
 // ==== end LETHALITY T9 ========================================================
+
+// ==== FRONT T1: the square frame ============================================
+// mk1.00 (The Front, Task 1). The field is a 120x120 SQUARE: rim 60/60 as the
+// one source, stray falloff/territory literals dead, the splat grid pitch
+// field-derived under the depot's rim option, generation stretched to fill.
+{
+  console.log("\n[front t1: the square frame]");
+  const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  ok("FRONT T1: the rim is 60x60 (the square)", /const RIM_HALF_U = 60, RIM_HALF_V = 60;/.test(src));
+  ok("FRONT T1: the flow grid is 59x59 (rim minus the 1m inset, as before)",
+    /const GRID_CS = 2\.0, GRID_W = 59, GRID_H = 59;/.test(src));
+  ok("FRONT T1: the terrain falloff reads the rim constants, not literals",
+    /Math\.abs\(cuv\.u\) - RIM_HALF_U, Math\.abs\(cuv\.v\) - RIM_HALF_V/.test(src));
+  ok("FRONT T1: territory is built from the rim constants",
+    /makeTerritory\(RIM_HALF_U, RIM_HALF_V\)/.test(src));
+  ok("FRONT T1: camera pan extents are square", /const EXT = \{ x: 65, z: 65 \};/.test(src));
+  const rsrc = fs.readFileSync(new URL("../src/render/renderer.js", import.meta.url), "utf8");
+  ok("FRONT T1: the splat grid span derives from the field under the rim option (188.7 fallback kept)",
+    /opts\.rim \? Wd : null/.test(rsrc) && /span \|\| 188\.7/.test(rsrc));
+
+  // functional: the LIVE genMap fills the square. Same extraction machinery
+  // as the FRONT F1 block above (sliceFn over the real source), fresh copy
+  // here because that block's helpers are scoped to it.
+  const sliceFn2 = (name) => {
+    const start = src.indexOf(`\nfunction ${name}(`);
+    if (start < 0) throw new Error("T1 extract: missing function " + name);
+    const rest = src.slice(start + 1);
+    const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
+    return rest.slice(0, m < 0 ? rest.length : m + 9);
+  };
+  const headerT1 = src.slice(src.indexOf("const GRID_CS"), src.indexOf("function genMap"));
+  const mapSrcT1 = [
+    headerT1,
+    sliceFn2("genMap"), sliceFn2("makeMap"), sliceFn2("pondAt"), sliceFn2("rockAt"),
+    sliceFn2("makeGrid"), sliceFn2("checkConnectivity"), sliceFn2("townFootprint"), sliceFn2("buildTown"),
+    `return { makeMap, makeGrid, checkConnectivity, invW,
+      state: () => ({ ORIENT, OBJ_POS, SPAWN_POINTS, ROCKS, TOWN, MAP_SEED }) };`,
+  ].join("\n");
+  const mkMapT1 = () => new Function(
+    "mulberry32", "MASON", "fwdUFor", "fwdDirFor", "invWFor", "addBody", "addWeld", mapSrcT1,
+  )(mulberry32, MASON, fwdUFor, fwdDirFor, invWFor, addBody, addWeld);
+  let wide = 0, connected = 0, spawnSpread = 0;
+  for (let s = 1; s <= 10; s++) {
+    const Mi = mkMapT1();
+    Mi.makeMap(s * 977);
+    const st = Mi.state();
+    // width proof: something generated lives beyond the OLD field's |u| 29
+    const uOf = (p) => Math.abs(invWFor(st.ORIENT, p.x, p.z).u);
+    if (st.ROCKS.some((k) => uOf(k) > 30) || st.TOWN.some((t) => uOf(t) > 30)) wide++;
+    // the three spawns spread wider than the old +-21 band
+    const us = st.SPAWN_POINTS.map((sp) => invWFor(st.ORIENT, sp.x, sp.z).u);
+    if (Math.max(...us) - Math.min(...us) > 60) spawnSpread++;
+    // both depots reachable on the accepted map (makeMap's own gate re-run)
+    const g = Mi.makeGrid(null);
+    for (const t of st.TOWN) {
+      const hx = (t.nx * MASON.pitch) / 2, hz = (t.nz * MASON.pitch) / 2;
+      for (let gz = 0; gz < g.h; gz++) for (let gx = 0; gx < g.w; gx++) {
+        const wp = g.gridToWorld(gx, gz);
+        if (Math.abs(wp.x - t.x) < hx + 1.0 && Math.abs(wp.z - t.z) < hz + 1.0) {
+          if (Math.hypot(wp.x - st.OBJ_POS.x, wp.z - st.OBJ_POS.z) < 5) continue;
+          g.cells[g.idx(gx, gz)].blocked = true;
+        }
+      }
+    }
+    const og = g.worldToGrid(st.OBJ_POS.x, st.OBJ_POS.z);
+    const dw = fwdUFor(st.ORIENT, 0, -51);
+    const dg = g.worldToGrid(dw.x, dw.z);
+    if (Mi.checkConnectivity(g, st.SPAWN_POINTS, og.gx, og.gz) &&
+        Mi.checkConnectivity(g, st.SPAWN_POINTS, dg.gx, dg.gz)) connected++;
+  }
+  ok("FRONT T1: the square fills — generated features beyond the old rim on every seed", wide === 10, `${wide}/10`);
+  ok("FRONT T1: the spawn line spreads across the square (span > 60m)", spawnSpread === 10, `${spawnSpread}/10`);
+  ok("FRONT T1: spawns reach the objective AND the enemy depot's door on every seed", connected === 10, `${connected}/10`);
+}
+// ==== end FRONT T1 ===========================================================
 
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
