@@ -1,6 +1,6 @@
-# SLOW FRONT — Phase 4: Possession (mk0.90-0.92)
+# SLOW FRONT — Phase 4: Possession (mk0.90-0.93)
 
-*Written overnight 2026-08-13 under the owner's standing authorization ("write the plan for phase 4 and continue"). Every design point below is a ratified decision-record ruling or the sandbox's established twin-stick convention — the assessment is that no owner-only fork is open; anything that proves otherwise mid-task STOPS the night per protocol. The owner reviews this plan and every landing in the morning; all feel acceptance is his playtest. Three tasks, sequential Sonnet dispatches, Fable drift audit after each.*
+*Written 2026-08-13. Tasks 1-3 executed under the owner's standing authorization; Task 4 added after his playtest of mk0.92. Every design point is a ratified decision-record ruling or the sandbox's established twin-stick convention. All feel acceptance is the owner's playtest. Sequential Sonnet dispatches, Fable drift audit after each.*
 
 **The ruling this phase implements (decision record, "Possession"):** any friendly squad or tower is takeover-able — TAKE CONTROL on every pie. Twin-stick: the stick drives a squad as one body (stick = formation anchor; fire = squad volley at the aim), towers become manual fire control. The front fights on under standing orders; a bell save mid-possession releases to command view. The enemy needs no mirror. Vehicles wait for the Heroes phase (none exist player-side yet).
 
@@ -198,6 +198,94 @@ export function possessedTowerFire(world, tower, aim, T, toUV = (x, z) => ({ u: 
 **Behavior stated plainly:** your tower, your trigger — real reload, real ballistics, real scatter; the friendly-fire safety is OFF while you hold the trigger, because the trigger is yours. Release and it goes back to picking its own targets under its own discipline. Frost tower has nothing to fire and cannot be taken.
 
 **Gates (ONLY these):** parse · lint:depot · test:depot (3.1 green) · build AFTER bump to "mk0.92" · SMOKE_ONLY=depot smoke. Allowed files: `state.js`, `DepotGame.jsx`, `depot-test.mjs`, `version.js`. Commit "(mk0.92)", push, CI green, STOP for audit.
+
+---
+
+## Task 4 — The steered reticle (mk0.93) — suggested model: Sonnet (all code below)
+
+*Amendment, 2026-08-13, the owner's ruling after playing mk0.92: tap-to-aim is replaced by a right stick that STEERS a persistent ground reticle; the reticle is bounded to the possessed unit's OWN sight circle on seen ground — dark or out-of-view ground is unreachable, not refused; FIRE shoots at the reticle. Left stick unchanged. This also closes the queued far-eyes range question: possessed fire reaches only what the possessed unit itself can view.*
+
+**Required reading (agent, before any code; anchors re-verified at dispatch):** this plan whole; `CLAUDE.md`; `docs/superpowers/decision-record.md` "Possession" (the 2026-08-13 reticle ruling); `src/depot/sight.js` whole (`SIGHT`/`eyeOf`/`seenAt` — the new helpers live beside them); `src/depot/DepotGame.jsx` — the whole possession machinery as shipped (takeControl/takeControlTower/releasePossession, the frame-loop possession block, the joystick DOM, the FIRE/RELEASE row, tapAt's possession branch, `S.possessAim` sites — all of which this task touches), `stepDepot`'s possessed branches (the volley/tower-fire call sites); `src/game/ContractSandbox.jsx` :413-443 (the mouse-as-reticle convention being mapped); `scripts/depot-test.mjs` — POSSESSION T1-T3 blocks whole; grep `possessAim` (every site dies this task).
+
+**Step 4.1 — failing tests first.** `scripts/depot-test.mjs`, new block `==== POSSESSION T4: the steered reticle` — the two helpers are pure and REALLY imported (no mirrors): (a) `steerReticle` moves the reticle at `RETICLE_SPEED` per second of stick tilt (flat lit fixture: 1s at full tilt = 14m); (b) the sight-circle clamp holds (steer hard away for 3s from a 24m radius — reticle sits ON the circle, never past); (c) an unseen cell stops it dead (hand-lit sight map with a dark band — steering into the band leaves the reticle at its last position); (d) `reclampReticle` drags a left-behind reticle back inside the circle as the center moves; (e) stranded-on-dark falls back to the center (the unit's own ground — its own eye lights it); (f) source pin — both fire paths (`possessedVolley` and `possessedTowerFire` call sites) read `S.reticle`, and `possessAim` appears nowhere in `DepotGame.jsx`; (g) source pin — the right-stick steer runs through `steerReticle` and the walk-drag through `reclampReticle` (no second clamp implementation). Run: (a)-(e) fail on missing exports, (f)/(g) fail on absent wiring; all green after.
+
+**Step 4.2 — the helpers, in sight.js** (beside `seenAt`; pure, zero rng):
+
+```js
+// POSSESSION T4 (mk0.93): THE STEERED RETICLE. The right stick pushes a
+// ground reticle around the possessed unit — deflection is velocity, it
+// stays put on release — and the reticle can only exist inside the unit's
+// OWN sight circle on ground the side currently sees. Dark ground is not
+// refused; it is unreachable. Pure functions: the game layer owns the
+// state, these own the rules.
+export const RETICLE_SPEED = 14;   // m/s at full tilt // provisional (F5)
+export function steerReticle(SG, team, center, radius, cur, vx, vz, dt, toUV) {
+  let nx = cur.x + vx * RETICLE_SPEED * dt, nz = cur.z + vz * RETICLE_SPEED * dt;
+  const dx = nx - center.x, dz = nz - center.z;
+  const d = Math.hypot(dx, dz);
+  if (d > radius && d > 1e-9) { nx = center.x + (dx / d) * radius; nz = center.z + (dz / d) * radius; }
+  const c = toUV(nx, nz);
+  if (!seenAt(SG, c.u, c.v, team)) return { x: cur.x, z: cur.z };   // stopped dead at the dark
+  return { x: nx, z: nz };
+}
+// The unit walks; the reticle is world-anchored — every tick it is dragged
+// back inside the live circle, and if the ground under it has gone dark it
+// falls home to the unit's own cell (always lit by the unit's own eye).
+export function reclampReticle(SG, team, center, radius, cur, toUV) {
+  let nx = cur.x, nz = cur.z;
+  const dx = nx - center.x, dz = nz - center.z, d = Math.hypot(dx, dz);
+  if (d > radius && d > 1e-9) { nx = center.x + (dx / d) * radius; nz = center.z + (dz / d) * radius; }
+  const c = toUV(nx, nz);
+  if (seenAt(SG, c.u, c.v, team)) return { x: nx, z: nz };
+  return { x: center.x, z: center.z };
+}
+```
+
+**Step 4.3 — the possessed unit's circle.** `DepotGame.jsx`, beside the possession machinery (`eyeOf` joins the sight.js import):
+
+```js
+      // The possessed unit's own sight circle: a squad sees with its best
+      // living eye (a sniper pair's spotter reaches 46), a tower with its
+      // height. The reticle lives inside THIS circle — the owner's ruling
+      // that closes the far-eyes range question.
+      const possessCenter = () => {
+        const P = S.possess;
+        if (!P) return null;
+        if (P.kind === "tower") { const b = world.byId.get(P.id); return b ? { x: b.pos.x, z: b.pos.z } : null; }
+        const sq = S.squads.find((q) => q.id === P.id);
+        return sq ? { x: sq.anchor.x, z: sq.anchor.z } : null;
+      };
+      const possessSightR = () => {
+        const P = S.possess;
+        if (!P) return 0;
+        if (P.kind === "tower") { const b = world.byId.get(P.id); return b ? eyeOf(b).r : 0; }
+        const sq = S.squads.find((q) => q.id === P.id);
+        let r = 0;
+        if (sq) for (const id of sq.memberIds) { const u = world.byId.get(id); if (u && u.alive) r = Math.max(r, eyeOf(u).r); }
+        return r;
+      };
+```
+
+**Step 4.4 — state and lifecycle.** `S.reticle = null` in the state object. `S.takeControl` and `S.takeControlTower` both seed it — `S.reticle = reclampReticle(T.sight, 1, c, possessSightR(), { x: c.x, z: c.z + 4 }, invW)` computed AFTER `S.possess` is set (adapt the +4 offset through `fwdU`'s camera-up if trivially available; a fixed world offset is acceptable — the reclamp makes any seed legal). `S.releasePossession` clears it (`S.reticle = null;` joins the existing possessAim/fireHeld clears — which this task then DELETES: every `possessAim` site dies, the hygiene clears now clear `S.reticle`/`S.fireHeld`; re-pin the mk0.91 audit pin accordingly, old→new).
+
+**Step 4.5 — the right stick.** A second joystick, mirrored from the left one's DOM pattern: base center at `(width - 92, height - 208)` (above the FIRE/RELEASE row), same radius 56, same deadzone, own pointer capture, visible whenever possessed (towers too — their LEFT stick stays hidden, the right one is their whole interface). Its deflection lands in `S.joyR = { t, s, active }`. In the frame loop's possession block: camera-relative vector exactly as the left stick's math, then
+
+```js
+            const rc = possessCenter();
+            if (rc && S.reticle) {
+              const rv = /* camera-relative vector from S.joyR (touch) — desktop: see below */;
+              S.reticle = steerReticle(T.sight, 1, rc, possessSightR(), S.reticle, rv.vx, rv.vz, dt, invW);
+              S.reticle = reclampReticle(T.sight, 1, rc, possessSightR(), S.reticle, invW);
+            }
+```
+
+Desktop maps the sandbox's own convention: the MOUSE is the reticle — each frame, `groundPoint(pointer)` reclamped through `reclampReticle` sets it directly (position, not velocity; the stick ruling governs the stick; the mouse was always positional in the sandbox). Arrow keys are already squad-drive and stay so.
+
+**Step 4.6 — the ring and the trigger.** The aim ring renders at `S.reticle` every possessed frame — always green (the reticle cannot exist on dark ground by construction; the red state dies with possessAim). Both fire paths read the reticle: the volley attempt becomes `possessedVolley(world, psq, S.reticle, T, invW)` and the tower's `possessedTowerFire(world, pb, S.reticle, T, invW)` — their internal sight gates stay (defense in depth, and they still bound `__DEPOT`-driven calls). Taps while possessed stay consumed and now do NOTHING (the reticle is stick-and-mouse only — a thumb tap can no longer yank the aim; stated plainly in the comment).
+
+**Behavior stated plainly:** possess anything and a green reticle lives on the ground near it. The right stick pushes it around like a cursor; it stops dead at the edge of what the unit can see and at the circle of how far it can see; walking drags it along; it comes home if its ground goes dark. FIRE volleys at it, no aiming tap needed, and there is nothing to aim at that the unit couldn't watch — range and sight in one circle. On desktop the mouse is the reticle, the sandbox's own convention.
+
+**Gates (ONLY these):** parse changed files · `npm run lint:depot` · `npm run test:depot` (4.1 green; every re-pin old→new) · build AFTER bumping `src/version.js` to "mk0.93" · `SMOKE_ONLY=depot` smoke. Allowed files: `sight.js`, `DepotGame.jsx`, `depot-test.mjs`, `version.js`. Commit "(mk0.93)", push, CI green, STOP for audit.
 
 ---
 
