@@ -14,10 +14,7 @@
 
 **Task 3 — Only engineers build** — POPULATED BELOW (mk1.12).
 
-**Task 4 — The bell market** *(skeleton; revised by the owner, 2026-08-13)*
-- Prices PER TYPE: each type's price rises with how many of that type stand on the field, both armies' stock counted together — one shared market, both sides pay the same table.
-- Income becomes a flat 1 scrap per second, both sides, replacing the old trickle and the flat bell payout; the ground-holding town payout stays as the only bonus.
-- Prices recalculate EVERY SECOND off live standing counts (owner's cadence ruling) — the bar and manifest always show the price of this moment. Each side may BUY at most once per second (owner's anti-spam ruling; the enemy obeys the same limit). Curve anchors per type are provisional dials.
+**Task 4 — The living market** — POPULATED BELOW (mk1.13).
 
 **Task 5 — The body lists, resurrected** *(skeleton)*
 - The archived typed-pools spec (THE FRONT plan, bottom), re-landed as written.
@@ -36,6 +33,238 @@
 - The technical section beneath, for engineers who keep reading.
 
 **Close** — the owner's playtest closes the phase.
+
+---
+
+# TASK 4 — The living market (mk1.13)
+
+**What it does.** The economy starts breathing. Every purchasable thing belongs to a TYPE FAMILY, and each family's price is its base cost multiplied by how much of that family already STANDS on the field — both armies' stock counted together, one shared market, both sides paying the same multiplier. Prices recalculate every second from the live counts; the build bar and the manifest always show the price of this moment. Each side may buy at most once per second. Income flattens to 1 scrap per second for both sides — the old player trickle and the flat bell payout die; the ground-holding town payout at each bell remains the only bonus. All of it is counting and arithmetic: zero dice, deterministic to the bit.
+
+**The owner's rulings carried (decision record, 2026-08-13):** per-type prices; shared stock across both armies; per-second repricing; one purchase per second per side; 1 scrap/second income replacing trickle and bell payout; town payout stays. Curve anchors below are provisional dials (F5).
+
+**Four interpretation lines, stated for the owner's review (each is my reading of a ruling's edge, reversible at review):**
+1. KILL BOUNTIES STAND, both sides — "1 scrap/second replacing the old income" is read as replacing the PASSIVE streams only; earnings for kills, structure damage, and the town payout are performance income, untouched this task. Say the word if bounties should die too.
+2. The enemy's passive income RISES with symmetry: its old stipend was 14 per bell; the symmetric 1 scrap/second pays 90 per bell (credited at the bell, where the regiment spends — arithmetically identical to a per-second drip it never reads between bells). The player's passive falls from ~210 per bell (trickle + payout) to 90. Both sides now at exactly 90. This is the ruling's honest arithmetic; flagged because the enemy side sextuples.
+3. The one-buy-per-second limit binds the PURCHASE taps (towers, squads) — an engineer line's pieces are one accepted order's execution, already paced by walking (about one piece every 0.6 seconds at march pace), and are exempt. The enemy's muster is one composed purchase per bell, far inside the limit by construction.
+4. The enemy's minimum-muster floor stays priced at BASE cost (it is a paralysis detector, not a purchase).
+
+**The family table and the curve (all dials provisional, F5).** Price = `max(1, round(base × min(4, 1 + count / K)))` — base price on an empty field, double when K of the family stand, capped at 4x. Counts are STANDING stock: live men for infantry families (a rifles squad is its living members, a conscript is one man), live towers/walls (stacks)/sandbags/tanks for the rest. The mirror pairs share a family across the two armies:
+
+| Family | Player key | Enemy tag | Counts | K (doubles at) |
+|---|---|---|---|---|
+| rifles | sq_rifles | "" (conscript) | men | 16 |
+| marksman | sq_sniper | sniper | men | 4 |
+| sapper | sq_sappers | sapper | men | 4 |
+| mortar crew | sq_mortars | gren | men | 6 |
+| mg team | sq_mg | — | men | 6 |
+| engineer | sq_engineers | — | men | 6 |
+| runner | — | fast | men | 12 |
+| breaker | — | heavy | men | 6 |
+| tank | — | tank | vehicles | 3 |
+| mg tower | mg | — | towers | 4 |
+| gun tower | gun | — | towers | 4 |
+| mortar tower | mortar | — | towers | 3 |
+| rocket tower | rocket | — | towers | 3 |
+| frost tower | frost | — | towers | 4 |
+| wall | wall (field lines) | — | stacks | 30 |
+| sandbag | sandbag (field lines) | — | bags | 40 |
+
+**Feel changes that ship for the owner's eyes:** prices on the bar move as the war fills; their conscript wave makes YOUR rifles dearer; a cheap under-fielded slot invites the experiment; the bell stops paying a lump and money arrives like a clock; buying too fast gets a pacing toast.
+
+**Suggested model:** Sonnet — the module and every edit are specified; the wiring is wide but mechanical.
+
+**Required reading (re-verify anchors at dispatch):**
+- `src/depot/economy.js` — whole (61 lines; STIPEND at 31).
+- `src/depot/ai.js` — whole (254 lines; `cost()` at 13, planWave at 174 — the priceOf threading).
+- `src/depot/state.js` — 1110–1130 (BELL_SCRAP at 1124), 1355–1380 (fireBell's income step at 1361–1362), 1050–1108 (manifest, read-only).
+- `src/depot/DepotGame.jsx` — the PALETTE block (base costs), `buildAt`/`canBuildAt`/`confirmPending`/`placeSquadAt` (the purchase commits), `layPieceAt` (field costs — exempt from the limit, priced live), `ringBell` (the toast), the frame loop's trickle (`S.resources += 2.2 * sdt;` at 3220) and the hud tick (prices out to the bar/manifest).
+- `src/depot/units.js` — 23–40 (spawnUnit: enemy bodies carry `u.tag` — verified at plan time), read-only.
+- `src/depot/squads.js` — SQUAD_SPECS head (base costs), read-only.
+- `scripts/depot-test.mjs` — 1–70, 95–110 (the bell-pay pins), 275–285, 670–820 (the economy/STIPEND blocks), the tail.
+- `src/version.js`.
+
+**Trap notes:**
+- ZERO rng anywhere in the market. Counting, division, rounding. `depot-lint` gates it.
+- The 4-draw planWave contract is UNTOUCHED — priceOf changes what draws BUY, never how many draws happen. The suite's draw-parity asserts must hold.
+- ai.js stays PURE: `planWave` gains an optional `priceOf` parameter defaulting to today's base-cost function — every existing fixture and test calls it without the argument and must pass UNCHANGED.
+- EXPECTED RE-PINS, exactly FOUR: (1) "bell pays the player's cycle scrap" (~103) — becomes "the bell pays nothing; income is the clock" (asserts resources unchanged across fireBell); (2) the resume-path bell-pay pin (~281) — same shape; (3) `STIPEND === 14` (~677) → `=== 90` with the 1-scrap-per-second wording; (4) the ~815 "bell pays STIPEND" pin's arithmetic follows the constant automatically — verify it does, re-pin its literal only if it carries one. Every OTHER economy assert references the constants symbolically and must pass untouched — any other movement is a STOP.
+- `BELL_SCRAP` the constant DIES with its payout line (grep for stragglers); the ringBell toast becomes town-pay-only, shown only when the ground actually paid.
+- The purchase-limit stamp (`S._buyAt`) and the market cache (`S._market`) are transient run state — NEVER serialized; a resumed run rebuilds both within a second. No save.js edits.
+- Prices apply at COMMIT time (the live price the second you confirm), and the bar re-renders prices on the hud tick — a pending ✓ shows the cost it will actually charge because both read the same cache.
+- The market cache recomputes on the same accumulator pattern as the census (1 Hz, sdt-gated — paused games freeze prices).
+- Headless fixtures without a market cache fall back to base costs everywhere (`S._market ? ... : base`) — dozens of tests construct S by hand.
+- `marketCounts` walks `world.bodies` once per second plus the squads array — cheap; do NOT fold it into the census callback (different consumers, keep it its own accumulator).
+
+## Steps, in execution order
+
+**Step 1 — failing asserts first.** Insert the P6-T4 block before the tail summary and apply the four named re-pins; `npm run test:depot` shows the block red (module missing) and the re-pinned lines red against today's code. Record the exact reds.
+
+```js
+// ==== P6 T4: the living market ==============================================
+// mk1.13 (Troops & Physics, Task 4). Per-family prices off live standing
+// stock, both armies counted together; repriced every second; one buy per
+// second per side; income flat 1 scrap/second both sides. Zero rng.
+{
+  console.log("\n[p6 t4: the living market]");
+  let mkt = null;
+  try { mkt = await import("../src/depot/market.js"); } catch (e) {}
+  ok("T4: src/depot/market.js exists with the three exports",
+    !!mkt && typeof mkt.marketCounts === "function" && typeof mkt.computePrices === "function" && mkt.MARKET_CAP === 4);
+
+  if (mkt) {
+    // (a) the curve: base at zero, double at K, capped at 4x, integer prices
+    const P0 = mkt.computePrices({});
+    ok("T4(a): an empty field pays base prices", P0.player.sq_rifles === SQUAD_SPECS.rifles.cost && P0.player.gun === TOWER_SPECS.gun.cost,
+      `rifles ${P0.player.sq_rifles}, gun ${P0.player.gun}`);
+    const Pk = mkt.computePrices({ rifles: 16 });
+    ok("T4(a): K of a family doubles its price", Pk.player.sq_rifles === SQUAD_SPECS.rifles.cost * 2, `${Pk.player.sq_rifles}`);
+    const Pcap = mkt.computePrices({ rifles: 999 });
+    ok("T4(a): the cap holds at 4x", Pcap.player.sq_rifles === SQUAD_SPECS.rifles.cost * 4, `${Pcap.player.sq_rifles}`);
+
+    // (b) shared stock: enemy conscripts and player riflemen are ONE family
+    {
+      const flatM = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+      const world = makeWorld({ field: flatM, seed: 3 });
+      for (let i = 0; i < 6; i++) spawnUnit(world, { x: i * 2, z: 0 }, "");     // 6 conscripts
+      const sq = makeSquad(1, "rifles", 1, 20, 20);
+      spawnSquadMembers(world, sq);                                             // 4 riflemen
+      const counts = mkt.marketCounts(world, [sq]);
+      ok("T4(b): the rifles family counts both armies' men", counts.rifles === 10, `${counts.rifles}`);
+      const Pm = mkt.computePrices(counts);
+      ok("T4(b): both sides pay the same multiplied table",
+        Pm.player.sq_rifles === Math.max(1, Math.round(SQUAD_SPECS.rifles.cost * (1 + 10 / 16))) &&
+        Pm.foe[""] === Math.max(1, Math.round(ENEMY_SPECS[""].bounty * (1 + 10 / 16))),
+        `player ${Pm.player.sq_rifles}, foe ${Pm.foe[""]}`);
+    }
+
+    // (c) determinism: same counts, same prices, twice
+    ok("T4(c): twin determinism", JSON.stringify(mkt.computePrices({ rifles: 7, guntower: 2 })) === JSON.stringify(mkt.computePrices({ rifles: 7, guntower: 2 })));
+
+    // (d) planWave pays market prices — and its 4-draw contract holds
+    {
+      const reg = { heads: 400, tanks: 10, heads0: 400, tanks0: 10, scrap: 400 };
+      const reg2 = { heads: 400, tanks: 10, heads0: 400, tanks0: 10, scrap: 400 };
+      let draws = 0;
+      const rngW = () => { draws++; return mulberry32(77)(); };
+      const rngA = mulberry32(77), rngB = mulberry32(77);
+      const flat = planWave(reg, {}, 6, rngA);
+      const priceOf = (t) => Math.round((t === "tank" ? TANK.bounty : ENEMY_SPECS[t].bounty) * 2);
+      const priced = planWave(reg2, {}, 6, rngB, null, priceOf);
+      const nOf = (r) => r.buys.reduce((s, b) => s + b.n, 0);
+      ok("T4(d): doubled prices field a smaller assault on the same budget", nOf(priced) < nOf(flat), `${nOf(priced)} vs ${nOf(flat)}`);
+      planWave({ heads: 9, tanks: 0, heads0: 9, tanks0: 0, scrap: 9 }, {}, 1, rngW, null, priceOf);
+      ok("T4(d): the 4-draw contract holds under market prices", draws === 4, `${draws}`);
+    }
+  }
+
+  // (e) income + limit + wiring: source pins
+  const srcT4 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  const stT4 = fs.readFileSync(new URL("../src/depot/state.js", import.meta.url), "utf8");
+  ok("T4(e): the player's income is the clock — 1 scrap/second", /S\.resources \+= 1 \* sdt;/.test(srcT4) && !/S\.resources \+= 2\.2 \* sdt;/.test(srcT4));
+  ok("T4(e): the bell pays no lump", !/S\.resources \+= BELL_SCRAP;/.test(stT4));
+  ok("T4(e): one purchase per second, toasted", /THE MARKET PACES YOU/.test(srcT4) && /S\._buyAt = world\.t;/.test(srcT4));
+  ok("T4(e): purchases charge the live price", /const priceNow = /.test(srcT4));
+  ok("T4(e): the enemy stipend is the same clock", /export const STIPEND = 90;/.test(fs.readFileSync(new URL("../src/depot/economy.js", import.meta.url), "utf8")));
+}
+// ==== end P6 T4 ==============================================================
+```
+**Step 2 — the module.** Create `src/depot/market.js`:
+```js
+// COLDSNAP DEPOT — market.js: the living market (mk1.13, owner's rulings).
+// Every purchasable belongs to a TYPE FAMILY; a family's price is its base
+// cost times min(4, 1 + standing/K) — both armies' standing stock counted
+// together, one shared table both sides pay. Pure counting and arithmetic:
+// no rng, no world mutation, recomputed each second by the game layer.
+import { TOWER_SPECS, ENEMY_SPECS, TANK } from "./specs.js";
+import { SQUAD_SPECS } from "./squads.js";
+
+export const MARKET_CAP = 4;
+// K: the standing count at which a family's price doubles. // provisional (F5)
+export const MARKET_K = {
+  rifles: 16, marksman: 4, sapper: 4, mortarcrew: 6, mgteam: 6, engineer: 6,
+  runner: 12, breaker: 6, tank: 3,
+  mgtower: 4, guntower: 4, mortartower: 3, rockettower: 3, frosttower: 4,
+  wall: 30, sandbag: 40,
+};
+const FAMILY_OF_SQUAD = { rifles: "rifles", sniper: "marksman", sappers: "sapper", mortars: "mortarcrew", mg: "mgteam", engineers: "engineer" };
+const FAMILY_OF_TAG = { "": "rifles", sniper: "marksman", sapper: "sapper", gren: "mortarcrew", fast: "runner", heavy: "breaker" };
+const FAMILY_OF_TOWER = { mg: "mgtower", gun: "guntower", mortar: "mortartower", rocket: "rockettower", frost: "frosttower" };
+
+// marketCounts(world, squads) -> { family: standing count }. Men for
+// infantry families (live bodies), things for the rest. One pass over
+// world.bodies plus the squads array; deterministic.
+export function marketCounts(world, squads) {
+  const c = {};
+  const add = (fam, n) => { if (fam) c[fam] = (c[fam] || 0) + n; };
+  for (const sq of squads || []) {
+    let live = 0;
+    for (const id of sq.memberIds) { const u = world.byId.get(id); if (u && u.alive) live++; }
+    add(FAMILY_OF_SQUAD[sq.type], live);
+  }
+  for (const b of world.bodies) {
+    if (!b.alive) continue;
+    if (b.kind === "unit" && b.team === 2) add(FAMILY_OF_TAG[b.tag || ""], 1);
+    else if (b.kind === "vehicle" && b.team === 2) add("tank", 1);
+    else if (b.kind === "tower" && b.team === 1) add(FAMILY_OF_TOWER[b.towerType], 1);
+    else if (b.kind === "wall" && b.team === 1 && !b.course) add("wall", 1);
+    else if (b.kind === "chunk" && b.sandbag) add("sandbag", 1);
+  }
+  return c;
+}
+
+const priced = (base, fam, counts) =>
+  Math.max(1, Math.round(base * Math.min(MARKET_CAP, 1 + (counts[fam] || 0) / MARKET_K[fam])));
+
+// computePrices(counts) -> { player: {barKey: price}, foe: {tag: price} } —
+// the one shared table, read by the bar, the manifest, every purchase
+// commit, the engineer field costs, and the enemy's planWave.
+export function computePrices(counts) {
+  const player = {};
+  for (const k in FAMILY_OF_TOWER) player[k] = priced(TOWER_SPECS[k].cost, FAMILY_OF_TOWER[k], counts);
+  for (const t in FAMILY_OF_SQUAD) player["sq_" + t] = priced(SQUAD_SPECS[t].cost, FAMILY_OF_SQUAD[t], counts);
+  const foe = {};
+  for (const t in FAMILY_OF_TAG) foe[t] = priced(ENEMY_SPECS[t].bounty, FAMILY_OF_TAG[t], counts);
+  foe.tank = priced(TANK.bounty, "tank", counts);
+  return { player, foe, counts };
+}
+
+// field-piece prices for the engineer lines (wall stacks / bags), same curve.
+export function fieldPrices(counts, wallBase, bagBase) {
+  return { wall: priced(wallBase, "wall", counts), bag: priced(bagBase, "sandbag", counts) };
+}
+```
+
+**Step 3 — income becomes the clock.**
+(3a) `src/depot/state.js` fireBell (~1361): DELETE `S.resources += BELL_SCRAP;` (the stipend line beneath it stays, re-valued by 3c). Delete the `BELL_SCRAP` const (~1124) and its export; fix the two import sites (state's own export list and depot-test's import — the test import drops it as part of the re-pins). The income comment above the deleted line now says: "the player's income is the clock (1 scrap/second, the frame loop); the bell pays only what the held ground earns (payTown, applied by the caller)."
+(3b) `src/depot/DepotGame.jsx` 3220: `S.resources += 2.2 * sdt;` → `S.resources += 1 * sdt; // mk1.13 (owner): income is the clock — 1 scrap/second, both sides`. The ringBell toast pair: delete the "CYCLE PAY" toast; in its place `if (paid.player > 0) toast("◆ +" + Math.round(paid.player) + " — GROUND HELD");`.
+(3c) `src/depot/economy.js` 31: `export const STIPEND = 90; // mk1.13 (owner): 1 scrap/second × the 90-second bell — the identical clock the player lives on, credited where the regiment spends`.
+
+**Step 4 — the game layer prices and paces.** `src/depot/DepotGame.jsx`:
+(4a) Import `marketCounts, computePrices, fieldPrices` from `./market.js`. In the boot, beside the census state: `S._market = null; S._marketAcc = 0; S._buyAt = -9;`
+(4b) In the frame loop beside the census call (sdt-gated): 
+```js
+          S._marketAcc += sdt;
+          if (S._marketAcc >= 1) { S._marketAcc -= 1; S._market = computePrices(marketCounts(world, S.squads)); }
+```
+(4c) One helper beside the toast helper:
+```js
+      const priceNow = (key, base) => (S._market && S._market.player[key] != null ? S._market.player[key] : base);
+      const buyPaced = () => {
+        if (world.t - S._buyAt < 1) { toast("THE MARKET PACES YOU — one purchase a second"); return false; }
+        return true;
+      };
+```
+(4d) `buildAt` (towers): the cost line becomes `const cost = spec ? priceNow(mode, spec.cost) : WALL_COST;`; at the top of the SPEND path (after the connectivity check, before `S.resources -= cost`): `if (!buyPaced()) { cell.blocked = false; return; }` then `S._buyAt = world.t;` beside the spend. The harness's wall branch (no spec) pays WALL_COST unpaced, as today — staging is not a market participant.
+(4e) `placeSquadAt`: cost becomes `priceNow(mode key, SQUAD_SPECS[type].cost)` (thread the bar key), guard with `buyPaced()` before spawning, stamp `S._buyAt` beside the spend. `canPlaceInfantryAt`/`canBuildAt` validate affordability against the SAME priceNow so the ✓ never lies.
+(4f) `layPieceAt` (engineer pieces): the cost line reads `const fp = S._market ? fieldPrices(S._market.counts, WALL_FIELD_COST, SANDBAG_FIELD_COST) : { wall: WALL_FIELD_COST, bag: SANDBAG_FIELD_COST }; const cost = job.kind === "walls" ? fp.wall : fp.bag;` — priced live, NOT paced (interpretation line 3). `refreshLinePreview`'s "up to" cost uses the same fieldPrices.
+(4g) The hud tick exports prices: `prices: S._market ? { ...S._market.player } : null` — and the bar render maps `p.cost` through `hud.prices?.[p.key] ?? p.cost`; the manifest card offers show the same lookup.
+(4h) `ringBell`'s fireBell call gains the enemy's table: pass `priceOf: (t) => (S._market ? S._market.foe[t === "tank" ? "tank" : t] : undefined)` through to planWave (state.js's fireBell signature gains the passthrough; planWave's default covers undefined).
+
+**Step 5 — the enemy pays the same table.** `src/depot/ai.js`: `planWave(reg, snap, bell, rng, tags = null, priceOf = null)` — one line at the top: `const price = priceOf || cost;` and every `cost(` call site inside planWave/buyInfantryMix/buySnipers/buyTanks reads `price(` instead (thread `price` down as a parameter to the three buy helpers). `MIN_WAVE_FLOOR` stays on base `cost` (interpretation line 4). All existing callers (tests, fixtures, state.js) pass no priceOf and behave byte-identically.
+
+**Step 6 — green, bump, build, smoke.** `npm run lint:depot` · `npm run test:depot` fully green (the four named re-pins, nothing else) · `src/version.js` → `"mk1.13"` · `npm run build` AFTER the bump · `SMOKE_ONLY=depot npm run smoke`.
+
+**Gates (ONLY these):** parse changed files · `npm run lint:depot` · `npm run test:depot` (Step 1 red-first, then green; four named re-pins reported old→new) · `npm run build` after the bump · `SMOKE_ONLY=depot` smoke. Allowed files: `src/depot/market.js` (new), `src/depot/DepotGame.jsx`, `src/depot/state.js`, `src/depot/economy.js`, `src/depot/ai.js`, `scripts/depot-test.mjs`, `src/version.js`. Commit `"the living market: every price is a census (mk1.13)"`, push, CI green, STOP. The owner checks the deployed site: bar prices moving as the field fills, the pacing toast on a fast double-buy, income ticking at 1/second, the bell paying only held ground.
 
 ---
 
