@@ -39,6 +39,8 @@
 
 ## Possession (its own phase, after Command)
 
+- TWIN-STICK RETICLE (owner, 2026-08-13, after playing mk0.92): the tap-to-aim is replaced by a RIGHT STICK that STEERS a persistent ground reticle (deflection = velocity, stays put on release); the reticle is BOUNDED to the possessed unit's OWN sight circle (unit's SIGHT radius) intersected with ground currently seen — dark or out-of-view ground is unreachable, not refused. FIRE shoots at the reticle. Left stick unchanged (movement; towers have none). This also answers the queued far-eyes range question: possessed fire reaches only what the possessed unit itself can view. Patrols and proposed lines accepted as shipped ("look good").
+
 - Any friendly unit, squad, or tower is takeover-able — TAKE CONTROL on every radial. Twin-stick; squads driven as one (stick = formation anchor, fire = volley at aim); towers = manual fire control with doctrine buttons. The front fights on under standing orders; a bell save mid-possession releases to command view. Enemy needs no mirror.
 - SHIPPED (overnight run, 2026-08-13): Possession phase mk0.90-0.92 — take control on every squad and tower pie, twin-stick squad drive, volley at the aim, manual tower fire. Awaits the owner's playtest and his rulings on the queued questions (possessed squad pace; volleys beyond weapon range under far eyes).
 
