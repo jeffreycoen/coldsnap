@@ -1370,6 +1370,20 @@ function collectContacts(world) {
     world._weldPairsDirty = false;
   }
   const weldPairs = world._weldPairs;
+  // DIVERGENCE (guarded, mk0.98): INFANTRY CAN'T KNOCK MASONRY OVER. Under
+  // depotCombat a sleeping chunk that still holds a live weld ignores
+  // contact-wake from bodies under 200kg — men lean on a building and it
+  // stands. Blasts wake unconditionally (explode's path, untouched);
+  // breakers/tanks (mass >= 200) still wake and ram; severed rubble (no
+  // live weld) still kicks around underfoot. No flag, no change: the
+  // frozen demo path is byte-identical (golden proves it).
+  const weldedAsleep = (s) => {
+    const wl = world.weldsOf && world.weldsOf.get(s.id);
+    if (wl) for (const wd of wl) if (!wd.broken) return true;
+    return false;
+  };
+  const wakeExempt = (s, mover) =>
+    world.depotCombat && s.kind === "chunk" && mover.mass < 200 && weldedAsleep(s);
   const seen = new Set();
   for (const arr of grid.values()) {
     if (arr.epoch !== epoch || arr.length < 2) continue;
@@ -1404,8 +1418,8 @@ function collectContacts(world) {
       if (n > 0) {
         // parked wrecks ignore infantry brushes: only the blade (vehicle mass) or a
         // blast (explode wakes unconditionally) sets the bowling lane in motion.
-        if (a.sleeping && V.len2(b.v) > 0.6 && !(a.kind === "wreck" && b.mass < 200)) { if (a.kind === "chunk") wake(a); else wakeIsland(world, a); }
-        if (b.sleeping && V.len2(a.v) > 0.6 && !(b.kind === "wreck" && a.mass < 200)) { if (b.kind === "chunk") wake(b); else wakeIsland(world, b); }
+        if (a.sleeping && V.len2(b.v) > 0.6 && !(a.kind === "wreck" && b.mass < 200) && !wakeExempt(a, b)) { if (a.kind === "chunk") wake(a); else wakeIsland(world, a); }
+        if (b.sleeping && V.len2(a.v) > 0.6 && !(b.kind === "wreck" && a.mass < 200) && !wakeExempt(b, a)) { if (b.kind === "chunk") wake(b); else wakeIsland(world, b); }
         // player shove tagging
         const bis = world.bisonId;
         if (a.id === bis && (b.kind === "wreck" || b.kind === "chunk")) { b.lastPlayerTouch = world.t; b.lastImp = { src: "shove", attacker: "player", t: world.t, volley: 0 }; }

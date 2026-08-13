@@ -641,10 +641,17 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
         // POSSESSION: the stick owns this squad — no engage check, no order
         // machine, no auto-fire (T2 gives the trigger). Input is the frame's
         // snapshot; the drive runs at the fixed step like all movement.
+        const a0 = { x: sq.anchor.x, z: sq.anchor.z };
         const pi = S.possessInput || { vx: 0, vz: 0 };
         drivePossessedSquad(world, sq, pi.vx, pi.vz, world.dt, S.reticle);
         const cl = clampToRim(sq.anchor.x, sq.anchor.z);
-        sq.anchor = { x: cl.x, z: cl.z };
+        // MASONRY (T8, mk0.98): a building footprint (or a rock, or a wall
+        // line) refuses the anchor the way the rim does — the formation can
+        // never be driven into a lattice it would have to shove through.
+        // The whole tick's move reverts (no slide); the stick just stops.
+        const gA = grid.worldToGrid(cl.x, cl.z);
+        const cellA = grid.inBounds(gA.gx, gA.gz) ? grid.cells[grid.idx(gA.gx, gA.gz)] : null;
+        sq.anchor = cellA && (cellA.blocked || cellA.wallId) ? a0 : { x: cl.x, z: cl.z };
         // POSSESSION (P4 T2, mk0.91): squadFire normally decays u.fireCd —
         // it's skipped for a possessed squad, so the trigger (possessedVolley)
         // does not, and the cooldown must decay somewhere or it never clears.
@@ -3637,7 +3644,7 @@ export default function DepotGame({ onExit, resume = null }) {
           : null;
       })()}
 
-      {hud.started && !hud.gameOver && !hud.victory && (
+      {hud.started && !hud.gameOver && !hud.victory && !hud.possessed && (
         <div style={P.bar}>
           {palette.map((p) => {
             const sel = !hud.sellMode && hud.mode === p.key;

@@ -5183,6 +5183,89 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 }
 // ==== end POSSESSION T7 ======================================================
 
+// ==== POSSESSION T8: stone stands ============================================
+{
+  const stoneField = () => ({
+    heightAt: () => 0,
+    normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; },
+    carve: () => {},
+    dirty: false,
+  });
+  const buildStand = (depotFlag, moverMass) => {
+    const world = makeWorld({ field: stoneField(), seed: 1 });
+    if (depotFlag) world.depotCombat = true;
+    const c1 = addBody(world, { kind: "chunk", team: 0, mass: MASON.mass, hx: MASON.hcs, hy: MASON.hcs, hz: MASON.hcs, x: 2, y: MASON.hcs, z: 0, friction: 0.65, restitution: 0.02 });
+    const c2 = addBody(world, { kind: "chunk", team: 0, mass: MASON.mass, hx: MASON.hcs, hy: MASON.hcs, hz: MASON.hcs, x: 2 + MASON.pitch, y: MASON.hcs, z: 0, friction: 0.65, restitution: 0.02 });
+    c1.sleeping = true; c2.sleeping = true;
+    const w = addWeld(world, c1, c2, MASON.breakF);
+    const mover = addBody(world, { kind: "unit", team: 1, mass: moverMass, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.72, z: 0, friction: 0.5 });
+    return { world, c1, c2, w, mover };
+  };
+  const p1a = { x: 2, z: 0 }, p2a = { x: 2 + MASON.pitch, z: 0 };
+
+  // (a) the law: an 82kg unit driven into welded, asleep stones -> stones
+  // stay put, weld holds.
+  {
+    const { world, c1, c2, w, mover } = buildStand(true, 82);
+    for (let i = 0; i < 120; i++) { mover.v.x = 3.2; stepWorld(world); }
+    ok("POSSESSION T8(a): stone 1 still sleeping (82kg unit can't wake a welded, standing chunk)", c1.sleeping === true);
+    ok("POSSESSION T8(a): stone 2 still sleeping", c2.sleeping === true);
+    ok("POSSESSION T8(a): stone 1 unmoved to 1mm", Math.abs(c1.pos.x - p1a.x) < 1e-3 && Math.abs(c1.pos.z - p1a.z) < 1e-3, `pos=${c1.pos.x},${c1.pos.z}`);
+    ok("POSSESSION T8(a): stone 2 unmoved to 1mm", Math.abs(c2.pos.x - p2a.x) < 1e-3 && Math.abs(c2.pos.z - p2a.z) < 1e-3, `pos=${c2.pos.x},${c2.pos.z}`);
+    ok("POSSESSION T8(a): weld unbroken", w.broken === false);
+  }
+
+  // (b) heavy still rams: a 340kg breaker-class body still wakes at least one stone.
+  {
+    const { world, c1, c2, mover } = buildStand(true, 340);
+    for (let i = 0; i < 120; i++) { mover.v.x = 3.2; stepWorld(world); }
+    ok("POSSESSION T8(b): a 340kg breaker still wakes the stones", c1.sleeping === false || c2.sleeping === false, `c1=${c1.sleeping} c2=${c2.sleeping}`);
+  }
+
+  // (c) rubble still kicks: a single UNWELDED sleeping chunk still wakes —
+  // the exemption keys on the live weld, not on kind.
+  {
+    const world = makeWorld({ field: stoneField(), seed: 1 });
+    world.depotCombat = true;
+    const c = addBody(world, { kind: "chunk", team: 0, mass: MASON.mass, hx: MASON.hcs, hy: MASON.hcs, hz: MASON.hcs, x: 2, y: MASON.hcs, z: 0, friction: 0.65, restitution: 0.02 });
+    c.sleeping = true;
+    const mover = addBody(world, { kind: "unit", team: 1, mass: 82, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.72, z: 0, friction: 0.5 });
+    for (let i = 0; i < 120; i++) { mover.v.x = 3.2; stepWorld(world); }
+    ok("POSSESSION T8(c): an unwelded sleeping chunk still wakes (exemption keys on the live weld, not kind)", c.sleeping === false);
+  }
+
+  // (d) the demo is untouched: the same two-stone fixture WITHOUT
+  // world.depotCombat -> the man wakes the island exactly as before (the
+  // guard's own control).
+  {
+    const { world, c1, c2, mover } = buildStand(false, 82);
+    for (let i = 0; i < 120; i++) { mover.v.x = 3.2; stepWorld(world); }
+    ok("POSSESSION T8(d): without depotCombat, the man wakes the island exactly as before (guard's own control)",
+      c1.sleeping === false || c2.sleeping === false, `c1=${c1.sleeping} c2=${c2.sleeping}`);
+  }
+
+  // (e) source pin: the possessed anchor's building clamp exists — the
+  // branch captures the pre-drive anchor and reverts when the clamped cell
+  // is blocked or a wall.
+  {
+    const dsrc8 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("POSSESSION T8(e) source pin: the possessed branch captures the pre-drive anchor",
+      /const a0 = \{ x: sq\.anchor\.x, z: sq\.anchor\.z \};/.test(dsrc8));
+    ok("POSSESSION T8(e) source pin: the anchor reverts when the clamped cell is blocked or a wall",
+      /sq\.anchor = cellA && \(cellA\.blocked \|\| cellA\.wallId\) \? a0 : \{ x: cl\.x, z: cl\.z \};/.test(dsrc8));
+  }
+
+  // (f) source pin: the build bar renders only when !hud.possessed.
+  {
+    const dsrc8b = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("POSSESSION T8(f): the build bar condition gains !hud.possessed",
+      /hud\.started && !hud\.gameOver && !hud\.victory && !hud\.possessed && \(/.test(dsrc8b));
+    ok("POSSESSION T8(f): the old bar condition (without the possessed guard) is gone",
+      !/hud\.started && !hud\.gameOver && !hud\.victory && \(/.test(dsrc8b));
+  }
+}
+// ==== end POSSESSION T8 =======================================================
+
 
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
