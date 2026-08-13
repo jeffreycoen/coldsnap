@@ -5918,6 +5918,135 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 }
 // ==== end FRONT T6 ===========================================================
 
+// ==== P6 T1: the path that walks around =====================================
+// mk1.10 (Troops & Physics, Task 1). Squad marches follow a computed route
+// on the movement grid: around masonry, through the causeway. The leg
+// machine consumes waypoints; routes are drawn/redrawn by the game layer.
+// Zero new rng; the one-draw-per-leg contract is untouched.
+{
+  console.log("\n[p6 t1: the path that walks around]");
+  const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  let M1ok = true, mk1 = null;
+  try {
+    const sliceFnP = (name) => {
+      const start = src.indexOf(`\nfunction ${name}(`);
+      if (start < 0) throw new Error("P6T1 extract: missing function " + name);
+      const rest = src.slice(start + 1);
+      const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
+      return rest.slice(0, m < 0 ? rest.length : m + 9);
+    };
+    const headerP = src.slice(src.indexOf("const GRID_CS"), src.indexOf("function genMap"));
+    const mapSrcP = [
+      headerP,
+      sliceFnP("genMap"), sliceFnP("makeMap"), sliceFnP("streamAt"), sliceFnP("planTrees"),
+      sliceFnP("pondAt"), sliceFnP("rockAt"),
+      sliceFnP("makeGrid"), sliceFnP("checkConnectivity"), sliceFnP("planRoute"), sliceFnP("stepSquadRouting"),
+      sliceFnP("townFootprint"), sliceFnP("buildTown"),
+      `return { makeMap, makeGrid, buildTown, planRoute, stepSquadRouting, streamAt, invW, fwdU,
+        state: () => ({ ORIENT, TOWN, STREAM, MAP_SEED }) };`,
+    ].join("\n");
+    mk1 = () => new Function(
+      "mulberry32", "MASON", "fwdUFor", "fwdDirFor", "invWFor", "addBody", "addWeld", mapSrcP,
+    )(mulberry32, MASON, fwdUFor, fwdDirFor, invWFor, addBody, addWeld);
+  } catch (e) { M1ok = false; }
+  ok("P6T1: the map module extracts with planRoute and stepSquadRouting", M1ok);
+
+  if (M1ok) {
+    // (a) the causeway: on 10 seeds, a route across the stream passes within
+    // the causeway's exemption (|u - bridgeU| < 3) as it crosses the water line.
+    let crossed = 0;
+    for (let s = 1; s <= 10; s++) {
+      const Mi = mk1(); Mi.makeMap(s * 613);
+      const st = Mi.state();
+      const g = Mi.makeGrid(null);
+      const a = Mi.fwdU(0, st.STREAM.v + 20), d = Mi.fwdU(0, st.STREAM.v - 20);
+      const route = Mi.planRoute(g, a.x, a.z, d.x, d.z);
+      if (!route) continue;
+      let okX = false;
+      let px = a.x, pz = a.z;
+      for (const p of route.pts) {
+        const segL = Math.hypot(p.x - px, p.z - pz);
+        for (let sd = 0; sd <= segL; sd += 0.5) {
+          const c = Mi.invW(px + (p.x - px) * (sd / (segL || 1)), pz + (p.z - pz) * (sd / (segL || 1)));
+          if (Math.abs(c.v - st.STREAM.v) < 3 && Math.abs(c.u - st.STREAM.bridgeU) < 3.5) { okX = true; break; }
+        }
+        if (okX) break;
+        px = p.x; pz = p.z;
+      }
+      if (okX) crossed++;
+    }
+    ok("P6T1(a): routes cross the stream at the causeway (10 seeds)", crossed === 10, `${crossed}/10`);
+
+    // (b) around, not through: a route past the biggest building never enters
+    // a blocked cell, and ends within a cell of its destination.
+    {
+      const Mi = mk1(); Mi.makeMap(4242);
+      const st = Mi.state();
+      const g = Mi.makeGrid(null);
+      Mi.buildTown(makeWorld({ field: { heightAt: () => 0 }, seed: 5 }), g, { heightAt: () => 0 }); // claims footprints
+      const big = st.TOWN.filter((t) => !t.depot).sort((x, y) => y.nx * y.nz - x.nx * x.nz)[0];
+      const route = Mi.planRoute(g, big.x - 14, big.z, big.x + 14, big.z);
+      ok("P6T1(b): a route exists past the biggest building", !!route && route.pts.length >= 2, route && `${route.pts.length} pts`);
+      if (route) {
+        const foul = route.pts.filter((p) => { const c = g.cellAt(p.x, p.z); return c && c.blocked; }).length;
+        ok("P6T1(b): no route point stands on a blocked cell", foul === 0, `${foul} fouls`);
+        const end = route.pts[route.pts.length - 1];
+        ok("P6T1(b): the route ends beside the asked ground", Math.hypot(end.x - (big.x + 14), end.z - big.z) < 2.9, Math.hypot(end.x - (big.x + 14), end.z - big.z).toFixed(2));
+      }
+    }
+
+    // (c) the honest clamp: a destination ON the building routes to the
+    // nearest reachable ground beside it, and stepSquadRouting rewrites
+    // sq.dest to that point.
+    {
+      const Mi = mk1(); Mi.makeMap(4242);
+      const st = Mi.state();
+      const g = Mi.makeGrid(null);
+      Mi.buildTown(makeWorld({ field: { heightAt: () => 0 }, seed: 5 }), g, { heightAt: () => 0 });
+      const big = st.TOWN.filter((t) => !t.depot).sort((x, y) => y.nx * y.nz - x.nx * x.nz)[0];
+      const sq = { order: "move", dest: { x: big.x, z: big.z }, anchor: { x: big.x - 14, z: big.z }, _route: null };
+      Mi.stepSquadRouting(g, sq);
+      ok("P6T1(c): an unreachable destination is clamped to reachable ground",
+        !!sq._route && Math.hypot(sq.dest.x - big.x, sq.dest.z - big.z) > 1.5 && Math.hypot(sq.dest.x - big.x, sq.dest.z - big.z) < 12,
+        `moved ${Math.hypot(sq.dest.x - big.x, sq.dest.z - big.z).toFixed(2)}m`);
+      const endC = sq._route && g.cellAt(sq.dest.x, sq.dest.z);
+      ok("P6T1(c): the clamped ground is not blocked", !!endC && !endC.blocked);
+    }
+
+    // (d) determinism twin: identical routes from identical seeds.
+    {
+      const A = mk1(); A.makeMap(7717); const gA = A.makeGrid(null);
+      const B = mk1(); B.makeMap(7717); const gB = B.makeGrid(null);
+      const wa = A.fwdU(-30, -30), wd = A.fwdU(30, 30);
+      ok("P6T1(d): twin determinism — identical routes",
+        JSON.stringify(A.planRoute(gA, wa.x, wa.z, wd.x, wd.z)) === JSON.stringify(B.planRoute(gB, wa.x, wa.z, wd.x, wd.z)));
+    }
+  }
+
+  // (e) the leg machine walks a route: stubbed water band with a gap at
+  // x=20; a squad with a route through the gap crosses and digs in; the
+  // T3(f) routeless squad still holds at the bank (that block re-proves it).
+  {
+    const flatFP = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+    const world = makeWorld({ field: flatFP, seed: 5 });
+    world.streamAt = (x, z) => z > 10 && z < 14 && !(x > 18 && x < 22);
+    const sq = makeSquad(1, "rifles", 1, 0, 0);
+    spawnSquadMembers(world, sq);
+    sq.order = "move"; sq.dest = { x: 0, z: 30 };
+    sq._route = [{ x: 20, z: 6 }, { x: 20, z: 18 }, { x: 0, z: 30 }];
+    for (let i = 0; i < 4800; i++) { stepSquad(world, sq, 1 / 60); stepWorld(world); }
+    ok("P6T1(e): the routed squad crosses at the gap and digs in", sq.order === "defend" && Math.hypot(sq.anchor.x - 0, sq.anchor.z - 30) < 1.5, `${sq.order} at (${sq.anchor.x.toFixed(1)}, ${sq.anchor.z.toFixed(1)})`);
+    ok("P6T1(e): the route is consumed", !sq._route || sq._route.length === 0, sq._route && `${sq._route.length} left`);
+  }
+
+  // (f) source pins
+  const sqsrcP = fs.readFileSync(new URL("../src/depot/squads.js", import.meta.url), "utf8");
+  ok("P6T1(f): the leg machine pops waypoints", /squad\._route\.shift\(\);/.test(sqsrcP));
+  ok("P6T1(f): legs aim at the waypoint, arrival still reads the true dest", /const wp = squad\._route && squad\._route\.length \? squad\._route\[0\] : squad\.dest;/.test(sqsrcP));
+  ok("P6T1(f): stepDepot routes every ordered squad", /stepSquadRouting\(grid, sq\);/.test(src));
+}
+// ==== end P6 T1 ==============================================================
+
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
   process.exit(1);

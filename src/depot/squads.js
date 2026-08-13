@@ -519,6 +519,11 @@ export function stepSquad(world, squad, dt) {
   // below), so the same dest-driven advance carries it both ways.
   if ((squad.order === "attack" || squad.order === "move" || squad.order === "build" || squad.order === "patrol") && squad.dest) {
     const cx = squad.anchor.x, cz = squad.anchor.z;
+    // P6 T1: the route — waypoints drawn by the game layer, consumed here.
+    // Reaching a waypoint pops it (no draw: a waypoint is not a leg arrival);
+    // legs aim at the live waypoint; ARRIVAL stays the true-dest branch below.
+    while (squad._route && squad._route.length && Math.hypot(squad._route[0].x - cx, squad._route[0].z - cz) < 1.2) squad._route.shift();
+    const wp = squad._route && squad._route.length ? squad._route[0] : squad.dest;
     const dToDest = Math.hypot(squad.dest.x - cx, squad.dest.z - cz);
     // F1 Task 4.5: a sapper squad's ATTACK completes when the charges are
     // spent, not when the virtual anchor touches the dest — the anchor
@@ -544,12 +549,14 @@ export function stepSquad(world, squad, dt) {
       const goingToB = Math.hypot(squad.dest.x - squad._patB.x, squad.dest.z - squad._patB.z) < 0.5;
       squad.dest = goingToB ? { x: squad._patA.x, z: squad._patA.z } : { x: squad._patB.x, z: squad._patB.z };
       squad._legTarget = null;
+      squad._route = null;
       squad._cohesionHoldT = 0;
     } else if (dToDest <= ARRIVE_TOL) {
       squad.order = "defend";
       squad.anchor = { x: squad.dest.x, z: squad.dest.z };
       squad.dest = null;
       squad._legTarget = null;
+      squad._route = null;
       squad._pauseT = 0;
       squad._cohesionHoldT = 0;     // order change: the hold budget is per leg
       squad._threatSig = undefined; // force a defend re-scan on arrival
@@ -567,15 +574,16 @@ export function stepSquad(world, squad, dt) {
         squad._threatened = (squad.order === "move" || squad.order === "build") ? false : squadThreatened(world, squad, members);
         if (squad._threatened) {
           const bearing = defaultThreatBearing(world, squad, { x: cx, z: cz });
-          squad._legTarget = coverHop(world, { x: cx, z: cz }, squad.dest, bearing);
+          squad._legTarget = coverHop(world, { x: cx, z: cz }, wp, bearing);
         } else {
           // DOUBLE-TIME: nobody's shooting, so exposure is ignored — the
           // straightest-progress candidate is the direct step toward dest,
           // at 1.5x the careful hop radius (9m). Deterministic, no rng.
-          const step = Math.min(HOP_R * 1.5, dToDest);
+          const dToWp = Math.hypot(wp.x - cx, wp.z - cz) || 1e-6;
+          const step = Math.min(HOP_R * 1.5, dToWp);
           squad._legTarget = {
-            x: cx + ((squad.dest.x - cx) / dToDest) * step,
-            z: cz + ((squad.dest.z - cz) / dToDest) * step,
+            x: cx + ((wp.x - cx) / dToWp) * step,
+            z: cz + ((wp.z - cz) / dToWp) * step,
           };
         }
       }

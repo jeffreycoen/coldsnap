@@ -591,6 +591,92 @@ function checkConnectivity(grid, spawns, objGx, objGz) {
   return true;
 }
 
+// P6 T1: THE ROUTE. Squads march the same grid the enemy trusts. planRoute
+// is a breadth-first search from the anchor's cell (8-way, with
+// computeFlowField's own corner rule) that reaches for the destination cell
+// and settles for the CLOSEST reachable cell when the asked ground is
+// blocked or walled off. The cell path is thinned to its turning points and
+// returned as world waypoints, destination last. Deterministic, zero rng.
+function planRoute(grid, ax, az, dx, dz) {
+  const s = grid.worldToGrid(ax, az);
+  if (!grid.inBounds(s.gx, s.gz)) return null;
+  const t = { gx: Math.max(0, Math.min(grid.w - 1, grid.worldToGrid(dx, dz).gx)),
+              gz: Math.max(0, Math.min(grid.h - 1, grid.worldToGrid(dx, dz).gz)) };
+  const { cells } = grid;
+  const prev = new Int32Array(grid.w * grid.h).fill(-2);
+  const si = grid.idx(s.gx, s.gz);
+  prev[si] = -1;
+  const q = [si];
+  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
+  let head = 0, best = si, bestD = Infinity;
+  while (head < q.length) {
+    const ci = q[head++];
+    const cgx = ci % grid.w, cgz = (ci / grid.w) | 0;
+    const dd = Math.hypot(cgx - t.gx, cgz - t.gz);
+    if (dd < bestD) { bestD = dd; best = ci; if (dd === 0) break; }
+    for (const d of dirs) {
+      const nx = cgx + d[0], nz = cgz + d[1];
+      if (!grid.inBounds(nx, nz)) continue;
+      const ni = grid.idx(nx, nz);
+      if (prev[ni] !== -2 || cells[ni].blocked) continue;
+      if (d[0] !== 0 && d[1] !== 0) {
+        if (cells[grid.idx(cgx + d[0], cgz)].blocked || cells[grid.idx(cgx, cgz + d[1])].blocked) continue;
+      }
+      prev[ni] = ci;
+      q.push(ni);
+    }
+  }
+  if (best === si) return null; // nowhere to go (or already there)
+  const cellsPath = [];
+  for (let ci = best; ci !== -1; ci = prev[ci]) cellsPath.push(ci);
+  cellsPath.reverse();
+  const pts = [];
+  for (let i = 1; i < cellsPath.length; i++) {
+    const p0 = cellsPath[i - 1], p1 = cellsPath[i], p2 = cellsPath[i + 1];
+    const turn = p2 == null ||
+      (p1 % grid.w) - (p0 % grid.w) !== (p2 % grid.w) - (p1 % grid.w) ||
+      ((p1 / grid.w) | 0) - ((p0 / grid.w) | 0) !== ((p2 / grid.w) | 0) - ((p1 / grid.w) | 0);
+    if (turn) pts.push(grid.gridToWorld(p1 % grid.w, (p1 / grid.w) | 0));
+  }
+  return { pts, reached: bestD === 0 };
+}
+
+// P6 T1: route bookkeeping, one squad, once per sim tick (stepDepot calls
+// it before stepSquad). Draws a route when the destination is new, rewrites
+// an unreachable destination to the route's honest end (and a patrol's
+// matching endpoint with it), and redraws the route when progress stalls
+// (under half a meter of approach in three seconds — the mid-march stall's
+// tombstone). Deterministic, zero rng, no draws.
+function stepSquadRouting(grid, sq) {
+  if (!sq.dest || (sq.order !== "move" && sq.order !== "attack" && sq.order !== "build" && sq.order !== "patrol")) {
+    sq._route = null; sq._routeDest = null; return;
+  }
+  const destChanged = !sq._routeDest || Math.hypot(sq._routeDest.x - sq.dest.x, sq._routeDest.z - sq.dest.z) > 0.5;
+  const wp = sq._route && sq._route.length ? sq._route[0] : sq.dest;
+  const dWp = Math.hypot(wp.x - sq.anchor.x, wp.z - sq.anchor.z);
+  if (!destChanged) {
+    // the stall watch: approach distance must shrink, or the route is stale
+    if (sq._routeD == null || dWp < sq._routeD - 0.5) { sq._routeD = dWp; sq._routeT = 0; }
+    else { sq._routeT = (sq._routeT || 0) + 1 / 120; }
+    if (sq._routeT < 3) return;
+  }
+  sq._routeD = null; sq._routeT = 0;
+  const route = planRoute(grid, sq.anchor.x, sq.anchor.z, sq.dest.x, sq.dest.z);
+  if (!route || !route.pts.length) { sq._route = null; sq._routeDest = { x: sq.dest.x, z: sq.dest.z }; return; }
+  if (!route.reached) {
+    // the honest clamp: they go as close as ground allows, and the order
+    // (and a patrol's turnaround point) now SAYS so.
+    const end = route.pts[route.pts.length - 1];
+    if (sq.order === "patrol") {
+      if (sq._patA && Math.hypot(sq.dest.x - sq._patA.x, sq.dest.z - sq._patA.z) < 0.5) sq._patA = { x: end.x, z: end.z };
+      else if (sq._patB && Math.hypot(sq.dest.x - sq._patB.x, sq.dest.z - sq._patB.z) < 0.5) sq._patB = { x: end.x, z: end.z };
+    }
+    sq.dest = { x: end.x, z: end.z };
+  }
+  sq._route = route.pts;
+  sq._routeDest = { x: sq.dest.x, z: sq.dest.z };
+}
+
 // ================================================================ towers
 export function stepTowers(world, T, discipline, possessedId) {
   const dt = world.dt;
@@ -924,6 +1010,7 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
         }
         continue;
       }
+      stepSquadRouting(grid, sq);
       engageCheck(sq);
       stepSquad(world, sq, world.dt);
       // P1.5 T4: the two-point build line, driven straight after the squad's
