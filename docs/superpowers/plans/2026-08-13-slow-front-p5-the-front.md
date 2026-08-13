@@ -18,13 +18,298 @@
 
 **Task 4 — Buildings of the proving grounds** — POPULATED BELOW (mk1.03).
 
-**Task 5 — Copses and forests** *(skeleton)*
-- Copse/forest placement in generation.
-- Raise the tree pools; burn behavior already carries.
+**Task 5 — Copses, forests, and the high ground** — POPULATED BELOW (mk1.04).
 
 **Task 6 — The measurement close** *(skeleton)*
 - Full-density Pi baseline on the new map: frame split, collapse worst case, sight recompute.
 - Re-pin perf numbers; owner playtest closes the phase.
+
+---
+
+# TASK 5 — Copses, forests, and the high ground (mk1.04)
+
+**What it does.** The map grows hills and real woods. Every seed draws 1–3 hills (always at least one) — the proving grounds' bump form, 3–5 meters high, 20–30 meters across, climbable after the existing slope pass. Every hill carries a copse on its flanks, so high ground reads as wooded high ground. Independent of the hills, each seed draws 2–5 copses of 5–9 trees anywhere on the map and 0–2 forests of 20–40 trees. The old enemy-half tree clumps are superseded by this system; the rim treeline stays as edge dressing. All tree planting moves into ONE pure plan function the suite can run headlessly. The renderer's tree pool rises 144 → 360 behind one new constant. Trees keep everything they already are: bodies that block sight and shots, catch fire, and fall where physics drops them — no combat code changes at all.
+
+**Rulings folded in (owner, 2026-08-13):** hills 1–3 per seed, ALWAYS at least one, demo-sized; OVERLOOK ALLOWED — a hill may rise beside either depot (only the stream, ponds, and roads push a hill away); tree scale is copses + rare forests with the pool at ~360.
+
+**Feel changes that ship for the owner's eyes:** real hills with woods on them; height you can fight from (guns and eyes on a hill already shoot and see farther — that machinery exists); forests as concealment that burns; a treeline that no longer hugs only the enemy edge.
+
+**Suggested model:** Sonnet — all code specified below.
+
+**Required reading (re-verify anchors at dispatch):**
+- `src/depot/DepotGame.jsx` — 30–56 (map state; `let STREAM` at 56 — HILLS lands beside it), 58–218 (genMap; the ponds block ends near 152 — hills land after it), 219–250 (makeMap — one assignment line), 252–349 (buildDepotTerrain; the band-lift loop at 264 — hills land after it), 350–394 (pondAt/rockAt/makeGrid/streamAt, read-only; planTrees lands after streamAt), the boot tree block (treeAt + treeline + clumps — near 1162–1195 at plan time; find it by the `mulberry32(MAP_SEED ^ 0x517)` line), 1038–1110 context (read-only).
+- `src/render/renderer.js` — 1121–1140 (tree pools; the 144 literals), 1503–1530 (the tree draw loop; the `tri >= 144` guard).
+- `src/engine/core.js` — 1724–1735 region is NOT required; instead read the demo hill's pattern at `src/demo/coldsnap-proving-grounds.jsx` 1730–1733 (the side-hill bump — pattern source, read-only, frozen).
+- `scripts/depot-test.mjs` — 1–70 (harness), 5490–5608 at plan time (T3/T4 blocks + tail; the new T5 block lands immediately before `if (fails.length) {`).
+- `src/version.js`.
+
+**Trap notes:**
+- ALL new draws ride map-seed streams (genMap's `r`, planTrees' own `mulberry32(MAP_SEED ^ 0x517)`) — free streams, draw counts may vary; `depot-lint` still forbids `Math.random`.
+- Hills are CANONICAL (u, v), like the stream — buildDepotTerrain reads them in its own canonical frame; they are deliberately NOT run through genMap's `T()` transform.
+- Hills draw AFTER the ponds block (they reject against ponds and roads, both still canonical there) and BEFORE the big forms — a building placed later flattens its pad into a hillside, which is intended (terraced buildings, the owner's overlook ruling).
+- Hills reject the STREAM by centerline margin (`hr + 10`) — the carve must never meet a hill flank, or the banks turn to cliffs.
+- The old clump block DIES; the treeline logic MOVES into planTrees byte-similar, not byte-identical (its rejections become the shared `clearAt`). The boot's `rT` stream disappears with it — planTrees seeds its own identical stream, so the planted treeline shifts slightly on the same seed. That is a map-seed-stream change, legal, and the mark bump burns saves anyway.
+- Hill copses RETRY until planted (up to 24 candidate draws per tree) so the wooded-hills assert holds; drawn copses and forests stay single-candidate draws (ragged edges are the look).
+- planTrees runs at BOOT (after makeMap), so TOWN/ROADS are world coordinates and hill centers convert through `fwdU`. The suite runs the same function through the extraction.
+- The five 144 literals in the renderer become ONE `TREE_CAP` constant — miss one (the flame pool or the loop guard) and burning trees or the draw silently truncate.
+- Trees still spawn only on a fresh boot (`if (!RES)`) — a resumed run's trees come off the save as bodies. No save edits.
+- EXPECTED RE-PINS: none. Any old assert moving is a defect — STOP and report. (T4's sweeps assert town properties; trees and hills touch neither TOWN nor the grid.)
+- If any sweep seed plants over 340 trees or under 25, STOP and report — the budget ruling goes back to the owner.
+
+## Steps, in execution order
+
+**Step 1 — failing asserts first.** Insert the FRONT-T5 block before the tail summary. `npm run test:depot` shows it red (no HILLS in the extraction header, planTrees missing). Record the exact reds.
+
+```js
+// ==== FRONT T5: copses, forests, and the high ground ========================
+// mk1.04 (The Front, Task 5). Every seed draws 1-3 hills (always at least
+// one), each carrying a copse; plus 2-5 copses and 0-2 forests anywhere.
+// All planting lives in planTrees (pure, map-seed stream) so this block
+// plans the exact trees the game plants. Tree pool 144 -> 360.
+{
+  console.log("\n[front t5: copses, forests, and the high ground]");
+  const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  let M5ok = true, mkMapT5 = null;
+  try {
+    const sliceFn5 = (name) => {
+      const start = src.indexOf(`\nfunction ${name}(`);
+      if (start < 0) throw new Error("T5 extract: missing function " + name);
+      const rest = src.slice(start + 1);
+      const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
+      return rest.slice(0, m < 0 ? rest.length : m + 9);
+    };
+    const header5 = src.slice(src.indexOf("const GRID_CS"), src.indexOf("function genMap"));
+    if (!/let HILLS = \[\];/.test(header5)) throw new Error("T5: HILLS state not in header");
+    const mapSrc5 = [
+      header5,
+      sliceFn5("genMap"), sliceFn5("makeMap"), sliceFn5("streamAt"), sliceFn5("planTrees"),
+      sliceFn5("pondAt"), sliceFn5("rockAt"),
+      sliceFn5("makeGrid"), sliceFn5("checkConnectivity"), sliceFn5("townFootprint"), sliceFn5("buildTown"),
+      sliceFn5("buildDepotTerrain"),
+      `return { makeMap, makeGrid, buildDepotTerrain, planTrees, streamAt, pondAt, rockAt, invW, fwdU,
+        state: () => ({ ORIENT, TOWN, ROADS, PONDS, ROCKS, SPAWN_POINTS, STREAM, HILLS, MAP_SEED }) };`,
+    ].join("\n");
+    mkMapT5 = () => new Function(
+      "mulberry32", "MASON", "fwdUFor", "fwdDirFor", "invWFor", "addBody", "addWeld", mapSrc5,
+    )(mulberry32, MASON, fwdUFor, fwdDirFor, invWFor, addBody, addWeld);
+  } catch (e) { M5ok = false; }
+  ok("T5: the map module extracts with HILLS state and planTrees", M5ok);
+
+  if (M5ok) {
+    // (a) the sweep: hills and trees inside their ruled bounds on every seed
+    let hillLo = 99, hillHi = 0, hillShape = 0, hillStream = 0, nHillsTotal = 0;
+    let treeLo = 9999, treeHi = 0, treeFoul = 0, woodedHills = 0, worstTreeSeed = 0;
+    for (let s = 1; s <= 40; s++) {
+      const Mi = mkMapT5(); Mi.makeMap(s * 907);
+      const st = Mi.state();
+      hillLo = Math.min(hillLo, st.HILLS.length); hillHi = Math.max(hillHi, st.HILLS.length);
+      nHillsTotal += st.HILLS.length;
+      for (const hb of st.HILLS) {
+        if (hb.h >= 3 && hb.h <= 5.01 && hb.r >= 10 && hb.r <= 15.01) hillShape++;
+        if (Math.abs(hb.v - st.STREAM.v) >= hb.r + 9.9) hillStream++;
+      }
+      const plan = Mi.planTrees();
+      if (plan.length > treeHi) { treeHi = plan.length; worstTreeSeed = s * 907; }
+      treeLo = Math.min(treeLo, plan.length);
+      for (const p of plan) {
+        const c = Mi.invW(p.x, p.z);
+        const onBuilding = st.TOWN.some((t) =>
+          Math.abs(p.x - t.x) < (t.nx * MASON.pitch) / 2 + 1.4 &&
+          Math.abs(p.z - t.z) < (t.nz * MASON.pitch) / 2 + 1.4);
+        if (Mi.rockAt(p.x, p.z) || Mi.pondAt(p.x, p.z) || Mi.streamAt(p.x, p.z) ||
+            onBuilding || Math.abs(c.u) > 58.01 || Math.abs(c.v) > 58.01) treeFoul++;
+      }
+      for (const hb of st.HILLS) {
+        const hw = Mi.fwdU(hb.u, hb.v);
+        const near = plan.filter((p) => Math.hypot(p.x - hw.x, p.z - hw.z) < hb.r * 1.6).length;
+        if (near >= 3) woodedHills++;
+      }
+    }
+    ok("T5(a): every seed draws 1-3 hills, never zero", hillLo >= 1 && hillHi <= 3, `${hillLo}-${hillHi}`);
+    ok("T5(a): every hill is demo-sized (h 3-5, r 10-15)", hillShape === nHillsTotal, `${hillShape}/${nHillsTotal}`);
+    ok("T5(a): every hill keeps its flank off the stream", hillStream === nHillsTotal, `${hillStream}/${nHillsTotal}`);
+    ok("T5(a): tree counts stay inside the budget (25-340 per seed)", treeLo >= 25 && treeHi <= 340, `${treeLo}-${treeHi} (worst seed ${worstTreeSeed})`);
+    ok("T5(a): no planned tree stands in rock, water, a building, or off the rim", treeFoul === 0, `${treeFoul} fouls`);
+    ok("T5(a): every hill is wooded (3+ trees on its flanks)", woodedHills === nHillsTotal, `${woodedHills}/${nHillsTotal}`);
+
+    // (b) the terrain rises: a hill's summit stands proud of its surroundings
+    {
+      const Mi = mkMapT5(); Mi.makeMap(907);
+      const st = Mi.state();
+      const field = makeField(121, 2.0, st.MAP_SEED);
+      Mi.buildDepotTerrain(field, st.MAP_SEED);
+      const hb = st.HILLS[0];
+      const hw = Mi.fwdU(hb.u, hb.v);
+      const peak = field.heightAt(hw.x, hw.z);
+      let ringMin = 1e9;
+      for (let a = 0; a < 8; a++) {
+        const rw = Mi.fwdU(hb.u + Math.cos(a * 0.785) * hb.r * 2.5, hb.v + Math.sin(a * 0.785) * hb.r * 2.5);
+        const cu = Mi.invW(rw.x, rw.z);
+        if (Math.abs(cu.u) > 58 || Math.abs(cu.v) > 58) continue; // ring points past the rim tell nothing
+        ringMin = Math.min(ringMin, field.heightAt(rw.x, rw.z));
+      }
+      ok("T5(b): the hill stands proud of the ground around it (1.8m+)", peak - ringMin > 1.8, (peak - ringMin).toFixed(2));
+    }
+
+    // (c) determinism: same seed, identical hills and identical tree plan
+    {
+      const A = mkMapT5(); A.makeMap(7717);
+      const B = mkMapT5(); B.makeMap(7717);
+      ok("T5(c): twin determinism — identical HILLS and tree plan",
+        JSON.stringify(A.state().HILLS) === JSON.stringify(B.state().HILLS) &&
+        JSON.stringify(A.planTrees()) === JSON.stringify(B.planTrees()));
+    }
+  }
+
+  // (d) source pins: the hooks exist where claimed
+  ok("T5(d): buildDepotTerrain lifts the drawn hills", /hb\.h \* Math\.exp\(-dh\)/.test(src));
+  ok("T5(d): the boot plants the plan and nothing else", /for \(const p of planTrees\(\)\) treeAt\(p\.x, p\.z\);/.test(src));
+  const rsrc5 = fs.readFileSync(new URL("../src/render/renderer.js", import.meta.url), "utf8");
+  ok("T5(d): the tree pool is one constant at 360", /const TREE_CAP = 360;/.test(rsrc5) && !/144/.test(rsrc5.slice(rsrc5.indexOf("snow-laden pine"), rsrc5.indexOf("snow-laden pine") + 900)));
+}
+// ==== end FRONT T5 ===========================================================
+```
+Note on the extraction: the return line gains `fwdU` (planTrees and the asserts need the module's live transform) — the T1–T4 blocks return `invW` only; this block needs both.
+
+**Step 2 — the map state and the hills.** `src/depot/DepotGame.jsx`:
+
+(2a) Module state, beside the stream (line 56):
+```js
+let HILLS = []; // T5: [{u, v, r, h}...] — canonical, regrown from seed
+```
+
+(2b) genMap draws the hills — insert directly AFTER the ponds block (after line 152) and BEFORE the TPL list:
+```js
+  // T5: THE HIGH GROUND (owner's rulings: 1-3 hills, never zero; overlook
+  // allowed — only the stream, ponds and roads push a hill away). Canonical
+  // coords like the stream; buildDepotTerrain lifts them in its own frame.
+  const hills = [];
+  const nHills = 1 + Math.floor(r() * 3);
+  for (let k = 0, placed = 0; k < 60 && placed < nHills; k++) {
+    const hu = -48 + r() * 96, hv = -46 + r() * 88;
+    const hr = 10 + r() * 5, hh = 3 + r() * 2;
+    if (Math.abs(hv - streamV) < hr + 10) continue;
+    if (ponds.some((q) => Math.hypot(hu - q.x, hv - q.z) < q.r + hr * 0.7 + 4)) continue;
+    if (roadDist(hu, hv) < hr * 0.7 + 4) continue;
+    hills.push({ u: hu, v: hv, r: hr, h: hh });
+    placed++;
+  }
+```
+The return (line 217) gains `hills`:
+```js
+  return { seed, bands, passes, rocks, ponds, spawns, spawnU, town, roads, depotFoul, objU, objV, depotU1, depotU2, depotDepth, stream, hills };
+```
+
+(2c) makeMap assigns it with the other globals (line 227):
+```js
+    SPAWN_U = m.spawnU; STREAM = m.stream; HILLS = m.hills;
+```
+
+(2d) buildDepotTerrain lifts them — insert directly after the band-lift line (line 264), before the rim falloff:
+```js
+    // T5: the high ground — the proving grounds' bump form, per drawn hill.
+    for (const hb of HILLS) {
+      const dh = ((cuv.u - hb.u) * (cuv.u - hb.u) + (cuv.v - hb.v) * (cuv.v - hb.v)) / (hb.r * hb.r);
+      y += hb.h * Math.exp(-dh);
+    }
+```
+
+**Step 3 — planTrees.** Insert as a module-level function directly after `streamAt` (after line 394):
+```js
+// T5: THE TREE PLAN — every tree a fresh boot plants, as data: the rim
+// treeline, a copse on every hill's flanks, 2-5 drawn copses, 0-2 forests.
+// Pure function of the regrown map on its own map-seed stream, so the test
+// suite plans the exact trees the game plants. World coordinates out.
+function planTrees() {
+  const rT = mulberry32(MAP_SEED ^ 0x517);
+  const out = [];
+  const roadD = (x, z) => {
+    let best = 1e9;
+    for (const route of ROADS) for (let i = 0; i + 1 < route.length; i++) {
+      const a = route[i], b = route[i + 1];
+      const dx = b[0] - a[0], dz = b[1] - a[1];
+      const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / (dx * dx + dz * dz || 1)));
+      best = Math.min(best, Math.hypot(x - (a[0] + dx * t), z - (a[1] + dz * t)));
+    }
+    return best;
+  };
+  const clearAt = (x, z) => {
+    if (rockAt(x, z) || pondAt(x, z) || streamAt(x, z)) return false;
+    if (SPAWN_POINTS.some((sp) => Math.hypot(x - sp.x, z - sp.z) < 4.5)) return false;
+    if (roadD(x, z) < 3.5) return false;
+    const c = invW(x, z);
+    if (Math.abs(c.u) > 58 || Math.abs(c.v) > 58) return false;
+    for (const t of TOWN) {
+      if (Math.abs(x - t.x) < (t.nx * MASON.pitch) / 2 + 1.5 &&
+          Math.abs(z - t.z) < (t.nz * MASON.pitch) / 2 + 1.5) return false;
+    }
+    return true;
+  };
+  // the rim treeline — the old edge dressing, kept (draws before tests, as before)
+  for (let tu = -56; tu <= 56; tu += 3.2) {
+    const w = fwdU(tu + (rT() - 0.5) * 1.6, -54.5 + rT() * 3.2);
+    if (clearAt(w.x, w.z)) out.push({ x: w.x, z: w.z });
+  }
+  // a copse on every hill's flanks (the owner's wooded hills) — these RETRY
+  // until planted (free stream) so a hill is never bald by bad luck.
+  for (const hb of HILLS) {
+    const n = 6 + Math.floor(rT() * 4);
+    for (let i = 0, got = 0; i < 24 && got < n; i++) {
+      const a = rT() * 6.28, rr = hb.r * (0.35 + rT() * 0.75);
+      const w = fwdU(hb.u + Math.cos(a) * rr, hb.v + Math.sin(a) * rr);
+      if (clearAt(w.x, w.z)) { out.push({ x: w.x, z: w.z }); got++; }
+    }
+  }
+  // drawn copses: 2-5, anywhere clear on the map
+  const nCop = 2 + Math.floor(rT() * 4);
+  for (let c = 0; c < nCop; c++) {
+    const cu = -52 + rT() * 104, cv = -52 + rT() * 104;
+    const n = 5 + Math.floor(rT() * 5);
+    for (let i = 0; i < n; i++) {
+      const a = rT() * 6.28, rr = 1.5 + rT() * 4.5;
+      const w = fwdU(cu + Math.cos(a) * rr, cv + Math.sin(a) * rr);
+      if (clearAt(w.x, w.z)) out.push({ x: w.x, z: w.z });
+    }
+  }
+  // rare forests: 0-2, 20-40 trees
+  const nFor = Math.floor(rT() * 3);
+  for (let f = 0; f < nFor; f++) {
+    const fu = -48 + rT() * 96, fv = -48 + rT() * 96;
+    const n = 20 + Math.floor(rT() * 21);
+    for (let i = 0; i < n; i++) {
+      const a = rT() * 6.28, rr = 2 + rT() * 9;
+      const w = fwdU(fu + Math.cos(a) * rr, fv + Math.sin(a) * rr);
+      if (clearAt(w.x, w.z)) out.push({ x: w.x, z: w.z });
+    }
+  }
+  return out;
+}
+```
+
+**Step 4 — the boot plants the plan.** In the mount effect's fresh-boot block: DELETE the old treeline loop and the clump block (the code from `const rT = mulberry32(MAP_SEED ^ 0x517);` through the end of the clump inner loop — at plan time lines 1177–1195; `treeAt` at 1162–1167 STAYS), and replace with:
+```js
+        // T5: the whole tree plan, planted (planTrees carries the treeline,
+        // the hill copses, the drawn copses and the forests — one function,
+        // shared with the test suite).
+        for (const p of planTrees()) treeAt(p.x, p.z);
+```
+The seeded-sandbag block below it (its own `bagR` stream) is untouched.
+
+**Step 5 — the tree pool rises behind one constant.** `src/render/renderer.js`. Above the tree pools (line 1124), add the constant; the five 144 literals read it:
+```js
+  // T5 (mk1.04, owner's ruling): copses + rare forests — the pool rises
+  // 144 -> 360 behind ONE constant (trunk, canopy, canopy colors, flames,
+  // and the draw-loop guard all read it; a missed site silently truncates).
+  const TREE_CAP = 360;
+  const treeTrunkMesh = pool(new THREE.BoxGeometry(0.3, 1.4, 0.3), toon(0x4a3626), TREE_CAP, true);
+  const treeCanopyMesh = pool(new THREE.ConeGeometry(1.05, 2.6, 6), toon(0xffffff), TREE_CAP, true);
+  treeCanopyMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(TREE_CAP * 3).fill(1), 3);
+```
+…the flame pool (line 1136) becomes `pool(new THREE.PlaneGeometry(0.9, 1.5), fireMat, TREE_CAP, false)`, and the draw-loop guard (line 1509) becomes `if (b.kind !== "tree" || tri >= TREE_CAP) continue;`.
+
+**Step 6 — green, bump, build, smoke.** `npm run lint:depot` · `npm run test:depot` fully green (zero re-pins) · `src/version.js` → `"mk1.04"` · `npm run build` AFTER the bump · `SMOKE_ONLY=depot npm run smoke`.
+
+**Gates (ONLY these):** parse changed files · `npm run lint:depot` · `npm run test:depot` (Step 1 red-first, then green; zero re-pins) · `npm run build` after the bump · `SMOKE_ONLY=depot` smoke. Allowed files: `src/depot/DepotGame.jsx`, `src/render/renderer.js`, `scripts/depot-test.mjs`, `src/version.js`. Commit `"copses, forests, and the high ground (mk1.04)"`, push, CI green, STOP. The owner checks the deployed site across seeds: at least one wooded hill on every map, forests you can hide a squad in (and burn), the treeline still on the rim, snipers and towers on hills reaching farther.
 
 ---
 
