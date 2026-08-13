@@ -29,7 +29,7 @@ The project owner directs design, reviews every plan, and is the sole playtester
 
 ## Dispatch
 
-- Implementation agents are Sonnet 5 (`model: "sonnet"`, which resolves to Sonnet 5). Never Opus 4.8; Opus 5 is retired for agents (instruction drift).
+- Implementation agents are Sonnet 5 (`model: "sonnet"`). Plans must be fully specced — the agent executes, it never designs. Fable agents only when the owner explicitly calls for one. Never Opus 4.8; Opus 5 is retired for agents (instruction drift).
 - One agent in the working tree at a time, sequential. Parallel work requires worktree isolation.
 - **Stop after every task.** A task landing is a stop: report it and wait for the owner's word before the next dispatch. Plan approval approves the plan, not an unattended run of it.
 - Every dispatch carries: a pre-verified reading list (anchors checked against live code at dispatch), trap notes, and a required read-confirmation opening the agent's report.
