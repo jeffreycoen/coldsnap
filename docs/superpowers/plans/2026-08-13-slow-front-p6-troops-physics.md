@@ -150,7 +150,13 @@ await browser.close();
 
 ---
 
-# P6 CLOSE — The load ramp (mk1.18)
+**AMENDMENT 2 (2026-08-14, owner's ruling after the first verdict — "measure more times"):** the first execution PASSED the defended window decisively (12.75/12.34 → 6.60/6.68 normalized, both repeats) and FAILED idle by one cell of +0.04 ms — smaller than the instrument's own run-to-run spread (0.07 ms between the two BEFORE runs). The owner's ruling: the idle question is settled by more measurements, not by one cell.
+
+- **The defended verdict STANDS as PASSED** on the recorded two-repeat evidence; it is not re-run.
+- **Re-execute Steps 1-8** (the landing was reverted clean; anchors re-verified — the tree is unchanged since, expect clean matches).
+- **The idle window runs FIVE repeats per side.** The instrument gains an idle-only mode (`IDLE_ONLY=1` env: run window A, skip window B) — five idle-only runs against the mk1.18 build BEFORE re-landing, five against the post-bump mk1.19 build after. Fresh page per run.
+- **The idle gate: mean of the five after-norms ≤ mean of the five before-norms.** All ten numbers reported with medians; tails never gate.
+- PASS → ship (Step 9's commit/push) and run Step 10. FAIL → revert clean, report, stop for the owner.
 
 **What it does.** The phase-close measurement, per the capacity-anchor ruling: escalating waves on the dense seed until the frame budget breaks, the ceiling reported in men and awake stones. That number then sizes the market's dials and settles soft cap versus hard cap — those decisions come to the owner WITH the number, they are not in this task. Two parts: one tiny read-only debug hook ships (the load gauge, mk1.18 — the only deploy), then an untracked instrument runs the ramp on this Pi and reports.
 
