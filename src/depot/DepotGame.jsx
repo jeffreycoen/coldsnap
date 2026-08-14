@@ -3038,6 +3038,17 @@ export default function DepotGame({ onExit, resume = null }) {
         }).filter(Boolean),
       }));
       window.__DEPOTSANDBAGS__ = () => world.bodies.filter((b) => b.sandbag).map((b) => ({ id: b.id, x: +b.pos.x.toFixed(2), z: +b.pos.z.toFixed(2), hx: b.hx, hz: b.hz, alive: b.alive }));
+      window.__DEPOTLOAD__ = () => {
+        // the load ramp's gauge (P6 close): live men and the awake/asleep
+        // stone split, counted fresh on each call — read-only, no cadence.
+        let men = 0, awake = 0, asleep = 0;
+        for (const b of world.bodies) {
+          if (!b.alive) continue;
+          if (b.kind === "unit") men++;
+          else if (b.kind === "chunk") { if (b.sleeping) asleep++; else awake++; }
+        }
+        return { men, awake, asleep };
+      };
       window.__DEPOTENEMYPOS__ = () => {
         const b = world.bodies.find((b2) => b2.kind === "unit" && b2.alive && b2.team === 2);
         return b ? { x: b.pos.x, y: b.pos.y, z: b.pos.z } : null;
