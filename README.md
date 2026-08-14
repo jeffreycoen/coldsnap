@@ -8,8 +8,7 @@ The whole thing — the war, the engine, five tech demos, every sound — is one
 
 | | |
 |---|---|
-| ![A building collapsing under shellfire](docs/media/wf-collapse.png) | ![A walled front under assault, fog beyond](docs/media/wf-front.png) |
-| ![Driving a possessed squad, the red reticle up](docs/media/wf-takecontrol.png) | ![The muster bell's convoy manifest](docs/media/wf-bell.png) |
+| ![A depot's masonry breaking under shellfire, stones mid-fall](docs/media/wf-collapse.png) | ![One whole procedurally drawn valley — hills, stream, village, two depots](docs/media/wf-valley.png) |
 
 Destruction here is structural, not scripted. Every building is individual stones held together by welds with real break forces — a collapse is the physics finding out, not an animation playing.
 
