@@ -101,7 +101,8 @@ function angleDiff(a, b) {
 // him).
 export function exposureAt(world, x, z, threatBearing) {
   let bestCoverWeight = 0;
-  for (const b of world.bodies) {
+  const pool = world._L ? world._L.statics : world.bodies;  // T10
+  for (const b of pool) {
     if (!b.alive || b.invM > 0) continue; // static solids only (invM>0 = dynamic)
     if (!SOLID_KINDS.has(b.kind)) continue;
     const dx = b.pos.x - x, dz = b.pos.z - z;
@@ -167,7 +168,8 @@ export function coverHop(world, from, dest, threatBearing) {
 const SLOT_CLEAR_PAD = 0.35;
 function slotBlocked(world, x, z, clear) {
   if (world.streamAt && world.streamAt(x, z)) return true; // T3: open water is never a slot
-  for (const b of world.bodies) {
+  const pool = world._L ? world._L.statics : world.bodies;  // T10
+  for (const b of pool) {
     if (!b.alive || b.invM > 0) continue; // static solids only
     if (!SOLID_KINDS.has(b.kind)) continue;
     if (Math.abs(x - b.pos.x) <= b.hx + clear && Math.abs(z - b.pos.z) <= b.hz + clear) return true;
@@ -427,7 +429,8 @@ export function squadThreatened(world, squad, members) {
     if (u._paceHit && world.t - u._paceHitT < THREAT_HIT_WINDOW) hit = true;
   }
   if (hit) return true;
-  for (const b of world.bodies) {
+  const pool = world._L ? world._L.foes : world.bodies;     // T10
+  for (const b of pool) {
     if (!b.alive || b.team !== 2) continue;
     if (b.kind !== "unit" && b.kind !== "vehicle") continue;
     if (Math.hypot(b.pos.x - squad.anchor.x, b.pos.z - squad.anchor.z) <= THREAT_RADIUS) return true;
@@ -482,7 +485,8 @@ function stepSapperCharges(world, squad, dt, members) {
       continue;
     }
     if (squad.order !== "attack") continue; // no charge use on defend
-    for (const t2 of world.bodies) {
+    const pool = world._L ? world._L.structsFor1 : world.bodies; // T10
+    for (const t2 of pool) {
       if (!hostileStructure(t2, 1)) continue;
       // SIEGE FIX (mk0.21) directive 3 — STANDING masonry only. Rubble already
       // knocked off its home is a corpse; blowing it again is the wasted-charge

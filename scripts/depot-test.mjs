@@ -6206,6 +6206,111 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 }
 // ==== end P6 T7 ==============================================================
 
+// ==== P6 T10: body lists =====================================================
+// mk1.19 (Troops & Physics, Task 10). Third landing. One pass per frame
+// filters world.bodies into typed pools (src/depot/lists.js); every hot scan
+// iterates its pool with its full original predicate kept, falling back to
+// world.bodies when no lists are installed. The keystone is (c): a twin
+// firefight with and without the lists installed lands on the identical
+// worldHash and draw count.
+{
+  console.log("\n[p6 t10: body lists]");
+  let listsMod = null;
+  try { listsMod = await import("../src/depot/lists.js"); } catch (e) {}
+  ok("T10: src/depot/lists.js exists and exports makeBodyLists/rebuildBodyLists",
+    !!listsMod && typeof listsMod.makeBodyLists === "function" && typeof listsMod.rebuildBodyLists === "function");
+  const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+  const idUV = (x, z) => ({ u: x, v: z });
+  const idW = (u, v) => ({ x: u, z: v });
+
+  // one of everything the pool predicates distinguish
+  const buildZoo = () => {
+    const world = makeWorld({ field: flatF, seed: 3 });
+    spawnWallCourses(world, 0, 0, 0);                       // player wall, 3 static courses
+    spawnSandbag(world, 4, 0);                              // team-1 static chunk (sandbag)
+    const tw = addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: 1, hz: 0.8, x: 8, y: 1, z: 0, hp: 80 });
+    tw.towerType = "gun";
+    addBody(world, { kind: "rock", team: 0, mass: 0, hx: 2, hy: 2, hz: 2, x: -8, y: 1.6, z: 0, hp: 400 });
+    addBody(world, { kind: "tree", team: 0, mass: 260, hx: 0.28, hy: 1.6, hz: 0.28, x: -4, y: 1.62, z: 4, hp: 70 });
+    const cd = addBody(world, { kind: "chunk", team: 0, mass: 100, hx: 0.4, hy: 0.4, hz: 0.4, x: 0, y: 0.4, z: 10, hp: 40 }); cd.town = "depot";
+    const c2 = addBody(world, { kind: "chunk", team: 0, mass: 100, hx: 0.4, hy: 0.4, hz: 0.4, x: 0, y: 0.4, z: -10, hp: 40 }); c2.town = "depot2";
+    addBody(world, { kind: "chunk", team: 1, mass: 100, hx: 0.3, hy: 0.3, hz: 0.3, x: 6, y: 0.3, z: 6, hp: 40 }); // dynamic rubble
+    const sq = makeSquad(1, "rifles", 1, -2, -2);
+    spawnSquadMembers(world, sq);
+    spawnUnit(world, { x: 2, z: 14 }, "");                  // enemy conscript
+    spawnUnit(world, { x: -2, z: 16 }, "tank");             // enemy vehicle
+    const dead = spawnUnit(world, { x: 9, z: 9 }, ""); dead.alive = false;
+    return { world, sq };
+  };
+
+  // (a) pool identity: each pool equals its reference filter, in world order.
+  if (listsMod) {
+    const { world } = buildZoo();
+    const L = listsMod.makeBodyLists();
+    listsMod.rebuildBodyLists(world, L);
+    const SOLID = new Set(["rock", "wall", "tower", "tree", "chunk"]);
+    const ref = {
+      solids: world.bodies.filter((b) => b.alive && SOLID.has(b.kind) && !(b.invM > 0 && b.kind !== "chunk" && b.kind !== "tree")),
+      statics: world.bodies.filter((b) => b.alive && SOLID.has(b.kind) && b.invM === 0),
+      friends: world.bodies.filter((b) => b.alive && (b.kind === "unit" || b.kind === "vehicle") && b.team === 1),
+      foes: world.bodies.filter((b) => b.alive && (b.kind === "unit" || b.kind === "vehicle") && b.team === 2),
+      structsFor1: world.bodies.filter((b) => b.alive && (((b.kind === "wall" || b.kind === "tower") && b.team === 2) || (b.kind === "chunk" && b.town === "depot2"))),
+      structsFor2: world.bodies.filter((b) => b.alive && (((b.kind === "wall" || b.kind === "tower") && b.team === 1) || (b.kind === "chunk" && b.town === "depot"))),
+      friendly: world.bodies.filter((b) => b.alive && (((b.kind === "wall" || b.kind === "tower") && b.team === 1) || (b.kind === "chunk" && b.team === 0 && b.town !== "depot2"))),
+    };
+    for (const k of Object.keys(ref)) {
+      ok(`T10(a): pool ${k} matches its reference filter, in world order`,
+        L[k].length === ref[k].length && L[k].every((b, i) => b === ref[k][i]),
+        `${k}: ${L[k].length} vs ${ref[k].length}`);
+    }
+    ok("T10(a): rebuild installs world._L", world._L === L);
+    ok("T10(a): a second rebuild reuses the same arrays (no per-tick allocation)",
+      (() => { const s = L.solids; listsMod.rebuildBodyLists(world, L); return L.solids === s; })());
+  }
+
+  // (b) mid-tick death honesty: a foe killed AFTER the rebuild is never
+  // acquired off the stale pool — the consumer's own alive check skips him.
+  if (listsMod) {
+    const world = makeWorld({ field: flatF, seed: 7 });
+    const sq = makeSquad(1, "rifles", 1, 0, 0);
+    spawnSquadMembers(world, sq);
+    const foe = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 10, hp: 58 });
+    listsMod.rebuildBodyLists(world, listsMod.makeBodyLists());
+    foe.alive = false;                                      // dies mid-tick, list is stale
+    squadFire(world, sq, 1 / 60);
+    ok("T10(b): a foe killed after the rebuild draws no fire off the stale pool",
+      world.projectiles.length === 0, `projectiles=${world.projectiles.length}`);
+  }
+
+  // (c) THE KEYSTONE: twin firefight, with and without the lists installed —
+  // identical worldHash, identical rng draw count, after 8 sim-seconds of
+  // squads, enemy shooters and a live tower-style scan all running together.
+  if (listsMod) {
+    const run = (withLists) => {
+      const { world, sq } = buildZoo();
+      world.dt = 1 / 60;
+      const T = makeTerritory(29, 57);
+      T.sight = makeSight(T);
+      let draws = 0;
+      const raw = world.rng;
+      world.rng = () => { draws++; return raw(); };
+      const L = listsMod.makeBodyLists();
+      for (let i = 0; i < 480; i++) {
+        if (withLists) listsMod.rebuildBodyLists(world, L);
+        if (i % 15 === 0) stepSight(world, T.sight, idUV, idW);
+        stepUnits(world, straightGrid(0, 1), identFwdDir, T, idUV);
+        stepSquad(world, sq, world.dt);
+        squadFire(world, sq, world.dt, T, idUV);
+        stepWorld(world);
+      }
+      return `${worldHash(world)}|${draws}`;
+    };
+    ok("T10(c) KEYSTONE: lists installed vs absent — identical worldHash and draw count",
+      run(true) === run(false), `${run(true)} vs ${run(false)}`);
+  }
+}
+// ==== end P6 T10 ==============================================================
+
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
   process.exit(1);

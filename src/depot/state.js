@@ -536,8 +536,9 @@ export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })
     // exists somewhere in range. Sight gating (VISION, mk0.72) is untouched
     // on both paths.
     const scanUnits = () => {
+      const pool = world._L ? (enemyTeam === 2 ? world._L.foes : world._L.friends) : world.bodies; // T10
       let best = null, bd = eR * eR;
-      for (const e of world.bodies) {
+      for (const e of pool) {
         if ((e.kind !== "unit" && e.kind !== "vehicle") || !e.alive || e.team !== enemyTeam) continue;
         const dx = e.pos.x - u.pos.x, dz = e.pos.z - u.pos.z;
         const d2 = dx * dx + dz * dz;
@@ -557,8 +558,9 @@ export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })
     // pick — nearest, ties by body id order (the scan order gives this).
     // Zero rng draws.
     const scanStructs = () => {
+      const pool = world._L ? (squad.team === 1 ? world._L.structsFor1 : world._L.structsFor2) : world.bodies; // T10
       let best = null, bs = eR * eR;
-      for (const s of world.bodies) {
+      for (const s of pool) {
         if (!hostileStructure(s, squad.team)) continue;
         const cs = toUV(s.pos.x, s.pos.z);
         if (!fieldReaches(T, cs.u, cs.v, squad.team)) continue;
@@ -607,8 +609,9 @@ export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })
 export const POSSESS_ACC = 0.25;   // spread multiplier under player control // provisional (F5)
 export const POSSESS_SNAP_R = 2;   // m — reticle-to-enemy snap radius // provisional (F5)
 export function snapTargetNear(world, aim, T, toUV, r = POSSESS_SNAP_R) {
+  const pool = world._L ? world._L.foes : world.bodies;     // T10
   let best = null, bd = r * r;
-  for (const b of world.bodies) {
+  for (const b of pool) {
     if ((b.kind !== "unit" && b.kind !== "vehicle") || !b.alive || b.team !== 2) continue;
     const dx = b.pos.x - aim.x, dz = b.pos.z - aim.z, d2 = dx * dx + dz * dz;
     if (d2 >= bd) continue;
@@ -835,7 +838,8 @@ const FRIENDLY_MARGIN = 0.4;
 // tower's own position). Passing the shooter's id through lets the check
 // skip its own body while still catching every OTHER friendly it might hit.
 function friendlyBlocksPoint(world, x, y, z, selfId) {
-  for (const b of world.bodies) {
+  const pool = world._L ? world._L.friendly : world.bodies; // T10
+  for (const b of pool) {
     // Kind-not-mobility filter (6.5 Task 1, mirrors solidBlocksPoint):
     // town/depot chunks are dynamic (mass 88-320), so the old `invM > 0`
     // skip made the team-0-chunk clause below dead code — CAREFUL never

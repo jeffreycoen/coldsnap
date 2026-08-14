@@ -134,7 +134,8 @@ function stepTank(world, grid, t, dt, fwdDir, T, toUV = (x, z) => ({ u: x, v: z 
   const muzzle = { x: t.pos.x, y: t.pos.y + 1.2, z: t.pos.z };
   const eR = effRange(world, muzzle, fspec);
   let tgt = null, td = eR * eR;
-  for (const s of world.bodies) {
+  const pool = world._L ? world._L.structsFor2 : world.bodies; // T10
+  for (const s of pool) {
     // FRONT F1 (4c): the shared hostile-structure set — behavior identical
     // to the old inline tower|wall filter except depot masonry joins it.
     if (!hostileStructure(s, 2)) continue;
@@ -167,8 +168,9 @@ function stepTank(world, grid, t, dt, fwdDir, T, toUV = (x, z) => ({ u: x, v: z 
 // men and masonry alike). fieldReaches is read with the ATTACKER's own team
 // (2); arcClears threads the shooter's own id (self-hit law).
 function nearestPlayerUnit(world, u, muzzle, fspec, R2, urgency, T, toUV) {
+  const pool = world._L ? world._L.friends : world.bodies;  // T10
   let best = null, bd = R2 * urgency * urgency; // (urgency*R)^2
-  for (const s of world.bodies) {
+  for (const s of pool) {
     if (s.kind !== "unit" || !s.alive || s.team !== 1) continue;
     const c = toUV(s.pos.x, s.pos.z);
     if (!fieldReaches(T, c.u, c.v, 2)) continue; // attacker-sign fog gate
@@ -307,7 +309,8 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u
     u._effR = effRange(world, muzzle, fspec);
     R2 = u._effR * u._effR;
     let td = R2;
-    for (const s of world.bodies) {
+    const pool = world._L ? world._L.structsFor2 : world.bodies; // T10
+    for (const s of pool) {
       // FRONT F1 (4c): shared hostile-structure set — identical to the old
       // inline tower|wall filter except depot masonry joins it.
       if (!hostileStructure(s, 2)) continue;
@@ -401,7 +404,8 @@ function stepGrenadier(world, u, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, 
     u._effR = effRange(world, muzzle, fspec);
     R2 = u._effR * u._effR;
     let td = R2;
-    for (const b of world.bodies) {
+    const pool = world._L ? world._L.structsFor2 : world.bodies; // T10
+    for (const b of pool) {
       // FRONT F1 (4c): shared hostile-structure set (depot masonry joins).
       if (!hostileStructure(b, 2)) continue;
       // VISION (mk0.72): sight gates the lob too.
@@ -458,7 +462,8 @@ function stepSapper(world, u, dt) {
     }
     return true;
   }
-  for (const t2 of world.bodies) {
+  const pool = world._L ? world._L.structsFor2 : world.bodies; // T10
+  for (const t2 of pool) {
     // FRONT F1 (4c): the sapper's wall-seek gains depot chunks via the
     // shared hostile-structure set.
     if (!hostileStructure(t2, 2)) continue;

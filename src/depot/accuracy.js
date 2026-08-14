@@ -42,7 +42,8 @@ const SOLID_KINDS = new Set(["rock", "wall", "tower", "tree", "chunk"]);
 // battlefield debris (shattered chunks) now also blocks aiming — correct
 // physics (rubble is cover), and exposureAt already treated it as cover.
 export function solidBlocksPoint(world, x, y, z, selfId) {
-  for (const b of world.bodies) {
+  const pool = world._L ? world._L.solids : world.bodies;   // T10: typed pool, full-scan fallback
+  for (const b of pool) {
     if (!b.alive || (selfId != null && b.id === selfId)) continue;
     if (!SOLID_KINDS.has(b.kind)) continue;
     if (b.invM > 0 && b.kind !== "chunk" && b.kind !== "tree") continue; // dynamic non-masonry never blocks
@@ -156,7 +157,8 @@ export function losGraze(world, muzzle, aim) {
   const dx = aim.x - muzzle.x, dy = aim.y - muzzle.y, dz = aim.z - muzzle.z;
   const len = Math.hypot(dx, dy, dz); if (len < 2) return 0;
   let worst = 0;
-  for (const b of world.bodies) {
+  const pool = world._L ? world._L.statics : world.bodies;  // T10
+  for (const b of pool) {
     if (!b.alive || b.invM > 0) continue;                    // static solids only
     if (b.kind !== "rock" && b.kind !== "wall" && b.kind !== "tower" && b.kind !== "tree" && b.kind !== "chunk") continue;
     // coarse reject: box vs segment AABB
@@ -177,7 +179,8 @@ export function losGraze(world, muzzle, aim) {
 // sides of the war get this, symmetric with the graze exemption above.
 const BRACE_R = 1.2, BRACE_K = 0.85; // provisional (F5)
 export function bracedAt(world, x, z) {
-  for (const b of world.bodies) {
+  const pool = world._L ? world._L.solids : world.bodies;   // T10
+  for (const b of pool) {
     if (!b.alive || !SOLID_KINDS.has(b.kind)) continue;
     if (b.invM > 0 && b.kind !== "chunk" && b.kind !== "tree") continue;
     if (Math.abs(x - b.pos.x) <= b.hx + BRACE_R && Math.abs(z - b.pos.z) <= b.hz + BRACE_R) return true;

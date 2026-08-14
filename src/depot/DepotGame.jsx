@@ -26,6 +26,7 @@ import { makeTerritory, stepTerritory, holderAt, canBuild, fogStateFor, valueAt,
 import { makeSight, stepSight, seenAt, eyeOf, steerReticle, reclampReticle } from "./sight.js";
 import { fwdUFor, fwdDirFor, invWFor, clampToRimFor } from "./orient.js";
 import { SAVE_KEY, serializeFront, burnFront, restoreBodies, restoreWelds, restoreCensus, restoreSquads } from "./save.js";
+import { makeBodyLists, rebuildBodyLists } from "./lists.js";
 import Dispatch from "./Dispatch.jsx";
 import FieldManual from "../ui/FieldManual.jsx";
 
@@ -726,8 +727,9 @@ export function stepTowers(world, T, discipline, possessedId) {
     b.scanCd = (b.scanCd || 0) - dt;
     if (!best && b.scanCd <= 0) {
       b.scanCd = 0.11 + (b.id % 8) * 0.011;
+      const pool = world._L ? world._L.foes : world.bodies; // T10
       let bd = eR * eR;
-      for (const e of world.bodies) {
+      for (const e of pool) {
         if ((e.kind !== "unit" && e.kind !== "vehicle") || !e.alive || e.team !== 2) continue;
         const c = invW(e.pos.x, e.pos.z);
         if (!fieldReaches(T, c.u, c.v, 1)) continue;
@@ -982,7 +984,8 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
       const arms = INFANTRY_ARMS[sq.type];
       if (!arms) return;
       const R2 = arms.range * arms.range;
-      for (const e of world.bodies) {
+      const pool = world._L ? world._L.foes : world.bodies; // T10
+      for (const e of pool) {
         if ((e.kind !== "unit" && e.kind !== "vehicle") || !e.alive || e.team !== 2) continue;
         const dx = e.pos.x - sq.anchor.x, dz = e.pos.z - sq.anchor.z;
         if (dx * dx + dz * dz > R2) continue;
@@ -1648,6 +1651,9 @@ export default function DepotGame({ onExit, resume = null }) {
         // stamp. Transient run state, never serialized — a resumed run
         // rebuilds both within a second (no save.js edits).
         _market: null, _marketAcc: 0, _buyAt: -9,
+        // P6 T10 / Task 5 Amendment 1 (mk1.19): the idle gate — true once
+        // the war goes hot (stashed by the hud census pass); starts false.
+        _hot: false,
         // The attacker's economy — seeded off the run's own rng stream, not
         // an unseeded generator, so ?seed= replays reproduce the same
         // regiment. Mutated in place by planWave (buy-time depletion — the
@@ -3298,6 +3304,21 @@ export default function DepotGame({ onExit, resume = null }) {
           if (terrGuard > 0 && R.updateTerritory) R.updateTerritory();
           world.events.length = 0;
           const pSim0 = perf ? performance.now() : 0; // stopwatch: sim bracket opens
+          // P6 T10 (mk1.19): the pool rebuild runs ONCE PER FRAME, not once
+          // per sub-step (Task 5's Amendment 1 finding — a catch-up frame
+          // running six sub-steps paid six rebuilds in exactly the frames
+          // that were already worst). Staleness widens from one tick to one
+          // frame; still deterministic. THE IDLE GATE (Task 5 Amendment 1
+          // Step A1-1): the pools exist only while the war is hot — squads,
+          // towers, or enemies afield. Cold frames null the lists and every
+          // consumer full-scans exactly as before the pools existed
+          // (pools-vs-full-scan is proven identical, so the gate can be
+          // cheap and even frame-paced without touching determinism of
+          // outcomes). _hot is stashed by the hud census pass below.
+          if (S.acc >= STEP) {
+            if (S._hot) rebuildBodyLists(world, world._L || makeBodyLists());
+            else world._L = null;
+          }
           let guard = 0;
           while (S.acc >= STEP && guard++ < 6) {
             S.acc -= STEP;
@@ -3435,6 +3456,11 @@ export default function DepotGame({ onExit, resume = null }) {
               else if (b.kind === "wall") { if (!b.course) nw++; } // the HUD counts WALLS, not courses (P1.5 T2)
               else if (b.kind === "tower") nt++;
             }
+            // P6 T10 / Task 5 Amendment 1 (mk1.19): the idle gate's flag —
+            // the war is hot (pools worth building) while any enemy or
+            // tower stands, or any squad is fielded. Stashed here (already
+            // a full body walk) rather than adding a second one.
+            S._hot = en > 0 || nt > 0 || S.squads.length > 0;
             const nowS = performance.now() / 1000;
             S.toasts = S.toasts.filter((t) => nowS - t.t < 2.2);
             setHud({
