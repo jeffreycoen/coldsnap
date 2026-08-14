@@ -26,9 +26,138 @@
 
 **Task 9 — The README** — POPULATED BELOW (mk1.16).
 
-**Task 10 — The body lists, third landing** — POPULATED BELOW (mk1.19; ordered by the ramp's no-headroom verdict).
+**Task 10 — The body lists, third landing** — POPULATED BELOW (mk1.19; ordered by the ramp's no-headroom verdict). SHIPPED (Amendment 3, owner's ruling): battles halved, +0.05 ms idle accepted; new ceiling 80 men confirmed / ~100 by trend.
+
+**Task 11 — The two-pressure wall** — POPULATED BELOW (mk1.20; the market sized against the ceiling).
 
 **Close — the load ramp** — POPULATED BELOW (mk1.18). RUN (2026-08-14, two repeats, Amendment 1 normalization): NO HEADROOM — rung 1 (56 men fighting, 1,299 sleeping stones, 0 awake) measures 11.58/11.93 ms normalized against the 11.0 line. Task 10 answers it; the ramp re-runs after Task 10 for the real ceiling, then the market is sized and the owner's playtest closes the phase.
+
+---
+
+# TASK 11 — The two-pressure wall (mk1.20)
+
+**What it does.** The owner's soft-wall ruling made law: every price carries TWO pressures — the type's own standing count (strong, today's curve, unchanged) plus the whole field's living men measured against the engine ceiling (mild at first, heavy as the war swells). Buying rifles makes rifles notably dearer and everything a little dearer. No sell-outs; the 4x cap stands; repriced every second as today. One file changes plus its test pins — every consumer (the bar, the manifest, engineer lines, the enemy's war chest) inherits the new curve through the existing plumbing untouched.
+
+**The formula (owner's revisions: ridiculous at the ceiling, and the type's own wall twice as tight).** Both pressures are the SAME wall shape — `wall(n, pole) = pole / (pole − n)`, clamped at 50x. The price: `base × wall(own, 2K) × wall(men, 88)`.
+- **The type wall**: pole at TWICE the type's familiar K, so the doubling point is exactly where it is today (rifles double at 16) but the curve goes vertical approaching 2K: rifles 2x at 16, 4x at 24, 8x at 28, 50x near 32. The old flat 4x type cap dies.
+- **The field wall**: pole 88, just past the mk1.19 ramp's confirmed 80 — 1.3x at 20 men, 2x at 44, 5x at 70, **11x at the measured limit, 22x at 84, 50x beyond**.
+- Spamming one type climbs BOTH walls; everyone else climbs only the field wall. All dials provisional (F5), tuned by the owner's play.
+
+**Suggested model:** Sonnet — one module edit, one re-pin, one new test block, all specified.
+
+**Required reading (re-verify at dispatch):**
+- `src/depot/market.js` — whole (62 lines).
+- `scripts/depot-test.mjs` — the P6 T4 block (lines 6120-6186) and the tail (`if (fails.length)`, ~6188).
+- `src/depot/DepotGame.jsx` — ONLY the market wiring lines: 1741 (`priceNow`), 2154/2200 (`fieldPrices` calls), 3362 (the 1 Hz recompute) — read to confirm no consumer edit is needed; do not edit them.
+- `src/version.js` — whole.
+
+**Trap notes:**
+- `_men` is a TALLY key riding in the counts object, not a family: it must never appear in `MARKET_K`, and `computePrices`' loops (which iterate the FAMILY maps) never see it. The underscore is the convention.
+- Player squad members are `kind === "unit"` bodies too — one counting site in the bodies walk covers BOTH armies; do not also count via the squads walk (that would double-count player men).
+- The ONE expected old-test movement is T4(b)'s expected-price formula (it computes live counts, which now carry `_men`). It is re-pinned in Step 1. Any OTHER assert moving is a STOP.
+- No rng; `lint:depot` gates. No consumer files change.
+
+**Step 1 — failing asserts first.** Four edits to `scripts/depot-test.mjs`, then run `npm run test:depot` and confirm: the new T11 asserts red (MARKET_KG missing / `_men` missing), the re-pinned T4 asserts red (new formula vs old code), everything else green.
+
+(1a) T4 re-pins — the old formula's pins move to the two-wall form (three named movements, no others):
+- Line 6129, the exports check: `mkt.MARKET_CAP === 4` becomes `mkt.MARKET_KG === 88` (MARKET_CAP dies with the flat cap).
+- Lines 6138-6139, the cap assert becomes the type-wall clamp: 
+
+```js
+    const Pcap = mkt.computePrices({ rifles: 999 });
+    ok("T4(a): a type bought out tops at its own pole — 32x for rifles", Pcap.player.sq_rifles === SQUAD_SPECS.rifles.cost * 32, `${Pcap.player.sq_rifles}`);
+```
+
+(A type's wall tops at its own pole, `2K` — the 50x clamp binds only walls whose pole exceeds 50, i.e. the field wall.)
+
+- Lines 6152-6153, the expected-price expressions become the two-wall arithmetic (10 men afield: type wall 32/(32−10), field wall 88/(88−10)):
+
+```js
+        Pm.player.sq_rifles === Math.max(1, Math.round(SQUAD_SPECS.rifles.cost * (32 / (32 - 10)) * (88 / (88 - 10)))) &&
+        Pm.foe[""] === Math.max(1, Math.round(ENEMY_SPECS[""].bounty * (32 / (32 - 10)) * (88 / (88 - 10)))),
+```
+
+(1b) The T11 block, inserted immediately before the tail's `if (fails.length) {`:
+
+```js
+// ==== P6 T11: the two-pressure wall =========================================
+// mk1.20. Every price carries the type's own count (strong) plus the whole
+// field's living men against the engine ceiling (mild) — the owner's ruling:
+// "all prices increase with each buy but the prices for the unit purchased
+// go up more substantially." Soft wall, no sell-outs, the 4x cap stands.
+{
+  console.log("\n[p6 t11: the two-pressure wall]");
+  let mkt = null;
+  try { mkt = await import("../src/depot/market.js"); } catch (e) {}
+  ok("T11: the two poles exported — field 88, clamp 50", !!mkt && mkt.MARKET_KG === 88 && mkt.WALL_CLAMP === 50);
+  if (mkt) {
+    const base = SQUAD_SPECS.rifles.cost;
+    const Pg = mkt.computePrices({ _men: 44 });
+    ok("T11(a): a half-full field doubles every price", Pg.player.sq_rifles === base * 2 && Pg.player.gun === TOWER_SPECS.gun.cost * 2,
+      `rifles ${Pg.player.sq_rifles}, gun ${Pg.player.gun}`);
+    const Pk = mkt.computePrices({ rifles: 16 });
+    ok("T11(b): the type wall still doubles at K", Pk.player.sq_rifles === base * 2, `${Pk.player.sq_rifles}`);
+    const Pboth = mkt.computePrices({ rifles: 16, _men: 44 });
+    ok("T11(b2): the two walls multiply — the bought type rises more", Pboth.player.sq_rifles === base * 4, `${Pboth.player.sq_rifles}`);
+    const Ptype = mkt.computePrices({ rifles: 28 });
+    ok("T11(c): a spammed type is ridiculous on its own line — 8x at 28 rifles",
+      Ptype.player.sq_rifles === base * 8, `${Ptype.player.sq_rifles}`);
+    const Pwall = mkt.computePrices({ _men: 80 });
+    ok("T11(c2): the measured ceiling is ridiculous — 11x at 80 men",
+      Pwall.player.sq_rifles === Math.max(1, Math.round(base * (88 / 8))), `${Pwall.player.sq_rifles}`);
+    const Pcap = mkt.computePrices({ rifles: 999, _men: 999 });
+    ok("T11(c3): both walls topped — the rifle pole (32x) times the field clamp (50x)", Pcap.player.sq_rifles === base * 32 * 50, `${Pcap.player.sq_rifles}`);
+    {
+      const flatM = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+      const world = makeWorld({ field: flatM, seed: 3 });
+      for (let i = 0; i < 6; i++) spawnUnit(world, { x: i * 2, z: 0 }, "");
+      const sq = makeSquad(1, "rifles", 1, 20, 20);
+      spawnSquadMembers(world, sq);
+      const counts = mkt.marketCounts(world, [sq]);
+      ok("T11(d): _men counts every living man, both armies", counts._men === 10, `${counts._men}`);
+    }
+  }
+}
+// ==== end P6 T11 =============================================================
+```
+
+**Step 2 — the module.** Three edits to `src/depot/market.js`:
+
+(2a) REPLACE `export const MARKET_CAP = 4;` (line 9) with:
+
+```js
+// THE TWO WALLS (mk1.20, owner's rulings): both pressures are the same
+// asymptotic wall, wall(n, pole) = pole/(pole - n), clamped at 50x.
+// The TYPE wall's pole is twice the type's K — the doubling point stays at
+// K exactly as before, but the curve goes vertical approaching 2K (the old
+// flat 4x cap is dead). The FIELD wall's pole is 88 living men, both
+// armies — just past the mk1.19 ramp's confirmed 80: 11x at the measured
+// limit, 22x at 84, 50x beyond. The last slots on the field cost like the
+// last seats on the plane. // provisional (F5), every number
+export const MARKET_KG = 88;
+export const WALL_CLAMP = 50;
+```
+
+(2b) In `marketCounts`' bodies walk, the first line inside the loop after the alive check (line 33's `if (!b.alive) continue;`):
+
+```js
+    if (b.kind === "unit") c._men = (c._men || 0) + 1; // both armies — squad men are unit bodies too
+```
+
+(2c) The `priced` helper (line 43-44) becomes the two-wall form:
+
+```js
+const wall = (n, pole) => {
+  const m = Math.min(n, pole - 1); // stay off the pole
+  return Math.min(WALL_CLAMP, pole / (pole - m));
+};
+const priced = (base, fam, counts) =>
+  Math.max(1, Math.round(base * wall(counts[fam] || 0, 2 * MARKET_K[fam]) * wall(counts._men || 0, MARKET_KG)));
+```
+
+**Step 3 — green.** `npm run test:depot` — fully green; the only movements are the named T4(b) re-pin and the new T11 block. Anything else is a STOP.
+
+**Step 4 — ship.** `src/version.js` → `"mk1.20"`; build AFTER the bump. Gates: `npm run lint:depot` · `SMOKE_ONLY=depot node scripts/smoke.mjs` (post-bump preview). Commit `the two-pressure wall: every man on the field raises the price of the next (mk1.20)`, staging only `src/depot/market.js`, `scripts/depot-test.mjs`, `src/version.js`; push.
 
 ---
 
