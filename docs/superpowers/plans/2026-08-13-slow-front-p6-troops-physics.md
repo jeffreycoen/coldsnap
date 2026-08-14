@@ -16,11 +16,11 @@
 
 **Task 4 — The living market** — POPULATED BELOW (mk1.13).
 
-**Task 5 — The body lists, resurrected** — POPULATED BELOW (mk1.14).
+**Task 5 — The body lists, resurrected** — EXECUTED AND RETIRED (2026-08-13): the re-measurement failed the ship rule (idle regressed both repeats despite the cold-frame gate; the defended battle won −25% to −40%). Reverted clean; no mk1.14 shipped; the mark is NOT skipped — Task 6 takes mk1.14. Retirement recorded in the decision record.
 
 **Task 6 — The weld scan sleeps too** *(skeleton)*
 - The per-tick walk over every weld skips what sleeps — the collision books' cousin.
-- Same engine gates; before/after measured alongside Task 5's numbers.
+- Same engine gates; before/after measured with the defended-scenario instrument, standing alone (mk1.14).
 
 **Task 7 — The front door** *(skeleton)*
 - The site opens straight into Winter Front's start screen; one small tech-demos link to a second page.
