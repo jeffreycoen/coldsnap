@@ -52,6 +52,29 @@
 9. EXPECTED RE-PINS: none. The keystone battles (FRONT T6, P6 T2's fixtures) drive `stepWorld` directly — the lists never install there, the pools' keystone is this task's own zoo twin (archived T1(c), now T5(c)). Any old assert moving is a STOP.
 10. GATES (ONLY these): parse changed files · `npm run lint:depot` (lists.js is rng-free) · `npm run test:depot` (archived Step 1's block red-first as written — module missing — then fully green, zero re-pins) · `npm run build` after the bump · `SMOKE_ONLY=depot npm run smoke` · the Step 0/AFTER Pi captures with delta 6's ship rule. No golden (core.js untouched — game layer only).
 
+## AMENDMENT 1 (owner's ruling, 2026-08-13) — the pools sleep at peace, and the fight gets a defense
+
+*Found in execution: the ship rule failed both windows — idle regressed 12–20% (the per-frame rebuild walks ~2,500 bodies while nothing reads a pool) and the battle window measured flat (the capture's assault marches on an UNDEFENDED depot, so the target-hunting scans the pools accelerate barely run; the collapse cost it measures is the collision books' territory, already won). Rulings: the design gains an idle gate, the instrument gains a defense, ONE re-measurement decides under the unchanged rule — and a second failure retires the body lists for good.*
+
+**Step A1-1 — the idle gate.** The frame-loop rebuild becomes:
+```js
+          // AMENDMENT (mk1.14): the pools exist only while the war is hot —
+          // squads, towers, or enemies afield. Cold frames null the lists and
+          // every consumer full-scans exactly as before the pools existed
+          // (pools-vs-full-scan is proven identical, so the gate can be
+          // cheap and even frame-paced without touching determinism of
+          // outcomes). _hot is stashed by the hud census pass below.
+          if (S.acc >= STEP) {
+            if (S._hot) rebuildBodyLists(world, world._L || makeBodyLists());
+            else world._L = null;
+          }
+```
+And the hud tick's existing body walk (the en/nw/nt counters) stashes the flag beside its counts: `S._hot = en > 0 || nt > 0 || S.squads.length > 0;` (initialized `S._hot = false;` at boot beside the market fields).
+
+**Step A1-2 — the instrument fields a defense.** `.superpowers/diag-t6-perf.mjs` (untracked) gains a defended battle window: before window B's assault, drive the debug hooks — `__DEPOTFINDBUILDABLE__` + `__DEPOTBUILD__` to raise 4 gun towers and 2 mg towers, `__DEPOTSQUAD__` to field 2 rifle squads and 1 mg team near the depot, grant scrap as needed via the harness's own state (or build pre-market-pace via the hook, which is unpaced by design) — THEN `__DEPOTSPAWN__(40)` plus the hangar shells, run 20s. Window A (idle) unchanged. Both BEFORE and AFTER captures re-run with this amended script (the old BEFORE numbers measured a different scenario and are void).
+
+**Step A1-3 — the verdict.** Same ship rule, one re-measurement: after-mean sim at or below before-mean, both windows, both repeats. PASS ships mk1.14; FAIL reverts every code edit (the test block's module assert included) and the body lists are RETIRED — recorded as such, never a third attempt.
+
 **Required reading (re-verify at dispatch):** the WHOLE archived spec section including its Amendment; `src/depot/accuracy.js` whole; `src/depot/squads.js` whole; `src/depot/state.js` — `squadFire` through `friendlyFouls` (the four consumer sites); `src/depot/units.js` whole; `src/depot/DepotGame.jsx` — imports, `stepTowers`, `engageCheck`, the frame-loop sim bracket; `scripts/depot-test.mjs` 1–70 + tail; `.superpowers/diag-t6-perf.mjs` (run-only); `src/version.js`.
 
 **Allowed files:** `src/depot/lists.js` (new), `src/depot/accuracy.js`, `src/depot/squads.js`, `src/depot/state.js`, `src/depot/units.js`, `src/depot/DepotGame.jsx`, `scripts/depot-test.mjs`, `src/version.js`.
