@@ -22,7 +22,11 @@
 
 **Task 7 — The front door** — POPULATED BELOW (mk1.14).
 
-**Task 8 — The README** *(skeleton; takes mk1.15)*
+**Task 8 — The field manual** *(skeleton; owner's ruling, 2026-08-13; takes mk1.15)*
+- A first-entry tour: linked cards teaching the bell, real stone, squad orders and engineer-only building, take-control, the living market, the fall.
+- NEXT/BACK/SKIP, don't-show-again honored forever, reopenable as FIELD MANUAL from the start overlay.
+
+**Task 9 — The README** *(skeleton; takes mk1.16)*
 - Showcase first: screenshots from the deployed game, the bold true claims.
 - The technical section beneath, for engineers who keep reading.
 
