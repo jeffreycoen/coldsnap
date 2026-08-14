@@ -28,9 +28,72 @@
 
 **Task 10 — The body lists, third landing** — POPULATED BELOW (mk1.19; ordered by the ramp's no-headroom verdict). SHIPPED (Amendment 3, owner's ruling): battles halved, +0.05 ms idle accepted; new ceiling 80 men confirmed / ~100 by trend.
 
-**Task 11 — The two-pressure wall** — POPULATED BELOW (mk1.20; the market sized against the ceiling).
+**Task 11 — The two-pressure wall** — POPULATED BELOW (mk1.20; the market sized against the ceiling). SHIPPED.
+
+**Task 12 — Desktop takes command** — POPULATED BELOW (mk1.21; the owner's closing-playtest findings).
 
 **Close — the load ramp** — POPULATED BELOW (mk1.18). RUN (2026-08-14, two repeats, Amendment 1 normalization): NO HEADROOM — rung 1 (56 men fighting, 1,299 sleeping stones, 0 awake) measures 11.58/11.93 ms normalized against the 11.0 line. Task 10 answers it; the ramp re-runs after Task 10 for the real ceiling, then the market is sized and the owner's playtest closes the phase.
+
+---
+
+# TASK 12 — Desktop takes command (mk1.21)
+
+**What it does.** The owner's closing playtest found the last defect: on desktop, a possessed squad aims with the mouse but has no trigger — the war screen still wears the phone chrome. Three fixes, all ruled: LEFT CLICK FIRES while possessed (hold to keep volleying, exactly like holding the phone FIRE button); the phone sticks and FIRE button hide on desktop (mouse aims, WASD walks, click shoots — RELEASE and the possession chip stay); and CONTROLS returns to the front door as a quiet link (it also stays on the Proving Range page — remapping applies to the demos, but the door is where the owner looks).
+
+**Suggested model:** Sonnet — three anchored edits and a wiring line, all specified.
+
+**Required reading (re-verify at dispatch):**
+- `src/depot/DepotGame.jsx` — ONLY: the canvas pointer handlers (2502-2560), the possession input block (3120-3202), the possession chrome JSX (3736-3800), the release paths (2000-2035, where `fireHeld` is cleared).
+- `src/ui/StartScreen.jsx` — whole (111 lines).
+- `src/ui/App.jsx` — whole (149 lines).
+- `scripts/smoke.mjs` — lines 55-90 (the start section: confirm the new button breaks no text pin) and 167-179 (the keymap section: it reaches CONTROLS through the demos page — unchanged).
+- `src/version.js` — whole.
+
+**Trap notes:**
+- The mouse-fire branch must claim the click BEFORE the pan/tap machinery: return without touching `pointers`/`downPt`, so a fire-click can never pan the camera or land a ground tap. `e.pointerType === "mouse" && e.button === 0` is the whole gate — touch keeps the FIRE button, right/middle click stay free.
+- The possession release paths already clear `fireHeld` — do not add another clearing site.
+- RELEASE (`data-possess-release`) and the possessed chip stay on BOTH platforms; only the two sticks and the FIRE button gain the `isTouch` gate.
+- The desktop reticle already follows the mouse (the `!isTouch && S.pointer` branch) — do not touch the aim path.
+- `data-menu="controls"` will now exist on TWO screens (door and Proving Range) — never simultaneously mounted, so smoke's selectors stay unambiguous.
+- Expected test movement: NONE. Any assert or smoke pin moving is a STOP.
+
+**Step 1 — the trigger.** `src/depot/DepotGame.jsx`, `onPointerDown` (line 2502): immediately after `A.ensure();` insert:
+
+```js
+        // DESKTOP FIRE (P6 T12, mk1.21, owner's playtest): while possessed,
+        // the left mouse button IS the trigger — held, it volleys like the
+        // phone FIRE button; the click never becomes a pan or a tap. The
+        // possession release paths already clear fireHeld.
+        if (S.possess && e.pointerType === "mouse" && e.button === 0) {
+          canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
+          S.fireHeld = true;
+          return;
+        }
+```
+
+And in `onPointerUp` (line 2539), first line of the handler:
+
+```js
+        if (S.fireHeld && e.pointerType === "mouse") { S.fireHeld = false; pointers.delete(e.pointerId); return; }
+```
+
+**Step 2 — the chrome hides on desktop.** Same file, three JSX gates (anchor by the refs/labels, not line numbers):
+- The left stick's `{hud.possessed && hud.possessed.kind !== "tower" && (` becomes `{isTouch && hud.possessed && hud.possessed.kind !== "tower" && (`.
+- The right stick's `{hud.possessed && (` (the block holding `joyRKnobRef`) becomes `{isTouch && hud.possessed && (`.
+- The FIRE button's `{hud.possessed && (` (the block holding `fireBtnRef`, `data-possess-fire`) becomes `{isTouch && hud.possessed && (`.
+- RELEASE and the `data-possessed-chip` header stay ungated.
+
+**Step 3 — CONTROLS on the door.** `src/ui/StartScreen.jsx`: the props gain `onControls` (`{ onDepot, onDepotResume, onDemos, onControls }`), and after the PROVING RANGE button (line 101-103) insert:
+
+```jsx
+        <button data-menu="controls" style={{ ...option(), marginTop: 8, opacity: 0.7, fontSize: 12 }} onClick={onControls}>
+          CONTROLS — keys and remapping →
+        </button>
+```
+
+`src/ui/App.jsx`: the StartScreen return (line 145-148) gains `onControls={() => setScreen("controls")}`. (Controls' BACK already returns to the door.)
+
+**Step 4 — ship.** `src/version.js` → `"mk1.21"`; build AFTER the bump. Gates (ONLY these): `npm run lint:depot` · `npm run test:depot` (zero movements) · `SMOKE_ONLY=start,depot node scripts/smoke.mjs` (post-bump preview). Commit `desktop takes command: the left button is the trigger, controls at the door (mk1.21)`, staging only `src/depot/DepotGame.jsx`, `src/ui/StartScreen.jsx`, `src/ui/App.jsx`, `src/version.js`; push. The owner checks the click live on the deployed site.
 
 ---
 
