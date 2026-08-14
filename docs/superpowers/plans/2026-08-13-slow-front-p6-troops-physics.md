@@ -20,15 +20,92 @@
 
 **Task 6 — The weld scan sleeps too** — CUT (owner's ruling, 2026-08-13): the whole weld walk costs at or under the instrument's noise floor and the cache it needs is the phase's riskiest shape; its intent folds into the capacity ramp. Recorded in the decision record.
 
-**Task 7 — The front door** *(skeleton; takes mk1.14)*
-- The site opens straight into Winter Front's start screen; one small tech-demos link to a second page.
-- Every line of site copy audited against what the game is now — stale wording dies.
+**Task 7 — The front door** — POPULATED BELOW (mk1.14).
 
 **Task 8 — The README** *(skeleton; takes mk1.15)*
 - Showcase first: screenshots from the deployed game, the bold true claims.
 - The technical section beneath, for engineers who keep reading.
 
 **Close** — the owner's playtest closes the phase.
+
+---
+
+# TASK 7 — The front door (mk1.14)
+
+**What it does.** The site stops opening on a seven-button range menu and opens on WINTER FRONT — one identity, one action, three true laws. The owner's directive: the front door must unambiguously draw the player in and prime them. The old menu's five demo surfaces move whole to a second page behind one quiet link. Every line of door copy is audited against what the game is NOW — "WINTER RANGE COMMAND" and "the southern treeline" die.
+
+**The door (the look ships; the owner's eyes accept it live — no screenshot loops):**
+- Title block: `COLDSNAP` / `WINTER FRONT` / the mark. The subtitle "WINTER RANGE COMMAND" is deleted.
+- One tagline under the title: `A winter war in real stone.`
+- THE PRIMER — three laws, small and unmissable, between title and button:
+  - `The muster bell rings every 90 seconds. Everything that reaches this war comes off that truck.`
+  - `Every wall is real masonry. What you break stays broken — what falls, falls for real.`
+  - `When a depot falls, its war is over. The save burns. No rewinds.`
+- ONE dominant action: `▶ RESUME FRONT` (gold, today's card and copy) when a save exists; beneath it (or alone on a fresh slate) `▶ DIG IN — NEW FRONT` with today's two-tap burn-arm flow and copy, except the fresh-slate blurb becomes: `Two depots, one frozen valley, a river with one crossing. Break theirs before they break yours.`
+- The stale-save notice line stays as is.
+- The foot: one quiet link `THE PROVING RANGE — tech demos this war was built on →` and the device-appropriate control hint line (today's), and nothing else.
+
+**The second page (`DemosScreen`):** header `THE PROVING RANGE`, then today's five demo cards VERBATIM — Hold the Depot, Clearance Campaign, Contract Sandbox (medal row), Proving Grounds (medal row), Mech Test Range — plus the CONTROLS card (remap only ever applied to the demo surfaces, so it lives here), and `← BACK` to the front door.
+
+**Copy audit rulings (the "now" truths):** the in-game start overlay's `They come out of the southern treeline for the depot.` becomes `They are coming for your depot across the valley — wall your ground, gun the choke points.` (spawns wander now; the wall line already tells the engineer truth from mk1.12). The ponds line (`frozen ponds carry them faster — and you cannot build on ice`) stays — still true. The rest of the overlay (control hints, DIG IN, seed line) stays.
+
+**Suggested model:** Sonnet — component work and copy, all specified.
+
+**Required reading (re-verify at dispatch):**
+- `src/ui/StartScreen.jsx` — whole (156 lines; becomes the front door; the five demo cards move out).
+- `src/ui/App.jsx` — whole (141 lines; gains the `demos` screen; `RESUME_SCREENS` untouched).
+- `src/ui/theme.js` — whole (the shared styles the new page reuses).
+- `src/depot/DepotGame.jsx` — the start overlay (search `southern treeline`).
+- `scripts/smoke.mjs` — whole navigation layer: every surface's entry clicks a `data-menu` button on the OLD single menu; each such navigation must be updated to go front door → `data-menu="demos"` → the surface's card. Grep `data-menu` for the full list. The depot surface's entry stays one tap (it is the front door now).
+- `scripts/depot-test.mjs` — grep `data-menu`/`StartScreen` for pins (none known; any found is reported before touching).
+- `src/version.js`.
+
+**Trap notes:**
+- App.jsx routing: `menu` renders the front door; new screen key `demos` renders DemosScreen; all existing screen keys and the ESC map are untouched. The screen-persist logic (`RESUME_SCREENS`) is untouched — `demos` is not a resume screen.
+- The save probe/burn flow (probeFront, burnFront, the two-tap arm, `data-menu="depot"` / `data-menu="depot-resume"` attributes) moves INTO the front door UNCHANGED — the smoke and any tests key on those attributes.
+- The five demo cards move byte-similar (same `data-menu` attributes, same copy, same medal rows) — only their home changes.
+- SMOKE is the risk surface: every non-depot navigation gains one hop. Update each site minimally (`click [data-menu="demos"]` then the existing selector); the depot entries lose nothing. Run the FULL smoke — every surface's mount path changed.
+- EXPECTED RE-PINS: none in depot-test. Smoke edits are navigation, not assertions.
+- No engine, no depot logic beyond one overlay string — no golden, no keystone concerns.
+
+## Steps, in execution order
+
+**Step 1 — failing asserts first.** Insert the P6-T7 block before the tail summary; red against today's code. Record the reds.
+```js
+// ==== P6 T7: the front door =================================================
+// mk1.14 (Troops & Physics, Task 7). The site opens on WINTER FRONT — one
+// identity, one action, three laws — and the demos live behind one link.
+{
+  console.log("\n[p6 t7: the front door]");
+  const ss = fs.readFileSync(new URL("../src/ui/StartScreen.jsx", import.meta.url), "utf8");
+  const app = fs.readFileSync(new URL("../src/ui/App.jsx", import.meta.url), "utf8");
+  ok("T7: the range subtitle is dead", !/WINTER RANGE COMMAND/.test(ss));
+  ok("T7: the door carries the three laws", /muster bell rings every 90 seconds/.test(ss) && /real masonry/.test(ss) && /The save burns/.test(ss));
+  ok("T7: the demos left the door", !/PROVING GROUNDS/.test(ss) && !/MECH TEST RANGE/.test(ss) && !/HOLD THE DEPOT/.test(ss));
+  ok("T7: one quiet link leads to the range", /data-menu="demos"/.test(ss));
+  ok("T7: the demos page routes from the app shell", /DemosScreen/.test(app) && /data-menu="demos"/.test(ss));
+  const dg = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  ok("T7: the southern treeline is gone", !/southern treeline/.test(dg));
+  let dm = "";
+  try { dm = fs.readFileSync(new URL("../src/ui/DemosScreen.jsx", import.meta.url), "utf8"); } catch (e) {}
+  ok("T7: the five cards and controls live on the range page",
+    /HOLD THE DEPOT/.test(dm) && /CLEARANCE CAMPAIGN/.test(dm) && /CONTRACT SANDBOX/.test(dm) && /PROVING GROUNDS/.test(dm) && /MECH TEST RANGE/.test(dm) && /CONTROLS/.test(dm));
+}
+// ==== end P6 T7 ==============================================================
+```
+**Step 2 — DemosScreen.** New `src/ui/DemosScreen.jsx`: the five demo cards and the CONTROLS card cut byte-similar from StartScreen (same `data-menu` attributes, same handlers passed as props: onPlay/onSandbox/onCampaign/onControls/onMech/onTowerDef), medal loading (`coldsnap-medals`, `coldsnap-cs-medals`) and `starRow` MOVE here with them, header `THE PROVING RANGE`, `← BACK` button (`data-menu="back"`) calling `onBack`. Styles via the same `theme.js` imports.
+
+**Step 3 — the front door.** `src/ui/StartScreen.jsx` rewritten per the door spec above: keeps probeFront/burnFront/two-tap arm/RESUME/NEW flows and their `data-menu` attributes verbatim; gains the tagline, the three-law primer, and the `data-menu="demos"` foot link (`onDemos` prop); loses the five cards, the controls card, the medal machinery, and the range subtitle.
+
+**Step 4 — the route.** `src/ui/App.jsx`: `demos` screen key renders `<DemosScreen ...handlers onBack={() => setScreen("menu")} />`; StartScreen gains `onDemos={() => setScreen("demos")}`; nothing else moves.
+
+**Step 5 — the overlay line.** `src/depot/DepotGame.jsx`: the start-overlay sentence per the copy audit ruling above.
+
+**Step 6 — the smoke walks the new door.** `scripts/smoke.mjs`: every navigation that clicked a demo card on the old menu now clicks `[data-menu="demos"]` first; depot navigations unchanged; the BACK path is not exercised (keep it that way — minimal edits).
+
+**Step 7 — green, bump, build, smoke.** `npm run lint:depot` · `npm run test:depot` fully green (zero re-pins) · `src/version.js` → `"mk1.14"` · `npm run build` AFTER the bump · `npm run smoke` (FULL — every surface's mount path changed).
+
+**Gates (ONLY these):** parse changed files · `npm run lint:depot` · `npm run test:depot` (Step 1 red-first, then green; zero re-pins) · `npm run build` after the bump · `npm run smoke` (full). Allowed files: `src/ui/StartScreen.jsx`, `src/ui/DemosScreen.jsx` (new), `src/ui/App.jsx`, `src/depot/DepotGame.jsx`, `scripts/smoke.mjs`, `scripts/depot-test.mjs`, `src/version.js`. Commit `"the front door: one war, one button, three laws (mk1.14)"`, push, CI green, STOP. The owner opens the deployed site cold and judges: does it draw you in, does it prime you, is the range one quiet link away.
 
 ---
 
