@@ -3,16 +3,10 @@ import { COLORS, FONT, btn, detectTouch } from "./theme.js";
 import { MK } from "../version.js";
 import { probeFront, burnFront } from "../depot/save.js";
 
-// Display-only mirror of the demo's trial order for the medal star row; the
-// demo file is frozen and does not export TRIALS.
-const TRIAL_IDS = ["gunnery", "roadkill", "saturation", "demolition", "deep_end", "counter_battery", "thin_ice"];
-
-const medalColor = (m) =>
-  !m ? COLORS.btnBorder : m.deviation ? COLORS.dim : m.medal === "GOLD" ? COLORS.gold : m.medal === "SILVER" ? COLORS.text : "#b0764a";
-
-export default function StartScreen({ onPlay, onSandbox, onCampaign, onControls, onMech, onTowerDef, onDepot, onDepotResume }) {
-  const [medals, setMedals] = useState(null);
-  const [csMedals, setCsMedals] = useState(null);
+// THE FRONT DOOR (P6 T7, mk1.14). The site opens on WINTER FRONT — one
+// identity, one dominant action, three true laws — and the tech demos this
+// war was built on live one quiet link away (DemosScreen).
+export default function StartScreen({ onDepot, onDepotResume, onDemos }) {
   const [isTouch] = useState(detectTouch);
   // THE SAVED FRONT (P1 Task 3). null until the async probe lands — the menu
   // renders its normal self meanwhile and RESUME FRONT simply appears when
@@ -30,15 +24,6 @@ export default function StartScreen({ onPlay, onSandbox, onCampaign, onControls,
 
   useEffect(() => {
     let live = true;
-    const load = async (key, set) => {
-      try {
-        const r = await window.storage.get(key);
-        const m = JSON.parse(r.value);
-        if (live && m && typeof m === "object") set(m);
-      } catch (e) {}
-    };
-    load("coldsnap-medals", setMedals);
-    load("coldsnap-cs-medals", setCsMedals);
     // probeFront burns a save from another mark itself and reports it gone —
     // this era runs no migration machinery, so a stale front is simply told.
     (async () => { const f = await probeFront(); if (live) setFront(f); })();
@@ -55,15 +40,6 @@ export default function StartScreen({ onPlay, onSandbox, onCampaign, onControls,
     onDepot();
   };
 
-  const starRow = (m, hook) => m && (
-    <div style={{ marginTop: 6, fontSize: 13 }}>
-      {TRIAL_IDS.map((id) => (
-        <span key={id} style={{ color: medalColor(m[id]), marginRight: 4 }}>{m[id] && m[id].deviation ? "☆" : "★"}</span>
-      ))}
-      <span style={{ fontSize: 11, opacity: 0.7, marginLeft: 4 }}>{hook}</span>
-    </div>
-  );
-
   const option = (extra) => ({
     ...btn,
     display: "block",
@@ -79,8 +55,15 @@ export default function StartScreen({ onPlay, onSandbox, onCampaign, onControls,
       <div style={{ width: "min(420px, 92vw)", padding: "24px 0", margin: "auto" }}>
         <div style={{ textAlign: "center", marginBottom: 8 }}>
           <div style={{ fontSize: 34, color: COLORS.red, letterSpacing: 8 }}>COLDSNAP</div>
-          <div style={{ opacity: 0.7, letterSpacing: 3, fontSize: 12 }}>WINTER RANGE COMMAND</div>
+          <div style={{ fontSize: 13, letterSpacing: 8, color: COLORS.gold, marginTop: 2 }}>WINTER FRONT</div>
           <div data-mk style={{ opacity: 0.5, letterSpacing: 2, fontSize: 10, marginTop: 4 }}>{MK}</div>
+          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 10 }}>A winter war in real stone.</div>
+        </div>
+
+        <div style={{ fontSize: 11, lineHeight: 1.7, opacity: 0.75, marginTop: 14 }}>
+          <div>The muster bell rings every 90 seconds. Everything that reaches this war comes off that truck.</div>
+          <div style={{ marginTop: 6 }}>Every wall is real masonry. What you break stays broken — what falls, falls for real.</div>
+          <div style={{ marginTop: 6 }}>When a depot falls, its war is over. The save burns. No rewinds.</div>
         </div>
 
         {hasFront && (
@@ -98,14 +81,14 @@ export default function StartScreen({ onPlay, onSandbox, onCampaign, onControls,
             button shows through (mk0.43 regression, Jeff's screenshot) */}
         <button data-menu="depot" style={option({ borderColor: burnArmed ? "#a63c3c" : "#6a8a9a", background: burnArmed ? "rgba(92,33,27,0.85)" : COLORS.btnBg })} onClick={startNewFront}>
           <div style={{ color: burnArmed ? "#ff6b5e" : "#9fd4e4", fontSize: 15, letterSpacing: 2 }}>
-            {burnArmed ? "THE FRONT BURNS — CONFIRM" : hasFront ? "▶ NEW FRONT" : "▶ WINTER FRONT"}
+            {burnArmed ? "THE FRONT BURNS — CONFIRM" : "▶ DIG IN — NEW FRONT"}
           </div>
           <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>
             {burnArmed
               ? "Tap again and the saved front is gone for good."
               : hasFront
                 ? "A fresh valley. The saved front is burned when you start one."
-                : "Two depots, one valley. Break theirs before they break yours — nothing here shoots straight for free."}
+                : "Two depots, one frozen valley, a river with one crossing. Break theirs before they break yours."}
           </div>
         </button>
 
@@ -115,36 +98,8 @@ export default function StartScreen({ onPlay, onSandbox, onCampaign, onControls,
           </div>
         )}
 
-        <button data-menu="towerdef" style={option({ borderColor: "#4e7a5a" })} onClick={onTowerDef}>
-          <div style={{ color: "#8fd4a0", fontSize: 15, letterSpacing: 2 }}>▶ HOLD THE DEPOT</div>
-          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>Tower defense on the snowfield. Wall the passes — the ponds won't hold a foundation.</div>
-        </button>
-
-        <button data-menu="campaign" style={option({ borderColor: "#c9a04e" })} onClick={onCampaign}>
-          <div style={{ color: COLORS.gold, fontSize: 15, letterSpacing: 2 }}>▶ CLEARANCE CAMPAIGN</div>
-          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>Eight work orders. The territory is being re-let.</div>
-        </button>
-
-        <button data-menu="contracts" style={option({ borderColor: "#8a5a1c" })} onClick={onSandbox}>
-          <div style={{ color: COLORS.gold, fontSize: 15, letterSpacing: 2 }}>▶ CONTRACT SANDBOX</div>
-          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>Seven work orders from the bureau. The clock is part of the record.</div>
-          {starRow(csMedals, "commendations on file")}
-        </button>
-
-        <button data-menu="demo" style={option({ borderColor: COLORS.borderHot })} onClick={onPlay}>
-          <div style={{ color: COLORS.red, fontSize: 15, letterSpacing: 2 }}>▶ PROVING GROUNDS</div>
-          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>The original demo — seven field trials across the winter range.</div>
-          {starRow(medals, "best times on record")}
-        </button>
-
-        <button data-menu="mech" style={option({ borderColor: "#5f6e80" })} onClick={onMech}>
-          <div style={{ color: "#9fb4cc", fontSize: 15, letterSpacing: 2 }}>▶ MECH TEST RANGE</div>
-          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>Biped frame MK1 on the flat pad. Gait acceptance pending — it stands, it steps, it falls.</div>
-        </button>
-
-        <button data-menu="controls" style={option()} onClick={onControls}>
-          <div style={{ color: COLORS.bright, fontSize: 15, letterSpacing: 2 }}>⌨ CONTROLS</div>
-          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>Remap the keyboard bindings{isTouch ? " (hardware keyboards)" : ""}.</div>
+        <button data-menu="demos" style={{ ...option(), marginTop: 22, opacity: 0.7, fontSize: 12 }} onClick={onDemos}>
+          THE PROVING RANGE — tech demos this war was built on →
         </button>
 
         <div style={{ textAlign: "center", marginTop: 18, fontSize: 11, opacity: 0.55 }}>

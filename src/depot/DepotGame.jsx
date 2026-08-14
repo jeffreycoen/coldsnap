@@ -4043,7 +4043,7 @@ export default function DepotGame({ onExit, resume = null }) {
           <div style={{ fontSize: 26, letterSpacing: 4, color: "#9fdcff" }}>COLDSNAP</div>
           <div style={{ fontSize: 13, letterSpacing: 8, color: "#ffd27a", marginBottom: 14 }}>WINTER FRONT</div>
           <div style={{ fontSize: 12, opacity: 0.85, maxWidth: 420, lineHeight: 1.6, marginBottom: 18 }}>
-            They come out of the southern treeline for the depot. Gun the choke points; your engineers dig the lines.
+            They are coming for your depot across the valley — wall your ground, gun the choke points.
             Rock is free cover. The frozen ponds carry them faster — and you cannot build on ice.
             {isTouch ? " Drag to pan, pinch to zoom, tap to build. Tap a tower to inspect it." : " WASD pans, wheel zooms, Q/E rotates, click builds. Click a tower to inspect it."}
           </div>

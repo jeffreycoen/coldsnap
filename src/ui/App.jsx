@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import ColdsnapProvingGrounds from "../demo/coldsnap-proving-grounds.jsx";
 import ColdsnapContractSandbox from "../game/ContractSandbox.jsx";
 import StartScreen from "./StartScreen.jsx";
+import DemosScreen from "./DemosScreen.jsx";
 import CampaignScreen from "./CampaignScreen.jsx";
 import CampaignRunner from "../game/CampaignRunner.jsx";
 import MechRange from "../game/MechRange.jsx";
@@ -120,6 +121,12 @@ export default function App() {
   if (screen === "controls") {
     return <Controls keymap={keymap} onChange={applyKeymap} onBack={() => setScreen("menu")} />;
   }
+  if (screen === "demos") {
+    return <DemosScreen
+      onPlay={() => setScreen("demo")} onSandbox={() => setScreen("sandbox")} onCampaign={() => setScreen("campaign")}
+      onControls={() => setScreen("controls")} onMech={() => setScreen("mechrange")} onTowerDef={() => setScreen("towerdef")}
+      onBack={() => setScreen("menu")} />;
+  }
   if (GAME_SCREENS.has(screen)) {
     // the sandbox carries its own ⏏ in the order bar; the frozen demo can't,
     // so it keeps the overlay button
@@ -135,7 +142,8 @@ export default function App() {
       </div>
     );
   }
-  return <StartScreen onPlay={() => setScreen("demo")} onSandbox={() => setScreen("sandbox")} onCampaign={() => setScreen("campaign")} onControls={() => setScreen("controls")} onMech={() => setScreen("mechrange")} onTowerDef={() => setScreen("towerdef")}
+  return <StartScreen
     onDepot={() => { setDepotResume(null); setScreen("depot"); }}
-    onDepotResume={(data) => { setDepotResume(data); setScreen("depot"); }} />;
+    onDepotResume={(data) => { setDepotResume(data); setScreen("depot"); }}
+    onDemos={() => setScreen("demos")} />;
 }

@@ -6185,6 +6185,27 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 }
 // ==== end P6 T4 ==============================================================
 
+// ==== P6 T7: the front door =================================================
+// mk1.14 (Troops & Physics, Task 7). The site opens on WINTER FRONT — one
+// identity, one action, three laws — and the demos live behind one link.
+{
+  console.log("\n[p6 t7: the front door]");
+  const ss = fs.readFileSync(new URL("../src/ui/StartScreen.jsx", import.meta.url), "utf8");
+  const app = fs.readFileSync(new URL("../src/ui/App.jsx", import.meta.url), "utf8");
+  ok("T7: the range subtitle is dead", !/WINTER RANGE COMMAND/.test(ss));
+  ok("T7: the door carries the three laws", /muster bell rings every 90 seconds/.test(ss) && /real masonry/.test(ss) && /The save burns/.test(ss));
+  ok("T7: the demos left the door", !/PROVING GROUNDS/.test(ss) && !/MECH TEST RANGE/.test(ss) && !/HOLD THE DEPOT/.test(ss));
+  ok("T7: one quiet link leads to the range", /data-menu="demos"/.test(ss));
+  ok("T7: the demos page routes from the app shell", /DemosScreen/.test(app) && /data-menu="demos"/.test(ss));
+  const dg = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  ok("T7: the southern treeline is gone", !/southern treeline/.test(dg));
+  let dm = "";
+  try { dm = fs.readFileSync(new URL("../src/ui/DemosScreen.jsx", import.meta.url), "utf8"); } catch (e) {}
+  ok("T7: the five cards and controls live on the range page",
+    /HOLD THE DEPOT/.test(dm) && /CLEARANCE CAMPAIGN/.test(dm) && /CONTRACT SANDBOX/.test(dm) && /PROVING GROUNDS/.test(dm) && /MECH TEST RANGE/.test(dm) && /CONTROLS/.test(dm));
+}
+// ==== end P6 T7 ==============================================================
+
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
   process.exit(1);

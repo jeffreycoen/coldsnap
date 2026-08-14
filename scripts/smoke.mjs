@@ -55,6 +55,15 @@ try {
   page.on("pageerror", (e) => pageErrors.push(String(e)));
 
   const clickMenu = (sel) => page.evaluate((s) => document.querySelector(`[data-menu="${s}"]`).click(), sel);
+  // P6 T7 (mk1.14): the five demo surfaces + controls moved off the front
+  // door behind one quiet link. Every non-depot navigation now hops through
+  // it first: click the door's THE PROVING RANGE link, wait for the target
+  // card to mount on the range page, then the existing click follows.
+  const toDemos = async (target) => {
+    await page.waitForSelector('[data-menu="demos"]');
+    await clickMenu("demos");
+    await page.waitForSelector(`[data-menu="${target}"]`);
+  };
   const text = () => page.evaluate(() => document.body.innerText);
   const toMenu = async () => {
     await page.evaluate(() => localStorage.setItem("coldsnap-screen", "menu"));
@@ -66,11 +75,12 @@ try {
   await page.goto(URL, { waitUntil: "networkidle0" });
   let body = await text();
 
-  // --- start screen: it renders, it offers the modes, it wears the mark
+  // --- start screen (the front door, P6 T7 mk1.14): it renders, it carries
+  // the three laws, it offers DIG IN and the one quiet link to the demos.
   if (sectionEnabled("start")) {
-    ok("start screen shows the demo option", body.includes("PROVING GROUNDS"));
-    ok("start screen shows contract placeholder", body.includes("CONTRACT SANDBOX"));
-    ok("start screen shows controls option", body.includes("CONTROLS"));
+    ok("start screen carries the three laws", body.includes("The muster bell rings every 90 seconds") && body.includes("real masonry") && body.includes("The save burns"));
+    ok("start screen offers DIG IN — NEW FRONT", body.includes("DIG IN"));
+    ok("start screen links to the demos page", body.includes("THE PROVING RANGE"));
     ok("no game canvas on the start screen", (await page.$("canvas")) === null);
     const mk = await page.evaluate(() => { const e = document.querySelector("[data-mk]"); return e ? e.textContent.trim() : null; });
     ok(`start screen shows the deployment mark [${mk}]`, mk === MK);
@@ -79,14 +89,15 @@ try {
   // --- demo: it boots from the menu and ESC gives the menu back
   if (sectionEnabled("demo")) {
     await toMenu();
+    await toDemos("demo");
     await clickMenu("demo");
     await page.waitForSelector("canvas");
     await page.waitForFunction(() => !!window.__COLDSNAP__);
     ok("demo boots from the menu", true);
     await page.keyboard.press("Escape");
     await page.waitForFunction(() => !document.querySelector("canvas"));
-    body = await text();
-    ok("ESC returns to the start screen", body.includes("PROVING GROUNDS"));
+    await toDemos("demo");
+    ok("ESC returns to the start screen", true);
   }
 
   // --- contract sandbox: it boots, it builds its whole world, ESC returns.
@@ -94,6 +105,7 @@ try {
   if (sectionEnabled("contracts")) {
     await page.evaluate(() => localStorage.removeItem("coldsnap-cs-trial"));
     await toMenu();
+    await toDemos("contracts");
     await clickMenu("contracts");
     await page.waitForSelector("canvas");
     await page.waitForFunction(() => !!window.__COLDSNAP__);
@@ -115,6 +127,7 @@ try {
       localStorage.setItem("coldsnap-screen", "menu");
     });
     await page.reload({ waitUntil: "networkidle0" });
+    await toDemos("campaign");
     await clickMenu("campaign");
     await page.waitForFunction(() => document.body.innerText.includes("ORDER BOOK"));
     const book = await text();
@@ -141,7 +154,7 @@ try {
     await phone.evaluateOnNewDocument(() => { try { localStorage.setItem("coldsnap-screen", "menu"); } catch (e) {} });
     await phone.goto(URL, { waitUntil: "networkidle0" });
     const phoneBody = await phone.evaluate(() => document.body.innerText);
-    ok("phone: the start screen renders", phoneBody.includes("PROVING GROUNDS"));
+    ok("phone: the start screen renders", phoneBody.includes("THE PROVING RANGE"));
     const phoneMk = await phone.evaluate(() => { const e = document.querySelector("[data-mk]"); return e ? e.textContent.trim() : null; });
     ok(`phone: the start screen wears the mark [${phoneMk}]`, phoneMk === MK);
     await phone.waitForSelector('[data-menu="depot"]', { timeout: 15000 });
@@ -157,6 +170,7 @@ try {
     await page.evaluate(() => localStorage.setItem("coldsnap-screen", "menu"));
     await page.evaluate(() => localStorage.setItem("coldsnap-keymap", JSON.stringify({ ...JSON.parse(localStorage.getItem("coldsnap-keymap") || "{}"), forward: "escape" })));
     await page.reload({ waitUntil: "networkidle0" });
+    await toDemos("controls");
     await clickMenu("controls");
     await page.waitForFunction(() => document.querySelector('[data-bind="forward"]'));
     const fwdKey = await page.evaluate(() => document.querySelector('[data-bind="forward"]').textContent.trim());
@@ -167,17 +181,19 @@ try {
   // --- MECH TEST RANGE: it mounts, ESC returns
   if (sectionEnabled("mech")) {
     await toMenu();
+    await toDemos("mech");
     await clickMenu("mech");
     await page.waitForSelector("[data-mech-hud]", { timeout: 20000 });
     ok("mech range: HUD mounts", true);
     await page.keyboard.press("Escape");
-    await page.waitForFunction(() => document.querySelector('[data-menu="mech"]'), { timeout: 10000 });
+    await toDemos("mech");
     ok("mech range: ESC returns to menu", true);
   }
 
   // --- HOLD THE DEPOT (tower defense): it mounts, it steps, ESC returns
   if (sectionEnabled("td")) {
     await toMenu();
+    await toDemos("towerdef");
     await clickMenu("towerdef");
     await page.waitForFunction(() => typeof window.__TD__ === "function", { timeout: 20000 });
     ok("tower defense: mounts", true);
@@ -186,7 +202,7 @@ try {
     const td = await page.evaluate(() => window.__TD__());
     ok("tower defense: world stepping", td.t > 1 && td.lives === 20);
     await page.keyboard.press("Escape");
-    await page.waitForFunction(() => document.querySelector('[data-menu="towerdef"]'), { timeout: 10000 });
+    await toDemos("towerdef");
     ok("tower defense: ESC returns to menu", true);
   }
 
