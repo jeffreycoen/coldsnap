@@ -161,6 +161,15 @@ await browser.close();
 
 ---
 
+**AMENDMENT 1 (2026-08-14, owner-approved after the first run):** the raw per-frame sim mean is NOT comparable to the 11.0 ms line under the software renderer — a ~20 fps page catches up ~6 physics steps per frame where a real 60 fps frame does 2, so the same per-step cost reads ~3x. (First run's finding preserved: 56 men fighting + 1,299 sleeping stones measured 35-36 ms raw ≈ 11.8 ms normalized — a defended firefight already sits AT the budget line.) The instrument normalizes and gates on the TRUE 60 fps frame cost:
+
+- Bracket the measure window in sim time: capture `tA = __DEPOT__().t` right after `__DEPOTPERF__.reset()`, and `tB` inside the read. Steps executed = `(tB − tA) × 120`.
+- Normalized frame cost = `(sum of all sim ms in the window ÷ steps) × 2`.
+- The gate, the break print, and the ceiling record use the NORMALIZED number; the table gains a `norm` column ahead of the raw mean (raw mean/median/p95 still shown, never gating).
+- Everything else — rungs, spawns, shells, plateau doubling, breach guard, two repeats — unchanged. Re-run both repeats in full.
+
+---
+
 # TASK 9 — The README (mk1.16)
 
 **What it does.** The README stops describing the proving grounds and starts selling the war. Showcase first: the floppy-disk hook, four screenshots from the running game, the bold true claims — every one fact-checked against the live code and the measured bundle this session. The technical section beneath, for engineers who keep reading. The owner's rulings: the floppy leads; the screenshot row is collapse-led; the demo history gets one sentence.
