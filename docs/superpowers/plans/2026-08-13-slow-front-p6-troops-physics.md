@@ -18,15 +18,13 @@
 
 **Task 5 — The body lists, resurrected** — EXECUTED AND RETIRED (2026-08-13): the re-measurement failed the ship rule (idle regressed both repeats despite the cold-frame gate; the defended battle won −25% to −40%). Reverted clean; no mk1.14 shipped; the mark is NOT skipped — Task 6 takes mk1.14. Retirement recorded in the decision record.
 
-**Task 6 — The weld scan sleeps too** *(skeleton)*
-- The per-tick walk over every weld skips what sleeps — the collision books' cousin.
-- Same engine gates; before/after measured with the defended-scenario instrument, standing alone (mk1.14).
+**Task 6 — The weld scan sleeps too** — CUT (owner's ruling, 2026-08-13): the whole weld walk costs at or under the instrument's noise floor and the cache it needs is the phase's riskiest shape; its intent folds into the capacity ramp. Recorded in the decision record.
 
-**Task 7 — The front door** *(skeleton)*
+**Task 7 — The front door** *(skeleton; takes mk1.14)*
 - The site opens straight into Winter Front's start screen; one small tech-demos link to a second page.
 - Every line of site copy audited against what the game is now — stale wording dies.
 
-**Task 8 — The README** *(skeleton)*
+**Task 8 — The README** *(skeleton; takes mk1.15)*
 - Showcase first: screenshots from the deployed game, the bold true claims.
 - The technical section beneath, for engineers who keep reading.
 
