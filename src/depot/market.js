@@ -6,7 +6,16 @@
 import { TOWER_SPECS, ENEMY_SPECS, TANK } from "./specs.js";
 import { SQUAD_SPECS } from "./squads.js";
 
-export const MARKET_CAP = 4;
+// THE TWO WALLS (mk1.20, owner's rulings): both pressures are the same
+// asymptotic wall, wall(n, pole) = pole/(pole - n), clamped at 50x.
+// The TYPE wall's pole is twice the type's K — the doubling point stays at
+// K exactly as before, but the curve goes vertical approaching 2K (the old
+// flat 4x cap is dead). The FIELD wall's pole is 88 living men, both
+// armies — just past the mk1.19 ramp's confirmed 80: 11x at the measured
+// limit, 22x at 84, 50x beyond. The last slots on the field cost like the
+// last seats on the plane. // provisional (F5), every number
+export const MARKET_KG = 88;
+export const WALL_CLAMP = 50;
 // K: the standing count at which a family's price doubles. // provisional (F5)
 export const MARKET_K = {
   rifles: 16, marksman: 4, sapper: 4, mortarcrew: 6, mgteam: 6, engineer: 6,
@@ -31,6 +40,7 @@ export function marketCounts(world, squads) {
   }
   for (const b of world.bodies) {
     if (!b.alive) continue;
+    if (b.kind === "unit") c._men = (c._men || 0) + 1; // both armies — squad men are unit bodies too
     if (b.kind === "unit" && b.team === 2) add(FAMILY_OF_TAG[b.tag || ""], 1);
     else if (b.kind === "vehicle" && b.team === 2) add("tank", 1);
     else if (b.kind === "tower" && b.team === 1) add(FAMILY_OF_TOWER[b.towerType], 1);
@@ -40,8 +50,12 @@ export function marketCounts(world, squads) {
   return c;
 }
 
+const wall = (n, pole) => {
+  const m = Math.min(n, pole - 1); // stay off the pole
+  return Math.min(WALL_CLAMP, pole / (pole - m));
+};
 const priced = (base, fam, counts) =>
-  Math.max(1, Math.round(base * Math.min(MARKET_CAP, 1 + (counts[fam] || 0) / MARKET_K[fam])));
+  Math.max(1, Math.round(base * wall(counts[fam] || 0, 2 * MARKET_K[fam]) * wall(counts._men || 0, MARKET_KG)));
 
 // computePrices(counts) -> { player: {barKey: price}, foe: {tag: price} } —
 // the one shared table, read by the bar, the manifest, every purchase

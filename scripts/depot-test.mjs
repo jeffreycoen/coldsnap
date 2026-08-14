@@ -6126,7 +6126,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   let mkt = null;
   try { mkt = await import("../src/depot/market.js"); } catch (e) {}
   ok("T4: src/depot/market.js exists with the three exports",
-    !!mkt && typeof mkt.marketCounts === "function" && typeof mkt.computePrices === "function" && mkt.MARKET_CAP === 4);
+    !!mkt && typeof mkt.marketCounts === "function" && typeof mkt.computePrices === "function" && mkt.MARKET_KG === 88);
 
   if (mkt) {
     // (a) the curve: base at zero, double at K, capped at 4x, integer prices
@@ -6136,7 +6136,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     const Pk = mkt.computePrices({ rifles: 16 });
     ok("T4(a): K of a family doubles its price", Pk.player.sq_rifles === SQUAD_SPECS.rifles.cost * 2, `${Pk.player.sq_rifles}`);
     const Pcap = mkt.computePrices({ rifles: 999 });
-    ok("T4(a): the cap holds at 4x", Pcap.player.sq_rifles === SQUAD_SPECS.rifles.cost * 4, `${Pcap.player.sq_rifles}`);
+    ok("T4(a): a type bought out tops at its own pole — 32x for rifles", Pcap.player.sq_rifles === SQUAD_SPECS.rifles.cost * 32, `${Pcap.player.sq_rifles}`);
 
     // (b) shared stock: enemy conscripts and player riflemen are ONE family
     {
@@ -6149,8 +6149,8 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
       ok("T4(b): the rifles family counts both armies' men", counts.rifles === 10, `${counts.rifles}`);
       const Pm = mkt.computePrices(counts);
       ok("T4(b): both sides pay the same multiplied table",
-        Pm.player.sq_rifles === Math.max(1, Math.round(SQUAD_SPECS.rifles.cost * (1 + 10 / 16))) &&
-        Pm.foe[""] === Math.max(1, Math.round(ENEMY_SPECS[""].bounty * (1 + 10 / 16))),
+        Pm.player.sq_rifles === Math.max(1, Math.round(SQUAD_SPECS.rifles.cost * (32 / (32 - 10)) * (88 / (88 - 10)))) &&
+        Pm.foe[""] === Math.max(1, Math.round(ENEMY_SPECS[""].bounty * (32 / (32 - 10)) * (88 / (88 - 10)))),
         `player ${Pm.player.sq_rifles}, foe ${Pm.foe[""]}`);
     }
 
@@ -6310,6 +6310,46 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 }
 // ==== end P6 T10 ==============================================================
+
+// ==== P6 T11: the two-pressure wall =========================================
+// mk1.20. Every price carries the type's own count (strong) plus the whole
+// field's living men against the engine ceiling (mild) — the owner's ruling:
+// "all prices increase with each buy but the prices for the unit purchased
+// go up more substantially." Soft wall, no sell-outs, the 4x cap stands.
+{
+  console.log("\n[p6 t11: the two-pressure wall]");
+  let mkt = null;
+  try { mkt = await import("../src/depot/market.js"); } catch (e) {}
+  ok("T11: the two poles exported — field 88, clamp 50", !!mkt && mkt.MARKET_KG === 88 && mkt.WALL_CLAMP === 50);
+  if (mkt) {
+    const base = SQUAD_SPECS.rifles.cost;
+    const Pg = mkt.computePrices({ _men: 44 });
+    ok("T11(a): a half-full field doubles every price", Pg.player.sq_rifles === base * 2 && Pg.player.gun === TOWER_SPECS.gun.cost * 2,
+      `rifles ${Pg.player.sq_rifles}, gun ${Pg.player.gun}`);
+    const Pk = mkt.computePrices({ rifles: 16 });
+    ok("T11(b): the type wall still doubles at K", Pk.player.sq_rifles === base * 2, `${Pk.player.sq_rifles}`);
+    const Pboth = mkt.computePrices({ rifles: 16, _men: 44 });
+    ok("T11(b2): the two walls multiply — the bought type rises more", Pboth.player.sq_rifles === base * 4, `${Pboth.player.sq_rifles}`);
+    const Ptype = mkt.computePrices({ rifles: 28 });
+    ok("T11(c): a spammed type is ridiculous on its own line — 8x at 28 rifles",
+      Ptype.player.sq_rifles === base * 8, `${Ptype.player.sq_rifles}`);
+    const Pwall = mkt.computePrices({ _men: 80 });
+    ok("T11(c2): the measured ceiling is ridiculous — 11x at 80 men",
+      Pwall.player.sq_rifles === Math.max(1, Math.round(base * (88 / 8))), `${Pwall.player.sq_rifles}`);
+    const Pcap = mkt.computePrices({ rifles: 999, _men: 999 });
+    ok("T11(c3): both walls topped — the rifle pole (32x) times the field clamp (50x)", Pcap.player.sq_rifles === base * 32 * 50, `${Pcap.player.sq_rifles}`);
+    {
+      const flatM = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+      const world = makeWorld({ field: flatM, seed: 3 });
+      for (let i = 0; i < 6; i++) spawnUnit(world, { x: i * 2, z: 0 }, "");
+      const sq = makeSquad(1, "rifles", 1, 20, 20);
+      spawnSquadMembers(world, sq);
+      const counts = mkt.marketCounts(world, [sq]);
+      ok("T11(d): _men counts every living man, both armies", counts._men === 10, `${counts._men}`);
+    }
+  }
+}
+// ==== end P6 T11 =============================================================
 
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
