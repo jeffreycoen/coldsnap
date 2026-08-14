@@ -22,15 +22,175 @@
 
 **Task 7 — The front door** — POPULATED BELOW (mk1.14).
 
-**Task 8 — The field manual** *(skeleton; owner's ruling, 2026-08-13; takes mk1.15)*
-- A first-entry tour: linked cards teaching the bell, real stone, squad orders and engineer-only building, take-control, the living market, the fall — and the return: every map is drawn fresh, so losing invites a new war on new ground.
-- NEXT/BACK/SKIP, don't-show-again honored forever, reopenable as FIELD MANUAL from the start overlay.
+**Task 8 — The field manual** — POPULATED BELOW (mk1.15).
 
 **Task 9 — The README** *(skeleton; takes mk1.16)*
 - Showcase first: screenshots from the deployed game, the bold true claims.
 - The technical section beneath, for engineers who keep reading.
 
 **Close** — the owner's playtest closes the phase.
+
+---
+
+# TASK 8 — The field manual (mk1.15)
+
+**What it does.** First time a player opens a new war, six linked cards teach what makes this game itself: real stone, orders, possession, the bell, the market, the fall. NEXT/BACK walk the chain, SKIP leaves at any card, and a don't-show-again toggle is honored forever once ticked. The tour returns on every fresh war until the player ticks it off; a resumed war never auto-opens it. It reopens on demand as FIELD MANUAL from the pre-battle overlay. This task also carries the owner's TAKE COMMAND ruling: "DIG IN" dies at both sites.
+
+**The cards (owner-approved copy, verbatim, in this order):**
+
+1. `REAL STONE` — The whole battlefield is real physics. Collapse a wall on the men behind it. Drop a roof on a squad. Rubble is a weapon.
+2. `YOUR MEN` — Tap a squad, give it orders. Men are your eyes — what they can't see, you can't see. Only engineers build.
+3. `TAKE CONTROL` — Any squad or tower can be yours. Drive it, aim it, fire it. The front fights on without you.
+4. `THE BELL` — Scrap flows every second. Every 90 seconds the bell rings and the convoy offers new mercenaries — pick one. Then they attack.
+5. `THE MARKET` — One market, both armies. What the field is full of costs more. Buy out what they need before they can.
+6. `THE FALL` — Lose your depot and the save burns. No rewinds. But every valley is drawn fresh — a new front is always waiting.
+
+**Shape (the look ships; the owner's eyes accept it live):** a scrim over the pre-battle overlay, one centered card — `FIELD MANUAL · n/6` and `SKIP ✕` on top, gold title, body copy, a tickable `☐ DON'T SHOW THIS AGAIN` row, then `← BACK` / `NEXT →` (last card: green `CLOSE`). The storage flag `coldsnap-wf-manual = "off"` is written only when the toggle is ticked at close — a plain SKIP or CLOSE writes nothing.
+
+**Suggested model:** Sonnet — component work and copy, all specified.
+
+**Required reading (re-verify anchors at dispatch):**
+- `src/ui/StartScreen.jsx` — whole (111 lines; the rename at line 84).
+- `src/ui/theme.js` — whole (COLORS/FONT exports FieldManual uses).
+- `src/platform/storage.js` — whole (22 lines; the async get/set shapes).
+- `src/depot/DepotGame.jsx` — regions only: imports 9-29; state hooks 1194-1220; the `P` styles 1082-1103; `startGame` 3584-3589; the pre-battle overlay 4041-4055. Do not read the rest.
+- `scripts/smoke.mjs` — lines 55-90 (start section) and 209-250 (depot section).
+- `src/version.js` — whole.
+
+**Trap notes:**
+- The tour must never gate the debug start path: smoke starts wars through `__DEPOTSTART__()`, not the button. The manual renders only while `!hud.started && manualOpen` — starting the war unmounts it. Keep all manual state in React state, never in `stateRef`.
+- Write the storage flag ONLY when the toggle is ticked. The tour returning each fresh war is the design, not a bug.
+- The tower-defense demo has its own DIG IN button (`src/game/ColdsnapTD.jsx:1745`) — out of scope, do not touch.
+- StartScreen's comment law holds: never spread a style that can leave `background: undefined` over a button.
+- The overlay's `P.ovl` is zIndex 8 — the manual sits at 9.
+- `data-menu="manual"` is a new attribute; smoke's `clickMenu` helper keys on `data-menu` values — the ones it uses (`demos`, `depot`, …) are untouched.
+
+**Step 1 — new file `src/ui/FieldManual.jsx` (whole file, exactly this):** the six cards and the card walker. Pure presentation; opening, closing, and the flag belong to the caller.
+
+```jsx
+import React, { useState } from "react";
+import { FONT } from "./theme.js";
+
+// THE FIELD MANUAL (P6 T8, mk1.15). Six linked cards, the first-entry tour.
+// Owner-approved copy — do not edit a word without a ruling.
+const CARDS = [
+  { title: "REAL STONE", body: "The whole battlefield is real physics. Collapse a wall on the men behind it. Drop a roof on a squad. Rubble is a weapon." },
+  { title: "YOUR MEN", body: "Tap a squad, give it orders. Men are your eyes — what they can't see, you can't see. Only engineers build." },
+  { title: "TAKE CONTROL", body: "Any squad or tower can be yours. Drive it, aim it, fire it. The front fights on without you." },
+  { title: "THE BELL", body: "Scrap flows every second. Every 90 seconds the bell rings and the convoy offers new mercenaries — pick one. Then they attack." },
+  { title: "THE MARKET", body: "One market, both armies. What the field is full of costs more. Buy out what they need before they can." },
+  { title: "THE FALL", body: "Lose your depot and the save burns. No rewinds. But every valley is drawn fresh — a new front is always waiting." },
+];
+
+export default function FieldManual({ onClose }) {
+  const [i, setI] = useState(0);
+  const [never, setNever] = useState(false);
+  const card = CARDS[i];
+  const last = i === CARDS.length - 1;
+  const B = { background: "#1a212b", border: "1px solid #48515f", color: "#e6ebf1", borderRadius: 8, padding: "10px 18px", fontFamily: "inherit", fontSize: 13, letterSpacing: 1, minHeight: 44, minWidth: 44, cursor: "pointer" };
+  return (
+    <div data-manual style={{ position: "absolute", inset: 0, zIndex: 9, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(10,13,18,0.82)", fontFamily: FONT, color: "#e6ebf1", padding: 20 }}>
+      <div style={{ width: "min(400px, 92vw)", background: "rgba(14,18,24,0.96)", border: "1px solid #48515f", borderRadius: 10, padding: "18px 20px", textAlign: "left" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+          <div style={{ fontSize: 11, letterSpacing: 3, opacity: 0.6 }}>FIELD MANUAL · {i + 1}/{CARDS.length}</div>
+          <button data-manual-skip style={{ ...B, minHeight: 0, minWidth: 0, padding: "4px 10px", fontSize: 11, opacity: 0.8 }} onClick={() => onClose(never)}>SKIP ✕</button>
+        </div>
+        <div data-manual-card style={{ fontSize: 17, letterSpacing: 3, color: "#ffd27a", marginTop: 12 }}>{card.title}</div>
+        <div style={{ fontSize: 13, lineHeight: 1.7, opacity: 0.9, marginTop: 10, minHeight: 88 }}>{card.body}</div>
+        <div data-manual-never onClick={() => setNever(!never)} style={{ fontSize: 11, opacity: 0.7, marginTop: 12, cursor: "pointer" }}>
+          {never ? "☑" : "☐"} DON'T SHOW THIS AGAIN
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14, gap: 10 }}>
+          <button data-manual-back style={{ ...B, visibility: i === 0 ? "hidden" : "visible" }} onClick={() => setI(i - 1)}>← BACK</button>
+          {last
+            ? <button data-manual-close style={{ ...B, borderColor: "#4aff8c", color: "#4aff8c" }} onClick={() => onClose(never)}>CLOSE</button>
+            : <button data-manual-next style={{ ...B, borderColor: "#9fd4e4", color: "#9fd4e4" }} onClick={() => setI(i + 1)}>NEXT →</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+**Step 2 — `DepotGame.jsx`: import and key.** After the Dispatch import (line 29 `import Dispatch from "./Dispatch.jsx";`) add:
+
+```jsx
+import FieldManual from "../ui/FieldManual.jsx";
+
+// THE FIELD MANUAL's don't-show-again flag (P6 T8). "off" means never
+// auto-open again; anything else (including absent) means the tour greets
+// every fresh war. A resumed war never auto-opens it either way.
+const MANUAL_KEY = "coldsnap-wf-manual";
+```
+
+**Step 3 — `DepotGame.jsx`: state and probe.** After line 1199 (`const [rereadDispatch, setRereadDispatch] = useState(false);`) add:
+
+```jsx
+  // P6 T8: the field manual. React state only — the sim never sees it.
+  const [manualOpen, setManualOpen] = useState(false);
+  useEffect(() => {
+    if (resumeRef.current) return; // a resumed war is not a first entry
+    let live = true;
+    (async () => {
+      try { const r = await window.storage.get(MANUAL_KEY); if (live && !(r && r.value === "off")) setManualOpen(true); }
+      catch (e) { if (live) setManualOpen(true); }
+    })();
+    return () => { live = false; };
+  }, []);
+  const closeManual = (never) => {
+    setManualOpen(false);
+    if (never) { try { window.storage.set(MANUAL_KEY, "off"); } catch (e) {} }
+  };
+```
+
+**Step 4 — `DepotGame.jsx`: the overlay.** In the pre-battle overlay (lines 4041-4055): the start button's text `DIG IN` becomes `TAKE COMMAND` (owner's ruling — the burn/arm flow lives on the menu screen and is untouched), and between the start button and the seed line a FIELD MANUAL button is added:
+
+```jsx
+          <button style={{ ...P.btn, fontSize: 15, padding: "10px 26px", borderColor: "#4aff8c", color: "#4aff8c" }} onClick={startGame}>
+            TAKE COMMAND
+          </button>
+          <button data-menu="manual" style={{ ...P.btn, marginTop: 14, opacity: 0.75, fontSize: 11, letterSpacing: 1 }} onClick={() => setManualOpen(true)}>
+            FIELD MANUAL
+          </button>
+          <div style={{ fontSize: 10, opacity: 0.55, marginTop: 12, letterSpacing: 2 }}>FIELD ORDER #{hud.seed || "—"} · ?seed= replays a map</div>
+```
+
+**Step 5 — `DepotGame.jsx`: render the manual.** Immediately after the pre-battle overlay's closing `)}` (line 4055) add — the `!hud.started` guard is the trap note made law:
+
+```jsx
+      {!hud.started && !fatal && manualOpen && <FieldManual onClose={closeManual} />}
+```
+
+**Step 6 — `StartScreen.jsx` line 84:** `"▶ DIG IN — NEW FRONT"` becomes `"▶ NEW FRONT — TAKE COMMAND"`. Nothing else on the menu changes.
+
+**Step 7 — `scripts/smoke.mjs`, three edits.**
+(a) The start-section pin (lines 79-82): the comment's `DIG IN` wording and the check become:
+
+```js
+    ok("start screen offers NEW FRONT — TAKE COMMAND", body.includes("TAKE COMMAND"));
+```
+
+(b) The depot section's storage-clearing line (218) also clears the manual flag so the tour deterministically appears:
+
+```js
+    await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (k.startsWith("coldsnap-depot")) localStorage.removeItem(k); localStorage.removeItem("coldsnap-front-save"); localStorage.removeItem("coldsnap-wf-manual"); });
+```
+
+(c) After `ok("depot: mounts", true);` (line 223), before `__DEPOTSTART__`, the manual's two load checks:
+
+```js
+    await page.waitForSelector("[data-manual]", { timeout: 10000 });
+    ok("depot: the field manual greets a fresh war", true);
+    await page.click("[data-manual-skip]");
+    await page.waitForFunction(() => !document.querySelector("[data-manual]"), { timeout: 5000 });
+    ok("depot: SKIP closes the manual", true);
+```
+
+The depot section's second entry (the end-card leg) opens the manual again — by design (SKIP without the toggle writes nothing) — and `__DEPOTSTART__` unmounts it; no edit needed there.
+
+**Step 8 — ship.** `src/version.js` MK → `"mk1.15"`; build AFTER the bump; commit; push (CI deploys).
+
+**Gates (run ONLY these):** `node scripts/depot-lint.mjs` · `npm run build` · `SMOKE_ONLY=start,depot node scripts/smoke.mjs`. No engine change — golden and the keystone are not in play. Expected test deltas: exactly one smoke pin re-taught (7a) and two smoke checks added (7c) — any other breakage is a STOP.
 
 ---
 
