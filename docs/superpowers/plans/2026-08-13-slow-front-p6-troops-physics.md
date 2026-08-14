@@ -23,7 +23,7 @@
 **Task 7 — The front door** — POPULATED BELOW (mk1.14).
 
 **Task 8 — The field manual** *(skeleton; owner's ruling, 2026-08-13; takes mk1.15)*
-- A first-entry tour: linked cards teaching the bell, real stone, squad orders and engineer-only building, take-control, the living market, the fall.
+- A first-entry tour: linked cards teaching the bell, real stone, squad orders and engineer-only building, take-control, the living market, the fall — and the return: every map is drawn fresh, so losing invites a new war on new ground.
 - NEXT/BACK/SKIP, don't-show-again honored forever, reopenable as FIELD MANUAL from the start overlay.
 
 **Task 9 — The README** *(skeleton; takes mk1.16)*
