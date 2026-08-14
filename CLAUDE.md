@@ -64,5 +64,6 @@ The project owner directs design, reviews every plan, and is the sole playtester
 ## Process
 
 - No momentum: stop and check before each next step. Slow is smooth, smooth is fast.
+- Every phase closeout updates the README: claims and screenshots re-checked against the shipped game before the phase is declared closed.
 - Deferred items collect into the post-phase polish queue — never folded in opportunistically.
 - Frozen laws: `src/demo/coldsnap-proving-grounds.jsx` is byte-frozen; `core.js`/`renderer.js` engine changes are guarded additive divergences with `golden.mjs` green; no `Math.random` in `src/depot` (seeded rng + draw-count stability; `depot-lint` gates CI).

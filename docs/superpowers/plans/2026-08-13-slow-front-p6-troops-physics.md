@@ -24,11 +24,212 @@
 
 **Task 8 — The field manual** — POPULATED BELOW (mk1.15).
 
-**Task 9 — The README** *(skeleton; takes mk1.16)*
-- Showcase first: screenshots from the deployed game, the bold true claims.
-- The technical section beneath, for engineers who keep reading.
+**Task 9 — The README** — POPULATED BELOW (mk1.16).
 
 **Close** — the owner's playtest closes the phase.
+
+---
+
+# TASK 9 — The README (mk1.16)
+
+**What it does.** The README stops describing the proving grounds and starts selling the war. Showcase first: the floppy-disk hook, four screenshots from the running game, the bold true claims — every one fact-checked against the live code and the measured bundle this session. The technical section beneath, for engineers who keep reading. The owner's rulings: the floppy leads; the screenshot row is collapse-led; the demo history gets one sentence.
+
+**The numbers behind the claims (measured 2026-08-14, this tree):** built bundle 1.25 MB total (one JS file + index.html — under a 1.44 MB floppy), ~395 KB gzipped; core.js 2,407 dependency-free lines; fixed 1/120s timestep; two-tier broadphase Pi measurements idle 5.0→3.1 ms, assault+collapse 10.8→7.3 ms; instanced caps 3,000 stones / 360 trees; audio fully procedural, zero asset files. Screenshots live in `docs/media/` which is NOT in `dist/` — the floppy claim is unaffected by them.
+
+**Suggested model:** Sonnet — staging and prose are fully specified.
+
+**Required reading (re-verify at dispatch):**
+- This task section, whole.
+- `README.md` — whole (73 lines; replaced by the text below, credits kept verbatim).
+- `src/depot/DepotGame.jsx` — ONLY the debug-hook region, lines 2750-3080 (every `window.__DEPOT*__` the capture script calls: `__DEPOT__`, `__DEPOTSTART__`, `__DEPOTEND__`, `__DEPOTSPAWN__`, `__DEPOTBELL__`, `__DEPOTMANIFEST__`, `__DEPOTSQUADS__`, `__DEPOTSCREENAT__`, `__DEPOTFLAGS__`, `__DEPOTENEMYPOS__`) — confirm each hook's exact return shape before writing the waits that read them.
+- `scripts/smoke.mjs` — lines 1-56 (the launch block the capture script mirrors) and 209-250 (the depot entry pattern).
+- `src/version.js` — whole.
+
+**Trap notes:**
+- The field manual (mk1.15) now greets a fresh war — the capture boot sets `coldsnap-wf-manual` to `"off"` BEFORE entering so no card covers a shot.
+- `__DEPOTSQUADS__`/`__DEPOTENEMYPOS__` return shapes are asserted at dispatch, not assumed — if a shape differs from what the script expects, fix the READ side only.
+- Any stage that cannot be landed as specified (a pie that will not open to a DOM click, a reticle that will not show) is a STOP: screenshot the failed stage, report, do not improvise a different picture.
+- Swiftshader runs the world at roughly a third of wall time — waits are generous and condition-based, never bare sleeps where a condition exists.
+- The four PNGs are chosen by the agent ONLY for stage-correctness (the staged thing is on screen); the owner judges the look in the rendered README on GitHub — no screenshot-approval loop.
+- README claims are locked as written below — not one number or claim is edited without a STOP.
+- `docs/media/` is new; create it. Do not touch `dist/`.
+
+**Step 1 — the capture script `.superpowers/t9-readme-shots.mjs` (untracked), exactly this, then run it** against a local preview (`npm run build && npm run preview` first — build of the CURRENT tree, mk1.15):
+
+```js
+// .superpowers/t9-readme-shots.mjs — stages the README's four screenshots.
+// Serve the built bundle first: npm run build && npm run preview
+// Candidates land in .superpowers/; Step 2 copies the keepers to docs/media/.
+import puppeteer from "puppeteer-core";
+
+const BASE = process.env.SHOT_URL || "http://localhost:4173/coldsnap/";
+const CHROME = process.env.CHROME_BIN || "/usr/bin/chromium";
+const W = 1440, H = 810;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const browser = await puppeteer.launch({
+  protocolTimeout: 600000,
+  executablePath: CHROME,
+  headless: true,
+  args: ["--no-sandbox", "--disable-gpu", "--enable-unsafe-swiftshader", `--window-size=${W},${H}`],
+});
+
+// One fresh war per shot. Seed 2307 — the dense proving seed (hills, town,
+// stream). The manual flag is set off BEFORE entry so no card covers a shot.
+async function boot() {
+  const page = await browser.newPage();
+  await page.setViewport({ width: W, height: H });
+  await page.goto(BASE + "?seed=2307", { waitUntil: "networkidle0" });
+  await page.evaluate(() => {
+    localStorage.removeItem("coldsnap-front-save");
+    localStorage.setItem("coldsnap-wf-manual", "off");
+    localStorage.setItem("coldsnap-screen", "menu");
+  });
+  await page.reload({ waitUntil: "networkidle0" });
+  await page.waitForSelector('[data-menu="depot"]');
+  await page.click('[data-menu="depot"]');
+  await page.waitForFunction(() => typeof window.__DEPOT__ === "function", { timeout: 30000 });
+  await page.evaluate(() => window.__DEPOTSTART__());
+  await page.waitForFunction(() => window.__DEPOT__().t > 0.5, { timeout: 30000 });
+  return page;
+}
+
+// SHOT 1 — wf-collapse.png. The depot's masonry mid-fall: the loss collapse
+// fires at the camera's home focus and the end card is delayed by design,
+// so the frame is clean stone in motion.
+{
+  const page = await boot();
+  await sleep(1500);
+  await page.evaluate(() => window.__DEPOTEND__(false));
+  await sleep(1400);
+  await page.screenshot({ path: ".superpowers/wf-collapse.png" });
+  console.log("shot 1 landed:", await page.evaluate(() => ({ t: window.__DEPOT__().t, breach: window.__DEPOT__().breach })));
+  await page.close();
+}
+
+// SHOT 2 — wf-front.png. The opening front under assault: enemies spawned
+// and marched into the defenders' sight, fog holding beyond it.
+{
+  const page = await boot();
+  await page.evaluate(() => { window.__DEPOTSPAWN__(6); window.__DEPOTSPAWN__(6); });
+  await page.waitForFunction(() => {
+    const flags = window.__DEPOTFLAGS__();
+    const home = flags.find((f) => f.kind === "depot") || flags[0];
+    if (!home) return false;
+    return window.__DEPOTENEMYPOS__().some((e) => {
+      const dx = e.x - home.x, dz = e.z - home.z;
+      return dx * dx + dz * dz < 26 * 26;
+    });
+  }, { timeout: 240000, polling: 1000 });
+  await sleep(800);
+  await page.screenshot({ path: ".superpowers/wf-front.png" });
+  console.log("shot 2 landed: enemies in sight range");
+  await page.close();
+}
+
+// SHOT 3 — wf-takecontrol.png. Possession: tap the starting rifle squad's
+// anchor, take TAKE CONTROL off its pie, let the red reticle show.
+{
+  const page = await boot();
+  const at = await page.evaluate(() => {
+    const sq = window.__DEPOTSQUADS__()[0];
+    // anchor field names verified at dispatch against the hook body
+    const p = window.__DEPOTSCREENAT__(sq.x ?? sq.ax, sq.z ?? sq.az);
+    return { x: p.x, y: p.y };
+  });
+  await page.mouse.click(at.x, at.y);
+  await page.waitForFunction(
+    () => [...document.querySelectorAll("button")].some((b) => /TAKE CONTROL/.test(b.textContent)),
+    { timeout: 10000 },
+  );
+  await page.evaluate(() => {
+    [...document.querySelectorAll("button")].find((b) => /TAKE CONTROL/.test(b.textContent)).click();
+  });
+  await sleep(600);
+  await page.mouse.move(W / 2 + 180, H / 2 - 90); // steer the reticle out where it reads
+  await sleep(900);
+  await page.screenshot({ path: ".superpowers/wf-takecontrol.png" });
+  console.log("shot 3 landed:", await page.evaluate(() => ({ possessed: !!document.body.innerText.match(/RELEASE|POSSESS/i) })));
+  await page.close();
+}
+
+// SHOT 4 — wf-bell.png. The muster bell's convoy: force the bell, capture
+// with the manifest card up.
+{
+  const page = await boot();
+  await page.evaluate(() => window.__DEPOTBELL__(0));
+  await page.waitForFunction(() => {
+    const m = window.__DEPOTMANIFEST__();
+    return m && m.offers && m.offers.length > 0;
+  }, { timeout: 60000, polling: 500 });
+  await sleep(600);
+  await page.screenshot({ path: ".superpowers/wf-bell.png" });
+  console.log("shot 4 landed:", await page.evaluate(() => window.__DEPOTMANIFEST__()));
+  await page.close();
+}
+
+await browser.close();
+console.log("four candidates in .superpowers/ — copy keepers to docs/media/");
+```
+
+**Step 2 — place the keepers.** `mkdir -p docs/media`, copy the four PNGs to `docs/media/wf-collapse.png`, `wf-front.png`, `wf-takecontrol.png`, `wf-bell.png`. Keeper rule: the staged thing is on screen (stones mid-fall; enemies visible with fog beyond; the red reticle up; the manifest card up). A shot failing that rule after two staging attempts is a STOP.
+
+**Step 3 — `README.md`, replaced whole with exactly this:**
+
+````markdown
+# COLDSNAP — WINTER FRONT
+
+**A full physics war game that fits on a floppy disk.** 💾
+
+The whole thing — the war, the engine, five tech demos, every sound — is one 1.25 MB bundle, about 395 KB over the wire.
+
+**PLAY:** https://jeffreycoen.github.io/coldsnap/
+
+| | |
+|---|---|
+| ![A building collapsing under shellfire](docs/media/wf-collapse.png) | ![A walled front under assault, fog beyond](docs/media/wf-front.png) |
+| ![Driving a possessed squad, the red reticle up](docs/media/wf-takecontrol.png) | ![The muster bell's convoy manifest](docs/media/wf-bell.png) |
+
+Destruction here is structural, not scripted. Every building is individual stones held together by welds with real break forces — a collapse is the physics finding out, not an animation playing.
+
+- **The physics engine is written from scratch in plain JavaScript.** No game engine, no physics library, no WebAssembly. Three.js pushes the triangles; React draws the menus.
+- **Deterministic to the bit.** No hidden randomness anywhere. Same seed, same valley; same actions, same war — provable by hash, and tested that way on every push.
+- **Every valley is drawn fresh.** Hills, a stream with one crossing, villages, forests — no two wars share ground. `?seed=` replays a specific one.
+- **The enemy lives under your rules.** Same physics, same shared market, same prices, same purchase pacing. Symmetry is law.
+- **Sight is honest.** Walls block sight and never grant it. An enemy no one sees is not drawn at all.
+- **Every sound is synthesized.** Zero audio files: gunfire, the bell, the wind — all procedural, tuned against published acoustics. Distant fire arrives late — sound travels at 343 m/s in-game — and echoes off rock and masonry while the snowfield stays dead.
+- **A whole war saves as one JSON string.** The map is not saved — it regrows from its seed, and the war's scars are laid back over it. Lose your depot and the save burns. No rewinds.
+- **60 fps on a Raspberry Pi.** The game was built, measured, and played on the machine it targets.
+
+The war itself: every 90 seconds the muster bell rings and the convoy offers new mercenaries — pick one. Both armies buy from one living market where every price is a census of what already stands on the field. Only engineers build. Any squad or tower can be taken over and driven directly while the front fights on. Dead men stain the snow for the whole war.
+
+## Under the hood
+
+- **Engine** (`src/engine/core.js`, ~2,400 dependency-free lines): sequential-impulse rigid-body solver — boxes, quaternions, friction, stacking — with welds that carry break forces, sleeping bodies, and a fixed 120 Hz timestep.
+- **Two-tier collision books**: sleeping and immovable stones file into the broadphase once and stay filed — a cell of settled masonry does no pair work. Measured on the Pi: idle simulation 5.0 → 3.1 ms, assault plus collapse 10.8 → 7.3 ms, physics bit-identical before and after.
+- **Determinism culture**: every random draw is seeded and draw-count-stable (a lint gate forbids `Math.random` in game logic); the original demo is byte-frozen and `scripts/golden.mjs` re-extracts the engine from it on every push, asserting bit-identical world-state hashes; behavior changes are pinned by keystone hashes.
+- **Renderer** (`src/render/renderer.js`): one Three.js scene, instanced pools with fixed caps sized by measurement — 3,000 stones, 360 trees — and a fog pass that draws only what a living eye can see.
+- **The save**: bodies, welds mid-break, craters, squad rosters, the dice — serialized at each bell into a single JSON string in browser storage.
+- Winter Front was built on five playable tech demos — driving, contracts, a campaign, a tower defense, and a walking biped mech — all still on the site behind THE PROVING RANGE.
+
+## Development
+
+```
+npm install
+npm run dev      # local dev server
+npm run build    # static build in dist/
+```
+
+Pushes to `main` deploy to GitHub Pages automatically.
+
+**Credits:** Direction & design — Jeff Coen. Code — Claude (Anthropic's
+Fable 5), written across many sessions under Jeff's direction. MIT licensed;
+copyright held by Jeff Coen.
+````
+
+**Step 4 — ship.** `src/version.js` MK → `"mk1.16"`; build AFTER the bump; stage `README.md`, `docs/media/*.png`, `src/version.js`; commit; push (CI deploys). Commit message: `the README: the war on a floppy disk (mk1.16)`.
+
+**Gates (run ONLY these):** `npm run build` · `SMOKE_ONLY=start node scripts/smoke.mjs` · `ls -la docs/media/` showing the four PNGs the README references. No engine, depot, or test-pin change is in play — any test movement at all is a STOP.
 
 ---
 
