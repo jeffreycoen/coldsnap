@@ -26,7 +26,127 @@
 
 **Task 9 — The README** — POPULATED BELOW (mk1.16).
 
-**Close — the load ramp** — POPULATED BELOW (mk1.18); then the owner's playtest closes the phase.
+**Task 10 — The body lists, third landing** — POPULATED BELOW (mk1.19; ordered by the ramp's no-headroom verdict).
+
+**Close — the load ramp** — POPULATED BELOW (mk1.18). RUN (2026-08-14, two repeats, Amendment 1 normalization): NO HEADROOM — rung 1 (56 men fighting, 1,299 sleeping stones, 0 awake) measures 11.58/11.93 ms normalized against the 11.0 line. Task 10 answers it; the ramp re-runs after Task 10 for the real ceiling, then the market is sized and the owner's playtest closes the phase.
+
+---
+
+# TASK 10 — The body lists, third landing (mk1.19)
+
+**What it does.** Re-lands the typed body pools — once per frame, the body array filters into seven pools and every hot combat scan reads its pool instead of walking the whole world, full predicates kept, behavior identical by construction. Ordered by the load ramp's verdict: a 56-man defended firefight already sits at the frame budget, and the pools' measured win lives exactly there (−25% to −40% on the defended window, on file from the second landing). The second landing was reverted on an idle regression measured by the OLD raw-per-frame instrument — the same instrument the ramp just proved reads ~3x high and distorts under the software renderer. This landing is judged by the NORMALIZED protocol.
+
+**The governing texts, in order of authority:**
+1. THIS section's delta list.
+2. The mk1.14 Task 5 section below (its DELTA LIST 1-10 and Amendment 1's Step A1-1 idle gate — all folded in from the start).
+3. The ARCHIVED SPEC in `docs/superpowers/plans/2026-08-13-slow-front-p5-the-front.md` ("ARCHIVED SPEC — Body lists", line ~1769) — the module code, the test block, the eighteen consumer edits, including its own Amendment (once-per-frame rebuild).
+
+**THE DELTA LIST (third landing, supersedes where it disagrees):**
+1. NAMES AND MARK: test block `P6 T10: body lists` (mk1.19); assert prefixes `T10(`; version bump `"mk1.19"`; commit subject `body lists: the hot scans stop walking the world (mk1.19)`.
+2. THE IDLE GATE lands from the start (Task 5 Amendment Step A1-1 verbatim: `S._hot` from the hud census walk, cold frames null `world._L`). With no squads fielded at a fresh war's boot, a cold frame does zero pool work.
+3. MEASUREMENT (supersedes Task 5 delta 6 and Amendment A1-2/A1-3): the instrument is `.superpowers/p6-lists-perf.mjs` (Step 0 below) — the load ramp's staging and its Amendment-1 NORMALIZATION. Two windows, each 12 sim-seconds, normalized frame cost = (Σ sim ms ÷ steps) × 2: WINDOW A idle (fresh war, nothing fielded), WINDOW B the ramp's rung-1 defended firefight (8 rifle squads, 24 rim enemies, 8 town shells). BEFORE = two repeats on the mk1.18 build, captured before any code lands; AFTER = two repeats on the post-bump mk1.19 build. SHIP RULE: after-norm ≤ before-norm in BOTH windows, both repeats; medians alongside; tails reported never gating.
+4. ON FAILURE: revert every code edit clean and report — the owner decides what happens next. (There is NO auto-retire clause; the mk1.14-era "retires for good" wording was disclaimed by the owner and is void.)
+5. ANCHOR LAW unchanged (Task 5 delta 4): function names are the anchors; the eighteen consumer sites are listed there; a site whose shape has drifted from the archived snippet is a STOP. Since mk1.13, the depot layer gained: `stepSquadRouting` (mk1.10, before the archive's second landing — already reflected), the `__DEPOTLOAD__` hook (mk1.18, hook region only), and UI-side tasks that never touch the consumer files. Expect clean matches.
+6. GATES (ONLY these): parse changed files · `npm run lint:depot` · `npm run test:depot` (the T10 block red-first — module missing — then fully green, zero re-pins; any old assert moving is a STOP) · `npm run build` AFTER the bump · `SMOKE_ONLY=depot node scripts/smoke.mjs` · the Step 0 BEFORE and Step 9 AFTER captures under delta 3's ship rule. No golden — core.js untouched, game layer only.
+7. AFTER THE SHIP: Step 10 re-runs the load ramp (`.superpowers/p6-load-ramp.mjs`, unchanged, two repeats) for the REAL ceiling. Its table and ceiling line go in the report; market sizing stays with the owner.
+
+**Suggested model:** Sonnet — the spec is archived in full; the work is careful re-anchoring, the gate, and the measurement.
+
+**Required reading (re-verify at dispatch):** this section; the Task 5 section below IN FULL; the whole ARCHIVED SPEC section in the P5 plan; `src/depot/accuracy.js` whole; `src/depot/squads.js` whole; `src/depot/state.js` — `squadFire` through `friendlyFouls`; `src/depot/units.js` whole; `src/depot/DepotGame.jsx` — imports, `stepTowers`, `engageCheck`, the frame-loop sim bracket (the `?perf=1` stopwatch region), the hud census walk (for `S._hot`); `scripts/depot-test.mjs` 1-70 + tail; `.superpowers/p6-load-ramp.mjs` whole (the staging and normalization Step 0 copies); `src/version.js`.
+
+**Allowed files:** `src/depot/lists.js` (new), `src/depot/accuracy.js`, `src/depot/squads.js`, `src/depot/state.js`, `src/depot/units.js`, `src/depot/DepotGame.jsx`, `scripts/depot-test.mjs`, `src/version.js`, `.superpowers/p6-lists-perf.mjs` (untracked instrument).
+
+**Step 0 — the instrument and the BEFORE.** Write `.superpowers/p6-lists-perf.mjs` exactly as follows and run it TWICE against a preview of the CURRENT (mk1.18) build; the two printed pairs are the BEFORE numbers. Foreground, fresh page per run.
+
+```js
+// p6-lists-perf.mjs — body-lists before/after instrument (P6 T10).
+// Two normalized windows per run: A = idle fresh war, B = the load ramp's
+// rung-1 defended firefight. Serve the build first: npm run preview.
+import puppeteer from "puppeteer-core";
+
+const BASE = process.env.SHOT_URL || "http://localhost:4173/coldsnap/";
+const CHROME = process.env.CHROME_BIN || "/usr/bin/chromium";
+const MEASURE_S = 12;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const browser = await puppeteer.launch({
+  protocolTimeout: 600000,
+  executablePath: CHROME,
+  headless: true,
+  args: ["--no-sandbox", "--disable-gpu", "--enable-unsafe-swiftshader", "--window-size=960,600"],
+});
+const page = await browser.newPage();
+await page.setViewport({ width: 960, height: 600 });
+await page.goto(BASE + "?seed=2307&perf=1", { waitUntil: "networkidle0" });
+await page.evaluate(() => {
+  localStorage.removeItem("coldsnap-front-save");
+  localStorage.setItem("coldsnap-wf-manual", "off");
+  localStorage.setItem("coldsnap-screen", "menu");
+});
+await page.reload({ waitUntil: "networkidle0" });
+await page.waitForSelector('[data-menu="depot"]');
+await page.click('[data-menu="depot"]');
+await page.waitForFunction(() => typeof window.__DEPOT__ === "function", { timeout: 30000 });
+await page.evaluate(() => window.__DEPOTSTART__());
+await page.waitForFunction(() => window.__DEPOT__().t > 0.5, { timeout: 30000 });
+
+const simT = () => page.evaluate(() => window.__DEPOT__().t);
+const waitSim = async (s) => {
+  const t0 = await simT();
+  await page.waitForFunction((tt) => window.__DEPOT__().t >= tt, { timeout: 300000, polling: 500 }, t0 + s);
+};
+const measure = async (label) => {
+  await page.evaluate(() => window.__DEPOTPERF__.reset());
+  const tA = await simT();
+  await waitSim(MEASURE_S);
+  const d = await page.evaluate((tA) => {
+    const p = window.__DEPOTPERF__();
+    const tB = window.__DEPOT__().t;
+    const sims = p.frames.map((f) => f.sim).sort((a, b) => a - b);
+    const total = sims.reduce((s, v) => s + v, 0);
+    const steps = Math.max(1, Math.round((tB - tA) * 120));
+    const load = window.__DEPOTLOAD__();
+    return {
+      norm: (total / steps) * 2,
+      mean: total / sims.length,
+      med: sims[Math.floor(sims.length / 2)],
+      p95: sims[Math.floor(sims.length * 0.95)],
+      frames: sims.length, ...load,
+    };
+  }, tA);
+  console.log(`${label} | norm ${d.norm.toFixed(2)} | raw mean ${d.mean.toFixed(2)} | med ${d.med.toFixed(2)} | p95 ${d.p95.toFixed(2)} | men ${d.men} awake ${d.awake} asleep ${d.asleep} (${d.frames}f)`);
+  return d;
+};
+
+// WINDOW A — idle: a fresh war, nothing fielded, 4 settle seconds first.
+await waitSim(4);
+await measure("A idle");
+
+// WINDOW B — the ramp's rung-1 defended firefight.
+await page.evaluate(() => {
+  const flags = window.__DEPOTFLAGS__();
+  const home = flags[0];
+  const toward = home.z > 0 ? -1 : 1;
+  for (let i = 0; i < 8; i++) {
+    window.__DEPOTSQUAD__("rifles", home.x - 14 + i * 4, home.z + toward * 10);
+  }
+  for (let i = 0; i < 4; i++) window.__DEPOTSPAWN__(6);
+  const town = window.__DEPOTTOWN__();
+  for (let k = 0; k < 8; k++) {
+    const t = town[(k * 3 + 1) % town.length] || town[0];
+    window.__DEPOTSHELL__(t.x, 2.0, t.z);
+  }
+});
+await waitSim(8);
+await measure("B defended");
+await browser.close();
+```
+
+**Steps 1-8 — the landing.** Execute the ARCHIVED SPEC's Steps 1-8 (test block red-first, `lists.js`, the import, the eighteen consumer edits) under the Task 5 delta list (names per delta 1 here, rebuild site per its delta 2 — the frame loop, gated `if (S.acc >= STEP)` — with the idle gate from delta 2 here folded in) . Function-name anchors; STOP on drift.
+
+**Step 9 — the verdict.** Bump `src/version.js` → `"mk1.19"`; build; run gates (delta 6); AFTER capture (instrument unchanged, two repeats, post-bump preview). Ship rule per delta 3. PASS → commit and push. FAIL → revert clean, report, stop.
+
+**Step 10 — the new ceiling.** On a PASS only: run `.superpowers/p6-load-ramp.mjs` twice against the shipped build; report both rung tables and the ceiling line.
 
 ---
 
