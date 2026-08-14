@@ -965,6 +965,16 @@ function stepDrive(world) {
     } else if (b.squad) {
       if (!b.ctl) b.ctl = { throttle: 0, steer: 0, brake: false };
       aiDrive(world, b);
+    } else if (world.depotCombat && b.depotDrive) {
+      // DIVERGENCE (guarded, mk1.30 P7 T1): THE WAR COMMANDS ITS OWN HULLS.
+      // A depot vehicle carrying b.depotDrive is driven here: "auto" — the
+      // game layer wrote b.goal (an order) and aiDrive steers to it;
+      // "manual" — the game layer wrote b.ctl itself this tick (possession
+      // sticks, Task 2). Guarded on world.depotCombat and a field no demo/
+      // TD/campaign body ever carries, so every other mode is byte-identical
+      // (golden proves it).
+      if (!b.ctl) b.ctl = { throttle: 0, steer: 0, brake: false };
+      if (b.depotDrive === "auto") aiDrive(world, b);
     } else continue; // parked hulls (scouts, depot) stay untouched
     driveHull(world, b, b.ctl);
   }

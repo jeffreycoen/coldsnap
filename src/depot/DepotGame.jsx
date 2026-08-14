@@ -21,6 +21,7 @@ import { marketCounts, computePrices, fieldPrices } from "./market.js";
 import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic, drivePossessedSquad } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
+import { stepDrivers } from "./drivers.js";
 import { makeRegiment, payTown } from "./economy.js";
 import { makeTerritory, stepTerritory, holderAt, canBuild, fogStateFor, valueAt, EMIT } from "./territory.js";
 import { makeSight, stepSight, seenAt, eyeOf, steerReticle, reclampReticle } from "./sight.js";
@@ -913,12 +914,12 @@ function shatterStructure(world, b, opts) {
   return grid;
 }
 
-// =============================================================== enemies
-// March + combat driver — full roster (conscript/runner/breaker/grenadier/
-// sapper/tank). Lives in src/depot/units.js; DepotGame just supplies the
-// flow field and the orientation-aware fwdDir (ORIENT is module-local here,
-// so units.js can't reimplement it without drifting).
+// March + combat drivers. Vehicles first (drivers.js — the motor pool,
+// mk1.30), then infantry (units.js) — the mk1.21 order, tanks before men,
+// which is also the rng draw-order contract. DepotGame supplies the flow
+// field and the orientation-aware fwdDir/invW.
 function stepEnemies(world, grid, T) {
+  stepDrivers(world, grid, fwdDir, T, invW);
   stepUnits(world, grid, fwdDir, T, invW);
 }
 

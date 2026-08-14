@@ -72,7 +72,7 @@ export function holderAt(T, x, z) {
 // reads the raw value (positive = held); team 2 (the attacker) reads it
 // sign-flipped, so "their" held ground is where the field runs negative.
 // This is the one gate both towers (DepotGame.jsx's stepTowers) and enemy
-// shooters (units.js's stepRifleman/stepGrenadier/stepTank) call — a target
+// shooters (units.js's stepRifleman/stepGrenadier, drivers.js's tank) call — a target
 // is acquirable only where the acquiring side's own field reaches it.
 export function fogStateFor(T, x, z, team) {
   const { ix, iz } = cellOf(T, x, z);

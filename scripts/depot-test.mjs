@@ -28,6 +28,7 @@ import {
 } from "../src/engine/core.js";
 import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, MASON, INFANTRY_ARMS, PLAYER_START, PLAYER_TIERS } from "../src/depot/specs.js";
 import { stepUnits, spawnUnit, payBounties, SNIPER_FIRE } from "../src/depot/units.js";
+import { stepDrivers } from "../src/depot/drivers.js";
 import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad, drivePossessedSquad, COHESION_M, slotBlockedPublic } from "../src/depot/squads.js";
 import {
   makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue,
@@ -1156,15 +1157,17 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   ok("effRange: caps at 1.2x (well beyond +10m)", effRange(flatWorld(), { x: 0, y: 40, z: 0 }, spec) === spec.range * 1.2);
   ok("effRange: no downhill penalty (muzzle below surround clamps to 0 elev)", effRange(flatWorld(), { x: 0, y: -20, z: 0 }, spec) === spec.range);
 
-  // --- enemy symmetric consumption: units.js's stepRifleman/stepGrenadier/
-  // stepTank all import effRange from state.js (grep-verified below rather
-  // than re-simulating a full unit tick here — the sim behavior is
+  // --- enemy symmetric consumption: units.js's stepRifleman/stepGrenadier
+  // and drivers.js's tank import effRange from state.js (grep-verified below
+  // rather than re-simulating a full unit tick here — the sim behavior is
   // exercised by the rest of this file's unit tests; this asserts the
   // wiring itself so a future edit that reverts to spec.range trips it).
   {
     const unitsSrc = fs.readFileSync(new URL("../src/depot/units.js", import.meta.url), "utf8");
+    const driversSrc = fs.readFileSync(new URL("../src/depot/drivers.js", import.meta.url), "utf8");
     ok("units.js imports effRange from state.js", /import\s*\{[^}]*effRange[^}]*\}\s*from\s*"\.\/state\.js"/.test(unitsSrc));
-    ok("units.js's tank/rifle/grenadier scans consume effRange (not raw spec.range) for their threshold", (unitsSrc.match(/effRange\(world,\s*muzzle,\s*fspec\)/g) || []).length === 3);
+    ok("units.js's rifle/grenadier scans consume effRange (not raw spec.range)", (unitsSrc.match(/effRange\(world,\s*muzzle,\s*fspec\)/g) || []).length === 2);
+    ok("drivers.js's tank scan consumes effRange (re-pinned mk1.30 — stepTank moved to the motor pool)", (driversSrc.match(/effRange\(world,\s*muzzle,\s*fspec\)/g) || []).length === 1);
   }
 
   // --- reachPolygon
@@ -3689,9 +3692,15 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
       /export function fogStateFor\(/.test(terrSrc) && /export function valueAt\(/.test(terrSrc) &&
       /export function holderAt\(/.test(terrSrc) && /export function canBuild\(/.test(terrSrc));
     const unitsSrc = fs.readFileSync(new URL("../src/depot/units.js", import.meta.url), "utf8");
+    const driversSrc = fs.readFileSync(new URL("../src/depot/drivers.js", import.meta.url), "utf8");
     ok("VISION T2(e): no enemy shooter claims an ungated structure scan any more", !/NO fieldReaches/.test(unitsSrc));
-    ok("VISION T2(e): all seven enemy acquisition paths gate on sight",
-      (unitsSrc.match(/fieldReaches\(T,/g) || []).length === 7, (unitsSrc.match(/fieldReaches\(T,/g) || []).length);
+    // re-pinned mk1.30 (P7 T1): the tank's acquisition path moved verbatim to
+    // drivers.js — 6 of the seven remain in units.js, the 7th (the tank's
+    // structure scan) now lives in the motor pool, same gate, same law.
+    ok("VISION T2(e): six of the seven enemy acquisition paths gate on sight in units.js",
+      (unitsSrc.match(/fieldReaches\(T,/g) || []).length === 6, (unitsSrc.match(/fieldReaches\(T,/g) || []).length);
+    ok("VISION T2(e): the tank's acquisition path gates on sight in drivers.js (re-pinned mk1.30 — moved to the motor pool)",
+      (driversSrc.match(/fieldReaches\(T,/g) || []).length === 1, (driversSrc.match(/fieldReaches\(T,/g) || []).length);
     ok("VISION T2(e): the sapper's contact plant stays ungated (he IS the eye, at arm's length)",
       /stepSapper/.test(unitsSrc) && !/fieldReaches[\s\S]{0,200}SAPPER_PLANT_PAD/.test(unitsSrc));
   }
@@ -6350,6 +6359,68 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 }
 // ==== end P6 T11 =============================================================
+
+// ==== P7 T1: THE MOTOR POOL ==================================================
+// The pin: the wave tank's whole life — flow march, lost-clock, gun scan,
+// shell fire — byte-identical after the re-seat. Hash and draws captured on
+// the mk1.21 stepUnits path; the motor pool must not move either number.
+{
+  const PIN_HASH = 781775633, PIN_DRAWS = 12; // captured on the mk1.21 stepUnits path (pre-move)
+  const field = makeField(80, 1.7, 5);
+  const world = makeWorld({ field, seed: 91 });
+  world.depotCombat = true; world._tdStruct = true;
+  let draws = 0;
+  const baseRng = world.rng;
+  world.rng = () => { draws++; return baseRng(); };
+  const grid = straightGrid(0, 1);
+  spawnUnit(world, { x: 0, z: -30 }, "tank");
+  spawnWallCourses(world, 0, field.heightAt(0, 6), 6, 0);
+  for (let i = 0; i < 1200; i++) {
+    stepDrivers(world, grid, identFwdDir, null);
+    stepUnits(world, grid, identFwdDir, null);
+    stepWorld(world);
+  }
+  ok("T1 pin: tank fixture hash unmoved", worldHash(world) === PIN_HASH, worldHash(world));
+  ok("T1 pin: tank fixture draw count unmoved", draws === PIN_DRAWS, draws);
+  ok("T1 pin: the gun actually fired (fixture is live, not vacuous)",
+    world.events.filter((e) => e.type === "boom").length > 0);
+}
+
+// The guarded line: the war commands its own hulls. depotCombat + b.depotDrive
+// only — the demo, tower defense, and every parked hull are byte-identical.
+{
+  const field = makeField(80, 1.7, 5);
+  const mk = (depot) => {
+    const w = makeWorld({ field, seed: 7 });
+    if (depot) w.depotCombat = true;
+    const v = addBody(w, { kind: "vehicle", team: 1, mass: 3800, hx: 2.2, hy: 0.95, hz: 3.3, x: 0, z: 0, y: field.heightAt(0, 0) + 0.97, hp: 1e9, friction: 0.85 });
+    return { w, v };
+  };
+  { // "auto": the game layer writes a goal, the engine steers and drives to it
+    const { w, v } = mk(true);
+    v.depotDrive = "auto"; v.goal = { x: 0, z: 20 };
+    for (let i = 0; i < 1200; i++) stepWorld(w);
+    ok("T1 engine: an auto hull drives to its goal", Math.hypot(v.pos.x, v.pos.z - 20) < 3, v.pos.z.toFixed(1));
+  }
+  { // "manual": the game layer wrote b.ctl itself — the treads answer it
+    const { w, v } = mk(true);
+    v.depotDrive = "manual"; v.ctl = { throttle: 1, steer: 0, brake: false };
+    for (let i = 0; i < 600; i++) stepWorld(w);
+    ok("T1 engine: a manual hull answers the stick", v.pos.z > 8, v.pos.z.toFixed(1));
+  }
+  { // the guard: without depotCombat the same fields are inert
+    const { w, v } = mk(false);
+    v.depotDrive = "auto"; v.goal = { x: 0, z: 20 };
+    for (let i = 0; i < 600; i++) stepWorld(w);
+    ok("T1 engine: without depotCombat the branch never runs", Math.abs(v.pos.z) < 0.5, v.pos.z.toFixed(1));
+  }
+  { // the old contract, re-asserted: a hull with no driver stays parked
+    const { w, v } = mk(true);
+    for (let i = 0; i < 600; i++) stepWorld(w);
+    ok("T1 engine: a driverless hull stays parked", Math.abs(v.pos.z) < 0.5, v.pos.z.toFixed(1));
+  }
+}
+// ==== end P7 T1 ==============================================================
 
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);

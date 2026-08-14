@@ -70,6 +70,7 @@ function spawnTank(world, sp) {
   t.armor = 140;
   t.tag = "tank";
   t.squad = "waveArmor"; // engine's stepDrive/aiDrive picks this up generically
+  t.drv = "waveArmor"; // P7 T1: the motor pool's policy key (drivers.js)
   t.driverSpec = { throttleHabit: 0.8 };
   t.bounty = TANK.bounty;
   t.gunT = 2 + world.rng() * 2;
@@ -108,58 +109,6 @@ function faceTravel(u, dt) {
     u.w.y += err * 6 * dt;
     u.w.y *= 1 - Math.min(1, 4 * dt);
   }
-}
-
-// ------------------------------------------------------------ tank driver
-// Wave armor: an engine vehicle on the engine's own tread physics
-// (stepDrive/aiDrive, called generically from stepWorld). We only need to
-// keep t.goal pointed down the flow field and pull the trigger on its gun.
-function stepTank(world, grid, t, dt, fwdDir, T, toUV = (x, z) => ({ u: x, v: z })) {
-  const cell = grid && grid.cellAt(t.pos.x, t.pos.z);
-  if (cell && cell.dist < 1e8 && (cell.dx || cell.dz)) {
-    const fd = fwdDir(cell.dx, cell.dz);
-    t.goal = { x: t.pos.x + fd.x * 9, z: t.pos.z + fd.z * 9 };
-    t.lostT = 0;
-  } else {
-    // off-grid write-off: same 12s window infantry uses (above). Without
-    // this a tank that wanders off the flow field (grid gap, pushed off
-    // the map by a collision, etc.) keeps driving forever — no leak radius
-    // ever catches it, and it never dies. Mirrors the infantry lostT path.
-    t.lostT = (t.lostT || 0) + dt;
-    if (t.lostT > 12) applyDamage(world, t, 1e9, { attacker: "world" });
-  }
-  t.gunT = (t.gunT || 0) - dt;
-  if (t.gunT > 0) return;
-  const fspec = ENEMY_FIRE.tank;
-  const muzzle = { x: t.pos.x, y: t.pos.y + 1.2, z: t.pos.z };
-  const eR = effRange(world, muzzle, fspec);
-  let tgt = null, td = eR * eR;
-  const pool = world._L ? world._L.structsFor2 : world.bodies; // T10
-  for (const s of pool) {
-    // FRONT F1 (4c): the shared hostile-structure set — behavior identical
-    // to the old inline tower|wall filter except depot masonry joins it.
-    if (!hostileStructure(s, 2)) continue;
-    // VISION (mk0.72): structures obey the one law too — you shoot what your
-    // side sees. The old no-gate carve-out died with the ground gate that
-    // caused it (a tower's own emission pinned its own ground untargetable
-    // for team 2 forever); a visible wall is simply visible.
-    const c = toUV(s.pos.x, s.pos.z);
-    if (!fieldReaches(T, c.u, c.v, 2)) continue;
-    const dx = s.pos.x - t.pos.x, dz = s.pos.z - t.pos.z, d2 = dx * dx + dz * dz;
-    if (d2 < td && arcClears(world, muzzle, s.pos, fspec, t.id)) { td = d2; tgt = s; }
-  }
-  if (!tgt) { t.gunT = 0.5; return; }
-  t.gunT = fspec.cd + world.rng() * (fspec.cdVar || 0);
-  // owner: t.id — without it the shell has no muzzle-clearing immunity
-  // (core.js's owner-immunity gate, ~:698) against the tank's OWN hull.
-  // The muzzle sits at t.pos.x/z (only offset in y), squarely inside the
-  // tank's own 2.4m-deep hz box, and hitStruct:true is required below to
-  // let the round hit the tower target at all — so without an owner id the
-  // round detonates on its own hull on the very first tick, every time,
-  // and never reaches the target. Found by scripts/depot-test.mjs's
-  // tank-vs-tower fixture: a "boom" event landed ~2m from the muzzle,
-  // still inside the tank's own footprint, tower hp never moved.
-  shooterFire(world, t, muzzle, tgt, fspec, { attacker: "enemy", hitStruct: true, owner: t.id });
 }
 
 // ---------------------------------------------------- anti-personnel pass
@@ -487,11 +436,6 @@ function stepSapper(world, u, dt) {
 // upright/contacts/sleep/damage all belong to the engine.
 export function stepUnits(world, grid, fwdDir, T, toUV = (x, z) => ({ u: x, v: z })) {
   const dt = world.dt;
-  // wave armor (tanks): engine-driven vehicles, gun on a timer
-  for (const t of world.bodies) {
-    if (t.kind !== "vehicle" || t.team !== 2 || !t.alive || !t.squad) continue;
-    stepTank(world, grid, t, dt, fwdDir, T, toUV);
-  }
   for (const u of world.bodies) {
     if (u.kind !== "unit" || !u.alive || u.team !== 2) continue;
     u.frostMul = u.frostMul == null ? 1 : u.frostMul; // frost towers arrive later; default no-slow
