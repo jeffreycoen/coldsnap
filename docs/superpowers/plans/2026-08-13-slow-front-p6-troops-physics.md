@@ -26,7 +26,138 @@
 
 **Task 9 — The README** — POPULATED BELOW (mk1.16).
 
-**Close** — the owner's playtest closes the phase.
+**Close — the load ramp** — POPULATED BELOW (mk1.18); then the owner's playtest closes the phase.
+
+---
+
+# P6 CLOSE — The load ramp (mk1.18)
+
+**What it does.** The phase-close measurement, per the capacity-anchor ruling: escalating waves on the dense seed until the frame budget breaks, the ceiling reported in men and awake stones. That number then sizes the market's dials and settles soft cap versus hard cap — those decisions come to the owner WITH the number, they are not in this task. Two parts: one tiny read-only debug hook ships (the load gauge, mk1.18 — the only deploy), then an untracked instrument runs the ramp on this Pi and reports.
+
+**The break line, stated once:** 60 fps gives 16.7 ms a frame; drawing measures ~5 ms flat on this Pi (mk0.50 evidence run). So the simulation's budget line is **11.0 ms mean**. The instrument gates on simulation milliseconds only — valid under the software renderer because simulation is pure CPU; render and whole-frame times under the software renderer mean nothing and never gate.
+
+**The ramp shape:** a firing line of eight rifle squads stands before the player depot (debug-spawned, cost-free — real combat load without touching scrap). Each rung adds 24 enemy men at the rim and fires 8 shells into the town to keep masonry awake; 8 sim-seconds to settle, 12 sim-seconds measured. If the standing count plateaus (the line kills as fast as the rim spawns), the rung's spawn count doubles. The ramp ends when the sim mean crosses 11.0 ms — the ceiling is the LAST rung under it — or when a depot breaches first (reported as such). Two full repeats, fresh war each.
+
+**Suggested model:** Sonnet — one anchored hook plus a fully specified instrument.
+
+**Required reading (re-verify at dispatch):**
+- This section, whole.
+- `src/depot/DepotGame.jsx` — ONLY the debug-hook region, lines 2750-3080: `__DEPOTSPAWN__` (2763), `__DEPOTFLAGS__` (2766), `__DEPOTTOWN__` (2767), `__DEPOTSHELL__` (2789), `__DEPOTSQUAD__` (2873), `__DEPOTSANDBAGS__` (3040 — the Step 1 anchor), and the `?perf=1` stopwatch (3053-3077: `__DEPOTPERF__` exists ONLY with the flag; returns oldest-first frames of `{t, sim, render, frame}` in ms plus `.reset()`).
+- `scripts/smoke.mjs` — lines 1-56 (launch block the instrument mirrors).
+- `src/version.js` — whole.
+
+**Trap notes:**
+- `?perf=1` must be in the URL or `__DEPOTPERF__` never exists.
+- Gate on `sim` ms only. Never on `render`, `frame`, or wall-clock fps — the software renderer poisons all three.
+- The stopwatch ring holds 4096 frames — a 12-second window always fits.
+- Watch `__DEPOT__().breach` and `.enemyBreach` every rung; a breach ends the run with an honest "war ended before the budget broke" line.
+- The field manual flag is set off before entry; the save key is cleared.
+- No game logic changes — the hook is read-only. Any test movement at all is a STOP.
+- The instrument stays untracked in `.superpowers/`.
+
+**Step 1 — the load gauge.** In `DepotGame.jsx`, immediately after the `__DEPOTSANDBAGS__` line (3040), add:
+
+```js
+      window.__DEPOTLOAD__ = () => {
+        // the load ramp's gauge (P6 close): live men and the awake/asleep
+        // stone split, counted fresh on each call — read-only, no cadence.
+        let men = 0, awake = 0, asleep = 0;
+        for (const b of world.bodies) {
+          if (!b.alive) continue;
+          if (b.kind === "unit") men++;
+          else if (b.kind === "chunk") { if (b.sleeping) asleep++; else awake++; }
+        }
+        return { men, awake, asleep };
+      };
+```
+
+**Step 2 — ship the gauge.** `src/version.js` MK → `"mk1.18"`; build AFTER the bump; commit `the load gauge: one read-only counter for the ramp (mk1.18)` (with the standard trailer); push. Gates for this step: `node scripts/depot-lint.mjs` · `npm run build` · `SMOKE_ONLY=depot node scripts/smoke.mjs`.
+
+**Step 3 — the instrument `.superpowers/p6-load-ramp.mjs` (untracked), exactly this, then run it twice** against `npm run preview` serving the post-bump build; both runs' tables go in the report:
+
+```js
+// p6-load-ramp.mjs — P6 phase-close capacity ramp. Serve the built bundle
+// first (npm run preview). Gates on SIM ms only; see the plan's break line.
+import puppeteer from "puppeteer-core";
+
+const BASE = process.env.SHOT_URL || "http://localhost:4173/coldsnap/";
+const CHROME = process.env.CHROME_BIN || "/usr/bin/chromium";
+const BREAK_MS = 11.0, SETTLE_S = 8, MEASURE_S = 12, MAX_RUNGS = 20;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const browser = await puppeteer.launch({
+  protocolTimeout: 600000,
+  executablePath: CHROME,
+  headless: true,
+  args: ["--no-sandbox", "--disable-gpu", "--enable-unsafe-swiftshader", "--window-size=960,600"],
+});
+const page = await browser.newPage();
+await page.setViewport({ width: 960, height: 600 });
+await page.goto(BASE + "?seed=2307&perf=1", { waitUntil: "networkidle0" });
+await page.evaluate(() => {
+  localStorage.removeItem("coldsnap-front-save");
+  localStorage.setItem("coldsnap-wf-manual", "off");
+  localStorage.setItem("coldsnap-screen", "menu");
+});
+await page.reload({ waitUntil: "networkidle0" });
+await page.waitForSelector('[data-menu="depot"]');
+await page.click('[data-menu="depot"]');
+await page.waitForFunction(() => typeof window.__DEPOT__ === "function", { timeout: 30000 });
+await page.evaluate(() => window.__DEPOTSTART__());
+await page.waitForFunction(() => window.__DEPOT__().t > 0.5, { timeout: 30000 });
+
+// The firing line: eight rifle squads across the depot's front.
+await page.evaluate(() => {
+  const flags = window.__DEPOTFLAGS__();
+  const home = flags[0];
+  const toward = home.z > 0 ? -1 : 1; // face mid-field
+  for (let i = 0; i < 8; i++) {
+    window.__DEPOTSQUAD__("rifles", home.x - 14 + i * 4, home.z + toward * 10);
+  }
+});
+
+const simT = () => page.evaluate(() => window.__DEPOT__().t);
+const waitSim = async (s) => {
+  const t0 = await simT();
+  await page.waitForFunction((tt) => window.__DEPOT__().t >= tt, { timeout: 300000, polling: 500 }, t0 + s);
+};
+
+let prevMen = 0, spawnCalls = 4, ceiling = null, broke = null;
+console.log("rung | spawned+ | men | awake | asleep | sim mean | median | p95");
+for (let r = 1; r <= MAX_RUNGS; r++) {
+  await page.evaluate(({ n, rung }) => {
+    for (let i = 0; i < n; i++) window.__DEPOTSPAWN__(6);
+    const town = window.__DEPOTTOWN__();
+    for (let k = 0; k < 8; k++) {
+      const t = town[(k * 3 + rung) % town.length] || town[0];
+      window.__DEPOTSHELL__(t.x, 2.0, t.z);
+    }
+  }, { n: spawnCalls, rung: r });
+  await waitSim(SETTLE_S);
+  await page.evaluate(() => window.__DEPOTPERF__.reset());
+  await waitSim(MEASURE_S);
+  const d = await page.evaluate(() => {
+    const p = window.__DEPOTPERF__();
+    const sims = p.frames.map((f) => f.sim).sort((a, b) => a - b);
+    const mean = sims.reduce((s, v) => s + v, 0) / sims.length;
+    const med = sims[Math.floor(sims.length / 2)];
+    const p95 = sims[Math.floor(sims.length * 0.95)];
+    const load = window.__DEPOTLOAD__();
+    const st = window.__DEPOT__();
+    return { mean, med, p95, ...load, breach: st.breach, ebreach: st.enemyBreach, frames: sims.length };
+  });
+  console.log(`${r} | +${spawnCalls * 6} | ${d.men} | ${d.awake} | ${d.asleep} | ${d.mean.toFixed(2)} | ${d.med.toFixed(2)} | ${d.p95.toFixed(2)} (${d.frames}f)`);
+  if (d.breach || d.ebreach) { console.log(`RUN ENDS: a depot breached at rung ${r} before the budget broke`); break; }
+  if (d.mean > BREAK_MS) { broke = { r, ...d }; console.log(`BUDGET BROKE at rung ${r}: sim mean ${d.mean.toFixed(2)} ms > ${BREAK_MS}`); break; }
+  ceiling = { r, men: d.men, awake: d.awake, mean: d.mean };
+  if (d.men < prevMen * 1.1) spawnCalls = Math.min(spawnCalls * 2, 32); // plateau: the line kills as fast as the rim spawns
+  prevMen = d.men;
+}
+console.log("CEILING (last rung under budget):", JSON.stringify(ceiling));
+await browser.close();
+```
+
+**Step 4 — the report.** Both repeats' full rung tables; the ceiling stated in one plain line — men standing and stones awake at the last rung under 11.0 ms — means and medians shown, tails shown never gating. No dial changes, no cap decision: those are served to the owner as questions with the number in hand.
 
 ---
 

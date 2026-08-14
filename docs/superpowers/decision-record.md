@@ -90,6 +90,7 @@
 ## Deferral queues
 
 **Polish II (post-phase, owner-ratified disposition — deferrals collect here, never folded in opportunistically):**
+- Crater readability (owner, 2026-08-14: "it can ride for now"): ground deformation verified working end to end (probe: ~0.5m sink from six gun shells, drawn mesh moves) but reads weakly — shallow dials, snow palette, grid/tint/fog on top, and artillery bell-gated so crater sources are rare early. Candidate fixes when it's taken up: deeper `crater` dials per weapon and/or a renderer rim highlight on the bowl.
 - Manual wall rotation toggle (like sandbags).
 - Full-width top/bottom bar strips swallow ground taps (screen-eighth bands can't issue orders).
 - Intel card's future purpose and re-entry.
