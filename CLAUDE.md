@@ -47,6 +47,7 @@ The project owner directs design, reviews every plan, and is the sole playtester
 
 ## Look and sound
 
+- **Interface ships for phone AND desktop, every single time.** A control or input change is not done until both platforms carry it — touch gets its buttons, desktop gets mouse and keys. Plans for interface work name both explicitly.
 - **Visual changes ship, and the owner checks them live on the deployed site.** No screenshot loops — push the change and say what to look at. Words never ratify a shape; the owner's eyes are the acceptance.
 - Sound changes are auditioned on the soundboard (`?sounds=1`, OLD/NEW A/B) — the owner's ear is the acceptance.
 - The acoustics reference is `docs/superpowers/2026-08-12-sound-profiles-reference.md`; future sound-domain research appends to it.
