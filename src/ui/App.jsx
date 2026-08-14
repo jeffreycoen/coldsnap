@@ -145,5 +145,6 @@ export default function App() {
   return <StartScreen
     onDepot={() => { setDepotResume(null); setScreen("depot"); }}
     onDepotResume={(data) => { setDepotResume(data); setScreen("depot"); }}
-    onDemos={() => setScreen("demos")} />;
+    onDemos={() => setScreen("demos")}
+    onControls={() => setScreen("controls")} />;
 }

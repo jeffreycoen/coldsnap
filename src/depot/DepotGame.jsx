@@ -2501,6 +2501,15 @@ export default function DepotGame({ onExit, resume = null }) {
       let pinchD0 = 0, pinchZ0 = 1, dragTotal = 0, downPt = null;
       const onPointerDown = (e) => {
         A.ensure();
+        // DESKTOP FIRE (P6 T12, mk1.21, owner's playtest): while possessed,
+        // the left mouse button IS the trigger — held, it volleys like the
+        // phone FIRE button; the click never becomes a pan or a tap. The
+        // possession release paths already clear fireHeld.
+        if (S.possess && e.pointerType === "mouse" && e.button === 0) {
+          canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
+          S.fireHeld = true;
+          return;
+        }
         canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
         pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         if (pointers.size === 1) { dragTotal = 0; downPt = { x: e.clientX, y: e.clientY }; }
@@ -2537,6 +2546,7 @@ export default function DepotGame({ onExit, resume = null }) {
         }
       };
       const onPointerUp = (e) => {
+        if (S.fireHeld && e.pointerType === "mouse") { S.fireHeld = false; pointers.delete(e.pointerId); return; }
         pointers.delete(e.pointerId);
         if (downPt && dragTotal <= 12 && pointers.size === 0) tapAt(e.clientX, e.clientY);
         if (pointers.size < 2) pinchD0 = 0;
@@ -3740,7 +3750,7 @@ export default function DepotGame({ onExit, resume = null }) {
         </div>
       )}
       {/* POSSESSION (P4 T3, mk0.92): no stick for towers — they don't walk. */}
-      {hud.possessed && hud.possessed.kind !== "tower" && (
+      {isTouch && hud.possessed && hud.possessed.kind !== "tower" && (
         <div data-joy
           style={{ position: "absolute", left: 92 - 70, bottom: 128 - 70, width: 140, height: 140, zIndex: 7, touchAction: "none" }}
           onPointerDown={(e) => {
@@ -3761,7 +3771,7 @@ export default function DepotGame({ onExit, resume = null }) {
       {/* POSSESSION T4 (mk0.93): the right stick — steers the reticle.
           Shown for BOTH possessed kinds (towers have no left stick, so this
           is their whole interface). */}
-      {hud.possessed && (
+      {isTouch && hud.possessed && (
         <div data-joyr
           style={{ position: "absolute", right: 92 - 70, bottom: 208 - 70, width: 140, height: 140, zIndex: 7, touchAction: "none" }}
           onPointerDown={(e) => {
@@ -3789,7 +3799,7 @@ export default function DepotGame({ onExit, resume = null }) {
       {/* POSSESSION (P4 T2, mk0.91) — FIRE: hold-to-repeat, like the
           sandbox's own trigger. Sets S.fireHeld; the sim bracket (frame loop)
           is what actually attempts a volley, at most once per sim tick. */}
-      {hud.possessed && (
+      {isTouch && hud.possessed && (
         <button data-possess-fire ref={fireBtnRef}
           style={{ ...P.btnBig, position: "absolute", right: 132, bottom: 16, zIndex: 7, width: 64, height: 64, borderRadius: "50%", borderColor: "#ff6b5e", color: "#ff6b5e", fontWeight: "bold", background: "#2a1418", touchAction: "none" }}
           onPointerDown={(e) => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); setFireHeld(true); }}
