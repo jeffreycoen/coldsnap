@@ -81,7 +81,7 @@ export default function StartScreen({ onDepot, onDepotResume, onDemos }) {
             button shows through (mk0.43 regression, Jeff's screenshot) */}
         <button data-menu="depot" style={option({ borderColor: burnArmed ? "#a63c3c" : "#6a8a9a", background: burnArmed ? "rgba(92,33,27,0.85)" : COLORS.btnBg })} onClick={startNewFront}>
           <div style={{ color: burnArmed ? "#ff6b5e" : "#9fd4e4", fontSize: 15, letterSpacing: 2 }}>
-            {burnArmed ? "THE FRONT BURNS — CONFIRM" : "▶ DIG IN — NEW FRONT"}
+            {burnArmed ? "THE FRONT BURNS — CONFIRM" : "▶ NEW FRONT — TAKE COMMAND"}
           </div>
           <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>
             {burnArmed

@@ -76,10 +76,11 @@ try {
   let body = await text();
 
   // --- start screen (the front door, P6 T7 mk1.14): it renders, it carries
-  // the three laws, it offers DIG IN and the one quiet link to the demos.
+  // the three laws, it offers NEW FRONT — TAKE COMMAND and the one quiet
+  // link to the demos.
   if (sectionEnabled("start")) {
     ok("start screen carries the three laws", body.includes("The muster bell rings every 90 seconds") && body.includes("real masonry") && body.includes("The save burns"));
-    ok("start screen offers DIG IN — NEW FRONT", body.includes("DIG IN"));
+    ok("start screen offers NEW FRONT — TAKE COMMAND", body.includes("TAKE COMMAND"));
     ok("start screen links to the demos page", body.includes("THE PROVING RANGE"));
     ok("no game canvas on the start screen", (await page.$("canvas")) === null);
     const mk = await page.evaluate(() => { const e = document.querySelector("[data-mk]"); return e ? e.textContent.trim() : null; });
@@ -215,12 +216,17 @@ try {
     // ...and the saved front (P1 T3): its key is not coldsnap-depot-prefixed,
     // and a leftover save would turn the menu's one-tap WINTER FRONT into the
     // two-tap NEW FRONT burn confirm.
-    await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (k.startsWith("coldsnap-depot")) localStorage.removeItem(k); localStorage.removeItem("coldsnap-front-save"); });
+    await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (k.startsWith("coldsnap-depot")) localStorage.removeItem(k); localStorage.removeItem("coldsnap-front-save"); localStorage.removeItem("coldsnap-wf-manual"); });
     await page.evaluate(() => localStorage.setItem("coldsnap-screen", "menu"));
     await page.goto(depotURL, { waitUntil: "networkidle0" });
     await clickMenu("depot");
     await page.waitForFunction(() => typeof window.__DEPOT__ === "function", { timeout: 20000 });
     ok("depot: mounts", true);
+    await page.waitForSelector("[data-manual]", { timeout: 10000 });
+    ok("depot: the field manual greets a fresh war", true);
+    await page.click("[data-manual-skip]");
+    await page.waitForFunction(() => !document.querySelector("[data-manual]"), { timeout: 5000 });
+    ok("depot: SKIP closes the manual", true);
     await page.evaluate(() => window.__DEPOTSTART__());
     await page.waitForFunction(() => window.__DEPOT__().t > 0.2, { timeout: 20000 });
     body = await text();

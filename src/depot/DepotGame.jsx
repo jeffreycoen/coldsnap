@@ -27,6 +27,12 @@ import { makeSight, stepSight, seenAt, eyeOf, steerReticle, reclampReticle } fro
 import { fwdUFor, fwdDirFor, invWFor, clampToRimFor } from "./orient.js";
 import { SAVE_KEY, serializeFront, burnFront, restoreBodies, restoreWelds, restoreCensus, restoreSquads } from "./save.js";
 import Dispatch from "./Dispatch.jsx";
+import FieldManual from "../ui/FieldManual.jsx";
+
+// THE FIELD MANUAL's don't-show-again flag (P6 T8). "off" means never
+// auto-open again; anything else (including absent) means the tour greets
+// every fresh war. A resumed war never auto-opens it either way.
+const MANUAL_KEY = "coldsnap-wf-manual";
 
 // ============================================================== the map
 // THE FRONT (mk1.00): a 120x120 SQUARE — one canonical frame, four rotations.
@@ -1197,6 +1203,21 @@ export default function DepotGame({ onExit, resume = null }) {
   const [fatal, setFatal] = useState(null);
   const [runId, setRunId] = useState(0);
   const [rereadDispatch, setRereadDispatch] = useState(false);
+  // P6 T8: the field manual. React state only — the sim never sees it.
+  const [manualOpen, setManualOpen] = useState(false);
+  useEffect(() => {
+    if (resumeRef.current) return; // a resumed war is not a first entry
+    let live = true;
+    (async () => {
+      try { const r = await window.storage.get(MANUAL_KEY); if (live && !(r && r.value === "off")) setManualOpen(true); }
+      catch (e) { if (live) setManualOpen(true); }
+    })();
+    return () => { live = false; };
+  }, []);
+  const closeManual = (never) => {
+    setManualOpen(false);
+    if (never) { try { window.storage.set(MANUAL_KEY, "off"); } catch (e) {} }
+  };
   const restart = () => { setFatal(null); setHud({ ...HUD0 }); setRunId((r) => r + 1); };
   // mk0.29 — THE DEAD BUTTON, diagnosed: makeEndDispatch() was called inline
   // in the render, so every HUD tick (~8Hz) handed Dispatch a brand-new
@@ -4048,11 +4069,16 @@ export default function DepotGame({ onExit, resume = null }) {
             {isTouch ? " Drag to pan, pinch to zoom, tap to build. Tap a tower to inspect it." : " WASD pans, wheel zooms, Q/E rotates, click builds. Click a tower to inspect it."}
           </div>
           <button style={{ ...P.btn, fontSize: 15, padding: "10px 26px", borderColor: "#4aff8c", color: "#4aff8c" }} onClick={startGame}>
-            DIG IN
+            TAKE COMMAND
+          </button>
+          <button data-menu="manual" style={{ ...P.btn, marginTop: 14, opacity: 0.75, fontSize: 11, letterSpacing: 1 }} onClick={() => setManualOpen(true)}>
+            FIELD MANUAL
           </button>
           <div style={{ fontSize: 10, opacity: 0.55, marginTop: 12, letterSpacing: 2 }}>FIELD ORDER #{hud.seed || "—"} · ?seed= replays a map</div>
         </div>
       )}
+
+      {!hud.started && !fatal && manualOpen && <FieldManual onClose={closeManual} />}
 
       {(hud.gameOver || hud.victory) && hud.endCard && !fatal && (
         <Dispatch
