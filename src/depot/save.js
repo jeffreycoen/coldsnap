@@ -56,6 +56,8 @@ const BODY_HANDLED = new Set([
   "hx", "hy", "hz", "hp", "friction", "restitution", "alive", "sleeping",
   "pos", "q", "v", "w", "home", "gpos", "rockRef", "pairId",
   "lastImp", "lastHit", "driver", "_paceHit", "_coverHit", "targetId", "tgtId",
+  "_filed", "_cells", // mk1.05's broadphase bookkeeping — NEVER saved: a restored
+                      // stone marked filed against an empty book is a ghost (P7 T5)
 ]);
 
 // A value the file can carry: a finite number, a string, a boolean, null, an
@@ -140,6 +142,9 @@ function readBody(world, s, rocks) {
   // Targeting caches revalidate on the first scan — a restored sticky target
   // would be an id from a world that no longer exists.
   b.targetId = null; b.tgtId = null;
+  // The broadphase re-files restored sleepers itself — a carried _filed
+  // would tell it not to (the resume ghost, P7 T5).
+  b._filed = false; b._cells = null;
   return b;
 }
 

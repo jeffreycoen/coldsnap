@@ -747,69 +747,136 @@ function buildTown(world, grid, field) {
       : () => false;
     // T4: drive doors run down the LONG axis — derived from live dims too.
     const driveZ = t.drive && t.nz >= t.nx;
-    for (let ix = 0; ix < t.nx; ix++) for (let iy = 0; iy <= t.ny; iy++) for (let iz = 0; iz < t.nz; iz++) {
-      const perim = ix === 0 || ix === t.nx - 1 || iz === 0 || iz === t.nz - 1;
-      const corner = (ix <= 1 || ix >= t.nx - 2) && (iz <= 1 || iz >= t.nz - 2);
-      if (iy < t.ny && !perim && !colAt(ix, iz)) continue;
-      if (iy === t.ny && (t.roof === false || t.slab)) continue; // T4: a slab replaces the granular roof below
-      if (ix === t.door && (iz === 1 || iz === 2) && iy <= 2) continue;
-      // T4: drive-through — doors carved through BOTH end walls of the long
-      // axis, full width bar the corners, every course but the top lintel.
-      if (t.drive && iy < t.ny - 1 && (driveZ
-        ? (iz === 0 || iz === t.nz - 1) && ix >= 1 && ix <= t.nx - 2
-        : (ix === 0 || ix === t.nx - 1) && iz >= 1 && iz <= t.nz - 2)) continue;
-      if (t.depot && iy === t.ny && perim && !corner && (ix + iz) % 2) continue;
-      if (t.ruin && ((ix * 31 + iy * 17 + iz * 7) % 100) / 100 < t.ruin && iy > 0) continue;
-      const c = addBody(world, {
-        kind: "chunk", team: 0, mass, hx: hcs, hy: hcs, hz: hcs,
-        x: t.x + (ix - (t.nx - 1) / 2) * pitch,
-        y: base + iy * pitch,
-        z: t.z + (iz - (t.nz - 1) / 2) * pitch,
-        friction: 0.65, restitution: 0.02,
-      });
-      c.sleeping = true;
-      c.town = t.id;
-      c.gpos = [ix, iy, iz];
-      grid3.push(c);
-    }
-    if (t.depot) for (const [bx, bz] of [[0, 0], [t.nx - 1, 0], [0, t.nz - 1], [t.nx - 1, t.nz - 1]]) {
-      for (let iy = t.ny + 1; iy <= t.ny + 2; iy++) {
+    // P7 T5 (mk1.34, owner): THE PRECAST DEPOT — column-and-panel, the
+    // warehouse lesson at fortress scale. A quarter the lattice's bodies
+    // (the measured boom at the wall drops 5.3 -> 1.6 ms); demolition goes
+    // structural — shear a panel's welds and it falls as ONE piece, drop
+    // columns and the roof pancakes. Same footprint, same censuses, same
+    // breach law: every piece is an ordinary chunk with town set.
+    if (t.depot) {
+      const NY = t.ny;
+      const colXs = [0, 4, 7, t.nx - 1];
+      const colZs = [0, 4, t.nz - 1];
+      const isCol = (ix, iz) =>
+        (iz === 0 || iz === t.nz - 1) ? colXs.indexOf(ix) >= 0
+        : (ix === 0 || ix === t.nx - 1) ? colZs.indexOf(iz) >= 0 : false;
+      const colTops = [];
+      for (let ix = 0; ix < t.nx; ix++) for (let iz = 0; iz < t.nz; iz++) {
+        if (!isCol(ix, iz)) continue;
+        let below = null;
+        for (let iy = 0; iy < NY; iy++) {
+          const c = addBody(world, { kind: "chunk", team: 0, mass, hx: hcs, hy: hcs, hz: hcs,
+            x: t.x + (ix - (t.nx - 1) / 2) * pitch, y: base + iy * pitch, z: t.z + (iz - (t.nz - 1) / 2) * pitch,
+            friction: 0.65, restitution: 0.02 });
+          c.sleeping = true; c.town = t.id; c.gpos = [ix, iy, iz];
+          grid3.push(c);
+          if (below) addWeld(world, below, c, breakF);
+          below = c;
+          if (iy === NY - 1) colTops.push(c);
+        }
+      }
+      const panelH = (NY * pitch) / 2 - 0.04;
+      const panels = [];
+      const addPanel = (px, pz, hx2, hz2) => {
+        const p = addBody(world, { kind: "chunk", team: 0, mass: 750, hx: hx2, hy: panelH, hz: hz2,
+          x: px, y: base + panelH - hcs, z: pz, friction: 0.65, restitution: 0.02 });
+        p.sleeping = true; p.town = t.id; p.gpos = [-2, 0, panels.length];
+        grid3.push(p); panels.push(p);
+        // welded to BOTH its columns at three heights — the shear points
+        for (const s of grid3) {
+          if (s.gpos[0] < 0 || ![1, 3, NY - 2].includes(s.gpos[1])) continue;
+          if (Math.abs(s.pos.x - px) <= hx2 + pitch && Math.abs(s.pos.z - pz) <= hz2 + pitch) addWeld(world, p, s, breakF);
+        }
+        return p;
+      };
+      for (const iz of [0, t.nz - 1]) {
+        for (let bi = 0; bi + 1 < colXs.length; bi++) {
+          if (iz === 0 && bi === 1) continue; // THE DOOR BAY — men walk in, hulls don't fit
+          const a = colXs[bi], b2 = colXs[bi + 1];
+          addPanel(t.x + ((a + b2) / 2 - (t.nx - 1) / 2) * pitch, t.z + (iz - (t.nz - 1) / 2) * pitch,
+            ((b2 - a) * pitch) / 2 - hcs - 0.03, hcs);
+        }
+      }
+      for (const ix of [0, t.nx - 1]) {
+        for (let bi = 0; bi + 1 < colZs.length; bi++) {
+          const a = colZs[bi], b2 = colZs[bi + 1];
+          addPanel(t.x + (ix - (t.nx - 1) / 2) * pitch, t.z + ((a + b2) / 2 - (t.nz - 1) / 2) * pitch,
+            hcs, ((b2 - a) * pitch) / 2 - hcs - 0.03);
+        }
+      }
+      // THE ROOF: one rigid slab on the caps and panel tops — the hangar's
+      // proven pancake (1-hop convergence, falls whole when the ring shears)
+      const slab = addBody(world, { kind: "chunk", team: 0, mass: 900,
+        hx: ((t.nx - 1) / 2) * pitch - hcs, hy: 0.2, hz: ((t.nz - 1) / 2) * pitch - hcs,
+        x: t.x, y: base + (NY - 0.5) * pitch + 0.2, z: t.z, friction: 0.65, restitution: 0.02 });
+      slab.sleeping = true; slab.town = t.id; slab.gpos = [-1, NY, -1];
+      grid3.push(slab);
+      for (const cTop of colTops) addWeld(world, slab, cTop, breakF);
+      for (const p of panels) addWeld(world, slab, p, breakF);
+      // the crowns: the four corner silhouettes, on the slab
+      for (const [bx, bz] of [[0, 0], [t.nx - 1, 0], [0, t.nz - 1], [t.nx - 1, t.nz - 1]]) {
+        let below = slab;
+        for (let iy = NY + 1; iy <= NY + 2; iy++) {
+          const c = addBody(world, { kind: "chunk", team: 0, mass, hx: hcs, hy: hcs, hz: hcs,
+            x: t.x + (bx - (t.nx - 1) / 2) * pitch, y: base + iy * pitch, z: t.z + (bz - (t.nz - 1) / 2) * pitch,
+            friction: 0.65, restitution: 0.02 });
+          c.sleeping = true; c.town = t.id; c.gpos = [bx, iy, bz];
+          grid3.push(c);
+          addWeld(world, below, c, breakF);
+          below = c;
+        }
+      }
+    } else {
+      for (let ix = 0; ix < t.nx; ix++) for (let iy = 0; iy <= t.ny; iy++) for (let iz = 0; iz < t.nz; iz++) {
+        const perim = ix === 0 || ix === t.nx - 1 || iz === 0 || iz === t.nz - 1;
+        const corner = (ix <= 1 || ix >= t.nx - 2) && (iz <= 1 || iz >= t.nz - 2);
+        if (iy < t.ny && !perim && !colAt(ix, iz)) continue;
+        if (iy === t.ny && (t.roof === false || t.slab)) continue; // T4: a slab replaces the granular roof below
+        if (ix === t.door && (iz === 1 || iz === 2) && iy <= 2) continue;
+        // T4: drive-through — doors carved through BOTH end walls of the long
+        // axis, full width bar the corners, every course but the top lintel.
+        if (t.drive && iy < t.ny - 1 && (driveZ
+          ? (iz === 0 || iz === t.nz - 1) && ix >= 1 && ix <= t.nx - 2
+          : (ix === 0 || ix === t.nx - 1) && iz >= 1 && iz <= t.nz - 2)) continue;
+        if (t.ruin && ((ix * 31 + iy * 17 + iz * 7) % 100) / 100 < t.ruin && iy > 0) continue;
         const c = addBody(world, {
           kind: "chunk", team: 0, mass, hx: hcs, hy: hcs, hz: hcs,
-          x: t.x + (bx - (t.nx - 1) / 2) * pitch,
+          x: t.x + (ix - (t.nx - 1) / 2) * pitch,
           y: base + iy * pitch,
-          z: t.z + (bz - (t.nz - 1) / 2) * pitch,
+          z: t.z + (iz - (t.nz - 1) / 2) * pitch,
           friction: 0.65, restitution: 0.02,
         });
-        c.sleeping = true; c.town = t.id; c.gpos = [bx, iy, bz];
+        c.sleeping = true;
+        c.town = t.id;
+        c.gpos = [ix, iy, iz];
         grid3.push(c);
       }
-    }
-    const key = (a, b, c2) => a + "," + b + "," + c2;
-    const map = new Map(grid3.map((c) => [key(c.gpos[0], c.gpos[1], c.gpos[2]), c]));
-    const townBreakF = breakF; // P7 T3 (owner): normal welds — the depot is big, not magic; the breach bar is what makes it a siege
-    for (const c of grid3) {
-      const g = c.gpos;
-      for (const d of [[1, 0, 0], [0, 1, 0], [0, 0, 1]]) {
-        const o = map.get(key(g[0] + d[0], g[1] + d[1], g[2] + d[2]));
-        if (o) addWeld(world, c, o, townBreakF);
+      const key = (a, b, c2) => a + "," + b + "," + c2;
+      const map = new Map(grid3.map((c) => [key(c.gpos[0], c.gpos[1], c.gpos[2]), c]));
+      const townBreakF = breakF; // P7 T3 (owner): normal welds — the depot is big, not magic; the breach bar is what makes it a siege
+      for (const c of grid3) {
+        const g = c.gpos;
+        for (const d of [[1, 0, 0], [0, 1, 0], [0, 0, 1]]) {
+          const o = map.get(key(g[0] + d[0], g[1] + d[1], g[2] + d[2]));
+          if (o) addWeld(world, c, o, townBreakF);
+        }
       }
-    }
-    // T4: THE SLAB — one rigid 800kg roof plate, sized inside the wall ring
-    // with the standard ~2cm joint, welded to the top two courses (the
-    // proving grounds' proven form: 1-hop convergence, pancakes whole when
-    // the ring shears). It joins stones/n0 so a fallen roof counts as ruin.
-    if (t.slab) {
-      const shx = ((t.nx - 1) / 2) * pitch - hcs - 0.02;
-      const shz = ((t.nz - 1) / 2) * pitch - hcs - 0.02;
-      const slab = addBody(world, {
-        kind: "chunk", team: 0, mass: 800, hx: shx, hy: 0.2, hz: shz,
-        x: t.x, y: base + (t.ny - 1) * pitch + 0.2, z: t.z,
-        friction: 0.65, restitution: 0.02,
-      });
-      slab.sleeping = true; slab.town = t.id; slab.gpos = [-1, t.ny, -1];
-      for (const c of grid3) if (c.gpos[1] >= t.ny - 2) addWeld(world, slab, c, townBreakF);
-      grid3.push(slab);
+      // T4: THE SLAB — one rigid 800kg roof plate, sized inside the wall ring
+      // with the standard ~2cm joint, welded to the top two courses (the
+      // proving grounds' proven form: 1-hop convergence, pancakes whole when
+      // the ring shears). It joins stones/n0 so a fallen roof counts as ruin.
+      if (t.slab) {
+        const shx = ((t.nx - 1) / 2) * pitch - hcs - 0.02;
+        const shz = ((t.nz - 1) / 2) * pitch - hcs - 0.02;
+        const slab = addBody(world, {
+          kind: "chunk", team: 0, mass: 800, hx: shx, hy: 0.2, hz: shz,
+          x: t.x, y: base + (t.ny - 1) * pitch + 0.2, z: t.z,
+          friction: 0.65, restitution: 0.02,
+        });
+        slab.sleeping = true; slab.town = t.id; slab.gpos = [-1, t.ny, -1];
+        for (const c of grid3) if (c.gpos[1] >= t.ny - 2) addWeld(world, slab, c, townBreakF);
+        grid3.push(slab);
+      }
     }
     const cells = townFootprint(grid, t);
     for (const ci of cells) { const c = grid.cells[ci]; c.blocked = true; c.building = t.id; }

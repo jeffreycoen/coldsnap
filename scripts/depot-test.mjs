@@ -41,7 +41,7 @@ import { makeTerritory, stepTerritory, holderAt, fogStateAt, valueAt, canBuild, 
 import { SIGHT, eyeOf, canSee, fillMaps, gridEye, makeSight, seenAt, stepSight, RETICLE_SPEED, steerReticle, reclampReticle } from "../src/depot/sight.js";
 import { fwdUFor, fwdDirFor, invWFor, clampToRimFor } from "../src/depot/orient.js";
 import { washAlpha, WASH_SEAM, WASH_MAX_A } from "../src/render/renderer.js";
-import { serializeFront, parseFront, restoreBodies, restoreSquads } from "../src/depot/save.js";
+import { serializeFront, parseFront, restoreBodies, restoreWelds, restoreSquads } from "../src/depot/save.js";
 import fs from "node:fs";
 
 // identity fwdDir (DepotGame.jsx's ORIENT-aware transform, ORIENT===0 case)
@@ -5868,8 +5868,13 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   // hills/town) shifts for a fixed seed, so seed 4242's whole map (and thus
   // the keystone battle it fights) is a different map. Recaptured off this
   // block's own printed console log.
-  const T6_HASH = 1250293016;   // was 2061472628
-  const T6_DRAWS = 749;  // was 551
+  // re-pinned mk1.34 (P7 T5): both depots rebuild as column-and-panel
+  // precast — a different body count/order in the same world.bodies array
+  // this keystone hashes over, even though the fixture's own battle (a
+  // non-depot building) never touches depot masonry. Recaptured off this
+  // block's own printed console log.
+  const T6_HASH = 119305372;   // was 1250293016
+  const T6_DRAWS = 755;  // was 749
   const src6 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   const sliceFn6 = (name) => {
     const start = src6.indexOf(`\nfunction ${name}(`);
@@ -6827,6 +6832,178 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 }
 // ==== end P7 T4 ==============================================================
+
+// ==== P7 T5: THE PRECAST DEPOT AND THE HONEST RESUME ========================
+{
+  // (a) THE GHOST DIES: a full save/restore round trip, then a hull driven
+  // at the restored sleeping masonry — contacts must form. Same minimal
+  // save-ctx shape the COMMAND T1(c) round-trip block builds.
+  {
+    const { hcs, pitch, mass, breakF } = MASON;
+    const fieldA = makeField(80, 1.7, 5);
+    const worldA = makeWorld({ field: fieldA, seed: 61 });
+    worldA.depotCombat = true;
+    const stonesA = [];
+    for (let ix = 0; ix < 10; ix++) for (let iy = 0; iy < 2; iy++) {
+      const c = addBody(worldA, { kind: "chunk", team: 0, mass, hx: hcs, hy: hcs, hz: hcs,
+        x: (ix - 4.5) * pitch, y: hcs + 0.02 + iy * pitch, z: 6, friction: 0.65, restitution: 0.02 });
+      c.sleeping = true; c.town = "depot2"; c.gpos = [ix, iy, 0];
+      stonesA.push(c);
+    }
+    const keyA = (a, b) => a + "," + b;
+    const mapA = new Map(stonesA.map((c) => [keyA(c.gpos[0], c.gpos[1]), c]));
+    for (const c of stonesA) for (const [dx, dy] of [[1, 0], [0, 1]]) {
+      const o = mapA.get(keyA(c.gpos[0] + dx, c.gpos[1] + dy));
+      if (o) addWeld(worldA, c, o, breakF);
+    }
+    for (let i = 0; i < 60; i++) stepWorld(worldA); // files the stones into A's books (_filed goes true)
+
+    const S = {
+      bell: 0, resources: 0, kills: 0, spawnRR: 0, started: false, mode: "wall", sandbagOrient: 0,
+      nextSquadId: 1, zoom: 1, focus: { x: 0, z: 0 }, depotCensusAcc: 0, depotStanding: 1, enemyStanding: 1,
+      starvedStreak: 0, _reportedBreak: false, _reportedSpent: false,
+      manifest: {}, foe: {}, intelUp: false, intelArmedAt: 0, lastDispatch: null,
+      pendingPlan: null, intelPlan: null, ws: {}, reg: {}, squads: [],
+    };
+    const Tterr = makeTerritory(5, 5);
+    const json = serializeFront({ S, world: worldA, T: Tterr, town: [], census: [], census2: [], rocks: [], smears: [], mapSeed: 1, rngSeed: 1 });
+    ok("(a1) the file carries no broadphase bookkeeping", !json.includes("_filed") && !json.includes("_cells"));
+
+    const parsed = parseFront(json);
+    ok("P7 T5(a): the save round trip parses back", parsed.ok, parsed.reason);
+    const worldB = makeWorld({ field: makeField(80, 1.7, 5), seed: 61 });
+    worldB.depotCombat = true;
+    const bodiesB = parsed.ok ? restoreBodies(worldB, parsed.data, []) : [];
+    if (parsed.ok) restoreWelds(worldB, parsed.data, bodiesB);
+    const home = bodiesB.map((b) => ({ b, x: b.pos.x, y: b.pos.y, z: b.pos.z }));
+
+    const hull = addBody(worldB, { kind: "vehicle", team: 1, mass: APC.mass, hx: APC.hx, hy: APC.hy, hz: APC.hz,
+      x: 0, y: APC.hy + 0.05, z: -10, hp: APC.hp, friction: 0.85 });
+    hull.depotDrive = "manual"; hull.ctl = { throttle: 1, steer: 0, brake: false };
+    let contacts = 0;
+    for (let i = 0; i < 1200; i++) {
+      stepWorld(worldB);
+      for (const c of worldB.contacts) {
+        const o = c.a === hull ? c.b : c.b === hull ? c.a : null;
+        if (o && o.kind === "chunk") contacts++;
+      }
+    }
+    ok("(a2) resumed stones are solid again", contacts > 0, `contacts=${contacts}`);
+    const movedStones = home.filter((h) => Math.hypot(h.b.pos.x - h.x, h.b.pos.y - h.y, h.b.pos.z - h.z) > 0.05).length;
+    ok("(a3) resumed stones still displace", movedStones > 0, `moved=${movedStones}/${home.length}`);
+  }
+
+  // (b)/(c)/(d): the T3/T4 sliced-buildTown machinery, one pinned seed —
+  // proves the precast shape, the open door bay, and that the siege law
+  // (census/standing/breach) flows through the new pieces unchanged.
+  {
+    const srcT5 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    const sliceFn5 = (name) => {
+      const start = srcT5.indexOf(`\nfunction ${name}(`);
+      if (start < 0) throw new Error("T5 extract: missing function " + name);
+      const rest = srcT5.slice(start + 1);
+      const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
+      return rest.slice(0, m < 0 ? rest.length : m + 9);
+    };
+    const header5 = srcT5.slice(srcT5.indexOf("const GRID_CS"), srcT5.indexOf("function genMap"));
+    const mapSrc5 = [
+      header5,
+      sliceFn5("genMap"), sliceFn5("makeMap"), sliceFn5("streamAt"), sliceFn5("pondAt"), sliceFn5("rockAt"),
+      sliceFn5("makeGrid"), sliceFn5("checkConnectivity"), sliceFn5("townFootprint"), sliceFn5("buildTown"),
+      `return { makeMap, makeGrid, buildTown, invW, state: () => ({ ORIENT, TOWN, MAP_SEED }) };`,
+    ].join("\n");
+    const mkMapT5 = () => new Function(
+      "mulberry32", "MASON", "fwdUFor", "fwdDirFor", "invWFor", "addBody", "addWeld", mapSrc5,
+    )(mulberry32, MASON, fwdUFor, fwdDirFor, invWFor, addBody, addWeld);
+    const flatF5 = { heightAt: () => 0, dirty: false, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; } };
+
+    const M5 = mkMapT5(); M5.makeMap(4); // the pinned seed (ORIENT 0 — unswapped 12x9 dims)
+    const worldC = makeWorld({ field: flatF5, seed: 5 });
+    M5.buildTown(worldC, M5.makeGrid(null), flatF5);
+    const st5 = M5.state();
+    const d1 = st5.TOWN.find((t) => t.id === "depot"), d2 = st5.TOWN.find((t) => t.id === "depot2");
+
+    const shapeOf = (t) => {
+      const mine = worldC.bodies.filter((b) => b.kind === "chunk" && b.town === t.id);
+      const cols = mine.filter((b) => b.hx === MASON.hcs && b.mass === MASON.mass && b.gpos[1] < t.ny);
+      const panels = mine.filter((b) => b.mass === 750 && b.hy > 2);
+      const slabs = mine.filter((b) => b.hy === 0.2 && b.hx > 4 && b.mass === 900);
+      const crowns = mine.filter((b) => b.hx === MASON.hcs && b.mass === MASON.mass && b.gpos[1] > t.ny);
+      return { cols: cols.length, panels: panels.length, slabs: slabs.length, crowns: crowns.length, total: mine.length };
+    };
+    for (const [name, t] of [["depot", d1], ["depot2", d2]]) {
+      const s = shapeOf(t);
+      ok(`(b) ${name}: column stones (unit dims), count in [60,80]`, s.cols >= 60 && s.cols <= 80, `${s.cols}`);
+      ok(`(b) ${name}: panels (full-height, mass 750), count in [7,10]`, s.panels >= 7 && s.panels <= 10, `${s.panels}`);
+      ok(`(b) ${name}: exactly one roof slab (hy 0.2, mass 900)`, s.slabs === 1, `${s.slabs}`);
+      ok(`(b) ${name}: crowns: 8`, s.crowns === 8, `${s.crowns}`);
+      ok(`(b) ${name}: total per depot in [80,110] (was ~300 for the lattice)`, s.total >= 80 && s.total <= 110, `${s.total}`);
+    }
+
+    // (c) THE DOOR BAY: no panel occupies the front face's middle bay (a
+    // point probe at the bay center at man height finds no body).
+    const doorProbe = (t) => {
+      const colXs = [0, 4, 7, t.nx - 1];
+      const bx = (colXs[1] + colXs[2]) / 2;
+      const px = t.x + (bx - (t.nx - 1) / 2) * MASON.pitch;
+      const pz = t.z + (0 - (t.nz - 1) / 2) * MASON.pitch;
+      const py = flatF5.heightAt(t.x, t.z) + MASON.hcs + 0.02 + 1.0;
+      const mine = worldC.bodies.filter((b) => b.kind === "chunk" && b.town === t.id);
+      return mine.some((b) =>
+        Math.abs(px - b.pos.x) <= b.hx && Math.abs(py - b.pos.y) <= b.hy && Math.abs(pz - b.pos.z) <= b.hz);
+    };
+    ok("(c) door bay clear (player depot): no body at man height", !doorProbe(d1));
+    ok("(c) door bay clear (enemy depot): no body at man height", !doorProbe(d2));
+
+    // (d) THE SIEGE STILL WORKS: displace 65% of one depot's census
+    // (teleport pieces well past DEPOT_STANDING_TOL) -> breach; 30% doesn't.
+    const census2 = censusDepotChunks(worldC.bodies, "depot2");
+    const stones2 = worldC.bodies.filter((b) => b.kind === "chunk" && b.town === "depot2");
+    const homes2 = stones2.map((b) => ({ x: b.pos.x, y: b.pos.y, z: b.pos.z }));
+    const restore2 = () => stones2.forEach((b, i) => { b.pos.x = homes2[i].x; b.pos.y = homes2[i].y; b.pos.z = homes2[i].z; });
+
+    const n65 = Math.floor(stones2.length * 0.65);
+    for (let i = 0; i < n65; i++) stones2[i].pos.x += 20;
+    const frac65 = depotStandingFraction(census2, worldC.byId);
+    ok("(d) 65% displaced crosses the breach line", frac65 < DEPOT_BREACH_FRAC, `${frac65}`);
+    const Sd = { gameOver: false, victory: false };
+    ok("(d) checkEnemyBreach fires at 65%", checkEnemyBreach(Sd, frac65) === true && Sd.victory === true);
+
+    restore2();
+    const n30 = Math.floor(stones2.length * 0.30);
+    for (let i = 0; i < n30; i++) stones2[i].pos.x += 20;
+    const frac30 = depotStandingFraction(census2, worldC.byId);
+    ok("(d) 30% displaced does not cross the breach line", frac30 >= DEPOT_BREACH_FRAC, `${frac30}`);
+    const Se = { gameOver: false, victory: false };
+    ok("(d) checkEnemyBreach does not fire at 30%", checkEnemyBreach(Se, frac30) === false);
+
+    // (e) THE PANEL FALLS WHOLE: shear one panel's welds, wake it, run 600
+    // steps -> the panel lies displaced/toppled while its columns stand.
+    const worldE = makeWorld({ field: flatF5, seed: 5 });
+    M5.buildTown(worldE, M5.makeGrid(null), flatF5);
+    const mineE = worldE.bodies.filter((b) => b.kind === "chunk" && b.town === "depot");
+    const panelE = mineE.find((b) => b.mass === 750 && b.hy > 2);
+    const y0 = panelE.pos.y;
+    const panelWelds = worldE.welds.filter((w) => w.a === panelE || w.b === panelE);
+    const colsE = panelWelds.map((w) => (w.a === panelE ? w.b : w.a)).filter((c) => c.hx === MASON.hcs && c.mass === MASON.mass);
+    const colHomesE = colsE.map((c) => ({ c, x: c.pos.x, y: c.pos.y, z: c.pos.z }));
+    for (const w of panelWelds) w.broken = true;
+    panelE.sleeping = false;
+    // a grounded wall panel sitting square on its own footprint has no
+    // reason to topple under gravity alone (it's already resting on the
+    // ground) — the shear is what a blast would do to the joint; the shove
+    // (perpendicular to the thin face, outward — the way a real shell
+    // would push it, not into its neighbor column 3cm away) is what the
+    // same blast's impulse would do to the freed panel.
+    panelE.v.z += 2.5; panelE.w.x += 1.8;
+    for (let i = 0; i < 600; i++) stepWorld(worldE);
+    const fell = Math.abs(panelE.R[4] - 1) > 0.05 || panelE.pos.y < y0 - 0.3;
+    ok("(e) the sheared panel falls whole (toppled or dropped)", fell, `R4=${panelE.R[4].toFixed(3)} dy=${(panelE.pos.y - y0).toFixed(3)}`);
+    const colsMoved = colHomesE.filter((h) => Math.hypot(h.c.pos.x - h.x, h.c.pos.y - h.y, h.c.pos.z - h.z) > 0.5).length;
+    ok("(e) its columns stand", colsMoved === 0, `${colsMoved}/${colHomesE.length}`);
+  }
+}
+// ==== end P7 T5 ==============================================================
 
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
