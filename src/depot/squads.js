@@ -52,7 +52,19 @@ export const SQUAD_SPECS = {           // costs are scrap; members spawn as unit
   // BUILD order (DepotGame.jsx): walk a line and lay bags or walls along it.
   // Every match starts with a team (PLAYER_START, specs.js). // provisional (F5)
   engineers: { n: 2, cost: 30, label: "ENGINEER TEAM" },
+  // P7 T7 (owner): the enemy's tier-1 types join YOUR list — mirrors of
+  // ENEMY_SPECS.fast/heavy, squads of 4 and 2, at tier 1 both sides.
+  runners:  { n: 4, cost: 34, label: "RUNNER SQUAD", speed: 5.0,             // provisional (F5)
+              member: { mass: 62, hx: 0.24, hy: 0.82, hz: 0.24, hp: 36 } },
+  breakers: { n: 2, cost: 40, label: "BREAKER PAIR", speed: 2.1,             // provisional (F5)
+              member: { mass: 340, hx: 0.46, hy: 1.02, hz: 0.46, hp: 290 } },
 };
+
+// THE PER-TYPE SPEED (P7 T7): a squad's march speed off its own SQUAD_SPECS
+// row, falling back to the flat MOVE_SPEED for every type that carries no
+// `speed` field — every existing squad type resolves to exactly 3.2,
+// byte-identical to today.
+export const squadSpeed = (type) => (SQUAD_SPECS[type] && SQUAD_SPECS[type].speed) || MOVE_SPEED;
 
 // Task 6 (the pair): squads.js now imports arcClears/effRange/INFANTRY_ARMS
 // for the sniper stand-point scorer — a module cycle with state.js/accuracy.js
@@ -371,7 +383,10 @@ function seekGoal(world, u, dt) {
       }
     }
   }
-  const sp = MOVE_SPEED;
+  // P7 T7: per-type speed — members carry utype (spawnSquadMembers), so a
+  // man's own march rate reads off his squad type, falling back to the flat
+  // MOVE_SPEED for every existing type (no `speed` field).
+  const sp = squadSpeed(u.utype);
   // Wake-on-seek (diag-squadlag root cause): a paused body goes to SLEEP
   // (core.js skips integration and re-zeros v below the wake threshold — a
   // gentle accel-from-rest never escapes it, so a slept marcher stalls
@@ -624,7 +639,7 @@ export function stepSquad(world, squad, dt) {
         // draw above still fires exactly once per leg.
         if (trail > COHESION_M) squad._cohesionHoldT = (squad._cohesionHoldT || 0) + dt;
         if (trail <= COHESION_M || squad._cohesionHoldT > COHESION_CAP_S) {
-          const step = Math.min(ld, MOVE_SPEED * dt);
+          const step = Math.min(ld, squadSpeed(squad.type) * dt);
           const nx2 = cx + (lx / ld) * step, nz2 = cz + (lz / ld) * step;
           // T3: the anchor never fords — a leg into open water holds at the bank.
           if (!(world.streamAt && world.streamAt(nx2, nz2))) squad.anchor = { x: nx2, z: nz2 };
@@ -726,7 +741,8 @@ export function drivePossessedSquad(world, squad, vx, vz, dt, aim) {
   if (trail > COHESION_M) squad._cohesionHoldT = (squad._cohesionHoldT || 0) + dt;
   else squad._cohesionHoldT = 0;
   if (trail <= COHESION_M || squad._cohesionHoldT > COHESION_CAP_S) {
-    squad.anchor = { x: squad.anchor.x + vx * MOVE_SPEED * dt, z: squad.anchor.z + vz * MOVE_SPEED * dt };
+    const sp = squadSpeed(squad.type); // P7 T7: per-type speed under the stick too
+    squad.anchor = { x: squad.anchor.x + vx * sp * dt, z: squad.anchor.z + vz * sp * dt };
   }
   const n = members.length;
   members.forEach((u, i) => {

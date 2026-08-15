@@ -714,8 +714,13 @@ export function spawnSquadMembers(world, squad) {
     // gets the man depenetration-ejected and slam-killed on his first tick —
     // spawn only on vetted ground (member hx 0.28 + the module's 0.35 pad).
     const p = clearSlot(world, squad.anchor.x + Math.cos(a) * r, squad.anchor.z + Math.sin(a) * r, 0.28 + 0.35);
-    const u = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28,
-      x: p.x, y: world.field.heightAt(p.x, p.z) + 0.74, z: p.z, hp: 58, friction: 0.5 });
+    // P7 T7: member stats read per-type off SQUAD_SPECS[type].member,
+    // falling back to today's literals — every existing type spawns
+    // byte-identical. Runners mirror ENEMY_SPECS.fast, breakers mirror
+    // ENEMY_SPECS.heavy.
+    const M = spec.member || { mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, hp: 58 };
+    const u = addBody(world, { kind: "unit", team: 1, mass: M.mass, hx: M.hx, hy: M.hy, hz: M.hz,
+      x: p.x, y: world.field.heightAt(p.x, p.z) + M.hy + 0.02, z: p.z, hp: M.hp, friction: 0.5 });
     u.utype = squad.type; u.squadId = squad.id; u.dress = "human"; // player side reads human
     // SMEARS ON (C0 T4, mk0.33): every man who falls leaves a permanent red
     // mark in the snow. smearStyle is render-only — the renderer's kill

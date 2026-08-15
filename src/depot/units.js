@@ -540,21 +540,42 @@ export function stepUnits(world, grid, fwdDir, T, toUV = (x, z) => ({ u: x, v: z
 // TD applies this against wave-armor contacts after the engine step; DEPOT
 // mirrors it identically (heavy tag = breaker). Called from DepotGame.jsx's
 // stepDepot, once per tick, after stepWorld's contact list is fresh.
+// P7 T7 (owner): the ram is SYMMETRIC. A breaker-type unit of either side
+// (enemy tag "heavy", player utype "breakers") works the OTHER side's
+// structures on contact: hp-bearing walls/towers take the ram damage the
+// enemy rule always dealt; sleeping welded masonry takes GRIND — fatigue
+// fed straight into the welds' own acc channel (the explode() pattern; the
+// engine consumes it next weldBreakPass, core untouched). BREAKER_GRIND
+// sits UNDER one weld's break force on purpose: one breaker leans forever,
+// the PAIR working the same stone exceeds it — that is why they come in twos.
+export const BREAKER_GRIND = 55000; // provisional (F5)
 export function stepBreakerRam(world) {
   for (const c of world.contacts) {
     if (c.pn <= 0 || !c.b) continue;
     const a = c.a, b = c.b;
-    const unit = a.tag === "heavy" ? a : b.tag === "heavy" ? b : null;
+    const isBreaker = (u) => u.kind === "unit" && u.alive && (u.tag === "heavy" || u.utype === "breakers");
+    const unit = isBreaker(a) ? a : isBreaker(b) ? b : null;
+    if (!unit) continue;
     const str = unit === a ? b : a;
-    if (unit && unit.alive && (str.kind === "wall" || str.kind === "tower") && str.alive) {
+    const foe = (unit.team === 2 && str.team === 1) || (unit.team === 1 && str.team === 2);
+    if ((str.kind === "wall" || str.kind === "tower") && str.alive && foe) {
       // P1.5 T2: a player wall is three stacked courses and a breaker is tall
       // enough to be in contact with two of them at once — every contact
       // POINT deals ram damage, so charging the same wall would deal roughly
       // double what it dealt as one body. He works the BASE: only course 0
       // takes the ram, and when the base goes the courses above fall on him.
-      if (str.kind === "wall" && str.course > 0) continue;
+      if (str.kind === "wall" && str.course > 0) continue; // work the BASE (P1.5 T2's rule)
       const sp = Math.hypot(unit.v.x, unit.v.z);
-      if (sp > 0.8) { applyDamage(world, str, sp * world.dt * 16, { attacker: "enemy" }); str.hitT = world.t; }
+      if (sp > 0.8) { applyDamage(world, str, sp * world.dt * 16, { attacker: unit.team === 2 ? "enemy" : "player" }); str.hitT = world.t; }
+    } else if (str.kind === "chunk" && str.alive && hostileStructure(str, unit.team)) {
+      const sp = Math.hypot(unit.v.x, unit.v.z);
+      if (sp < 0.8) continue;      // a lean is not a grind — he has to work it
+      const wl = world.weldsOf && world.weldsOf.get(str.id);
+      if (!wl) continue;
+      const dxg = str.pos.x - unit.pos.x, dzg = str.pos.z - unit.pos.z;
+      const dg = Math.hypot(dxg, dzg) || 1;
+      const j = BREAKER_GRIND * world.dt;
+      for (const wd of wl) { if (!wd.broken) { wd.acc[0] += (dxg / dg) * j; wd.acc[2] += (dzg / dg) * j; } }
     }
   }
 }

@@ -132,11 +132,11 @@ export const ENEMY_FIRE = {
 // [1, 3, 5]) — the symmetry is the design, so the two columns are written here
 // together where a reader can check one against the other:
 //
-//              PLAYER (build-menu keys)          ENEMY (ENEMY_SPECS tags)
-//   START      sq_rifles · sq_engineers          "" conscripts (never gated)
-//   TIER 1     mg · sq_mg · frost                fast (runner) · heavy (breaker)
-//   TIER 2     gun · sq_sniper · sq_mortars      gren · sapper
-//   TIER 3     mortar · rocket · sq_sappers      sniper (marksman) · tank
+//              PLAYER (build-menu keys)                    ENEMY (ENEMY_SPECS tags)
+//   START      sq_rifles · sq_engineers                    "" conscripts (never gated)
+//   TIER 1     mg · sq_mg · frost · sq_runners · sq_breakers   fast (runner) · heavy (breaker)
+//   TIER 2     gun · sq_sniper · sq_mortars                gren · sapper
+//   TIER 3     mortar · rocket · sq_sappers                sniper (marksman) · tank
 //
 // The enemy column is a READING of state.js's ENEMY_TIERS, not a second copy:
 // the live gate stays where Task 1 put it and nothing here is consulted for
@@ -154,7 +154,9 @@ export const ENEMY_FIRE = {
 // mirrors them (the sapper split is the "Engineers & Arms" phase's business).
 export const PLAYER_START = ["sq_rifles", "sq_engineers"]; // mk1.12 (owner): masonry is engineer work — walls and sandbags come only off their lines
 export const PLAYER_TIERS = [
-  ["mg", "sq_mg", "frost"],
+  // P7 T7 (mk1.36, owner): the tier-1 mirror closes — sq_runners and
+  // sq_breakers join mg/sq_mg/frost, matching the enemy's own fast/heavy.
+  ["mg", "sq_mg", "frost", "sq_runners", "sq_breakers"],
   ["gun", "sq_sniper", "sq_mortars"],
   ["mortar", "rocket", "sq_sappers"],
 ];
@@ -225,4 +227,11 @@ export const INFANTRY_ARMS = {
   // one-for-one: 3.0 -> 6.0 with the C0 T4 cadence halving. // provisional (F5)
   mortars: { projSpeed: 28, kind: "shell", weapon: "mortar", dmg: 20, blastR: 2.6, kv: 6, crater: 0.45,
              fireRate: 6.0, range: 21, acc: 0.020, occl: "lofted", windF: 0.04, windComp: 0.6 },
+  // P7 T7 (owner): the enemy's tier-1 types join the player's own arms
+  // table — one gun, four hands for the runner squad; the breaker pair
+  // works at the enemy heavy's own 1.1s cadence. Rifle table verbatim.
+  runners:  { projSpeed: 90, kind: "mg", weapon: "rifle", dmg: 5, dirDmg: 15, fireRate: 1.3, range: 15,
+              acc: 0.090, occl: "arc", windF: 0.06, windComp: 0.6 },
+  breakers: { projSpeed: 90, kind: "mg", weapon: "rifle", dmg: 5, dirDmg: 15, fireRate: 1.1, range: 15,
+              acc: 0.090, occl: "arc", windF: 0.06, windComp: 0.6 },
 };
