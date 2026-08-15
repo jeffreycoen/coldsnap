@@ -26,9 +26,10 @@ import { friendlyFouls } from "../src/depot/state.js";
 import {
   makeWorld, makeField, addBody, addWeld, fireProjectile, stepWorld, applyDamage, worldHash, CAUSE, mulberry32, aimSolve,
 } from "../src/engine/core.js";
-import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, MASON, INFANTRY_ARMS, PLAYER_START, PLAYER_TIERS, BISON, BISON_FIRE } from "../src/depot/specs.js";
+import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, MASON, INFANTRY_ARMS, PLAYER_START, PLAYER_TIERS, BISON, BISON_FIRE, APC } from "../src/depot/specs.js";
 import { stepUnits, spawnUnit, payBounties, SNIPER_FIRE } from "../src/depot/units.js";
 import { stepDrivers, possessedArmorFire, possessedArmorMg } from "../src/depot/drivers.js";
+import { stepTransports, unloadApc, apcSeated } from "../src/depot/transports.js";
 import { planRoute } from "../src/depot/route.js";
 import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad, drivePossessedSquad, COHESION_M, slotBlockedPublic } from "../src/depot/squads.js";
 import {
@@ -6660,6 +6661,172 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 }
 // ==== end P7 T3 ==============================================================
+
+// ==== P7 T4: THE APC =========================================================
+{
+  const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
+  const mkW = (seed) => { const w = makeWorld({ field: flatF, seed }); w.depotCombat = true; return w; };
+  const mkApc = (w, team, x, z, seq) => {
+    const v = addBody(w, { kind: "vehicle", team, mass: APC.mass, hx: APC.hx, hy: APC.hy, hz: APC.hz, x, y: APC.hy + 0.05, z, hp: APC.hp, friction: 0.85 });
+    v.armor = APC.armor; v.vtype = "apc"; v.apcSeq = seq; v.drv = "apc"; v.depotDrive = "auto"; v.tracks = "careful"; v.order = "defend";
+    return v;
+  };
+  const liveIds = (w, sq) => sq.memberIds.map((id) => w.byId.get(id)).filter((u) => u && u.alive);
+  // T2's mkGrid helper is scoped inside its own block — duplicated here
+  // (matching the file's style) rather than hoisted, so T2's landed block
+  // stays untouched.
+  const mkGrid = (blocked = []) => {
+    const W = 30, H = 30, CS = 2, OX = -30, OZ = -30;
+    const cells = Array.from({ length: W * H }, () => ({ blocked: false, ice: false, water: false, wallId: null, dist: 1, dx: 0, dz: 1 }));
+    for (const [gx, gz] of blocked) cells[gz * W + gx].blocked = true;
+    return { cells, w: W, h: H, cs: CS, ox: OX, oz: OZ,
+      idx: (gx, gz) => gz * W + gx,
+      inBounds: (gx, gz) => gx >= 0 && gx < W && gz >= 0 && gz < H,
+      worldToGrid: (x, z) => ({ gx: Math.floor((x - OX) / CS), gz: Math.floor((z - OZ) / CS) }),
+      gridToWorld: (gx, gz) => ({ x: OX + (gx + 0.5) * CS, z: OZ + (gz + 0.5) * CS }),
+      cellAt(x, z) { const g = this.worldToGrid(x, z); return this.inBounds(g.gx, g.gz) ? cells[this.idx(g.gx, g.gz)] : null; } };
+  };
+  { // (a) boarding: the squad walks in, mounts, seals; a second squad finds no room
+    const w = mkW(31); const v = mkApc(w, 1, 0, 0, 1);
+    const sq = makeSquad(1, "rifles", 1, 0, -12); spawnSquadMembers(w, sq);
+    const sq2 = makeSquad(2, "mg", 1, 8, -12); spawnSquadMembers(w, sq2);
+    const squads = [sq, sq2];
+    sq._boarding = 1;
+    for (let i = 0; i < 1800 && sq.ridingIn == null; i++) { stepTransports(w, squads); stepSquad(w, sq, w.dt); stepWorld(w); }
+    ok("T4(a): the squad mounts and seals", sq.ridingIn === 1 && sq.order === "ride", `${sq.ridingIn}/${sq.order}`);
+    ok("T4(a2): riders are pinned in the hold, under the hull", liveIds(w, sq).every((u) => u.pinned && u.riding && u.pos.y < -30));
+    ok("T4(a3): the seats are counted full", apcSeated(w, squads, 1) === 4, apcSeated(w, squads, 1));
+    sq2._boarding = 1;
+    stepTransports(w, squads);
+    ok("T4(a4): no room — the second squad's boarding is refused", sq2._boarding == null && sq2.ridingIn == null);
+  }
+  { // (b) sealed: a riding man is not an eye
+    const w = mkW(32);
+    const T4s = makeTerritory(29, 57); T4s.sight = makeSight(T4s);
+    const u = addBody(w, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: -60, z: 0, hp: 58 });
+    u.riding = true; u.pinned = true;
+    stepSight(w, T4s.sight, (x, z) => ({ u: x, v: z }), (uu, vv) => ({ x: uu, z: vv }));
+    ok("T4(b): a rider lights nothing", seenAt(T4s.sight, 0, 0, 1) === false);
+  }
+  { // (c) carried and (d) sealed both ways: the hold dies with the hull
+    const w = mkW(33); const v = mkApc(w, 1, 0, 0, 1);
+    const sq = makeSquad(1, "rifles", 1, 0, -6); spawnSquadMembers(w, sq);
+    const squads = [sq];
+    sq._boarding = 1;
+    for (let i = 0; i < 1800 && sq.ridingIn == null; i++) { stepTransports(w, squads); stepSquad(w, sq, w.dt); stepWorld(w); }
+    v.order = "move"; v.dest = { x: 0, z: 20 };
+    const grid = mkGrid();
+    for (let i = 0; i < 600; i++) { stepTransports(w, squads); stepDrivers(w, grid, identFwdDir, null, (x, z) => ({ u: x, v: z }), {}); stepWorld(w); }
+    ok("T4(c): the hold rides with the hull", liveIds(w, sq).every((u) => Math.hypot(u.pos.x - v.pos.x, u.pos.z - v.pos.z) < 1), "");
+    applyDamage(w, v, 1e9, { attacker: "enemy" });
+    stepTransports(w, squads);
+    ok("T4(d): passengers die with the vehicle", liveIds(w, sq).length === 0);
+  }
+  { // (e) unload: back on the snow, clear of the hull, dug in; seats freed; hatch stamped
+    const w = mkW(34); const v = mkApc(w, 1, 0, 0, 1);
+    const sq = makeSquad(1, "rifles", 1, 0, -6); spawnSquadMembers(w, sq);
+    const squads = [sq];
+    sq._boarding = 1;
+    for (let i = 0; i < 1800 && sq.ridingIn == null; i++) { stepTransports(w, squads); stepSquad(w, sq, w.dt); stepWorld(w); }
+    unloadApc(w, squads, v);
+    ok("T4(e): the squad unloads dug in beside the hull", sq.ridingIn == null && sq.order === "defend" &&
+      liveIds(w, sq).every((u) => !u.pinned && !u.riding && u.pos.y > 0 && Math.hypot(u.pos.x - v.pos.x, u.pos.z - v.pos.z) < 8));
+    ok("T4(e2): the seats free up", apcSeated(w, squads, 1) === 0);
+    ok("T4(e3): the ramp is stamped open", v._unloadT === w.t);
+  }
+  { // (f) the hatch opens for men coming in
+    const w = mkW(35); const v = mkApc(w, 1, 0, 0, 1);
+    const sq = makeSquad(1, "rifles", 1, 0, -10); spawnSquadMembers(w, sq);
+    sq._boarding = 1;
+    stepTransports(w, [sq]);
+    ok("T4(f): the ramp drops for the boarding squad", v._hatch === 1);
+  }
+  { // (g) the guards widen to the APC
+    const w = mkW(36);
+    const eApc = mkApc(w, 2, 0, 30, 2); delete eApc.drv; eApc.bounty = APC.bounty;
+    const tank = spawnUnit(w, { x: 5, z: 30 }, "tank");
+    const S3 = makeRunState(); S3.reg = fatReg();
+    executeWithdrawal(S3, w);
+    ok("T4(g): withdrawal spares the APC, sweeps the wave tank", w.byId.has(eApc.id) && !w.byId.has(tank.id));
+    const counts = (await import("../src/depot/market.js")).marketCounts(w, []);
+    ok("T4(g2): the APC prices no tank family", !counts.tank, JSON.stringify(counts.tank));
+  }
+  { // (h) the coax is the whole armory: possessed FIRE streams mg rounds, no shells
+    const w = mkW(37); const v = mkApc(w, 1, 0, 0, 1);
+    const fired = possessedArmorMg(w, v, { x: 0, z: 12 }, null, (x, z) => ({ u: x, v: z }));
+    ok("T4(h): the coax fires and cools", fired === true && v.mgT > 0);
+    ok("T4(h2): every round in the air is mg-kind", w.projectiles.every((p) => p.spec.kind === "mg"), w.projectiles.length);
+  }
+  { // (i) twin determinism with a mounted hold in motion
+    const twin = () => {
+      const w = mkW(38); const v = mkApc(w, 1, 0, 0, 1);
+      const sq = makeSquad(1, "rifles", 1, 0, -8); spawnSquadMembers(w, sq);
+      sq._boarding = 1;
+      for (let i = 0; i < 900; i++) { stepTransports(w, [sq]); if (sq.ridingIn == null) stepSquad(w, sq, w.dt); stepWorld(w); }
+      return worldHash(w);
+    };
+    ok("T4(i): twin runs agree", twin() === twin());
+  }
+  // AMENDMENT 1 (owner, 2026-08-15): ARMOR PARKS STABLE. parkArmor lives
+  // inside DepotGame.jsx's boot closure (deep local bindings — not a
+  // slice-out candidate like genMap), so this fixture reproduces its own
+  // clear+stable scan verbatim over a deliberately bumpy field: the chosen
+  // cell passes the spread bound, the hull spawns asleep, and — the real
+  // proof, the engine's own sleeping-body skip (T6's proven mechanism,
+  // core.js :1976-1977/:1386) — it drifts under 0.1m over 600 idle steps.
+  {
+    const bumpyF = {
+      heightAt: (x, z) => Math.sin(x / 6) * Math.cos(z / 6) * 0.5,
+      dirty: false, carve: () => {},
+      normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; },
+    };
+    const spreadAt = (bx, bz, spec) => {
+      const h0 = bumpyF.heightAt(bx, bz);
+      let lo = h0, hi = h0;
+      for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+        const h = bumpyF.heightAt(bx + sx * spec.hx, bz + sz * spec.hz);
+        if (h < lo) lo = h; else if (h > hi) hi = h;
+      }
+      return hi - lo;
+    };
+    const w = makeWorld({ field: bumpyF, seed: 51 }); w.depotCombat = true;
+    const grid = mkGrid();
+    const clearAt = (bx, bz) => {
+      const cell = grid.cellAt(bx, bz);
+      return !!cell && !cell.blocked && !cell.ice && !cell.water && !cell.wallId
+        && Math.hypot(bx, bz) >= 4
+        && !slotBlockedPublic(w, bx, bz, Math.hypot(BISON.hx, BISON.hz) + 0.5);
+    };
+    let chosen = null;
+    for (let rr = 10; rr <= 26 && !chosen; rr += 1.5) for (let k = 0; k < 16; k++) {
+      const az = (k / 16) * Math.PI * 2;
+      const bx = Math.sin(az) * rr, bz = Math.cos(az) * rr;
+      if (clearAt(bx, bz) && spreadAt(bx, bz, BISON) < 0.28) { chosen = { x: bx, z: bz }; break; }
+    }
+    if (!chosen) {
+      let best = null, bd = 1e9, flat = null, flatSp = 1e9;
+      for (let gz = 0; gz < 30; gz++) for (let gx = 0; gx < 30; gx++) {
+        const wp = grid.gridToWorld(gx, gz);
+        const d = Math.hypot(wp.x, wp.z);
+        if (d > 30 || d < 8 || !clearAt(wp.x, wp.z)) continue;
+        const sp = spreadAt(wp.x, wp.z, BISON);
+        if (sp < flatSp) { flatSp = sp; flat = wp; }
+        if (sp < 0.28 && d < bd) { bd = d; best = wp; }
+      }
+      chosen = best || flat;
+    }
+    ok("AMENDMENT 1: a clear cell is found on a bumpy field", !!chosen);
+    ok("AMENDMENT 1: the chosen cell passes the spread bound", chosen && spreadAt(chosen.x, chosen.z, BISON) < 0.28, chosen ? spreadAt(chosen.x, chosen.z, BISON).toFixed(3) : "none");
+    const v = addBody(w, { kind: "vehicle", team: 1, mass: BISON.mass, hx: BISON.hx, hy: BISON.hy, hz: BISON.hz,
+      x: chosen.x, y: bumpyF.heightAt(chosen.x, chosen.z) + BISON.hy + 0.05, z: chosen.z, hp: BISON.hp, friction: 0.85 });
+    v.sleeping = true;
+    const x0 = v.pos.x, y0 = v.pos.y, z0 = v.pos.z;
+    for (let i = 0; i < 600; i++) stepWorld(w);
+    const drift = Math.hypot(v.pos.x - x0, v.pos.y - y0, v.pos.z - z0);
+    ok("AMENDMENT 1: parked cold — under 0.1m drift over 600 idle steps", drift < 0.1, drift.toFixed(4));
+  }
+}
+// ==== end P7 T4 ==============================================================
 
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);

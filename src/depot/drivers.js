@@ -144,45 +144,49 @@ function armorGoal(world, grid, v, dt, fwdDir, opts) {
   }
   v.goal = { x: wp.x, z: wp.z };
 }
-function armorGuns(world, v, dt, T, toUV) {
+// ---- the two scans, lifted to module level (P7 T4): armorGuns' own nested
+// closures, bodies unchanged, parameters explicit — so the APC's coax-only
+// guns policy can share them without a second copy. Behavior identical for
+// the Bison (same gates, same order — the T2 fixtures prove it stays green).
+function armorScanFoes(world, v, muzzle, spec, unitsOnly, T, toUV) {
   const enemyTeam = v.team === 1 ? 2 : 1;
+  const eR = effRange(world, muzzle, spec);
+  const pool = world._L ? (enemyTeam === 2 ? world._L.foes : world._L.friends) : world.bodies;
+  let best = null, bd = eR * eR;
+  for (const e of pool) {
+    if ((e.kind !== "unit" && (unitsOnly || e.kind !== "vehicle")) || !e.alive || e.team !== enemyTeam) continue;
+    const dx = e.pos.x - v.pos.x, dz = e.pos.z - v.pos.z, d2 = dx * dx + dz * dz;
+    if (d2 >= bd) continue;
+    const c = toUV(e.pos.x, e.pos.z);
+    if (!fieldReaches(T, c.u, c.v, v.team)) continue;
+    if (!arcClears(world, muzzle, e.pos, spec, v.id)) continue;
+    bd = d2; best = e;
+  }
+  return best;
+}
+function armorScanStructs(world, v, muzzle, spec, T, toUV) {
+  const eR = effRange(world, muzzle, spec);
+  const pool = world._L ? (v.team === 1 ? world._L.structsFor1 : world._L.structsFor2) : world.bodies;
+  let best = null, bs = eR * eR;
+  for (const s of pool) {
+    if (!hostileStructure(s, v.team)) continue;
+    const cs = toUV(s.pos.x, s.pos.z);
+    if (!fieldReaches(T, cs.u, cs.v, v.team)) continue;
+    const dx = s.pos.x - v.pos.x, dz = s.pos.z - v.pos.z, d2 = dx * dx + dz * dz;
+    if (d2 >= bs) continue;
+    if (!arcClears(world, muzzle, s.pos, spec, v.id)) continue;
+    bs = d2; best = s;
+  }
+  return best;
+}
+function armorGuns(world, v, dt, T, toUV) {
   const attacker = v.team === 1 ? "player" : "enemy";
   v.gunT = (v.gunT || 0) - dt; v.mgT = (v.mgT || 0) - dt;
   const muzzle = { x: v.pos.x, y: v.pos.y + 1.4, z: v.pos.z };
-  const scanFoes = (spec, unitsOnly) => {
-    const eR = effRange(world, muzzle, spec);
-    const pool = world._L ? (enemyTeam === 2 ? world._L.foes : world._L.friends) : world.bodies;
-    let best = null, bd = eR * eR;
-    for (const e of pool) {
-      if ((e.kind !== "unit" && (unitsOnly || e.kind !== "vehicle")) || !e.alive || e.team !== enemyTeam) continue;
-      const dx = e.pos.x - v.pos.x, dz = e.pos.z - v.pos.z, d2 = dx * dx + dz * dz;
-      if (d2 >= bd) continue;
-      const c = toUV(e.pos.x, e.pos.z);
-      if (!fieldReaches(T, c.u, c.v, v.team)) continue;
-      if (!arcClears(world, muzzle, e.pos, spec, v.id)) continue;
-      bd = d2; best = e;
-    }
-    return best;
-  };
-  const scanStructs = (spec) => {
-    const eR = effRange(world, muzzle, spec);
-    const pool = world._L ? (v.team === 1 ? world._L.structsFor1 : world._L.structsFor2) : world.bodies;
-    let best = null, bs = eR * eR;
-    for (const s of pool) {
-      if (!hostileStructure(s, v.team)) continue;
-      const cs = toUV(s.pos.x, s.pos.z);
-      if (!fieldReaches(T, cs.u, cs.v, v.team)) continue;
-      const dx = s.pos.x - v.pos.x, dz = s.pos.z - v.pos.z, d2 = dx * dx + dz * dz;
-      if (d2 >= bs) continue;
-      if (!arcClears(world, muzzle, s.pos, spec, v.id)) continue;
-      bs = d2; best = s;
-    }
-    return best;
-  };
   if (v.gunT <= 0) {
     const gun = BISON_FIRE.gun;
-    let tgt = scanFoes(gun, false), struct = false;
-    if (!tgt) { tgt = scanStructs(gun); struct = !!tgt; }
+    let tgt = armorScanFoes(world, v, muzzle, gun, false, T, toUV), struct = false;
+    if (!tgt) { tgt = armorScanStructs(world, v, muzzle, gun, T, toUV); struct = !!tgt; }
     if (tgt) {
       v.gunT = gun.cd;
       v._aimYaw = Math.atan2(tgt.pos.x - v.pos.x, tgt.pos.z - v.pos.z);
@@ -193,7 +197,7 @@ function armorGuns(world, v, dt, T, toUV) {
   }
   if (v.mgT <= 0) {
     const mg = BISON_FIRE.mg;
-    const tgt = scanFoes(mg, true);   // the coax shoots men, not dirt
+    const tgt = armorScanFoes(world, v, muzzle, mg, true, T, toUV);   // the coax shoots men, not dirt
     if (tgt) {
       v.mgT = mg.cd;
       v._aimYaw = Math.atan2(tgt.pos.x - v.pos.x, tgt.pos.z - v.pos.z);
@@ -202,6 +206,25 @@ function armorGuns(world, v, dt, T, toUV) {
   }
 }
 DRIVERS.armor = { goal: armorGoal, guns: armorGuns };
+
+// ---- the APC (P7 T4): same legs, one gun. The goal policy IS armorGoal —
+// orders, routes, escort, the overrun safety, all shared. The guns policy
+// is the coax alone: a transport defends itself, it does not duel.
+function apcGuns(world, v, dt, T, toUV) {
+  const attacker = v.team === 1 ? "player" : "enemy";
+  v.mgT = (v.mgT || 0) - dt;
+  if (v.mgT > 0) return;
+  const mg = BISON_FIRE.mg;
+  const muzzle = { x: v.pos.x, y: v.pos.y + 1.3, z: v.pos.z };
+  const tgt = armorScanFoes(world, v, muzzle, mg, true, T, toUV);
+  if (tgt) {
+    v.mgT = mg.cd;
+    v._aimYaw = Math.atan2(tgt.pos.x - v.pos.x, tgt.pos.z - v.pos.z);
+    shooterFire(world, v, muzzle, tgt, { ...mg, volley: mg.burst }, { attacker, owner: v.id, volleyDelay: mg.burstGap, muzzleStep: 0 });
+  } else v.mgT = 0.4;
+}
+DRIVERS.apc = { goal: armorGoal, guns: apcGuns };
+// (stepDrivers' possessed skip already decays mgT — no change.)
 
 // stepDrivers: once per sim tick, BEFORE stepUnits — tanks drew from
 // world.rng before infantry at mk1.21 and the draw-order contract holds.

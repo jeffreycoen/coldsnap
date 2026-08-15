@@ -87,6 +87,13 @@ export const BISON_FIRE = {
   mg:  { projSpeed: 100, dmg: 5, dirDmg: 8, kind: "mg", weapon: "mg", blastR: 0.3, kv: 0.5, crater: 0, acc: 0.080, burst: 6, burstGap: 0.17, cd: 1.6, range: 18, occl: "arc", windF: 0.06, windComp: 0 },  // provisional (F5)
 };
 
+// P7 T4 (mk1.33): THE APC — the starting transport, one parked at each
+// depot beside the Bison. Four seats: one squad of four or two teams of
+// two. Riders are SEALED — no eyes, no fire — and die with the vehicle;
+// loading is a real decision (owner). Its only gun is the coax
+// (BISON_FIRE.mg — one mg table, every hull). All dials provisional (F5).
+export const APC = { mass: 2600, hx: 1.6, hy: 1.0, hz: 3.0, hp: 300, armor: 120, bounty: 45, seats: 4 };
+
 // Enemy fire specs — acc/windF/windComp EQUAL to the analogous tower (Jeff's
 // decision: aim fully equal). rifle mirrors TOWER_SPECS.mg, lob mirrors
 // TOWER_SPECS.mortar, tank mirrors TOWER_SPECS.gun. cd/cdVar/range are the

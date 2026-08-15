@@ -673,6 +673,38 @@ export function makeRenderer(canvas, world0, opts = {}) {
     g.add(tur); g.userData.turret = tur;
     return g;
   }
+  // P7 T4 (mk1.33): the APC — four seats, one coax. team parameterizes the
+  // dress exactly as buildBison does.
+  function buildApc(team) {
+    const g = new THREE.Group();
+    const hullC = team === 2 ? 0x6e3a34 : 0x3f5a78, topC = team === 2 ? 0x5a2f2a : 0x2f4a66, fenderC = team === 2 ? 0x3a2320 : 0x1e3a56;
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(3.1, 1.5, 5.6), toon(hullC));
+    hull.position.y = 0.25; hull.castShadow = true; hull.receiveShadow = true; g.add(hull);
+    const glacis = new THREE.Mesh(new THREE.BoxGeometry(2.9, 0.9, 1.4), toon(topC));
+    glacis.position.set(0, 0.95, 2.0); glacis.rotation.x = 0.35; glacis.castShadow = true; g.add(glacis);
+    const cupola = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.5, 1.1), toon(topC));
+    cupola.position.set(-0.6, 1.25, 0.4); cupola.castShadow = true; g.add(cupola);
+    const coax = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 1.2, 6), toon(0x33383d));
+    coax.rotation.x = Math.PI / 2; coax.position.set(-0.6, 1.35, 1.2); g.add(coax);
+    for (const sx of [-1, 1]) {
+      const tread = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.0, 6.0), toon(0x1b1e22));
+      tread.position.set(sx * 1.6, -0.45, 0); tread.castShadow = true; g.add(tread);
+      const fender = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.14, 6.2), toon(fenderC));
+      fender.position.set(sx * 1.6, 0.22, 0); g.add(fender);
+    }
+    // THE RAMP (owner, 2026-08-14): CLOSED on the march, OPEN when troops
+    // are loading or unloading — hinged at the tail's foot, swinging down
+    // to the snow. The game layer stamps b._hatch; the sync loop eases it.
+    const hinge = new THREE.Group(); hinge.position.set(0, -0.5, -2.8); g.add(hinge);
+    const ramp = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.35, 0.16), toon(topC));
+    ramp.position.y = 0.68; ramp.castShadow = true; hinge.add(ramp);
+    g.userData.ramp = hinge;
+    // the safety bulb — the Bison's law: green safe, red off
+    const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), new THREE.MeshBasicMaterial({ color: 0x35ff6a }));
+    bulb.position.set(-0.6, 1.62, 0.4); g.add(bulb);
+    g.userData.bulb = bulb;
+    return g;
+  }
   function buildTruck() {
     const g = new THREE.Group();
     const bed = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.0, 3.4), toon(0x4c5a49));
@@ -1412,11 +1444,11 @@ export function makeRenderer(canvas, world0, opts = {}) {
       if (b.kind !== "vehicle" && b.kind !== "wreck" && b.kind !== "truck") continue;
       let g = vehMap.get(b.id);
       if (!g) {
-        // P7 T2: b.vtype === "bison" (DEPOT's starting armor, both sides)
-        // joins the demo-global bisonId path — buildBison(b.team) dresses
-        // each side; the demo's undefined team is untouched (parity by
-        // construction).
-        g = b.vtype === "bison" || b.id === world.bisonId ? buildBison(b.team) : (b.vtype === "truck" ? buildTruck() : buildScout());
+        // P7 T2/T4: b.vtype === "bison"/"apc" (DEPOT's starting armor, both
+        // sides) joins the demo-global bisonId path — buildBison/buildApc
+        // dress each side; the demo's undefined team is untouched (parity
+        // by construction).
+        g = b.vtype === "apc" ? buildApc(b.team) : (b.vtype === "bison" || b.id === world.bisonId) ? buildBison(b.team) : (b.vtype === "truck" ? buildTruck() : buildScout());
         vehMap.set(b.id, g); scene.add(g);
       }
       // DEPOT fog (opts.territory, gated by fogOn): unheld enemy vehicles
@@ -1454,6 +1486,9 @@ export function makeRenderer(canvas, world0, opts = {}) {
       // A body with no b.tracks (the demo, the enemy's Bison before Task 5)
       // reads green.
       if (g.userData.bulb) g.userData.bulb.material.color.setHex(b.tracks === "free" ? 0xff4433 : 0x35ff6a);
+      // P7 T4: the ramp eases toward its game-layer-stamped state (b._hatch:
+      // 0 closed, 1 open) — render-only, no sim reads it.
+      if (g.userData.ramp) g.userData.ramp.rotation.x += ((b._hatch ? -1.9 : 0) - g.userData.ramp.rotation.x) * 0.12;
     }
     for (const [id, g] of vehMap) if (!world.byId.has(id)) { scene.remove(g); vehMap.delete(id); }
     // towers (tower defense): group per body; turret tracks target, recoil on
@@ -1584,6 +1619,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
     let ci = 0, gi = 0, gli = 0;
     for (const b of world.bodies) {
       if (b.kind !== "unit") continue;
+      if (b.riding) continue; // P7 T4: the hold is sealed — a rider draws nowhere
       const R = b.R;
       const isG = b.utype === "gren";
       if (isG ? gi >= 24 : ci >= 96) continue;

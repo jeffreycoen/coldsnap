@@ -133,6 +133,7 @@ export function stepSight(world, SG, toUV, toWorld) {
     if (!b.alive) continue;
     const isEye = b.kind === "unit" || b.kind === "vehicle" || b.kind === "tower" || b.kind === "flag";
     if (!isEye || (b.team !== 1 && b.team !== 2)) continue;
+    if (b.riding) continue; // P7 T4: the hold is sealed — a rider is not an eye; the APC is
     const raw = eyeOf(b); raw.selfId = b.id;
     const e = gridEye(SG, raw, toUV);
     const key = e.iv * SG.nx + e.iu;
