@@ -9,8 +9,11 @@
 - Task 2 — `p7-task-2-bison.md` — SHIPPED mk1.31 (604a601)
 - Task 3 — `p7-task-3-seat-of-the-war.md` — SHIPPED mk1.32 (d5cc184)
 - Task 4 — `p7-task-4-apc.md` — SHIPPED mk1.33 (5949967), Amendment 1 included
-- Task 5 — `p7-task-5-precast-depot.md` — WRITTEN, awaiting the owner's approval
-- Tasks 6-10 — skeleton below, written when their turn comes
+- Task 5 — `p7-task-5-precast-depot.md` — SHIPPED mk1.34 (17ee617)
+- Task 6 — `p7-task-6-defensive-opening.md` — WRITTEN, awaiting the owner's approval
+- Tasks 7-11 — skeleton below, written when their turn comes
+
+**OPEN DEFECT:** the owner hit an ENGINE FAULT knocking down the enemy depot (mk1.34) — screenshot pending; headless knockdown repro is clean, so the fault is browser-side. Amends into Task 6 if the text arrives before dispatch, else hotfixes.
 
 **Architecture notes from the 2026-08-14 reading (for the plan writer):** the engine's `stepDrive`/`aiDrive`/`driveHull` (core.js ~916-971) already drive ANY vehicle carrying `b.squad` (goal-seek) or the possessed `world.bisonId` (via `world.control`) — the driver framework is a depot-side ORDER layer that sets goals and triggers, plus one guarded divergence so the depot can command team-1 hulls and possessed vehicles without the demo-global `bisonId` path. The enemy tank driver to re-seat is `units.js` `stepTank` (~117-163). `bisonFire`/`bisonMg`/`recoverBison` exist (core.js 2418/2440/1319). Vehicles are already sight eyes (sight.js SIGHT.vehicle 36) and territory emitters (territory.js EMIT.vehicle). The renderer has `buildBison`/`buildScout`/`buildTruck` and vehicle fog rules (renderer.js ~620-1410); the APC needs one new mesh. Mines are designed as game-layer watched points, NOT physics bodies — no engine cost, invisible by construction; save/resume must carry them.
 
@@ -38,25 +41,28 @@
 - Both depots rebuild as column-and-panel precast — a quarter the bodies, the measured boom cost at the wall drops 3.3×; demolition goes structural (panels fall whole, columns drop the roof).
 - The resume ghost dies: the save stops carrying the broadphase bookkeeping that left every resumed sleeping stone untouchable.
 
-**Task 6 — Runners and breakers for both sides (mk1.35)** *(owner's 2026-08-14 ruling — see the decision record)*
+**Task 6 — The defensive opening (mk1.35)** *(owner's 2026-08-15 rulings)*
+- Half of each early muster digs in at home (taper to zero by ~bell 8, standing garrison capped at 12); the precast census gets teeth — upright slid pieces still stand, mass weights the fraction.
+
+**Task 7 — Runners and breakers for both sides (mk1.36)** *(owner's 2026-08-14 ruling — see the decision record)*
 - The runner and breaker join the player's production list at tier 1, mirroring the enemy's tier 1.
 - Runner squads of 4 with a per-type march speed (they actually run); breaker squads of 2 with the symmetric ram — they grind enemy masonry by contact, the same rule the enemy's use.
 
-**Task 7 — The enemy learns to drive (mk1.36)**
+**Task 8 — The enemy learns to drive (mk1.37)**
 - The commander profile, drawn once per war from the seed: cautious guards and commits late, bold rides out early, stubborn never leaves home.
 - The enemy APC ferries assault squads and sometimes flanks where the roads allow.
 - The intel desk may whisper which commander you drew.
 
-**Task 8 — The hero tier (mk1.37)**
+**Task 9 — The hero tier (mk1.38)**
 - A new top of the manifest opens at a late bell: lost armor can return off the convoy — ruinous, market-walled prices, both sides paying the same table.
 
-**Task 9 — Mines and tripwires (mk1.38)**
+**Task 10 — Mines and tripwires (mk1.39)**
 - The sapper team lays both on a two-point line. Mines: one blast, never harms its own side, invisible to the other side always.
 - Tripwires: a flare that lights the fog over the spot, plus a small charge.
 - Mines are not physics bodies — points the game watches, so a minefield costs the engine nothing and hides by construction.
 - The enemy sapper brain seeds its approaches and the contested ground. Mine prices ride the market.
 
-**Task 10 — The manual learns armor (mk1.39)**
+**Task 11 — The manual learns armor (mk1.40)**
 - The field manual gains the armor card — your tank, your transport, yours to lose.
 - One save/resume audit across everything new: vehicles, riders, mines, the commander profile.
 
