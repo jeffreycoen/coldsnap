@@ -260,3 +260,24 @@ export function planWave(reg, snap, bell, rng, tags = null, priceOf = null) {
 
   return { buys, banked };
 }
+
+// P7 T6 (mk1.35, owner): THE DEFENSIVE OPENING. Half of an early muster
+// stays home and digs in; the share fades to nothing by ~bell 8 and the
+// war matures into full assaults. Pure math here — the game layer applies
+// it AFTER planWave, so the 4-draw contract above is untouched.
+export function homeShare(bell) {
+  return Math.max(0, 0.5 - (Math.max(1, bell) - 1) * 0.07); // provisional (F5)
+}
+// The home detail: rifle-family tags only — grenadiers and sappers carry no
+// hold discipline (units.js) and would march off the post. Splices from the
+// FRONT of the mix bag (nextSpawnTag pops the back), deterministic.
+const HOLD_TAGS = ["", "fast", "heavy", "sniper"];
+export function pickHomeDetail(mixBag, n) {
+  const out = [];
+  for (let i = 0; i < mixBag.length && out.length < n; ) {
+    if (HOLD_TAGS.indexOf(mixBag[i]) >= 0) out.push(mixBag.splice(i, 1)[0]);
+    else i++;
+  }
+  return out;
+}
+export const HOME_GUARD_CAP = 12; // provisional (F5)

@@ -191,9 +191,16 @@ export function serializeFront(ctx) {
   // gone from the world entirely (welded off and swept) is written as -1:
   // depotStandingFraction already reads "no live body" as not-standing, and
   // dropping the row instead would quietly heal the depot.
+  // P7 T6: the row's mass (`m`, stamped by censusDepotChunks) rides too —
+  // it feeds the weighted standing fraction, and dropping it on save would
+  // quietly revert every resumed war to the old unweighted arithmetic.
+  // Omitted for rows with no mass (pre-T6 synthetic callers) — restoreCensus
+  // mirrors the omission and depotStandingFraction's `c.m || 1` covers it.
   const cens = (rows) => (rows || []).map((c) => {
     const i = idx.has(c.id) ? idx.get(c.id) : -1;
-    return { i, h: [r3(c.home.x), r3(c.home.y), r3(c.home.z)] };
+    const o = { i, h: [r3(c.home.x), r3(c.home.y), r3(c.home.z)] };
+    if (c.m != null) o.m = r3(c.m);
+    return o;
   });
 
   const heights = new Array(world.field.h.length);
@@ -326,10 +333,14 @@ export function restoreWelds(world, data, bodies) {
 
 // The censuses, rows and order intact (see cens() above for the -1 rule).
 export function restoreCensus(rows, bodies) {
-  return (rows || []).map((c) => ({
-    id: c.i >= 0 && bodies[c.i] ? bodies[c.i].id : -1,
-    home: { x: c.h[0], y: c.h[1], z: c.h[2] },
-  }));
+  return (rows || []).map((c) => {
+    const row = {
+      id: c.i >= 0 && bodies[c.i] ? bodies[c.i].id : -1,
+      home: { x: c.h[0], y: c.h[1], z: c.h[2] },
+    };
+    if (c.m != null) row.m = c.m; // P7 T6: rides back if the file carries it
+    return row;
+  });
 }
 
 export function restoreSquads(data, bodies) {

@@ -880,6 +880,8 @@ export function friendlyFouls(world, muzzle, target, spec, selfId) {
 export const DEPOT_STANDING_TOL = 1.2; // meters
 export const DEPOT_BREACH_FRAC = 0.40; // P7 T3 (owner): really knocked down — was 0.58 // provisional (F5)
 export const DEPOT_CENSUS_HZ = 1; // census cadence — NOT per frame
+export const STAND_SLIDE_M = 4;    // P7 T6: an UPRIGHT piece slid this far still stands // provisional (F5)
+export const STAND_UPRIGHT = 0.7;  // R[4] above this reads as upright // provisional (F5)
 
 // censusDepotChunks: called once at buildTown time. bodies is world.bodies
 // (or any array of chunk-like {id, kind, town, pos}) — picks out one town's
@@ -899,7 +901,7 @@ export function censusDepotChunks(bodies, townId = "depot") {
     if (b.kind !== "chunk" || b.town !== townId) continue;
     const home = { x: b.pos.x, y: b.pos.y, z: b.pos.z };
     b.home = home;
-    out.push({ id: b.id, home });
+    out.push({ id: b.id, home, m: b.mass }); // P7 T6: the fraction weighs mass — a panel outranks a crown stone
   }
   return out;
 }
@@ -911,6 +913,10 @@ export function censusDepotChunks(bodies, townId = "depot") {
 // stone) is standing by definition — it has never been knocked anywhere.
 // Sappers (both signs) filter their targets through this: rubble is a corpse,
 // and the assault is on the building.
+// P7 T6: this stays the TIGHT rule (no upright-slide tolerance) on purpose —
+// a plant target is asked "is this a corpse to walk past", not "does the
+// depot's health bar still count it"; a slid-but-upright panel is still in
+// the sapper's way just as much as one flush on its footprint.
 export function standingStructure(b) {
   if (!b || !b.alive) return false;
   const h = b.home;
@@ -919,22 +925,35 @@ export function standingStructure(b) {
   return Math.sqrt(dx * dx + dy * dy + dz * dz) <= DEPOT_STANDING_TOL;
 }
 
-// depotStandingFraction: fraction of the census still standing. byId is a
-// Map (world.byId works directly) or anything with a .get(id) -> body-like
-// {alive, pos:{x,y,z}}. A census entry with no live body at all (welded off
-// and despawned) counts as not-standing, same as one that's merely wandered
-// past the tolerance. Empty census reads as 1.0 (nothing to lose yet/ever —
-// callers should not invoke this before buildTown has run).
+// depotStandingFraction: fraction of the census still standing, WEIGHTED BY
+// MASS (P7 T6, owner: a 750kg panel outranks a crown stone) and upright-
+// tolerant (a piece merely SLID but still standing on its feet is still the
+// building — only a toppled or far-flung piece reads as gone; see
+// STAND_SLIDE_M/STAND_UPRIGHT below). byId is a Map (world.byId works
+// directly) or anything with a .get(id) -> body-like {alive, pos:{x,y,z},R}.
+// A census entry with no live body at all (welded off and despawned) counts
+// as not-standing, same as one that's merely wandered past the tolerance.
+// Empty census reads as 1.0 (nothing to lose yet/ever — callers should not
+// invoke this before buildTown has run). Census back-compat: rows with no
+// `m` (every pre-T6 synthetic fixture) weigh 1 each, so the old unweighted
+// arithmetic is unchanged for them.
 export function depotStandingFraction(census, byId) {
   if (!census || census.length === 0) return 1;
-  let standing = 0;
+  let stand = 0, total = 0;
   for (const c of census) {
+    const w = c.m || 1;
+    total += w;
     const b = byId && byId.get ? byId.get(c.id) : null;
     if (!b || b.alive === false) continue;
     const dx = b.pos.x - c.home.x, dy = b.pos.y - c.home.y, dz = b.pos.z - c.home.z;
-    if (Math.sqrt(dx * dx + dy * dy + dz * dz) <= DEPOT_STANDING_TOL) standing++;
+    const near = Math.sqrt(dx * dx + dy * dy + dz * dz) <= DEPOT_STANDING_TOL;
+    // P7 T6 (owner): an upright piece merely SLID is still the building —
+    // topple it or bury it to erase it. Horizontal band, small drop, upright.
+    const slidUpright = !near && b.R && b.R[4] > STAND_UPRIGHT &&
+      Math.hypot(dx, dz) <= STAND_SLIDE_M && Math.abs(dy) < 1.0;
+    if (near || slidUpright) stand += w;
   }
-  return standing / census.length;
+  return stand / total;
 }
 
 // checkDepotBreach: the second (independent) LOSS track, alongside checkLoss

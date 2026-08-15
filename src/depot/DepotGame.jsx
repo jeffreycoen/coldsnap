@@ -18,6 +18,7 @@ import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS, BISON, APC
 import { windAt } from "./wind.js";
 import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest } from "./state.js";
 import { marketCounts, computePrices, fieldPrices } from "./market.js";
+import { homeShare, pickHomeDetail, HOME_GUARD_CAP } from "./ai.js";
 import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic, drivePossessedSquad, clearSlot } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
@@ -2933,6 +2934,31 @@ export default function DepotGame({ onExit, resume = null }) {
           reg: S.reg, snap: buildSnapshot(), rng: world.rng, t: world.t,
           priceOf: (t) => (S._market ? S._market.foe[t === "tank" ? "tank" : t] : undefined),
         });
+        // P7 T6 (owner): THE DEFENSIVE OPENING — part of an early muster
+        // digs in at home instead of marching. Pure post-muster split: no
+        // planWave draw moves. Rifle-family only; capped at HOME_GUARD_CAP
+        // live defenders; spawn draws (3/man) are deterministic from the
+        // bag and the live count.
+        {
+          const share = homeShare(S.bell);
+          if (share > 0 && S.ws.mixBag.length) {
+            let liveG = 0;
+            for (const b of world.bodies) if (b.garrison && b.alive && b.team === 2) liveG++;
+            const want = Math.min(Math.round(S.ws.spawnQueue * share), Math.max(0, HOME_GUARD_CAP - liveG));
+            const detail = want > 0 ? pickHomeDetail(S.ws.mixBag, want) : [];
+            S.ws.spawnQueue -= detail.length;
+            const depotE3 = TOWN.find((tt) => tt.depot && tt.team === 2);
+            if (depotE3) {
+              const gR3 = Math.hypot(depotE3.nx, depotE3.nz) * MASON.pitch / 2 + 3.5;
+              detail.forEach((tag, i) => {
+                const a = ((i + liveG) / HOME_GUARD_CAP) * Math.PI * 2 + 1.1;
+                const p = clearSlot(world, depotE3.x + Math.sin(a) * gR3, depotE3.z + Math.cos(a) * gR3, 0.28 + 0.35);
+                const u = spawnUnit(world, { x: p.x, z: p.z }, tag);
+                u.hold = true; u.garrison = true;
+              });
+            }
+          }
+        }
         // The convoy is heard when its card comes up, and only then — a bell
         // whose pool had nothing left to offer raises no card and makes no
         // truck noise.
