@@ -1015,6 +1015,25 @@ The left stick and FIRE button already show for any non-tower possession — unc
 
 *(Renumbered 2026-08-14: the seat-of-the-war task cut ahead. Every "mk1.32" and "P7 T3" inside THIS section reads as "mk1.33" and "P7 T4" at dispatch; the version-bump step reads mk1.32 → mk1.33. Content otherwise stands as approved-for-review.)*
 
+**AMENDMENT 1 (owner, 2026-08-15): ARMOR PARKS STABLE.** The mk1.32 playtest found the starting hulls on unstable ground. Step 6(a)'s parkArmor gains two things, both hulls, both sides:
+
+1. **A flatness vet.** clearAt additionally requires `stableAt(bx, bz, spec)` — the hull footprint's four corners and center sampled off the heightfield, total spread under PARK_FLAT = 0.28 m (~a 5° grade across the hull). The brute-sweep backstop applies the same vet, and tracks the FLATTEST clear cell seen as it goes — if no cell passes the vet, the flattest clear cell parks the hull anyway (fail-proof stays fail-proof; stability is preferred, never blocking):
+```js
+          const stableAt = (bx, bz, spec) => {
+            // AMENDMENT 1 (owner): armor parks on FLAT ground — no sliding boots.
+            const h0 = field.heightAt(bx, bz);
+            let lo = h0, hi = h0;
+            for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+              const h = field.heightAt(bx + sx * spec.hx, bz + sz * spec.hz);
+              if (h < lo) lo = h; else if (h > hi) hi = h;
+            }
+            return hi - lo < 0.28;   // provisional (F5)
+          };
+```
+2. **Parked cold.** place() sets `v.sleeping = true;` — a sleeping hull cannot creep, slide, or jitter at boot. Every wake path already exists: driveHull wakes on throttle/steer/brake input, so the first order, the safety brake, or the possession stick wakes it; the guns policy never needed the body awake to fire.
+
+And one fixture joins the Step 1 block: on a deliberately bumpy field (a sine-lump heightAt), the parked hull's chosen cell passes the spread bound, spawns asleep, and after 600 idle steps has moved under 0.1 m. The T2-landed parkBison is REPLACED whole by this parkArmor — the Bison inherits stability the moment this task lands.
+
 **What it does, in one line:** the new transport hull parks beside each depot — four seats (one squad of four or two teams of two), LOAD and UNLOAD on its pie, riders sealed (no eyes, no fire, die with the vehicle), the same orders/possession/track rules and safety bulb as the Bison — and the hull shows a CLOSED and an OPEN position: the rear ramp drops when troops are loading or unloading (owner, 2026-08-14).
 
 **Rulings embedded:** the APC's only gun is the coax machine gun (possessed FIRE and the auto guns both stream it; no main gun — it is a transport); riders are protected while sealed by construction (they ride in the hold, out of every blast's reach) and die only with the hull; a possessed squad cannot be loaded (release it first).
