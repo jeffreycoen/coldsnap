@@ -630,9 +630,12 @@ export function makeRenderer(canvas, world0, opts = {}) {
     t.minFilter = THREE.NearestFilter; t.magFilter = THREE.NearestFilter; t.generateMipmaps = false;
     return t;
   }
-  function buildBison() {
+  // P7 T2 (mk1.31): team parameterizes the dress — undefined (the demo) is
+  // today's colors exactly; team 2 (the enemy's own Bison) rides a slate-red
+  // dress instead of the player's blue. Symmetric build, one function.
+  function buildBison(team) {
     const g = new THREE.Group();
-    const hull = new THREE.Mesh(new THREE.BoxGeometry(3.3, 1.5, 6.4), toon(PAL.bisonBlue));
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(3.3, 1.5, 6.4), toon(team === 2 ? 0x6e3a34 : PAL.bisonBlue));
     hull.position.y = 0.35;
     hull.castShadow = true; hull.receiveShadow = true; g.add(hull);
     const treadMats = [];
@@ -646,20 +649,27 @@ export function makeRenderer(canvas, world0, opts = {}) {
         const wheel = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.62, 0.62), toon(0x101317));
         wheel.position.set(sx * 1.78, -0.62, wz); g.add(wheel);
       }
-      const fender = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.16, 7.1), toon(0x1e3a56));
+      const fender = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.16, 7.1), toon(team === 2 ? 0x3a2320 : 0x1e3a56));
       fender.position.set(sx * 1.78, 0.28, 0); g.add(fender);
     }
     g.userData.treadMats = treadMats;
     const blade = new THREE.Mesh(new THREE.BoxGeometry(4.8, 1.15, 0.5), toon(0x777d84));
     blade.position.set(0, -0.45, 3.5); blade.rotation.x = -0.24; blade.castShadow = true; g.add(blade);
     const tur = new THREE.Group(); tur.position.y = 1.35;
-    const turBox = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.95, 2.7), toon(0x2a5082)); turBox.castShadow = true; tur.add(turBox);
+    const turBox = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.95, 2.7), toon(team === 2 ? 0x5a2f2a : 0x2a5082)); turBox.castShadow = true; tur.add(turBox);
     const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.36, 3.6), toon(0x33383d)); barrel.position.set(0, 0.12, 2.4); barrel.castShadow = true; tur.add(barrel);
     const star = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.14, 0.9), toon(0xe0c34a)); star.position.set(0, 1.13, 0); g.add(star);
     // coax .50 stub riding right of the main gun
     const coax = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.5, 6), tur.material);
     coax.rotation.x = Math.PI / 2; coax.position.set(0.55, 0.3, 1.5);
     tur.add(coax);
+    // THE BULB (P7 T2, owner, 2026-08-14): a small lamp on the turret rear —
+    // GREEN with the tracks safety on (CAREFUL), RED with it off (FREE).
+    // Bodies with no b.tracks field (the demo, the enemy's Bison before
+    // Task 5) read green — see the vehicle sync loop below.
+    const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), new THREE.MeshBasicMaterial({ color: 0x35ff6a }));
+    bulb.position.set(0, 0.62, -1.2);
+    tur.add(bulb); g.userData.bulb = bulb;
     g.add(tur); g.userData.turret = tur;
     return g;
   }
@@ -1402,7 +1412,11 @@ export function makeRenderer(canvas, world0, opts = {}) {
       if (b.kind !== "vehicle" && b.kind !== "wreck" && b.kind !== "truck") continue;
       let g = vehMap.get(b.id);
       if (!g) {
-        g = b.id === world.bisonId ? buildBison() : (b.vtype === "truck" ? buildTruck() : buildScout());
+        // P7 T2: b.vtype === "bison" (DEPOT's starting armor, both sides)
+        // joins the demo-global bisonId path — buildBison(b.team) dresses
+        // each side; the demo's undefined team is untouched (parity by
+        // construction).
+        g = b.vtype === "bison" || b.id === world.bisonId ? buildBison(b.team) : (b.vtype === "truck" ? buildTruck() : buildScout());
         vehMap.set(b.id, g); scene.add(g);
       }
       // DEPOT fog (opts.territory, gated by fogOn): unheld enemy vehicles
@@ -1431,7 +1445,15 @@ export function makeRenderer(canvas, world0, opts = {}) {
         if (fogSil) { g.userData.hull.material.color.copy(SIL_C); if (g.userData.top) g.userData.top.material.color.copy(SIL_C); g.userData.fogSil = true; }
         else if (g.userData.fogSil) { g.userData.hull.material.color.setHex(PAL.scoutRed); if (g.userData.top) g.userData.top.material.color.setHex(0x6f3b36); g.userData.fogSil = false; }
       }
-      if (g.userData.turret) g.userData.turret.rotation.y = turretYaw;
+      // P7 T2: a driven hull's turret follows its own aim yaw (world azimuth
+      // minus the hull's own yaw, R[6]/R[8] atan2 — the group already
+      // carries the hull quaternion); falls back to the demo's turretYaw
+      // when b._aimYaw is absent (parity by construction).
+      if (g.userData.turret) g.userData.turret.rotation.y = b._aimYaw != null ? b._aimYaw - Math.atan2(b.R[6], b.R[8]) : turretYaw;
+      // THE BULB (P7 T2): GREEN with the tracks safety on, RED with it off.
+      // A body with no b.tracks (the demo, the enemy's Bison before Task 5)
+      // reads green.
+      if (g.userData.bulb) g.userData.bulb.material.color.setHex(b.tracks === "free" ? 0xff4433 : 0x35ff6a);
     }
     for (const [id, g] of vehMap) if (!world.byId.has(id)) { scene.remove(g); vehMap.delete(id); }
     // towers (tower defense): group per body; turret tracks target, recoil on

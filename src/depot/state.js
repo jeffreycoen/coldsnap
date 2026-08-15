@@ -1473,6 +1473,7 @@ export function executeWithdrawal(S, world) {
   for (let i = world.bodies.length - 1; i >= 0; i--) {
     const b = world.bodies[i];
     if ((b.kind !== "unit" && b.kind !== "vehicle") || !b.alive || b.team !== 2) continue;
+    if (b.vtype === "bison") continue; // P7 T2: starting armor is not wave stock — it neither withdraws nor refunds a tank
     if (b.kind === "vehicle") tanks++; else inf++;
     world.byId.delete(b.id);
     world.bodies.splice(i, 1);

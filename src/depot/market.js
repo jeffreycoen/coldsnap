@@ -42,7 +42,7 @@ export function marketCounts(world, squads) {
     if (!b.alive) continue;
     if (b.kind === "unit") c._men = (c._men || 0) + 1; // both armies — squad men are unit bodies too
     if (b.kind === "unit" && b.team === 2) add(FAMILY_OF_TAG[b.tag || ""], 1);
-    else if (b.kind === "vehicle" && b.team === 2) add("tank", 1);
+    else if (b.kind === "vehicle" && b.team === 2 && b.tag === "tank") add("tank", 1); // P7 T2: only wave armor prices the tank family
     else if (b.kind === "tower" && b.team === 1) add(FAMILY_OF_TOWER[b.towerType], 1);
     else if (b.kind === "wall" && b.team === 1 && !b.course) add("wall", 1);
     else if (b.kind === "chunk" && b.sandbag) add("sandbag", 1);

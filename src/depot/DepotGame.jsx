@@ -10,18 +10,19 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { MK } from "../version.js";
 import {
   makeField, makeWorld, addBody, addWeld, stepWorld, fireProjectile,
-  applyDamage, mulberry32,
+  applyDamage, mulberry32, heading,
 } from "../engine/core.js";
 import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
-import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS } from "./specs.js";
+import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS, BISON } from "./specs.js";
 import { windAt } from "./wind.js";
 import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest } from "./state.js";
 import { marketCounts, computePrices, fieldPrices } from "./market.js";
 import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic, drivePossessedSquad } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
-import { stepDrivers } from "./drivers.js";
+import { stepDrivers, possessedArmorFire, possessedArmorMg } from "./drivers.js";
+import { planRoute } from "./route.js";
 import { makeRegiment, payTown } from "./economy.js";
 import { makeTerritory, stepTerritory, holderAt, canBuild, fogStateFor, valueAt, EMIT } from "./territory.js";
 import { makeSight, stepSight, seenAt, eyeOf, steerReticle, reclampReticle } from "./sight.js";
@@ -600,56 +601,6 @@ function checkConnectivity(grid, spawns, objGx, objGz) {
   return true;
 }
 
-// P6 T1: THE ROUTE. Squads march the same grid the enemy trusts. planRoute
-// is a breadth-first search from the anchor's cell (8-way, with
-// computeFlowField's own corner rule) that reaches for the destination cell
-// and settles for the CLOSEST reachable cell when the asked ground is
-// blocked or walled off. The cell path is thinned to its turning points and
-// returned as world waypoints, destination last. Deterministic, zero rng.
-function planRoute(grid, ax, az, dx, dz) {
-  const s = grid.worldToGrid(ax, az);
-  if (!grid.inBounds(s.gx, s.gz)) return null;
-  const t = { gx: Math.max(0, Math.min(grid.w - 1, grid.worldToGrid(dx, dz).gx)),
-              gz: Math.max(0, Math.min(grid.h - 1, grid.worldToGrid(dx, dz).gz)) };
-  const { cells } = grid;
-  const prev = new Int32Array(grid.w * grid.h).fill(-2);
-  const si = grid.idx(s.gx, s.gz);
-  prev[si] = -1;
-  const q = [si];
-  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
-  let head = 0, best = si, bestD = Infinity;
-  while (head < q.length) {
-    const ci = q[head++];
-    const cgx = ci % grid.w, cgz = (ci / grid.w) | 0;
-    const dd = Math.hypot(cgx - t.gx, cgz - t.gz);
-    if (dd < bestD) { bestD = dd; best = ci; if (dd === 0) break; }
-    for (const d of dirs) {
-      const nx = cgx + d[0], nz = cgz + d[1];
-      if (!grid.inBounds(nx, nz)) continue;
-      const ni = grid.idx(nx, nz);
-      if (prev[ni] !== -2 || cells[ni].blocked) continue;
-      if (d[0] !== 0 && d[1] !== 0) {
-        if (cells[grid.idx(cgx + d[0], cgz)].blocked || cells[grid.idx(cgx, cgz + d[1])].blocked) continue;
-      }
-      prev[ni] = ci;
-      q.push(ni);
-    }
-  }
-  if (best === si) return null; // nowhere to go (or already there)
-  const cellsPath = [];
-  for (let ci = best; ci !== -1; ci = prev[ci]) cellsPath.push(ci);
-  cellsPath.reverse();
-  const pts = [];
-  for (let i = 1; i < cellsPath.length; i++) {
-    const p0 = cellsPath[i - 1], p1 = cellsPath[i], p2 = cellsPath[i + 1];
-    const turn = p2 == null ||
-      (p1 % grid.w) - (p0 % grid.w) !== (p2 % grid.w) - (p1 % grid.w) ||
-      ((p1 / grid.w) | 0) - ((p0 / grid.w) | 0) !== ((p2 / grid.w) | 0) - ((p1 / grid.w) | 0);
-    if (turn) pts.push(grid.gridToWorld(p1 % grid.w, (p1 / grid.w) | 0));
-  }
-  return { pts, reached: bestD === 0 };
-}
-
 // P6 T1: route bookkeeping, one squad, once per sim tick (stepDepot calls
 // it before stepSquad). Draws a route when the destination is new, rewrites
 // an unreachable destination to the route's honest end (and a patrol's
@@ -918,8 +869,11 @@ function shatterStructure(world, b, opts) {
 // mk1.30), then infantry (units.js) — the mk1.21 order, tanks before men,
 // which is also the rng draw-order contract. DepotGame supplies the flow
 // field and the orientation-aware fwdDir/invW.
-function stepEnemies(world, grid, T) {
-  stepDrivers(world, grid, fwdDir, T, invW);
+function stepEnemies(world, grid, T, S) {
+  stepDrivers(world, grid, fwdDir, T, invW, {
+    possessedId: S.possess && S.possess.kind === "vehicle" ? S.possess.id : 0,
+    squads: S.squads,
+  });
   stepUnits(world, grid, fwdDir, T, invW);
 }
 
@@ -957,7 +911,7 @@ function uprightMember(u, dt) {
 }
 
 function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S) {
-  stepEnemies(world, grid, T);
+  stepEnemies(world, grid, T, S);
   // Squads (Phase 5 Task 3), after enemies, before towers — the brief's
   // loop-order contract: prune dead members -> delete empty squads ->
   // stepSquad (movement) -> squadFire (combat). squadFire threads T + invW
@@ -1043,6 +997,12 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
   if (S.possess && S.possess.kind === "tower") {
     const ptw = world.byId.get(S.possess.id);
     if (!ptw || !ptw.alive) S.releasePossession();
+  }
+  // POSSESSION (P7 T2): a possessed vehicle killed out from under the owner
+  // frees the trigger automatically, same rule as a squad or a tower.
+  if (S.possess && S.possess.kind === "vehicle") {
+    const pv = world.byId.get(S.possess.id);
+    if (!pv || !pv.alive) S.releasePossession();
   }
   stepTowers(world, T, discipline, S.possess && S.possess.kind === "tower" ? S.possess.id : undefined);
   // WIND TOGGLE (mk0.95, owner's accuracy-tuning request): off = dead calm
@@ -1198,6 +1158,8 @@ export default function DepotGame({ onExit, resume = null }) {
   // FIRE FEEDBACK (mk0.96): the FIRE button's own ref — setFireHeld paints
   // its held state straight to the DOM.
   const fireBtnRef = useRef(null);
+  // P7 T2: the Bison's coax MG button — same discipline as fireBtnRef.
+  const mgBtnRef = useRef(null);
   // Held in a ref, not read from props inside the effect, for the same reason
   // every other loop input is: the effect must never close over a value React
   // can change under it. Captured once, at mount.
@@ -1433,6 +1395,7 @@ export default function DepotGame({ onExit, resume = null }) {
           else if (b.kind === "chunk" && b.sandbag && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.wall.w, r: EMIT.wall.r, sign: 1 }); }
           else if (b.kind === "unit" && b.team === 2 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.unit.w, r: EMIT.unit.r, sign: -1 }); }
           else if (b.kind === "vehicle" && b.team === 2 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.vehicle.w, r: EMIT.vehicle.r, sign: -1 }); }
+          else if (b.kind === "vehicle" && b.team === 1 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.vehicle.w, r: EMIT.vehicle.r, sign: 1 }); }
         }
         // FRONT F1: the SPAWN_POINTS anchor emitters are gone — spawn points
         // are spawn locations only; the enemy's permanent red is its depot flag.
@@ -1510,6 +1473,29 @@ export default function DepotGame({ onExit, resume = null }) {
             }
           }
         }
+        // P7 T2: THE STARTING ARMOR — one Bison parked by each depot.
+        // Draw-free: fixed radii out, sixteen azimuths around, first clear
+        // cell wins. Deterministic; no rng stream is touched.
+        const parkBison = (team, depotT) => {
+          if (!depotT) return;
+          for (let rr = 9; rr <= 15; rr += 1.5) for (let k = 0; k < 16; k++) {
+            const az = (k / 16) * Math.PI * 2;
+            const bx = depotT.x + Math.sin(az) * rr, bz = depotT.z + Math.cos(az) * rr;
+            const cell = grid.cellAt(bx, bz);
+            if (!cell || cell.blocked || cell.ice || cell.water || cell.wallId) continue;
+            if (Math.hypot(bx - OBJ_POS.x, bz - OBJ_POS.z) < 4) continue;
+            if (slotBlockedPublic(world, bx, bz, Math.hypot(BISON.hx, BISON.hz) + 0.5)) continue;
+            const v = addBody(world, { kind: "vehicle", team, mass: BISON.mass, hx: BISON.hx, hy: BISON.hy, hz: BISON.hz,
+              x: bx, y: field.heightAt(bx, bz) + BISON.hy + 0.05, z: bz, hp: BISON.hp, friction: 0.85,
+              q: heading(null, Math.atan2(-bx, -bz)) });   // parked facing the valley
+            v.armor = BISON.armor; v.vtype = "bison"; v.maxHp = BISON.hp;
+            if (team === 1) { v.drv = "armor"; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful"; v.driver = "player"; }
+            else v.bounty = BISON.bounty;   // parked and killable; its commander is Task 5's
+            return;
+          }
+        };
+        parkBison(1, TOWN.find((t) => t.depot && t.team !== 2));
+        parkBison(2, TOWN.find((t) => t.depot && t.team === 2));
       }
       const objG = grid.worldToGrid(OBJ_POS.x, OBJ_POS.z);
       computeFlowField(grid, objG.gx, objG.gz);
@@ -1632,6 +1618,9 @@ export default function DepotGame({ onExit, resume = null }) {
         // (S.pieOpen = false) but an aiming order keeps the squad selected
         // so the ground stays tappable — see consumeOrderTap.
         squads: [], nextSquadId: 1, selSquadId: null, selArmedAt: 0, orderMode: null, buildPt0: null, pieOpen: false,
+        // P7 T2: the selected vehicle's own selection/order state — the
+        // squad selection fields' exact shape, one Bison at a time.
+        selVehId: null, vehOrderMode: null,
         // POSSESSION (P4 T1, mk0.90): { kind: "squad", id } while live, else
         // null. possessInput is the frame's world-space stick vector; joy is
         // the touch stick's own live drag state (DOM handlers below).
@@ -1645,6 +1634,8 @@ export default function DepotGame({ onExit, resume = null }) {
         // stick's own live drag state; fireHeld mirrors the FIRE
         // button/pointer state — true while held, read once per sim tick.
         reticle: null, reticleOff: null, joyR: null, fireHeld: false,
+        // P7 T2: the Bison's coax — its own held state, mirroring fireHeld.
+        mgHeld: false,
         linePending: null, // COMMAND T2 (mk0.84): the proposed line, awaiting accept/reject
         hudT: 0, keys: {}, sellById: null, audio: A,
         // THE LIVING MARKET (mk1.13): the price cache, its own 1Hz
@@ -1916,6 +1907,52 @@ export default function DepotGame({ onExit, resume = null }) {
         return null;
       };
       const selectedSquad = () => (S.selSquadId != null ? S.squads.find((q) => q.id === S.selSquadId) || null : null);
+      // P7 T2: the Bison's own selection — vehicleAtPoint mirrors
+      // squadAtPoint, team-1 vehicles only (the player's own hulls select).
+      const vehicleAtPoint = (p) => {
+        for (const b of world.bodies) {
+          if (b.kind !== "vehicle" || !b.alive || b.team !== 1) continue;
+          if (Math.hypot(b.pos.x - p.x, b.pos.z - p.z) < 3.2) return b;
+        }
+        return null;
+      };
+      const selectedVehicle = () => (S.selVehId != null ? world.byId.get(S.selVehId) || null : null);
+      // P7 T2: the Bison's own radial orders — DEFEND is instant (mirrors
+      // S.orderSquad's defend branch); MOVE/PATROL/ESCORT arm the aiming
+      // mode and consumeVehOrderTap's ground/squad tap finishes them.
+      S.orderVehicle = (kind) => {
+        if (S.gameOver || S.victory) return;
+        const v = selectedVehicle();
+        if (!v || world.t < S.selArmedAt) return;
+        if (kind === "defend") { v.order = "defend"; v.dest = null; v.goal = null; v._route = null; v._routeDest = null; S.vehOrderMode = null; S.buildPt0 = null; }
+        else if (kind === "move" || kind === "patrol" || kind === "escort") {
+          if (S.vehOrderMode === kind) { S.vehOrderMode = null; S.buildPt0 = null; return; }
+          S.vehOrderMode = kind; S.buildPt0 = null;
+        }
+      };
+      // P7 T2: THE OVERRUN SAFETY toggle — CAREFUL (default) brakes for the
+      // Bison's own men; FREE takes the safety off (drivers.js reads v.tracks).
+      S.toggleTracks = () => {
+        const v = selectedVehicle();
+        if (!v || world.t < S.selArmedAt) return;
+        v.tracks = (v.tracks || "careful") === "careful" ? "free" : "careful";
+      };
+      // POSSESSION (P7 T2): TAKE CONTROL on the Bison — same hygiene as
+      // S.takeControl/S.takeControlTower: digs in (order defend, goal/route
+      // cleared), hands the stick over, clears every other selection/order
+      // UI state.
+      S.takeControlVehicle = () => {
+        const v = selectedVehicle();
+        if (!v || world.t < S.selArmedAt) return;
+        v.order = "defend"; v.dest = null; v.goal = null; v._route = null; v._routeDest = null;
+        S.possess = { kind: "vehicle", id: v.id };
+        S.fireHeld = false; S.mgHeld = false;
+        const pc2 = possessCenter();
+        S.reticleOff = pc2 ? reclampReticle(T.sight, 1, pc2, possessSightR(), { dx: 0, dz: 6 }, invW) : null;
+        S.reticle = pc2 && S.reticleOff ? { x: pc2.x + S.reticleOff.dx, z: pc2.z + S.reticleOff.dz } : null;
+        S.selVehId = null; S.vehOrderMode = null; S.selSquadId = null; S.orderMode = null; S.buildPt0 = null; S.linePending = null; S.pieOpen = false;
+        R.overlay.setLinePreview(false);
+      };
       // Order chips (DEFEND | ATTACK). 350ms arming (selArmedAt, same
       // trailing-tap guard as pending ✓) so the selecting tap can't
       // double-fire a chip. DEFEND digs in where the men stand (anchor =
@@ -1974,6 +2011,7 @@ export default function DepotGame({ onExit, resume = null }) {
         const P = S.possess;
         if (!P) return null;
         if (P.kind === "tower") { const b = world.byId.get(P.id); return b ? { x: b.pos.x, z: b.pos.z } : null; }
+        if (P.kind === "vehicle") { const b = world.byId.get(P.id); return b ? { x: b.pos.x, z: b.pos.z } : null; }
         const sq = S.squads.find((q) => q.id === P.id);
         return sq ? { x: sq.anchor.x, z: sq.anchor.z } : null;
       };
@@ -1981,6 +2019,7 @@ export default function DepotGame({ onExit, resume = null }) {
         const P = S.possess;
         if (!P) return 0;
         if (P.kind === "tower") { const b = world.byId.get(P.id); return b ? eyeOf(b).r : 0; }
+        if (P.kind === "vehicle") { const b = world.byId.get(P.id); return b ? eyeOf(b).r : 0; }
         const sq = S.squads.find((q) => q.id === P.id);
         let r = 0;
         if (sq) for (const id of sq.memberIds) { const u = world.byId.get(id); if (u && u.alive) r = Math.max(r, eyeOf(u).r); }
@@ -2025,12 +2064,19 @@ export default function DepotGame({ onExit, resume = null }) {
         if (!S.possess) return;
         const wasSquad = S.possess.kind === "squad";
         const sq = wasSquad ? S.squads.find((q) => q.id === S.possess.id) : null;
+        // POSSESSION (P7 T2): the Bison released where you left it — back to
+        // auto driving, dug in (order defend), same intrinsic default a
+        // released squad gets.
+        if (S.possess.kind === "vehicle") {
+          const pv = world.byId.get(S.possess.id);
+          if (pv && pv.alive) { pv.depotDrive = "auto"; pv.order = "defend"; pv.dest = null; pv.goal = null; }
+        }
         S.possess = null; S.possessInput = null;
         // POSSESSION HYGIENE (mk0.91 audit item A, carried to T4/T5): the
         // same stale-trigger clear, on every release — the reticle and its
         // offset die with the possession, fireHeld can't stick from a
         // mid-hold bell release.
-        S.reticle = null; S.reticleOff = null; S.fireHeld = false;
+        S.reticle = null; S.reticleOff = null; S.fireHeld = false; S.mgHeld = false;
         if (sq) {
           // released where you left them: dig in — the intrinsic default
           sq.order = "defend"; sq.dest = null; sq._legTarget = null; sq._threatSig = undefined;
@@ -2166,6 +2212,17 @@ export default function DepotGame({ onExit, resume = null }) {
         const lp = S.linePending;
         if (!lp) return;
         if (!pendingArmed(lp, world.t)) { toast("HOLD — ARMING"); return; }
+        if (lp.veh != null) {
+          const v = world.byId.get(lp.veh);
+          S.linePending = null;
+          R.overlay.setLinePreview(false);
+          if (v && v.alive) {
+            v._patA = { x: lp.a.x, z: lp.a.z }; v._patB = { x: lp.b.x, z: lp.b.z };
+            v.order = "patrol"; v.dest = { x: lp.a.x, z: lp.a.z }; v._route = null; v._routeDest = null;
+          }
+          S.selVehId = null; S.vehOrderMode = null; S.buildPt0 = null;
+          return;
+        }
         const sq = S.squads.find((q) => q.id === lp.sq);
         S.linePending = null;
         R.overlay.setLinePreview(false);
@@ -2188,6 +2245,7 @@ export default function DepotGame({ onExit, resume = null }) {
         S.linePending = null;
         R.overlay.setLinePreview(false);
         S.selSquadId = null; S.orderMode = null; S.buildPt0 = null;
+        S.selVehId = null; S.vehOrderMode = null;
       };
       S.acceptLine = acceptLine; S.rejectLine = rejectLine;
       // One piece. Returns "laid" | "skip" | "dry". Placement runs the REAL
@@ -2323,6 +2381,37 @@ export default function DepotGame({ onExit, resume = null }) {
             a: { x: S.buildPt0.x, z: S.buildPt0.z }, b: { x: d.x, z: d.z },
             moving: null, armedAt: world.t + PENDING_ARM_S };
           S.buildPt0 = null; S.orderMode = null;
+          refreshLinePreview();
+          return true;
+        }
+        return false;
+      };
+      // P7 T2: the Bison's own ground taps — mirrors consumeOrderTap's
+      // shape. ESCORT catches a squad tap here (before squad selection would
+      // steal it — tapAt's order matters).
+      const consumeVehOrderTap = (p) => {
+        const om = S.vehOrderMode;
+        if (!om) return false;
+        const v = selectedVehicle();
+        if (!v) { S.vehOrderMode = null; S.selVehId = null; S.buildPt0 = null; return true; }
+        if (om === "escort") {
+          const sq = squadAtPoint(p);
+          if (!sq) { toast("TAP A SQUAD TO ESCORT"); return true; }
+          v.order = "escort"; v.escortId = sq.id; v.dest = null; v.goal = null; v._route = null; v._routeDest = null;
+          S.vehOrderMode = null; S.selVehId = null;
+          return true;
+        }
+        const d = clampToRim(p.x, p.z);
+        if (streamAt(d.x, d.z)) { toast("OPEN WATER — find the crossing"); return true; }
+        if (om === "move") {
+          v.order = "move"; v.dest = { x: d.x, z: d.z }; v._route = null; v._routeDest = null;
+          S.vehOrderMode = null; S.selVehId = null;
+          return true;
+        }
+        if (om === "patrol") {   // the two-point confirm law, verbatim from squads
+          if (!S.buildPt0) { S.buildPt0 = { x: d.x, z: d.z }; toast("PATROL START — TAP THE FAR END"); return true; }
+          S.linePending = { kind: "patrol", veh: v.id, a: { x: S.buildPt0.x, z: S.buildPt0.z }, b: { x: d.x, z: d.z }, moving: null, armedAt: world.t + PENDING_ARM_S };
+          S.buildPt0 = null; S.vehOrderMode = null;
           refreshLinePreview();
           return true;
         }
@@ -2472,6 +2561,7 @@ export default function DepotGame({ onExit, resume = null }) {
         // destination (flag marker renders at dest until arrival); an armed
         // BUILD consumes TWO — the line's start, then its far end (mk0.60).
         if (consumeOrderTap(p)) return;
+        if (consumeVehOrderTap(p)) return;
         // Tap on a squad member selects his squad; tap elsewhere while one
         // is selected deselects (and consumes the tap — no accidental build).
         const tappedSquad = squadAtPoint(p);
@@ -2479,6 +2569,11 @@ export default function DepotGame({ onExit, resume = null }) {
         // the one already selected) opens/reopens the pie.
         if (tappedSquad) { S.selSquadId = tappedSquad.id; S.selArmedAt = world.t + PENDING_ARM_S; S.orderMode = null; S.buildPt0 = null; S.inspectId = null; S.pieOpen = true; return; }
         if (S.selSquadId != null) { S.selSquadId = null; S.orderMode = null; S.buildPt0 = null; S.pieOpen = false; return; }
+        // P7 T2: tap on the Bison selects it; tap elsewhere while it's
+        // selected deselects (mirrors the squad pair immediately above).
+        const tappedVeh = vehicleAtPoint(p);
+        if (tappedVeh) { S.selVehId = tappedVeh.id; S.selArmedAt = world.t + PENDING_ARM_S; S.selSquadId = null; S.orderMode = null; S.vehOrderMode = null; S.buildPt0 = null; S.inspectId = null; S.pieOpen = true; return; }
+        if (S.selVehId != null) { S.selVehId = null; S.vehOrderMode = null; S.buildPt0 = null; S.pieOpen = false; return; }
         const g = grid.worldToGrid(p.x, p.z);
         if (!grid.inBounds(g.gx, g.gz)) { S.inspectId = null; return; }
         const cell2 = grid.cells[grid.idx(g.gx, g.gz)];
@@ -2506,6 +2601,15 @@ export default function DepotGame({ onExit, resume = null }) {
         // the left mouse button IS the trigger — held, it volleys like the
         // phone FIRE button; the click never becomes a pan or a tap. The
         // possession release paths already clear fireHeld.
+        // DESKTOP COAX (P7 T2, owner's ruling): while possessing the Bison,
+        // the right mouse button IS the coax trigger — held, like FIRE/MG.
+        // Checked before the left-button main-gun branch so a right-click
+        // never falls through to it.
+        if (S.possess && S.possess.kind === "vehicle" && e.pointerType === "mouse" && e.button === 2) {
+          canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
+          S.mgHeld = true;
+          return;
+        }
         if (S.possess && e.pointerType === "mouse" && e.button === 0) {
           canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
           S.fireHeld = true;
@@ -2547,6 +2651,7 @@ export default function DepotGame({ onExit, resume = null }) {
         }
       };
       const onPointerUp = (e) => {
+        if (e.pointerType === "mouse" && e.button === 2 && S.mgHeld) { S.mgHeld = false; pointers.delete(e.pointerId); return; }
         if (S.fireHeld && e.pointerType === "mouse") { S.fireHeld = false; pointers.delete(e.pointerId); return; }
         pointers.delete(e.pointerId);
         if (downPt && dragTotal <= 12 && pointers.size === 0) tapAt(e.clientX, e.clientY);
@@ -2562,10 +2667,14 @@ export default function DepotGame({ onExit, resume = null }) {
       const kd = (e) => { A.ensure(); if (e.key === "m" || e.key === "M") { A.setMuted(!A.muted); setHud((h) => ({ ...h, muted: A.muted })); } if (e.key === "q" || e.key === "Q") R.rotateStep(-1); if (e.key === "e" || e.key === "E") R.rotateStep(1); onKey(e, true); };
       const ku = (e) => onKey(e, false);
       const blockTouch = (e) => e.preventDefault();
+      // P7 T2: the right mouse button is the coax trigger while possessing
+      // the Bison — the browser's own context menu must never steal it.
+      const onCtxMenu = (e) => e.preventDefault();
       canvas.addEventListener("pointerdown", onPointerDown);
       canvas.addEventListener("pointermove", onPointerMove);
       canvas.addEventListener("pointerup", onPointerUp);
       canvas.addEventListener("pointercancel", onPointerUp);
+      canvas.addEventListener("contextmenu", onCtxMenu);
       canvas.addEventListener("wheel", onWheel, { passive: false });
       canvas.addEventListener("touchstart", blockTouch, { passive: false });
       window.addEventListener("keydown", kd);
@@ -3166,6 +3275,33 @@ export default function DepotGame({ onExit, resume = null }) {
             // a possessed squad.
             const ptw = world.byId.get(S.possess.id);
             if (ptw) { S.focus.x = ptw.pos.x; S.focus.z = ptw.pos.z; S.focus.y = field.heightAt(S.focus.x, S.focus.z); }
+          } else if (S.possess && S.possess.kind === "vehicle") {
+            const pv = world.byId.get(S.possess.id);
+            if (pv) {
+              S.focus.x = pv.pos.x; S.focus.z = pv.pos.z; S.focus.y = field.heightAt(S.focus.x, S.focus.z);
+              const cbv = R.camBasis;
+              const flv = Math.hypot(cbv.up.x, cbv.up.z) || 1, rlv = Math.hypot(cbv.right.x, cbv.right.z) || 1;
+              let st = 0, ss = 0;
+              if (S.joy && S.joy.active) { st = S.joy.t; ss = S.joy.s; }
+              else {
+                st = (S.keys.w || S.keys.arrowup ? 1 : 0) + (S.keys.s || S.keys.arrowdown ? -1 : 0);
+                ss = (S.keys.d || S.keys.arrowright ? 1 : 0) + (S.keys.a || S.keys.arrowleft ? -1 : 0);
+              }
+              const wxv = (cbv.right.x / rlv) * ss + (cbv.up.x / flv) * st;
+              const wzv = (cbv.right.z / rlv) * ss + (cbv.up.z / flv) * st;
+              const magv = Math.min(1, Math.hypot(ss, st));
+              pv.depotDrive = "manual";
+              if (!pv.ctl) pv.ctl = { throttle: 0, steer: 0, brake: false };
+              if (magv > 0.03) {
+                const desired = Math.atan2(wxv, wzv);
+                let errY = desired - Math.atan2(pv.R[6], pv.R[8]);
+                while (errY > Math.PI) errY -= 2 * Math.PI;
+                while (errY < -Math.PI) errY += 2 * Math.PI;
+                pv.ctl.steer = Math.max(-1, Math.min(1, errY * 1.8));
+                pv.ctl.throttle = magv * Math.max(0, Math.cos(errY));
+                pv.ctl.brake = false;
+              } else { pv.ctl.throttle = 0; pv.ctl.steer = 0; pv.ctl.brake = false; }
+            }
           }
           if (S.possess) {
             // POSSESSION T4/T5 (mk0.93/0.94): THE CARRIED RETICLE. The right
@@ -3196,6 +3332,13 @@ export default function DepotGame({ onExit, resume = null }) {
               }
               S.reticleOff = reclampReticle(T.sight, 1, rc, rR, S.reticleOff, invW);
               S.reticle = { x: rc.x + S.reticleOff.dx, z: rc.z + S.reticleOff.dz };
+              // P7 T2: keep the turret honest while possessed — the hull's
+              // own aim yaw follows the live reticle every frame, not just
+              // on a shot.
+              if (S.possess.kind === "vehicle" && S.reticle) {
+                const pv2 = world.byId.get(S.possess.id);
+                if (pv2) pv2._aimYaw = Math.atan2(S.reticle.x - pv2.pos.x, S.reticle.z - pv2.pos.z);
+              }
             }
           }
           if (!isTouch && S.pointer && S.started && !S.gameOver && !S.victory && !S.pending) {
@@ -3349,6 +3492,16 @@ export default function DepotGame({ onExit, resume = null }) {
               const ptw = world.byId.get(S.possess.id);
               if (ptw) possessedTowerFire(world, ptw, S.reticle, T, invW);
             }
+            // POSSESSION (P7 T2): the Bison's two triggers — same
+            // one-attempt-per-tick flags, real cooldowns, through
+            // possessedArmorFire/possessedArmorMg.
+            if (S.possess && S.possess.kind === "vehicle" && S.reticle) {
+              const pv = world.byId.get(S.possess.id);
+              if (pv) {
+                if (S.fireHeld) possessedArmorFire(world, pv, S.reticle, T, invW);
+                if (S.mgHeld) possessedArmorMg(world, pv, S.reticle, T, invW);
+              }
+            }
           }
           if (perf) pSim = performance.now() - pSim0; // ...and closes
           if (S.acc > STEP * 6) S.acc = 0;
@@ -3446,6 +3599,16 @@ export default function DepotGame({ onExit, resume = null }) {
               S.squadScreen = toScreen(sqCx, field.heightAt(sqCx, sqCz) + 2.2, sqCz);
               S.flagScreen = selSq.dest ? toScreen(selSq.dest.x, field.heightAt(selSq.dest.x, selSq.dest.z) + 1.6, selSq.dest.z) : null;
             } else { S.squadScreen = null; S.flagScreen = null; }
+            // P7 T2: the Bison's pie anchor — same screen-space recipe,
+            // projected off the hull top (the towerScreen recipe).
+            if (S.selVehId != null && R.project) {
+              const vb = world.byId.get(S.selVehId);
+              if (vb && vb.alive) {
+                const rect5 = canvas.getBoundingClientRect();
+                const nd5 = R.project(vb.pos.x, vb.pos.y + vb.hy + 1.4, vb.pos.z);
+                S.vehScreen = nd5 ? { x: rect5.left + (nd5.x * 0.5 + 0.5) * rect5.width, y: rect5.top + (-nd5.y * 0.5 + 0.5) * rect5.height } : null;
+              } else S.vehScreen = null;
+            } else S.vehScreen = null;
             // Tower radial anchor (COMMAND T1, mk0.80): the same screen-space
             // convention as the squad chip anchor above — projected off the
             // tower's top from the live camera every frame, rotation/pan-proof.
@@ -3537,9 +3700,19 @@ export default function DepotGame({ onExit, resume = null }) {
               // tower is gone. The stick (data-joy) additionally checks
               // kind !== "tower" — towers don't walk.
               possessed: !S.possess ? null
-                : S.possess.kind === "squad"
-                ? (() => { const psq = S.squads.find((q) => q.id === S.possess.id); return psq ? { kind: "squad", label: SQUAD_SPECS[psq.type].label } : null; })()
+                : S.possess.kind === "squad" ? (() => { const psq = S.squads.find((q) => q.id === S.possess.id); return psq ? { kind: "squad", label: SQUAD_SPECS[psq.type].label } : null; })()
+                : S.possess.kind === "vehicle" ? (() => { const pv = world.byId.get(S.possess.id); return pv && pv.alive ? { kind: "vehicle", label: "BISON" } : null; })()
                 : (() => { const ptw = world.byId.get(S.possess.id); return ptw && ptw.kind === "tower" ? { kind: "tower", label: TOWER_SPECS[ptw.towerType].label } : null; })(),
+              // P7 T2: the Bison's own pie, projected off the hull top (the
+              // towerScreen recipe) — null unless a vehicle is selected.
+              vehRadial: (() => {
+                if (S.selVehId == null || !S.vehScreen) return null;
+                const v = world.byId.get(S.selVehId);
+                if (!v || !v.alive) return null;
+                return { id: v.id, x: S.vehScreen.x, y: S.vehScreen.y, order: v.order || "defend", tracks: v.tracks || "careful",
+                  aimingMove: S.vehOrderMode === "move", aimingPatrol: S.vehOrderMode === "patrol", aimingEscort: S.vehOrderMode === "escort",
+                  patrolStart: !!S.buildPt0, armed: world.t >= S.selArmedAt, showPie: !!S.pieOpen, linePending: !!S.linePending };
+              })(),
               // COMMAND T2 (mk0.84): the proposed line's accept/reject pair —
               // survives the end point going off-screen (buttons just hide).
               linePending: S.linePending && S.lineScreen ? {
@@ -3618,6 +3791,7 @@ export default function DepotGame({ onExit, resume = null }) {
         canvas.removeEventListener("pointermove", onPointerMove);
         canvas.removeEventListener("pointerup", onPointerUp);
         canvas.removeEventListener("pointercancel", onPointerUp);
+        canvas.removeEventListener("contextmenu", onCtxMenu);
         canvas.removeEventListener("wheel", onWheel);
         canvas.removeEventListener("touchstart", blockTouch);
         window.removeEventListener("keydown", kd);
@@ -3681,6 +3855,14 @@ export default function DepotGame({ onExit, resume = null }) {
     if (fireBtnRef.current) {
       fireBtnRef.current.style.background = v ? "#ff6b5e" : "#2a1418";
       fireBtnRef.current.style.color = v ? "#1a0d0f" : "#ff6b5e";
+    }
+  };
+  // P7 T2: the coax MG's held state — mirrors setFireHeld with its own ref.
+  const setMgHeld = (v) => {
+    const S = stateRef.current; if (S) S.mgHeld = v;
+    if (mgBtnRef.current) {
+      mgBtnRef.current.style.background = v ? "#ffd27a" : "#2a2214";
+      mgBtnRef.current.style.color = v ? "#1a1608" : "#ffd27a";
     }
   };
   const sellInspected = () => { const S = stateRef.current; if (S && S.inspectId && S.sellById) S.sellById(S.inspectId); };
@@ -3807,6 +3989,16 @@ export default function DepotGame({ onExit, resume = null }) {
           onPointerUp={(e) => { e.stopPropagation(); setFireHeld(false); }}
           onPointerCancel={(e) => { e.stopPropagation(); setFireHeld(false); }}>
           FIRE
+        </button>
+      )}
+      {/* P7 T2: the Bison's coax — vehicle possession only, beside FIRE. */}
+      {isTouch && hud.possessed && hud.possessed.kind === "vehicle" && (
+        <button data-possess-mg ref={mgBtnRef}
+          style={{ ...P.btnBig, position: "absolute", right: 208, bottom: 16, zIndex: 7, width: 64, height: 64, borderRadius: "50%", borderColor: "#ffd27a", color: "#ffd27a", fontWeight: "bold", background: "#2a2214", touchAction: "none" }}
+          onPointerDown={(e) => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); setMgHeld(true); }}
+          onPointerUp={(e) => { e.stopPropagation(); setMgHeld(false); }}
+          onPointerCancel={(e) => { e.stopPropagation(); setMgHeld(false); }}>
+          MG
         </button>
       )}
       <div style={P.top}>
@@ -4080,6 +4272,25 @@ export default function DepotGame({ onExit, resume = null }) {
         return tr.showPie
           ? <RadialMenu cx={tr.x} cy={tr.y} label={tr.label} slots={slots} armed={true} onChoose={() => { const S = stateRef.current; if (S) S.pieOpen = false; }} />
           : null;
+      })()}
+
+      {hud.vehRadial && (() => {
+        const vr = hud.vehRadial;
+        const slots = [
+          { key: "defend", icon: "∴", label: "DEFEND", color: "#7dffa8", on: vr.order === "defend", act: () => { const S = stateRef.current; if (S) { S.orderVehicle("defend"); S.selVehId = null; } } },
+          { key: "move", icon: "→", label: "MOVE", color: "#7fd7ff", on: vr.aimingMove || vr.order === "move", act: () => stateRef.current && stateRef.current.orderVehicle("move") },
+          { key: "patrol", icon: "⇄", label: "PATROL", color: "#7fd7ff", on: vr.aimingPatrol || vr.order === "patrol", act: () => stateRef.current && stateRef.current.orderVehicle("patrol") },
+          { key: "escort", icon: "⛨", label: "ESCORT", color: "#c9a0ff", on: vr.aimingEscort || vr.order === "escort", act: () => stateRef.current && stateRef.current.orderVehicle("escort") },
+          { key: "tracks", icon: vr.tracks === "free" ? "●" : "◐", label: vr.tracks === "free" ? "TRACKS FREE" : "TRACKS CAREFUL", color: vr.tracks === "free" ? "#ff7a7a" : "#4aff8c", on: true, act: () => { const S = stateRef.current; if (S) { S.toggleTracks(); S.selVehId = null; } } },
+          { key: "possess", icon: "✥", label: "TAKE CONTROL", color: "#7dffa8", on: false, act: () => stateRef.current && stateRef.current.takeControlVehicle() },
+        ];
+        const status = vr.linePending ? " — ACCEPT OR ADJUST THE LINE"
+          : vr.aimingPatrol ? (vr.patrolStart ? " — TAP THE FAR END" : " — TAP THE PATROL START")
+          : vr.aimingEscort ? " — TAP A SQUAD"
+          : vr.aimingMove ? " — TAP GROUND" : "";
+        return vr.showPie
+          ? <RadialMenu cx={vr.x} cy={vr.y} label={"BISON" + status} slots={slots} armed={vr.armed} onChoose={() => { const S = stateRef.current; if (S) S.pieOpen = false; }} />
+          : <div style={{ position: "absolute", left: vr.x, top: vr.y + 26, transform: "translate(-50%,0)", fontSize: 10, letterSpacing: 1, color: "#7dffa8", background: "rgba(14,18,24,0.85)", padding: "1px 6px", borderRadius: 4, zIndex: 7, pointerEvents: "none" }}>{"BISON" + status}</div>;
       })()}
 
       {hud.started && !hud.gameOver && !hud.victory && !hud.possessed && (

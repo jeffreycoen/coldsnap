@@ -26,9 +26,10 @@ import { friendlyFouls } from "../src/depot/state.js";
 import {
   makeWorld, makeField, addBody, addWeld, fireProjectile, stepWorld, applyDamage, worldHash, CAUSE, mulberry32, aimSolve,
 } from "../src/engine/core.js";
-import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, MASON, INFANTRY_ARMS, PLAYER_START, PLAYER_TIERS } from "../src/depot/specs.js";
+import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, MASON, INFANTRY_ARMS, PLAYER_START, PLAYER_TIERS, BISON, BISON_FIRE } from "../src/depot/specs.js";
 import { stepUnits, spawnUnit, payBounties, SNIPER_FIRE } from "../src/depot/units.js";
-import { stepDrivers } from "../src/depot/drivers.js";
+import { stepDrivers, possessedArmorFire, possessedArmorMg } from "../src/depot/drivers.js";
+import { planRoute } from "../src/depot/route.js";
 import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad, drivePossessedSquad, COHESION_M, slotBlockedPublic } from "../src/depot/squads.js";
 import {
   makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue,
@@ -3311,8 +3312,10 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     // to the rim at all (a tap while possessed is consumed and does
     // nothing; the reticle is bounded by the sight circle, not clampToRim).
     // Count moves back 3 -> 2, honestly, one caller lost, not loosened.
+    // re-pinned P7 T2 (mk1.31): consumeVehOrderTap (the Bison's MOVE/PATROL
+    // ground tap) joined the same clamp shape — a fourth caller, count 2 -> 3.
     ok("mk0.60/6: build points clamp to the rim through the same clamp shape",
-      /const d = clampToRim\(p\.x, p\.z\);/.test(dsrc) && (dsrc.match(/clampToRim\(p\.x, p\.z\)/g) || []).length === 2);
+      /const d = clampToRim\(p\.x, p\.z\);/.test(dsrc) && (dsrc.match(/clampToRim\(p\.x, p\.z\)/g) || []).length === 3);
     ok("mk0.60/6: the cell walk steps ONE axis at a time (consecutive cells share an EDGE)",
       /const stepX = z === g1\.gz \? true : x === g1\.gx \? false : 2 \* err > -dz;/.test(dsrc));
     // Jeff, 2026-08-12: ONE rotation for the whole line — the dominant axis of
@@ -3699,8 +3702,13 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     // structure scan) now lives in the motor pool, same gate, same law.
     ok("VISION T2(e): six of the seven enemy acquisition paths gate on sight in units.js",
       (unitsSrc.match(/fieldReaches\(T,/g) || []).length === 6, (unitsSrc.match(/fieldReaches\(T,/g) || []).length);
-    ok("VISION T2(e): the tank's acquisition path gates on sight in drivers.js (re-pinned mk1.30 — moved to the motor pool)",
-      (driversSrc.match(/fieldReaches\(T,/g) || []).length === 1, (driversSrc.match(/fieldReaches\(T,/g) || []).length);
+    // re-pinned P7 T2 (mk1.31): the Bison's armor policy joined the motor
+    // pool — armorGuns' two scans (unit/vehicle foes, hostile structures) and
+    // the two possessed triggers (main gun, coax) all gate on sight, the same
+    // law every other shot obeys. Count moves 1 -> 5, honestly, four new
+    // sight-gated call sites, none loosened.
+    ok("VISION T2(e): the tank's and the Bison's acquisition paths gate on sight in drivers.js (re-pinned mk1.31 — the armor policy joined the motor pool)",
+      (driversSrc.match(/fieldReaches\(T,/g) || []).length === 5, (driversSrc.match(/fieldReaches\(T,/g) || []).length);
     ok("VISION T2(e): the sapper's contact plant stays ungated (he IS the eye, at arm's length)",
       /stepSapper/.test(unitsSrc) && !/fieldReaches[\s\S]{0,200}SAPPER_PLANT_PAD/.test(unitsSrc));
   }
@@ -5929,14 +5937,18 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
       headerP,
       sliceFnP("genMap"), sliceFnP("makeMap"), sliceFnP("streamAt"), sliceFnP("planTrees"),
       sliceFnP("pondAt"), sliceFnP("rockAt"),
-      sliceFnP("makeGrid"), sliceFnP("checkConnectivity"), sliceFnP("planRoute"), sliceFnP("stepSquadRouting"),
+      sliceFnP("makeGrid"), sliceFnP("checkConnectivity"), sliceFnP("stepSquadRouting"),
       sliceFnP("townFootprint"), sliceFnP("buildTown"),
       `return { makeMap, makeGrid, buildTown, planRoute, stepSquadRouting, streamAt, invW, fwdU,
         state: () => ({ ORIENT, TOWN, STREAM, MAP_SEED }) };`,
     ].join("\n");
+    // P7 T2 (mk1.31): planRoute moved out of DepotGame.jsx into route.js —
+    // no longer sliceable source text here, so the REAL imported function is
+    // injected as a parameter instead; sliced stepSquadRouting's own
+    // internal call to planRoute(...) closes over this same binding.
     mk1 = () => new Function(
-      "mulberry32", "MASON", "fwdUFor", "fwdDirFor", "invWFor", "addBody", "addWeld", mapSrcP,
-    )(mulberry32, MASON, fwdUFor, fwdDirFor, invWFor, addBody, addWeld);
+      "mulberry32", "MASON", "fwdUFor", "fwdDirFor", "invWFor", "addBody", "addWeld", "planRoute", mapSrcP,
+    )(mulberry32, MASON, fwdUFor, fwdDirFor, invWFor, addBody, addWeld, planRoute);
   } catch (e) { M1ok = false; }
   ok("P6T1: the map module extracts with planRoute and stepSquadRouting", M1ok);
 
@@ -6421,6 +6433,113 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 }
 // ==== end P7 T1 ==============================================================
+
+// ==== P7 T2: THE BISON MUSTERS ==============================================
+{
+  // carve is a no-op stub: the Bison's gun carries crater:0.5 (BISON_FIRE),
+  // and explode() (core.js) calls world.field.carve on a near-ground hit —
+  // every other flat fixture in this file skips weapons that crater.
+  const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
+  // a real little grid: 30x30 cells of 2m centered on the origin, cellAt/
+  // worldToGrid/gridToWorld in DepotGame's own shape, with a block list.
+  const mkGrid = (blocked = []) => {
+    const W = 30, H = 30, CS = 2, OX = -30, OZ = -30;
+    const cells = Array.from({ length: W * H }, () => ({ blocked: false, ice: false, water: false, wallId: null, dist: 1, dx: 0, dz: 1 }));
+    for (const [gx, gz] of blocked) cells[gz * W + gx].blocked = true;
+    return { cells, w: W, h: H, cs: CS, ox: OX, oz: OZ,
+      idx: (gx, gz) => gz * W + gx,
+      inBounds: (gx, gz) => gx >= 0 && gx < W && gz >= 0 && gz < H,
+      worldToGrid: (x, z) => ({ gx: Math.floor((x - OX) / CS), gz: Math.floor((z - OZ) / CS) }),
+      gridToWorld: (gx, gz) => ({ x: OX + (gx + 0.5) * CS, z: OZ + (gz + 0.5) * CS }),
+      cellAt(x, z) { const g = this.worldToGrid(x, z); return this.inBounds(g.gx, g.gz) ? cells[this.idx(g.gx, g.gz)] : null; } };
+  };
+  const mkVeh = (w, team, x, z) => {
+    const v = addBody(w, { kind: "vehicle", team, mass: BISON.mass, hx: BISON.hx, hy: BISON.hy, hz: BISON.hz, x, y: BISON.hy + 0.05, z, hp: BISON.hp, friction: 0.85 });
+    v.armor = BISON.armor; v.vtype = "bison"; v.drv = "armor"; v.depotDrive = "auto"; v.tracks = "careful"; v.order = "defend";
+    return v;
+  };
+  const idUV = (x, z) => ({ u: x, v: z });
+  const run = (w, grid, n, opts) => { for (let i = 0; i < n; i++) { stepDrivers(w, grid, identFwdDir, null, idUV, opts || {}); stepWorld(w); } };
+
+  { // (a) DEFEND holds; (b) MOVE routes and arrives, order flips to defend
+    const w = makeWorld({ field: flatF, seed: 11 }); w.depotCombat = true;
+    const v = mkVeh(w, 1, 0, -20);
+    run(w, mkGrid(), 300);
+    ok("T2(a): a defending Bison holds its ground", Math.hypot(v.pos.x, v.pos.z + 20) < 1, v.pos.z.toFixed(1));
+    v.order = "move"; v.dest = { x: 0, z: 20 };
+    run(w, mkGrid(), 2400);
+    ok("T2(b): MOVE arrives and digs in", Math.hypot(v.pos.x, v.pos.z - 20) < 4 && v.order === "defend", `${v.pos.z.toFixed(1)}/${v.order}`);
+  }
+  { // (c) the route detours: a wall of blocked cells across the straight line
+    const blocked = []; for (let gx = 9; gx <= 20; gx++) blocked.push([gx, 15]);
+    const w = makeWorld({ field: flatF, seed: 12 }); w.depotCombat = true;
+    const v = mkVeh(w, 1, 0, -20);
+    v.order = "move"; v.dest = { x: 0, z: 20 };
+    run(w, mkGrid(blocked), 3600);
+    ok("T2(c): the route walks around the blocked band", Math.hypot(v.pos.x, v.pos.z - 20) < 4, `${v.pos.x.toFixed(1)},${v.pos.z.toFixed(1)}`);
+  }
+  { // (d) THE OVERRUN SAFETY: a friendly in the lane stops the hull; FREE rolls on
+    const trial = (tracks) => {
+      const w = makeWorld({ field: flatF, seed: 13 }); w.depotCombat = true;
+      const v = mkVeh(w, 1, 0, -20); v.tracks = tracks;
+      const man = addBody(w, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: -8, hp: 58, friction: 0.5 });
+      v.order = "move"; v.dest = { x: 0, z: 20 };
+      run(w, mkGrid(), 1500);
+      return { v, man };
+    };
+    const careful = trial("careful");
+    ok("T2(d): CAREFUL tracks brake for their own man", careful.man.alive && careful.v.pos.z < -10, `z=${careful.v.pos.z.toFixed(1)} alive=${careful.man.alive}`);
+    const free = trial("free");
+    ok("T2(d2): FREE tracks roll through", free.v.pos.z > -6, free.v.pos.z.toFixed(1));
+  }
+  { // (e) the guns: main gun works a conscript, the coax streams — both fire
+    const w = makeWorld({ field: flatF, seed: 14 }); w.depotCombat = true;
+    const v = mkVeh(w, 1, 0, 0);
+    spawnUnit(w, { x: 0, z: 14 }, "");
+    run(w, mkGrid(), 600);
+    const booms = w.events.filter((e) => e.type === "boom").length;
+    ok("T2(e): the Bison's guns fire on a seen enemy", booms > 0, `${booms} booms`);
+  }
+  { // (f) ESCORT trails the squad, offset back — never parked inside the ring
+    const w = makeWorld({ field: flatF, seed: 15 }); w.depotCombat = true;
+    const v = mkVeh(w, 1, 0, -15);
+    const sq = makeSquad(1, "rifles", 1, 10, 5);
+    v.order = "escort"; v.escortId = 1;
+    run(w, mkGrid(), 1200, { squads: [sq] });
+    const d = Math.hypot(v.pos.x - 10, v.pos.z - 5);
+    ok("T2(f): the escort closes to a trailing offset", d > 2 && d < 9, d.toFixed(1));
+  }
+  { // (g) the parked enemy Bison is not wave stock
+    const w = makeWorld({ field: flatF, seed: 16 }); w.depotCombat = true;
+    const eb = mkVeh(w, 2, 0, 30); delete eb.drv; eb.bounty = BISON.bounty;
+    const tank = spawnUnit(w, { x: 5, z: 30 }, "tank");
+    const S2 = makeRunState(); S2.reg = fatReg();
+    executeWithdrawal(S2, w);
+    ok("T2(g): withdrawal sweeps the wave tank, spares the Bison", !w.byId.has(tank.id) && w.byId.has(eb.id));
+    const counts = (await import("../src/depot/market.js")).marketCounts(w, []);
+    ok("T2(g2): the Bison prices no tank family", !counts.tank, JSON.stringify(counts.tank));
+  }
+  { // (h) the possessed triggers: cooldown-gated, one shell per cd
+    const w = makeWorld({ field: flatF, seed: 17 }); w.depotCombat = true;
+    const v = mkVeh(w, 1, 0, 0);
+    const f1 = possessedArmorFire(w, v, { x: 0, z: 15 }, null, idUV);
+    const f2 = possessedArmorFire(w, v, { x: 0, z: 15 }, null, idUV);
+    ok("T2(h): main gun fires once then waits out its cd", f1 === true && f2 === false && v.gunT > 0);
+    const m1 = possessedArmorMg(w, v, { x: 0, z: 12 }, null, idUV);
+    ok("T2(h2): the coax is its own trigger and cd", m1 === true && v.mgT > 0);
+  }
+  { // (i) twin determinism: same seed, same field, identical hash
+    const twin = () => {
+      const w = makeWorld({ field: flatF, seed: 18 }); w.depotCombat = true;
+      const v = mkVeh(w, 1, 0, -10); v.order = "move"; v.dest = { x: 4, z: 16 };
+      spawnUnit(w, { x: 0, z: 20 }, "");
+      run(w, mkGrid(), 900);
+      return worldHash(w);
+    };
+    ok("T2(i): twin runs agree", twin() === twin());
+  }
+}
+// ==== end P7 T2 ==============================================================
 
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);

@@ -74,6 +74,19 @@ export const ENEMY_SPECS = {
 // ColdsnapTD.jsx :836.
 export const TANK = { mass: 3400, hx: 1.5, hy: 0.8, hz: 2.4, hp: 260, bounty: 25, gunCd: 4.6, gunRange: 34, dmg: 30, blastR: 2.5 };
 
+// P7 T2 (mk1.31): THE BISON — the starting hero tank, one parked at each
+// depot at war start. ONE row, both sides — symmetry is law; the enemy's is
+// this same machine (its commander arrives in Task 5). Killable and dear:
+// replacement is the hero tier's business. All dials provisional (F5).
+export const BISON = { mass: 3800, hx: 2.2, hy: 0.95, hz: 3.3, hp: 420, armor: 160, bounty: 60 };
+// The Bison's guns — every aimed shot through shooterFire like the rest of
+// DEPOT. The main gun is the wave tank's round on a hero cadence; the coax
+// is the mg family's stream. weapon tags are voice only.
+export const BISON_FIRE = {
+  gun: { projSpeed: 85, dmg: TANK.dmg, kind: "shell", weapon: "tank", blastR: TANK.blastR, kv: 8, crater: 0.5, acc: 0.070, windF: 0.9, windComp: 0.6, cd: 2.6, range: 30, occl: "arc" },  // provisional (F5)
+  mg:  { projSpeed: 100, dmg: 5, dirDmg: 8, kind: "mg", weapon: "mg", blastR: 0.3, kv: 0.5, crater: 0, acc: 0.080, burst: 6, burstGap: 0.17, cd: 1.6, range: 18, occl: "arc", windF: 0.06, windComp: 0 },  // provisional (F5)
+};
+
 // Enemy fire specs — acc/windF/windComp EQUAL to the analogous tower (Jeff's
 // decision: aim fully equal). rifle mirrors TOWER_SPECS.mg, lob mirrors
 // TOWER_SPECS.mortar, tank mirrors TOWER_SPECS.gun. cd/cdVar/range are the

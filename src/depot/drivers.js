@@ -9,9 +9,10 @@
 // world.bodies order — deterministic. Future vehicles (the depot Bison,
 // the APC, heroes) add a DRIVERS row, never a second loop.
 import { applyDamage } from "../engine/core.js";
-import { shooterFire, fieldReaches, effRange, hostileStructure } from "./state.js";
+import { shooterFire, fieldReaches, effRange, hostileStructure, snapTargetNear, POSSESS_ACC } from "./state.js";
 import { arcClears } from "./accuracy.js";
-import { ENEMY_FIRE } from "./specs.js";
+import { ENEMY_FIRE, BISON_FIRE } from "./specs.js";
+import { planRoute } from "./route.js";
 
 // ---- the wave tank — re-seated from units.js stepTank (mk1.30), verbatim.
 function tankGoal(world, grid, t, dt, fwdDir) {
@@ -59,15 +60,192 @@ export const DRIVERS = {
   waveArmor: { goal: tankGoal, guns: tankGuns },
 };
 
+// ---- the depot's own armor (P7 T2, mk1.31): the full-citizen driver.
+// Orders live ON the body (order/dest/_patA/_patB/escortId/tracks — plain
+// scalars and flat objects, they ride the save's generic sweep): DEFEND
+// holds, MOVE and PATROL run planRoute legs on the movement grid with the
+// squads' own stall watch, ESCORT trails a squad at a respectful offset.
+// THE OVERRUN SAFETY (owner): under tracks "careful" (the default) the hull
+// brakes rather than roll over its OWN side's men — it flips depotDrive to
+// "manual" with the brake on while blocked, back to "auto" when the lane
+// clears (Task 1's own mechanism, no engine edit). "free" takes the safety
+// off; enemy infantry are crushable either way — that is the weapon.
+// Team-agnostic throughout: the enemy's Bison rides this exact policy when
+// Task 5 seats its commander.
+const ARMOR_WP_R = 2.5, ARMOR_ARRIVE = 3.0, ARMOR_ESCORT_BACK = 4;   // provisional (F5)
+const SAFETY_AHEAD = 4, SAFETY_SPEED_K = 0.5, SAFETY_HALF_W = 2.8;   // provisional (F5)
+function armorSafetyBlocked(world, v) {
+  const fx = v.R[6], fz = v.R[8];
+  const fl = Math.hypot(fx, fz) || 1;
+  const reach = v.hz + SAFETY_AHEAD + Math.hypot(v.v.x, v.v.z) * SAFETY_SPEED_K;
+  const pool = world._L ? (v.team === 1 ? world._L.friends : world._L.foes) : world.bodies;
+  for (const u of pool) {
+    if (u.kind !== "unit" || !u.alive || u.team !== v.team) continue;
+    const dx = u.pos.x - v.pos.x, dz = u.pos.z - v.pos.z;
+    const ahead = (dx * fx + dz * fz) / fl;
+    if (ahead < 0 || ahead > reach) continue;
+    if (Math.abs((dx * fz - dz * fx) / fl) < SAFETY_HALF_W) return true;
+  }
+  return false;
+}
+function armorGoal(world, grid, v, dt, fwdDir, opts) {
+  if (v.tracks !== "free" && armorSafetyBlocked(world, v)) {
+    v.depotDrive = "manual";
+    v.ctl = { throttle: 0, steer: 0, brake: true };   // the tracks bite — the strong stop
+    return;
+  }
+  v.depotDrive = "auto";
+  const order = v.order || "defend";
+  if (order === "defend") { v.goal = null; return; }
+  if (order === "escort") {
+    const sq = opts && opts.squads ? opts.squads.find((q) => q.id === v.escortId) : null;
+    if (!sq) { v.order = "defend"; v.goal = null; return; }
+    const dx = sq.anchor.x - v.pos.x, dz = sq.anchor.z - v.pos.z, d = Math.hypot(dx, dz) || 1;
+    // trail the formation, never park inside it: goal sits ESCORT_BACK short
+    // of the anchor on the approach line; inside that band the hull rests.
+    v.goal = d > ARMOR_ESCORT_BACK + 2.2
+      ? { x: sq.anchor.x - (dx / d) * ARMOR_ESCORT_BACK, z: sq.anchor.z - (dz / d) * ARMOR_ESCORT_BACK }
+      : null;
+    return;
+  }
+  if (!v.dest) { v.order = "defend"; v.goal = null; return; }
+  // MOVE/PATROL: route legs — stepSquadRouting's shape, carried on the body.
+  const destChanged = !v._routeDest || Math.hypot(v._routeDest.x - v.dest.x, v._routeDest.z - v.dest.z) > 0.5;
+  const wp0 = v._route && v._route.length ? v._route[0] : v.dest;
+  const dWp = Math.hypot(wp0.x - v.pos.x, wp0.z - v.pos.z);
+  let stale = false;
+  if (!destChanged) {
+    if (v._routeD == null || dWp < v._routeD - 0.5) { v._routeD = dWp; v._routeT = 0; }
+    else v._routeT = (v._routeT || 0) + dt;
+    stale = v._routeT >= 3;
+  }
+  if (destChanged || stale || !v._route) {
+    v._routeD = null; v._routeT = 0;
+    const r = planRoute(grid, v.pos.x, v.pos.z, v.dest.x, v.dest.z);
+    if (r && !r.reached && r.pts.length) {
+      const end = r.pts[r.pts.length - 1];
+      if (v.order === "patrol") {   // the honest clamp fixes the loop's endpoint too
+        if (v._patA && Math.hypot(v.dest.x - v._patA.x, v.dest.z - v._patA.z) < 0.5) v._patA = { x: end.x, z: end.z };
+        else if (v._patB && Math.hypot(v.dest.x - v._patB.x, v.dest.z - v._patB.z) < 0.5) v._patB = { x: end.x, z: end.z };
+      }
+      v.dest = { x: end.x, z: end.z };
+    }
+    v._route = r && r.pts.length ? r.pts : null;
+    v._routeDest = { x: v.dest.x, z: v.dest.z };
+  }
+  while (v._route && v._route.length && Math.hypot(v._route[0].x - v.pos.x, v._route[0].z - v.pos.z) < ARMOR_WP_R) v._route.shift();
+  const wp = v._route && v._route.length ? v._route[0] : v.dest;
+  if (Math.hypot(v.dest.x - v.pos.x, v.dest.z - v.pos.z) <= ARMOR_ARRIVE) {
+    if (v.order === "patrol" && v._patA && v._patB) {
+      const goingToB = Math.hypot(v.dest.x - v._patB.x, v.dest.z - v._patB.z) < 0.5;
+      v.dest = goingToB ? { x: v._patA.x, z: v._patA.z } : { x: v._patB.x, z: v._patB.z };
+      v._route = null; v._routeDest = null;
+    } else { v.order = "defend"; v.dest = null; v.goal = null; return; }
+  }
+  v.goal = { x: wp.x, z: wp.z };
+}
+function armorGuns(world, v, dt, T, toUV) {
+  const enemyTeam = v.team === 1 ? 2 : 1;
+  const attacker = v.team === 1 ? "player" : "enemy";
+  v.gunT = (v.gunT || 0) - dt; v.mgT = (v.mgT || 0) - dt;
+  const muzzle = { x: v.pos.x, y: v.pos.y + 1.4, z: v.pos.z };
+  const scanFoes = (spec, unitsOnly) => {
+    const eR = effRange(world, muzzle, spec);
+    const pool = world._L ? (enemyTeam === 2 ? world._L.foes : world._L.friends) : world.bodies;
+    let best = null, bd = eR * eR;
+    for (const e of pool) {
+      if ((e.kind !== "unit" && (unitsOnly || e.kind !== "vehicle")) || !e.alive || e.team !== enemyTeam) continue;
+      const dx = e.pos.x - v.pos.x, dz = e.pos.z - v.pos.z, d2 = dx * dx + dz * dz;
+      if (d2 >= bd) continue;
+      const c = toUV(e.pos.x, e.pos.z);
+      if (!fieldReaches(T, c.u, c.v, v.team)) continue;
+      if (!arcClears(world, muzzle, e.pos, spec, v.id)) continue;
+      bd = d2; best = e;
+    }
+    return best;
+  };
+  const scanStructs = (spec) => {
+    const eR = effRange(world, muzzle, spec);
+    const pool = world._L ? (v.team === 1 ? world._L.structsFor1 : world._L.structsFor2) : world.bodies;
+    let best = null, bs = eR * eR;
+    for (const s of pool) {
+      if (!hostileStructure(s, v.team)) continue;
+      const cs = toUV(s.pos.x, s.pos.z);
+      if (!fieldReaches(T, cs.u, cs.v, v.team)) continue;
+      const dx = s.pos.x - v.pos.x, dz = s.pos.z - v.pos.z, d2 = dx * dx + dz * dz;
+      if (d2 >= bs) continue;
+      if (!arcClears(world, muzzle, s.pos, spec, v.id)) continue;
+      bs = d2; best = s;
+    }
+    return best;
+  };
+  if (v.gunT <= 0) {
+    const gun = BISON_FIRE.gun;
+    let tgt = scanFoes(gun, false), struct = false;
+    if (!tgt) { tgt = scanStructs(gun); struct = !!tgt; }
+    if (tgt) {
+      v.gunT = gun.cd;
+      v._aimYaw = Math.atan2(tgt.pos.x - v.pos.x, tgt.pos.z - v.pos.z);
+      shooterFire(world, v, muzzle, tgt, gun, struct
+        ? { attacker, hitStruct: true, hitOnly: "structure", owner: v.id }
+        : { attacker, hitStruct: true, owner: v.id });
+    } else v.gunT = 0.5;
+  }
+  if (v.mgT <= 0) {
+    const mg = BISON_FIRE.mg;
+    const tgt = scanFoes(mg, true);   // the coax shoots men, not dirt
+    if (tgt) {
+      v.mgT = mg.cd;
+      v._aimYaw = Math.atan2(tgt.pos.x - v.pos.x, tgt.pos.z - v.pos.z);
+      shooterFire(world, v, muzzle, tgt, { ...mg, volley: mg.burst }, { attacker, owner: v.id, volleyDelay: mg.burstGap, muzzleStep: 0 });
+    } else v.mgT = 0.4;
+  }
+}
+DRIVERS.armor = { goal: armorGoal, guns: armorGuns };
+
 // stepDrivers: once per sim tick, BEFORE stepUnits — tanks drew from
 // world.rng before infantry at mk1.21 and the draw-order contract holds.
-export function stepDrivers(world, grid, fwdDir, T, toUV = (x, z) => ({ u: x, v: z })) {
+// opts.possessedId (P7 T2): a possessed hull skips its driver entirely
+// (goal untouched, guns untouched) but its cooldowns still decay — the
+// stepTowers precedent. opts.squads: escort's own live squad lookup.
+export function stepDrivers(world, grid, fwdDir, T, toUV = (x, z) => ({ u: x, v: z }), opts = {}) {
   const dt = world.dt;
   for (const b of world.bodies) {
     if (b.kind !== "vehicle" || !b.alive) continue;
     const d = DRIVERS[b.drv];
     if (!d) continue;
-    d.goal(world, grid, b, dt, fwdDir);
+    if (opts.possessedId === b.id) { b.gunT = (b.gunT || 0) - dt; b.mgT = (b.mgT || 0) - dt; continue; }
+    d.goal(world, grid, b, dt, fwdDir, opts);
     d.guns(world, b, dt, T, toUV);
   }
+}
+
+// POSSESSION (P7 T2): the owner's two triggers. Same laws as every
+// possessed shot — sight-gated at the aim, POSSESS_ACC sharpening, snap to
+// a live seen enemy, real cooldowns shared with the auto guns.
+export function possessedArmorFire(world, v, aim, T, toUV = (x, z) => ({ u: x, v: z })) {
+  const gun = BISON_FIRE.gun;
+  v.gunT = v.gunT || 0;
+  if (v.gunT > 0) return false;
+  const c = toUV(aim.x, aim.z);
+  if (!fieldReaches(T, c.u, c.v, v.team)) return false;
+  const live = snapTargetNear(world, aim, T, toUV);
+  const tgt = live || { pos: { x: aim.x, y: world.field.heightAt(aim.x, aim.z) + 0.9, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: 0.9 };
+  v.gunT = gun.cd;
+  v._aimYaw = Math.atan2(aim.x - v.pos.x, aim.z - v.pos.z);
+  shooterFire(world, v, { x: v.pos.x, y: v.pos.y + 1.4, z: v.pos.z }, tgt, { ...gun, acc: gun.acc * POSSESS_ACC }, { attacker: "player", hitStruct: true, owner: v.id });
+  return true;
+}
+export function possessedArmorMg(world, v, aim, T, toUV = (x, z) => ({ u: x, v: z })) {
+  const mg = BISON_FIRE.mg;
+  v.mgT = v.mgT || 0;
+  if (v.mgT > 0) return false;
+  const c = toUV(aim.x, aim.z);
+  if (!fieldReaches(T, c.u, c.v, v.team)) return false;
+  const live = snapTargetNear(world, aim, T, toUV);
+  const tgt = live || { pos: { x: aim.x, y: world.field.heightAt(aim.x, aim.z) + 0.9, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: 0.9 };
+  v.mgT = mg.cd;
+  v._aimYaw = Math.atan2(aim.x - v.pos.x, aim.z - v.pos.z);
+  shooterFire(world, v, { x: v.pos.x, y: v.pos.y + 1.4, z: v.pos.z }, tgt, { ...mg, acc: mg.acc * POSSESS_ACC, volley: mg.burst }, { attacker: "player", owner: v.id, volleyDelay: mg.burstGap, muzzleStep: 0 });
+  return true;
 }
