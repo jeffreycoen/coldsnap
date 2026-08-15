@@ -878,7 +878,7 @@ export function friendlyFouls(world, muzzle, target, spec, selfId) {
 // alive and asleep somewhere downrange (matches the campaign's demolition
 // semantics — displacement counts as destruction, not survival).
 export const DEPOT_STANDING_TOL = 1.2; // meters
-export const DEPOT_BREACH_FRAC = 0.58; // standing fraction below this -> LOSS
+export const DEPOT_BREACH_FRAC = 0.40; // P7 T3 (owner): really knocked down — was 0.58 // provisional (F5)
 export const DEPOT_CENSUS_HZ = 1; // census cadence — NOT per frame
 
 // censusDepotChunks: called once at buildTown time. bodies is world.bodies
@@ -1473,7 +1473,7 @@ export function executeWithdrawal(S, world) {
   for (let i = world.bodies.length - 1; i >= 0; i--) {
     const b = world.bodies[i];
     if ((b.kind !== "unit" && b.kind !== "vehicle") || !b.alive || b.team !== 2) continue;
-    if (b.vtype === "bison") continue; // P7 T2: starting armor is not wave stock — it neither withdraws nor refunds a tank
+    if (b.vtype === "bison" || b.vtype === "apc" || b.garrison) continue; // starting armor and the home guard are not wave stock
     if (b.kind === "vehicle") tanks++; else inf++;
     world.byId.delete(b.id);
     world.bodies.splice(i, 1);

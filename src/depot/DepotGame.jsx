@@ -18,7 +18,7 @@ import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS, BISON } fr
 import { windAt } from "./wind.js";
 import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest } from "./state.js";
 import { marketCounts, computePrices, fieldPrices } from "./market.js";
-import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic, drivePossessedSquad } from "./squads.js";
+import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic, drivePossessedSquad, clearSlot } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
 import { stepDrivers, possessedArmorFire, possessedArmorMg } from "./drivers.js";
@@ -68,14 +68,14 @@ let HILLS = []; // T5: [{u, v, r, h}...] — canonical, regrown from seed
 
 function genMap(seed) {
   const r = mulberry32(seed);
-  // THE DEPOTS FIRST (T2, mk1.01): both drawn per seed at MIRRORED DEPTH —
-  // the same distance from their own rim by construction, which closes the
-  // old placement asymmetry (record: player 8m from rim, enemy 14). Their
-  // side-to-side positions are independent, so no two wars share a front.
-  // v-separation is >= 80m by construction; spacing needs no retry luck.
-  const depotDepth = 40 + r() * 10;      // provisional (F5)
-  const depotU1 = (r() - 0.5) * 70;      // the player's depot, canonical u
-  const depotU2 = (r() - 0.5) * 70;      // the enemy's
+  // THE SEAT OF THE WAR (P7 T3, owner): the depots press into OPPOSITE
+  // CORNERS, point-symmetric — the longest front the square holds. Depth
+  // hugs the rim; the u side is drawn once and mirrored with a hair of
+  // jitter. genMap's rng is its own free stream — draw shape is ours.
+  const depotDepth = 44 + r() * 8;                       // provisional (F5)
+  const cornerSide = r() < 0.5 ? 1 : -1;
+  const depotU1 = cornerSide * (34 + r() * 14);          // the player's corner
+  const depotU2 = -depotU1 + (r() - 0.5) * 8;            // the far corner
   const objU = depotU1, objV = depotDepth - 3; // the objective sits 3m field-side of the player depot
   // THE BANDS (T2): 2-4 rock bands, evenly seeded across the middle ground,
   // each jittered — the fixed three-band skeleton is gone.
@@ -184,14 +184,18 @@ function genMap(seed) {
   ];
   // T2: both depots at their DRAWN positions — same lattice, same template.
   const town = [
-    { id: "depot", x: depotU1, z: depotDepth, nx: 9, nz: 7, ny: 6, door: 4, depot: true },
-    { id: "depot2", x: depotU2, z: -depotDepth, nx: 9, nz: 7, ny: 6, door: 4, depot: true, team: 2 },
+    { id: "depot", x: depotU1, z: depotDepth, nx: 12, nz: 9, ny: 7, door: 5, depot: true },
+    { id: "depot2", x: depotU2, z: -depotDepth, nx: 12, nz: 9, ny: 7, door: 5, depot: true, team: 2 },
   ];
   // T2: BOTH depots run the foul check the enemy's alone used to run —
   // except the ROAD clause, which checks depot2 only (AMENDMENT 2): every
   // drawn road terminates AT the player depot by design (its own supply
   // road), so road proximity is a foul for the enemy's ground alone.
-  const dHalfDiag = Math.hypot(9, 7) * MASON.pitch / 2;
+  // P7 T3 fix (dispatch-time anchor mismatch): this was hardcoded to the OLD
+  // 9x7 dims, not derived from the TOWN entries above — with the depot grown
+  // to 12x9 it under-cleared the real footprint (found by FRONT F1's sweep,
+  // two seeds where depot2 read as clear of a spawn it actually crowded).
+  const dHalfDiag = Math.hypot(town[0].nx, town[0].nz) * MASON.pitch / 2;
   const dFoul = (d, roadChecked) =>
     (roadChecked && roadDist(d.x, d.z) <= dHalfDiag + 2) ||
     spawns.some((sp) => Math.hypot(d.x - sp.x, d.z - sp.z) < dHalfDiag + 2) ||
@@ -782,7 +786,7 @@ function buildTown(world, grid, field) {
     }
     const key = (a, b, c2) => a + "," + b + "," + c2;
     const map = new Map(grid3.map((c) => [key(c.gpos[0], c.gpos[1], c.gpos[2]), c]));
-    const townBreakF = t.depot ? breakF * 1.5 : breakF; // the depot is built like it matters
+    const townBreakF = breakF; // P7 T3 (owner): normal welds — the depot is big, not magic; the breach bar is what makes it a siege
     for (const c of grid3) {
       const g = c.gpos;
       for (const d of [[1, 0, 0], [0, 1, 0], [0, 0, 1]]) {
@@ -1421,8 +1425,10 @@ export default function DepotGame({ onExit, resume = null }) {
         // shared with the test suite).
         for (const p of planTrees()) treeAt(p.x, p.z);
         // P1.5 T4 (mk0.60) — THE DEPOT COMES WITH COVER. Four to six sandbags
-        // ringed on the player depot at map-build time, so a fresh front opens
-        // with something to lie behind instead of bare ground.
+        // ringed on each depot at map-build time, so a fresh front opens with
+        // something to lie behind instead of bare ground. P7 T3 (owner):
+        // generalized to both depots — the enemy's was never dressed before,
+        // symmetry now — same rules, its own derived stream.
         //
         // Drawn off a DEDICATED map-seed stream (the same mulberry32(MAP_SEED ^
         // k) pattern the treeline above uses) and never world.rng: the world
@@ -1437,9 +1443,10 @@ export default function DepotGame({ onExit, resume = null }) {
         // its drawn spot (four radii out, then the same four either side of the
         // azimuth) because the depot's own approach road and mound reject a lot
         // of the ring; a bag that clears none of the twelve is simply dropped.
-        const bagR = mulberry32(MAP_SEED ^ 0x5ba6);
-        const depotT = TOWN.find((t) => t.depot && t.team !== 2);
-        if (depotT) {
+        // Ring radius grown to 7.8m (P7 T3) — the depots got bigger.
+        const seedBags = (depotT, streamKey) => {
+          if (!depotT) return;
+          const bagR = mulberry32(MAP_SEED ^ streamKey);
           const roadClear = (x, z) => {
             let best = 1e9;
             for (const route of ROADS) for (let i = 0; i < route.length - 1; i++) {
@@ -1453,7 +1460,7 @@ export default function DepotGame({ onExit, resume = null }) {
           const nBags = 4 + Math.floor(bagR() * 3);
           for (let i = 0; i < nBags; i++) {
             const az0 = ((i + 0.5) / nBags) * Math.PI * 2 + (bagR() - 0.5) * 0.5;
-            const r0 = 6.4 + bagR() * 1.6;
+            const r0 = 7.8 + bagR() * 1.6;
             let placed = false;
             for (let swing = 0; swing < 3 && !placed; swing++) {
               const az = az0 + [0, 0.38, -0.38][swing];
@@ -1472,27 +1479,50 @@ export default function DepotGame({ onExit, resume = null }) {
               }
             }
           }
-        }
-        // P7 T2: THE STARTING ARMOR — one Bison parked by each depot.
-        // Draw-free: fixed radii out, sixteen azimuths around, first clear
-        // cell wins. Deterministic; no rng stream is touched.
+        };
+        seedBags(TOWN.find((t) => t.depot && t.team !== 2), 0x5ba6);
+        seedBags(TOWN.find((t) => t.depot && t.team === 2), 0x5ba7); // P7 T3: their depot was never dressed — symmetry now
+        // P7 T2/T3: THE STARTING ARMOR — one Bison parked by each depot, the
+        // enemy's ARMED AT POST (owner) — its driving doctrine still waits
+        // for its commander (Task 6). FAIL-PROOF (P7 T3): a widened fixed
+        // ring (10-26m) first, then a brute nearest-clear-cell sweep (8-30m)
+        // backstops it — a hemmed ring (mk1.31's silent give-up) must never
+        // leave a side tankless. Deterministic; no rng stream is touched.
         const parkBison = (team, depotT) => {
           if (!depotT) return;
-          for (let rr = 9; rr <= 15; rr += 1.5) for (let k = 0; k < 16; k++) {
-            const az = (k / 16) * Math.PI * 2;
-            const bx = depotT.x + Math.sin(az) * rr, bz = depotT.z + Math.cos(az) * rr;
-            const cell = grid.cellAt(bx, bz);
-            if (!cell || cell.blocked || cell.ice || cell.water || cell.wallId) continue;
-            if (Math.hypot(bx - OBJ_POS.x, bz - OBJ_POS.z) < 4) continue;
-            if (slotBlockedPublic(world, bx, bz, Math.hypot(BISON.hx, BISON.hz) + 0.5)) continue;
+          const place = (bx, bz) => {
             const v = addBody(world, { kind: "vehicle", team, mass: BISON.mass, hx: BISON.hx, hy: BISON.hy, hz: BISON.hz,
               x: bx, y: field.heightAt(bx, bz) + BISON.hy + 0.05, z: bz, hp: BISON.hp, friction: 0.85,
               q: heading(null, Math.atan2(-bx, -bz)) });   // parked facing the valley
             v.armor = BISON.armor; v.vtype = "bison"; v.maxHp = BISON.hp;
-            if (team === 1) { v.drv = "armor"; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful"; v.driver = "player"; }
-            else v.bounty = BISON.bounty;   // parked and killable; its commander is Task 5's
-            return;
+            v.drv = "armor"; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful";
+            if (team === 1) v.driver = "player";
+            else v.bounty = BISON.bounty; // armed at post (owner) — its commander arrives in Task 6
+            return v;
+          };
+          const clearAt = (bx, bz) => {
+            const cell = grid.cellAt(bx, bz);
+            if (!cell || cell.blocked || cell.ice || cell.water || cell.wallId) return false;
+            if (Math.hypot(bx - OBJ_POS.x, bz - OBJ_POS.z) < 4) return false;
+            if (slotBlockedPublic(world, bx, bz, Math.hypot(BISON.hx, BISON.hz) + 0.5)) return false;
+            if (world.bodies.some((o) => o.kind === "vehicle" && o.alive && Math.hypot(o.pos.x - bx, o.pos.z - bz) < 7)) return false;
+            return true;
+          };
+          for (let rr = 10; rr <= 26; rr += 1.5) for (let k = 0; k < 16; k++) {
+            const az = (k / 16) * Math.PI * 2;
+            const bx = depotT.x + Math.sin(az) * rr, bz = depotT.z + Math.cos(az) * rr;
+            if (clearAt(bx, bz)) return place(bx, bz);
           }
+          // FAIL-PROOF (P7 T3): a hemmed ring must never leave a side tankless
+          // (the mk1.31 silent give-up) — brute-sweep the nearest clear cell.
+          let best = null, bd = 1e9;
+          for (let gz = 0; gz < GRID_H; gz++) for (let gx = 0; gx < GRID_W; gx++) {
+            const wp = grid.gridToWorld(gx, gz);
+            const d = Math.hypot(wp.x - depotT.x, wp.z - depotT.z);
+            if (d > 30 || d < 8) continue;
+            if (d < bd && clearAt(wp.x, wp.z)) { bd = d; best = wp; }
+          }
+          if (best) place(best.x, best.z);
         };
         parkBison(1, TOWN.find((t) => t.depot && t.team !== 2));
         parkBison(2, TOWN.find((t) => t.depot && t.team === 2));
@@ -1656,6 +1686,23 @@ export default function DepotGame({ onExit, resume = null }) {
         // a formation it already has.
         reg: RES ? { ...RES.run.reg } : makeRegiment(world.rng),
       };
+      // P7 T3: THE HOME GUARD (owner) — eight riflemen dug in around the
+      // enemy depot from second zero, paid out of the regiment's own books.
+      // Fixed azimuths; clearSlot vets the ground; spawnUnit's own jitter is
+      // 3 world-rng draws per man, 8 men, every seed — count-stable.
+      if (!RES) {
+        const depotE2 = TOWN.find((t) => t.depot && t.team === 2);
+        if (depotE2) {
+          const gR = Math.hypot(depotE2.nx, depotE2.nz) * MASON.pitch / 2 + 3.5;
+          for (let i = 0; i < 8; i++) {
+            const a = (i / 8) * Math.PI * 2 + 0.39;
+            const p = clearSlot(world, depotE2.x + Math.sin(a) * gR, depotE2.z + Math.cos(a) * gR, 0.28 + 0.35);
+            const u = spawnUnit(world, { x: p.x, z: p.z }, "");
+            u.hold = true; u.garrison = true;
+          }
+          S.reg.heads = Math.max(0, S.reg.heads - 8); // the books stay honest
+        }
+      }
       // Step 5. The run state itself, straight off the file. The bell is the
       // ONE deliberate exception: the countdown restarts at a full period
       // rather than resuming a half-elapsed one (ratified — simpler, and
