@@ -3989,7 +3989,9 @@ export default function DepotGame({ onExit, resume = null }) {
           }
         } catch (err) {
           console.error("COLDSNAP DEPOT frame failed", err);
-          setFatal(String(err && err.message ? err.message : err));
+          // HOTFIX mk1.37: the overlay names the throwing SITE — "non-finite" alone left the fault anonymous on a phone
+          const top = err && err.stack ? String(err.stack).split("\n").slice(0, 3).join(" ⏎ ") : "";
+          setFatal(String(err && err.message ? err.message : err) + (top ? " — " + top : ""));
           disposed = true;
         }
       };
@@ -4014,7 +4016,9 @@ export default function DepotGame({ onExit, resume = null }) {
       };
     } catch (err) {
       console.error("COLDSNAP DEPOT boot failed", err);
-      setFatal(String(err && err.message ? err.message : err));
+      // HOTFIX mk1.37: the overlay names the throwing SITE — "non-finite" alone left the fault anonymous on a phone
+      const top = err && err.stack ? String(err.stack).split("\n").slice(0, 3).join(" ⏎ ") : "";
+      setFatal(String(err && err.message ? err.message : err) + (top ? " — " + top : ""));
       if (R) R.dispose();
     }
   }, [isTouch, runId]);

@@ -37,6 +37,7 @@ export function makeGameAudio() {
   const VOICE_CAP = 26;
   const C_SND = 343;                      // m/s
   const MASTER_G = 0.8;
+  const fin = (v, d = 0) => (Number.isFinite(v) ? v : d); // HOTFIX mk1.37: the browser throws on non-finite params; a stray value degrades one sound, never the frame
 
   const ensure = () => {
     try {
@@ -46,7 +47,7 @@ export function makeGameAudio() {
         ctx = new AC();
         comp = ctx.createDynamicsCompressor();
         comp.threshold.value = -18; comp.ratio.value = 6; comp.knee.value = 12;
-        master = ctx.createGain(); master.gain.value = MASTER_G;
+        master = ctx.createGain(); master.gain.value = fin(MASTER_G, 0);
         master.connect(comp).connect(ctx.destination);
         // THE BELL'S OWN DOOR (mk0.58). Everything in the game goes out
         // through `master` into the compressor, and that compressor's job —
@@ -56,7 +57,7 @@ export function makeGameAudio() {
         // and instead of the mix ducking the bell, the toll ducks the mix
         // (see duckMix). Same 0.8 trim, so nothing else about the balance
         // moves. Nothing but bellToll/preToll is ever routed here.
-        bellBus = ctx.createGain(); bellBus.gain.value = MASTER_G;
+        bellBus = ctx.createGain(); bellBus.gain.value = fin(MASTER_G, 0);
         bellBus.connect(ctx.destination);
         const n = Math.floor(ctx.sampleRate * 2);
         noiseBuf = ctx.createBuffer(1, n, ctx.sampleRate);
@@ -101,18 +102,18 @@ export function makeGameAudio() {
     const t0 = ctx.currentTime + delay + d / C_SND + Math.random() * 0.02;
     const near = Math.min(1, d / (listener.range * 1.6));
     const air = ctx.createBiquadFilter(); air.type = "lowpass";
-    air.frequency.value = Math.max(300, 9500 * Math.pow(1 - near, 1.6) * dark + 250);
-    const dry = ctx.createGain(); dry.gain.value = baseGain * att(d) * (1 - wet * near * 0.8);
+    air.frequency.value = fin(Math.max(300, 9500 * Math.pow(1 - near, 1.6) * dark + 250), 440);
+    const dry = ctx.createGain(); dry.gain.value = fin(baseGain * att(d) * (1 - wet * near * 0.8), 0);
     let tail = dry;
-    if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = panOf(x); dry.connect(p); tail = p; }
+    if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = fin(panOf(x), 0); dry.connect(p); tail = p; }
     tail.connect(out || master);
-    const wetG = ctx.createGain(); wetG.gain.value = baseGain * att(d) * wet * (0.4 + near * 0.9);
+    const wetG = ctx.createGain(); wetG.gain.value = fin(baseGain * att(d) * wet * (0.4 + near * 0.9), 0);
     air.connect(dry); air.connect(wetG); wetG.connect(verb);
     return { node: air, t0, d };
   };
 
   // ---- one-shot builders ----------------------------------------------
-  const done = (src, t1) => { voices++; src.onended = () => { voices--; }; src.stop(t1); };
+  const done = (src, t1) => { voices++; src.onended = () => { voices--; }; src.stop(fin(t1, ctx.currentTime)); };
   const ATK = 0.005; // attack ramp: pads click, munitions don't
   // `atk` (mk0.58) lets a caller ask for a faster onset than the anti-click
   // default — a muzzle blast is over in three milliseconds, so a five
@@ -123,16 +124,16 @@ export function makeGameAudio() {
     try {
       dur = vary(dur); gain = vary(gain); f0 = vary(f0);
       const { node, t0 } = chain(x, z, gain, { wet, delay, dark });
-      const src = ctx.createBufferSource(); src.buffer = noiseBuf; src.playbackRate.value = vary(rate);
+      const src = ctx.createBufferSource(); src.buffer = noiseBuf; src.playbackRate.value = fin(vary(rate), 1);
       src.loop = true; src.loopStart = Math.random() * 1.2;
-      const f = ctx.createBiquadFilter(); f.type = type; f.frequency.setValueAtTime(f0, t0); f.Q.value = q;
-      if (f1 != null) f.frequency.exponentialRampToValueAtTime(Math.max(20, vary(f1)), t0 + dur);
+      const f = ctx.createBiquadFilter(); f.type = type; f.frequency.setValueAtTime(fin(f0, 440), fin(t0, ctx.currentTime)); f.Q.value = fin(q, 1);
+      if (f1 != null) f.frequency.exponentialRampToValueAtTime(fin(Math.max(1e-4, Math.max(20, vary(f1))), 440), fin(t0 + dur, ctx.currentTime));
       const env = ctx.createGain();
-      env.gain.setValueAtTime(0.0001, t0);
-      env.gain.linearRampToValueAtTime(1, t0 + atk + Math.random() * Math.min(0.004, atk * 0.8));
+      env.gain.setValueAtTime(0.0001, fin(t0, ctx.currentTime));
+      env.gain.linearRampToValueAtTime(1, fin(t0 + atk + Math.random() * Math.min(0.004, atk * 0.8), ctx.currentTime));
       env.gain.setTargetAtTime(0.0001, t0 + atk, dur / 3); // convex settle, not a gate
       src.connect(f).connect(env).connect(node);
-      src.start(t0);
+      src.start(fin(t0, ctx.currentTime));
       done(src, t0 + dur + 0.15);
     } catch (e) {}
   };
@@ -142,14 +143,14 @@ export function makeGameAudio() {
       dur = vary(dur); gain = vary(gain);
       const { node, t0 } = chain(x, z, gain, { wet, delay });
       const o = ctx.createOscillator(); o.type = type;
-      o.frequency.setValueAtTime(vary(f0, 0.06), t0);
-      if (f1 != null) o.frequency.exponentialRampToValueAtTime(Math.max(15, f1), t0 + dur);
+      o.frequency.setValueAtTime(fin(vary(f0, 0.06), 440), fin(t0, ctx.currentTime));
+      if (f1 != null) o.frequency.exponentialRampToValueAtTime(fin(Math.max(1e-4, Math.max(15, f1)), 440), fin(t0 + dur, ctx.currentTime));
       const env = ctx.createGain();
-      env.gain.setValueAtTime(0.0001, t0);
-      env.gain.linearRampToValueAtTime(1, t0 + atk);
+      env.gain.setValueAtTime(0.0001, fin(t0, ctx.currentTime));
+      env.gain.linearRampToValueAtTime(1, fin(t0 + atk, ctx.currentTime));
       env.gain.setTargetAtTime(0.0001, t0 + atk, dur / 3);
       o.connect(env).connect(node);
-      o.start(t0);
+      o.start(fin(t0, ctx.currentTime));
       done(o, t0 + dur + 0.15);
     } catch (e) {}
   };
@@ -164,16 +165,16 @@ export function makeGameAudio() {
       const sum = ctx.createGain(); sum.gain.value = 1;
       for (const m of modes) {
         const f = ctx.createBiquadFilter(); f.type = "bandpass";
-        f.frequency.value = vary(m.f, 0.08); f.Q.value = m.q || 22;
-        const g = ctx.createGain(); g.gain.value = m.g || 1;
+        f.frequency.value = fin(vary(m.f, 0.08), 440); f.Q.value = fin(m.q || 22, 1);
+        const g = ctx.createGain(); g.gain.value = fin(m.g || 1, 0);
         src.connect(f).connect(g).connect(sum);
       }
       const env = ctx.createGain();
-      env.gain.setValueAtTime(0.0001, t0);
-      env.gain.linearRampToValueAtTime(1, t0 + 0.003);
+      env.gain.setValueAtTime(0.0001, fin(t0, ctx.currentTime));
+      env.gain.linearRampToValueAtTime(1, fin(t0 + 0.003, ctx.currentTime));
       env.gain.setTargetAtTime(0.0001, t0 + 0.003, dur / 3.2);
       sum.connect(env).connect(node);
-      src.start(t0);
+      src.start(fin(t0, ctx.currentTime));
       done(src, t0 + dur + 0.1);
     } catch (e) {}
   };
@@ -221,14 +222,14 @@ export function makeGameAudio() {
     try {
       const { node, t0 } = chain(x, z, vary(gain) * (0.72 + 0.28 * mass), { wet, delay });
       const src = ctx.createBufferSource(); src.buffer = noiseBuf;
-      src.playbackRate.value = vary(1, 0.06);
+      src.playbackRate.value = fin(vary(1, 0.06), 1);
       src.loop = true; src.loopStart = Math.random() * 1.2;
       const cf = vary(f, 0.06), bd = vary(bdur), cd = vary(cdur);
       const branch = (type, freq, q, atk, tau, amp) => {
-        const flt = ctx.createBiquadFilter(); flt.type = type; flt.frequency.value = freq; flt.Q.value = q;
+        const flt = ctx.createBiquadFilter(); flt.type = type; flt.frequency.value = fin(freq, 440); flt.Q.value = fin(q, 1);
         const env = ctx.createGain();
-        env.gain.setValueAtTime(0.0001, t0);
-        env.gain.linearRampToValueAtTime(amp, t0 + atk);
+        env.gain.setValueAtTime(0.0001, fin(t0, ctx.currentTime));
+        env.gain.linearRampToValueAtTime(fin(amp, 0), fin(t0 + atk, ctx.currentTime));
         env.gain.setTargetAtTime(0.0001, t0 + atk, tau);
         src.connect(flt).connect(env);
         return env;
@@ -243,11 +244,11 @@ export function makeGameAudio() {
       const dB = ctx.createDelay(0.05); dB.delayTime.value = 0.0008;
       const gB = ctx.createGain(); gB.gain.value = 0.5;
       A.connect(dB).connect(gB).connect(node);
-      const dG = ctx.createDelay(0.05); dG.delayTime.value = 0.0015 + Math.random() * 0.0015;
+      const dG = ctx.createDelay(0.05); dG.delayTime.value = fin(0.0015 + Math.random() * 0.0015, 0);
       const lpG = ctx.createBiquadFilter(); lpG.type = "lowpass"; lpG.frequency.value = 4000;
       const gG = ctx.createGain(); gG.gain.value = 0.63;
       AC.connect(dG).connect(lpG).connect(gG).connect(node);
-      src.start(t0);
+      src.start(fin(t0, ctx.currentTime));
       done(src, t0 + bd + 0.08);
     } catch (e) {}
   };
@@ -444,10 +445,10 @@ export function makeGameAudio() {
     try {
       const g = master.gain, lo = MASTER_G * Math.pow(10, -4 / 20);
       g.cancelScheduledValues(t0);
-      g.setValueAtTime(g.value, t0);
-      g.linearRampToValueAtTime(lo, t0 + 0.2);
-      g.setValueAtTime(lo, t0 + 0.8);
-      g.linearRampToValueAtTime(MASTER_G, t0 + 2.3);
+      g.setValueAtTime(fin(g.value, MASTER_G), fin(t0, ctx.currentTime));
+      g.linearRampToValueAtTime(fin(lo, 0), fin(t0 + 0.2, ctx.currentTime));
+      g.setValueAtTime(fin(lo, 0), fin(t0 + 0.8, ctx.currentTime));
+      g.linearRampToValueAtTime(fin(MASTER_G, 0), fin(t0 + 2.3, ctx.currentTime));
     } catch (e) {}
   };
   // Non-positional: it is the garrison's own bell hanging over the listener,
@@ -463,9 +464,9 @@ export function makeGameAudio() {
       const { node, t0 } = chain(listener.x, listener.z, vary(BELL_GAIN, 0.05), { wet: 0.4, out: bellBus });
       const src = ctx.createBufferSource();
       src.buffer = bellBuf;
-      src.playbackRate.value = vary(1, 0.003);
+      src.playbackRate.value = fin(vary(1, 0.003), 1);
       src.connect(node);
-      src.start(t0);
+      src.start(fin(t0, ctx.currentTime));
       done(src, t0 + BELL_S + 0.05);
       duckMix(t0);
     } catch (e) {}
@@ -480,13 +481,13 @@ export function makeGameAudio() {
       const { node, t0 } = chain(listener.x, listener.z, vary(PRETOLL_GAIN, 0.08), { wet: 0.3, out: bellBus });
       const src = ctx.createBufferSource();
       src.buffer = bellBuf;
-      src.playbackRate.value = vary(1, 0.003);
+      src.playbackRate.value = fin(vary(1, 0.003), 1);
       const env = ctx.createGain();
-      env.gain.setValueAtTime(0.0001, t0);
-      env.gain.linearRampToValueAtTime(1, t0 + 0.004);
+      env.gain.setValueAtTime(0.0001, fin(t0, ctx.currentTime));
+      env.gain.linearRampToValueAtTime(1, fin(t0 + 0.004, ctx.currentTime));
       env.gain.setTargetAtTime(0.0001, t0 + 0.004, 0.075);
       src.connect(env).connect(node);
-      src.start(t0, BELL_KNOCK);
+      src.start(fin(t0, ctx.currentTime), BELL_KNOCK);
       done(src, t0 + 0.45);
     } catch (e) {}
   };
@@ -561,7 +562,7 @@ export function makeGameAudio() {
       try {
         const src = ctx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
         src.loopStart = Math.random() * 1.5;
-        const filt = ctx.createBiquadFilter(); filt.type = type; filt.frequency.value = f0; filt.Q.value = q;
+        const filt = ctx.createBiquadFilter(); filt.type = type; filt.frequency.value = fin(f0, 440); filt.Q.value = fin(q, 1);
         const gain = ctx.createGain(); gain.gain.value = 0.0001;
         src.connect(filt).connect(gain).connect(master);
         src.start();
@@ -574,8 +575,8 @@ export function makeGameAudio() {
   const setLoop = (L, gv, fv, dt) => {
     if (!L) return;
     const k = Math.min(1, dt * 8);
-    L.gain.gain.value += (gv - L.gain.gain.value) * k;
-    if (fv != null) L.filt.frequency.value += (fv - L.filt.frequency.value) * k;
+    L.gain.gain.value = fin(L.gain.gain.value + (gv - L.gain.gain.value) * k, 0);
+    if (fv != null) L.filt.frequency.value = fin(L.filt.frequency.value + (fv - L.filt.frequency.value) * k, 440);
   };
   const knockCd = new Map();
   let knockBudget = 0;
@@ -621,15 +622,15 @@ export function makeGameAudio() {
       // pitch climbs as it falls faster (the classic incoming shriek),
       // vibrato gives it air; loudness swells as it nears the ground
       const fall = Math.min(1, -p.v.y / 42);
-      w.o.frequency.value = (620 + fall * 900) * (1 + Math.sin(p.life * 31) * 0.025);
+      w.o.frequency.value = fin((620 + fall * 900) * (1 + Math.sin(p.life * 31) * 0.025), 440);
       const h = p.pos.y - (world.field ? world.field.heightAt(p.pos.x, p.pos.z) : 0);
       const near = Math.max(0, 1 - h / 45);
-      w.g.gain.value = 0.05 * (0.25 + 0.75 * near * near) * att(dist(p.pos.x, p.pos.z));
-      if (w.pan) w.pan.pan.value = panOf(p.pos.x);
+      w.g.gain.value = fin(0.05 * (0.25 + 0.75 * near * near) * att(dist(p.pos.x, p.pos.z)), 0);
+      if (w.pan) w.pan.pan.value = fin(panOf(p.pos.x), 0);
     }
     for (const [p, w] of whistles) {
       if (live.has(p)) continue;
-      try { w.g.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.02); w.o.stop(ctx.currentTime + 0.1); } catch (e) {}
+      try { w.g.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.02); w.o.stop(fin(ctx.currentTime + 0.1, ctx.currentTime)); } catch (e) {}
       whistles.delete(p);
     }
   };

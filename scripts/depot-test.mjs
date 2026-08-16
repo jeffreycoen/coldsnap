@@ -7280,6 +7280,18 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 }
 // ==== end P7 T7 ==============================================================
 
+// HOTFIX mk1.37 pin: every audio.js `.value = ` assignment is either fin()-wrapped
+// or a bare numeric literal (regex /\.value = -?\d[\d.]*;/) — no raw computed
+// expression reaches a WebAudio param unguarded.
+{
+  const audSrc = fs.readFileSync(new URL("../src/platform/audio.js", import.meta.url), "utf8");
+  const total = (audSrc.match(/\.value = /g) || []).length;
+  const literal = (audSrc.match(/\.value = -?\d[\d.]*;/g) || []).length;
+  const wrapped = (audSrc.match(/\.value = fin\(/g) || []).length;
+  ok("HOTFIX mk1.37: audio.js .value = assignments are all fin()-wrapped or bare numeric literals",
+    literal + wrapped === total, `total=${total} literal=${literal} fin=${wrapped}`);
+}
+
 if (fails.length) {
   console.error(`\n${fails.length} FAILURE(S): ${fails.join(", ")}`);
   process.exit(1);
