@@ -3,7 +3,7 @@
 // cost times min(4, 1 + standing/K) — both armies' standing stock counted
 // together, one shared table both sides pay. Pure counting and arithmetic:
 // no rng, no world mutation, recomputed each second by the game layer.
-import { TOWER_SPECS, ENEMY_SPECS, TANK } from "./specs.js";
+import { TOWER_SPECS, ENEMY_SPECS, TANK, BISON, APC } from "./specs.js";
 import { SQUAD_SPECS } from "./squads.js";
 
 // THE TWO WALLS (mk1.20, owner's rulings): both pressures are the same
@@ -22,6 +22,10 @@ export const MARKET_K = {
   runner: 12, breaker: 6, tank: 3,
   mgtower: 4, guntower: 4, mortartower: 3, rockettower: 3, frosttower: 4,
   wall: 30, sandbag: 40,
+  // P7 T9 (owner): THE HERO TIER — K 1, pole 2. ONE standing hull doubles
+  // the price and the curve goes vertical approaching two; with the field
+  // wall on top, a second hero while yours lives is absurd — the ruling.
+  heroBison: 1, heroApc: 1,
 };
 const FAMILY_OF_SQUAD = { rifles: "rifles", sniper: "marksman", sappers: "sapper", mortars: "mortarcrew", mg: "mgteam", engineers: "engineer", runners: "runner", breakers: "breaker" };
 const FAMILY_OF_TAG = { "": "rifles", sniper: "marksman", sapper: "sapper", gren: "mortarcrew", fast: "runner", heavy: "breaker" };
@@ -43,6 +47,11 @@ export function marketCounts(world, squads) {
     if (b.kind === "unit") c._men = (c._men || 0) + 1; // both armies — squad men are unit bodies too
     if (b.kind === "unit" && b.team === 2) add(FAMILY_OF_TAG[b.tag || ""], 1);
     else if (b.kind === "vehicle" && b.team === 2 && b.tag === "tank") add("tank", 1); // P7 T2: only wave armor prices the tank family
+    // P7 T9: THE HERO TIER — one shared market, BOTH teams' standing hulls
+    // count into the same family (the wall that makes a second hero absurd
+    // has to see both sides' iron).
+    else if (b.kind === "vehicle" && b.vtype === "bison") add("heroBison", 1);
+    else if (b.kind === "vehicle" && b.vtype === "apc") add("heroApc", 1);
     else if (b.kind === "tower" && b.team === 1) add(FAMILY_OF_TOWER[b.towerType], 1);
     else if (b.kind === "wall" && b.team === 1 && !b.course) add("wall", 1);
     else if (b.kind === "chunk" && b.sandbag) add("sandbag", 1);
@@ -64,9 +73,14 @@ export function computePrices(counts) {
   const player = {};
   for (const k in FAMILY_OF_TOWER) player[k] = priced(TOWER_SPECS[k].cost, FAMILY_OF_TOWER[k], counts);
   for (const t in FAMILY_OF_SQUAD) player["sq_" + t] = priced(SQUAD_SPECS[t].cost, FAMILY_OF_SQUAD[t], counts);
+  // P7 T9: THE HERO TIER — one price table, both sides, off the specs' own cost.
+  player.hero_bison = priced(BISON.cost, "heroBison", counts);
+  player.hero_apc = priced(APC.cost, "heroApc", counts);
   const foe = {};
   for (const t in FAMILY_OF_TAG) foe[t] = priced(ENEMY_SPECS[t].bounty, FAMILY_OF_TAG[t], counts);
   foe.tank = priced(TANK.bounty, "tank", counts);
+  foe.hero_bison = priced(BISON.cost, "heroBison", counts);
+  foe.hero_apc = priced(APC.cost, "heroApc", counts);
   return { player, foe, counts };
 }
 

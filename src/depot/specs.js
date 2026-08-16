@@ -78,7 +78,10 @@ export const TANK = { mass: 3400, hx: 1.5, hy: 0.8, hz: 2.4, hp: 260, bounty: 25
 // depot at war start. ONE row, both sides — symmetry is law; the enemy's is
 // this same machine (its commander arrives in Task 5). Killable and dear:
 // replacement is the hero tier's business. All dials provisional (F5).
-export const BISON = { mass: 3800, hx: 2.2, hy: 0.95, hz: 3.3, hp: 420, armor: 160, bounty: 60 };
+// P7 T9 (owner): cost is the HERO TIER's convoy price — the wall (market.js's
+// heroBison family, K 1) plus the field wall are what make it ruinous; this
+// is the base the curve multiplies. // provisional (F5)
+export const BISON = { mass: 3800, hx: 2.2, hy: 0.95, hz: 3.3, hp: 420, armor: 160, bounty: 60, cost: 200 };
 // The Bison's guns — every aimed shot through shooterFire like the rest of
 // DEPOT. The main gun is the wave tank's round on a hero cadence; the coax
 // is the mg family's stream. weapon tags are voice only.
@@ -92,7 +95,8 @@ export const BISON_FIRE = {
 // two. Riders are SEALED — no eyes, no fire — and die with the vehicle;
 // loading is a real decision (owner). Its only gun is the coax
 // (BISON_FIRE.mg — one mg table, every hull). All dials provisional (F5).
-export const APC = { mass: 2600, hx: 1.6, hy: 1.0, hz: 3.0, hp: 300, armor: 120, bounty: 45, seats: 4 };
+// P7 T9 (owner): cost — the hero tier's convoy price, same story as BISON.cost above. // provisional (F5)
+export const APC = { mass: 2600, hx: 1.6, hy: 1.0, hz: 3.0, hp: 300, armor: 120, bounty: 45, seats: 4, cost: 140 };
 
 // Enemy fire specs — acc/windF/windComp EQUAL to the analogous tower (Jeff's
 // decision: aim fully equal). rifle mirrors TOWER_SPECS.mg, lob mirrors
@@ -137,6 +141,7 @@ export const ENEMY_FIRE = {
 //   TIER 1     mg · sq_mg · frost · sq_runners · sq_breakers   fast (runner) · heavy (breaker)
 //   TIER 2     gun · sq_sniper · sq_mortars                gren · sapper
 //   TIER 3     mortar · rocket · sq_sappers                sniper (marksman) · tank
+//   TIER 4     hero_bison · hero_apc                       hero_bison · hero_apc (P7 T9, bell 10 — the hero tier)
 //
 // The enemy column is a READING of state.js's ENEMY_TIERS, not a second copy:
 // the live gate stays where Task 1 put it and nothing here is consulted for
@@ -159,6 +164,9 @@ export const PLAYER_TIERS = [
   ["mg", "sq_mg", "frost", "sq_runners", "sq_breakers"],
   ["gun", "sq_sniper", "sq_mortars"],
   ["mortar", "rocket", "sq_sappers"],
+  // P7 T9 (owner): THE HERO TIER — bell 10, replacement armor off the
+  // convoy at a ruinous, market-walled price.
+  ["hero_bison", "hero_apc"],
 ];
 
 export const MASON = { hcs: 0.40, pitch: 0.83, mass: 100, breakF: 8.0e4 };

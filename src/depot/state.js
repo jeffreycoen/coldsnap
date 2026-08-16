@@ -1023,18 +1023,20 @@ export function stepDepotCensus(S, dt, computeFraction) {
 // file reads a hard 120.
 export const BELL_PERIOD_S = 90;   // provisional (F5)
 
-// Bell index at which the enemy's tiers 1/2/3 open. Bell 1 is the FIRST bell
-// of a match, so tier 1 marches with the opening assault. // provisional (F5)
-export const TIER_BELLS = [1, 3, 5];
+// Bell index at which the enemy's tiers 1/2/3/4 open. Bell 1 is the FIRST
+// bell of a match, so tier 1 marches with the opening assault. P7 T9 (owner):
+// the 4th tier, the hero tier, opens dear and late. // provisional (F5)
+export const TIER_BELLS = [1, 3, 5, 10];
 
 // The enemy's ladder: ENEMY_SPECS tags (plus "tank", TANK's own row) by tier.
 // Conscripts ("") are never gated — they are what a regiment has before it
 // has anything. Task 2 writes the player's mirrored table in specs.js against
-// these exact three rows; both sides climb on the same bells.
+// these exact rows; both sides climb on the same bells.
 export const ENEMY_TIERS = [
   ["fast", "heavy"],    // tier 1 — runners, breakers
   ["gren", "sapper"],   // tier 2 — grenadiers, sappers
   ["sniper", "tank"],   // tier 3 — marksmen, armour
+  ["hero_bison", "hero_apc"], // tier 4 — THE HERO TIER (owner): lost armor returns off the convoy, dear
 ];
 
 // ---------------------------------------------------------------- the ladder

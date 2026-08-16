@@ -3,7 +3,7 @@
 // src/depot/state.js directly, no DOM/three.js.
 //   node scripts/depot-test.mjs
 import {
-  makeRunState, stepBell, fireBell, withdrawDue, executeWithdrawal,
+  makeRunState, stepBell, fireBell, withdrawDue, executeWithdrawal, nextSpawnTag,
   BELL_PERIOD_S, TIER_BELLS, ENEMY_TIERS, enemyTierState, enemyTierOf, ASSAULT_TIMEOUT,
   MANIFEST_DRAWS, FOE_DRAWS, makeManifestState, makeFoeState, manifestPool, foePool,
   drawOffers, drawFoePick, pickManifest, isUnlocked, tierOpenCount,
@@ -31,7 +31,7 @@ import { stepUnits, spawnUnit, payBounties, SNIPER_FIRE, stepBreakerRam } from "
 import { stepDrivers, possessedArmorFire, possessedArmorMg } from "../src/depot/drivers.js";
 import { stepTransports, unloadApc, apcSeated, unloadEnemyRiders } from "../src/depot/transports.js";
 import { planRoute } from "../src/depot/route.js";
-import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad, drivePossessedSquad, COHESION_M, slotBlockedPublic } from "../src/depot/squads.js";
+import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad, drivePossessedSquad, COHESION_M, slotBlockedPublic, clearSlot } from "../src/depot/squads.js";
 import {
   makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue,
 } from "../src/depot/economy.js";
@@ -7443,6 +7443,164 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 }
 // ==== end P7 T8 ==============================================================
+
+// ==== P7 T9: THE HERO TIER AND THE FIELDED START ============================
+//  (a) tiers: TIER_BELLS [1,3,5,10]; hero tags in both ladders' 4th row;
+//      manifestPool(unlocked, 9) has no hero; (…,10) offers them
+//  (b) planWave never shops heroes: 40 seeded musters at bell 12 with heroes
+//      offered — no hero tag in any buys, and nextSpawnTag never yields one
+//  (c) the wall: computePrices with zero hulls prices hero_bison at 200; with
+//      ONE standing bison (either team) the price at least doubles; with men
+//      on the field the field wall multiplies on top
+//  (d) enemy replacement: source-pinned in ringBell (after the ferry block) —
+//      gated on a dead hull, the tier's own bell, the enemy's own pick, and
+//      affordability (a poor regiment fails the same AND-chain); Bison
+//      first; the replacement APC's seat arithmetic is proven fresh
+//  (e) the fielded start: a player runners squad + breakers pair on defend
+//      near the depot, and 4 fast + 2 heavy garrison-held at the enemy's —
+//      built off the SAME real primitives DepotGame's boot calls (matches
+//      how T3's garrison fixtures asserted it)
+//  (f) draw stability: the boot's draw count is fixed across two same-seed
+//      boots (hash equality of the twin worlds)
+{
+  console.log("\n[p7 t9: the hero tier and the fielded start]");
+
+  // (a) tiers
+  {
+    ok("T9(a): TIER_BELLS gains the 4th bell (10)", TIER_BELLS.length === 4 && TIER_BELLS[3] === 10, JSON.stringify(TIER_BELLS));
+    ok("T9(a2): ENEMY_TIERS' 4th row carries both hero tags",
+      !!ENEMY_TIERS[3] && ENEMY_TIERS[3].indexOf("hero_bison") >= 0 && ENEMY_TIERS[3].indexOf("hero_apc") >= 0, JSON.stringify(ENEMY_TIERS[3]));
+    ok("T9(a3): PLAYER_TIERS' 4th row mirrors it",
+      !!PLAYER_TIERS[3] && PLAYER_TIERS[3].indexOf("hero_bison") >= 0 && PLAYER_TIERS[3].indexOf("hero_apc") >= 0, JSON.stringify(PLAYER_TIERS[3]));
+    const poolAt9 = manifestPool(makeManifestState().unlocked, 9);
+    ok("T9(a4): manifestPool at bell 9 offers no hero", poolAt9.indexOf("hero_bison") < 0 && poolAt9.indexOf("hero_apc") < 0, poolAt9.join(","));
+    const poolAt10 = manifestPool(makeManifestState().unlocked, 10);
+    ok("T9(a5): manifestPool at bell 10 offers both heroes", poolAt10.indexOf("hero_bison") >= 0 && poolAt10.indexOf("hero_apc") >= 0, poolAt10.join(","));
+    const foeAt10 = foePool([], 10);
+    ok("T9(a6): foePool mirrors at bell 10", foeAt10.indexOf("hero_bison") >= 0 && foeAt10.indexOf("hero_apc") >= 0, foeAt10.join(","));
+  }
+
+  // (b) planWave never shops heroes; nextSpawnTag never yields one
+  {
+    let anyHeroBuy = false, anyHeroSpawn = false;
+    const tags9b = ["", "fast", "heavy", "gren", "sapper", "sniper", "tank", "hero_bison", "hero_apc"];
+    for (let seed = 1; seed <= 40; seed++) {
+      const rng = mulberry32(seed * 991);
+      const reg = { heads: 300, tanks: 10, heads0: 300, tanks0: 10, scrap: 5000 };
+      const plan = planWave(reg, {}, 12, rng, tags9b);
+      if (plan.buys.some((b) => b.type === "hero_bison" || b.type === "hero_apc")) anyHeroBuy = true;
+      const S9b = makeRunState(); S9b.reg = reg;
+      S9b.ws.mixBag = plan.buys.flatMap((b) => Array(b.n).fill(b.type));
+      for (let k = 0; k < S9b.ws.mixBag.length + 2; k++) {
+        const t = nextSpawnTag(S9b);
+        if (t === "hero_bison" || t === "hero_apc") anyHeroSpawn = true;
+      }
+    }
+    ok("T9(b): planWave never buys a hero tag across 40 seeded musters at bell 12, even offered", !anyHeroBuy);
+    ok("T9(b2): nextSpawnTag never yields a hero tag off those musters", !anyHeroSpawn);
+    const aiSrc9 = fs.readFileSync(new URL("../src/depot/ai.js", import.meta.url), "utf8");
+    ok("T9(b3): ai.js's INF_TYPES source carries no hero tag (planWave can never see one)", !/INF_TYPES = \[[^\]]*hero/.test(aiSrc9));
+  }
+
+  // (c) the wall
+  {
+    const mkt9 = await import("../src/depot/market.js");
+    const p0 = mkt9.computePrices({});
+    ok("T9(c): hero_bison prices at its base 200 with zero hulls", p0.player.hero_bison === 200, p0.player.hero_bison);
+    ok("T9(c2): hero_apc prices at its base 140 with zero hulls", p0.player.hero_apc === 140, p0.player.hero_apc);
+    ok("T9(c2b): the foe table prices the same hero families", p0.foe.hero_bison === 200 && p0.foe.hero_apc === 140);
+    const p1 = mkt9.computePrices({ heroBison: 1 });
+    ok("T9(c3): one standing bison at least doubles the price (either team, one shared market)", p1.player.hero_bison >= 2 * 200, p1.player.hero_bison);
+    const p2 = mkt9.computePrices({ heroBison: 1, _men: 44 });
+    ok("T9(c4): the field wall multiplies further on top of the type wall", p2.player.hero_bison > p1.player.hero_bison, `${p1.player.hero_bison} -> ${p2.player.hero_bison}`);
+    // marketCounts: a live bison on EITHER team counts into the one shared
+    // heroBison family — the wall that makes a second hero absurd has to
+    // see both sides' iron.
+    const flatF9c = { heightAt: () => 0 };
+    const w9c = makeWorld({ field: flatF9c, seed: 71 });
+    const bb9c = addBody(w9c, { kind: "vehicle", team: 2, mass: BISON.mass, hx: BISON.hx, hy: BISON.hy, hz: BISON.hz, x: 0, y: 0, z: 0, hp: BISON.hp });
+    bb9c.vtype = "bison";
+    const counts9c = mkt9.marketCounts(w9c, []);
+    ok("T9(c5): marketCounts counts an ENEMY bison into heroBison too", counts9c.heroBison === 1, JSON.stringify(counts9c));
+  }
+
+  // (d) enemy replacement — source-pinned (ringBell is a React-closure arrow
+  // function, not an importable pure function; same convention T8's own
+  // ferry/commander wiring was verified by, POSSESSION T1(d) above).
+  {
+    const dsrc9 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    const ringBellBody9 = (dsrc9.match(/const ringBell = \(\) => \{[\s\S]*?\n      \};/) || [""])[0];
+    ok("T9(d): ringBell extracts (source pin base)", ringBellBody9.length > 0);
+    ok("T9(d2): gated on a dead hull, both kinds", /!has\("bison"\)/.test(ringBellBody9) && /!has\("apc"\)/.test(ringBellBody9));
+    ok("T9(d3): gated on the tier's own bell (TIER_BELLS[3])", /S\.bell >= TIER_BELLS\[3\]/.test(ringBellBody9));
+    ok("T9(d4): gated on the enemy's own pick (S.foe.unlocked)", /S\.foe\.unlocked\.indexOf\(tag\) >= 0/.test(ringBellBody9));
+    ok("T9(d5): the full gate ANDs dead-hull, tier-open-and-picked and affordability — a poor regiment fails the same chain and buys nothing",
+      /if \(depotE4 && !has\("bison"\) && open\("hero_bison"\) && S\.reg\.scrap >= heroPrice\("hero_bison"\)\)/.test(ringBellBody9));
+    ok("T9(d6): scrap is deducted before the hull parks, draw-free", /S\.reg\.scrap -= heroPrice\("hero_bison"\); parkArmor\(2, depotE4, "bison"\)/.test(ringBellBody9));
+    ok("T9(d7): the same table prices the apc replacement", /S\.reg\.scrap -= heroPrice\("hero_apc"\); parkArmor\(2, depotE4, "apc"\)/.test(ringBellBody9));
+    ok("T9(d8): Bison goes first — the bison branch is the `if`, the apc branch the `else if`",
+      ringBellBody9.indexOf('parkArmor(2, depotE4, "bison")') < ringBellBody9.indexOf('parkArmor(2, depotE4, "apc")'));
+    ok("T9(d9): sits after the ferry block", ringBellBody9.indexOf('ea.ferry = "out";') < ringBellBody9.indexOf("THE HERO TIER, their side"));
+    // the reseed arithmetic itself (trap note 4): apcSeqN seeded to the max
+    // restored seat, so the very next ++apcSeqN assignment is guaranteed
+    // fresh — pure math, mirrors the file's own local-reimplementation
+    // pattern (AMENDMENT 1's spreadAt) for logic embedded in the boot closure.
+    const seatsRestored9 = [3, 1, 7, 2];
+    let apcSeqN9 = 0;
+    for (const s of seatsRestored9) if (s > apcSeqN9) apcSeqN9 = s;
+    const freshSeq9 = ++apcSeqN9;
+    ok("T9(d10): a replacement APC's seat is fresh — past every restored seat", freshSeq9 > Math.max(...seatsRestored9), freshSeq9);
+    ok("T9(d11): the mount-scope reseed formula is in source (max restored + 1)",
+      /if \(b\.kind === "vehicle" && b\.vtype === "apc" && b\.apcSeq > apcSeqN\) apcSeqN = b\.apcSeq;/.test(dsrc9));
+  }
+
+  // (e)/(f) the fielded start + draw/hash stability — built off the SAME real
+  // primitives (makeSquad/spawnSquadMembers/clearSlot/spawnUnit) the boot
+  // code calls, matching T3(e)/(f)'s own fixture convention.
+  {
+    const flatF9e = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
+    const fieldedStart = (seed) => {
+      const w = makeWorld({ field: flatF9e, seed });
+      let draws = 0; const raw = w.rng;
+      w.rng = () => { draws++; return raw(); };
+      const depotP9 = { x: -40, z: -40 };
+      const depotE9 = { x: 40, z: 40, nx: 12, nz: 9 };
+      const squads = [];
+      let nextSquadId = 1;
+      for (const type of ["runners", "breakers"]) {
+        const a0 = type === "runners" ? 0.9 : 2.3;
+        const p0 = clearSlot(w, depotP9.x + Math.sin(a0) * 11, depotP9.z + Math.cos(a0) * 11, 0.5);
+        const sq = makeSquad(nextSquadId++, type, 1, p0.x, p0.z);
+        spawnSquadMembers(w, sq);
+        squads.push(sq);
+      }
+      const gR5 = Math.hypot(depotE9.nx, depotE9.nz) * MASON.pitch / 2 + 5.5;
+      const garrison = [];
+      ["fast", "fast", "fast", "fast", "heavy", "heavy"].forEach((tag, i) => {
+        const a = (i / 6) * Math.PI * 2 + 2.0;
+        const p = clearSlot(w, depotE9.x + Math.sin(a) * gR5, depotE9.z + Math.cos(a) * gR5, 0.5);
+        const u = spawnUnit(w, { x: p.x, z: p.z }, tag);
+        u.hold = true; u.garrison = true;
+        garrison.push(u);
+      });
+      return { w, squads, garrison, draws };
+    };
+    const r1 = fieldedStart(801);
+    ok("T9(e): the player fields a runners squad + a breakers pair, on defend, near the depot",
+      r1.squads.length === 2 && r1.squads.every((sq) => sq.order === "defend" && sq.memberIds.length > 0) &&
+      r1.squads.find((sq) => sq.type === "runners").memberIds.length === 4 &&
+      r1.squads.find((sq) => sq.type === "breakers").memberIds.length === 2);
+    ok("T9(e2): the enemy fields 4 fast + 2 heavy, held, garrisoned",
+      r1.garrison.length === 6 && r1.garrison.filter((u) => u.tag === "fast").length === 4 &&
+      r1.garrison.filter((u) => u.tag === "heavy").length === 2 &&
+      r1.garrison.every((u) => u.hold === true && u.garrison === true));
+    ok("T9(e3): the fielded start draws exactly 18 world-rng values (6 spawnUnit x 3; squads draw-free)", r1.draws === 18, r1.draws);
+    const r2 = fieldedStart(801);
+    ok("T9(f): the boot's draw count is fixed across two same-seed boots", r1.draws === r2.draws, `${r1.draws} vs ${r2.draws}`);
+    ok("T9(f2): the twin worlds hash identical", worldHash(r1.w) === worldHash(r2.w), `${worldHash(r1.w)} vs ${worldHash(r2.w)}`);
+  }
+}
+// ==== end P7 T9 ==============================================================
 
 // HOTFIX mk1.37 pin: every audio.js `.value = ` assignment is either fin()-wrapped
 // or a bare numeric literal (regex /\.value = -?\d[\d.]*;/) — no raw computed

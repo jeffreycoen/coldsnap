@@ -16,7 +16,7 @@ import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS, BISON, APC } from "./specs.js";
 import { windAt } from "./wind.js";
-import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest } from "./state.js";
+import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest, TIER_BELLS } from "./state.js";
 import { marketCounts, computePrices, fieldPrices } from "./market.js";
 import { homeShare, pickHomeDetail, HOME_GUARD_CAP, cmdrOf, cmdrBellOrders, ferryDecide, flankDrop } from "./ai.js";
 import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic, drivePossessedSquad, clearSlot } from "./squads.js";
@@ -1222,6 +1222,11 @@ const PALETTE = [
   // P7 T7: the tier-1 mirror — runners and breakers join the player's own list.
   { key: "sq_runners", label: "RUNNERS", icon: "⇶", cost: SQUAD_SPECS.runners.cost },
   { key: "sq_breakers", label: "BREAKERS", icon: "⨳", cost: SQUAD_SPECS.breakers.cost },
+  // P7 T9: THE HERO TIER — bell 10, both ladders. Bar-visible only once
+  // unlocked like everything else; the buy is a two-tap arm (S.buyHero),
+  // never a build mode.
+  { key: "hero_bison", label: "BISON", icon: "⛨", cost: BISON.cost },
+  { key: "hero_apc", label: "APC", icon: "⬒", cost: APC.cost },
 ];
 const PALETTE_BY_KEY = Object.fromEntries(PALETTE.map((p) => [p.key, p]));
 const PALETTE_LABEL = Object.fromEntries(PALETTE.map((p) => [p.key, p.label]));
@@ -1362,6 +1367,87 @@ export default function DepotGame({ onExit, resume = null }) {
       world.pondAt = (x, z) => !!pondAt(x, z);
       world.inRim = (x, z) => { const c = invW(x, z); return Math.abs(c.u) <= RIM_HALF_U && Math.abs(c.v) <= RIM_HALF_V; };
       world.streamAt = (x, z) => streamAt(x, z);
+      // P7 T2/T3/T4: THE STARTING ARMOR — a Bison AND an APC parked by
+      // each depot, the enemy's ARMED AT POST (owner) — driving doctrine
+      // still waits for its commander (Task 6). FAIL-PROOF (P7 T3): a
+      // widened fixed ring (10-26m) first, then a brute nearest-clear-cell
+      // sweep (8-30m) backstops it — a hemmed ring must never leave a side
+      // tankless. AMENDMENT 1 (P7 T4, owner): armor parks STABLE — every
+      // clear cell is also vetted for a flat footprint (stableAt), and the
+      // hull spawns asleep (no creep, no slide, no jitter). The brute
+      // sweep tracks the flattest clear cell it sees as its own backstop —
+      // stability is preferred, never blocking. Deterministic; no rng
+      // stream is touched.
+      // P7 T9 (owner): HOISTED TO MOUNT SCOPE — parkArmor/apcSeqN/depotP/
+      // depotE used to be boot-local (the `else` branch below, fresh boot
+      // only). The hero tier's player buy and the enemy's draw-free
+      // replacement both need to park a fresh hull long after boot, off
+      // the SAME apcSeq counter — a replacement APC must never seat-collide
+      // with a surviving one. Same closure over world/grid/field/TOWN, same
+      // body, unchanged.
+      const spreadAt = (bx, bz, spec) => {
+        const h0 = field.heightAt(bx, bz);
+        let lo = h0, hi = h0;
+        for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+          const h = field.heightAt(bx + sx * spec.hx, bz + sz * spec.hz);
+          if (h < lo) lo = h; else if (h > hi) hi = h;
+        }
+        return hi - lo;
+      };
+      const stableAt = (bx, bz, spec) => spreadAt(bx, bz, spec) < 0.28; // AMENDMENT 1 (owner): flat ground, no sliding boots // provisional (F5)
+      let apcSeqN = 0;
+      const parkArmor = (team, depotT, kind) => {
+        if (!depotT) return;
+        const spec = kind === "apc" ? APC : BISON;
+        const place = (bx, bz) => {
+          const v = addBody(world, { kind: "vehicle", team, mass: spec.mass, hx: spec.hx, hy: spec.hy, hz: spec.hz,
+            x: bx, y: field.heightAt(bx, bz) + spec.hy + 0.05, z: bz, hp: spec.hp, friction: 0.85,
+            q: heading(null, Math.atan2(-bx, -bz)) });   // parked facing the valley
+          v.armor = spec.armor; v.vtype = kind; v.maxHp = spec.hp;
+          v.homeX = bx; v.homeZ = bz; // P7 T8: the hull's own park spot — both teams, the commander's "home"
+          // AMENDMENT 1: parked cold — a sleeping hull cannot creep, slide
+          // or jitter at boot. Every wake path already exists (the first
+          // order, the safety brake, the possession stick).
+          v.sleeping = true;
+          if (kind === "apc") v.apcSeq = ++apcSeqN;
+          // Both kinds, both teams: armed at post (Task 3's shape) — the
+          // enemy's parks armed too (coax defends it) but driverless-in-
+          // doctrine until Task 6.
+          v.drv = kind === "apc" ? "apc" : "armor"; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful";
+          if (team === 1) v.driver = "player";
+          else v.bounty = spec.bounty;
+          return v;
+        };
+        const clearAt = (bx, bz) => {
+          const cell = grid.cellAt(bx, bz);
+          if (!cell || cell.blocked || cell.ice || cell.water || cell.wallId) return false;
+          if (Math.hypot(bx - OBJ_POS.x, bz - OBJ_POS.z) < 4) return false;
+          if (slotBlockedPublic(world, bx, bz, Math.hypot(spec.hx, spec.hz) + 0.5)) return false;
+          if (world.bodies.some((o) => o.kind === "vehicle" && o.alive && Math.hypot(o.pos.x - bx, o.pos.z - bz) < 7)) return false;
+          return true;
+        };
+        for (let rr = 10; rr <= 26; rr += 1.5) for (let k = 0; k < 16; k++) {
+          const az = (k / 16) * Math.PI * 2;
+          const bx = depotT.x + Math.sin(az) * rr, bz = depotT.z + Math.cos(az) * rr;
+          if (clearAt(bx, bz) && stableAt(bx, bz, spec)) return place(bx, bz);
+        }
+        // FAIL-PROOF (P7 T3, AMENDMENT 1): a hemmed or unstable ring must
+        // never leave a side tankless — brute-sweep the nearest clear+
+        // stable cell; if none is stable, the flattest clear cell parks
+        // the hull anyway.
+        let best = null, bd = 1e9, flat = null, flatSp = 1e9;
+        for (let gz = 0; gz < GRID_H; gz++) for (let gx = 0; gx < GRID_W; gx++) {
+          const wp = grid.gridToWorld(gx, gz);
+          const d = Math.hypot(wp.x - depotT.x, wp.z - depotT.z);
+          if (d > 30 || d < 8 || !clearAt(wp.x, wp.z)) continue;
+          const sp = spreadAt(wp.x, wp.z, spec);
+          if (sp < flatSp) { flatSp = sp; flat = wp; }
+          if (sp < 0.28 && d < bd) { bd = d; best = wp; }
+        }
+        if (best) place(best.x, best.z);
+        else if (flat) place(flat.x, flat.z);
+      };
+      const depotP = TOWN.find((t) => t.depot && t.team !== 2), depotE = TOWN.find((t) => t.depot && t.team === 2);
       // town / censuses / rocks: laid fresh, or lifted back off the save.
       let town, depotCensus, depotCensus2, rocksLive, resBodies = null;
       if (RES) {
@@ -1370,6 +1456,13 @@ export default function DepotGame({ onExit, resume = null }) {
         // then the welds, by index pair, with their original joint anchors.
         resBodies = restoreBodies(world, RES, ROCKS);
         restoreWelds(world, RES, resBodies);
+        // P7 T9 (owner): RESUME SEAT-COLLISION GUARD — the mount-scope
+        // apcSeqN counter (hoisted above) must not hand out a seat number a
+        // restored APC already carries, or a hero-tier replacement's riders
+        // could stash onto the wrong hull. Seeded past the highest restored
+        // seat; a war with no surviving APC leaves it at 0, exactly the
+        // fresh-boot start.
+        for (const b of resBodies) if (b.kind === "vehicle" && b.vtype === "apc" && b.apcSeq > apcSeqN) apcSeqN = b.apcSeq;
         // The town array is bookkeeping over bodies that are already back:
         // stones by b.town, n0 and ruined off the file, footprint cells
         // recomputed from the regrown TOWN layout. A ruined building has
@@ -1566,79 +1659,11 @@ export default function DepotGame({ onExit, resume = null }) {
         seedBags(TOWN.find((t) => t.depot && t.team !== 2), 0x5ba6);
         seedBags(TOWN.find((t) => t.depot && t.team === 2), 0x5ba7); // P7 T3: their depot was never dressed — symmetry now
         // P7 T2/T3/T4: THE STARTING ARMOR — a Bison AND an APC parked by
-        // each depot, the enemy's ARMED AT POST (owner) — driving doctrine
-        // still waits for its commander (Task 6). FAIL-PROOF (P7 T3): a
-        // widened fixed ring (10-26m) first, then a brute nearest-clear-cell
-        // sweep (8-30m) backstops it — a hemmed ring must never leave a side
-        // tankless. AMENDMENT 1 (P7 T4, owner): armor parks STABLE — every
-        // clear cell is also vetted for a flat footprint (stableAt), and the
-        // hull spawns asleep (no creep, no slide, no jitter). The brute
-        // sweep tracks the flattest clear cell it sees as its own backstop —
-        // stability is preferred, never blocking. Deterministic; no rng
-        // stream is touched.
-        const spreadAt = (bx, bz, spec) => {
-          const h0 = field.heightAt(bx, bz);
-          let lo = h0, hi = h0;
-          for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
-            const h = field.heightAt(bx + sx * spec.hx, bz + sz * spec.hz);
-            if (h < lo) lo = h; else if (h > hi) hi = h;
-          }
-          return hi - lo;
-        };
-        const stableAt = (bx, bz, spec) => spreadAt(bx, bz, spec) < 0.28; // AMENDMENT 1 (owner): flat ground, no sliding boots // provisional (F5)
-        let apcSeqN = 0;
-        const parkArmor = (team, depotT, kind) => {
-          if (!depotT) return;
-          const spec = kind === "apc" ? APC : BISON;
-          const place = (bx, bz) => {
-            const v = addBody(world, { kind: "vehicle", team, mass: spec.mass, hx: spec.hx, hy: spec.hy, hz: spec.hz,
-              x: bx, y: field.heightAt(bx, bz) + spec.hy + 0.05, z: bz, hp: spec.hp, friction: 0.85,
-              q: heading(null, Math.atan2(-bx, -bz)) });   // parked facing the valley
-            v.armor = spec.armor; v.vtype = kind; v.maxHp = spec.hp;
-            v.homeX = bx; v.homeZ = bz; // P7 T8: the hull's own park spot — both teams, the commander's "home"
-            // AMENDMENT 1: parked cold — a sleeping hull cannot creep, slide
-            // or jitter at boot. Every wake path already exists (the first
-            // order, the safety brake, the possession stick).
-            v.sleeping = true;
-            if (kind === "apc") v.apcSeq = ++apcSeqN;
-            // Both kinds, both teams: armed at post (Task 3's shape) — the
-            // enemy's parks armed too (coax defends it) but driverless-in-
-            // doctrine until Task 6.
-            v.drv = kind === "apc" ? "apc" : "armor"; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful";
-            if (team === 1) v.driver = "player";
-            else v.bounty = spec.bounty;
-            return v;
-          };
-          const clearAt = (bx, bz) => {
-            const cell = grid.cellAt(bx, bz);
-            if (!cell || cell.blocked || cell.ice || cell.water || cell.wallId) return false;
-            if (Math.hypot(bx - OBJ_POS.x, bz - OBJ_POS.z) < 4) return false;
-            if (slotBlockedPublic(world, bx, bz, Math.hypot(spec.hx, spec.hz) + 0.5)) return false;
-            if (world.bodies.some((o) => o.kind === "vehicle" && o.alive && Math.hypot(o.pos.x - bx, o.pos.z - bz) < 7)) return false;
-            return true;
-          };
-          for (let rr = 10; rr <= 26; rr += 1.5) for (let k = 0; k < 16; k++) {
-            const az = (k / 16) * Math.PI * 2;
-            const bx = depotT.x + Math.sin(az) * rr, bz = depotT.z + Math.cos(az) * rr;
-            if (clearAt(bx, bz) && stableAt(bx, bz, spec)) return place(bx, bz);
-          }
-          // FAIL-PROOF (P7 T3, AMENDMENT 1): a hemmed or unstable ring must
-          // never leave a side tankless — brute-sweep the nearest clear+
-          // stable cell; if none is stable, the flattest clear cell parks
-          // the hull anyway.
-          let best = null, bd = 1e9, flat = null, flatSp = 1e9;
-          for (let gz = 0; gz < GRID_H; gz++) for (let gx = 0; gx < GRID_W; gx++) {
-            const wp = grid.gridToWorld(gx, gz);
-            const d = Math.hypot(wp.x - depotT.x, wp.z - depotT.z);
-            if (d > 30 || d < 8 || !clearAt(wp.x, wp.z)) continue;
-            const sp = spreadAt(wp.x, wp.z, spec);
-            if (sp < flatSp) { flatSp = sp; flat = wp; }
-            if (sp < 0.28 && d < bd) { bd = d; best = wp; }
-          }
-          if (best) place(best.x, best.z);
-          else if (flat) place(flat.x, flat.z);
-        };
-        const depotP = TOWN.find((t) => t.depot && t.team !== 2), depotE = TOWN.find((t) => t.depot && t.team === 2);
+        // each depot, fresh boot only (a RESUME's hulls are already in the
+        // save). P7 T9: parkArmor/apcSeqN/depotP/depotE are MOUNT-SCOPE now
+        // (hoisted above, just after world.streamAt) — the hero tier's
+        // player buy and the enemy's draw-free replacement both need to
+        // park a fresh hull long after boot, off this exact same function.
         parkArmor(1, depotP, "bison"); parkArmor(1, depotP, "apc");
         parkArmor(2, depotE, "bison"); parkArmor(2, depotE, "apc");
       }
@@ -1754,6 +1779,7 @@ export default function DepotGame({ onExit, resume = null }) {
         })(),
         zoom: 1, acc: 0, t: 0, fps: 60, fpsAcc: 0, fpsN: 0,
         hover: null, pointer: null, toasts: [], pending: null,
+        heroArm: null, // P7 T9: the hero tier's two-tap arm ({ key, armedAt } or null)
         // Squads (Phase 5 Task 3): live squad rosters + selection/order UI
         // state. selArmedAt mirrors pending's 350ms trailing-tap guard so
         // the tap that selected a squad can't double-fire an order chip.
@@ -1822,6 +1848,32 @@ export default function DepotGame({ onExit, resume = null }) {
         // documented: after makeRegiment's 2 draws and the garrison's 24
         // (8 men x 3 draws each). A RESUME never reaches this branch.
         S.cmdr = cmdrOf(world.rng);
+        // P7 T9 (owner): THE FIELDED START — each base opens with a runner
+        // squad and a breaker pair, free starting kit like the armor.
+        // Player: real squads on defend. Enemy: the mirror men, dug in with
+        // the home guard, unbooked. 18 fixed world-rng draws (6 spawnUnit,
+        // 3 draws each), positioned after the commander's own draw above.
+        // depotP is parkArmor's own player-depot lookup (mount scope) —
+        // reused here rather than refound.
+        if (depotP) for (const type of ["runners", "breakers"]) {
+          const a0 = type === "runners" ? 0.9 : 2.3;
+          const p0 = clearSlot(world, depotP.x + Math.sin(a0) * 11, depotP.z + Math.cos(a0) * 11, 0.5);
+          const sq = makeSquad(S.nextSquadId++, type, 1, p0.x, p0.z);
+          spawnSquadMembers(world, sq);
+          S.squads.push(sq);
+        }
+        {
+          const depotE5 = TOWN.find((tt) => tt.depot && tt.team === 2);
+          if (depotE5) {
+            const gR5 = Math.hypot(depotE5.nx, depotE5.nz) * MASON.pitch / 2 + 5.5;
+            ["fast", "fast", "fast", "fast", "heavy", "heavy"].forEach((tag, i) => {
+              const a = (i / 6) * Math.PI * 2 + 2.0;
+              const p = clearSlot(world, depotE5.x + Math.sin(a) * gR5, depotE5.z + Math.cos(a) * gR5, 0.5);
+              const u = spawnUnit(world, { x: p.x, z: p.z }, tag);
+              u.hold = true; u.garrison = true;
+            });
+          }
+        }
       }
       // Step 5. The run state itself, straight off the file. The bell is the
       // ONE deliberate exception: the countdown restarts at a full period
@@ -1902,6 +1954,32 @@ export default function DepotGame({ onExit, resume = null }) {
       const buyPaced = () => {
         if (world.t - S._buyAt < 1) { toast("THE MARKET PACES YOU — one purchase a second"); return false; }
         return true;
+      };
+      // P7 T9: THE HERO TIER, player-side — a two-tap arm on the bar slot
+      // itself (3s, the menu-exit pattern): first tap arms and toasts the
+      // price, a second tap within the window buys. No ground tap, no
+      // pending ghost — the bought hull parks straight onto the depot,
+      // exactly like the starting pair (parkArmor, mount-scope now).
+      const HERO_ARM_S = 3; // provisional (F5)
+      S.buyHero = (key) => {
+        if (S.gameOver || S.victory) return;
+        const kind = key === "hero_apc" ? "apc" : "bison";
+        const spec = kind === "apc" ? APC : BISON;
+        const label = PALETTE_BY_KEY[key].label;
+        const price = priceNow(key, spec.cost);
+        const armed = S.heroArm && S.heroArm.key === key && world.t < S.heroArm.armedAt;
+        if (!armed) {
+          S.heroArm = { key, armedAt: world.t + HERO_ARM_S };
+          toast(label + " — ◆" + price + " — TAP AGAIN TO ORDER");
+          return;
+        }
+        S.heroArm = null;
+        if (S.resources < price) { toast("NO SCRAP"); return; }
+        if (!buyPaced()) return;
+        parkArmor(1, depotP, kind);
+        S.resources -= price;
+        S._buyAt = world.t;
+        toast("THE CONVOY DELIVERS");
       };
 
       const recomputeFlow = () => computeFlowField(grid, objG.gx, objG.gz);
@@ -3025,6 +3103,20 @@ export default function DepotGame({ onExit, resume = null }) {
             }
           }
         }
+        // P7 T9: THE HERO TIER, their side — draw-free replacement off the
+        // same table, one hull a bell, Bison first. The commander's own
+        // doctrine finds the new hull on its own (it scans live bodies).
+        {
+          const heroPrice = (k) => (S._market ? S._market.foe[k] : (k === "hero_bison" ? BISON.cost : APC.cost));
+          const has = (vt) => world.bodies.some((b) => b.kind === "vehicle" && b.team === 2 && b.vtype === vt && b.alive);
+          const open = (tag) => S.foe.unlocked.indexOf(tag) >= 0 && S.bell >= TIER_BELLS[3];
+          const depotE4 = TOWN.find((tt) => tt.depot && tt.team === 2);
+          if (depotE4 && !has("bison") && open("hero_bison") && S.reg.scrap >= heroPrice("hero_bison")) {
+            S.reg.scrap -= heroPrice("hero_bison"); parkArmor(2, depotE4, "bison");
+          } else if (depotE4 && !has("apc") && open("hero_apc") && S.reg.scrap >= heroPrice("hero_apc")) {
+            S.reg.scrap -= heroPrice("hero_apc"); parkArmor(2, depotE4, "apc");
+          }
+        }
         // The convoy is heard when its card comes up, and only then — a bell
         // whose pool had nothing left to offer raises no card and makes no
         // truck noise.
@@ -4089,6 +4181,10 @@ export default function DepotGame({ onExit, resume = null }) {
   const setMode = (m) => {
     const S = stateRef.current; if (!S) return;
     if (S.gameOver || S.victory) return;   // mk0.29: the war is over — nothing left to build
+    // P7 T9: hero keys are a two-tap ARM/BUY on the bar slot itself — never
+    // a build mode (no ground tap, no pending ghost). Branch before S.mode
+    // is ever touched.
+    if (m === "hero_bison" || m === "hero_apc") { if (S.buyHero) S.buyHero(m); return; }
     // COMMAND T2 (mk0.84): switching build-menu mode with a line still up
     // clears it through the same door ✗ uses (rejectLine also disposes the
     // renderer's preview group) — it never lingers behind the new mode.
