@@ -18,12 +18,12 @@ import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS, BISON, APC
 import { windAt } from "./wind.js";
 import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest } from "./state.js";
 import { marketCounts, computePrices, fieldPrices } from "./market.js";
-import { homeShare, pickHomeDetail, HOME_GUARD_CAP } from "./ai.js";
+import { homeShare, pickHomeDetail, HOME_GUARD_CAP, cmdrOf, cmdrBellOrders, ferryDecide, flankDrop } from "./ai.js";
 import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic, drivePossessedSquad, clearSlot } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
 import { stepDrivers, possessedArmorFire, possessedArmorMg } from "./drivers.js";
-import { stepTransports, unloadApc, apcSeated } from "./transports.js";
+import { stepTransports, unloadApc, apcSeated, unloadEnemyRiders } from "./transports.js";
 import { planRoute } from "./route.js";
 import { makeRegiment, payTown } from "./economy.js";
 import { makeTerritory, stepTerritory, holderAt, canBuild, fogStateFor, valueAt, EMIT } from "./territory.js";
@@ -995,6 +995,15 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
     // the stick automatically — nothing left to drive.
     if (S.possess && S.possess.kind === "squad" && !S.squads.some((q) => q.id === S.possess.id)) S.releasePossession();
     stepTransports(world, S.squads);   // P7 T4: boarding, riding, the sealed hold
+    // P7 T8: the ferry's turnaround — arrived out: drop the ramp and turn
+    // for home; arrived back: the post resumes.
+    for (const b of world.bodies) {
+      if (b.kind !== "vehicle" || b.team !== 2 || b.vtype !== "apc" || !b.ferry || !b.alive) continue;
+      if (b.order === "defend") {   // armorGoal's arrival flip
+        if (b.ferry === "out") { unloadEnemyRiders(world, b); b.ferry = "back"; b.order = "move"; b.dest = { x: b.homeX != null ? b.homeX : b.pos.x, z: b.homeZ != null ? b.homeZ : b.pos.z }; b._route = null; b._routeDest = null; }
+        else b.ferry = null;
+      }
+    }
     if (S.selSquadId != null && !S.squads.some((q) => q.id === S.selSquadId)) { S.selSquadId = null; S.orderMode = null; S.buildPt0 = null; }
     // VISION T4 (mk0.74, owner's ruling): an attacking squad that SEES an
     // enemy in weapon reach halts and fights — the halt is the squad's own
@@ -1586,6 +1595,7 @@ export default function DepotGame({ onExit, resume = null }) {
               x: bx, y: field.heightAt(bx, bz) + spec.hy + 0.05, z: bz, hp: spec.hp, friction: 0.85,
               q: heading(null, Math.atan2(-bx, -bz)) });   // parked facing the valley
             v.armor = spec.armor; v.vtype = kind; v.maxHp = spec.hp;
+            v.homeX = bx; v.homeZ = bz; // P7 T8: the hull's own park spot — both teams, the commander's "home"
             // AMENDMENT 1: parked cold — a sleeping hull cannot creep, slide
             // or jitter at boot. Every wake path already exists (the first
             // order, the safety brake, the possession stick).
@@ -1712,6 +1722,7 @@ export default function DepotGame({ onExit, resume = null }) {
 
       const S = {
         resources: 120, kills: 0,
+        cmdr: null, // P7 T8: the drawn armor doctrine — one boot draw (fresh war), restored on RESUME
         ws: makeDepotAssaultState(), spawnRR: 0,
         mode: null, sellMode: false, inspectId: null,
         started: false, gameOver: false, victory: false,
@@ -1807,6 +1818,10 @@ export default function DepotGame({ onExit, resume = null }) {
           }
           S.reg.heads = Math.max(0, S.reg.heads - 8); // the books stay honest
         }
+        // P7 T8: THE COMMANDER — one draw per war, uniform, hidden. Position
+        // documented: after makeRegiment's 2 draws and the garrison's 24
+        // (8 men x 3 draws each). A RESUME never reaches this branch.
+        S.cmdr = cmdrOf(world.rng);
       }
       // Step 5. The run state itself, straight off the file. The bell is the
       // ONE deliberate exception: the countdown restarts at a full period
@@ -1827,6 +1842,7 @@ export default function DepotGame({ onExit, resume = null }) {
         S.depotStanding = r.depotStanding; S.enemyStanding = r.enemyStanding;
         S.starvedStreak = r.starvedStreak;
         S._reportedBreak = r.reportedBreak; S._reportedSpent = r.reportedSpent;
+        S.cmdr = r.cmdr || "cautious"; // P7 T8: restored, never redrawn on resume
         S.manifest = r.manifest; S.foe = r.foe;
         S.intelUp = r.intelUp; S.intelArmedAt = r.intelArmedAt;
         S.lastDispatch = r.lastDispatch;
@@ -2959,6 +2975,53 @@ export default function DepotGame({ onExit, resume = null }) {
                 const u = spawnUnit(world, { x: p.x, z: p.z }, tag);
                 u.hold = true; u.garrison = true;
               });
+            }
+          }
+        }
+        // P7 T8: THE COMMANDER DRIVES. Bell-cadence only; orders go through
+        // the same motor pool the player's armor rides. Held-ratio read off
+        // the territory field, neutral ignored.
+        {
+          const eb = world.bodies.find((b) => b.kind === "vehicle" && b.team === 2 && b.vtype === "bison" && b.alive);
+          if (eb && S.cmdr) {
+            let pc = 0, ec = 0;
+            for (let i2 = 0; i2 < T.v.length; i2++) { if (T.v[i2] > 0.15) pc++; else if (T.v[i2] < -0.15) ec++; }
+            const heldRatio = ec + pc > 0 ? ec / (ec + pc) : 0;
+            const atFront = Math.hypot(eb.pos.x - (eb.homeX || eb.pos.x), eb.pos.z - (eb.homeZ || eb.pos.z)) > 20;
+            const order = cmdrBellOrders(S.cmdr, { bell: S.bell, fielded: S.ws.fielded > 0, heldRatio, atFront, committed: !!eb.committed });
+            if (order === "forward") {
+              eb.committed = 1;
+              eb.order = "move"; eb.dest = { x: OBJ_POS.x, z: OBJ_POS.z }; eb._route = null; eb._routeDest = null;
+            } else if (atFront || eb.order !== "defend") {
+              eb.order = "move"; eb.dest = { x: eb.homeX != null ? eb.homeX : eb.pos.x, z: eb.homeZ != null ? eb.homeZ : eb.pos.z }; eb._route = null; eb._routeDest = null;
+            }
+          }
+        }
+        // P7 T8: THE FERRY. Two draws EVERY bell (draw-then-clamp law);
+        // eligibility only gates what they buy. Drop = a drawn flank on the
+        // player's half, wide of the direct line, never at the depot's feet.
+        {
+          const ferryRoll = world.rng(), dropRoll = world.rng();
+          const ea = world.bodies.find((b) => b.kind === "vehicle" && b.team === 2 && b.vtype === "apc" && b.alive);
+          const seated = ea ? world.bodies.filter((b) => b.kind === "unit" && b.rideApc === ea.apcSeq && b.alive).length : 0;
+          const eligible = !!(ea && !ea.ferry && seated === 0 && S.ws.mixBag.length >= 4);
+          if (ferryDecide(ferryRoll, eligible)) {
+            const cands = [];
+            for (const band of PASSES) for (const g of band) { const c = invW(g.x, g.z); if (c.v > 0 && c.v < 40) cands.push({ x: g.x, z: g.z, u: c.u }); }
+            const depotP2 = TOWN.find((tt) => tt.depot && tt.team !== 2);
+            const depotRef = depotP2 ? { x: depotP2.x, z: depotP2.z, u: invW(depotP2.x, depotP2.z).u } : null;
+            const drop = flankDrop(cands, dropRoll, depotRef);
+            if (drop) {
+              const four = [];
+              for (let k = 0; k < S.ws.mixBag.length && four.length < 4; ) {
+                if (S.ws.mixBag[k] !== "tank") four.push(S.ws.mixBag.splice(k, 1)[0]); else k++;
+              }
+              S.ws.spawnQueue -= four.length;
+              for (const tag of four) {
+                const u = spawnUnit(world, { x: ea.pos.x, z: ea.pos.z }, tag);
+                u.rideApc = ea.apcSeq;
+              }
+              ea.ferry = "out"; ea.order = "move"; ea.dest = { x: drop.x, z: drop.z }; ea._route = null; ea._routeDest = null;
             }
           }
         }

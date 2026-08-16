@@ -241,6 +241,7 @@ export function serializeFront(ctx) {
     run: {
       resources: r3(S.resources), kills: S.kills, spawnRR: S.spawnRR,
       bell: S.bell, started: !!S.started, mode: S.mode, sandbagOrient: S.sandbagOrient || 0,
+      cmdr: S.cmdr, // P7 T8: the drawn doctrine — explicit field, not the generic sweep
       nextSquadId: S.nextSquadId, zoom: r3(S.zoom),
       focus: { x: r3(S.focus.x), z: r3(S.focus.z) },
       depotCensusAcc: r4(S.depotCensusAcc || 0),

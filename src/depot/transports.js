@@ -35,6 +35,15 @@ export function apcSeated(world, squads, seq) {
 }
 export function stepTransports(world, squads) {
   for (const b of world.bodies) if (b.vtype === "apc") b._hatch = (world.t - (b._unloadT || -9) < 1.5) ? 1 : 0;
+  // P7 T8: THE FERRY'S HOLD — enemy riders are loose units, seated by
+  // u.rideApc (the seat number), not a squad roster. Same stash (y RIDE_Y),
+  // same seal, same grave: the hull gone kills every rider it still carries.
+  for (const b of world.bodies) {
+    if (b.kind !== "unit" || b.team !== 2 || b.rideApc == null || !b.alive) continue;
+    const v = apcBySeq(world, b.rideApc);
+    if (!v) { b.pinned = false; b.riding = false; b.rideApc = null; applyDamage(world, b, 1e6, { cause: "CRUSH", attacker: "world" }); continue; }
+    b.riding = true; b.pinned = true; b.pos.x = v.pos.x; b.pos.y = RIDE_Y; b.pos.z = v.pos.z;
+  }
   for (const sq of squads) {
     if (sq.ridingIn != null) {
       const v = apcBySeq(world, sq.ridingIn);
@@ -108,6 +117,23 @@ export function unloadApc(world, squads, v) {
       u.pos.x = p.x; u.pos.z = p.z; u.pos.y = world.field.heightAt(p.x, p.z) + 0.74;
       u.v.x = 0; u.v.y = 0; u.v.z = 0;
     }
+  }
+  v._unloadT = world.t;
+}
+
+// P7 T8: unloadEnemyRiders — the ferry's own unload, mirroring unloadApc's
+// ring but for loose team-2 units (no squad, no anchor/order to reset — they
+// simply resume marching the flow field once ringed out clear of the hull).
+export function unloadEnemyRiders(world, v) {
+  let i = 0, n = 0;
+  for (const b of world.bodies) if (b.kind === "unit" && b.rideApc === v.apcSeq && b.alive) n++;
+  for (const b of world.bodies) {
+    if (b.kind !== "unit" || b.rideApc !== v.apcSeq || !b.alive) continue;
+    const a = (i++ / Math.max(1, n)) * Math.PI * 2;
+    const p = clearSlot(world, v.pos.x + Math.sin(a) * 3.4, v.pos.z + Math.cos(a) * 3.4, (b.hx || 0.26) + 0.35);
+    b.riding = false; b.pinned = false; b.rideApc = null; b.sleeping = false;
+    b.pos.x = p.x; b.pos.z = p.z; b.pos.y = world.field.heightAt(p.x, p.z) + (b.hy || 0.86) + 0.02;
+    b.v.x = 0; b.v.y = 0; b.v.z = 0;
   }
   v._unloadT = world.t;
 }

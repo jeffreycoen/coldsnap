@@ -54,6 +54,22 @@ const MARKSMAN = [
   "A scope flash logged at the ridge. Range disputed.",
 ];
 
+// P7 T8: THE COMMANDER — the bureau's read on the enemy's own armor doctrine
+// (ai.js's cmdrOf/cmdrBellOrders), keyed by S.cmdr. Digit-free, three
+// variants per profile, same silence rule as every other family. Not tied
+// to any buy — a standing read on a hidden profile, not a one-wave report.
+const COMMANDER = {
+  cautious: ["Their armor idles under nets. The commander counts his ground.",
+             "Engine warm-ups logged, no movement. A patient hand opposite.",
+             "Armor holds the yard. Doctrine reads deliberate."],
+  bold:     ["Track noise forward with the infantry. Their armor rides the assault.",
+             "The commander opposite leads with steel. Expect armor early.",
+             "Armor seen at the muster line, engines hot."],
+  stubborn: ["Their armor has not moved in days. Dug in at the yard.",
+             "The commander opposite will not risk his steel. It guards the gate.",
+             "Armor static under guard. It is not coming."],
+};
+
 const GAP_CHANCE = 0.25; // seeded silence — see composeIntel's draw order below
 
 // composeIntel(prevPlan, reg, rng) -> string[] (0-3 lines)
@@ -70,7 +86,7 @@ const GAP_CHANCE = 0.25; // seeded silence — see composeIntel's draw order bel
 // line variants. Collection stops once 3 lines are held; later true
 // families still consume no draws once stopped, since they're never
 // reached (early-exit before the condition check).
-export function composeIntel(prevPlan, reg, rng) {
+export function composeIntel(prevPlan, reg, rng, cmdr) {
   const lines = [];
   const buys = prevPlan && prevPlan.buys;
 
@@ -103,6 +119,11 @@ export function composeIntel(prevPlan, reg, rng) {
   // every previously-seeded composition is byte-identical.
   const sniperBuy = buys && buyOf(buys, "sniper");
   tryFamily(!!(sniperBuy && sniperBuy.n > 0), MARKSMAN, null);
+
+  // P7 T8: the commander family — APPENDED LAST in draw order (a run with no
+  // cmdr arg, every existing caller, is byte-stable: `active` is false and
+  // the family consumes no draw at all).
+  tryFamily(!!(cmdr && COMMANDER[cmdr]), COMMANDER[cmdr] || [], null);
 
   return lines;
 }

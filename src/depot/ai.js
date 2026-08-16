@@ -281,3 +281,47 @@ export function pickHomeDetail(mixBag, n) {
   return out;
 }
 export const HOME_GUARD_CAP = 12; // provisional (F5)
+
+// ==== P7 T8: THE ENEMY LEARNS TO DRIVE =======================================
+// THE COMMANDER — one draw per war, uniform, hidden. cmdrOf consumes exactly
+// ONE world-rng draw (DepotGame's boot, fresh war only — a RESUME restores
+// S.cmdr from the save and draws nothing, exactly makeRegiment's pattern).
+export const CMDRS = ["cautious", "bold", "stubborn"];
+export function cmdrOf(rng) { return CMDRS[Math.min(2, Math.floor(rng() * 3))]; } // provisional (F5)
+
+// The commander's bell decision for the Bison. ctx: { bell, fielded,
+// heldRatio, atFront, committed }. Returns "forward" | "home". Pure — the
+// game layer (ringBell) reads territory/S.ws and writes the order, this only
+// decides. Once committed (game layer stamps v.committed = 1 forever, on the
+// first "forward"), cautious behaves bold-equivalent thereafter.
+export function cmdrBellOrders(profile, ctx) {
+  if (profile === "stubborn") return "home";
+  const go = profile === "bold" ? true
+    : (ctx.committed || ctx.heldRatio >= 0.55 || ctx.bell >= 8);   // provisional (F5)
+  if (!go) return "home";
+  return ctx.fielded ? "forward" : "home";                          // rides with assaults; home between them
+}
+
+// THE FERRY GATE — pure. `eligible` is the game layer's own gate (an APC in
+// hand, not already ferrying, hold empty, a muster worth the trip); the roll
+// is drawn EVERY bell regardless (draw-then-clamp) — this only reads it.
+export function ferryDecide(roll, eligible) {
+  return !!eligible && roll < 0.4; // provisional (F5)
+}
+
+// THE DROP DRAW — pure. `cands` is the game layer's precomputed candidate
+// list ({x, z, u}, canonical u already resolved); `depotRef` is the PLAYER
+// depot's own reference point ({x, z, u}) the "never within 18m" and "wide
+// of the direct line" rules measure against. Prefers the WIDE set (>15m off
+// the depot's own canonical u) among candidates already >18m from the depot;
+// falls back to the >18m set, then the raw pool, so a real map (PASSES
+// always yields far candidates) never fails to pick. Deterministic index
+// pick by roll. Empty cands -> null (the caller has already drawn the roll).
+export function flankDrop(cands, roll, depotRef) {
+  if (!cands || !cands.length) return null;
+  const far = depotRef ? cands.filter((c) => Math.hypot(c.x - depotRef.x, c.z - depotRef.z) > 18) : cands;
+  const wide = depotRef ? far.filter((c) => Math.abs(c.u - depotRef.u) > 15) : far;
+  const pool = wide.length ? wide : far.length ? far : cands;
+  return pool[Math.min(pool.length - 1, Math.floor(roll * pool.length))];
+}
+// ==== end P7 T8 ==============================================================

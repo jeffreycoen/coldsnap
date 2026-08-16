@@ -1368,7 +1368,7 @@ export function fireBell(S, opts = {}) {
   let intelLines = [];
   if (rng && reg) {
     if (S.bell === 1) intelLines = [openingIntel(reg)];
-    else intelLines = composeIntel(S.intelPlan, reg, rng);
+    else intelLines = composeIntel(S.intelPlan, reg, rng, S.cmdr); // P7 T8: the commander family, threaded through
   }
   // P1.5 Task 1 (mk0.50, Jeff): the intel card no longer AUTO-RAISES. The
   // report is still composed every bell and still written to S.lastDispatch
@@ -1498,6 +1498,7 @@ export function executeWithdrawal(S, world) {
     const b = world.bodies[i];
     if ((b.kind !== "unit" && b.kind !== "vehicle") || !b.alive || b.team !== 2) continue;
     if (b.vtype === "bison" || b.vtype === "apc" || b.garrison) continue; // starting armor and the home guard are not wave stock
+    if (b.rideApc != null) continue; // P7 T8: seated mid-ferry — withdraws when unloaded and spent, like anyone
     if (b.kind === "vehicle") tanks++; else inf++;
     world.byId.delete(b.id);
     world.bodies.splice(i, 1);

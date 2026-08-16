@@ -29,13 +29,13 @@ import {
 import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, MASON, INFANTRY_ARMS, PLAYER_START, PLAYER_TIERS, BISON, BISON_FIRE, APC, SATCHEL } from "../src/depot/specs.js";
 import { stepUnits, spawnUnit, payBounties, SNIPER_FIRE, stepBreakerRam } from "../src/depot/units.js";
 import { stepDrivers, possessedArmorFire, possessedArmorMg } from "../src/depot/drivers.js";
-import { stepTransports, unloadApc, apcSeated } from "../src/depot/transports.js";
+import { stepTransports, unloadApc, apcSeated, unloadEnemyRiders } from "../src/depot/transports.js";
 import { planRoute } from "../src/depot/route.js";
 import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad, drivePossessedSquad, COHESION_M, slotBlockedPublic } from "../src/depot/squads.js";
 import {
   makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue,
 } from "../src/depot/economy.js";
-import { planWave, MIN_WAVE_FLOOR, snapSquads, homeShare, pickHomeDetail, HOME_GUARD_CAP } from "../src/depot/ai.js";
+import { planWave, MIN_WAVE_FLOOR, snapSquads, homeShare, pickHomeDetail, HOME_GUARD_CAP, cmdrOf, cmdrBellOrders, ferryDecide, flankDrop } from "../src/depot/ai.js";
 import { composeIntel, openingIntel } from "../src/depot/intel.js";
 import { makeTerritory, stepTerritory, holderAt, fogStateAt, valueAt, canBuild, DECAY_TAU, EMIT } from "../src/depot/territory.js";
 import { SIGHT, eyeOf, canSee, fillMaps, gridEye, makeSight, seenAt, stepSight, RETICLE_SPEED, steerReticle, reclampReticle } from "../src/depot/sight.js";
@@ -7279,6 +7279,170 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 }
 // ==== end P7 T7 ==============================================================
+
+// ==== P7 T8: THE ENEMY LEARNS TO DRIVE ======================================
+//  (a) profile: cmdrOf(rng) is one draw, uniform over the three, stable per seed
+//  (b) doctrine table: cmdrBellOrders(profile, ctx) — pure — returns the
+//      Bison's order for this bell:
+//        stubborn: always home;  bold: forward when the muster fielded;
+//        cautious: home until heldRatio >= 0.55 || bell >= 8, then forward;
+//        forward-then-home: ctx.atFront && !ctx.fielded -> home
+//  (c) the ferry gate: ferryDecide(roll, eligible) — a 0.39 roll ferries when
+//      eligible, 0.41 never; ineligible never, roll consumed regardless
+//  (d) the drop draw: flankDrop(cands, roll, depotU) prefers the wide set,
+//      never lands nearer the depot than 18m, picks by index deterministically
+//  (e) team-2 riders: seat 4 loose units on an APC via transports' new pass —
+//      stashed at y -60, carried, die with the hull; unload rings them out
+//      clear and they resume marching (goal: cell.dist read non-null)
+//  (f) withdrawal spares seated riders mid-ferry
+//  (g) intel: the commander family whispers with no digits, joins LAST
+//      (200-seed sweep extended), and a run without a cmdr arg is byte-stable
+{
+  const flatF8 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
+  const mkW8 = (seed) => { const w = makeWorld({ field: flatF8, seed }); w.depotCombat = true; return w; };
+  const mkApc8 = (w, team, x, z, seq) => {
+    const v = addBody(w, { kind: "vehicle", team, mass: APC.mass, hx: APC.hx, hy: APC.hy, hz: APC.hz, x, y: APC.hy + 0.05, z, hp: APC.hp, friction: 0.85 });
+    v.armor = APC.armor; v.vtype = "apc"; v.apcSeq = seq; v.drv = "apc"; v.depotDrive = "auto"; v.tracks = "careful"; v.order = "defend";
+    return v;
+  };
+
+  // (a) the profile
+  {
+    const counts = { cautious: 0, bold: 0, stubborn: 0 };
+    for (let seed = 1; seed <= 300; seed++) counts[cmdrOf(mulberry32(seed))]++;
+    ok("T8(a): cmdrOf returns one of the three profiles, roughly uniform over 300 seeds",
+      counts.cautious > 60 && counts.bold > 60 && counts.stubborn > 60, JSON.stringify(counts));
+    let draws8a = 0; const raw8a = mulberry32(7);
+    cmdrOf(() => { draws8a++; return raw8a(); });
+    ok("T8(a2): cmdrOf draws exactly once", draws8a === 1, draws8a);
+    ok("T8(a3): cmdrOf is stable per seed", cmdrOf(mulberry32(99)) === cmdrOf(mulberry32(99)));
+  }
+
+  // (b) the doctrine table
+  {
+    ok("T8(b): stubborn always orders home",
+      cmdrBellOrders("stubborn", { bell: 20, fielded: true, heldRatio: 1, atFront: true, committed: true }) === "home");
+    ok("T8(b2): bold rides forward when the muster fielded",
+      cmdrBellOrders("bold", { bell: 1, fielded: true, heldRatio: 0, atFront: false, committed: false }) === "forward");
+    ok("T8(b3): bold sits home between musters (nothing fielded)",
+      cmdrBellOrders("bold", { bell: 1, fielded: false, heldRatio: 0, atFront: true, committed: false }) === "home");
+    ok("T8(b4): cautious sits home below both thresholds",
+      cmdrBellOrders("cautious", { bell: 3, fielded: true, heldRatio: 0.3, atFront: false, committed: false }) === "home");
+    ok("T8(b5): cautious commits at the held-ratio threshold (0.55)",
+      cmdrBellOrders("cautious", { bell: 3, fielded: true, heldRatio: 0.55, atFront: false, committed: false }) === "forward");
+    ok("T8(b6): cautious commits at bell 8 regardless of held ratio",
+      cmdrBellOrders("cautious", { bell: 8, fielded: true, heldRatio: 0, atFront: false, committed: false }) === "forward");
+    ok("T8(b7): once committed, cautious is bold-equivalent (forward whenever fielded)",
+      cmdrBellOrders("cautious", { bell: 1, fielded: true, heldRatio: 0, atFront: false, committed: true }) === "forward");
+    ok("T8(b8): forward-then-home — go true but nothing fielded returns home even at the front",
+      cmdrBellOrders("cautious", { bell: 8, fielded: false, heldRatio: 1, atFront: true, committed: false }) === "home");
+  }
+
+  // (c) the ferry gate
+  {
+    ok("T8(c): ferryDecide ferries at 0.39 when eligible", ferryDecide(0.39, true) === true);
+    ok("T8(c2): ferryDecide never ferries at 0.41", ferryDecide(0.41, true) === false);
+    ok("T8(c3): ferryDecide never ferries when ineligible, any roll", ferryDecide(0.0, false) === false);
+  }
+
+  // (d) the drop draw
+  {
+    const depotRef = { x: 0, z: 0, u: 0 };
+    const cands = [
+      { x: 5, z: 5, u: 2 },      // near the depot (<18m) — must never be picked while a farther candidate exists
+      { x: 30, z: 0, u: 10 },    // far but narrow (<15 u offset)
+      { x: 0, z: 30, u: 20 },    // far AND wide
+      { x: -30, z: 0, u: -25 },  // far AND wide
+    ];
+    const d0 = flankDrop(cands, 0, depotRef);
+    const d1 = flankDrop(cands, 0.99, depotRef);
+    ok("T8(d): flankDrop never lands within 18m of the depot when a farther candidate exists",
+      Math.hypot(d0.x - depotRef.x, d0.z - depotRef.z) > 18 && Math.hypot(d1.x - depotRef.x, d1.z - depotRef.z) > 18);
+    ok("T8(d2): flankDrop prefers the wide set when any qualify",
+      Math.abs(d0.u - depotRef.u) > 15 && Math.abs(d1.u - depotRef.u) > 15);
+    ok("T8(d3): flankDrop picks deterministically by roll index", d0 === cands[2] && d1 === cands[3]);
+    ok("T8(d4): flankDrop falls back to the far set when nothing is wide", flankDrop(cands.slice(0, 2), 0, depotRef) === cands[1]);
+    ok("T8(d5): flankDrop falls back to the raw pool when nothing is far", flankDrop(cands.slice(0, 1), 0, depotRef) === cands[0]);
+    ok("T8(d6): empty candidates -> null", flankDrop([], 0.5, depotRef) === null);
+  }
+
+  // (e) team-2 riders: stashed, carried, die with the hull; unload rings clear
+  {
+    const w = mkW8(60); const v = mkApc8(w, 2, 0, 0, 5);
+    const riders = [];
+    for (let i = 0; i < 4; i++) { const u = spawnUnit(w, { x: v.pos.x, z: v.pos.z }, ""); u.rideApc = v.apcSeq; riders.push(u); }
+    stepTransports(w, []);
+    ok("T8(e): team-2 riders stash at the ride depth (y -60)", riders.every((u) => u.pos.y === -60));
+    ok("T8(e2): team-2 riders are carried, pinned", riders.every((u) => u.riding && u.pinned));
+    v.pos.x = 12; v.pos.z = -7;
+    stepTransports(w, []);
+    ok("T8(e3): team-2 riders are carried with the hull", riders.every((u) => u.pos.x === 12 && u.pos.z === -7));
+    applyDamage(w, v, 1e9, { attacker: "player" });
+    stepTransports(w, []);
+    ok("T8(e4): team-2 riders die with the hull", riders.every((u) => !u.alive));
+  }
+  {
+    const w = mkW8(61); const v = mkApc8(w, 2, 0, 0, 6);
+    const riders = [];
+    for (let i = 0; i < 4; i++) { const u = spawnUnit(w, { x: v.pos.x, z: v.pos.z }, ""); u.rideApc = v.apcSeq; riders.push(u); }
+    stepTransports(w, []);
+    unloadEnemyRiders(w, v);
+    ok("T8(e5): unload rings riders out clear of the hull, unpinned, unseated",
+      riders.every((u) => !u.riding && !u.pinned && u.rideApc == null && Math.hypot(u.pos.x - v.pos.x, u.pos.z - v.pos.z) > 2));
+    ok("T8(e6): unload stamps the ramp", v._unloadT === w.t);
+    const grid8 = straightGrid(0, 1);
+    ok("T8(e7): unloaded riders resume the flow field (goal: cell.dist reads non-null)",
+      riders.every((u) => grid8.cellAt(u.pos.x, u.pos.z).dist != null));
+  }
+
+  // (f) withdrawal spares seated riders mid-ferry
+  {
+    const w = mkW8(62); const v = mkApc8(w, 2, 0, 0, 7);
+    const rider = spawnUnit(w, { x: v.pos.x, z: v.pos.z }, ""); rider.rideApc = v.apcSeq;
+    const straggler = spawnUnit(w, { x: 10, z: 10 }, "");
+    const S8 = makeRunState(); S8.reg = fatReg();
+    executeWithdrawal(S8, w);
+    ok("T8(f): withdrawal spares a seated rider mid-ferry", w.byId.has(rider.id));
+    ok("T8(f2): withdrawal still sweeps an ordinary straggler", !w.byId.has(straggler.id));
+  }
+
+  // (g) the whisper
+  {
+    let byteStable = true;
+    const reg8g = { heads: 300, heads0: 300 };
+    const prevPlan8g = { buys: [{ type: "sapper", n: 3 }], banked: false };
+    for (let seed = 1; seed <= 50; seed++) {
+      const a = composeIntel(prevPlan8g, reg8g, mulberry32(seed));
+      const b = composeIntel(prevPlan8g, reg8g, mulberry32(seed), undefined);
+      if (JSON.stringify(a) !== JSON.stringify(b)) byteStable = false;
+    }
+    ok("T8(g): a run without a cmdr arg is byte-stable (old 3-arg callers unaffected)", byteStable);
+
+    let joinedLastOk = true, sawCmdrLine = false, digitFound8 = null;
+    for (let seed = 1; seed <= 200; seed++) {
+      const shapes = [
+        { buys: [{ type: "tank", n: 5 }, { type: "sapper", n: 2 }], banked: false },
+        { buys: [{ type: "", n: 20 }], banked: false },
+        { buys: [], banked: true },
+        null,
+      ];
+      const prevPlan = shapes[seed % shapes.length];
+      const reg = { heads: seed * 3, heads0: 300 + (seed % 200) };
+      const cmdrs = [null, "cautious", "bold", "stubborn"];
+      const cmdr = cmdrs[seed % cmdrs.length];
+      const linesNo = composeIntel(prevPlan, reg, mulberry32(seed));
+      const linesCmdr = composeIntel(prevPlan, reg, mulberry32(seed), cmdr);
+      for (let i = 0; i < linesNo.length; i++) if (linesNo[i] !== linesCmdr[i]) joinedLastOk = false;
+      if (linesCmdr.length === linesNo.length + 1) sawCmdrLine = true;
+      else if (linesCmdr.length !== linesNo.length) joinedLastOk = false;
+      for (const l of linesCmdr) if (/\d/.test(l)) digitFound8 = l;
+    }
+    ok("T8(g2): the commander family only ever appends at the end (never reorders/replaces earlier lines)", joinedLastOk);
+    ok("T8(g3): the commander family actually fires across the 200-seed sweep", sawCmdrLine);
+    ok("T8(g4): no digits in any commander line across the 200-seed sweep", !digitFound8, digitFound8 || "");
+  }
+}
+// ==== end P7 T8 ==============================================================
 
 // HOTFIX mk1.37 pin: every audio.js `.value = ` assignment is either fin()-wrapped
 // or a bare numeric literal (regex /\.value = -?\d[\d.]*;/) — no raw computed
