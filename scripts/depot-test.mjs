@@ -40,8 +40,12 @@ import { composeIntel, openingIntel } from "../src/depot/intel.js";
 import { makeTerritory, stepTerritory, holderAt, fogStateAt, valueAt, canBuild, DECAY_TAU, EMIT } from "../src/depot/territory.js";
 import { SIGHT, eyeOf, canSee, fillMaps, gridEye, makeSight, seenAt, stepSight, RETICLE_SPEED, steerReticle, reclampReticle } from "../src/depot/sight.js";
 import { fwdUFor, fwdDirFor, invWFor, clampToRimFor } from "../src/depot/orient.js";
-import { washAlpha, WASH_SEAM, WASH_MAX_A } from "../src/render/renderer.js";
+import { washAlpha, WASH_SEAM, WASH_MAX_A, minesToDraw } from "../src/render/renderer.js";
 import { serializeFront, parseFront, restoreBodies, restoreWelds, restoreSquads } from "../src/depot/save.js";
+import {
+  stepMines, minePrices, mineSeedRoll, mineSeedPlace,
+  MINE_TRIG, WIRE_TRIG, FLARE_S, MINE_BLAST, WIRE_BLAST, MINE_COST, WIRE_COST,
+} from "../src/depot/mines.js";
 import fs from "node:fs";
 
 // identity fwdDir (DepotGame.jsx's ORIENT-aware transform, ORIENT===0 case)
@@ -7601,6 +7605,204 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 }
 // ==== end P7 T9 ==============================================================
+
+// ==== P7 T10: MINES AND TRIPWIRES ============================================
+//  (a) the trigger: a player rifleman standing ON a player mine never trips
+//      it (long run, untouched); an enemy conscript walking on DOES — and a
+//      player rifleman inside the blast radius at that moment is hurt too
+//      (both-sides blast, owner's revision); the mine spends
+//  (b) the wire: an enemy crossing fires the flare — a team-1 flag-kind eye
+//      appears at the spot, sight lights the cell for team 1 on the next
+//      recompute, the crosser takes the small blast, the eye dies at 6 s
+//  (c) budgets climb: minePrices with 0 devices = base; with 12 live mines
+//      (either side) the mine price doubles
+//  (d) enemy seeding: mineSeedRoll/mineSeedPlace (mines.js) — factored out of
+//      ringBell for direct testability (named deviation, mirrors the P7 T8
+//      ferryDecide/flankDrop precedent) — plus source-pins proving ringBell
+//      draws both rolls unconditionally every bell and wires them straight
+//      through, after the hero-tier block
+//  (e) the save round trip carries S.mines verbatim, live flags included
+//  (f) laying: the line kinds produce one device per clear cell, no grid
+//      claim (cells stay unblocked), scrap deducted at the live price —
+//      pinned by source shape (layPieceAt/linePieces are DepotGame.jsx
+//      closures with no live grid/world to run headless, same convention
+//      the mk0.60 two-point build block above uses)
+//  (g) invisibility: the R.setMines list never contains a team-2 device
+//      (pure list-builder assert)
+{
+  console.log("\n[p7 t10: mines and tripwires]");
+  const flatF10 = { heightAt: () => 0, dirty: false, carve: () => {} };
+
+  // (a) the trigger + both-sides blast + the spend
+  {
+    const w = makeWorld({ field: flatF10, seed: 401 });
+    const mines = [{ x: 0, z: 0, team: 1, kind: "mine", live: true }];
+    addBody(w, { kind: "unit", team: 1, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0.2, y: 0.88, z: 0, hp: 58 });
+    for (let i = 0; i < 30; i++) stepMines(w, mines);
+    ok("T10(a): a player rifleman standing on a player mine never trips it (long run)", mines[0].live === true, JSON.stringify(mines[0]));
+  }
+  {
+    const w = makeWorld({ field: flatF10, seed: 402 });
+    const mines = [{ x: 0, z: 0, team: 1, kind: "mine", live: true }];
+    const enemyU = addBody(w, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0.5, y: 0.88, z: 0, hp: 58 });
+    const friendlyU = addBody(w, { kind: "unit", team: 1, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: -1.0, y: 0.88, z: 0, hp: 58 });
+    const eHp0 = enemyU.hp, fHp0 = friendlyU.hp;
+    stepMines(w, mines);
+    ok("T10(a2): an enemy crosser trips the mine — it spends", mines[0].live === false);
+    ok("T10(a3): the enemy crosser takes real damage", enemyU.hp < eHp0, `${eHp0} -> ${enemyU.hp}`);
+    ok("T10(a4): a player rifleman inside the blast radius at that moment is hurt too (both-sides blast, owner's 2026-08-17 revision)",
+      friendlyU.hp < fHp0, `${fHp0} -> ${friendlyU.hp}`);
+  }
+
+  // (b) the wire: flare eye, sight, the small blast, the 6s reap
+  {
+    const w = makeWorld({ field: flatF10, seed: 403 });
+    const mines = [{ x: 5, z: 5, team: 1, kind: "wire", live: true }];
+    const crosser = addBody(w, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 5.3, y: 0.88, z: 5, hp: 58 });
+    const hp0 = crosser.hp;
+    stepMines(w, mines);
+    ok("T10(b): the wire fires and spends", mines[0].live === false);
+    const eye = w.bodies.find((b) => b.kind === "flag" && b._dieT != null);
+    ok("T10(b2): a team-1 flag-kind eye appears at the spot", !!eye && eye.team === 1 && Math.abs(eye.pos.x - 5) < 1e-6 && Math.abs(eye.pos.z - 5) < 1e-6,
+      JSON.stringify(eye && eye.pos));
+    ok("T10(b3): the eye carries no flagPole — nothing draws it", eye && !eye.flagPole);
+    ok("T10(b4): a \"flare\" event was pushed", w.events.some((e) => e.type === "flare" && e.x === 5 && e.z === 5));
+    ok("T10(b5): the crosser takes the small blast", crosser.hp < hp0, `${hp0} -> ${crosser.hp}`);
+    // sight lights the cell for team 1 on the next recompute
+    const T10b = makeTerritory(30, 30);
+    const SG10b = makeSight(T10b);
+    const ident10b = (x, z) => ({ u: x, v: z });
+    stepSight(w, SG10b, ident10b, ident10b);
+    ok("T10(b6): sight lights the cell for team 1 on the next recompute", seenAt(SG10b, 5, 5, 1));
+    // the eye dies at 6s — _dieT reaped by stepMines' own cleanup pass
+    w.t += FLARE_S + 0.01;
+    stepMines(w, mines);
+    ok("T10(b7): the eye dies at 6s", !w.byId.get(eye.id));
+  }
+
+  // (c) budgets climb
+  {
+    const mkt10 = await import("../src/depot/market.js");
+    const p0 = minePrices({}, mkt10.priced);
+    ok("T10(c): minePrices with 0 devices = base", p0.mine === MINE_COST && p0.wire === WIRE_COST, JSON.stringify(p0));
+    const p1 = minePrices({ mine: 12 }, mkt10.priced);
+    ok("T10(c2): 12 live mines (either side) doubles the mine price", p1.mine === 2 * MINE_COST, p1.mine);
+    ok("T10(c3): MARKET_K carries the mine/wire families at K 12/16", mkt10.MARKET_K.mine === 12 && mkt10.MARKET_K.wire === 16, JSON.stringify({ mine: mkt10.MARKET_K.mine, wire: mkt10.MARKET_K.wire }));
+    // marketCounts: mines is an optional third arg, both sides' live devices
+    // together — module purity (market.js never imports mines.js).
+    const flatF10c = { heightAt: () => 0 };
+    const w10c = makeWorld({ field: flatF10c, seed: 404 });
+    const mines10c = [
+      { x: 0, z: 0, team: 1, kind: "mine", live: true }, { x: 1, z: 1, team: 2, kind: "mine", live: true },
+      { x: 2, z: 2, team: 1, kind: "mine", live: false }, { x: 3, z: 3, team: 1, kind: "wire", live: true },
+    ];
+    const counts10c = mkt10.marketCounts(w10c, [], mines10c);
+    ok("T10(c4): marketCounts counts live mine/wire devices, both teams together, dead ones excluded",
+      counts10c.mine === 2 && counts10c.wire === 1, JSON.stringify(counts10c));
+    ok("T10(c5): marketCounts's third arg is optional — omitting it never throws and adds no mine/wire family",
+      (() => { const c = mkt10.marketCounts(w10c, []); return c.mine === undefined && c.wire === undefined; })());
+  }
+
+  // (d) enemy seeding — the pure gate/pick functions, plus source-pins of
+  // ringBell's own wiring (the same convention T9(d) used for its own
+  // ringBell-embedded logic).
+  {
+    ok("T10(d): mineSeedRoll fires under 0.5 with a sapper in the bag and afford", mineSeedRoll(0.3, true, 100, 18) === true);
+    ok("T10(d2): mineSeedRoll never fires at/above 0.5", mineSeedRoll(0.5, true, 100, 18) === false);
+    ok("T10(d3): mineSeedRoll never fires without a sapper in the bag", mineSeedRoll(0.1, false, 100, 18) === false);
+    ok("T10(d4): mineSeedRoll never fires when the regiment can't afford 3x the table", mineSeedRoll(0.1, true, 10, 18) === false);
+    const cands10d = []; for (let i = 0; i < 9; i++) cands10d.push({ x: i, z: 0 });
+    const picks0 = mineSeedPlace(cands10d, 0);
+    ok("T10(d5): mineSeedPlace lays exactly 3, striding the candidate list", picks0.length === 3, JSON.stringify(picks0));
+    ok("T10(d6): mineSeedPlace's picks stride deterministically", picks0[0] === cands10d[0] && picks0[1] === cands10d[3] && picks0[2] === cands10d[6]);
+    const picks1 = mineSeedPlace(cands10d, 0.99);
+    ok("T10(d7): a different roll picks a different start, still exactly 3", picks1.length === 3 && picks1[0] !== picks0[0]);
+    ok("T10(d8): fewer than 3 candidates lays none", mineSeedPlace([{ x: 0, z: 0 }], 0.2).length === 0);
+    ok("T10(d9): a 0.6 roll never lays, regardless of afford/bag", mineSeedRoll(0.6, true, 1e9, 1) === false);
+
+    const dsrc10 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    const ringBellBody10 = (dsrc10.match(/const ringBell = \(\) => \{[\s\S]*?\n      \};/) || [""])[0];
+    ok("T10(d10): ringBell extracts (source pin base)", ringBellBody10.length > 0);
+    ok("T10(d11): TWO unconditional draws every bell (mineRoll, minePlaceRoll — the law)",
+      /const mineRoll = world\.rng\(\), minePlaceRoll = world\.rng\(\);/.test(ringBellBody10));
+    ok("T10(d12): price3 reads the live market, falling back to the table base",
+      /const price3 = S\._minePrices \? S\._minePrices\.mine \* 3 : MINE_COST \* 3;/.test(ringBellBody10));
+    ok("T10(d13): the bag gate reads the enemy's own current muster (S.ws.mixBag)",
+      /const hasSapper = S\.ws\.mixBag\.indexOf\("sapper"\) >= 0;/.test(ringBellBody10));
+    ok("T10(d14): the roll is gated through mineSeedRoll, unconditionally drawn either way",
+      /if \(mineSeedRoll\(mineRoll, hasSapper, S\.reg\.scrap, price3\)\)/.test(ringBellBody10));
+    ok("T10(d15): the pick is gated through mineSeedPlace",
+      /const picks = mineSeedPlace\(cands, minePlaceRoll\);/.test(ringBellBody10));
+    ok("T10(d16): scrap is deducted once for the three, before they land",
+      /S\.reg\.scrap -= price3;\s*\n\s*for \(const c3 of picks\) S\.mines\.push/.test(ringBellBody10));
+    ok("T10(d17): enemy mines land team 2, kind mine, live",
+      /S\.mines\.push\(\{ x: c3\.x, z: c3\.z, team: 2, kind: "mine", live: true \}\);/.test(ringBellBody10));
+    ok("T10(d18): candidates draw from PASSES on the enemy's own half (c.v < 0) plus the territory seam band",
+      /if \(c\.v < 0\) cands\.push/.test(ringBellBody10) && /vv > -0\.15 && vv < 0\.15/.test(ringBellBody10));
+    ok("T10(d19): sits after the hero-tier block (P7 T9)",
+      ringBellBody10.indexOf("THE HERO TIER, their side") < ringBellBody10.indexOf("THE ENEMY SAPPER BRAIN"));
+  }
+
+  // (e) the save round trip
+  {
+    const T10e = makeTerritory(5, 5);
+    const world10e = makeWorld({ field: makeField(9, 2.0, 1), seed: 405 });
+    const S10e = {
+      bell: 0, resources: 0, kills: 0, spawnRR: 0, started: false, mode: "wall", sandbagOrient: 0,
+      nextSquadId: 1, zoom: 1, focus: { x: 0, z: 0 }, depotCensusAcc: 0, depotStanding: 1, enemyStanding: 1,
+      starvedStreak: 0, _reportedBreak: false, _reportedSpent: false,
+      manifest: {}, foe: {}, intelUp: false, intelArmedAt: 0, lastDispatch: null,
+      pendingPlan: null, intelPlan: null, ws: {}, reg: {}, squads: [],
+      mines: [{ x: 1.2345, z: -3.4, team: 1, kind: "mine", live: true }, { x: 5, z: 5, team: 2, kind: "wire", live: false }],
+    };
+    const json10e = serializeFront({ S: S10e, world: world10e, T: T10e, town: [], census: [], census2: [], rocks: [], smears: [], mapSeed: 1, rngSeed: 1 });
+    const parsed10e = parseFront(json10e);
+    ok("T10(e): the save round trip parses back", parsed10e.ok, parsed10e.reason);
+    const rm = parsed10e.ok ? parsed10e.data.run.mines : null;
+    ok("T10(e2): S.mines carries verbatim, live flags included",
+      !!rm && rm.length === 2 &&
+      Math.abs(rm[0].x - 1.2345) < 0.001 && Math.abs(rm[0].z - (-3.4)) < 0.001 && rm[0].t === 1 && rm[0].k === "mine" && rm[0].l === 1 &&
+      Math.abs(rm[1].x - 5) < 0.001 && rm[1].t === 2 && rm[1].k === "wire" && rm[1].l === 0,
+      JSON.stringify(rm));
+  }
+
+  // (f) laying — source-pinned (layPieceAt/linePieces need a live grid/world
+  // the headless suite doesn't build; same convention mk0.60/6 above uses).
+  {
+    const dsrc10f = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("T10(f): layPieceAt gains a device branch for mines/wires",
+      /if \(job\.kind === "mines" \|\| job\.kind === "wires"\) \{/.test(dsrc10f));
+    ok("T10(f2): no cell claim, no validatePlacement — only water\\/blocked-terrain cells refuse",
+      /if \(cell\.blocked \|\| cell\.ice\) return "skip";/.test(dsrc10f) && !/if \(job\.kind === "mines" \|\| job\.kind === "wires"\) \{[\s\S]{0,400}validatePlacement/.test(dsrc10f));
+    ok("T10(f3): a device is a watched point, one per clear cell, at the live price",
+      /S\.mines\.push\(\{ x: row\.x, z: row\.z, team: 1, kind: job\.kind === "mines" \? "mine" : "wire", live: true \}\);/.test(dsrc10f) &&
+      /S\.resources -= cost;\s*\n\s*R\.setMines\(S\.mines\);/.test(dsrc10f));
+    ok("T10(f4): linePieces' ghost mirrors layPieceAt's exact skip rule for devices (water\\/blocked-terrain only, no ground-held gate)",
+      /if \(isDevice\) \{ if \(cell\.blocked \|\| cell\.ice\) continue; \}/.test(dsrc10f));
+    ok("T10(f5): the sapper pie gains MINES and WIRES wedges",
+      /key: "build_mines", icon: "◆", label: "MINES"/.test(dsrc10f) && /key: "build_wires", icon: "⌁", label: "WIRES"/.test(dsrc10f));
+    ok("T10(f6): the wedges are gated to sappers, mirroring the engineer gate",
+      /if \(sq\.sapper\) \{/.test(dsrc10f) && /sapper: sq\.type === "sappers",/.test(dsrc10f));
+    ok("T10(f7): S.orderSquad's build gate is sappers-only for the device kinds",
+      /kind === "build_mines" \|\| kind === "build_wires"/.test(dsrc10f) && /if \(sq\.type !== "sappers"\) return;/.test(dsrc10f));
+    ok("T10(f8): consumeOrderTap accepts the two device kinds under the same sapper guard",
+      /if \(om === "build_mines" \|\| om === "build_wires"\) \{/.test(dsrc10f) && /if \(!osq \|\| osq\.type !== "sappers"\)/.test(dsrc10f));
+  }
+
+  // (g) invisibility — pure list-builder
+  {
+    const list10g = [
+      { x: 0, z: 0, team: 1, kind: "mine", live: true },
+      { x: 1, z: 1, team: 2, kind: "mine", live: true },
+      { x: 2, z: 2, team: 1, kind: "mine", live: false },
+      { x: 3, z: 3, team: 2, kind: "wire", live: true },
+    ];
+    const drawn = minesToDraw(list10g);
+    ok("T10(g): R.setMines's list-builder never contains a team-2 device", drawn.every((m) => m.team === 1));
+    ok("T10(g2): only LIVE team-1 devices draw", drawn.length === 1 && drawn[0].x === 0);
+  }
+}
+// ==== end P7 T10 ==============================================================
 
 // HOTFIX mk1.37 pin: every audio.js `.value = ` assignment is either fin()-wrapped
 // or a bare numeric literal (regex /\.value = -?\d[\d.]*;/) — no raw computed

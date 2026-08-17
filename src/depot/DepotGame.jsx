@@ -17,7 +17,8 @@ import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS, BISON, APC } from "./specs.js";
 import { windAt } from "./wind.js";
 import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest, TIER_BELLS } from "./state.js";
-import { marketCounts, computePrices, fieldPrices } from "./market.js";
+import { marketCounts, computePrices, fieldPrices, priced } from "./market.js";
+import { stepMines, minePrices, mineSeedRoll, mineSeedPlace, MINE_COST, WIRE_COST } from "./mines.js";
 import { homeShare, pickHomeDetail, HOME_GUARD_CAP, cmdrOf, cmdrBellOrders, ferryDecide, flankDrop } from "./ai.js";
 import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic, drivePossessedSquad, clearSlot } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accuracy.js";
@@ -1570,7 +1571,10 @@ export default function DepotGame({ onExit, resume = null }) {
           else if (b.kind === "wall" && b.team === 1 && b.alive && !b.course) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.wall.w, r: EMIT.wall.r, sign: 1 }); }
           // FRONT F1: flags emit their OWN team's influence at homeland
           // strength — the enemy depot IS the enemy anchor now.
-          else if (b.kind === "flag") { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.depot.w, r: EMIT.depot.r, sign: b.team === 2 ? -1 : 1 }); }
+          // P7 T10 guard: a tripwire's flare is also kind "flag" (a temporary
+          // sight-only eye, sight.js's eyeOf) — b._dieT != null marks it, and
+          // it must NEVER emit territory (it lights sight, not ground).
+          else if (b.kind === "flag" && b._dieT == null) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.depot.w, r: EMIT.depot.r, sign: b.team === 2 ? -1 : 1 }); }
           else if (b.kind === "unit" && b.team === 1 && b.alive && !b.riding) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.unit.w, r: EMIT.unit.r, sign: 1 }); }
           else if (b.kind === "chunk" && b.sandbag && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.wall.w, r: EMIT.wall.r, sign: 1 }); }
           else if (b.kind === "unit" && b.team === 2 && b.alive && !b.riding) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.unit.w, r: EMIT.unit.r, sign: -1 }); }
@@ -1790,6 +1794,9 @@ export default function DepotGame({ onExit, resume = null }) {
         // (S.pieOpen = false) but an aiming order keeps the squad selected
         // so the ground stays tappable — see consumeOrderTap.
         squads: [], nextSquadId: 1, selSquadId: null, selArmedAt: 0, orderMode: null, buildPt0: null, pieOpen: false,
+        // P7 T10: MINES AND TRIPWIRES — watched points, never bodies.
+        // { x, z, team, kind: "mine"|"wire", live }. Saved verbatim (save.js).
+        mines: [],
         // P7 T2: the selected vehicle's own selection/order state — the
         // squad selection fields' exact shape, one Bison at a time.
         selVehId: null, vehOrderMode: null,
@@ -1815,6 +1822,7 @@ export default function DepotGame({ onExit, resume = null }) {
         // stamp. Transient run state, never serialized — a resumed run
         // rebuilds both within a second (no save.js edits).
         _market: null, _marketAcc: 0, _buyAt: -9,
+        _minePrices: null, // P7 T10: computed beside _market, same 1Hz cadence
         // P6 T10 / Task 5 Amendment 1 (mk1.19): the idle gate — true once
         // the war goes hot (stashed by the hud census pass); starts false.
         _hot: false,
@@ -1902,6 +1910,8 @@ export default function DepotGame({ onExit, resume = null }) {
         S.ws = r.ws;
         S.squads = restoreSquads(RES, resBodies);
         S.nextSquadId = r.nextSquadId;
+        // P7 T10: watched points restore verbatim, live flags included.
+        S.mines = (r.mines || []).map((m) => ({ x: m.x, z: m.z, team: m.t, kind: m.k, live: !!m.l }));
         // Step 6, last: the ground remembers. Every mark where a man fell is
         // replayed through the same paint the kill handler uses, so the snow
         // comes back stained exactly as it was left. Scorch and tread
@@ -1910,6 +1920,10 @@ export default function DepotGame({ onExit, resume = null }) {
         if (R._splat && R._splat.smear) for (const m of RES.smears || []) R._splat.smear(m.u, m.v, m.s, m.x, m.z);
       }
       stateRef.current = S;
+      // P7 T10: R.setMines is a setDressing-style setter — called once here
+      // at boot/restore (fresh boot: S.mines is empty, harmless), then again
+      // on every lay and every trigger tick.
+      R.setMines(S.mines);
       // id -> last-observed hp for wall/tower/building bodies, so structure
       // damage dealt (not just kills) can be attributed to the attacker
       // across ticks — there is no discrete "damage" event to read instead
@@ -2236,6 +2250,11 @@ export default function DepotGame({ onExit, resume = null }) {
           if (sq.type !== "engineers") return;
           if (S.orderMode === kind) { S.orderMode = null; S.buildPt0 = null; return; }
           S.orderMode = kind; S.buildPt0 = null;
+        } else if (kind === "build_mines" || kind === "build_wires") {
+          // P7 T10: the sapper build gate — engineers' own two-tap shape, sappers only.
+          if (sq.type !== "sappers") return;
+          if (S.orderMode === kind) { S.orderMode = null; S.buildPt0 = null; return; }
+          S.orderMode = kind; S.buildPt0 = null;
         } else if (kind === "patrol") {
           // COMMAND T3 (mk0.85): the same two-tap flow the build orders use —
           // no type restriction here (the pie only offers the wedge to
@@ -2383,6 +2402,11 @@ export default function DepotGame({ onExit, resume = null }) {
       const LAY_AHEAD = 4.5;      // m — a piece goes down this far in FRONT of the anchor
       const LINE_MAX_CELLS = 64;  // a hard ceiling on one order's line
       const LAY_MAN_PAD = 0.15;   // m — margin on top of a hard man-vs-piece overlap
+      // P7 T10: the sapper's per-piece pause — a device is quicker to lay
+      // than a wall course (no masonry to stack), so it rides its own
+      // constant beside WALL_LAY_PAUSE_S rather than that one. Lives here
+      // (not state.js) — this task's commit list doesn't touch state.js.
+      const MINE_LAY_PAUSE_S = 0.6; // provisional (F5)
       // lineCells: the grid cells a start->end segment runs through, in order.
       // Bresenham with ONE axis moved per step (never the diagonal shortcut the
       // stock algorithm takes) — that is what makes the staircase.
@@ -2403,6 +2427,9 @@ export default function DepotGame({ onExit, resume = null }) {
       // The footprint a piece will occupy, given its orientation. Bags and wall
       // courses share one shape family (mk0.54/mk0.55) so this is one rule.
       const pieceHalf = (kind, orient) => {
+        // P7 T10: a mine/wire ghost is a small flat disc, not a slab —
+        // orientation-independent (a watched point has no facing).
+        if (kind === "mines" || kind === "wires") return { hx: 0.3, hz: 0.3 };
         const long = kind === "walls" ? WALL_HALF : SANDBAG_HX;   // 0.9 either way
         const thin = kind === "walls" ? WALL_THIN : SANDBAG_HZ;   // 0.35 either way
         return orient === 1 ? { hx: thin, hz: long } : { hx: long, hz: thin };
@@ -2427,7 +2454,7 @@ export default function DepotGame({ onExit, resume = null }) {
         sq.order = "build";
         sq.dest = { x: a.x, z: a.z };
         sq._legTarget = null; sq._pauseT = 0; sq._cohesionHoldT = 0; sq._threatSig = undefined;
-        toast((kind === "walls" ? "WALL" : "BAG") + " LINE — " + rows.length + " SECTIONS");
+        toast((kind === "walls" ? "WALL" : kind === "mines" ? "MINE" : kind === "wires" ? "WIRE" : "BAG") + " LINE — " + rows.length + " SECTIONS");
       };
       // COMMAND T2 (mk0.84): THE PROPOSED LINE. The second tap of a
       // two-point order proposes; nothing walks until the owner of the tap
@@ -2436,15 +2463,21 @@ export default function DepotGame({ onExit, resume = null }) {
       const LINE_END_R = 2.5;   // m — a tap this close to an endpoint disc picks it up
       const linePieces = (kind, a, b) => {
         if (kind === "patrol") return [];
+        const isDevice = kind === "mines" || kind === "wires"; // P7 T10
         const orient = Math.abs(b.x - a.x) >= Math.abs(b.z - a.z) ? 0 : 1;
         const ph = pieceHalf(kind, orient);
-        const hy = kind === "walls" ? 0.9 : SANDBAG_HY;
+        const hy = kind === "walls" ? 0.9 : isDevice ? 0.06 : SANDBAG_HY;
         const out = [];
         for (const c of lineCells(a, b)) {
           if (!grid.inBounds(c.gx, c.gz)) continue;
           const cell = grid.cells[grid.idx(c.gx, c.gz)];
           const wp = grid.gridToWorld(c.gx, c.gz), c0 = invW(wp.x, wp.z);
-          if (cell.blocked || cell.wallId || cell.ice || !canBuild(T, c0.u, c0.v)) continue; // an honest gap
+          // P7 T10: a device is a watched point, never a body — no cell
+          // claim, no validatePlacement (no held-ground gate); the ghost
+          // must skip exactly what layPieceAt's device branch skips: water/
+          // blocked-terrain cells only.
+          if (isDevice) { if (cell.blocked || cell.ice) continue; }
+          else if (cell.blocked || cell.wallId || cell.ice || !canBuild(T, c0.u, c0.v)) continue; // an honest gap
           out.push({ x: wp.x, z: wp.z, y: field.heightAt(wp.x, wp.z) + hy, hx: ph.hx, hy, hz: ph.hz });
         }
         return out;
@@ -2455,8 +2488,11 @@ export default function DepotGame({ onExit, resume = null }) {
         const pieces = linePieces(lp.kind, lp.a, lp.b);
         lp.count = pieces.length;
         const fpPrev = S._market ? fieldPrices(S._market.counts, WALL_FIELD_COST, SANDBAG_FIELD_COST) : { wall: WALL_FIELD_COST, bag: SANDBAG_FIELD_COST };
+        const mpPrev = S._minePrices || { mine: MINE_COST, wire: WIRE_COST }; // P7 T10
         lp.cost = lp.kind === "walls" ? pieces.length * fpPrev.wall
-                : lp.kind === "bags" ? pieces.length * fpPrev.bag : 0;
+                : lp.kind === "bags" ? pieces.length * fpPrev.bag
+                : lp.kind === "mines" ? pieces.length * mpPrev.mine
+                : lp.kind === "wires" ? pieces.length * mpPrev.wire : 0;
         R.overlay.setLinePreview(true, {
           a: { x: lp.a.x, z: lp.a.z, y: field.heightAt(lp.a.x, lp.a.z) },
           b: { x: lp.b.x, z: lp.b.z, y: field.heightAt(lp.b.x, lp.b.z) },
@@ -2509,6 +2545,22 @@ export default function DepotGame({ onExit, resume = null }) {
       // build menu makes) — a cell that is occupied, iced or unheld is skipped,
       // never double-filled; running out of scrap stops the line for good.
       const layPieceAt = (job, row) => {
+        // P7 T10: THE TRIGGER IS THE PROTECTION — a mine/wire is a watched
+        // point, never a physics body: no cell claim, no validatePlacement
+        // (no ground-held gate, no occupied-cell gate — a wall/building cell
+        // is fine to seed under, only water/blocked-terrain cells refuse).
+        if (job.kind === "mines" || job.kind === "wires") {
+          if (!grid.inBounds(row.gx, row.gz)) return "skip";
+          const cell = grid.cells[grid.idx(row.gx, row.gz)];
+          if (cell.blocked || cell.ice) return "skip";
+          const mp = S._minePrices || { mine: MINE_COST, wire: WIRE_COST };
+          const cost = job.kind === "mines" ? mp.mine : mp.wire;
+          if (S.resources < cost) return "dry";
+          S.mines.push({ x: row.x, z: row.z, team: 1, kind: job.kind === "mines" ? "mine" : "wire", live: true });
+          S.resources -= cost;
+          R.setMines(S.mines);
+          return "laid";
+        }
         if (!grid.inBounds(row.gx, row.gz)) return "skip";
         const cell = grid.cells[grid.idx(row.gx, row.gz)];
         const c0 = invW(row.x, row.z);
@@ -2586,6 +2638,9 @@ export default function DepotGame({ onExit, resume = null }) {
               // squads.js holds the anchor and issues no new leg, and no rng is
               // touched by either side of the arrangement.
               if (job.kind === "walls" && !arrived) { sq._pauseT = WALL_LAY_PAUSE_S; break; }
+              // P7 T10: a device costs the sapper a shorter commitment — the
+              // same dwell field, its own constant.
+              if ((job.kind === "mines" || job.kind === "wires") && !arrived) { sq._pauseT = MINE_LAY_PAUSE_S; break; }
             } else job.skipped++;
           }
         }
@@ -2621,6 +2676,19 @@ export default function DepotGame({ onExit, resume = null }) {
           // COMMAND T2 (mk0.84): the second tap PROPOSES — S.linePending goes
           // up, the squad stays selected, and nothing walks until acceptLine.
           S.linePending = { kind: om === "build_walls" ? "walls" : "bags", sq: osq.id,
+            a: { x: S.buildPt0.x, z: S.buildPt0.z }, b: { x: d.x, z: d.z },
+            moving: null, armedAt: world.t + PENDING_ARM_S };
+          S.buildPt0 = null; S.orderMode = null;
+          refreshLinePreview();
+          return true;
+        }
+        // P7 T10: MINES and WIRES — the identical two-tap shape build_bags/
+        // build_walls use, sapper-gated (the type check mirrors the
+        // engineer build gate above).
+        if (om === "build_mines" || om === "build_wires") {
+          if (!osq || osq.type !== "sappers") { S.orderMode = null; S.buildPt0 = null; S.selSquadId = null; return true; }
+          if (!S.buildPt0) { S.buildPt0 = { x: d.x, z: d.z }; toast("LINE START — TAP THE FAR END"); return true; }
+          S.linePending = { kind: om === "build_mines" ? "mines" : "wires", sq: osq.id,
             a: { x: S.buildPt0.x, z: S.buildPt0.z }, b: { x: d.x, z: d.z },
             moving: null, armedAt: world.t + PENDING_ARM_S };
           S.buildPt0 = null; S.orderMode = null;
@@ -3115,6 +3183,30 @@ export default function DepotGame({ onExit, resume = null }) {
             S.reg.scrap -= heroPrice("hero_bison"); parkArmor(2, depotE4, "bison");
           } else if (depotE4 && !has("apc") && open("hero_apc") && S.reg.scrap >= heroPrice("hero_apc")) {
             S.reg.scrap -= heroPrice("hero_apc"); parkArmor(2, depotE4, "apc");
+          }
+        }
+        // P7 T10: THE ENEMY SAPPER BRAIN — two draws every bell (the law);
+        // a committed roll seeds three mines on its approaches or the
+        // contested seam, paid off the same table. mineSeedRoll/
+        // mineSeedPlace (mines.js) carry the gate/pick arithmetic — the
+        // candidate list stays here (PASSES + the territory seam sample are
+        // both closure-scoped, game-layer only).
+        {
+          const mineRoll = world.rng(), minePlaceRoll = world.rng();
+          const price3 = S._minePrices ? S._minePrices.mine * 3 : MINE_COST * 3;
+          const hasSapper = S.ws.mixBag.indexOf("sapper") >= 0;
+          if (mineSeedRoll(mineRoll, hasSapper, S.reg.scrap, price3)) {
+            const cands = [];
+            for (const band of PASSES) for (const g of band) { const c = invW(g.x, g.z); if (c.v < 0) cands.push({ x: g.x, z: g.z }); }
+            for (let iz2 = 0; iz2 < T.nz; iz2 += 4) for (let ix2 = 0; ix2 < T.nx; ix2 += 4) {
+              const vv = T.v[iz2 * T.nx + ix2];
+              if (vv > -0.15 && vv < 0.15) { const w2 = fwdU(-T.halfU + (ix2 + 0.5) * T.cs, -T.halfV + (iz2 + 0.5) * T.cs); cands.push({ x: w2.x, z: w2.z }); }
+            }
+            const picks = mineSeedPlace(cands, minePlaceRoll);
+            if (picks.length) {
+              S.reg.scrap -= price3;
+              for (const c3 of picks) S.mines.push({ x: c3.x, z: c3.z, team: 2, kind: "mine", live: true });
+            }
           }
         }
         // The convoy is heard when its card comes up, and only then — a bell
@@ -3818,6 +3910,10 @@ export default function DepotGame({ onExit, resume = null }) {
           // territory field itself, not per frame (see renderer.js
           // updateTerritory/retintTerritory/updateFogWash).
           if (terrGuard > 0 && R.updateTerritory) R.updateTerritory();
+          // P7 T10: TRIGGERS — a 4Hz game-layer step, beside the territory
+          // accumulator (NOT per sim tick). Cheap: setMines only rewrites the
+          // two instanced pools when a device actually fired this tick.
+          if (terrGuard > 0) { stepMines(world, S.mines); R.setMines(S.mines); }
           world.events.length = 0;
           const pSim0 = perf ? performance.now() : 0; // stopwatch: sim bracket opens
           // P6 T10 (mk1.19): the pool rebuild runs ONCE PER FRAME, not once
@@ -3887,7 +3983,11 @@ export default function DepotGame({ onExit, resume = null }) {
           // separate from stepDepotCensus's accumulator (different
           // consumers) per the brief.
           S._marketAcc += sdt;
-          if (S._marketAcc >= 1) { S._marketAcc -= 1; S._market = computePrices(marketCounts(world, S.squads)); }
+          if (S._marketAcc >= 1) {
+            S._marketAcc -= 1;
+            S._market = computePrices(marketCounts(world, S.squads, S.mines));
+            S._minePrices = minePrices(S._market.counts, priced); // P7 T10: beside _market, same cadence
+          }
           R.consume(evs);
           A.setListener(S.focus.x, S.focus.z, 46 / Math.max(0.6, S.zoom));
           A.consume(evs);
@@ -4040,7 +4140,10 @@ export default function DepotGame({ onExit, resume = null }) {
                   // P1.5 T4: the BUILD chips exist for engineer squads and no
                   // other type, so the row is per-squad-type by construction.
                   engineer: sq.type === "engineers",
-                  building: S.orderMode === "build_bags" ? "bags" : S.orderMode === "build_walls" ? "walls" : null,
+                  // P7 T10: the sapper build gate — mirrors the engineer flag above.
+                  sapper: sq.type === "sappers",
+                  building: S.orderMode === "build_bags" ? "bags" : S.orderMode === "build_walls" ? "walls"
+                          : S.orderMode === "build_mines" ? "mines" : S.orderMode === "build_wires" ? "wires" : null,
                   buildStart: !!S.buildPt0,
                   // COMMAND T3 (mk0.85): PATROL rides every squad type
                   // except engineers and sappers (tools, not shooters — the
@@ -4567,6 +4670,14 @@ export default function DepotGame({ onExit, resume = null }) {
           slots.push(
             { key: "build_bags", icon: "▬", label: "BAGS", color: "#ffd27a", on: sq.building === "bags", act: () => stateRef.current && stateRef.current.orderSquad("build_bags") },
             { key: "build_walls", icon: "▦", label: "WALLS", color: "#ffd27a", on: sq.building === "walls", act: () => stateRef.current && stateRef.current.orderSquad("build_walls") },
+          );
+        }
+        // P7 T10: MINES and WIRES — the sapper team's own two wedges, the
+        // identical two-tap build shape the engineer wedges above use.
+        if (sq.sapper) {
+          slots.push(
+            { key: "build_mines", icon: "◆", label: "MINES", color: "#ffb45e", on: sq.building === "mines", act: () => stateRef.current && stateRef.current.orderSquad("build_mines") },
+            { key: "build_wires", icon: "⌁", label: "WIRES", color: "#ffb45e", on: sq.building === "wires", act: () => stateRef.current && stateRef.current.orderSquad("build_wires") },
           );
         }
         // COMMAND T2 (mk0.84): a proposed line up takes over the status —

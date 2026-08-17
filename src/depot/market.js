@@ -26,15 +26,23 @@ export const MARKET_K = {
   // the price and the curve goes vertical approaching two; with the field
   // wall on top, a second hero while yours lives is absurd — the ruling.
   heroBison: 1, heroApc: 1,
+  // P7 T10 (owner): mine/wire families — a per-side budget rides the market
+  // so a mine war stays under the engine ceiling. Both sides' LIVE devices
+  // count together, one shared table (provisional F5).
+  mine: 12, wire: 16,
 };
 const FAMILY_OF_SQUAD = { rifles: "rifles", sniper: "marksman", sappers: "sapper", mortars: "mortarcrew", mg: "mgteam", engineers: "engineer", runners: "runner", breakers: "breaker" };
 const FAMILY_OF_TAG = { "": "rifles", sniper: "marksman", sapper: "sapper", gren: "mortarcrew", fast: "runner", heavy: "breaker" };
 const FAMILY_OF_TOWER = { mg: "mgtower", gun: "guntower", mortar: "mortartower", rocket: "rockettower", frost: "frosttower" };
 
-// marketCounts(world, squads) -> { family: standing count }. Men for
+// marketCounts(world, squads, mines) -> { family: standing count }. Men for
 // infantry families (live bodies), things for the rest. One pass over
-// world.bodies plus the squads array; deterministic.
-export function marketCounts(world, squads) {
+// world.bodies plus the squads array; deterministic. `mines` (P7 T10,
+// optional) is the game layer's own S.mines watched-point list — this
+// module stays pure and never imports mines.js (module purity), so the
+// caller hands the live list in and marketCounts just counts it, both
+// sides together, same as every other family.
+export function marketCounts(world, squads, mines) {
   const c = {};
   const add = (fam, n) => { if (fam) c[fam] = (c[fam] || 0) + n; };
   for (const sq of squads || []) {
@@ -56,6 +64,8 @@ export function marketCounts(world, squads) {
     else if (b.kind === "wall" && b.team === 1 && !b.course) add("wall", 1);
     else if (b.kind === "chunk" && b.sandbag) add("sandbag", 1);
   }
+  // P7 T10: mine/wire, both sides' LIVE devices together.
+  for (const m of mines || []) { if (m.live) add(m.kind === "wire" ? "wire" : "mine", 1); }
   return c;
 }
 
@@ -63,7 +73,9 @@ const wall = (n, pole) => {
   const m = Math.min(n, pole - 1); // stay off the pole
   return Math.min(WALL_CLAMP, pole / (pole - m));
 };
-const priced = (base, fam, counts) =>
+// exported (P7 T10) so mines.js's minePrices can ride the exact same curve
+// (module purity: mines.js has no reason to reimplement the wall formula).
+export const priced = (base, fam, counts) =>
   Math.max(1, Math.round(base * wall(counts[fam] || 0, 2 * MARKET_K[fam]) * wall(counts._men || 0, MARKET_KG)));
 
 // computePrices(counts) -> { player: {barKey: price}, foe: {tag: price} } —

@@ -262,6 +262,10 @@ export function serializeFront(ctx) {
       // assault the bell actually called, not a cancelled one.
       ws: JSON.parse(JSON.stringify(S.ws)),
       reg: { ...S.reg },
+      // P7 T10: watched points only — x/z/team/kind/live, rounded like every
+      // other saved coordinate. Defaulted (S.mines || []) so a fixture/state
+      // object built before this task (no mines field at all) still saves.
+      mines: (S.mines || []).map((m) => ({ x: r3(m.x), z: r3(m.z), t: m.team, k: m.kind, l: m.live ? 1 : 0 })),
     },
     towns: town.map((b) => ({ id: b.id, n0: b.n0, ruined: !!b.ruined })),
     census: cens(census), census2: cens(census2),

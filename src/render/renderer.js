@@ -298,6 +298,14 @@ export function washAlpha(v) {
   const t = (av - WASH_SEAM) / (1 - WASH_SEAM);
   return (t > 1 ? 1 : t) * WASH_MAX_A;
 }
+// P7 T10: MINES AND TRIPWIRES — invisible always to the other side (owner's
+// law). The list-builder R.setMines(list) mirrors: only team-1 LIVE devices
+// are ever drawn — the enemy's are never in the list, minefields are learned
+// by loss like the real war. Pure and exported so that law is directly
+// testable without a THREE/WebGL context (P7 T10 plan Step 1(g)).
+export function minesToDraw(list) {
+  return (list || []).filter((m) => m.team === 1 && m.live);
+}
 export function makeRenderer(canvas, world0, opts = {}) {
   let world = world0;
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance" });
@@ -1238,6 +1246,31 @@ export function makeRenderer(canvas, world0, opts = {}) {
     }
   }
 
+  // P7 T10: MINES AND TRIPWIRES — the two tiny instanced pools (a setDressing-
+  // style setter: the game layer calls R.setMines on lay/trigger/restore, not
+  // every frame). Dark disc for mines, a peg for wires; capacity 96 each,
+  // count-clamped. minesToDraw (module-level, above) filters to team-1 LIVE
+  // devices only — the enemy's are never in the list.
+  const MINE_CAP = 96, WIRE_CAP = 96;
+  const mineDiscMesh = pool(new THREE.CylinderGeometry(0.32, 0.32, 0.08, 10), toon(0x2a2f36), MINE_CAP, false);
+  const wirePegMesh = pool(new THREE.BoxGeometry(0.06, 0.35, 0.06), toon(0x8a7a52), WIRE_CAP, false);
+  function setMines(list) {
+    const live = minesToDraw(list);
+    let mi = 0, wi = 0;
+    for (const m of live) {
+      const gy = F.heightAt(m.x, m.z);
+      if (m.kind === "wire") {
+        if (wi >= WIRE_CAP) continue;
+        writeInst(wirePegMesh, wi++, m.x, gy + 0.18, m.z, null, 1, 1, 1);
+      } else {
+        if (mi >= MINE_CAP) continue;
+        writeInst(mineDiscMesh, mi++, m.x, gy + 0.04, m.z, null, 1, 1, 1);
+      }
+    }
+    mineDiscMesh.count = mi; mineDiscMesh.instanceMatrix.needsUpdate = true;
+    wirePegMesh.count = wi; wirePegMesh.instanceMatrix.needsUpdate = true;
+  }
+
   // ---- build overlay (tower defense): ghost pad + range preview + objective
   // marker + spawn banners. Lazy nulls until the game layer calls them, so
   // nothing here exists for the other modes.
@@ -2130,5 +2163,5 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // never calls this and keeps the shipped look exactly
   function setGrade(g) { postMat.uniforms.uGrade.value = Math.max(-1, Math.min(1, g || 0)); }
   const project = (x, y, z) => { const v = new THREE.Vector3(x, y, z); v.project(cam); return { x: v.x, y: v.y }; };
-  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, overlay, setDressing, rotateStep, updateTerritory, setFog, getFogDebug, chunkStats: () => chunkStats, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
+  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, overlay, setDressing, setMines, rotateStep, updateTerritory, setFog, getFogDebug, chunkStats: () => chunkStats, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
 }
