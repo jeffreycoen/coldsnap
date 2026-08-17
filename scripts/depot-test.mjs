@@ -7804,6 +7804,200 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 }
 // ==== end P7 T10 ==============================================================
 
+// ==== P7 T11: THE MANUAL LEARNS ARMOR, AND THE AUDIT ========================
+// mk1.41. One comprehensive fixture: a war state carrying everything P7
+// added — a player Bison mid-PATROL, a player APC with a squad sealed
+// aboard, an enemy Bison committed forward, an enemy APC mid-FERRY with
+// loose riders, live and spent mines both teams, the drawn commander, a
+// garrisoned man, and hero tags in both unlocked lists — round-tripped
+// through serializeFront -> parseFront -> restoreBodies/restoreSquads,
+// every named field checked by name. Also: _route re-derives (never
+// survives), a mid-possession save resumes to command view, and the flare
+// eye's _dieT.
+{
+  console.log("\n[p7 t11: the manual learns armor, and the audit]");
+  const field11 = makeField(9, 2.0, 1101);
+  const world11 = makeWorld({ field: field11, seed: 1101 });
+  world11.t = 100; // an arbitrary mid-run clock — the flare eye's _dieT is checked against this
+
+  // player Bison, mid-PATROL
+  const pBison = addBody(world11, { kind: "vehicle", team: 1, mass: BISON.mass, hx: BISON.hx, hy: BISON.hy, hz: BISON.hz,
+    x: 0, y: BISON.hy + 0.05, z: -10, hp: BISON.hp, friction: 0.85 });
+  pBison.vtype = "bison"; pBison.drv = "armor"; pBison.depotDrive = "auto"; pBison.order = "patrol";
+  pBison.dest = { x: 12, z: -30 }; pBison.tracks = "free"; pBison.homeX = 0; pBison.homeZ = -10; pBison.armor = BISON.armor;
+  pBison._patA = { x: 5, z: -5 }; pBison._patB = { x: 12, z: -30 };
+  pBison._route = [{ x: 1, z: 1 }, { x: 2, z: 2 }]; // a live route — must NOT survive
+
+  // player APC, a squad sealed aboard
+  const pApc = addBody(world11, { kind: "vehicle", team: 1, mass: APC.mass, hx: APC.hx, hy: APC.hy, hz: APC.hz,
+    x: 20, y: APC.hy + 0.05, z: -10, hp: APC.hp, friction: 0.85 });
+  pApc.vtype = "apc"; pApc.apcSeq = 1; pApc.drv = "apc"; pApc.depotDrive = "auto"; pApc.order = "defend"; pApc.tracks = "careful";
+  pApc.homeX = 20; pApc.homeZ = -10; pApc.armor = APC.armor;
+  const r1 = addBody(world11, { kind: "unit", team: 1, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 20, y: -60, z: -10, hp: 58 });
+  const r2 = addBody(world11, { kind: "unit", team: 1, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 20, y: -60, z: -10, hp: 58 });
+  r1.riding = true; r1.pinned = true; r2.riding = true; r2.pinned = true;
+  const sq1 = makeSquad(1, "rifles", 1, 20, -10);
+  sq1.ridingIn = 1; sq1.memberIds = [r1.id, r2.id];
+
+  // enemy Bison, committed forward
+  const eBison = addBody(world11, { kind: "vehicle", team: 2, mass: BISON.mass, hx: BISON.hx, hy: BISON.hy, hz: BISON.hz,
+    x: 0, y: BISON.hy + 0.05, z: 40, hp: BISON.hp, friction: 0.85 });
+  eBison.vtype = "bison"; eBison.drv = "armor"; eBison.depotDrive = "auto"; eBison.order = "move";
+  eBison.dest = { x: 0, z: 0 }; eBison.tracks = "careful"; eBison.homeX = 0; eBison.homeZ = 40;
+  eBison.committed = 1; eBison.bounty = BISON.bounty; eBison.armor = BISON.armor;
+
+  // enemy APC, mid-FERRY, loose riders
+  const eApc = addBody(world11, { kind: "vehicle", team: 2, mass: APC.mass, hx: APC.hx, hy: APC.hy, hz: APC.hz,
+    x: 20, y: APC.hy + 0.05, z: 40, hp: APC.hp, friction: 0.85 });
+  eApc.vtype = "apc"; eApc.apcSeq = 2; eApc.drv = "apc"; eApc.depotDrive = "auto"; eApc.order = "move";
+  eApc.dest = { x: 15, z: 10 }; eApc.tracks = "careful"; eApc.homeX = 20; eApc.homeZ = 40; eApc.ferry = "out";
+  const er1 = addBody(world11, { kind: "unit", team: 2, mass: 70, hx: 0.24, hy: 0.8, hz: 0.24, x: 20, y: -60, z: 40, hp: 44 });
+  const er2 = addBody(world11, { kind: "unit", team: 2, mass: 70, hx: 0.24, hy: 0.8, hz: 0.24, x: 20, y: -60, z: 40, hp: 44 });
+  er1.riding = true; er1.pinned = true; er1.rideApc = 2;
+  er2.riding = true; er2.pinned = true; er2.rideApc = 2;
+
+  // a garrisoned man
+  const gMan = addBody(world11, { kind: "unit", team: 2, mass: 70, hx: 0.24, hy: 0.8, hz: 0.24, x: 30, y: 0.88, z: 60, hp: 44 });
+  gMan.hold = true; gMan.garrison = true;
+
+  // the flare eye — a _dieT flag body, live at save time
+  const eye = addBody(world11, { kind: "flag", team: 1, mass: 0, hx: 0.05, hy: 0.05, hz: 0.05, x: 5, y: 2.5, z: 5 });
+  eye.sleeping = true; eye._dieT = world11.t + FLARE_S;
+
+  const T11 = makeTerritory(5, 5);
+  const S11 = {
+    bell: 7, resources: 300, kills: 12, spawnRR: 2, started: true, mode: null, sandbagOrient: 0,
+    nextSquadId: 2, zoom: 1, focus: { x: 0, z: 0 }, depotCensusAcc: 0, depotStanding: 1, enemyStanding: 1,
+    starvedStreak: 0, _reportedBreak: false, _reportedSpent: false,
+    cmdr: "bold", // P7 T8's doctrine
+    manifest: { unlocked: PLAYER_START.slice().concat(["hero_bison", "hero_apc"]), offers: [], offerBell: 0, cardUp: false, armedAt: 0 },
+    foe: { unlocked: ["hero_bison", "hero_apc"] },
+    intelUp: false, intelArmedAt: 0, lastDispatch: null, pendingPlan: null, intelPlan: null,
+    ws: {}, reg: {},
+    squads: [sq1],
+    mines: [
+      { x: 1.2345, z: -3.4, team: 1, kind: "mine", live: true },
+      { x: 5, z: 5, team: 2, kind: "mine", live: false },
+      { x: -2, z: 8, team: 1, kind: "wire", live: false },
+      { x: 9, z: -1, team: 2, kind: "wire", live: true },
+    ],
+    // a mid-possession save — the pinned law: this must never ride
+    possess: { kind: "vehicle", id: pBison.id },
+  };
+
+  const json11 = serializeFront({ S: S11, world: world11, T: T11, town: [], census: [], census2: [], rocks: [], smears: [], mapSeed: 1, rngSeed: 1 });
+  const parsed11 = parseFront(json11);
+  ok("T11(0): the P7-comprehensive save round trip parses back", parsed11.ok, parsed11.reason);
+  ok("T11(0b): a mid-possession save never writes \"possess\" anywhere in the file (S.possess is not read by serializeFront)",
+    !json11.includes("possess"));
+
+  const world11b = makeWorld({ field: makeField(9, 2.0, 1101), seed: 1101 });
+  world11b.t = parsed11.ok ? parsed11.data.world.t : 0; // the boot order (DepotGame.jsx): world.t set BEFORE restoreBodies
+  const bodies11 = parsed11.ok ? restoreBodies(world11b, parsed11.data, []) : [];
+  if (parsed11.ok) restoreWelds(world11b, parsed11.data, bodies11);
+  const squads11 = parsed11.ok ? restoreSquads(parsed11.data, bodies11) : [];
+
+  const rBison = bodies11.find((b) => b.kind === "vehicle" && b.team === 1 && b.vtype === "bison");
+  const rApc = bodies11.find((b) => b.kind === "vehicle" && b.team === 1 && b.vtype === "apc");
+  const rEBison = bodies11.find((b) => b.kind === "vehicle" && b.team === 2 && b.vtype === "bison");
+  const rEApc = bodies11.find((b) => b.kind === "vehicle" && b.team === 2 && b.vtype === "apc");
+  const rRiders1 = bodies11.filter((b) => b.kind === "unit" && b.team === 1 && b.riding);
+  const rRiders2 = bodies11.filter((b) => b.kind === "unit" && b.team === 2 && b.rideApc != null);
+  const rGarrison = bodies11.find((b) => b.kind === "unit" && b.team === 2 && b.garrison);
+  const rEye = bodies11.find((b) => b.kind === "flag" && b._dieT != null);
+  const rSq = squads11.find((s) => s.ridingIn === 1);
+
+  // (1) player Bison, mid-PATROL
+  ok("T11(1a): vtype rides", !!rBison && rBison.vtype === "bison");
+  ok("T11(1b): drv rides", !!rBison && rBison.drv === "armor");
+  ok("T11(1c): depotDrive rides", !!rBison && rBison.depotDrive === "auto");
+  ok("T11(1d): order rides", !!rBison && rBison.order === "patrol");
+  ok("T11(1e): dest rides", !!rBison && rBison.dest && Math.abs(rBison.dest.x - 12) < 0.001 && Math.abs(rBison.dest.z - (-30)) < 0.001);
+  ok("T11(1f): tracks rides", !!rBison && rBison.tracks === "free");
+  ok("T11(1g): homeX/homeZ ride", !!rBison && rBison.homeX === 0 && rBison.homeZ === -10);
+  ok("T11(1h): armor rides", !!rBison && rBison.armor === BISON.armor);
+  ok("T11(1i): _patA/_patB ride (flat objects)",
+    !!rBison && rBison._patA && Math.abs(rBison._patA.x - 5) < 0.001 && rBison._patB && Math.abs(rBison._patB.z - (-30)) < 0.001);
+  ok("T11(1j): _route does NOT survive — it re-derives, not carries", !!rBison && rBison._route === undefined);
+
+  // (2)/(3) player APC + sealed squad
+  ok("T11(2a): vtype rides", !!rApc && rApc.vtype === "apc");
+  ok("T11(2b): apcSeq rides", !!rApc && rApc.apcSeq === 1);
+  ok("T11(2c): drv/depotDrive/tracks ride", !!rApc && rApc.drv === "apc" && rApc.depotDrive === "auto" && rApc.tracks === "careful");
+  ok("T11(2d): homeX/homeZ ride", !!rApc && rApc.homeX === 20 && rApc.homeZ === -10);
+  ok("T11(3a): squad.ridingIn rides", !!rSq);
+  ok("T11(3b): sealed riders restore riding/pinned", rRiders1.length === 2 && rRiders1.every((u) => u.riding === true && u.pinned === true));
+  ok("T11(3c): sealed riders restore pinned at RIDE_Y (-60)", rRiders1.every((u) => Math.abs(u.pos.y - (-60)) < 0.001));
+  ok("T11(3d): the squad's memberIds re-link to the restored riders",
+    !!rSq && rSq.memberIds.length === 2 && rRiders1.every((u) => rSq.memberIds.indexOf(u.id) >= 0));
+
+  // (4) enemy Bison, committed forward
+  ok("T11(4a): committed rides", !!rEBison && rEBison.committed === 1);
+  ok("T11(4b): order/dest ride", !!rEBison && rEBison.order === "move" && rEBison.dest && rEBison.dest.x === 0 && rEBison.dest.z === 0);
+  ok("T11(4c): bounty rides", !!rEBison && rEBison.bounty === BISON.bounty);
+  ok("T11(4d): armor/homeX/homeZ ride", !!rEBison && rEBison.armor === BISON.armor && rEBison.homeX === 0 && rEBison.homeZ === 40);
+
+  // (5) enemy APC, mid-FERRY + loose riders
+  ok("T11(5a): the ferry string rides", !!rEApc && rEApc.ferry === "out");
+  ok("T11(5b): apcSeq/order/dest ride", !!rEApc && rEApc.apcSeq === 2 && rEApc.order === "move" && rEApc.dest && Math.abs(rEApc.dest.x - 15) < 0.001);
+  ok("T11(5c): loose riders restore riding/pinned/rideApc",
+    rRiders2.length === 2 && rRiders2.every((u) => u.riding === true && u.pinned === true && u.rideApc === 2));
+  ok("T11(5d): loose riders restore pinned at RIDE_Y (-60)", rRiders2.every((u) => Math.abs(u.pos.y - (-60)) < 0.001));
+
+  // (6) mines: live and spent, both teams, both kinds
+  const rmRows = parsed11.ok ? parsed11.data.run.mines.map((m) => ({ x: m.x, z: m.z, team: m.t, kind: m.k, live: !!m.l })) : [];
+  ok("T11(6a): all four mine rows ride", rmRows.length === 4, rmRows.length);
+  ok("T11(6b): a live player mine rides with its coordinates and live flag",
+    rmRows.some((m) => m.team === 1 && m.kind === "mine" && m.live === true && Math.abs(m.x - 1.2345) < 0.001 && Math.abs(m.z - (-3.4)) < 0.001));
+  ok("T11(6c): a spent enemy mine rides live:false", rmRows.some((m) => m.team === 2 && m.kind === "mine" && m.live === false));
+  ok("T11(6d): a spent player wire rides live:false", rmRows.some((m) => m.team === 1 && m.kind === "wire" && m.live === false));
+  ok("T11(6e): a live enemy wire rides live:true", rmRows.some((m) => m.team === 2 && m.kind === "wire" && m.live === true));
+
+  // (7) the commander's doctrine
+  ok("T11(7): S.cmdr rides its explicit channel", parsed11.ok && parsed11.data.run.cmdr === "bold");
+
+  // (8) hold/garrison
+  ok("T11(8a): hold rides", !!rGarrison && rGarrison.hold === true);
+  ok("T11(8b): garrison rides", !!rGarrison && rGarrison.garrison === true);
+
+  // (9) hero tags in both unlocked lists
+  ok("T11(9a): a hero tag rides in S.manifest.unlocked", parsed11.ok && parsed11.data.run.manifest.unlocked.indexOf("hero_bison") >= 0);
+  ok("T11(9b): a hero tag rides in S.foe.unlocked", parsed11.ok && parsed11.data.run.foe.unlocked.indexOf("hero_apc") >= 0);
+
+  // (10) the flare eye — a _dieT flag body: decide whether it saves cleanly.
+  // FINDING: _dieT is a plain finite number (not an id-bearing cache), and
+  // world.t is restored verbatim (RES.world.t, law 2 in save.js) — so a
+  // restored eye's _dieT stays a valid absolute sim-clock stamp against the
+  // restored world.t. CHOICE: no exclusion. It rides the generic body sweep
+  // like any other scalar and the burn-out math (stepMines' own
+  // `world.t >= b._dieT`) still holds after resume.
+  ok("T11(10a): the flare eye's _dieT rides (a plain finite number, not a cache)",
+    !!rEye && Math.abs(rEye._dieT - 106) < 0.001);
+  ok("T11(10b): world.t is restored verbatim, so the eye's burn-out math still holds after resume",
+    parsed11.ok && Math.abs(world11b.t - 100) < 0.001 && !!rEye && rEye._dieT > world11b.t);
+  {
+    // prove the burn-out fires correctly post-restore: advance world11b.t
+    // past _dieT and run stepMines' own reap pass — the eye must die.
+    world11b.t = rEye._dieT + 0.01;
+    stepMines(world11b, []);
+    ok("T11(10c): the restored eye still burns out correctly at its _dieT", !world11b.byId.get(rEye.id));
+  }
+
+  // (11) mid-possession resumes to command view: the RES restore block
+  // (DepotGame.jsx) never assigns S.possess from the file — the base S
+  // object's possess:null is the only initializer, unconditional.
+  const dsrc11 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  const start11 = dsrc11.indexOf("const r = RES.run;");
+  const end11 = dsrc11.indexOf("stateRef.current = S;");
+  const resBlock11 = start11 >= 0 && end11 > start11 ? dsrc11.slice(start11, end11) : "";
+  ok("T11(11a): the RES restore block source-extracts", resBlock11.length > 0);
+  ok("T11(11b): the RES restore block never assigns S.possess (a mid-possession save resumes to command view)",
+    !/S\.possess\s*=/.test(resBlock11));
+  ok("T11(11c): the base S object initializes possess: null unconditionally (not gated on RES)",
+    /possess: null, possessInput: null, joy: null,/.test(dsrc11));
+}
+// ==== end P7 T11 ==============================================================
+
 // HOTFIX mk1.37 pin: every audio.js `.value = ` assignment is either fin()-wrapped
 // or a bare numeric literal (regex /\.value = -?\d[\d.]*;/) — no raw computed
 // expression reaches a WebAudio param unguarded.

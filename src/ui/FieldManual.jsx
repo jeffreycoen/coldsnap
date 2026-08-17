@@ -7,6 +7,7 @@ const CARDS = [
   { title: "REAL STONE", body: "The whole battlefield is real physics. Collapse a wall on the men behind it. Drop a roof on a squad. Rubble is a weapon." },
   { title: "YOUR MEN", body: "Tap a squad, give it orders. Men are your eyes — what they can't see, you can't see. Only engineers build." },
   { title: "TAKE CONTROL", body: "Any squad or tower can be yours. Drive it, aim it, fire it. The front fights on without you." },
+  { title: "YOUR ARMOR", body: "A Bison and a transport stand at your depot. Order them like squads — or take the controls yourself. The tracks brake for your own men until you say otherwise. Theirs to kill, and dear to replace: lost armor returns only off a late convoy, at a price." },
   { title: "THE BELL", body: "Scrap flows every second. Every 90 seconds the bell rings and the convoy offers new mercenaries — pick one. Then they attack." },
   { title: "THE MARKET", body: "One market, both armies. What the field is full of costs more. Buy out what they need before they can." },
   { title: "THE FALL", body: "Lose your depot and the save burns. No rewinds. But every valley is drawn fresh — a new front is always waiting." },
