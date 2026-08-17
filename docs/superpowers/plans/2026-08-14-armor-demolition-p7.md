@@ -10,10 +10,15 @@
 - Task 3 — `p7-task-3-seat-of-the-war.md` — SHIPPED mk1.32 (d5cc184)
 - Task 4 — `p7-task-4-apc.md` — SHIPPED mk1.33 (5949967), Amendment 1 included
 - Task 5 — `p7-task-5-precast-depot.md` — SHIPPED mk1.34 (17ee617)
-- Task 6 — `p7-task-6-defensive-opening.md` — WRITTEN, awaiting the owner's approval
-- Tasks 7-11 — skeleton below, written when their turn comes
+- Task 6 — `p7-task-6-defensive-opening.md` — SHIPPED mk1.35 (ba1fa28)
+- Task 7 — `p7-task-7-runners-breakers.md` — SHIPPED mk1.36 (1bcbf5a)
+- Hotfix — `p7-hotfix-mk137-fault-names-itself.md` — SHIPPED mk1.37 (981429d)
+- Task 8 — `p7-task-8-enemy-drive.md` — SHIPPED mk1.38 (65c7cbc)
+- Task 9 — `p7-task-9-hero-tier.md` — SHIPPED mk1.39 (e039027)
+- Task 10 — `p7-task-10-mines.md` — SHIPPED mk1.40 (34907ef)
+- Task 11 — `p7-task-11-manual-audit.md` — SHIPPED mk1.41 (304644c)
 
-**OPEN DEFECT:** the owner hit an ENGINE FAULT knocking down the enemy depot (mk1.34) — screenshot pending; headless knockdown repro is clean, so the fault is browser-side. Amends into Task 6 if the text arrives before dispatch, else hotfixes.
+**ALL ELEVEN TASKS SHIPPED. Before the close:** the capacity check (two hulls a side + minefields under the ramp's ceiling) and the owner's playtest. The owner is running a DEBUGGING pass first (2026-08-17). Open: the ENGINE FAULT root cause (mk1.37's overlay now names the site — a new screenshot pinpoints it); the setTargetAtTime audio gap; the siege-hardness caveat; the plow-stutter FEEL confirmation (the precast depot was the measured fix — awaiting the owner's hands).
 
 **Architecture notes from the 2026-08-14 reading (for the plan writer):** the engine's `stepDrive`/`aiDrive`/`driveHull` (core.js ~916-971) already drive ANY vehicle carrying `b.squad` (goal-seek) or the possessed `world.bisonId` (via `world.control`) — the driver framework is a depot-side ORDER layer that sets goals and triggers, plus one guarded divergence so the depot can command team-1 hulls and possessed vehicles without the demo-global `bisonId` path. The enemy tank driver to re-seat is `units.js` `stepTank` (~117-163). `bisonFire`/`bisonMg`/`recoverBison` exist (core.js 2418/2440/1319). Vehicles are already sight eyes (sight.js SIGHT.vehicle 36) and territory emitters (territory.js EMIT.vehicle). The renderer has `buildBison`/`buildScout`/`buildTruck` and vehicle fog rules (renderer.js ~620-1410); the APC needs one new mesh. Mines are designed as game-layer watched points, NOT physics bodies — no engine cost, invisible by construction; save/resume must carry them.
 
