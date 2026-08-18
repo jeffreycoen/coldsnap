@@ -46,7 +46,7 @@ const MANUAL_KEY = "coldsnap-wf-manual";
 // 1m inset is gone. Cell centers sit at u,v = ±59; cell edges land exactly
 // on the ±60 rim, so a stream running the rim's full width has no off-grid
 // endpoint.
-const GRID_CS = 2.0, GRID_W = 60, GRID_H = 60;
+const GRID_CS = 2.0, GRID_W = 90, GRID_H = 90;
 const GRID_OX = -(GRID_W * GRID_CS) / 2, GRID_OZ = -(GRID_H * GRID_CS) / 2;
 let ORIENT = 0;
 // Transform formulas live in orient.js (pure, ORIENT-explicit, headlessly
@@ -59,7 +59,7 @@ const invW = (x, z) => invWFor(ORIENT, x, z);
 // canonical (u, v) — beyond it there is no ground to stand on, only the
 // painted horizon. world.inRim, the renderer's rim descriptor and the order
 // clamp below all read THESE two numbers so they cannot drift apart.
-const RIM_HALF_U = 60, RIM_HALF_V = 60;
+const RIM_HALF_U = 90, RIM_HALF_V = 90;
 // P1.5 Task 1 (mk0.50): an off-map destination tap becomes the nearest point
 // still on the field. The transform itself is orient.js's (pure, testable);
 // this is the same thin ORIENT-binding wrapper fwdU/invW are.
@@ -75,21 +75,21 @@ function genMap(seed) {
   // CORNERS, point-symmetric — the longest front the square holds. Depth
   // hugs the rim; the u side is drawn once and mirrored with a hair of
   // jitter. genMap's rng is its own free stream — draw shape is ours.
-  const depotDepth = 44 + r() * 8;                       // provisional (F5)
+  const depotDepth = 66 + r() * 12;                       // provisional (F5)
   const cornerSide = r() < 0.5 ? 1 : -1;
-  const depotU1 = cornerSide * (34 + r() * 14);          // the player's corner
-  const depotU2 = -depotU1 + (r() - 0.5) * 8;            // the far corner
+  const depotU1 = cornerSide * (51 + r() * 21);          // the player's corner
+  const depotU2 = -depotU1 + (r() - 0.5) * 12;            // the far corner
   const objU = depotU1, objV = depotDepth - 3; // the objective sits 3m field-side of the player depot
   // THE BANDS (T2): 2-4 rock bands, evenly seeded across the middle ground,
   // each jittered — the fixed three-band skeleton is gone.
   const nBands = 2 + Math.floor(r() * 3);
   const bands = [];
-  for (let i = 0; i < nBands; i++) bands.push(-28 + (i + 0.5) * (58 / nBands) + (r() - 0.5) * 10);
+  for (let i = 0; i < nBands; i++) bands.push(-42 + (i + 0.5) * (87 / nBands) + (r() - 0.5) * 15);
   // THE PASSES (T2): 1-3 gaps per band, drawn anywhere across the width.
   const passes = bands.map((z) => {
     const n = 1 + Math.floor(r() * 3);
     const out = [];
-    for (let i = 0; i < n; i++) out.push({ x: -50 + r() * 100, z });
+    for (let i = 0; i < n; i++) out.push({ x: -75 + r() * 150, z });
     return out;
   });
   // THE STREAM (T3, mk1.02): one per map — full width, meandering, in a
@@ -100,18 +100,18 @@ function genMap(seed) {
   // streamV; genMap's rng is its own free stream, so the draw order is ours.
   let streamV = (bands[0] + bands[1]) / 2;   // fallback: between the first two bands
   for (let i = 0; i < 20; i++) {
-    const v = -22 + r() * 44;
+    const v = -33 + r() * 66;
     if (bands.every((b) => Math.abs(v - b) >= 8)) { streamV = v; break; }
   }
   const streamW = 2.2 + r() * 1.8;           // half-width: a 4.4-8m channel // provisional (F5)
-  const bridgeU = (r() - 0.5) * 90;
+  const bridgeU = (r() - 0.5) * 135;
   const streamPts = [];
-  for (let u = -60; u <= 60; u += 10) streamPts.push({ u, v: streamV + (r() - 0.5) * 6 });
+  for (let u = -90; u <= 90; u += 15) streamPts.push({ u, v: streamV + (r() - 0.5) * 6 });
   const stream = { pts: streamPts, w: streamW, v: streamV, bridgeU };
   const rocks = [];
   for (let bi = 0; bi < bands.length; bi++) {
     const density = 0.35 + r() * 0.65;
-    for (let x = -55; x <= 55; x += 5.5 + r() * 3) {
+    for (let x = -82.5; x <= 82.5; x += 8.25 + r() * 4.5) {
       if (r() > density) continue;
       const z = bands[bi] + (r() - 0.5) * 2.5;
       if (passes[bi].some((g) => Math.abs(x - g.x) < 6.5)) continue;
@@ -124,7 +124,7 @@ function genMap(seed) {
   // THE SPAWNS (T2): 2-4, spread across the enemy edge with jitter.
   const nSpawn = 2 + Math.floor(r() * 3);
   const spawns = [];
-  for (let i = 0; i < nSpawn; i++) spawns.push({ x: -45 + (i + 0.5) * (90 / nSpawn) + (r() - 0.5) * 10, z: GRID_OZ + 2 });
+  for (let i = 0; i < nSpawn; i++) spawns.push({ x: -67.5 + (i + 0.5) * (135 / nSpawn) + (r() - 0.5) * 15, z: GRID_OZ + 2 });
   // THE ROADS (T2): 0-3 — a front owes nobody a road. Each drawn road runs
   // spawn -> one pass per band -> the objective. Roads are terrain and looks;
   // the march runs the flow field either way.
@@ -155,7 +155,7 @@ function genMap(seed) {
   const ponds = [];
   const nP = 1 + Math.floor(r() * 4);
   for (let i = 0; i < 30 && ponds.length < nP; i++) {
-    const x = -50 + r() * 100, z = -12 + r() * 48, rad = 5.5 + r() * 2.5;
+    const x = -75 + r() * 150, z = -18 + r() * 72, rad = 5.5 + r() * 2.5;
     if (passes.flat().some((g) => Math.abs(x - g.x) < 9 && Math.abs(z - g.z) < 14)) continue;
     if (roadDist(x, z) < rad + 6) continue;
     // T2: clear of BOTH depots (the old check knew one fixed objective)
@@ -170,7 +170,7 @@ function genMap(seed) {
   const hills = [];
   const nHills = 1 + Math.floor(r() * 3);
   for (let k = 0, placed = 0; k < 60 && placed < nHills; k++) {
-    const hu = -48 + r() * 96, hv = -46 + r() * 88;
+    const hu = -72 + r() * 144, hv = -69 + r() * 132;
     const hr = 10 + r() * 5, hh = 3 + r() * 2;
     if (Math.abs(hv - streamV) < hr + 10) continue;
     if (ponds.some((q) => Math.hypot(hu - q.x, hv - q.z) < q.r + hr * 0.7 + 4)) continue;
@@ -219,8 +219,8 @@ function genMap(seed) {
     const tpl = BIG[Math.floor(r() * BIG.length)];
     const swap = r() < 0.5;
     const nx = swap ? tpl.nz : tpl.nx, nz = swap ? tpl.nx : tpl.nz;
-    const x = -48 + r() * 96;
-    const z = -44 + r() * 84;
+    const x = -72 + r() * 144;
+    const z = -66 + r() * 126;
     const rad = Math.max(nx, nz) * MASON.pitch / 2 + 2;
     if (passes.flat().some((g) => Math.abs(x - g.x) < rad + 4 && Math.abs(z - g.z) < 12)) continue;
     if (spawns.some((sp) => Math.hypot(x - sp.x, z - sp.z) < rad + 4)) continue;
@@ -244,7 +244,7 @@ function genMap(seed) {
       const tpl = TPL[Math.floor(r() * TPL.length)];
       const swap = r() < 0.5;
       const nx = swap ? tpl.nz : tpl.nx, nz = swap ? tpl.nx : tpl.nz;
-      const x = -52 + r() * 104;
+      const x = -78 + r() * 156;
       const z = benches[bi][0] + r() * Math.max(2, benches[bi][1] - benches[bi][0]);
       const rad = Math.max(nx, nz) * MASON.pitch / 2 + 2;
       if (passes.flat().some((g) => Math.abs(x - g.x) < rad + 4 && Math.abs(z - g.z) < 12)) continue;
@@ -259,7 +259,7 @@ function genMap(seed) {
   }
   const nRuin = Math.floor(r() * 3);
   for (let k = 0, placed = 0; k < 14 && placed < nRuin; k++) {
-    const x = -50 + r() * 100, z = -depotDepth + r() * 20;
+    const x = -75 + r() * 150, z = -depotDepth + r() * 30;
     if (spawns.some((sp) => Math.hypot(x - sp.x, z - sp.z) < 10)) continue;
     if (town.some((q) => Math.hypot(x - q.x, z - q.z) < 10)) continue;
     if (Math.abs(z - streamV) < 9) continue; // T3: old ruins stay clear of the stream
@@ -274,8 +274,8 @@ function genMap(seed) {
     const L = 3 + Math.floor(r() * 6), H = 2 + Math.floor(r() * 3);
     const swap = r() < 0.5;
     const nx = swap ? 1 : L, nz = swap ? L : 1;
-    const x = -50 + r() * 100;
-    const z = -44 + r() * 84;
+    const x = -75 + r() * 150;
+    const z = -66 + r() * 126;
     const rad = L * MASON.pitch / 2 + 1;
     if (passes.flat().some((g) => Math.abs(x - g.x) < rad + 4 && Math.abs(z - g.z) < 8)) continue;
     if (spawns.some((sp) => Math.hypot(x - sp.x, z - sp.z) < rad + 3)) continue;
@@ -324,7 +324,7 @@ function makeMap(seed) {
     // T2: the grown predicate — town minimum, no depot foul, explicit spacing
     // (guaranteed by construction, asserted anyway), both connectivities.
     if (TOWN.length >= 6 && !m.depotFoul &&
-        Math.hypot(m.depotU1 - m.depotU2, 2 * m.depotDepth) >= 70 &&
+        Math.hypot(m.depotU1 - m.depotU2, 2 * m.depotDepth) >= 105 &&
         checkConnectivity(g, SPAWN_POINTS, og.gx, og.gz) &&
         checkConnectivity(g, SPAWN_POINTS, dg.gx, dg.gz)) return;
   }
@@ -507,7 +507,7 @@ function planTrees() {
     if (SPAWN_POINTS.some((sp) => Math.hypot(x - sp.x, z - sp.z) < 4.5)) return false;
     if (roadD(x, z) < 3.5) return false;
     const c = invW(x, z);
-    if (Math.abs(c.u) > 58 || Math.abs(c.v) > 58) return false;
+    if (Math.abs(c.u) > 88 || Math.abs(c.v) > 88) return false;
     for (const t of TOWN) {
       if (Math.abs(x - t.x) < (t.nx * MASON.pitch) / 2 + 1.5 &&
           Math.abs(z - t.z) < (t.nz * MASON.pitch) / 2 + 1.5) return false;
@@ -515,8 +515,8 @@ function planTrees() {
     return true;
   };
   // the rim treeline — the old edge dressing, kept (draws before tests, as before)
-  for (let tu = -56; tu <= 56; tu += 3.2) {
-    const w = fwdU(tu + (rT() - 0.5) * 1.6, -54.5 + rT() * 3.2);
+  for (let tu = -86; tu <= 86; tu += 3.2) {
+    const w = fwdU(tu + (rT() - 0.5) * 1.6, -84.5 + rT() * 3.2);
     if (clearAt(w.x, w.z)) out.push({ x: w.x, z: w.z });
   }
   // a copse on every hill's flanks (the owner's wooded hills) — these RETRY
@@ -532,7 +532,7 @@ function planTrees() {
   // drawn copses: 2-5, anywhere clear on the map
   const nCop = 2 + Math.floor(rT() * 4);
   for (let c = 0; c < nCop; c++) {
-    const cu = -52 + rT() * 104, cv = -52 + rT() * 104;
+    const cu = -78 + rT() * 156, cv = -78 + rT() * 156;
     const n = 5 + Math.floor(rT() * 5);
     for (let i = 0; i < n; i++) {
       const a = rT() * 6.28, rr = 1.5 + rT() * 4.5;
@@ -543,7 +543,7 @@ function planTrees() {
   // rare forests: 0-2, 20-40 trees
   const nFor = Math.floor(rT() * 3);
   for (let f = 0; f < nFor; f++) {
-    const fu = -48 + rT() * 96, fv = -48 + rT() * 96;
+    const fu = -72 + rT() * 144, fv = -72 + rT() * 144;
     const n = 20 + Math.floor(rT() * 21);
     for (let i = 0; i < n; i++) {
       const a = rT() * 6.28, rr = 2 + rT() * 9;
@@ -1344,7 +1344,7 @@ export default function DepotGame({ onExit, resume = null }) {
       const seed = RES ? RES.map.seed
         : Number.isFinite(urlSeed) ? urlSeed : Math.floor(Date.now() % 1000000);
       makeMap(seed);
-      const field = makeField(121, 2.0, MAP_SEED);
+      const field = makeField(181, 2.0, MAP_SEED);
       buildDepotTerrain(field, MAP_SEED);
       if (RES) {
         // The heightfield goes back OVER the freshly grown terrain — same
@@ -1704,7 +1704,7 @@ export default function DepotGame({ onExit, resume = null }) {
           sampleVal: (x, z) => { const c = invW(x, z); return valueAt(T, c.u, c.v); },
         },
       });
-      const EXT = { x: 65, z: 65 }; // square rim 60 + 5m margin; same at every rotation
+      const EXT = { x: 95, z: 95 }; // square rim 90 + 5m margin; same at every rotation
       const A = makeGameAudio();
       A.setReflectors([
         ...ROCKS.filter((k) => k.r >= 4),
@@ -1716,9 +1716,9 @@ export default function DepotGame({ onExit, resume = null }) {
       if (STREAM) {
         let run = [];
         const flush = () => { if (run.length >= 2) streamRibs.push({ pts: run, w: STREAM.w + 1 }); run = []; };
-        for (let u = -60; u <= 60; u += 2) {
+        for (let u = -90; u <= 90; u += 2) {
           if (Math.abs(u - STREAM.bridgeU) < 3) { flush(); continue; }
-          const i2 = Math.max(0, Math.min(STREAM.pts.length - 2, Math.floor((u + 60) / 10)));
+          const i2 = Math.max(0, Math.min(STREAM.pts.length - 2, Math.floor((u + 90) / 15)));
           const a = STREAM.pts[i2], b = STREAM.pts[i2 + 1];
           const t = Math.max(0, Math.min(1, (u - a.u) / (b.u - a.u || 1)));
           const w = fwdU(u, a.v + (b.v - a.v) * t);

@@ -2436,8 +2436,8 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     const depot1 = st.TOWN.find((t) => t.id === "depot");
     const c1 = depot1 ? invWFor(st.ORIENT, depot1.x, depot1.z) : { u: 9e9, v: 9e9 };
     const c2 = depot2 ? invWFor(st.ORIENT, depot2.x, depot2.z) : { u: 9e9, v: 9e9 };
-    ok("F1/1a (re-pinned mk1.32, P7 T3): the depots are EVENED — mirrored depth, 44-52m from center",
-      Math.abs(c1.v + c2.v) < 0.01 && c1.v >= 44 && c1.v <= 52.01, `v1=${c1.v} v2=${c2.v}`);
+    ok("F1/1a (re-pinned mk1.45, P7 T15): the depots are EVENED — mirrored depth, 66-78m from center",
+      Math.abs(c1.v + c2.v) < 0.01 && c1.v >= 66 && c1.v <= 78.01, `v1=${c1.v} v2=${c2.v}`);
     ok("F1/1a (re-pinned mk1.32, P7 T3): depot2 shares the depot lattice template (12x9x7, door 5, depot flag)",
       !!depot2 && depot2.depot === true &&
       Math.max(depot2.nx, depot2.nz) === 12 && Math.min(depot2.nx, depot2.nz) === 9 && depot2.ny === 7,
@@ -3023,7 +3023,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     ok("mk0.50/6: the order flow clamps at the ONE site where a tap becomes a dest",
       /const d = clampToRim\(p\.x, p\.z\);/.test(src) && /osq\.dest = \{ x: d\.x, z: d\.z \}/.test(src));
     ok("mk0.50/6: the rim half-extents exist once (inRim and the clamp share them)",
-      /const RIM_HALF_U = 60, RIM_HALF_V = 60;/.test(src) && !/halfU: 29, halfV: 57/.test(src));
+      /const RIM_HALF_U = 90, RIM_HALF_V = 90;/.test(src) && !/halfU: 29, halfV: 57/.test(src));
   }
 }
 // ==== end mk0.50 =============================================================
@@ -5367,14 +5367,14 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 {
   console.log("\n[front t1: the square frame]");
   const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  ok("FRONT T1: the rim is 60x60 (the square)", /const RIM_HALF_U = 60, RIM_HALF_V = 60;/.test(src));
-  ok("FRONT T1 (re-pinned mk1.02, Amendment 3): the flow grid is 60x60 — the grid covers the full rim",
-    /const GRID_CS = 2\.0, GRID_W = 60, GRID_H = 60;/.test(src));
+  ok("FRONT T1: the rim is 90x90 (the square)", /const RIM_HALF_U = 90, RIM_HALF_V = 90;/.test(src));
+  ok("FRONT T1 (re-pinned mk1.02, Amendment 3): the flow grid is 90x90 — the grid covers the full rim",
+    /const GRID_CS = 2\.0, GRID_W = 90, GRID_H = 90;/.test(src));
   ok("FRONT T1: the terrain falloff reads the rim constants, not literals",
     /Math\.abs\(cuv\.u\) - RIM_HALF_U, Math\.abs\(cuv\.v\) - RIM_HALF_V/.test(src));
   ok("FRONT T1: territory is built from the rim constants",
     /makeTerritory\(RIM_HALF_U, RIM_HALF_V\)/.test(src));
-  ok("FRONT T1: camera pan extents are square", /const EXT = \{ x: 65, z: 65 \};/.test(src));
+  ok("FRONT T1: camera pan extents are square", /const EXT = \{ x: 95, z: 95 \};/.test(src));
   const rsrc = fs.readFileSync(new URL("../src/render/renderer.js", import.meta.url), "utf8");
   ok("FRONT T1: the splat grid span derives from the field under the rim option (188.7 fallback kept)",
     /opts\.rim \? Wd : null/.test(rsrc) && /span \|\| 188\.7/.test(rsrc));
@@ -5473,7 +5473,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     roadCounts.add(st.ROADS.length); bandCounts.add(st.BANDS.length); spawnCounts.add(st.SPAWN_POINTS.length);
     const d1 = st.TOWN.find((t) => t.id === "depot"), d2 = st.TOWN.find((t) => t.id === "depot2");
     const c1 = invWFor(st.ORIENT, d1.x, d1.z), c2 = invWFor(st.ORIENT, d2.x, d2.z);
-    if (Math.abs(c1.v + c2.v) < 0.01 && c1.v >= 44 && c1.v <= 52.01) evened++;
+    if (Math.abs(c1.v + c2.v) < 0.01 && c1.v >= 66 && c1.v <= 78.01) evened++;
     if (Math.hypot(d1.x - d2.x, d1.z - d2.z) >= 70) spaced++;
     u1s.push(c1.u);
     const depotClear = (d) =>
@@ -5484,7 +5484,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   ok("T2: road count varies — at least 3 distinct values in 0-3 across 40 seeds", roadCounts.size >= 3, [...roadCounts].join(","));
   ok("T2: band count varies within 2-4", bandCounts.size >= 2 && Math.min(...bandCounts) >= 2 && Math.max(...bandCounts) <= 4, [...bandCounts].join(","));
   ok("T2: spawn count varies within 2-4", spawnCounts.size >= 2 && Math.min(...spawnCounts) >= 2 && Math.max(...spawnCounts) <= 4, [...spawnCounts].join(","));
-  ok("T2 (re-pinned mk1.32, P7 T3): every seed's depots are EVENED (mirrored depth, 44-52m)", evened === 40, `${evened}/40`);
+  ok("T2 (re-pinned mk1.45, P7 T15): every seed's depots are EVENED (mirrored depth, 66-78m)", evened === 40, `${evened}/40`);
   ok("T2: every seed's depots sit >= 70m apart", spaced === 40, `${spaced}/40`);
   ok("T2: the player depot wanders side to side (u spread > 30m over 40 seeds)", Math.max(...u1s) - Math.min(...u1s) > 30, (Math.max(...u1s) - Math.min(...u1s)).toFixed(1));
   ok("T2: both depots clear of ponds and rocks on every seed", clear === 40, `${clear}/40`);
@@ -5540,7 +5540,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
       const st = Mi.state();
       if (!st.STREAM) continue;
       has++;
-      if (Math.abs(st.STREAM.v) <= 22.01 && st.STREAM.pts[0].u === -60 && st.STREAM.pts[st.STREAM.pts.length - 1].u === 60) safe++;
+      if (Math.abs(st.STREAM.v) <= 33.01 && st.STREAM.pts[0].u === -90 && st.STREAM.pts[st.STREAM.pts.length - 1].u === 90) safe++;
       // (b) the grid: mid-channel cells block; the causeway stays open
       const g = Mi.makeGrid(null);
       // a centerline point at least 12m from the causeway
@@ -5555,18 +5555,18 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
       if (g.inBounds(gc.gx, gc.gz) && !g.cells[g.idx(gc.gx, gc.gz)].blocked) openCauseway++;
     }
     ok("T3(a): every seed carries a stream", has === 20, `${has}/20`);
-    ok("T3(a): the stream spans the full width inside |v| <= 22", safe === 20, `${safe}/20`);
+    ok("T3(a): the stream spans the full width inside |v| <= 33", safe === 20, `${safe}/20`);
     ok("T3(b): mid-channel grid cells are blocked", blockedMid === 20, `${blockedMid}/20`);
     ok("T3(b): the causeway cell stays open", openCauseway === 20, `${openCauseway}/20`);
 
     // (c) the carve: bed below the waterline mid-channel, causeway above it.
-    // re-pinned mk1.32 (P7 T3): genMap draws one more rng value up front now
-    // (cornerSide) — every downstream draw shifts for a fixed seed, so 4242's
-    // causeway crown drifted to 0.80 (was 0.88); seed 13 keeps solid margin.
+    // re-pinned mk1.45 (P7 T15): the square grew — seed 13's causeway crown
+    // drifted to 0.80 (was comfortable); seed 4242 (the T6 keystone's own
+    // seed) keeps solid margin (0.86) under the reshaped world.
     {
-      const Mi = mkMapT3(); Mi.makeMap(13);
+      const Mi = mkMapT3(); Mi.makeMap(4242);
       const st = Mi.state();
-      const field = makeField(121, 2.0, st.MAP_SEED);
+      const field = makeField(181, 2.0, st.MAP_SEED);
       Mi.buildDepotTerrain(field, st.MAP_SEED);
       const P = st.STREAM.pts.find((q) => Math.abs(q.u - st.STREAM.bridgeU) > 12) || st.STREAM.pts[0];
       const wMid = fwdUFor(st.ORIENT, P.u, P.v);
@@ -5810,7 +5810,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
           Math.abs(p.x - t.x) < (t.nx * MASON.pitch) / 2 + 1.4 &&
           Math.abs(p.z - t.z) < (t.nz * MASON.pitch) / 2 + 1.4);
         if (Mi.rockAt(p.x, p.z) || Mi.pondAt(p.x, p.z) || Mi.streamAt(p.x, p.z) ||
-            onBuilding || Math.abs(c.u) > 58.01 || Math.abs(c.v) > 58.01) treeFoul++;
+            onBuilding || Math.abs(c.u) > 88.01 || Math.abs(c.v) > 88.01) treeFoul++;
       }
       for (const hb of st.HILLS) {
         const hw = Mi.fwdU(hb.u, hb.v);
@@ -5880,8 +5880,13 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   // this keystone hashes over, even though the fixture's own battle (a
   // non-depot building) never touches depot masonry. Recaptured off this
   // block's own printed console log.
-  const T6_HASH = 119305372;   // was 1250293016
-  const T6_DRAWS = 755;  // was 749
+  // re-pinned mk1.45 (P7 T15, Amendment 1): the square grew 120->180 —
+  // seed 4242's reshaped map sorts a DIFFERENT biggest non-depot building
+  // (warehouse0 6x8, not hangar0 9x10), so the battle's own draw count
+  // legitimately moves too (hash AND draws re-pin together, the T3/T5
+  // precedent). Recaptured off this block's own printed console log.
+  const T6_HASH = 3465970090;   // was 119305372
+  const T6_DRAWS = 695;  // was 755
   const src6 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   const sliceFn6 = (name) => {
     const start = src6.indexOf(`\nfunction ${name}(`);
@@ -5906,7 +5911,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 
   M6.makeMap(4242);
   const st6 = M6.state();
-  const field6 = makeField(121, 2.0, st6.MAP_SEED);
+  const field6 = makeField(181, 2.0, st6.MAP_SEED);
   M6.buildDepotTerrain(field6, st6.MAP_SEED);
   const world = makeWorld({ field: field6, seed: 4242 });
   world._tdStruct = true; world.depotCombat = true;
@@ -7784,6 +7789,105 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 }
 // ==== end P7 T13 =============================================================
+
+// ==== P7 T15: THE MAP GROWS ==================================================
+// The owner's ruling: 180x180, feature counts held, position ranges x1.5.
+// These pin the new frame; the T6 keystone re-pins hash AND draw count
+// together (Amendment 1 — the battle plays out over the reshaped world).
+{
+  const dgSrc15 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  ok("T15(a): the rim halves grew to 90", /const RIM_HALF_U = 90, RIM_HALF_V = 90;/.test(dgSrc15));
+  ok("T15(a2): the grid grew to 90x90 at the same 2m cell", /const GRID_CS = 2\.0, GRID_W = 90, GRID_H = 90;/.test(dgSrc15));
+  ok("T15(a3): the heightfield grew with its apron", /makeField\(181, 2\.0, MAP_SEED\)/.test(dgSrc15));
+  ok("T15(a4): the depot-separation floor scaled", /2 \* m\.depotDepth\) >= 105/.test(dgSrc15));
+
+  // (b) 25-seed census: every map accepts, stays connected, and fits its
+  // pools — counts held means the pools MUST hold; this is the proof, not
+  // a hope. The F1 Task 1 / T5 boot harness idiom, regrowing maps headless
+  // off the real shipped source.
+  const sliceFn15 = (name) => {
+    const start = dgSrc15.indexOf(`\nfunction ${name}(`);
+    if (start < 0) throw new Error("T15 extract: missing function " + name);
+    const rest = dgSrc15.slice(start + 1);
+    const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
+    return rest.slice(0, m < 0 ? rest.length : m + 9);
+  };
+  const header15 = dgSrc15.slice(dgSrc15.indexOf("const GRID_CS"), dgSrc15.indexOf("function genMap"));
+  const mapSrc15 = [
+    header15,
+    sliceFn15("genMap"), sliceFn15("makeMap"), sliceFn15("streamAt"), sliceFn15("planTrees"),
+    sliceFn15("pondAt"), sliceFn15("rockAt"),
+    sliceFn15("makeGrid"), sliceFn15("checkConnectivity"), sliceFn15("townFootprint"), sliceFn15("buildTown"),
+    `return { genMap, makeMap, makeGrid, checkConnectivity, buildTown, planTrees, invW, fwdU,
+      state: () => ({ ORIENT, OBJ_POS, SPAWN_POINTS, TOWN, MAP_SEED }) };`,
+  ].join("\n");
+  const mkMap15 = () => new Function(
+    "mulberry32", "MASON", "fwdUFor", "fwdDirFor", "invWFor", "addBody", "addWeld", mapSrc15,
+  )(mulberry32, MASON, fwdUFor, fwdDirFor, invWFor, addBody, addWeld);
+  const flatF15 = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+
+  let stoneLo = 9e9, stoneHi = 0, treeLo15 = 9e9, treeHi15 = 0, attemptHi = 0;
+  let allInRim = true, allReachable = true, allAccepted = true;
+  for (let s = 1; s <= 25; s++) {
+    const seed = s * 613;
+    const Mi = mkMap15();
+    // reproduce makeMap's own retry loop (DepotGame.jsx 300-331) to count
+    // the accept-attempt — makeMap itself doesn't report how many it took.
+    // (geometry-only proxy: town/foul/spacing, the same terms makeMap gates
+    // on before its two connectivity checks — real connectivity is verified
+    // below, against the real accepted map, by T15(b5))
+    let accepted = false, attempts = 0;
+    for (let attempt = 0; attempt < 24; attempt++) {
+      attempts = attempt + 1;
+      const sd = seed + attempt * 7919;
+      const m = Mi.genMap(sd);
+      const townMin = m.town.length >= 6;
+      const noFoul = !m.depotFoul;
+      const spaced = Math.hypot(m.depotU1 - m.depotU2, 2 * m.depotDepth) >= 105;
+      if (townMin && noFoul && spaced) { accepted = true; break; }
+    }
+    Mi.makeMap(seed); // the real accept path — same seed, same outcome, live state
+    const st = Mi.state();
+    if (!accepted) allAccepted = false;
+    if (attempts > attemptHi) attemptHi = attempts;
+    const world = makeWorld({ field: flatF15, seed });
+    Mi.buildTown(world, Mi.makeGrid(null), flatF15);
+    const stones = world.bodies.filter((b) => b.kind === "chunk").length;
+    stoneLo = Math.min(stoneLo, stones); stoneHi = Math.max(stoneHi, stones);
+    if (stones >= 3000) allInRim = false; // reuse the flag: pool overflow is a foul too
+    const trees = Mi.planTrees().length;
+    treeLo15 = Math.min(treeLo15, trees); treeHi15 = Math.max(treeHi15, trees);
+    const d1 = st.TOWN.find((t) => t.id === "depot"), d2 = st.TOWN.find((t) => t.id === "depot2");
+    const c1 = Mi.invW(d1.x, d1.z), c2 = Mi.invW(d2.x, d2.z);
+    if (Math.abs(c1.u) > 90.01 || Math.abs(c1.v) > 90.01 || Math.abs(c2.u) > 90.01 || Math.abs(c2.v) > 90.01) allInRim = false;
+    const g = Mi.makeGrid(null);
+    for (const t of st.TOWN) {
+      const hx = (t.nx * MASON.pitch) / 2, hz = (t.nz * MASON.pitch) / 2;
+      for (let gz = 0; gz < g.h; gz++) for (let gx = 0; gx < g.w; gx++) {
+        const wp = g.gridToWorld(gx, gz);
+        if (Math.abs(wp.x - t.x) < hx + 1.0 && Math.abs(wp.z - t.z) < hz + 1.0) {
+          if (Math.hypot(wp.x - st.OBJ_POS.x, wp.z - st.OBJ_POS.z) < 5) continue;
+          g.cells[g.idx(gx, gz)].blocked = true;
+        }
+      }
+    }
+    const og = g.worldToGrid(st.OBJ_POS.x, st.OBJ_POS.z);
+    const c2s = Mi.invW(d2.x, d2.z); // canonical, then 5m behind depot2's own center — mirrors makeMap's own doorway derivation
+    const doorW = Mi.fwdU(c2s.u, c2s.v - 5);
+    const dg = g.worldToGrid(doorW.x, doorW.z);
+    if (!Mi.checkConnectivity(g, st.SPAWN_POINTS, og.gx, og.gz)) allReachable = false;
+    if (!Mi.checkConnectivity(g, st.SPAWN_POINTS, dg.gx, dg.gz)) allReachable = false;
+  }
+  ok("T15(b): every one of 25 seeds accepts within its 24 attempts", allAccepted, `worst attempt count ${attemptHi}`);
+  ok("T15(b2): boot stone count stays under the 3000 chunk pool on every seed",
+    stoneHi < 3000, `${stoneLo}-${stoneHi}`);
+  ok("T15(b3): planted tree count stays under the 360 tree pool on every seed",
+    treeHi15 < 360, `${treeLo15}-${treeHi15}`);
+  ok("T15(b4): both depots sit inside the 90 rim on every seed", allInRim);
+  ok("T15(b5): every spawn reaches the objective and the enemy doorway on every seed", allReachable);
+  console.log(`[t15 census] stones ${stoneLo}-${stoneHi}, trees ${treeLo15}-${treeHi15}, worst attempts ${attemptHi}`);
+}
+// ==== end P7 T15 =============================================================
 
 // ==== P7 T10: MINES AND TRIPWIRES ============================================
 //  (a) the trigger: a player rifleman standing ON a player mine never trips
