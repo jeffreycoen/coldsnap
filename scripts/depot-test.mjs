@@ -48,6 +48,7 @@ import {
 } from "../src/depot/mines.js";
 import { makeMap, TOWN } from "../src/depot/mapgen.js";
 import { musterFreshStart } from "../src/depot/muster.js";
+import { startBuildLine, stepBuildLine } from "../src/depot/buildlines.js";
 import fs from "node:fs";
 
 // identity fwdDir (DepotGame.jsx's ORIENT-aware transform, ORIENT===0 case)
@@ -3318,6 +3319,10 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   {
     const dsrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     const muSrc60 = fs.readFileSync(new URL("../src/depot/muster.js", import.meta.url), "utf8");
+    // P7 T20: the lay machinery (lineCells/startBuildLine/linePieces/
+    // layPieceAt/stepBuildLine) moved to buildlines.js — the pins below on
+    // that literal text retarget there (sweep license, unchanged content).
+    const blSrc60 = fs.readFileSync(new URL("../src/depot/buildlines.js", import.meta.url), "utf8");
     ok("mk0.60/6: the build chips are engineer-only, at the order site and in the radial",
       /if \(sq\.type !== "engineers"\) return;/.test(dsrc) && /engineer: sq\.type === "engineers"/.test(dsrc)
       // COMMAND T1 (mk0.80) re-pin: the chip row's `hud.squadSel.engineer && (`
@@ -3341,24 +3346,24 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     // ground tap) joined the same clamp shape — a fourth caller, count 2 -> 3.
     ok("mk0.60/6: build points clamp to the rim through the same clamp shape",
       /const d = clampToRim\(p\.x, p\.z\);/.test(dsrc) && (dsrc.match(/clampToRim\(p\.x, p\.z\)/g) || []).length === 3);
-    ok("mk0.60/6: the cell walk steps ONE axis at a time (consecutive cells share an EDGE)",
-      /const stepX = z === g1\.gz \? true : x === g1\.gx \? false : 2 \* err > -dz;/.test(dsrc));
+    ok("mk0.60/6: the cell walk steps ONE axis at a time (consecutive cells share an EDGE) (retargeted mk1.50, P7 T20: lineCells moved to buildlines.js)",
+      /const stepX = z === g1\.gz \? true : x === g1\.gx \? false : 2 \* err > -dz;/.test(blSrc60));
     // Jeff, 2026-08-12: ONE rotation for the whole line — the dominant axis of
     // start->end, decided once at order time. NOT per-step; and the
     // auto-continue conventions must never override it.
-    ok("mk0.60/6: one rotation per line, taken from the order's dominant axis",
-      /const orient = len > 1e-6 \? \(Math\.abs\(dxw\) >= Math\.abs\(dzw\) \? 0 : 1\) : null;/.test(dsrc)
-      && /const orient = job\.orient != null \? job\.orient/.test(dsrc));
+    ok("mk0.60/6: one rotation per line, taken from the order's dominant axis (retargeted mk1.50, P7 T20: startBuildLine/layPieceAt moved to buildlines.js)",
+      /const orient = len > 1e-6 \? \(Math\.abs\(dxw\) >= Math\.abs\(dzw\) \? 0 : 1\) : null;/.test(blSrc60)
+      && /const orient = job\.orient != null \? job\.orient/.test(blSrc60));
     ok("mk0.60/6: no per-cell rotation survives anywhere in the line machinery",
       !/row\.orient/.test(dsrc));
-    ok("mk0.60/6: placement runs the real spawners and the real gate",
-      /spawnWallCourses\(world, row\.x, field\.heightAt\(row\.x, row\.z\), row\.z, orient\)/.test(dsrc)
-      && /spawnSandbag\(world, row\.x, row\.z, orient\)/.test(dsrc)
-      && /const v = validatePlacement\(\{\n\s+blocked: !!\(cell\.blocked \|\| cell\.wallId\), ice: !!cell\.ice,\n\s+held: canBuild\(T, c0\.u, c0\.v\), resources: S\.resources, cost,/.test(dsrc));
-    ok("mk0.60/6: an occupied cell is SKIPPED, scrap running dry stops the line",
-      /return v\.msg === "NO SCRAP" \? "dry" : "skip";/.test(dsrc) && /job\.dry = true;/.test(dsrc));
-    ok("mk0.60/6: a wall lay holds the squad on squad._pauseT, the existing dwell field",
-      /sq\._pauseT = WALL_LAY_PAUSE_S;/.test(dsrc));
+    ok("mk0.60/6: placement runs the real spawners and the real gate (retargeted mk1.50, P7 T20: layPieceAt moved to buildlines.js)",
+      /spawnWallCourses\(world, row\.x, field\.heightAt\(row\.x, row\.z\), row\.z, orient\)/.test(blSrc60)
+      && /spawnSandbag\(world, row\.x, row\.z, orient\)/.test(blSrc60)
+      && /const v = validatePlacement\(\{\n\s+blocked: !!\(cell\.blocked \|\| cell\.wallId\), ice: !!cell\.ice,\n\s+held: canBuild\(T, c0\.u, c0\.v\), resources: S\.resources, cost,/.test(blSrc60));
+    ok("mk0.60/6: an occupied cell is SKIPPED, scrap running dry stops the line (retargeted mk1.50, P7 T20: layPieceAt/stepBuildLine moved to buildlines.js)",
+      /return v\.msg === "NO SCRAP" \? "dry" : "skip";/.test(blSrc60) && /job\.dry = true;/.test(blSrc60));
+    ok("mk0.60/6: a wall lay holds the squad on squad._pauseT, the existing dwell field (retargeted mk1.50, P7 T20: stepBuildLine moved to buildlines.js)",
+      /sq\._pauseT = WALL_LAY_PAUSE_S;/.test(blSrc60));
     ok("mk0.60/6 (re-pinned mk1.32, P7 T3: seedBags(depotT, streamKey) generalized to both depots;" +
       " retargeted mk1.49, P7 T19: seedBags moved to muster.js)" +
       " the seeded depot bags draw off a MAP-seed stream, never world.rng",
@@ -4005,6 +4010,10 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 // over a hand grid, the same convention VISION T4's scan mirrors use.
 {
   const dsrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  // P7 T20: linePieces (and its cell-filter predicate) moved to
+  // buildlines.js — the (e) pin below retargets there (sweep license,
+  // unchanged content).
+  const blSrcCmd2 = fs.readFileSync(new URL("../src/depot/buildlines.js", import.meta.url), "utf8");
 
   // (a) the second tap PROPOSES: consumeOrderTap's build branch creates
   // S.linePending and never calls startBuildLine itself (only acceptLine
@@ -4018,8 +4027,8 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   // (b) acceptLine: the only path that calls startBuildLine, and it nulls
   // S.selSquadId (the deselect the owner's rule requires on accept).
   const acceptBody = (dsrc.match(/const acceptLine = \(\) => \{[\s\S]*?\n      const rejectLine = \(\) => \{/) || [""])[0];
-  ok("COMMAND T2(b): acceptLine exists and calls startBuildLine",
-    /else startBuildLine\(sq, lp\.kind, lp\.a, lp\.b\);/.test(acceptBody));
+  ok("COMMAND T2(b): acceptLine exists and calls startBuildLine (re-taught mk1.50, P7 T20: startBuildLine's new-arity call)",
+    /else startBuildLine\(grid, sq, lp\.kind, lp\.a, lp\.b, toast\);/.test(acceptBody));
   ok("COMMAND T2(b): acceptLine nulls S.selSquadId (full deselect on accept)",
     /S\.selSquadId = null; S\.orderMode = null; S\.buildPt0 = null;/.test(acceptBody));
 
@@ -4048,8 +4057,8 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   // occupied, iced, unheld — so a gap in the preview is a gap in the wall.
   // Mirrored here over a hand grid, kept in lockstep with the source line:
   //   if (cell.blocked || cell.wallId || cell.ice || !canBuild(T, c0.u, c0.v)) continue; // an honest gap
-  ok("COMMAND T2(e): the source predicate matches the mirror line-for-line",
-    /if \(cell\.blocked \|\| cell\.wallId \|\| cell\.ice \|\| !canBuild\(T, c0\.u, c0\.v\)\) continue; \/\/ an honest gap/.test(dsrc));
+  ok("COMMAND T2(e): the source predicate matches the mirror line-for-line (retargeted mk1.50, P7 T20: linePieces moved to buildlines.js)",
+    /if \(cell\.blocked \|\| cell\.wallId \|\| cell\.ice \|\| !canBuild\(T, c0\.u, c0\.v\)\) continue; \/\/ an honest gap/.test(blSrcCmd2));
   {
     const handGrid = [
       { blocked: false, wallId: null, ice: false, held: true },   // laid
@@ -6227,12 +6236,13 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   console.log("\n[p6 t3: only engineers build]");
   const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   const muSrcT3 = fs.readFileSync(new URL("../src/depot/muster.js", import.meta.url), "utf8");
+  const blSrcT3 = fs.readFileSync(new URL("../src/depot/buildlines.js", import.meta.url), "utf8");
   ok("T3: the bar has no wall slot", !/key: "wall", label: "WALL"/.test(src));
   ok("T3: the bar has no sandbag slot", !/key: "sandbag", label: "SANDBAG"/.test(src));
   ok("T3: no build mode is selected by default", /mode: null, sellMode: false/.test(src));
   ok("T3: the ground tap guards the tower path on a live mode", /if \(S\.mode && TOWER_SPECS\[S\.mode\]\)/.test(src));
-  ok("T3: the engineer line machinery is untouched (both spawners live)",
-    /spawnWallCourses\(world, row\.x/.test(src) && /spawnSandbag\(world, row\.x, row\.z, orient\)/.test(src));
+  ok("T3: the engineer line machinery is untouched (both spawners live) (retargeted mk1.50, P7 T20: layPieceAt moved to buildlines.js)",
+    /spawnWallCourses\(world, row\.x/.test(blSrcT3) && /spawnSandbag\(world, row\.x, row\.z, orient\)/.test(blSrcT3));
   ok("T3: the seeded depot bags are untouched (retargeted mk1.49, P7 T19: seedBags moved to muster.js)",
     /spawnSandbag\(world, bx, bz,/.test(muSrcT3));
   ok("T3: the harness door stays (buildAt via __DEPOTBUILD__)", /__DEPOTBUILD__ = \(gx, gz, mode\) => buildAt\(gx, gz, mode \|\| "wall"\)/.test(src));
@@ -7866,7 +7876,11 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     const mgSrcT13 = fs.readFileSync(new URL("../src/depot/mapgen.js", import.meta.url), "utf8");
     ok("T13(i): makeGrid stamps the terrain masks", /if \(field\) stampTerrainMasks\(G, field\)/.test(mgSrcT13));
     ok("T13(i2): the enemy flow pays 3x to march a cliff lip", /cells\[ni\]\.drop \? 3 : 1/.test(mgSrcT13));
-    ok("T13(i3): every structure stamp carries its team", (dgSrc.match(/\.bTeam = /g) || []).length >= 8);
+    // P7 T20: layPieceAt (one .bTeam = stamp) moved to buildlines.js — the
+    // count below sums both files, unchanged threshold (sweep license).
+    const blSrcT13 = fs.readFileSync(new URL("../src/depot/buildlines.js", import.meta.url), "utf8");
+    ok("T13(i3): every structure stamp carries its team (retargeted mk1.50, P7 T20: layPieceAt's stamp moved to buildlines.js — counted across both files)",
+      (dgSrc.match(/\.bTeam = /g) || []).length + (blSrcT13.match(/\.bTeam = /g) || []).length >= 8);
   }
   // (j) Amendment 1 — the green threads (source shape; the look is the
   // owner's live acceptance, smoke's zero-page-errors gate covers the boot)
@@ -8139,6 +8153,11 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   };
   const dgSrc17 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   const saveSrc17 = fs.readFileSync(new URL("../src/depot/save.js", import.meta.url), "utf8");
+  // P7 T20: the lay loop and the seeded-ring stamp moved out of DepotGame.jsx
+  // (buildlines.js/muster.js) — the two pins below retarget to where the
+  // pinned literal text now lives (sweep license, unchanged content).
+  const blSrc17 = fs.readFileSync(new URL("../src/depot/buildlines.js", import.meta.url), "utf8");
+  const muSrc17 = fs.readFileSync(new URL("../src/depot/muster.js", import.meta.url), "utf8");
   // (a) the reach test, behaviorally — live member in reach, dead men don't count
   {
     const w = makeWorld({ field: flatF17, seed: 31 });
@@ -8155,7 +8174,8 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   {
     ok("T17(b): the pick arms the bar, heroes stay two-tap", /if \(!key\.startsWith\("hero_"\)\) setMode\(key\);/.test(dgSrc17));
     ok("T17(c): the active build button toggles off", /if \(S\.mode === m\) \{/.test(dgSrc17));
-    ok("T17(a4): the lay loop is reach-gated", /if \(!memberNearRow\(world, sq, row, LAY_REACH\)\) break;/.test(dgSrc17));
+    ok("T17(a4): the lay loop is reach-gated (retargeted mk1.50, P7 T20: stepBuildLine moved to buildlines.js)",
+      /if \(!memberNearRow\(world, sq, row, LAY_REACH\)\) break;/.test(blSrc17));
   }
   // (d) friendly bags turn a hull route; men walk it untouched
   {
@@ -8188,7 +8208,8 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   // (f) the bag lifecycle is wired (source shape) and the side rides the save
   {
     ok("T17(f): the stamp helper exists and stamps side + cell", /const stampBag = \(b, side\) => \{/.test(dgSrc17));
-    ok("T17(f2): the seeded rings stamp their depot's side", /stampBag\(spawnSandbag\(/.test(dgSrc17));
+    ok("T17(f2): the seeded rings stamp their depot's side (retargeted mk1.50, P7 T20: layPieceAt moved to buildlines.js — dgSrc loses its last matching site; muster.js's seeded-ring stamp is the surviving one)",
+      /stampBag\(spawnSandbag\(/.test(muSrc17));
     ok("T17(f3): a resumed bag re-stamps its cell", /if \(b\.sandbag && b\.alive\) stampBag\(b, b\.bagSide \|\| 1\);/.test(dgSrc17));
     ok("T17(f4): dead bags release their ground at the derived cadence", /c\.bagId == null/.test(dgSrc17));
     ok("T17(f5): bagSide RIDES the save (never in the drop list)", !/BODY_HANDLED[\s\S]{0,600}bagSide/.test(saveSrc17));
@@ -8257,6 +8278,85 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 }
 // ==== end P7 T19 =============================================================
+
+// ==== P7 T20: THE BUILD LINES MOVE OUT =======================================
+// Reorganization 3 of 5 (owner): the two-point lay machinery lives in
+// buildlines.js, verbatim bodies with explicit parameters; the interface
+// glue stays behind and calls in.
+{
+  let blSrc20 = "";
+  try { blSrc20 = fs.readFileSync(new URL("../src/depot/buildlines.js", import.meta.url), "utf8"); } catch (e) {}
+  const dgSrc20 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  ok("T20(a): buildlines.js owns the machinery",
+    /export function stepBuildLine\(world, grid, field, T, S, sq, ctx, toast\)/.test(blSrc20) &&
+    /export function layPieceAt\(world, grid, field, T, S, job, row, ctx\)/.test(blSrc20) &&
+    /export function startBuildLine\(grid, sq, kind, a, b, toast\)/.test(blSrc20) &&
+    /export function linePieces\(grid, field, T, kind, a, b\)/.test(blSrc20) &&
+    /export function lineCells\(grid, a, b\)/.test(blSrc20) && /export function pieceHalf\(kind, orient\)/.test(blSrc20));
+  ok("T20(a2): DepotGame no longer defines what it now imports",
+    !/const layPieceAt = /.test(dgSrc20) && !/const lineCells = /.test(dgSrc20) &&
+    !/const startBuildLine = /.test(dgSrc20) && /from "\.\/buildlines\.js"/.test(dgSrc20));
+  ok("T20(a3): the mount wires the driver through the context",
+    /const layCtx = \{ stampBag, recomputeFlow, objG, setMines: \(m\) => R\.setMines\(m\) \};/.test(dgSrc20) &&
+    /S\.stepBuildLine = \(sq\) => stepBuildLine\(world, grid, field, T, S, sq, layCtx, toast\);/.test(dgSrc20));
+  // (b) the machinery, called for real — a wall line on a synthetic world
+  // lays through the imported driver end to end.
+  {
+    const flatF20 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
+    const w = makeWorld({ field: flatF20, seed: 41 });
+    // identity-mapped mini grid, cs 2 — the T16/T17 mkGrid shape, local name
+    // (those helpers are block-scoped to their own tasks, so this task gets
+    // its own copy of the same idiom rather than reaching across blocks).
+    const mkGrid20 = (n) => {
+      const cells = new Array(n * n);
+      for (let i = 0; i < cells.length; i++) cells[i] = { blocked: false, terrain: false, ice: false, wallId: null, building: null, bTeam: 0, steep: false, drop: false };
+      const G = { cells, w: n, h: n, cs: 2,
+        idx: (gx, gz) => gz * n + gx,
+        inBounds: (gx, gz) => gx >= 0 && gx < n && gz >= 0 && gz < n,
+        worldToGrid: (x, z) => ({ gx: Math.floor(x / 2) + (n >> 1), gz: Math.floor(z / 2) + (n >> 1) }),
+        gridToWorld: (gx, gz) => ({ x: (gx - (n >> 1)) * 2 + 1, z: (gz - (n >> 1)) * 2 + 1 }) };
+      G.cellAt = (x, z) => { const g = G.worldToGrid(x, z); return G.inBounds(g.gx, g.gz) ? cells[G.idx(g.gx, g.gz)] : null; };
+      return G;
+    };
+    const G = mkGrid20(20); // any of the suite's mini-grid helpers with cellAt
+    const sq = makeSquad(1, "engineers", 1, -5, 1);
+    spawnSquadMembers(w, sq);
+    const S20 = { resources: 500, mines: [], sandbagOrient: 0, _market: null, _minePrices: null, squads: [sq] };
+    const ctx20 = { stampBag: () => {}, recomputeFlow: () => {}, objG: { gx: 10, gz: 19 }, setMines: () => {} };
+    // T20 deviation (Step 1, licensed fit 1): canBuild(T, u, v) reads
+    // T.halfU/halfV/cs/nx/nz/v (territory.js's cellOf/holderAt) — not
+    // stubbable as a bare object without reimplementing those reads, so
+    // this is the real makeTerritory(90, 90) (matches RIM_HALF_U/V), filled
+    // green (v.fill(1)) so every cell answers "held" — permissive by
+    // construction, no territory.js edit.
+    const T20 = makeTerritory(90, 90); T20.v.fill(1);
+    startBuildLine(G, sq, "bags", { x: -5, z: 1 }, { x: 5, z: 1 }, () => {});
+    ok("T20(b): the order arms — rows planned, phase toStart", !!sq._build && sq._build.rows.length >= 5 && sq._build.phase === "toStart");
+    sq.order = "defend"; sq.dest = null;                        // simulate the arrival handoff
+    stepBuildLine(w, G, flatF20, T20, S20, sq, ctx20, () => {}); // flips to laying
+    // T20 deviation (Step 1, licensed fit 2 — arrival flow): the literal
+    // "hands present at the far end" step deadlocks the real driver — once
+    // arrived, layPieceAt's while loop drains job.rows in ONE call, in
+    // row order starting at the line's near end, breaking the instant
+    // memberNearRow fails; hands only at the far end never reach the near
+    // rows. Real intent (arm -> handoff -> hands at rows -> all rows lay ->
+    // job closes): both engineers are placed 1m off the line's z-axis
+    // (clear of the piece-overlap skip, ph.hz + u.hz + LAY_MAN_PAD = 0.78m)
+    // and spread along x so every row sits within LAY_REACH(3) of one of
+    // them — the whole line lays in the single arrived call.
+    const mem20 = sq.memberIds.map((id) => w.byId.get(id));
+    mem20[0].pos.x = -2.5; mem20[0].pos.z = 2;
+    mem20[1].pos.x = 2.5; mem20[1].pos.z = 2;
+    sq.anchor = { x: 5, z: 1 };                                  // anchor at the far end
+    sq.order = "defend";                                         // arrived
+    for (let i = 0; i < 80; i++) { sq._pauseT = 0; stepBuildLine(w, G, flatF20, T20, S20, sq, ctx20, () => {}); if (!sq._build) break; }
+    let bags = 0;
+    for (const b of w.bodies) if (b.sandbag && b.alive) bags++;
+    ok("T20(b2): the line laid real bags through the real driver", bags >= 3, bags);
+    ok("T20(b3): the job closed and the books were charged", sq._build === null && S20.resources < 500, S20.resources);
+  }
+}
+// ==== end P7 T20 =============================================================
 
 // ==== P7 T10: MINES AND TRIPWIRES ============================================
 //  (a) the trigger: a player rifleman standing ON a player mine never trips
@@ -8422,15 +8522,19 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   // the headless suite doesn't build; same convention mk0.60/6 above uses).
   {
     const dsrc10f = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("T10(f): layPieceAt gains a device branch for mines/wires",
-      /if \(job\.kind === "mines" \|\| job\.kind === "wires"\) \{/.test(dsrc10f));
-    ok("T10(f2): no cell claim, no validatePlacement — only water\\/blocked-terrain cells refuse",
-      /if \(cell\.blocked \|\| cell\.ice\) return "skip";/.test(dsrc10f) && !/if \(job\.kind === "mines" \|\| job\.kind === "wires"\) \{[\s\S]{0,400}validatePlacement/.test(dsrc10f));
-    ok("T10(f3): a device is a watched point, one per clear cell, at the live price",
-      /S\.mines\.push\(\{ x: row\.x, z: row\.z, team: 1, kind: job\.kind === "mines" \? "mine" : "wire", live: true \}\);/.test(dsrc10f) &&
-      /S\.resources -= cost;\s*\n\s*R\.setMines\(S\.mines\);/.test(dsrc10f));
-    ok("T10(f4): linePieces' ghost mirrors layPieceAt's exact skip rule for devices (water\\/blocked-terrain only, no ground-held gate)",
-      /if \(isDevice\) \{ if \(cell\.blocked \|\| cell\.ice\) continue; \}/.test(dsrc10f));
+    // P7 T20: layPieceAt/linePieces moved to buildlines.js — (f)-(f4) below
+    // retarget to that literal text (sweep license); (f3) also re-teaches
+    // R.setMines -> ctx.setMines per the task's own substitution table.
+    const blSrc10f = fs.readFileSync(new URL("../src/depot/buildlines.js", import.meta.url), "utf8");
+    ok("T10(f): layPieceAt gains a device branch for mines/wires (retargeted mk1.50, P7 T20: layPieceAt moved to buildlines.js)",
+      /if \(job\.kind === "mines" \|\| job\.kind === "wires"\) \{/.test(blSrc10f));
+    ok("T10(f2): no cell claim, no validatePlacement — only water\\/blocked-terrain cells refuse (retargeted mk1.50, P7 T20: layPieceAt moved to buildlines.js)",
+      /if \(cell\.blocked \|\| cell\.ice\) return "skip";/.test(blSrc10f) && !/if \(job\.kind === "mines" \|\| job\.kind === "wires"\) \{[\s\S]{0,400}validatePlacement/.test(blSrc10f));
+    ok("T10(f3): a device is a watched point, one per clear cell, at the live price (retargeted mk1.50, P7 T20: layPieceAt moved to buildlines.js; re-taught R.setMines -> ctx.setMines)",
+      /S\.mines\.push\(\{ x: row\.x, z: row\.z, team: 1, kind: job\.kind === "mines" \? "mine" : "wire", live: true \}\);/.test(blSrc10f) &&
+      /S\.resources -= cost;\s*\n\s*ctx\.setMines\(S\.mines\);/.test(blSrc10f));
+    ok("T10(f4): linePieces' ghost mirrors layPieceAt's exact skip rule for devices (water\\/blocked-terrain only, no ground-held gate) (retargeted mk1.50, P7 T20: linePieces moved to buildlines.js)",
+      /if \(isDevice\) \{ if \(cell\.blocked \|\| cell\.ice\) continue; \}/.test(blSrc10f));
     ok("T10(f5): the sapper pie gains MINES and WIRES wedges",
       /key: "build_mines", icon: "◆", label: "MINES"/.test(dsrc10f) && /key: "build_wires", icon: "⌁", label: "WIRES"/.test(dsrc10f));
     ok("T10(f6): the wedges are gated to sappers, mirroring the engineer gate",
