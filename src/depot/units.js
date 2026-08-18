@@ -303,6 +303,20 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u
     }
   }
   if (u.hold) { // vantage hold (4C): permanently claims the march tick
+    // P7 T16: THE YIELD — a hull's lane outranks the post, briefly; the post
+    // wins it back. Seek the yield point while fresh, then walk home.
+    if (u._yield && u._yield.until <= world.t) u._yield = null;
+    const yg = u._yield || (u._yieldHome && Math.hypot(u._yieldHome.x - u.pos.x, u._yieldHome.z - u.pos.z) > 0.5 ? u._yieldHome : null);
+    if (!u._yield && u._yieldHome && !yg) u._yieldHome = null;          // home again — stand down
+    if (yg) {
+      const dx = yg.x - u.pos.x, dz = yg.z - u.pos.z, d = Math.hypot(dx, dz) || 1;
+      if (u.sleeping) { u.sleeping = false; }
+      u.settled = false;
+      u.v.x += ((dx / d) * spec.speed - u.v.x) * Math.min(1, 4 * dt);
+      u.v.z += ((dz / d) * spec.speed - u.v.z) * Math.min(1, 4 * dt);
+      faceTravel(u, dt);
+      return true;
+    }
     // The pair (6.5 Task 6): a directed sniper walks the few meters to his
     // spotter-chosen stand point (u._standPt, set once at the latch), then
     // settles — seekStandPoint drives, damps on arrival. Undirected holds

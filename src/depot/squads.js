@@ -667,6 +667,8 @@ export function stepSquad(world, squad, dt) {
       const slot = slotFor(squad, i, n);
       u.goal = clearSlot(world, slot.x, slot.z, memberClear(u)); // never march a man into masonry
       u.settled = false; // pair poses (renderer) only ever read true while holding
+      if (u._yield && u._yield.until <= world.t) u._yield = null;       // P7 T16
+      if (u._yield) { u.goal = { x: u._yield.x, z: u._yield.z }; u.settled = false; }
       seekGoal(world, u, dt);
     });
     return;
@@ -713,6 +715,8 @@ export function stepSquad(world, squad, dt) {
     // settled: holding on chosen ground (renderer poses/glint key off this;
     // deterministic body field, sim-inert)
     u.settled = !!u.role && Math.hypot(u.goal.x - u.pos.x, u.goal.z - u.pos.z) < 0.35;
+    if (u._yield && u._yield.until <= world.t) u._yield = null;       // P7 T16
+    if (u._yield) { u.goal = { x: u._yield.x, z: u._yield.z }; u.settled = false; }
     seekGoal(world, u, dt);
   });
 }

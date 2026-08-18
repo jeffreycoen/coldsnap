@@ -60,6 +60,8 @@ const BODY_HANDLED = new Set([
                       // stone marked filed against an empty book is a ghost (P7 T5)
   "_pp", "_ppT", "_backT", "_avoid", "_stuckN", // P7 T13: transient driving
                       // state — a resumed hull re-measures fresh
+  "_yield", "_yieldHome", "_brakeT", // P7 T16: traffic transients — yields
+                      // and patience re-measure fresh
 ]);
 
 // A value the file can carry: a finite number, a string, a boolean, null, an
@@ -224,7 +226,8 @@ export function serializeFront(ctx) {
   const squads = S.squads.map((sq) => {
     const o = { members: sq.memberIds.map((id) => (idx.has(id) ? idx.get(id) : -1)).filter((i) => i >= 0) };
     for (const key in sq) {
-      if (key === "memberIds" || key === "_legTarget") continue; // the leg target is a per-leg cache; it re-derives
+      if (key === "memberIds" || key === "_legTarget" || key === "_avoid") continue; // the leg target is a per-leg cache; it re-derives
+                      // _avoid: traffic scratch, re-marks live
       const val = plainValue(sq[key]);
       if (val === undefined) continue;
       o[key] = val;

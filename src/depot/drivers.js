@@ -13,6 +13,7 @@ import { shooterFire, fieldReaches, effRange, hostileStructure, snapTargetNear, 
 import { arcClears } from "./accuracy.js";
 import { ENEMY_FIRE, BISON_FIRE } from "./specs.js";
 import { planRoute } from "./route.js";
+import { clearSlot } from "./squads.js";
 
 // ---- the wave tank — re-seated from units.js stepTank (mk1.30), verbatim.
 function tankGoal(world, grid, t, dt, fwdDir) {
@@ -74,26 +75,56 @@ export const DRIVERS = {
 // Task 5 seats its commander.
 const ARMOR_WP_R = 2.5, ARMOR_ARRIVE = 3.0, ARMOR_ESCORT_BACK = 4;   // provisional (F5)
 const SAFETY_AHEAD = 4, SAFETY_SPEED_K = 0.5, SAFETY_HALF_W = 2.8;   // provisional (F5)
-function armorSafetyBlocked(world, v) {
+const YIELD_M = 3.2, YIELD_S = 2.5, PATIENCE_S = 4;   // provisional (F5)
+const KEEP_RIGHT_D = 14, KEEP_RIGHT_M = 3.0;   // provisional (F5)
+// P7 T16: the cone now REPORTS who blocks it — the yield order needs names,
+// not just a verdict. Same reach, same width, same team filter.
+function armorBlockers(world, v) {
   const fx = v.R[6], fz = v.R[8];
   const fl = Math.hypot(fx, fz) || 1;
   const reach = v.hz + SAFETY_AHEAD + Math.hypot(v.v.x, v.v.z) * SAFETY_SPEED_K;
   const pool = world._L ? (v.team === 1 ? world._L.friends : world._L.foes) : world.bodies;
+  let out = null;
   for (const u of pool) {
     if (u.kind !== "unit" || !u.alive || u.team !== v.team) continue;
     const dx = u.pos.x - v.pos.x, dz = u.pos.z - v.pos.z;
     const ahead = (dx * fx + dz * fz) / fl;
     if (ahead < 0 || ahead > reach) continue;
-    if (Math.abs((dx * fz - dz * fx) / fl) < SAFETY_HALF_W) return true;
+    if (Math.abs((dx * fz - dz * fx) / fl) < SAFETY_HALF_W) (out || (out = [])).push(u);
   }
-  return false;
+  return out;
 }
 function armorGoal(world, grid, v, dt, fwdDir, opts) {
-  if (v.tracks !== "free" && armorSafetyBlocked(world, v)) {
+  const blockers = v.tracks !== "free" ? armorBlockers(world, v) : null;
+  if (blockers) {
     v.depotDrive = "manual";
-    v.ctl = { throttle: 0, steer: 0, brake: true };   // the tracks bite — the strong stop
+    v.ctl = { throttle: 0, steer: 0, brake: true };   // the tracks bite — the strong stop, never weakened
+    // P7 T16: THE YIELD — each man in the lane is told to step aside, to his
+    // own side of the hull's heading, onto vetted ground; he remembers home.
+    const fx = v.R[6], fz = v.R[8], fl = Math.hypot(fx, fz) || 1;
+    for (const u of blockers) {
+      if (u._yield && u._yield.until > world.t) continue;
+      if (u.riding || u.pinned || u._fuse != null) continue;
+      const side = ((u.pos.x - v.pos.x) * fz - (u.pos.z - v.pos.z) * fx) / fl >= 0 ? 1 : -1;
+      const px = (fz / fl) * side, pz = (-fx / fl) * side;
+      const p = clearSlot(world, u.pos.x + px * YIELD_M, u.pos.z + pz * YIELD_M, (u.hx || 0.28) + 0.35);
+      if (!u._yieldHome) u._yieldHome = { x: u.pos.x, z: u.pos.z };
+      u._yield = { x: p.x, z: p.z, until: world.t + YIELD_S };
+    }
+    // P7 T16: PATIENCE — a lane that will not clear stops being waited on:
+    // the blockers' ground joins the avoid list and the route redraws around.
+    v._brakeT = (v._brakeT || 0) + dt;
+    if (v._brakeT >= PATIENCE_S) {
+      v._avoid = (v._avoid || []).filter((a) => a.until > world.t);
+      for (const u of blockers) {
+        const g = grid.worldToGrid(u.pos.x, u.pos.z);
+        if (grid.inBounds(g.gx, g.gz)) v._avoid.push({ ci: grid.idx(g.gx, g.gz), until: world.t + 25 });
+      }
+      v._route = null; v._routeDest = null; v._brakeT = 0;
+    }
     return;
   }
+  v._brakeT = 0;
   v.depotDrive = "auto";
   // P7 T13: THE BACK-OUT — a hull that measured itself not-moving reverses
   // gently (under the crush speed), then replans; the failed lane is already
@@ -171,6 +202,19 @@ function armorGoal(world, grid, v, dt, fwdDir, opts) {
     else { v.order = "defend"; v.dest = null; v.goal = null; return; }
   }
   v.goal = { x: wp.x, z: wp.z };
+  // P7 T16: KEEP RIGHT (owner) — same-team hulls closing head-on each ease
+  // to their own right and pass port-to-port. Deterministic, both sides.
+  for (const o of world.bodies) {
+    if (o === v || o.kind !== "vehicle" || !o.alive || o.team !== v.team) continue;
+    const dx = o.pos.x - v.pos.x, dz = o.pos.z - v.pos.z, d = Math.hypot(dx, dz);
+    if (d > KEEP_RIGHT_D || d < 0.5) continue;
+    const fx = v.R[6], fz = v.R[8], fl = Math.hypot(fx, fz) || 1;
+    if ((dx * fx + dz * fz) / (fl * d) < 0.86) continue;          // he must be ahead, within ~30 degrees
+    const ox = o.R[6], oz = o.R[8], ol = Math.hypot(ox, oz) || 1;
+    if ((fx * ox + fz * oz) / (fl * ol) > -0.5) continue;          // and coming AT us, not alongside
+    v.goal = { x: v.goal.x + (fz / fl) * KEEP_RIGHT_M, z: v.goal.z + (-fx / fl) * KEEP_RIGHT_M };
+    break;
+  }
   // P7 T13: SLOW THROUGH THE TURN — full speed on the straights, a crawl at
   // the corner, so the hull's turning arc stays inside the route's clearance
   // corridor instead of sweeping through whatever stands past it.

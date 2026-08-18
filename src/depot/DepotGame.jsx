@@ -621,21 +621,47 @@ function checkConnectivity(grid, spawns, objGx, objGz) {
 // matching endpoint with it), and redraws the route when progress stalls
 // (under half a meter of approach in three seconds — the mid-march stall's
 // tombstone). Deterministic, zero rng, no draws.
-function stepSquadRouting(grid, sq) {
+function stepSquadRouting(grid, sq, world) {
   if (!sq.dest || (sq.order !== "move" && sq.order !== "attack" && sq.order !== "build" && sq.order !== "patrol")) {
     sq._route = null; sq._routeDest = null; return;
   }
   const destChanged = !sq._routeDest || Math.hypot(sq._routeDest.x - sq.dest.x, sq._routeDest.z - sq.dest.z) > 0.5;
   const wp = sq._route && sq._route.length ? sq._route[0] : sq.dest;
   const dWp = Math.hypot(wp.x - sq.anchor.x, wp.z - sq.anchor.z);
+  let stalled = false;
   if (!destChanged) {
     // the stall watch: approach distance must shrink, or the route is stale
     if (sq._routeD == null || dWp < sq._routeD - 0.5) { sq._routeD = dWp; sq._routeT = 0; }
     else { sq._routeT = (sq._routeT || 0) + 1 / 120; }
     if (sq._routeT < 3) return;
+    stalled = true;
   }
   sq._routeD = null; sq._routeT = 0;
-  const route = planRoute(grid, sq.anchor.x, sq.anchor.z, sq.dest.x, sq.dest.z);
+  // P7 T16: the stall's usual cause is a LIVING blocker the grid can't see —
+  // a parked friendly hull, a standing squad. Mark their ground for this
+  // redraw and route around them. Friendly flesh and any friendly hull only —
+  // enemy contact is combat, not traffic. Runs ONLY on the stalled redraw,
+  // never the fresh-dest path (destChanged never sets stalled).
+  if (stalled) {
+    const sx = sq.anchor.x, sz = sq.anchor.z;
+    const dx = wp.x - sx, dz = wp.z - sz, dl = Math.hypot(dx, dz) || 1;
+    const ux = dx / dl, uz = dz / dl, segLen = Math.min(10, dl);
+    for (const b of world.bodies) {
+      if (!b.alive) continue;
+      const isHull = b.kind === "vehicle" && b.team === sq.team;
+      const isFlesh = b.kind === "unit" && b.team === sq.team && !sq.memberIds.includes(b.id);
+      if (!isHull && !isFlesh) continue;
+      const bx = b.pos.x - sx, bz = b.pos.z - sz;
+      const along = bx * ux + bz * uz;
+      if (along < 0 || along > segLen) continue;
+      if (Math.abs(bx * uz - bz * ux) > 3.5) continue;
+      const g = grid.worldToGrid(b.pos.x, b.pos.z);
+      if (grid.inBounds(g.gx, g.gz)) (sq._avoid || (sq._avoid = [])).push({ ci: grid.idx(g.gx, g.gz), until: world.t + 25 });
+    }
+  }
+  if (sq._avoid) sq._avoid = sq._avoid.filter((a) => a.until > world.t);
+  const route = planRoute(grid, sq.anchor.x, sq.anchor.z, sq.dest.x, sq.dest.z,
+    sq._avoid && sq._avoid.length ? { avoid: new Set(sq._avoid.map((a) => a.ci)) } : null);
   if (!route || !route.pts.length) { sq._route = null; sq._routeDest = { x: sq.dest.x, z: sq.dest.z }; return; }
   if (!route.reached) {
     // the honest clamp: they go as close as ground allows, and the order
@@ -1067,7 +1093,7 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
         }
         continue;
       }
-      stepSquadRouting(grid, sq);
+      stepSquadRouting(grid, sq, world);
       engageCheck(sq);
       stepSquad(world, sq, world.dt);
       // P1.5 T4: the two-point build line, driven straight after the squad's

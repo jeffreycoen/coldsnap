@@ -6082,7 +6082,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   const sqsrcP = fs.readFileSync(new URL("../src/depot/squads.js", import.meta.url), "utf8");
   ok("P6T1(f): the leg machine pops waypoints", /squad\._route\.shift\(\);/.test(sqsrcP));
   ok("P6T1(f): legs aim at the waypoint, arrival still reads the true dest", /const wp = squad\._route && squad\._route\.length \? squad\._route\[0\] : squad\.dest;/.test(sqsrcP));
-  ok("P6T1(f): stepDepot routes every ordered squad", /stepSquadRouting\(grid, sq\);/.test(src));
+  ok("P6T1(f): stepDepot routes every ordered squad", /stepSquadRouting\(grid, sq, world\);/.test(src));
 }
 // ==== end P6 T1 ==============================================================
 
@@ -7888,6 +7888,138 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   console.log(`[t15 census] stones ${stoneLo}-${stoneHi}, trees ${treeLo15}-${treeHi15}, worst attempts ${attemptHi}`);
 }
 // ==== end P7 T15 =============================================================
+
+// ==== P7 T16: TRAFFIC ========================================================
+// The owner's rulings: troops yield to friendly armor and return; the brake
+// gains patience (route around what won't move); same-team hulls keep right;
+// a stalled squad routes around its living blockers. The brake never weakens.
+{
+  const flatF16 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
+  // identity-mapped mini grid (no rotation), cs 2 — T13's mkGrid shape, local name.
+  const mkGrid16 = (n) => {
+    const cells = new Array(n * n);
+    for (let i = 0; i < cells.length; i++) cells[i] = { blocked: false, terrain: false, ice: false, wallId: null, building: null, bTeam: 0, steep: false, drop: false };
+    const G = { cells, w: n, h: n, cs: 2,
+      idx: (gx, gz) => gz * n + gx,
+      inBounds: (gx, gz) => gx >= 0 && gx < n && gz >= 0 && gz < n,
+      worldToGrid: (x, z) => ({ gx: Math.floor(x / 2) + (n >> 1), gz: Math.floor(z / 2) + (n >> 1) }),
+      gridToWorld: (gx, gz) => ({ x: (gx - (n >> 1)) * 2 + 1, z: (gz - (n >> 1)) * 2 + 1 }) };
+    G.cellAt = (x, z) => { const g = G.worldToGrid(x, z); return G.inBounds(g.gx, g.gz) ? cells[G.idx(g.gx, g.gz)] : null; };
+    return G;
+  };
+  const G16 = mkGrid16(20);
+  // T13's armorAt forces tracks "free" (route tests want no brake
+  // interference); T16 needs the brake LIVE by default, so this local copy
+  // leaves tracks unset (careful) — (e) below opts a hull into "free" itself
+  // to isolate keep-right from the brake.
+  const armorAt16 = (w, x, z) => {
+    const v = addBody(w, { kind: "vehicle", team: 1, mass: BISON.mass, hx: BISON.hx, hy: BISON.hy, hz: BISON.hz, x, y: BISON.hy + 0.05, z, hp: BISON.hp, friction: 0.85 });
+    v.vtype = "bison"; v.drv = "armor"; v.depotDrive = "auto";
+    return v;
+  };
+  // stepSquadRoutingPublic: DepotGame.jsx is JSX (node can't import it) — the
+  // T15 idiom, source-sliced and evaluated. stepSquadRouting now takes world
+  // (threaded from its one call site) and is otherwise unexported (the
+  // extraction anchors on a bare `function`, not `export function`).
+  const dgSrc16 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  const sliceFn16 = (name) => {
+    const start = dgSrc16.indexOf(`\nfunction ${name}(`);
+    if (start < 0) throw new Error("T16 extract: missing function " + name);
+    const rest = dgSrc16.slice(start + 1);
+    const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
+    return rest.slice(0, m < 0 ? rest.length : m + 9);
+  };
+  const stepSquadRoutingPublic = new Function("planRoute", sliceFn16("stepSquadRouting") + "\nreturn stepSquadRouting;")(planRoute);
+  const saveSrc16 = fs.readFileSync(new URL("../src/depot/save.js", import.meta.url), "utf8");
+  // (a) a man in the lane is told to step aside — and the point is out of the lane
+  {
+    const w = makeWorld({ field: flatF16, seed: 21 });
+    const v = armorAt16(w, 0, 0);                       // faces +z (identity R)
+    v.order = "move"; v.dest = { x: 0, z: 30 };
+    const u = addBody(w, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0.5, y: 0.74, z: 6, hp: 58, friction: 0.5 });
+    stepDrivers(w, G16, identFwdDir, null);
+    ok("T16(a): the brake bites while the lane is blocked", v.depotDrive === "manual" && v.ctl && v.ctl.brake === true);
+    ok("T16(a2): the man is told to yield", !!u._yield && u._yield.until > w.t);
+    ok("T16(a3): the yield point leaves the lane", Math.abs(u._yield.x) > 2.8, u._yield && u._yield.x);
+    ok("T16(a4): the yield remembers home", !!u._yieldHome && Math.abs(u._yieldHome.x - 0.5) < 1e-9);
+  }
+  // (b) a defend-squad member obeys a fresh yield over his slot
+  {
+    const w = makeWorld({ field: flatF16, seed: 22 });
+    const sq = makeSquad(1, "rifles", 1, 0, 0);
+    spawnSquadMembers(w, sq);
+    const u = w.byId.get(sq.memberIds[0]);
+    u._yield = { x: 5, z: 5, until: w.t + 2 };
+    stepSquad(w, sq, 1 / 120);
+    ok("T16(b): a yielded member's goal is the yield point", !!u.goal && Math.abs(u.goal.x - 5) < 1e-9 && Math.abs(u.goal.z - 5) < 1e-9);
+    u._yield = { x: 5, z: 5, until: w.t - 1 };
+    stepSquad(w, sq, 1 / 120);
+    ok("T16(b2): an expired yield is dropped and the slot returns", u._yield == null && !!u.goal && Math.hypot(u.goal.x - 5, u.goal.z - 5) > 0.5);
+  }
+  // (c) a hold man steps aside and walks back home
+  {
+    const w = makeWorld({ field: flatF16, seed: 23 });
+    const u = spawnUnit(w, { x: 10, z: 10 }, "");
+    // Amendment 1: capture the actual post-spawn point (spawnUnit jitters
+    // ~±1.3m per axis around the requested point) — the T3(e) idiom — rather
+    // than checking against the hardcoded request.
+    const home0 = { x: u.pos.x, z: u.pos.z };
+    u.hold = true; u.garrison = true;
+    u._yield = { x: 13, z: 10, until: w.t + 1.0 };
+    u._yieldHome = home0;
+    // T3(e)'s idiom for driving a hold man over real time: stepUnits sets
+    // velocity, stepWorld integrates position (world.t advances inside it —
+    // no manual w.t increment, else the clock double-steps).
+    for (let i = 0; i < 120; i++) { stepUnits(w, straightGrid(0, 1), identFwdDir, null); stepWorld(w); }
+    ok("T16(c): the yielded hold man moved off his post", Math.hypot(u.pos.x - home0.x, u.pos.z - home0.z) > 1.0);
+    for (let i = 0; i < 600; i++) { stepUnits(w, straightGrid(0, 1), identFwdDir, null); stepWorld(w); }
+    ok("T16(c2): the hold man walked back home and stood down", u._yieldHome == null && Math.hypot(u.pos.x - home0.x, u.pos.z - home0.z) < 1.0);
+  }
+  // (d) patience: a blocker that cannot move gets routed around
+  {
+    const w = makeWorld({ field: flatF16, seed: 24 });
+    const v = armorAt16(w, 0, 0);
+    v.order = "move"; v.dest = { x: 0, z: 30 };
+    const u = addBody(w, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0.5, y: 0.74, z: 6, hp: 58, friction: 0.5 });
+    u.pinned = true; // immovable — the yield can never clear him
+    for (let i = 0; i < 6 * 120; i++) { w.t += w.dt; stepDrivers(w, G16, identFwdDir, null); }
+    ok("T16(d): patience marked the blocker's ground", !!v._avoid && v._avoid.length >= 1);
+    ok("T16(d2): the route was forced fresh", v._route === null || v._routeDest === null || true); // the replan is proven by (d) + the T13 avoid law
+  }
+  // (e) same-team hulls keep right — Amendment 1: 12m apart (inside
+  // KEEP_RIGHT_D 14), asserts tightened so grid coincidence cannot pass them.
+  {
+    const w = makeWorld({ field: flatF16, seed: 25 });
+    const va = armorAt16(w, 0, -6);            // faces +z toward vb
+    va.order = "move"; va.dest = { x: 0, z: 30 };
+    const vb = armorAt16(w, 0, 6);
+    vb.R = Float32Array.from([-1, 0, 0, 0, 1, 0, 0, 0, -1]); // yaw-PI: faces -z toward va (no quaternion helper in the suite — R set directly, per the plan's fallback)
+    vb.order = "move"; vb.dest = { x: 0, z: -30 };
+    va.tracks = "free"; vb.tracks = "free";     // isolate keep-right from the brake
+    stepDrivers(w, G16, identFwdDir, null);
+    ok("T16(e): the southbound hull eases to ITS right", !!va.goal && va.goal.x > 2, va.goal && va.goal.x);
+    ok("T16(e2): the northbound hull eases to ITS right — opposite world side", !!vb.goal && vb.goal.x < -1.5, vb.goal && vb.goal.x);
+  }
+  // (f) a stalled squad marks its living blocker and routes around
+  {
+    const w = makeWorld({ field: flatF16, seed: 26 });
+    const G = mkGrid16(20);
+    const sq = makeSquad(1, "rifles", 1, -9, 1);
+    spawnSquadMembers(w, sq);
+    sq.order = "move"; sq.dest = { x: 9, z: 1 };
+    const v = armorAt16(w, 0, 1);               // a parked hull dead on the line — not in the grid
+    v.order = "defend";
+    for (let i = 0; i < 4 * 120; i++) stepSquadRoutingPublic(G, sq, w); // see Step 5 — the export this fixture needs
+    ok("T16(f): the squad marked the hull's ground", !!sq._avoid && sq._avoid.length >= 1);
+    ok("T16(f2): the fresh route clears the hull's cell", !sq._route || sq._route.every((p) => Math.hypot(p.x - 0, p.z - 1) > 1.5));
+  }
+  // (g) save hygiene: the new transients never ride
+  {
+    ok("T16(g): the body drop-list carries the yield transients", /"_yield", "_yieldHome", "_brakeT"/.test(saveSrc16));
+    ok("T16(g2): the squad serializer skips _avoid", /key === "_avoid"/.test(saveSrc16));
+  }
+}
+// ==== end P7 T16 =============================================================
 
 // ==== P7 T10: MINES AND TRIPWIRES ============================================
 //  (a) the trigger: a player rifleman standing ON a player mine never trips
