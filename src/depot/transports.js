@@ -12,15 +12,14 @@ import { APC } from "./specs.js";
 const RIDE_Y = -60;
 const BOARD_R = 2.5;        // m from the rally point — the formation has closed up // provisional (F5)
 const HATCH_R = 14;         // m — the ramp drops when the boarders close to this // provisional (F5)
-// STANDOFF (found running the boarding fixture, not guessed): clearSlot's
-// SOLID_KINDS (squads.js) doesn't vet moving vehicle bodies — a march goal
-// set to the hull's own center drives a formation straight INTO its box, and
-// core.js's own CRUSH rule (:1734, "other.pos.y > victim.pos.y" with a real
-// contact impulse) reads the resulting collision as a tank squashing its own
-// boarding squad. The rally point sits outside the hull's footprint radius
-// (hypot(v.hx, v.hz)) by this much — enough to clear the formation ring too
-// (rifles/mg squads ring at 1.5m, squads.js slotFor) — so no member's slot
-// can ever land inside the hull. // provisional (F5)
+// STANDOFF (found running the boarding fixture, not guessed): the march goal
+// must never sit at the hull's own center — core.js's CRUSH rule reads the
+// resulting collision as a tank squashing its own boarding squad. Since P7
+// T12 clearSlot DOES vet hulls, but the rally point stays explicitly outside
+// the footprint radius (hypot(v.hx, v.hz)) anyway: the boarding goal must be
+// deterministic and reachable, not wherever the clearance sweep happens to
+// shove a center point. Clears the formation ring too (rifles/mg ring at
+// 1.5m, squads.js slotFor), so no member's slot can land inside the hull. // provisional (F5)
 const STANDOFF = 2.2;
 
 export function apcBySeq(world, seq) {

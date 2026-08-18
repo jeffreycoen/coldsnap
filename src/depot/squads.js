@@ -177,6 +177,9 @@ export function coverHop(world, from, dest, threatBearing) {
 // clear = member hx + SLOT_CLEAR_PAD of a solid's footprint is rejected, and
 // clearSlot falls back to the NEAREST clear candidate on a fixed ring sweep
 // (deterministic — no rng, radii then azimuths in fixed order).
+// P7 T12: live vehicle hulls are vetted too (their own loop below — the
+// static pool can't carry a dynamic body), so no spawn or slot ever lands
+// a man inside parked or moving armor.
 const SLOT_CLEAR_PAD = 0.35;
 function slotBlocked(world, x, z, clear) {
   if (world.streamAt && world.streamAt(x, z)) return true; // T3: open water is never a slot
@@ -184,6 +187,16 @@ function slotBlocked(world, x, z, clear) {
   for (const b of pool) {
     if (!b.alive || b.invM > 0) continue; // static solids only
     if (!SOLID_KINDS.has(b.kind)) continue;
+    if (Math.abs(x - b.pos.x) <= b.hx + clear && Math.abs(z - b.pos.z) <= b.hz + clear) return true;
+  }
+  // P7 T12: THE HULL IS GROUND TOO — a live vehicle blocks a slot exactly as
+  // masonry does (same box + clearance test). The static pool above can never
+  // carry one (a hull is dynamic, and the invM guard skips it), so hulls ride
+  // their own small pool. This is the fielded-start fix: every spawn, slot,
+  // and steer-around site inherits it through this one law.
+  const vpool = world._L ? world._L.vehicles : world.bodies;
+  for (const b of vpool) {
+    if (!b.alive || b.kind !== "vehicle") continue;
     if (Math.abs(x - b.pos.x) <= b.hx + clear && Math.abs(z - b.pos.z) <= b.hz + clear) return true;
   }
   return false;

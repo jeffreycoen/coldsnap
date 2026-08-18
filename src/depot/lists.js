@@ -14,7 +14,7 @@
 const SOLID_KINDS = new Set(["rock", "wall", "tower", "tree", "chunk"]);
 
 export function makeBodyLists() {
-  return { solids: [], statics: [], friends: [], foes: [], structsFor1: [], structsFor2: [], friendly: [] };
+  return { solids: [], statics: [], friends: [], foes: [], structsFor1: [], structsFor2: [], friendly: [], vehicles: [] };
 }
 
 // structsFor1/structsFor2: hostileStructure(b, team)'s candidate sets — what
@@ -23,12 +23,15 @@ export function makeBodyLists() {
 // invM check stays in the consumer.
 export function rebuildBodyLists(world, L) {
   L.solids.length = 0; L.statics.length = 0;
-  L.friends.length = 0; L.foes.length = 0;
+  L.friends.length = 0; L.foes.length = 0; L.vehicles.length = 0;
   L.structsFor1.length = 0; L.structsFor2.length = 0; L.friendly.length = 0;
   for (const b of world.bodies) {
     if (!b.alive) continue;
     const k = b.kind;
     if (k === "unit" || k === "vehicle") {
+      // P7 T12: hulls get their own small pool — slotBlocked's hull test
+      // (squads.js) reads it; the statics pool can never carry one (dynamic).
+      if (k === "vehicle") L.vehicles.push(b);
       if (b.team === 1) L.friends.push(b);
       else if (b.team === 2) L.foes.push(b);
       continue;

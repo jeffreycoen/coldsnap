@@ -7606,6 +7606,54 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 }
 // ==== end P7 T9 ==============================================================
 
+// ==== P7 T12: SPAWN GROUND LEARNS VEHICLES ===================================
+// The fielded-start kill (owner, 2026-08-17): slotBlocked vetted static solids
+// only — a parked hull was invisible to every spawn/slot site. The fielded-
+// start squads spawned overlapping the player's parked armor; the engine's
+// shove-apart killed the men at second zero and the empty squads were silently
+// deleted. The law learns hulls; every consumer inherits the fix.
+{
+  const flatF12 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
+  // (a) the law itself: a live hull blocks a slot at its box + clearance.
+  {
+    const w = makeWorld({ field: flatF12, seed: 11 });
+    const v = addBody(w, { kind: "vehicle", team: 1, mass: BISON.mass, hx: BISON.hx, hy: BISON.hy, hz: BISON.hz, x: 0, y: BISON.hy + 0.05, z: 0, hp: BISON.hp, friction: 0.85 });
+    v.vtype = "bison";
+    ok("T12(a): a live hull blocks the slot at its box + clearance", slotBlockedPublic(w, 0, 0, 0.63) === true);
+    const p = clearSlot(w, 0, 0, 0.63);
+    ok("T12(a2): clearSlot hands back ground clear of the hull box",
+      Math.abs(p.x - v.pos.x) > v.hx + 0.63 || Math.abs(p.z - v.pos.z) > v.hz + 0.63, `${p.x.toFixed(2)},${p.z.toFixed(2)}`);
+    v.alive = false;
+    ok("T12(a3): a dead hull stops blocking", slotBlockedPublic(w, 0, 0, 0.63) === false);
+  }
+  // (b) the owner's report, reproduced and closed: the fielded start beside a
+  // hull parked exactly on the runners' fixed 11m azimuth — every man spawns
+  // clear of the box and lives through 3 simulated seconds. Before the fix the
+  // men spawn inside the box and the shove-apart kills them.
+  {
+    const w = makeWorld({ field: flatF12, seed: 801 });
+    const depotP = { x: -40, z: -40 };
+    const hx0 = depotP.x + Math.sin(0.9) * 11, hz0 = depotP.z + Math.cos(0.9) * 11;
+    const v = addBody(w, { kind: "vehicle", team: 1, mass: BISON.mass, hx: BISON.hx, hy: BISON.hy, hz: BISON.hz, x: hx0, y: BISON.hy + 0.05, z: hz0, hp: BISON.hp, friction: 0.85 });
+    v.vtype = "bison"; v.sleeping = true;
+    const squads = [];
+    let nextSquadId = 1;
+    for (const type of ["runners", "breakers"]) {
+      const a = type === "runners" ? 0.9 : 2.3;
+      const p0 = clearSlot(w, depotP.x + Math.sin(a) * 11, depotP.z + Math.cos(a) * 11, 0.5);
+      const sq = makeSquad(nextSquadId++, type, 1, p0.x, p0.z);
+      spawnSquadMembers(w, sq);
+      squads.push(sq);
+    }
+    const men = squads.flatMap((sq) => sq.memberIds.map((id) => w.byId.get(id)));
+    ok("T12(b): no man spawns inside the parked hull's box",
+      men.every((u) => Math.abs(u.pos.x - v.pos.x) > v.hx + u.hx || Math.abs(u.pos.z - v.pos.z) > v.hz + u.hz));
+    for (let i = 0; i < 360; i++) stepWorld(w);
+    ok("T12(b2): every fielded man is alive 3 seconds in", men.every((u) => u.alive), `${men.filter((u) => u.alive).length}/6 alive`);
+  }
+}
+// ==== end P7 T12 =============================================================
+
 // ==== P7 T10: MINES AND TRIPWIRES ============================================
 //  (a) the trigger: a player rifleman standing ON a player mine never trips
 //      it (long run, untouched); an enemy conscript walking on DOES — and a
