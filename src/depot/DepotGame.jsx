@@ -35,6 +35,7 @@ import { makeBodyLists, rebuildBodyLists } from "./lists.js";
 import Dispatch from "./Dispatch.jsx";
 import FieldManual from "../ui/FieldManual.jsx";
 import { GRID_CS, GRID_W, GRID_H, GRID_OX, GRID_OZ, RIM_HALF_U, RIM_HALF_V, ORIENT, fwdU, fwdDir, invW, clampToRim, OBJ_POS, SPAWN_POINTS, PONDS, ROCKS, TOWN, ROADS, PASSES, BANDS, MAP_SEED, SPAWN_U, STREAM, HILLS, genMap, makeMap, buildDepotTerrain, pondAt, rockAt, makeGrid, streamAt, planTrees, computeFlowField, checkConnectivity } from "./mapgen.js";
+import { armorSpread, armorStable, parkArmor, seedBags, musterFreshStart } from "./muster.js";
 
 // THE FIELD MANUAL's don't-show-again flag (P6 T8). "off" means never
 // auto-open again; anything else (including absent) means the tour greets
@@ -859,68 +860,8 @@ export default function DepotGame({ onExit, resume = null }) {
       // the SAME apcSeq counter — a replacement APC must never seat-collide
       // with a surviving one. Same closure over world/grid/field/TOWN, same
       // body, unchanged.
-      const spreadAt = (bx, bz, spec) => {
-        const h0 = field.heightAt(bx, bz);
-        let lo = h0, hi = h0;
-        for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
-          const h = field.heightAt(bx + sx * spec.hx, bz + sz * spec.hz);
-          if (h < lo) lo = h; else if (h > hi) hi = h;
-        }
-        return hi - lo;
-      };
-      const stableAt = (bx, bz, spec) => spreadAt(bx, bz, spec) < 0.28; // AMENDMENT 1 (owner): flat ground, no sliding boots // provisional (F5)
       let apcSeqN = 0;
-      const parkArmor = (team, depotT, kind) => {
-        if (!depotT) return;
-        const spec = kind === "apc" ? APC : BISON;
-        const place = (bx, bz) => {
-          const v = addBody(world, { kind: "vehicle", team, mass: spec.mass, hx: spec.hx, hy: spec.hy, hz: spec.hz,
-            x: bx, y: field.heightAt(bx, bz) + spec.hy + 0.05, z: bz, hp: spec.hp, friction: 0.85,
-            q: heading(null, Math.atan2(-bx, -bz)) });   // parked facing the valley
-          v.armor = spec.armor; v.vtype = kind; v.maxHp = spec.hp;
-          v.homeX = bx; v.homeZ = bz; // P7 T8: the hull's own park spot — both teams, the commander's "home"
-          // AMENDMENT 1: parked cold — a sleeping hull cannot creep, slide
-          // or jitter at boot. Every wake path already exists (the first
-          // order, the safety brake, the possession stick).
-          v.sleeping = true;
-          if (kind === "apc") v.apcSeq = ++apcSeqN;
-          // Both kinds, both teams: armed at post (Task 3's shape) — the
-          // enemy's parks armed too (coax defends it) but driverless-in-
-          // doctrine until Task 6.
-          v.drv = kind === "apc" ? "apc" : "armor"; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful";
-          if (team === 1) v.driver = "player";
-          else v.bounty = spec.bounty;
-          return v;
-        };
-        const clearAt = (bx, bz) => {
-          const cell = grid.cellAt(bx, bz);
-          if (!cell || cell.blocked || cell.ice || cell.water || cell.wallId) return false;
-          if (Math.hypot(bx - OBJ_POS.x, bz - OBJ_POS.z) < 4) return false;
-          if (slotBlockedPublic(world, bx, bz, Math.hypot(spec.hx, spec.hz) + 0.5)) return false;
-          if (world.bodies.some((o) => o.kind === "vehicle" && o.alive && Math.hypot(o.pos.x - bx, o.pos.z - bz) < 7)) return false;
-          return true;
-        };
-        for (let rr = 10; rr <= 26; rr += 1.5) for (let k = 0; k < 16; k++) {
-          const az = (k / 16) * Math.PI * 2;
-          const bx = depotT.x + Math.sin(az) * rr, bz = depotT.z + Math.cos(az) * rr;
-          if (clearAt(bx, bz) && stableAt(bx, bz, spec)) return place(bx, bz);
-        }
-        // FAIL-PROOF (P7 T3, AMENDMENT 1): a hemmed or unstable ring must
-        // never leave a side tankless — brute-sweep the nearest clear+
-        // stable cell; if none is stable, the flattest clear cell parks
-        // the hull anyway.
-        let best = null, bd = 1e9, flat = null, flatSp = 1e9;
-        for (let gz = 0; gz < GRID_H; gz++) for (let gx = 0; gx < GRID_W; gx++) {
-          const wp = grid.gridToWorld(gx, gz);
-          const d = Math.hypot(wp.x - depotT.x, wp.z - depotT.z);
-          if (d > 30 || d < 8 || !clearAt(wp.x, wp.z)) continue;
-          const sp = spreadAt(wp.x, wp.z, spec);
-          if (sp < flatSp) { flatSp = sp; flat = wp; }
-          if (sp < 0.28 && d < bd) { bd = d; best = wp; }
-        }
-        if (best) place(best.x, best.z);
-        else if (flat) place(flat.x, flat.z);
-      };
+      const nextApcSeq = () => ++apcSeqN;
       const depotP = TOWN.find((t) => t.depot && t.team !== 2), depotE = TOWN.find((t) => t.depot && t.team === 2);
       // town / censuses / rocks: laid fresh, or lifted back off the save.
       let town, depotCensus, depotCensus2, rocksLive, resBodies = null;
@@ -1099,52 +1040,16 @@ export default function DepotGame({ onExit, resume = null }) {
         // azimuth) because the depot's own approach road and mound reject a lot
         // of the ring; a bag that clears none of the twelve is simply dropped.
         // Ring radius grown to 7.8m (P7 T3) — the depots got bigger.
-        const seedBags = (depotT, streamKey) => {
-          if (!depotT) return;
-          const bagR = mulberry32(MAP_SEED ^ streamKey);
-          const roadClear = (x, z) => {
-            let best = 1e9;
-            for (const route of ROADS) for (let i = 0; i < route.length - 1; i++) {
-              const a2 = route[i], b2 = route[i + 1];
-              const rdx = b2[0] - a2[0], rdz = b2[1] - a2[1];
-              const tt = Math.max(0, Math.min(1, ((x - a2[0]) * rdx + (z - a2[1]) * rdz) / (rdx * rdx + rdz * rdz || 1)));
-              best = Math.min(best, Math.hypot(x - (a2[0] + rdx * tt), z - (a2[1] + rdz * tt)));
-            }
-            return best;
-          };
-          const nBags = 4 + Math.floor(bagR() * 3);
-          for (let i = 0; i < nBags; i++) {
-            const az0 = ((i + 0.5) / nBags) * Math.PI * 2 + (bagR() - 0.5) * 0.5;
-            const r0 = 7.8 + bagR() * 1.6;
-            let placed = false;
-            for (let swing = 0; swing < 3 && !placed; swing++) {
-              const az = az0 + [0, 0.38, -0.38][swing];
-              for (let nudge = 0; nudge < 4; nudge++) {
-                const rr = r0 + nudge * 1.3;
-                const bx = depotT.x + Math.sin(az) * rr, bz = depotT.z + Math.cos(az) * rr;
-                const cell = grid.cellAt(bx, bz);
-                if (!cell || cell.blocked || cell.ice) continue;
-                if (Math.hypot(bx - OBJ_POS.x, bz - OBJ_POS.z) < 3) continue;
-                if (roadClear(bx, bz) < 3) continue;
-                if (slotBlockedPublic(world, bx, bz, SANDBAG_HX + 0.35)) continue;
-                // laid ACROSS the radius, so the ring reads as cover facing out
-                stampBag(spawnSandbag(world, bx, bz, Math.abs(Math.cos(az)) >= Math.abs(Math.sin(az)) ? 0 : 1), depotT.team === 2 ? 2 : 1);
-                placed = true;
-                break;
-              }
-            }
-          }
-        };
-        seedBags(TOWN.find((t) => t.depot && t.team !== 2), 0x5ba6);
-        seedBags(TOWN.find((t) => t.depot && t.team === 2), 0x5ba7); // P7 T3: their depot was never dressed — symmetry now
+        seedBags(world, grid, TOWN.find((t) => t.depot && t.team !== 2), 0x5ba6, stampBag);
+        seedBags(world, grid, TOWN.find((t) => t.depot && t.team === 2), 0x5ba7, stampBag); // P7 T3: their depot was never dressed — symmetry now
         // P7 T2/T3/T4: THE STARTING ARMOR — a Bison AND an APC parked by
         // each depot, fresh boot only (a RESUME's hulls are already in the
         // save). P7 T9: parkArmor/apcSeqN/depotP/depotE are MOUNT-SCOPE now
         // (hoisted above, just after world.streamAt) — the hero tier's
         // player buy and the enemy's draw-free replacement both need to
         // park a fresh hull long after boot, off this exact same function.
-        parkArmor(1, depotP, "bison"); parkArmor(1, depotP, "apc");
-        parkArmor(2, depotE, "bison"); parkArmor(2, depotE, "apc");
+        parkArmor(world, grid, field, depotP, 1, "bison", nextApcSeq); parkArmor(world, grid, field, depotP, 1, "apc", nextApcSeq);
+        parkArmor(world, grid, field, depotE, 2, "bison", nextApcSeq); parkArmor(world, grid, field, depotE, 2, "apc", nextApcSeq);
       }
       const objG = grid.worldToGrid(OBJ_POS.x, OBJ_POS.z);
       computeFlowField(grid, objG.gx, objG.gz);
@@ -1311,52 +1216,8 @@ export default function DepotGame({ onExit, resume = null }) {
         // a formation it already has.
         reg: RES ? { ...RES.run.reg } : makeRegiment(world.rng),
       };
-      // P7 T3: THE HOME GUARD (owner) — eight riflemen dug in around the
-      // enemy depot from second zero, paid out of the regiment's own books.
-      // Fixed azimuths; clearSlot vets the ground; spawnUnit's own jitter is
-      // 3 world-rng draws per man, 8 men, every seed — count-stable.
       if (!RES) {
-        const depotE2 = TOWN.find((t) => t.depot && t.team === 2);
-        if (depotE2) {
-          const gR = Math.hypot(depotE2.nx, depotE2.nz) * MASON.pitch / 2 + 3.5;
-          for (let i = 0; i < 8; i++) {
-            const a = (i / 8) * Math.PI * 2 + 0.39;
-            const p = clearSlot(world, depotE2.x + Math.sin(a) * gR, depotE2.z + Math.cos(a) * gR, 0.28 + 0.35);
-            const u = spawnUnit(world, { x: p.x, z: p.z }, "");
-            u.hold = true; u.garrison = true;
-          }
-          S.reg.heads = Math.max(0, S.reg.heads - 8); // the books stay honest
-        }
-        // P7 T8: THE COMMANDER — one draw per war, uniform, hidden. Position
-        // documented: after makeRegiment's 2 draws and the garrison's 24
-        // (8 men x 3 draws each). A RESUME never reaches this branch.
-        S.cmdr = cmdrOf(world.rng);
-        // P7 T9 (owner): THE FIELDED START — each base opens with a runner
-        // squad and a breaker pair, free starting kit like the armor.
-        // Player: real squads on defend. Enemy: the mirror men, dug in with
-        // the home guard, unbooked. 18 fixed world-rng draws (6 spawnUnit,
-        // 3 draws each), positioned after the commander's own draw above.
-        // depotP is parkArmor's own player-depot lookup (mount scope) —
-        // reused here rather than refound.
-        if (depotP) for (const type of ["runners", "breakers"]) {
-          const a0 = type === "runners" ? 0.9 : 2.3;
-          const p0 = clearSlot(world, depotP.x + Math.sin(a0) * 11, depotP.z + Math.cos(a0) * 11, 0.5);
-          const sq = makeSquad(S.nextSquadId++, type, 1, p0.x, p0.z);
-          spawnSquadMembers(world, sq);
-          S.squads.push(sq);
-        }
-        {
-          const depotE5 = TOWN.find((tt) => tt.depot && tt.team === 2);
-          if (depotE5) {
-            const gR5 = Math.hypot(depotE5.nx, depotE5.nz) * MASON.pitch / 2 + 5.5;
-            ["fast", "fast", "fast", "fast", "heavy", "heavy"].forEach((tag, i) => {
-              const a = (i / 6) * Math.PI * 2 + 2.0;
-              const p = clearSlot(world, depotE5.x + Math.sin(a) * gR5, depotE5.z + Math.cos(a) * gR5, 0.5);
-              const u = spawnUnit(world, { x: p.x, z: p.z }, tag);
-              u.hold = true; u.garrison = true;
-            });
-          }
-        }
+        musterFreshStart(world, S, depotP);
       }
       // Step 5. The run state itself, straight off the file. The bell is the
       // ONE deliberate exception: the countdown restarts at a full period
@@ -1465,7 +1326,7 @@ export default function DepotGame({ onExit, resume = null }) {
         S.heroArm = null;
         if (S.resources < price) { toast("NO SCRAP"); return; }
         if (!buyPaced()) return;
-        parkArmor(1, depotP, kind);
+        parkArmor(world, grid, field, depotP, 1, kind, nextApcSeq);
         S.resources -= price;
         S._buyAt = world.t;
         toast("THE CONVOY DELIVERS");
@@ -2664,9 +2525,9 @@ export default function DepotGame({ onExit, resume = null }) {
           const open = (tag) => S.foe.unlocked.indexOf(tag) >= 0 && S.bell >= TIER_BELLS[3];
           const depotE4 = TOWN.find((tt) => tt.depot && tt.team === 2);
           if (depotE4 && !has("bison") && open("hero_bison") && S.reg.scrap >= heroPrice("hero_bison")) {
-            S.reg.scrap -= heroPrice("hero_bison"); parkArmor(2, depotE4, "bison");
+            S.reg.scrap -= heroPrice("hero_bison"); parkArmor(world, grid, field, depotE4, 2, "bison", nextApcSeq);
           } else if (depotE4 && !has("apc") && open("hero_apc") && S.reg.scrap >= heroPrice("hero_apc")) {
-            S.reg.scrap -= heroPrice("hero_apc"); parkArmor(2, depotE4, "apc");
+            S.reg.scrap -= heroPrice("hero_apc"); parkArmor(world, grid, field, depotE4, 2, "apc", nextApcSeq);
           }
         }
         // P7 T10: THE ENEMY SAPPER BRAIN — two draws every bell (the law);

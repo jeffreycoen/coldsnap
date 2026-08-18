@@ -46,6 +46,8 @@ import {
   stepMines, minePrices, mineSeedRoll, mineSeedPlace,
   MINE_TRIG, WIRE_TRIG, FLARE_S, MINE_BLAST, WIRE_BLAST, MINE_COST, WIRE_COST,
 } from "../src/depot/mines.js";
+import { makeMap, TOWN } from "../src/depot/mapgen.js";
+import { musterFreshStart } from "../src/depot/muster.js";
 import fs from "node:fs";
 
 // identity fwdDir (DepotGame.jsx's ORIENT-aware transform, ORIENT===0 case)
@@ -3315,6 +3317,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   // the brief fixed are actually written where they are claimed to be.
   {
     const dsrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    const muSrc60 = fs.readFileSync(new URL("../src/depot/muster.js", import.meta.url), "utf8");
     ok("mk0.60/6: the build chips are engineer-only, at the order site and in the radial",
       /if \(sq\.type !== "engineers"\) return;/.test(dsrc) && /engineer: sq\.type === "engineers"/.test(dsrc)
       // COMMAND T1 (mk0.80) re-pin: the chip row's `hud.squadSel.engineer && (`
@@ -3356,12 +3359,13 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
       /return v\.msg === "NO SCRAP" \? "dry" : "skip";/.test(dsrc) && /job\.dry = true;/.test(dsrc));
     ok("mk0.60/6: a wall lay holds the squad on squad._pauseT, the existing dwell field",
       /sq\._pauseT = WALL_LAY_PAUSE_S;/.test(dsrc));
-    ok("mk0.60/6 (re-pinned mk1.32, P7 T3: seedBags(depotT, streamKey) generalized to both depots)" +
+    ok("mk0.60/6 (re-pinned mk1.32, P7 T3: seedBags(depotT, streamKey) generalized to both depots;" +
+      " retargeted mk1.49, P7 T19: seedBags moved to muster.js)" +
       " the seeded depot bags draw off a MAP-seed stream, never world.rng",
-      /mulberry32\(MAP_SEED \^ streamKey\)/.test(dsrc) &&
-      /seedBags\(TOWN\.find\(\(t\) => t\.depot && t\.team !== 2\), 0x5ba6\);/.test(dsrc) &&
-      /seedBags\(TOWN\.find\(\(t\) => t\.depot && t\.team === 2\), 0x5ba7\);/.test(dsrc) &&
-      /const nBags = 4 \+ Math\.floor\(bagR\(\) \* 3\);/.test(dsrc));
+      /mulberry32\(MAP_SEED \^ streamKey\)/.test(muSrc60) &&
+      /seedBags\(world, grid, TOWN\.find\(\(t\) => t\.depot && t\.team !== 2\), 0x5ba6, stampBag\);/.test(dsrc) &&
+      /seedBags\(world, grid, TOWN\.find\(\(t\) => t\.depot && t\.team === 2\), 0x5ba7, stampBag\);/.test(dsrc) &&
+      /const nBags = 4 \+ Math\.floor\(bagR\(\) \* 3\);/.test(muSrc60));
     ok("mk0.60/6: the engineer team is on the build bar",
       /key: "sq_engineers", label: "ENGINEERS"/.test(dsrc) && /sq_engineers: "engineers"/.test(dsrc));
     // the geometry the line is built on, written down where a reader will look
@@ -6222,13 +6226,15 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 {
   console.log("\n[p6 t3: only engineers build]");
   const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  const muSrcT3 = fs.readFileSync(new URL("../src/depot/muster.js", import.meta.url), "utf8");
   ok("T3: the bar has no wall slot", !/key: "wall", label: "WALL"/.test(src));
   ok("T3: the bar has no sandbag slot", !/key: "sandbag", label: "SANDBAG"/.test(src));
   ok("T3: no build mode is selected by default", /mode: null, sellMode: false/.test(src));
   ok("T3: the ground tap guards the tower path on a live mode", /if \(S\.mode && TOWER_SPECS\[S\.mode\]\)/.test(src));
   ok("T3: the engineer line machinery is untouched (both spawners live)",
     /spawnWallCourses\(world, row\.x/.test(src) && /spawnSandbag\(world, row\.x, row\.z, orient\)/.test(src));
-  ok("T3: the seeded depot bags are untouched", /spawnSandbag\(world, bx, bz,/.test(src));
+  ok("T3: the seeded depot bags are untouched (retargeted mk1.49, P7 T19: seedBags moved to muster.js)",
+    /spawnSandbag\(world, bx, bz,/.test(muSrcT3));
   ok("T3: the harness door stays (buildAt via __DEPOTBUILD__)", /__DEPOTBUILD__ = \(gx, gz, mode\) => buildAt\(gx, gz, mode \|\| "wall"\)/.test(src));
   ok("T3: the start screen stopped promising the trowel", !/Wall their road/.test(src));
 }
@@ -7621,10 +7627,13 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     ok("T9(d4): gated on the enemy's own pick (S.foe.unlocked)", /S\.foe\.unlocked\.indexOf\(tag\) >= 0/.test(ringBellBody9));
     ok("T9(d5): the full gate ANDs dead-hull, tier-open-and-picked and affordability — a poor regiment fails the same chain and buys nothing",
       /if \(depotE4 && !has\("bison"\) && open\("hero_bison"\) && S\.reg\.scrap >= heroPrice\("hero_bison"\)\)/.test(ringBellBody9));
-    ok("T9(d6): scrap is deducted before the hull parks, draw-free", /S\.reg\.scrap -= heroPrice\("hero_bison"\); parkArmor\(2, depotE4, "bison"\)/.test(ringBellBody9));
-    ok("T9(d7): the same table prices the apc replacement", /S\.reg\.scrap -= heroPrice\("hero_apc"\); parkArmor\(2, depotE4, "apc"\)/.test(ringBellBody9));
+    ok("T9(d6): scrap is deducted before the hull parks, draw-free (re-taught mk1.49, P7 T19: parkArmor's new-arity call)",
+      /S\.reg\.scrap -= heroPrice\("hero_bison"\); parkArmor\(world, grid, field, depotE4, 2, "bison", nextApcSeq\)/.test(ringBellBody9));
+    ok("T9(d7): the same table prices the apc replacement (re-taught mk1.49, P7 T19: parkArmor's new-arity call)",
+      /S\.reg\.scrap -= heroPrice\("hero_apc"\); parkArmor\(world, grid, field, depotE4, 2, "apc", nextApcSeq\)/.test(ringBellBody9));
     ok("T9(d8): Bison goes first — the bison branch is the `if`, the apc branch the `else if`",
-      ringBellBody9.indexOf('parkArmor(2, depotE4, "bison")') < ringBellBody9.indexOf('parkArmor(2, depotE4, "apc")'));
+      ringBellBody9.indexOf('parkArmor(world, grid, field, depotE4, 2, "bison", nextApcSeq)') <
+      ringBellBody9.indexOf('parkArmor(world, grid, field, depotE4, 2, "apc", nextApcSeq)'));
     ok("T9(d9): sits after the ferry block", ringBellBody9.indexOf('ea.ferry = "out";') < ringBellBody9.indexOf("THE HERO TIER, their side"));
     // the reseed arithmetic itself (trap note 4): apcSeqN seeded to the max
     // restored seat, so the very next ++apcSeqN assignment is guaranteed
@@ -8206,6 +8215,48 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     !/function computeFlowField\(/.test(dgSrc18) && /from "\.\/mapgen\.js"/.test(dgSrc18));
 }
 // ==== end P7 T18 =============================================================
+
+// ==== P7 T19: THE MUSTER MOVES OUT ===========================================
+// Reorganization 2 of 5 (owner): the fresh-war boot block lives in muster.js,
+// verbatim bodies with explicit parameters. Boot draws stay 45 by pin; and
+// the boot block gets its FIRST real fixture — the suite calls the actual
+// code instead of reimplementing it (how both boot bugs hid).
+{
+  let muSrc19 = "";
+  try { muSrc19 = fs.readFileSync(new URL("../src/depot/muster.js", import.meta.url), "utf8"); } catch (e) {}
+  const dgSrc19 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  ok("T19(a): muster.js owns the boot block",
+    /export function parkArmor\(world, grid, field, depotT, team, kind, nextSeq\)/.test(muSrc19) &&
+    /export function seedBags\(world, grid, depotT, streamKey, stampBag\)/.test(muSrc19) &&
+    /export function musterFreshStart\(world, S, depotP\)/.test(muSrc19) &&
+    /export function armorSpread\(field, bx, bz, spec\)/.test(muSrc19));
+  ok("T19(a2): DepotGame no longer defines what it now imports",
+    !/const parkArmor = /.test(dgSrc19) && !/const seedBags = /.test(dgSrc19) &&
+    !/THE HOME GUARD \(owner\)/.test(dgSrc19) && /from "\.\/muster\.js"/.test(dgSrc19));
+  ok("T19(a3): the seat counter stays a mount let with its pinned reseed",
+    /let apcSeqN = 0;/.test(dgSrc19) && /const nextApcSeq = \(\) => \+\+apcSeqN;/.test(dgSrc19));
+  // (b) the boot block, called for real — the first true muster fixture.
+  {
+    makeMap(4242);
+    const flatF19 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
+    const w = makeWorld({ field: flatF19, seed: 4242 });
+    let draws = 0; const raw = w.rng;
+    w.rng = () => { draws++; return raw(); };
+    const S19 = { reg: { heads: 60 }, squads: [], nextSquadId: 1, cmdr: null };
+    musterFreshStart(w, S19, TOWN.find((t) => t.depot && t.team !== 2));
+    ok("T19(b): the fresh start draws exactly 43 (guard 24 + commander 1 + fielded 18)", draws === 43, draws);
+    ok("T19(b2): two player squads muster — runners of 4, breakers of 2",
+      S19.squads.length === 2 &&
+      S19.squads.find((q) => q.type === "runners").memberIds.length === 4 &&
+      S19.squads.find((q) => q.type === "breakers").memberIds.length === 2);
+    let guard = 0;
+    for (const b of w.bodies) if (b.kind === "unit" && b.team === 2 && b.garrison && b.alive) guard++;
+    ok("T19(b3): fourteen enemy standers hold their ground (8 guard + 6 fielded)", guard === 14, guard);
+    ok("T19(b4): the commander was drawn", S19.cmdr === "cautious" || S19.cmdr === "bold" || S19.cmdr === "stubborn", S19.cmdr);
+    ok("T19(b5): the books stayed honest", S19.reg.heads === 52, S19.reg.heads);
+  }
+}
+// ==== end P7 T19 =============================================================
 
 // ==== P7 T10: MINES AND TRIPWIRES ============================================
 //  (a) the trigger: a player rifleman standing ON a player mine never trips
