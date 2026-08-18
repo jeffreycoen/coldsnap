@@ -2402,16 +2402,26 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 // imported deps injected. This runs the actual shipped code, not a copy.
 {
   const depotSrcF1 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  // P7 T18: the map frame moved to mapgen.js, verbatim, with export keywords
+  // added. townFootprint/buildTown stayed in DepotGame.jsx. sliceFn checks
+  // DepotGame.jsx first (unmoved names), then mapgen.js (moved names,
+  // stripping the "export " prefix so the extracted text is byte-identical
+  // to what it was pre-move).
+  const mgSrcF1 = fs.readFileSync(new URL("../src/depot/mapgen.js", import.meta.url), "utf8");
   const sliceFn = (name) => {
-    const start = depotSrcF1.indexOf(`\nfunction ${name}(`);
-    if (start < 0) throw new Error("F1 extract: missing function " + name);
-    const rest = depotSrcF1.slice(start + 1);
+    let start = depotSrcF1.indexOf(`\nfunction ${name}(`), rest;
+    if (start >= 0) { rest = depotSrcF1.slice(start + 1); }
+    else {
+      start = mgSrcF1.indexOf(`\nexport function ${name}(`);
+      if (start < 0) throw new Error("F1 extract: missing function " + name);
+      rest = mgSrcF1.slice(start + 1).replace(/^export /, "");
+    }
     const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
     return rest.slice(0, m < 0 ? rest.length : m + 9);
   };
-  const headerStart = depotSrcF1.indexOf("const GRID_CS");
-  const headerEnd = depotSrcF1.indexOf("function genMap");
-  const header = depotSrcF1.slice(headerStart, headerEnd);
+  const headerStart = mgSrcF1.indexOf("const GRID_CS");
+  const headerEnd = mgSrcF1.indexOf("function genMap");
+  const header = mgSrcF1.slice(headerStart, headerEnd).replace(/^export /gm, "");
   const mapSrc = [
     header,
     sliceFn("genMap"), sliceFn("makeMap"), sliceFn("streamAt"), sliceFn("pondAt"), sliceFn("rockAt"),
@@ -3022,8 +3032,10 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     ok("mk0.50/6: the order flow clamps at the ONE site where a tap becomes a dest",
       /const d = clampToRim\(p\.x, p\.z\);/.test(src) && /osq\.dest = \{ x: d\.x, z: d\.z \}/.test(src));
+    // P7 T18: RIM_HALF_U/V moved to mapgen.js.
+    const mgSrc050 = fs.readFileSync(new URL("../src/depot/mapgen.js", import.meta.url), "utf8");
     ok("mk0.50/6: the rim half-extents exist once (inRim and the clamp share them)",
-      /const RIM_HALF_U = 90, RIM_HALF_V = 90;/.test(src) && !/halfU: 29, halfV: 57/.test(src));
+      /const RIM_HALF_U = 90, RIM_HALF_V = 90;/.test(mgSrc050) && !/halfU: 29, halfV: 57/.test(mgSrc050) && !/halfU: 29, halfV: 57/.test(src));
   }
 }
 // ==== end mk0.50 =============================================================
@@ -5367,11 +5379,13 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 {
   console.log("\n[front t1: the square frame]");
   const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  ok("FRONT T1: the rim is 90x90 (the square)", /const RIM_HALF_U = 90, RIM_HALF_V = 90;/.test(src));
+  // P7 T18: RIM_HALF_U/GRID_CS/the falloff line moved to mapgen.js.
+  const mgSrcT1pin = fs.readFileSync(new URL("../src/depot/mapgen.js", import.meta.url), "utf8");
+  ok("FRONT T1: the rim is 90x90 (the square)", /const RIM_HALF_U = 90, RIM_HALF_V = 90;/.test(mgSrcT1pin));
   ok("FRONT T1 (re-pinned mk1.02, Amendment 3): the flow grid is 90x90 — the grid covers the full rim",
-    /const GRID_CS = 2\.0, GRID_W = 90, GRID_H = 90;/.test(src));
+    /const GRID_CS = 2\.0, GRID_W = 90, GRID_H = 90;/.test(mgSrcT1pin));
   ok("FRONT T1: the terrain falloff reads the rim constants, not literals",
-    /Math\.abs\(cuv\.u\) - RIM_HALF_U, Math\.abs\(cuv\.v\) - RIM_HALF_V/.test(src));
+    /Math\.abs\(cuv\.u\) - RIM_HALF_U, Math\.abs\(cuv\.v\) - RIM_HALF_V/.test(mgSrcT1pin));
   ok("FRONT T1: territory is built from the rim constants",
     /makeTerritory\(RIM_HALF_U, RIM_HALF_V\)/.test(src));
   ok("FRONT T1: camera pan extents are square", /const EXT = \{ x: 95, z: 95 \};/.test(src));
@@ -5382,14 +5396,21 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   // functional: the LIVE genMap fills the square. Same extraction machinery
   // as the FRONT F1 block above (sliceFn over the real source), fresh copy
   // here because that block's helpers are scoped to it.
+  // P7 T18: sliceFn2 checks DepotGame.jsx first (unmoved names), then
+  // mapgen.js (moved names, stripping the "export " prefix).
+  const mgSrcT1 = mgSrcT1pin;
   const sliceFn2 = (name) => {
-    const start = src.indexOf(`\nfunction ${name}(`);
-    if (start < 0) throw new Error("T1 extract: missing function " + name);
-    const rest = src.slice(start + 1);
+    let start = src.indexOf(`\nfunction ${name}(`), rest;
+    if (start >= 0) { rest = src.slice(start + 1); }
+    else {
+      start = mgSrcT1.indexOf(`\nexport function ${name}(`);
+      if (start < 0) throw new Error("T1 extract: missing function " + name);
+      rest = mgSrcT1.slice(start + 1).replace(/^export /, "");
+    }
     const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
     return rest.slice(0, m < 0 ? rest.length : m + 9);
   };
-  const headerT1 = src.slice(src.indexOf("const GRID_CS"), src.indexOf("function genMap"));
+  const headerT1 = mgSrcT1.slice(mgSrcT1.indexOf("const GRID_CS"), mgSrcT1.indexOf("function genMap")).replace(/^export /gm, "");
   const mapSrcT1 = [
     headerT1,
     sliceFn2("genMap"), sliceFn2("makeMap"), sliceFn2("streamAt"), sliceFn2("pondAt"), sliceFn2("rockAt"),
@@ -5446,14 +5467,20 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 {
   console.log("\n[front t2: the wilder map]");
   const srcT2 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  // P7 T18: sliceFn3 checks DepotGame.jsx first, then mapgen.js for moved names.
+  const mgSrcT2 = fs.readFileSync(new URL("../src/depot/mapgen.js", import.meta.url), "utf8");
   const sliceFn3 = (name) => {
-    const start = srcT2.indexOf(`\nfunction ${name}(`);
-    if (start < 0) throw new Error("T2 extract: missing function " + name);
-    const rest = srcT2.slice(start + 1);
+    let start = srcT2.indexOf(`\nfunction ${name}(`), rest;
+    if (start >= 0) { rest = srcT2.slice(start + 1); }
+    else {
+      start = mgSrcT2.indexOf(`\nexport function ${name}(`);
+      if (start < 0) throw new Error("T2 extract: missing function " + name);
+      rest = mgSrcT2.slice(start + 1).replace(/^export /, "");
+    }
     const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
     return rest.slice(0, m < 0 ? rest.length : m + 9);
   };
-  const headerT2 = srcT2.slice(srcT2.indexOf("const GRID_CS"), srcT2.indexOf("function genMap"));
+  const headerT2 = mgSrcT2.slice(mgSrcT2.indexOf("const GRID_CS"), mgSrcT2.indexOf("function genMap")).replace(/^export /gm, "");
   const mapSrcT2 = [
     headerT2,
     sliceFn3("genMap"), sliceFn3("makeMap"), sliceFn3("streamAt"), sliceFn3("pondAt"), sliceFn3("rockAt"),
@@ -5507,16 +5534,22 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   console.log("\n[front t3: the stream and the causeway]");
   const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   // extraction: the T1/T2 pattern, plus streamAt and the STREAM module state.
+  // P7 T18: sliceFn3 checks DepotGame.jsx first, then mapgen.js for moved names.
+  const mgSrcT3 = fs.readFileSync(new URL("../src/depot/mapgen.js", import.meta.url), "utf8");
   let M3ok = true, mkMapT3 = null;
   try {
     const sliceFn3 = (name) => {
-      const start = src.indexOf(`\nfunction ${name}(`);
-      if (start < 0) throw new Error("T3 extract: missing function " + name);
-      const rest = src.slice(start + 1);
+      let start = src.indexOf(`\nfunction ${name}(`), rest;
+      if (start >= 0) { rest = src.slice(start + 1); }
+      else {
+        start = mgSrcT3.indexOf(`\nexport function ${name}(`);
+        if (start < 0) throw new Error("T3 extract: missing function " + name);
+        rest = mgSrcT3.slice(start + 1).replace(/^export /, "");
+      }
       const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
       return rest.slice(0, m < 0 ? rest.length : m + 9);
     };
-    const header3 = src.slice(src.indexOf("const GRID_CS"), src.indexOf("function genMap"));
+    const header3 = mgSrcT3.slice(mgSrcT3.indexOf("const GRID_CS"), mgSrcT3.indexOf("function genMap")).replace(/^export /gm, "");
     if (!/let STREAM = null;/.test(header3)) throw new Error("T3: STREAM state not in header");
     const mapSrc3 = [
       header3,
@@ -5623,14 +5656,20 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 {
   console.log("\n[front t4: buildings of the proving grounds]");
   const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  // P7 T18: sliceFn4 checks DepotGame.jsx first, then mapgen.js for moved names.
+  const mgSrcT4 = fs.readFileSync(new URL("../src/depot/mapgen.js", import.meta.url), "utf8");
   const sliceFn4 = (name) => {
-    const start = src.indexOf(`\nfunction ${name}(`);
-    if (start < 0) throw new Error("T4 extract: missing function " + name);
-    const rest = src.slice(start + 1);
+    let start = src.indexOf(`\nfunction ${name}(`), rest;
+    if (start >= 0) { rest = src.slice(start + 1); }
+    else {
+      start = mgSrcT4.indexOf(`\nexport function ${name}(`);
+      if (start < 0) throw new Error("T4 extract: missing function " + name);
+      rest = mgSrcT4.slice(start + 1).replace(/^export /, "");
+    }
     const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
     return rest.slice(0, m < 0 ? rest.length : m + 9);
   };
-  const header4 = src.slice(src.indexOf("const GRID_CS"), src.indexOf("function genMap"));
+  const header4 = mgSrcT4.slice(mgSrcT4.indexOf("const GRID_CS"), mgSrcT4.indexOf("function genMap")).replace(/^export /gm, "");
   const mapSrc4 = [
     header4,
     sliceFn4("genMap"), sliceFn4("makeMap"), sliceFn4("streamAt"), sliceFn4("pondAt"), sliceFn4("rockAt"),
@@ -5745,7 +5784,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 
   // (g) source pins: the hooks and the raised cap exist where claimed
   ok("T4(g): the wide templates and the warehouse carry the cols flag (5 sites)",
-    (src.match(/cols: true/g) || []).length === 5);
+    (mgSrcT4.match(/cols: true/g) || []).length === 5);
   ok("T4(g): the drive doors bind to the long axis by live dimensions",
     /const driveZ = t\.drive && t\.nz >= t\.nx;/.test(src));
   ok("T4(g): the town debug hook exists", /__DEPOTTOWN__/.test(src));
@@ -5762,16 +5801,22 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 {
   console.log("\n[front t5: copses, forests, and the high ground]");
   const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  // P7 T18: sliceFn5 checks DepotGame.jsx first, then mapgen.js for moved names.
+  const mgSrcT5 = fs.readFileSync(new URL("../src/depot/mapgen.js", import.meta.url), "utf8");
   let M5ok = true, mkMapT5 = null;
   try {
     const sliceFn5 = (name) => {
-      const start = src.indexOf(`\nfunction ${name}(`);
-      if (start < 0) throw new Error("T5 extract: missing function " + name);
-      const rest = src.slice(start + 1);
+      let start = src.indexOf(`\nfunction ${name}(`), rest;
+      if (start >= 0) { rest = src.slice(start + 1); }
+      else {
+        start = mgSrcT5.indexOf(`\nexport function ${name}(`);
+        if (start < 0) throw new Error("T5 extract: missing function " + name);
+        rest = mgSrcT5.slice(start + 1).replace(/^export /, "");
+      }
       const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
       return rest.slice(0, m < 0 ? rest.length : m + 9);
     };
-    const header5 = src.slice(src.indexOf("const GRID_CS"), src.indexOf("function genMap"));
+    const header5 = mgSrcT5.slice(mgSrcT5.indexOf("const GRID_CS"), mgSrcT5.indexOf("function genMap")).replace(/^export /gm, "");
     if (!/let HILLS = \[\];/.test(header5)) throw new Error("T5: HILLS state not in header");
     const mapSrc5 = [
       header5,
@@ -5855,7 +5900,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 
   // (d) source pins: the hooks exist where claimed
-  ok("T5(d): buildDepotTerrain lifts the drawn hills", /hb\.h \* Math\.exp\(-dh\)/.test(src));
+  ok("T5(d): buildDepotTerrain lifts the drawn hills", /hb\.h \* Math\.exp\(-dh\)/.test(mgSrcT5));
   ok("T5(d): the boot plants the plan and nothing else", /for \(const p of planTrees\(\)\) treeAt\(p\.x, p\.z\);/.test(src));
   const rsrc5 = fs.readFileSync(new URL("../src/render/renderer.js", import.meta.url), "utf8");
   ok("T5(d): the tree pool is one constant at 360", /const TREE_CAP = 360;/.test(rsrc5));
@@ -5888,14 +5933,20 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   const T6_HASH = 3465970090;   // was 119305372
   const T6_DRAWS = 695;  // was 755
   const src6 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  // P7 T18: sliceFn6 checks DepotGame.jsx first, then mapgen.js for moved names.
+  const mgSrc6 = fs.readFileSync(new URL("../src/depot/mapgen.js", import.meta.url), "utf8");
   const sliceFn6 = (name) => {
-    const start = src6.indexOf(`\nfunction ${name}(`);
-    if (start < 0) throw new Error("T6 extract: missing function " + name);
-    const rest = src6.slice(start + 1);
+    let start = src6.indexOf(`\nfunction ${name}(`), rest;
+    if (start >= 0) { rest = src6.slice(start + 1); }
+    else {
+      start = mgSrc6.indexOf(`\nexport function ${name}(`);
+      if (start < 0) throw new Error("T6 extract: missing function " + name);
+      rest = mgSrc6.slice(start + 1).replace(/^export /, "");
+    }
     const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
     return rest.slice(0, m < 0 ? rest.length : m + 9);
   };
-  const header6 = src6.slice(src6.indexOf("const GRID_CS"), src6.indexOf("function genMap"));
+  const header6 = mgSrc6.slice(mgSrc6.indexOf("const GRID_CS"), mgSrc6.indexOf("function genMap")).replace(/^export /gm, "");
   const mapSrc6 = [
     header6,
     sliceFn6("genMap"), sliceFn6("makeMap"), sliceFn6("streamAt"), sliceFn6("planTrees"),
@@ -5955,16 +6006,23 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 {
   console.log("\n[p6 t1: the path that walks around]");
   const src = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  // P7 T18: sliceFnP checks DepotGame.jsx first (stepSquadRouting/townFootprint/
+  // buildTown stayed), then mapgen.js for moved names.
+  const mgSrcP = fs.readFileSync(new URL("../src/depot/mapgen.js", import.meta.url), "utf8");
   let M1ok = true, mk1 = null;
   try {
     const sliceFnP = (name) => {
-      const start = src.indexOf(`\nfunction ${name}(`);
-      if (start < 0) throw new Error("P6T1 extract: missing function " + name);
-      const rest = src.slice(start + 1);
+      let start = src.indexOf(`\nfunction ${name}(`), rest;
+      if (start >= 0) { rest = src.slice(start + 1); }
+      else {
+        start = mgSrcP.indexOf(`\nexport function ${name}(`);
+        if (start < 0) throw new Error("P6T1 extract: missing function " + name);
+        rest = mgSrcP.slice(start + 1).replace(/^export /, "");
+      }
       const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
       return rest.slice(0, m < 0 ? rest.length : m + 9);
     };
-    const headerP = src.slice(src.indexOf("const GRID_CS"), src.indexOf("function genMap"));
+    const headerP = mgSrcP.slice(mgSrcP.indexOf("const GRID_CS"), mgSrcP.indexOf("function genMap")).replace(/^export /gm, "");
     const mapSrcP = [
       headerP,
       sliceFnP("genMap"), sliceFnP("makeMap"), sliceFnP("streamAt"), sliceFnP("planTrees"),
@@ -6587,14 +6645,20 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   // back off the TOWN entries through invW (the same way FRONT T2 reads
   // depth off c1.v) rather than off a genMap return value directly.
   const srcT3 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  // P7 T18: sliceFn4 checks DepotGame.jsx first, then mapgen.js for moved names.
+  const mgSrcT3b = fs.readFileSync(new URL("../src/depot/mapgen.js", import.meta.url), "utf8");
   const sliceFn4 = (name) => {
-    const start = srcT3.indexOf(`\nfunction ${name}(`);
-    if (start < 0) throw new Error("T3 extract: missing function " + name);
-    const rest = srcT3.slice(start + 1);
+    let start = srcT3.indexOf(`\nfunction ${name}(`), rest;
+    if (start >= 0) { rest = srcT3.slice(start + 1); }
+    else {
+      start = mgSrcT3b.indexOf(`\nexport function ${name}(`);
+      if (start < 0) throw new Error("T3 extract: missing function " + name);
+      rest = mgSrcT3b.slice(start + 1).replace(/^export /, "");
+    }
     const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
     return rest.slice(0, m < 0 ? rest.length : m + 9);
   };
-  const headerT3 = srcT3.slice(srcT3.indexOf("const GRID_CS"), srcT3.indexOf("function genMap"));
+  const headerT3 = mgSrcT3b.slice(mgSrcT3b.indexOf("const GRID_CS"), mgSrcT3b.indexOf("function genMap")).replace(/^export /gm, "");
   const mapSrcT3 = [
     headerT3,
     sliceFn4("genMap"), sliceFn4("makeMap"), sliceFn4("streamAt"), sliceFn4("pondAt"), sliceFn4("rockAt"),
@@ -6910,14 +6974,20 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   // (census/standing/breach) flows through the new pieces unchanged.
   {
     const srcT5 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    // P7 T18: sliceFn5 checks DepotGame.jsx first, then mapgen.js for moved names.
+    const mgSrcT5b = fs.readFileSync(new URL("../src/depot/mapgen.js", import.meta.url), "utf8");
     const sliceFn5 = (name) => {
-      const start = srcT5.indexOf(`\nfunction ${name}(`);
-      if (start < 0) throw new Error("T5 extract: missing function " + name);
-      const rest = srcT5.slice(start + 1);
+      let start = srcT5.indexOf(`\nfunction ${name}(`), rest;
+      if (start >= 0) { rest = srcT5.slice(start + 1); }
+      else {
+        start = mgSrcT5b.indexOf(`\nexport function ${name}(`);
+        if (start < 0) throw new Error("T5 extract: missing function " + name);
+        rest = mgSrcT5b.slice(start + 1).replace(/^export /, "");
+      }
       const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
       return rest.slice(0, m < 0 ? rest.length : m + 9);
     };
-    const header5 = srcT5.slice(srcT5.indexOf("const GRID_CS"), srcT5.indexOf("function genMap"));
+    const header5 = mgSrcT5b.slice(mgSrcT5b.indexOf("const GRID_CS"), mgSrcT5b.indexOf("function genMap")).replace(/^export /gm, "");
     const mapSrc5 = [
       header5,
       sliceFn5("genMap"), sliceFn5("makeMap"), sliceFn5("streamAt"), sliceFn5("pondAt"), sliceFn5("rockAt"),
@@ -7077,14 +7147,20 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   // battering (20+ blasts) still gets there — hard, not impossible.
   {
     const srcT6 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    // P7 T18: sliceFn6 checks DepotGame.jsx first, then mapgen.js for moved names.
+    const mgSrcT6b = fs.readFileSync(new URL("../src/depot/mapgen.js", import.meta.url), "utf8");
     const sliceFn6 = (name) => {
-      const start = srcT6.indexOf(`\nfunction ${name}(`);
-      if (start < 0) throw new Error("T6 extract: missing function " + name);
-      const rest = srcT6.slice(start + 1);
+      let start = srcT6.indexOf(`\nfunction ${name}(`), rest;
+      if (start >= 0) { rest = srcT6.slice(start + 1); }
+      else {
+        start = mgSrcT6b.indexOf(`\nexport function ${name}(`);
+        if (start < 0) throw new Error("T6 extract: missing function " + name);
+        rest = mgSrcT6b.slice(start + 1).replace(/^export /, "");
+      }
       const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
       return rest.slice(0, m < 0 ? rest.length : m + 9);
     };
-    const header6 = srcT6.slice(srcT6.indexOf("const GRID_CS"), srcT6.indexOf("function genMap"));
+    const header6 = mgSrcT6b.slice(mgSrcT6b.indexOf("const GRID_CS"), mgSrcT6b.indexOf("function genMap")).replace(/^export /gm, "");
     const mapSrc6 = [
       header6,
       sliceFn6("genMap"), sliceFn6("makeMap"), sliceFn6("streamAt"), sliceFn6("pondAt"), sliceFn6("rockAt"),
@@ -7777,8 +7853,10 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   // (i) source shape: the game wires the masks, the flow shuns the lip, the
   // stamps carry their team
   {
-    ok("T13(i): makeGrid stamps the terrain masks", /if \(field\) stampTerrainMasks\(G, field\)/.test(dgSrc));
-    ok("T13(i2): the enemy flow pays 3x to march a cliff lip", /cells\[ni\]\.drop \? 3 : 1/.test(dgSrc));
+    // P7 T18: makeGrid/computeFlowField moved to mapgen.js.
+    const mgSrcT13 = fs.readFileSync(new URL("../src/depot/mapgen.js", import.meta.url), "utf8");
+    ok("T13(i): makeGrid stamps the terrain masks", /if \(field\) stampTerrainMasks\(G, field\)/.test(mgSrcT13));
+    ok("T13(i2): the enemy flow pays 3x to march a cliff lip", /cells\[ni\]\.drop \? 3 : 1/.test(mgSrcT13));
     ok("T13(i3): every structure stamp carries its team", (dgSrc.match(/\.bTeam = /g) || []).length >= 8);
   }
   // (j) Amendment 1 — the green threads (source shape; the look is the
@@ -7796,23 +7874,31 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 // together (Amendment 1 — the battle plays out over the reshaped world).
 {
   const dgSrc15 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  ok("T15(a): the rim halves grew to 90", /const RIM_HALF_U = 90, RIM_HALF_V = 90;/.test(dgSrc15));
-  ok("T15(a2): the grid grew to 90x90 at the same 2m cell", /const GRID_CS = 2\.0, GRID_W = 90, GRID_H = 90;/.test(dgSrc15));
+  // P7 T18: RIM_HALF_U/GRID_CS/the depot-separation floor moved to mapgen.js;
+  // makeField(181...) call stays in DepotGame.jsx's mount code.
+  const mgSrc15 = fs.readFileSync(new URL("../src/depot/mapgen.js", import.meta.url), "utf8");
+  ok("T15(a): the rim halves grew to 90", /const RIM_HALF_U = 90, RIM_HALF_V = 90;/.test(mgSrc15));
+  ok("T15(a2): the grid grew to 90x90 at the same 2m cell", /const GRID_CS = 2\.0, GRID_W = 90, GRID_H = 90;/.test(mgSrc15));
   ok("T15(a3): the heightfield grew with its apron", /makeField\(181, 2\.0, MAP_SEED\)/.test(dgSrc15));
-  ok("T15(a4): the depot-separation floor scaled", /2 \* m\.depotDepth\) >= 105/.test(dgSrc15));
+  ok("T15(a4): the depot-separation floor scaled", /2 \* m\.depotDepth\) >= 105/.test(mgSrc15));
 
   // (b) 25-seed census: every map accepts, stays connected, and fits its
   // pools — counts held means the pools MUST hold; this is the proof, not
   // a hope. The F1 Task 1 / T5 boot harness idiom, regrowing maps headless
   // off the real shipped source.
+  // P7 T18: sliceFn15 checks DepotGame.jsx first, then mapgen.js for moved names.
   const sliceFn15 = (name) => {
-    const start = dgSrc15.indexOf(`\nfunction ${name}(`);
-    if (start < 0) throw new Error("T15 extract: missing function " + name);
-    const rest = dgSrc15.slice(start + 1);
+    let start = dgSrc15.indexOf(`\nfunction ${name}(`), rest;
+    if (start >= 0) { rest = dgSrc15.slice(start + 1); }
+    else {
+      start = mgSrc15.indexOf(`\nexport function ${name}(`);
+      if (start < 0) throw new Error("T15 extract: missing function " + name);
+      rest = mgSrc15.slice(start + 1).replace(/^export /, "");
+    }
     const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
     return rest.slice(0, m < 0 ? rest.length : m + 9);
   };
-  const header15 = dgSrc15.slice(dgSrc15.indexOf("const GRID_CS"), dgSrc15.indexOf("function genMap"));
+  const header15 = mgSrc15.slice(mgSrc15.indexOf("const GRID_CS"), mgSrc15.indexOf("function genMap")).replace(/^export /gm, "");
   const mapSrc15 = [
     header15,
     sliceFn15("genMap"), sliceFn15("makeMap"), sliceFn15("streamAt"), sliceFn15("planTrees"),
@@ -8100,6 +8186,26 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 }
 // ==== end P7 T17 =============================================================
+
+// ==== P7 T18: THE MAP MOVES OUT ==============================================
+// Reorganization 1 of 5 (owner): the map frame lives in mapgen.js, verbatim.
+// Zero behavior change — the keystone above is the proof.
+{
+  let mgSrc18 = "";
+  try { mgSrc18 = fs.readFileSync(new URL("../src/depot/mapgen.js", import.meta.url), "utf8"); } catch (e) {}
+  const dgSrc18 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  ok("T18(a): mapgen.js exists and owns the generator",
+    /export function genMap\(seed\)/.test(mgSrc18) && /export function makeMap\(seed\)/.test(mgSrc18) &&
+    /export function buildDepotTerrain\(/.test(mgSrc18) && /export function makeGrid\(field\)/.test(mgSrc18) &&
+    /export function planTrees\(\)/.test(mgSrc18) && /export function computeFlowField\(/.test(mgSrc18));
+  ok("T18(a2): the frame state moved with it",
+    /export let ORIENT = 0;/.test(mgSrc18) && /export const RIM_HALF_U = 90, RIM_HALF_V = 90;/.test(mgSrc18) &&
+    /export let STREAM = null;/.test(mgSrc18));
+  ok("T18(b): DepotGame no longer defines what it now imports",
+    !/function genMap\(/.test(dgSrc18) && !/function makeGrid\(/.test(dgSrc18) &&
+    !/function computeFlowField\(/.test(dgSrc18) && /from "\.\/mapgen\.js"/.test(dgSrc18));
+}
+// ==== end P7 T18 =============================================================
 
 // ==== P7 T10: MINES AND TRIPWIRES ============================================
 //  (a) the trigger: a player rifleman standing ON a player mine never trips
