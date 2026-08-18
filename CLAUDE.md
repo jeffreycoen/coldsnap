@@ -36,6 +36,8 @@ The project owner directs design, reviews every plan, and is the sole playtester
 - **Every task in a plan names a suggested model** (Sonnet or Fable, with the one-line reason); the owner rules on it at plan approval.
 - One agent in the working tree at a time, sequential. Parallel work requires worktree isolation.
 - **Stop after every task.** A task landing is a stop: report it and wait for the owner's word before the next dispatch. Plan approval approves the plan, not an unattended run of it.
+- **A landing includes the deploy:** gates green → commit → push, without asking — the owner's live check IS the acceptance step. The stop rule governs the next dispatch, never the deploy of the finished task.
+- **"Deep status"** from the owner means a full state report on the current operation (done / in-flight / pending / blocked-on-owner, agent reports, commits, the next gate) — never independent re-verification runs.
 - Every dispatch carries: a pre-verified reading list (anchors checked against live code at dispatch), trap notes, and a required read-confirmation opening the agent's report.
 - Agents verify **mechanics, never feel**. Perceptibility, look, and sound acceptance belong to the owner alone.
 
