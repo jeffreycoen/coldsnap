@@ -25,7 +25,7 @@ import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accurac
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
 import { stepDrivers, possessedArmorFire, possessedArmorMg } from "./drivers.js";
 import { stepTransports, unloadApc, apcSeated, unloadEnemyRiders } from "./transports.js";
-import { planRoute } from "./route.js";
+import { planRoute, stampTerrainMasks } from "./route.js";
 import { makeRegiment, payTown } from "./economy.js";
 import { makeTerritory, stepTerritory, holderAt, canBuild, fogStateFor, valueAt, EMIT } from "./territory.js";
 import { makeSight, stepSight, seenAt, eyeOf, steerReticle, reclampReticle } from "./sight.js";
@@ -439,7 +439,7 @@ function rockAt(x, z) { for (const k of ROCKS) if (Math.hypot(x - k.x, z - k.z) 
 // ========================================================== grid + flow
 function makeGrid(field) {
   const cells = new Array(GRID_W * GRID_H);
-  for (let i = 0; i < cells.length; i++) cells[i] = { blocked: false, terrain: false, ice: false, dx: 0, dz: 0, dist: 1e9, wallId: null };
+  for (let i = 0; i < cells.length; i++) cells[i] = { blocked: false, terrain: false, ice: false, dx: 0, dz: 0, dist: 1e9, wallId: null, building: null, bTeam: 0, steep: false, drop: false };
   const G = {
     cells, w: GRID_W, h: GRID_H, cs: GRID_CS, ox: GRID_OX, oz: GRID_OZ,
     idx: (gx, gz) => gz * GRID_W + gx,
@@ -459,6 +459,13 @@ function makeGrid(field) {
     else if (streamAt(wp.x, wp.z)) { c.blocked = true; c.water = true; }
     else if (pondAt(wp.x, wp.z)) c.ice = true;
   }
+  // P7 T13: the terrain masks — steep ground a hull must not climb, cliff
+  // lips a man must not walk off. Stamped once; craters do not restamp
+  // (their ~0.5m sits under both thresholds). AMENDMENT 2: makeMap's
+  // generation-time grid (makeGrid(null), ~line 309) carries no terrain
+  // field and needs no masks — it only tests footprints; the guard keeps
+  // its cells' steep/drop at their false defaults.
+  if (field) stampTerrainMasks(G, field);
   return G;
 }
 // T3: is this WORLD point open water? Canonical distance to the stream
@@ -566,7 +573,7 @@ function computeFlowField(grid, objGx, objGz) {
         if (cells[grid.idx(cur.gx + d[0], cur.gz)].blocked || cells[grid.idx(cur.gx, cur.gz + d[1])].blocked) continue;
       }
       const step = (d[0] !== 0 && d[1] !== 0) ? 1.414 : 1;
-      const nd = cd + step * (cells[ni].ice ? 0.72 : 1);
+      const nd = cd + step * (cells[ni].ice ? 0.72 : 1) * (cells[ni].drop ? 3 : 1);
       if (nd < cells[ni].dist - 1e-6) { cells[ni].dist = nd; q.push({ gx: nx, gz: nz }); }
     }
   }
@@ -881,7 +888,7 @@ function buildTown(world, grid, field) {
       }
     }
     const cells = townFootprint(grid, t);
-    for (const ci of cells) { const c = grid.cells[ci]; c.blocked = true; c.building = t.id; }
+    for (const ci of cells) { const c = grid.cells[ci]; c.blocked = true; c.building = t.id; c.bTeam = t.team === 2 ? 2 : (t.depot ? 1 : 0); }
     if (t.depot) {
       // roof-peak flag anchor: kinematic marker body, no collision role —
       // the renderer draws pole+cloth at any body with flagPole === true
@@ -903,7 +910,7 @@ function stepTown(world, grid, town, onRuin) {
     for (const s of b.stones) if (world.byId.has(s.id) && s.sleeping) standing++;
     if (standing > b.n0 * 0.66) continue;
     b.ruined = true;
-    for (const ci of b.cells) { const c = grid.cells[ci]; c.blocked = false; c.building = null; }
+    for (const ci of b.cells) { const c = grid.cells[ci]; c.blocked = false; c.building = null; c.bTeam = 0; }
     world.events.push({ type: "collapse", x: b.x, y: world.field.heightAt(b.x, b.z) + 2, z: b.z });
     if (onRuin) onRuin(b);
   }
@@ -1477,7 +1484,7 @@ export default function DepotGame({ onExit, resume = null }) {
           const saved = (RES.towns || []).find((s) => s.id === t.id) || {};
           const cells = townFootprint(grid, t);
           const ruined = !!saved.ruined;
-          if (!ruined) for (const ci of cells) { const c = grid.cells[ci]; c.blocked = true; c.building = t.id; }
+          if (!ruined) for (const ci of cells) { const c = grid.cells[ci]; c.blocked = true; c.building = t.id; c.bTeam = t.team === 2 ? 2 : (t.depot ? 1 : 0); }
           const stones = stonesBy.get(t.id) || [];
           return { id: t.id, cells, stones, n0: saved.n0 != null ? saved.n0 : stones.length, ruined, x: t.x, z: t.z };
         });
@@ -1499,7 +1506,7 @@ export default function DepotGame({ onExit, resume = null }) {
           const g = grid.worldToGrid(b.pos.x, b.pos.z);
           if (!grid.inBounds(g.gx, g.gz)) continue;
           const c = grid.cells[grid.idx(g.gx, g.gz)];
-          c.blocked = true; c.wallId = b.id;
+          c.blocked = true; c.wallId = b.id; c.bTeam = b.team || 1;
         }
         // Rocks: the live set is whatever rock bodies came back. A ridge that
         // was breached during the run has no body in the file, so its cells
@@ -2044,6 +2051,7 @@ export default function DepotGame({ onExit, resume = null }) {
         }
         b.maxHp = b.hp;
         cell.wallId = b.id;
+        cell.bTeam = b.team || 1;
         S.resources -= cost;
         S._buyAt = world.t;
         recomputeFlow();
@@ -2597,6 +2605,7 @@ export default function DepotGame({ onExit, resume = null }) {
           if (!checkConnectivity(grid, SPAWN_POINTS, objG.gx, objG.gz)) { cell.blocked = false; return "skip"; }
           const b = spawnWallCourses(world, row.x, field.heightAt(row.x, row.z), row.z, orient)[0];
           cell.wallId = b.id;
+          cell.bTeam = 1;
           recomputeFlow();
         } else {
           spawnSandbag(world, row.x, row.z, orient);
@@ -2780,7 +2789,7 @@ export default function DepotGame({ onExit, resume = null }) {
           const bi = world.bodies.indexOf(s);
           if (bi >= 0) world.bodies.splice(bi, 1);
         }
-        cell.wallId = null; cell.blocked = false;
+        cell.wallId = null; cell.blocked = false; cell.bTeam = 0;
         S.resources += refund;
         recomputeFlow();
         toast("+" + refund + " scrap");
@@ -2804,7 +2813,7 @@ export default function DepotGame({ onExit, resume = null }) {
       S.clearPending = clearPending;
       S.rotate = (d) => R.rotateStep(d);
       const onStructureLost = (b) => {
-        for (const c of grid.cells) if (c.wallId === b.id) { c.wallId = null; c.blocked = false; }
+        for (const c of grid.cells) if (c.wallId === b.id) { c.wallId = null; c.blocked = false; c.bTeam = 0; }
         recomputeFlow();
       };
       const onRuin = () => recomputeFlow();
@@ -3914,6 +3923,22 @@ export default function DepotGame({ onExit, resume = null }) {
           // accumulator (NOT per sim tick). Cheap: setMines only rewrites the
           // two instanced pools when a device actually fired this tick.
           if (terrGuard > 0) { stepMines(world, S.mines); R.setMines(S.mines); }
+          // P7 T13 (owner): THE GREEN THREADS — every friendly ordered path,
+          // green on the ground, refreshed with the other derived overlays.
+          {
+            const paths = [];
+            for (const sq of S.squads) {
+              if (!sq.dest || sq.ridingIn != null) continue;
+              if (sq.order !== "move" && sq.order !== "attack" && sq.order !== "build" && sq.order !== "patrol") continue;
+              paths.push({ pts: [{ x: sq.anchor.x, z: sq.anchor.z }, ...(sq._route || []), { x: sq.dest.x, z: sq.dest.z }] });
+            }
+            for (const b of world.bodies) {
+              if (b.kind !== "vehicle" || !b.alive || b.team !== 1 || !b.dest) continue;
+              if (b.order !== "move" && b.order !== "patrol" && b.order !== "escort") continue;
+              paths.push({ pts: [{ x: b.pos.x, z: b.pos.z }, ...(b._route || []), { x: b.dest.x, z: b.dest.z }] });
+            }
+            R.overlay.setOrderPaths(paths);
+          }
           world.events.length = 0;
           const pSim0 = perf ? performance.now() : 0; // stopwatch: sim bracket opens
           // P6 T10 (mk1.19): the pool rebuild runs ONCE PER FRAME, not once

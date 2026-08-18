@@ -30,7 +30,7 @@ import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, MASON, INFANTRY_ARMS, PLAYE
 import { stepUnits, spawnUnit, payBounties, SNIPER_FIRE, stepBreakerRam } from "../src/depot/units.js";
 import { stepDrivers, possessedArmorFire, possessedArmorMg } from "../src/depot/drivers.js";
 import { stepTransports, unloadApc, apcSeated, unloadEnemyRiders } from "../src/depot/transports.js";
-import { planRoute } from "../src/depot/route.js";
+import { planRoute, stampTerrainMasks } from "../src/depot/route.js";
 import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad, drivePossessedSquad, COHESION_M, slotBlockedPublic, clearSlot } from "../src/depot/squads.js";
 import {
   makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue,
@@ -2424,8 +2424,8 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
       state: () => ({ ORIENT, OBJ_POS, SPAWN_POINTS, PONDS, ROCKS, TOWN, ROADS, MAP_SEED }) };`,
   ].join("\n");
   const makeMapModule = () => new Function(
-    "mulberry32", "MASON", "fwdUFor", "fwdDirFor", "invWFor", "addBody", "addWeld", mapSrc,
-  )(mulberry32, MASON, fwdUFor, fwdDirFor, invWFor, addBody, addWeld);
+    "mulberry32", "MASON", "fwdUFor", "fwdDirFor", "invWFor", "addBody", "addWeld", "stampTerrainMasks", mapSrc,
+  )(mulberry32, MASON, fwdUFor, fwdDirFor, invWFor, addBody, addWeld, stampTerrainMasks);
 
   const M = makeMapModule();
   M.makeMap(5);
@@ -7653,6 +7653,137 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 }
 // ==== end P7 T12 =============================================================
+
+// ==== P7 T13: SELF-PRESERVATION ==============================================
+// The owner's rulings (08-17/08-18): the grid learns steepness and drops, the
+// hull learns clearance, corners, backing out, and the difference between
+// masonry it must respect and masonry it was ordered through; the rim joins
+// the slot law. All game-layer; core.js untouched.
+{
+  const dgSrc = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  const rSrc = fs.readFileSync(new URL("../src/render/renderer.js", import.meta.url), "utf8");
+  const flatF13 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
+  // identity-mapped mini grid (no rotation), cs 2 — the real grid's interface.
+  const mkGrid = (n) => {
+    const cells = new Array(n * n);
+    for (let i = 0; i < cells.length; i++) cells[i] = { blocked: false, terrain: false, ice: false, wallId: null, building: null, bTeam: 0, steep: false, drop: false };
+    const G = { cells, w: n, h: n, cs: 2,
+      idx: (gx, gz) => gz * n + gx,
+      inBounds: (gx, gz) => gx >= 0 && gx < n && gz >= 0 && gz < n,
+      worldToGrid: (x, z) => ({ gx: Math.floor(x / 2) + (n >> 1), gz: Math.floor(z / 2) + (n >> 1) }),
+      gridToWorld: (gx, gz) => ({ x: (gx - (n >> 1)) * 2 + 1, z: (gz - (n >> 1)) * 2 + 1 }) };
+    G.cellAt = (x, z) => { const g = G.worldToGrid(x, z); return G.inBounds(g.gx, g.gz) ? cells[G.idx(g.gx, g.gz)] : null; };
+    return G;
+  };
+  const armorAt = (w, x, z) => {
+    const v = addBody(w, { kind: "vehicle", team: 1, mass: BISON.mass, hx: BISON.hx, hy: BISON.hy, hz: BISON.hz, x, y: BISON.hy + 0.05, z, hp: BISON.hp, friction: 0.85 });
+    v.vtype = "bison"; v.drv = "armor"; v.depotDrive = "auto"; v.tracks = "free";
+    return v;
+  };
+  // (a) the terrain masks, pure over a synthetic field
+  {
+    const G = mkGrid(20);
+    stampTerrainMasks(G, { heightAt: (x, z) => (x > 6 ? (x - 6) * 1.2 : 0) });
+    ok("T13(a): a 50-degree ramp flags steep", G.cellAt(11, 1).steep === true);
+    ok("T13(a2): the flat stays clear", G.cellAt(-8, 1).steep === false && G.cellAt(-8, 1).drop === false);
+    const G2 = mkGrid(20);
+    stampTerrainMasks(G2, { heightAt: (x) => (x < 0 ? 2 : 0) });
+    ok("T13(a3): the cliff's high lip flags drop", G2.cellAt(-1, 1).drop === true);
+    ok("T13(a4): the low ground doesn't", G2.cellAt(5, 1).drop === false);
+  }
+  // (b) hull routing shuns steep; feet don't care about grade
+  {
+    const G3 = mkGrid(20);
+    for (let gz = 0; gz < 20; gz++) if (gz !== 10) G3.cells[G3.idx(10, gz)].steep = true;
+    const rH = planRoute(G3, -9, 1, 9, 1, { hull: true, team: 1 });
+    ok("T13(b): the hull route threads the one gentle gap in a steep wall", !!rH && rH.reached === true &&
+      rH.pts.every((p) => { const c = G3.cellAt(p.x, p.z); return !c || !c.steep; }));
+    const rF = planRoute(G3, -9, 1, 9, 1);
+    ok("T13(b2): feet don't care about grade", !!rF && rF.reached === true);
+  }
+  // (c) foot routing walks the safe shoulder past a cliff line
+  {
+    const G4 = mkGrid(20);
+    for (let gz = 0; gz < 20; gz++) if (gz !== 4) G4.cells[G4.idx(10, gz)].drop = true;
+    const rF2 = planRoute(G4, -9, 1, 9, 1);
+    ok("T13(c): a squad route walks the one safe shoulder past a cliff line", !!rF2 && rF2.reached === true &&
+      rF2.pts.every((p) => { const c = G4.cellAt(p.x, p.z); return !c || !c.drop; }));
+  }
+  // (d) hull clearance: a one-cell doorway is no lane for a 4.4m box
+  {
+    const G5 = mkGrid(20);
+    for (let gz = 0; gz < 20; gz++) if (gz !== 10) { const c = G5.cells[G5.idx(10, gz)]; c.blocked = true; c.building = 9; c.bTeam = 0; }
+    const rH2 = planRoute(G5, -9, 1, 9, 1, { hull: true, team: 1 });
+    ok("T13(d): a one-cell doorway is no lane for a hull", !rH2 || !rH2.reached);
+    const rF3 = planRoute(G5, -9, 1, 9, 1);
+    ok("T13(d2): men walk through it", !!rF3 && rF3.reached === true);
+  }
+  // (e) the ramming ruling, both halves — reuse the T1 fixture's identity fwdDir
+  {
+    const wldE = makeWorld({ field: flatF13, seed: 7 });
+    const G6 = mkGrid(20);
+    for (let gz = 0; gz < 20; gz++) { const c = G6.cells[G6.idx(10, gz)]; c.blocked = true; c.building = 77; c.bTeam = 2; }
+    const vE = armorAt(wldE, -9, 1);
+    vE.order = "move"; vE.dest = { x: 9, z: 1 };
+    stepDrivers(wldE, G6, identFwdDir, null);
+    ok("T13(e): an order through ENEMY masonry keeps its destination — the ram is the order",
+      Math.hypot(vE.dest.x - 9, vE.dest.z - 1) < 0.6, `${vE.dest.x},${vE.dest.z}`);
+    const wldF = makeWorld({ field: flatF13, seed: 7 });
+    const G7 = mkGrid(20);
+    for (let gz = 0; gz < 20; gz++) { const c = G7.cells[G7.idx(10, gz)]; c.blocked = true; c.building = 77; c.bTeam = 1; }
+    const vF = armorAt(wldF, -9, 1);
+    vF.order = "move"; vF.dest = { x: 9, z: 1 };
+    stepDrivers(wldF, G7, identFwdDir, null);
+    ok("T13(e2): FRIENDLY masonry clamps the order short — never rammed",
+      Math.hypot(vF.dest.x - 9, vF.dest.z - 1) > 0.6, `${vF.dest.x},${vF.dest.z}`);
+  }
+  // (f) the progress watch: a hull that travels nothing backs out, marks the
+  // lane, and after three strikes clamps the leg where it stands
+  {
+    const wldS = makeWorld({ field: flatF13, seed: 8 });
+    const G8 = mkGrid(20);
+    const vS = armorAt(wldS, -9, 1);
+    vS.order = "move"; vS.dest = { x: 9, z: 1 };
+    let sawBack = false;
+    for (let i = 0; i < 16 * 120; i++) { wldS.t += wldS.dt; stepDrivers(wldS, G8, identFwdDir, null); if ((vS._backT || 0) > 0) sawBack = true; }
+    ok("T13(f): a hull that travels nothing backs out", sawBack === true);
+    ok("T13(f2): the failed lane is marked", !!vS._avoid && vS._avoid.length >= 1);
+    ok("T13(f3): three strikes clamp the leg honestly — the hull stands down", vS.order === "defend");
+  }
+  // (g) the rim joins the slot law
+  {
+    const wldR = makeWorld({ field: flatF13, seed: 9 });
+    wldR.inRim = (x, z) => Math.abs(x) <= 10 && Math.abs(z) <= 10;
+    ok("T13(g): off the map is never a slot", slotBlockedPublic(wldR, 14, 0, 0.63) === true);
+    const pR = clearSlot(wldR, 11, 0, 0.63);
+    ok("T13(g2): clearSlot walks back inside the rim", wldR.inRim(pR.x, pR.z) === true, `${pR.x},${pR.z}`);
+  }
+  // (h) the corner is taken at a crawl (manual channel, throttle 0.35)
+  {
+    const wldC = makeWorld({ field: flatF13, seed: 10 });
+    const G9 = mkGrid(20);
+    const vC = armorAt(wldC, -5, 1);
+    vC.order = "move"; vC.dest = { x: -1, z: 9 };
+    vC._route = [{ x: -1, z: 1 }, { x: -1, z: 9 }];
+    vC._routeDest = { x: -1, z: 9 };
+    stepDrivers(wldC, G9, identFwdDir, null);
+    ok("T13(h): the corner is taken at a crawl", vC.depotDrive === "manual" && !!vC.ctl && Math.abs(vC.ctl.throttle - 0.35) < 1e-9);
+  }
+  // (i) source shape: the game wires the masks, the flow shuns the lip, the
+  // stamps carry their team
+  {
+    ok("T13(i): makeGrid stamps the terrain masks", /if \(field\) stampTerrainMasks\(G, field\)/.test(dgSrc));
+    ok("T13(i2): the enemy flow pays 3x to march a cliff lip", /cells\[ni\]\.drop \? 3 : 1/.test(dgSrc));
+    ok("T13(i3): every structure stamp carries its team", (dgSrc.match(/\.bTeam = /g) || []).length >= 8);
+  }
+  // (j) Amendment 1 — the green threads (source shape; the look is the
+  // owner's live acceptance, smoke's zero-page-errors gate covers the boot)
+  {
+    ok("T13(j): the renderer carries the order-path overlay", /setOrderPaths\(paths\)/.test(rSrc) && /0x4aff8c/.test(rSrc));
+    ok("T13(j2): the game feeds it at the derived-overlay cadence", /setOrderPaths\(/.test(dgSrc));
+  }
+}
+// ==== end P7 T13 =============================================================
 
 // ==== P7 T10: MINES AND TRIPWIRES ============================================
 //  (a) the trigger: a player rifleman standing ON a player mine never trips

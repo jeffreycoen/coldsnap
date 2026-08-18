@@ -95,21 +95,29 @@ function armorGoal(world, grid, v, dt, fwdDir, opts) {
     return;
   }
   v.depotDrive = "auto";
+  // P7 T13: THE BACK-OUT — a hull that measured itself not-moving reverses
+  // gently (under the crush speed), then replans; the failed lane is already
+  // on its avoid list. Rides the manual channel — core.js untouched.
+  if ((v._backT || 0) > 0) {
+    v._backT -= dt;
+    v.depotDrive = "manual";
+    v.ctl = { throttle: -0.4, steer: 0, brake: false };   // provisional (F5)
+    if (v._backT <= 0) { v._route = null; v._routeDest = null; v._pp = null; v._ppT = 0; }
+    return;
+  }
   const order = v.order || "defend";
   if (order === "defend") { v.goal = null; return; }
   if (order === "escort") {
     const sq = opts && opts.squads ? opts.squads.find((q) => q.id === v.escortId) : null;
     if (!sq) { v.order = "defend"; v.goal = null; return; }
     const dx = sq.anchor.x - v.pos.x, dz = sq.anchor.z - v.pos.z, d = Math.hypot(dx, dz) || 1;
-    // trail the formation, never park inside it: goal sits ESCORT_BACK short
-    // of the anchor on the approach line; inside that band the hull rests.
-    v.goal = d > ARMOR_ESCORT_BACK + 2.2
-      ? { x: sq.anchor.x - (dx / d) * ARMOR_ESCORT_BACK, z: sq.anchor.z - (dz / d) * ARMOR_ESCORT_BACK }
-      : null;
-    return;
+    if (d <= ARMOR_ESCORT_BACK + 2.2) { v.dest = null; v._route = null; v._routeDest = null; v.goal = null; return; }
+    // P7 T13: the escort leg ROUTES now (ordered driving goes around
+    // masonry) — the trail point is a moving dest on the same machinery.
+    v.dest = { x: sq.anchor.x - (dx / d) * ARMOR_ESCORT_BACK, z: sq.anchor.z - (dz / d) * ARMOR_ESCORT_BACK };
   }
   if (!v.dest) { v.order = "defend"; v.goal = null; return; }
-  // MOVE/PATROL: route legs — stepSquadRouting's shape, carried on the body.
+  // MOVE/PATROL/ESCORT: route legs — stepSquadRouting's shape, on the body.
   const destChanged = !v._routeDest || Math.hypot(v._routeDest.x - v.dest.x, v._routeDest.z - v.dest.z) > 0.5;
   const wp0 = v._route && v._route.length ? v._route[0] : v.dest;
   const dWp = Math.hypot(wp0.x - v.pos.x, wp0.z - v.pos.z);
@@ -121,14 +129,33 @@ function armorGoal(world, grid, v, dt, fwdDir, opts) {
   }
   if (destChanged || stale || !v._route) {
     v._routeD = null; v._routeT = 0;
-    const r = planRoute(grid, v.pos.x, v.pos.z, v.dest.x, v.dest.z);
+    // P7 T13: hulls route as HULLS — steep ground and pressed-to-masonry
+    // lanes are no lanes, and lately-failed cells are shunned while marked.
+    if (v._avoid) v._avoid = v._avoid.filter((a) => a.until > world.t);
+    const r = planRoute(grid, v.pos.x, v.pos.z, v.dest.x, v.dest.z,
+      { hull: true, team: v.team, avoid: v._avoid && v._avoid.length ? new Set(v._avoid.map((a) => a.ci)) : null });
     if (r && !r.reached && r.pts.length) {
       const end = r.pts[r.pts.length - 1];
-      if (v.order === "patrol") {   // the honest clamp fixes the loop's endpoint too
-        if (v._patA && Math.hypot(v.dest.x - v._patA.x, v.dest.z - v._patA.z) < 0.5) v._patA = { x: end.x, z: end.z };
-        else if (v._patB && Math.hypot(v.dest.x - v._patB.x, v.dest.z - v._patB.z) < 0.5) v._patB = { x: end.x, z: end.z };
+      // owner's ruling (2026-08-18): friendly and neutral masonry always
+      // detours; a path only ENEMY masonry closes is followed verbatim —
+      // the route runs to the wall and the hull drives the last stretch
+      // straight, ramming through. Anything else clamps honestly.
+      const foe = v.team === 1 ? 2 : 1;
+      const rdx = v.dest.x - end.x, rdz = v.dest.z - end.z, rd = Math.hypot(rdx, rdz);
+      let ram = rd > 0.5 && rd < 40;   // a bounded last stretch // provisional (F5)
+      for (let s = 1; ram && s < rd; s++) {
+        const cell = grid.cellAt(end.x + (rdx / rd) * s, end.z + (rdz / rd) * s);
+        if (!cell) { ram = false; break; }
+        const struct = cell.building != null || cell.wallId != null;
+        if (cell.steep || cell.terrain || cell.water || (struct && cell.bTeam !== foe) || (cell.blocked && !struct)) ram = false;
       }
-      v.dest = { x: end.x, z: end.z };
+      if (!ram) {
+        if (v.order === "patrol") {   // the honest clamp fixes the loop's endpoint too
+          if (v._patA && Math.hypot(v.dest.x - v._patA.x, v.dest.z - v._patA.z) < 0.5) v._patA = { x: end.x, z: end.z };
+          else if (v._patB && Math.hypot(v.dest.x - v._patB.x, v.dest.z - v._patB.z) < 0.5) v._patB = { x: end.x, z: end.z };
+        }
+        v.dest = { x: end.x, z: end.z };
+      }
     }
     v._route = r && r.pts.length ? r.pts : null;
     v._routeDest = { x: v.dest.x, z: v.dest.z };
@@ -139,10 +166,46 @@ function armorGoal(world, grid, v, dt, fwdDir, opts) {
     if (v.order === "patrol" && v._patA && v._patB) {
       const goingToB = Math.hypot(v.dest.x - v._patB.x, v.dest.z - v._patB.z) < 0.5;
       v.dest = goingToB ? { x: v._patA.x, z: v._patA.z } : { x: v._patB.x, z: v._patB.z };
-      v._route = null; v._routeDest = null;
-    } else { v.order = "defend"; v.dest = null; v.goal = null; return; }
+      v._route = null; v._routeDest = null; v._stuckN = 0;
+    } else if (v.order === "escort") { v.goal = null; return; }
+    else { v.order = "defend"; v.dest = null; v.goal = null; return; }
   }
   v.goal = { x: wp.x, z: wp.z };
+  // P7 T13: SLOW THROUGH THE TURN — full speed on the straights, a crawl at
+  // the corner, so the hull's turning arc stays inside the route's clearance
+  // corridor instead of sweeping through whatever stands past it.
+  const wp1 = v._route && v._route.length > 1 ? v._route[1] : null;
+  const wpd = Math.hypot(wp.x - v.pos.x, wp.z - v.pos.z);
+  if (wp1 && wpd < 5) {                              // provisional (F5)
+    const a1 = Math.atan2(wp.x - v.pos.x, wp.z - v.pos.z);
+    const a2 = Math.atan2(wp1.x - wp.x, wp1.z - wp.z);
+    let bend = a2 - a1;
+    while (bend > Math.PI) bend -= 2 * Math.PI;
+    while (bend < -Math.PI) bend += 2 * Math.PI;
+    if (Math.abs(bend) > 0.5) {                      // provisional (F5)
+      let err = a1 - Math.atan2(v.R[6], v.R[8]);
+      while (err > Math.PI) err -= 2 * Math.PI;
+      while (err < -Math.PI) err += 2 * Math.PI;
+      v.depotDrive = "manual";
+      v.ctl = { throttle: 0.35, steer: Math.max(-1, Math.min(1, err * 1.8)), brake: false };   // provisional (F5)
+    }
+  }
+  // P7 T13: THE PROGRESS WATCH — waypoint distance can lie (a tipped hull
+  // near a waypoint it cannot reach); travelled ground cannot. Under 0.4m in
+  // 4s with a live goal = stuck: mark the lane, back out, replan. Three
+  // strikes on one leg clamp the leg where the hull stands — honest.
+  if (!v._pp || Math.hypot(v.pos.x - v._pp.x, v.pos.z - v._pp.z) > 0.4) { v._pp = { x: v.pos.x, z: v.pos.z }; v._ppT = 0; }
+  else v._ppT = (v._ppT || 0) + dt;
+  if (v._ppT >= 4) {                                 // provisional (F5)
+    const g = grid.worldToGrid(v.goal.x, v.goal.z);
+    if (grid.inBounds(g.gx, g.gz)) {
+      v._avoid = (v._avoid || []).filter((a) => a.until > world.t);
+      v._avoid.push({ ci: grid.idx(g.gx, g.gz), until: world.t + 25 });   // provisional (F5)
+    }
+    v._stuckN = (v._stuckN || 0) + 1;
+    v._backT = 1.2; v._ppT = 0;                      // provisional (F5)
+    if (v._stuckN >= 3) { v._stuckN = 0; v.dest = { x: v.pos.x, z: v.pos.z }; v._route = null; v._routeDest = null; }
+  }
 }
 // ---- the two scans, lifted to module level (P7 T4): armorGuns' own nested
 // closures, bodies unchanged, parameters explicit — so the APC's coax-only

@@ -182,6 +182,7 @@ export function coverHop(world, from, dest, threatBearing) {
 // a man inside parked or moving armor.
 const SLOT_CLEAR_PAD = 0.35;
 function slotBlocked(world, x, z, clear) {
+  if (world.inRim && !world.inRim(x, z)) return true; // P7 T13: off the map is never a slot (bare fixtures carry no inRim and skip)
   if (world.streamAt && world.streamAt(x, z)) return true; // T3: open water is never a slot
   const pool = world._L ? world._L.statics : world.bodies;  // T10
   for (const b of pool) {

@@ -1279,6 +1279,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
   let pendingPad = null, pendingFill = null, pendingEdge = null, pendingAuraRing = null, pendingAuraFill = null;
   let reachFill = null, reachEdge = null;
   let lineGroup = null; // COMMAND T2 (mk0.84): the proposed line's group, rebuilt on endpoint taps only.
+  let pathGroup = null;
   let retRing = null; // POSSESSION T5 (mk0.94): the possessed reticle's red circle
   const overlay = {
     // POSSESSION T5 (mk0.94): the possessed reticle — its own red ring, not
@@ -1446,6 +1447,36 @@ export function makeRenderer(canvas, world0, opts = {}) {
       }
       lineGroup.traverse((o) => o.layers && o.layers.set(1));
       scene.add(lineGroup);
+    },
+    // P7 T13 (owner): THE GREEN THREADS — the computed route of every
+    // friendly ordered unit, sampled to the ground so the line lies on the
+    // terrain. Rebuilt at the caller's cadence (4Hz), never per frame.
+    setOrderPaths(paths) {
+      if (pathGroup) {
+        scene.remove(pathGroup);
+        pathGroup.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+        pathGroup = null;
+      }
+      if (!paths || !paths.length) return;
+      pathGroup = new THREE.Group();
+      for (const p of paths) {
+        const v = [];
+        for (let i = 0; i + 1 < p.pts.length; i++) {
+          const a = p.pts[i], b = p.pts[i + 1];
+          const d = Math.hypot(b.x - a.x, b.z - a.z), n = Math.max(1, Math.ceil(d / 2));
+          for (let k = 0; k <= n; k++) {
+            const x = a.x + ((b.x - a.x) * k) / n, z = a.z + ((b.z - a.z) * k) / n;
+            v.push(new THREE.Vector3(x, F.heightAt(x, z) + 0.22, z));
+          }
+        }
+        if (v.length < 2) continue;
+        const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(v),
+          new THREE.LineDashedMaterial({ color: 0x4aff8c, dashSize: 0.7, gapSize: 0.45, transparent: true, opacity: 0.55, depthWrite: false }));
+        line.computeLineDistances();
+        pathGroup.add(line);
+      }
+      pathGroup.traverse((o) => o.layers && o.layers.set(1));
+      scene.add(pathGroup);
     },
     // spawn banners: red cloth on a pole at each entry point
     setBanners(pts) {

@@ -58,6 +58,8 @@ const BODY_HANDLED = new Set([
   "lastImp", "lastHit", "driver", "_paceHit", "_coverHit", "targetId", "tgtId",
   "_filed", "_cells", // mk1.05's broadphase bookkeeping — NEVER saved: a restored
                       // stone marked filed against an empty book is a ghost (P7 T5)
+  "_pp", "_ppT", "_backT", "_avoid", "_stuckN", // P7 T13: transient driving
+                      // state — a resumed hull re-measures fresh
 ]);
 
 // A value the file can carry: a finite number, a string, a boolean, null, an
