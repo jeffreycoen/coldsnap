@@ -3925,7 +3925,7 @@ export default function DepotGame({ onExit, resume = null }) {
           if (terrGuard > 0) { stepMines(world, S.mines); R.setMines(S.mines); }
           // P7 T13 (owner): THE GREEN THREADS — every friendly ordered path,
           // green on the ground, refreshed with the other derived overlays.
-          {
+          if (terrGuard > 0) {
             const paths = [];
             for (const sq of S.squads) {
               if (!sq.dest || sq.ridingIn != null) continue;

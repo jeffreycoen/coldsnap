@@ -7779,8 +7779,8 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   // (j) Amendment 1 — the green threads (source shape; the look is the
   // owner's live acceptance, smoke's zero-page-errors gate covers the boot)
   {
-    ok("T13(j): the renderer carries the order-path overlay", /setOrderPaths\(paths\)/.test(rSrc) && /0x4aff8c/.test(rSrc));
-    ok("T13(j2): the game feeds it at the derived-overlay cadence", /setOrderPaths\(/.test(dgSrc));
+    ok("T13(j): the renderer carries the order-path overlay", /setOrderPaths\(paths\)/.test(rSrc) && /0x4aff8c/.test(rSrc) && /0x0c2416/.test(rSrc));
+    ok("T13(j2): the game feeds it at the derived-overlay cadence", /THE GREEN THREADS[\s\S]{0,200}?if \(terrGuard > 0\) \{/.test(dgSrc));
   }
 }
 // ==== end P7 T13 =============================================================

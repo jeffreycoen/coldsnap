@@ -1466,12 +1466,14 @@ export function makeRenderer(canvas, world0, opts = {}) {
           const d = Math.hypot(b.x - a.x, b.z - a.z), n = Math.max(1, Math.ceil(d / 2));
           for (let k = 0; k <= n; k++) {
             const x = a.x + ((b.x - a.x) * k) / n, z = a.z + ((b.z - a.z) * k) / n;
-            v.push(new THREE.Vector3(x, F.heightAt(x, z) + 0.22, z));
+            v.push(new THREE.Vector3(x, F.heightAt(x, z) + 0.34, z));
           }
         }
         if (v.length < 2) continue;
-        const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(v),
-          new THREE.LineDashedMaterial({ color: 0x4aff8c, dashSize: 0.7, gapSize: 0.45, transparent: true, opacity: 0.55, depthWrite: false }));
+        const geo = new THREE.BufferGeometry().setFromPoints(v);
+        const under = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0x0c2416, transparent: true, opacity: 0.85, depthWrite: false }));
+        pathGroup.add(under);
+        const line = new THREE.Line(geo.clone(), new THREE.LineDashedMaterial({ color: 0x4aff8c, dashSize: 1.4, gapSize: 0.6, transparent: true, opacity: 0.95, depthWrite: false }));   // provisional (F5)
         line.computeLineDistances();
         pathGroup.add(line);
       }
