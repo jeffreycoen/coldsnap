@@ -16,7 +16,7 @@ import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS, BISON, APC } from "./specs.js";
 import { windAt } from "./wind.js";
-import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest, TIER_BELLS } from "./state.js";
+import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest, TIER_BELLS, memberNearRow } from "./state.js";
 import { marketCounts, computePrices, fieldPrices, priced } from "./market.js";
 import { stepMines, minePrices, mineSeedRoll, mineSeedPlace, MINE_COST, WIRE_COST } from "./mines.js";
 import { homeShare, pickHomeDetail, HOME_GUARD_CAP, cmdrOf, cmdrBellOrders, ferryDecide, flankDrop } from "./ai.js";
@@ -439,7 +439,7 @@ function rockAt(x, z) { for (const k of ROCKS) if (Math.hypot(x - k.x, z - k.z) 
 // ========================================================== grid + flow
 function makeGrid(field) {
   const cells = new Array(GRID_W * GRID_H);
-  for (let i = 0; i < cells.length; i++) cells[i] = { blocked: false, terrain: false, ice: false, dx: 0, dz: 0, dist: 1e9, wallId: null, building: null, bTeam: 0, steep: false, drop: false };
+  for (let i = 0; i < cells.length; i++) cells[i] = { blocked: false, terrain: false, ice: false, dx: 0, dz: 0, dist: 1e9, wallId: null, building: null, bTeam: 0, steep: false, drop: false, bag: null, bagId: null };
   const G = {
     cells, w: GRID_W, h: GRID_H, cs: GRID_CS, ox: GRID_OX, oz: GRID_OZ,
     idx: (gx, gz) => gz * GRID_W + gx,
@@ -1383,6 +1383,19 @@ export default function DepotGame({ onExit, resume = null }) {
       }
       const grid = makeGrid(field);
       const world = makeWorld({ field, seed: MAP_SEED });
+      // P7 T17 (owner): HULLS RESPECT FRIENDLY SANDBAGS — a bag claims its
+      // cell for HULL routing only (men still fight over bags; foot routing,
+      // the enemy flow, and connectivity never read c.bag). The side rides
+      // the body (bagSide) so a resumed war re-stamps honestly — b.team is 1
+      // on every bag by spawnSandbag's old shape and must not be trusted.
+      // Defined here (grid exists, ahead of both the resume and fresh-boot
+      // branches below) rather than beside seedBags — the resume branch
+      // stamps resumed bags before seedBags' fresh-boot-only block ever runs.
+      const stampBag = (b, side) => {
+        b.bagSide = side;
+        const cell = grid.cellAt(b.pos.x, b.pos.z);
+        if (cell) { cell.bag = side; cell.bagId = b.id; }
+      };
       if (RES) {
         // Law 2 (save.js): a fresh stream from the seed the save drew at the
         // bell. A return, not a replay. world.t comes back too — every stamp
@@ -1490,6 +1503,8 @@ export default function DepotGame({ onExit, resume = null }) {
         // then the welds, by index pair, with their original joint anchors.
         resBodies = restoreBodies(world, RES, ROCKS);
         restoreWelds(world, RES, resBodies);
+        // P7 T17: resumed bags re-claim their ground for hull routing.
+        for (const b of resBodies) if (b.sandbag && b.alive) stampBag(b, b.bagSide || 1);
         // P7 T9 (owner): RESUME SEAT-COLLISION GUARD — the mount-scope
         // apcSeqN counter (hoisted above) must not hand out a seat number a
         // restored APC already carries, or a hero-tier replacement's riders
@@ -1686,7 +1701,7 @@ export default function DepotGame({ onExit, resume = null }) {
                 if (roadClear(bx, bz) < 3) continue;
                 if (slotBlockedPublic(world, bx, bz, SANDBAG_HX + 0.35)) continue;
                 // laid ACROSS the radius, so the ring reads as cover facing out
-                spawnSandbag(world, bx, bz, Math.abs(Math.cos(az)) >= Math.abs(Math.sin(az)) ? 0 : 1);
+                stampBag(spawnSandbag(world, bx, bz, Math.abs(Math.cos(az)) >= Math.abs(Math.sin(az)) ? 0 : 1), depotT.team === 2 ? 2 : 1);
                 placed = true;
                 break;
               }
@@ -2436,6 +2451,7 @@ export default function DepotGame({ onExit, resume = null }) {
       const LAY_AHEAD = 4.5;      // m — a piece goes down this far in FRONT of the anchor
       const LINE_MAX_CELLS = 64;  // a hard ceiling on one order's line
       const LAY_MAN_PAD = 0.15;   // m — margin on top of a hard man-vs-piece overlap
+      const LAY_REACH = 3;   // m — no hands within reach, no piece // provisional (F5)
       // P7 T10: the sapper's per-piece pause — a device is quicker to lay
       // than a wall course (no masonry to stack), so it rides its own
       // constant beside WALL_LAY_PAUSE_S rather than that one. Lives here
@@ -2634,7 +2650,7 @@ export default function DepotGame({ onExit, resume = null }) {
           cell.bTeam = 1;
           recomputeFlow();
         } else {
-          spawnSandbag(world, row.x, row.z, orient);
+          stampBag(spawnSandbag(world, row.x, row.z, orient), 1);
         }
         S.resources -= cost;
         return "laid";
@@ -2663,6 +2679,12 @@ export default function DepotGame({ onExit, resume = null }) {
           while (job.i < job.rows.length) {
             const row = job.rows[job.i];
             if (!arrived && row.t > t + LAY_AHEAD) break;
+            // P7 T17 (owner): ENGINEERS BUILD WITH THEIR HANDS — a row lays
+            // only while a live member stands within reach; no one near, this
+            // row and every row behind it wait for the men. The anchor keeps
+            // walking (its escape stands) — rows it outruns lay late, when
+            // hands pass them, or die unlaid with the job. Skips never charge.
+            if (!memberNearRow(world, sq, row, LAY_REACH)) break;
             const r = layPieceAt(job, row);
             if (r === "dry") { job.dry = true; toast("NO SCRAP — THE LINE STOPS HERE"); break; }
             job.i++;
@@ -3277,6 +3299,9 @@ export default function DepotGame({ onExit, resume = null }) {
         cue("uitick"); // the pick is taken
         const item = PALETTE_LABEL[key] || key;
         toast(item + " — ON THE MANIFEST");
+        // P7 T17 (owner): THE PICK ARMS THE BAR — the next ground tap places
+        // what the convoy just delivered. Hero keys stay two-tap buys.
+        if (!key.startsWith("hero_")) setMode(key);
       };
       const spawnOne = () => {
         const ws = S.ws;
@@ -3949,6 +3974,13 @@ export default function DepotGame({ onExit, resume = null }) {
           // accumulator (NOT per sim tick). Cheap: setMines only rewrites the
           // two instanced pools when a device actually fired this tick.
           if (terrGuard > 0) { stepMines(world, S.mines); R.setMines(S.mines); }
+          // P7 T17: dead bags release their ground — same cadence as the
+          // other derived overlays; bagId cells are few.
+          if (terrGuard > 0) for (const c of grid.cells) {
+            if (c.bagId == null) continue;
+            const b = world.byId.get(c.bagId);
+            if (!b || !b.alive) { c.bag = null; c.bagId = null; }
+          }
           // P7 T13 (owner): THE GREEN THREADS — every friendly ordered path,
           // green on the ground, refreshed with the other derived overlays.
           if (terrGuard > 0) {
@@ -4339,6 +4371,14 @@ export default function DepotGame({ onExit, resume = null }) {
     // a build mode (no ground tap, no pending ghost). Branch before S.mode
     // is ever touched.
     if (m === "hero_bison" || m === "hero_apc") { if (S.buyHero) S.buyHero(m); return; }
+    // P7 T17 (owner): TAP AGAIN TO PUT IT AWAY — the active build button is
+    // a toggle; the second tap clears back to plain command.
+    if (S.mode === m) {
+      if (S.linePending && S.rejectLine) S.rejectLine();
+      S.mode = null; S.pending = null; S.buildPt0 = null;
+      setHud((h) => ({ ...h, mode: null }));
+      return;
+    }
     // COMMAND T2 (mk0.84): switching build-menu mode with a line still up
     // clears it through the same door ✗ uses (rejectLine also disposes the
     // renderer's preview group) — it never lingers behind the new mode.

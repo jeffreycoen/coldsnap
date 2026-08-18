@@ -61,7 +61,7 @@ export function planRoute(grid, ax, az, dx, dz, opts = null) {
   const shut = (ci) => {
     const c = cells[ci];
     if (avoid && avoid.has(ci)) return true;
-    if (hull) return c.blocked || c.steep || tight(ci);
+    if (hull) return c.blocked || c.steep || c.bag != null || tight(ci);
     return c.blocked || c.drop;
   };
   const prev = new Int32Array(grid.w * grid.h).fill(-2);

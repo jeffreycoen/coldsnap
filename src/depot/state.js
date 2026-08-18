@@ -774,6 +774,17 @@ export function spawnSandbag(world, x, z, orient = 0) {
   return b;
 }
 
+// P7 T17 (owner): ENGINEERS BUILD WITH THEIR HANDS — the reach test, pure
+// and exported for the suite (the T8/T10 factoring precedent). A live squad
+// member within reach meters of the row's spot.
+export function memberNearRow(world, sq, row, reach) {
+  for (const id of sq.memberIds) {
+    const u = world.byId.get(id);
+    if (u && u.alive && Math.hypot(u.pos.x - row.x, u.pos.z - row.z) <= reach) return true;
+  }
+  return false;
+}
+
 // sandbagOrientAt: AUTO-CONTINUE. If (x,z) lands within 2.2m of an existing
 // live sandbag, orient along the line to the NEAREST such bag (|dx| >= |dz|
 // -> long axis x, orient 0; else orient 1) — overrides the toggle for that

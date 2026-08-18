@@ -13,7 +13,7 @@ import {
   PENDING_EDGE_PAD, pendingButtonsVisible, canvasTapConsumesPending,
   END_CARD_DELAY_S, stampEnd, endCardReady,
   censusDepotChunks, depotStandingFraction, checkDepotBreach, checkEnemyBreach, stepDepotCensus,
-  spawnSquadMembers, spawnSandbag, SANDBAG_COST, WALL_COST, pruneSquads,
+  spawnSquadMembers, spawnSandbag, SANDBAG_COST, WALL_COST, pruneSquads, memberNearRow,
   SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S,
   DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, DEPOT_CENSUS_HZ,
   spawnWallCourses, stepWallSupport, wallCourseHp,
@@ -6169,7 +6169,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   ok("T3: no build mode is selected by default", /mode: null, sellMode: false/.test(src));
   ok("T3: the ground tap guards the tower path on a live mode", /if \(S\.mode && TOWER_SPECS\[S\.mode\]\)/.test(src));
   ok("T3: the engineer line machinery is untouched (both spawners live)",
-    /spawnWallCourses\(world, row\.x/.test(src) && /spawnSandbag\(world, row\.x, row\.z, orient\);/.test(src));
+    /spawnWallCourses\(world, row\.x/.test(src) && /spawnSandbag\(world, row\.x, row\.z, orient\)/.test(src));
   ok("T3: the seeded depot bags are untouched", /spawnSandbag\(world, bx, bz,/.test(src));
   ok("T3: the harness door stays (buildAt via __DEPOTBUILD__)", /__DEPOTBUILD__ = \(gx, gz, mode\) => buildAt\(gx, gz, mode \|\| "wall"\)/.test(src));
   ok("T3: the start screen stopped promising the trowel", !/Wall their road/.test(src));
@@ -8020,6 +8020,86 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   }
 }
 // ==== end P7 T16 =============================================================
+
+// ==== P7 T17: HANDS AND HABITS ===============================================
+// Engineers build with their hands; the pick arms the bar; buttons toggle;
+// hulls respect friendly sandbags.
+{
+  const flatF17 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
+  const mkGrid17 = (n) => {
+    const cells = new Array(n * n);
+    for (let i = 0; i < cells.length; i++) cells[i] = { blocked: false, terrain: false, ice: false, wallId: null, building: null, bTeam: 0, steep: false, drop: false, bag: null, bagId: null };
+    const G = { cells, w: n, h: n, cs: 2,
+      idx: (gx, gz) => gz * n + gx,
+      inBounds: (gx, gz) => gx >= 0 && gx < n && gz >= 0 && gz < n,
+      worldToGrid: (x, z) => ({ gx: Math.floor(x / 2) + (n >> 1), gz: Math.floor(z / 2) + (n >> 1) }),
+      gridToWorld: (gx, gz) => ({ x: (gx - (n >> 1)) * 2 + 1, z: (gz - (n >> 1)) * 2 + 1 }) };
+    G.cellAt = (x, z) => { const g = G.worldToGrid(x, z); return G.inBounds(g.gx, g.gz) ? cells[G.idx(g.gx, g.gz)] : null; };
+    return G;
+  };
+  const armorAt17 = (w, x, z) => {
+    const v = addBody(w, { kind: "vehicle", team: 1, mass: BISON.mass, hx: BISON.hx, hy: BISON.hy, hz: BISON.hz, x, y: BISON.hy + 0.05, z, hp: BISON.hp, friction: 0.85 });
+    v.vtype = "bison"; v.drv = "armor"; v.depotDrive = "auto";
+    return v;
+  };
+  const dgSrc17 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  const saveSrc17 = fs.readFileSync(new URL("../src/depot/save.js", import.meta.url), "utf8");
+  // (a) the reach test, behaviorally — live member in reach, dead men don't count
+  {
+    const w = makeWorld({ field: flatF17, seed: 31 });
+    const sq = makeSquad(1, "engineers", 1, 0, 0);
+    spawnSquadMembers(w, sq);
+    const row = { x: 2.5, z: 0 };
+    ok("T17(a): a live member within reach executes the build", memberNearRow(w, sq, row, 3) === true);
+    ok("T17(a2): reach is reach", memberNearRow(w, sq, { x: 9, z: 0 }, 3) === false);
+    for (const id of sq.memberIds) { const u = w.byId.get(id); u.alive = false; }
+    ok("T17(a3): dead hands build nothing", memberNearRow(w, sq, row, 3) === false);
+  }
+  // (b)-(c) the bar's habits (source shape; the look and feel are the owner's
+  // live acceptance, smoke's zero-page-errors covers the boot)
+  {
+    ok("T17(b): the pick arms the bar, heroes stay two-tap", /if \(!key\.startsWith\("hero_"\)\) setMode\(key\);/.test(dgSrc17));
+    ok("T17(c): the active build button toggles off", /if \(S\.mode === m\) \{/.test(dgSrc17));
+    ok("T17(a4): the lay loop is reach-gated", /if \(!memberNearRow\(world, sq, row, LAY_REACH\)\) break;/.test(dgSrc17));
+  }
+  // (d) friendly bags turn a hull route; men walk it untouched
+  {
+    const G = mkGrid17(20);
+    for (let gz = 0; gz < 20; gz++) if (gz !== 10) { const c = G.cells[G.idx(10, gz)]; c.bag = 1; c.bagId = 999; }
+    const rH = planRoute(G, -9, 1, 9, 1, { hull: true, team: 1 });
+    ok("T17(d): a hull route refuses the friendly bag line save its gap",
+      !!rH && rH.reached === true && rH.pts.every((p) => { const c = G.cellAt(p.x, p.z); return !c || c.bag == null; }));
+    const rF = planRoute(G, -9, 1, 9, 1);
+    ok("T17(d2): men never notice bags in the grid", !!rF && rF.reached === true);
+  }
+  // (e) the ramming ruling covers bags — enemy bags driven through on order,
+  // friendly bags clamp
+  {
+    const wE = makeWorld({ field: flatF17, seed: 32 });
+    const GE = mkGrid17(20);
+    for (let gz = 0; gz < 20; gz++) { const c = GE.cells[GE.idx(10, gz)]; c.bag = 2; c.bagId = 998; }
+    const vE = armorAt17(wE, -9, 1);
+    vE.order = "move"; vE.dest = { x: 9, z: 1 };
+    stepDrivers(wE, GE, identFwdDir, null);
+    ok("T17(e): an order through ENEMY bags keeps its destination", Math.hypot(vE.dest.x - 9, vE.dest.z - 1) < 0.6, `${vE.dest.x},${vE.dest.z}`);
+    const wF = makeWorld({ field: flatF17, seed: 32 });
+    const GF = mkGrid17(20);
+    for (let gz = 0; gz < 20; gz++) { const c = GF.cells[GF.idx(10, gz)]; c.bag = 1; c.bagId = 997; }
+    const vF = armorAt17(wF, -9, 1);
+    vF.order = "move"; vF.dest = { x: 9, z: 1 };
+    stepDrivers(wF, GF, identFwdDir, null);
+    ok("T17(e2): FRIENDLY bags clamp the order short", Math.hypot(vF.dest.x - 9, vF.dest.z - 1) > 0.6, `${vF.dest.x},${vF.dest.z}`);
+  }
+  // (f) the bag lifecycle is wired (source shape) and the side rides the save
+  {
+    ok("T17(f): the stamp helper exists and stamps side + cell", /const stampBag = \(b, side\) => \{/.test(dgSrc17));
+    ok("T17(f2): the seeded rings stamp their depot's side", /stampBag\(spawnSandbag\(/.test(dgSrc17));
+    ok("T17(f3): a resumed bag re-stamps its cell", /if \(b\.sandbag && b\.alive\) stampBag\(b, b\.bagSide \|\| 1\);/.test(dgSrc17));
+    ok("T17(f4): dead bags release their ground at the derived cadence", /c\.bagId == null/.test(dgSrc17));
+    ok("T17(f5): bagSide RIDES the save (never in the drop list)", !/BODY_HANDLED[\s\S]{0,600}bagSide/.test(saveSrc17));
+  }
+}
+// ==== end P7 T17 =============================================================
 
 // ==== P7 T10: MINES AND TRIPWIRES ============================================
 //  (a) the trigger: a player rifleman standing ON a player mine never trips

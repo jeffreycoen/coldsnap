@@ -178,7 +178,7 @@ function armorGoal(world, grid, v, dt, fwdDir, opts) {
         const cell = grid.cellAt(end.x + (rdx / rd) * s, end.z + (rdz / rd) * s);
         if (!cell) { ram = false; break; }
         const struct = cell.building != null || cell.wallId != null;
-        if (cell.steep || cell.terrain || cell.water || (struct && cell.bTeam !== foe) || (cell.blocked && !struct)) ram = false;
+        if (cell.steep || cell.terrain || cell.water || (struct && cell.bTeam !== foe) || (cell.bag != null && cell.bag !== foe) || (cell.blocked && !struct)) ram = false;
       }
       if (!ram) {
         if (v.order === "patrol") {   // the honest clamp fixes the loop's endpoint too
