@@ -1872,9 +1872,9 @@ export function makeRenderer(canvas, world0, opts = {}) {
         dummy.position.set(b.pos.x, b.pos.y + b.hy + e.lift, b.pos.z);
         dummy.position.addScaledVector(camRight, -e.w / 2);
         dummy.quaternion.copy(camQ);
-        dummy.scale.set(e.w, 0.14, 1); dummy.updateMatrix();
+        dummy.scale.set(e.w, 0.28, 1); dummy.updateMatrix();
         barBackMesh.setMatrixAt(bi2, dummy.matrix);
-        dummy.scale.set(e.w * f, 0.10, 1); dummy.updateMatrix();
+        dummy.scale.set(e.w * f, 0.20, 1); dummy.updateMatrix();
         barFillMesh.setMatrixAt(bi2, dummy.matrix);
         _barC.copy(BAR_LO).lerp(BAR_HI, f);
         if (barFillMesh.setColorAt) barFillMesh.setColorAt(bi2, _barC);
