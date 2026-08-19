@@ -313,3 +313,19 @@ Phase A found three red rows; the owner ruled all three plus the ATTACK STRUCTUR
 ```
 
 SVG renders identically on phone and desktop — both platforms carry it by construction. The look is the owner's live acceptance.
+
+---
+
+# AMENDMENT 2 — the tracks slider (owner, 2026-08-19, post-mk1.61)
+
+The vehicle pie's TRACKS wedge wears the same slider the ATTACK STRUCTURES wedge got in Step B5: green and slid over while the safety is on (CAREFUL — the default, so the slider defaults ON), black at rest with the safety off (FREE). The slider mechanism already exists (RadialMenu's `toggle` field); this is one slot-line edit. Lands alone as mk1.62.
+
+**Step 1.** `src/depot/DepotGame.jsx:3851` — the tracks slot gains `toggle: vr.tracks !== "free",` after `on: true,` — the finished line:
+
+```js
+          { key: "tracks", icon: vr.tracks === "free" ? "●" : "◐", label: vr.tracks === "free" ? "TRACKS FREE" : "TRACKS CAREFUL", color: vr.tracks === "free" ? "#ff7a7a" : "#4aff8c", on: true, toggle: vr.tracks !== "free", act: () => { const S = stateRef.current; if (S) { S.toggleTracks(); S.selVehId = null; } } },
+```
+
+**Step 2.** `src/version.js`: `mk1.61` → `mk1.62`. Build AFTER the bump.
+
+**Gates — run ONLY these:** `node scripts/depot-test.mjs` (1404/0, zero movement — the audit's tracks wiring pin `/key: "tracks", .*toggleTracks\(\)/` still matches the finished line), `node scripts/smoke.mjs` (preview pattern), `node scripts/depot-lint.mjs`. Green → commit `src/depot/DepotGame.jsx` + `src/version.js`, subject "the tracks wear the safety slider (mk1.62)", trailer lines as standing, push. The slider's look and its default-on state are the owner's live acceptance.
