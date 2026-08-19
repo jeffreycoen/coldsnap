@@ -45,6 +45,7 @@ The enemy's engineers build (owner, 2026-08-19: "he can do anything I can do —
 ## The sweep license
 
 - ONE licensed movement, pre-computed to the digit: 09-reorg T19(b3) `guard === 4` → `guard === 2` (seed 4242's engineer pick musters a squad; its two men leave the garrison count). Reported old → new.
+- AMENDMENT 1 adds four re-sign pins the Step 11 stop surfaced — see the amendment section at the end; five re-teaches total.
 - NO draw-count pin moves: the T21 two-bell fixture is a floor (`>= 16`) and stands at +2/bell; the T10(d11)-family pins are source shapes the task never touches. A draw-count pin actually failing is NOT licensed — stop and report.
 - The KEYSTONE is NOT licensed — if it moves, stop and report.
 - Anything else failing: STOP.
@@ -74,7 +75,7 @@ export function canBuildFor(T, x, z, team) { return holderAt(T, x, z) === team; 
 **Step 3 — buildlines.js: the job carries its side.**
 
 - `startBuildLine(grid, sq, kind, a, b, toast, team = 1)` — the job literal gains `team,`.
-- `layPieceAt`: at its top add `const team = job.team || 1;`; the import line swaps `canBuild` for `canBuildFor`; the two `validatePlacement` calls' `held:` become `canBuildFor(T, c0.u, c0.v, team)`; the walls branch's `cell.bTeam = 1` becomes `= team` and `spawnWallCourses(world, row.x, ..., orient)[0]` gains `, team`; the bags branch becomes `ctx.stampBag(spawnSandbag(world, row.x, row.z, orient, team), team);`.
+- `layPieceAt`: at its top add `const team = job.team || 1;`; the import line swaps `canBuild` for `canBuildFor`; the `validatePlacement` call's `held:` becomes `canBuildFor(T, c0.u, c0.v, team)` (Amendment 1: buildlines.js holds exactly ONE such call — "two" was the plan-writer's error; the device branch has none); the walls branch's `cell.bTeam = 1` becomes `= team` and `spawnWallCourses(world, row.x, ..., orient)[0]` gains `, team`; the bags branch becomes `ctx.stampBag(spawnSandbag(world, row.x, row.z, orient, team), team);`.
 - `linePieces` (the preview) keeps `canBuild` — the proposed-line ghost is player-side interface; his lines never preview. Import both.
 
 **Step 4 — ai.js: the pure deciders** (the T8/T10 pattern; they land at the END of ai.js, after the T8 block — ai.js has no mine block, the mine deciders live in mines.js):
@@ -277,3 +278,17 @@ Green → commit `src/depot/territory.js`, `src/depot/state.js`, `src/depot/buil
 ## Report requirements
 
 Read-confirmation (twelve items), one outcome line, then bullets: each step; every re-teach old→new; each gate with exact counts; the internal checkpoint's result; commit hash. Every deviation its own labeled bullet. The owner's live acceptance: a war where his engineer draw comes up should, within a few bells, show red-held ground growing bag or wall lines — and your breakers, sappers, and STRUCTURES-toggled squads can tear them down.
+
+## Amendment 1 — the re-sign sweep (2026-08-19, after the agent's honest stop at Step 11)
+
+The checkpoint surfaced FOUR literal-text pins outside the plan's reading list that pin the exact tokens Steps 3 and 7 re-sign. All four are sweep-license class — the pin follows the re-signed text, the asserted CONTENT stays identical — but the plan's license named zero, so the agent stopped correctly. This amendment licenses them and corrects one plan error the agent flagged (folded into Step 3 above).
+
+The five re-teaches, each applied and reported old → new, each label gaining `(re-taught P7.1 T7)`:
+
+1. `scripts/tests/09-reorg.mjs:80` — T19(b3): `guard === 4` → `guard === 2` (the original license, unchanged).
+2. `scripts/tests/01-engine-era.mjs:1824` — the sandbag-emitter regex follows Step 7's side-aware sign: `EMIT\.wall\.w, r: EMIT\.wall\.r, sign: 1` → `EMIT\.wall\.w, r: EMIT\.wall\.r, sign: b\.bagSide === 2 \? -1 : 1`. Content unchanged: bags emit under EMIT.wall.
+3. `scripts/tests/03-bell-polish.mjs:448-450` — three literals follow Step 3's re-sign: `spawnWallCourses\(world, row\.x, field\.heightAt\(row\.x, row\.z\), row\.z, orient\)` gains `, team`; `spawnSandbag\(world, row\.x, row\.z, orient\)` gains `, team`; `held: canBuild\(T, c0\.u, c0\.v\)` becomes `held: canBuildFor\(T, c0\.u, c0\.v, team\)`. Content unchanged: placement still runs the real spawners and the real gate.
+4. `scripts/tests/06-troops-physics.mjs:249` — `spawnSandbag\(world, row\.x, row\.z, orient\)` gains `, team`. Content unchanged: both spawners live.
+5. `scripts/tests/09-reorg.mjs:98` — T20(a): `export function startBuildLine\(grid, sq, kind, a, b, toast\)` gains `, team = 1`. Content unchanged: buildlines.js owns the machinery.
+
+RESUME from Step 11: apply the five re-teaches, re-run `node scripts/depot-test.mjs`, expect **1427/0 exactly**. Then Steps 12-13 and the three gates as written; final expected **1439/0**. Anything else moving: STOP.
