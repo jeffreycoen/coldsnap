@@ -3508,6 +3508,7 @@ export default function DepotGame({ onExit, resume = null }) {
       setHud((h) => ({ ...h, placing: S._placeQueue[0] }));
       return;
     }
+    S._placeQueue = null; // P7.1 T6 A2: the war has begun — the ticker must yield nothing
     S.started = true;
     setHud((h) => ({ ...h, started: true, placing: null }));
   };
