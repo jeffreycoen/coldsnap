@@ -644,10 +644,10 @@ import fs from "node:fs";
   const dgSrc23 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   ok("T23(a): the mines card exists, verbatim, at its ruled seat",
     /\{ title: "THE GROUND BITES", body: "Sappers lay mines and tripwires along a tapped line\. Yours are invisible to them; theirs to you — always\. A tripwire's flare lights the fog\. A mine just waits\. Minefields are learned by loss, both ways\." \},/.test(fmSrc23));
-  ok("T23(a2): the chain is eight cards in the ruled order",
+  ok("T23(a2): the chain is nine cards in the ruled order (re-taught P7.1 T8 A1: 8 -> 9)",
     /YOUR ARMOR[\s\S]*?THE GROUND BITES[\s\S]*?THE BELL[\s\S]*?THE MARKET[\s\S]*?THE FALL/.test(fmSrc23) &&
-    (fmSrc23.match(/\{ title: "/g) || []).length === 8);
-  ok("T23(b): the manual carries its revision stamp", /export const MANUAL_REV = 2;/.test(fmSrc23));
+    (fmSrc23.match(/\{ title: "/g) || []).length === 9);
+  ok("T23(b): the manual carries its revision stamp (re-taught P7.1 T8 A1: 2 -> 3)", /export const MANUAL_REV = 3;/.test(fmSrc23));
   ok("T23(b2): the gate compares revisions and honors the legacy tick once",
     /r\.value === "off" \? 1 : parseInt\(r\.value, 10\)/.test(dgSrc23) && /seen >= MANUAL_REV/.test(dgSrc23));
   ok("T23(b3): the tick stores the revision it was ticked at", /window\.storage\.set\(MANUAL_KEY, String\(MANUAL_REV\)\)/.test(dgSrc23));

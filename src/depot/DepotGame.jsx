@@ -4099,7 +4099,7 @@ export default function DepotGame({ onExit, resume = null }) {
 
       {!hud.started && !hud.placing && !fatal && manualOpen && <FieldManual onClose={closeManual} />}
 
-      {hud.placing && !fatal && (() => {
+      {hud.placing && !hud.info && !fatal && (() => {
         const S = stateRef.current;
         const remaining = S && S._placeQueue ? S._placeQueue.length : 0;
         const n = Math.max(1, 4 - remaining + 1);

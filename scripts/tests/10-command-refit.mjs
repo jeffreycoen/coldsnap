@@ -367,6 +367,7 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "frost"]) {
   ok("T8 wiring: each placement deals the next card", /S\.openInfo\(next, "deal"\)/.test(src8));
   ok("T8 wiring: a ground tap never places under an open card", /if \(S\.infoKey\) return;/.test(src8));
   ok("T8 wiring: the pick grid is gone", !/data-pick=/.test(src8) && !/togglePick/.test(src8));
+  ok("T8 A1: the ticker yields while a deal card is up", /hud\.placing && !hud\.info && !fatal/.test(src8));
   const ic8 = fs.readFileSync("src/depot/InfoCard.jsx", "utf8");
   ok("T8 wiring: the card carries the deal door", /door === "deal"/.test(ic8) && /PLACE IT/.test(ic8));
 }
