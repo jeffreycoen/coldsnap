@@ -18,6 +18,7 @@ The project owner directs design, reviews every plan, and is the sole playtester
 - The phase plan document holds the skeleton, status, and an index; **each task's full plan is its own file** (`plans/pN-task-M-name.md`), served ALONE for review (owner's ruling, 2026-08-15 — one giant document per phase is retired). No split audiences — the owner reads all of whichever document is served, so each is written once, plainly.
 - **Atomic steps with code:** each step names the exact file and line anchor and contains the actual code (or assert) to be added or changed, in execution order, failing-asserts-first where tests exist. Plain-language sentence above each step saying what it does. Agents execute plans; they do not design from intent.
 - **Every task carries its required-reading list in the plan** (files and regions the agent must read before code), re-verified against live anchors at dispatch.
+- **Verbatim-move tasks** (code relocation with zero behavior change) carry three things: an INVENTORY naming exactly which lines move; a SUBSTITUTION TABLE naming every token allowed to differ in the new home (signatures, context parameters) — an agent finding an unlisted difference stops rather than adapts; and an ARITHMETIC acceptance — the fixed-seed keystone's hash and draw count, or the suite's exact pass count, identical to the digit. Judgment never ratifies a move; numbers do.
 - The owner approves the plan **before any code**. No open design questions may enter a plan.
 - **All code that may be affected is read in full before thinking about the plan** — reading comes before design, not at dispatch.
 - **Pause between the design questions and the writing** — questions answered, then stop; the owner says when the plan gets written. Every time.
@@ -45,6 +46,7 @@ The project owner directs design, reviews every plan, and is the sole playtester
 
 - Test only what changed. Load/boot checks and the gates the brief lists — **run ONLY the gates listed, nothing else.** No scripted playtesting, ever. The full suite rides CI.
 - Prune unnecessary tests; re-pin honestly and report every re-pin old→new.
+- **The sweep license:** a plan may license, in advance, the re-teaching of any test that pins literal text the task itself moves or re-signs — the pin follows the text to its new home or new shape, the asserted CONTENT stays identical, and every re-teach is reported old→new. A test failing for any other reason, or asserting different content, still stops the task. The license covers text the task moves; it never covers behavior.
 - No multi-agent review passes — verification is inline (gates + smoke + screenshots).
 
 ## Look and sound
