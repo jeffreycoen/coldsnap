@@ -93,8 +93,11 @@ import fs from "node:fs";
 
     // (b) around, not through: a route past the biggest building never enters
     // a blocked cell, and ends within a cell of its destination.
+    // re-pinned mk1.72 (P7.1 T8): THE SEED PURGE — the old special-cased
+    // seed leaves the suite; seed 1001 (first candidate) holds both (b)
+    // and (c) unchanged.
     {
-      const Mi = mk1(); Mi.makeMap(4242);
+      const Mi = mk1(); Mi.makeMap(1001);
       const st = Mi.state();
       const g = Mi.makeGrid(null);
       Mi.buildTown(makeWorld({ field: { heightAt: () => 0 }, seed: 5 }), g, { heightAt: () => 0 }); // claims footprints
@@ -113,7 +116,7 @@ import fs from "node:fs";
     // nearest reachable ground beside it, and stepSquadRouting rewrites
     // sq.dest to that point.
     {
-      const Mi = mk1(); Mi.makeMap(4242);
+      const Mi = mk1(); Mi.makeMap(1001);
       const st = Mi.state();
       const g = Mi.makeGrid(null);
       Mi.buildTown(makeWorld({ field: { heightAt: () => 0 }, seed: 5 }), g, { heightAt: () => 0 });

@@ -778,8 +778,6 @@ export default function DepotGame({ onExit, resume = null }) {
   const [manualOpen, setManualOpen] = useState(false);
   // P7.1 T5: the tree's presentation state — never the sim's business.
   const [buildOpen, setBuildOpen] = useState(false);
-  // P7.1 T6 (owner): THE BARE OPENING — his up-to-four picks, pre-start.
-  const [picks, setPicks] = useState([]);
   const [branch, setBranch] = useState("troops");
   useEffect(() => {
     if (resumeRef.current) return; // a resumed war is not a first entry
@@ -1583,6 +1581,7 @@ export default function DepotGame({ onExit, resume = null }) {
         }
         S._placeQueue.shift();
         const next = S._placeQueue[0];
+        if (next && S.openInfo) S.openInfo(next, "deal"); // P7.1 T8: the next card deals before its unit places
         setHud((h) => ({ ...h, placing: next || "done" }));
         toast(next ? "PLACED — NEXT: " + (PALETTE_BY_KEY[next] || {}).label : "ALL PLACED — TAKE COMMAND");
       };
@@ -2121,6 +2120,7 @@ export default function DepotGame({ onExit, resume = null }) {
       const tapAt = (cx, cy) => {
         // P7.1 T6: PLACE MODE — pre-start ground taps put the picks down.
         if (!S.started && S._placeQueue && S._placeQueue.length) {
+          if (S.infoKey) return; // P7.1 T8: the card is up — read it first (PLACE IT closes it)
           const p0 = groundPoint(cx, cy);
           if (p0) placePick(p0);
           return;
@@ -2383,13 +2383,15 @@ export default function DepotGame({ onExit, resume = null }) {
       // P7.1 T4: THE INFO CARD — two doors, one state. The manifest door's
       // CONFIRM runs the real pick (its own arming and stale-offer guards
       // intact); the card adds its own trailing-tap arm on top.
-      S.openInfo = (key, door) => { S.infoKey = key; S.infoDoor = door; S.infoArmedAt = world.t + PENDING_ARM_S; };
+      S.openInfo = (key, door) => { S.infoKey = key; S.infoDoor = door; S.infoArmedAt = world.t + PENDING_ARM_S; S.infoArmedWall = performance.now() / 1000 + PENDING_ARM_S; };
       S.closeInfo = () => { S.infoKey = null; S.infoDoor = null; };
       S.confirmInfo = () => {
-        if (world.t < S.infoArmedAt) { toast("HOLD — ARMING"); return; }
-        const k = S.infoKey;
+        const armed = S.infoDoor === "deal" ? performance.now() / 1000 >= S.infoArmedWall : world.t >= S.infoArmedAt;
+        if (!armed) { toast("HOLD — ARMING"); return; }
+        const k = S.infoKey, door = S.infoDoor;
         S.closeInfo();
-        if (k) S.pickManifest(k);
+        if (k && door === "manifest") S.pickManifest(k);
+        // P7.1 T8: the deal door just closes — the ground tap places next.
       };
       S.pickManifest = (key) => {
         const M = S.manifest;
@@ -3305,7 +3307,7 @@ export default function DepotGame({ onExit, resume = null }) {
                 up: !!S.manifest.cardUp, armed: world.t >= S.manifest.armedAt,
                 bell: S.manifest.offerBell, offers: S.manifest.offers.slice(),
               } : null,
-              info: S.infoKey ? { key: S.infoKey, door: S.infoDoor, armed: world.t >= S.infoArmedAt } : null,
+              info: S.infoKey ? { key: S.infoKey, door: S.infoDoor, armed: S.infoDoor === "deal" ? performance.now() / 1000 >= S.infoArmedWall : world.t >= S.infoArmedAt } : null,
               intel: S.intelUp && S.lastDispatch ? { armed: world.t >= S.intelArmedAt } : null,
               started: S.started, gameOver: S.gameOver, victory: S.victory,
               placing: S._placeQueue ? (S._placeQueue[0] || "done") : null, // P7.1 T6 A1: place mode must survive the ticker
@@ -3509,26 +3511,14 @@ export default function DepotGame({ onExit, resume = null }) {
     S.mode = null; S.pending = null; S.buildPt0 = null; S.sellMode = false;
     setHud((h) => ({ ...h, mode: null, sellMode: false }));
   };
-  // P7.1 T6 (owner): the fifteen-slot pick toggle — up to four unique keys,
-  // re-tap or the chip removes, a fifth tap is refused with a toast.
-  const togglePick = (key) => {
-    setPicks((ps) => {
-      if (ps.includes(key)) return ps.filter((k) => k !== key);
-      if (ps.length >= 4) {
-        const S = stateRef.current;
-        if (S) { S.toasts.push({ txt: "FOUR PICKS ONLY", t: performance.now() / 1000 }); if (S.toasts.length > 4) S.toasts.shift(); }
-        return ps;
-      }
-      return [...ps, key];
-    });
-  };
   const startGame = () => {
     const S = stateRef.current; if (!S) return;
     if (S.audio) S.audio.ensure();
-    if (picks.length > 0 && S._placeQueue == null) {
-      // P7.1 T6: PLACE MODE — the overlay steps aside; each pick lands by
-      // a ground tap inside the homeland. START completes when all placed.
-      S._placeQueue = picks.slice();
+    if (S.hand && S.hand.length && S._placeQueue == null) {
+      // P7.1 T8: THE DEAL — the overlay steps aside; each dealt unit shows
+      // its card first, then lands by a ground tap inside the homeland.
+      S._placeQueue = S.hand.slice();
+      if (S.openInfo) S.openInfo(S._placeQueue[0], "deal");
       setHud((h) => ({ ...h, placing: S._placeQueue[0] }));
       return;
     }
@@ -3843,7 +3833,7 @@ export default function DepotGame({ onExit, resume = null }) {
 
       {hud.info && !hud.gameOver && !hud.victory && (
         <InfoCard card={cardFor(hud.info.key)} door={hud.info.door} armed={hud.info.armed}
-          price={hud.prices?.[hud.info.key] ?? PALETTE_BY_KEY[hud.info.key]?.cost}
+          price={hud.info.door === "deal" ? null : (hud.prices?.[hud.info.key] ?? PALETTE_BY_KEY[hud.info.key]?.cost)}
           onConfirm={() => { const S = stateRef.current; if (S && S.confirmInfo) S.confirmInfo(); }}
           onCancel={() => { const S = stateRef.current; if (S && S.closeInfo) S.closeInfo(); }} />
       )}
@@ -4094,35 +4084,9 @@ export default function DepotGame({ onExit, resume = null }) {
             Rock is free cover. The frozen ponds carry them faster — and you cannot build on ice.
             {isTouch ? " Drag to pan, pinch to zoom, twist to rotate, tap to build. Tap a tower to inspect it." : " WASD pans, wheel zooms, Q/E rotates (tap snaps, hold swings), click builds. Click a tower to inspect it."}
           </div>
-          <div style={{ fontSize: 11, opacity: 0.85, maxWidth: 460, marginBottom: 8 }}>
-            Pick up to four — you place every pick by hand near your depot before TAKE COMMAND.
+          <div style={{ fontSize: 11, opacity: 0.85, maxWidth: 460, marginBottom: 10 }}>
+            The convoy deals you four units — read each card, place each one by hand near your depot, then take command.
           </div>
-          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 6, maxWidth: 460, marginBottom: 8 }}>
-            {PALETTE.map((p) => {
-              const sel = picks.includes(p.key);
-              return (
-                <div key={p.key} data-pick={p.key}
-                  style={{ ...P.slot, position: "relative", borderColor: sel ? "#4aff8c" : "#48515f", color: sel ? "#4aff8c" : "#e6ebf1", minWidth: isTouch ? 56 : 52 }}
-                  onClick={() => togglePick(p.key)}>
-                  <div data-info={p.key} onClick={(e) => { e.stopPropagation(); const S = stateRef.current; if (S && S.openInfo) S.openInfo(p.key, "bar"); }}
-                    style={{ position: "absolute", top: 0, right: 2, fontSize: 12, opacity: 0.65, padding: "2px 4px", cursor: "pointer" }}>ⓘ</div>
-                  <div style={{ fontSize: 16 }}>{p.icon}</div>
-                  <div>{p.label}</div>
-                </div>
-              );
-            })}
-          </div>
-          {picks.length > 0 ? (
-            <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 6, marginBottom: 10 }}>
-              {picks.map((key) => (
-                <div key={key} style={{ ...P.btn, borderColor: "#4aff8c", color: "#4aff8c", cursor: "pointer" }} onClick={() => togglePick(key)}>
-                  {PALETTE_BY_KEY[key].label} ✕
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 10 }}>none picked — a bare depot is a legal start</div>
-          )}
           <button style={{ ...P.btn, fontSize: 15, padding: "10px 26px", borderColor: "#4aff8c", color: "#4aff8c" }} onClick={startGame}>
             TAKE COMMAND
           </button>
@@ -4138,7 +4102,7 @@ export default function DepotGame({ onExit, resume = null }) {
       {hud.placing && !fatal && (() => {
         const S = stateRef.current;
         const remaining = S && S._placeQueue ? S._placeQueue.length : 0;
-        const n = Math.max(1, picks.length - remaining + 1);
+        const n = Math.max(1, 4 - remaining + 1);
         return (
           <div style={{ position: "absolute", top: 10, left: "50%", transform: "translateX(-50%)", zIndex: 9,
             background: "#1a212b", border: "1px solid #4aff8c", borderRadius: 8, padding: "8px 16px",
@@ -4149,7 +4113,7 @@ export default function DepotGame({ onExit, resume = null }) {
                 <button style={{ ...P.btn, borderColor: "#4aff8c", color: "#4aff8c" }} onClick={startGame}>TAKE COMMAND</button>
               </>
             ) : (
-              <span>PLACE: {PALETTE_BY_KEY[hud.placing]?.label} — tap ground near your depot ({n} of {picks.length})</span>
+              <span>PLACE: {PALETTE_BY_KEY[hud.placing]?.label} — tap ground near your depot ({n} of 4)</span>
             )}
           </div>
         );

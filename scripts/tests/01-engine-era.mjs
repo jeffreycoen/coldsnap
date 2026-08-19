@@ -24,7 +24,7 @@ import fs from "node:fs";
 const S = makeRunState();
 S.started = true;
 S.reg = fatReg();
-const rngS = mulberry32(4242);
+const rngS = mulberry32(1001); // re-pinned mk1.72 (P7.1 T8): THE SEED PURGE — the old special-cased seed leaves the suite
 
 // --- the clock: bellT counts down off SIM time, the bell fires at zero
 ok("starts before the first bell", S.bell === 0 && S.bellT === BELL_PERIOD_S, `${S.bell}/${S.bellT}`);

@@ -232,10 +232,13 @@ import fs from "node:fs";
 
     // (c) the carve: bed below the waterline mid-channel, causeway above it.
     // re-pinned mk1.45 (P7 T15): the square grew — seed 13's causeway crown
-    // drifted to 0.80 (was comfortable); seed 4242 (the T6 keystone's own
-    // seed) keeps solid margin (0.86) under the reshaped world.
+    // drifted to 0.80 (was comfortable); the old special-cased seed (the T6
+    // keystone's own) keeps solid margin (0.86) under the reshaped world.
+    // re-pinned mk1.72 (P7.1 T8): THE SEED PURGE — that old seed leaves the
+    // suite; seed 1001 (first of the 1001-1010 candidates) holds both
+    // thresholds under the reshaped world.
     {
-      const Mi = mkMapT3(); Mi.makeMap(4242);
+      const Mi = mkMapT3(); Mi.makeMap(1001);
       const st = Mi.state();
       const field = makeField(181, 2.0, st.MAP_SEED);
       Mi.buildDepotTerrain(field, st.MAP_SEED);
@@ -555,21 +558,25 @@ import fs from "node:fs";
   console.log("\n[front t6: the keystone and the quiet books]");
   // re-pinned mk1.32 (P7 T3): genMap draws one more rng value up front now
   // (cornerSide) — every downstream draw (bands/rocks/spawns/roads/ponds/
-  // hills/town) shifts for a fixed seed, so seed 4242's whole map (and thus
-  // the keystone battle it fights) is a different map. Recaptured off this
-  // block's own printed console log.
+  // hills/town) shifts for a fixed seed, so the keystone's whole map (and
+  // thus the keystone battle it fights) is a different map. Recaptured off
+  // this block's own printed console log.
   // re-pinned mk1.34 (P7 T5): both depots rebuild as column-and-panel
   // precast — a different body count/order in the same world.bodies array
   // this keystone hashes over, even though the fixture's own battle (a
   // non-depot building) never touches depot masonry. Recaptured off this
   // block's own printed console log.
   // re-pinned mk1.45 (P7 T15, Amendment 1): the square grew 120->180 —
-  // seed 4242's reshaped map sorts a DIFFERENT biggest non-depot building
+  // the keystone's reshaped map sorts a DIFFERENT biggest non-depot building
   // (warehouse0 6x8, not hangar0 9x10), so the battle's own draw count
   // legitimately moves too (hash AND draws re-pin together, the T3/T5
   // precedent). Recaptured off this block's own printed console log.
-  const T6_HASH = 3465970090;   // was 119305372
-  const T6_DRAWS = 695;  // was 755
+  // re-pinned mk1.72 (P7.1 T8, owner-ratified): THE SEED PURGE — the old
+  // special-cased seed leaves the suite; the keystone's anchor moves to
+  // 1000, an ordinary seed with no special standing. Hash and draws
+  // re-measured off this block's own printed console log.
+  const T6_HASH = 843448507;   // was 3465970090 (old seed -> 1000)
+  const T6_DRAWS = 749;  // was 695 (old seed -> 1000)
   const src6 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   // P7 T18: sliceFn6 checks DepotGame.jsx first, then mapgen.js for moved names.
   const mgSrc6 = fs.readFileSync(new URL("../../src/depot/mapgen.js", import.meta.url), "utf8");
@@ -598,11 +605,11 @@ import fs from "node:fs";
     "mulberry32", "MASON", "fwdUFor", "fwdDirFor", "invWFor", "addBody", "addWeld", mapSrc6,
   )(mulberry32, MASON, fwdUFor, fwdDirFor, invWFor, addBody, addWeld);
 
-  M6.makeMap(4242);
+  M6.makeMap(1000);
   const st6 = M6.state();
   const field6 = makeField(181, 2.0, st6.MAP_SEED);
   M6.buildDepotTerrain(field6, st6.MAP_SEED);
-  const world = makeWorld({ field: field6, seed: 4242 });
+  const world = makeWorld({ field: field6, seed: 1000 });
   world._tdStruct = true; world.depotCombat = true;
   M6.buildTown(world, M6.makeGrid(null), field6);
   let draws = 0; const raw6 = world.rng;

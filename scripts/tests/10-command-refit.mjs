@@ -15,7 +15,7 @@ import { startBuildLine, stepBuildLine } from "../../src/depot/buildlines.js";
 import { engBuildDecide, engBuildKind, engSeedPlace } from "../../src/depot/ai.js";
 import { marketCounts } from "../../src/depot/market.js";
 import { CARDS, cardFor } from "../../src/depot/infocards.js";
-import { musterFreshStart, parkTower, PICK_POOL } from "../../src/depot/muster.js";
+import { musterFreshStart, parkTower, PICK_POOL, dealHand } from "../../src/depot/muster.js";
 import { makeMap, TOWN } from "../../src/depot/mapgen.js";
 import fs from "node:fs";
 
@@ -261,18 +261,19 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "frost"]) {
 
 // ---- P7.1 T6 v2: THE BARE OPENING
 {
-  makeMap(4242);
+  makeMap(92);
   const flatF6 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
-  const w = makeWorld({ field: flatF6, seed: 4242 });
+  const w = makeWorld({ field: flatF6, seed: 92 });
   let draws = 0; const raw = w.rng;
   w.rng = () => { draws++; return raw(); };
   const S6 = { reg: { heads: 60 }, squads: [], nextSquadId: 1, cmdr: null };
   const G6 = mkGridA(); // the era-07 mini-grid helper already local to this file
   musterFreshStart(w, S6, TOWN.find((t) => t.depot && t.team !== 2), G6, flatF6, () => 1);
-  ok("T6v2: the fresh start draws exactly 5 (commander 1 + mirror 4)", draws === 5, draws);
+  ok("T6v2: the fresh start draws exactly 9 (commander 1 + hand 4 + mirror 4) (re-taught P7.1 T8: 5 -> 9)", draws === 9, draws);
   ok("T6v2: nothing player-side fields at boot", S6.squads.length === 0 && !w.bodies.some((b) => b.team === 1 && b.alive));
   ok("T6v2: the pool is fifteen, unique keys", PICK_POOL.length === 15 && new Set(PICK_POOL.map((p) => p.key)).size === 15);
   ok("T6v2: his picks fielded something", w.bodies.some((b) => b.team === 2 && b.alive));
+  ok("T8: the player's hand is four distinct pool keys", S6.hand.length === 4 && new Set(S6.hand).size === 4 && S6.hand.every((k) => PICK_POOL.some((p) => p.key === k)));
 }
 // ---- P7.1 T6 v2: his MG team and his shovels behave (v1's rows)
 {
@@ -350,4 +351,22 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "frost"]) {
   ok("T7: his shovels ring after the sapper brain", be7.indexOf("THE ENEMY SAPPER BRAIN") < be7.indexOf("HIS SHOVELS"));
   const mu7 = fs.readFileSync("src/depot/muster.js", "utf8");
   ok("T7: the engineer pick musters a tagged squad", /if \(pick\.tag === "eng"\) \{/.test(mu7) && /\.tag = "eng";/.test(mu7));
+}
+// ---- P7.1 T8: THE DEALT HAND
+{
+  const mkRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
+  const h1 = dealHand(mkRng([0.99, 0.99, 0.99, 0.99]), PICK_POOL.map((p) => p.key));
+  ok("T8: four draws, four distinct — the splice forbids collision", h1.length === 4 && new Set(h1).size === 4);
+  let n8 = 0; const counting = () => { n8++; return 0.5; };
+  dealHand(counting, PICK_POOL.map((p) => p.key));
+  ok("T8: exactly four draws, always", n8 === 4);
+}
+{
+  const src8 = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
+  ok("T8 wiring: the deal opens the first card", /S\.openInfo\(S\._placeQueue\[0\], "deal"\)/.test(src8));
+  ok("T8 wiring: each placement deals the next card", /S\.openInfo\(next, "deal"\)/.test(src8));
+  ok("T8 wiring: a ground tap never places under an open card", /if \(S\.infoKey\) return;/.test(src8));
+  ok("T8 wiring: the pick grid is gone", !/data-pick=/.test(src8) && !/togglePick/.test(src8));
+  const ic8 = fs.readFileSync("src/depot/InfoCard.jsx", "utf8");
+  ok("T8 wiring: the card carries the deal door", /door === "deal"/.test(ic8) && /PLACE IT/.test(ic8));
 }

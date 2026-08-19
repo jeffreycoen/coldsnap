@@ -60,24 +60,24 @@ import fs from "node:fs";
   ok("T19(a3): the seat counter stays a mount let with its pinned reseed",
     /let apcSeqN = 0;/.test(dgSrc19) && /const nextApcSeq = \(\) => \+\+apcSeqN;/.test(dgSrc19));
   // (b) the boot block, called for real — the first true muster fixture.
-  // Re-taught (P7.1 T6, the sweep license): THE BARE OPENING — no home
-  // guard, no fielded start; his four picks alone (deduped draw-then-clamp
-  // off the same fifteen-type pool), on seed 4242.
+  // Re-taught (P7.1 T8, the sweep license): THE DEALT HAND — the player's
+  // hand deals too now (9 draws: commander 1 + hand 4 + mirror 4), on
+  // seed 91.
   {
-    makeMap(4242);
+    makeMap(91);
     const flatF19 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
-    const w = makeWorld({ field: flatF19, seed: 4242 });
+    const w = makeWorld({ field: flatF19, seed: 91 });
     let draws = 0; const raw = w.rng;
     w.rng = () => { draws++; return raw(); };
     const S19 = { reg: { heads: 60 }, squads: [], nextSquadId: 1, cmdr: null };
     const G19 = makeGrid(flatF19);
     musterFreshStart(w, S19, TOWN.find((t) => t.depot && t.team !== 2), G19, flatF19, () => 1);
-    ok("T19(b): the fresh start draws exactly 5 (commander 1 + mirror 4) (re-taught P7.1 T6: 43 -> 5)", draws === 5, draws);
+    ok("T19(b): the fresh start draws exactly 9 (commander 1 + hand 4 + mirror 4) (re-taught P7.1 T8: 5 -> 9)", draws === 9, draws);
     ok("T19(b2): nothing player-side musters (re-taught P7.1 T6: two player squads -> zero — the player picks by hand now)",
       S19.squads.length === 0 && !w.bodies.some((b) => b.team === 1 && b.alive));
     let guard = 0;
     for (const b of w.bodies) if (b.kind === "unit" && b.team === 2 && b.garrison && b.alive) guard++;
-    ok("T19(b3): the mirror's men alone hold their ground (re-taught P7.1 T6: fourteen (8 guard + 6 fielded) -> measured on seed 4242, no home guard) (re-taught P7.1 T7)", guard === 2, guard);
+    ok("T19(b3): the mirror's men alone hold their ground (measured on seed 91, no home guard) (re-taught P7.1 T8: 2 -> 6)", guard === 6, guard);
     ok("T19(b4): the commander was drawn", S19.cmdr === "cautious" || S19.cmdr === "bold" || S19.cmdr === "stubborn", S19.cmdr);
     ok("T19(b5): the books stayed honest (re-taught P7.1 T6: the guard's -8 died with the guard, 52 -> 60)", S19.reg.heads === 60, S19.reg.heads);
   }
@@ -178,8 +178,11 @@ import fs from "node:fs";
     /const ringBell = \(\) => ringBellOut\(world, grid, field, T, S, bellCtx\);/.test(dgSrc21) &&
     /S\.pickManifest = /.test(dgSrc21));
   // (b) two bells rung through the real ring — structure, not feel
+  // re-pinned mk1.72 (P7.1 T8): THE SEED PURGE — the old special-cased seed
+  // leaves the suite; the map seed moves to 1001 (its floors/properties
+  // asserts hold).
   {
-    makeMap(4242);
+    makeMap(1001);
     const flatF21 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
     const w = makeWorld({ field: flatF21, seed: 51 });
     let draws = 0; const raw = w.rng; w.rng = () => { draws++; return raw(); };

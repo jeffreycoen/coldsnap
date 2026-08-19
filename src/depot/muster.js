@@ -201,6 +201,17 @@ export const PICK_POOL = [
   { key: "mg", kind: "tower" }, { key: "gun", kind: "tower" }, { key: "mortar", kind: "tower" },
   { key: "rocket", kind: "tower" }, { key: "frost", kind: "tower" },
 ];
+// P7.1 T8 (owner): THE DEALT HAND — four DISTINCT picks off the pool, the
+// manifest's splice-draw shape (drawOffers, state.js): four draws always,
+// the splice makes a collision impossible. One helper, both armies.
+export function dealHand(rng, pool) {
+  const rest = pool.slice(), out = [];
+  for (let d = 0; d < 4; d++) {
+    const j = Math.min(rest.length - 1, Math.floor(rng() * rest.length));
+    out.push(rest.splice(j, 1)[0]);
+  }
+  return out;
+}
 // One mirror man, DRAW-FREE (the spotter precedent): fixed ring ground via
 // clearSlot, walk phase derived from his index — the boot stream never moves.
 function spawnMirrorMan(world, x, z, tag, i) {
@@ -220,19 +231,17 @@ export function musterFreshStart(world, S, depotP, grid, field, nextApcSeq) {
   // P7 T8: THE COMMANDER — one draw per war, after makeRegiment's 2.
   // A RESUME never reaches this branch.
   S.cmdr = cmdrOf(world.rng);
-  // P7.1 T6 (owner): THE BARE OPENING — his four picks, the same fifteen-
-  // type pool as the player's, deduped draw-then-clamp (all four draws
-  // always burn; duplicates field nothing). Boot: exactly 7 draws, any seed.
-  const mirrorPicks = [];
-  for (let d = 0; d < 4; d++) mirrorPicks.push(PICK_POOL[Math.min(PICK_POOL.length - 1, Math.floor(world.rng() * PICK_POOL.length))]);
+  // P7.1 T8 (owner): THE DEALT HAND — the player's four, then his four,
+  // both DISTINCT off the same fifteen-type pool (supersedes T6's
+  // duplicates-field-nothing clamp). Draws here: exactly 9, any seed
+  // (commander 1 + hand 4 + mirror 4), all before the early return.
+  S.hand = dealHand(world.rng, PICK_POOL.map((p) => p.key));
+  const mirrorPicks = dealHand(world.rng, PICK_POOL.map((p) => p.key)).map((k) => PICK_POOL.find((p) => p.key === k));
   const depotE = TOWN.find((tt) => tt.depot && tt.team === 2);
   if (!depotE || !grid || !field) return;
   const gR = Math.hypot(depotE.nx, depotE.nz) * MASON.pitch / 2 + 3.5;
-  const fielded = new Set();
   let mi = 0;
   for (const pick of mirrorPicks) {
-    if (fielded.has(pick.key)) continue; // deduped like the player (owner)
-    fielded.add(pick.key);
     if (pick.kind === "hull") { parkArmor(world, grid, field, depotE, 2, pick.vtype, nextApcSeq || (() => 1)); continue; }
     if (pick.kind === "tower") { parkTower(world, grid, field, depotE, 2, pick.key); continue; }
     if (pick.tag === "eng") {

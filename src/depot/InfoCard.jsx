@@ -1,7 +1,8 @@
-// COLDSNAP DEPOT — InfoCard.jsx (P7.1 T4): one card, two doors. The
+// COLDSNAP DEPOT — InfoCard.jsx (P7.1 T4): one card, three doors. The
 // manifest door carries CONFIRM PICK / ✗ (the decision gate before a bell
-// pick); the bar door carries CLOSE (an owned type's reference). Pure
-// presentation — every action is a prop (the Dispatch.jsx discipline).
+// pick); the bar door carries CLOSE (an owned type's reference); the deal
+// door (P7.1 T8) carries PLACE IT. Pure presentation — every action is a
+// prop (the Dispatch.jsx discipline).
 import React from "react";
 
 export default function InfoCard({ card, price, armed, door, onConfirm, onCancel }) {
@@ -31,6 +32,8 @@ export default function InfoCard({ card, price, armed, door, onConfirm, onCancel
             <button data-info-confirm style={{ ...B, flex: 1, borderColor: "#4aff8c", color: "#4aff8c", opacity: armed ? 1 : 0.5 }} onClick={onConfirm}>CONFIRM PICK</button>
             <button data-info-cancel style={{ ...B, borderColor: "#ff6b5e", color: "#ff6b5e" }} onClick={onCancel}>✗</button>
           </>
+        ) : door === "deal" ? (
+          <button data-info-place style={{ ...B, flex: 1, borderColor: "#4aff8c", color: "#4aff8c", opacity: armed ? 1 : 0.5 }} onClick={onConfirm}>PLACE IT</button>
         ) : (
           <button data-info-close style={{ ...B, flex: 1 }} onClick={onCancel}>CLOSE</button>
         )}
