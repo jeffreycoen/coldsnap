@@ -60,6 +60,7 @@ The project owner directs design, reviews every plan, and is the sole playtester
 ## Reports
 
 - One line of outcome, then short bullets. No essays.
+- **Every task report names the fixture seeds its tests ran** — new pins and re-pins alike. No seed is ever special (owner, 2026-08-19: the 4242 purge).
 - **Every nonconformity, deviation, and re-pin is its own labeled bullet** — never buried in prose, never filtered, never triaged away. Completeness of the defect list is the owner's call.
 - Report outcomes faithfully: failures stated plainly with output; skipped steps named as skipped.
 
