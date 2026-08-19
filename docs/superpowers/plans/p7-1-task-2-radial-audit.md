@@ -256,3 +256,60 @@ await import("./tests/10-command-refit.mjs");
 ## Report requirements
 
 Open with the read-confirmation (twelve items). Then the verdict line: AUDIT CLEAN or AUDIT FINDINGS. Then the full wedge matrix as a table — every wedge × type row with PASS/FAIL — followed by gates and counts (old total 1312 → new total). Every red row, deviation, or pre-existing movement is its own labeled bullet.
+
+---
+
+# AMENDMENT 1 — Phase B: the ruled fixes (owner, 2026-08-19)
+
+Phase A found three red rows; the owner ruled all three plus the ATTACK STRUCTURES relabel. Four steps, then the whole task lands as mk1.61. The Phase A file (`scripts/tests/10-command-refit.mjs`, uncommitted in the tree) and runner line stand as built.
+
+**Step B1 — the sapper fix (game code, one line).** `src/depot/squads.js:569` — the charges-carried arrival hold gates on the ATTACK order, exactly as its own comment always described it:
+
+```js
+    const chargesCarried = squad.order === "attack" && squad.type === "sappers" && members.some((u) => u._fuse == null);
+```
+
+(This also cures the BUILD path: a sapper squad finishing a mine line now arrives, closes its job, and digs in.) ATTACK behavior is byte-unchanged.
+
+**Step B2 — the drift threshold (fixture re-teach).** In `10-command-refit.mjs`, audit(a)'s drift check `> 5` becomes `> 6.5` — clear of the spotter's by-design 5m survey radius plus the slot ring. Re-teach reported old→new.
+
+**Step B3 — the settled corridor (fixture re-teach).** In audit(e)'s `first(pref)` fixture, after `spawnSquadMembers(w, sq);` add:
+
+```js
+    const spot = sq.memberIds.map((id) => w.byId.get(id)).find((u) => u && u.role === "spotter");
+    if (spot) { spot.pos.x = 0; spot.pos.z = 3; } // off the firing corridor — the pair settled, not mid-spawn
+```
+
+**Step B4 — the relabel (owner's ruling).** `src/depot/DepotGame.jsx:3734`: `label: "STRUCTURES"` → `label: "ATTACK STRUCTURES"`. Key, machinery, and every other token on the line untouched. (Grepped: no test pins the label literal.)
+
+**Sweep license:** any pre-existing pin that asserts the sapper MOVE park or the STRUCTURES label text re-teaches with content-preserving intent, reported old→new. (Dispatch grep found none — the license is insurance, not a plan.)
+
+**Land.** `src/version.js` mk1.60 → mk1.61; build AFTER the bump. Gates: `node scripts/depot-test.mjs` (expect 1404/0 — the three reds turn green, zero other movement), `node scripts/smoke.mjs` (preview-server pattern), `node scripts/depot-lint.mjs`. All green → commit `scripts/tests/10-command-refit.mjs`, `scripts/depot-test.mjs`, `src/depot/squads.js`, `src/depot/DepotGame.jsx`, `src/version.js` — subject "every button answers: the radial audit (mk1.61)" — and push.
+
+**Step B5 — the slider toggle (owner, 2026-08-19, mid-review addition).** The ATTACK STRUCTURES wedge carries a small slider: black knob at the left when off; slid to the right and bright green when on — on top of the existing lit-wedge highlight, which stays. Generic mechanism: a slot may carry a `toggle` field (true/false); only the structures slot sets it. Two edits:
+
+(1) `src/depot/DepotGame.jsx:655` — inside RadialMenu's slot group, directly after the label `<text>` line, add:
+
+```jsx
+            {/* P7.1 T2 (owner): a toggle wedge wears a slider — black at
+                rest, slid over and bright green in use. Only slots that
+                carry s.toggle draw it; every other wedge is untouched. */}
+            {s.toggle != null && (
+              <g>
+                <rect x={lx - 11} y={ly + 17} width={22} height={10} rx={5}
+                  fill={s.toggle ? "rgba(74,255,140,0.28)" : "#0a0d12"}
+                  stroke={s.toggle ? "#4aff8c" : "#48515f"} strokeWidth="1" />
+                <circle cx={s.toggle ? lx + 6 : lx - 6} cy={ly + 22} r={4}
+                  fill={s.toggle ? "#4aff8c" : "#14171a"}
+                  stroke={s.toggle ? "#4aff8c" : "#48515f"} strokeWidth="1" />
+              </g>
+            )}
+```
+
+(2) The structures slot line (`src/depot/DepotGame.jsx:3734`, the same line Step B4 relabels) also gains `toggle: sq.structFirst,` after `on: sq.structFirst,` — the finished line:
+
+```js
+          slots.push({ key: "structures", icon: "▨", label: "ATTACK STRUCTURES", color: "#c9a0ff", on: sq.structFirst, toggle: sq.structFirst, act: () => { const S = stateRef.current; if (S) { S.toggleStructFirst(); S.selSquadId = null; } } });
+```
+
+SVG renders identically on phone and desktop — both platforms carry it by construction. The look is the owner's live acceptance.
