@@ -4,10 +4,10 @@
 // nothing; frost mans no gun). A FAIL here is an audit finding.
 import { ok } from "./harness.mjs";
 import { identFwdDir, straightGrid } from "./shared.mjs";
-import { makeWorld, makeField, addBody, stepWorld, explode } from "../../src/engine/core.js";
+import { makeWorld, makeField, addBody, stepWorld, explode, aimSolve } from "../../src/engine/core.js";
 import { SQUAD_SPECS, makeSquad, stepSquad, drivePossessedSquad, squadSpeed } from "../../src/depot/squads.js";
 import { spawnSquadMembers, squadFire, possessedVolley, possessedTowerFire, spawnSandbag, executeWithdrawal, spawnWallCourses, hostileStructure } from "../../src/depot/state.js";
-import { TOWER_SPECS, INFANTRY_ARMS, BISON, APC, SATCHEL } from "../../src/depot/specs.js";
+import { TOWER_SPECS, INFANTRY_ARMS, ENEMY_FIRE, BISON, APC, SATCHEL } from "../../src/depot/specs.js";
 import { spawnUnit, stepUnits } from "../../src/depot/units.js";
 import { stepDrivers } from "../../src/depot/drivers.js";
 import { makeTerritory, canBuildFor } from "../../src/depot/territory.js";
@@ -370,4 +370,14 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "frost"]) {
   ok("T8 A1: the ticker yields while a deal card is up", /hud\.placing && !hud\.info && !fatal/.test(src8));
   const ic8 = fs.readFileSync("src/depot/InfoCard.jsx", "utf8");
   ok("T8 wiring: the card carries the deal door", /door === "deal"/.test(ic8) && /PLACE IT/.test(ic8));
+}
+
+// ---- P7.1 T9: THE GENTLE ARC AND THE TIGHT TUBE
+{
+  ok("T9: the three lobbed tables tightened together (symmetry)", TOWER_SPECS.mortar.acc === 0.005 && INFANTRY_ARMS.mortars.acc === 0.005 && ENEMY_FIRE.lob.acc === 0.005);
+  ok("T9: the rocket flies slow, flat, and honest", TOWER_SPECS.rocket.projSpeed === 18 && TOWER_SPECS.rocket.occl === "arc");
+  const src9 = fs.readFileSync("src/depot/state.js", "utf8");
+  ok("T9: only the mortar tower takes the steep solve", /const high = tower\.towerType === "mortar";/.test(src9));
+  const p9 = aimSolve(18, 23, 0, 9.8, false);
+  ok("T9: the arc is gentle at full reach (a low rising pitch)", p9 != null && p9 > 0.1 && p9 < 0.45, p9 && p9.toFixed(3));
 }

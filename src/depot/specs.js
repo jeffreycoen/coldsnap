@@ -37,8 +37,8 @@ export const TOWER_SPECS = {
   // adds calibration this line once carried is superseded.
   mg:     { range: 15, fireRate: 0.17, projSpeed: 95, dmg: 5, dirDmg: 8, blastR: 0.3, kv: 0.5, cost: 23, hp: 80,  crater: 0, label: "MG",     icon: "⊞", kind: "mg",    weapon: "mg",     hy: 1.0, acc: 0.090, windF: 0.06, windComp: 0,   blurb: "Fast, cheap, short reach", occl: "arc" },
   gun:    { range: 19, fireRate: 1.05, projSpeed: 58, dmg: 25, blastR: 2.3, kv: 8,   cost: 38, hp: 130, crater: 0.55, label: "GUN",    icon: "⚑", kind: "shell", weapon: "shell",  hy: 1.5, acc: 0.07, windF: 0.9,  windComp: 0.6, blurb: "Flat-trajectory workhorse", occl: "arc" },
-  mortar: { range: 26, fireRate: 4.6 /* halved cadence (C0 T4) // provisional (F5) */,  projSpeed: 33, dmg: 38, blastR: 3.8, kv: 10,  cost: 53, hp: 95,  crater: 0.8, label: "MORTAR", icon: "◎", kind: "shell", weapon: "mortar", hy: 0.8, acc: 0.020, windF: 0.04, windComp: 0.6, blurb: "Arcs over walls, big blast", occl: "lofted" },
-  rocket: { range: 23, fireRate: 8.8 /* halved cadence (C0 T4) // provisional (F5) */,  projSpeed: 30, dmg: 27, blastR: 3.4, kv: 9,   cost: 75, hp: 110, volley: 4, crater: 0.7, label: "ROCKET", icon: "▲", kind: "shell", weapon: "rocket", hy: 1.2, acc: 0.021, windF: 1.3  /* lobbed retune (mk0.25): swept 0.020-0.035 vs the pinned flat baseline 2.4592, curve in the F1.5 artillery plan // provisional (F5) */, windComp: 0.5, blurb: "Four-round salvo, slow reload", occl: "lofted" },
+  mortar: { range: 26, fireRate: 4.6 /* halved cadence (C0 T4) // provisional (F5) */ /* mk1.74 (owner): tightened 0.020 -> 0.005 — the lob lands where it looks */,  projSpeed: 33, dmg: 38, blastR: 3.8, kv: 10,  cost: 53, hp: 95,  crater: 0.8, label: "MORTAR", icon: "◎", kind: "shell", weapon: "mortar", hy: 0.8, acc: 0.005, windF: 0.04, windComp: 0.6, blurb: "Arcs over walls, big blast", occl: "lofted" },
+  rocket: { range: 23, fireRate: 8.8 /* halved cadence (C0 T4) // provisional (F5) */,  projSpeed: 18, dmg: 27, blastR: 3.4, kv: 9,   cost: 75, hp: 110, volley: 4, crater: 0.7, label: "ROCKET", icon: "▲", kind: "shell", weapon: "rocket", hy: 1.2, acc: 0.021, windF: 1.3  /* lobbed retune (mk0.25): swept 0.020-0.035 vs the pinned flat baseline 2.4592, curve in the F1.5 artillery plan // provisional (F5) */, windComp: 0.5, blurb: "Four-round salvo, slow reload", occl: "arc" /* mk1.74 (owner): THE GENTLE ARC — flat solve at 18 m/s, ~22° and a 2.3m apex at full reach; terrain checks honest */ },
   frost:  { range: 12, fireRate: 0,    projSpeed: 0,  dmg: 0,  blastR: 0,   kv: 0,   cost: 30, hp: 85,  label: "FROST",  icon: "❄", kind: "mg",    slow: 0.42, hy: 1.35, blurb: "Halves their pace in radius" },
 };
 export const TOWER_ORDER = ["mg", "gun", "mortar", "rocket", "frost"];
@@ -127,7 +127,7 @@ export const ENEMY_FIRE = {
   // alongside TOWER_SPECS.mortar and INFANTRY_ARMS.mortars — symmetry is law,
   // so their lob slows exactly as much as ours. cdVar is a separate dial and
   // was not moved. // provisional (F5)
-  lob:   { projSpeed: 28, dmg: 20, kind: "shell", weapon: "mortar", blastR: 2.6, kv: 6, crater: 0.45, acc: 0.020, windF: 0.04, windComp: 0.6, cd: 6.0, cdVar: 0.6, range: 21, occl: "lofted" },
+  lob:   { projSpeed: 28, dmg: 20, kind: "shell", weapon: "mortar", blastR: 2.6, kv: 6, crater: 0.45, acc: 0.005 /* mk1.74 (owner): tightened 0.020 -> 0.005 — the lob lands where it looks */, windF: 0.04, windComp: 0.6, cd: 6.0, cdVar: 0.6, range: 21, occl: "lofted" },
   tank:  { projSpeed: 85, dmg: TANK.dmg, kind: "shell", weapon: "tank", blastR: TANK.blastR, kv: 8, crater: 0.5, acc: 0.070, windF: 0.9, windComp: 0.6, cd: TANK.gunCd, cdVar: 1.2, range: TANK.gunRange, occl: "arc" },
 };
 
@@ -238,7 +238,7 @@ export const INFANTRY_ARMS = {
   // fireRate (squadFire's cooldown field), so it tracks ENEMY_FIRE.lob.cd
   // one-for-one: 3.0 -> 6.0 with the C0 T4 cadence halving. // provisional (F5)
   mortars: { projSpeed: 28, kind: "shell", weapon: "mortar", dmg: 20, blastR: 2.6, kv: 6, crater: 0.45,
-             fireRate: 6.0, range: 21, acc: 0.020, occl: "lofted", windF: 0.04, windComp: 0.6 },
+             fireRate: 6.0, range: 21, acc: 0.005 /* mk1.74 (owner): tightened 0.020 -> 0.005 — the lob lands where it looks */, occl: "lofted", windF: 0.04, windComp: 0.6 },
   // P7 T7 (owner): the enemy's tier-1 types join the player's own arms
   // table — one gun, four hands for the runner squad; the breaker pair
   // works at the enemy heavy's own 1.1s cadence. Rifle table verbatim.
