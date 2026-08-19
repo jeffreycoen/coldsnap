@@ -14,7 +14,7 @@
 | 5 | The build tree | mk1.67 | `p7-1-task-5-build-tree.md` | SHIPPED (4bac756) |
 | 6 | The starting pick | mk1.68 | `p7-1-task-6-starting-pick.md` | SHIPPED (f090a53) |
 | 7 | His shovels dig | mk1.71 | `p7-1-task-7-enemy-builds.md` | SHIPPED (5057b93) |
-| 8 | The dealt hand | mk1.72 | `p7-1-task-8-dealt-hand.md` | ruled, plan pending |
+| 8 | The seed purge + the dealt hand | mk1.72 | `p7-1-task-8-dealt-hand.md` | SHIPPED (156bd4d) |
 
 Every deploy bumps `src/version.js` first, builds after. One agent in the tree at a time; stop after every task.
 
