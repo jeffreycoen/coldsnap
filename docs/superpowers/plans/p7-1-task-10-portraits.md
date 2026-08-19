@@ -219,3 +219,23 @@ Green → commit `src/render/renderer.js`, `src/render/portrait.js`, `src/depot/
 ## Report requirements
 
 Read-confirmation (eight items), one outcome line, then bullets: the hoist's inventory confirmed verbatim (any unlisted difference = the stop that should have happened); each step; the checkpoint's and each gate's exact counts; commit hash; THE SEED LIST (no new fixture seeds — state it plainly). Every deviation its own labeled bullet. The owner's live acceptance: open any card — deal, convoy offer, or bar ⓘ — and the unit stands in its corner portrait, the real model at a three-quarter view: the rust-coated rifleman, the marksman's long glass, the mortar's tube, the sandbagged towers, the Bison and the ramp-backed transport.
+
+## Amendment 1 — the tread texture learns headless (2026-08-19, after the agent's honest stop at gate 1)
+
+THE FINDING: the plan claimed the hoisted builders were context-free headless. Wrong on one function — the plan-writer's error: `makeTreadTex` builds the Bison's tread texture on a browser canvas (`document.createElement`), and Step 6's assert became its first-ever headless caller. Gate 1 crashed (`ReferenceError: document is not defined` inside `buildBison`) after 1453 green. The hoist itself is proven (checkpoint 1452/0, golden 7/7, a symmetric 157-line move); nothing shipped.
+
+THE FIX: the texture learns headless — a guarded fallback INSIDE `makeTreadTex`, first lines of the function. With a document (every browser, every player) the original code runs byte-identical; without one (the suite) a one-pixel flat tread stands in. No assert changes, no harness stubs — the T10 asserts stay real behavior.
+
+**Step A1-1 — renderer.js, `makeTreadTex`'s first line gains:**
+
+```js
+    // P7.1 T10 A1: headless — the suite builds hulls with no browser canvas;
+    // a one-pixel flat tread stands in. The browser path below is untouched.
+    if (typeof document === "undefined") {
+      const t = new THREE.DataTexture(new Uint8Array([90, 90, 96, 255]), 1, 1, THREE.RGBAFormat);
+      t.needsUpdate = true;
+      return t;
+    }
+```
+
+**Step A1-2 — resume:** re-run all four gates from the top. Expected unchanged: depot-test **1459/0** (the seven T10 asserts now execute), golden **7/7**, smoke green at mark mk1.75 (build AFTER the already-bumped version), lint clean. Commit list unchanged (renderer.js is already on it); same subject, same trailers, push.
