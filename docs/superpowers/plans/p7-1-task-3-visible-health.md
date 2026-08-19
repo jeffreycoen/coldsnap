@@ -174,3 +174,11 @@ Green → commit `src/render/renderer.js`, `src/depot/units.js`, `src/depot/stat
 ## Report requirements
 
 Read-confirmation (ten items) first, one outcome line, then bullets: each step, each gate with counts, build, commit hash. Every deviation or re-pin its own labeled bullet. The bars' look, the drain color, and the toggle live on both platforms are the owner's acceptance.
+
+---
+
+# AMENDMENT 1 — taller bars (owner, 2026-08-19, off the mk1.63 live check)
+
+"Health bars work but should be twice as tall." Two numbers in the Step 4 draw block (`src/render/renderer.js`, the bar-draw braces after `chunkStats`): the plate's `dummy.scale.set(e.w, 0.14, 1)` becomes `0.28`; the fill's `dummy.scale.set(e.w * f, 0.10, 1)` becomes `0.20`. Both still provisional (F5). Lands alone as mk1.64; tasks 4-6 shift to mk1.65-mk1.67.
+
+**Gates — run ONLY these:** `node scripts/depot-test.mjs` (1407/0, zero movement), `node scripts/golden.mjs`, `node scripts/smoke.mjs` (preview pattern, mark mk1.64), `node scripts/depot-lint.mjs`. Green → commit `src/render/renderer.js` + `src/version.js`, subject "the bars stand taller (mk1.64)", standing trailers, push. The height is the owner's live acceptance.
