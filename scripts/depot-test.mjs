@@ -23,4 +23,5 @@ await import("./tests/06-troops-physics.mjs");
 await import("./tests/07-armor-demolition.mjs");
 await import("./tests/08-debug-pass.mjs");
 await import("./tests/09-reorg.mjs");
+await import("./tests/10-command-refit.mjs");
 finish();

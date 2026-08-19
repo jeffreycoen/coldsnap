@@ -566,7 +566,7 @@ export function stepSquad(world, squad, dt) {
     // one charge per team detonated, the other man stood at the wall
     // holding his). The enemy sapper has no such flip — he marches until his
     // charge is in the wall. Symmetry restored; other squad types unchanged.
-    const chargesCarried = squad.type === "sappers" && members.some((u) => u._fuse == null);
+    const chargesCarried = squad.order === "attack" && squad.type === "sappers" && members.some((u) => u._fuse == null);
     if (dToDest <= ARRIVE_TOL && chargesCarried) {
       // hold the anchor at the dest WITHOUT the leg machinery (its leg-
       // arrival rng draw must never fire per-tick); members below keep

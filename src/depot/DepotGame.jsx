@@ -652,6 +652,19 @@ function RadialMenu({ cx, cy, label, slots, armed, onChoose }) {
             {s.on && <path d={wedge(i)} fill={s.color} fillOpacity="0.14" stroke="none" />}
             <text x={lx} y={ly - 4} textAnchor="middle" fontSize="15" fill={s.color} stroke="#0e1218" strokeWidth="3" paintOrder="stroke" style={{ userSelect: "none" }}>{s.icon || ""}</text>
             <text x={lx} y={ly + 12} textAnchor="middle" fontSize="10" letterSpacing="1" fill={s.color} stroke="#0e1218" strokeWidth="3" paintOrder="stroke" fontFamily="inherit" style={{ userSelect: "none" }}>{s.label}</text>
+            {/* P7.1 T2 (owner): a toggle wedge wears a slider — black at
+                rest, slid over and bright green in use. Only slots that
+                carry s.toggle draw it; every other wedge is untouched. */}
+            {s.toggle != null && (
+              <g>
+                <rect x={lx - 11} y={ly + 17} width={22} height={10} rx={5}
+                  fill={s.toggle ? "rgba(74,255,140,0.28)" : "#0a0d12"}
+                  stroke={s.toggle ? "#4aff8c" : "#48515f"} strokeWidth="1" />
+                <circle cx={s.toggle ? lx + 6 : lx - 6} cy={ly + 22} r={4}
+                  fill={s.toggle ? "#4aff8c" : "#14171a"}
+                  stroke={s.toggle ? "#4aff8c" : "#48515f"} strokeWidth="1" />
+              </g>
+            )}
           </g>
         );
       })}
@@ -3731,7 +3744,7 @@ export default function DepotGame({ onExit, resume = null }) {
         // on. Its act also fully deselects, the DEFEND/SELL/CAREFUL-FREE
         // rule for instant pie actions.
         if (sq.structOk) {
-          slots.push({ key: "structures", icon: "▨", label: "STRUCTURES", color: "#c9a0ff", on: sq.structFirst, act: () => { const S = stateRef.current; if (S) { S.toggleStructFirst(); S.selSquadId = null; } } });
+          slots.push({ key: "structures", icon: "▨", label: "ATTACK STRUCTURES", color: "#c9a0ff", on: sq.structFirst, toggle: sq.structFirst, act: () => { const S = stateRef.current; if (S) { S.toggleStructFirst(); S.selSquadId = null; } } });
         }
         if (sq.engineer) {
           slots.push(
