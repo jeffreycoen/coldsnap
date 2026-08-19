@@ -1,6 +1,6 @@
 # WINTER FRONT — Phase 7.1: The Command Refit
 
-*The skeleton. Scope and all design rulings: `docs/superpowers/decision-record.md`, the 2026-08-19 entries. Six tasks, ruled order, marks mk1.60–mk1.66 (mk1.62 = the tracks-slider amendment). Each task's full plan is its own file, written one at a time and served alone for review. Resource harvesting is NOT here — it is Phase 7.2. ARMS follows 7.2.*
+*The skeleton. Scope and all design rulings: `docs/superpowers/decision-record.md`, the 2026-08-19 entries. Six tasks, ruled order, marks mk1.60–mk1.67 (mk1.62/mk1.64 = the slider and bar-height amendments). Each task's full plan is its own file, written one at a time and served alone for review. Resource harvesting is NOT here — it is Phase 7.2. ARMS follows 7.2.*
 
 ## Status
 
@@ -9,9 +9,9 @@
 | 1 | Camera rotation | mk1.60 | `p7-1-task-1-camera-rotation.md` | SHIPPED (ef8776a) |
 | 2 | The radial audit | mk1.61 | `p7-1-task-2-radial-audit.md` | SHIPPED (9fada4c) |
 | 3 | Visible health | mk1.63 | `p7-1-task-3-visible-health.md` | SHIPPED (ee77bde) |
-| 4 | Market info cards | mk1.64 | `p7-1-task-4-info-cards.md` | pending |
-| 5 | The build tree | mk1.65 | `p7-1-task-5-build-tree.md` | pending |
-| 6 | The starting pick | mk1.66 | `p7-1-task-6-starting-pick.md` | pending |
+| 4 | Market info cards | mk1.65 | `p7-1-task-4-info-cards.md` | pending |
+| 5 | The build tree | mk1.66 | `p7-1-task-5-build-tree.md` | pending |
+| 6 | The starting pick | mk1.67 | `p7-1-task-6-starting-pick.md` | pending |
 
 Every deploy bumps `src/version.js` first, builds after. One agent in the tree at a time; stop after every task.
 
@@ -23,11 +23,11 @@ Every deploy bumps `src/version.js` first, builds after. One agent in the tree a
 
 **Task 3 — Visible health (mk1.63).** A health bar shown only while hurt, on everything with hp — men, hulls, towers, walls. The red hit-flash stays. The depot stays census-only (the building is the readout). Renderer work over fields that already exist (`hp`/`maxHp`); the owner checks the look live. Suggested model: Sonnet (render-layer, specced look).
 
-**Task 4 — Market info cards (mk1.64).** A per-type card: what it does, health, damage, skills. Reachable from the bell's manifest offer — confirm or cancel before the pick — and from the build bar for owned types. One card component, both doors. Needs the type data table written (task 2's audited vocabulary is its source). Phone and desktop both. Suggested model: Sonnet (interface + a data table, fully specced).
+**Task 4 — Market info cards (mk1.65).** A per-type card: what it does, health, damage, skills. Reachable from the bell's manifest offer — confirm or cancel before the pick — and from the build bar for owned types. One card component, both doors. Needs the type data table written (task 2's audited vocabulary is its source). Phone and desktop both. Suggested model: Sonnet (interface + a data table, fully specced).
 
-**Task 5 — The build tree (mk1.65).** The flat build bar collapses into one BUILD entry opening TROOPS / BUILDINGS / VEHICLES; SELL lives inside the tree. A branch stays open for repeat placement; tapping the active button still clears to command. The manifest pick still arms the bar through the tree. Phone and desktop both. Suggested model: Sonnet (interface reshape, no sim change).
+**Task 5 — The build tree (mk1.66).** The flat build bar collapses into one BUILD entry opening TROOPS / BUILDINGS / VEHICLES; SELL lives inside the tree. A branch stays open for repeat placement; tapping the active button still clears to command. The manifest pick still arms the bar through the tree. Phone and desktop both. Suggested model: Sonnet (interface reshape, no sim change).
 
-**Task 6 — The starting pick (mk1.66).** Before the war starts, the player picks up to four squads from the full troop list — free kit, no scrap. The picks replace the auto-gifted runner squad and breaker pair. The enemy mirrors with four count-stable seeded draws fielded beside its garrison. Touches the fresh-boot draw contract (45 pinned draws) and the save; reuses task 4's card and task 5's grouping to present the choices. Suggested model: Sonnet, with the boot-draw arithmetic pre-computed in the plan.
+**Task 6 — The starting pick (mk1.67).** Before the war starts, the player picks up to four squads from the full troop list — free kit, no scrap. The picks replace the auto-gifted runner squad and breaker pair. The enemy mirrors with four count-stable seeded draws fielded beside its garrison. Touches the fresh-boot draw contract (45 pinned draws) and the save; reuses task 4's card and task 5's grouping to present the choices. Suggested model: Sonnet, with the boot-draw arithmetic pre-computed in the plan.
 
 ## Standing constraints
 
