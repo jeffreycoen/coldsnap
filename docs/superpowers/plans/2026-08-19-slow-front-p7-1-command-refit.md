@@ -13,7 +13,8 @@
 | 4b | Mortal sandbags | mk1.66 | `p7-1-task-4b-mortal-sandbags.md` | SHIPPED (1d191b4) |
 | 5 | The build tree | mk1.67 | `p7-1-task-5-build-tree.md` | SHIPPED (4bac756) |
 | 6 | The starting pick | mk1.68 | `p7-1-task-6-starting-pick.md` | SHIPPED (f090a53) |
-| 7 | His shovels dig | mk1.71 | `p7-1-task-7-enemy-builds.md` | pending |
+| 7 | His shovels dig | mk1.71 | `p7-1-task-7-enemy-builds.md` | SHIPPED (5057b93) |
+| 8 | The dealt hand | mk1.72 | `p7-1-task-8-dealt-hand.md` | ruled, plan pending |
 
 Every deploy bumps `src/version.js` first, builds after. One agent in the tree at a time; stop after every task.
 
@@ -48,4 +49,6 @@ Every deploy bumps `src/version.js` first, builds after. One agent in the tree a
 - The shelved order vocabulary (take cover, fall back, squad escort, suppress) — a later phase.
 - The setTargetAtTime audio gap (6 sites) and the siege caveat — standing oddments, unchanged.
 
-**Task 7 — His shovels dig (mk1.69).** The enemy's engineers lay sandbag and wall lines on his held ground on the bell's cadence, seeded draws, through the same two-point machinery the player's use, parameterized by side (owner, 2026-08-19: he can do anything the player can, including building defenses). Tower placement stays with the full build-brain at Enemy Front. Plan pending.
+**Task 7 — His shovels dig (mk1.71).** The enemy's engineers lay sandbag and wall lines on his held ground on the bell's cadence, seeded draws, through the same two-point machinery the player's use, parameterized by side (owner, 2026-08-19: he can do anything the player can, including building defenses). Tower placement stays with the full build-brain at Enemy Front. SHIPPED (5057b93).
+
+**Task 8 — The dealt hand (mk1.72).** The starting pick dies: every war opens with four randomly assigned units off the fifteen-type pool, four distinct BOTH sides (supersedes the enemy's 2-4 dedupe). The cards deal one at a time — deal, read, place that unit, next — then TAKE COMMAND. Rulings on the record (2026-08-19); plan written on the owner's word. Suggested model: Sonnet (interface + draw-contract arithmetic, fully specced at planning).
