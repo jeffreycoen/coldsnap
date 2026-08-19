@@ -229,3 +229,55 @@ Green → commit `src/depot/muster.js`, `src/depot/DepotGame.jsx`, `src/depot/In
 ## Report requirements
 
 Read-confirmation (eight items), one outcome line, then bullets: each phase-A site with its CHOSEN SEED and every re-pin old → new (the keystone's hash and draws explicitly); each Phase B step; every re-teach old → new; the checkpoint's and each gate's exact counts; commit hash; **the full list of fixture seeds the task's tests ran**. Every deviation its own labeled bullet. The owner's live acceptance: a fresh war shows no pick grid — TAKE COMMAND deals card 1 of 4 (PLACE IT armed after a beat, no price row), each placement deals the next card, the fourth ends on ALL PLACED — TAKE COMMAND, and no two wars deal the same hand.
+
+## Amendment 1 — one popup at a time; the manual learns the deal (mk1.73)
+
+TWO FINDINGS (owner, 2026-08-19, live check of mk1.72 on the phone):
+
+1. THE OVERLAP (screenshot): the place ticker (top-center, z-index 9) draws OVER the deal card (top-right, z-index 7) — on a phone's width they collide, and the ticker covers the card's title. The ticker is also misleading at that moment: it says "tap ground" while ground taps are refused until PLACE IT. RULED (the question tool): one at a time — while a card is up the ticker hides; the card's PLACE IT is the only instruction.
+2. THE MANUAL'S STALE WORD: the YOUR ARMOR card still claims "A Bison and a transport stand at your depot" — false since the bare opening (mk1.68, pre-existing staleness, caught now), and nothing in the tour teaches the deal. The manual gains a deal card, YOUR ARMOR rewrites, and the revision stamp bumps so every player gets the tour once more (the standing MANUAL_REV law).
+
+**Step A1-1 — DepotGame.jsx, the ticker's render gate.** The line
+
+```jsx
+      {hud.placing && !fatal && (() => {
+```
+
+becomes
+
+```jsx
+      {hud.placing && !hud.info && !fatal && (() => {
+```
+
+(`hud.info` is set only while a card is up; during placement only the deal door can raise one, so the condition is exact.)
+
+**Step A1-2 — FieldManual.jsx: the manual learns the deal.** Three edits; the two card texts below are served for the owner's approval WITH this amendment — his word on this document approves the copy.
+
+- `MANUAL_REV = 2` → `MANUAL_REV = 3` (the cards changed; the tour greets everyone once more).
+- A NEW CARD, inserted directly after REAL STONE (second seat — the opening is the first thing a fresh commander meets):
+
+```js
+  { title: "THE HAND YOU'RE DEALT", body: "Every war opens with a dealt hand — four units, shown one card at a time. Place each near your depot, then take command. The enemy is dealt four of his own. No two wars open alike." },
+```
+
+- YOUR ARMOR's body replaced (title and seat unchanged):
+
+```js
+  { title: "YOUR ARMOR", body: "Armor is dealt to you or bought off a late convoy, never free. Order a hull like a squad — or take the controls yourself. The tracks brake for your own men until you say otherwise. Dear iron: a lost hull returns only at a price." },
+```
+
+**Step A1-3 — the licensed re-teaches** (both in `scripts/tests/09-reorg.mjs`, the T23 block, each label gaining `(re-taught P7.1 T8 A1)`, each reported old → new):
+
+- T23(a2): the card count `=== 8` → `=== 9` (the order regex is untouched — YOUR ARMOR through THE FALL keep their sequence; the new card sits ahead of them).
+- T23(b): `/export const MANUAL_REV = 2;/` → `/export const MANUAL_REV = 3;/`.
+- T23(a) — THE GROUND BITES verbatim pin — must NOT move; movement is a STOP.
+
+**Step A1-4 — the pin** (appended inside `10-command-refit.mjs`'s T8 wiring block):
+
+```js
+  ok("T8 A1: the ticker yields while a deal card is up", /hud\.placing && !hud\.info && !fatal/.test(src8));
+```
+
+**Step A1-5 — version.** `src/version.js`: `mk1.72` → `mk1.73`. Build AFTER the bump.
+
+Gates: the standing three — depot-test expected **1448/0** (one new assert; two re-teaches), smoke green at mark mk1.73, lint clean. Green → commit `src/depot/DepotGame.jsx`, `src/ui/FieldManual.jsx`, `scripts/tests/09-reorg.mjs`, `scripts/tests/10-command-refit.mjs`, `src/version.js` — subject "one popup at a time; the manual learns the deal (mk1.73)" — standing trailers, push. Report: gate counts exact, every re-teach old → new, the seed list (no new fixture seeds — state that plainly), any deviation its own bullet. The owner's live acceptance: the deal shows one popup at a time, and a fresh entry replays the tour with the deal card second and the armor card telling the truth.
