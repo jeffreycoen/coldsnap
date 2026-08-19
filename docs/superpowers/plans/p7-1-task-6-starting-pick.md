@@ -332,3 +332,19 @@ Green → commit `src/depot/muster.js`, `src/depot/specs.js`, `src/depot/units.j
 ## Report requirements
 
 Read-confirmation (eight items), one outcome line, then bullets: each step; EVERY re-teach and re-pin old→new (T19's numbers, the bag-ring pins, the keystone's hash and draws); each gate with exact counts; commit hash. Every deviation its own labeled bullet. The owner's live acceptance: pick four of fifteen, place each by hand inside the homeland, TAKE COMMAND, and meet an enemy opening drawn from the same fifteen — some wars, his towers firing back. Phone and desktop.
+
+---
+
+# AMENDMENT 1 — the ticker wipes place mode (mk1.69, hotfix)
+
+Found live by the owner (2026-08-19): picks selected, placement skipped. THE DEFECT IS THE PLAN'S: the hud ticker rebuilds the whole hud from a full literal every 120ms, and the plan never put `placing` in that literal — place mode survives one tick, the overlay returns, and the next TAKE COMMAND tap starts the war past the queue.
+
+**Step 1.** In the hud tick's literal (the line `started: S.started, gameOver: S.gameOver, victory: S.victory,`), add directly after it:
+
+```js
+              placing: S._placeQueue ? (S._placeQueue[0] || "done") : null, // P7.1 T6 A1: place mode must survive the ticker
+```
+
+**Step 2.** `src/version.js`: `mk1.68` → `mk1.69`. Build AFTER the bump.
+
+**Gates — run ONLY these:** `node scripts/depot-test.mjs` (1427/0, zero movement), `node scripts/smoke.mjs` (preview pattern, mark mk1.69), `node scripts/depot-lint.mjs`. Green → commit `src/depot/DepotGame.jsx` + `src/version.js`, subject "place mode survives the ticker (mk1.69)", standing trailers, push. Task 7 shifts to mk1.70.
