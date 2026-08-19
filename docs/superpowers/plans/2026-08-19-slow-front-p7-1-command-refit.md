@@ -1,6 +1,6 @@
 # WINTER FRONT — Phase 7.1: The Command Refit
 
-*The skeleton. Scope and all design rulings: `docs/superpowers/decision-record.md`, the 2026-08-19 entries. Six tasks, ruled order, marks mk1.60–mk1.69 (mk1.62/mk1.64 = amendments; mk1.66 = the sandbag fix; mk1.69 = enemy engineers build, both added by the owner). Each task's full plan is its own file, written one at a time and served alone for review. Resource harvesting is NOT here — it is Phase 7.2. ARMS follows 7.2.*
+*The skeleton. Scope and all design rulings: `docs/superpowers/decision-record.md`, the 2026-08-19 entries. Six tasks, ruled order, marks mk1.60–mk1.69 (mk1.62/mk1.64 = amendments; mk1.66 = the sandbag fix; mk1.69 = the place-mode hotfix; mk1.70 = enemy engineers build, additions by the owner). Each task's full plan is its own file, written one at a time and served alone for review. Resource harvesting is NOT here — it is Phase 7.2. ARMS follows 7.2.*
 
 ## Status
 
@@ -13,7 +13,7 @@
 | 4b | Mortal sandbags | mk1.66 | `p7-1-task-4b-mortal-sandbags.md` | SHIPPED (1d191b4) |
 | 5 | The build tree | mk1.67 | `p7-1-task-5-build-tree.md` | SHIPPED (4bac756) |
 | 6 | The starting pick | mk1.68 | `p7-1-task-6-starting-pick.md` | SHIPPED (f090a53) |
-| 7 | His shovels dig | mk1.69 | `p7-1-task-7-enemy-builds.md` | pending |
+| 7 | His shovels dig | mk1.70 | `p7-1-task-7-enemy-builds.md` | pending |
 
 Every deploy bumps `src/version.js` first, builds after. One agent in the tree at a time; stop after every task.
 
