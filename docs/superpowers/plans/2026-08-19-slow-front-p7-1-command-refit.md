@@ -16,7 +16,7 @@
 | 7 | His shovels dig | mk1.71 | `p7-1-task-7-enemy-builds.md` | SHIPPED (5057b93) |
 | 8 | The seed purge + the dealt hand | mk1.72 | `p7-1-task-8-dealt-hand.md` | SHIPPED (156bd4d; A1 mk1.73 5a76809) |
 | 9 | The gentle arc and the tight tube | mk1.74 | `p7-1-task-9-artillery.md` | SHIPPED (4c399f4) |
-| 10 | Live portraits | mk1.75 | `p7-1-task-10-portraits.md` | dispatched |
+| 10 | Live portraits | mk1.75 | `p7-1-task-10-portraits.md` | SHIPPED (72da690) |
 
 Every deploy bumps `src/version.js` first, builds after. One agent in the tree at a time; stop after every task.
 
