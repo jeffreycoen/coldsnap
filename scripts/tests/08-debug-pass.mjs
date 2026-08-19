@@ -483,14 +483,22 @@ import fs from "node:fs";
     ok("T17(a4): the lay loop is reach-gated (retargeted mk1.50, P7 T20: stepBuildLine moved to buildlines.js)",
       /if \(!memberNearRow\(world, sq, row, LAY_REACH\)\) break;/.test(blSrc17));
   }
-  // (d) friendly bags turn a hull route; men walk it untouched
+  // (d) friendly bags turn a hull route; men walk it untouched. P7 T24
+  // re-teach (owner): bag cells inflate one ring for hull lanes now — a
+  // ONE-cell doorway is no lane for a hull (its neighbors are bagged), but
+  // a THREE-cell gap still threads. Men never notice bags either way.
   {
-    const G = mkGrid17(20);
-    for (let gz = 0; gz < 20; gz++) if (gz !== 10) { const c = G.cells[G.idx(10, gz)]; c.bag = 1; c.bagId = 999; }
-    const rH = planRoute(G, -9, 1, 9, 1, { hull: true, team: 1 });
-    ok("T17(d): a hull route refuses the friendly bag line save its gap",
-      !!rH && rH.reached === true && rH.pts.every((p) => { const c = G.cellAt(p.x, p.z); return !c || c.bag == null; }));
-    const rF = planRoute(G, -9, 1, 9, 1);
+    const G1 = mkGrid17(20);
+    for (let gz = 0; gz < 20; gz++) if (gz !== 10) { const c = G1.cells[G1.idx(10, gz)]; c.bag = 1; c.bagId = 999; }
+    const rH1 = planRoute(G1, -9, 1, 9, 1, { hull: true, team: 1 });
+    ok("T17(d): a one-cell bag doorway is no lane for a hull (P7 T24 re-teach: was 'threads it', now refused — the inflation ruling)",
+      !rH1 || !rH1.reached);
+    const G3 = mkGrid17(20);
+    for (let gz = 0; gz < 20; gz++) if (gz < 9 || gz > 11) { const c = G3.cells[G3.idx(10, gz)]; c.bag = 1; c.bagId = 900 + gz; }
+    const rH3 = planRoute(G3, -9, 1, 9, 1, { hull: true, team: 1 });
+    ok("T17(d3): a three-cell bag gap still threads for a hull, clear of the line (P7 T24: takes over the threads-it duty)",
+      !!rH3 && rH3.reached === true && rH3.pts.every((p) => { const c = G3.cellAt(p.x, p.z); return !c || c.bag == null; }));
+    const rF = planRoute(G1, -9, 1, 9, 1);
     ok("T17(d2): men never notice bags in the grid", !!rF && rF.reached === true);
   }
   // (e) the ramming ruling covers bags — enemy bags driven through on order,

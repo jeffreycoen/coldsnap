@@ -54,7 +54,7 @@ export function planRoute(grid, ax, az, dx, dz, opts = null) {
       if (!ox && !oz) continue;
       if (!grid.inBounds(gx + ox, gz + oz)) continue;
       const n = cells[grid.idx(gx + ox, gz + oz)];
-      if (n.building != null || n.wallId != null || n.terrain) return true;
+      if (n.building != null || n.wallId != null || n.terrain || n.bag != null) return true;
     }
     return false;
   };

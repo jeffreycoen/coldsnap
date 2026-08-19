@@ -189,10 +189,10 @@ function armorGoal(world, grid, v, dt, fwdDir, opts) {
       }
     }
     v._route = r && r.pts.length ? r.pts : null;
+    v._noRoute = !r;   // P7 T24: null = NOWHERE to go — never blind-drive at the dest
     v._routeDest = { x: v.dest.x, z: v.dest.z };
   }
   while (v._route && v._route.length && Math.hypot(v._route[0].x - v.pos.x, v._route[0].z - v.pos.z) < ARMOR_WP_R) v._route.shift();
-  const wp = v._route && v._route.length ? v._route[0] : v.dest;
   if (Math.hypot(v.dest.x - v.pos.x, v.dest.z - v.pos.z) <= ARMOR_ARRIVE) {
     if (v.order === "patrol" && v._patA && v._patB) {
       const goingToB = Math.hypot(v.dest.x - v._patB.x, v.dest.z - v._patB.z) < 0.5;
@@ -201,7 +201,34 @@ function armorGoal(world, grid, v, dt, fwdDir, opts) {
     } else if (v.order === "escort") { v.goal = null; return; }
     else { v.order = "defend"; v.dest = null; v.goal = null; return; }
   }
+  // P7 T24, amended (owner, C): ARRIVAL outranks the STAND — a leg that just
+  // settled (the three-strike clamp above sets dest=pos) must reach "defend",
+  // not get caught standing on a stale no-route flag from the abandoned leg.
+  if (v._noRoute) {
+    // P7 T24: THE STAND — a hull with no route holds its ground and asks
+    // again every three seconds (the stall clock already re-plans); the
+    // mk1.31 blind fallback rolled the owner's APC and is dead. The
+    // progress watch is skipped while standing — patience is not stuck.
+    v.goal = null;
+    v._routeT = (v._routeT || 0) + dt;
+    return;
+  }
+  const wp = v._route && v._route.length ? v._route[0] : v.dest;
   v.goal = { x: wp.x, z: wp.z };
+  // P7 T24: BRAKE BEFORE THE TURN-AROUND — a route appearing or reversing
+  // mid-drive can demand a near-U-turn while the hull carries speed; steering
+  // hard at speed ROLLS it (both measured deaths). Slow first, then turn.
+  {
+    const spd = Math.hypot(v.v.x, v.v.z);
+    let err = Math.atan2(v.goal.x - v.pos.x, v.goal.z - v.pos.z) - Math.atan2(v.R[6], v.R[8]);
+    while (err > Math.PI) err -= 2 * Math.PI;
+    while (err < -Math.PI) err += 2 * Math.PI;
+    if (Math.abs(err) > 1.2 && spd > 3) {          // provisional (F5)
+      v.depotDrive = "manual";
+      v.ctl = { throttle: 0, steer: 0, brake: true };
+      return;
+    }
+  }
   // P7 T16: KEEP RIGHT (owner) — same-team hulls closing head-on each ease
   // to their own right and pass port-to-port. Deterministic, both sides.
   for (const o of world.bodies) {

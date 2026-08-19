@@ -1,7 +1,8 @@
 import { ok } from "./harness.mjs";
+import { identFwdDir } from "./shared.mjs";
 import { fireBell, makeManifestState, makeFoeState, makeAssaultState, pickManifest, validatePlacement, spawnSquadMembers, memberNearRow } from "../../src/depot/state.js";
-import { makeWorld, makeField, addBody } from "../../src/engine/core.js";
-import { PLAYER_START, BISON, APC } from "../../src/depot/specs.js";
+import { makeWorld, makeField, addBody, stepWorld } from "../../src/engine/core.js";
+import { PLAYER_START, BISON, APC, MASON } from "../../src/depot/specs.js";
 import { makeSquad } from "../../src/depot/squads.js";
 import { makeRegiment } from "../../src/depot/economy.js";
 import { planWave, ferryDecide, flankDrop } from "../../src/depot/ai.js";
@@ -10,11 +11,13 @@ import { makeSight, seenAt, stepSight } from "../../src/depot/sight.js";
 import { minesToDraw } from "../../src/render/renderer.js";
 import { serializeFront, parseFront, restoreBodies, restoreWelds, restoreSquads } from "../../src/depot/save.js";
 import { stepMines, minePrices, mineSeedRoll, mineSeedPlace, FLARE_S, MINE_COST, WIRE_COST } from "../../src/depot/mines.js";
-import { makeMap, TOWN } from "../../src/depot/mapgen.js";
-import { musterFreshStart } from "../../src/depot/muster.js";
+import { makeMap, TOWN, OBJ_POS, buildDepotTerrain, makeGrid, MAP_SEED, RIM_HALF_U, RIM_HALF_V, fwdDir, invW, streamAt, pondAt } from "../../src/depot/mapgen.js";
+import { musterFreshStart, parkArmor, seedBags } from "../../src/depot/muster.js";
 import { startBuildLine, stepBuildLine } from "../../src/depot/buildlines.js";
 import { ringBell } from "../../src/depot/bell.js";
 import { computePrices, marketCounts } from "../../src/depot/market.js";
+import { stepDrivers } from "../../src/depot/drivers.js";
+import { planRoute } from "../../src/depot/route.js";
 import fs from "node:fs";
 
 // ==== P7 T18: THE MAP MOVES OUT ==============================================
@@ -646,3 +649,144 @@ import fs from "node:fs";
 }
 // ==== end P7 T23 =============================================================
 // ==== end P7 T22 =============================================================
+
+// ==== P7 T24: QUIET FRAMES, CLEAR YARDS ======================================
+// The stutter's churn dies (one persistent pool, zero per-tick allocation);
+// the yards open (wider parking, bag clearance for hull lanes).
+{
+  const rSrc24 = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
+  const muSrc24 = fs.readFileSync(new URL("../../src/depot/muster.js", import.meta.url), "utf8");
+  ok("T24(a): the pool is born lazily, once, beside the overlay's other lazies",
+    /if \(!pathPool\) \{/.test(rSrc24) && /PATH_VERT_CAP/.test(rSrc24) && /lineDistance/.test(rSrc24));
+  // T24(a2), amended (owner): the birth block (`if (!pathPool) { ... }`)
+  // necessarily allocates — the assert now slices the HOT PATH after the
+  // cursor grabs the born pool (`const P = pathPool;`) through the method's
+  // own close, and requires zero `new` in that slice alone.
+  {
+    const cutStart = rSrc24.indexOf("const P = pathPool;");
+    const cutEnd = cutStart >= 0 ? rSrc24.indexOf("\n    },\n", cutStart) : -1;   // named fit: the method's real close brace, verified live
+    const hotSlice = cutStart >= 0 && cutEnd > cutStart ? rSrc24.slice(cutStart, cutEnd) : "";
+    ok("T24(a2): setOrderPaths allocates nothing per call, after the pool is born",
+      cutStart >= 0 && cutEnd > cutStart && !/\bnew\b/.test(hotSlice) && /setDrawRange\(/.test(hotSlice));
+  }
+  // T24 test scaffolding: local grid/hull fixtures, the same idiom T17(d)
+  // uses in scripts/tests/08-debug-pass.mjs — lifted verbatim (this file
+  // has no prior copy).
+  const flatF24 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
+  const mkGrid17 = (n) => {
+    const cells = new Array(n * n);
+    for (let i = 0; i < cells.length; i++) cells[i] = { blocked: false, terrain: false, ice: false, wallId: null, building: null, bTeam: 0, steep: false, drop: false, bag: null, bagId: null };
+    const G = { cells, w: n, h: n, cs: 2,
+      idx: (gx, gz) => gz * n + gx,
+      inBounds: (gx, gz) => gx >= 0 && gx < n && gz >= 0 && gz < n,
+      worldToGrid: (x, z) => ({ gx: Math.floor(x / 2) + (n >> 1), gz: Math.floor(z / 2) + (n >> 1) }),
+      gridToWorld: (gx, gz) => ({ x: (gx - (n >> 1)) * 2 + 1, z: (gz - (n >> 1)) * 2 + 1 }) };
+    G.cellAt = (x, z) => { const g = G.worldToGrid(x, z); return G.inBounds(g.gx, g.gz) ? cells[G.idx(g.gx, g.gz)] : null; };
+    return G;
+  };
+  const armorAt17 = (w, x, z) => {
+    const v = addBody(w, { kind: "vehicle", team: 1, mass: BISON.mass, hx: BISON.hx, hy: BISON.hy, hz: BISON.hz, x, y: BISON.hy + 0.05, z, hp: BISON.hp, friction: 0.85 });
+    v.vtype = "bison"; v.drv = "armor"; v.depotDrive = "auto";
+    return v;
+  };
+  // (b) the inflation: a one-cell bag gap is no lane; a three-cell gap drives
+  {
+    const G1 = mkGrid17(20);
+    for (let gz = 0; gz < 20; gz++) if (gz !== 10) { const c = G1.cells[G1.idx(10, gz)]; c.bag = 1; c.bagId = 900 + gz; }
+    const r1 = planRoute(G1, -9, 1, 9, 1, { hull: true, team: 1 });
+    ok("T24(b): a one-cell bag doorway is no lane for a hull", !r1 || !r1.reached);
+    const G3 = mkGrid17(20);
+    for (let gz = 0; gz < 20; gz++) if (gz < 9 || gz > 11) { const c = G3.cells[G3.idx(10, gz)]; c.bag = 1; c.bagId = 900 + gz; }
+    const r3 = planRoute(G3, -9, 1, 9, 1, { hull: true, team: 1 });
+    ok("T24(b2): a three-cell gap drives", !!r3 && r3.reached === true);
+    const rF = planRoute(G1, -9, 1, 9, 1);
+    ok("T24(b3): men still walk the one-cell gap", !!rF && rF.reached === true);
+  }
+  // (c) the parking: wider ring, bag standoff in the vetting
+  ok("T24(c): the ring starts wider", /for \(let rr = 15; rr <= 30; rr \+= 1\.5\)/.test(muSrc24));
+  ok("T24(c2): the vetting stands off further", /slotBlockedPublic\(world, bx, bz, Math\.hypot\(spec\.hx, spec\.hz\) \+ 2\.5\)/.test(muSrc24));
+  // (d) the yard, proven: across 40 real maps, every parked hull's nearest
+  // bag gap clears 1.5m and a MOVE order's first route is never null
+  {
+    let worstGap = 1e9, nullRoutes = 0;
+    for (let s = 0; s < 40; s++) {
+      const seed = 7000 + s;
+      makeMap(seed);
+      const field = makeField(181, 2.0, MAP_SEED);
+      buildDepotTerrain(field, MAP_SEED);
+      const grid = makeGrid(field);
+      const world = makeWorld({ field, seed: MAP_SEED });
+      world._tdStruct = true;
+      world.depotCombat = true;
+      world.pondAt = (x, z) => !!pondAt(x, z);
+      world.inRim = (x, z) => { const c = invW(x, z); return Math.abs(c.u) <= RIM_HALF_U && Math.abs(c.v) <= RIM_HALF_V; };
+      world.streamAt = (x, z) => streamAt(x, z);
+      const stampBag = (b, side) => {
+        b.bagSide = side;
+        const cell = grid.cellAt(b.pos.x, b.pos.z);
+        if (cell) { cell.bag = side; cell.bagId = b.id; }
+      };
+      for (const t of TOWN) {
+        const hx = (t.nx * MASON.pitch) / 2, hz = (t.nz * MASON.pitch) / 2;
+        for (let gz = 0; gz < grid.h; gz++) for (let gx = 0; gx < grid.w; gx++) {
+          const wp = grid.gridToWorld(gx, gz);
+          if (Math.abs(wp.x - t.x) < hx + 1.0 && Math.abs(wp.z - t.z) < hz + 1.0) {
+            if (Math.hypot(wp.x - OBJ_POS.x, wp.z - OBJ_POS.z) < 5) continue;
+            const c = grid.cells[grid.idx(gx, gz)];
+            c.blocked = true; c.building = t.id; c.bTeam = t.team === 2 ? 2 : (t.depot ? 1 : 0);
+          }
+        }
+      }
+      const depotP = TOWN.find((t) => t.depot && t.team !== 2), depotE = TOWN.find((t) => t.depot && t.team === 2);
+      seedBags(world, grid, depotP, 0x5ba6, stampBag);
+      seedBags(world, grid, depotE, 0x5ba7, stampBag);
+      let apcSeqN = 0;
+      const nextApcSeq = () => ++apcSeqN;
+      parkArmor(world, grid, field, depotP, 1, "bison", nextApcSeq);
+      parkArmor(world, grid, field, depotP, 1, "apc", nextApcSeq);
+      parkArmor(world, grid, field, depotE, 2, "bison", nextApcSeq);
+      parkArmor(world, grid, field, depotE, 2, "apc", nextApcSeq);
+      const bags = world.bodies.filter((b) => b.kind === "chunk" && b.sandbag && b.alive);
+      for (const hull of world.bodies) {
+        if (hull.kind !== "vehicle" || hull.team !== 1 || !hull.alive) continue;
+        for (const b of bags) {
+          const d = Math.hypot(hull.pos.x - b.pos.x, hull.pos.z - b.pos.z);
+          const gap = d - Math.hypot(hull.hx, hull.hz) - Math.hypot(b.hx, b.hz);
+          if (gap < worstGap) worstGap = gap;
+        }
+        const r = planRoute(grid, hull.pos.x, hull.pos.z, OBJ_POS.x, OBJ_POS.z, { hull: true, team: 1 });
+        if (!r) nullRoutes++;
+      }
+    }
+    ok("T24(d): no parked hull touches the bag ring (worst gap >= 1.5m)", worstGap >= 1.5, worstGap.toFixed(2));
+    ok("T24(d2): every yard has a first route out", nullRoutes === 0, nullRoutes);
+  }
+  // (e) no route means STAND: a hull whose plan comes back null holds its
+  // ground alive — the blind fallback is dead
+  {
+    const w = makeWorld({ field: flatF24, seed: 61 });
+    const G = mkGrid17(20);
+    for (let gz = 0; gz < 20; gz++) for (let gx = 0; gx < 20; gx++)
+      if (Math.abs(gx - 10) > 1 || Math.abs(gz - 10) > 1) G.cells[G.idx(gx, gz)].steep = true; // an island
+    const v = armorAt17(w, 1, 1);
+    v.order = "move"; v.dest = { x: -15, z: -15 };
+    const x0 = v.pos.x, z0 = v.pos.z;
+    for (let i = 0; i < 10 * 120; i++) { w.t += w.dt; stepDrivers(w, G, identFwdDir, null); stepWorld(w); }
+    ok("T24(e): the road-less hull stands, alive", v.alive === true && Math.hypot(v.pos.x - x0, v.pos.z - z0) < 2, `${v.pos.x},${v.pos.z}`);
+    ok("T24(e2): it never took the blind goal", v.goal == null || Math.hypot(v.goal.x - -15, v.goal.z - -15) > 1);
+  }
+  // (f) the turn-around brakes: full speed with the goal behind — the hull
+  // slows before it steers, and never rolls
+  {
+    const w = makeWorld({ field: flatF24, seed: 62 });
+    const G = mkGrid17(20);
+    const v = armorAt17(w, 0, -10);
+    v.order = "move"; v.dest = { x: 0, z: 30 };
+    for (let i = 0; i < 3 * 120; i++) { w.t += w.dt; stepDrivers(w, G, identFwdDir, null); stepWorld(w); } // build speed north
+    v.dest = { x: 0, z: -30 }; v._route = null; v._routeDest = null;  // the U-turn order
+    let minUp = 1;
+    for (let i = 0; i < 6 * 120; i++) { w.t += w.dt; stepDrivers(w, G, identFwdDir, null); stepWorld(w); if (v.R[4] < minUp) minUp = v.R[4]; }
+    ok("T24(f): the U-turn never rolls the hull", v.alive === true && minUp > 0.7, minUp.toFixed(2));
+  }
+}
+// ==== end P7 T24 =============================================================

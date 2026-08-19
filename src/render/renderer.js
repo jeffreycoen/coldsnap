@@ -1279,7 +1279,8 @@ export function makeRenderer(canvas, world0, opts = {}) {
   let pendingPad = null, pendingFill = null, pendingEdge = null, pendingAuraRing = null, pendingAuraFill = null;
   let reachFill = null, reachEdge = null;
   let lineGroup = null; // COMMAND T2 (mk0.84): the proposed line's group, rebuilt on endpoint taps only.
-  let pathGroup = null;
+  let pathPool = null;
+  const PATH_VERT_CAP = 4096;   // segment vertices — ~30 ordered units at full route length // provisional (F5)
   let retRing = null; // POSSESSION T5 (mk0.94): the possessed reticle's red circle
   const overlay = {
     // POSSESSION T5 (mk0.94): the possessed reticle — its own red ring, not
@@ -1448,37 +1449,51 @@ export function makeRenderer(canvas, world0, opts = {}) {
       lineGroup.traverse((o) => o.layers && o.layers.set(1));
       scene.add(lineGroup);
     },
-    // P7 T13 (owner): THE GREEN THREADS — the computed route of every
-    // friendly ordered unit, sampled to the ground so the line lies on the
-    // terrain. Rebuilt at the caller's cadence (4Hz), never per frame.
+    // P7 T24: THE GREEN THREADS, POOLED — the mk1.44 dispose-and-rebuild
+    // churned enough garbage to stall the Pi's collector for whole seconds
+    // (measured; the stutter's root). ONE geometry, born once, written in
+    // place: segment pairs with per-path dash distances, drawRange sized to
+    // the tick's real content. Zero allocation after birth.
     setOrderPaths(paths) {
-      if (pathGroup) {
-        scene.remove(pathGroup);
-        pathGroup.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
-        pathGroup = null;
+      if (!pathPool) {
+        const pos = new Float32Array(PATH_VERT_CAP * 3);
+        const dist = new Float32Array(PATH_VERT_CAP);
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute("position", new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
+        geo.setAttribute("lineDistance", new THREE.BufferAttribute(dist, 1).setUsage(THREE.DynamicDrawUsage));
+        const under = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0x0c2416, transparent: true, opacity: 0.85, depthWrite: false }));
+        const over = new THREE.LineSegments(geo, new THREE.LineDashedMaterial({ color: 0x4aff8c, dashSize: 1.4, gapSize: 0.6, transparent: true, opacity: 0.95, depthWrite: false }));
+        under.frustumCulled = false; over.frustumCulled = false;
+        under.layers.set(1); over.layers.set(1);
+        scene.add(under); scene.add(over);
+        pathPool = { geo, pos, dist, under, over };
       }
-      if (!paths || !paths.length) return;
-      pathGroup = new THREE.Group();
-      for (const p of paths) {
-        const v = [];
+      const P = pathPool;
+      let v = 0; // vertex cursor (segment pairs)
+      for (const p of paths || []) {
+        let run = 0, px = 0, py = 0, pz = 0, has = false;
         for (let i = 0; i + 1 < p.pts.length; i++) {
           const a = p.pts[i], b = p.pts[i + 1];
           const d = Math.hypot(b.x - a.x, b.z - a.z), n = Math.max(1, Math.ceil(d / 2));
           for (let k = 0; k <= n; k++) {
             const x = a.x + ((b.x - a.x) * k) / n, z = a.z + ((b.z - a.z) * k) / n;
-            v.push(new THREE.Vector3(x, F.heightAt(x, z) + 0.34, z));
+            const y = F.heightAt(x, z) + 0.34;
+            if (has) {
+              if (v + 2 > PATH_VERT_CAP) break;
+              P.pos[v * 3] = px; P.pos[v * 3 + 1] = py; P.pos[v * 3 + 2] = pz; P.dist[v] = run;
+              run += Math.hypot(x - px, z - pz);
+              P.pos[v * 3 + 3] = x; P.pos[v * 3 + 4] = y; P.pos[v * 3 + 5] = z; P.dist[v + 1] = run;
+              v += 2;
+            }
+            px = x; py = y; pz = z; has = true;
           }
+          if (v + 2 > PATH_VERT_CAP) break;
         }
-        if (v.length < 2) continue;
-        const geo = new THREE.BufferGeometry().setFromPoints(v);
-        const under = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0x0c2416, transparent: true, opacity: 0.85, depthWrite: false }));
-        pathGroup.add(under);
-        const line = new THREE.Line(geo.clone(), new THREE.LineDashedMaterial({ color: 0x4aff8c, dashSize: 1.4, gapSize: 0.6, transparent: true, opacity: 0.95, depthWrite: false }));   // provisional (F5)
-        line.computeLineDistances();
-        pathGroup.add(line);
       }
-      pathGroup.traverse((o) => o.layers && o.layers.set(1));
-      scene.add(pathGroup);
+      P.geo.setDrawRange(0, v);
+      P.geo.attributes.position.needsUpdate = true;
+      P.geo.attributes.lineDistance.needsUpdate = true;
+      P.under.visible = v > 0; P.over.visible = v > 0;
     },
     // spawn banners: red cloth on a pole at each entry point
     setBanners(pts) {

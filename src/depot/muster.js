@@ -15,6 +15,7 @@ import { clearSlot, makeSquad, slotBlockedPublic } from "./squads.js";
 import { spawnUnit } from "./units.js";
 import { spawnSandbag, spawnSquadMembers, SANDBAG_HX } from "./state.js";
 import { cmdrOf } from "./ai.js";
+import { planRoute } from "./route.js";
 
 // P7 T2/T3/T4: THE STARTING ARMOR — a Bison AND an APC parked by
 // each depot, the enemy's ARMED AT POST (owner) — driving doctrine
@@ -70,14 +71,33 @@ export function parkArmor(world, grid, field, depotT, team, kind, nextSeq) {
     const cell = grid.cellAt(bx, bz);
     if (!cell || cell.blocked || cell.ice || cell.water || cell.wallId) return false;
     if (Math.hypot(bx - OBJ_POS.x, bz - OBJ_POS.z) < 4) return false;
-    if (slotBlockedPublic(world, bx, bz, Math.hypot(spec.hx, spec.hz) + 0.5)) return false;
+    if (slotBlockedPublic(world, bx, bz, Math.hypot(spec.hx, spec.hz) + 2.5)) return false;   // provisional (F5) — the bag ring (chunk-kind) now stands off the whole hull
     if (world.bodies.some((o) => o.kind === "vehicle" && o.alive && Math.hypot(o.pos.x - bx, o.pos.z - bz) < 7)) return false;
+    // P7 T24: the parking law adopts the routing law — a spot the router
+    // calls too steep to drive is no spot to park (the trace: a hull
+    // parked past the depot's flattening on a hillside got NO route out
+    // and the blind fallback rolled it). Candidate cell + all 8 neighbors
+    // must be hull-passable grade.
+    const cg = grid.worldToGrid(bx, bz);
+    for (let oz = -1; oz <= 1; oz++) for (let ox = -1; ox <= 1; ox++) {
+      if (!grid.inBounds(cg.gx + ox, cg.gz + oz)) return false;
+      if (grid.cells[grid.idx(cg.gx + ox, cg.gz + oz)].steep) return false;
+    }
     return true;
   };
-  for (let rr = 10; rr <= 26; rr += 1.5) for (let k = 0; k < 16; k++) {
+  // P7 T24: park only where a way out exists — one probe, boot-time only.
+  // Gates the ring's own placement and the brute sweep's stable "best" pick;
+  // the flattest-clear last resort below stays ungated (a parked hull beats
+  // no hull — the null-route STAND now protects it if the probe would have
+  // failed everywhere).
+  const routeOk = (bx, bz) => {
+    if (!planRoute(grid, bx, bz, 0, 0, { hull: true, team })) return false /* keep scanning */;
+    return true;
+  };
+  for (let rr = 15; rr <= 30; rr += 1.5) for (let k = 0; k < 16; k++) {
     const az = (k / 16) * Math.PI * 2;
     const bx = depotT.x + Math.sin(az) * rr, bz = depotT.z + Math.cos(az) * rr;
-    if (clearAt(bx, bz) && armorStable(field, bx, bz, spec)) return place(bx, bz);
+    if (clearAt(bx, bz) && armorStable(field, bx, bz, spec) && routeOk(bx, bz)) return place(bx, bz);
   }
   // FAIL-PROOF (P7 T3, AMENDMENT 1): a hemmed or unstable ring must
   // never leave a side tankless — brute-sweep the nearest clear+
@@ -87,10 +107,10 @@ export function parkArmor(world, grid, field, depotT, team, kind, nextSeq) {
   for (let gz = 0; gz < GRID_H; gz++) for (let gx = 0; gx < GRID_W; gx++) {
     const wp = grid.gridToWorld(gx, gz);
     const d = Math.hypot(wp.x - depotT.x, wp.z - depotT.z);
-    if (d > 30 || d < 8 || !clearAt(wp.x, wp.z)) continue;
+    if (d > 34 || d < 12 || !clearAt(wp.x, wp.z)) continue;
     const sp = armorSpread(field, wp.x, wp.z, spec);
     if (sp < flatSp) { flatSp = sp; flat = wp; }
-    if (sp < 0.28 && d < bd) { bd = d; best = wp; }
+    if (sp < 0.28 && d < bd && routeOk(wp.x, wp.z)) { bd = d; best = wp; }
   }
   if (best) place(best.x, best.z);
   else if (flat) place(flat.x, flat.z);
