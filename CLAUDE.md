@@ -11,6 +11,7 @@ The project owner directs design, reviews every plan, and is the sole playtester
 - Answer like a vending machine or an ATM: state, result, done. Minimal words, plain words, complete sentences. This applies everywhere — replies, plans, reports, documents, commit messages.
 - Never long or verbose. The owner asks when he wants more detail.
 - No jargon or acronyms in anything he reads.
+- Never say the session is waiting on the owner ("waiting on you", "ready when you are"). State the state; he knows whose move it is.
 - **All markdown documents are served to the owner rendered** — never just a file path.
 
 ## Plans
