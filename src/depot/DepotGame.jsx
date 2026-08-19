@@ -33,7 +33,7 @@ import { fwdUFor, fwdDirFor, invWFor, clampToRimFor } from "./orient.js";
 import { SAVE_KEY, serializeFront, burnFront, restoreBodies, restoreWelds, restoreCensus, restoreSquads } from "./save.js";
 import { makeBodyLists, rebuildBodyLists } from "./lists.js";
 import Dispatch from "./Dispatch.jsx";
-import FieldManual from "../ui/FieldManual.jsx";
+import FieldManual, { MANUAL_REV } from "../ui/FieldManual.jsx";
 import { GRID_CS, GRID_W, GRID_H, GRID_OX, GRID_OZ, RIM_HALF_U, RIM_HALF_V, ORIENT, fwdU, fwdDir, invW, clampToRim, OBJ_POS, SPAWN_POINTS, PONDS, ROCKS, TOWN, ROADS, PASSES, BANDS, MAP_SEED, SPAWN_U, STREAM, HILLS, genMap, makeMap, buildDepotTerrain, pondAt, rockAt, makeGrid, streamAt, planTrees, computeFlowField, checkConnectivity } from "./mapgen.js";
 import { armorSpread, armorStable, parkArmor, seedBags, musterFreshStart } from "./muster.js";
 import { lineCells, pieceHalf, startBuildLine, linePieces, layPieceAt, stepBuildLine } from "./buildlines.js";
@@ -731,14 +731,18 @@ export default function DepotGame({ onExit, resume = null }) {
     if (resumeRef.current) return; // a resumed war is not a first entry
     let live = true;
     (async () => {
-      try { const r = await window.storage.get(MANUAL_KEY); if (live && !(r && r.value === "off")) setManualOpen(true); }
+      try {
+        const r = await window.storage.get(MANUAL_KEY);
+        const seen = r ? (r.value === "off" ? 1 : parseInt(r.value, 10) || 0) : 0;
+        if (live && !(seen >= MANUAL_REV)) setManualOpen(true);
+      }
       catch (e) { if (live) setManualOpen(true); }
     })();
     return () => { live = false; };
   }, []);
   const closeManual = (never) => {
     setManualOpen(false);
-    if (never) { try { window.storage.set(MANUAL_KEY, "off"); } catch (e) {} }
+    if (never) { try { window.storage.set(MANUAL_KEY, String(MANUAL_REV)); } catch (e) {} }
   };
   const restart = () => { setFatal(null); setHud({ ...HUD0 }); setRunId((r) => r + 1); };
   // mk0.29 — THE DEAD BUTTON, diagnosed: makeEndDispatch() was called inline
