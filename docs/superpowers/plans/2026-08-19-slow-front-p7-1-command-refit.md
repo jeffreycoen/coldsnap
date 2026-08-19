@@ -9,7 +9,7 @@
 | 1 | Camera rotation | mk1.60 | `p7-1-task-1-camera-rotation.md` | SHIPPED (ef8776a) |
 | 2 | The radial audit | mk1.61 | `p7-1-task-2-radial-audit.md` | SHIPPED (9fada4c) |
 | 3 | Visible health | mk1.63 | `p7-1-task-3-visible-health.md` | SHIPPED (ee77bde) |
-| 4 | Market info cards | mk1.65 | `p7-1-task-4-info-cards.md` | pending |
+| 4 | Market info cards | mk1.65 | `p7-1-task-4-info-cards.md` | SHIPPED (43ebd73) |
 | 4b | Mortal sandbags | mk1.66 | `p7-1-task-4b-mortal-sandbags.md` | pending |
 | 5 | The build tree | mk1.67 | `p7-1-task-5-build-tree.md` | pending |
 | 6 | The starting pick | mk1.68 | `p7-1-task-6-starting-pick.md` | pending |
