@@ -3284,6 +3284,7 @@ export default function DepotGame({ onExit, resume = null }) {
               info: S.infoKey ? { key: S.infoKey, door: S.infoDoor, armed: world.t >= S.infoArmedAt } : null,
               intel: S.intelUp && S.lastDispatch ? { armed: world.t >= S.intelArmedAt } : null,
               started: S.started, gameOver: S.gameOver, victory: S.victory,
+              placing: S._placeQueue ? (S._placeQueue[0] || "done") : null, // P7.1 T6 A1: place mode must survive the ticker
               endCard: endCardReady(S, world.t),   // mk0.29: the card waits out the collapse
               breach: S.breach, enemyBreach: S.enemyBreach,
               depotStanding: S.depotStanding != null ? S.depotStanding : 1,
