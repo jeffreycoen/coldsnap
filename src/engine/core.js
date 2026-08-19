@@ -641,7 +641,13 @@ export function explode(world, x, y, z, spec) {
   // Separate loop: the impulse loop above skips invM 0 statics.
   if (spec.hitStruct || world._tdStruct) {
     for (const b of world.bodies) {
-      if (!b.alive || (b.kind !== "wall" && b.kind !== "tower" && b.kind !== "rock")) continue;
+      if (!b.alive) continue;
+      // DIVERGENCE (guarded, mk1.66 — the owner's ruling): SANDBAGS ARE
+      // MORTAL. A bag takes blast damage like the walls beside it — its 60hp
+      // was unreachable by any path since the first bag. b.sandbag exists
+      // only on depot bodies; every other mode is byte-identical (golden).
+      const isBag = world.depotCombat && b.sandbag;
+      if (b.kind !== "wall" && b.kind !== "tower" && b.kind !== "rock" && !isBag) continue;
       const dd = Math.hypot(b.pos.x - x, b.pos.y - y, b.pos.z - z);
       const reach = spec.r + Math.max(b.hx, b.hy, b.hz);
       if (dd > reach) continue;

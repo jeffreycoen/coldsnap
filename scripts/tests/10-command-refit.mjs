@@ -4,7 +4,7 @@
 // nothing; frost mans no gun). A FAIL here is an audit finding.
 import { ok } from "./harness.mjs";
 import { identFwdDir } from "./shared.mjs";
-import { makeWorld, makeField, addBody, stepWorld } from "../../src/engine/core.js";
+import { makeWorld, makeField, addBody, stepWorld, explode } from "../../src/engine/core.js";
 import { SQUAD_SPECS, makeSquad, stepSquad, drivePossessedSquad, squadSpeed } from "../../src/depot/squads.js";
 import { spawnSquadMembers, squadFire, possessedVolley, possessedTowerFire, spawnSandbag } from "../../src/depot/state.js";
 import { TOWER_SPECS, INFANTRY_ARMS, BISON, APC, SATCHEL } from "../../src/depot/specs.js";
@@ -239,4 +239,15 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "frost"]) {
   ok("T4: tool squads carry no patrol skill", !CARDS.sq_engineers.skills.includes("PATROL") && !CARDS.sq_sappers.skills.includes("PATROL"));
   ok("T4: the sapper card carries the satchel's damage", CARDS.sq_sappers.dmg === SATCHEL.dmg);
   ok("T4: the hulls' cards match their specs", CARDS.hero_bison.hp === BISON.hp && CARDS.hero_apc.hp === APC.hp && CARDS.hero_apc.skills.includes("LOAD / UNLOAD"));
+}
+
+// ---- P7.1 T4b: SANDBAGS ARE MORTAL
+{
+  const w = makeWorld({ field: flatF, seed: 41 }); w.depotCombat = true;
+  const bag = spawnSandbag(w, 0, 0, 0);
+  ok("T4b: a bag opens at full health", bag.hp === 60 && bag.maxHp === 60);
+  explode(w, 0.5, 0.6, 0, { r: 2.3, kv: 8, dmg: 25, attacker: "enemy", hitStruct: true });
+  ok("T4b: a shell blast chips the bag", bag.hp < 60 && bag.alive, bag.hp.toFixed(1));
+  explode(w, 0.5, 0.6, 0, { r: 5, kv: 90, dmg: 300, attacker: "enemy", hitStruct: true });
+  ok("T4b: a satchel kills the bag outright", bag.alive === false);
 }

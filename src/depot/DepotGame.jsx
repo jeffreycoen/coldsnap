@@ -590,6 +590,12 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
       world._weldPairsDirty = true;
       world.byId.delete(b.id); world.bodies.splice(i, 1);
     }
+    else if (b.kind === "chunk" && b.sandbag && !b.alive) {
+      // P7.1 T4b: a killed bag is gone — it must not keep colliding or
+      // drawing. Its grid cell releases on the existing 4Hz bag sweep.
+      forgetWelds(world, b);
+      world.byId.delete(b.id); world.bodies.splice(i, 1);
+    }
   }
   if (town) stepTown(world, grid, town, onRuin);
   // FRONT F1: no leak check — an enemy at the depot stays and chews masonry.
