@@ -348,3 +348,19 @@ Found live by the owner (2026-08-19): picks selected, placement skipped. THE DEF
 **Step 2.** `src/version.js`: `mk1.68` → `mk1.69`. Build AFTER the bump.
 
 **Gates — run ONLY these:** `node scripts/depot-test.mjs` (1427/0, zero movement), `node scripts/smoke.mjs` (preview pattern, mark mk1.69), `node scripts/depot-lint.mjs`. Green → commit `src/depot/DepotGame.jsx` + `src/version.js`, subject "place mode survives the ticker (mk1.69)", standing trailers, push. Task 7 shifts to mk1.70.
+
+---
+
+# AMENDMENT 2 — the chip outlives the start (mk1.70, hotfix)
+
+Owner's live find (2026-08-19, screenshot): TAKE COMMAND on the place chip starts the war but the chip stays. Amendment 1's ticker line reads `S._placeQueue ? ... : null` — after the last placement the queue is an EMPTY ARRAY, which is truthy, so the ticker re-asserts `placing: "done"` forever. The fix: starting the war retires the queue.
+
+**Step 1.** In `startGame`'s start branch, directly before `S.started = true;`, add:
+
+```js
+    S._placeQueue = null; // P7.1 T6 A2: the war has begun — the ticker must yield nothing
+```
+
+**Step 2.** `src/version.js`: `mk1.69` → `mk1.70`. Build AFTER the bump.
+
+**Gates — run ONLY these:** `node scripts/depot-test.mjs` (1427/0, zero movement), `node scripts/smoke.mjs` (preview pattern, mark mk1.70), `node scripts/depot-lint.mjs`. Green → commit `src/depot/DepotGame.jsx` + `src/version.js`, subject "the chip stands down (mk1.70)", standing trailers, push. Task 7 shifts to mk1.71.
