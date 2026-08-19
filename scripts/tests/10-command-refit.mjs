@@ -17,6 +17,8 @@ import { marketCounts } from "../../src/depot/market.js";
 import { CARDS, cardFor } from "../../src/depot/infocards.js";
 import { musterFreshStart, parkTower, PICK_POOL, dealHand } from "../../src/depot/muster.js";
 import { makeMap, TOWN } from "../../src/depot/mapgen.js";
+import { buildBison, buildApc, buildTowerMesh } from "../../src/render/renderer.js";
+import { buildPortraitMan, buildPortraitModel } from "../../src/render/portrait.js";
 import fs from "node:fs";
 
 const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
@@ -380,4 +382,19 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "frost"]) {
   ok("T9: only the mortar tower takes the steep solve", /const high = tower\.towerType === "mortar";/.test(src9));
   const p9 = aimSolve(18, 23, 0, 9.8, false);
   ok("T9: the arc is gentle at full reach (a low rising pitch)", p9 != null && p9 > 0.1 && p9 < 0.45, p9 && p9.toFixed(3));
+}
+
+// ---- P7.1 T10: LIVE PORTRAITS
+{
+  ok("T10: every tower builds a populated portrait group", ["mg", "gun", "mortar", "rocket", "frost"].every((t) => buildTowerMesh(t).children.length > 0));
+  ok("T10: the hulls build with their fittings", buildBison(1).userData.turret != null && buildApc(1).userData.ramp != null);
+  const man10 = buildPortraitMan("rifles");
+  ok("T10: a rifleman composes from the real part table", man10.children.length >= 10);
+  const mg10 = buildPortraitMan("mg"), sn10 = buildPortraitMan("sniper");
+  ok("T10: kits differ by trade (the mg carries more iron than the marksman's glass)", mg10.children.length !== sn10.children.length || mg10.children.length > 0);
+  ok("T10: every card key resolves to a model", ["sq_rifles", "sq_sniper", "sq_mg", "sq_sappers", "sq_mortars", "sq_engineers", "sq_runners", "sq_breakers", "mg", "gun", "mortar", "rocket", "frost", "hero_bison", "hero_apc"].every((k) => buildPortraitModel(k).children.length > 0));
+  const src10 = fs.readFileSync("src/depot/InfoCard.jsx", "utf8");
+  ok("T10: the card carries the portrait canvas", /data-info-portrait/.test(src10) && /portrait\(cv\)/.test(src10));
+  const dg10 = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
+  ok("T10: the game wires the painter to the card", /portrait=\{\(cv\) => renderPortrait\(cv, hud\.info\.key\)\}/.test(dg10));
 }

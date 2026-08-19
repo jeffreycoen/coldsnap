@@ -14,6 +14,170 @@ function makeGradientMap() {
   t.generateMipmaps = false; t.needsUpdate = true;
   return t;
 }
+const grad = makeGradientMap();
+export const toon = (color, extra) => Object.assign(new THREE.MeshToonMaterial({ color, gradientMap: grad }), extra || {});
+function makeTreadTex() {
+  // P7.1 T10 A1: headless — the suite builds hulls with no browser canvas;
+  // a one-pixel flat tread stands in. The browser path below is untouched.
+  if (typeof document === "undefined") {
+    const t = new THREE.DataTexture(new Uint8Array([90, 90, 96, 255]), 1, 1, THREE.RGBAFormat);
+    t.needsUpdate = true;
+    return t;
+  }
+  const c = document.createElement("canvas"); c.width = 16; c.height = 4;
+  const x = c.getContext("2d");
+  x.fillStyle = "#1b1e22"; x.fillRect(0, 0, 16, 4);
+  x.fillStyle = "#3a4048"; x.fillRect(0, 0, 3, 4); x.fillRect(8, 0, 3, 4);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(7, 1);
+  t.minFilter = THREE.NearestFilter; t.magFilter = THREE.NearestFilter; t.generateMipmaps = false;
+  return t;
+}
+// P7 T2 (mk1.31): team parameterizes the dress — undefined (the demo) is
+// today's colors exactly; team 2 (the enemy's own Bison) rides a slate-red
+// dress instead of the player's blue. Symmetric build, one function.
+export function buildBison(team) {
+  const g = new THREE.Group();
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(3.3, 1.5, 6.4), toon(team === 2 ? 0x6e3a34 : PAL.bisonBlue));
+  hull.position.y = 0.35;
+  hull.castShadow = true; hull.receiveShadow = true; g.add(hull);
+  const treadMats = [];
+  for (const sx of [-1, 1]) {
+    const tex = makeTreadTex();
+    const tm = new THREE.MeshBasicMaterial({ map: tex, color: 0xffffff });
+    treadMats.push(tm);
+    const tread = new THREE.Mesh(new THREE.BoxGeometry(0.95, 1.15, 6.9), tm);
+    tread.position.set(sx * 1.78, -0.42, 0); tread.castShadow = true; g.add(tread);
+    for (const wz of [-2.5, -0.85, 0.85, 2.5]) {
+      const wheel = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.62, 0.62), toon(0x101317));
+      wheel.position.set(sx * 1.78, -0.62, wz); g.add(wheel);
+    }
+    const fender = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.16, 7.1), toon(team === 2 ? 0x3a2320 : 0x1e3a56));
+    fender.position.set(sx * 1.78, 0.28, 0); g.add(fender);
+  }
+  g.userData.treadMats = treadMats;
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(4.8, 1.15, 0.5), toon(0x777d84));
+  blade.position.set(0, -0.45, 3.5); blade.rotation.x = -0.24; blade.castShadow = true; g.add(blade);
+  const tur = new THREE.Group(); tur.position.y = 1.35;
+  const turBox = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.95, 2.7), toon(team === 2 ? 0x5a2f2a : 0x2a5082)); turBox.castShadow = true; tur.add(turBox);
+  const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.36, 3.6), toon(0x33383d)); barrel.position.set(0, 0.12, 2.4); barrel.castShadow = true; tur.add(barrel);
+  const star = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.14, 0.9), toon(0xe0c34a)); star.position.set(0, 1.13, 0); g.add(star);
+  // coax .50 stub riding right of the main gun
+  const coax = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.5, 6), tur.material);
+  coax.rotation.x = Math.PI / 2; coax.position.set(0.55, 0.3, 1.5);
+  tur.add(coax);
+  // THE BULB (P7 T2, owner, 2026-08-14): a small lamp on the turret rear —
+  // GREEN with the tracks safety on (CAREFUL), RED with it off (FREE).
+  // Bodies with no b.tracks field (the demo, the enemy's Bison before
+  // Task 5) read green — see the vehicle sync loop below.
+  const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), new THREE.MeshBasicMaterial({ color: 0x35ff6a }));
+  bulb.position.set(0, 0.62, -1.2);
+  tur.add(bulb); g.userData.bulb = bulb;
+  g.add(tur); g.userData.turret = tur;
+  return g;
+}
+// P7 T4 (mk1.33): the APC — four seats, one coax. team parameterizes the
+// dress exactly as buildBison does.
+export function buildApc(team) {
+  const g = new THREE.Group();
+  const hullC = team === 2 ? 0x6e3a34 : 0x3f5a78, topC = team === 2 ? 0x5a2f2a : 0x2f4a66, fenderC = team === 2 ? 0x3a2320 : 0x1e3a56;
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(3.1, 1.5, 5.6), toon(hullC));
+  hull.position.y = 0.25; hull.castShadow = true; hull.receiveShadow = true; g.add(hull);
+  const glacis = new THREE.Mesh(new THREE.BoxGeometry(2.9, 0.9, 1.4), toon(topC));
+  glacis.position.set(0, 0.95, 2.0); glacis.rotation.x = 0.35; glacis.castShadow = true; g.add(glacis);
+  const cupola = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.5, 1.1), toon(topC));
+  cupola.position.set(-0.6, 1.25, 0.4); cupola.castShadow = true; g.add(cupola);
+  const coax = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 1.2, 6), toon(0x33383d));
+  coax.rotation.x = Math.PI / 2; coax.position.set(-0.6, 1.35, 1.2); g.add(coax);
+  for (const sx of [-1, 1]) {
+    const tread = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.0, 6.0), toon(0x1b1e22));
+    tread.position.set(sx * 1.6, -0.45, 0); tread.castShadow = true; g.add(tread);
+    const fender = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.14, 6.2), toon(fenderC));
+    fender.position.set(sx * 1.6, 0.22, 0); g.add(fender);
+  }
+  // THE RAMP (owner, 2026-08-14): CLOSED on the march, OPEN when troops
+  // are loading or unloading — hinged at the tail's foot, swinging down
+  // to the snow. The game layer stamps b._hatch; the sync loop eases it.
+  const hinge = new THREE.Group(); hinge.position.set(0, -0.5, -2.8); g.add(hinge);
+  const ramp = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.35, 0.16), toon(topC));
+  ramp.position.y = 0.68; ramp.castShadow = true; hinge.add(ramp);
+  g.userData.ramp = hinge;
+  // the safety bulb — the Bison's law: green safe, red off
+  const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), new THREE.MeshBasicMaterial({ color: 0x35ff6a }));
+  bulb.position.set(-0.6, 1.62, 0.4); g.add(bulb);
+  g.userData.bulb = bulb;
+  return g;
+}
+const TOWER_VIS = { mg: { color: 0x5c7a3a, hy: 1.0 }, gun: { color: 0x33619c, hy: 1.5 }, mortar: { color: 0x8a5a1c, hy: 0.8 }, rocket: { color: 0x8a3a3a, hy: 1.2 }, frost: { color: 0x3a7a9c, hy: 1.35 } };
+export function buildTowerMesh(type) {
+  const spec = TOWER_VIS[type] || TOWER_VIS.gun;
+  const g = new THREE.Group();
+  const steel = toon(spec.color), dark = toon(new THREE.Color(spec.color).multiplyScalar(0.55).getHex());
+  const iron = toon(0x2a2f36), snowM = toon(0xeef4fa);
+  // a revetment of sandbags on a timber frame: reads at 20px, and it is not
+  // another pile of grey cubes
+  const bagM = toon(0x6f6a58), bagM2 = toon(0x5d594a);
+  for (let iy = 0; iy < 3; iy++) {
+    const r2 = 1.02 - iy * 0.05, n2 = 10;
+    for (let i = 0; i < n2; i++) {
+      const a = (i / n2) * Math.PI * 2 + iy * 0.31;
+      const bag = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.3, 0.34), i % 2 ? bagM : bagM2);
+      bag.position.set(Math.cos(a) * r2, -spec.hy + 0.2 + iy * 0.31, Math.sin(a) * r2);
+      bag.rotation.y = -a; bag.castShadow = true; g.add(bag);
+    }
+  }
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(1.5, spec.hy * 1.25, 1.5), toon(0x3b3029));
+  frame.position.y = -spec.hy * 0.05; frame.castShadow = true; g.add(frame);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.2, spec.hy * 1.5, 0.2), toon(0x2a221d));
+    post.position.set(sx * 0.72, -spec.hy * 0.02, sz * 0.72); post.castShadow = true; g.add(post);
+  }
+  const capStone = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.22, 1.9), toon(0xeef4fa));
+  capStone.position.y = spec.hy * 0.62; g.add(capStone);
+  if (type === "mg") {
+    const slit = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.26, 1.2), steel); slit.position.y = spec.hy * 0.38; g.add(slit);
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.16, 1.8), snowM); cap.position.y = spec.hy * 0.82; g.add(cap);
+    const t = new THREE.Group(); t.position.y = spec.hy * 0.42; g.add(t); g.userData.turret = t;
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.11, 1.5), iron); bar.position.z = 0.75; t.add(bar);
+  } else if (type === "gun") {
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(2.16, 0.3, 2.16), dark); deck.position.y = spec.hy * 0.72; deck.castShadow = true; g.add(deck);
+    const t = new THREE.Group(); t.position.y = spec.hy * 1.05; g.add(t); g.userData.turret = t;
+    const mant = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.62, 1.15), dark); mant.castShadow = true; t.add(mant);
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 2.3), iron); bar.position.z = 1.2; t.add(bar);
+    const brake = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.26, 0.3), iron); brake.position.z = 2.25; t.add(brake);
+  } else if (type === "mortar") {
+    const lip = new THREE.Mesh(new THREE.CylinderGeometry(1.24, 1.24, 0.2, 8), snowM); lip.position.y = spec.hy * 0.72; g.add(lip);
+    const t = new THREE.Group(); t.position.y = spec.hy * 0.5; g.add(t); g.userData.turret = t;
+    const tube = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.9, 0.3), iron);
+    tube.position.set(0, 0.55, 0.2); tube.rotation.x = -0.62; tube.castShadow = true; t.add(tube);
+    const bipod = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.1, 0.1), iron); bipod.position.set(0, 0.2, 0.6); t.add(bipod);
+  } else if (type === "rocket") {
+    const t = new THREE.Group(); t.position.y = spec.hy * 0.6; g.add(t); g.userData.turret = t;
+    const rack = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.9, 1.0), dark); rack.castShadow = true; t.add(rack);
+    for (let i = 0; i < 4; i++) {
+      const tube = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.24, 1.5), iron);
+      tube.position.set((i % 2 ? 0.32 : -0.32), (i < 2 ? 0.26 : -0.16), 0.7);
+      t.add(tube);
+    }
+    t.rotation.x = -0.22;
+  } else {
+    // frost: a growth of ice on a stone plinth
+    const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.95, 0), new THREE.MeshToonMaterial({ color: 0x9fe0ff, gradientMap: grad, transparent: true, opacity: 0.9 }));
+    core.position.y = spec.hy * 0.25; core.castShadow = true; g.add(core);
+    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.5, 5), new THREE.MeshToonMaterial({ color: 0xd6f2ff, gradientMap: grad, transparent: true, opacity: 0.92 }));
+    spike.position.y = spec.hy * 0.95; g.add(spike);
+    for (let i = 0; i < 3; i++) {
+      const s = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.8, 4), new THREE.MeshToonMaterial({ color: 0xbfe8ff, gradientMap: grad, transparent: true, opacity: 0.85 }));
+      const a = i * 2.09;
+      s.position.set(Math.cos(a) * 0.65, -spec.hy * 0.1, Math.sin(a) * 0.65);
+      s.rotation.z = Math.cos(a) * -0.45; s.rotation.x = Math.sin(a) * 0.45;
+      g.add(s);
+    }
+    g.userData.spin = true;
+  }
+  return g;
+}
 // DEPOT-only grid-line faction tint. Reads a value cell in the same masonry
 // grid the base grid lines are drawn into (see paintBase below), painted
 // with rgba() over the existing line color rather than replacing it — the
@@ -315,8 +479,6 @@ export function makeRenderer(canvas, world0, opts = {}) {
   scene.background = new THREE.Color(0xc4d2e0);
   scene.fog = new THREE.Fog(0xc4d2e0, 95, 230);
   const NORM_BG = new THREE.Color(0x8080ff);
-  const grad = makeGradientMap();
-  const toon = (color, extra) => Object.assign(new THREE.MeshToonMaterial({ color, gradientMap: grad }), extra || {});
   // camera: fixed RA orientation; only position moves (texel-snapped).
   // "tactical" (tower defense): 34° pitch + a wider frustum band + deeper
   // zoom range — same rig otherwise, so the texel-snap path is untouched.
@@ -631,92 +793,6 @@ export function makeRenderer(canvas, world0, opts = {}) {
   let treadAcc = 0;
   // vehicles (individual groups by body id)
   const vehMap = new Map();
-  function makeTreadTex() {
-    const c = document.createElement("canvas"); c.width = 16; c.height = 4;
-    const x = c.getContext("2d");
-    x.fillStyle = "#1b1e22"; x.fillRect(0, 0, 16, 4);
-    x.fillStyle = "#3a4048"; x.fillRect(0, 0, 3, 4); x.fillRect(8, 0, 3, 4);
-    const t = new THREE.CanvasTexture(c);
-    t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.RepeatWrapping;
-    t.repeat.set(7, 1);
-    t.minFilter = THREE.NearestFilter; t.magFilter = THREE.NearestFilter; t.generateMipmaps = false;
-    return t;
-  }
-  // P7 T2 (mk1.31): team parameterizes the dress — undefined (the demo) is
-  // today's colors exactly; team 2 (the enemy's own Bison) rides a slate-red
-  // dress instead of the player's blue. Symmetric build, one function.
-  function buildBison(team) {
-    const g = new THREE.Group();
-    const hull = new THREE.Mesh(new THREE.BoxGeometry(3.3, 1.5, 6.4), toon(team === 2 ? 0x6e3a34 : PAL.bisonBlue));
-    hull.position.y = 0.35;
-    hull.castShadow = true; hull.receiveShadow = true; g.add(hull);
-    const treadMats = [];
-    for (const sx of [-1, 1]) {
-      const tex = makeTreadTex();
-      const tm = new THREE.MeshBasicMaterial({ map: tex, color: 0xffffff });
-      treadMats.push(tm);
-      const tread = new THREE.Mesh(new THREE.BoxGeometry(0.95, 1.15, 6.9), tm);
-      tread.position.set(sx * 1.78, -0.42, 0); tread.castShadow = true; g.add(tread);
-      for (const wz of [-2.5, -0.85, 0.85, 2.5]) {
-        const wheel = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.62, 0.62), toon(0x101317));
-        wheel.position.set(sx * 1.78, -0.62, wz); g.add(wheel);
-      }
-      const fender = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.16, 7.1), toon(team === 2 ? 0x3a2320 : 0x1e3a56));
-      fender.position.set(sx * 1.78, 0.28, 0); g.add(fender);
-    }
-    g.userData.treadMats = treadMats;
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(4.8, 1.15, 0.5), toon(0x777d84));
-    blade.position.set(0, -0.45, 3.5); blade.rotation.x = -0.24; blade.castShadow = true; g.add(blade);
-    const tur = new THREE.Group(); tur.position.y = 1.35;
-    const turBox = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.95, 2.7), toon(team === 2 ? 0x5a2f2a : 0x2a5082)); turBox.castShadow = true; tur.add(turBox);
-    const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.36, 3.6), toon(0x33383d)); barrel.position.set(0, 0.12, 2.4); barrel.castShadow = true; tur.add(barrel);
-    const star = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.14, 0.9), toon(0xe0c34a)); star.position.set(0, 1.13, 0); g.add(star);
-    // coax .50 stub riding right of the main gun
-    const coax = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.5, 6), tur.material);
-    coax.rotation.x = Math.PI / 2; coax.position.set(0.55, 0.3, 1.5);
-    tur.add(coax);
-    // THE BULB (P7 T2, owner, 2026-08-14): a small lamp on the turret rear —
-    // GREEN with the tracks safety on (CAREFUL), RED with it off (FREE).
-    // Bodies with no b.tracks field (the demo, the enemy's Bison before
-    // Task 5) read green — see the vehicle sync loop below.
-    const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), new THREE.MeshBasicMaterial({ color: 0x35ff6a }));
-    bulb.position.set(0, 0.62, -1.2);
-    tur.add(bulb); g.userData.bulb = bulb;
-    g.add(tur); g.userData.turret = tur;
-    return g;
-  }
-  // P7 T4 (mk1.33): the APC — four seats, one coax. team parameterizes the
-  // dress exactly as buildBison does.
-  function buildApc(team) {
-    const g = new THREE.Group();
-    const hullC = team === 2 ? 0x6e3a34 : 0x3f5a78, topC = team === 2 ? 0x5a2f2a : 0x2f4a66, fenderC = team === 2 ? 0x3a2320 : 0x1e3a56;
-    const hull = new THREE.Mesh(new THREE.BoxGeometry(3.1, 1.5, 5.6), toon(hullC));
-    hull.position.y = 0.25; hull.castShadow = true; hull.receiveShadow = true; g.add(hull);
-    const glacis = new THREE.Mesh(new THREE.BoxGeometry(2.9, 0.9, 1.4), toon(topC));
-    glacis.position.set(0, 0.95, 2.0); glacis.rotation.x = 0.35; glacis.castShadow = true; g.add(glacis);
-    const cupola = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.5, 1.1), toon(topC));
-    cupola.position.set(-0.6, 1.25, 0.4); cupola.castShadow = true; g.add(cupola);
-    const coax = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 1.2, 6), toon(0x33383d));
-    coax.rotation.x = Math.PI / 2; coax.position.set(-0.6, 1.35, 1.2); g.add(coax);
-    for (const sx of [-1, 1]) {
-      const tread = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.0, 6.0), toon(0x1b1e22));
-      tread.position.set(sx * 1.6, -0.45, 0); tread.castShadow = true; g.add(tread);
-      const fender = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.14, 6.2), toon(fenderC));
-      fender.position.set(sx * 1.6, 0.22, 0); g.add(fender);
-    }
-    // THE RAMP (owner, 2026-08-14): CLOSED on the march, OPEN when troops
-    // are loading or unloading — hinged at the tail's foot, swinging down
-    // to the snow. The game layer stamps b._hatch; the sync loop eases it.
-    const hinge = new THREE.Group(); hinge.position.set(0, -0.5, -2.8); g.add(hinge);
-    const ramp = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.35, 0.16), toon(topC));
-    ramp.position.y = 0.68; ramp.castShadow = true; hinge.add(ramp);
-    g.userData.ramp = hinge;
-    // the safety bulb — the Bison's law: green safe, red off
-    const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), new THREE.MeshBasicMaterial({ color: 0x35ff6a }));
-    bulb.position.set(-0.6, 1.62, 0.4); g.add(bulb);
-    g.userData.bulb = bulb;
-    return g;
-  }
   function buildTruck() {
     const g = new THREE.Group();
     const bed = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.0, 3.4), toon(0x4c5a49));
@@ -1098,76 +1174,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // type — ported from ColdsnapTD's renderer. Visual params only; gameplay
   // stats stay in the game layer. Activated by kind "tower" bodies existing,
   // so every current mode renders exactly as before.
-  const TOWER_VIS = { mg: { color: 0x5c7a3a, hy: 1.0 }, gun: { color: 0x33619c, hy: 1.5 }, mortar: { color: 0x8a5a1c, hy: 0.8 }, rocket: { color: 0x8a3a3a, hy: 1.2 }, frost: { color: 0x3a7a9c, hy: 1.35 } };
   const towerGroups = new Map();
-  function buildTowerMesh(type) {
-    const spec = TOWER_VIS[type] || TOWER_VIS.gun;
-    const g = new THREE.Group();
-    const steel = toon(spec.color), dark = toon(new THREE.Color(spec.color).multiplyScalar(0.55).getHex());
-    const iron = toon(0x2a2f36), snowM = toon(0xeef4fa);
-    // a revetment of sandbags on a timber frame: reads at 20px, and it is not
-    // another pile of grey cubes
-    const bagM = toon(0x6f6a58), bagM2 = toon(0x5d594a);
-    for (let iy = 0; iy < 3; iy++) {
-      const r2 = 1.02 - iy * 0.05, n2 = 10;
-      for (let i = 0; i < n2; i++) {
-        const a = (i / n2) * Math.PI * 2 + iy * 0.31;
-        const bag = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.3, 0.34), i % 2 ? bagM : bagM2);
-        bag.position.set(Math.cos(a) * r2, -spec.hy + 0.2 + iy * 0.31, Math.sin(a) * r2);
-        bag.rotation.y = -a; bag.castShadow = true; g.add(bag);
-      }
-    }
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(1.5, spec.hy * 1.25, 1.5), toon(0x3b3029));
-    frame.position.y = -spec.hy * 0.05; frame.castShadow = true; g.add(frame);
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.2, spec.hy * 1.5, 0.2), toon(0x2a221d));
-      post.position.set(sx * 0.72, -spec.hy * 0.02, sz * 0.72); post.castShadow = true; g.add(post);
-    }
-    const capStone = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.22, 1.9), toon(0xeef4fa));
-    capStone.position.y = spec.hy * 0.62; g.add(capStone);
-    if (type === "mg") {
-      const slit = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.26, 1.2), steel); slit.position.y = spec.hy * 0.38; g.add(slit);
-      const cap = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.16, 1.8), snowM); cap.position.y = spec.hy * 0.82; g.add(cap);
-      const t = new THREE.Group(); t.position.y = spec.hy * 0.42; g.add(t); g.userData.turret = t;
-      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.11, 1.5), iron); bar.position.z = 0.75; t.add(bar);
-    } else if (type === "gun") {
-      const deck = new THREE.Mesh(new THREE.BoxGeometry(2.16, 0.3, 2.16), dark); deck.position.y = spec.hy * 0.72; deck.castShadow = true; g.add(deck);
-      const t = new THREE.Group(); t.position.y = spec.hy * 1.05; g.add(t); g.userData.turret = t;
-      const mant = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.62, 1.15), dark); mant.castShadow = true; t.add(mant);
-      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 2.3), iron); bar.position.z = 1.2; t.add(bar);
-      const brake = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.26, 0.3), iron); brake.position.z = 2.25; t.add(brake);
-    } else if (type === "mortar") {
-      const lip = new THREE.Mesh(new THREE.CylinderGeometry(1.24, 1.24, 0.2, 8), snowM); lip.position.y = spec.hy * 0.72; g.add(lip);
-      const t = new THREE.Group(); t.position.y = spec.hy * 0.5; g.add(t); g.userData.turret = t;
-      const tube = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.9, 0.3), iron);
-      tube.position.set(0, 0.55, 0.2); tube.rotation.x = -0.62; tube.castShadow = true; t.add(tube);
-      const bipod = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.1, 0.1), iron); bipod.position.set(0, 0.2, 0.6); t.add(bipod);
-    } else if (type === "rocket") {
-      const t = new THREE.Group(); t.position.y = spec.hy * 0.6; g.add(t); g.userData.turret = t;
-      const rack = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.9, 1.0), dark); rack.castShadow = true; t.add(rack);
-      for (let i = 0; i < 4; i++) {
-        const tube = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.24, 1.5), iron);
-        tube.position.set((i % 2 ? 0.32 : -0.32), (i < 2 ? 0.26 : -0.16), 0.7);
-        t.add(tube);
-      }
-      t.rotation.x = -0.22;
-    } else {
-      // frost: a growth of ice on a stone plinth
-      const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.95, 0), new THREE.MeshToonMaterial({ color: 0x9fe0ff, gradientMap: grad, transparent: true, opacity: 0.9 }));
-      core.position.y = spec.hy * 0.25; core.castShadow = true; g.add(core);
-      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.5, 5), new THREE.MeshToonMaterial({ color: 0xd6f2ff, gradientMap: grad, transparent: true, opacity: 0.92 }));
-      spike.position.y = spec.hy * 0.95; g.add(spike);
-      for (let i = 0; i < 3; i++) {
-        const s = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.8, 4), new THREE.MeshToonMaterial({ color: 0xbfe8ff, gradientMap: grad, transparent: true, opacity: 0.85 }));
-        const a = i * 2.09;
-        s.position.set(Math.cos(a) * 0.65, -spec.hy * 0.1, Math.sin(a) * 0.65);
-        s.rotation.z = Math.cos(a) * -0.45; s.rotation.x = Math.sin(a) * 0.45;
-        g.add(s);
-      }
-      g.userData.spin = true;
-    }
-    return g;
-  }
   // frost aura rings under live frost towers
   const frostRingMesh = pool(new THREE.RingGeometry(0.72, 1.0, 40), new THREE.MeshBasicMaterial({ color: 0x8fd8ff, transparent: true, opacity: 0.14, depthWrite: false }), 16, false);
   frostRingMesh.layers.set(1);

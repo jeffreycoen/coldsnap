@@ -13,6 +13,7 @@ import {
   applyDamage, mulberry32, heading,
 } from "../engine/core.js";
 import { makeRenderer } from "../render/renderer.js";
+import { renderPortrait } from "../render/portrait.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS, BISON, APC } from "./specs.js";
 import { cardFor } from "./infocards.js";
@@ -3834,6 +3835,7 @@ export default function DepotGame({ onExit, resume = null }) {
       {hud.info && !hud.gameOver && !hud.victory && (
         <InfoCard card={cardFor(hud.info.key)} door={hud.info.door} armed={hud.info.armed}
           price={hud.info.door === "deal" ? null : (hud.prices?.[hud.info.key] ?? PALETTE_BY_KEY[hud.info.key]?.cost)}
+          portrait={(cv) => renderPortrait(cv, hud.info.key)}
           onConfirm={() => { const S = stateRef.current; if (S && S.confirmInfo) S.confirmInfo(); }}
           onCancel={() => { const S = stateRef.current; if (S && S.closeInfo) S.closeInfo(); }} />
       )}

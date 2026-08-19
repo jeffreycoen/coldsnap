@@ -5,7 +5,7 @@
 // prop (the Dispatch.jsx discipline).
 import React from "react";
 
-export default function InfoCard({ card, price, armed, door, onConfirm, onCancel }) {
+export default function InfoCard({ card, price, armed, door, portrait, onConfirm, onCancel }) {
   if (!card) return null;
   const B = { background: "#1a212b", border: "1px solid #48515f", color: "#e6ebf1", borderRadius: 8, padding: "10px 16px", fontFamily: "inherit", fontSize: 14, minHeight: 44, minWidth: 44, cursor: "pointer" };
   const row = (k, v) => (v == null ? null : (
@@ -16,6 +16,11 @@ export default function InfoCard({ card, price, armed, door, onConfirm, onCancel
   return (
     <div data-info-card={door} style={{ position: "absolute", top: 52, right: 10, zIndex: 7, width: "min(300px, 62vw)", background: "rgba(14,18,24,0.96)", border: "1px solid #9fdcff", borderRadius: 8, padding: 12, fontFamily: "ui-monospace, Menlo, Consolas, monospace", color: "#e6ebf1" }}>
       <div style={{ color: "#9fdcff", letterSpacing: 2, fontSize: 14 }}>{card.label}</div>
+      {portrait && (
+        <canvas data-info-portrait width={128} height={128}
+          ref={(cv) => { if (cv) portrait(cv); }}
+          style={{ display: "block", width: 92, height: 92, margin: "8px auto 0", imageRendering: "pixelated", background: "rgba(20,26,34,0.6)", border: "1px solid #2c3846", borderRadius: 6 }} />
+      )}
       <div style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.5, marginTop: 6 }}>{card.role}</div>
       {row("HEALTH", card.n ? `${card.hp} × ${card.n} men` : card.hp)}
       {row("DAMAGE", card.dmg)}
