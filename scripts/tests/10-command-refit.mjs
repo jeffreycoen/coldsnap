@@ -7,11 +7,12 @@ import { identFwdDir } from "./shared.mjs";
 import { makeWorld, makeField, addBody, stepWorld } from "../../src/engine/core.js";
 import { SQUAD_SPECS, makeSquad, stepSquad, drivePossessedSquad, squadSpeed } from "../../src/depot/squads.js";
 import { spawnSquadMembers, squadFire, possessedVolley, possessedTowerFire, spawnSandbag } from "../../src/depot/state.js";
-import { TOWER_SPECS, INFANTRY_ARMS, BISON, APC } from "../../src/depot/specs.js";
+import { TOWER_SPECS, INFANTRY_ARMS, BISON, APC, SATCHEL } from "../../src/depot/specs.js";
 import { spawnUnit } from "../../src/depot/units.js";
 import { stepDrivers } from "../../src/depot/drivers.js";
 import { makeTerritory } from "../../src/depot/territory.js";
 import { startBuildLine, stepBuildLine } from "../../src/depot/buildlines.js";
+import { CARDS, cardFor } from "../../src/depot/infocards.js";
 import fs from "node:fs";
 
 const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
@@ -227,4 +228,15 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "frost"]) {
   spawnSquadMembers(w, sq);
   const m = w.byId.get(sq.memberIds[0]);
   ok("T3: a squad man spawns with maxHp", m && m.maxHp === m.hp && m.maxHp > 0);
+}
+
+// ---- P7.1 T4: the info cards tell the truth
+{
+  const want = ["mg", "gun", "mortar", "rocket", "frost", "sq_sniper", "sq_rifles", "sq_mg", "sq_sappers", "sq_mortars", "sq_engineers", "sq_runners", "sq_breakers", "hero_bison", "hero_apc"];
+  ok("T4: every buyable has a card", want.every((k) => !!cardFor(k)));
+  ok("T4: the rifle card matches its spec", CARDS.sq_rifles.hp === 58 && CARDS.sq_rifles.dmg === INFANTRY_ARMS.rifles.dirDmg && CARDS.sq_rifles.range === INFANTRY_ARMS.rifles.range && CARDS.sq_rifles.n === 4);
+  ok("T4: the gun tower card matches its spec", CARDS.gun.hp === TOWER_SPECS.gun.hp && CARDS.gun.dmg === TOWER_SPECS.gun.dmg && CARDS.gun.range === TOWER_SPECS.gun.range);
+  ok("T4: tool squads carry no patrol skill", !CARDS.sq_engineers.skills.includes("PATROL") && !CARDS.sq_sappers.skills.includes("PATROL"));
+  ok("T4: the sapper card carries the satchel's damage", CARDS.sq_sappers.dmg === SATCHEL.dmg);
+  ok("T4: the hulls' cards match their specs", CARDS.hero_bison.hp === BISON.hp && CARDS.hero_apc.hp === APC.hp && CARDS.hero_apc.skills.includes("LOAD / UNLOAD"));
 }

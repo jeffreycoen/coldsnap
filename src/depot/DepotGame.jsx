@@ -15,6 +15,7 @@ import {
 import { makeRenderer } from "../render/renderer.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS, BISON, APC } from "./specs.js";
+import { cardFor } from "./infocards.js";
 import { windAt } from "./wind.js";
 import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest, TIER_BELLS, memberNearRow } from "./state.js";
 import { marketCounts, computePrices, fieldPrices, priced } from "./market.js";
@@ -33,6 +34,7 @@ import { fwdUFor, fwdDirFor, invWFor, clampToRimFor } from "./orient.js";
 import { SAVE_KEY, serializeFront, burnFront, restoreBodies, restoreWelds, restoreCensus, restoreSquads } from "./save.js";
 import { makeBodyLists, rebuildBodyLists } from "./lists.js";
 import Dispatch from "./Dispatch.jsx";
+import InfoCard from "./InfoCard.jsx";
 import FieldManual, { MANUAL_REV } from "../ui/FieldManual.jsx";
 import { GRID_CS, GRID_W, GRID_H, GRID_OX, GRID_OZ, RIM_HALF_U, RIM_HALF_V, ORIENT, fwdU, fwdDir, invW, clampToRim, OBJ_POS, SPAWN_POINTS, PONDS, ROCKS, TOWN, ROADS, PASSES, BANDS, MAP_SEED, SPAWN_U, STREAM, HILLS, genMap, makeMap, buildDepotTerrain, pondAt, rockAt, makeGrid, streamAt, planTrees, computeFlowField, checkConnectivity } from "./mapgen.js";
 import { armorSpread, armorStable, parkArmor, seedBags, musterFreshStart } from "./muster.js";
@@ -1190,6 +1192,7 @@ export default function DepotGame({ onExit, resume = null }) {
         zoom: 1, acc: 0, t: 0, fps: 60, fpsAcc: 0, fpsN: 0,
         hover: null, pointer: null, toasts: [], pending: null,
         heroArm: null, // P7 T9: the hero tier's two-tap arm ({ key, armedAt } or null)
+        infoKey: null, infoDoor: null, infoArmedAt: 0, // P7.1 T4: the info card's own state
         // Squads (Phase 5 Task 3): live squad rosters + selection/order UI
         // state. selArmedAt mirrors pending's 350ms trailing-tap guard so
         // the tap that selected a squad can't double-fire an order chip.
@@ -2284,6 +2287,17 @@ export default function DepotGame({ onExit, resume = null }) {
         M.armedAt = world.t + PENDING_ARM_S;
       };
       S.dismissManifest = () => { if (S.manifest) S.manifest.cardUp = false; };
+      // P7.1 T4: THE INFO CARD — two doors, one state. The manifest door's
+      // CONFIRM runs the real pick (its own arming and stale-offer guards
+      // intact); the card adds its own trailing-tap arm on top.
+      S.openInfo = (key, door) => { S.infoKey = key; S.infoDoor = door; S.infoArmedAt = world.t + PENDING_ARM_S; };
+      S.closeInfo = () => { S.infoKey = null; S.infoDoor = null; };
+      S.confirmInfo = () => {
+        if (world.t < S.infoArmedAt) { toast("HOLD — ARMING"); return; }
+        const k = S.infoKey;
+        S.closeInfo();
+        if (k) S.pickManifest(k);
+      };
       S.pickManifest = (key) => {
         const M = S.manifest;
         if (!M || world.t < M.armedAt) { toast("HOLD — ARMING"); return; }
@@ -3198,6 +3212,7 @@ export default function DepotGame({ onExit, resume = null }) {
                 up: !!S.manifest.cardUp, armed: world.t >= S.manifest.armedAt,
                 bell: S.manifest.offerBell, offers: S.manifest.offers.slice(),
               } : null,
+              info: S.infoKey ? { key: S.infoKey, door: S.infoDoor, armed: world.t >= S.infoArmedAt } : null,
               intel: S.intelUp && S.lastDispatch ? { armed: world.t >= S.intelArmedAt } : null,
               started: S.started, gameOver: S.gameOver, victory: S.victory,
               endCard: endCardReady(S, world.t),   // mk0.29: the card waits out the collapse
@@ -3683,7 +3698,7 @@ export default function DepotGame({ onExit, resume = null }) {
               return (
                 <button key={key} data-manifest-offer={key}
                   style={{ ...P.btnBig, width: "100%", marginBottom: 6, display: "flex", alignItems: "center", gap: 10, textAlign: "left", opacity: hud.manifest.armed ? 1 : 0.5 }}
-                  onClick={() => { const S = stateRef.current; if (S && S.pickManifest) S.pickManifest(key); }}>
+                  onClick={() => { const S = stateRef.current; if (S && S.openInfo) S.openInfo(key, "manifest"); }}>
                   <span style={{ fontSize: 18 }}>{it.icon}</span>
                   <span style={{ flex: 1 }}>{it.label}</span>
                   <span style={{ color: "#ffd27a", fontSize: 12 }}>◆{hud.prices?.[key] ?? it.cost}</span>
@@ -3697,6 +3712,13 @@ export default function DepotGame({ onExit, resume = null }) {
             </button>
           </div>
         </div>
+      )}
+
+      {hud.info && !hud.gameOver && !hud.victory && (
+        <InfoCard card={cardFor(hud.info.key)} door={hud.info.door} armed={hud.info.armed}
+          price={hud.prices?.[hud.info.key] ?? PALETTE_BY_KEY[hud.info.key]?.cost}
+          onConfirm={() => { const S = stateRef.current; if (S && S.confirmInfo) S.confirmInfo(); }}
+          onCancel={() => { const S = stateRef.current; if (S && S.closeInfo) S.closeInfo(); }} />
       )}
 
       {hud.pending && (
@@ -3892,8 +3914,10 @@ export default function DepotGame({ onExit, resume = null }) {
             const afford = hud.resources >= priceP;
             return (
               <div key={p.key} data-tower-key={p.key}
-                style={{ ...P.slot, borderColor: sel ? "#4aff8c" : "#48515f", opacity: afford ? 1 : 0.45, minWidth: isTouch ? 56 : 52 }}
+                style={{ ...P.slot, position: "relative", borderColor: sel ? "#4aff8c" : "#48515f", opacity: afford ? 1 : 0.45, minWidth: isTouch ? 56 : 52 }}
                 onClick={() => setMode(p.key)}>
+                <div data-info={p.key} onClick={(e) => { e.stopPropagation(); const S = stateRef.current; if (S && S.openInfo) S.openInfo(p.key, "bar"); }}
+                  style={{ position: "absolute", top: 0, right: 2, fontSize: 12, opacity: 0.65, padding: "2px 4px", cursor: "pointer" }}>ⓘ</div>
                 <div style={{ fontSize: 16 }}>{p.icon}</div>
                 <div>{p.label}</div>
                 <div style={{ color: "#ffd27a" }}>◆{priceP}</div>
