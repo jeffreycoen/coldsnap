@@ -1,6 +1,6 @@
 # P7.1 Task 6 — The starting pick (mk1.68)
 
-Before the war starts, the player picks up to FOUR squads from the full troop list — free kit, no scrap, zero picks legal, NO DUPLICATES (owner, 2026-08-19) — the pick is WHICH squads, one of each type at most. The picks replace the auto-gifted runner squad and breaker pair. The enemy mirrors with four count-stable seeded type draws, his men fielded draw-free beside his garrison, unbooked like all starting kit. The pick row lives on the pre-battle overlay above TAKE COMMAND, with the T4 ⓘ card on every choice. Phone and desktop, one DOM.
+Before the war starts, the player picks up to FOUR squads from the full troop list — free kit, no scrap, zero picks legal, NO DUPLICATES (owner, 2026-08-19) — the pick is WHICH squads, one of each type at most. The picks replace the auto-gifted runner squad and breaker pair. The enemy mirrors with four count-stable seeded type draws, DEDUPED LIKE THE PLAYER'S (owner, 2026-08-19 — draw-then-clamp: all four draws always burn, duplicate draws field nothing, so his opening is 2-4 distinct packets), his men fielded draw-free beside his garrison, unbooked like all starting kit. The pick row lives on the pre-battle overlay above TAKE COMMAND, with the T4 ⓘ card on every choice. Phone and desktop, one DOM.
 
 **Rulings executed here** (decision record, 2026-08-19): full troop list; free kit; replaces the fielded start; the enemy mirrors with four count-stable seeded draws.
 
@@ -16,7 +16,7 @@ Before the war starts, the player picks up to FOUR squads from the full troop li
 
 ## Stated lines
 
-- The enemy's mirror pool is the SIX types his army fields — rifles ("" conscripts ×4), runners (fast ×4), breakers (heavy ×2), sappers (sapper ×2), mortars (gren ×2 — his tube is the grenadier), the sniper pair (×2, roles and pairId wired) — no engineer corps and no MG team exist in his order of battle (the standing asymmetry until the Enemy Front phase). Drawn uniformly, four draws.
+- The enemy's mirror pool is the SIX types his army fields — rifles ("" conscripts ×4), runners (fast ×4), breakers (heavy ×2), sappers (sapper ×2), mortars (gren ×2 — his tube is the grenadier), the sniper pair (×2, roles and pairId wired) — no engineer corps and no MG team exist in his order of battle (the standing asymmetry until the Enemy Front phase). Drawn uniformly, four draws, DUPLICATES DROPPED at fielding — strict symmetry with the player's one-of-each rule.
 - Mirror men are hold+garrison, unbooked (free kit both sides, the T9 precedent); they join the market's standing counts like the old fast/heavy did.
 - The pick row offers the FULL list regardless of unlocked tiers (ruled) — the bell ladder governs everything after the start.
 - `__DEPOTSTART__` (smoke/debug) sets `started` directly and fields nothing — smoke is untouched by construction.
@@ -88,7 +88,10 @@ function spawnMirrorMan(world, x, z, tag, i) {
     if (depotE5) {
       const gR5 = Math.hypot(depotE5.nx, depotE5.nz) * MASON.pitch / 2 + 5.5;
       let mi = 0;
+      const fielded6 = new Set();
       for (const pick of mirrorPicks) {
+        if (fielded6.has(pick.tag)) continue; // deduped like the player (owner) — the draw burned, the packet doesn't double
+        fielded6.add(pick.tag);
         let pairLead = null;
         for (let k = 0; k < pick.n; k++) {
           const a = (mi / 24) * Math.PI * 2 + 2.0;
