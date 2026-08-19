@@ -5,7 +5,7 @@
 import {
   makeRunState, stepBell, fireBell, withdrawDue, executeWithdrawal, nextSpawnTag,
   BELL_PERIOD_S, TIER_BELLS, ENEMY_TIERS, enemyTierState, enemyTierOf, ASSAULT_TIMEOUT,
-  MANIFEST_DRAWS, FOE_DRAWS, makeManifestState, makeFoeState, manifestPool, foePool,
+  MANIFEST_DRAWS, FOE_DRAWS, makeManifestState, makeFoeState, makeAssaultState, manifestPool, foePool,
   drawOffers, drawFoePick, pickManifest, isUnlocked, tierOpenCount,
   regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, squadFire, possessedVolley, possessedTowerFire,
   POSSESS_ACC, POSSESS_SNAP_R, MATE_R, snapTargetNear, mateBlocks,
@@ -49,6 +49,8 @@ import {
 import { makeMap, TOWN } from "../src/depot/mapgen.js";
 import { musterFreshStart } from "../src/depot/muster.js";
 import { startBuildLine, stepBuildLine } from "../src/depot/buildlines.js";
+import { ringBell } from "../src/depot/bell.js";
+import { computePrices, marketCounts } from "../src/depot/market.js";
 import fs from "node:fs";
 
 // identity fwdDir (DepotGame.jsx's ORIENT-aware transform, ORIENT===0 case)
@@ -4510,11 +4512,14 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   // through the round change. The save it writes still carries no
   // possession: T1(c) above proves that with a live possession at save time.
   {
-    const ringBellBody = (dsrc.match(/const ringBell = \(\) => \{[\s\S]*?\n      \};/) || [""])[0];
+    // retargeted mk1.51, P7 T21: ringBell moved to bell.js — the body is
+    // read off its new home, and the save call re-teaches to ctx.saveFront().
+    const bellSrcT1d = fs.readFileSync(new URL("../src/depot/bell.js", import.meta.url), "utf8");
+    const ringBellBody = (bellSrcT1d.match(/export function ringBell\(world, grid, field, T, S, ctx\) \{[\s\S]*?\n\}/) || [""])[0];
     ok("POSSESSION T1(d): ringBell no longer releases possession — the bell keeps your hands on the unit",
       ringBellBody.length > 0 && !ringBellBody.includes("releasePossession"), ringBellBody.slice(0, 80));
     ok("POSSESSION T1(d): the bell still writes the save",
-      ringBellBody.includes("saveFront();"));
+      ringBellBody.includes("ctx.saveFront();"));
   }
 
   // (e) zero new rng draws while driving: player input is not a replayed
@@ -7625,25 +7630,30 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     ok("T9(c5): marketCounts counts an ENEMY bison into heroBison too", counts9c.heroBison === 1, JSON.stringify(counts9c));
   }
 
-  // (d) enemy replacement — source-pinned (ringBell is a React-closure arrow
-  // function, not an importable pure function; same convention T8's own
+  // (d) enemy replacement — source-pinned (ringBell lived as a React-closure
+  // arrow function; retargeted mk1.51, P7 T21: it's now an importable
+  // function in bell.js, but stays source-pinned — same convention T8's own
   // ferry/commander wiring was verified by, POSSESSION T1(d) above).
   {
     const dsrc9 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    const ringBellBody9 = (dsrc9.match(/const ringBell = \(\) => \{[\s\S]*?\n      \};/) || [""])[0];
+    // retargeted mk1.51, P7 T21: ringBell moved to bell.js — the extraction
+    // reads its new home; dsrc9 (DepotGame.jsx) stays live for T9(d11) below,
+    // which pins the mount-scope reseed formula (untouched by this task).
+    const bellSrc9 = fs.readFileSync(new URL("../src/depot/bell.js", import.meta.url), "utf8");
+    const ringBellBody9 = (bellSrc9.match(/export function ringBell\(world, grid, field, T, S, ctx\) \{[\s\S]*?\n\}/) || [""])[0];
     ok("T9(d): ringBell extracts (source pin base)", ringBellBody9.length > 0);
     ok("T9(d2): gated on a dead hull, both kinds", /!has\("bison"\)/.test(ringBellBody9) && /!has\("apc"\)/.test(ringBellBody9));
     ok("T9(d3): gated on the tier's own bell (TIER_BELLS[3])", /S\.bell >= TIER_BELLS\[3\]/.test(ringBellBody9));
     ok("T9(d4): gated on the enemy's own pick (S.foe.unlocked)", /S\.foe\.unlocked\.indexOf\(tag\) >= 0/.test(ringBellBody9));
     ok("T9(d5): the full gate ANDs dead-hull, tier-open-and-picked and affordability — a poor regiment fails the same chain and buys nothing",
       /if \(depotE4 && !has\("bison"\) && open\("hero_bison"\) && S\.reg\.scrap >= heroPrice\("hero_bison"\)\)/.test(ringBellBody9));
-    ok("T9(d6): scrap is deducted before the hull parks, draw-free (re-taught mk1.49, P7 T19: parkArmor's new-arity call)",
-      /S\.reg\.scrap -= heroPrice\("hero_bison"\); parkArmor\(world, grid, field, depotE4, 2, "bison", nextApcSeq\)/.test(ringBellBody9));
-    ok("T9(d7): the same table prices the apc replacement (re-taught mk1.49, P7 T19: parkArmor's new-arity call)",
-      /S\.reg\.scrap -= heroPrice\("hero_apc"\); parkArmor\(world, grid, field, depotE4, 2, "apc", nextApcSeq\)/.test(ringBellBody9));
+    ok("T9(d6): scrap is deducted before the hull parks, draw-free (re-taught mk1.51, P7 T21: parkArmor's ctx.nextApcSeq call)",
+      /S\.reg\.scrap -= heroPrice\("hero_bison"\); parkArmor\(world, grid, field, depotE4, 2, "bison", ctx\.nextApcSeq\)/.test(ringBellBody9));
+    ok("T9(d7): the same table prices the apc replacement (re-taught mk1.51, P7 T21: parkArmor's ctx.nextApcSeq call)",
+      /S\.reg\.scrap -= heroPrice\("hero_apc"\); parkArmor\(world, grid, field, depotE4, 2, "apc", ctx\.nextApcSeq\)/.test(ringBellBody9));
     ok("T9(d8): Bison goes first — the bison branch is the `if`, the apc branch the `else if`",
-      ringBellBody9.indexOf('parkArmor(world, grid, field, depotE4, 2, "bison", nextApcSeq)') <
-      ringBellBody9.indexOf('parkArmor(world, grid, field, depotE4, 2, "apc", nextApcSeq)'));
+      ringBellBody9.indexOf('parkArmor(world, grid, field, depotE4, 2, "bison", ctx.nextApcSeq)') <
+      ringBellBody9.indexOf('parkArmor(world, grid, field, depotE4, 2, "apc", ctx.nextApcSeq)'));
     ok("T9(d9): sits after the ferry block", ringBellBody9.indexOf('ea.ferry = "out";') < ringBellBody9.indexOf("THE HERO TIER, their side"));
     // the reseed arithmetic itself (trap note 4): apcSeqN seeded to the max
     // restored seat, so the very next ++apcSeqN assignment is guaranteed
@@ -8358,6 +8368,59 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 }
 // ==== end P7 T20 =============================================================
 
+// ==== P7 T21: THE BELL MOVES OUT =============================================
+// Reorganization 4 of 5 (owner): the ring lives in bell.js, one verbatim
+// body with explicit parameters; the cards stay presentation. And the ring
+// gets its first real fixture — two bells rung through the actual code.
+{
+  const beSrc21 = (() => { try { return fs.readFileSync(new URL("../src/depot/bell.js", import.meta.url), "utf8"); } catch (e) { return ""; } })();
+  const dgSrc21 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  ok("T21(a): bell.js owns the ring",
+    /export function ringBell\(world, grid, field, T, S, ctx\)/.test(beSrc21) &&
+    /ctx\.saveFront\(\);/.test(beSrc21) && /payTown\(ctx\.townUV, T\)/.test(beSrc21));
+  ok("T21(a2): DepotGame keeps only the wrapper and the cards",
+    !/const ringBell = \(\) => \{/.test(dgSrc21) &&
+    /const ringBell = \(\) => ringBellOut\(world, grid, field, T, S, bellCtx\);/.test(dgSrc21) &&
+    /S\.pickManifest = /.test(dgSrc21));
+  // (b) two bells rung through the real ring — structure, not feel
+  {
+    makeMap(4242);
+    const flatF21 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
+    const w = makeWorld({ field: flatF21, seed: 51 });
+    let draws = 0; const raw = w.rng; w.rng = () => { draws++; return raw(); };
+    const T21 = makeTerritory(90, 90);
+    // The licensed S21 fit: every field named because the ring reads it.
+    // bell/resources/mines follow the mount's own fresh-boot literal;
+    // reg/ws/manifest/foe are the real state factories, called in the
+    // mount's own order (reg last, off the same rng stream). _minePrices
+    // stubs to null (the mount's own fresh value) — the sapper block's own
+    // ternary falls back to MINE_COST cleanly. _market CANNOT stub to null:
+    // fireBell's priceOf closure passes it straight to ai.js's planWave as
+    // `price = priceOf || cost` — priceOf is a live (non-null) function
+    // reference either way, so a null S._market makes every price() call
+    // return undefined, not fall through to the static table; the buy math
+    // (scrap / price) silently goes NaN instead of throwing. Named field:
+    // _market is the real computePrices(marketCounts(...)) read off the
+    // synthetic (bodyless) world — exactly what the mount computes at 1Hz
+    // before any bell can ring.
+    const S21 = {
+      bell: 0, resources: 120, mines: [], squads: [],
+      ws: makeAssaultState(), manifest: makeManifestState(), foe: makeFoeState(),
+      _market: computePrices(marketCounts(w, [], [])), _minePrices: null,
+      reg: makeRegiment(w.rng),
+    };
+    let saves = 0;
+    const ctx21 = { cue: () => {}, toast: () => {}, townUV: [], buildSnapshot: () => ({ }), nextApcSeq: () => 99, saveFront: () => { saves++; } };
+    const d0 = draws;
+    ringBell(w, null, flatF21, T21, S21, ctx21);
+    ringBell(w, null, flatF21, T21, S21, ctx21);
+    ok("T21(b): two rings, two saves, no throw", saves === 2);
+    ok("T21(b2): the unconditional pairs drew — at least 16 draws across two bells (4 planWave + 2 ferry + 2 sapper each, intel on top)", draws - d0 >= 16, draws - d0);
+    ok("T21(b3): the muster filled the queue", S21.ws.spawnQueue > 0 || S21.ws.mixBag.length > 0);
+  }
+}
+// ==== end P7 T21 =============================================================
+
 // ==== P7 T10: MINES AND TRIPWIRES ============================================
 //  (a) the trigger: a player rifleman standing ON a player mine never trips
 //      it (long run, untouched); an enemy conscript walking on DOES — and a
@@ -8472,8 +8535,9 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     ok("T10(d8): fewer than 3 candidates lays none", mineSeedPlace([{ x: 0, z: 0 }], 0.2).length === 0);
     ok("T10(d9): a 0.6 roll never lays, regardless of afford/bag", mineSeedRoll(0.6, true, 1e9, 1) === false);
 
-    const dsrc10 = fs.readFileSync(new URL("../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    const ringBellBody10 = (dsrc10.match(/const ringBell = \(\) => \{[\s\S]*?\n      \};/) || [""])[0];
+    // retargeted mk1.51, P7 T21: ringBell moved to bell.js.
+    const dsrc10 = fs.readFileSync(new URL("../src/depot/bell.js", import.meta.url), "utf8");
+    const ringBellBody10 = (dsrc10.match(/export function ringBell\(world, grid, field, T, S, ctx\) \{[\s\S]*?\n\}/) || [""])[0];
     ok("T10(d10): ringBell extracts (source pin base)", ringBellBody10.length > 0);
     ok("T10(d11): TWO unconditional draws every bell (mineRoll, minePlaceRoll — the law)",
       /const mineRoll = world\.rng\(\), minePlaceRoll = world\.rng\(\);/.test(ringBellBody10));
