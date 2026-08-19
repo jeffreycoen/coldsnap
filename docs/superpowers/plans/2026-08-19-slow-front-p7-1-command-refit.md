@@ -6,7 +6,7 @@
 
 | # | Task | Mark | Plan file | State |
 |---|------|------|-----------|-------|
-| 1 | Camera rotation | mk1.60 | `p7-1-task-1-camera-rotation.md` | pending |
+| 1 | Camera rotation | mk1.60 | `p7-1-task-1-camera-rotation.md` | SHIPPED (ef8776a) |
 | 2 | The radial audit | mk1.61 | `p7-1-task-2-radial-audit.md` | pending |
 | 3 | Visible health | mk1.62 | `p7-1-task-3-visible-health.md` | pending |
 | 4 | Market info cards | mk1.63 | `p7-1-task-4-info-cards.md` | pending |
