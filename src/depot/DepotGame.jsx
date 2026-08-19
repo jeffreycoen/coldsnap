@@ -37,7 +37,7 @@ import Dispatch from "./Dispatch.jsx";
 import InfoCard from "./InfoCard.jsx";
 import FieldManual, { MANUAL_REV } from "../ui/FieldManual.jsx";
 import { GRID_CS, GRID_W, GRID_H, GRID_OX, GRID_OZ, RIM_HALF_U, RIM_HALF_V, ORIENT, fwdU, fwdDir, invW, clampToRim, OBJ_POS, SPAWN_POINTS, PONDS, ROCKS, TOWN, ROADS, PASSES, BANDS, MAP_SEED, SPAWN_U, STREAM, HILLS, genMap, makeMap, buildDepotTerrain, pondAt, rockAt, makeGrid, streamAt, planTrees, computeFlowField, checkConnectivity } from "./mapgen.js";
-import { armorSpread, armorStable, parkArmor, seedBags, musterFreshStart } from "./muster.js";
+import { armorSpread, armorStable, parkArmor, musterFreshStart, PICK_POOL } from "./muster.js";
 import { lineCells, pieceHalf, startBuildLine, linePieces, layPieceAt, stepBuildLine } from "./buildlines.js";
 import { ringBell as ringBellOut } from "./bell.js";
 
@@ -118,6 +118,10 @@ export function stepTowers(world, T, discipline, possessedId) {
     // the owner's aim is its aim now (possessedTowerFire, called from the
     // frame loop). Cooldown still decays here; nothing else runs.
     if (possessedId === b.id) { b.fireCd = (b.fireCd || 0) - dt; continue; }
+    // P7.1 T6 (owner): THE TOWER BRAIN LEARNS ITS TEAM — every tower targets
+    // the OPPOSITE team and sight-gates on its OWN side. tTeam is the
+    // tower's own side, foeTeam who it hunts.
+    const tTeam = b.team === 2 ? 2 : 1; const foeTeam = tTeam === 1 ? 2 : 1;
     // COMMAND T1 (mk0.80): fire discipline is per tower now — the radial
     // sets b.discipline; the old argument is the fallback for bodies that
     // predate the field (old saves, bare fixtures).
@@ -132,7 +136,7 @@ export function stepTowers(world, T, discipline, possessedId) {
     const eR = b.effRange != null ? b.effRange : spec.range;
     const muzzle = { x: b.pos.x, y: b.pos.y + b.hy + 0.45, z: b.pos.z };
     let best = b.targetId ? world.byId.get(b.targetId) : null;
-    if (best && (!best.alive || best.team !== 2 || (best.kind !== "unit" && best.kind !== "vehicle"))) best = null;
+    if (best && (!best.alive || best.team !== foeTeam || (best.kind !== "unit" && best.kind !== "vehicle"))) best = null;
     if (best) {
       const dx = best.pos.x - b.pos.x, dz = best.pos.z - b.pos.z;
       if (dx * dx + dz * dz > eR * eR) best = null;
@@ -146,17 +150,17 @@ export function stepTowers(world, T, discipline, possessedId) {
     // since risen between, is dropped right here so "next rescan" is
     // immediate. The tower is itself an eye (sight.js SIGHT.tower), and a
     // tall one: it often sees ground its own guns cannot reach.
-    if (best) { const c = invW(best.pos.x, best.pos.z); if (!fieldReaches(T, c.u, c.v, 1)) best = null; }
+    if (best) { const c = invW(best.pos.x, best.pos.z); if (!fieldReaches(T, c.u, c.v, tTeam)) best = null; }
     if (best && !arcClears(world, muzzle, best.pos, spec, b.id)) best = null;
     b.scanCd = (b.scanCd || 0) - dt;
     if (!best && b.scanCd <= 0) {
       b.scanCd = 0.11 + (b.id % 8) * 0.011;
-      const pool = world._L ? world._L.foes : world.bodies; // T10
+      const pool = world._L ? (foeTeam === 2 ? world._L.foes : world._L.friends) : world.bodies; // T10
       let bd = eR * eR;
       for (const e of pool) {
-        if ((e.kind !== "unit" && e.kind !== "vehicle") || !e.alive || e.team !== 2) continue;
+        if ((e.kind !== "unit" && e.kind !== "vehicle") || !e.alive || e.team !== foeTeam) continue;
         const c = invW(e.pos.x, e.pos.z);
-        if (!fieldReaches(T, c.u, c.v, 1)) continue;
+        if (!fieldReaches(T, c.u, c.v, tTeam)) continue;
         const dx = e.pos.x - b.pos.x, dz = e.pos.z - b.pos.z;
         const d2 = dx * dx + dz * dz;
         if (d2 < bd && arcClears(world, muzzle, e.pos, spec, b.id)) { bd = d2; best = e; }
@@ -168,7 +172,7 @@ export function stepTowers(world, T, discipline, possessedId) {
     // tower/town chunk holds the trigger pull (cadence still resets — keeps
     // the target, retries next cadence; target movement usually clears it).
     // Enemy fire (units.js) never runs this check.
-    if (disc !== "free" && friendlyFouls(world, muzzle, best.pos, spec, b.id)) {
+    if (tTeam === 1 && disc !== "free" && friendlyFouls(world, muzzle, best.pos, spec, b.id)) {
       b.fireCd = spec.fireRate;
       continue;
     }
@@ -759,6 +763,8 @@ export default function DepotGame({ onExit, resume = null }) {
   const [manualOpen, setManualOpen] = useState(false);
   // P7.1 T5: the tree's presentation state — never the sim's business.
   const [buildOpen, setBuildOpen] = useState(false);
+  // P7.1 T6 (owner): THE BARE OPENING — his up-to-four picks, pre-start.
+  const [picks, setPicks] = useState([]);
   const [branch, setBranch] = useState("troops");
   useEffect(() => {
     if (resumeRef.current) return; // a resumed war is not a first entry
@@ -1079,16 +1085,10 @@ export default function DepotGame({ onExit, resume = null }) {
         // azimuth) because the depot's own approach road and mound reject a lot
         // of the ring; a bag that clears none of the twelve is simply dropped.
         // Ring radius grown to 7.8m (P7 T3) — the depots got bigger.
-        seedBags(world, grid, TOWN.find((t) => t.depot && t.team !== 2), 0x5ba6, stampBag);
-        seedBags(world, grid, TOWN.find((t) => t.depot && t.team === 2), 0x5ba7, stampBag); // P7 T3: their depot was never dressed — symmetry now
-        // P7 T2/T3/T4: THE STARTING ARMOR — a Bison AND an APC parked by
-        // each depot, fresh boot only (a RESUME's hulls are already in the
-        // save). P7 T9: parkArmor/apcSeqN/depotP/depotE are MOUNT-SCOPE now
-        // (hoisted above, just after world.streamAt) — the hero tier's
-        // player buy and the enemy's draw-free replacement both need to
-        // park a fresh hull long after boot, off this exact same function.
-        parkArmor(world, grid, field, depotP, 1, "bison", nextApcSeq); parkArmor(world, grid, field, depotP, 1, "apc", nextApcSeq);
-        parkArmor(world, grid, field, depotE, 2, "bison", nextApcSeq); parkArmor(world, grid, field, depotE, 2, "apc", nextApcSeq);
+        // P7.1 T6 (owner): THE BARE OPENING — the seeded bag rings and the
+        // free starting armor die here. seedBags/parkArmor stay exported
+        // (parkArmor still parks the hero tier's buys and the enemy's
+        // draw-free replacement; seedBags' export survives for Task 7).
       }
       const objG = grid.worldToGrid(OBJ_POS.x, OBJ_POS.z);
       computeFlowField(grid, objG.gx, objG.gz);
@@ -1267,7 +1267,7 @@ export default function DepotGame({ onExit, resume = null }) {
         reg: RES ? { ...RES.run.reg } : makeRegiment(world.rng),
       };
       if (!RES) {
-        musterFreshStart(world, S, depotP);
+        musterFreshStart(world, S, depotP, grid, field, nextApcSeq);
       }
       // Step 5. The run state itself, straight off the file. The bell is the
       // ONE deliberate exception: the countdown restarts at a full period
@@ -1509,6 +1509,7 @@ export default function DepotGame({ onExit, resume = null }) {
         });
         return v.ok ? { ok: true, wp } : v;
       };
+      const HOMELAND_R = 36; // provisional (F5)
       const placeSquadAt = (gx, gz, type) => {
         const price = priceNow("sq_" + type, SQUAD_SPECS[type].cost);
         const v = canPlaceInfantryAt(gx, gz, price);
@@ -1523,6 +1524,50 @@ export default function DepotGame({ onExit, resume = null }) {
         S.selSquadId = sq.id; S.selArmedAt = world.t + PENDING_ARM_S; S.pieOpen = true;
         S.resources -= price;
         S._buyAt = world.t;
+      };
+      // P7.1 T6 (owner): one picked unit onto the ground — vetted per kind, free
+      // (the starting kit costs nothing), inside the homeland only.
+      const placePick = (p) => {
+        const key = S._placeQueue[0];
+        const pk = PICK_POOL.find((x) => x.key === key);
+        if (!pk) { S._placeQueue.shift(); return; }
+        if (Math.hypot(p.x - depotP.x, p.z - depotP.z) > HOMELAND_R) { toast("TOO FAR FROM THE DEPOT"); return; }
+        const g = grid.worldToGrid(p.x, p.z);
+        if (!grid.inBounds(g.gx, g.gz)) { toast("OFF THE FIELD"); return; }
+        const cell = grid.cells[grid.idx(g.gx, g.gz)];
+        const wp = grid.gridToWorld(g.gx, g.gz);
+        if (pk.kind === "squad") {
+          if (cell.water || cell.ice || cell.blocked || cell.wallId) { toast("NO GROUND"); return; }
+          const sq = makeSquad(S.nextSquadId++, pk.type, 1, wp.x, wp.z);
+          spawnSquadMembers(world, sq);
+          S.squads.push(sq);
+        } else if (pk.kind === "hull") {
+          if (cell.water || cell.ice || cell.blocked || cell.wallId) { toast("NO GROUND"); return; }
+          const spec = pk.vtype === "apc" ? APC : BISON;
+          if (!armorStable(field, wp.x, wp.z, spec)) { toast("TOO STEEP TO PARK"); return; }
+          if (slotBlockedPublic(world, wp.x, wp.z, Math.hypot(spec.hx, spec.hz) + 1.0)) { toast("NO ROOM"); return; }
+          const v = addBody(world, { kind: "vehicle", team: 1, mass: spec.mass, hx: spec.hx, hy: spec.hy, hz: spec.hz,
+            x: wp.x, y: field.heightAt(wp.x, wp.z) + spec.hy + 0.05, z: wp.z, hp: spec.hp, friction: 0.85,
+            q: heading(null, Math.atan2(-wp.x, -wp.z)) });
+          v.armor = spec.armor; v.vtype = pk.vtype; v.maxHp = spec.hp;
+          v.homeX = wp.x; v.homeZ = wp.z; v.sleeping = true;
+          if (pk.vtype === "apc") v.apcSeq = nextApcSeq();
+          v.drv = pk.vtype === "apc" ? "apc" : "armor"; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful"; v.driver = "player";
+        } else { // tower — free, rights-free (territory hasn't grown), road still owed
+          if (cell.water || cell.ice || cell.blocked || cell.wallId) { toast("NO GROUND"); return; }
+          cell.blocked = true;
+          if (!checkConnectivity(grid, SPAWN_POINTS, objG.gx, objG.gz)) { cell.blocked = false; toast("Leave them a road"); return; }
+          const spec = TOWER_SPECS[pk.key];
+          const b = addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: spec.hy, hz: 0.8, x: wp.x, y: field.heightAt(wp.x, wp.z) + spec.hy, z: wp.z, hp: spec.hp });
+          b.towerType = pk.key; b.flagPole = true; b.maxHp = b.hp;
+          b.effRange = effRange(world, { x: b.pos.x, y: b.pos.y + b.hy + 0.45, z: b.pos.z }, spec);
+          cell.wallId = b.id; cell.bTeam = 1;
+          recomputeFlow();
+        }
+        S._placeQueue.shift();
+        const next = S._placeQueue[0];
+        setHud((h) => ({ ...h, placing: next || "done" }));
+        toast(next ? "PLACED — NEXT: " + (PALETTE_BY_KEY[next] || {}).label : "ALL PLACED — TAKE COMMAND");
       };
       // Squad placement rides the tower pending-confirm flow. Sniper preview
       // is the reachPolygon fan with INFANTRY_ARMS.sniper, fog-INDEPENDENT
@@ -2050,6 +2095,12 @@ export default function DepotGame({ onExit, resume = null }) {
         return { x: ox + f.x * t, z: oz + f.z * t };
       };
       const tapAt = (cx, cy) => {
+        // P7.1 T6: PLACE MODE — pre-start ground taps put the picks down.
+        if (!S.started && S._placeQueue && S._placeQueue.length) {
+          const p0 = groundPoint(cx, cy);
+          if (p0) placePick(p0);
+          return;
+        }
         if (!S.started || S.gameOver || S.victory) return;
         // any tap on the canvas while a placement is pending resolves it —
         // confirm/cancel are the ✓/✗ HTML buttons (separate DOM elements,
@@ -3433,11 +3484,31 @@ export default function DepotGame({ onExit, resume = null }) {
     S.mode = null; S.pending = null; S.buildPt0 = null; S.sellMode = false;
     setHud((h) => ({ ...h, mode: null, sellMode: false }));
   };
+  // P7.1 T6 (owner): the fifteen-slot pick toggle — up to four unique keys,
+  // re-tap or the chip removes, a fifth tap is refused with a toast.
+  const togglePick = (key) => {
+    setPicks((ps) => {
+      if (ps.includes(key)) return ps.filter((k) => k !== key);
+      if (ps.length >= 4) {
+        const S = stateRef.current;
+        if (S) { S.toasts.push({ txt: "FOUR PICKS ONLY", t: performance.now() / 1000 }); if (S.toasts.length > 4) S.toasts.shift(); }
+        return ps;
+      }
+      return [...ps, key];
+    });
+  };
   const startGame = () => {
     const S = stateRef.current; if (!S) return;
     if (S.audio) S.audio.ensure();
+    if (picks.length > 0 && S._placeQueue == null) {
+      // P7.1 T6: PLACE MODE — the overlay steps aside; each pick lands by
+      // a ground tap inside the homeland. START completes when all placed.
+      S._placeQueue = picks.slice();
+      setHud((h) => ({ ...h, placing: S._placeQueue[0] }));
+      return;
+    }
     S.started = true;
-    setHud((h) => ({ ...h, started: true }));
+    setHud((h) => ({ ...h, started: true, placing: null }));
   };
   const toggleMute = () => {
     const S = stateRef.current; if (!S || !S.audio) return;
@@ -3988,7 +4059,7 @@ export default function DepotGame({ onExit, resume = null }) {
         </div>
       )}
 
-      {!hud.started && !fatal && (
+      {!hud.started && !hud.placing && !fatal && (
         <div style={P.ovl}>
           <div style={{ fontSize: 26, letterSpacing: 4, color: "#9fdcff" }}>COLDSNAP</div>
           <div style={{ fontSize: 13, letterSpacing: 8, color: "#ffd27a", marginBottom: 14 }}>WINTER FRONT</div>
@@ -3997,6 +4068,35 @@ export default function DepotGame({ onExit, resume = null }) {
             Rock is free cover. The frozen ponds carry them faster — and you cannot build on ice.
             {isTouch ? " Drag to pan, pinch to zoom, twist to rotate, tap to build. Tap a tower to inspect it." : " WASD pans, wheel zooms, Q/E rotates (tap snaps, hold swings), click builds. Click a tower to inspect it."}
           </div>
+          <div style={{ fontSize: 11, opacity: 0.85, maxWidth: 460, marginBottom: 8 }}>
+            Pick up to four — you place every pick by hand near your depot before TAKE COMMAND.
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 6, maxWidth: 460, marginBottom: 8 }}>
+            {PALETTE.map((p) => {
+              const sel = picks.includes(p.key);
+              return (
+                <div key={p.key} data-pick={p.key}
+                  style={{ ...P.slot, position: "relative", borderColor: sel ? "#4aff8c" : "#48515f", color: sel ? "#4aff8c" : "#e6ebf1", minWidth: isTouch ? 56 : 52 }}
+                  onClick={() => togglePick(p.key)}>
+                  <div data-info={p.key} onClick={(e) => { e.stopPropagation(); const S = stateRef.current; if (S && S.openInfo) S.openInfo(p.key, "bar"); }}
+                    style={{ position: "absolute", top: 0, right: 2, fontSize: 12, opacity: 0.65, padding: "2px 4px", cursor: "pointer" }}>ⓘ</div>
+                  <div style={{ fontSize: 16 }}>{p.icon}</div>
+                  <div>{p.label}</div>
+                </div>
+              );
+            })}
+          </div>
+          {picks.length > 0 ? (
+            <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 6, marginBottom: 10 }}>
+              {picks.map((key) => (
+                <div key={key} style={{ ...P.btn, borderColor: "#4aff8c", color: "#4aff8c", cursor: "pointer" }} onClick={() => togglePick(key)}>
+                  {PALETTE_BY_KEY[key].label} ✕
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 10 }}>none picked — a bare depot is a legal start</div>
+          )}
           <button style={{ ...P.btn, fontSize: 15, padding: "10px 26px", borderColor: "#4aff8c", color: "#4aff8c" }} onClick={startGame}>
             TAKE COMMAND
           </button>
@@ -4007,7 +4107,27 @@ export default function DepotGame({ onExit, resume = null }) {
         </div>
       )}
 
-      {!hud.started && !fatal && manualOpen && <FieldManual onClose={closeManual} />}
+      {!hud.started && !hud.placing && !fatal && manualOpen && <FieldManual onClose={closeManual} />}
+
+      {hud.placing && !fatal && (() => {
+        const S = stateRef.current;
+        const remaining = S && S._placeQueue ? S._placeQueue.length : 0;
+        const n = Math.max(1, picks.length - remaining + 1);
+        return (
+          <div style={{ position: "absolute", top: 10, left: "50%", transform: "translateX(-50%)", zIndex: 9,
+            background: "#1a212b", border: "1px solid #4aff8c", borderRadius: 8, padding: "8px 16px",
+            display: "flex", alignItems: "center", gap: 10, fontSize: 12, color: "#e6ebf1", textAlign: "center" }}>
+            {hud.placing === "done" ? (
+              <>
+                <span>ALL PLACED</span>
+                <button style={{ ...P.btn, borderColor: "#4aff8c", color: "#4aff8c" }} onClick={startGame}>TAKE COMMAND</button>
+              </>
+            ) : (
+              <span>PLACE: {PALETTE_BY_KEY[hud.placing]?.label} — tap ground near your depot ({n} of {picks.length})</span>
+            )}
+          </div>
+        );
+      })()}
 
       {(hud.gameOver || hud.victory) && hud.endCard && !fatal && (
         <Dispatch

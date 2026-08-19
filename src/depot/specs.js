@@ -67,6 +67,10 @@ export const ENEMY_SPECS = {
   // deletion re-dresses the whole pair. Campaign androids are unaffected —
   // that dress lives on scenario bodies (src/game/scenario.js), not here.
   sniper: { mass: 82,  hx: 0.26, hy: 0.86, hz: 0.26, hp: 44,  bounty: 45, speed: 2.9, gain: 14, label: "marksman" },
+  // P7.1 T6 (owner): the pick pool is the player's full list — his MG team
+  // and his engineers join the roster. Bounties provisional (F5).
+  mg:  { mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, hp: 58, bounty: 8, speed: 3.2, gain: 14, label: "mg team" },
+  eng: { mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, hp: 58, bounty: 6, speed: 3.2, gain: 14, label: "engineer" },
 };
 
 // Wave armor: an engine vehicle on the engine's own tread physics (see

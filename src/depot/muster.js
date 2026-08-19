@@ -10,10 +10,10 @@
 // change.
 import { TOWN, ROADS, MAP_SEED, OBJ_POS, GRID_W, GRID_H } from "./mapgen.js";
 import { addBody, heading, mulberry32 } from "../engine/core.js";
-import { BISON, APC, MASON } from "./specs.js";
-import { clearSlot, makeSquad, slotBlockedPublic } from "./squads.js";
+import { BISON, APC, MASON, ENEMY_SPECS, TOWER_SPECS } from "./specs.js";
+import { clearSlot, makeSquad, slotBlockedPublic, SQUAD_SPECS } from "./squads.js";
 import { spawnUnit } from "./units.js";
-import { spawnSandbag, spawnSquadMembers, SANDBAG_HX } from "./state.js";
+import { spawnSandbag, spawnSquadMembers, SANDBAG_HX, effRange } from "./state.js";
 import { cmdrOf } from "./ai.js";
 import { planRoute } from "./route.js";
 
@@ -116,6 +116,31 @@ export function parkArmor(world, grid, field, depotT, team, kind, nextSeq) {
   else if (flat) place(flat.x, flat.z);
 }
 
+// P7.1 T6: a picked tower parks like armor — vetted flat clear ring ground,
+// the real body, the cached effRange, the grid claim. Draw-free.
+export function parkTower(world, grid, field, depotT, team, towerType) {
+  if (!depotT) return null;
+  const spec = TOWER_SPECS[towerType];
+  for (let rr = 12; rr <= 30; rr += 1.5) for (let k = 0; k < 16; k++) {
+    const az = (k / 16) * Math.PI * 2 + 0.2;
+    const bx = depotT.x + Math.sin(az) * rr, bz = depotT.z + Math.cos(az) * rr;
+    const cell = grid.cellAt(bx, bz);
+    if (!cell || cell.blocked || cell.ice || cell.water || cell.wallId) continue;
+    if (slotBlockedPublic(world, bx, bz, 1.2)) continue;
+    const g = grid.worldToGrid(bx, bz);
+    const wp = grid.gridToWorld(g.gx, g.gz);
+    const y = field.heightAt(wp.x, wp.z);
+    const b = addBody(world, { kind: "tower", team, mass: 0, hx: 0.8, hy: spec.hy, hz: 0.8, x: wp.x, y: y + spec.hy, z: wp.z, hp: spec.hp });
+    b.towerType = towerType; b.flagPole = true; b.maxHp = b.hp;
+    b.effRange = effRange(world, { x: b.pos.x, y: b.pos.y + b.hy + 0.45, z: b.pos.z }, spec);
+    if (team === 2) b.discipline = "free"; // his careful doctrine is Enemy Front work
+    const c2 = grid.cells[grid.idx(g.gx, g.gz)];
+    c2.blocked = true; c2.wallId = b.id; c2.bTeam = team;
+    return b;
+  }
+  return null; // a hemmed ring parks nothing — the draw burned regardless
+}
+
 // bag's own half-extent plus a man's clearance) plus the grid's verdict
 // — a blocked cell is the depot footprint or a rock, ice is water — plus
 // road and objective clearance. Each bag gets a fan of candidates around
@@ -160,50 +185,65 @@ export function seedBags(world, grid, depotT, streamKey, stampBag) {
   }
 }
 
-// P7 T3: THE HOME GUARD (owner) — eight riflemen dug in around the
-// enemy depot from second zero, paid out of the regiment's own books.
-// Fixed azimuths; clearSlot vets the ground; spawnUnit's own jitter is
-// 3 world-rng draws per man, 8 men, every seed — count-stable.
-export function musterFreshStart(world, S, depotP) {
-  const depotE2 = TOWN.find((t) => t.depot && t.team === 2);
-  if (depotE2) {
-    const gR = Math.hypot(depotE2.nx, depotE2.nz) * MASON.pitch / 2 + 3.5;
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * Math.PI * 2 + 0.39;
-      const p = clearSlot(world, depotE2.x + Math.sin(a) * gR, depotE2.z + Math.cos(a) * gR, 0.28 + 0.35);
-      const u = spawnUnit(world, { x: p.x, z: p.z }, "");
-      u.hold = true; u.garrison = true;
-    }
-    S.reg.heads = Math.max(0, S.reg.heads - 8); // the books stay honest
-  }
-  // P7 T8: THE COMMANDER — one draw per war, uniform, hidden. Position
-  // documented: after makeRegiment's 2 draws and the garrison's 24
-  // (8 men x 3 draws each). A RESUME never reaches this branch.
+// P7.1 T6 (owner): THE BARE OPENING's pool — fifteen unique picks, one
+// table both sides. kind routes the placer; tag/n shape the enemy's men.
+export const PICK_POOL = [
+  { key: "sq_rifles", kind: "squad", type: "rifles", tag: "", n: 4 },
+  { key: "sq_runners", kind: "squad", type: "runners", tag: "fast", n: 4 },
+  { key: "sq_breakers", kind: "squad", type: "breakers", tag: "heavy", n: 2 },
+  { key: "sq_sappers", kind: "squad", type: "sappers", tag: "sapper", n: 2 },
+  { key: "sq_mortars", kind: "squad", type: "mortars", tag: "gren", n: 2 },
+  { key: "sq_sniper", kind: "squad", type: "sniper", tag: "sniper", n: 2 },
+  { key: "sq_mg", kind: "squad", type: "mg", tag: "mg", n: 2 },
+  { key: "sq_engineers", kind: "squad", type: "engineers", tag: "eng", n: 2 },
+  { key: "hero_bison", kind: "hull", vtype: "bison" },
+  { key: "hero_apc", kind: "hull", vtype: "apc" },
+  { key: "mg", kind: "tower" }, { key: "gun", kind: "tower" }, { key: "mortar", kind: "tower" },
+  { key: "rocket", kind: "tower" }, { key: "frost", kind: "tower" },
+];
+// One mirror man, DRAW-FREE (the spotter precedent): fixed ring ground via
+// clearSlot, walk phase derived from his index — the boot stream never moves.
+function spawnMirrorMan(world, x, z, tag, i) {
+  const spec = ENEMY_SPECS[tag] || ENEMY_SPECS[""];
+  const p = clearSlot(world, x, z, 0.28 + 0.35);
+  const u = addBody(world, { kind: "unit", team: 2, mass: spec.mass, hx: spec.hx, hy: spec.hy, hz: spec.hz,
+    x: p.x, z: p.z, y: world.field.heightAt(p.x, p.z) + spec.hy + 0.02, hp: spec.hp, friction: 0.38 });
+  u.tag = tag; u.bounty = spec.bounty; u.maxHp = spec.hp;
+  if (spec.dress) u.dress = spec.dress;
+  u.smearStyle = "human"; u.brave = true;
+  if (tag === "gren") u.utype = "gren";
+  u.wph = (i * 1.7) % 6.28;
+  u.hold = true; u.garrison = true;
+  return u;
+}
+export function musterFreshStart(world, S, depotP, grid, field, nextApcSeq) {
+  // P7 T8: THE COMMANDER — one draw per war, after makeRegiment's 2.
+  // A RESUME never reaches this branch.
   S.cmdr = cmdrOf(world.rng);
-  // P7 T9 (owner): THE FIELDED START — each base opens with a runner
-  // squad and a breaker pair, free starting kit like the armor.
-  // Player: real squads on defend. Enemy: the mirror men, dug in with
-  // the home guard, unbooked. 18 fixed world-rng draws (6 spawnUnit,
-  // 3 draws each), positioned after the commander's own draw above.
-  // depotP is parkArmor's own player-depot lookup (mount scope) —
-  // reused here rather than refound.
-  if (depotP) for (const type of ["runners", "breakers"]) {
-    const a0 = type === "runners" ? 0.9 : 2.3;
-    const p0 = clearSlot(world, depotP.x + Math.sin(a0) * 11, depotP.z + Math.cos(a0) * 11, 0.5);
-    const sq = makeSquad(S.nextSquadId++, type, 1, p0.x, p0.z);
-    spawnSquadMembers(world, sq);
-    S.squads.push(sq);
-  }
-  {
-    const depotE5 = TOWN.find((tt) => tt.depot && tt.team === 2);
-    if (depotE5) {
-      const gR5 = Math.hypot(depotE5.nx, depotE5.nz) * MASON.pitch / 2 + 5.5;
-      ["fast", "fast", "fast", "fast", "heavy", "heavy"].forEach((tag, i) => {
-        const a = (i / 6) * Math.PI * 2 + 2.0;
-        const p = clearSlot(world, depotE5.x + Math.sin(a) * gR5, depotE5.z + Math.cos(a) * gR5, 0.5);
-        const u = spawnUnit(world, { x: p.x, z: p.z }, tag);
-        u.hold = true; u.garrison = true;
-      });
+  // P7.1 T6 (owner): THE BARE OPENING — his four picks, the same fifteen-
+  // type pool as the player's, deduped draw-then-clamp (all four draws
+  // always burn; duplicates field nothing). Boot: exactly 7 draws, any seed.
+  const mirrorPicks = [];
+  for (let d = 0; d < 4; d++) mirrorPicks.push(PICK_POOL[Math.min(PICK_POOL.length - 1, Math.floor(world.rng() * PICK_POOL.length))]);
+  const depotE = TOWN.find((tt) => tt.depot && tt.team === 2);
+  if (!depotE || !grid || !field) return;
+  const gR = Math.hypot(depotE.nx, depotE.nz) * MASON.pitch / 2 + 3.5;
+  const fielded = new Set();
+  let mi = 0;
+  for (const pick of mirrorPicks) {
+    if (fielded.has(pick.key)) continue; // deduped like the player (owner)
+    fielded.add(pick.key);
+    if (pick.kind === "hull") { parkArmor(world, grid, field, depotE, 2, pick.vtype, nextApcSeq || (() => 1)); continue; }
+    if (pick.kind === "tower") { parkTower(world, grid, field, depotE, 2, pick.key); continue; }
+    let pairLead = null;
+    for (let k = 0; k < pick.n; k++) {
+      const a = (mi / 16) * Math.PI * 2 + 2.0;
+      const u = spawnMirrorMan(world, depotE.x + Math.sin(a) * gR, depotE.z + Math.cos(a) * gR, pick.tag, mi);
+      mi++;
+      if (pick.tag === "sniper") { // the pair's roles and link, draw-free
+        if (!pairLead) { pairLead = u; u.role = "sniper"; u.bounty = 30; }
+        else { u.role = "spotter"; u.bounty = 15; u.pairId = pairLead.id; pairLead.pairId = u.id; }
+      }
     }
   }
 }

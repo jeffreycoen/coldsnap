@@ -453,11 +453,13 @@ import fs from "node:fs";
     ok("mk0.60/6: a wall lay holds the squad on squad._pauseT, the existing dwell field (retargeted mk1.50, P7 T20: stepBuildLine moved to buildlines.js)",
       /sq\._pauseT = WALL_LAY_PAUSE_S;/.test(blSrc60));
     ok("mk0.60/6 (re-pinned mk1.32, P7 T3: seedBags(depotT, streamKey) generalized to both depots;" +
-      " retargeted mk1.49, P7 T19: seedBags moved to muster.js)" +
+      " retargeted mk1.49, P7 T19: seedBags moved to muster.js;" +
+      " re-taught P7.1 T6: THE BARE OPENING kills the seeded bag rings — the call sites left" +
+      " DepotGame, the function's own draw-off-a-MAP-seed-stream shape stays exported for Task 7)" +
       " the seeded depot bags draw off a MAP-seed stream, never world.rng",
       /mulberry32\(MAP_SEED \^ streamKey\)/.test(muSrc60) &&
-      /seedBags\(world, grid, TOWN\.find\(\(t\) => t\.depot && t\.team !== 2\), 0x5ba6, stampBag\);/.test(dsrc) &&
-      /seedBags\(world, grid, TOWN\.find\(\(t\) => t\.depot && t\.team === 2\), 0x5ba7, stampBag\);/.test(dsrc) &&
+      !/seedBags\(world, grid, TOWN\.find\(\(t\) => t\.depot && t\.team !== 2\), 0x5ba6, stampBag\);/.test(dsrc) &&
+      !/seedBags\(world, grid, TOWN\.find\(\(t\) => t\.depot && t\.team === 2\), 0x5ba7, stampBag\);/.test(dsrc) &&
       /const nBags = 4 \+ Math\.floor\(bagR\(\) \* 3\);/.test(muSrc60));
     ok("mk0.60/6: the engineer team is on the build bar",
       /key: "sq_engineers", label: "ENGINEERS"/.test(dsrc) && /sq_engineers: "engineers"/.test(dsrc));

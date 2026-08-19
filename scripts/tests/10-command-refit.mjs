@@ -3,19 +3,36 @@
 // Correct-by-design rows are asserted as correct (tool squads volley
 // nothing; frost mans no gun). A FAIL here is an audit finding.
 import { ok } from "./harness.mjs";
-import { identFwdDir } from "./shared.mjs";
+import { identFwdDir, straightGrid } from "./shared.mjs";
 import { makeWorld, makeField, addBody, stepWorld, explode } from "../../src/engine/core.js";
 import { SQUAD_SPECS, makeSquad, stepSquad, drivePossessedSquad, squadSpeed } from "../../src/depot/squads.js";
 import { spawnSquadMembers, squadFire, possessedVolley, possessedTowerFire, spawnSandbag } from "../../src/depot/state.js";
 import { TOWER_SPECS, INFANTRY_ARMS, BISON, APC, SATCHEL } from "../../src/depot/specs.js";
-import { spawnUnit } from "../../src/depot/units.js";
+import { spawnUnit, stepUnits } from "../../src/depot/units.js";
 import { stepDrivers } from "../../src/depot/drivers.js";
 import { makeTerritory } from "../../src/depot/territory.js";
 import { startBuildLine, stepBuildLine } from "../../src/depot/buildlines.js";
 import { CARDS, cardFor } from "../../src/depot/infocards.js";
+import { musterFreshStart, parkTower, PICK_POOL } from "../../src/depot/muster.js";
+import { makeMap, TOWN } from "../../src/depot/mapgen.js";
 import fs from "node:fs";
 
 const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
+// the era-07 mkGrid idiom, cs 2, no blocks — copied verbatim from
+// 07-armor-demolition.mjs:90-101, lifted to module scope (P7.1 T6) so both
+// the APC-patrol block below and the T6v2 muster fixture share one grid.
+// Widened 30->44 cells a side (under the plan's 40-cell floor).
+const mkGridA = (blocked = []) => {
+  const W = 44, H = 44, CS = 2, OX = -44, OZ = -44;
+  const cells = Array.from({ length: W * H }, () => ({ blocked: false, ice: false, water: false, wallId: null, dist: 1, dx: 0, dz: 1 }));
+  for (const [gx, gz] of blocked) cells[gz * W + gx].blocked = true;
+  return { cells, w: W, h: H, cs: CS, ox: OX, oz: OZ,
+    idx: (gx, gz) => gz * W + gx,
+    inBounds: (gx, gz) => gx >= 0 && gx < W && gz >= 0 && gz < H,
+    worldToGrid: (x, z) => ({ gx: Math.floor((x - OX) / CS), gz: Math.floor((z - OZ) / CS) }),
+    gridToWorld: (gx, gz) => ({ x: OX + (gx + 0.5) * CS, z: OZ + (gz + 0.5) * CS }),
+    cellAt(x, z) { const g = this.worldToGrid(x, z); return this.inBounds(g.gx, g.gz) ? cells[this.idx(g.gx, g.gz)] : null; } };
+};
 const ARMED = ["sniper", "rifles", "mg", "mortars", "runners", "breakers"];
 const TOOLS = ["engineers", "sappers"];
 const ALL = [...ARMED, ...TOOLS];
@@ -161,20 +178,8 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "frost"]) {
   v.armor = APC.armor; v.vtype = "apc"; v.drv = "apc"; v.depotDrive = "auto"; v.tracks = "careful";
   v._patA = { x: 0, z: -14 }; v._patB = { x: 0, z: 14 };
   v.order = "patrol"; v.dest = { x: 0, z: 14 };
-  // the 07-era mkGrid idiom, 30x30 cs 2, no blocks — copied verbatim from
-  // 07-armor-demolition.mjs:90-101 as a local module helper (era files never
-  // import each other's block-scoped helpers).
-  const mkGridA = (blocked = []) => {
-    const W = 30, H = 30, CS = 2, OX = -30, OZ = -30;
-    const cells = Array.from({ length: W * H }, () => ({ blocked: false, ice: false, water: false, wallId: null, dist: 1, dx: 0, dz: 1 }));
-    for (const [gx, gz] of blocked) cells[gz * W + gx].blocked = true;
-    return { cells, w: W, h: H, cs: CS, ox: OX, oz: OZ,
-      idx: (gx, gz) => gz * W + gx,
-      inBounds: (gx, gz) => gx >= 0 && gx < W && gz >= 0 && gz < H,
-      worldToGrid: (x, z) => ({ gx: Math.floor((x - OX) / CS), gz: Math.floor((z - OZ) / CS) }),
-      gridToWorld: (gx, gz) => ({ x: OX + (gx + 0.5) * CS, z: OZ + (gz + 0.5) * CS }),
-      cellAt(x, z) { const g = this.worldToGrid(x, z); return this.inBounds(g.gx, g.gz) ? cells[this.idx(g.gx, g.gz)] : null; } };
-  };
+  // mkGridA is the module-scope helper above (widened 30->44, P7.1 T6) —
+  // this call keeps AUDIT(i)'s own origin-centered default.
   const grid = mkGridA();
   let flips = 0, lastZ = 14;
   for (let i = 0; i < 120 * 60 && flips < 2; i++) {
@@ -250,4 +255,45 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "frost"]) {
   ok("T4b: a shell blast chips the bag", bag.hp < 60 && bag.alive, bag.hp.toFixed(1));
   explode(w, 0.5, 0.6, 0, { r: 5, kv: 90, dmg: 300, attacker: "enemy", hitStruct: true });
   ok("T4b: a satchel kills the bag outright", bag.alive === false);
+}
+
+// ---- P7.1 T6 v2: THE BARE OPENING
+{
+  makeMap(4242);
+  const flatF6 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
+  const w = makeWorld({ field: flatF6, seed: 4242 });
+  let draws = 0; const raw = w.rng;
+  w.rng = () => { draws++; return raw(); };
+  const S6 = { reg: { heads: 60 }, squads: [], nextSquadId: 1, cmdr: null };
+  const G6 = mkGridA(); // the era-07 mini-grid helper already local to this file
+  musterFreshStart(w, S6, TOWN.find((t) => t.depot && t.team !== 2), G6, flatF6, () => 1);
+  ok("T6v2: the fresh start draws exactly 5 (commander 1 + mirror 4)", draws === 5, draws);
+  ok("T6v2: nothing player-side fields at boot", S6.squads.length === 0 && !w.bodies.some((b) => b.team === 1 && b.alive));
+  ok("T6v2: the pool is fifteen, unique keys", PICK_POOL.length === 15 && new Set(PICK_POOL.map((p) => p.key)).size === 15);
+  ok("T6v2: his picks fielded something", w.bodies.some((b) => b.team === 2 && b.alive));
+}
+// ---- P7.1 T6 v2: his MG team and his shovels behave (v1's rows)
+{
+  const w = makeWorld({ field: flatF, seed: 61 }); w.depotCombat = true;
+  const mgMan = spawnUnit(w, { x: 0, z: 0 }, "mg");
+  addBody(w, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 10, hp: 58, friction: 0.5 });
+  const ev0 = w.events.length;
+  for (let i = 0; i < 120 * 5; i++) { stepUnits(w, straightGrid(0, 1), identFwdDir, null); stepWorld(w); }
+  ok("T6v2: his MG team fires the burst", w.events.slice(ev0).some((e) => e.type === "muzzle" && e.weapon === "mg"));
+  const w2 = makeWorld({ field: flatF, seed: 62 }); w2.depotCombat = true;
+  const engMan = spawnUnit(w2, { x: 0, z: 0 }, "eng"); engMan.hold = true;
+  addBody(w2, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 8, hp: 58, friction: 0.5 });
+  const ev2 = w2.events.length;
+  for (let i = 0; i < 120 * 5; i++) { stepUnits(w2, straightGrid(0, 1), identFwdDir, null); stepWorld(w2); }
+  ok("T6v2: his engineer stands unarmed", w2.events.slice(ev2).filter((e) => e.type === "muzzle").length === 0 && Math.hypot(engMan.pos.x, engMan.pos.z) < 2);
+}
+// ---- P7.1 T6 v2: the tower brain's team lesson (wiring pins — stepTowers
+// lives in DepotGame.jsx, unimportable headlessly; the audit precedent)
+{
+  const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
+  ok("T6v2 wiring: stepTowers derives its team", /const tTeam = b\.team === 2 \? 2 : 1/.test(src));
+  ok("T6v2 wiring: acquisition hunts the foe team", /e\.team !== foeTeam/.test(src));
+  ok("T6v2 wiring: sight gates on the tower's own side", /fieldReaches\(T, c\.u, c\.v, tTeam\)/.test(src));
+  ok("T6v2 wiring: careful stays team-1 machinery", /tTeam === 1 && disc !== "free"/.test(src));
+  ok("T6v2 wiring: parkTower stands in muster.js", /export function parkTower\(world, grid, field, depotT, team, towerType\)/.test(fs.readFileSync("src/depot/muster.js", "utf8")));
 }

@@ -32,7 +32,7 @@ export const MARKET_K = {
   mine: 12, wire: 16,
 };
 const FAMILY_OF_SQUAD = { rifles: "rifles", sniper: "marksman", sappers: "sapper", mortars: "mortarcrew", mg: "mgteam", engineers: "engineer", runners: "runner", breakers: "breaker" };
-const FAMILY_OF_TAG = { "": "rifles", sniper: "marksman", sapper: "sapper", gren: "mortarcrew", fast: "runner", heavy: "breaker" };
+const FAMILY_OF_TAG = { "": "rifles", sniper: "marksman", sapper: "sapper", gren: "mortarcrew", fast: "runner", heavy: "breaker", mg: "mgteam", eng: "engineer" };
 const FAMILY_OF_TOWER = { mg: "mgtower", gun: "guntower", mortar: "mortartower", rocket: "rockettower", frost: "frosttower" };
 
 // marketCounts(world, squads, mines) -> { family: standing count }. Men for
@@ -60,7 +60,7 @@ export function marketCounts(world, squads, mines) {
     // has to see both sides' iron).
     else if (b.kind === "vehicle" && b.vtype === "bison") add("heroBison", 1);
     else if (b.kind === "vehicle" && b.vtype === "apc") add("heroApc", 1);
-    else if (b.kind === "tower" && b.team === 1) add(FAMILY_OF_TOWER[b.towerType], 1);
+    else if (b.kind === "tower" && FAMILY_OF_TOWER[b.towerType]) add(FAMILY_OF_TOWER[b.towerType], 1);
     else if (b.kind === "wall" && b.team === 1 && !b.course) add("wall", 1);
     else if (b.kind === "chunk" && b.sandbag) add("sandbag", 1);
   }

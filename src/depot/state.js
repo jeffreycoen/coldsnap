@@ -415,7 +415,7 @@ export function towerShot(world, tower, target, spec) {
   // owner: now that every shooterFire round carries hitStruct (Task 4), a
   // tower's own hull is a shootable structure to its own muzzle-adjacent
   // round — thread the uniform muzzle-clearing immunity (self-hit law).
-  shooterFire(world, tower, muzzle, target, spec, { high, attacker: "player", owner: tower.id });
+  shooterFire(world, tower, muzzle, target, spec, { high, attacker: tower.team === 2 ? "enemy" : "player", owner: tower.id });
 }
 
 // squadFire(world, squad, dt, T, toUV): infantry trigger pull, one call per

@@ -207,6 +207,10 @@ function seekStandPoint(world, u, sp, dt) {
 // table, both sides, so their marksman's shot has the same voice as ours.
 export const SNIPER_FIRE = { ...INFANTRY_ARMS.sniper, blastR: 0.3, kv: 0.5, cd: INFANTRY_ARMS.sniper.fireRate };
 
+// P7.1 T6: his MG team fires the player's own MG table — one table, both
+// sides (the SNIPER_FIRE pattern; volley carries the burst).
+export const MG_FIRE = { ...INFANTRY_ARMS.mg, blastR: 0.3, kv: 0.5, cd: INFANTRY_ARMS.mg.fireRate, volley: INFANTRY_ARMS.mg.burst };
+
 // VANTAGE (small documented heuristic): a marching sniper stops for good
 // where (a) exposure toward the advance bearing < 0.35 — he is IN cover
 // against what he is walking toward — and (b) his ground is no lower than
@@ -229,7 +233,7 @@ function atVantage(world, u, bearing) {
 // halts to work on a wall or emplacement rather than walk past it.
 function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, v: z })) {
   const sniper = u.tag === "sniper";
-  const fspec = sniper ? SNIPER_FIRE : ENEMY_FIRE.rifle;
+  const fspec = sniper ? SNIPER_FIRE : u.tag === "mg" ? MG_FIRE : ENEMY_FIRE.rifle;
   u.fireCd = (u.fireCd || 0) - dt;
   u.scanCd = (u.scanCd || 0) - dt;
   const muzzle = { x: u.pos.x, y: u.pos.y + 0.5, z: u.pos.z };
@@ -280,7 +284,7 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u
   u.tgtId = tgt ? tgt.id : null;
   if (tgt) {
     if (u.fireCd <= 0) {
-      u.fireCd = (sniper ? fspec.cd : u.tag === "heavy" ? 1.1 : 1.5) + world.rng() * 0.5;
+      u.fireCd = ((sniper || u.tag === "mg") ? fspec.cd : u.tag === "heavy" ? 1.1 : 1.5) + world.rng() * 0.5;
       u.flashT = world.t;
       // unit target: NO hitOnly — the round hits whatever it physically
       // hits (law of the world). Structure target: hitOnly kept. Both carry
@@ -495,6 +499,13 @@ export function stepUnits(world, grid, fwdDir, T, toUV = (x, z) => ({ u: x, v: z
       continue;
     }
     if (u.tag === "sapper" && stepSapper(world, u, dt)) continue;
+    // P7.1 T6 (owner): his engineers — unarmed shovels until Task 7 arms
+    // their build lines. A held engineer stands; an unheld one marches.
+    if (u.tag === "eng" && u.hold) {
+      u.settled = true;
+      u.v.x *= 1 - Math.min(1, 6 * dt); u.v.z *= 1 - Math.min(1, 6 * dt);
+      continue;
+    }
     // sniper vantage check (4C): while marching, latch u.hold at the first
     // spot that reads as VANTAGE toward the advance bearing. The pair (6.5
     // Task 6): at the latch, a live spotter surveys the high ground around
@@ -515,7 +526,7 @@ export function stepUnits(world, grid, fwdDir, T, toUV = (x, z) => ({ u: x, v: z
         }
       }
     }
-    if (u.tag !== "gren" && u.tag !== "sapper" && stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV)) continue;
+    if (u.tag !== "gren" && u.tag !== "sapper" && u.tag !== "eng" && stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV)) continue;
     if (u.tag === "gren" && stepGrenadier(world, u, cell, dt, fwdDir, T, toUV)) continue;
 
     // lost / default march (also the fallback path when a rifleman/

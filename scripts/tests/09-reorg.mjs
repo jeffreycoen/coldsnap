@@ -49,10 +49,10 @@ import fs from "node:fs";
   let muSrc19 = "";
   try { muSrc19 = fs.readFileSync(new URL("../../src/depot/muster.js", import.meta.url), "utf8"); } catch (e) {}
   const dgSrc19 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  ok("T19(a): muster.js owns the boot block",
+  ok("T19(a): muster.js owns the boot block (re-taught P7.1 T6: musterFreshStart re-signed for THE BARE OPENING)",
     /export function parkArmor\(world, grid, field, depotT, team, kind, nextSeq\)/.test(muSrc19) &&
     /export function seedBags\(world, grid, depotT, streamKey, stampBag\)/.test(muSrc19) &&
-    /export function musterFreshStart\(world, S, depotP\)/.test(muSrc19) &&
+    /export function musterFreshStart\(world, S, depotP, grid, field, nextApcSeq\)/.test(muSrc19) &&
     /export function armorSpread\(field, bx, bz, spec\)/.test(muSrc19));
   ok("T19(a2): DepotGame no longer defines what it now imports",
     !/const parkArmor = /.test(dgSrc19) && !/const seedBags = /.test(dgSrc19) &&
@@ -60,6 +60,9 @@ import fs from "node:fs";
   ok("T19(a3): the seat counter stays a mount let with its pinned reseed",
     /let apcSeqN = 0;/.test(dgSrc19) && /const nextApcSeq = \(\) => \+\+apcSeqN;/.test(dgSrc19));
   // (b) the boot block, called for real — the first true muster fixture.
+  // Re-taught (P7.1 T6, the sweep license): THE BARE OPENING — no home
+  // guard, no fielded start; his four picks alone (deduped draw-then-clamp
+  // off the same fifteen-type pool), on seed 4242.
   {
     makeMap(4242);
     const flatF19 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
@@ -67,17 +70,16 @@ import fs from "node:fs";
     let draws = 0; const raw = w.rng;
     w.rng = () => { draws++; return raw(); };
     const S19 = { reg: { heads: 60 }, squads: [], nextSquadId: 1, cmdr: null };
-    musterFreshStart(w, S19, TOWN.find((t) => t.depot && t.team !== 2));
-    ok("T19(b): the fresh start draws exactly 43 (guard 24 + commander 1 + fielded 18)", draws === 43, draws);
-    ok("T19(b2): two player squads muster — runners of 4, breakers of 2",
-      S19.squads.length === 2 &&
-      S19.squads.find((q) => q.type === "runners").memberIds.length === 4 &&
-      S19.squads.find((q) => q.type === "breakers").memberIds.length === 2);
+    const G19 = makeGrid(flatF19);
+    musterFreshStart(w, S19, TOWN.find((t) => t.depot && t.team !== 2), G19, flatF19, () => 1);
+    ok("T19(b): the fresh start draws exactly 5 (commander 1 + mirror 4) (re-taught P7.1 T6: 43 -> 5)", draws === 5, draws);
+    ok("T19(b2): nothing player-side musters (re-taught P7.1 T6: two player squads -> zero — the player picks by hand now)",
+      S19.squads.length === 0 && !w.bodies.some((b) => b.team === 1 && b.alive));
     let guard = 0;
     for (const b of w.bodies) if (b.kind === "unit" && b.team === 2 && b.garrison && b.alive) guard++;
-    ok("T19(b3): fourteen enemy standers hold their ground (8 guard + 6 fielded)", guard === 14, guard);
+    ok("T19(b3): the mirror's men alone hold their ground (re-taught P7.1 T6: fourteen (8 guard + 6 fielded) -> measured on seed 4242, no home guard)", guard === 4, guard);
     ok("T19(b4): the commander was drawn", S19.cmdr === "cautious" || S19.cmdr === "bold" || S19.cmdr === "stubborn", S19.cmdr);
-    ok("T19(b5): the books stayed honest", S19.reg.heads === 52, S19.reg.heads);
+    ok("T19(b5): the books stayed honest (re-taught P7.1 T6: the guard's -8 died with the guard, 52 -> 60)", S19.reg.heads === 60, S19.reg.heads);
   }
 }
 // ==== end P7 T19 =============================================================
