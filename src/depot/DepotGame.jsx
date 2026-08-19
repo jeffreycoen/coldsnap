@@ -716,6 +716,15 @@ const PALETTE = [
 const PALETTE_BY_KEY = Object.fromEntries(PALETTE.map((p) => [p.key, p]));
 const PALETTE_LABEL = Object.fromEntries(PALETTE.map((p) => [p.key, p.label]));
 
+// P7.1 T5: THE BUILD TREE — one BUILD entry, three branches, SELL inside.
+// Pure presentation: S.mode stays the single truth the tap layer reads.
+const TREE_BRANCHES = [
+  { key: "troops", label: "TROOPS", icon: "∴", match: (k) => k.startsWith("sq_") },
+  { key: "buildings", label: "BUILDINGS", icon: "⌂", match: (k) => TOWER_SPECS[k] != null },
+  { key: "vehicles", label: "VEHICLES", icon: "⛨", match: (k) => k.startsWith("hero_") },
+];
+const branchOf = (key) => { const b = TREE_BRANCHES.find((x) => x.match(key)); return b ? b.key : null; };
+
 // `resume` (P1 Task 3): a PARSED save object, or null for a fresh front. The
 // start screen does the async probe and the mark check (save.js's probeFront)
 // and hands the data down already validated, so this mount effect stays
@@ -748,6 +757,9 @@ export default function DepotGame({ onExit, resume = null }) {
   const [rereadDispatch, setRereadDispatch] = useState(false);
   // P6 T8: the field manual. React state only — the sim never sees it.
   const [manualOpen, setManualOpen] = useState(false);
+  // P7.1 T5: the tree's presentation state — never the sim's business.
+  const [buildOpen, setBuildOpen] = useState(false);
+  const [branch, setBranch] = useState("troops");
   useEffect(() => {
     if (resumeRef.current) return; // a resumed war is not a first entry
     let live = true;
@@ -3402,12 +3414,24 @@ export default function DepotGame({ onExit, resume = null }) {
     if (S.linePending && S.rejectLine) S.rejectLine();
     S.mode = m; S.sellMode = false; S.inspectId = null; S.pending = null; S.selSquadId = null; S.orderMode = null; S.buildPt0 = null;
     setHud((h) => ({ ...h, mode: m, sellMode: false }));
+    // P7.1 T5: the pick arms the bar — the tree lands on the armed type's branch.
+    const b = branchOf(m);
+    if (b) setBranch(b);
   };
   const toggleSell = () => {
     const S = stateRef.current; if (!S) return;
     if (S.linePending && S.rejectLine) S.rejectLine();
     S.sellMode = !S.sellMode; S.inspectId = null; S.pending = null;
     setHud((h) => ({ ...h, sellMode: S.sellMode }));
+  };
+  // P7.1 T5: closing the tree clears back to plain command — the ruled
+  // toggle-off, one door for mode, pending, half-given lines, and sell.
+  const closeBuild = () => {
+    setBuildOpen(false);
+    const S = stateRef.current; if (!S) return;
+    if (S.linePending && S.rejectLine) S.rejectLine();
+    S.mode = null; S.pending = null; S.buildPt0 = null; S.sellMode = false;
+    setHud((h) => ({ ...h, mode: null, sellMode: false }));
   };
   const startGame = () => {
     const S = stateRef.current; if (!S) return;
@@ -3914,13 +3938,36 @@ export default function DepotGame({ onExit, resume = null }) {
 
       {hud.started && !hud.gameOver && !hud.victory && !hud.possessed && (
         <div style={P.bar}>
-          {palette.map((p) => {
+          <style>{`@keyframes cs-unfurl { from { opacity: 0; transform: translateY(10px) scale(0.92); } to { opacity: 1; transform: none; } }`}</style>
+          <div data-build-toggle
+            style={{ ...P.slot, borderColor: buildOpen ? "#4aff8c" : "#48515f", color: buildOpen ? "#4aff8c" : "#e6ebf1", minWidth: isTouch ? 64 : 60 }}
+            onClick={() => {
+              if (buildOpen) { closeBuild(); return; }
+              const S = stateRef.current;
+              const b = S && S.mode ? branchOf(S.mode) : null;
+              if (b) setBranch(b);
+              setBuildOpen(true);
+            }}>
+            <div style={{ fontSize: 16 }}>⚒</div>
+            <div>{buildOpen ? "CLOSE" : "BUILD"}</div>
+            <div style={{ color: "#ffd27a", fontSize: 10 }}>{!buildOpen && hud.mode ? (PALETTE_LABEL[hud.mode] || "") : " "}</div>
+          </div>
+          {buildOpen && TREE_BRANCHES.map((b) => palette.some((p) => b.match(p.key)) ? (
+            <div key={b.key} data-branch={b.key}
+              style={{ ...P.slot, minWidth: isTouch ? 64 : 60, borderColor: branch === b.key ? "#9fdcff" : "#48515f", color: branch === b.key ? "#9fdcff" : "#e6ebf1", animation: "cs-unfurl 0.14s ease-out backwards", animationDelay: (TREE_BRANCHES.indexOf(b) * 0.03) + "s" }}
+              onClick={() => setBranch(b.key)}>
+              <div style={{ fontSize: 16 }}>{b.icon}</div>
+              <div>{b.label}</div>
+              <div style={{ opacity: 0.6, fontSize: 10 }}>{palette.filter((p) => b.match(p.key)).length}</div>
+            </div>
+          ) : null)}
+          {buildOpen && palette.filter((p) => { const b = TREE_BRANCHES.find((x) => x.key === branch); return b && b.match(p.key); }).map((p, pi) => {
             const sel = !hud.sellMode && hud.mode === p.key;
             const priceP = hud.prices?.[p.key] ?? p.cost;
             const afford = hud.resources >= priceP;
             return (
-              <div key={p.key} data-tower-key={p.key}
-                style={{ ...P.slot, position: "relative", borderColor: sel ? "#4aff8c" : "#48515f", opacity: afford ? 1 : 0.45, minWidth: isTouch ? 56 : 52 }}
+              <div key={branch + ":" + p.key} data-tower-key={p.key}
+                style={{ ...P.slot, position: "relative", borderColor: sel ? "#4aff8c" : "#48515f", opacity: afford ? 1 : 0.45, minWidth: isTouch ? 56 : 52, animation: "cs-unfurl 0.14s ease-out backwards", animationDelay: (0.09 + pi * 0.03) + "s" }}
                 onClick={() => setMode(p.key)}>
                 <div data-info={p.key} onClick={(e) => { e.stopPropagation(); const S = stateRef.current; if (S && S.openInfo) S.openInfo(p.key, "bar"); }}
                   style={{ position: "absolute", top: 0, right: 2, fontSize: 12, opacity: 0.65, padding: "2px 4px", cursor: "pointer" }}>ⓘ</div>
@@ -3930,12 +3977,14 @@ export default function DepotGame({ onExit, resume = null }) {
               </div>
             );
           })}
-          <div data-sell-toggle style={{ ...P.slot, borderColor: hud.sellMode ? "#ffb45e" : "#48515f", color: hud.sellMode ? "#ffb45e" : "#e6ebf1", minWidth: isTouch ? 56 : 52 }}
-            onClick={toggleSell}>
-            <div style={{ fontSize: 16 }}>✕</div>
-            <div>SELL</div>
-            <div style={{ opacity: 0.7 }}>60%</div>
-          </div>
+          {buildOpen && (
+            <div data-sell-toggle style={{ ...P.slot, borderColor: hud.sellMode ? "#ffb45e" : "#48515f", color: hud.sellMode ? "#ffb45e" : "#e6ebf1", minWidth: isTouch ? 56 : 52, animation: "cs-unfurl 0.14s ease-out backwards", animationDelay: "0.09s" }}
+              onClick={toggleSell}>
+              <div style={{ fontSize: 16 }}>✕</div>
+              <div>SELL</div>
+              <div style={{ opacity: 0.7 }}>60%</div>
+            </div>
+          )}
         </div>
       )}
 
