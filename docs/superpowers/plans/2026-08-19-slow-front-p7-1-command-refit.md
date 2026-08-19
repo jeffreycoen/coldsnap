@@ -12,7 +12,7 @@
 | 4 | Market info cards | mk1.65 | `p7-1-task-4-info-cards.md` | SHIPPED (43ebd73) |
 | 4b | Mortal sandbags | mk1.66 | `p7-1-task-4b-mortal-sandbags.md` | SHIPPED (1d191b4) |
 | 5 | The build tree | mk1.67 | `p7-1-task-5-build-tree.md` | SHIPPED (4bac756) |
-| 6 | The starting pick | mk1.68 | `p7-1-task-6-starting-pick.md` | pending |
+| 6 | The starting pick | mk1.68 | `p7-1-task-6-starting-pick.md` | SHIPPED (f090a53) |
 | 7 | His shovels dig | mk1.69 | `p7-1-task-7-enemy-builds.md` | pending |
 
 Every deploy bumps `src/version.js` first, builds after. One agent in the tree at a time; stop after every task.
