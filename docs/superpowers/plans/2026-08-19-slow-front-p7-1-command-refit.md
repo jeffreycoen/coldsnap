@@ -1,6 +1,6 @@
 # WINTER FRONT — Phase 7.1: The Command Refit
 
-*The skeleton. Scope and all design rulings: `docs/superpowers/decision-record.md`, the 2026-08-19 entries. Six tasks, ruled order, marks mk1.60–mk1.68 (mk1.62/mk1.64 = amendments; mk1.66 = the sandbag fix, added by the owner). Each task's full plan is its own file, written one at a time and served alone for review. Resource harvesting is NOT here — it is Phase 7.2. ARMS follows 7.2.*
+*The skeleton. Scope and all design rulings: `docs/superpowers/decision-record.md`, the 2026-08-19 entries. Six tasks, ruled order, marks mk1.60–mk1.69 (mk1.62/mk1.64 = amendments; mk1.66 = the sandbag fix; mk1.69 = enemy engineers build, both added by the owner). Each task's full plan is its own file, written one at a time and served alone for review. Resource harvesting is NOT here — it is Phase 7.2. ARMS follows 7.2.*
 
 ## Status
 
@@ -13,6 +13,7 @@
 | 4b | Mortal sandbags | mk1.66 | `p7-1-task-4b-mortal-sandbags.md` | SHIPPED (1d191b4) |
 | 5 | The build tree | mk1.67 | `p7-1-task-5-build-tree.md` | SHIPPED (4bac756) |
 | 6 | The starting pick | mk1.68 | `p7-1-task-6-starting-pick.md` | pending |
+| 7 | His shovels dig | mk1.69 | `p7-1-task-7-enemy-builds.md` | pending |
 
 Every deploy bumps `src/version.js` first, builds after. One agent in the tree at a time; stop after every task.
 
@@ -46,3 +47,5 @@ Every deploy bumps `src/version.js` first, builds after. One agent in the tree a
 - Resource harvesting — Phase 7.2 (rocks, trees, scrap salvage; the trees question still open).
 - The shelved order vocabulary (take cover, fall back, squad escort, suppress) — a later phase.
 - The setTargetAtTime audio gap (6 sites) and the siege caveat — standing oddments, unchanged.
+
+**Task 7 — His shovels dig (mk1.69).** The enemy's engineers lay sandbag and wall lines on his held ground on the bell's cadence, seeded draws, through the same two-point machinery the player's use, parameterized by side (owner, 2026-08-19: he can do anything the player can, including building defenses). Tower placement stays with the full build-brain at Enemy Front. Plan pending.

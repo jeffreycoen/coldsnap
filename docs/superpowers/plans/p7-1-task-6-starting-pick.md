@@ -16,7 +16,7 @@ Before the war starts, the player picks up to FOUR squads from the full troop li
 
 ## Stated lines
 
-- The enemy's mirror pool is the SIX types his army fields — rifles ("" conscripts ×4), runners (fast ×4), breakers (heavy ×2), sappers (sapper ×2), mortars (gren ×2 — his tube is the grenadier), the sniper pair (×2, roles and pairId wired) — no engineer corps and no MG team exist in his order of battle (the standing asymmetry until the Enemy Front phase). Drawn uniformly, four draws, DUPLICATES DROPPED at fielding — strict symmetry with the player's one-of-each rule.
+- The enemy's mirror pool is ALL EIGHT squad types (owner, 2026-08-19: "the enemy should be able to do anything I can do") — rifles ("" ×4), runners (fast ×4), breakers (heavy ×2), sappers (×2), mortars (gren ×2 — his tube is the grenadier), the sniper pair (×2, wired), and TWO NEW ROWS this task creates: his MG TEAM ("mg" ×2, firing the real six-round burst table — one table, both sides) and his ENGINEERS ("eng" ×2, unarmed, standing guard until Task 7 of this phase arms their build lines — ruled). Drawn uniformly, four draws, DUPLICATES DROPPED at fielding — strict symmetry with the player's one-of-each rule.
 - Mirror men are hold+garrison, unbooked (free kit both sides, the T9 precedent); they join the market's standing counts like the old fast/heavy did.
 - The pick row offers the FULL list regardless of unlocked tiers (ruled) — the bell ladder governs everything after the start.
 - `__DEPOTSTART__` (smoke/debug) sets `started` directly and fields nothing — smoke is untouched by construction.
@@ -27,7 +27,8 @@ Before the war starts, the player picks up to FOUR squads from the full troop li
 
 1. This plan, whole.
 2. `src/depot/muster.js` — whole (the boot block this task reshapes).
-3. `src/depot/units.js:23-62` — spawnUnit (the draw-free mirror variant copies its body shape).
+3. `src/depot/units.js` — whole (spawnUnit's shape; SNIPER_FIRE's pattern; stepRifleman/stepUnits, which gain the MG and engineer rows).
+3b. `src/depot/specs.js:48-70` — ENEMY_SPECS (the two new rows' home); `src/depot/market.js:34-36` — FAMILY_OF_TAG.
 4. `src/depot/DepotGame.jsx:1265-1275` — the musterFreshStart call site; `:3436-3443` — startGame; `:3991-4010` — the pre-battle overlay.
 5. `src/depot/DepotGame.jsx:671-720` — PALETTE (the pick row's source).
 6. `scripts/tests/09-reorg.mjs:55-82` — the T19 boot fixture this task re-teaches.
@@ -48,8 +49,8 @@ The old fielded start is dying, so every pin that asserts IT re-teaches to the n
 **Step 1 — muster.js: the mirror table and the draw-free man.** After the imports, `SQUAD_SPECS` joins the squads.js import line, `ENEMY_SPECS` joins the specs.js import line, and above `musterFreshStart` add:
 
 ```js
-// P7.1 T6: THE STARTING PICK's enemy mirror — the six types his army
-// fields (no engineer corps, no MG team until the Enemy Front phase).
+// P7.1 T6: THE STARTING PICK's enemy mirror — all eight squad types
+// (owner: anything the player can field, he can field).
 export const MIRROR_TYPES = [
   { tag: "", n: 4 },       // rifles
   { tag: "fast", n: 4 },   // runners
@@ -57,6 +58,8 @@ export const MIRROR_TYPES = [
   { tag: "sapper", n: 2 }, // sappers
   { tag: "gren", n: 2 },   // mortars — his tube is the grenadier
   { tag: "sniper", n: 2 }, // the pair
+  { tag: "mg", n: 2 },     // P7.1 T6 (owner): his MG team — the real burst
+  { tag: "eng", n: 2 },    // P7.1 T6 (owner): his shovels — armed at Task 7
 ];
 // One mirror man, DRAW-FREE (the spotter precedent): fixed ring ground via
 // clearSlot, walk phase derived from his index — the boot stream never moves.
@@ -126,7 +129,46 @@ export function fieldStartingPicks(world, S, depotP, picks) {
 }
 ```
 
-**Step 4 — DepotGame: the hook and the start.**
+**Step 4 — specs.js: his two new rows.** `ENEMY_SPECS` gains, after `sniper`:
+
+```js
+  // P7.1 T6 (owner): the mirror pool is the player's full list — his MG
+  // team and his engineers join the roster. Member stats mirror the player
+  // squads' own default man; bounties provisional (F5).
+  mg:  { mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, hp: 58, bounty: 8, speed: 3.2, gain: 14, label: "mg team" },
+  eng: { mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, hp: 58, bounty: 6, speed: 3.2, gain: 14, label: "engineer" },
+```
+
+**Step 5 — units.js: the MG burst and the unarmed shovel.**
+
+- After `SNIPER_FIRE` (line ~205), add:
+
+```js
+// P7.1 T6: his MG team fires the player's own MG table — one table, both
+// sides, the SNIPER_FIRE pattern (blastR/kv merged, cd aliases fireRate,
+// volley carries the burst through shooterFire's existing loop).
+export const MG_FIRE = { ...INFANTRY_ARMS.mg, blastR: 0.3, kv: 0.5, cd: INFANTRY_ARMS.mg.fireRate, volley: INFANTRY_ARMS.mg.burst };
+```
+
+- In `stepRifleman`, the fspec line becomes `const fspec = sniper ? SNIPER_FIRE : u.tag === "mg" ? MG_FIRE : ENEMY_FIRE.rifle;` and the cooldown ternary becomes `u.fireCd = ((sniper || u.tag === "mg") ? fspec.cd : u.tag === "heavy" ? 1.1 : 1.5) + world.rng() * 0.5;` — nothing else in the function changes.
+- In `stepUnits`, directly after the sapper dispatch line (`if (u.tag === "sapper" && stepSapper(world, u, dt)) continue;`), add:
+
+```js
+    // P7.1 T6 (owner): his engineers — unarmed shovels until Task 7 arms
+    // their build lines. A held engineer stands his ground; an unheld one
+    // marches the flow like any man (the future lines walk this way).
+    if (u.tag === "eng" && u.hold) {
+      u.settled = true;
+      u.v.x *= 1 - Math.min(1, 6 * dt); u.v.z *= 1 - Math.min(1, 6 * dt);
+      continue;
+    }
+```
+
+- The rifle dispatch line gains the eng exclusion: `if (u.tag !== "gren" && u.tag !== "sapper" && u.tag !== "eng" && stepRifleman(...)) continue;`
+
+**Step 6 — market.js: the two families.** `FAMILY_OF_TAG` gains `mg: "mgteam", eng: "engineer"` — his standing MG teams and engineers price into the same shared families the player's already do.
+
+**Step 7 — DepotGame: the hook and the start.**
 
 - Import `fieldStartingPicks` on the muster.js import line (40).
 - At the boot's fresh branch (line ~1269-1271), directly after `musterFreshStart(world, S, depotP);` add:
@@ -140,7 +182,7 @@ export function fieldStartingPicks(world, S, depotP, picks) {
 - Component state, beside the tree's useState: `const [picks, setPicks] = useState([]);`
 - `startGame` (line 3436) gains one line before `S.started = true;`: `if (S.fieldPicks) S.fieldPicks(picks);`
 
-**Step 5 — the pick row.** In the pre-battle overlay (line ~3991), directly ABOVE the TAKE COMMAND button, add:
+**Step 8 — the pick row.** In the pre-battle overlay (line ~3991), directly ABOVE the TAKE COMMAND button, add:
 
 ```jsx
           <div style={{ fontSize: 11, letterSpacing: 2, color: "#ffd27a", marginBottom: 6 }}>THE MUSTER — PICK UP TO FOUR SQUADS</div>
@@ -169,7 +211,7 @@ export function fieldStartingPicks(world, S, depotP, picks) {
           </div>
 ```
 
-**Step 6 — the asserts.** Append to `scripts/tests/10-command-refit.mjs` (imports gain `musterFreshStart, fieldStartingPicks` from `../../src/depot/muster.js`, and `makeMap, TOWN` from `../../src/depot/mapgen.js` — this file runs LAST, so makeMap is safe here):
+**Step 9 — the asserts.** Append to `scripts/tests/10-command-refit.mjs` (imports gain `musterFreshStart, fieldStartingPicks, MIRROR_TYPES` from `../../src/depot/muster.js`, `makeMap, TOWN` from `../../src/depot/mapgen.js`, `stepUnits` on the units.js line, and `straightGrid` joins the shared.mjs import — this file runs LAST, so makeMap is safe here):
 
 ```js
 // ---- P7.1 T6: THE STARTING PICK — the boot draws 29 (fixture scope), the
@@ -197,19 +239,35 @@ export function fieldStartingPicks(world, S, depotP, picks) {
   fieldStartingPicks(w, S6, depotP6, []);
   ok("T6pick: zero picks is a legal start", S6.squads.length === 4);
 }
+// ---- P7.1 T6: his two new rows behave
+{
+  const w = makeWorld({ field: flatF, seed: 61 }); w.depotCombat = true;
+  ok("T6pick: the mirror pool is all eight types", MIRROR_TYPES.length === 8 && MIRROR_TYPES.some((m) => m.tag === "mg") && MIRROR_TYPES.some((m) => m.tag === "eng"));
+  const mgMan = spawnUnit(w, { x: 0, z: 0 }, "mg");
+  addBody(w, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 10, hp: 58, friction: 0.5 });
+  const ev0 = w.events.length;
+  for (let i = 0; i < 120 * 5; i++) { stepUnits(w, straightGrid(0, 1), identFwdDir, null); stepWorld(w); }
+  ok("T6pick: his MG team fires the burst", w.events.slice(ev0).filter((e) => e.type === "muzzle" && e.weapon === "mg").length > 0);
+  const w2 = makeWorld({ field: flatF, seed: 62 }); w2.depotCombat = true;
+  const engMan = spawnUnit(w2, { x: 0, z: 0 }, "eng"); engMan.hold = true;
+  addBody(w2, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 8, hp: 58, friction: 0.5 });
+  const ev2 = w2.events.length;
+  for (let i = 0; i < 120 * 5; i++) { stepUnits(w2, straightGrid(0, 1), identFwdDir, null); stepWorld(w2); }
+  ok("T6pick: his engineer stands unarmed — no muzzle, no march", w2.events.slice(ev2).filter((e) => e.type === "muzzle").length === 0 && Math.hypot(engMan.pos.x, engMan.pos.z) < 2);
+}
 ```
 
-**Step 7 — the re-teaches** (the sweep license above): `09-reorg.mjs:71-80` — T19(b) 43 → 29 with its comment following ("guard 24 + commander 1 + mirror 4"); T19(b2) re-taught to `S19.squads.length === 0` under the new name; T19(b3) re-taught to the measured stander count on seed 4242 (report the number); T19(b5) untouched. `05-the-front.mjs:571` region — keystone hash and draws re-pinned old→new as measured. Then the dispatch grep for stragglers.
+**Step 10 — the re-teaches** (the sweep license above): `09-reorg.mjs:71-80` — T19(b) 43 → 29 with its comment following ("guard 24 + commander 1 + mirror 4"); T19(b2) re-taught to `S19.squads.length === 0` under the new name; T19(b3) re-taught to the measured stander count on seed 4242 (report the number); T19(b5) untouched. `05-the-front.mjs:571` region — keystone hash and draws re-pinned old→new as measured. Then the dispatch grep for stragglers.
 
-**Step 8 — version.** `src/version.js`: `mk1.67` → `mk1.68`. Build AFTER the bump.
+**Step 11 — version.** `src/version.js`: `mk1.67` → `mk1.68`. Build AFTER the bump.
 
 ## Gates — run ONLY these
 
-1. `node scripts/depot-test.mjs` — 0 failed; expected count 1416 + 7 new = 1423 (T19's re-taught asserts keep their count). Licensed movements ONLY: the T19 re-teaches, the keystone hash+draws re-pin, any grep-found old-fielded-start pin. Anything else red: STOP.
+1. `node scripts/depot-test.mjs` — 0 failed; expected count 1416 + 10 new = 1426 (T19's re-taught asserts keep their count). Licensed movements ONLY: the T19 re-teaches, the keystone hash+draws re-pin, any grep-found old-fielded-start pin. Anything else red: STOP.
 2. `node scripts/smoke.mjs` — preview pattern, all green, mark mk1.68 (`__DEPOTSTART__` bypasses the pick; boot unaffected).
 3. `node scripts/depot-lint.mjs` — clean.
 
-Green → commit `src/depot/muster.js`, `src/depot/DepotGame.jsx`, `scripts/tests/10-command-refit.mjs`, `scripts/tests/09-reorg.mjs`, `scripts/tests/05-the-front.mjs` (if re-pinned), `src/version.js` — subject "the war opens on your terms: the starting pick (mk1.68)" — standing trailers, push.
+Green → commit `src/depot/muster.js`, `src/depot/specs.js`, `src/depot/units.js`, `src/depot/market.js`, `src/depot/DepotGame.jsx`, `scripts/tests/10-command-refit.mjs`, `scripts/tests/09-reorg.mjs`, `scripts/tests/05-the-front.mjs` (if re-pinned), `src/version.js` — subject "the war opens on your terms: the starting pick (mk1.68)" — standing trailers, push.
 
 ## Report requirements
 
