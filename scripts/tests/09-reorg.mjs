@@ -77,7 +77,7 @@ import fs from "node:fs";
       S19.squads.length === 0 && !w.bodies.some((b) => b.team === 1 && b.alive));
     let guard = 0;
     for (const b of w.bodies) if (b.kind === "unit" && b.team === 2 && b.garrison && b.alive) guard++;
-    ok("T19(b3): the mirror's men alone hold their ground (re-taught P7.1 T6: fourteen (8 guard + 6 fielded) -> measured on seed 4242, no home guard)", guard === 4, guard);
+    ok("T19(b3): the mirror's men alone hold their ground (re-taught P7.1 T6: fourteen (8 guard + 6 fielded) -> measured on seed 4242, no home guard) (re-taught P7.1 T7)", guard === 2, guard);
     ok("T19(b4): the commander was drawn", S19.cmdr === "cautious" || S19.cmdr === "bold" || S19.cmdr === "stubborn", S19.cmdr);
     ok("T19(b5): the books stayed honest (re-taught P7.1 T6: the guard's -8 died with the guard, 52 -> 60)", S19.reg.heads === 60, S19.reg.heads);
   }
@@ -92,10 +92,10 @@ import fs from "node:fs";
   let blSrc20 = "";
   try { blSrc20 = fs.readFileSync(new URL("../../src/depot/buildlines.js", import.meta.url), "utf8"); } catch (e) {}
   const dgSrc20 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  ok("T20(a): buildlines.js owns the machinery",
+  ok("T20(a): buildlines.js owns the machinery (re-taught P7.1 T7)",
     /export function stepBuildLine\(world, grid, field, T, S, sq, ctx, toast\)/.test(blSrc20) &&
     /export function layPieceAt\(world, grid, field, T, S, job, row, ctx\)/.test(blSrc20) &&
-    /export function startBuildLine\(grid, sq, kind, a, b, toast\)/.test(blSrc20) &&
+    /export function startBuildLine\(grid, sq, kind, a, b, toast, team = 1\)/.test(blSrc20) &&
     /export function linePieces\(grid, field, T, kind, a, b\)/.test(blSrc20) &&
     /export function lineCells\(grid, a, b\)/.test(blSrc20) && /export function pieceHalf\(kind, orient\)/.test(blSrc20));
   ok("T20(a2): DepotGame no longer defines what it now imports",

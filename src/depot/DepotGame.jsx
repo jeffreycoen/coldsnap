@@ -545,6 +545,21 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
       }
     }
   }
+  // P7.1 T7: HIS SQUADS — the enemy's engineer roster, squad-driven like the
+  // player's (routing, legs, the build driver), never tappable (squadAtPoint
+  // scans S.squads alone). Engineers fire nothing; no squadFire call.
+  if (S.foeSquads && S.foeSquads.length) {
+    S.foeSquads = pruneSquads(world, S.foeSquads);
+    for (const sq of S.foeSquads) {
+      stepSquadRouting(grid, sq, world);
+      stepSquad(world, sq, world.dt);
+      if (sq._build && S.stepFoeBuildLine) S.stepFoeBuildLine(sq);
+      for (const id of sq.memberIds) {
+        const u = world.byId.get(id);
+        if (u && u.alive) uprightMember(u, world.dt);
+      }
+    }
+  }
   // POSSESSION (P4 T3, mk0.92): a possessed tower killed out from under the
   // owner frees the trigger automatically — nothing left to fire, same rule
   // T1 gives a wiped-out possessed squad.
@@ -1030,6 +1045,7 @@ export default function DepotGame({ onExit, resume = null }) {
           // carries it, so three stacked bodies push the same green influence
           // one body used to.
           else if (b.kind === "wall" && b.team === 1 && b.alive && !b.course) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.wall.w, r: EMIT.wall.r, sign: 1 }); }
+          else if (b.kind === "wall" && b.team === 2 && b.alive && !b.course) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.wall.w, r: EMIT.wall.r, sign: -1 }); }
           // FRONT F1: flags emit their OWN team's influence at homeland
           // strength — the enemy depot IS the enemy anchor now.
           // P7 T10 guard: a tripwire's flare is also kind "flag" (a temporary
@@ -1037,7 +1053,7 @@ export default function DepotGame({ onExit, resume = null }) {
           // it must NEVER emit territory (it lights sight, not ground).
           else if (b.kind === "flag" && b._dieT == null) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.depot.w, r: EMIT.depot.r, sign: b.team === 2 ? -1 : 1 }); }
           else if (b.kind === "unit" && b.team === 1 && b.alive && !b.riding) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.unit.w, r: EMIT.unit.r, sign: 1 }); }
-          else if (b.kind === "chunk" && b.sandbag && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.wall.w, r: EMIT.wall.r, sign: 1 }); }
+          else if (b.kind === "chunk" && b.sandbag && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.wall.w, r: EMIT.wall.r, sign: b.bagSide === 2 ? -1 : 1 }); }
           else if (b.kind === "unit" && b.team === 2 && b.alive && !b.riding) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.unit.w, r: EMIT.unit.r, sign: -1 }); }
           else if (b.kind === "vehicle" && b.team === 2 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.vehicle.w, r: EMIT.vehicle.r, sign: -1 }); }
           else if (b.kind === "vehicle" && b.team === 1 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.vehicle.w, r: EMIT.vehicle.r, sign: 1 }); }
@@ -1220,7 +1236,7 @@ export default function DepotGame({ onExit, resume = null }) {
         // screen around the selected squad/tower; a wedge tap closes it
         // (S.pieOpen = false) but an aiming order keeps the squad selected
         // so the ground stays tappable — see consumeOrderTap.
-        squads: [], nextSquadId: 1, selSquadId: null, selArmedAt: 0, orderMode: null, buildPt0: null, pieOpen: false,
+        squads: [], foeSquads: [], nextSquadId: 1, selSquadId: null, selArmedAt: 0, orderMode: null, buildPt0: null, pieOpen: false,
         // P7 T10: MINES AND TRIPWIRES — watched points, never bodies.
         // { x, z, team, kind: "mine"|"wire", live }. Saved verbatim (save.js).
         mines: [],
@@ -1295,6 +1311,7 @@ export default function DepotGame({ onExit, resume = null }) {
         S.pendingPlan = r.pendingPlan; S.intelPlan = r.intelPlan;
         S.ws = r.ws;
         S.squads = restoreSquads(RES, resBodies);
+        S.foeSquads = RES.foeSquads ? restoreSquads({ squads: RES.foeSquads }, resBodies) : [];
         S.nextSquadId = r.nextSquadId;
         // P7 T10: watched points restore verbatim, live flags included.
         S.mines = (r.mines || []).map((m) => ({ x: m.x, z: m.z, team: m.t, kind: m.k, live: !!m.l }));
@@ -1881,6 +1898,13 @@ export default function DepotGame({ onExit, resume = null }) {
       // The driver, once per sim tick per squad carrying a job.
       const layCtx = { stampBag, recomputeFlow, objG, setMines: (m) => R.setMines(m) };
       S.stepBuildLine = (sq) => stepBuildLine(world, grid, field, T, S, sq, layCtx, toast);
+      // P7.1 T7: the enemy's build driver — same machinery, his books. The
+      // façade carries reg.scrap through S-shaped fields and settles after.
+      S.stepFoeBuildLine = (sq) => {
+        const SE = { resources: S.reg.scrap, mines: S.mines, sandbagOrient: 0, _market: S._market, _minePrices: S._minePrices };
+        stepBuildLine(world, grid, field, T, SE, sq, { stampBag, recomputeFlow, objG, setMines: (m) => R.setMines(m) }, () => {});
+        S.reg.scrap = SE.resources;
+      };
       // The order flow's ground taps, in one place. tapAt calls this with the
       // point its ray hit; the debug harness calls it with a world point
       // directly, so both drive the identical code.

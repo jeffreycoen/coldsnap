@@ -13,7 +13,7 @@ import {
 } from "./state.js";
 import { fieldPrices } from "./market.js";
 import { MINE_COST, WIRE_COST } from "./mines.js";
-import { canBuild } from "./territory.js";
+import { canBuild, canBuildFor } from "./territory.js";
 
 // P7: THE TWO-POINT BUILD LINE. Tap where the line starts, tap where it
 // ends. The squad walks to the start, lays end-to-end along the line, and
@@ -69,7 +69,7 @@ export function pieceHalf(kind, orient) {
   const thin = kind === "walls" ? WALL_THIN : SANDBAG_HZ;   // 0.35 either way
   return orient === 1 ? { hx: thin, hz: long } : { hx: long, hz: thin };
 }
-export function startBuildLine(grid, sq, kind, a, b, toast) {
+export function startBuildLine(grid, sq, kind, a, b, toast, team = 1) {
   const dxw = b.x - a.x, dzw = b.z - a.z;
   const len = Math.hypot(dxw, dzw);
   const ux = len > 1e-6 ? dxw / len : 0, uz = len > 1e-6 ? dzw / len : 1;
@@ -85,7 +85,7 @@ export function startBuildLine(grid, sq, kind, a, b, toast) {
     const wp = grid.gridToWorld(c.gx, c.gz);
     return { gx: c.gx, gz: c.gz, x: wp.x, z: wp.z, t: (wp.x - a.x) * ux + (wp.z - a.z) * uz };
   });
-  sq._build = { kind, orient, ax: a.x, az: a.z, ux, uz, len, rows, i: 0, laid: 0, skipped: 0, dry: false, phase: "toStart" };
+  sq._build = { kind, orient, ax: a.x, az: a.z, ux, uz, len, rows, i: 0, laid: 0, skipped: 0, dry: false, phase: "toStart", team };
   sq.order = "build";
   sq.dest = { x: a.x, z: a.z };
   sq._legTarget = null; sq._pauseT = 0; sq._cohesionHoldT = 0; sq._threatSig = undefined;
@@ -121,6 +121,7 @@ export function linePieces(grid, field, T, kind, a, b) {
 // build menu makes) — a cell that is occupied, iced or unheld is skipped,
 // never double-filled; running out of scrap stops the line for good.
 export function layPieceAt(world, grid, field, T, S, job, row, ctx) {
+  const team = job.team || 1;
   // P7 T10: THE TRIGGER IS THE PROTECTION — a mine/wire is a watched
   // point, never a physics body: no cell claim, no validatePlacement
   // (no ground-held gate, no occupied-cell gate — a wall/building cell
@@ -144,7 +145,7 @@ export function layPieceAt(world, grid, field, T, S, job, row, ctx) {
   const cost = job.kind === "walls" ? fp.wall : fp.bag;
   const v = validatePlacement({
     blocked: !!(cell.blocked || cell.wallId), ice: !!cell.ice,
-    held: canBuild(T, c0.u, c0.v), resources: S.resources, cost,
+    held: canBuildFor(T, c0.u, c0.v, team), resources: S.resources, cost,
   });
   if (!v.ok) return v.msg === "NO SCRAP" ? "dry" : "skip";
   // The LINE's rotation, not the cell's: every piece on one order faces
@@ -171,12 +172,12 @@ export function layPieceAt(world, grid, field, T, S, job, row, ctx) {
     // owes: a line that seals the map off is refused cell by cell.
     cell.blocked = true;
     if (!checkConnectivity(grid, SPAWN_POINTS, ctx.objG.gx, ctx.objG.gz)) { cell.blocked = false; return "skip"; }
-    const b = spawnWallCourses(world, row.x, field.heightAt(row.x, row.z), row.z, orient)[0];
+    const b = spawnWallCourses(world, row.x, field.heightAt(row.x, row.z), row.z, orient, team)[0];
     cell.wallId = b.id;
-    cell.bTeam = 1;
+    cell.bTeam = team;
     ctx.recomputeFlow();
   } else {
-    ctx.stampBag(spawnSandbag(world, row.x, row.z, orient), 1);
+    ctx.stampBag(spawnSandbag(world, row.x, row.z, orient, team), team);
   }
   S.resources -= cost;
   return "laid";

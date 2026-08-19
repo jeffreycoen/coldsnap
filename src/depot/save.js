@@ -223,7 +223,7 @@ export function serializeFront(ctx) {
   // the squad comes back still ordered "build" with its dest, so the men finish
   // the walk and dig in at the far end exactly as they would have. They just
   // stop laying — the order is forgotten, the work is not.
-  const squads = S.squads.map((sq) => {
+  const squadRow = (sq) => {
     const o = { members: sq.memberIds.map((id) => (idx.has(id) ? idx.get(id) : -1)).filter((i) => i >= 0) };
     for (const key in sq) {
       if (key === "memberIds" || key === "_legTarget" || key === "_avoid") continue; // the leg target is a per-leg cache; it re-derives
@@ -233,7 +233,7 @@ export function serializeFront(ctx) {
       o[key] = val;
     }
     return o;
-  });
+  };
 
   const data = {
     mk: MK,
@@ -274,7 +274,7 @@ export function serializeFront(ctx) {
     },
     towns: town.map((b) => ({ id: b.id, n0: b.n0, ruined: !!b.ruined })),
     census: cens(census), census2: cens(census2),
-    bodies, welds, squads,
+    bodies, welds, squads: S.squads.map(squadRow), foeSquads: (S.foeSquads || []).map(squadRow),
     smears: (smears || []).map((m) => ({ u: r3(m.u), v: r3(m.v), s: m.style, x: r3(m.wx), z: r3(m.wz) })),
   };
   return JSON.stringify(data);

@@ -61,7 +61,7 @@ export function marketCounts(world, squads, mines) {
     else if (b.kind === "vehicle" && b.vtype === "bison") add("heroBison", 1);
     else if (b.kind === "vehicle" && b.vtype === "apc") add("heroApc", 1);
     else if (b.kind === "tower" && FAMILY_OF_TOWER[b.towerType]) add(FAMILY_OF_TOWER[b.towerType], 1);
-    else if (b.kind === "wall" && b.team === 1 && !b.course) add("wall", 1);
+    else if (b.kind === "wall" && !b.course) add("wall", 1);
     else if (b.kind === "chunk" && b.sandbag) add("sandbag", 1);
   }
   // P7 T10: mine/wire, both sides' LIVE devices together.

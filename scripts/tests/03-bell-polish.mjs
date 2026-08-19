@@ -444,10 +444,10 @@ import fs from "node:fs";
       && /const orient = job\.orient != null \? job\.orient/.test(blSrc60));
     ok("mk0.60/6: no per-cell rotation survives anywhere in the line machinery",
       !/row\.orient/.test(dsrc));
-    ok("mk0.60/6: placement runs the real spawners and the real gate (retargeted mk1.50, P7 T20: layPieceAt moved to buildlines.js)",
-      /spawnWallCourses\(world, row\.x, field\.heightAt\(row\.x, row\.z\), row\.z, orient\)/.test(blSrc60)
-      && /spawnSandbag\(world, row\.x, row\.z, orient\)/.test(blSrc60)
-      && /const v = validatePlacement\(\{\n\s+blocked: !!\(cell\.blocked \|\| cell\.wallId\), ice: !!cell\.ice,\n\s+held: canBuild\(T, c0\.u, c0\.v\), resources: S\.resources, cost,/.test(blSrc60));
+    ok("mk0.60/6: placement runs the real spawners and the real gate (retargeted mk1.50, P7 T20: layPieceAt moved to buildlines.js) (re-taught P7.1 T7)",
+      /spawnWallCourses\(world, row\.x, field\.heightAt\(row\.x, row\.z\), row\.z, orient, team\)/.test(blSrc60)
+      && /spawnSandbag\(world, row\.x, row\.z, orient, team\)/.test(blSrc60)
+      && /const v = validatePlacement\(\{\n\s+blocked: !!\(cell\.blocked \|\| cell\.wallId\), ice: !!cell\.ice,\n\s+held: canBuildFor\(T, c0\.u, c0\.v, team\), resources: S\.resources, cost,/.test(blSrc60));
     ok("mk0.60/6: an occupied cell is SKIPPED, scrap running dry stops the line (retargeted mk1.50, P7 T20: layPieceAt/stepBuildLine moved to buildlines.js)",
       /return v\.msg === "NO SCRAP" \? "dry" : "skip";/.test(blSrc60) && /job\.dry = true;/.test(blSrc60));
     ok("mk0.60/6: a wall lay holds the squad on squad._pauseT, the existing dwell field (retargeted mk1.50, P7 T20: stepBuildLine moved to buildlines.js)",

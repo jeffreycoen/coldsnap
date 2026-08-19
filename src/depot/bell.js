@@ -13,13 +13,15 @@
 // Zero behavior change.
 import { TOWN, PASSES, OBJ_POS, invW, fwdU } from "./mapgen.js";
 import { payTown } from "./economy.js";
-import { fireBell, TIER_BELLS } from "./state.js";
-import { homeShare, pickHomeDetail, HOME_GUARD_CAP, cmdrBellOrders, ferryDecide, flankDrop } from "./ai.js";
+import { fireBell, TIER_BELLS, WALL_FIELD_COST, SANDBAG_FIELD_COST } from "./state.js";
+import { homeShare, pickHomeDetail, HOME_GUARD_CAP, cmdrBellOrders, ferryDecide, flankDrop, engBuildDecide, engBuildKind, engSeedPlace } from "./ai.js";
 import { clearSlot } from "./squads.js";
 import { spawnUnit } from "./units.js";
 import { parkArmor } from "./muster.js";
 import { mineSeedRoll, mineSeedPlace, MINE_COST } from "./mines.js";
 import { MASON, BISON, APC } from "./specs.js";
+import { startBuildLine } from "./buildlines.js";
+import { fieldPrices } from "./market.js";
 
 export function ringBell(world, grid, field, T, S, ctx) {
   // POSSESSION T5 (mk0.94), REVERSING the mk0.90 rule by the owner's
@@ -146,6 +148,34 @@ export function ringBell(world, grid, field, T, S, ctx) {
       if (picks.length) {
         S.reg.scrap -= price3;
         for (const c3 of picks) S.mines.push({ x: c3.x, z: c3.z, team: 2, kind: "mine", live: true });
+      }
+    }
+  }
+  // P7.1 T7: HIS SHOVELS — two draws every bell (the law); a committed roll
+  // sends an idle engineer squad to lay a line on his held ground, paid off
+  // the same market table at lay time.
+  {
+    const lineRoll = world.rng(), placeRoll = world.rng();
+    const eng = (S.foeSquads || []).find((q) => q.type === "engineers" && !q._build &&
+      q.memberIds.some((id) => { const u = world.byId.get(id); return u && u.alive; }));
+    const fp2 = S._market ? fieldPrices(S._market.counts, WALL_FIELD_COST, SANDBAG_FIELD_COST) : { wall: WALL_FIELD_COST, bag: SANDBAG_FIELD_COST };
+    const kind2 = engBuildKind(lineRoll);
+    const est = 6 * (kind2 === "walls" ? fp2.wall : fp2.bag);
+    if (engBuildDecide(lineRoll, !!eng, S.reg.scrap, est)) {
+      const depotE6 = TOWN.find((tt) => tt.depot && tt.team === 2);
+      const cands = [];
+      for (let iz3 = 0; iz3 < T.nz; iz3 += 4) for (let ix3 = 0; ix3 < T.nx; ix3 += 4) {
+        if (T.v[iz3 * T.nx + ix3] >= -0.15) continue; // his ground only
+        const w3 = fwdU(-T.halfU + (ix3 + 0.5) * T.cs, -T.halfV + (iz3 + 0.5) * T.cs);
+        if (depotE6 && Math.hypot(w3.x - depotE6.x, w3.z - depotE6.z) > 50) continue;
+        cands.push({ x: w3.x, z: w3.z });
+      }
+      if (!cands.length) for (const band of PASSES) for (const g of band) { const c = invW(g.x, g.z); if (c.v < 0) cands.push({ x: g.x, z: g.z }); }
+      const spot = engSeedPlace(cands, placeRoll);
+      if (spot && eng) {
+        const cs2 = invW(spot.x, spot.z);
+        const a2 = fwdU(cs2.u - 6, cs2.v), b3 = fwdU(cs2.u + 6, cs2.v);
+        startBuildLine(grid, eng, kind2, { x: a2.x, z: a2.z }, { x: b3.x, z: b3.z }, () => {}, 2);
       }
     }
   }

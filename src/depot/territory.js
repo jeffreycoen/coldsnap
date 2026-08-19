@@ -106,3 +106,5 @@ export function valueAt(T, x, z) {
 
 // canBuild: ground rights for placement (towers AND walls) — green only.
 export function canBuild(T, x, z) { return holderAt(T, x, z) === 1; }
+// P7.1 T7: the same rights, either side — his engineers build on HIS ground.
+export function canBuildFor(T, x, z, team) { return holderAt(T, x, z) === team; }

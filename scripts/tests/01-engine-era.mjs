@@ -1819,9 +1819,9 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     ok("sweep/emitters: buildEmitters includes team-1 units at EMIT.unit sign +1",
       depotSrc3.includes('b.kind === "unit" && b.team === 1 && b.alive') &&
       /team === 1[\s\S]{0,220}EMIT\.unit\.w, r: EMIT\.unit\.r, sign: 1/.test(depotSrc3));
-    ok("sweep/emitters: buildEmitters includes sandbags under EMIT.wall",
+    ok("sweep/emitters: buildEmitters includes sandbags under EMIT.wall (re-taught P7.1 T7)",
       depotSrc3.includes("b.sandbag") &&
-      /sandbag[\s\S]{0,220}EMIT\.wall\.w, r: EMIT\.wall\.r, sign: 1/.test(depotSrc3));
+      /sandbag[\s\S]{0,220}EMIT\.wall\.w, r: EMIT\.wall\.r, sign: b\.bagSide === 2 \? -1 : 1/.test(depotSrc3));
     {
       const T3 = makeTerritory(29, 57);
       for (let i = 0; i < 40; i++) stepTerritory(T3, [{ x: 0, z: 0, w: EMIT.unit.w, r: EMIT.unit.r, sign: 1 }], 0.25);

@@ -245,8 +245,8 @@ import fs from "node:fs";
   ok("T3: the bar has no sandbag slot", !/key: "sandbag", label: "SANDBAG"/.test(src));
   ok("T3: no build mode is selected by default", /mode: null, sellMode: false/.test(src));
   ok("T3: the ground tap guards the tower path on a live mode", /if \(S\.mode && TOWER_SPECS\[S\.mode\]\)/.test(src));
-  ok("T3: the engineer line machinery is untouched (both spawners live) (retargeted mk1.50, P7 T20: layPieceAt moved to buildlines.js)",
-    /spawnWallCourses\(world, row\.x/.test(blSrcT3) && /spawnSandbag\(world, row\.x, row\.z, orient\)/.test(blSrcT3));
+  ok("T3: the engineer line machinery is untouched (both spawners live) (retargeted mk1.50, P7 T20: layPieceAt moved to buildlines.js) (re-taught P7.1 T7)",
+    /spawnWallCourses\(world, row\.x/.test(blSrcT3) && /spawnSandbag\(world, row\.x, row\.z, orient, team\)/.test(blSrcT3));
   ok("T3: the seeded depot bags are untouched (retargeted mk1.49, P7 T19: seedBags moved to muster.js)",
     /spawnSandbag\(world, bx, bz,/.test(muSrcT3));
   ok("T3: the harness door stays (buildAt via __DEPOTBUILD__)", /__DEPOTBUILD__ = \(gx, gz, mode\) => buildAt\(gx, gz, mode \|\| "wall"\)/.test(src));

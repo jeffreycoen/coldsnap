@@ -223,11 +223,11 @@ export function wallOrientAt(world, x, z, defaultOrient) {
 // The bottom course is the one the grid cell holds (DepotGame's cell.wallId):
 // its death is what releases the ground, and the courses above it come down
 // with it via the support rule below.
-export function spawnWallCourses(world, x, groundY, z, orient = 0) {
+export function spawnWallCourses(world, x, groundY, z, orient = 0, team = 1) {
   const out = [];
   for (let i = 0; i < WALL_COURSES; i++) {
     const b = addBody(world, {
-      kind: "wall", team: 1, mass: 0,
+      kind: "wall", team, mass: 0,
       hx: orient === 1 ? WALL_THIN : WALL_HALF, hy: WALL_COURSE_HY, hz: orient === 1 ? WALL_HALF : WALL_THIN,
       x, y: groundY + (i + 0.5) * WALL_COURSE_PITCH, z,
       hp: wallCourseHp(i),
@@ -719,7 +719,7 @@ export function spawnSquadMembers(world, squad) {
     // byte-identical. Runners mirror ENEMY_SPECS.fast, breakers mirror
     // ENEMY_SPECS.heavy.
     const M = spec.member || { mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, hp: 58 };
-    const u = addBody(world, { kind: "unit", team: 1, mass: M.mass, hx: M.hx, hy: M.hy, hz: M.hz,
+    const u = addBody(world, { kind: "unit", team: squad.team || 1, mass: M.mass, hx: M.hx, hy: M.hy, hz: M.hz,
       x: p.x, y: world.field.heightAt(p.x, p.z) + M.hy + 0.02, z: p.z, hp: M.hp, friction: 0.5 });
     u.utype = squad.type; u.squadId = squad.id; u.dress = "human"; // player side reads human
     u.maxHp = M.hp;
@@ -761,10 +761,10 @@ export const SANDBAG_COST = 5;
 // back exactly (orient swaps hx/hz as before); walls are now built as three
 // of THESE stacked (see buildAt) — one shape family for everything bagged.
 export const SANDBAG_HX = 0.9, SANDBAG_HY = 0.45, SANDBAG_HZ = 0.35;
-export function spawnSandbag(world, x, z, orient = 0) {
+export function spawnSandbag(world, x, z, orient = 0, team = 1) {
   const y = world.field.heightAt(x, z);
   const b = addBody(world, {
-    kind: "chunk", team: 1, mass: 0,
+    kind: "chunk", team, mass: 0,
     hx: orient === 1 ? SANDBAG_HZ : SANDBAG_HX, hy: SANDBAG_HY, hz: orient === 1 ? SANDBAG_HX : SANDBAG_HZ,
     x, y: y + SANDBAG_HY, z, hp: 60, friction: 0.7, restitution: 0.02,
   });
@@ -1512,6 +1512,7 @@ export function executeWithdrawal(S, world) {
     const b = world.bodies[i];
     if ((b.kind !== "unit" && b.kind !== "vehicle") || !b.alive || b.team !== 2) continue;
     if (b.vtype === "bison" || b.vtype === "apc" || b.garrison) continue; // starting armor and the home guard are not wave stock
+    if (b.squadId != null) continue; // P7.1 T7: squad-roster men are not wave stock — the timeout sweep must never delete his engineer squads
     if (b.rideApc != null) continue; // P7 T8: seated mid-ferry — withdraws when unloaded and spent, like anyone
     if (b.kind === "vehicle") tanks++; else inf++;
     world.byId.delete(b.id);

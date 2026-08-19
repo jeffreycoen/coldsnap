@@ -6,12 +6,14 @@ import { ok } from "./harness.mjs";
 import { identFwdDir, straightGrid } from "./shared.mjs";
 import { makeWorld, makeField, addBody, stepWorld, explode } from "../../src/engine/core.js";
 import { SQUAD_SPECS, makeSquad, stepSquad, drivePossessedSquad, squadSpeed } from "../../src/depot/squads.js";
-import { spawnSquadMembers, squadFire, possessedVolley, possessedTowerFire, spawnSandbag } from "../../src/depot/state.js";
+import { spawnSquadMembers, squadFire, possessedVolley, possessedTowerFire, spawnSandbag, executeWithdrawal, spawnWallCourses, hostileStructure } from "../../src/depot/state.js";
 import { TOWER_SPECS, INFANTRY_ARMS, BISON, APC, SATCHEL } from "../../src/depot/specs.js";
 import { spawnUnit, stepUnits } from "../../src/depot/units.js";
 import { stepDrivers } from "../../src/depot/drivers.js";
-import { makeTerritory } from "../../src/depot/territory.js";
+import { makeTerritory, canBuildFor } from "../../src/depot/territory.js";
 import { startBuildLine, stepBuildLine } from "../../src/depot/buildlines.js";
+import { engBuildDecide, engBuildKind, engSeedPlace } from "../../src/depot/ai.js";
+import { marketCounts } from "../../src/depot/market.js";
 import { CARDS, cardFor } from "../../src/depot/infocards.js";
 import { musterFreshStart, parkTower, PICK_POOL } from "../../src/depot/muster.js";
 import { makeMap, TOWN } from "../../src/depot/mapgen.js";
@@ -296,4 +298,56 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "frost"]) {
   ok("T6v2 wiring: sight gates on the tower's own side", /fieldReaches\(T, c\.u, c\.v, tTeam\)/.test(src));
   ok("T6v2 wiring: careful stays team-1 machinery", /tTeam === 1 && disc !== "free"/.test(src));
   ok("T6v2 wiring: parkTower stands in muster.js", /export function parkTower\(world, grid, field, depotT, team, towerType\)/.test(fs.readFileSync("src/depot/muster.js", "utf8")));
+}
+// ---- P7.1 T7: HIS SHOVELS DIG
+{
+  const T7 = makeTerritory(90, 90); T7.v.fill(-1); // all his ground
+  ok("T7: ground rights know the asker", canBuildFor(T7, 0, 0, 2) === true && canBuildFor(T7, 0, 0, 1) === false);
+  const w = makeWorld({ field: flatF, seed: 71 }); w.depotCombat = true;
+  const G7 = mkGridA();
+  const sq = makeSquad(9001, "engineers", 2, -5, 1);
+  spawnSquadMembers(w, sq);
+  ok("T7: his engineer squad's men are team 2", sq.memberIds.every((id) => w.byId.get(id).team === 2));
+  const SE = { resources: 300, mines: [], sandbagOrient: 0, _market: null, _minePrices: null };
+  const ctx7 = { stampBag: (b, s) => { b.bagSide = s; }, recomputeFlow: () => {}, objG: { gx: 10, gz: 19 }, setMines: () => {} };
+  startBuildLine(G7, sq, "bags", { x: -5, z: 1 }, { x: 5, z: 1 }, () => {}, 2);
+  sq.order = "defend"; sq.dest = null;
+  stepBuildLine(w, G7, flatF, T7, SE, sq, ctx7, () => {});
+  const m7 = sq.memberIds.map((id) => w.byId.get(id));
+  m7[0].pos.x = -2.5; m7[0].pos.z = 2; m7[1].pos.x = 2.5; m7[1].pos.z = 2;
+  sq.anchor = { x: 5, z: 1 }; sq.order = "defend";
+  for (let i = 0; i < 80; i++) { sq._pauseT = 0; stepBuildLine(w, G7, flatF, T7, SE, sq, ctx7, () => {}); if (!sq._build) break; }
+  const bags7 = w.bodies.filter((b) => b.sandbag && b.alive);
+  ok("T7: his line laid real bags on his own ground", bags7.length >= 3 && bags7.every((b) => b.bagSide === 2), bags7.length);
+  ok("T7: his books were charged", SE.resources < 300, SE.resources);
+  ok("T7: his ground refused the player the same tap", canBuildFor(T7, 1, 1, 1) === false);
+}
+{
+  const w = makeWorld({ field: flatF, seed: 72 });
+  const courses = spawnWallCourses(w, 0, 0, 0, 0, 2);
+  ok("T7: his wall stands as team 2 and is the player's lawful target", courses.length === 3 && courses.every((c) => c.team === 2) && hostileStructure(courses[0], 1));
+  ok("T7: the deciders hold the line", engBuildDecide(0.5, true, 100, 30) === true && engBuildDecide(0.7, true, 100, 30) === false && engBuildDecide(0.5, false, 100, 30) === false && ["bags", "walls"].includes(engBuildKind(0.5)) && engSeedPlace([{ x: 1 }, { x: 2 }], 0.9).x === 2);
+}
+{
+  // the withdrawal law: the timeout sweep spares his squads, takes wave stock
+  const w = makeWorld({ field: flatF, seed: 73 });
+  const sq = makeSquad(9002, "engineers", 2, 0, 0);
+  spawnSquadMembers(w, sq);
+  for (const id of sq.memberIds) w.byId.get(id).tag = "eng";
+  const loose = addBody(w, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 5, y: 0.88, z: 5, hp: 58 });
+  const S7b = { reg: { heads: 0, tanks: 0 }, ws: {} };
+  executeWithdrawal(S7b, w);
+  ok("T7: the timeout sweep spares his squad and takes the wave man",
+    sq.memberIds.every((id) => { const u = w.byId.get(id); return u && u.alive; }) && !w.byId.get(loose.id) && S7b.reg.heads === 1);
+  ok("T7: his tagged men price into the engineer family, never rifles",
+    (() => { const c = marketCounts(w, [], []); return c.engineer === 2 && !c.rifles; })());
+}
+{
+  // the two new draws + the muster branch, pinned by source shape (the T10(d11) precedent)
+  const be7 = fs.readFileSync("src/depot/bell.js", "utf8");
+  ok("T7: TWO unconditional draws every bell (lineRoll, placeRoll — the law)",
+    /const lineRoll = world\.rng\(\), placeRoll = world\.rng\(\);/.test(be7));
+  ok("T7: his shovels ring after the sapper brain", be7.indexOf("THE ENEMY SAPPER BRAIN") < be7.indexOf("HIS SHOVELS"));
+  const mu7 = fs.readFileSync("src/depot/muster.js", "utf8");
+  ok("T7: the engineer pick musters a tagged squad", /if \(pick\.tag === "eng"\) \{/.test(mu7) && /\.tag = "eng";/.test(mu7));
 }

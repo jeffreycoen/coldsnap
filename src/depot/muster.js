@@ -235,6 +235,17 @@ export function musterFreshStart(world, S, depotP, grid, field, nextApcSeq) {
     fielded.add(pick.key);
     if (pick.kind === "hull") { parkArmor(world, grid, field, depotE, 2, pick.vtype, nextApcSeq || (() => 1)); continue; }
     if (pick.kind === "tower") { parkTower(world, grid, field, depotE, 2, pick.key); continue; }
+    if (pick.tag === "eng") {
+      // P7.1 T7: his engineers are a real squad — the build driver runs them.
+      const a0 = (mi / 16) * Math.PI * 2 + 2.0;
+      const p0 = clearSlot(world, depotE.x + Math.sin(a0) * gR, depotE.z + Math.cos(a0) * gR, 0.5);
+      const sq = makeSquad(9000 + mi, "engineers", 2, p0.x, p0.z);
+      spawnSquadMembers(world, sq);
+      for (const id of sq.memberIds) world.byId.get(id).tag = "eng"; // the market's family key (marketCounts prices team-2 men by tag)
+      (S.foeSquads || (S.foeSquads = [])).push(sq);
+      mi += 2;
+      continue;
+    }
     let pairLead = null;
     for (let k = 0; k < pick.n; k++) {
       const a = (mi / 16) * Math.PI * 2 + 2.0;

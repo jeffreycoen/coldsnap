@@ -325,3 +325,17 @@ export function flankDrop(cands, roll, depotRef) {
   return pool[Math.min(pool.length - 1, Math.floor(roll * pool.length))];
 }
 // ==== end P7 T8 ==============================================================
+
+// ==== P7.1 T7: HIS SHOVELS ===================================================
+// Two unconditional draws per bell (the ferry/mine law). The gate is pure;
+// the kind is a derived fraction of the same roll — no third draw.
+export function engBuildDecide(roll, hasIdleEng, scrap, estCost) {
+  return roll < 0.6 && hasIdleEng && scrap >= estCost; // provisional (F5)
+}
+export function engBuildKind(roll) {
+  return (roll * 10) % 1 < 0.35 ? "walls" : "bags"; // provisional (F5)
+}
+export function engSeedPlace(cands, roll) {
+  if (!cands || !cands.length) return null;
+  return cands[Math.min(cands.length - 1, Math.floor(roll * cands.length))];
+}
