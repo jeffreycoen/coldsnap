@@ -215,3 +215,16 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "frost"]) {
   // the handlers themselves exist
   pin("handlers live", /S\.orderSquad = \(kind\)/.test(src) && /S\.orderVehicle = \(kind\)/.test(src) && /S\.takeControl = \(\)/.test(src) ? /./ : /(?!)/);
 }
+
+// ---- P7.1 T3: every fielded man knows his full health (maxHp at spawn)
+{
+  const w = makeWorld({ field: flatF, seed: 31 }); w.depotCombat = true;
+  const u = spawnUnit(w, { x: 0, z: 0 }, "");
+  ok("T3: an enemy man spawns with maxHp", u.maxHp === u.hp && u.maxHp > 0);
+  const t = spawnUnit(w, { x: 10, z: 0 }, "tank");
+  ok("T3: wave armor spawns with maxHp", t.maxHp === t.hp && t.maxHp > 0);
+  const sq = makeSquad(9, "rifles", 1, -10, 0);
+  spawnSquadMembers(w, sq);
+  const m = w.byId.get(sq.memberIds[0]);
+  ok("T3: a squad man spawns with maxHp", m && m.maxHp === m.hp && m.maxHp > 0);
+}

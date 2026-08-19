@@ -1148,15 +1148,22 @@ export default function DepotGame({ onExit, resume = null }) {
       let windOn = true;
       try { windOn = window.localStorage.getItem("coldsnap-depot-wind") !== "0"; } catch (e) {}
 
+      // P7.1 T3 (owner): HEALTH BARS toggle — visual only, beside FOG.
+      // Same coldsnap-depot-* persistence pattern. Default ON.
+      let healthOn = true;
+      try { healthOn = window.localStorage.getItem("coldsnap-depot-health") !== "0"; } catch (e) {}
+      R.setHealth(healthOn);
+
       const S = {
         resources: 120, kills: 0,
         cmdr: null, // P7 T8: the drawn armor doctrine — one boot draw (fresh war), restored on RESUME
         ws: makeDepotAssaultState(), spawnRR: 0,
         mode: null, sellMode: false, inspectId: null,
         started: false, gameOver: false, victory: false,
-        paused: false, speed: 1, fogOn, discipline, windOn,
+        paused: false, speed: 1, fogOn, discipline, windOn, healthOn,
         setFog: (v) => { fogOn = v; S.fogOn = v; R.setFog(v); try { window.localStorage.setItem("coldsnap-depot-fog", v ? "1" : "0"); } catch (e) {} },
         setWind: (v) => { windOn = v; S.windOn = v; try { window.localStorage.setItem("coldsnap-depot-wind", v ? "1" : "0"); } catch (e) {} },
+        setHealth: (v) => { healthOn = v; S.healthOn = v; R.setHealth(v); try { window.localStorage.setItem("coldsnap-depot-health", v ? "1" : "0"); } catch (e) {} },
         setDiscipline: (v) => { discipline = v; S.discipline = v; try { window.localStorage.setItem("coldsnap-depot-discipline", v); } catch (e) {} },
         // The clock (P1 Task 1): bellAt is the absolute SIM-clock stamp the
         // next bell is due at, bellT the readout stepBell derives from it.
@@ -3199,7 +3206,7 @@ export default function DepotGame({ onExit, resume = null }) {
               enemyStanding: S.enemyStanding != null ? S.enemyStanding : 1,
               mode: S.mode, sellMode: S.sellMode, sandbagOrient: S.sandbagOrient || 0,
               paused: S.paused, speed: S.speed,
-              muted: A.muted, fogOn: S.fogOn, windOn: S.windOn, discipline: S.discipline, seed: MAP_SEED,
+              muted: A.muted, fogOn: S.fogOn, windOn: S.windOn, healthOn: S.healthOn, discipline: S.discipline, seed: MAP_SEED,
               toasts: S.toasts.map((t) => t.txt),
               squadSel: (() => {
                 const sq = S.selSquadId != null ? S.squads.find((q) => q.id === S.selSquadId) : null;
@@ -3403,6 +3410,11 @@ export default function DepotGame({ onExit, resume = null }) {
     S.setWind(!S.windOn);
     setHud((h) => ({ ...h, windOn: S.windOn }));
   };
+  const toggleHealth = () => {
+    const S = stateRef.current; if (!S || !S.setHealth) return;
+    S.setHealth(!S.healthOn);
+    setHud((h) => ({ ...h, healthOn: S.healthOn }));
+  };
   // FIRE FEEDBACK (mk0.96): the held state, and the LOOK of the held state,
   // set in one place — direct DOM writes (the joystick knob's discipline, no
   // React state in the hot path). A hold the browser cancels pops the button
@@ -3592,6 +3604,9 @@ export default function DepotGame({ onExit, resume = null }) {
           onClick={() => { const S = stateRef.current; if (S && S.rotate) S.rotate(1); }}>⟳</button>
         <button style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.fogOn ? "#7fd7ff" : "#48515f", opacity: hud.fogOn ? 1 : 0.6 }} title="fog of war (visual only)" onClick={toggleFog}>
           FOG {hud.fogOn ? "ON" : "OFF"}
+        </button>
+        <button data-health style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.healthOn ? "#7fd7ff" : "#48515f", opacity: hud.healthOn ? 1 : 0.6 }} title="health bars on hurt things (visual only)" onClick={toggleHealth}>
+          HEALTH {hud.healthOn ? "ON" : "OFF"}
         </button>
         <button data-wind style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.windOn ? "#7fd7ff" : "#48515f", opacity: hud.windOn ? 1 : 0.6 }} title="wind (drift on every shot, both sides)" onClick={toggleWind}>
           WIND {hud.windOn ? "ON" : "OFF"}

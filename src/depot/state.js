@@ -722,6 +722,7 @@ export function spawnSquadMembers(world, squad) {
     const u = addBody(world, { kind: "unit", team: 1, mass: M.mass, hx: M.hx, hy: M.hy, hz: M.hz,
       x: p.x, y: world.field.heightAt(p.x, p.z) + M.hy + 0.02, z: p.z, hp: M.hp, friction: 0.5 });
     u.utype = squad.type; u.squadId = squad.id; u.dress = "human"; // player side reads human
+    u.maxHp = M.hp;
     // SMEARS ON (C0 T4, mk0.33): every man who falls leaves a permanent red
     // mark in the snow. smearStyle is render-only — the renderer's kill
     // handler reads it off the corpse; nothing in the sim branches on it.
@@ -1526,7 +1527,7 @@ export const HUD0 = {
   lastDispatch: null,
   started: false, gameOver: false, victory: false, breach: false, enemyBreach: false,
   mode: "wall", sellMode: false, sandbagOrient: 0, paused: false, speed: 1, inspect: null, toasts: [],
-  pending: null, fogOn: true, discipline: "careful", depotStanding: 1, enemyStanding: 1,
+  pending: null, fogOn: true, healthOn: true, discipline: "careful", depotStanding: 1, enemyStanding: 1,
   squadSel: null, squadFlag: null,
   // The manifest's React mirror. unlocked seeds from PLAYER_START so the very
   // first render — before the hud tick has run once — already draws the right

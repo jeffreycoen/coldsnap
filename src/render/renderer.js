@@ -900,6 +900,25 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const glintMat = new THREE.MeshBasicMaterial({ color: 0xfff6c8, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
   const glintMesh = pool(new THREE.PlaneGeometry(1, 1), glintMat, 8, false); glintMesh.layers.set(1);
 
+  // P7.1 T3: HEALTH BARS — a dark plate and a green-to-red fill over any
+  // hurt body that carries maxHp. DEPOT only (world.depotCombat) and
+  // toggleable (setHealth) — every other mode draws these pools at count 0.
+  // Left-anchored geometry: scaling x drains the fill from the right.
+  const barBackGeo = new THREE.PlaneGeometry(1, 1); barBackGeo.translate(0.5, 0, 0);
+  const barFillGeo = new THREE.PlaneGeometry(1, 1); barFillGeo.translate(0.5, 0, 0);
+  const BAR_CAP = 256; // provisional (F5)
+  const barBackMesh = pool(barBackGeo, new THREE.MeshBasicMaterial({ color: 0x10141a, transparent: true, opacity: 0.85, depthWrite: false }), BAR_CAP, false); barBackMesh.layers.set(1);
+  const barFillMesh = pool(barFillGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false }), BAR_CAP, false); barFillMesh.layers.set(1);
+  const BAR_HI = new THREE.Color(0x4aff8c), BAR_LO = new THREE.Color(0xff4433), _barC = new THREE.Color();
+  let healthOn = true;
+  function setHealth(v) { healthOn = !!v; }
+  const _bars = [];
+  const pushBar = (b, w, lift) => {
+    if (!healthOn || !world.depotCombat) return;
+    if (!b.maxHp || !b.alive || !(b.hp > 0) || b.hp >= b.maxHp) return;
+    _bars.push({ b, w, lift });
+  };
+
   // snowfall: instanced flakes drifting in a box around the camera focus
   const flakeMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false });
   const flakeMesh = pool(new THREE.PlaneGeometry(0.14, 0.14), flakeMat, 220, false);
@@ -1520,6 +1539,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
       nextFadeT = world.t + FADE_EVERY;
     }
     fogDbgTotal = 0; fogDbgVisible = 0;
+    _bars.length = 0;
     // vehicles sync
     for (const b of world.bodies) {
       // DIVERGENCE from the demo: kind "truck" joins the loop. The demo's
@@ -1554,6 +1574,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
       if (fogHide) continue;
       g.position.set(b.pos.x, b.pos.y, b.pos.z);
       g.quaternion.set(b.q.x, b.q.y, b.q.z, b.q.w);
+      if (b.kind === "vehicle") pushBar(b, 2.6, 1.0); // provisional (F5)
       if ((b.kind === "wreck" || (b.kind === "truck" && !b.alive)) && !g.userData.dead) {
         g.userData.dead = true;
         g.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.material.color.lerp(wreckTint, 0.75); } });
@@ -1584,6 +1605,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
       let g = towerGroups.get(b.id);
       if (!g) { g = buildTowerMesh(b.towerType); towerGroups.set(b.id, g); scene.add(g); }
       g.position.set(b.pos.x, b.pos.y, b.pos.z);
+      pushBar(b, 1.6, 1.0); // provisional (F5)
       const hurt = b.maxHp ? b.hp / b.maxHp : 1;
       if (g.userData.turret) {
         const tgt = b.targetId ? world.byId.get(b.targetId) : null;
@@ -1619,6 +1641,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
       if (b.kind !== "wall" || wi >= WALL_INST) continue;
       const hurtW = b.maxHp ? Math.max(0.75, b.hp / b.maxHp) : 1;
       const dy = Math.max(0.05, b.hy - SEAM_Y);
+      pushBar(b, 1.2, 0.5); // provisional (F5)
       if (b.course == null) {
         const dx = Math.max(0.05, b.hx - SEAM_XZ), dz = Math.max(0.05, b.hz - SEAM_XZ);
         writeInst(wallMesh, wi, b.pos.x, b.pos.y, b.pos.z, b.q, dx / 0.9 * hurtW, dy / 0.9, dz / 0.9 * hurtW);
@@ -1722,6 +1745,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
         }
         fogDbgVisible++;
       }
+      if (!fogSil) pushBar(b, 0.9, 0.55); // provisional (F5) — a silhouette keeps its secrets
       const sp = b.alive ? Math.hypot(b.v.x, b.v.z) : 0;
       b.wph = (b.wph || 0) + sp * dt * 3.4;
       const sw = Math.sin(b.wph) * Math.min(0.5, sp * 0.24);
@@ -1832,11 +1856,34 @@ export function makeRenderer(canvas, world0, opts = {}) {
       // are drawn a hair inside their bodies so the outline reads each block.
       // Town/depot masonry is untouched: its 3cm laying pitch already does it.
       const bs = b.sandbag ? SEAM_BAG : 0;
+      if (b.sandbag) pushBar(b, 1.2, 0.4); // provisional (F5)
       writeInst(chunkMesh, ki, b.pos.x, b.pos.y, b.pos.z, b.q, (b.hx - bs) / 0.6, (b.hy - bs) / 0.6, (b.hz - bs) / 0.6);
       ki++;
     }
     chunkMesh.count = ki; chunkMesh.instanceMatrix.needsUpdate = true;
     chunkStats = { drawn: ki, cap: CHUNK_CAP, total: world.bodies.reduce((n, b) => n + (b.kind === "chunk" ? 1 : 0), 0) };
+    // P7.1 T3: the collected bars — plate first, fill on top, camera-facing,
+    // left edge anchored so the fill drains rightward as hp falls.
+    {
+      let bi2 = 0;
+      for (const e of _bars) {
+        if (bi2 >= BAR_CAP) break;
+        const b = e.b, f = Math.max(0, Math.min(1, b.hp / b.maxHp));
+        dummy.position.set(b.pos.x, b.pos.y + b.hy + e.lift, b.pos.z);
+        dummy.position.addScaledVector(camRight, -e.w / 2);
+        dummy.quaternion.copy(camQ);
+        dummy.scale.set(e.w, 0.14, 1); dummy.updateMatrix();
+        barBackMesh.setMatrixAt(bi2, dummy.matrix);
+        dummy.scale.set(e.w * f, 0.10, 1); dummy.updateMatrix();
+        barFillMesh.setMatrixAt(bi2, dummy.matrix);
+        _barC.copy(BAR_LO).lerp(BAR_HI, f);
+        if (barFillMesh.setColorAt) barFillMesh.setColorAt(bi2, _barC);
+        bi2++;
+      }
+      barBackMesh.count = bi2; barBackMesh.instanceMatrix.needsUpdate = true;
+      barFillMesh.count = bi2; barFillMesh.instanceMatrix.needsUpdate = true;
+      if (barFillMesh.instanceColor) barFillMesh.instanceColor.needsUpdate = true;
+    }
     // mech links (kind filter lesson: name EVERY kind explicitly)
     let torsoB = null;
     let mi = 0;
@@ -2215,5 +2262,5 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // never calls this and keeps the shipped look exactly
   function setGrade(g) { postMat.uniforms.uGrade.value = Math.max(-1, Math.min(1, g || 0)); }
   const project = (x, y, z) => { const v = new THREE.Vector3(x, y, z); v.project(cam); return { x: v.x, y: v.y }; };
-  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, overlay, setDressing, setMines, rotateStep, rotateBy, updateTerritory, setFog, getFogDebug, chunkStats: () => chunkStats, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
+  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, overlay, setDressing, setMines, rotateStep, rotateBy, updateTerritory, setFog, setHealth, getFogDebug, chunkStats: () => chunkStats, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
 }

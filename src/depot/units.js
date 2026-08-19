@@ -29,6 +29,7 @@ export function spawnUnit(world, sp, tag) {
     x, z, y: world.field.heightAt(x, z) + spec.hy + 0.02, hp: spec.hp, friction: 0.38,
   });
   u.tag = tag || ""; u.bounty = spec.bounty;
+  u.maxHp = spec.hp;
   if (spec.dress) u.dress = spec.dress;
   // SMEARS ON (C0 T4, mk0.33): every enemy infantryman — conscript, runner,
   // breaker, grenadier, sapper, marksman — leaves a permanent red mark where
@@ -52,6 +53,7 @@ export function spawnUnit(world, sp, tag) {
       x: x + 1.1, z: z + 0.7, y: world.field.heightAt(x + 1.1, z + 0.7) + spec.hy + 0.02, hp: spec.hp, friction: 0.38,
     });
     s.tag = "sniper"; s.role = "spotter"; s.bounty = 15;
+    s.maxHp = spec.hp;
     if (spec.dress) s.dress = spec.dress;
     s.smearStyle = "human";                 // the spotter falls like any man
     s.brave = true;
@@ -68,6 +70,7 @@ function spawnTank(world, sp) {
     x, y: world.field.heightAt(x, z) + TANK.hy + 0.1, z, hp: TANK.hp, friction: 0.85,
   });
   t.armor = 140;
+  t.maxHp = TANK.hp;
   t.tag = "tank";
   t.squad = "waveArmor"; // engine's stepDrive/aiDrive picks this up generically
   t.drv = "waveArmor"; // P7 T1: the motor pool's policy key (drivers.js)
