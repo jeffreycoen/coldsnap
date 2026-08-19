@@ -347,6 +347,10 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // 90° step: eased tween; texel snap suspends while turning (rotZoom in
   // render()) so the shimmer never shows
   function rotateStep(dir) { yawTgt += (dir > 0 ? 1 : -1) * Math.PI / 2; }
+  // P7.1 T1: continuous rotation — small increments stream in from a held
+  // key or a two-finger twist. Only yawTgt moves: the existing tween chases
+  // it, so smoothing and the mid-turn texel-snap suspension come for free.
+  function rotateBy(d) { yawTgt += d; }
   const R3 = (v) => ({ x: v.x, y: v.y, z: v.z });
   // lights
   const hemi = new THREE.HemisphereLight(0xe2ecf7, 0x7e8fa3, 0.62);
@@ -2211,5 +2215,5 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // never calls this and keeps the shipped look exactly
   function setGrade(g) { postMat.uniforms.uGrade.value = Math.max(-1, Math.min(1, g || 0)); }
   const project = (x, y, z) => { const v = new THREE.Vector3(x, y, z); v.project(cam); return { x: v.x, y: v.y }; };
-  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, overlay, setDressing, setMines, rotateStep, updateTerritory, setFog, getFogDebug, chunkStats: () => chunkStats, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
+  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, overlay, setDressing, setMines, rotateStep, rotateBy, updateTerritory, setFog, getFogDebug, chunkStats: () => chunkStats, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
 }

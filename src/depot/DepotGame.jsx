@@ -1203,6 +1203,9 @@ export default function DepotGame({ onExit, resume = null }) {
         mgHeld: false,
         linePending: null, // COMMAND T2 (mk0.84): the proposed line, awaiting accept/reject
         hudT: 0, keys: {}, sellById: null, audio: A,
+        // P7.1 T1: tap = the 90° snap, hold = continuous — accumulated hold
+        // time per key, read on keyup to decide tap-vs-hold.
+        _rotHeld: { q: 0, e: 0 },
         // THE LIVING MARKET (mk1.13): the price cache, its own 1Hz
         // accumulator (beside the census's), and the once-a-second purchase
         // stamp. Transient run state, never serialized — a resumed run
@@ -2076,7 +2079,7 @@ export default function DepotGame({ onExit, resume = null }) {
       };
 
       const pointers = new Map();
-      let pinchD0 = 0, pinchZ0 = 1, dragTotal = 0, downPt = null;
+      let pinchD0 = 0, pinchZ0 = 1, pinchA = 0, dragTotal = 0, downPt = null;
       const onPointerDown = (e) => {
         A.ensure();
         // DESKTOP FIRE (P6 T12, mk1.21, owner's playtest): while possessed,
@@ -2110,6 +2113,7 @@ export default function DepotGame({ onExit, resume = null }) {
           const ps = [...pointers.values()];
           pinchD0 = Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y);
           pinchZ0 = S.zoom;
+          pinchA = Math.atan2(ps[1].y - ps[0].y, ps[1].x - ps[0].x); // P7.1 T1: the twist's running angle
           downPt = null;
         }
       };
@@ -2136,6 +2140,15 @@ export default function DepotGame({ onExit, resume = null }) {
           const d = Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y);
           S.zoom = Math.max(0.5, Math.min(2.6, pinchZ0 * (d / pinchD0)));
           R.setZoom(S.zoom);
+          // P7.1 T1: TWO-FINGER ROTATION — the twist between the touches
+          // steers the yaw. Incremental with wrap, so fingers crossing the
+          // ±π seam never jump the view.
+          const a = Math.atan2(ps[1].y - ps[0].y, ps[1].x - ps[0].x);
+          let da = a - pinchA;
+          while (da > Math.PI) da -= 2 * Math.PI;
+          while (da < -Math.PI) da += 2 * Math.PI;
+          pinchA = a;
+          R.rotateBy(da);
         }
       };
       const onPointerUp = (e) => {
@@ -2151,9 +2164,20 @@ export default function DepotGame({ onExit, resume = null }) {
         S.zoom = Math.max(0.5, Math.min(2.6, S.zoom * (e.deltaY > 0 ? 0.9 : 1.11)));
         R.setZoom(S.zoom);
       };
+      // P7.1 T1: tap = the 90° snap, hold = continuous. The frame loop
+      // accumulates hold time and rotates past the window; keyup reads the
+      // accumulated time to decide tap-vs-hold.
+      const ROT_HOLD_S = 0.22, ROT_SPEED = 1.6; // provisional (F5)
       const onKey = (e, down) => { S.keys[e.key.toLowerCase()] = down; };
-      const kd = (e) => { A.ensure(); if (e.key === "m" || e.key === "M") { A.setMuted(!A.muted); setHud((h) => ({ ...h, muted: A.muted })); } if (e.key === "q" || e.key === "Q") R.rotateStep(-1); if (e.key === "e" || e.key === "E") R.rotateStep(1); onKey(e, true); };
-      const ku = (e) => onKey(e, false);
+      const kd = (e) => { A.ensure(); if (e.key === "m" || e.key === "M") { A.setMuted(!A.muted); setHud((h) => ({ ...h, muted: A.muted })); } onKey(e, true); };
+      const ku = (e) => {
+        const k = e.key.toLowerCase();
+        if (k === "q" || k === "e") {
+          if ((S._rotHeld[k] || 0) <= ROT_HOLD_S) R.rotateStep(k === "q" ? -1 : 1);
+          S._rotHeld[k] = 0;
+        }
+        onKey(e, false);
+      };
       const blockTouch = (e) => e.preventDefault();
       // P7 T2: the right mouse button is the coax trigger while possessing
       // the Bison — the browser's own context menu must never steal it.
@@ -2700,6 +2724,10 @@ export default function DepotGame({ onExit, resume = null }) {
           const cb = R.camBasis;
           const ul = Math.hypot(cb.up.x, cb.up.z) || 1, rl = Math.hypot(cb.right.x, cb.right.z) || 1;
           const ux = cb.up.x / ul, uz = cb.up.z / ul, rx = cb.right.x / rl, rz = cb.right.z / rl;
+          // P7.1 T1: held rotation keys — past the tap window the key swings
+          // the view continuously; a release inside it snaps 90° (see ku).
+          if (S.keys.q) { S._rotHeld.q += dt; if (S._rotHeld.q > ROT_HOLD_S) R.rotateBy(-ROT_SPEED * dt); }
+          if (S.keys.e) { S._rotHeld.e += dt; if (S._rotHeld.e > ROT_HOLD_S) R.rotateBy(ROT_SPEED * dt); }
           // POSSESSION (P4 T1, mk0.90): while possessed, WASD drives the
           // squad, NOT the camera — the pan block is gated off entirely.
           if (!S.possess) {
@@ -3860,7 +3888,7 @@ export default function DepotGame({ onExit, resume = null }) {
           <div style={{ fontSize: 12, opacity: 0.85, maxWidth: 420, lineHeight: 1.6, marginBottom: 18 }}>
             They are coming for your depot across the valley — wall your ground, gun the choke points.
             Rock is free cover. The frozen ponds carry them faster — and you cannot build on ice.
-            {isTouch ? " Drag to pan, pinch to zoom, tap to build. Tap a tower to inspect it." : " WASD pans, wheel zooms, Q/E rotates, click builds. Click a tower to inspect it."}
+            {isTouch ? " Drag to pan, pinch to zoom, twist to rotate, tap to build. Tap a tower to inspect it." : " WASD pans, wheel zooms, Q/E rotates (tap snaps, hold swings), click builds. Click a tower to inspect it."}
           </div>
           <button style={{ ...P.btn, fontSize: 15, padding: "10px 26px", borderColor: "#4aff8c", color: "#4aff8c" }} onClick={startGame}>
             TAKE COMMAND
