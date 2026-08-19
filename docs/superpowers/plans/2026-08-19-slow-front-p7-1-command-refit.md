@@ -1,4 +1,4 @@
-# WINTER FRONT — Phase 7.1: The Command Refit
+# WINTER FRONT — Phase 7.1: The Command Refit — CLOSED (owner, 2026-08-19, at mk1.75)
 
 *The skeleton. Scope and all design rulings: `docs/superpowers/decision-record.md`, the 2026-08-19 entries. Six tasks, ruled order, marks mk1.60–mk1.69 (mk1.62/mk1.64 = amendments; mk1.66 = the sandbag fix; mk1.69/mk1.70 = the place-mode hotfixes; mk1.71 = enemy engineers build). Each task's full plan is its own file, written one at a time and served alone for review. Resource harvesting is NOT here — it is Phase 7.2. ARMS follows 7.2.*
 
