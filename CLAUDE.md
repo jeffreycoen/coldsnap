@@ -39,6 +39,7 @@ The project owner directs design, reviews every plan, and is the sole playtester
 - **Stop after every task.** A task landing is a stop: report it and wait for the owner's word before the next dispatch. Plan approval approves the plan, not an unattended run of it.
 - **A landing includes the deploy:** gates green → commit → push, without asking — the owner's live check IS the acceptance step. The stop rule governs the next dispatch, never the deploy of the finished task.
 - **"Deep status"** from the owner means a full state report on the current operation (done / in-flight / pending / blocked-on-owner, agent reports, commits, the next gate) — never independent re-verification runs.
+- **"Status" on a running agent means CHECK IT.** Query the task runner's live state and report it with real numbers: wall-clock elapsed since dispatch, expected remaining against comparable prior runs (implementation agents here run ~6–11 minutes, gates dominating). Never answer with a dispatch restatement, the task's step list, "still running" alone, or vague times ("a few minutes ago"). If the live state is unknowable, say exactly that — and still give the real elapsed time.
 - Every dispatch carries: a pre-verified reading list (anchors checked against live code at dispatch), trap notes, and a required read-confirmation opening the agent's report.
 - Agents verify **mechanics, never feel**. Perceptibility, look, and sound acceptance belong to the owner alone.
 
