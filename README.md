@@ -2,7 +2,7 @@
 
 **A full physics war game that fits on a floppy disk.** 💾
 
-The whole thing — the war, the engine, five tech demos, every sound — is one 1.29 MB bundle, about 417 KB over the wire. A 1.44 MB floppy holds it with room left over.
+The whole thing — the war, the engine, five tech demos, every sound — is one 1.31 MB bundle, about 416 KB over the wire. A 1.44 MB floppy holds it with room left over.
 
 **PLAY:** https://jeffreycoen.github.io/coldsnap/
 
@@ -15,7 +15,7 @@ Destruction here is structural, not scripted. Every building is individual stone
 - **The physics engine is written from scratch in plain JavaScript.** No game engine, no physics library, no WebAssembly. Three.js pushes the triangles; React draws the menus.
 - **Deterministic to the bit.** No hidden randomness anywhere. Same seed, same valley; same actions, same war — provable by hash, and tested that way on every push.
 - **Every valley is drawn fresh.** A 180-meter square of hills, forests, a stream with one crossing, villages — and two fortress depots pressed into opposite corners. No two wars share ground. `?seed=` replays a specific one.
-- **Both sides open the war with armor.** A tank and a troop transport stand at each depot — order yours like squads, or take the controls and drive. Riders seal into the hold and share the hull's fate. Replacement comes late and dear.
+- **The war deals your opening hand.** Four units dealt to each side, shown card by card — with a live portrait of the real model — and placed by hand near your depot. No two wars open alike. Armor, when dealt or bought, drives like the rest: order it like a squad or take the controls; riders seal into the hold and share the hull's fate. Replacement comes late and dear.
 - **The ground bites.** Sappers lay mines and tripwires that the other side never sees — minefields are learned by loss, in both directions.
 - **The enemy lives under your rules.** Same physics, same shared market, same prices, same purchase pacing — and a commander personality drawn fresh each war decides when their armor rides out. Symmetry is law.
 - **Sight is honest.** Walls block sight and never grant it. An enemy no one sees is not drawn at all.
@@ -29,7 +29,7 @@ The war itself: every 90 seconds the muster bell rings and the convoy offers new
 
 - **Engine** (`src/engine/core.js`, ~2,500 dependency-free lines): sequential-impulse rigid-body solver — boxes, quaternions, friction, stacking — with welds that carry break forces, sleeping bodies, and a fixed 120 Hz timestep.
 - **Two-tier collision books**: sleeping and immovable stones file into the broadphase once and stay filed — a cell of settled masonry does no pair work. Measured on the Pi: idle simulation 5.0 → 3.1 ms, assault plus collapse 10.8 → 7.3 ms, physics bit-identical before and after.
-- **Determinism culture**: every random draw is seeded and draw-count-stable (a lint gate forbids `Math.random` in game logic); the original demo is byte-frozen and `scripts/golden.mjs` re-extracts the engine from it on every push, asserting bit-identical world-state hashes; behavior changes are pinned by keystone hashes. 1,294 headless checks run green behind seven CI gates on every push.
+- **Determinism culture**: every random draw is seeded and draw-count-stable (a lint gate forbids `Math.random` in game logic); the original demo is byte-frozen and `scripts/golden.mjs` re-extracts the engine from it on every push, asserting bit-identical world-state hashes; behavior changes are pinned by keystone hashes. 1,459 headless checks run green behind seven CI gates on every push.
 - **Renderer** (`src/render/renderer.js`): one Three.js scene, instanced pools with fixed caps sized by measurement — 3,000 stones, 360 trees — and a fog pass that draws only what a living eye can see.
 - **The save**: bodies, welds mid-break, craters, squad rosters, minefields, the dice — serialized at each bell into a single JSON string in browser storage.
 - Winter Front was built on five playable tech demos — driving, contracts, a campaign, a tower defense, and a walking biped mech — all still on the site behind THE PROVING RANGE.
