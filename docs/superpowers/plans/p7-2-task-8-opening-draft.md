@@ -29,6 +29,7 @@ Dials, provisional (F5): PLAN_ODDS 0.4, start scrap 250, the profile score table
 - **10 T6v2:** draws 9 → 15; "his picks fielded something" re-teaches to "his five landed — men afield OR plans on his ledgers" (`w.bodies.some(team 2 alive) || S6.foe.unlocked.length > 0 || S6.foe.towers.length > 0`); line 278's "T8: the player's hand is four distinct pool keys" re-teaches to the draft (`S6.draft.length === 7`, seven distinct `k`, every k in the pool, kinds 0/1).
 - **10 T8 (lines 359–364):** the two dealHand pins re-teach to draftDeal — seven draws always; seven distinct under a forced-collision rng. Count-neutral (2 for 2). The T8 wiring pins (368–374) stand untouched.
 - **11 T2(f):** `MANUAL_REV = 4` → `= 5`; T2(f2)'s "Nine linked cards" count stands (a card re-worded, none added).
+- **09 T23(b) (Amendment 1 — found by the agent's honest stop; the plan-writer's ledger missed it):** `scripts/tests/09-reorg.mjs:650` pins the same literal `MANUAL_REV = 4` regex — the identical kind already licensed above; re-teaches identically, 4 → 5, message noting the draft's re-tour.
 - **Value-shift license (standing):** fixed-seed boot outcomes shift with the new contract; numeric re-bases measured old → new; draw-count movement anywhere = stop.
 
 ## The steps
