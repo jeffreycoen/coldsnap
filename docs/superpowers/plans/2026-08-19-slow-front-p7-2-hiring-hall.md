@@ -12,7 +12,7 @@
 | 4 | His hand | mk1.84 | `p7-2-task-4-his-hand.md` | SHIPPED (ef3811b) |
 | 5 | The reaction | mk1.85 | `p7-2-task-5-reaction.md` | SHIPPED (341d09b; A1) |
 | — | Hotfix: the hire answers its price | mk1.86 | `p7-2-hotfix-mk186-hire-affordability.md` | SHIPPED (9d0faec) |
-| 6 | The medic | mk1.87 | `p7-2-task-6-medic.md` | pending |
+| 6 | The medic | mk1.87 | `p7-2-task-6-medic.md` | SHIPPED (92ad73b; A1) |
 | 7 | The mechanic | mk1.88 | `p7-2-task-7-mechanic.md` | pending |
 | 8 | The volunteer | mk1.89 | `p7-2-task-8-volunteer.md` | pending (moved behind the mechanic — owner, 2026-08-20) |
 | 9 | The mech | mk1.90 | `p7-2-task-9-mech.md` | pending |
