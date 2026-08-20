@@ -214,6 +214,7 @@ export const PICK_POOL = [
   { key: "sq_sniper", kind: "squad", type: "sniper", tag: "sniper", n: 2 },
   { key: "sq_mg", kind: "squad", type: "mg", tag: "mg", n: 2 },
   { key: "sq_engineers", kind: "squad", type: "engineers", tag: "eng", n: 2 },
+  { key: "sq_medics", kind: "squad", type: "medics", tag: "medic", n: 2 },
   { key: "hero_bison", kind: "hull", vtype: "bison" },
   { key: "hero_apc", kind: "hull", vtype: "apc" },
   { key: "mg", kind: "tower" }, { key: "gun", kind: "tower" }, { key: "mortar", kind: "tower" },

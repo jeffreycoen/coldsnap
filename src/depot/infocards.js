@@ -34,6 +34,7 @@ export const CARDS = {
   sq_engineers: sq("engineers", "Two builders — shovels, not rifles. They lay sandbag and wall lines where you draw them.", ["DEFEND", "MOVE", "ATTACK", "TAKE CONTROL", "BUILD BAGS", "BUILD WALLS"], null),
   sq_runners:   sq("runners", "Four fast men. First to a flank, thin as paper.", ORDERS_ARMED),
   sq_breakers:  sq("breakers", "A heavy pair. They grind enemy masonry apart by hand and shrug off rifle fire.", ORDERS_ARMED),
+  sq_medics:    sq("medics", "Two medics in white, the red cross front and back, a black bag in hand. They walk to the wounded and kneel to treat — no rifle, no fight.", ["DEFEND", "MOVE", "PATROL", "TREAT THE WOUNDED", "TAKE CONTROL"], null),
   hero_bison: { label: "BISON", role: "The Bison. Main gun, coax, and tracks that brake for your own. Dear, and dearer to replace.",
     n: null, hp: BISON.hp, dmg: null, range: null, speed: null, skills: ORDERS_HULL },
   hero_apc:   { label: "APC", role: "The transport. Four sealed seats — riders see nothing, fire nothing, and die with the hull.",

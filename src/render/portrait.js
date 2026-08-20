@@ -6,7 +6,7 @@
 // blank corner, never a dead card. Pure render layer — no sim, no rng.
 import * as THREE from "three";
 import { INFANTRY } from "../engine/core.js";
-import { troopKit } from "./troopkit.js";
+import { troopKit, MEDIC_HEX } from "./troopkit.js";
 import { toon, buildBison, buildApc, buildTowerMesh } from "./renderer.js";
 
 const SIZE = 128;
@@ -43,7 +43,7 @@ export function buildPortraitMan(utype) {
   const b = { team: 1, utype, alive: true };
   const KIT = troopKit(b, true, false);
   const spec = INFANTRY.con;
-  const pal = INFANTRY.pal[KIT.pal];
+  const pal = KIT.pal === "medic" ? { ...INFANTRY.pal.con, ...MEDIC_HEX } : INFANTRY.pal[KIT.pal];
   const g = new THREE.Group();
   const riflePre = spec.find((p) => p.key === "rifle").preRot;
   for (const p of spec) {
@@ -65,7 +65,7 @@ export function buildPortraitMan(utype) {
       if (!KIT.rifle) continue;
       sx = sy = sz = KIT.rifle;
     }
-    const m = new THREE.Mesh(geo, toon(pal[p.role]));
+    const m = new THREE.Mesh(geo, toon(pal[(pi !== undefined && KIT.props[pi] && KIT.props[pi].role) || p.role]));
     const bulk = pi !== undefined ? 1 : 1; // props keep literal scale (the shear law)
     const bw = pi !== undefined ? 1 : KIT.bw, bh = pi !== undefined ? 1 : KIT.bh;
     m.position.set(off[0] * bw, off[1] * bh, off[2] * bw);

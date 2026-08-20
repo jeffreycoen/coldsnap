@@ -3,7 +3,7 @@
 // imports the single-file version got from its own top-of-file scope.
 import * as THREE from "three";
 import { POOL, INFANTRY, BAYER4, snapCam, ICE_CREEP, ICE_CREEP_T } from "../engine/core.js";
-import { troopKit, RIFLE_PREROT } from "./troopkit.js";
+import { troopKit, RIFLE_PREROT, MEDIC_HEX } from "./troopkit.js";
 
 // ==================================================================== render
 const PAL = { bisonBlue: 0x33619c, scoutRed: 0x8a4a44, snow: 0xe9edf2, uiRed: 0xd8433a }; // player is blue steel; the enemy wears the red now
@@ -855,6 +855,10 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const mkPal = (o) => { const p = {}; for (const k in o) p[k] = new THREE.Color(o[k]); return p; };
   const AND_LIVE = mkPal({ dom: 0xdde3ea, sec: 0x9aa6b2, acc: 0xc0cbd6, skin: 0xeef2f6, gun: 0x2a2e34 });
   const AND_DEAD = mkPal({ dom: 0x6d747c, sec: 0x474d54, acc: 0x596069, skin: 0x8b929a, gun: 0x14171a });
+  // P7.2 T6 (owner): the medic's whites — MEDIC_HEX over the con palette
+  // (skin inherits), and a winter-kill grey of the same dress for the dead.
+  const MED_LIVE = mkPal({ ...INFANTRY.pal.con, ...MEDIC_HEX });
+  const MED_DEAD = mkPal({ ...INFANTRY.dead.con, dom: 0x8f9498, sec: 0x7d8286, acc: 0x6e3531, gun: 0x101214 });
   // DIVERGENCE (guarded, mk0.99): HIT FEEDBACK palette — a struck man flashes
   // toward this red for 0.18s (see hurtK below).
   const HIT_C = new THREE.Color(0xff5230), _hitC = new THREE.Color();
@@ -1781,7 +1785,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
       const kitPal = KIT.pal;
       for (let pi = 0; pi < spec.length; pi++) {
         const p = spec[pi];
-        let o = p.off, ksx = 1, ksy = 1, ksz = 1, tilt = null, aim = null;
+        let o = p.off, ksx = 1, ksy = 1, ksz = 1, tilt = null, aim = null, propRole = null;
         const propI = PROP_KEYS[p.key];
         if (propI !== undefined) {
           const pr = KIT.props[propI];
@@ -1790,6 +1794,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
           if (!pr) { writeInst(pools[pi], idx, b.pos.x, b.pos.y, b.pos.z, b.q, 0, 0, 0); continue; }
           o = pr.off; ksx = pr.s[0]; ksy = pr.s[1]; ksz = pr.s[2];
           tilt = pr.tilt || null; aim = pr.aim || null;
+          propRole = pr.role || null; // P7.2 T6: a prop may name its own color role
         } else if (p.key === "rifle") { ksx = ksy = ksz = KIT.rifle; }
         // bulk scales the RIG (offsets + body part scale). Props keep their
         // own literal scale: an aim:"barrel" prop must stay UNIFORMLY scaled
@@ -1832,9 +1837,9 @@ export function makeRenderer(canvas, world0, opts = {}) {
         if (pools[pi].setColorAt) {
           if (fogSil) pools[pi].setColorAt(idx, SIL_C);
           else {
-            const pal = b.dress === "android" ? (b.alive ? AND_LIVE : AND_DEAD) : (b.alive ? INF_LIVE : INF_DEAD)[kitPal];
-            if (hurtK > 0) { _hitC.copy(pal[p.role]).lerp(HIT_C, 0.7 * hurtK); pools[pi].setColorAt(idx, _hitC); }
-            else pools[pi].setColorAt(idx, pal[p.role]);
+            const pal = b.dress === "android" ? (b.alive ? AND_LIVE : AND_DEAD) : kitPal === "medic" ? (b.alive ? MED_LIVE : MED_DEAD) : (b.alive ? INF_LIVE : INF_DEAD)[kitPal];
+            if (hurtK > 0) { _hitC.copy(pal[propRole || p.role]).lerp(HIT_C, 0.7 * hurtK); pools[pi].setColorAt(idx, _hitC); }
+            else pools[pi].setColorAt(idx, pal[propRole || p.role]);
           }
         }
       }

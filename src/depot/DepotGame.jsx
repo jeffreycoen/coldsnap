@@ -22,7 +22,7 @@ import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag
 import { marketCounts, computePrices, fieldPrices, priced } from "./market.js";
 import { stepMines, minePrices, mineSeedRoll, mineSeedPlace, MINE_COST, WIRE_COST } from "./mines.js";
 import { homeShare, pickHomeDetail, HOME_GUARD_CAP, cmdrOf, cmdrBellOrders, ferryDecide, flankDrop } from "./ai.js";
-import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic, drivePossessedSquad, clearSlot } from "./squads.js";
+import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic, drivePossessedSquad, clearSlot, stepMedicTendSquad } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
 import { stepDrivers, possessedArmorFire, possessedArmorMg } from "./drivers.js";
@@ -544,6 +544,9 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
       // because it spends scrap and places bodies — both barred from
       // squads.js by that module's law. Squads with no job cost one test.
       if (sq._build && S.stepBuildLine) S.stepBuildLine(sq);
+      // P7.2 T6: the medics make their rounds — after the squad's own step,
+      // so a tending man's goal overrides this tick's slot seek.
+      if (sq.type === "medics") stepMedicTendSquad(world, sq, world.dt);
       squadFire(world, sq, world.dt, T, invW);
       for (const id of sq.memberIds) {
         const u = world.byId.get(id);
@@ -732,6 +735,8 @@ const PALETTE = [
   // P7 T7: the tier-1 mirror — runners and breakers join the player's own list.
   { key: "sq_runners", label: "RUNNERS", icon: "⇶", cost: SQUAD_SPECS.runners.cost },
   { key: "sq_breakers", label: "BREAKERS", icon: "⨳", cost: SQUAD_SPECS.breakers.cost },
+  // P7.2 T6: the medic team — mercy on the bar
+  { key: "sq_medics", label: "MEDICS", icon: "✚", cost: SQUAD_SPECS.medics.cost },
   // P7 T9: THE HERO TIER — bell 10, both ladders. Bar-visible only once
   // unlocked like everything else; the buy is a two-tap arm (S.buyHero),
   // never a build mode.
@@ -1522,7 +1527,7 @@ export default function DepotGame({ onExit, resume = null }) {
       // ---------------------------------------------- squads (Phase 5 Task 3)
       // Build-bar mode keys -> squad type. Prefixed (sq_mg vs mg) because the
       // MG TOWER already owns the bare "mg" mode key.
-      const SQUAD_MODE = { sq_sniper: "sniper", sq_rifles: "rifles", sq_mg: "mg", sq_sappers: "sappers", sq_mortars: "mortars", sq_engineers: "engineers", sq_runners: "runners", sq_breakers: "breakers" };
+      const SQUAD_MODE = { sq_sniper: "sniper", sq_rifles: "rifles", sq_mg: "mg", sq_sappers: "sappers", sq_mortars: "mortars", sq_engineers: "engineers", sq_runners: "runners", sq_breakers: "breakers", sq_medics: "medics" };
       // Infantry/sandbag placement checks: same validatePlacement gate as
       // towers (occupied/ice/held/afford) — men don't claim the grid cell
       // (no cell.blocked write, no connectivity re-check: bodies, not

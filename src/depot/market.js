@@ -30,9 +30,10 @@ export const MARKET_K = {
   // so a mine war stays under the engine ceiling. Both sides' LIVE devices
   // count together, one shared table (provisional F5).
   mine: 12, wire: 16,
+  medic: 6, // P7.2 T6 // provisional (F5)
 };
-const FAMILY_OF_SQUAD = { rifles: "rifles", sniper: "marksman", sappers: "sapper", mortars: "mortarcrew", mg: "mgteam", engineers: "engineer", runners: "runner", breakers: "breaker" };
-const FAMILY_OF_TAG = { "": "rifles", sniper: "marksman", sapper: "sapper", gren: "mortarcrew", fast: "runner", heavy: "breaker", mg: "mgteam", eng: "engineer" };
+const FAMILY_OF_SQUAD = { rifles: "rifles", sniper: "marksman", sappers: "sapper", mortars: "mortarcrew", mg: "mgteam", engineers: "engineer", runners: "runner", breakers: "breaker", medics: "medic" };
+const FAMILY_OF_TAG = { "": "rifles", sniper: "marksman", sapper: "sapper", gren: "mortarcrew", fast: "runner", heavy: "breaker", mg: "mgteam", eng: "engineer", medic: "medic" };
 const FAMILY_OF_TOWER = { mg: "mgtower", gun: "guntower", mortar: "mortartower", rocket: "rockettower", frost: "frosttower" };
 
 // marketCounts(world, squads, mines) -> { family: standing count }. Men for

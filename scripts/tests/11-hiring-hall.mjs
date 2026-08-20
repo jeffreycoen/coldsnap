@@ -2,13 +2,16 @@
 // selection — the tap radii, the cycle rule, select-all-of-type, the wiring.
 import { ok } from "./harness.mjs";
 import { makeWorld, mulberry32, addBody, stepWorld, applyDamage, explode } from "../../src/engine/core.js";
-import { makeSquad, stepSquad, reactShift } from "../../src/depot/squads.js";
+import { makeSquad, stepSquad, reactShift, stepMedicTend, stepMedicTendSquad, MEDIC_SEEK_M, MEDIC_TEND_M, MEDIC_RATE, SQUAD_SPECS } from "../../src/depot/squads.js";
 import { spawnSquadMembers, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType, dealConvoyHand, takeHandCard, HAND_DRAWS, makeManifestState, makeRunState, fireBell, BELL_PERIOD_S, pendingArmed, shooterFire, hitOrigin } from "../../src/depot/state.js";
-import { HAND_KEYS, PLAYER_START, HAND_TAGS, INFANTRY_ARMS, BISON } from "../../src/depot/specs.js";
+import { HAND_KEYS, PLAYER_START, HAND_TAGS, INFANTRY_ARMS, BISON, ENEMY_SPECS } from "../../src/depot/specs.js";
 import { PICK_POOL, mirrorFieldKey } from "../../src/depot/muster.js";
 import { makeMap, TOWN } from "../../src/depot/mapgen.js";
 import { stepUnits, spawnUnit } from "../../src/depot/units.js";
 import { stepDrivers, HUNT_HOLD_S } from "../../src/depot/drivers.js";
+import { computePrices, marketCounts } from "../../src/depot/market.js";
+import { troopKit, MEDIC_HEX } from "../../src/render/troopkit.js";
+import { CARDS } from "../../src/depot/infocards.js";
 import { fatReg, identFwdDir, straightGrid } from "./shared.mjs";
 import fs from "node:fs";
 
@@ -51,9 +54,9 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
 
 // ---- P7.2 T2 (mk1.81): THE HAND — five cards, three plans + two hires
 {
-  // (a) one table: the hand's fifteen are the pick pool's fifteen
-  ok("T2(a): HAND_KEYS is the fifteen, exactly the pick pool's keys",
-    HAND_KEYS.length === 15 && new Set(HAND_KEYS).size === 15 && PICK_POOL.every((p) => HAND_KEYS.includes(p.key)));
+  // (a) one table: the hand's sixteen are the pick pool's sixteen
+  ok("T2(a): HAND_KEYS is the sixteen, exactly the pick pool's keys",
+    HAND_KEYS.length === 16 && new Set(HAND_KEYS).size === 16 && PICK_POOL.every((p) => HAND_KEYS.includes(p.key)));
 
   // (b) the deal's contract — five draws, always, draw-then-clamp
   const count = () => { let n = 0; const r = mulberry32(7); return { rng: () => { n++; return r(); }, n: () => n }; };
@@ -70,7 +73,7 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
   }
   {
     const c = count();
-    const owned = HAND_KEYS.slice(0, 13); // two plans left in the pool
+    const owned = HAND_KEYS.slice(0, 14); // two plans left in the pool
     const hand = dealConvoyHand(owned, HAND_KEYS, c.rng);
     ok("T2(b5): a thin pool still burns five draws and deals what it has",
       c.n() === 5 && hand.filter((x) => !x.hire).length === 2 && hand.filter((x) => x.hire).length === 2);
@@ -147,9 +150,9 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
   // (a) the bare bar
   ok("T3(a): PLAYER_START is empty — the bar starts bare (owner)", PLAYER_START.length === 0);
   ok("T3(a2): the fresh manifest owns nothing", makeManifestState().unlocked.length === 0);
-  ok("T3(a3): the plans pool is the full fifteen",
+  ok("T3(a3): the plans pool is the full sixteen",
     dealConvoyHand([], HAND_KEYS, mulberry32(9)).filter((c) => !c.hire).length === 3 &&
-    HAND_KEYS.filter((k) => makeManifestState().unlocked.indexOf(k) < 0).length === 15);
+    HAND_KEYS.filter((k) => makeManifestState().unlocked.indexOf(k) < 0).length === 16);
   // (b) the pause — one gate, source-pinned (the loop is unimportable)
   {
     const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
@@ -187,8 +190,8 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
 {
   // (a) the tag map: squads and heroes map to wave tags; a tower key maps to
   // nothing because it ROUTES to his plans ledger instead — never an exclusion
-  ok("T4(a): HAND_TAGS covers the eight squads and both heroes; tower keys route to the ledger",
-    Object.keys(HAND_TAGS).length === 10 && ["mg", "gun", "mortar", "rocket", "frost"].every((k) => HAND_TAGS[k] === undefined));
+  ok("T4(a): HAND_TAGS covers the nine squads and both heroes; tower keys route to the ledger",
+    Object.keys(HAND_TAGS).length === 11 && ["mg", "gun", "mortar", "rocket", "frost"].every((k) => HAND_TAGS[k] === undefined));
   // (b) his deal: five draws; owned plans of BOTH spaces never re-deal
   {
     let n = 0; const raw = mulberry32(84); const rng = () => { n++; return raw(); };
@@ -445,4 +448,106 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
   const ic = fs.readFileSync("src/depot/InfoCard.jsx", "utf8");
   ok("HF(e): CONFIRM HIRE greys and names the shortfall when the till can't cover it",
     /afford === false \? "NO SCRAP — ◆" \+ price : "CONFIRM HIRE"/.test(ic) && /disabled=\{afford === false\}/.test(ic));
+}
+
+// ---- P7.2 T6 (mk1.87): THE MEDIC — the sixteenth key; mercy on both sides
+{
+  // (a) the sixteenth key, every table
+  ok("T6(a): the pool is sixteen and sq_medics is in every seat",
+    HAND_KEYS.length === 16 && HAND_KEYS.includes("sq_medics") && PICK_POOL.length === 16 &&
+    PICK_POOL.some((p) => p.key === "sq_medics" && p.kind === "squad" && p.type === "medics" && p.tag === "medic" && p.n === 2));
+  ok("T6(a2): the tag map routes his medic plan to the wave map like any squad", HAND_TAGS.sq_medics === "medic");
+  ok("T6(a3): the squad row — two men at 55 // provisional (F5)", SQUAD_SPECS.medics.n === 2 && SQUAD_SPECS.medics.cost === 55);
+  ok("T6(a4): his side fields the same man — ENEMY_SPECS.medic, bounty 8", !!ENEMY_SPECS.medic && ENEMY_SPECS.medic.bounty === 8);
+  // (b) the tend loop, player side — walk, kneel, mend, stand down
+  {
+    const w = makeWorld({ field: flatF, seed: 110 });
+    const sq = makeSquad(60, "medics", 1, 0, 0);
+    spawnSquadMembers(w, sq);
+    const hurt = addBody(w, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 6, y: 0.74, z: 0, hp: 20 });
+    hurt.maxHp = 58;
+    // A1: 2400 (was 1200) — the DEFEND-branch tug-of-war fix (u._tending) needs the room.
+    for (let i = 0; i < 2400 && hurt.hp < 57; i++) { stepSquad(w, sq, w.dt); stepMedicTendSquad(w, sq, w.dt); stepWorld(w); }
+    ok("T6(b): the medic walks to the wounded man and mends him", hurt.hp > 55, hurt.hp.toFixed(1));
+    const medics = sq.memberIds.map((id) => w.byId.get(id));
+    ok("T6(b2): he knelt to do it — and stood down when the work was done",
+      medics.some((m) => m._kneltOnce === true || m.kneel === false) && (() => { for (let i = 0; i < 240; i++) { stepSquad(w, sq, w.dt); stepMedicTendSquad(w, sq, w.dt); stepWorld(w); } return medics.every((m) => !m.kneel); })());
+    for (let i = 0; i < 600; i++) { stepSquad(w, sq, w.dt); stepMedicTendSquad(w, sq, w.dt); stepWorld(w); }
+    ok("T6(b3): mending never passes maxHp", hurt.hp <= hurt.maxHp + 1e-9, hurt.hp);
+  }
+  // (c) the leash: a casualty beyond MEDIC_SEEK_M of the anchor is not visited
+  {
+    const w = makeWorld({ field: flatF, seed: 111 });
+    const sq = makeSquad(61, "medics", 1, 0, 0);
+    spawnSquadMembers(w, sq);
+    const far = addBody(w, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 25, y: 0.74, z: 0, hp: 20 });
+    far.maxHp = 58;
+    for (let i = 0; i < 600; i++) { stepSquad(w, sq, w.dt); stepMedicTendSquad(w, sq, w.dt); stepWorld(w); }
+    ok("T6(c): the leash holds — the far casualty is not visited, the squad keeps its post",
+      far.hp === 20 && sq.memberIds.every((id) => Math.hypot(w.byId.get(id).pos.x, w.byId.get(id).pos.z) < 8));
+  }
+  // (d) never the sealed, never the enemy, never himself
+  {
+    const w = makeWorld({ field: flatF, seed: 112 });
+    const medic = addBody(w, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 0, hp: 30 });
+    medic.maxHp = 58; medic.utype = "medics";
+    const rider = addBody(w, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 2, y: -60, z: 0, hp: 10 });
+    rider.maxHp = 58; rider.riding = true; rider.pinned = true;
+    const foe = addBody(w, { kind: "unit", team: 2, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 3, y: 0.74, z: 0, hp: 10 });
+    foe.maxHp = 58;
+    const drove = stepMedicTend(w, medic, 0, 0, w.dt);
+    ok("T6(d): a sealed rider, an enemy, and his own wounds are all no one's patient", drove === false && rider.hp === 10 && foe.hp === 10 && medic.hp === 30);
+  }
+  // (e) his side: the garrison medic tends off his post through the same helper
+  {
+    const w = makeWorld({ field: flatF, seed: 113 }); w.depotCombat = true;
+    const gm = spawnUnit(w, { x: 0, z: 0 }, "medic"); gm.hold = true; gm.garrison = true;
+    const hurt2 = spawnUnit(w, { x: 5, z: 0 }, ""); hurt2.hold = true; hurt2.garrison = true; hurt2.hp = 15;
+    hurt2.maxHp = 58;
+    let draws = 0; const raw = w.rng; w.rng = () => { draws++; return raw(); };
+    // A1: 2400 (was 1200) — the DEFEND-branch tug-of-war fix (u._tending) needs the room.
+    for (let i = 0; i < 2400 && hurt2.hp < 57; i++) { stepUnits(w, straightGrid(0, 1), identFwdDir, null); stepWorld(w); }
+    ok("T6(e): his medic walks and mends by the identical rule", hurt2.hp > 55, hurt2.hp.toFixed(1));
+    ok("T6(e2): mercy draws nothing — zero rng in the whole tend run", draws === 0, draws);
+  }
+  // (f) the market: one family, both sides' medics counted together
+  {
+    const w = makeWorld({ field: flatF, seed: 114 });
+    const sqM = makeSquad(62, "medics", 1, 0, 0);
+    spawnSquadMembers(w, sqM);
+    spawnUnit(w, { x: 10, z: 10 }, "medic");
+    const counts = marketCounts(w, [sqM]);
+    ok("T6(f): the medic family counts both armies' medics", counts.medic === 3, counts.medic);
+    const p = computePrices({});
+    ok("T6(f2): sq_medics prices at its 55 base with nothing standing", p.player.sq_medics === 55, p.player.sq_medics);
+  }
+  // (g) the look: the white, the cross, the black bag, the kneel — one dress, both sides
+  {
+    const kit1 = troopKit({ team: 1, utype: "medics", tag: undefined, role: undefined, alive: true }, true);
+    ok("T6(g): no rifle; the black bag and both red cross bars ride the three prop slots",
+      kit1.rifle === 0 && kit1.props[0] && kit1.props[0].role === "gun" &&
+      kit1.props[1] && kit1.props[1].role === "acc" && kit1.props[2] && kit1.props[2].role === "acc");
+    const kit2 = troopKit({ team: 2, utype: undefined, tag: "medic", role: undefined, alive: true }, true);
+    ok("T6(g2): both sides wear the white — the cross outranks the coat (owner)",
+      kit1.pal === "medic" && kit2.pal === "medic" && kit2.rifle === 0);
+    const kneeling = troopKit({ team: 1, utype: "medics", kneel: true, alive: true }, true);
+    const standing = troopKit({ team: 1, utype: "medics", kneel: false, alive: true }, true);
+    ok("T6(g3): the kneel drops him low — the crouch is the theater", kneeling.bh < standing.bh);
+    ok("T6(g4): MEDIC_HEX is the one home — white coat, red accent, black gear",
+      MEDIC_HEX.acc === 0xd0342c && MEDIC_HEX.gun === 0x1a1c1f && MEDIC_HEX.dom === 0xf4f6f8);
+    const rSrc = fs.readFileSync("src/render/renderer.js", "utf8");
+    const pSrc = fs.readFileSync("src/render/portrait.js", "utf8");
+    ok("T6(g5): the renderer and the portrait both wear the dress and honor a prop's own color role",
+      /kitPal === "medic" \? \(b\.alive \? MED_LIVE : MED_DEAD\)/.test(rSrc) && /pal\[propRole \|\| p\.role\]/.test(rSrc) &&
+      /KIT\.pal === "medic"/.test(pSrc) && /KIT\.props\[pi\] && KIT\.props\[pi\]\.role/.test(pSrc));
+  }
+  // (h) the card and the bar
+  {
+    ok("T6(h): the card carries the owner's copy and the treat skill",
+      !!CARDS.sq_medics && /kneel to treat/.test(CARDS.sq_medics.role) && CARDS.sq_medics.skills.includes("TREAT THE WOUNDED") && CARDS.sq_medics.dmg === null);
+    const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
+    ok("T6(h2): the bar, the mode map, and the tend call are wired",
+      /key: "sq_medics", label: "MEDICS", icon: "✚"/.test(src) && /sq_medics: "medics"/.test(src) &&
+      /if \(sq\.type === "medics"\) stepMedicTendSquad\(world, sq, world\.dt\);/.test(src));
+  }
 }

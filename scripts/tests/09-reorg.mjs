@@ -77,7 +77,7 @@ import fs from "node:fs";
       S19.squads.length === 0 && !w.bodies.some((b) => b.team === 1 && b.alive));
     let guard = 0;
     for (const b of w.bodies) if (b.kind === "unit" && b.team === 2 && b.garrison && b.alive) guard++;
-    ok("T19(b3): the mirror's men alone hold their ground (measured on seed 91, no home guard) (re-taught P7.1 T8: 2 -> 6)", guard === 6, guard);
+    ok("T19(b3): the mirror's men alone hold their ground (measured on seed 91, no home guard) (P7.2 T6 re-base: 6 -> 4)", guard === 4, guard);
     ok("T19(b4): the commander was drawn", S19.cmdr === "cautious" || S19.cmdr === "bold" || S19.cmdr === "stubborn", S19.cmdr);
     ok("T19(b5): the books stayed honest (re-taught P7.1 T6: the guard's -8 died with the guard, 52 -> 60)", S19.reg.heads === 60, S19.reg.heads);
   }

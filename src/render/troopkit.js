@@ -1,7 +1,7 @@
 // Troop identity (DEPOT only) — "side by coat, role by tool, weight by size".
 //
 // PURE and DETERMINISTIC by contract: troopKit() reads nothing but a body's
-// team / utype / tag / role / dress / alive flags. No rng, no world.t, no
+// team / utype / tag / role / dress / alive / kneel flags. No rng, no world.t, no
 // module state. That is what lets scripts/depot-test.mjs pin every unit
 // type's look headlessly, and what keeps the renderer's instance writes
 // frame-stable.
@@ -74,6 +74,19 @@ const SCOPE = { off: onBarrel(-0.10, 0.055), s: [0.75, 0.75, 2.6], aim: "barrel"
 // reach is a second barrel segment butted onto its muzzle
 const LONGBARREL = { off: onBarrel(MUZZLE - 0.22), s: [0.4, 0.4, 4.4], aim: "barrel" };
 const SATCHEL = { off: [0, 0.10, -0.22], s: [2.2, 1.6, 0.8] };
+// P7.2 T6 (owner): the medic's dress — white uniform, red cross front and
+// back, black bag. The two cross bars pass THROUGH the torso and protrude
+// on both faces, so one pair of props reads as a cross from either side.
+// role is the COLOR key (the renderer and portrait honor it over the part
+// slot's own): "gun" paints the bag black, "acc" paints the bars red off
+// the medic palette below. Offsets are look dials — the owner's eye rules.
+const MEDIC_BAG = { off: [0.17, 0.02, 0.0], s: [1.4, 1.8, 1.1], role: "gun" };
+const CROSS_V = { off: [0, 0.32, 0], s: [0.7, 2.6, 2.9], role: "acc" };
+const CROSS_H = { off: [0, 0.32, 0], s: [2.2, 0.7, 2.9], role: "acc" };
+// The medic palette, plain hexes, one home — the renderer's mkPal and the
+// portrait's material pick both consume it (spread over the con palette, so
+// skin and any unnamed role inherit). // provisional (F5) — the owner's eye
+export const MEDIC_HEX = { dom: 0xf4f6f8, sec: 0xe2e7ec, acc: 0xd0342c, gun: 0x1a1c1f };
 const MORTAR_TUBE = { off: [0.26, 0.30, 0.06], s: [1.6, 11, 1.6], tilt: [0, 0.42] };
 // MG: a SHORT gun (uniform 0.8 on the rifle) with a thick receiver sleeved
 // over it, standing on a real two-leg bipod — two separate legs splayed
@@ -96,6 +109,7 @@ const KIT_SNIPER = { rifle: 1, props: P(SCOPE, LONGBARREL) };
 const KIT_SAPPER = { rifle: 0, props: P(SATCHEL) };
 const KIT_MORTAR = { rifle: 0, props: P(MORTAR_TUBE) };
 const KIT_MG = { rifle: 0.8, props: P(MG_RECEIVER, MG_LEG_L, MG_LEG_R) };
+const KIT_MEDIC = { rifle: 0, props: P(MEDIC_BAG, CROSS_V, CROSS_H) };
 
 // ---- bulk -----------------------------------------------------------
 // STATED DECISION (director, mk0.23): bulk is the ONE identity cue that
@@ -124,9 +138,12 @@ export function troopKit(b, depot, sil = false) {
   // COAT = SIDE (DEPOT only): the player's infantry keep the warm rust coat,
   // the enemy's wear the cold slate one. The enemy grenadier already wore
   // slate, so he is unchanged; androids ignore both and keep their silver.
-  const pal = gren || b.team === 2 ? "gren" : "con";
+  const pal = (b.utype === "medics" || b.tag === "medic") ? "medic" : gren || b.team === 2 ? "gren" : "con"; // P7.2 T6 (owner): the cross outranks the coat — both sides' medics wear the white
   const bulk = BULK[b.tag] || null;
-  const bw = bulk ? bulk[0] : 1, bh = bulk ? bulk[1] : 1;
+  let bw = bulk ? bulk[0] : 1, bh = bulk ? bulk[1] : 1;
+  // P7.2 T6: the kneel — the medic drops low while treating. One flag, read
+  // here only; render-only theater.
+  if (b.kneel && (b.utype === "medics" || b.tag === "medic")) bh *= 0.72;
   if (sil) return { pal, bw, bh, rifle: 1, props: KIT_PLAIN.props }; // fog: bulk only
   let k = KIT_PLAIN;
   if (gren) k = KIT_PLAIN;                                    // grenadier: own table, own tube
@@ -137,11 +154,13 @@ export function troopKit(b, depot, sil = false) {
       : b.utype === "mg" ? (b.role === "loader" ? KIT_NONE : KIT_MG)
       : b.utype === "sappers" ? KIT_SAPPER
       : b.utype === "mortars" ? KIT_MORTAR
+      : b.utype === "medics" ? KIT_MEDIC
       : KIT_PLAIN;                                            // rifles
   } else {
     // enemy waves (tag)
     k = b.tag === "sniper" ? KIT_SNIPER                       // marksman
       : b.tag === "sapper" ? KIT_SAPPER
+      : b.tag === "medic" ? KIT_MEDIC
       : b.tag === "heavy" ? KIT_NONE                          // breaker: hands free
       : KIT_PLAIN;                                            // conscript, runner
   }

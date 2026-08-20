@@ -16,7 +16,7 @@ import { arcClears } from "./accuracy.js";
 // behavior module, both signs). squads.js now imports accuracy/state for the
 // stand-point scorer — the same documented-safe deferred cycle accuracy.js
 // and state.js already share (no top-level cross calls).
-import { exposureAt, surveyHighGround, bestStandPoint, reactShift } from "./squads.js";
+import { exposureAt, surveyHighGround, bestStandPoint, reactShift, stepMedicTend } from "./squads.js";
 import { ENEMY_SPECS, ENEMY_FIRE, TANK, INFANTRY_ARMS, SATCHEL, SAPPER_PLANT_PAD } from "./specs.js";
 
 // ---------------------------------------------------------------- spawning
@@ -509,6 +509,17 @@ export function stepUnits(world, grid, fwdDir, T, toUV = (x, z) => ({ u: x, v: z
     // P7.1 T6 (owner): his engineers — unarmed shovels until Task 7 arms
     // their build lines. A held engineer stands; an unheld one marches.
     if (u.tag === "eng" && u.hold) {
+      u.settled = true;
+      u.v.x *= 1 - Math.min(1, 6 * dt); u.v.z *= 1 - Math.min(1, 6 * dt);
+      continue;
+    }
+    // P7.2 T6: HIS MEDIC — walks to the nearest wounded comrade inside his
+    // post's leash and kneels to treat, the identical helper the player's
+    // team runs (one law, both sides). His post stamps once and never rides
+    // the save (re-derives — the _route precedent). No weapon, no draws.
+    if (u.tag === "medic") {
+      if (!u._post) u._post = { x: u.pos.x, z: u.pos.z };
+      if (stepMedicTend(world, u, u._post.x, u._post.z, dt)) { faceTravel(u, dt); continue; }
       u.settled = true;
       u.v.x *= 1 - Math.min(1, 6 * dt); u.v.z *= 1 - Math.min(1, 6 * dt);
       continue;

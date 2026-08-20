@@ -58,6 +58,10 @@ export const SQUAD_SPECS = {           // costs are scrap; members spawn as unit
               member: { mass: 62, hx: 0.24, hy: 0.82, hz: 0.24, hp: 36 } },
   breakers: { n: 2, cost: 40, label: "BREAKER PAIR", speed: 2.1,             // provisional (F5)
               member: { mass: 340, hx: 0.46, hy: 1.02, hz: 0.46, hp: 290 } },
+  // P7.2 T6 (owner): THE MEDIC TEAM — two medics with a bag; they walk to
+  // the wounded and kneel to treat. Tools, not shooters: no INFANTRY_ARMS
+  // row, so squadFire skips them by membership. // provisional (F5)
+  medics: { n: 2, cost: 55, label: "MEDIC TEAM" },
 };
 
 // THE PER-TYPE SPEED (P7 T7): a squad's march speed off its own SQUAD_SPECS
@@ -741,6 +745,7 @@ export function stepSquad(world, squad, dt) {
   }
   members.forEach((u) => {
     if (u._fuse != null) return; // a planting sapper holds his ground (fuse drives him)
+    if (u._tending) return; // P7.2 T6 A1: a tending medic drives on the patient's goal — the sapper _fuse precedent; the tend pass (after stepSquad) owns him
     // P7.2 T5: unseen fire moves a defender to cover — the shifted spot
     // becomes his micro-slot until the next threat re-scan reclaims it.
     const rs = reactShift(world, u);
@@ -806,4 +811,56 @@ export function drivePossessedSquad(world, squad, vx, vz, dt, aim) {
     u.settled = false;
     seekGoal(world, u, dt);
   });
+}
+
+// ------------------------------------------------------- the medic (P7.2 T6)
+// One helper, both sides: the nearest wounded comrade inside the anchor's
+// leash gets a medic walking to him; inside kneel range the medic drops
+// (u.kneel — the troop kit's crouch), stamps _kneltOnce (a test latch),
+// and mends MEDIC_RATE hp a second, never past maxHp. Sealed riders, the
+// enemy's men, and the medic himself are no one's patient. No patient →
+// stand down. Deterministic; zero rng; healing writes hp directly —
+// damage is the engine's, mending is the game's. All dials provisional (F5).
+export const MEDIC_SEEK_M = 12;  // provisional (F5) — the leash off the anchor/post
+export const MEDIC_TEND_M = 1.4; // provisional (F5) — kneel range
+export const MEDIC_RATE = 3;     // provisional (F5) — hp per second
+export function stepMedicTend(world, u, ax, az, dt) {
+  let best = null, bd = Infinity;
+  const pool = world._L ? (u.team === 2 ? world._L.foes : world._L.friends) : world.bodies;
+  for (const p of pool) {
+    if (p.kind !== "unit" || !p.alive || p.team !== u.team || p === u) continue;
+    if (p.maxHp == null || p.hp >= p.maxHp - 0.5) continue;
+    if (p.riding || p.pinned) continue;
+    if (Math.hypot(p.pos.x - ax, p.pos.z - az) > MEDIC_SEEK_M) continue;
+    const d = Math.hypot(p.pos.x - u.pos.x, p.pos.z - u.pos.z);
+    if (d < bd) { bd = d; best = p; }
+  }
+  if (!best) { u.kneel = false; u._tending = false; return false; }
+  if (bd > MEDIC_TEND_M) {
+    u.kneel = false; u._tending = true; // A1: the formation drive stands aside while he tends
+    const g = clearSlot(world, best.pos.x, best.pos.z, memberClear(u));
+    u.goal = { x: g.x, z: g.z };
+    u.settled = false;
+    seekGoal(world, u, dt);
+    return true;
+  }
+  u.kneel = true; u._kneltOnce = true; u._tending = true;
+  u.settled = true;
+  u.v.x *= 1 - Math.min(1, 8 * dt); u.v.z *= 1 - Math.min(1, 8 * dt);
+  best.hp = Math.min(best.maxHp, best.hp + MEDIC_RATE * dt);
+  return true;
+}
+// The squad wrapper: DEFEND only — orders outrank mercy on the march. A1: a
+// squad taken off DEFEND drops the tending flag and the kneel on every man
+// so the formation drive (stepSquad) reclaims them cleanly.
+export function stepMedicTendSquad(world, squad, dt) {
+  if (squad.type !== "medics") return;
+  if (squad.order !== "defend") {
+    for (const id of squad.memberIds) { const u = world.byId.get(id); if (u) { u.kneel = false; u._tending = false; } }
+    return;
+  }
+  for (const id of squad.memberIds) {
+    const u = world.byId.get(id);
+    if (u && u.alive) stepMedicTend(world, u, squad.anchor.x, squad.anchor.z, dt);
+  }
 }
