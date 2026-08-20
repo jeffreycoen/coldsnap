@@ -3,6 +3,8 @@
 **Suggested model: Sonnet** (Task 6's exact shape plus the repair-payment path, fully specced).
 **Scope (ruled 2026-08-19, both passes):** a new squad type, BOTH SIDES — the mechanic repairs MACHINES AND MASONRY: hulls, towers, walls, sandbags. Repair is SLOW, PAUSES UNDER FIRE, and PAYS SCRAP PER POINT off each side's own books — dear-to-replace keeps its teeth. Tier-3 row, ~55 scrap. He joins the hand's pool with his card and portrait. The pool grows SIXTEEN → SEVENTEEN — the Task 6 count sweep runs again over the same (now pre-known) sites. The enemy's mirror: mechanics arrive through its hand and the boot's dealt picks and repair its own iron off its own regiment books; they never march in waves (planWave untouched — the mg/engineer/medic precedent). Depot stones are structurally excluded (no hp ledger — the census is the depot's health, untouched). Zero rng anywhere; healing writes hp directly; the PAYMENT is the game layer's (a books callback stamped on the world at mount — squads.js's no-economy law holds, the module only asks).
 
+**AMENDMENT 1 (2026-08-20, after the agent's honest stop at 1597/1598 — the plan-writer's defect, caught by the plan's own fixture):** the Step 3 payment code charged the books only when the fractional debt first crossed one whole scrap — every tick before that mended freely, so an empty till still bought ~6.6 hp of repair before the first refusal (measured 46.63 against the fixture's ≤41.01). The accounting flips to PRE-PAID WORK: the wrench buys credit ONE scrap at a time BEFORE it mends, so the very first point of work requires the books to answer and an empty till mends nothing from tick one. Same long-run rate, same charge cadence, the (b2) tolerance unchanged. The `_repairDebt` field becomes `_repairCredit`.
+
 ## Required reading (verified against the mk1.87 tree; re-verify at dispatch)
 
 - `src/depot/squads.js` — 33–90 (SQUAD_SPECS with the medics row), 205–217, 786–860 (the shipped medic tend block and its A1 wrapper — the template this task mirrors), the DEFEND branch's `_tending` skip (shipped, generic — NO edit needed there).
@@ -195,11 +197,17 @@ export function stepMechanicTend(world, u, ax, az, dt) {
   u.settled = true;
   u.v.x *= 1 - Math.min(1, 8 * dt); u.v.z *= 1 - Math.min(1, 8 * dt);
   const heal = Math.min(REPAIR_RATE * dt, best.maxHp - best.hp);
-  u._repairDebt = (u._repairDebt || 0) + heal * REPAIR_COST_PER_HP;
-  if (u._repairDebt >= 1) {
-    if (world._mech && world._mech.take(u.team, 1)) u._repairDebt -= 1;
-    else { u._repairDebt -= heal * REPAIR_COST_PER_HP; return true; } // unfunded: the wrench waits
+  const cost = heal * REPAIR_COST_PER_HP;
+  // PRE-PAID WORK (A1): the wrench buys credit ONE scrap at a time BEFORE
+  // it mends — the first point of work requires the books to answer, and
+  // an empty till mends nothing from the first tick (the original
+  // deferred-charge shape leaked ~6.6 free hp; the task's own fixture
+  // caught it).
+  if ((u._repairCredit || 0) < cost) {
+    if (world._mech && world._mech.take(u.team, 1)) u._repairCredit = (u._repairCredit || 0) + 1;
+    else return true; // unfunded: kneel, but no work
   }
+  u._repairCredit -= cost;
   best.hp += heal;
   return true;
 }
@@ -259,7 +267,8 @@ export function stepMechanicTendSquad(world, squad, dt) {
 
 - The DEFEND branch's `_tending` skip is ALREADY GENERIC (Task 6 A1) — no squads.js edit beyond the appended block. Do not add a second skip.
 - The units.js mechanic branch must CONTINUE unconditionally (the medic-branch law).
-- The debt accumulator charges ahead of the mend — an unfunded tick must UNDO its own debt add (the plan's else branch) or debt inflates forever.
+- The credit accounting (A1) is PRE-PAID: the take() ask happens BEFORE any mend, and an unfunded ask returns with zero work done. Do not revert to deferred debt.
+- `_repairCredit` never rides the save (re-derives; at most one scrap of pre-paid work is forgotten on resume — named, accepted).
 - `world._mech` absent (bare fixtures) means the wrench waits — tests that want repair stamp their own stub, as Step 1's do.
 - Wall repair works per COURSE (each carries its own hp) — no stack logic, no support-rule interaction.
 - No edits to planWave/ai.js/bell.js/state.js/core.js/renderer.js/portrait.js/save.js.
