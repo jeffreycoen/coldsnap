@@ -1,8 +1,8 @@
 import { ok } from "./harness.mjs";
 import { identFwdDir, straightGrid, fatReg } from "./shared.mjs";
-import { makeRunState, executeWithdrawal, nextSpawnTag, TIER_BELLS, ENEMY_TIERS, makeManifestState, manifestPool, foePool, possessedVolley, censusDepotChunks, depotStandingFraction, checkDepotBreach, checkEnemyBreach, spawnSquadMembers, DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, spawnWallCourses } from "../../src/depot/state.js";
+import { makeRunState, executeWithdrawal, nextSpawnTag, TIER_BELLS, ENEMY_TIERS, makeManifestState, foePool, possessedVolley, censusDepotChunks, depotStandingFraction, checkDepotBreach, checkEnemyBreach, spawnSquadMembers, DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, spawnWallCourses } from "../../src/depot/state.js";
 import { makeWorld, makeField, addBody, addWeld, stepWorld, applyDamage, worldHash, mulberry32, explode } from "../../src/engine/core.js";
-import { ENEMY_SPECS, MASON, INFANTRY_ARMS, PLAYER_TIERS, BISON, BISON_FIRE, APC, SATCHEL } from "../../src/depot/specs.js";
+import { ENEMY_SPECS, MASON, INFANTRY_ARMS, PLAYER_TIERS, BISON, BISON_FIRE, APC, SATCHEL, HAND_KEYS } from "../../src/depot/specs.js";
 import { stepUnits, spawnUnit, stepBreakerRam } from "../../src/depot/units.js";
 import { stepDrivers, possessedArmorFire, possessedArmorMg } from "../../src/depot/drivers.js";
 import { stepTransports, unloadApc, apcSeated, unloadEnemyRiders } from "../../src/depot/transports.js";
@@ -870,9 +870,7 @@ import fs from "node:fs";
   }
   // (f) tier 1 is a 5-item pool now
   {
-    const M = makeManifestState();
-    const p1 = manifestPool(M.unlocked, 1);
-    ok("T7(f): bell 1 offers five", p1.length === 5 && p1.includes("sq_runners") && p1.includes("sq_breakers"), p1.join(","));
+    ok("T7(f): the ungated plans pool at bell one is thirteen, runners and breakers included", (() => { const p = HAND_KEYS.filter((k) => makeManifestState().unlocked.indexOf(k) < 0); return p.length === 13 && p.includes("sq_runners") && p.includes("sq_breakers"); })());
   }
   // (g) one market: a live player runner and an enemy runner price the same
   // family (marketCounts merges them)
@@ -1107,10 +1105,8 @@ import fs from "node:fs";
       !!ENEMY_TIERS[3] && ENEMY_TIERS[3].indexOf("hero_bison") >= 0 && ENEMY_TIERS[3].indexOf("hero_apc") >= 0, JSON.stringify(ENEMY_TIERS[3]));
     ok("T9(a3): PLAYER_TIERS' 4th row mirrors it",
       !!PLAYER_TIERS[3] && PLAYER_TIERS[3].indexOf("hero_bison") >= 0 && PLAYER_TIERS[3].indexOf("hero_apc") >= 0, JSON.stringify(PLAYER_TIERS[3]));
-    const poolAt9 = manifestPool(makeManifestState().unlocked, 9);
-    ok("T9(a4): manifestPool at bell 9 offers no hero", poolAt9.indexOf("hero_bison") < 0 && poolAt9.indexOf("hero_apc") < 0, poolAt9.join(","));
-    const poolAt10 = manifestPool(makeManifestState().unlocked, 10);
-    ok("T9(a5): manifestPool at bell 10 offers both heroes", poolAt10.indexOf("hero_bison") >= 0 && poolAt10.indexOf("hero_apc") >= 0, poolAt10.join(","));
+    ok("T9(a4): heroes stand in the plans pool at bell ONE — the tier gate is dead (owner, P7.2)", HAND_KEYS.filter((k) => makeManifestState().unlocked.indexOf(k) < 0).includes("hero_bison"));
+    ok("T9(a5): ...and at bell ten, same pool — one pool at any hour", HAND_KEYS.includes("hero_apc"));
     const foeAt10 = foePool([], 10);
     ok("T9(a6): foePool mirrors at bell 10", foeAt10.indexOf("hero_bison") >= 0 && foeAt10.indexOf("hero_apc") >= 0, foeAt10.join(","));
   }

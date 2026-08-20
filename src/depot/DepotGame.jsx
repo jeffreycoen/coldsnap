@@ -18,7 +18,7 @@ import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS, BISON, APC } from "./specs.js";
 import { cardFor } from "./infocards.js";
 import { windAt } from "./wind.js";
-import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest, TIER_BELLS, memberNearRow, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType } from "./state.js";
+import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, takeHandCard, TIER_BELLS, memberNearRow, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType } from "./state.js";
 import { marketCounts, computePrices, fieldPrices, priced } from "./market.js";
 import { stepMines, minePrices, mineSeedRoll, mineSeedPlace, MINE_COST, WIRE_COST } from "./mines.js";
 import { homeShare, pickHomeDetail, HOME_GUARD_CAP, cmdrOf, cmdrBellOrders, ferryDecide, flankDrop } from "./ai.js";
@@ -1230,6 +1230,7 @@ export default function DepotGame({ onExit, resume = null }) {
         zoom: 1, acc: 0, t: 0, fps: 60, fpsAcc: 0, fpsN: 0,
         hover: null, pointer: null, toasts: [], pending: null,
         heroArm: null, // P7 T9: the hero tier's two-tap arm ({ key, armedAt } or null)
+        hirePlace: null, // P7.2 T2: the hire's armed placement ({ key } or null)
         infoKey: null, infoDoor: null, infoArmedAt: 0, // P7.1 T4: the info card's own state
         // Squads (Phase 5 Task 3): live squad rosters + selection/order UI
         // state. selArmedAt mirrors pending's 350ms trailing-tap guard so
@@ -2145,6 +2146,12 @@ export default function DepotGame({ onExit, resume = null }) {
           return;
         }
         if (!S.started || S.gameOver || S.victory) return;
+        // P7.2 T2: THE HIRE'S TAP — an armed placement owns the ground tap.
+        if (S.hirePlace) {
+          const ph = groundPoint(cx, cy);
+          if (ph) placeHire(ph);
+          return;
+        }
         // any tap on the canvas while a placement is pending resolves it —
         // confirm/cancel are the ✓/✗ HTML buttons (separate DOM elements,
         // so their own onClick fires instead of this canvas handler); a tap
@@ -2423,7 +2430,7 @@ export default function DepotGame({ onExit, resume = null }) {
       S.ackIntel = () => { S.intelUp = false; };
       S.openManifest = () => {
         const M = S.manifest;
-        if (!M || M.offers.length === 0) return;
+        if (!M || M.hand.length === 0) return;
         M.cardUp = true;
         M.armedAt = world.t + PENDING_ARM_S;
       };
@@ -2439,18 +2446,83 @@ export default function DepotGame({ onExit, resume = null }) {
         const k = S.infoKey, door = S.infoDoor;
         S.closeInfo();
         if (k && door === "manifest") S.pickManifest(k);
+        else if (k && door === "hire") S.armHire(k);
         // P7.1 T8: the deal door just closes — the ground tap places next.
       };
       S.pickManifest = (key) => {
         const M = S.manifest;
         if (!M || world.t < M.armedAt) { toast("HOLD — ARMING"); return; }
-        if (!pickManifest(M, key)) return;
-        cue("uitick"); // the pick is taken
-        const item = PALETTE_LABEL[key] || key;
-        toast(item + " — ON THE MANIFEST");
-        // P7 T17 (owner): THE PICK ARMS THE BAR — the next ground tap places
-        // what the convoy just delivered. Hero keys stay two-tap buys.
+        // P7.2 T2 (owner): A PLAN COSTS HALF the live price — the ladder
+        // itself gained a price; each build after pays full. The convoy's
+        // window is EXEMPT from the one-buy-per-second law (the hand is
+        // one visit): no pacing check, no purchase stamp.
+        const it = PALETTE_BY_KEY[key];
+        const price = Math.max(1, Math.ceil(priceNow(key, it ? it.cost : 10) / 2));
+        if (S.resources < price) { toast("NO SCRAP"); return; }
+        if (!takeHandCard(M, key, 0)) return;
+        M.unlocked.push(key);
+        S.resources -= price;
+        cue("uitick"); // the plan is bought
+        toast((PALETTE_LABEL[key] || key) + " — PLANS BOUGHT ◆" + price);
+        // P7 T17 (owner): THE PICK ARMS THE BAR — hero keys stay two-tap buys.
         if (!key.startsWith("hero_")) setMode(key);
+      };
+      // P7.2 T2 (owner): A HIRE FIELDS AT ONCE, placed by your own ground
+      // tap on held ground. Payment lands only when the unit actually
+      // fields — the ✗ cancels, charges nothing, and reopens the hand.
+      S.armHire = (key) => {
+        const M = S.manifest;
+        if (!M || world.t < M.armedAt) { toast("HOLD — ARMING"); return; }
+        if (!M.hand.some((c) => c.k === key && c.hire === 1)) return;
+        S.hirePlace = { key };
+        M.cardUp = false; // the window steps aside for the placement tap
+        toast("PLACE THE HIRE — tap held ground");
+      };
+      S.cancelHire = () => { S.hirePlace = null; };
+      const placeHire = (p) => {
+        const key = S.hirePlace.key;
+        const pk = PICK_POOL.find((x) => x.key === key);
+        if (!pk) { S.hirePlace = null; return; }
+        const price = priceNow(key, PALETTE_BY_KEY[key].cost);
+        if (S.resources < price) { toast("NO SCRAP"); S.hirePlace = null; return; }
+        const g = grid.worldToGrid(p.x, p.z);
+        if (!grid.inBounds(g.gx, g.gz)) { toast("OFF THE FIELD"); return; }
+        const cell = grid.cells[grid.idx(g.gx, g.gz)];
+        const wp = grid.gridToWorld(g.gx, g.gz);
+        const c0 = invW(wp.x, wp.z);
+        if (!canBuild(T, c0.u, c0.v)) { toast("GROUND NOT HELD"); return; }
+        if (cell.water || cell.ice || cell.blocked || cell.wallId) { toast("NO GROUND"); return; }
+        if (pk.kind === "squad") {
+          const sq = makeSquad(S.nextSquadId++, pk.type, 1, wp.x, wp.z);
+          spawnSquadMembers(world, sq);
+          S.squads.push(sq);
+          S.selSquadId = sq.id; S.selSquadIds = null; S.selArmedAt = world.t + PENDING_ARM_S; S.pieOpen = true;
+        } else if (pk.kind === "hull") {
+          const spec = pk.vtype === "apc" ? APC : BISON;
+          if (!armorStable(field, wp.x, wp.z, spec)) { toast("TOO STEEP TO PARK"); return; }
+          if (slotBlockedPublic(world, wp.x, wp.z, Math.hypot(spec.hx, spec.hz) + 1.0)) { toast("NO ROOM"); return; }
+          const v = addBody(world, { kind: "vehicle", team: 1, mass: spec.mass, hx: spec.hx, hy: spec.hy, hz: spec.hz,
+            x: wp.x, y: field.heightAt(wp.x, wp.z) + spec.hy + 0.05, z: wp.z, hp: spec.hp, friction: 0.85,
+            q: heading(null, Math.atan2(-wp.x, -wp.z)) });
+          v.armor = spec.armor; v.vtype = pk.vtype; v.maxHp = spec.hp;
+          v.homeX = wp.x; v.homeZ = wp.z; v.sleeping = true;
+          if (pk.vtype === "apc") v.apcSeq = nextApcSeq();
+          v.drv = pk.vtype === "apc" ? "apc" : "armor"; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful"; v.driver = "player";
+        } else { // tower — the build law: cell claim + the road owed
+          cell.blocked = true;
+          if (!checkConnectivity(grid, SPAWN_POINTS, objG.gx, objG.gz)) { cell.blocked = false; toast("Leave them a road"); return; }
+          const spec = TOWER_SPECS[pk.key];
+          const b = addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: spec.hy, hz: 0.8, x: wp.x, y: field.heightAt(wp.x, wp.z) + spec.hy, z: wp.z, hp: spec.hp });
+          b.towerType = pk.key; b.flagPole = true; b.maxHp = b.hp;
+          b.effRange = effRange(world, { x: b.pos.x, y: b.pos.y + b.hy + 0.45, z: b.pos.z }, spec);
+          cell.wallId = b.id; cell.bTeam = 1;
+          recomputeFlow();
+        }
+        takeHandCard(S.manifest, key, 1);
+        S.resources -= price;
+        S.hirePlace = null;
+        cue("uitick");
+        toast("THE HIRE FIELDS — ◆" + price);
       };
       const spawnOne = () => {
         const ws = S.ws;
@@ -2614,7 +2686,7 @@ export default function DepotGame({ onExit, resume = null }) {
       // pushed where the design says they are.
       window.__DEPOTCUES__ = () => ({ ...cueN });
       window.__DEPOTMANIFEST__ = () => ({
-        unlocked: S.manifest.unlocked.slice(), offers: S.manifest.offers.slice(),
+        unlocked: S.manifest.unlocked.slice(), hand: S.manifest.hand.slice(),
         offerBell: S.manifest.offerBell, cardUp: !!S.manifest.cardUp,
         armed: world.t >= S.manifest.armedAt, intelUp: !!S.intelUp,
         foe: S.foe.unlocked.slice(),
@@ -3351,10 +3423,16 @@ export default function DepotGame({ onExit, resume = null }) {
               // trailing-tap law), so the armed flag is computed here on the
               // hud tick exactly the way the pending ✓ already is.
               unlocked: S.manifest.unlocked.slice(),
-              manifest: S.manifest.offers.length > 0 ? {
+              manifest: S.manifest.hand.length > 0 ? {
                 up: !!S.manifest.cardUp, armed: world.t >= S.manifest.armedAt,
-                bell: S.manifest.offerBell, offers: S.manifest.offers.slice(),
+                bell: S.manifest.offerBell,
+                hand: S.manifest.hand.map((c) => {
+                  const base = (PALETTE_BY_KEY[c.k] || { cost: 10 }).cost;
+                  const live = priceNow(c.k, base);
+                  return { k: c.k, hire: c.hire, price: c.hire ? live : Math.max(1, Math.ceil(live / 2)) };
+                }),
               } : null,
+              hiring: S.hirePlace ? { key: S.hirePlace.key, label: (PALETTE_BY_KEY[S.hirePlace.key] || {}).label } : null,
               info: S.infoKey ? { key: S.infoKey, door: S.infoDoor, armed: S.infoDoor === "deal" ? performance.now() / 1000 >= S.infoArmedWall : world.t >= S.infoArmedAt } : null,
               intel: S.intelUp && S.lastDispatch ? { armed: world.t >= S.intelArmedAt } : null,
               started: S.started, gameOver: S.gameOver, victory: S.victory,
@@ -3846,27 +3924,27 @@ export default function DepotGame({ onExit, resume = null }) {
               <span style={{ opacity: 0.6 }}>BELL {hud.manifest.bell}</span>
             </div>
             <div style={{ fontSize: 11, opacity: 0.8, marginBottom: 10, lineHeight: 1.5 }}>
-              One crate comes off the truck. The rest go back on.
+              Plans build; hires march. Take what your scrap can carry.
               {/* The teaching line, first truck only (mk0.50). Deterministic on
                   the bell index — bell 1 is the first bell of any match, so
                   nothing is stored, nothing is flagged, and a resumed save
                   shows it again only if it resumed to bell 1. */}
               {hud.manifest.bell === 1 && (
                 <div data-manifest-teach style={{ marginTop: 6, color: "#ffd27a", opacity: 0.9 }}>
-                  Pick one reinforcement — the convoy returns each bell.
+                  The convoy returns each bell — plans build, hires march.
                 </div>
               )}
             </div>
-            {hud.manifest.offers.map((key) => {
-              const it = PALETTE_BY_KEY[key];
+            {hud.manifest.hand.map((c, ci) => {
+              const it = PALETTE_BY_KEY[c.k];
               if (!it) return null;
               return (
-                <button key={key} data-manifest-offer={key}
+                <button key={ci + ":" + c.k} data-manifest-offer={c.k} data-hand-kind={c.hire ? "hire" : "plan"}
                   style={{ ...P.btnBig, width: "100%", marginBottom: 6, display: "flex", alignItems: "center", gap: 10, textAlign: "left", opacity: hud.manifest.armed ? 1 : 0.5 }}
-                  onClick={() => { const S = stateRef.current; if (S && S.openInfo) S.openInfo(key, "manifest"); }}>
+                  onClick={() => { const S = stateRef.current; if (S && S.openInfo) S.openInfo(c.k, c.hire ? "hire" : "manifest"); }}>
                   <span style={{ fontSize: 18 }}>{it.icon}</span>
                   <span style={{ flex: 1 }}>{it.label}</span>
-                  <span style={{ color: "#ffd27a", fontSize: 12 }}>◆{hud.prices?.[key] ?? it.cost}</span>
+                  <span style={{ color: c.hire ? "#7dffa8" : "#ffd27a", fontSize: 11, letterSpacing: 1 }}>{c.hire ? "HIRE" : "PLAN"} ◆{c.price}</span>
                 </button>
               );
             })}
@@ -3881,7 +3959,11 @@ export default function DepotGame({ onExit, resume = null }) {
 
       {hud.info && !hud.gameOver && !hud.victory && (
         <InfoCard card={cardFor(hud.info.key)} door={hud.info.door} armed={hud.info.armed}
-          price={hud.info.door === "deal" ? null : (hud.prices?.[hud.info.key] ?? PALETTE_BY_KEY[hud.info.key]?.cost)}
+          price={(() => {
+            if (hud.info.door === "deal") return null;
+            const base = hud.prices?.[hud.info.key] ?? PALETTE_BY_KEY[hud.info.key]?.cost;
+            return hud.info.door === "manifest" ? Math.max(1, Math.ceil(base / 2)) : base;
+          })()}
           portrait={(cv) => renderPortrait(cv, hud.info.key)}
           onConfirm={() => { const S = stateRef.current; if (S && S.confirmInfo) S.confirmInfo(); }}
           onCancel={() => { const S = stateRef.current; if (S && S.closeInfo) S.closeInfo(); }} />
@@ -4169,6 +4251,16 @@ export default function DepotGame({ onExit, resume = null }) {
           </div>
         );
       })()}
+
+      {hud.hiring && !hud.info && !fatal && (
+        <div data-hire-ticker style={{ position: "absolute", top: 10, left: "50%", transform: "translateX(-50%)", zIndex: 9,
+          background: "#1a212b", border: "1px solid #7dffa8", borderRadius: 8, padding: "8px 16px",
+          display: "flex", alignItems: "center", gap: 10, fontSize: 12, color: "#e6ebf1" }}>
+          <span>PLACE THE HIRE: {hud.hiring.label} — tap held ground</span>
+          <button data-hire-cancel style={{ ...P.btn, borderColor: "#ff6b5e", color: "#ff6b5e" }}
+            onClick={() => { const S = stateRef.current; if (S && S.cancelHire) { S.cancelHire(); if (S.openManifest) S.openManifest(); } }}>✗</button>
+        </div>
+      )}
 
       {(hud.gameOver || hud.victory) && hud.endCard && !fatal && (
         <Dispatch

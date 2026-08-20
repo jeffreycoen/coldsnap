@@ -1,6 +1,6 @@
 import { ok } from "./harness.mjs";
 import { identFwdDir } from "./shared.mjs";
-import { fireBell, makeManifestState, makeFoeState, makeAssaultState, pickManifest, validatePlacement, spawnSquadMembers, memberNearRow } from "../../src/depot/state.js";
+import { fireBell, makeManifestState, makeFoeState, makeAssaultState, validatePlacement, spawnSquadMembers, memberNearRow } from "../../src/depot/state.js";
 import { makeWorld, makeField, addBody, stepWorld } from "../../src/engine/core.js";
 import { PLAYER_START, BISON, APC, MASON } from "../../src/depot/specs.js";
 import { makeSquad } from "../../src/depot/squads.js";
@@ -647,7 +647,7 @@ import fs from "node:fs";
   ok("T23(a2): the chain is nine cards in the ruled order (re-taught P7.1 T8 A1: 8 -> 9)",
     /YOUR ARMOR[\s\S]*?THE GROUND BITES[\s\S]*?THE BELL[\s\S]*?THE MARKET[\s\S]*?THE FALL/.test(fmSrc23) &&
     (fmSrc23.match(/\{ title: "/g) || []).length === 9);
-  ok("T23(b): the manual carries its revision stamp (re-taught P7.1 T8 A1: 2 -> 3)", /export const MANUAL_REV = 3;/.test(fmSrc23));
+  ok("T23(b): the manual carries its revision stamp (re-taught P7.2 T2: 3 -> 4)", /export const MANUAL_REV = 4;/.test(fmSrc23));
   ok("T23(b2): the gate compares revisions and honors the legacy tick once",
     /r\.value === "off" \? 1 : parseInt\(r\.value, 10\)/.test(dgSrc23) && /seen >= MANUAL_REV/.test(dgSrc23));
   ok("T23(b3): the tick stores the revision it was ticked at", /window\.storage\.set\(MANUAL_KEY, String\(MANUAL_REV\)\)/.test(dgSrc23));

@@ -7,7 +7,7 @@ import { scatterSigma, applyScatter, arcClears, marchArc } from "./accuracy.js";
 import { planWave, MIN_WAVE_FLOOR, spawnDelayFor } from "./ai.js";
 import { STIPEND, payResults, combatIneffective, bookValue } from "./economy.js";
 import { composeIntel, openingIntel } from "./intel.js";
-import { TOWER_SPECS, ENEMY_SPECS, TANK, INFANTRY_ARMS, MASON, PLAYER_START, PLAYER_TIERS } from "./specs.js";
+import { TOWER_SPECS, ENEMY_SPECS, TANK, INFANTRY_ARMS, MASON, PLAYER_START, PLAYER_TIERS, HAND_KEYS } from "./specs.js";
 import { seenAt } from "./sight.js";
 
 // Targeting gate, symmetric, VISION era (mk0.72): a shooter of `team` (1 =
@@ -1123,11 +1123,14 @@ export function enemyTierState(bell, unlocked = []) {
 // is or whether anything is left in it at all. Every value is drawn up front
 // and then clamped/spliced, never drawn-if; an exhausted ladder still burns its
 // draws so two clients on the same seed stay in step forever.
-export const MANIFEST_DRAWS = 4;   // 1 count roll + 3 index rolls
-export const FOE_DRAWS = 1;        // 1 index roll
+// P7.2 T2 (owner): THE HAND — five draws per bell, the fixed split: three
+// plan draws over the not-yet-unlocked pool, two hire draws over the full
+// list. Draw-then-clamp: an exhausted plans pool still burns its three.
+export const HAND_DRAWS = 5;
+export const FOE_DRAWS = 1;        // 1 index roll (his pick — Task 3 replaces it)
 
 export function makeManifestState() {
-  return { unlocked: PLAYER_START.slice(), offers: [], offerBell: 0, cardUp: false, armedAt: 0 };
+  return { unlocked: PLAYER_START.slice(), hand: [], offerBell: 0, cardUp: false, armedAt: 0 };
 }
 export function makeFoeState() {
   return { unlocked: [] };
@@ -1142,20 +1145,40 @@ function ladderPool(tiers, unlocked, bell) {
   for (let i = 0; i < open; i++) for (const k of tiers[i]) if (unlocked.indexOf(k) < 0) pool.push(k);
   return pool;
 }
-export function manifestPool(unlocked, bell) { return ladderPool(PLAYER_TIERS, unlocked, bell); }
 export function foePool(unlocked, bell) { return ladderPool(ENEMY_TIERS, unlocked, bell); }
 
-// drawOffers(pool, rng) -> 0-3 distinct keys. Exactly MANIFEST_DRAWS draws.
-export function drawOffers(pool, rng) {
-  const d = [rng(), rng(), rng(), rng()];
-  const want = d[0] < 0.5 ? 2 : 3;
-  const rest = pool.slice();
-  const out = [];
-  for (let i = 0; i < 3 && out.length < want && rest.length > 0; i++) {
-    const j = Math.min(rest.length - 1, Math.floor(d[i + 1] * rest.length));
-    out.push(rest.splice(j, 1)[0]); // splice, so the three rolls can never collide
+// dealConvoyHand(unlocked, keys, rng) -> up to five rows { k, hire }.
+// Exactly HAND_DRAWS draws, always: three spliced plan picks over the
+// unowned pool, two spliced hire picks over the full list. A plan and a
+// hire may name the same type — different products (one teaches, one
+// delivers). No bell gate anywhere (owner).
+export function dealConvoyHand(unlocked, keys, rng) {
+  const plans = keys.filter((k) => unlocked.indexOf(k) < 0);
+  const hand = [];
+  for (let i = 0; i < 3; i++) {
+    const d = rng();
+    if (!plans.length) continue; // the draw burned; the pool had nothing left
+    const j = Math.min(plans.length - 1, Math.floor(d * plans.length));
+    hand.push({ k: plans.splice(j, 1)[0], hire: 0 });
   }
-  return out;
+  const hires = keys.slice();
+  for (let i = 0; i < 2; i++) {
+    const d = rng();
+    const j = Math.min(hires.length - 1, Math.floor(d * hires.length));
+    hand.push({ k: hires.splice(j, 1)[0], hire: 1 });
+  }
+  return hand;
+}
+
+// takeHandCard(M, key, hire): one row leaves the hand — multi-buy is the
+// law (owner), so nothing else closes. The last row leaving drops the card.
+export function takeHandCard(M, key, hire) {
+  if (!M || !M.hand) return false;
+  const i = M.hand.findIndex((c) => c.k === key && c.hire === (hire ? 1 : 0));
+  if (i < 0) return false;
+  M.hand.splice(i, 1);
+  if (!M.hand.length) M.cardUp = false;
+  return true;
 }
 
 // drawFoePick(pool, rng) -> one key or null. Exactly FOE_DRAWS draws.
@@ -1165,16 +1188,6 @@ export function drawFoePick(pool, rng) {
   return pool[Math.min(pool.length - 1, Math.floor(d * pool.length))];
 }
 
-// The pick itself. One per bell, and only from what THIS bell offered — a card
-// left open past the next bell has already had its offers overwritten, so a
-// stale tap cannot buy a stale item. Returns whether anything moved.
-export function pickManifest(M, key) {
-  if (!M || M.offers.indexOf(key) < 0) return false;
-  M.unlocked.push(key);
-  M.offers = [];
-  M.cardUp = false;
-  return true;
-}
 export function isUnlocked(M, key) {
   return !!M && M.unlocked.indexOf(key) >= 0;
 }
@@ -1381,7 +1394,7 @@ export function stepBell(S, worldT) {
 //      assault took off the player (payResults);
 //   2. the intel report — what the desk learned about the LAST muster;
 //   3. the cycle's income — the player's scrap and the attacker's stipend;
-//   4. the manifest — the convoy's 2-3 offers, one of which the player takes;
+//   4. the hand — the convoy's five cards, three plans and two hires;
 //   5. the enemy's own pick, then the muster — planWave composes the assault
 //      under the cap their picks (and the bell) allow;
 //   6. the bureau's read of that muster, onto the re-readable dispatch.
@@ -1430,15 +1443,16 @@ export function fireBell(S, opts = {}) {
   // the muster, so the regiment can spend what it was just paid.
   if (reg) reg.scrap += STIPEND;
 
-  // 4. the manifest. A skipped bell is a skipped pick: last bell's offers are
-  // overwritten here whether or not they were read, and the unpicked items are
-  // still in the pool, so nothing is lost and nothing banks.
+  // 4. the hand. Five cards — three plans, two hires — dealt fresh every
+  // bell. A skipped bell is overwritten; unpicked plans are still in the
+  // pool next bell (the pool derives from what is unlocked), so nothing is
+  // lost and nothing banks.
   if (rng) {
     if (!S.manifest) S.manifest = makeManifestState();
     const M = S.manifest;
-    M.offers = drawOffers(manifestPool(M.unlocked, S.bell), rng);
+    M.hand = dealConvoyHand(M.unlocked, HAND_KEYS, rng);
     M.offerBell = S.bell;
-    M.cardUp = M.offers.length > 0;
+    M.cardUp = M.hand.length > 0;
     M.armedAt = nowT + PENDING_ARM_S;
   }
 

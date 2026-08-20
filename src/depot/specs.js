@@ -173,6 +173,12 @@ export const PLAYER_TIERS = [
   ["hero_bison", "hero_apc"],
 ];
 
+// P7.2 T2 (owner): THE HAND IS UNGATED — the full fifteen, one table, from
+// bell one; price and the market wall do all the refusing. The tier ladders
+// above stop gating offers (they remain as rows and price families). The
+// mech joins this list in its own task, not before.
+export const HAND_KEYS = ["mg", "gun", "mortar", "rocket", "frost", "sq_sniper", "sq_rifles", "sq_mg", "sq_sappers", "sq_mortars", "sq_engineers", "sq_runners", "sq_breakers", "hero_bison", "hero_apc"];
+
 export const MASON = { hcs: 0.40, pitch: 0.83, mass: 100, breakF: 8.0e4 };
 
 // FRONT F1 Task 4.5 — THE satchel charge, one spec for both sides (the enemy

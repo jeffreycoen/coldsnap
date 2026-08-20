@@ -1,9 +1,9 @@
 import { ok } from "./harness.mjs";
 import { identFwdDir, straightGrid, fatReg, starvedReg } from "./shared.mjs";
-import { makeRunState, stepBell, fireBell, withdrawDue, BELL_PERIOD_S, TIER_BELLS, ENEMY_TIERS, enemyTierState, enemyTierOf, ASSAULT_TIMEOUT, MANIFEST_DRAWS, FOE_DRAWS, makeManifestState, manifestPool, drawOffers, drawFoePick, pickManifest, isUnlocked, tierOpenCount, regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, squadFire, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, censusDepotChunks, depotStandingFraction, checkDepotBreach, checkEnemyBreach, stepDepotCensus, spawnSquadMembers, spawnSandbag, SANDBAG_COST, pruneSquads, DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, DEPOT_CENSUS_HZ, friendlyFouls } from "../../src/depot/state.js";
+import { makeRunState, stepBell, fireBell, withdrawDue, BELL_PERIOD_S, TIER_BELLS, ENEMY_TIERS, enemyTierState, enemyTierOf, ASSAULT_TIMEOUT, HAND_DRAWS, dealConvoyHand, takeHandCard, FOE_DRAWS, makeManifestState, foePool, drawFoePick, isUnlocked, tierOpenCount, regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, squadFire, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, censusDepotChunks, depotStandingFraction, checkDepotBreach, checkEnemyBreach, stepDepotCensus, spawnSquadMembers, spawnSandbag, SANDBAG_COST, pruneSquads, DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, DEPOT_CENSUS_HZ, friendlyFouls } from "../../src/depot/state.js";
 import { makeWorld, addBody, fireProjectile, stepWorld, applyDamage, worldHash, CAUSE, mulberry32, aimSolve } from "../../src/engine/core.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "../../src/depot/accuracy.js";
-import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, MASON, INFANTRY_ARMS } from "../../src/depot/specs.js";
+import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, MASON, INFANTRY_ARMS, HAND_KEYS } from "../../src/depot/specs.js";
 import { stepUnits, spawnUnit, payBounties, SNIPER_FIRE } from "../../src/depot/units.js";
 import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad } from "../../src/depot/squads.js";
 import { makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue } from "../../src/depot/economy.js";
@@ -106,90 +106,87 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
     drawsFor(enemyTierState(1, allPicked).tags) === 4 && drawsFor(null) === 4);
 }
 
-// --- the manifest (P1 Task 2): two ladders, one bell, fixed draw counts
+// --- the hand (P7.2 T2): one ungated table, five draws, multi-buy
 {
-  console.log("\n[the manifest]");
+  console.log("\n[the hand]");
   const allPicked = ENEMY_TIERS.flat();
 
-  // (a) the player starts with START and nothing else.
+  // (a) the player starts with START and nothing else; the bell gates are dead.
   {
     const M = makeManifestState();
-    ok("manifest: the starting kit is rifles + engineers (re-pinned mk1.12 — only engineers build)",
+    ok("hand: the starting kit is rifles + engineers",
       M.unlocked.length === 2 && isUnlocked(M, "sq_rifles") && isUnlocked(M, "sq_engineers")
-      && !isUnlocked(M, "wall") && !isUnlocked(M, "sandbag"),
-      M.unlocked.join(","));
-    ok("manifest: nothing is offered before the first bell", M.offers.length === 0 && M.cardUp === false);
-    ok("manifest: no tier is open at bell 0", tierOpenCount(0) === 0 && manifestPool(M.unlocked, 0).length === 0);
+      && !isUnlocked(M, "wall") && !isUnlocked(M, "sandbag"), M.unlocked.join(","));
+    ok("hand: nothing is offered before the first bell", M.hand.length === 0 && M.cardUp === false);
+    const p0 = HAND_KEYS.filter((k) => M.unlocked.indexOf(k) < 0);
+    ok("hand: the plans pool ignores the bell entirely — one pool at any hour", p0.length === 13, p0.length);
   }
 
-  // (b) the pool: this tier's items plus every earlier tier's leftovers.
+  // (b) the pool: the full list minus what is owned. No tiers, no bells.
   {
     const M = makeManifestState();
-    const p1 = manifestPool(M.unlocked, 1);
-    // RE-PINNED (P7 T7, 3 -> 5, named): tier 1 grows sq_runners/sq_breakers.
-    ok("manifest: bell 1 offers tier 1 only", p1.length === 5 && p1.every((k) => ["mg", "sq_mg", "frost", "sq_runners", "sq_breakers"].includes(k)), p1.join(","));
+    const pool = () => HAND_KEYS.filter((k) => M.unlocked.indexOf(k) < 0);
+    ok("hand: thirteen plans stand at bell one", pool().length === 13);
     M.unlocked.push("mg");
-    ok("manifest: a picked item leaves the pool", manifestPool(M.unlocked, 1).indexOf("mg") < 0);
-    const p3 = manifestPool(M.unlocked, 3);
-    // RE-PINNED (P7 T7, 5 -> 7, named): tier 1's two new leftovers (sq_runners,
-    // sq_breakers) ride along with tier 2 once bell 3 opens it.
-    ok("manifest: the passed-over item waits for another truck", p3.length === 7 && p3.includes("frost") && p3.includes("gun"), p3.join(","));
-    ok("manifest: tier 3 is shut until its bell", manifestPool(M.unlocked, 4).indexOf("rocket") < 0);
-    ok("manifest: tier 3 opens at its bell", manifestPool(M.unlocked, 5).indexOf("rocket") >= 0);
+    ok("hand: a bought plan leaves the pool", pool().indexOf("mg") < 0 && pool().length === 12);
+    ok("hand: heroes stand in the pool from the start (the gate is dead, owner)",
+      pool().includes("hero_bison") && pool().includes("hero_apc"));
+    ok("hand: the kit's own keys are never plans", pool().indexOf("sq_rifles") < 0 && pool().indexOf("sq_engineers") < 0);
+    ok("hand: hires ignore ownership — the full fifteen, always",
+      dealConvoyHand(HAND_KEYS.slice(), HAND_KEYS, mulberry32(4)).every((c) => c.hire === 1));
   }
 
-  // (c) DRAW-COUNT LAW: fixed draws per bell whatever the pool holds.
+  // (c) DRAW-COUNT LAW: five draws whatever the pools hold; his pick still one.
   {
     const counted = (seed) => { let n = 0; const r = mulberry32(seed); return { rng: () => { n++; return r(); }, n: () => n }; };
-    for (const pool of [[], ["a"], ["a", "b"], ["a", "b", "c", "d", "e", "f", "g", "h", "i"]]) {
+    for (const owned of [[], HAND_KEYS.slice(0, 5), HAND_KEYS.slice(0, 13), HAND_KEYS.slice()]) {
       const c = counted(5);
-      drawOffers(pool, c.rng);
-      ok(`manifest: ${pool.length}-item pool still spends exactly ${MANIFEST_DRAWS} draws`, c.n() === MANIFEST_DRAWS, `${c.n()}`);
+      dealConvoyHand(owned, HAND_KEYS, c.rng);
+      ok(`hand: ${15 - owned.length}-plan pool still spends exactly ${HAND_DRAWS} draws`, c.n() === HAND_DRAWS, `${c.n()}`);
       const f = counted(6);
-      drawFoePick(pool, f.rng);
-      ok(`foe pick: ${pool.length}-item pool still spends exactly ${FOE_DRAWS} draw`, f.n() === FOE_DRAWS, `${f.n()}`);
+      drawFoePick(foePool([], 1), f.rng);
+      ok(`foe pick: still exactly ${FOE_DRAWS} draw beside a ${15 - owned.length}-plan hand`, f.n() === FOE_DRAWS, `${f.n()}`);
     }
-    // and the offers themselves are sane across 200 seeds: 2-3, distinct, in-pool.
     let badN = 0, dupe = 0, foreign = 0;
-    const pool = ["mg", "sq_mg", "frost", "gun", "sq_sniper", "sq_mortars"];
     for (let seed = 1; seed <= 200; seed++) {
-      const o = drawOffers(pool, mulberry32(seed));
-      if (o.length < 2 || o.length > 3) badN++;
-      if (new Set(o).size !== o.length) dupe++;
-      if (o.some((k) => !pool.includes(k))) foreign++;
+      const h = dealConvoyHand(["sq_rifles", "sq_engineers"], HAND_KEYS, mulberry32(seed));
+      const plans = h.filter((x) => !x.hire);
+      if (h.length !== 5 || plans.length !== 3) badN++;
+      if (new Set(plans.map((x) => x.k)).size !== plans.length) dupe++;
+      if (h.some((x) => !HAND_KEYS.includes(x.k))) foreign++;
     }
-    ok("manifest: 200 seeded offers are all 2-3 items", badN === 0, `${badN} bad`);
-    ok("manifest: 200 seeded offers never repeat an item", dupe === 0, `${dupe} dupes`);
-    ok("manifest: 200 seeded offers never invent an item", foreign === 0, `${foreign} foreign`);
-    // a thin pool clamps rather than padding: one item left means one offer.
-    ok("manifest: a one-item pool offers exactly that item", drawOffers(["frost"], mulberry32(3)).join(",") === "frost");
-    ok("manifest: an empty pool offers nothing", drawOffers([], mulberry32(3)).length === 0);
+    ok("hand: 200 seeded deals are all five cards, three plans", badN === 0, `${badN} bad`);
+    ok("hand: 200 seeded deals never repeat a plan", dupe === 0, `${dupe} dupes`);
+    ok("hand: 200 seeded deals never invent a card", foreign === 0, `${foreign} foreign`);
+    const one = dealConvoyHand(HAND_KEYS.slice(0, 14), HAND_KEYS, mulberry32(3));
+    ok("hand: a one-plan pool deals that plan and the two hires", one.filter((x) => !x.hire).length === 1 && one.length === 3);
+    ok("hand: an exhausted plans pool deals hires alone", dealConvoyHand(HAND_KEYS.slice(), HAND_KEYS, mulberry32(3)).length === 2);
     ok("foe pick: an empty pool picks nothing", drawFoePick([], mulberry32(3)) === null);
   }
 
-  // (d) the pick: one item, only from what this bell offered.
+  // (d) taking cards: only what the hand holds, and MORE THAN ONCE (owner).
   {
     const M = makeManifestState();
-    M.offers = ["mg", "frost"]; M.cardUp = true;
-    ok("manifest: an item that was never offered cannot be taken", pickManifest(M, "rocket") === false && M.unlocked.length === 2);
-    ok("manifest: the pick joins the unlocked set", pickManifest(M, "frost") === true && isUnlocked(M, "frost"));
-    ok("manifest: taking one crate closes the card and clears the offer", M.cardUp === false && M.offers.length === 0);
-    ok("manifest: a second pick off the same bell is refused", pickManifest(M, "mg") === false && M.unlocked.length === 3);
+    M.hand = [{ k: "mg", hire: 0 }, { k: "frost", hire: 0 }, { k: "mg", hire: 1 }]; M.cardUp = true;
+    ok("hand: a card the convoy never dealt cannot be taken", takeHandCard(M, "rocket", 0) === false && M.hand.length === 3);
+    ok("hand: taking a plan removes that row alone", takeHandCard(M, "frost", 0) === true && M.hand.length === 2);
+    ok("hand: a SECOND card off the same bell is taken — multi-buy is the law (owner)", takeHandCard(M, "mg", 0) === true && M.hand.length === 1);
+    ok("hand: the last card leaving closes the window", takeHandCard(M, "mg", 1) === true && M.cardUp === false);
   }
 
-  // (e) a skipped bell is a skipped pick — no banking, but nothing is lost:
-  // the unpicked items are still in the pool the next bell draws from.
+  // (e) a skipped bell is overwritten; unpicked plans re-pool by construction.
   {
     const S2 = makeRunState();
     S2.started = true; S2.reg = fatReg();
     const rng = mulberry32(41);
     fireBell(S2, { reg: S2.reg, snap: {}, rng, t: BELL_PERIOD_S });
-    const first = S2.manifest.offers.slice();
-    ok("manifest: the bell raises an offer", first.length >= 2 && S2.manifest.cardUp === true, first.join(","));
+    const first = S2.manifest.hand.slice();
+    ok("hand: the bell deals five", first.length === 5 && S2.manifest.cardUp === true, first.map((c) => c.k).join(","));
     fireBell(S2, { reg: S2.reg, snap: {}, rng, t: 2 * BELL_PERIOD_S });
-    ok("manifest: an unread offer is overwritten at the next bell, not banked",
-      S2.manifest.offerBell === 2 && S2.manifest.unlocked.length === 2, `${S2.manifest.offerBell}/${S2.manifest.unlocked.length}`); // 2 re-pinned mk1.12: START is rifles + engineers only
-    ok("manifest: the passed-over items are still on offer", S2.manifest.offers.every((k) => manifestPool(["sq_rifles", "sq_engineers"], 2).includes(k)));
+    ok("hand: an unread hand is overwritten at the next bell, not banked",
+      S2.manifest.offerBell === 2 && S2.manifest.unlocked.length === 2, `${S2.manifest.offerBell}/${S2.manifest.unlocked.length}`);
+    ok("hand: the passed-over plans are still in the pool",
+      first.filter((c) => !c.hire).every((c) => S2.manifest.unlocked.indexOf(c.k) < 0));
   }
 
   // (f) the enemy's mirror: one pick per bell, never ahead of its tier's bell.
@@ -737,13 +734,13 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     S.ws.mixBag.every((t) => enemyTierState(1, S.foe.unlocked).tags.includes(t)), JSON.stringify([...new Set(S.ws.mixBag)]));
   // The prediction has to be taken off the SAME books the bell hands planWave
   // — i.e. after the stipend the bell pays — or the counts can't match.
-  // mk0.41 re-pin: the bell now spends MANIFEST_DRAWS + FOE_DRAWS off the same
+  // P7.2 T2 re-pin: the bell now spends HAND_DRAWS + FOE_DRAWS off the same
   // stream BEFORE the muster (and, at bell 1, zero intel draws — openingIntel
   // takes no rng), so the prediction burns exactly those first.
   const regP = makeRegiment(mulberry32(7));
   regP.scrap += STIPEND;
   const rngP = mulberry32(8);
-  for (let i = 0; i < MANIFEST_DRAWS + FOE_DRAWS; i++) rngP();
+  for (let i = 0; i < HAND_DRAWS + FOE_DRAWS; i++) rngP();
   const predicted = planWave(regP, BASE_SNAP, 1, rngP, enemyTierState(1, S.foe.unlocked).tags);
   ok("fireBell: spawnQueue matches planWave's total buys off the post-stipend books",
     S.ws.spawnQueue === totalUnits(predicted.buys), `${S.ws.spawnQueue} vs ${totalUnits(predicted.buys)}`);

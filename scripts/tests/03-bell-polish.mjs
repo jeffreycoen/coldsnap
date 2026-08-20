@@ -91,7 +91,7 @@ import fs from "node:fs";
   {
     const src = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     ok("mk0.50/5: the teaching line renders on bell 1 only",
-      /hud\.manifest\.bell === 1 &&/.test(src) && /Pick one reinforcement — the convoy returns each bell\./.test(src));
+      /hud\.manifest\.bell === 1 &&/.test(src) && /The convoy returns each bell — plans build, hires march\./.test(src));
     ok("mk0.50/5: it is bell-index deterministic — no flag, no storage",
       !/taughtManifest|seenManifest|firstManifestShown/.test(src));
   }
