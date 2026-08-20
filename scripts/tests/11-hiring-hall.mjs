@@ -431,3 +431,18 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
       /srcId: world\.depotCombat \? spec\.owner : undefined, srcX: world\.depotCombat \? x : undefined, srcZ: world\.depotCombat \? z : undefined/.test(core));
   }
 }
+
+// ---- P7.2 HOTFIX mk1.86: THE HIRE ANSWERS ITS PRICE — refused up front, never a dead flow
+{
+  const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
+  ok("HF(a): armHire refuses an unaffordable hire up front — the card stays, the hand stays open",
+    /S\.armHire = \(key\) => \{[\s\S]{0,900}if \(S\.resources < price\) \{ toast\("NO SCRAP — ◆" \+ price \+ " TO HIRE"\); return; \}[\s\S]{0,120}S\.hirePlace = \{ key \};/.test(src));
+  ok("HF(b): a ✓ refusal keeps the armed hire and the ghost — the GROUND NOT HELD precedent",
+    !/toast\("NO SCRAP"\); S\.hirePlace = null;/.test(src));
+  ok("HF(c): a fielded hire reopens the hand while cards remain — multi-buy stays one visit",
+    /S\.hirePlace = null;\n\s+if \(S\.manifest && S\.manifest\.hand\.length && S\.openManifest\) S\.openManifest\(\);/.test(src));
+  ok("HF(d): the card door passes the till's own verdict", /afford=\{hud\.info\.door === "hire" \? /.test(src));
+  const ic = fs.readFileSync("src/depot/InfoCard.jsx", "utf8");
+  ok("HF(e): CONFIRM HIRE greys and names the shortfall when the till can't cover it",
+    /afford === false \? "NO SCRAP — ◆" \+ price : "CONFIRM HIRE"/.test(ic) && /disabled=\{afford === false\}/.test(ic));
+}

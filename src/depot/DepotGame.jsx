@@ -2485,6 +2485,13 @@ export default function DepotGame({ onExit, resume = null }) {
         const M = S.manifest;
         if (!M || performance.now() / 1000 < (M.armedAtWall ?? 0)) { toast("HOLD — ARMING"); return; }
         if (!M.hand.some((c) => c.k === key && c.hire === 1)) return;
+        // P7.2 HOTFIX mk1.86 (owner): AFFORDABILITY IS CHECKED FIRST — a hire
+        // the till can't cover is refused here, before any ceremony: the card
+        // stays in the hand, the window stays open, and the toast names the
+        // price. Found live: a Bison hire armed at bell one and died at the
+        // last step's tiny toast after the whole ghost dance.
+        const price = priceNow(key, (PALETTE_BY_KEY[key] || { cost: 10 }).cost);
+        if (S.resources < price) { toast("NO SCRAP — ◆" + price + " TO HIRE"); return; }
         S.hirePlace = { key };
         M.cardUp = false; // the window steps aside for the placement tap
         toast("PLACE THE HIRE — tap held ground");
@@ -2495,7 +2502,7 @@ export default function DepotGame({ onExit, resume = null }) {
         const pk = PICK_POOL.find((x) => x.key === key);
         if (!pk) { S.hirePlace = null; return; }
         const price = priceNow(key, PALETTE_BY_KEY[key].cost);
-        if (S.resources < price) { toast("NO SCRAP"); S.hirePlace = null; return; }
+        if (S.resources < price) { toast("NO SCRAP"); return; } // P7.2 HF mk1.86: the ghost STANDS (the GROUND NOT HELD precedent) — prices breathe by the second; ✗ still returns the card
         const g = grid.worldToGrid(p.x, p.z);
         if (!grid.inBounds(g.gx, g.gz)) { toast("OFF THE FIELD"); return; }
         const cell = grid.cells[grid.idx(g.gx, g.gz)];
@@ -2532,6 +2539,7 @@ export default function DepotGame({ onExit, resume = null }) {
         takeHandCard(S.manifest, key, 1);
         S.resources -= price;
         S.hirePlace = null;
+        if (S.manifest && S.manifest.hand.length && S.openManifest) S.openManifest(); // P7.2 HF mk1.86 (owner): multi-buy is one visit — the hand returns for the next card (the calm window returns with it, the ruled pause of an open hand)
         cue("uitick");
         toast("THE HIRE FIELDS — ◆" + price);
       };
@@ -3975,6 +3983,7 @@ export default function DepotGame({ onExit, resume = null }) {
 
       {hud.info && !hud.gameOver && !hud.victory && (
         <InfoCard card={cardFor(hud.info.key)} door={hud.info.door} armed={hud.info.armed}
+          afford={hud.info.door === "hire" ? hud.resources >= ((hud.prices?.[hud.info.key] ?? PALETTE_BY_KEY[hud.info.key]?.cost) || 0) : undefined}
           price={(() => {
             if (hud.info.door === "deal") return null;
             const base = hud.prices?.[hud.info.key] ?? PALETTE_BY_KEY[hud.info.key]?.cost;

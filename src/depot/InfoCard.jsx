@@ -5,7 +5,7 @@
 // prop (the Dispatch.jsx discipline).
 import React from "react";
 
-export default function InfoCard({ card, price, armed, door, portrait, onConfirm, onCancel }) {
+export default function InfoCard({ card, price, armed, door, portrait, onConfirm, onCancel, afford }) {
   if (!card) return null;
   const B = { background: "#1a212b", border: "1px solid #48515f", color: "#e6ebf1", borderRadius: 8, padding: "10px 16px", fontFamily: "inherit", fontSize: 14, minHeight: 44, minWidth: 44, cursor: "pointer" };
   const row = (k, v) => (v == null ? null : (
@@ -39,7 +39,7 @@ export default function InfoCard({ card, price, armed, door, portrait, onConfirm
           </>
         ) : door === "hire" ? (
           <>
-            <button data-info-hire style={{ ...B, flex: 1, borderColor: "#7dffa8", color: "#7dffa8", opacity: armed ? 1 : 0.5 }} onClick={onConfirm}>CONFIRM HIRE</button>
+            <button data-info-hire disabled={afford === false} style={{ ...B, flex: 1, borderColor: afford === false ? "#48515f" : "#7dffa8", color: afford === false ? "#8a93a1" : "#7dffa8", opacity: armed && afford !== false ? 1 : 0.5, cursor: afford === false ? "default" : "pointer" }} onClick={onConfirm}>{afford === false ? "NO SCRAP — ◆" + price : "CONFIRM HIRE"}</button>
             <button data-info-cancel style={{ ...B, borderColor: "#ff6b5e", color: "#ff6b5e" }} onClick={onCancel}>✗</button>
           </>
         ) : door === "deal" ? (
