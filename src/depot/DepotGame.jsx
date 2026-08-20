@@ -2525,7 +2525,7 @@ export default function DepotGame({ onExit, resume = null }) {
         for (const c of picked) if (c.plan && S.manifest.unlocked.indexOf(c.k) < 0) S.manifest.unlocked.push(c.k);
         S._placeQueue = picked.filter((c) => !c.plan).map((c) => c.k);
         S._placeTotal = S._placeQueue.length;
-        S._draftDone = true; S.draft = null;
+        S._draftDone = true; S._draftOpen = false; S.draft = null;
         setHud((h) => ({ ...h, drafting: null, unlocked: S.manifest.unlocked.slice(), placing: S._placeQueue[0] || "done" }));
         if (S._placeQueue.length && S.openInfo) S.openInfo(S._placeQueue[0], "deal");
       };
@@ -3530,6 +3530,7 @@ export default function DepotGame({ onExit, resume = null }) {
               intel: S.intelUp && S.lastDispatch ? { armed: world.t >= S.intelArmedAt } : null,
               started: S.started, gameOver: S.gameOver, victory: S.victory,
               placing: S._placeQueue ? (S._placeQueue[0] || "done") : null, // P7.1 T6 A1: place mode must survive the ticker
+              drafting: S._draftOpen && S.draft && !S._draftDone ? S.draft.map((c) => ({ k: c.k, plan: c.plan })) : null, // T8 A2: the draft survives the ticker (the mk1.69 law)
               endCard: endCardReady(S, world.t),   // mk0.29: the card waits out the collapse
               breach: S.breach, enemyBreach: S.enemyBreach,
               depotStanding: S.depotStanding != null ? S.depotStanding : 1,
@@ -3735,6 +3736,7 @@ export default function DepotGame({ onExit, resume = null }) {
     if (S.audio) S.audio.ensure();
     if (S.draft && S.draft.length && !S._draftDone) {
       // P7.2 T8: THE DRAFT — seven cards up, five picks, all free.
+      S._draftOpen = true;
       setHud((h) => ({ ...h, drafting: S.draft.map((c) => ({ k: c.k, plan: c.plan })) }));
       return;
     }

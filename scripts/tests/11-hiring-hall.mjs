@@ -719,6 +719,11 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
       /S\.confirmDraft = \(picked\) => \{/.test(src) && /S\.manifest\.unlocked\.push\(c\.k\)/.test(src) && /S\._placeQueue = picked\.filter\(\(c\) => !c\.plan\)\.map\(\(c\) => c\.k\);/.test(src));
     ok("T8v2(d3): the ticker counts the real queue", /S\._placeTotal/.test(src) && !/n} of 4\)/.test(src));
     ok("T8v2(d4): the till opens at 250 // provisional (F5)", makeRunState().resources === 250 && HUD0.resources === 250);
+    const src2 = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
+    ok("T8v2(d5): the draft survives the ticker — the hud tick mirrors it (the mk1.69 law)",
+      /drafting: S\._draftOpen && S\.draft && !S\._draftDone \? S\.draft\.map/.test(src2) );
+    ok("T8v2(d6): the flag opens at TAKE COMMAND and closes at the confirm",
+      /S\._draftOpen = true;/.test(src2) && /S\._draftOpen = false;/.test(src2));
   }
   // (e) the manual learns the draft
   {
