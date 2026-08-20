@@ -3,6 +3,8 @@
 **Suggested model: Sonnet** (a new squad type on existing machinery, fully specced; one small render-kit addition).
 **Scope (ruled 2026-08-19, both passes):** a new squad type, BOTH SIDES — the medic walks to the nearest wounded man and KNEELS to treat him (the theater over the aura, the owner's call). Tier-1 row, ~55 scrap. Medic dress — the owner's eye accepts the look live. He joins the hand's pool with his info card and live portrait. The pool grows FIFTEEN → SIXTEEN — a licensed count sweep rides this task. The enemy's mirror: medics arrive through its hand (hires and plans, Task 4's machinery) and the boot's dealt picks; they never march in waves (planWave's roster is untouched — the mg/engineer precedent exactly). Healing is deterministic, zero rng, and writes hp directly — damage is the engine's, mending is the game's; no engine file changes.
 
+**AMENDMENT 1 (2026-08-20, after the agent's honest stop at the suite — three plan-writer defects and one real integration defect, all corrected in place below):** (1) THE TEND FIGHT — stepSquad's DEFEND branch re-seeks every member's slot goal every tick, and the two same-gain seeks fight to a standstill (measured: the medics never left the ring, the patient never healed; the tend loop alone heals correctly). The fix is the sapper `_fuse` precedent: a member flagged `_tending` is skipped by the formation drive — the tend pass, running after, owns his goal alone. `stepMedicTend` stamps the flag; the wrapper clears flag and kneel on any non-defend order. (2) THE FIXTURE'S PATIENT WALKED AWAY — T6(e)'s bare team-2 body marched the flow field; he becomes a garrison hold man (real machinery, legitimately stationary). (3) THE HEALING BUDGET WAS SHORT — 1200 ticks is 10 sim-seconds, 30 hp at the rate; both heal loops extend to 2400. (4) THE LEDGER MISSED ONE PIN — 01's line 131 (`pool().length === 14`, the bought-plan-leaves-the-pool check) joins the sweep, 14 → 15. And the plan's own count line said twenty-one where the block holds twenty — expected suite corrects to **1579/0**.
+
 ## Required reading (verified against the mk1.86 tree; re-verify at dispatch)
 
 - `src/depot/squads.js` — 33–87 (SQUAD_SPECS, squadSpeed, makeSquad), 340–435 (seekGoal, slotFor, memberClear/clearSlot above at 205–217), 533–722 (stepSquad whole).
@@ -32,6 +34,7 @@ Dials, all provisional (F5): MEDIC_SEEK_M 12, MEDIC_TEND_M 1.4, MEDIC_RATE 3 hp/
 
 - **The count pins, 15 → 16 (re-teaches, content identical):** 11's T2(a) (both `=== 15` terms and the "fifteen" messages), 11's T3(a3), 01 lines 122 and 129 (`=== 15`) and 135 (the "full fifteen" label — text only), 07 line 873 (T7(f)), 10 line 276 (T6v2, both terms).
 - **The slice pins:** 11's T2(b5) `HAND_KEYS.slice(0, 13)` → `slice(0, 14)` (the "two plans left" premise holds); 01 line 162 `slice(0, 14)` → `slice(0, 15)` (the one-plan pool). 01's draw-law loop slices (line 143) stay as written — its asserts count draws, not contents.
+- **A1 addition:** 01 line 131 (`pool().length === 14`, the bought-plan-leaves-the-pool check) → `=== 15` — sixteen keys minus the one bought (found by the agent's honest stop; the original ledger missed it).
 - **HAND_TAGS count:** 11's T4(a) `=== 10` → `=== 11`, message re-worded to "the nine squads and both heroes".
 - **Value-shift license (the T15 precedent):** the sixteenth key shifts every fixed-seed deal and boot outcome. NUMERIC outcome pins moving for exactly that reason re-base, measured, old → new — the known candidate is 09's T19(b3) (seed-91 garrison count, currently 6); its sibling property pins (b2/b4/b5) and every draw-count pin (b: 9) must hold unmoved. A draw-count movement anywhere is a stop, not a re-base.
 
@@ -56,7 +59,7 @@ Dials, all provisional (F5): MEDIC_SEEK_M 12, MEDIC_TEND_M 1.4, MEDIC_RATE 3 hp/
     spawnSquadMembers(w, sq);
     const hurt = addBody(w, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 6, y: 0.74, z: 0, hp: 20 });
     hurt.maxHp = 58;
-    for (let i = 0; i < 1200 && hurt.hp < 57; i++) { stepSquad(w, sq, w.dt); stepMedicTendSquad(w, sq, w.dt); stepWorld(w); }
+    for (let i = 0; i < 2400 && hurt.hp < 57; i++) { stepSquad(w, sq, w.dt); stepMedicTendSquad(w, sq, w.dt); stepWorld(w); } // A1: 20 sim-seconds — walk time plus 37 hp at the rate
     ok("T6(b): the medic walks to the wounded man and mends him", hurt.hp > 55, hurt.hp.toFixed(1));
     const medics = sq.memberIds.map((id) => w.byId.get(id));
     ok("T6(b2): he knelt to do it — and stood down when the work was done",
@@ -91,10 +94,13 @@ Dials, all provisional (F5): MEDIC_SEEK_M 12, MEDIC_TEND_M 1.4, MEDIC_RATE 3 hp/
   {
     const w = makeWorld({ field: flatF, seed: 113 }); w.depotCombat = true;
     const gm = spawnUnit(w, { x: 0, z: 0 }, "medic"); gm.hold = true; gm.garrison = true;
-    const hurt2 = addBody(w, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 5, y: 0.88, z: 0, hp: 15 });
-    hurt2.maxHp = 58;
+    // A1: the patient is a garrison hold man — legitimately stationary
+    // through the real hold machinery (a bare body marches the flow field
+    // and walks away from his own medic, the honest stop's finding).
+    const hurt2 = spawnUnit(w, { x: 5, z: 0 }, ""); hurt2.hold = true; hurt2.garrison = true;
+    hurt2.hp = 15;
     let draws = 0; const raw = w.rng; w.rng = () => { draws++; return raw(); };
-    for (let i = 0; i < 1200 && hurt2.hp < 57; i++) { stepUnits(w, straightGrid(0, 1), identFwdDir, null); stepWorld(w); }
+    for (let i = 0; i < 2400 && hurt2.hp < 57; i++) { stepUnits(w, straightGrid(0, 1), identFwdDir, null); stepWorld(w); } // A1: one medic at the rate needs ~14 sim-seconds plus the walk
     ok("T6(e): his medic walks and mends by the identical rule", hurt2.hp > 55, hurt2.hp.toFixed(1));
     ok("T6(e2): mercy draws nothing — zero rng in the whole tend run", draws === 0, draws);
   }
@@ -141,7 +147,7 @@ Dials, all provisional (F5): MEDIC_SEEK_M 12, MEDIC_TEND_M 1.4, MEDIC_RATE 3 hp/
 }
 ```
 
-Twenty-one checks — (a) 4, (b) 3, (c) 1, (d) 1, (e) 2, (f) 2, (g) 5, (h) 2, the (b2) compound counting one. `MEDIC_HEX` joins the troopkit import in the test file. Expected suite after all steps: **1580/0** (1559 + 21, the sweep count-neutral). Run the suite now: RED on this block with the 1559 unmoved except the ledger's own pre-change reds — the failing-first proof. (Note for (b2): the helper sets `u._kneltOnce = true` the first time it kneels — a test-visible latch, one line, named below.)
+Twenty checks — (a) 4, (b) 3, (c) 1, (d) 1, (e) 2, (f) 2, (g) 5, (h) 2 (A1: the original count line's "twenty-one" was the plan-writer's miscount; the code's block is authoritative — the Task 2 precedent). `MEDIC_HEX` joins the troopkit import in the test file. Expected suite after all steps: **1579/0** (1559 + 20, the sweep count-neutral). Run the suite now: RED on this block with the 1559 unmoved except the ledger's own pre-change reds — the failing-first proof. (Note for (b2): the helper sets `u._kneltOnce = true` the first time it kneels — a test-visible latch, one line, named below.)
 
 **Step 2 — the tables.** Five small edits:
 - `src/depot/squads.js`, SQUAD_SPECS, after the breakers row:
@@ -189,30 +195,44 @@ export function stepMedicTend(world, u, ax, az, dt) {
     const d = Math.hypot(p.pos.x - u.pos.x, p.pos.z - u.pos.z);
     if (d < bd) { bd = d; best = p; }
   }
-  if (!best) { u.kneel = false; return false; }
+  if (!best) { u.kneel = false; u._tending = false; return false; }
   if (bd > MEDIC_TEND_M) {
-    u.kneel = false;
+    u.kneel = false; u._tending = true; // A1: the formation drive stands aside while he tends
     const g = clearSlot(world, best.pos.x, best.pos.z, memberClear(u));
     u.goal = { x: g.x, z: g.z };
     u.settled = false;
     seekGoal(world, u, dt);
     return true;
   }
-  u.kneel = true; u._kneltOnce = true;
+  u.kneel = true; u._kneltOnce = true; u._tending = true;
   u.settled = true;
   u.v.x *= 1 - Math.min(1, 8 * dt); u.v.z *= 1 - Math.min(1, 8 * dt);
   best.hp = Math.min(best.maxHp, best.hp + MEDIC_RATE * dt);
   return true;
 }
-// The squad wrapper: DEFEND only — orders outrank mercy on the march.
+// The squad wrapper: DEFEND only — orders outrank mercy on the march. A
+// non-defend order clears the kneel and the tending flag (A1), so a
+// marching medic never renders crouched and the formation drive owns him.
 export function stepMedicTendSquad(world, squad, dt) {
-  if (squad.type !== "medics" || squad.order !== "defend") return;
+  if (squad.type !== "medics") return;
+  if (squad.order !== "defend") {
+    for (const id of squad.memberIds) { const u = world.byId.get(id); if (u) { u.kneel = false; u._tending = false; } }
+    return;
+  }
   for (const id of squad.memberIds) {
     const u = world.byId.get(id);
     if (u && u.alive) stepMedicTend(world, u, squad.anchor.x, squad.anchor.z, dt);
   }
 }
 ```
+
+**Step 3b (A1) — the formation drive stands aside.** `src/depot/squads.js`, the DEFEND branch's members.forEach, directly after its `if (u._fuse != null) return;` line:
+
+```js
+    if (u._tending) return; // P7.2 T6 A1: a tending medic drives on the patient's goal — the sapper _fuse precedent; the tend pass (after stepSquad) owns him
+```
+
+(`_tending` never rides the save — absent from the sweep list, it re-derives on the first tend tick after resume.)
 
 **Step 4 — his medic.** `src/depot/units.js`:
 - Line 19's squads import gains `stepMedicTend`.
@@ -315,7 +335,7 @@ export const MEDIC_HEX = { dom: 0xf4f6f8, sec: 0xe2e7ec, acc: 0xd0342c, gun: 0x1
 
 **Step 8 — the sweep** (the license's ledger, every site pre-named above; each old → new in the report; 09's T19(b3) re-bases measured ONLY if seed 91's boot actually moves it).
 
-**Step 9 — the gates and the deploy.** In order: `node scripts/depot-test.mjs` — expected **1580/0**; `node scripts/golden.mjs` — 7/7 REQUIRED (troopkit is render-path); `node scripts/depot-lint.mjs` clean; keystone 843448507/749 unmoved (movement = stop); bump `src/version.js` to `mk1.87` BEFORE `npm run build`; smoke (stale 4173 stays; preview 4174 + SMOKE_URL; kill only yours) green at mk1.87. Gates green → `git add` the touched files → commit subject exactly `the medic (mk1.87)` → push.
+**Step 9 — the gates and the deploy.** In order: `node scripts/depot-test.mjs` — expected **1579/0**; `node scripts/golden.mjs` — 7/7 REQUIRED (troopkit is render-path); `node scripts/depot-lint.mjs` clean; keystone 843448507/749 unmoved (movement = stop); bump `src/version.js` to `mk1.87` BEFORE `npm run build`; smoke (stale 4173 stays; preview 4174 + SMOKE_URL; kill only yours) green at mk1.87. Gates green → `git add` the touched files → commit subject exactly `the medic (mk1.87)` → push.
 
 ## Trap notes
 
