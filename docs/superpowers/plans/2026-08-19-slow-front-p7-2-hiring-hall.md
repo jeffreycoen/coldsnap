@@ -14,7 +14,7 @@
 | — | Hotfix: the hire answers its price | mk1.86 | `p7-2-hotfix-mk186-hire-affordability.md` | SHIPPED (9d0faec) |
 | 6 | The medic | mk1.87 | `p7-2-task-6-medic.md` | SHIPPED (92ad73b; A1) |
 | 7 | The mechanic | mk1.88 | `p7-2-task-7-mechanic.md` | SHIPPED (733db8c; A1) |
-| 8 | The opening draft | mk1.89 | `p7-2-task-8-opening-draft.md` | pending (plan on the owner's word) |
+| 8 | The opening draft | mk1.89 | `p7-2-task-8-opening-draft.md` | SHIPPED (ee95bee; A1) |
 | 9 | The mech | mk1.90 | `p7-2-task-9-mech.md` | pending |
 | — | The volunteer | — | — | HELD (owner, 2026-08-20: "hold off for now" — returns on his word, takes the next open mark) |
 
