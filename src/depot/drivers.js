@@ -9,7 +9,7 @@
 // world.bodies order — deterministic. Future vehicles (the depot Bison,
 // the APC, heroes) add a DRIVERS row, never a second loop.
 import { applyDamage } from "../engine/core.js";
-import { shooterFire, fieldReaches, effRange, hostileStructure, snapTargetNear, POSSESS_ACC } from "./state.js";
+import { shooterFire, fieldReaches, effRange, hostileStructure, snapTargetNear, POSSESS_ACC, hitOrigin } from "./state.js";
 import { arcClears } from "./accuracy.js";
 import { ENEMY_FIRE, BISON_FIRE } from "./specs.js";
 import { planRoute } from "./route.js";
@@ -77,6 +77,8 @@ const ARMOR_WP_R = 2.5, ARMOR_ARRIVE = 3.0, ARMOR_ESCORT_BACK = 4;   // provisio
 const SAFETY_AHEAD = 4, SAFETY_SPEED_K = 0.5, SAFETY_HALF_W = 2.8;   // provisional (F5)
 const YIELD_M = 3.2, YIELD_S = 2.5, PATIENCE_S = 4;   // provisional (F5)
 const KEEP_RIGHT_D = 14, KEEP_RIGHT_M = 3.0;   // provisional (F5)
+const HUNT_HOLD_S = 12, HUNT_MAX_M = 45;   // provisional (F5) — P7.2 T5, the hunt
+export { HUNT_HOLD_S };
 // P7 T16: the cone now REPORTS who blocks it — the yield order needs names,
 // not just a verdict. Same reach, same width, same team filter.
 function armorBlockers(world, v) {
@@ -137,7 +139,35 @@ function armorGoal(world, grid, v, dt, fwdDir, opts) {
     return;
   }
   const order = v.order || "defend";
-  if (order === "defend") { v.goal = null; return; }
+  if (order === "defend") {
+    // P7.2 T5: THE HUNT (owner) — a defending GUN hull under fire drives at
+    // the fire's origin; its guns answer the moment the shooter crosses its
+    // own sight (the scan already runs every tick, sight-gated as ever).
+    // Quiet ground for HUNT_HOLD_S sends it back to its park. The transport
+    // never hunts (a transport defends itself, it does not duel — apcGuns'
+    // own law); the wave tank never defends; explicit orders, possession,
+    // and the commander's word all change the order off "defend" and
+    // outrank this. Hunt state never rides the save — it re-derives (the
+    // T11 _route precedent).
+    if (v.drv === "armor") {
+      if (v.lastHit !== v._huntHit) {
+        v._huntHit = v.lastHit;
+        const o = hitOrigin(world, v.lastHit);
+        if (o && Math.hypot(o.x - v.pos.x, o.z - v.pos.z) <= HUNT_MAX_M) {
+          v._huntPt = { x: o.x, z: o.z }; v._huntT = world.t;
+        }
+      }
+      if (v._huntPt && world.t - (v._huntT || 0) > HUNT_HOLD_S) {
+        v._huntPt = null;
+        if (v.homeX != null && Math.hypot(v.homeX - v.pos.x, v.homeZ - v.pos.z) > ARMOR_ARRIVE) {
+          v.order = "move"; v.dest = { x: v.homeX, z: v.homeZ }; v._route = null; v._routeDest = null;
+        }
+      } else if (v._huntPt && Math.hypot(v._huntPt.x - v.pos.x, v._huntPt.z - v.pos.z) > ARMOR_ARRIVE) {
+        v.order = "move"; v.dest = { x: v._huntPt.x, z: v._huntPt.z }; v._route = null; v._routeDest = null;
+      }
+    }
+    v.goal = null; return;
+  }
   if (order === "escort") {
     const sq = opts && opts.squads ? opts.squads.find((q) => q.id === v.escortId) : null;
     if (!sq) { v.order = "defend"; v.goal = null; return; }

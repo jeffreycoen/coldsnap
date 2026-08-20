@@ -16,7 +16,7 @@ import { arcClears } from "./accuracy.js";
 // behavior module, both signs). squads.js now imports accuracy/state for the
 // stand-point scorer — the same documented-safe deferred cycle accuracy.js
 // and state.js already share (no top-level cross calls).
-import { exposureAt, surveyHighGround, bestStandPoint } from "./squads.js";
+import { exposureAt, surveyHighGround, bestStandPoint, reactShift } from "./squads.js";
 import { ENEMY_SPECS, ENEMY_FIRE, TANK, INFANTRY_ARMS, SATCHEL, SAPPER_PLANT_PAD } from "./specs.js";
 
 // ---------------------------------------------------------------- spawning
@@ -324,6 +324,12 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u
       faceTravel(u, dt);
       return true;
     }
+    // P7.2 T5: THE REACTION — fire he cannot answer still moves him: dive
+    // to the covered flank and keep the post. The identical rule the
+    // player's defenders run (reactShift, squads.js); the yield above
+    // outranks it, and the seek below drives whatever it chooses.
+    const rs5 = reactShift(world, u);
+    if (rs5) u._standPt = rs5;
     // The pair (6.5 Task 6): a directed sniper walks the few meters to his
     // spotter-chosen stand point (u._standPt, set once at the latch), then
     // settles — seekStandPoint drives, damps on arrival. Undirected holds

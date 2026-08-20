@@ -72,7 +72,7 @@ export const squadSpeed = (type) => (SQUAD_SPECS[type] && SQUAD_SPECS[type].spee
 // accuracy.js): no side calls the other's export at module top level, only
 // from inside function bodies invoked long after evaluation.
 import { arcClears } from "./accuracy.js";
-import { effRange, hostileStructure, standingStructure } from "./state.js";
+import { effRange, hostileStructure, standingStructure, hitOrigin } from "./state.js";
 import { INFANTRY_ARMS, SATCHEL, SAPPER_PLANT_PAD } from "./specs.js";
 // FRONT F1 (Task 4.5): the player sapper's satchel — same core explode/
 // applyDamage the enemy sapper uses (units.js stepSapper), sign-flipped.
@@ -215,6 +215,39 @@ export function clearSlot(world, x, z, clear) {
 }
 const memberClear = (u) => (u.hx || 0.3) + SLOT_CLEAR_PAD;
 export const slotBlockedPublic = (world, x, z, clear) => slotBlocked(world, x, z, clear);
+
+// ------------------------------------------------------- the reaction (P7.2 T5)
+// Fire from a shooter this man cannot answer still moves him: on a fresh
+// hit with a known origin (state.js hitOrigin), evaluate the current spot
+// plus 4 lateral offsets perpendicular to the origin bearing (units.js
+// coverHaltUpdate's own shape) and return the lowest-exposure CLEAR
+// candidate — or null when the ground he holds is already best. Roled men
+// (sniper/spotter) never shift — the pair holds its chosen ground, both
+// sides. At most one evaluation per REACT_CD_S, keyed on lastHit identity
+// through the SAME _coverHit/_coverT fields coverHaltUpdate owns — one
+// cadence, whichever mechanism consumes the hit first. Deterministic,
+// zero rng. All dials provisional (F5).
+export const REACT_OFFSETS = [1.5, -1.5, 3, -3]; // provisional (F5)
+export const REACT_CD_S = 2;                     // provisional (F5)
+export function reactShift(world, u) {
+  if (u.role === "sniper" || u.role === "spotter") return null; // the PAIR alone — mg gunner/loader are render-only roles and react like any man (Amendment 1)
+  if (!u.lastHit || u.lastHit === u._coverHit) return null;
+  if (world.t - (u._coverT != null ? u._coverT : -1e9) < REACT_CD_S) return null;
+  const o = hitOrigin(world, u.lastHit);
+  if (!o) return null;
+  u._coverHit = u.lastHit;
+  u._coverT = world.t;
+  const bearing = Math.atan2(o.x - u.pos.x, o.z - u.pos.z);
+  const px = Math.cos(bearing), pz = -Math.sin(bearing);
+  let best = null, bestExp = exposureAt(world, u.pos.x, u.pos.z, bearing);
+  for (const off of REACT_OFFSETS) {
+    const cx = u.pos.x + px * off, cz = u.pos.z + pz * off;
+    if (slotBlocked(world, cx, cz, memberClear(u))) continue;
+    const e = exposureAt(world, cx, cz, bearing);
+    if (e < bestExp - 1e-9) { bestExp = e; best = { x: cx, z: cz }; }
+  }
+  return best;
+}
 
 // ------------------------------------------------- the pair (6.5 Task 6)
 // surveyHighGround: the spotter's survey — deterministic, draw-free, run on
@@ -708,6 +741,10 @@ export function stepSquad(world, squad, dt) {
   }
   members.forEach((u) => {
     if (u._fuse != null) return; // a planting sapper holds his ground (fuse drives him)
+    // P7.2 T5: unseen fire moves a defender to cover — the shifted spot
+    // becomes his micro-slot until the next threat re-scan reclaims it.
+    const rs = reactShift(world, u);
+    if (rs) u._slotGoal = rs;
     u.goal = u._slotGoal || slotFor(squad, squad.memberIds.indexOf(u.id), members.length);
     // the pair's directed ground outranks the formation micro-slot
     if (u.role === "spotter" && squad._spotGoal) u.goal = squad._spotGoal;

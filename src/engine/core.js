@@ -628,7 +628,11 @@ export function explode(world, x, y, z, spec) {
     // component too. Everyone else in the burst (including a neighbor 1m
     // away) still takes the blast normally.
     if (b.alive && (b.kind === "unit" || b.kind === "vehicle" || b.kind === "truck") && b.id !== spec._directHitId) {
-      applyDamage(world, b, dmg, { cause: CAUSE.BLAST, attacker: spec.attacker || "world", volley: spec.volley || 0 });
+      // DIVERGENCE (guarded, P7.2 T5): the hit remembers where it came from —
+      // the shooter when the round carried an owner, the blast point either
+      // way. Depot-only fields on the short-lived info object (the dmgT
+      // stamp's shape); every other mode's info is byte-identical.
+      applyDamage(world, b, dmg, { cause: CAUSE.BLAST, attacker: spec.attacker || "world", volley: spec.volley || 0, srcId: world.depotCombat ? spec.owner : undefined, srcX: world.depotCombat ? x : undefined, srcZ: world.depotCombat ? z : undefined });
     }
     // DIVERGENCE (guarded): trees (tower defense) burn down under any blast —
     // no demo or campaign world holds a "tree" body
@@ -776,7 +780,7 @@ function stepProjectiles(world) {
             impactDmg *= 0.35 + 0.65 * cosT;
           }
         }
-        applyDamage(world, hitBody, impactDmg, { cause: CAUSE.PROJECTILE, attacker: p.spec.attacker || "world", volley: p.spec.volley || 0 });
+        applyDamage(world, hitBody, impactDmg, { cause: CAUSE.PROJECTILE, attacker: p.spec.attacker || "world", volley: p.spec.volley || 0, srcId: world.depotCombat ? p.spec.owner : undefined }); // DIVERGENCE (guarded, P7.2 T5): the direct hit names its shooter — depot-only, the dmgT shape
         // DIVERGENCE (guarded): mark the struck body so explode()'s noImpact
         // blast-damage loop skips it below — the round already paid its
         // damage here as a direct hit; impulse/toss from the burst still

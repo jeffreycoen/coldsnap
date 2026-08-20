@@ -53,6 +53,18 @@ export function effRange(world, muzzle, spec) {
   return spec.range * Math.min(1.2, 1 + 0.02 * elev);
 }
 
+// P7.2 T5: THE REACTION's origin read — where did that hit come from? The
+// shooter's live ground when the engine's guarded stamp resolves (srcId),
+// else the blast point (srcX/srcZ), else nothing — and no origin means no
+// reaction. Pure; no rng; tolerant of every legacy info shape.
+export function hitOrigin(world, info) {
+  if (!info) return null;
+  const src = info.srcId != null ? world.byId.get(info.srcId) : null;
+  if (src && src.alive) return { x: src.pos.x, z: src.pos.z };
+  if (info.srcX != null) return { x: info.srcX, z: info.srcZ };
+  return null;
+}
+
 // ---------------------------------------------------------- pending placement
 // Task 3's confirm-before-build flow, factored into pure/headless-testable
 // pieces so depot-test.mjs can drive the state machine without React/DOM —

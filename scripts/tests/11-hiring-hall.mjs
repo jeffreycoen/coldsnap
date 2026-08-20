@@ -1,13 +1,15 @@
 // COLDSNAP suite — era 11: THE HIRING HALL (P7.2). T1 (mk1.80): easier
 // selection — the tap radii, the cycle rule, select-all-of-type, the wiring.
 import { ok } from "./harness.mjs";
-import { makeWorld, mulberry32 } from "../../src/engine/core.js";
-import { makeSquad } from "../../src/depot/squads.js";
-import { spawnSquadMembers, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType, dealConvoyHand, takeHandCard, HAND_DRAWS, makeManifestState, makeRunState, fireBell, BELL_PERIOD_S, pendingArmed } from "../../src/depot/state.js";
-import { HAND_KEYS, PLAYER_START, HAND_TAGS } from "../../src/depot/specs.js";
+import { makeWorld, mulberry32, addBody, stepWorld, applyDamage, explode } from "../../src/engine/core.js";
+import { makeSquad, stepSquad, reactShift } from "../../src/depot/squads.js";
+import { spawnSquadMembers, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType, dealConvoyHand, takeHandCard, HAND_DRAWS, makeManifestState, makeRunState, fireBell, BELL_PERIOD_S, pendingArmed, shooterFire, hitOrigin } from "../../src/depot/state.js";
+import { HAND_KEYS, PLAYER_START, HAND_TAGS, INFANTRY_ARMS, BISON } from "../../src/depot/specs.js";
 import { PICK_POOL, mirrorFieldKey } from "../../src/depot/muster.js";
 import { makeMap, TOWN } from "../../src/depot/mapgen.js";
-import { fatReg } from "./shared.mjs";
+import { stepUnits, spawnUnit } from "../../src/depot/units.js";
+import { stepDrivers, HUNT_HOLD_S } from "../../src/depot/drivers.js";
+import { fatReg, identFwdDir, straightGrid } from "./shared.mjs";
 import fs from "node:fs";
 
 const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
@@ -290,5 +292,142 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
       /HAND_KEYS\.find\(\(x\) => S\.foe\.towers\.indexOf\(x\) >= 0 && priceP\(x\) != null && reg\.scrap - priceP\(x\) >= MIN_WAVE_FLOOR\)/.test(st));
     ok("T4(e6): the born-owned clause is in the filter — dead money closed at the source",
       /HAND_TAGS\[k\] === "" \|\| S\.foe\.unlocked\.indexOf\(HAND_TAGS\[k\]\) >= 0/.test(st));
+  }
+}
+
+// ---- P7.2 T5 (mk1.85): THE REACTION — attacked ground answers, both sides
+{
+  // (a) hitOrigin: the shooter's live ground, else the blast point, else null
+  {
+    const w = makeWorld({ field: flatF, seed: 100 });
+    const s = addBody(w, { kind: "unit", team: 2, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 12, y: 0.74, z: 5, hp: 58 });
+    const o1 = hitOrigin(w, { srcId: s.id });
+    ok("T5(a): a live source resolves to the shooter's ground", !!o1 && o1.x === 12 && o1.z === 5, JSON.stringify(o1));
+    s.alive = false;
+    const o2 = hitOrigin(w, { srcId: s.id, srcX: 3, srcZ: 4 });
+    ok("T5(a2): a dead source falls back to the blast point", !!o2 && o2.x === 3 && o2.z === 4, JSON.stringify(o2));
+    ok("T5(a3): no source and no point is no origin — and no reaction", hitOrigin(w, { cause: 1 }) === null && hitOrigin(w, null) === null);
+  }
+  // (b) the engine stamp: real rounds and real blasts carry their origin, depot only
+  {
+    const w = makeWorld({ field: flatF, seed: 101 }); w.depotCombat = true;
+    const sh = addBody(w, { kind: "unit", team: 2, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 0, hp: 58 });
+    const victim = addBody(w, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 8, hp: 500 });
+    shooterFire(w, sh, { x: 0, y: 1.24, z: 0 }, victim, { ...INFANTRY_ARMS.rifles, acc: 0, blastR: 0.3, kv: 0.5 }, { attacker: "enemy", owner: sh.id });
+    for (let i = 0; i < 240 && !victim.lastHit; i++) stepWorld(w);
+    ok("T5(b): a landed round stamps its shooter onto the victim's hit", !!victim.lastHit && victim.lastHit.srcId === sh.id, JSON.stringify(victim.lastHit));
+    explode(w, 3, 1, 8, { r: 3, kv: 2, dmg: 10, attacker: "enemy" });
+    ok("T5(b2): an ownerless blast stamps its own point", victim.lastHit.srcX === 3 && victim.lastHit.srcZ === 8 && victim.lastHit.srcId === undefined, JSON.stringify(victim.lastHit));
+    const w2 = makeWorld({ field: flatF, seed: 101 });
+    const sh2 = addBody(w2, { kind: "unit", team: 2, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 0, hp: 58 });
+    const v2 = addBody(w2, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 8, hp: 500 });
+    shooterFire(w2, sh2, { x: 0, y: 1.24, z: 0 }, v2, { ...INFANTRY_ARMS.rifles, acc: 0, blastR: 0.3, kv: 0.5 }, { attacker: "enemy", owner: sh2.id });
+    for (let i = 0; i < 240 && !v2.lastHit; i++) stepWorld(w2);
+    ok("T5(b3): outside the depot the stamp is silent — the guard (golden's law)", !!v2.lastHit && v2.lastHit.srcId === undefined && v2.lastHit.srcX === undefined);
+  }
+  // (c) reactShift: the covered flank wins; cadence; the pair never shifts; good ground holds
+  {
+    const w = makeWorld({ field: flatF, seed: 102 });
+    addBody(w, { kind: "wall", team: 2, mass: 0, hx: 0.9, hy: 0.9, hz: 0.35, x: 1.5, y: 0.9, z: 1.2, hp: 70 });
+    const shooter = addBody(w, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 30, hp: 58 });
+    const m = addBody(w, { kind: "unit", team: 2, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 0, hp: 58 });
+    w.t = 10;
+    m.lastHit = { srcId: shooter.id };
+    const p1 = reactShift(w, m);
+    ok("T5(c): unseen fire moves the man to the covered flank", !!p1 && Math.abs(p1.x - 1.5) < 0.01 && Math.abs(p1.z) < 0.01, JSON.stringify(p1));
+    ok("T5(c2): the same hit never evaluates twice (the cadence)", reactShift(w, m) === null);
+    const sp2 = addBody(w, { kind: "unit", team: 2, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: -3, hp: 58 });
+    sp2.role = "spotter"; sp2.lastHit = { srcId: shooter.id };
+    ok("T5(c3): a roled man never shifts — the pair holds its chosen ground", reactShift(w, sp2) === null);
+    const m4 = addBody(w, { kind: "unit", team: 2, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 30, y: 0.74, z: -20, hp: 58 });
+    m4.lastHit = { srcId: shooter.id };
+    ok("T5(c4): open ground with no better spot holds — being shot at is not, by itself, a reason to move", reactShift(w, m4) === null);
+  }
+  // (d) the enemy garrison dives and keeps its post (the real hold machinery)
+  {
+    const w = makeWorld({ field: flatF, seed: 103 }); w.depotCombat = true;
+    addBody(w, { kind: "wall", team: 2, mass: 0, hx: 0.9, hy: 0.9, hz: 0.35, x: 1.5, y: 0.9, z: 1.2, hp: 70 });
+    const g = spawnUnit(w, { x: 0, z: 0 }, ""); g.hold = true; g.garrison = true;
+    g.pos.x = 0; g.pos.z = 0;
+    const far = addBody(w, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 30, hp: 5000 });
+    w.t = 5;
+    applyDamage(w, g, 1, { attacker: "player", srcId: far.id });
+    for (let i = 0; i < 600; i++) { stepUnits(w, straightGrid(0, 1), identFwdDir, null); stepWorld(w); }
+    ok("T5(d): the garrison man dives to the covered flank and keeps his post", g.alive && Math.hypot(g.pos.x - 1.5, g.pos.z) < 0.6, `${g.pos.x.toFixed(2)},${g.pos.z.toFixed(2)}`);
+    ok("T5(d2): and settles there", g.settled === true);
+  }
+  // (e) the player's defenders react by the same rule; every other order is the player's word
+  {
+    const w = makeWorld({ field: flatF, seed: 104 });
+    addBody(w, { kind: "wall", team: 1, mass: 0, hx: 0.9, hy: 0.35, hz: 0.9, x: 1.5, y: 0.35, z: 0, hp: 70 });
+    const sq = makeSquad(50, "mg", 1, 0, 0);
+    spawnSquadMembers(w, sq);
+    const m0 = w.byId.get(sq.memberIds[0]);
+    const far = addBody(w, { kind: "unit", team: 2, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 30, y: 0.74, z: 1.5, hp: 5000 });
+    w.t = 6;
+    for (let i = 0; i < 120; i++) { stepSquad(w, sq, w.dt); stepWorld(w); } // settle the formation first
+    applyDamage(w, m0, 1, { attacker: "enemy", srcId: far.id });
+    for (let i = 0; i < 600; i++) { stepSquad(w, sq, w.dt); stepWorld(w); }
+    ok("T5(e): the hit defender shifts to the covered flank of his slot", Math.hypot(m0.pos.x, m0.pos.z) < 3.6 && Math.abs(m0.pos.z) < 1.2, `${m0.pos.x.toFixed(2)},${m0.pos.z.toFixed(2)}`);
+    const sqSrc = fs.readFileSync("src/depot/squads.js", "utf8");
+    ok("T5(e2): the reaction lives in the defend branch alone — every other order is the player's word",
+      (sqSrc.match(/const rs = reactShift\(world, u\);/g) || []).length === 1 && /const rs = reactShift\(world, u\);\n\s+if \(rs\) u\._slotGoal = rs;/.test(sqSrc));
+    const unSrc = fs.readFileSync("src/depot/units.js", "utf8");
+    ok("T5(e3): the enemy hold branch consumes the identical rule — one law, both sides",
+      /const rs5 = reactShift\(world, u\);\n\s+if \(rs5\) u\._standPt = rs5;/.test(unSrc));
+  }
+  // (f) the hunt: a defending gun hull drives at the fire's origin, then home
+  {
+    const N = 44;
+    const mkGridT5 = () => {
+      const cells = Array.from({ length: N * N }, () => ({ blocked: false, terrain: false, ice: false, water: false, wallId: null, building: null, bTeam: 0, steep: false, drop: false, bag: null, bagId: null }));
+      const G = { cells, w: N, h: N, cs: 2,
+        idx: (gx, gz) => gz * N + gx,
+        inBounds: (gx, gz) => gx >= 0 && gx < N && gz >= 0 && gz < N,
+        worldToGrid: (x, z) => ({ gx: Math.floor(x / 2) + (N >> 1), gz: Math.floor(z / 2) + (N >> 1) }),
+        gridToWorld: (gx, gz) => ({ x: (gx - (N >> 1)) * 2 + 1, z: (gz - (N >> 1)) * 2 + 1 }) };
+      G.cellAt = (x, z) => { const g = G.worldToGrid(x, z); return G.inBounds(g.gx, g.gz) ? cells[G.idx(g.gx, g.gz)] : null; };
+      return G;
+    };
+    const mkHull = (w, drv, x, z) => {
+      const v = addBody(w, { kind: "vehicle", team: 1, mass: BISON.mass, hx: BISON.hx, hy: BISON.hy, hz: BISON.hz, x, y: BISON.hy + 0.05, z, hp: BISON.hp, friction: 0.85 });
+      v.armor = BISON.armor; v.vtype = drv === "apc" ? "apc" : "bison"; v.drv = drv; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful";
+      v.homeX = x; v.homeZ = z;
+      return v;
+    };
+    const w = makeWorld({ field: flatF, seed: 105 }); w.depotCombat = true;
+    const G = mkGridT5();
+    const v = mkHull(w, "armor", -20, 0);
+    const sniper = addBody(w, { kind: "unit", team: 2, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 20, y: 0.74, z: 0, hp: 50000 });
+    w.t = 3;
+    applyDamage(w, v, 1, { attacker: "enemy", srcId: sniper.id });
+    stepDrivers(w, G, identFwdDir, null);
+    ok("T5(f): the hit flips a defending hull to the hunt", v.order === "move" && v.dest && Math.abs(v.dest.x - 20) < 0.01 && Math.abs(v.dest.z) < 0.01, JSON.stringify(v.dest));
+    for (let i = 0; i < 3600 && v.order !== "defend"; i++) { w.t += w.dt; stepDrivers(w, G, identFwdDir, null); stepWorld(w); }
+    ok("T5(f2): it drives to the origin and stands", v.order === "defend" && Math.hypot(v.pos.x - 20, v.pos.z) < 6, `${v.pos.x.toFixed(1)},${v.pos.z.toFixed(1)}`);
+    v._huntT = w.t - (HUNT_HOLD_S + 1); // the quiet clock, expired
+    stepDrivers(w, G, identFwdDir, null);
+    ok("T5(f3): quiet ground sends it back to its park", v.order === "move" && v.dest && Math.abs(v.dest.x - (-20)) < 0.01, JSON.stringify(v.dest));
+    const wA = makeWorld({ field: flatF, seed: 106 }); wA.depotCombat = true;
+    const apc = mkHull(wA, "apc", -20, 0);
+    const sA = addBody(wA, { kind: "unit", team: 2, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 20, y: 0.74, z: 0, hp: 50000 });
+    wA.t = 3;
+    applyDamage(wA, apc, 1, { attacker: "enemy", srcId: sA.id });
+    for (let i = 0; i < 600; i++) { wA.t += wA.dt; stepDrivers(wA, mkGridT5(), identFwdDir, null); stepWorld(wA); }
+    ok("T5(f4): the transport never hunts — it defends itself, it does not duel", apc.order === "defend" && Math.hypot(apc.pos.x + 20, apc.pos.z) < 1.5, `${apc.pos.x.toFixed(1)}`);
+    const wB = makeWorld({ field: flatF, seed: 107 }); wB.depotCombat = true;
+    const vB = mkHull(wB, "armor", 0, 0);
+    const farB = addBody(wB, { kind: "unit", team: 2, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 60, y: 0.74, z: 0, hp: 5000 });
+    wB.t = 3;
+    applyDamage(wB, vB, 1, { attacker: "enemy", srcId: farB.id });
+    stepDrivers(wB, mkGridT5(), identFwdDir, null);
+    ok("T5(f5): an origin beyond HUNT_MAX_M is ignored — no cross-map wild chase", vB.order === "defend" && !vB._huntPt);
+  }
+  // (g) the engine stamp is guarded — the divergence law's letter
+  {
+    const core = fs.readFileSync("src/engine/core.js", "utf8");
+    ok("T5(g): both damage sites stamp depot-only, the dmgT precedent",
+      /srcId: world\.depotCombat \? p\.spec\.owner : undefined/.test(core) &&
+      /srcId: world\.depotCombat \? spec\.owner : undefined, srcX: world\.depotCombat \? x : undefined, srcZ: world\.depotCombat \? z : undefined/.test(core));
   }
 }
