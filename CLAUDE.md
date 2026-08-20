@@ -12,6 +12,7 @@ The project owner directs design, reviews every plan, and is the sole playtester
 - Never long or verbose. The owner asks when he wants more detail.
 - No jargon or acronyms in anything he reads.
 - Never say the session is waiting on the owner ("waiting on you", "ready when you are"). State the state; he knows whose move it is.
+- The enemy AI is "it" or "the enemy" — never "he"/"his" (owner, 2026-08-20). Shipped document titles keep their names; all new prose complies.
 - **All markdown documents are served to the owner rendered** — never just a file path.
 
 ## Plans
