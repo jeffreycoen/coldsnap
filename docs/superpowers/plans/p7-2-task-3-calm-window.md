@@ -169,3 +169,15 @@ export function pendingArmed(pending, nowT) {
 ## Report requirements
 
 Fixture seeds named (9 is the one new seed). Every re-teach old → new, each its own bullet. Deviations labeled (the possible confirmPending definition move in Step 4c, if made, is a named deviation). The suite count to the digit.
+
+## AMENDMENT 1 (after the agent's honest stop at gate 1 — the defect is the plan-writer's)
+
+Steps 1–7 landed clean; the suite sits at 1505/1506 with ONE red the plan's sweep missed: `scripts/tests/07-armor-demolition.mjs:873`, T7(f) — the pool pin Task 2's own re-teach set to "thirteen plans at bell one," which the bare bar legitimately moves to fifteen. The plan-writer re-taught that pin one task ago and failed to carry it into this task's sweep.
+
+**The correction:** `07-armor-demolition.mjs` joins the touchable list for exactly this one re-teach — T7(f) becomes:
+
+```js
+    ok("T7(f): the ungated plans pool at bell one is fifteen — the bare bar (re-taught P7.2 T3), runners and breakers included", (() => { const p = HAND_KEYS.filter((k) => makeManifestState().unlocked.indexOf(k) < 0); return p.length === 15 && p.includes("sq_runners") && p.includes("sq_breakers"); })());
+```
+
+Count-neutral, content follows the ruled bare bar. Nothing else changes; Step 8 proceeds against 1506/0.
