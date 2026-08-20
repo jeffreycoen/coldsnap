@@ -312,3 +312,23 @@ The wall/tower exact-cell branch below (2183) stays byte-identical.
 ## Report requirements
 
 Fixture seeds named (80 is the one new seed). Every re-pin old → new (expected: none). Deviations and license uses each their own bullet.
+
+## AMENDMENT 1 (after the agent's honest stop at Gate 1 — both defects are the plan-writer's)
+
+Steps 1–13 landed verbatim; the suite came back 1472 with 2 red, and the agent stopped without improvising. Two corrections:
+
+**A1a — the assert follows the code.** Step 1's hull wiring check and Step 11's code disagreed on a variable name: the check expected `d <= TAP_HULL_M) cands.push` while Step 11's own literal names it `d2`. The code is authoritative. In `scripts/tests/11-hiring-hall.mjs`, the T1(d) hull assert's regex becomes:
+
+```js
+ok("T1(d): hull picking rides the cycle scan on its own radius", /d2 <= TAP_HULL_M\) cands\.push/.test(src) && !/vehicleAtPoint/.test(src));
+```
+
+**A1b — one licensed re-teach outside the file list.** Step 9's group loop renames the order-clamp line's variable (`osq.dest` → `gsq.dest`), which breaks a pin the plan's grep missed: `scripts/tests/03-bell-polish.mjs:124–125`, "mk0.50/6: the order flow clamps at the ONE site where a tap becomes a dest", pinning `/osq\.dest = \{ x: d\.x, z: d\.z \}/`. The asserted content — the dest literal at the one clamp site — is unchanged; only the loop token the plan itself re-signed moves. The sweep license covers it, and `03-bell-polish.mjs` joins the touchable list for exactly this one edit:
+
+```js
+// old: /osq\.dest = \{ x: d\.x, z: d\.z \}/
+// new:
+/gsq\.dest = \{ x: d\.x, z: d\.z \}/
+```
+
+Nothing else moves. After both edits the suite is expected 1472/0 and Step 14 proceeds unchanged (lint, mk1.80 bump, build, smoke, keystone, commit, push).
