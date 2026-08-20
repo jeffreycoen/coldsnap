@@ -1201,7 +1201,7 @@ export function makeAssaultState() {
 // break contact and withdraw in order.
 export const ASSAULT_TIMEOUT = 75;
 
-export function makeRunState({ startResources = 120 } = {}) {
+export function makeRunState({ startResources = 250 } = {}) { // P7.2 T8 (owner): the draft's richer opening // provisional (F5)
   return {
     resources: startResources, kills: 0,
     ws: makeAssaultState(), spawnRR: 0,
@@ -1610,7 +1610,7 @@ export function executeWithdrawal(S, world) {
 }
 
 export const HUD0 = {
-  fps: 0, bell: 1, bellT: BELL_PERIOD_S, enemies: 0, resources: 120, walls: 0, towers: 0, kills: 0,
+  fps: 0, bell: 1, bellT: BELL_PERIOD_S, enemies: 0, resources: 250, walls: 0, towers: 0, kills: 0,
   lastDispatch: null,
   started: false, gameOver: false, victory: false, breach: false, enemyBreach: false,
   mode: "wall", sellMode: false, sandbagOrient: 0, paused: false, speed: 1, inspect: null, toasts: [],

@@ -15,7 +15,7 @@ import { startBuildLine, stepBuildLine } from "../../src/depot/buildlines.js";
 import { engBuildDecide, engBuildKind, engSeedPlace } from "../../src/depot/ai.js";
 import { marketCounts } from "../../src/depot/market.js";
 import { CARDS, cardFor } from "../../src/depot/infocards.js";
-import { musterFreshStart, parkTower, PICK_POOL, dealHand } from "../../src/depot/muster.js";
+import { musterFreshStart, parkTower, PICK_POOL, draftDeal } from "../../src/depot/muster.js";
 import { makeMap, TOWN } from "../../src/depot/mapgen.js";
 import { buildBison, buildApc, buildTowerMesh } from "../../src/render/renderer.js";
 import { buildPortraitMan, buildPortraitModel } from "../../src/render/portrait.js";
@@ -271,11 +271,14 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "frost"]) {
   const S6 = { reg: { heads: 60 }, squads: [], nextSquadId: 1, cmdr: null };
   const G6 = mkGridA(); // the era-07 mini-grid helper already local to this file
   musterFreshStart(w, S6, TOWN.find((t) => t.depot && t.team !== 2), G6, flatF6, () => 1);
-  ok("T6v2: the fresh start draws exactly 9 (commander 1 + hand 4 + mirror 4) (re-taught P7.1 T8: 5 -> 9)", draws === 9, draws);
+  ok("T6v2: the fresh start draws exactly 15 (commander 1 + seven + seven) (re-taught P7.2 T8: 9 -> 15)", draws === 15, draws);
   ok("T6v2: nothing player-side fields at boot", S6.squads.length === 0 && !w.bodies.some((b) => b.team === 1 && b.alive));
   ok("T6v2: the pool is seventeen, unique keys", PICK_POOL.length === 17 && new Set(PICK_POOL.map((p) => p.key)).size === 17);
-  ok("T6v2: his picks fielded something", w.bodies.some((b) => b.team === 2 && b.alive));
-  ok("T8: the player's hand is four distinct pool keys", S6.hand.length === 4 && new Set(S6.hand).size === 4 && S6.hand.every((k) => PICK_POOL.some((p) => p.key === k)));
+  ok("T6v2: his five landed — men afield or plans on his ledgers (re-taught P7.2 T8)",
+    w.bodies.some((b) => b.team === 2 && b.alive) || S6.foe.unlocked.length > 0 || S6.foe.towers.length > 0);
+  ok("T8: the player's hand is the seven-card draft, seven distinct pool keys (re-taught P7.2 T8)",
+    S6.draft.length === 7 && new Set(S6.draft.map((c) => c.k)).size === 7 &&
+    S6.draft.every((c) => PICK_POOL.some((p) => p.key === c.k) && (c.plan === 0 || c.plan === 1)));
 }
 // ---- P7.1 T6 v2: his MG team and his shovels behave (v1's rows)
 {
@@ -354,14 +357,15 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "frost"]) {
   const mu7 = fs.readFileSync("src/depot/muster.js", "utf8");
   ok("T7: the engineer pick musters a tagged squad", /if \(pick\.tag === "eng"\) \{/.test(mu7) && /\.tag = "eng";/.test(mu7));
 }
-// ---- P7.1 T8: THE DEALT HAND
+// ---- P7.2 T8: THE OPENING DRAFT (re-taught from P7.1 T8's dealHand)
 {
   const mkRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
-  const h1 = dealHand(mkRng([0.99, 0.99, 0.99, 0.99]), PICK_POOL.map((p) => p.key));
-  ok("T8: four draws, four distinct — the splice forbids collision", h1.length === 4 && new Set(h1).size === 4);
+  const h1 = draftDeal(mkRng([0.99, 0.99, 0.99, 0.99]), PICK_POOL.map((p) => p.key));
+  ok("T8: seven draws, seven distinct — the splice forbids collision (re-taught P7.2 T8: dealHand -> draftDeal, four -> seven)",
+    h1.length === 7 && new Set(h1.map((c) => c.k)).size === 7);
   let n8 = 0; const counting = () => { n8++; return 0.5; };
-  dealHand(counting, PICK_POOL.map((p) => p.key));
-  ok("T8: exactly four draws, always", n8 === 4);
+  draftDeal(counting, PICK_POOL.map((p) => p.key));
+  ok("T8: exactly seven draws, always (re-taught P7.2 T8: dealHand -> draftDeal, four -> seven)", n8 === 7);
 }
 {
   const src8 = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");

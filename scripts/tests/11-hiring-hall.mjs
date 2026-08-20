@@ -3,10 +3,11 @@
 import { ok } from "./harness.mjs";
 import { makeWorld, mulberry32, addBody, stepWorld, applyDamage, explode } from "../../src/engine/core.js";
 import { makeSquad, stepSquad, reactShift, stepMedicTend, stepMedicTendSquad, MEDIC_SEEK_M, MEDIC_TEND_M, MEDIC_RATE, SQUAD_SPECS, stepMechanicTend, stepMechanicTendSquad, REPAIR_RATE, REPAIR_COST_PER_HP } from "../../src/depot/squads.js";
-import { spawnSquadMembers, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType, dealConvoyHand, takeHandCard, HAND_DRAWS, makeManifestState, makeRunState, fireBell, BELL_PERIOD_S, pendingArmed, shooterFire, hitOrigin, spawnWallCourses, spawnSandbag } from "../../src/depot/state.js";
+import { spawnSquadMembers, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType, dealConvoyHand, takeHandCard, HAND_DRAWS, makeManifestState, makeRunState, fireBell, BELL_PERIOD_S, pendingArmed, shooterFire, hitOrigin, spawnWallCourses, spawnSandbag, HUD0 } from "../../src/depot/state.js";
 import { HAND_KEYS, PLAYER_START, HAND_TAGS, INFANTRY_ARMS, BISON, ENEMY_SPECS } from "../../src/depot/specs.js";
-import { PICK_POOL, mirrorFieldKey } from "../../src/depot/muster.js";
-import { makeMap, TOWN } from "../../src/depot/mapgen.js";
+import { PICK_POOL, mirrorFieldKey, draftDeal, musterFreshStart } from "../../src/depot/muster.js";
+import { draftPick, CMDRS } from "../../src/depot/ai.js";
+import { makeMap, TOWN, makeGrid } from "../../src/depot/mapgen.js";
 import { stepUnits, spawnUnit } from "../../src/depot/units.js";
 import { stepDrivers, HUNT_HOLD_S } from "../../src/depot/drivers.js";
 import { computePrices, marketCounts } from "../../src/depot/market.js";
@@ -139,7 +140,7 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
   // (f) the manual tells the hand's truth
   {
     const fm = fs.readFileSync("src/ui/FieldManual.jsx", "utf8");
-    ok("T2(f): the tour returns for the hand (MANUAL_REV 4)", /export const MANUAL_REV = 4;/.test(fm));
+    ok("T2(f): the tour returns for the hand (re-taught P7.2 T8: MANUAL_REV 4 -> 5)", /export const MANUAL_REV = 5;/.test(fm));
     ok("T2(f2): THE BELL card teaches plans and hires, and the header count is honest",
       /plans you buy once/.test(fm) && /hires that walk on at once/.test(fm) && /Nine linked cards/.test(fm));
   }
@@ -657,5 +658,72 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
       /key: "sq_mechanics", label: "MECHANICS", icon: "⚙"/.test(src) && /sq_mechanics: "mechanics"/.test(src) &&
       /if \(sq\.type === "mechanics"\) stepMechanicTendSquad\(world, sq, world\.dt\);/.test(src) &&
       /world\._mech = \{ take: \(team, n\) => \{/.test(src));
+  }
+}
+
+// ---- P7.2 T8 (mk1.89): THE OPENING DRAFT — seven dealt, five picked, free
+{
+  // (a) the deal: seven draws, seven distinct types, kind from the fraction
+  {
+    let n = 0; const raw = mulberry32(130); const rng = () => { n++; return raw(); };
+    const d = draftDeal(rng, HAND_KEYS);
+    ok("T8v2(a): seven draws, seven cards, seven distinct types",
+      n === 7 && d.length === 7 && new Set(d.map((c) => c.k)).size === 7 && d.every((c) => HAND_KEYS.includes(c.k) && (c.plan === 0 || c.plan === 1)));
+    let units = 0, plans = 0, heroes = 0;
+    for (let seed = 1; seed <= 100; seed++) {
+      for (const c of draftDeal(mulberry32(seed), HAND_KEYS)) {
+        if (c.plan) plans++; else units++;
+        if (c.k === "hero_bison" || c.k === "hero_apc") heroes++;
+      }
+    }
+    ok("T8v2(a2): both kinds deal across 100 seeds, units favored", units > plans && plans > 100);
+    ok("T8v2(a3): heroes deal at plain odds — a lucky war is real (owner)", heroes > 0, heroes);
+  }
+  // (b) its pick: commander-colored, deterministic, zero draws, always five
+  {
+    const cards = [
+      { k: "sq_rifles", plan: 0 }, { k: "gun", plan: 0 }, { k: "mortar", plan: 1 },
+      { k: "sq_mg", plan: 0 }, { k: "hero_bison", plan: 0 }, { k: "sq_sappers", plan: 1 }, { k: "frost", plan: 1 },
+    ];
+    const bold = draftPick(cards, "bold"), caut = draftPick(cards, "cautious"), stub = draftPick(cards, "stubborn");
+    ok("T8v2(b): every profile picks exactly five", bold.length === 5 && caut.length === 5 && stub.length === 5);
+    ok("T8v2(b2): bold takes every unit before any plan",
+      cards.filter((c) => !c.plan).every((c) => bold.includes(c)));
+    ok("T8v2(b3): cautious leads with towers and plans; stubborn with standing towers",
+      caut.filter((c) => ["mg", "gun", "mortar", "rocket", "frost"].includes(c.k)).length === 3 &&
+      stub.includes(cards[1]) && stub.includes(cards[6]));
+    ok("T8v2(b4): the pick is pure — same cards, same commander, same five",
+      JSON.stringify(draftPick(cards, "cautious")) === JSON.stringify(caut));
+  }
+  // (c) the boot: fifteen draws; the player holds seven; its five land
+  {
+    makeMap(94);
+    const flatF8 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
+    const w = makeWorld({ field: flatF8, seed: 131 });
+    let draws = 0; const raw = w.rng; w.rng = () => { draws++; return raw(); };
+    const S8 = { reg: { heads: 60 }, squads: [], nextSquadId: 1, cmdr: null };
+    const G8 = makeGrid(flatF8);
+    musterFreshStart(w, S8, TOWN.find((t) => t.depot && t.team !== 2), G8, flatF8, () => 1);
+    ok("T8v2(c): the boot draws exactly fifteen (commander 1 + seven + seven)", draws === 15, draws);
+    ok("T8v2(c2): the player holds seven distinct cards and fields nothing",
+      S8.draft.length === 7 && new Set(S8.draft.map((c) => c.k)).size === 7 && !w.bodies.some((b) => b.team === 1 && b.alive));
+    ok("T8v2(c3): its five landed — men afield or plans on its ledgers",
+      w.bodies.some((b) => b.team === 2 && b.alive) || S8.foe.unlocked.length > 0 || S8.foe.towers.length > 0);
+  }
+  // (d) the wiring: the pick screen, the split, the till
+  {
+    const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
+    ok("T8v2(d): the draft screen exists on its own attributes, confirm arms at five",
+      /data-draft-card=/.test(src) && /data-draft-confirm/.test(src) && /picked\.length === 5/.test(src));
+    ok("T8v2(d2): confirm splits — plans open the bar free, units join the place queue",
+      /S\.confirmDraft = \(picked\) => \{/.test(src) && /S\.manifest\.unlocked\.push\(c\.k\)/.test(src) && /S\._placeQueue = picked\.filter\(\(c\) => !c\.plan\)\.map\(\(c\) => c\.k\);/.test(src));
+    ok("T8v2(d3): the ticker counts the real queue", /S\._placeTotal/.test(src) && !/n} of 4\)/.test(src));
+    ok("T8v2(d4): the till opens at 250 // provisional (F5)", makeRunState().resources === 250 && HUD0.resources === 250);
+  }
+  // (e) the manual learns the draft
+  {
+    const fm = fs.readFileSync("src/ui/FieldManual.jsx", "utf8");
+    ok("T8v2(e): the tour returns for the draft (MANUAL_REV 5) and the card tells it",
+      /export const MANUAL_REV = 5;/.test(fm) && /seven dealt cards/.test(fm) && /Pick five, free/.test(fm));
   }
 }

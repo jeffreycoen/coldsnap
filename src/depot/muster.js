@@ -10,11 +10,11 @@
 // change.
 import { TOWN, ROADS, MAP_SEED, OBJ_POS, GRID_W, GRID_H } from "./mapgen.js";
 import { addBody, heading, mulberry32 } from "../engine/core.js";
-import { BISON, APC, MASON, ENEMY_SPECS, TOWER_SPECS } from "./specs.js";
+import { BISON, APC, MASON, ENEMY_SPECS, TOWER_SPECS, HAND_TAGS } from "./specs.js";
 import { clearSlot, makeSquad, slotBlockedPublic, SQUAD_SPECS } from "./squads.js";
 import { spawnUnit } from "./units.js";
 import { spawnSandbag, spawnSquadMembers, SANDBAG_HX, effRange } from "./state.js";
-import { cmdrOf } from "./ai.js";
+import { cmdrOf, draftPick } from "./ai.js";
 import { planRoute } from "./route.js";
 
 // P7 T2/T3/T4: THE STARTING ARMOR — a Bison AND an APC parked by
@@ -221,14 +221,18 @@ export const PICK_POOL = [
   { key: "mg", kind: "tower" }, { key: "gun", kind: "tower" }, { key: "mortar", kind: "tower" },
   { key: "rocket", kind: "tower" }, { key: "frost", kind: "tower" },
 ];
-// P7.1 T8 (owner): THE DEALT HAND — four DISTINCT picks off the pool, the
-// manifest's splice-draw shape (drawOffers, state.js): four draws always,
-// the splice makes a collision impossible. One helper, both armies.
-export function dealHand(rng, pool) {
-  const rest = pool.slice(), out = [];
-  for (let d = 0; d < 4; d++) {
-    const j = Math.min(rest.length - 1, Math.floor(rng() * rest.length));
-    out.push(rest.splice(j, 1)[0]);
+// P7.2 T8 (owner): THE OPENING DRAFT — seven cards each side, seven splice
+// draws, seven DISTINCT types; each card's unit-or-plan kind derives from
+// the SAME draw's residual fraction (no extra draws — the engBuildKind
+// idiom). Heroes deal at plain odds (owner: a drafted Bison is a lucky
+// war). PLAN_ODDS is the plan share. // provisional (F5)
+export const PLAN_ODDS = 0.4;
+export function draftDeal(rng, keys) {
+  const rest = keys.slice(), out = [];
+  for (let d7 = 0; d7 < 7; d7++) {
+    const d = rng();
+    const j = Math.min(rest.length - 1, Math.floor(d * rest.length));
+    out.push({ k: rest.splice(j, 1)[0], plan: (d * rest.length + j) % 1 < PLAN_ODDS ? 1 : 0 });
   }
   return out;
 }
@@ -251,39 +255,25 @@ export function musterFreshStart(world, S, depotP, grid, field, nextApcSeq) {
   // P7 T8: THE COMMANDER — one draw per war, after makeRegiment's 2.
   // A RESUME never reaches this branch.
   S.cmdr = cmdrOf(world.rng);
-  // P7.1 T8 (owner): THE DEALT HAND — the player's four, then his four,
-  // both DISTINCT off the same fifteen-type pool (supersedes T6's
-  // duplicates-field-nothing clamp). Draws here: exactly 9, any seed
-  // (commander 1 + hand 4 + mirror 4), all before the early return.
-  S.hand = dealHand(world.rng, PICK_POOL.map((p) => p.key));
-  const mirrorPicks = dealHand(world.rng, PICK_POOL.map((p) => p.key)).map((k) => PICK_POOL.find((p) => p.key === k));
+  // P7.2 T8 (owner): THE OPENING DRAFT — the player's seven (held for the
+  // pick screen; nothing player-side fields at boot), then its seven,
+  // picked commander-colored (zero draws) and applied: plans push its
+  // ledgers (a tower plan starts the one-build-a-bell engine from bell
+  // one), units field through the dealt-hand mirror, draw-free. Draws
+  // here: exactly 15, any seed (commander 1 + 7 + 7), all before the
+  // early return.
+  S.draft = draftDeal(world.rng, PICK_POOL.map((p) => p.key));
+  const eCards = draftDeal(world.rng, PICK_POOL.map((p) => p.key));
   const depotE = TOWN.find((tt) => tt.depot && tt.team === 2);
   if (!depotE || !grid || !field) return;
-  const gR = Math.hypot(depotE.nx, depotE.nz) * MASON.pitch / 2 + 3.5;
-  let mi = 0;
-  for (const pick of mirrorPicks) {
-    if (pick.kind === "hull") { parkArmor(world, grid, field, depotE, 2, pick.vtype, nextApcSeq || (() => 1)); continue; }
-    if (pick.kind === "tower") { parkTower(world, grid, field, depotE, 2, pick.key); continue; }
-    if (pick.tag === "eng") {
-      // P7.1 T7: his engineers are a real squad — the build driver runs them.
-      const a0 = (mi / 16) * Math.PI * 2 + 2.0;
-      const p0 = clearSlot(world, depotE.x + Math.sin(a0) * gR, depotE.z + Math.cos(a0) * gR, 0.5);
-      const sq = makeSquad(9000 + mi, "engineers", 2, p0.x, p0.z);
-      spawnSquadMembers(world, sq);
-      for (const id of sq.memberIds) world.byId.get(id).tag = "eng"; // the market's family key (marketCounts prices team-2 men by tag)
-      (S.foeSquads || (S.foeSquads = [])).push(sq);
-      mi += 2;
-      continue;
-    }
-    let pairLead = null;
-    for (let k = 0; k < pick.n; k++) {
-      const a = (mi / 16) * Math.PI * 2 + 2.0;
-      const u = spawnMirrorMan(world, depotE.x + Math.sin(a) * gR, depotE.z + Math.cos(a) * gR, pick.tag, mi);
-      mi++;
-      if (pick.tag === "sniper") { // the pair's roles and link, draw-free
-        if (!pairLead) { pairLead = u; u.role = "sniper"; u.bounty = 30; }
-        else { u.role = "spotter"; u.bounty = 15; u.pairId = pairLead.id; pairLead.pairId = u.id; }
-      }
+  if (!S.foe) S.foe = { unlocked: [], hired: [], towers: [] };
+  if (!S.foe.towers) S.foe.towers = [];
+  for (const c of draftPick(eCards, S.cmdr)) {
+    if (c.plan) {
+      if (HAND_TAGS[c.k] === undefined) { if (S.foe.towers.indexOf(c.k) < 0) S.foe.towers.push(c.k); }
+      else if (S.foe.unlocked.indexOf(HAND_TAGS[c.k]) < 0) S.foe.unlocked.push(HAND_TAGS[c.k]);
+    } else {
+      mirrorFieldKey(world, S, depotE, grid, field, c.k, nextApcSeq);
     }
   }
 }

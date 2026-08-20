@@ -60,9 +60,9 @@ import fs from "node:fs";
   ok("T19(a3): the seat counter stays a mount let with its pinned reseed",
     /let apcSeqN = 0;/.test(dgSrc19) && /const nextApcSeq = \(\) => \+\+apcSeqN;/.test(dgSrc19));
   // (b) the boot block, called for real — the first true muster fixture.
-  // Re-taught (P7.1 T8, the sweep license): THE DEALT HAND — the player's
-  // hand deals too now (9 draws: commander 1 + hand 4 + mirror 4), on
-  // seed 91.
+  // Re-taught (P7.2 T8, the sweep license): THE OPENING DRAFT — the player's
+  // seven, then its seven, its five picked and applied (15 draws: commander
+  // 1 + 7 + 7), on seed 91.
   {
     makeMap(91);
     const flatF19 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
@@ -72,12 +72,12 @@ import fs from "node:fs";
     const S19 = { reg: { heads: 60 }, squads: [], nextSquadId: 1, cmdr: null };
     const G19 = makeGrid(flatF19);
     musterFreshStart(w, S19, TOWN.find((t) => t.depot && t.team !== 2), G19, flatF19, () => 1);
-    ok("T19(b): the fresh start draws exactly 9 (commander 1 + hand 4 + mirror 4) (re-taught P7.1 T8: 5 -> 9)", draws === 9, draws);
+    ok("T19(b): the fresh start draws exactly 15 (commander 1 + seven + seven) (re-taught P7.2 T8: 9 -> 15)", draws === 15, draws);
     ok("T19(b2): nothing player-side musters (re-taught P7.1 T6: two player squads -> zero — the player picks by hand now)",
       S19.squads.length === 0 && !w.bodies.some((b) => b.team === 1 && b.alive));
     let guard = 0;
     for (const b of w.bodies) if (b.kind === "unit" && b.team === 2 && b.garrison && b.alive) guard++;
-    ok("T19(b3): the mirror's men alone hold their ground (measured on seed 91, no home guard) (P7.2 T6 re-base: 6 -> 4)", guard === 4, guard);
+    ok("T19(b3): the mirror's men alone hold their ground (measured on seed 91, no home guard) (re-taught P7.2 T8: 4 -> 10)", guard === 10, guard);
     ok("T19(b4): the commander was drawn", S19.cmdr === "cautious" || S19.cmdr === "bold" || S19.cmdr === "stubborn", S19.cmdr);
     ok("T19(b5): the books stayed honest (re-taught P7.1 T6: the guard's -8 died with the guard, 52 -> 60)", S19.reg.heads === 60, S19.reg.heads);
   }
@@ -647,7 +647,7 @@ import fs from "node:fs";
   ok("T23(a2): the chain is nine cards in the ruled order (re-taught P7.1 T8 A1: 8 -> 9)",
     /YOUR ARMOR[\s\S]*?THE GROUND BITES[\s\S]*?THE BELL[\s\S]*?THE MARKET[\s\S]*?THE FALL/.test(fmSrc23) &&
     (fmSrc23.match(/\{ title: "/g) || []).length === 9);
-  ok("T23(b): the manual carries its revision stamp (re-taught P7.2 T2: 3 -> 4)", /export const MANUAL_REV = 4;/.test(fmSrc23));
+  ok("T23(b): the manual carries its revision stamp (re-taught P7.2 T8: 4 -> 5)", /export const MANUAL_REV = 5;/.test(fmSrc23));
   ok("T23(b2): the gate compares revisions and honors the legacy tick once",
     /r\.value === "off" \? 1 : parseInt\(r\.value, 10\)/.test(dgSrc23) && /seen >= MANUAL_REV/.test(dgSrc23));
   ok("T23(b3): the tick stores the revision it was ticked at", /window\.storage\.set\(MANUAL_KEY, String\(MANUAL_REV\)\)/.test(dgSrc23));

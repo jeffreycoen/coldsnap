@@ -302,6 +302,20 @@ export function cmdrBellOrders(profile, ctx) {
   return ctx.fielded ? "forward" : "home";                          // rides with assaults; home between them
 }
 
+// P7.2 T8 (owner): THE DRAFT PICK, commander-colored — pure, ZERO draws.
+// Bold takes units; cautious takes towers and plans; stubborn takes
+// standing defensive iron first. Stable sort; deal order breaks ties.
+const DRAFT_TOWERS = ["mg", "gun", "mortar", "rocket", "frost"];
+export function draftPick(cards, cmdr) {
+  const score = (c) => {
+    const tower = DRAFT_TOWERS.indexOf(c.k) >= 0;
+    if (cmdr === "bold") return c.plan ? 0 : 2;
+    if (cmdr === "cautious") return (tower ? 2 : 0) + (c.plan ? 1 : 0);
+    return (tower ? 2 : 0) + (c.plan ? 0 : 1); // stubborn
+  };
+  return cards.slice().sort((a, b) => score(b) - score(a)).slice(0, 5);
+}
+
 // THE FERRY GATE — pure. `eligible` is the game layer's own gate (an APC in
 // hand, not already ferrying, hold empty, a muster worth the trip); the roll
 // is drawn EVERY bell regardless (draw-then-clamp) — this only reads it.

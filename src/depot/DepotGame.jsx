@@ -750,6 +750,48 @@ const PALETTE = [
 const PALETTE_BY_KEY = Object.fromEntries(PALETTE.map((p) => [p.key, p]));
 const PALETTE_LABEL = Object.fromEntries(PALETTE.map((p) => [p.key, p.label]));
 
+// P7.2 T8 (owner): THE DRAFT SCREEN — a NEW pre-start surface, shared DOM
+// phone and desktop. Seven cards up, tap toggles a pick, five max; CONFIRM
+// arms at exactly five. Styled on the pre-start overlay's own P.btn idiom
+// (P.slot's build-bar card, ~44px touch target both platforms).
+function DraftScreen({ cards, onConfirm }) {
+  const [picked, setPicked] = useState([]);
+  const toggle = (c) => {
+    if (picked.includes(c)) { setPicked(picked.filter((x) => x !== c)); return; }
+    if (picked.length >= 5) return;
+    setPicked([...picked, c]);
+  };
+  return (
+    <div style={P.ovl}>
+      <div style={{ fontSize: 20, letterSpacing: 3, color: "#9fdcff", marginBottom: 6 }}>THE OPENING DRAFT</div>
+      <div style={{ fontSize: 12, opacity: 0.85, maxWidth: 460, lineHeight: 1.6, marginBottom: 14 }}>
+        Seven cards dealt — units and plans together. Pick five, free.
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 8, maxWidth: 520, marginBottom: 14 }}>
+        {cards.map((c) => {
+          const it = PALETTE_BY_KEY[c.k];
+          const on = picked.includes(c);
+          return (
+            <div key={c.k} data-draft-card={c.k} data-draft-kind={c.plan ? "plan" : "unit"}
+              onClick={() => toggle(c)}
+              style={{ ...P.slot, minWidth: 88, minHeight: 44, borderColor: on ? "#4aff8c" : "#48515f", background: on ? "rgba(74,255,140,0.12)" : "#1a212b" }}>
+              <div style={{ fontSize: 16 }}>{it ? it.icon : "?"}</div>
+              <div>{it ? it.label : c.k}</div>
+              <div style={{ fontSize: 10, opacity: 0.7, color: c.plan ? "#9fd4e4" : "#ffd27a" }}>{c.plan ? "PLAN" : "UNIT"}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 10 }}>PICKED {picked.length} OF 5</div>
+      <button data-draft-confirm disabled={picked.length !== 5}
+        style={{ ...P.btn, fontSize: 15, padding: "10px 26px", minHeight: 44, minWidth: 44, borderColor: picked.length === 5 ? "#4aff8c" : "#48515f", color: picked.length === 5 ? "#4aff8c" : "#e6ebf1", opacity: picked.length === 5 ? 1 : 0.55 }}
+        onClick={() => onConfirm(picked)}>
+        FIELD THESE FIVE
+      </button>
+    </div>
+  );
+}
+
 // P7.1 T5: THE BUILD TREE — one BUILD entry, three branches, SELL inside.
 // Pure presentation: S.mode stays the single truth the tap layer reads.
 const TREE_BRANCHES = [
@@ -2476,6 +2518,17 @@ export default function DepotGame({ onExit, resume = null }) {
         else if (k && door === "hire") S.armHire(k);
         // P7.1 T8: the deal door just closes — the ground tap places next.
       };
+      // P7.2 T8 (owner): the five picks are FREE — the pick is the payment.
+      // Plans open the bar at once; units join the deal-placement queue.
+      S.confirmDraft = (picked) => {
+        if (!picked || picked.length !== 5) return;
+        for (const c of picked) if (c.plan && S.manifest.unlocked.indexOf(c.k) < 0) S.manifest.unlocked.push(c.k);
+        S._placeQueue = picked.filter((c) => !c.plan).map((c) => c.k);
+        S._placeTotal = S._placeQueue.length;
+        S._draftDone = true; S.draft = null;
+        setHud((h) => ({ ...h, drafting: null, unlocked: S.manifest.unlocked.slice(), placing: S._placeQueue[0] || "done" }));
+        if (S._placeQueue.length && S.openInfo) S.openInfo(S._placeQueue[0], "deal");
+      };
       S.pickManifest = (key) => {
         const M = S.manifest;
         if (!M || performance.now() / 1000 < (M.armedAtWall ?? 0)) { toast("HOLD — ARMING"); return; }
@@ -3680,12 +3733,9 @@ export default function DepotGame({ onExit, resume = null }) {
   const startGame = () => {
     const S = stateRef.current; if (!S) return;
     if (S.audio) S.audio.ensure();
-    if (S.hand && S.hand.length && S._placeQueue == null) {
-      // P7.1 T8: THE DEAL — the overlay steps aside; each dealt unit shows
-      // its card first, then lands by a ground tap inside the homeland.
-      S._placeQueue = S.hand.slice();
-      if (S.openInfo) S.openInfo(S._placeQueue[0], "deal");
-      setHud((h) => ({ ...h, placing: S._placeQueue[0] }));
+    if (S.draft && S.draft.length && !S._draftDone) {
+      // P7.2 T8: THE DRAFT — seven cards up, five picks, all free.
+      setHud((h) => ({ ...h, drafting: S.draft.map((c) => ({ k: c.k, plan: c.plan })) }));
       return;
     }
     S._placeQueue = null; // P7.1 T6 A2: the war has begun — the ticker must yield nothing
@@ -4249,7 +4299,7 @@ export default function DepotGame({ onExit, resume = null }) {
         </div>
       )}
 
-      {!hud.started && !hud.placing && !fatal && (
+      {!hud.started && !hud.placing && !hud.drafting && !fatal && (
         <div style={P.ovl}>
           <div style={{ fontSize: 26, letterSpacing: 4, color: "#9fdcff" }}>COLDSNAP</div>
           <div style={{ fontSize: 13, letterSpacing: 8, color: "#ffd27a", marginBottom: 14 }}>WINTER FRONT</div>
@@ -4259,7 +4309,7 @@ export default function DepotGame({ onExit, resume = null }) {
             {isTouch ? " Drag to pan, pinch to zoom, twist to rotate, tap to build. Tap a tower to inspect it." : " WASD pans, wheel zooms, Q/E rotates (tap snaps, hold swings), click builds. Click a tower to inspect it."}
           </div>
           <div style={{ fontSize: 11, opacity: 0.85, maxWidth: 460, marginBottom: 10 }}>
-            The convoy deals you four units — read each card, place each one by hand near your depot, then take command.
+            The convoy deals seven cards — pick five, free. Units place by your hand near the depot; plans open your build bar.
           </div>
           <button style={{ ...P.btn, fontSize: 15, padding: "10px 26px", borderColor: "#4aff8c", color: "#4aff8c" }} onClick={startGame}>
             TAKE COMMAND
@@ -4271,12 +4321,16 @@ export default function DepotGame({ onExit, resume = null }) {
         </div>
       )}
 
-      {!hud.started && !hud.placing && !fatal && manualOpen && <FieldManual onClose={closeManual} />}
+      {!hud.started && !hud.placing && !hud.drafting && !fatal && manualOpen && <FieldManual onClose={closeManual} />}
+
+      {hud.drafting && !fatal && (
+        <DraftScreen cards={hud.drafting} onConfirm={(picked) => { const S = stateRef.current; if (S && S.confirmDraft) S.confirmDraft(picked); }} />
+      )}
 
       {hud.placing && !hud.info && !fatal && (() => {
         const S = stateRef.current;
         const remaining = S && S._placeQueue ? S._placeQueue.length : 0;
-        const n = Math.max(1, 4 - remaining + 1);
+        const n = Math.max(1, (S && S._placeTotal ? S._placeTotal : remaining) - remaining + 1);
         return (
           <div style={{ position: "absolute", top: 10, left: "50%", transform: "translateX(-50%)", zIndex: 9,
             background: "#1a212b", border: "1px solid #4aff8c", borderRadius: 8, padding: "8px 16px",
@@ -4287,7 +4341,7 @@ export default function DepotGame({ onExit, resume = null }) {
                 <button style={{ ...P.btn, borderColor: "#4aff8c", color: "#4aff8c" }} onClick={startGame}>TAKE COMMAND</button>
               </>
             ) : (
-              <span>PLACE: {PALETTE_BY_KEY[hud.placing]?.label} — tap ground near your depot ({n} of 4)</span>
+              <span>PLACE: {PALETTE_BY_KEY[hud.placing]?.label} — tap ground near your depot ({n} of {S && S._placeTotal ? S._placeTotal : remaining})</span>
             )}
           </div>
         );

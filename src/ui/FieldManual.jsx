@@ -6,10 +6,10 @@ import { FONT } from "./theme.js";
 // THE REVISION STAMP (P7 T23, owner): bumped whenever a phase changes the
 // cards — the tour then greets everyone once more, ticked-never included,
 // and honors the tick again until the next bump. Rev 1 = the pre-stamp era.
-export const MANUAL_REV = 4;
+export const MANUAL_REV = 5;
 const CARDS = [
   { title: "REAL STONE", body: "The whole battlefield is real physics. Collapse a wall on the men behind it. Drop a roof on a squad. Rubble is a weapon." },
-  { title: "THE HAND YOU'RE DEALT", body: "Every war opens with a dealt hand — four units, shown one card at a time. Place each near your depot, then take command. The enemy is dealt four of his own. No two wars open alike." },
+  { title: "THE HAND YOU'RE DEALT", body: "Every war opens with seven dealt cards — units and plans together. Pick five, free. Units place by your hand near the depot; plans open your build bar. The enemy drafts five of its own. No two wars open alike." },
   { title: "YOUR MEN", body: "Tap a squad, give it orders. Men are your eyes — what they can't see, you can't see. Only engineers build." },
   { title: "TAKE CONTROL", body: "Any squad or tower can be yours. Drive it, aim it, fire it. The front fights on without you." },
   { title: "YOUR ARMOR", body: "Armor is dealt to you or bought off a late convoy, never free. Order a hull like a squad — or take the controls yourself. The tracks brake for your own men until you say otherwise. Dear iron: a lost hull returns only at a price." },
