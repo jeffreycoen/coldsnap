@@ -507,3 +507,9 @@ Scrap flows every second. Every 90 seconds the bell rings and the convoy shows i
 ## Report requirements
 
 Fixture seeds named (81 is the one new seed; 41 and 7 are reused fixture seeds in re-taught blocks). Every re-teach and every value-shift re-base old → new, each its own bullet. Deviations labeled. The suite count to the digit.
+
+## AMENDMENT 1 (after the agent's honest stop before any edit — the defect is the plan-writer's)
+
+Step 4a's replacement span is mis-cut. The original block's opening `{` (line 110) closes at line 244 — PAST the replaced span — because blocks (f) and (g) live inside the same scope and read the `allPicked` declared there. The plan's replacement text is self-balanced, so splicing it over a net-open span breaks the parse (verified by the agent with `node --check`: stray `}` at the old line 244) and would orphan `allPicked`.
+
+**The correction, one change:** the Step 4a replacement text loses its FINAL closing `}` — nothing else in it moves. The spliced text then reads: the new header comment, the outer `{` left OPEN, `console.log("\n[the hand]")`, the `const allPicked = ENEMY_TIERS.flat();` (blocks (f)/(g) keep reading it), then blocks (a) through (e) exactly as written. The outer scope stays open through the untouched (f)/(g) blocks and closes at the original line-244 `}` exactly as today. The 29-for-29 count law and everything else in the plan stand unchanged.
