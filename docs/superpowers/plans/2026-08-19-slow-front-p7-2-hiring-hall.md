@@ -10,7 +10,7 @@
 | 2 | The hand | mk1.81 | `p7-2-task-2-the-hand.md` | SHIPPED (e965d1e; A1/A2) |
 | 3 | The calm window | mk1.82 | `p7-2-task-3-calm-window.md` | SHIPPED (9e01adc; A1, A2 mk1.83 fbdc72f) |
 | 4 | His hand | mk1.84 | `p7-2-task-4-his-hand.md` | SHIPPED (ef3811b) |
-| 5 | The reaction | mk1.85 | `p7-2-task-5-reaction.md` | pending (design questions open) |
+| 5 | The reaction | mk1.85 | `p7-2-task-5-reaction.md` | SHIPPED (341d09b; A1) |
 | 6 | The volunteer | mk1.86 | `p7-2-task-6-volunteer.md` | pending |
 | 7 | The medic | mk1.87 | `p7-2-task-7-medic.md` | pending |
 | 8 | The mechanic | mk1.88 | `p7-2-task-8-mechanic.md` | pending |
