@@ -14,7 +14,8 @@
 | — | Hotfix: the hire answers its price | mk1.86 | `p7-2-hotfix-mk186-hire-affordability.md` | SHIPPED (9d0faec) |
 | 6 | The medic | mk1.87 | `p7-2-task-6-medic.md` | SHIPPED (92ad73b; A1) |
 | 7 | The mechanic | mk1.88 | `p7-2-task-7-mechanic.md` | SHIPPED (733db8c; A1) |
-| 8 | The mech | mk1.89 | `p7-2-task-8-mech.md` | pending |
+| 8 | The opening draft | mk1.89 | `p7-2-task-8-opening-draft.md` | pending (plan on the owner's word) |
+| 9 | The mech | mk1.90 | `p7-2-task-9-mech.md` | pending |
 | — | The volunteer | — | — | HELD (owner, 2026-08-20: "hold off for now" — returns on his word, takes the next open mark) |
 
 Every deploy bumps `src/version.js` first, builds after. One agent in the tree at a time; stop after every task.
@@ -37,7 +38,9 @@ Every deploy bumps `src/version.js` first, builds after. One agent in the tree a
 
 **The volunteer — HELD (owner, 2026-08-20; returns on his word, next open mark).** Roughly one bell in five (~20%, one count-stable seeded draw), a free unit simply joins: the player places his by ground tap; the enemy's mirror fields seeded. Rides the hand's card and placement machinery. Held out of the queue (owner, 2026-08-20). Suggested model: Sonnet (small, bounded, one draw added to the bell contract).
 
-**Task 8 — The mech (mk1.89).** The engine's walker joins the war on main's gait. THE PROBE IS THE FIRST GATE, inside the task: the mech walking amid the full standing field, measured on the Pi with the ramp protocol against the 11.0 ms line, two repeats — it fields only if it passes. Then: a motor-pool row over the mech's command interface, twin-stick possession, and its hire card at ~400 scrap joins the pool, any bell. The hip-yaw branch merge stays its own later decision; the enemy's mech stays the Heroes crown — a knowing asymmetry, on the record. Suggested model: Sonnet (probe protocol + motor-pool integration, fully specced; the probe's numbers land in the report before any fielding code runs).
+**Task 8 — The opening draft (mk1.89).** Seven cards dealt at the war's start, units AND plans, EACH SIDE PICKS FIVE, all five free; starting scrap 250. Seven distinct types, kind derived from the draw's own fraction; heroes included at plain odds; the enemy picks commander-colored (cautious towers and plans, bold units, stubborn defensive — deterministic, zero draws). New pre-start pick screen, phone and desktop. Supersedes the assigned dealt four. Suggested model: Sonnet (draw contract + interface, fully specced).
+
+**Task 9 — The mech (mk1.90).** The engine's walker joins the war on main's gait. THE PROBE IS THE FIRST GATE, inside the task: the mech walking amid the full standing field, measured on the Pi with the ramp protocol against the 11.0 ms line, two repeats — it fields only if it passes. Then: a motor-pool row over the mech's command interface, twin-stick possession, and its hire card at ~400 scrap joins the pool, any bell. The hip-yaw branch merge stays its own later decision; the enemy's mech stays the Heroes crown — a knowing asymmetry, on the record. Suggested model: Sonnet (probe protocol + motor-pool integration, fully specced; the probe's numbers land in the report before any fielding code runs).
 
 ## Standing constraints
 
