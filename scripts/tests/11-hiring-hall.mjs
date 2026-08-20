@@ -2,8 +2,8 @@
 // selection — the tap radii, the cycle rule, select-all-of-type, the wiring.
 import { ok } from "./harness.mjs";
 import { makeWorld, mulberry32, addBody, stepWorld, applyDamage, explode } from "../../src/engine/core.js";
-import { makeSquad, stepSquad, reactShift, stepMedicTend, stepMedicTendSquad, MEDIC_SEEK_M, MEDIC_TEND_M, MEDIC_RATE, SQUAD_SPECS } from "../../src/depot/squads.js";
-import { spawnSquadMembers, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType, dealConvoyHand, takeHandCard, HAND_DRAWS, makeManifestState, makeRunState, fireBell, BELL_PERIOD_S, pendingArmed, shooterFire, hitOrigin } from "../../src/depot/state.js";
+import { makeSquad, stepSquad, reactShift, stepMedicTend, stepMedicTendSquad, MEDIC_SEEK_M, MEDIC_TEND_M, MEDIC_RATE, SQUAD_SPECS, stepMechanicTend, stepMechanicTendSquad, REPAIR_RATE, REPAIR_COST_PER_HP } from "../../src/depot/squads.js";
+import { spawnSquadMembers, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType, dealConvoyHand, takeHandCard, HAND_DRAWS, makeManifestState, makeRunState, fireBell, BELL_PERIOD_S, pendingArmed, shooterFire, hitOrigin, spawnWallCourses, spawnSandbag } from "../../src/depot/state.js";
 import { HAND_KEYS, PLAYER_START, HAND_TAGS, INFANTRY_ARMS, BISON, ENEMY_SPECS } from "../../src/depot/specs.js";
 import { PICK_POOL, mirrorFieldKey } from "../../src/depot/muster.js";
 import { makeMap, TOWN } from "../../src/depot/mapgen.js";
@@ -54,9 +54,9 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
 
 // ---- P7.2 T2 (mk1.81): THE HAND — five cards, three plans + two hires
 {
-  // (a) one table: the hand's sixteen are the pick pool's sixteen
-  ok("T2(a): HAND_KEYS is the sixteen, exactly the pick pool's keys",
-    HAND_KEYS.length === 16 && new Set(HAND_KEYS).size === 16 && PICK_POOL.every((p) => HAND_KEYS.includes(p.key)));
+  // (a) one table: the hand's seventeen are the pick pool's seventeen
+  ok("T2(a): HAND_KEYS is the seventeen, exactly the pick pool's keys",
+    HAND_KEYS.length === 17 && new Set(HAND_KEYS).size === 17 && PICK_POOL.every((p) => HAND_KEYS.includes(p.key)));
 
   // (b) the deal's contract — five draws, always, draw-then-clamp
   const count = () => { let n = 0; const r = mulberry32(7); return { rng: () => { n++; return r(); }, n: () => n }; };
@@ -73,7 +73,7 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
   }
   {
     const c = count();
-    const owned = HAND_KEYS.slice(0, 14); // two plans left in the pool
+    const owned = HAND_KEYS.slice(0, 15); // two plans left in the pool
     const hand = dealConvoyHand(owned, HAND_KEYS, c.rng);
     ok("T2(b5): a thin pool still burns five draws and deals what it has",
       c.n() === 5 && hand.filter((x) => !x.hire).length === 2 && hand.filter((x) => x.hire).length === 2);
@@ -150,9 +150,9 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
   // (a) the bare bar
   ok("T3(a): PLAYER_START is empty — the bar starts bare (owner)", PLAYER_START.length === 0);
   ok("T3(a2): the fresh manifest owns nothing", makeManifestState().unlocked.length === 0);
-  ok("T3(a3): the plans pool is the full sixteen",
+  ok("T3(a3): the plans pool is the full seventeen",
     dealConvoyHand([], HAND_KEYS, mulberry32(9)).filter((c) => !c.hire).length === 3 &&
-    HAND_KEYS.filter((k) => makeManifestState().unlocked.indexOf(k) < 0).length === 16);
+    HAND_KEYS.filter((k) => makeManifestState().unlocked.indexOf(k) < 0).length === 17);
   // (b) the pause — one gate, source-pinned (the loop is unimportable)
   {
     const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
@@ -190,8 +190,8 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
 {
   // (a) the tag map: squads and heroes map to wave tags; a tower key maps to
   // nothing because it ROUTES to his plans ledger instead — never an exclusion
-  ok("T4(a): HAND_TAGS covers the nine squads and both heroes; tower keys route to the ledger",
-    Object.keys(HAND_TAGS).length === 11 && ["mg", "gun", "mortar", "rocket", "frost"].every((k) => HAND_TAGS[k] === undefined));
+  ok("T4(a): HAND_TAGS covers the ten squads and both heroes; tower keys route to the ledger",
+    Object.keys(HAND_TAGS).length === 12 && ["mg", "gun", "mortar", "rocket", "frost"].every((k) => HAND_TAGS[k] === undefined));
   // (b) his deal: five draws; owned plans of BOTH spaces never re-deal
   {
     let n = 0; const raw = mulberry32(84); const rng = () => { n++; return raw(); };
@@ -453,8 +453,8 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
 // ---- P7.2 T6 (mk1.87): THE MEDIC — the sixteenth key; mercy on both sides
 {
   // (a) the sixteenth key, every table
-  ok("T6(a): the pool is sixteen and sq_medics is in every seat",
-    HAND_KEYS.length === 16 && HAND_KEYS.includes("sq_medics") && PICK_POOL.length === 16 &&
+  ok("T6(a): the pool is seventeen and sq_medics is in every seat",
+    HAND_KEYS.length === 17 && HAND_KEYS.includes("sq_medics") && PICK_POOL.length === 17 &&
     PICK_POOL.some((p) => p.key === "sq_medics" && p.kind === "squad" && p.type === "medics" && p.tag === "medic" && p.n === 2));
   ok("T6(a2): the tag map routes his medic plan to the wave map like any squad", HAND_TAGS.sq_medics === "medic");
   ok("T6(a3): the squad row — two men at 55 // provisional (F5)", SQUAD_SPECS.medics.n === 2 && SQUAD_SPECS.medics.cost === 55);
@@ -549,5 +549,113 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
     ok("T6(h2): the bar, the mode map, and the tend call are wired",
       /key: "sq_medics", label: "MEDICS", icon: "✚"/.test(src) && /sq_medics: "medics"/.test(src) &&
       /if \(sq\.type === "medics"\) stepMedicTendSquad\(world, sq, world\.dt\);/.test(src));
+  }
+}
+
+// ---- P7.2 T7 (mk1.88): THE MECHANIC — the seventeenth key; the paid wrench
+{
+  // (a) the seventeenth key, every table
+  ok("T7v2(a): the pool is seventeen and sq_mechanics is in every seat",
+    HAND_KEYS.length === 17 && HAND_KEYS.includes("sq_mechanics") && PICK_POOL.length === 17 &&
+    PICK_POOL.some((p) => p.key === "sq_mechanics" && p.kind === "squad" && p.type === "mechanics" && p.tag === "mechanic" && p.n === 2));
+  ok("T7v2(a2): the tag map and the squad row — two men at 55, tag mechanic",
+    HAND_TAGS.sq_mechanics === "mechanic" && SQUAD_SPECS.mechanics.n === 2 && SQUAD_SPECS.mechanics.cost === 55);
+  ok("T7v2(a3): its side fields the same man — ENEMY_SPECS.mechanic, bounty 8", !!ENEMY_SPECS.mechanic && ENEMY_SPECS.mechanic.bounty === 8);
+  // (b) the paid repair, player side — walk, kneel, mend a hull, the books charged
+  {
+    const w = makeWorld({ field: flatF, seed: 120 });
+    let charged = 0;
+    w._mech = { take: (team, n) => { if (team !== 1) return false; charged += n; return true; } };
+    const sq = makeSquad(70, "mechanics", 1, 0, 0);
+    spawnSquadMembers(w, sq);
+    const hull = addBody(w, { kind: "vehicle", team: 1, mass: 3800, hx: 2.2, hy: 0.95, hz: 3.3, x: 7, y: 1.0, z: 0, hp: 200, friction: 0.85 });
+    hull.maxHp = 420; hull.sleeping = true;
+    for (let i = 0; i < 3600 && hull.hp < 320; i++) { stepSquad(w, sq, w.dt); stepMechanicTendSquad(w, sq, w.dt); stepWorld(w); }
+    ok("T7v2(b): the mechanics walk out, kneel, and the hull mends", hull.hp > 300, hull.hp.toFixed(1));
+    const healed = hull.hp - 200;
+    ok("T7v2(b2): every point was paid — the books charged at the dial (±2 scrap of healed × cost)",
+      Math.abs(charged - healed * REPAIR_COST_PER_HP) <= 2, `charged=${charged} healed=${healed.toFixed(1)}`);
+    ok("T7v2(b3): they knelt to do it", sq.memberIds.some((id) => w.byId.get(id)._kneltOnce === true));
+  }
+  // (c) an empty till leaves the wrench still — kneeling, mending nothing
+  {
+    const w = makeWorld({ field: flatF, seed: 121 });
+    w._mech = { take: () => false };
+    const m = addBody(w, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 3, y: 0.74, z: 0, hp: 58 });
+    m.maxHp = 58; m.utype = "mechanics";
+    const tw = addBody(w, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: 1.0, hz: 0.8, x: 0, y: 1.0, z: 0, hp: 40 });
+    tw.maxHp = 80;
+    for (let i = 0; i < 1200; i++) { stepMechanicTend(w, m, 0, 0, w.dt); stepWorld(w); }
+    ok("T7v2(c): unfunded repair does nothing — hp within a whole point of where it started, the man kneeling",
+      tw.hp < 41.01 && m.kneel === true, tw.hp.toFixed(2));
+  }
+  // (d) under fire the work pauses entirely
+  {
+    const w = makeWorld({ field: flatF, seed: 122 }); w.depotCombat = true;
+    w._mech = { take: () => true };
+    const m = addBody(w, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 1.5, y: 0.74, z: 0, hp: 58 });
+    m.maxHp = 58; m.utype = "mechanics";
+    const tw = addBody(w, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: 1.0, hz: 0.8, x: 0, y: 1.0, z: 0, hp: 40 });
+    tw.maxHp = 80;
+    w.t = 10; m.dmgT = w.t; // just hit
+    ok("T7v2(d): a fresh hit stands the mechanic down — no repair inside the under-fire window",
+      stepMechanicTend(w, m, 0, 0, w.dt) === false && tw.hp === 40);
+  }
+  // (e) masonry mends; the enemy's iron and the depot's stones never
+  {
+    const w = makeWorld({ field: flatF, seed: 123 });
+    w._mech = { take: () => true };
+    const m = addBody(w, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: 0, y: 0.74, z: 3, hp: 58 });
+    m.maxHp = 58; m.utype = "mechanics";
+    const wallC = spawnWallCourses(w, 0, 0, 0)[0]; wallC.hp = 30;
+    const bag = spawnSandbag(w, 2, 0); bag.hp = 20;
+    const eTower = addBody(w, { kind: "tower", team: 2, mass: 0, hx: 0.8, hy: 1.0, hz: 0.8, x: 4, y: 1.0, z: 4, hp: 40 });
+    eTower.maxHp = 80;
+    const stone = addBody(w, { kind: "chunk", team: 0, mass: 100, hx: 0.4, hy: 0.4, hz: 0.4, x: -3, y: 0.4, z: 0, hp: 50 });
+    for (let i = 0; i < 7200 && (wallC.hp < 69 || bag.hp < 59); i++) { stepMechanicTend(w, m, 0, 0, w.dt); stepWorld(w); }
+    ok("T7v2(e): the wall course and the bag both mend to full", wallC.hp > 69 && bag.hp > 59, `${wallC.hp.toFixed(1)}/${bag.hp.toFixed(1)}`);
+    ok("T7v2(e2): the enemy's tower and the unledgered stone are never touched", eTower.hp === 40 && stone.hp === 50);
+  }
+  // (f) its side: the garrison mechanic mends its own tower off its own books, draw-free
+  {
+    const w = makeWorld({ field: flatF, seed: 124 }); w.depotCombat = true;
+    let regCharged = 0;
+    w._mech = { take: (team, n) => { if (team !== 2) return false; regCharged += n; return true; } };
+    const gm = spawnUnit(w, { x: 0, z: 0 }, "mechanic"); gm.hold = true; gm.garrison = true;
+    const eTw = addBody(w, { kind: "tower", team: 2, mass: 0, hx: 0.8, hy: 1.0, hz: 0.8, x: 4, y: 1.0, z: 0, hp: 30 });
+    eTw.maxHp = 80; eTw.towerType = "gun"; eTw.discipline = "free";
+    let draws = 0; const raw = w.rng; w.rng = () => { draws++; return raw(); };
+    for (let i = 0; i < 3600 && eTw.hp < 79; i++) { stepUnits(w, straightGrid(0, 1), identFwdDir, null); stepWorld(w); }
+    ok("T7v2(f): its mechanic walks, kneels, and mends the tower", eTw.hp > 75, eTw.hp.toFixed(1));
+    ok("T7v2(f2): its own books paid", regCharged > 0, regCharged);
+    ok("T7v2(f3): the wrench draws nothing — zero rng", draws === 0, draws);
+  }
+  // (g) the market: one family, both sides
+  {
+    const w = makeWorld({ field: flatF, seed: 125 });
+    const sqM = makeSquad(71, "mechanics", 1, 0, 0);
+    spawnSquadMembers(w, sqM);
+    spawnUnit(w, { x: 10, z: 10 }, "mechanic");
+    ok("T7v2(g): the mechanic family counts both armies' men", marketCounts(w, [sqM]).mechanic === 3);
+    ok("T7v2(g2): sq_mechanics prices at its 55 base", computePrices({}).player.sq_mechanics === 55);
+  }
+  // (h) the look: side coats, the black toolbox, the kneel
+  {
+    const k1 = troopKit({ team: 1, utype: "mechanics", alive: true }, true);
+    const k2 = troopKit({ team: 2, tag: "mechanic", alive: true }, true);
+    ok("T7v2(h): no rifle, the toolbox in black, side coats kept (no white — the cross is the medic's alone)",
+      k1.rifle === 0 && k1.props[0] && k1.props[0].role === "gun" && k1.pal === "con" && k2.pal === "gren");
+    ok("T7v2(h2): the kneel drops him low",
+      troopKit({ team: 1, utype: "mechanics", kneel: true, alive: true }, true).bh < troopKit({ team: 1, utype: "mechanics", alive: true }, true).bh);
+  }
+  // (i) the card and the wiring
+  {
+    ok("T7v2(i): the card carries the owner's copy and the paid-repair skill",
+      !!CARDS.sq_mechanics && /paid in scrap/.test(CARDS.sq_mechanics.role) && CARDS.sq_mechanics.skills.includes("REPAIR — PAID IN SCRAP"));
+    const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
+    ok("T7v2(i2): the bar, the mode map, the loop call, and the books stamp are wired",
+      /key: "sq_mechanics", label: "MECHANICS", icon: "⚙"/.test(src) && /sq_mechanics: "mechanics"/.test(src) &&
+      /if \(sq\.type === "mechanics"\) stepMechanicTendSquad\(world, sq, world\.dt\);/.test(src) &&
+      /world\._mech = \{ take: \(team, n\) => \{/.test(src));
   }
 }

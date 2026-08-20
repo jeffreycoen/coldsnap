@@ -870,7 +870,7 @@ import fs from "node:fs";
   }
   // (f) tier 1 is a 5-item pool now
   {
-    ok("T7(f): the ungated plans pool at bell one is sixteen — the bare bar (re-taught P7.2 T3), runners and breakers included", (() => { const p = HAND_KEYS.filter((k) => makeManifestState().unlocked.indexOf(k) < 0); return p.length === 16 && p.includes("sq_runners") && p.includes("sq_breakers"); })());
+    ok("T7(f): the ungated plans pool at bell one is seventeen — the bare bar (re-taught P7.2 T3), runners and breakers included", (() => { const p = HAND_KEYS.filter((k) => makeManifestState().unlocked.indexOf(k) < 0); return p.length === 17 && p.includes("sq_runners") && p.includes("sq_breakers"); })());
   }
   // (g) one market: a live player runner and an enemy runner price the same
   // family (marketCounts merges them)

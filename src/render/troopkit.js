@@ -83,6 +83,7 @@ const SATCHEL = { off: [0, 0.10, -0.22], s: [2.2, 1.6, 0.8] };
 const MEDIC_BAG = { off: [0.17, 0.02, 0.0], s: [1.4, 1.8, 1.1], role: "gun" };
 const CROSS_V = { off: [0, 0.32, 0], s: [0.7, 2.6, 2.9], role: "acc" };
 const CROSS_H = { off: [0, 0.32, 0], s: [2.2, 0.7, 2.9], role: "acc" };
+const TOOLBOX = { off: [0.17, 0.0, 0.05], s: [1.6, 1.2, 1.0], role: "gun" }; // P7.2 T7: the mechanic's black box — side coats stay, the tool is the identity
 // The medic palette, plain hexes, one home — the renderer's mkPal and the
 // portrait's material pick both consume it (spread over the con palette, so
 // skin and any unnamed role inherit). // provisional (F5) — the owner's eye
@@ -110,6 +111,7 @@ const KIT_SAPPER = { rifle: 0, props: P(SATCHEL) };
 const KIT_MORTAR = { rifle: 0, props: P(MORTAR_TUBE) };
 const KIT_MG = { rifle: 0.8, props: P(MG_RECEIVER, MG_LEG_L, MG_LEG_R) };
 const KIT_MEDIC = { rifle: 0, props: P(MEDIC_BAG, CROSS_V, CROSS_H) };
+const KIT_MECHANIC = { rifle: 0, props: P(TOOLBOX) };
 
 // ---- bulk -----------------------------------------------------------
 // STATED DECISION (director, mk0.23): bulk is the ONE identity cue that
@@ -141,9 +143,9 @@ export function troopKit(b, depot, sil = false) {
   const pal = (b.utype === "medics" || b.tag === "medic") ? "medic" : gren || b.team === 2 ? "gren" : "con"; // P7.2 T6 (owner): the cross outranks the coat — both sides' medics wear the white
   const bulk = BULK[b.tag] || null;
   let bw = bulk ? bulk[0] : 1, bh = bulk ? bulk[1] : 1;
-  // P7.2 T6: the kneel — the medic drops low while treating. One flag, read
-  // here only; render-only theater.
-  if (b.kneel && (b.utype === "medics" || b.tag === "medic")) bh *= 0.72;
+  // P7.2 T6/T7: the kneel — the medic and the mechanic drop low while
+  // working. One flag, read here only; render-only theater.
+  if (b.kneel && (b.utype === "medics" || b.tag === "medic" || b.utype === "mechanics" || b.tag === "mechanic")) bh *= 0.72;
   if (sil) return { pal, bw, bh, rifle: 1, props: KIT_PLAIN.props }; // fog: bulk only
   let k = KIT_PLAIN;
   if (gren) k = KIT_PLAIN;                                    // grenadier: own table, own tube
@@ -155,12 +157,14 @@ export function troopKit(b, depot, sil = false) {
       : b.utype === "sappers" ? KIT_SAPPER
       : b.utype === "mortars" ? KIT_MORTAR
       : b.utype === "medics" ? KIT_MEDIC
+      : b.utype === "mechanics" ? KIT_MECHANIC
       : KIT_PLAIN;                                            // rifles
   } else {
     // enemy waves (tag)
     k = b.tag === "sniper" ? KIT_SNIPER                       // marksman
       : b.tag === "sapper" ? KIT_SAPPER
       : b.tag === "medic" ? KIT_MEDIC
+      : b.tag === "mechanic" ? KIT_MECHANIC
       : b.tag === "heavy" ? KIT_NONE                          // breaker: hands free
       : KIT_PLAIN;                                            // conscript, runner
   }

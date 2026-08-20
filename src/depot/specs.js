@@ -74,6 +74,9 @@ export const ENEMY_SPECS = {
   // P7.2 T6: his medic — the conscript frame, no weapon (units.js's medic
   // branch never fires). Bounty is the kill payout. // provisional (F5)
   medic: { mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, hp: 58, bounty: 8, speed: 3.2, gain: 14, label: "medic" },
+  // P7.2 T7: his mechanic — the conscript frame, no weapon (units.js's
+  // mechanic branch never fires). Bounty is the kill payout. // provisional (F5)
+  mechanic: { mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, hp: 58, bounty: 8, speed: 3.2, gain: 14, label: "mechanic" },
 };
 
 // Wave armor: an engine vehicle on the engine's own tread physics (see
@@ -171,7 +174,8 @@ export const PLAYER_TIERS = [
   // P7.2 T6: the medic's price-family seat — rows gate nothing since T2
   ["mg", "sq_mg", "frost", "sq_runners", "sq_breakers", "sq_medics"],
   ["gun", "sq_sniper", "sq_mortars"],
-  ["mortar", "rocket", "sq_sappers"],
+  // P7.2 T7: the mechanic's price-family seat — the ruled tier-3 row
+  ["mortar", "rocket", "sq_sappers", "sq_mechanics"],
   // P7 T9 (owner): THE HERO TIER — bell 10, replacement armor off the
   // convoy at a ruinous, market-walled price.
   ["hero_bison", "hero_apc"],
@@ -181,12 +185,12 @@ export const PLAYER_TIERS = [
 // bell one; price and the market wall do all the refusing. The tier ladders
 // above stop gating offers (they remain as rows and price families). The
 // mech joins this list in its own task, not before.
-export const HAND_KEYS = ["mg", "gun", "mortar", "rocket", "frost", "sq_sniper", "sq_rifles", "sq_mg", "sq_sappers", "sq_mortars", "sq_engineers", "sq_runners", "sq_breakers", "sq_medics", "hero_bison", "hero_apc"];
+export const HAND_KEYS = ["mg", "gun", "mortar", "rocket", "frost", "sq_sniper", "sq_rifles", "sq_mg", "sq_sappers", "sq_mortars", "sq_engineers", "sq_runners", "sq_breakers", "sq_medics", "sq_mechanics", "hero_bison", "hero_apc"];
 
 // P7.2 T4: the key -> enemy-tag map for HIS side of the hand. Tower keys
 // are deliberately absent — a tower is not a wave tag: his tower plans
 // ROUTE to S.foe.towers (the plans ledger he builds from), full symmetry.
-export const HAND_TAGS = { sq_rifles: "", sq_runners: "fast", sq_breakers: "heavy", sq_sappers: "sapper", sq_mortars: "gren", sq_sniper: "sniper", sq_mg: "mg", sq_engineers: "eng", sq_medics: "medic", hero_bison: "hero_bison", hero_apc: "hero_apc" };
+export const HAND_TAGS = { sq_rifles: "", sq_runners: "fast", sq_breakers: "heavy", sq_sappers: "sapper", sq_mortars: "gren", sq_sniper: "sniper", sq_mg: "mg", sq_engineers: "eng", sq_medics: "medic", sq_mechanics: "mechanic", hero_bison: "hero_bison", hero_apc: "hero_apc" };
 
 export const MASON = { hcs: 0.40, pitch: 0.83, mass: 100, breakF: 8.0e4 };
 

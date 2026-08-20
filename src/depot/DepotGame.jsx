@@ -22,7 +22,7 @@ import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag
 import { marketCounts, computePrices, fieldPrices, priced } from "./market.js";
 import { stepMines, minePrices, mineSeedRoll, mineSeedPlace, MINE_COST, WIRE_COST } from "./mines.js";
 import { homeShare, pickHomeDetail, HOME_GUARD_CAP, cmdrOf, cmdrBellOrders, ferryDecide, flankDrop } from "./ai.js";
-import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic, drivePossessedSquad, clearSlot, stepMedicTendSquad } from "./squads.js";
+import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic, drivePossessedSquad, clearSlot, stepMedicTendSquad, stepMechanicTendSquad } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
 import { stepDrivers, possessedArmorFire, possessedArmorMg } from "./drivers.js";
@@ -547,6 +547,8 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
       // P7.2 T6: the medics make their rounds — after the squad's own step,
       // so a tending man's goal overrides this tick's slot seek.
       if (sq.type === "medics") stepMedicTendSquad(world, sq, world.dt);
+      // P7.2 T7: the mechanics make their rounds — after the medic's own step.
+      if (sq.type === "mechanics") stepMechanicTendSquad(world, sq, world.dt);
       squadFire(world, sq, world.dt, T, invW);
       for (const id of sq.memberIds) {
         const u = world.byId.get(id);
@@ -737,6 +739,8 @@ const PALETTE = [
   { key: "sq_breakers", label: "BREAKERS", icon: "⨳", cost: SQUAD_SPECS.breakers.cost },
   // P7.2 T6: the medic team — mercy on the bar
   { key: "sq_medics", label: "MEDICS", icon: "✚", cost: SQUAD_SPECS.medics.cost },
+  // P7.2 T7: the mechanic team — the paid wrench
+  { key: "sq_mechanics", label: "MECHANICS", icon: "⚙", cost: SQUAD_SPECS.mechanics.cost },
   // P7 T9: THE HERO TIER — bell 10, both ladders. Bar-visible only once
   // unlocked like everything else; the buy is a two-tap arm (S.buyHero),
   // never a build mode.
@@ -911,6 +915,13 @@ export default function DepotGame({ onExit, resume = null }) {
       world.pondAt = (x, z) => !!pondAt(x, z);
       world.inRim = (x, z) => { const c = invW(x, z); return Math.abs(c.u) <= RIM_HALF_U && Math.abs(c.v) <= RIM_HALF_V; };
       world.streamAt = (x, z) => streamAt(x, z);
+      // P7.2 T7: THE REPAIR BOOKS — the mechanic's wrench asks here; each
+      // side pays its own till, one scrap at a time. Game-layer money, so
+      // squads.js's no-economy law holds (the module only invokes this).
+      world._mech = { take: (team, n) => {
+        if (team === 1) { if (S.resources < n) return false; S.resources -= n; return true; }
+        if (!S.reg || S.reg.scrap < n) return false; S.reg.scrap -= n; return true;
+      } };
       // P7 T2/T3/T4: THE STARTING ARMOR — a Bison AND an APC parked by
       // each depot, the enemy's ARMED AT POST (owner) — driving doctrine
       // still waits for its commander (Task 6). FAIL-PROOF (P7 T3): a
@@ -1527,7 +1538,7 @@ export default function DepotGame({ onExit, resume = null }) {
       // ---------------------------------------------- squads (Phase 5 Task 3)
       // Build-bar mode keys -> squad type. Prefixed (sq_mg vs mg) because the
       // MG TOWER already owns the bare "mg" mode key.
-      const SQUAD_MODE = { sq_sniper: "sniper", sq_rifles: "rifles", sq_mg: "mg", sq_sappers: "sappers", sq_mortars: "mortars", sq_engineers: "engineers", sq_runners: "runners", sq_breakers: "breakers", sq_medics: "medics" };
+      const SQUAD_MODE = { sq_sniper: "sniper", sq_rifles: "rifles", sq_mg: "mg", sq_sappers: "sappers", sq_mortars: "mortars", sq_engineers: "engineers", sq_runners: "runners", sq_breakers: "breakers", sq_medics: "medics", sq_mechanics: "mechanics" };
       // Infantry/sandbag placement checks: same validatePlacement gate as
       // towers (occupied/ice/held/afford) — men don't claim the grid cell
       // (no cell.blocked write, no connectivity re-check: bodies, not

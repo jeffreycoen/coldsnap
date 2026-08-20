@@ -16,7 +16,7 @@ import { arcClears } from "./accuracy.js";
 // behavior module, both signs). squads.js now imports accuracy/state for the
 // stand-point scorer — the same documented-safe deferred cycle accuracy.js
 // and state.js already share (no top-level cross calls).
-import { exposureAt, surveyHighGround, bestStandPoint, reactShift, stepMedicTend } from "./squads.js";
+import { exposureAt, surveyHighGround, bestStandPoint, reactShift, stepMedicTend, stepMechanicTend } from "./squads.js";
 import { ENEMY_SPECS, ENEMY_FIRE, TANK, INFANTRY_ARMS, SATCHEL, SAPPER_PLANT_PAD } from "./specs.js";
 
 // ---------------------------------------------------------------- spawning
@@ -520,6 +520,15 @@ export function stepUnits(world, grid, fwdDir, T, toUV = (x, z) => ({ u: x, v: z
     if (u.tag === "medic") {
       if (!u._post) u._post = { x: u.pos.x, z: u.pos.z };
       if (stepMedicTend(world, u, u._post.x, u._post.z, dt)) { faceTravel(u, dt); continue; }
+      u.settled = true;
+      u.v.x *= 1 - Math.min(1, 6 * dt); u.v.z *= 1 - Math.min(1, 6 * dt);
+      continue;
+    }
+    // P7.2 T7: ITS MECHANIC — the medic branch's shape, the wrench instead
+    // of the bag; its own books pay through world._mech. No weapon, no draws.
+    if (u.tag === "mechanic") {
+      if (!u._post) u._post = { x: u.pos.x, z: u.pos.z };
+      if (stepMechanicTend(world, u, u._post.x, u._post.z, dt)) { faceTravel(u, dt); continue; }
       u.settled = true;
       u.v.x *= 1 - Math.min(1, 6 * dt); u.v.z *= 1 - Math.min(1, 6 * dt);
       continue;

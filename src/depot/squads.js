@@ -62,6 +62,10 @@ export const SQUAD_SPECS = {           // costs are scrap; members spawn as unit
   // the wounded and kneel to treat. Tools, not shooters: no INFANTRY_ARMS
   // row, so squadFire skips them by membership. // provisional (F5)
   medics: { n: 2, cost: 55, label: "MEDIC TEAM" },
+  // P7.2 T7 (owner): THE MECHANIC TEAM — two mechanics with a toolbox. Tools,
+  // not shooters: no INFANTRY_ARMS row, so squadFire skips them by
+  // membership. // provisional (F5)
+  mechanics: { n: 2, cost: 55, label: "MECHANIC TEAM" },
 };
 
 // THE PER-TYPE SPEED (P7 T7): a squad's march speed off its own SQUAD_SPECS
@@ -862,5 +866,73 @@ export function stepMedicTendSquad(world, squad, dt) {
   for (const id of squad.memberIds) {
     const u = world.byId.get(id);
     if (u && u.alive) stepMedicTend(world, u, squad.anchor.x, squad.anchor.z, dt);
+  }
+}
+
+// ------------------------------------------------------ the mechanic (P7.2 T7)
+// The medic's tend template with three deltas (owner's rulings): TARGETS are
+// own-side machines and masonry with an hp ledger (hulls, towers, wall
+// courses, bags — depot stones carry no ledger and are excluded by
+// construction); UNDER FIRE THE WORK PAUSES (a fresh dmgT stands him down
+// for REPAIR_UNDERFIRE_S — the reaction covers him like any man); and EVERY
+// POINT IS PAID — a fractional debt charges ONE scrap at a time through
+// world._mech.take(team, 1), the game layer's books (stamped at mount; this
+// module only asks — its no-economy law holds). An empty till leaves him
+// kneeling with a still wrench. Shares kneel/_tending with the medic — the
+// defend-branch skip and the wrapper shape carry over. Zero rng.
+// All dials provisional (F5).
+export const MECH_SEEK_M = 12;          // provisional (F5)
+export const MECH_WORK_PAD = 1.6;       // provisional (F5)
+export const REPAIR_RATE = 4;           // provisional (F5) — hp per second
+export const REPAIR_COST_PER_HP = 0.15; // provisional (F5) — scrap per point
+export const REPAIR_UNDERFIRE_S = 4;    // provisional (F5)
+export function stepMechanicTend(world, u, ax, az, dt) {
+  if (world.t - (u.dmgT != null ? u.dmgT : -1e9) < REPAIR_UNDERFIRE_S) { u.kneel = false; u._tending = false; return false; }
+  let best = null, bd = Infinity, br = 0;
+  for (const b of world.bodies) {
+    if (!b.alive || b.team !== u.team) continue;
+    const machine = b.kind === "vehicle" || b.kind === "tower" || b.kind === "wall" || (b.kind === "chunk" && b.sandbag);
+    if (!machine || b.maxHp == null || b.hp >= b.maxHp - 0.5) continue;
+    if (Math.hypot(b.pos.x - ax, b.pos.z - az) > MECH_SEEK_M) continue;
+    const d = Math.hypot(b.pos.x - u.pos.x, b.pos.z - u.pos.z);
+    if (d < bd) { bd = d; best = b; br = Math.max(b.hx, b.hz) + MECH_WORK_PAD; }
+  }
+  if (!best) { u.kneel = false; u._tending = false; return false; }
+  if (bd > br) {
+    u.kneel = false; u._tending = true;
+    const g = clearSlot(world, best.pos.x, best.pos.z, memberClear(u));
+    u.goal = { x: g.x, z: g.z };
+    u.settled = false;
+    seekGoal(world, u, dt);
+    return true;
+  }
+  u.kneel = true; u._kneltOnce = true; u._tending = true;
+  u.settled = true;
+  u.v.x *= 1 - Math.min(1, 8 * dt); u.v.z *= 1 - Math.min(1, 8 * dt);
+  const heal = Math.min(REPAIR_RATE * dt, best.maxHp - best.hp);
+  const cost = heal * REPAIR_COST_PER_HP;
+  // PRE-PAID WORK (A1): the wrench buys credit ONE scrap at a time BEFORE
+  // it mends — the first point of work requires the books to answer, and
+  // an empty till mends nothing from the first tick (the original
+  // deferred-charge shape leaked ~6.6 free hp; the task's own fixture
+  // caught it).
+  if ((u._repairCredit || 0) < cost) {
+    if (world._mech && world._mech.take(u.team, 1)) u._repairCredit = (u._repairCredit || 0) + 1;
+    else return true; // unfunded: kneel, but no work
+  }
+  u._repairCredit -= cost;
+  best.hp += heal;
+  return true;
+}
+// The squad wrapper — the medic's A1 shape, one type over.
+export function stepMechanicTendSquad(world, squad, dt) {
+  if (squad.type !== "mechanics") return;
+  if (squad.order !== "defend") {
+    for (const id of squad.memberIds) { const u = world.byId.get(id); if (u) { u.kneel = false; u._tending = false; } }
+    return;
+  }
+  for (const id of squad.memberIds) {
+    const u = world.byId.get(id);
+    if (u && u.alive) stepMechanicTend(world, u, squad.anchor.x, squad.anchor.z, dt);
   }
 }
