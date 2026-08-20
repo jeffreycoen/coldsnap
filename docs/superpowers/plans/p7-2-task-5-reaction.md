@@ -3,6 +3,8 @@
 **Suggested model: Sonnet** (unit-behavior work on existing machinery, fully specced; one small guarded engine stamp).
 **Scope (ruled, 2026-08-20):** the enemy answers being attacked — and so does your side, identically. Three rulings: (1) BOTH, BY ROLE — garrison and hold men under fire from beyond their reach dive to nearby cover and keep their post; defending armor advances toward the fire's origin until its own eyes find the attacker. (2) UNITS ONLY — no commander escalation, no assault turning home; that doctrine stays with Enemy Front. (3) IDENTICAL BOTH SIDES — one rule, one code path per class, both teams; explicit orders always override. Fire stays sight-gated throughout — the reaction is MOVEMENT, never blind fire. The missing piece under everything is that a hit never says where it came from: the engine's damage stamp gains guarded origin fields (the dmgT precedent), and every reaction reads them through one pure helper.
 
+**AMENDMENT 1 (2026-08-20, after the agent's honest stop at gate 1 — both defects the plan-writer's, both corrected in place below):** (1) Step 4's role guard was written `if (u.role)` — broader than the ruling: mg-squad members carry render-only "gunner"/"loader" roles and were silently barred from reacting; the plan's own T5(e) fixture caught it (a genuine behavior gap, not a fixture fault — the fixture stands unchanged). The guard narrows to the pair alone: `u.role === "sniper" || u.role === "spotter"`. (2) T5(e2)'s count regex matched the function's own definition line as well as the call site and could never pass against the plan's own verbatim code — it now counts the call-site literal (`const rs = reactShift(world, u);`) exactly once.
+
 ## Required reading (verified against the mk1.84 tree at ca81efe; re-verify at dispatch)
 
 - `src/depot/units.js` — whole (615): coverHaltUpdate/seekStandPoint (152–198), the hold branch (312–340), stepUnits (458–566).
@@ -115,7 +117,7 @@ and `identFwdDir, straightGrid` join the shared.mjs import.
     ok("T5(e): the hit defender shifts to the covered flank of his slot", Math.hypot(m0.pos.x, m0.pos.z) < 3.6 && Math.abs(m0.pos.z) < 1.2, `${m0.pos.x.toFixed(2)},${m0.pos.z.toFixed(2)}`);
     const sqSrc = fs.readFileSync("src/depot/squads.js", "utf8");
     ok("T5(e2): the reaction lives in the defend branch alone — every other order is the player's word",
-      (sqSrc.match(/reactShift\(world, u\)/g) || []).length === 1 && /const rs = reactShift\(world, u\);\n\s+if \(rs\) u\._slotGoal = rs;/.test(sqSrc));
+      (sqSrc.match(/const rs = reactShift\(world, u\);/g) || []).length === 1 && /const rs = reactShift\(world, u\);\n\s+if \(rs\) u\._slotGoal = rs;/.test(sqSrc));
     const unSrc = fs.readFileSync("src/depot/units.js", "utf8");
     ok("T5(e3): the enemy hold branch consumes the identical rule — one law, both sides",
       /const rs5 = reactShift\(world, u\);\n\s+if \(rs5\) u\._standPt = rs5;/.test(unSrc));
@@ -236,7 +238,7 @@ export function hitOrigin(world, info) {
 export const REACT_OFFSETS = [1.5, -1.5, 3, -3]; // provisional (F5)
 export const REACT_CD_S = 2;                     // provisional (F5)
 export function reactShift(world, u) {
-  if (u.role) return null;
+  if (u.role === "sniper" || u.role === "spotter") return null; // the PAIR alone — mg gunner/loader are render-only roles and react like any man (Amendment 1)
   if (!u.lastHit || u.lastHit === u._coverHit) return null;
   if (world.t - (u._coverT != null ? u._coverT : -1e9) < REACT_CD_S) return null;
   const o = hitOrigin(world, u.lastHit);
@@ -330,7 +332,7 @@ export { HUNT_HOLD_S };
 - The two core.js sites are the ONLY engine lines this task touches. The structure-blast site (~line 654), the tree sites, and every non-projectile damage path stay byte-identical.
 - reactShift shares `_coverHit`/`_coverT` with coverHaltUpdate BY DESIGN — one hit, one evaluation, whichever path sees it first. Do not give it separate fields.
 - The hold branch's yield block (`u._yield`) returns before the insert point — a yielding man finishes yielding first. Keep the insert after the yield, before the `_standPt` seek.
-- An enemy sniper on vantage carries `u.role === "sniper"` — reactShift's role skip protects his directed stand; the same skip protects the 03/05-era vantage fixtures.
+- An enemy sniper on vantage carries `u.role === "sniper"` — reactShift's role skip protects his directed stand; the same skip protects the 03/05-era vantage fixtures. The skip is SNIPER/SPOTTER ONLY (Amendment 1): mg gunner/loader are render-only roles and react like any man. Do not widen it back.
 - The hunt writes `v.order`/`v.dest` — the commander's own bell-order shape (ringBell precedent). Do not invent a parallel channel.
 - stepDrivers' possessed skip (opts.possessedId) already bypasses armorGoal — possession outranks the hunt with zero new code.
 - `_huntPt`/`_huntT`/`_huntHit` are deliberately absent from save.js's sweep list — they re-derive after resume. No save.js edit.
