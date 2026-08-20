@@ -6,7 +6,7 @@
 
 | # | Task | Mark | Plan file | State |
 |---|------|------|-----------|-------|
-| 1 | Easier selection | mk1.80 | `p7-2-task-1-selection.md` | pending |
+| 1 | Easier selection | mk1.80 | `p7-2-task-1-selection.md` | SHIPPED (e8d9c60) |
 | 2 | The hand | mk1.81 | `p7-2-task-2-the-hand.md` | pending |
 | 3 | His hand | mk1.82 | `p7-2-task-3-his-hand.md` | pending |
 | 4 | The volunteer | mk1.83 | `p7-2-task-4-volunteer.md` | pending |
