@@ -13,11 +13,11 @@
 // Zero behavior change.
 import { TOWN, PASSES, OBJ_POS, invW, fwdU } from "./mapgen.js";
 import { payTown } from "./economy.js";
-import { fireBell, TIER_BELLS, WALL_FIELD_COST, SANDBAG_FIELD_COST } from "./state.js";
+import { fireBell, WALL_FIELD_COST, SANDBAG_FIELD_COST } from "./state.js";
 import { homeShare, pickHomeDetail, HOME_GUARD_CAP, cmdrBellOrders, ferryDecide, flankDrop, engBuildDecide, engBuildKind, engSeedPlace } from "./ai.js";
 import { clearSlot } from "./squads.js";
 import { spawnUnit } from "./units.js";
-import { parkArmor } from "./muster.js";
+import { parkArmor, mirrorFieldKey } from "./muster.js";
 import { mineSeedRoll, mineSeedPlace, MINE_COST } from "./mines.js";
 import { MASON, BISON, APC } from "./specs.js";
 import { startBuildLine } from "./buildlines.js";
@@ -40,7 +40,19 @@ export function ringBell(world, grid, field, T, S, ctx) {
   fireBell(S, {
     reg: S.reg, snap: ctx.buildSnapshot(), rng: world.rng, t: world.t,
     priceOf: (t) => (S._market ? S._market.foe[t === "tank" ? "tank" : t] : undefined),
+    // P7.2 T4: HIS HAND pays the PLAYER'S OWN price table — one table to
+    // the letter (owner). Null before the market's first tick: his walk
+    // then buys nothing, and the five draws still burn (the law).
+    priceP: (k) => (S._market && S._market.player[k] != null ? S._market.player[k] : null),
   });
+  // P7.2 T4: HIS HIRES AND BUILDS FIELD AT ONCE — seeded ground at his
+  // depot, the dealt-hand mirror's own machinery, draw-free. Bare fixtures
+  // with no grid skip the fielding (the books were charged; state-layer only).
+  if (S.foe && S.foe.hired && S.foe.hired.length) {
+    const depotH = TOWN.find((tt) => tt.depot && tt.team === 2);
+    if (grid && field && depotH) for (const k of S.foe.hired) mirrorFieldKey(world, S, depotH, grid, field, k, ctx.nextApcSeq);
+    S.foe.hired = [];
+  }
   // P7 T6 (owner): THE DEFENSIVE OPENING — part of an early muster
   // digs in at home instead of marching. Pure post-muster split: no
   // planWave draw moves. Rifle-family only; capped at HOME_GUARD_CAP
@@ -119,7 +131,7 @@ export function ringBell(world, grid, field, T, S, ctx) {
   {
     const heroPrice = (k) => (S._market ? S._market.foe[k] : (k === "hero_bison" ? BISON.cost : APC.cost));
     const has = (vt) => world.bodies.some((b) => b.kind === "vehicle" && b.team === 2 && b.vtype === vt && b.alive);
-    const open = (tag) => S.foe.unlocked.indexOf(tag) >= 0 && S.bell >= TIER_BELLS[3];
+    const open = (tag) => S.foe.unlocked.indexOf(tag) >= 0; // P7.2 T4 (owner): a bought hero plan re-parks at ANY bell — the clamp is dead
     const depotE4 = TOWN.find((tt) => tt.depot && tt.team === 2);
     if (depotE4 && !has("bison") && open("hero_bison") && S.reg.scrap >= heroPrice("hero_bison")) {
       S.reg.scrap -= heroPrice("hero_bison"); parkArmor(world, grid, field, depotE4, 2, "bison", ctx.nextApcSeq);

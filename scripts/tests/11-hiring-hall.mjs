@@ -3,9 +3,10 @@
 import { ok } from "./harness.mjs";
 import { makeWorld, mulberry32 } from "../../src/engine/core.js";
 import { makeSquad } from "../../src/depot/squads.js";
-import { spawnSquadMembers, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType, dealConvoyHand, takeHandCard, HAND_DRAWS, FOE_DRAWS, makeManifestState, makeRunState, fireBell, BELL_PERIOD_S, pendingArmed } from "../../src/depot/state.js";
-import { HAND_KEYS, PLAYER_START } from "../../src/depot/specs.js";
-import { PICK_POOL } from "../../src/depot/muster.js";
+import { spawnSquadMembers, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType, dealConvoyHand, takeHandCard, HAND_DRAWS, makeManifestState, makeRunState, fireBell, BELL_PERIOD_S, pendingArmed } from "../../src/depot/state.js";
+import { HAND_KEYS, PLAYER_START, HAND_TAGS } from "../../src/depot/specs.js";
+import { PICK_POOL, mirrorFieldKey } from "../../src/depot/muster.js";
+import { makeMap, TOWN } from "../../src/depot/mapgen.js";
 import { fatReg } from "./shared.mjs";
 import fs from "node:fs";
 
@@ -106,7 +107,7 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
     let draws = 0; const raw = mulberry32(81); const rng = () => { draws++; return raw(); };
     fireBell(S, { reg: S.reg, snap: {}, rng, t: BELL_PERIOD_S });
     ok("T2(d): the ring deals five and stamps the bell", S.manifest.hand.length === 5 && S.manifest.offerBell === 1 && S.manifest.cardUp === true);
-    ok("T2(d2): bell one spends exactly ten draws (hand 5 + his pick 1 + the muster 4; opening intel draws none)", draws === 10, draws);
+    ok("T2(d2): bell one spends exactly fourteen draws (hand 5 + his hand 5 + the muster 4; opening intel draws none)", draws === 14, draws);
     const kept = S.manifest.hand.filter((x) => !x.hire).map((x) => x.k);
     fireBell(S, { reg: S.reg, snap: {}, rng, t: 2 * BELL_PERIOD_S });
     ok("T2(d3): a skipped bell is overwritten, and unpicked plans stay in the pool",
@@ -177,5 +178,117 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
     ok("T3-A2b: both buy gates read the wall clock", (src.match(/performance\.now\(\) \/ 1000 < \(M\.armedAtWall \?\? 0\)/g) || []).length === 2);
     ok("T3-A2c: the info card arms on the wall for every door", /const armed = performance\.now\(\) \/ 1000 >= S\.infoArmedWall;/.test(src));
     ok("T3-A2d: a resumed hand re-arms instantly (dead-session stamps never block)", /S\.manifest\.armedAtWall = 0;/.test(src));
+  }
+}
+
+// ---- P7.2 T4 (mk1.84): HIS HAND — the full mirror, towers included
+{
+  // (a) the tag map: squads and heroes map to wave tags; a tower key maps to
+  // nothing because it ROUTES to his plans ledger instead — never an exclusion
+  ok("T4(a): HAND_TAGS covers the eight squads and both heroes; tower keys route to the ledger",
+    Object.keys(HAND_TAGS).length === 10 && ["mg", "gun", "mortar", "rocket", "frost"].every((k) => HAND_TAGS[k] === undefined));
+  // (b) his deal: five draws; owned plans of BOTH spaces never re-deal
+  {
+    let n = 0; const raw = mulberry32(84); const rng = () => { n++; return raw(); };
+    const foe = { unlocked: ["fast"], towers: ["gun"] };
+    const owned = HAND_KEYS.filter((k) => (HAND_TAGS[k] === undefined ? foe.towers.indexOf(k) >= 0 : (HAND_TAGS[k] === "" || foe.unlocked.indexOf(HAND_TAGS[k]) >= 0)));
+    const hand = dealConvoyHand(owned, HAND_KEYS, rng);
+    ok("T4(b): his deal burns five draws like the player's", n === 5, n);
+    ok("T4(b2): an owned tag and an owned tower plan never re-deal; unowned towers CAN deal (symmetry)",
+      hand.filter((c) => !c.hire).every((c) => c.k !== "gun" && (HAND_TAGS[c.k] === undefined || HAND_TAGS[c.k] !== "fast")));
+    ok("T4(b3): the conscript key is born-owned — his rifles plan never deals (his conscripts march from bell zero; a rifles plan is dead money)",
+      hand.filter((c) => !c.hire).every((c) => c.k !== "sq_rifles"));
+  }
+  // (c) the walk: deterministic buys off the one table, the floor kept
+  {
+    const S = makeRunState();
+    S.started = true; S.reg = fatReg(); S.reg.scrap = 5000;
+    let draws = 0; const raw = mulberry32(85); const rng = () => { draws++; return raw(); };
+    fireBell(S, { reg: S.reg, snap: {}, rng, t: BELL_PERIOD_S, priceP: () => 40 });
+    ok("T4(c): a rich bell buys plans AND queues hires", (S.foe.unlocked.length + S.foe.towers.length) >= 1 && (S.foe.hired || []).length >= 1, `${S.foe.unlocked.length}+${S.foe.towers.length}/${(S.foe.hired || []).length}`);
+    ok("T4(c2): the books were charged", S.reg.scrap < 5000, S.reg.scrap);
+    ok("T4(c3): bell draws stay fourteen with the walk buying — zero draws in the walk", draws === 14, draws);
+    const S2 = makeRunState();
+    S2.started = true; S2.reg = fatReg(); S2.reg.scrap = 0;
+    fireBell(S2, { reg: S2.reg, snap: {}, rng: mulberry32(85), t: BELL_PERIOD_S, priceP: () => 200 });
+    ok("T4(c4): prices past the till buy nothing — the muster floor holds (the stipend alone cannot fund a 100-scrap plan)",
+      S2.foe.unlocked.length === 0 && S2.foe.towers.length === 0 && (S2.foe.hired || []).length === 0);
+    const S3 = makeRunState();
+    S3.started = true; S3.reg = fatReg();
+    fireBell(S3, { reg: S3.reg, snap: {}, rng: mulberry32(85), t: BELL_PERIOD_S });
+    ok("T4(c5): no price table (an old fixture) — his walk is a no-op", S3.foe.unlocked.length === 0 && S3.foe.towers.length === 0);
+    // (c6) the tower plan-and-build loop: seed a ledger, ring, and the bell
+    // queues ONE full-price build of the first owned type in table order
+    const S6 = makeRunState();
+    S6.started = true; S6.reg = fatReg(); S6.reg.scrap = 5000;
+    S6.foe.towers = ["mortar", "mg"];
+    fireBell(S6, { reg: S6.reg, snap: {}, rng: mulberry32(86), t: BELL_PERIOD_S, priceP: () => 40 });
+    ok("T4(c6): he BUILDS what he owns — one tower build a bell, first owned in table order",
+      (S6.foe.hired || []).filter((k) => k === "mg" || k === "mortar").length >= 1 && (S6.foe.hired || []).indexOf("mg") >= 0);
+    // (c7) the stall is dead: a ruinous first-owned type is SKIPPED and the
+    // next affordable owned type builds instead
+    const S7 = makeRunState();
+    S7.started = true; S7.reg = fatReg(); S7.reg.scrap = 5000;
+    S7.foe.towers = ["mortar", "mg"];
+    fireBell(S7, { reg: S7.reg, snap: {}, rng: mulberry32(87), t: BELL_PERIOD_S, priceP: (k) => (k === "mg" ? 99999 : 40) });
+    ok("T4(c7): an unaffordable first-owned type is skipped — the first AFFORDABLE owned type builds (no stall)",
+      (S7.foe.hired || []).indexOf("mortar") >= 0 && (S7.foe.hired || []).indexOf("mg") < 0);
+  }
+  // (d) his hires field through the mirror machinery, draw-free
+  {
+    makeMap(93);
+    const flatF4 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
+    const w = makeWorld({ field: flatF4, seed: 93 });
+    const S4 = { foeSquads: [] };
+    const depotE4 = TOWN.find((t) => t.depot && t.team === 2);
+    mirrorFieldKey(w, S4, depotE4, {}, flatF4, "sq_rifles", () => 1);
+    const men = w.bodies.filter((b) => b.kind === "unit" && b.team === 2 && b.garrison && b.alive);
+    ok("T4(d): a hired rifle squad fields four garrison men at his depot", men.length === 4, men.length);
+    mirrorFieldKey(w, S4, depotE4, {}, flatF4, "sq_engineers", () => 1);
+    ok("T4(d2): a hired engineer squad joins his build roster", S4.foeSquads.length === 1 && S4.foeSquads[0].memberIds.length === 2);
+    mirrorFieldKey(w, S4, depotE4, {}, flatF4, "sq_engineers", () => 1);
+    ok("T4(d2b): a second hired squad's id never collides — derived from the live roster, save-proof",
+      S4.foeSquads.length === 2 && S4.foeSquads[0].id !== S4.foeSquads[1].id && S4.foeSquads.every((q) => q.id >= 9501));
+    // a REAL mini-grid for the tower branch (the era-10 mkGrid idiom, local)
+    const N = 44, cells = Array.from({ length: N * N }, () => ({ blocked: false, ice: false, water: false, wallId: null }));
+    const G = { cells, w: N, h: N, cs: 2,
+      idx: (gx, gz) => gz * N + gx,
+      inBounds: (gx, gz) => gx >= 0 && gx < N && gz >= 0 && gz < N,
+      worldToGrid: (x, z) => ({ gx: Math.floor(x / 2) + (N >> 1), gz: Math.floor(z / 2) + (N >> 1) }),
+      gridToWorld: (gx, gz) => ({ x: (gx - (N >> 1)) * 2 + 1, z: (gz - (N >> 1)) * 2 + 1 }) };
+    G.cellAt = (x, z) => { const g = G.worldToGrid(x, z); return G.inBounds(g.gx, g.gz) ? cells[G.idx(g.gx, g.gz)] : null; };
+    const w2 = makeWorld({ field: flatF4, seed: 94 });
+    mirrorFieldKey(w2, { foeSquads: [] }, { x: 0, z: 0, nx: 12, nz: 9, team: 2, depot: true }, G, flatF4, "gun", () => 1);
+    const tw = w2.bodies.find((b) => b.kind === "tower" && b.team === 2 && b.alive);
+    ok("T4(d3): a hired or built tower stands and fights at his depot", !!tw && tw.towerType === "gun" && tw.discipline === "free");
+    ok("T4(d4): a bare fixture (no grid) skips fielding without a throw",
+      (() => { mirrorFieldKey(w2, {}, { x: 0, z: 0 }, null, null, "hero_bison", null); return true; })());
+    // (d5) the hemmed ring: every cell blocked but one pocket past the ring
+    // scan's reach (~33m out — the ring samples only 12-30m) — the fail-proof
+    // backstop still parks the paid tower
+    const cellsH = Array.from({ length: N * N }, () => ({ blocked: true, ice: false, water: false, wallId: null }));
+    const GH = { ...G, cells: cellsH };
+    GH.cellAt = (x, z) => { const g = GH.worldToGrid(x, z); return GH.inBounds(g.gx, g.gz) ? cellsH[GH.idx(g.gx, g.gz)] : null; };
+    cellsH[GH.idx(38, 22)].blocked = false; // world (33, 1) — ~33m from the depot, inside the 8-34m sweep
+    const w4 = makeWorld({ field: flatF4, seed: 95 });
+    mirrorFieldKey(w4, { foeSquads: [] }, { x: 0, z: 0, nx: 12, nz: 9, team: 2, depot: true }, GH, flatF4, "gun", () => 1);
+    ok("T4(d5): a hemmed ring still parks the paid tower — the fail-proof backstop (the parkArmor precedent)",
+      !!w4.bodies.find((b) => b.kind === "tower" && b.alive));
+  }
+  // (e) the wiring
+  {
+    const be = fs.readFileSync("src/depot/bell.js", "utf8");
+    ok("T4(e): the ring fields his hires draw-free and clears the queue",
+      /for \(const k of S\.foe\.hired\) mirrorFieldKey\(world, S, depotH, grid, field, k, ctx\.nextApcSeq\);/.test(be) && /S\.foe\.hired = \[\];/.test(be));
+    ok("T4(e2): his hand pays the PLAYER'S price table — one table (owner)",
+      /priceP: \(k\) => \(S\._market && S\._market\.player\[k\] != null \? S\._market\.player\[k\] : null\)/.test(be));
+    const st = fs.readFileSync("src/depot/state.js", "utf8");
+    ok("T4(e3): plans pay half and the floor guards every buy — plan, hire, and the tower build",
+      /Math\.max\(1, Math\.ceil\(base \/ 2\)\)/.test(st) && (st.match(/< MIN_WAVE_FLOOR\) continue;/g) || []).length === 3 && /reg\.scrap - priceP\(x\) >= MIN_WAVE_FLOOR/.test(st));
+    ok("T4(e4): the old pick machinery is gone", !/drawFoePick/.test(st) && !/foePool/.test(st) && !/FOE_DRAWS/.test(st));
+    ok("T4(e5): one tower build a bell, first AFFORDABLE owned in table order, full price",
+      /HAND_KEYS\.find\(\(x\) => S\.foe\.towers\.indexOf\(x\) >= 0 && priceP\(x\) != null && reg\.scrap - priceP\(x\) >= MIN_WAVE_FLOOR\)/.test(st));
+    ok("T4(e6): the born-owned clause is in the filter — dead money closed at the source",
+      /HAND_TAGS\[k\] === "" \|\| S\.foe\.unlocked\.indexOf\(HAND_TAGS\[k\]\) >= 0/.test(st));
   }
 }

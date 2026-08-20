@@ -7,7 +7,7 @@ import { scatterSigma, applyScatter, arcClears, marchArc } from "./accuracy.js";
 import { planWave, MIN_WAVE_FLOOR, spawnDelayFor } from "./ai.js";
 import { STIPEND, payResults, combatIneffective, bookValue } from "./economy.js";
 import { composeIntel, openingIntel } from "./intel.js";
-import { TOWER_SPECS, ENEMY_SPECS, TANK, INFANTRY_ARMS, MASON, PLAYER_START, PLAYER_TIERS, HAND_KEYS } from "./specs.js";
+import { TOWER_SPECS, ENEMY_SPECS, TANK, INFANTRY_ARMS, MASON, PLAYER_START, PLAYER_TIERS, HAND_KEYS, HAND_TAGS } from "./specs.js";
 import { seenAt } from "./sight.js";
 
 // Targeting gate, symmetric, VISION era (mk0.72): a shooter of `team` (1 =
@@ -1110,11 +1110,12 @@ export function enemyTierOf(tag) {
 // unlocked); an empty/omitted list means they have picked nothing yet, so the
 // assault is conscripts only. Pure, no rng.
 export function enemyTierState(bell, unlocked = []) {
+  // P7.2 T4 (owner): the bell clamp is DEAD — a bought plan fields at
+  // once, the full mirror of the player's instant build rights. The
+  // signature keeps the bell for its callers; membership in his unlocked
+  // list is the whole gate now.
   const tags = [""];
-  for (const t of unlocked) {
-    const tier = enemyTierOf(t);
-    if (tier >= 0 && bell >= TIER_BELLS[tier] && tags.indexOf(t) < 0) tags.push(t);
-  }
+  for (const t of unlocked) if (tags.indexOf(t) < 0) tags.push(t);
   return { bell, tags };
 }
 
@@ -1123,34 +1124,20 @@ export function enemyTierState(bell, unlocked = []) {
 // and takes ONE; the enemy picks one from its own mirrored table (specs.js
 // carries both ladders written side by side).
 //
-// DRAW-COUNT LAW: both draw sites consume a FIXED number of world.rng values
-// per bell — MANIFEST_DRAWS (4) and FOE_DRAWS (1) — no matter how big the pool
-// is or whether anything is left in it at all. Every value is drawn up front
-// and then clamped/spliced, never drawn-if; an exhausted ladder still burns its
-// draws so two clients on the same seed stay in step forever.
+// DRAW-COUNT LAW: both hands consume a fixed HAND_DRAWS (5) each side, drawn
+// up front and then clamped/spliced, never drawn-if; an exhausted pool still
+// burns its draws so two clients on the same seed stay in step forever.
 // P7.2 T2 (owner): THE HAND — five draws per bell, the fixed split: three
 // plan draws over the not-yet-unlocked pool, two hire draws over the full
 // list. Draw-then-clamp: an exhausted plans pool still burns its three.
 export const HAND_DRAWS = 5;
-export const FOE_DRAWS = 1;        // 1 index roll (his pick — Task 3 replaces it)
 
 export function makeManifestState() {
   return { unlocked: PLAYER_START.slice(), hand: [], offerBell: 0, cardUp: false, armedAt: 0 };
 }
 export function makeFoeState() {
-  return { unlocked: [] };
+  return { unlocked: [], hired: [], towers: [] };
 }
-
-// The pool: everything in an OPEN tier the side has not taken yet — which is
-// exactly "this tier's items plus every earlier tier's leftovers", since a
-// passed-over item is never removed from anything.
-function ladderPool(tiers, unlocked, bell) {
-  const open = Math.min(tierOpenCount(bell), tiers.length);
-  const pool = [];
-  for (let i = 0; i < open; i++) for (const k of tiers[i]) if (unlocked.indexOf(k) < 0) pool.push(k);
-  return pool;
-}
-export function foePool(unlocked, bell) { return ladderPool(ENEMY_TIERS, unlocked, bell); }
 
 // dealConvoyHand(unlocked, keys, rng) -> up to five rows { k, hire }.
 // Exactly HAND_DRAWS draws, always: three spliced plan picks over the
@@ -1184,13 +1171,6 @@ export function takeHandCard(M, key, hire) {
   M.hand.splice(i, 1);
   if (!M.hand.length) M.cardUp = false;
   return true;
-}
-
-// drawFoePick(pool, rng) -> one key or null. Exactly FOE_DRAWS draws.
-export function drawFoePick(pool, rng) {
-  const d = rng();
-  if (pool.length === 0) return null;
-  return pool[Math.min(pool.length - 1, Math.floor(d * pool.length))];
 }
 
 export function isUnlocked(M, key) {
@@ -1408,7 +1388,7 @@ export function stepBell(S, worldT) {
 // simply joined by the next one, and NO card gates the muster — steps 2 and 4
 // only raise cards; step 5 marches whether or not they are ever read.
 export function fireBell(S, opts = {}) {
-  const { reg = null, snap = null, rng = null, t = null, priceOf = null } = opts;
+  const { reg = null, snap = null, rng = null, t = null, priceOf = null, priceP = null } = opts;
   const ws = S.ws;
   const prevWithdrew = ws.withdrew || 0;
   const nowT = t == null ? 0 : t;
@@ -1461,11 +1441,56 @@ export function fireBell(S, opts = {}) {
     M.armedAt = nowT + PENDING_ARM_S;
   }
 
-  // 5. the enemy's pick, then the muster.
+  // 5. HIS HAND, then the muster — the full mirror (P7.2 T4). Five draws,
+  // the step-4 shape; the buys are a deterministic walk in dealt order
+  // (zero draws): every card he can afford while keeping a muster floor
+  // in the till. Squad and hero plans push his tags — his waves field
+  // them AT ONCE (the bell clamp is dead, owner 2026-08-20); tower plans
+  // join S.foe.towers, his plans ledger; hires queue on S.foe.hired and
+  // the game layer fields them at his depot right after the ring. The
+  // conscript key is BORN-OWNED (the never-gated law): his conscripts
+  // march from bell zero, so a rifles plan is dead money and never deals.
   if (rng) {
     if (!S.foe) S.foe = makeFoeState();
-    const pick = drawFoePick(foePool(S.foe.unlocked, S.bell), rng);
-    if (pick != null) S.foe.unlocked.push(pick);
+    if (!S.foe.towers) S.foe.towers = [];
+    const ownedKeys = HAND_KEYS.filter((k) => (HAND_TAGS[k] === undefined ? S.foe.towers.indexOf(k) >= 0 : (HAND_TAGS[k] === "" || S.foe.unlocked.indexOf(HAND_TAGS[k]) >= 0)));
+    const foeHand = dealConvoyHand(ownedKeys, HAND_KEYS, rng);
+    if (reg && priceP) {
+      for (const c of foeHand) {
+        const base = priceP(c.k);
+        if (base == null) continue;
+        if (!c.hire) {
+          const cost = Math.max(1, Math.ceil(base / 2));
+          if (HAND_TAGS[c.k] === undefined) {
+            if (S.foe.towers.indexOf(c.k) >= 0) continue;
+            if (reg.scrap - cost < MIN_WAVE_FLOOR) continue;
+            reg.scrap -= cost;
+            S.foe.towers.push(c.k);
+          } else {
+            const tag = HAND_TAGS[c.k];
+            if (S.foe.unlocked.indexOf(tag) >= 0) continue;
+            if (reg.scrap - cost < MIN_WAVE_FLOOR) continue;
+            reg.scrap -= cost;
+            S.foe.unlocked.push(tag);
+          }
+        } else {
+          if (reg.scrap - base < MIN_WAVE_FLOOR) continue;
+          reg.scrap -= base;
+          (S.foe.hired || (S.foe.hired = [])).push(c.k);
+        }
+      }
+      // THE PLAN'S WHOLE POINT: he BUILDS what he owns — one tower build
+      // a bell, full price, the first owned type in table order THE TILL
+      // CAN AFFORD (a dear first type is skipped, never a stall), the
+      // same till floor. Deterministic, zero draws. // provisional (F5)
+      if (S.foe.towers.length) {
+        const k = HAND_KEYS.find((x) => S.foe.towers.indexOf(x) >= 0 && priceP(x) != null && reg.scrap - priceP(x) >= MIN_WAVE_FLOOR);
+        if (k != null) {
+          reg.scrap -= priceP(k);
+          (S.foe.hired || (S.foe.hired = [])).push(k);
+        }
+      }
+    }
   }
   const tier = enemyTierState(S.bell, S.foe ? S.foe.unlocked : []);
   let units = 0, mix = [];

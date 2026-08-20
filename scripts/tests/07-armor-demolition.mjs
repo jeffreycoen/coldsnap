@@ -1,8 +1,8 @@
 import { ok } from "./harness.mjs";
 import { identFwdDir, straightGrid, fatReg } from "./shared.mjs";
-import { makeRunState, executeWithdrawal, nextSpawnTag, TIER_BELLS, ENEMY_TIERS, makeManifestState, foePool, possessedVolley, censusDepotChunks, depotStandingFraction, checkDepotBreach, checkEnemyBreach, spawnSquadMembers, DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, spawnWallCourses } from "../../src/depot/state.js";
+import { makeRunState, executeWithdrawal, nextSpawnTag, TIER_BELLS, ENEMY_TIERS, makeManifestState, possessedVolley, censusDepotChunks, depotStandingFraction, checkDepotBreach, checkEnemyBreach, spawnSquadMembers, DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, spawnWallCourses } from "../../src/depot/state.js";
 import { makeWorld, makeField, addBody, addWeld, stepWorld, applyDamage, worldHash, mulberry32, explode } from "../../src/engine/core.js";
-import { ENEMY_SPECS, MASON, INFANTRY_ARMS, PLAYER_TIERS, BISON, BISON_FIRE, APC, SATCHEL, HAND_KEYS } from "../../src/depot/specs.js";
+import { ENEMY_SPECS, MASON, INFANTRY_ARMS, PLAYER_TIERS, BISON, BISON_FIRE, APC, SATCHEL, HAND_KEYS, HAND_TAGS } from "../../src/depot/specs.js";
 import { stepUnits, spawnUnit, stepBreakerRam } from "../../src/depot/units.js";
 import { stepDrivers, possessedArmorFire, possessedArmorMg } from "../../src/depot/drivers.js";
 import { stepTransports, unloadApc, apcSeated, unloadEnemyRiders } from "../../src/depot/transports.js";
@@ -1107,8 +1107,8 @@ import fs from "node:fs";
       !!PLAYER_TIERS[3] && PLAYER_TIERS[3].indexOf("hero_bison") >= 0 && PLAYER_TIERS[3].indexOf("hero_apc") >= 0, JSON.stringify(PLAYER_TIERS[3]));
     ok("T9(a4): heroes stand in the plans pool at bell ONE — the tier gate is dead (owner, P7.2)", HAND_KEYS.filter((k) => makeManifestState().unlocked.indexOf(k) < 0).includes("hero_bison"));
     ok("T9(a5): ...and at bell ten, same pool — one pool at any hour", HAND_KEYS.includes("hero_apc"));
-    const foeAt10 = foePool([], 10);
-    ok("T9(a6): foePool mirrors at bell 10", foeAt10.indexOf("hero_bison") >= 0 && foeAt10.indexOf("hero_apc") >= 0, foeAt10.join(","));
+    ok("T9(a6): heroes map to hero tags; tower keys route through the plans ledger, not the wave map (P7.2 T4)",
+      HAND_TAGS.hero_bison === "hero_bison" && HAND_TAGS.hero_apc === "hero_apc" && HAND_TAGS.gun === undefined && HAND_TAGS.sq_mg === "mg");
   }
 
   // (b) planWave never shops heroes; nextSpawnTag never yields one
@@ -1168,7 +1168,8 @@ import fs from "node:fs";
     const ringBellBody9 = (bellSrc9.match(/export function ringBell\(world, grid, field, T, S, ctx\) \{[\s\S]*?\n\}/) || [""])[0];
     ok("T9(d): ringBell extracts (source pin base)", ringBellBody9.length > 0);
     ok("T9(d2): gated on a dead hull, both kinds", /!has\("bison"\)/.test(ringBellBody9) && /!has\("apc"\)/.test(ringBellBody9));
-    ok("T9(d3): gated on the tier's own bell (TIER_BELLS[3])", /S\.bell >= TIER_BELLS\[3\]/.test(ringBellBody9));
+    ok("T9(d3): the bell clamp is DEAD — ownership alone gates, any bell (owner, P7.2 T4)",
+      !/S\.bell >= TIER_BELLS\[3\]/.test(ringBellBody9) && /S\.foe\.unlocked\.indexOf\(tag\) >= 0/.test(ringBellBody9));
     ok("T9(d4): gated on the enemy's own pick (S.foe.unlocked)", /S\.foe\.unlocked\.indexOf\(tag\) >= 0/.test(ringBellBody9));
     ok("T9(d5): the full gate ANDs dead-hull, tier-open-and-picked and affordability — a poor regiment fails the same chain and buys nothing",
       /if \(depotE4 && !has\("bison"\) && open\("hero_bison"\) && S\.reg\.scrap >= heroPrice\("hero_bison"\)\)/.test(ringBellBody9));

@@ -179,6 +179,11 @@ export const PLAYER_TIERS = [
 // mech joins this list in its own task, not before.
 export const HAND_KEYS = ["mg", "gun", "mortar", "rocket", "frost", "sq_sniper", "sq_rifles", "sq_mg", "sq_sappers", "sq_mortars", "sq_engineers", "sq_runners", "sq_breakers", "hero_bison", "hero_apc"];
 
+// P7.2 T4: the key -> enemy-tag map for HIS side of the hand. Tower keys
+// are deliberately absent — a tower is not a wave tag: his tower plans
+// ROUTE to S.foe.towers (the plans ledger he builds from), full symmetry.
+export const HAND_TAGS = { sq_rifles: "", sq_runners: "fast", sq_breakers: "heavy", sq_sappers: "sapper", sq_mortars: "gren", sq_sniper: "sniper", sq_mg: "mg", sq_engineers: "eng", hero_bison: "hero_bison", hero_apc: "hero_apc" };
+
 export const MASON = { hcs: 0.40, pitch: 0.83, mass: 100, breakF: 8.0e4 };
 
 // FRONT F1 Task 4.5 — THE satchel charge, one spec for both sides (the enemy

@@ -1,9 +1,9 @@
 import { ok } from "./harness.mjs";
 import { identFwdDir, straightGrid, fatReg, starvedReg } from "./shared.mjs";
-import { makeRunState, stepBell, fireBell, withdrawDue, BELL_PERIOD_S, TIER_BELLS, ENEMY_TIERS, enemyTierState, enemyTierOf, ASSAULT_TIMEOUT, HAND_DRAWS, dealConvoyHand, takeHandCard, FOE_DRAWS, makeManifestState, foePool, drawFoePick, isUnlocked, tierOpenCount, regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, squadFire, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, censusDepotChunks, depotStandingFraction, checkDepotBreach, checkEnemyBreach, stepDepotCensus, spawnSquadMembers, spawnSandbag, SANDBAG_COST, pruneSquads, DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, DEPOT_CENSUS_HZ, friendlyFouls } from "../../src/depot/state.js";
+import { makeRunState, stepBell, fireBell, withdrawDue, BELL_PERIOD_S, TIER_BELLS, ENEMY_TIERS, enemyTierState, enemyTierOf, ASSAULT_TIMEOUT, HAND_DRAWS, dealConvoyHand, takeHandCard, makeManifestState, isUnlocked, tierOpenCount, regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, squadFire, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, censusDepotChunks, depotStandingFraction, checkDepotBreach, checkEnemyBreach, stepDepotCensus, spawnSquadMembers, spawnSandbag, SANDBAG_COST, pruneSquads, DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, DEPOT_CENSUS_HZ, friendlyFouls } from "../../src/depot/state.js";
 import { makeWorld, addBody, fireProjectile, stepWorld, applyDamage, worldHash, CAUSE, mulberry32, aimSolve } from "../../src/engine/core.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "../../src/depot/accuracy.js";
-import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, MASON, INFANTRY_ARMS, HAND_KEYS } from "../../src/depot/specs.js";
+import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, MASON, INFANTRY_ARMS, HAND_KEYS, HAND_TAGS } from "../../src/depot/specs.js";
 import { stepUnits, spawnUnit, payBounties, SNIPER_FIRE } from "../../src/depot/units.js";
 import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad } from "../../src/depot/squads.js";
 import { makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue } from "../../src/depot/economy.js";
@@ -61,37 +61,37 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
     I.reg.scrap <= regBefore + STIPEND, `${I.reg.scrap}`);
 }
 
-// --- tier caps: what a bell's assault may contain
-// mk0.41 re-pin: enemyTierState is PICK-driven now (a tag needs a pick AND its
-// bell), so every read here passes an explicit pick list. `allPicked` is the
-// ceiling read — "if they had picked everything, what would this bell allow?"
-// — which is exactly what the old bell-only signature used to answer.
+// --- tier caps: OWNERSHIP IS THE GATE NOW (P7.2 T4, owner) — the bell
+// clamp is dead, enemyTierState is membership-only. Re-taught from the old
+// bell-clamp family: everything bought fields at bell zero; unbought never
+// fields; double-listed buys dedupe (per old tier row); and planWave now
+// WALKS formerly-gated tags through from bell one.
 {
   const allPicked = ENEMY_TIERS.flat();
   ok("conscripts are never gated", enemyTierState(0, allPicked).tags.includes(""));
-  ok("nothing but conscripts before the first tier bell", enemyTierState(TIER_BELLS[0] - 1, allPicked).tags.length === 1);
+  ok("everything bought fields at bell zero — the clamp is dead (owner, P7.2 T4)",
+    enemyTierState(0, allPicked).tags.length === allPicked.length + 1);
   ok("no picks, no tags: an attacker that has picked nothing marches conscripts", enemyTierState(99, []).tags.length === 1);
   for (let i = 0; i < ENEMY_TIERS.length; i++) {
-    const justBefore = enemyTierState(TIER_BELLS[i] - 1, allPicked).tags;
-    const atBell = enemyTierState(TIER_BELLS[i], allPicked).tags;
-    ok(`tier ${i + 1} is shut before bell ${TIER_BELLS[i]}`, ENEMY_TIERS[i].every((t) => !justBefore.includes(t)));
-    ok(`tier ${i + 1} opens at bell ${TIER_BELLS[i]}`, ENEMY_TIERS[i].every((t) => atBell.includes(t)));
-    // the bell is a CEILING even against a corrupt pick list: a tag picked
-    // ahead of its bell still cannot field.
-    ok(`tier ${i + 1} stays shut before its bell even if picked early`,
-      enemyTierState(TIER_BELLS[i] - 1, ENEMY_TIERS[i]).tags.length === 1);
+    const unbought = enemyTierState(TIER_BELLS[i], []).tags;
+    const bought = enemyTierState(0, ENEMY_TIERS[i]).tags;
+    ok(`tier ${i + 1} unbought never fields`, ENEMY_TIERS[i].every((t) => !unbought.includes(t)));
+    ok(`tier ${i + 1} bought fields at bell zero`, ENEMY_TIERS[i].every((t) => bought.includes(t)));
+    ok(`tier ${i + 1} double-listed buys dedupe`,
+      enemyTierState(0, ENEMY_TIERS[i].concat(ENEMY_TIERS[i])).tags.length === ENEMY_TIERS[i].length + 1);
   }
-  // and planWave honours the cap: 40 seeded musters at bell 1 field nothing
-  // from tiers 2 or 3, however rich the regiment.
+  // and planWave WALKS formerly-gated tags through from bell one now that
+  // ownership alone gates: 40 seeded musters at bell 1, tiers 2/3 owned,
+  // field at least once across the run (flipped from the old leak counter).
   const gated = ENEMY_TIERS[1].concat(ENEMY_TIERS[2]);
-  let leaked = 0, fieldedAny = 0;
+  let fielded = 0, fieldedAny = 0;
   for (let seed = 1; seed <= 40; seed++) {
     const reg = { heads: 400, tanks: 10, heads0: 400, tanks0: 10, scrap: 900 };
     const { buys } = planWave(reg, { mgs: 8, walls: 8, squads: 3 }, 1, mulberry32(seed * 31), enemyTierState(1, allPicked).tags);
-    if (buys.some((b) => gated.includes(b.type))) leaked++;
+    if (buys.some((b) => gated.includes(b.type))) fielded++;
     if (buys.reduce((n, b) => n + b.n, 0) > 0) fieldedAny++;
   }
-  ok("tier cap holds through planWave (40 seeds at bell 1, no tier-2/3 tags)", leaked === 0, `${leaked} leaks`);
+  ok("bought once-gated tags now WALK through planWave from bell one (40 seeds)", fielded >= 1, `${fielded} fielded`);
   ok("a capped muster still fields men", fieldedAny === 40, `${fieldedAny}/40`);
   // draw-count stability: the cap clamps what the draws buy, never how many
   // draws happen — a capped and an uncapped plan consume the same stream.
@@ -136,7 +136,8 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
       dealConvoyHand(HAND_KEYS.slice(), HAND_KEYS, mulberry32(4)).every((c) => c.hire === 1));
   }
 
-  // (c) DRAW-COUNT LAW: five draws whatever the pools hold; his pick still one.
+  // (c) DRAW-COUNT LAW: five draws whatever the pools hold — his side too
+  // (P7.2 T4 re-teach: his one-index pick is a five-draw dealt hand now).
   {
     const counted = (seed) => { let n = 0; const r = mulberry32(seed); return { rng: () => { n++; return r(); }, n: () => n }; };
     for (const owned of [[], HAND_KEYS.slice(0, 5), HAND_KEYS.slice(0, 13), HAND_KEYS.slice()]) {
@@ -144,8 +145,8 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
       dealConvoyHand(owned, HAND_KEYS, c.rng);
       ok(`hand: ${15 - owned.length}-plan pool still spends exactly ${HAND_DRAWS} draws`, c.n() === HAND_DRAWS, `${c.n()}`);
       const f = counted(6);
-      drawFoePick(foePool([], 1), f.rng);
-      ok(`foe pick: still exactly ${FOE_DRAWS} draw beside a ${15 - owned.length}-plan hand`, f.n() === FOE_DRAWS, `${f.n()}`);
+      dealConvoyHand(owned, HAND_KEYS, f.rng);
+      ok(`his hand: still exactly ${HAND_DRAWS} draws beside a ${15 - owned.length}-plan hand`, f.n() === HAND_DRAWS, `${f.n()}`);
     }
     let badN = 0, dupe = 0, foreign = 0;
     for (let seed = 1; seed <= 200; seed++) {
@@ -161,7 +162,11 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
     const one = dealConvoyHand(HAND_KEYS.slice(0, 14), HAND_KEYS, mulberry32(3));
     ok("hand: a one-plan pool deals that plan and the two hires", one.filter((x) => !x.hire).length === 1 && one.length === 3);
     ok("hand: an exhausted plans pool deals hires alone", dealConvoyHand(HAND_KEYS.slice(), HAND_KEYS, mulberry32(3)).length === 2);
-    ok("foe pick: an empty pool picks nothing", drawFoePick([], mulberry32(3)) === null);
+    {
+      let n = 0; const r = mulberry32(3);
+      const hand = dealConvoyHand(HAND_KEYS.slice(), HAND_KEYS, () => { n++; return r(); });
+      ok("his hand: everything owned still burns five and deals hires alone", n === 5 && hand.length === 2 && hand.every((x) => x.hire), `${n}/${hand.length}`);
+    }
   }
 
   // (d) taking cards: only what the hand holds, and MORE THAN ONCE (owner).
@@ -189,30 +194,28 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
       first.filter((c) => !c.hire).every((c) => S2.manifest.unlocked.indexOf(c.k) < 0));
   }
 
-  // (f) the enemy's mirror: one pick per bell, never ahead of its tier's bell.
+  // (f) his hand mirror: the ladder now climbs by PURCHASE off a flat price
+  // stub (P7.2 T4 re-teach) — the single index-roll pick and its tier-bell
+  // wait are both gone; everything owned fields the moment it is bought.
   {
     const S3 = makeRunState();
     S3.started = true; S3.reg = fatReg();
     const rng = mulberry32(42);
-    let early = 0, jumped = 0, prev = 0;
+    let lateFielding = 0, negTill = 0, offMix = 0;
     for (let b = 1; b <= 12; b++) {
       S3.reg.scrap += 400; S3.reg.heads += 200;
-      fireBell(S3, { reg: S3.reg, snap: {}, rng, t: b * BELL_PERIOD_S });
-      if (S3.foe.unlocked.length - prev > 1) jumped++;
-      prev = S3.foe.unlocked.length;
-      for (const tag of S3.foe.unlocked) if (b < TIER_BELLS[enemyTierOf(tag)]) early++;
-      // the live cap can never contain a tag whose bell has not come
-      for (const tag of enemyTierState(S3.bell, S3.foe.unlocked).tags) {
-        if (tag !== "" && S3.bell < TIER_BELLS[enemyTierOf(tag)]) early++;
-      }
-      // ...nor a tag the assault itself was never given
-      if (S3.ws.mixBag.some((t) => !enemyTierState(S3.bell, S3.foe.unlocked).tags.includes(t))) early++;
+      fireBell(S3, { reg: S3.reg, snap: {}, rng, t: b * BELL_PERIOD_S, priceP: () => 30 });
+      if (S3.reg.scrap < 0) negTill++;
+      const openTags = enemyTierState(S3.bell, S3.foe.unlocked).tags;
+      for (const tag of S3.foe.unlocked) if (openTags.indexOf(tag) < 0) lateFielding++;
+      if (S3.ws.mixBag.some((t) => openTags.indexOf(t) < 0)) offMix++;
     }
-    ok("foe pick: never more than one new item per bell", jumped === 0, `${jumped}`);
-    ok("foe pick: nothing fields ahead of its tier's bell across 12 bells", early === 0, `${early}`);
-    ok("foe pick: the ladder actually climbs", S3.foe.unlocked.length >= 5, S3.foe.unlocked.join(","));
-    ok("foe pick: the picks are all real enemy tags", S3.foe.unlocked.every((t) => allPicked.includes(t)));
-    ok("foe pick: the same item is never picked twice", new Set(S3.foe.unlocked).size === S3.foe.unlocked.length);
+    ok("his hand: the ladder climbs by PURCHASE across 12 rich bells", (S3.foe.unlocked.length + S3.foe.towers.length) >= 5, `${S3.foe.unlocked.length}+${S3.foe.towers.length}`);
+    ok("his hand: everything owned fields at once — no bell wait left to clear", lateFielding === 0, lateFielding);
+    ok("his hand: the till never goes negative and the assault never carries an unowned tag", negTill === 0 && offMix === 0, `${negTill}/${offMix}`);
+    ok("his hand: buys are lawful per HAND_TAGS's value set (mg/eng/conscript are lawful now)",
+      S3.foe.unlocked.every((t) => t === "" || Object.values(HAND_TAGS).indexOf(t) >= 0));
+    ok("his hand: the same tag is never bought twice", new Set(S3.foe.unlocked).size === S3.foe.unlocked.length);
   }
 
   // (g) the sequence: the cards go up, and the assault does NOT wait on them.
@@ -734,13 +737,14 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     S.ws.mixBag.every((t) => enemyTierState(1, S.foe.unlocked).tags.includes(t)), JSON.stringify([...new Set(S.ws.mixBag)]));
   // The prediction has to be taken off the SAME books the bell hands planWave
   // — i.e. after the stipend the bell pays — or the counts can't match.
-  // P7.2 T2 re-pin: the bell now spends HAND_DRAWS + FOE_DRAWS off the same
-  // stream BEFORE the muster (and, at bell 1, zero intel draws — openingIntel
-  // takes no rng), so the prediction burns exactly those first.
+  // P7.2 T4 re-pin: the bell now spends HAND_DRAWS + HAND_DRAWS (his five
+  // draws replace his one) off the same stream BEFORE the muster (and, at
+  // bell 1, zero intel draws — openingIntel takes no rng), so the
+  // prediction burns exactly those first.
   const regP = makeRegiment(mulberry32(7));
   regP.scrap += STIPEND;
   const rngP = mulberry32(8);
-  for (let i = 0; i < HAND_DRAWS + FOE_DRAWS; i++) rngP();
+  for (let i = 0; i < HAND_DRAWS + HAND_DRAWS; i++) rngP();
   const predicted = planWave(regP, BASE_SNAP, 1, rngP, enemyTierState(1, S.foe.unlocked).tags);
   ok("fireBell: spawnQueue matches planWave's total buys off the post-stipend books",
     S.ws.spawnQueue === totalUnits(predicted.buys), `${S.ws.spawnQueue} vs ${totalUnits(predicted.buys)}`);

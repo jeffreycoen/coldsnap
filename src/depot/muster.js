@@ -116,17 +116,22 @@ export function parkArmor(world, grid, field, depotT, team, kind, nextSeq) {
   else if (flat) place(flat.x, flat.z);
 }
 
-// P7.1 T6: a picked tower parks like armor — vetted flat clear ring ground,
+// P7.1 T6: a picked tower parks like armor — vetted clear ring ground,
 // the real body, the cached effRange, the grid claim. Draw-free.
+// P7.2 T4: FAIL-PROOF (the parkArmor T3 precedent) — a hemmed ring falls
+// back to a brute nearest-clear-cell sweep (8-34m), so paid tower money
+// always buys a standing tower on a real map. A grid with no clear cell
+// at all still returns null (bare fixtures).
 export function parkTower(world, grid, field, depotT, team, towerType) {
   if (!depotT) return null;
   const spec = TOWER_SPECS[towerType];
-  for (let rr = 12; rr <= 30; rr += 1.5) for (let k = 0; k < 16; k++) {
-    const az = (k / 16) * Math.PI * 2 + 0.2;
-    const bx = depotT.x + Math.sin(az) * rr, bz = depotT.z + Math.cos(az) * rr;
+  const clearAt = (bx, bz) => {
     const cell = grid.cellAt(bx, bz);
-    if (!cell || cell.blocked || cell.ice || cell.water || cell.wallId) continue;
-    if (slotBlockedPublic(world, bx, bz, 1.2)) continue;
+    if (!cell || cell.blocked || cell.ice || cell.water || cell.wallId) return false;
+    if (slotBlockedPublic(world, bx, bz, 1.2)) return false;
+    return true;
+  };
+  const place = (bx, bz) => {
     const g = grid.worldToGrid(bx, bz);
     const wp = grid.gridToWorld(g.gx, g.gz);
     const y = field.heightAt(wp.x, wp.z);
@@ -137,8 +142,21 @@ export function parkTower(world, grid, field, depotT, team, towerType) {
     const c2 = grid.cells[grid.idx(g.gx, g.gz)];
     c2.blocked = true; c2.wallId = b.id; c2.bTeam = team;
     return b;
+  };
+  for (let rr = 12; rr <= 30; rr += 1.5) for (let k = 0; k < 16; k++) {
+    const az = (k / 16) * Math.PI * 2 + 0.2;
+    const bx = depotT.x + Math.sin(az) * rr, bz = depotT.z + Math.cos(az) * rr;
+    if (clearAt(bx, bz)) return place(bx, bz);
   }
-  return null; // a hemmed ring parks nothing — the draw burned regardless
+  // the backstop: nearest clear cell, 8-34m, guaranteed on a real map
+  let best = null, bd = 1e9;
+  for (let gz = 0; gz < grid.h; gz++) for (let gx = 0; gx < grid.w; gx++) {
+    const wp = grid.gridToWorld(gx, gz);
+    const d = Math.hypot(wp.x - depotT.x, wp.z - depotT.z);
+    if (d > 34 || d < 8 || !clearAt(wp.x, wp.z)) continue;
+    if (d < bd) { bd = d; best = wp; }
+  }
+  return best ? place(best.x, best.z) : null;
 }
 
 // bag's own half-extent plus a man's clearance) plus the grid's verdict
@@ -264,6 +282,43 @@ export function musterFreshStart(world, S, depotP, grid, field, nextApcSeq) {
         if (!pairLead) { pairLead = u; u.role = "sniper"; u.bounty = 30; }
         else { u.role = "spotter"; u.bounty = 15; u.pairId = pairLead.id; pairLead.pairId = u.id; }
       }
+    }
+  }
+}
+
+// P7.2 T4: ONE mirror hire or build fields at his depot — the
+// musterFreshStart branches, reusable per key, draw-free. Bare fixtures
+// (no grid/field) skip fielding entirely. Squad ids derive from the live
+// roster so two hires can never collide — resume included (counters do
+// not ride the save; the apcSeq reseed precedent). Boot squads sit at
+// 9000+, hires from 9501 up; restored squads keep their ids.
+export function mirrorFieldKey(world, S, depotE, grid, field, key, nextApcSeq) {
+  const pick = PICK_POOL.find((p) => p.key === key);
+  if (!pick || !depotE || !grid || !field) return;
+  if (pick.kind === "hull") { parkArmor(world, grid, field, depotE, 2, pick.vtype, nextApcSeq || (() => 1)); return; }
+  if (pick.kind === "tower") { parkTower(world, grid, field, depotE, 2, pick.key); return; }
+  const gR = Math.hypot(depotE.nx, depotE.nz) * MASON.pitch / 2 + 3.5;
+  let mi = 0;
+  for (const b of world.bodies) if (b.kind === "unit" && b.team === 2 && b.garrison && b.alive) mi++;
+  if (pick.tag === "eng") {
+    const a0 = (mi / 16) * Math.PI * 2 + 2.0;
+    const p0 = clearSlot(world, depotE.x + Math.sin(a0) * gR, depotE.z + Math.cos(a0) * gR, 0.5);
+    let sid = 9501;
+    for (const q of (S.foeSquads || [])) if (q.id >= sid) sid = q.id + 1;
+    const sq = makeSquad(sid, "engineers", 2, p0.x, p0.z);
+    spawnSquadMembers(world, sq);
+    for (const id of sq.memberIds) world.byId.get(id).tag = "eng";
+    (S.foeSquads || (S.foeSquads = [])).push(sq);
+    return;
+  }
+  let pairLead = null;
+  for (let k = 0; k < pick.n; k++) {
+    const a = (mi / 16) * Math.PI * 2 + 2.0;
+    const u = spawnMirrorMan(world, depotE.x + Math.sin(a) * gR, depotE.z + Math.cos(a) * gR, pick.tag, mi);
+    mi++;
+    if (pick.tag === "sniper") {
+      if (!pairLead) { pairLead = u; u.role = "sniper"; u.bounty = 30; }
+      else { u.role = "spotter"; u.bounty = 15; u.pairId = pairLead.id; pairLead.pairId = u.id; }
     }
   }
 }
