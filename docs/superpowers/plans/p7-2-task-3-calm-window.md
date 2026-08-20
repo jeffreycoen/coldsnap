@@ -181,3 +181,31 @@ Steps 1–7 landed clean; the suite sits at 1505/1506 with ONE red the plan's sw
 ```
 
 Count-neutral, content follows the ruled bare bar. Nothing else changes; Step 8 proceeds against 1506/0.
+
+## AMENDMENT 2 — the frozen arm (mk1.83; found by the owner's live check, the defect is Task 3's)
+
+**The defect.** CONFIRM PICK does nothing while the war is paused. The convoy family's trailing-tap guards arm on the SIM clock — `S.confirmInfo` reads `world.t >= S.infoArmedAt` for the manifest and hire doors, and `S.pickManifest`/`S.armHire` gate on `world.t < M.armedAt` — and the calm window froze `world.t`, so none of them ever arm. The deal door already armed on the wall clock for exactly this reason (the T8 lesson); Task 3 failed to extend it when it froze the bell.
+
+**The fix: the convoy family arms on the WALL clock.** The guard exists to catch real-time double-taps, so real seconds are the honest clock. Five edits in `DepotGame.jsx`, nothing in `state.js` (M.armedAt keeps its stamp; no headless test moves):
+
+1. The ring stamps a wall arm — the frame loop's `if (stepBell(S, world.t)) ringBell();` becomes:
+```js
+            if (stepBell(S, world.t)) { ringBell(); S.manifest.armedAtWall = performance.now() / 1000 + PENDING_ARM_S; }
+```
+2. `S.openManifest` adds, after its `M.armedAt` stamp: `M.armedAtWall = performance.now() / 1000 + PENDING_ARM_S;`
+3. `S.pickManifest`'s gate becomes `if (!M || performance.now() / 1000 < (M.armedAtWall ?? 0)) { toast("HOLD — ARMING"); return; }` — and `S.armHire`'s gate the same.
+4. `S.confirmInfo`'s armed line becomes one clock for every door (infoArmedWall is already stamped on every open): `const armed = performance.now() / 1000 >= S.infoArmedWall;` — and the hud tick's `info.armed` mirror becomes `armed: performance.now() / 1000 >= S.infoArmedWall`.
+5. The hud tick's `manifest.armed` mirror becomes `armed: performance.now() / 1000 >= (S.manifest.armedAtWall ?? 0)` — and the RESUME path (the RES branch's `S.manifest = r.manifest;` line) gains `S.manifest.armedAtWall = 0;` immediately after: a wall stamp from a dead session must never block a resumed hand (performance.now restarts per page).
+
+**Asserts (append to the T3 block in `11-hiring-hall.mjs`, failing first):**
+```js
+  // ---- AMENDMENT 2 (mk1.83): the convoy arms on the wall clock
+  {
+    const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
+    ok("T3-A2: the ring stamps the wall arm", /ringBell\(\); S\.manifest\.armedAtWall = performance\.now\(\) \/ 1000 \+ PENDING_ARM_S;/.test(src));
+    ok("T3-A2b: both buy gates read the wall clock", (src.match(/performance\.now\(\) \/ 1000 < \(M\.armedAtWall \?\? 0\)/g) || []).length === 2);
+    ok("T3-A2c: the info card arms on the wall for every door", /const armed = performance\.now\(\) \/ 1000 >= S\.infoArmedWall;/.test(src));
+    ok("T3-A2d: a resumed hand re-arms instantly (dead-session stamps never block)", /S\.manifest\.armedAtWall = 0;/.test(src));
+  }
+```
+Four checks; suite expected 1506 → **1510/0**. Gates otherwise as Step 8: lint, bump to `mk1.83`, build after, smoke on 4174, keystone unmoved. Commit subject: `the convoy arms on the wall clock (mk1.83)`. The queue shifts: his hand takes mk1.84 and everything behind moves one.
