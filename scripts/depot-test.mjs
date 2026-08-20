@@ -24,4 +24,5 @@ await import("./tests/07-armor-demolition.mjs");
 await import("./tests/08-debug-pass.mjs");
 await import("./tests/09-reorg.mjs");
 await import("./tests/10-command-refit.mjs");
+await import("./tests/11-hiring-hall.mjs");
 finish();

@@ -122,7 +122,7 @@ import fs from "node:fs";
     ok("mk0.50/6: only the out-of-bounds axis moves (canonical clamp, not a world-space box)", cornerOK);
     const src = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     ok("mk0.50/6: the order flow clamps at the ONE site where a tap becomes a dest",
-      /const d = clampToRim\(p\.x, p\.z\);/.test(src) && /osq\.dest = \{ x: d\.x, z: d\.z \}/.test(src));
+      /const d = clampToRim\(p\.x, p\.z\);/.test(src) && /gsq\.dest = \{ x: d\.x, z: d\.z \}/.test(src));
     // P7 T18: RIM_HALF_U/V moved to mapgen.js.
     const mgSrc050 = fs.readFileSync(new URL("../../src/depot/mapgen.js", import.meta.url), "utf8");
     ok("mk0.50/6: the rim half-extents exist once (inRim and the clamp share them)",

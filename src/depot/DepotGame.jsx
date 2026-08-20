@@ -18,7 +18,7 @@ import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS, BISON, APC } from "./specs.js";
 import { cardFor } from "./infocards.js";
 import { windAt } from "./wind.js";
-import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest, TIER_BELLS, memberNearRow } from "./state.js";
+import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, pickManifest, TIER_BELLS, memberNearRow, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType } from "./state.js";
 import { marketCounts, computePrices, fieldPrices, priced } from "./market.js";
 import { stepMines, minePrices, mineSeedRoll, mineSeedPlace, MINE_COST, WIRE_COST } from "./mines.js";
 import { homeShare, pickHomeDetail, HOME_GUARD_CAP, cmdrOf, cmdrBellOrders, ferryDecide, flankDrop } from "./ai.js";
@@ -475,7 +475,12 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
         else b.ferry = null;
       }
     }
-    if (S.selSquadId != null && !S.squads.some((q) => q.id === S.selSquadId)) { S.selSquadId = null; S.orderMode = null; S.buildPt0 = null; }
+    if (S.selSquadIds) { S.selSquadIds = S.selSquadIds.filter((id) => S.squads.some((q) => q.id === id)); if (S.selSquadIds.length < 2) S.selSquadIds = null; }
+    if (S.selSquadId != null && !S.squads.some((q) => q.id === S.selSquadId)) {
+      const nextId = S.selSquadIds ? S.selSquadIds.find((id) => id !== S.selSquadId) : null; // the group promotes its next squad
+      if (nextId != null) S.selSquadId = nextId;
+      else { S.selSquadId = null; S.orderMode = null; S.buildPt0 = null; S.selSquadIds = null; }
+    }
     // VISION T4 (mk0.74, owner's ruling): an attacking squad that SEES an
     // enemy in weapon reach halts and fights — the halt is the squad's own
     // leg-pause field held open, so the fire rule and the leg machinery are
@@ -1235,7 +1240,7 @@ export default function DepotGame({ onExit, resume = null }) {
         // screen around the selected squad/tower; a wedge tap closes it
         // (S.pieOpen = false) but an aiming order keeps the squad selected
         // so the ground stays tappable — see consumeOrderTap.
-        squads: [], foeSquads: [], nextSquadId: 1, selSquadId: null, selArmedAt: 0, orderMode: null, buildPt0: null, pieOpen: false,
+        squads: [], foeSquads: [], nextSquadId: 1, selSquadId: null, selSquadIds: null, selArmedAt: 0, orderMode: null, buildPt0: null, pieOpen: false,
         // P7 T10: MINES AND TRIPWIRES — watched points, never bodies.
         // { x, z, team, kind: "mine"|"wire", live }. Saved verbatim (save.js).
         mines: [],
@@ -1537,7 +1542,7 @@ export default function DepotGame({ onExit, resume = null }) {
         // COMMAND T1 (mk0.80): a placed squad comes up already selected with
         // its radial open — defend-here is already its standing order (the
         // intrinsic default, no tap needed).
-        S.selSquadId = sq.id; S.selArmedAt = world.t + PENDING_ARM_S; S.pieOpen = true;
+        S.selSquadId = sq.id; S.selSquadIds = null; S.selArmedAt = world.t + PENDING_ARM_S; S.pieOpen = true;
         S.resources -= price;
         S._buyAt = world.t;
       };
@@ -1613,20 +1618,18 @@ export default function DepotGame({ onExit, resume = null }) {
           if (sq.ridingIn != null) continue; // P7 T4: a sealed squad is not tappable
           for (const id of sq.memberIds) {
             const u = world.byId.get(id);
-            if (u && u.alive && Math.hypot(u.pos.x - p.x, u.pos.z - p.z) < 1.6) return sq;
+            if (u && u.alive && Math.hypot(u.pos.x - p.x, u.pos.z - p.z) < TAP_SQUAD_M) return sq;
           }
         }
         return null;
       };
       const selectedSquad = () => (S.selSquadId != null ? S.squads.find((q) => q.id === S.selSquadId) || null : null);
-      // P7 T2: the Bison's own selection — vehicleAtPoint mirrors
-      // squadAtPoint, team-1 vehicles only (the player's own hulls select).
-      const vehicleAtPoint = (p) => {
-        for (const b of world.bodies) {
-          if (b.kind !== "vehicle" || !b.alive || b.team !== 1) continue;
-          if (Math.hypot(b.pos.x - p.x, b.pos.z - p.z) < 3.2) return b;
-        }
-        return null;
+      // P7.2 T1: the order fan-out — the SELECT ALL group when one is up,
+      // else the one selected squad. Primary first; dead ids drop out.
+      const selectedGroup = () => {
+        if (S.selSquadIds && S.selSquadIds.length) return S.selSquadIds.map((id) => S.squads.find((q) => q.id === id)).filter(Boolean);
+        const sq = selectedSquad();
+        return sq ? [sq] : [];
       };
       const selectedVehicle = () => (S.selVehId != null ? world.byId.get(S.selVehId) || null : null);
       // P7 T2: the Bison's own radial orders — DEFEND is instant (mirrors
@@ -1669,7 +1672,7 @@ export default function DepotGame({ onExit, resume = null }) {
         const pc2 = possessCenter();
         S.reticleOff = pc2 ? reclampReticle(T.sight, 1, pc2, possessSightR(), { dx: 0, dz: 6 }, invW) : null;
         S.reticle = pc2 && S.reticleOff ? { x: pc2.x + S.reticleOff.dx, z: pc2.z + S.reticleOff.dz } : null;
-        S.selVehId = null; S.vehOrderMode = null; S.selSquadId = null; S.orderMode = null; S.buildPt0 = null; S.linePending = null; S.pieOpen = false;
+        S.selVehId = null; S.vehOrderMode = null; S.selSquadId = null; S.selSquadIds = null; S.orderMode = null; S.buildPt0 = null; S.linePending = null; S.pieOpen = false;
         R.overlay.setLinePreview(false);
       };
       // Order chips (DEFEND | ATTACK). 350ms arming (selArmedAt, same
@@ -1681,12 +1684,14 @@ export default function DepotGame({ onExit, resume = null }) {
         const sq = selectedSquad();
         if (!sq || world.t < S.selArmedAt) return;
         if (kind === "defend") {
-          let cx = 0, cz = 0, n = 0;
-          for (const id of sq.memberIds) { const u = world.byId.get(id); if (u && u.alive) { cx += u.pos.x; cz += u.pos.z; n++; } }
-          if (n) sq.anchor = { x: cx / n, z: cz / n };
-          sq.order = "defend"; sq.dest = null; sq._legTarget = null; sq._pauseT = 0; sq._threatSig = undefined;
-          sq._surveyPending = true; // DEFEND re-anchor: the pair re-surveys (6.5 Task 6)
-          sq._build = null;         // mk0.60: a new order abandons the line where it stands
+          for (const gsq of selectedGroup()) {
+            let cx = 0, cz = 0, n = 0;
+            for (const id of gsq.memberIds) { const u = world.byId.get(id); if (u && u.alive) { cx += u.pos.x; cz += u.pos.z; n++; } }
+            if (n) gsq.anchor = { x: cx / n, z: cz / n };
+            gsq.order = "defend"; gsq.dest = null; gsq._legTarget = null; gsq._pauseT = 0; gsq._threatSig = undefined;
+            gsq._surveyPending = true;
+            gsq._build = null;
+          }
           S.orderMode = null; S.buildPt0 = null;
         } else if (kind === "attack" || kind === "move") {
           // mk0.28: both aiming orders arm the same "tap the ground" flow —
@@ -1697,11 +1702,13 @@ export default function DepotGame({ onExit, resume = null }) {
           // end); re-tapping the armed chip before the second point cancels it
           // cleanly, which is the only way out of a half-given order.
           if (sq.type !== "engineers") return;
+          S.selSquadIds = null; // a line is one squad's job — the group narrows to the primary
           if (S.orderMode === kind) { S.orderMode = null; S.buildPt0 = null; return; }
           S.orderMode = kind; S.buildPt0 = null;
         } else if (kind === "build_mines" || kind === "build_wires") {
           // P7 T10: the sapper build gate — engineers' own two-tap shape, sappers only.
           if (sq.type !== "sappers") return;
+          S.selSquadIds = null; // a line is one squad's job — the group narrows to the primary
           if (S.orderMode === kind) { S.orderMode = null; S.buildPt0 = null; return; }
           S.orderMode = kind; S.buildPt0 = null;
         } else if (kind === "patrol") {
@@ -1724,7 +1731,16 @@ export default function DepotGame({ onExit, resume = null }) {
         const sq = selectedSquad();
         if (!sq || world.t < S.selArmedAt) return;
         if (!INFANTRY_ARMS[sq.type]) return;
-        sq.prefStruct = !sq.prefStruct;
+        const v = !sq.prefStruct;
+        for (const gsq of selectedGroup()) gsq.prefStruct = v;
+      };
+      // P7.2 T1 (owner): SELECT ALL OF TYPE — every squad of the selected
+      // type joins; one-squad results collapse back to plain selection.
+      S.selectAllType = () => {
+        const sq = selectedSquad();
+        if (!sq || world.t < S.selArmedAt) return;
+        const ids = squadIdsOfType(world, S.squads, sq.type);
+        S.selSquadIds = ids.length > 1 ? ids : null;
       };
 
       // POSSESSION T4 (mk0.93): the possessed unit's own sight circle: a
@@ -1768,7 +1784,7 @@ export default function DepotGame({ onExit, resume = null }) {
         const pc0 = possessCenter();
         S.reticleOff = pc0 ? reclampReticle(T.sight, 1, pc0, possessSightR(), { dx: 0, dz: 4 }, invW) : null;
         S.reticle = pc0 && S.reticleOff ? { x: pc0.x + S.reticleOff.dx, z: pc0.z + S.reticleOff.dz } : null;
-        S.selSquadId = null; S.orderMode = null; S.buildPt0 = null; S.linePending = null;
+        S.selSquadId = null; S.selSquadIds = null; S.orderMode = null; S.buildPt0 = null; S.linePending = null;
         R.overlay.setLinePreview(false);
       };
       // POSSESSION (P4 T3, mk0.92): TAKE CONTROL on a tower — gun towers
@@ -1875,23 +1891,25 @@ export default function DepotGame({ onExit, resume = null }) {
         R.overlay.setLinePreview(false);
         if (sq) {
           if (lp.kind === "patrol") {
-            // COMMAND T3 (mk0.85): accept arms the loop — the near end (A)
-            // becomes the first destination, and stepSquad's turnaround
-            // branch carries the squad back and forth forever from here.
-            sq._patA = { x: lp.a.x, z: lp.a.z };
-            sq._patB = { x: lp.b.x, z: lp.b.z };
-            sq.order = "patrol";
-            sq.dest = { x: lp.a.x, z: lp.a.z };   // walk to the near end first
-            sq._legTarget = null; sq._pauseT = 0; sq._cohesionHoldT = 0; sq._build = null;
+            // COMMAND T3 (mk0.85): accept arms the loop — P7.2 T1: for the
+            // whole SELECT ALL group when one proposed the line.
+            const group = (lp.sqs && lp.sqs.length ? lp.sqs : [lp.sq]).map((id) => S.squads.find((q) => q.id === id)).filter(Boolean);
+            for (const gsq of group) {
+              gsq._patA = { x: lp.a.x, z: lp.a.z };
+              gsq._patB = { x: lp.b.x, z: lp.b.z };
+              gsq.order = "patrol";
+              gsq.dest = { x: lp.a.x, z: lp.a.z };   // walk to the near end first
+              gsq._legTarget = null; gsq._pauseT = 0; gsq._cohesionHoldT = 0; gsq._build = null;
+            }
           }
           else startBuildLine(grid, sq, lp.kind, lp.a, lp.b, toast);
         }
-        S.selSquadId = null; S.orderMode = null; S.buildPt0 = null;
+        S.selSquadId = null; S.orderMode = null; S.buildPt0 = null; S.selSquadIds = null;
       };
       const rejectLine = () => {
         S.linePending = null;
         R.overlay.setLinePreview(false);
-        S.selSquadId = null; S.orderMode = null; S.buildPt0 = null;
+        S.selSquadId = null; S.orderMode = null; S.buildPt0 = null; S.selSquadIds = null;
         S.selVehId = null; S.vehOrderMode = null;
       };
       S.acceptLine = acceptLine; S.rejectLine = rejectLine;
@@ -1920,15 +1938,15 @@ export default function DepotGame({ onExit, resume = null }) {
         // T3: open water takes no orders — the river is ground for nobody.
         if (streamAt(d.x, d.z)) { toast("OPEN WATER — find the crossing"); return true; }
         if (om === "attack" || om === "move") {
-          if (osq) { osq.order = om; osq.dest = { x: d.x, z: d.z }; osq._legTarget = null; osq._pauseT = 0; osq._build = null; }
+          for (const gsq of selectedGroup()) { gsq.order = om; gsq.dest = { x: d.x, z: d.z }; gsq._legTarget = null; gsq._pauseT = 0; gsq._build = null; }
           S.orderMode = null;
           // COMMAND 1b (mk0.82): the order's final ground tap landed — the
           // squad is released (deselected), same as an instant order.
-          S.selSquadId = null;
+          S.selSquadId = null; S.selSquadIds = null;
           return true;
         }
         if (om === "build_bags" || om === "build_walls") {
-          if (!osq || osq.type !== "engineers") { S.orderMode = null; S.buildPt0 = null; S.selSquadId = null; return true; }
+          if (!osq || osq.type !== "engineers") { S.orderMode = null; S.buildPt0 = null; S.selSquadId = null; S.selSquadIds = null; return true; }
           if (!S.buildPt0) { S.buildPt0 = { x: d.x, z: d.z }; toast("LINE START — TAP THE FAR END"); return true; }
           // COMMAND T2 (mk0.84): the second tap PROPOSES — S.linePending goes
           // up, the squad stays selected, and nothing walks until acceptLine.
@@ -1943,7 +1961,7 @@ export default function DepotGame({ onExit, resume = null }) {
         // build_walls use, sapper-gated (the type check mirrors the
         // engineer build gate above).
         if (om === "build_mines" || om === "build_wires") {
-          if (!osq || osq.type !== "sappers") { S.orderMode = null; S.buildPt0 = null; S.selSquadId = null; return true; }
+          if (!osq || osq.type !== "sappers") { S.orderMode = null; S.buildPt0 = null; S.selSquadId = null; S.selSquadIds = null; return true; }
           if (!S.buildPt0) { S.buildPt0 = { x: d.x, z: d.z }; toast("LINE START — TAP THE FAR END"); return true; }
           S.linePending = { kind: om === "build_mines" ? "mines" : "wires", sq: osq.id,
             a: { x: S.buildPt0.x, z: S.buildPt0.z }, b: { x: d.x, z: d.z },
@@ -1956,9 +1974,9 @@ export default function DepotGame({ onExit, resume = null }) {
           // COMMAND T3 (mk0.85): same shape as the build branch above, kind
           // "patrol", no engineer guard — every squad type the pie offers
           // this wedge to (not engineers, not sappers) rides it.
-          if (!osq) { S.orderMode = null; S.buildPt0 = null; S.selSquadId = null; return true; }
+          if (!osq) { S.orderMode = null; S.buildPt0 = null; S.selSquadId = null; S.selSquadIds = null; return true; }
           if (!S.buildPt0) { S.buildPt0 = { x: d.x, z: d.z }; toast("PATROL START — TAP THE FAR END"); return true; }
-          S.linePending = { kind: "patrol", sq: osq.id,
+          S.linePending = { kind: "patrol", sq: osq.id, sqs: selectedGroup().map((q) => q.id),
             a: { x: S.buildPt0.x, z: S.buildPt0.z }, b: { x: d.x, z: d.z },
             moving: null, armedAt: world.t + PENDING_ARM_S };
           S.buildPt0 = null; S.orderMode = null;
@@ -2164,17 +2182,46 @@ export default function DepotGame({ onExit, resume = null }) {
         // BUILD consumes TWO — the line's start, then its far end (mk0.60).
         if (consumeOrderTap(p)) return;
         if (consumeVehOrderTap(p)) return;
-        // Tap on a squad member selects his squad; tap elsewhere while one
-        // is selected deselects (and consumes the tap — no accidental build).
-        const tappedSquad = squadAtPoint(p);
-        // COMMAND 1b (mk0.82): tapping a squad (selecting it, or re-tapping
-        // the one already selected) opens/reopens the pie.
-        if (tappedSquad) { S.selSquadId = tappedSquad.id; S.selArmedAt = world.t + PENDING_ARM_S; S.orderMode = null; S.buildPt0 = null; S.inspectId = null; S.pieOpen = true; return; }
-        if (S.selSquadId != null) { S.selSquadId = null; S.orderMode = null; S.buildPt0 = null; S.pieOpen = false; return; }
-        // P7 T2: tap on the Bison selects it; tap elsewhere while it's
-        // selected deselects (mirrors the squad pair immediately above).
-        const tappedVeh = vehicleAtPoint(p);
-        if (tappedVeh) { S.selVehId = tappedVeh.id; S.selArmedAt = world.t + PENDING_ARM_S; S.selSquadId = null; S.orderMode = null; S.vehOrderMode = null; S.buildPt0 = null; S.inspectId = null; S.pieOpen = true; return; }
+        // P7.2 T1: THE TAP CYCLES. Every pickable thing near the tap —
+        // squads, hulls, towers (towers only in plain command, so a build
+        // tap is never stolen by the tower next door; the exact-cell tower
+        // tap below keeps today's behavior in every mode) — nearest first;
+        // tapping again hands the pick to the next one around.
+        const cands = [];
+        for (const sq of S.squads) {
+          if (sq.ridingIn != null) continue; // P7 T4: a sealed squad is not tappable
+          let dBest = Infinity;
+          for (const id of sq.memberIds) {
+            const u = world.byId.get(id);
+            if (u && u.alive) { const d2 = Math.hypot(u.pos.x - p.x, u.pos.z - p.z); if (d2 < dBest) dBest = d2; }
+          }
+          if (dBest <= TAP_SQUAD_M) cands.push({ key: "sq:" + sq.id, d: dBest });
+        }
+        for (const b of world.bodies) {
+          if (!b.alive || b.team !== 1) continue;
+          if (b.kind === "vehicle") {
+            const d2 = Math.hypot(b.pos.x - p.x, b.pos.z - p.z);
+            if (d2 <= TAP_HULL_M) cands.push({ key: "veh:" + b.id, d: d2 });
+          } else if (b.kind === "tower" && !S.mode && !S.sellMode) {
+            const d2 = Math.hypot(b.pos.x - p.x, b.pos.z - p.z);
+            if (d2 <= TAP_TOWER_M) cands.push({ key: "twr:" + b.id, d: d2 });
+          }
+        }
+        const curSel = S.selSquadId != null ? "sq:" + S.selSquadId
+          : S.selVehId != null ? "veh:" + S.selVehId
+          : S.inspectId != null && cands.some((c) => c.key === "twr:" + S.inspectId) ? "twr:" + S.inspectId : null;
+        const pick = nextPick(cands, curSel);
+        if (pick) {
+          const id = +pick.key.slice(pick.key.indexOf(":") + 1);
+          S.selSquadId = null; S.selSquadIds = null; S.selVehId = null; S.inspectId = null;
+          S.orderMode = null; S.vehOrderMode = null; S.buildPt0 = null;
+          S.selArmedAt = world.t + PENDING_ARM_S; S.pieOpen = true;
+          if (pick.key.startsWith("sq:")) S.selSquadId = id;
+          else if (pick.key.startsWith("veh:")) S.selVehId = id;
+          else S.inspectId = id;
+          return;
+        }
+        if (S.selSquadId != null) { S.selSquadId = null; S.selSquadIds = null; S.orderMode = null; S.buildPt0 = null; S.pieOpen = false; return; }
         if (S.selVehId != null) { S.selVehId = null; S.vehOrderMode = null; S.buildPt0 = null; S.pieOpen = false; return; }
         const g = grid.worldToGrid(p.x, p.z);
         if (!grid.inBounds(g.gx, g.gz)) { S.inspectId = null; return; }
@@ -3323,7 +3370,7 @@ export default function DepotGame({ onExit, resume = null }) {
               squadSel: (() => {
                 const sq = S.selSquadId != null ? S.squads.find((q) => q.id === S.selSquadId) : null;
                 if (!sq || !S.squadScreen) return null;
-                return { id: sq.id, label: SQUAD_SPECS[sq.type].label, order: sq.order, x: S.squadScreen.x, y: S.squadScreen.y, armed: world.t >= S.selArmedAt, aiming: S.orderMode === "attack", aimingMove: S.orderMode === "move",
+                return { id: sq.id, label: SQUAD_SPECS[sq.type].label, order: sq.order, count: S.selSquadIds ? S.selSquadIds.length : 1, x: S.squadScreen.x, y: S.squadScreen.y, armed: world.t >= S.selArmedAt, aiming: S.orderMode === "attack", aimingMove: S.orderMode === "move",
                   // COMMAND 1b (mk0.82): the pie is up only while S.pieOpen —
                   // a wedge tap closes it but (for aiming orders) keeps the
                   // squad selected, so the status chip renders on its own.
@@ -3491,7 +3538,7 @@ export default function DepotGame({ onExit, resume = null }) {
     // clears it through the same door ✗ uses (rejectLine also disposes the
     // renderer's preview group) — it never lingers behind the new mode.
     if (S.linePending && S.rejectLine) S.rejectLine();
-    S.mode = m; S.sellMode = false; S.inspectId = null; S.pending = null; S.selSquadId = null; S.orderMode = null; S.buildPt0 = null;
+    S.mode = m; S.sellMode = false; S.inspectId = null; S.pending = null; S.selSquadId = null; S.selSquadIds = null; S.orderMode = null; S.buildPt0 = null;
     setHud((h) => ({ ...h, mode: m, sellMode: false }));
     // P7.1 T5: the pick arms the bar — the tree lands on the armed type's branch.
     const b = branchOf(m);
@@ -3881,13 +3928,14 @@ export default function DepotGame({ onExit, resume = null }) {
         // they arm S.orderMode and consumeOrderTap's ground tap(s) finish
         // them (and deselect there, at completion).
         const slots = [
-          { key: "defend", icon: "∴", label: "DEFEND", color: "#7dffa8", on: sq.order === "defend", act: () => { const S = stateRef.current; if (S) { S.orderSquad("defend"); S.selSquadId = null; } } },
+          { key: "defend", icon: "∴", label: "DEFEND", color: "#7dffa8", on: sq.order === "defend", act: () => { const S = stateRef.current; if (S) { S.orderSquad("defend"); S.selSquadId = null; S.selSquadIds = null; } } },
           { key: "move", icon: "→", label: "MOVE", color: "#7fd7ff", on: sq.aimingMove || sq.order === "move", act: () => stateRef.current && stateRef.current.orderSquad("move") },
           { key: "attack", icon: "⚑", label: "ATTACK", color: "#ff6b5e", on: sq.aiming, act: () => stateRef.current && stateRef.current.orderSquad("attack") },
           // POSSESSION (P4 T1, mk0.90): TAKE CONTROL — every squad type,
           // instant like DEFEND (deselects on choose; the pie itself closes
           // via RadialMenu's onChoose regardless).
           { key: "possess", icon: "✥", label: "TAKE CONTROL", color: "#7dffa8", on: false, act: () => { const S = stateRef.current; if (S) S.takeControl(); } },
+          { key: "select_all", icon: "∷", label: "SELECT ALL", color: "#9fdcff", on: sq.count > 1, act: () => { const S = stateRef.current; if (S) { S.selectAllType(); S._keepPie = true; } } },
         ];
         // COMMAND T3 (mk0.85): PATROL — two taps propose a route through the
         // same proposed-line confirm the build orders use; accept and the
@@ -3900,7 +3948,7 @@ export default function DepotGame({ onExit, resume = null }) {
         // on. Its act also fully deselects, the DEFEND/SELL/CAREFUL-FREE
         // rule for instant pie actions.
         if (sq.structOk) {
-          slots.push({ key: "structures", icon: "▨", label: "ATTACK STRUCTURES", color: "#c9a0ff", on: sq.structFirst, toggle: sq.structFirst, act: () => { const S = stateRef.current; if (S) { S.toggleStructFirst(); S.selSquadId = null; } } });
+          slots.push({ key: "structures", icon: "▨", label: "ATTACK STRUCTURES", color: "#c9a0ff", on: sq.structFirst, toggle: sq.structFirst, act: () => { const S = stateRef.current; if (S) { S.toggleStructFirst(); S.selSquadId = null; S.selSquadIds = null; } } });
         }
         if (sq.engineer) {
           slots.push(
@@ -3927,12 +3975,13 @@ export default function DepotGame({ onExit, resume = null }) {
           : sq.aimingPatrol
           ? (sq.buildStart ? " — TAP THE FAR END" : " — TAP THE PATROL START")
           : sq.aiming || sq.aimingMove ? " — TAP GROUND" : "";
+        const lbl = sq.count > 1 ? sq.label + " ×" + sq.count : sq.label;
         // COMMAND 1b (mk0.82): pie open -> the wedge disc; pie closed but
         // still selected (an aiming order armed) -> the center label chip
         // alone, so the ground stays fully tappable for the follow-up taps.
         return sq.showPie
-          ? <RadialMenu cx={sq.x} cy={sq.y} label={sq.label + status} slots={slots} armed={sq.armed} onChoose={() => { const S = stateRef.current; if (S) S.pieOpen = false; }} />
-          : <div style={{ position: "absolute", left: sq.x, top: sq.y + 26, transform: "translate(-50%,0)", fontSize: 10, letterSpacing: 1, color: "#7dffa8", background: "rgba(14,18,24,0.85)", padding: "1px 6px", borderRadius: 4, zIndex: 7, pointerEvents: "none" }}>{sq.label + status}</div>;
+          ? <RadialMenu cx={sq.x} cy={sq.y} label={lbl + status} slots={slots} armed={sq.armed} onChoose={() => { const S = stateRef.current; if (S) { if (S._keepPie) S._keepPie = false; else S.pieOpen = false; } }} />
+          : <div style={{ position: "absolute", left: sq.x, top: sq.y + 26, transform: "translate(-50%,0)", fontSize: 10, letterSpacing: 1, color: "#7dffa8", background: "rgba(14,18,24,0.85)", padding: "1px 6px", borderRadius: 4, zIndex: 7, pointerEvents: "none" }}>{lbl + status}</div>;
       })()}
       {hud.squadFlag && (
         <div data-squad-flag style={{ position: "absolute", left: hud.squadFlag.x, top: hud.squadFlag.y, transform: "translate(-50%, -100%)", zIndex: 6, pointerEvents: "none", color: "#ff6b5e", fontSize: 18 }}>⚑</div>

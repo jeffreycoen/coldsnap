@@ -786,6 +786,36 @@ export function memberNearRow(world, sq, row, reach) {
   return false;
 }
 
+// P7.2 T1 (owner): EASIER SELECTION — the field tap radii, one home.
+// Squad was a hard-coded 1.6 in squadAtPoint, hull 3.2 in vehicleAtPoint;
+// towers had no proximity pick at all (exact cell only). // provisional (F5)
+export const TAP_SQUAD_M = 2.4;
+export const TAP_HULL_M = 4.0;
+export const TAP_TOWER_M = 2.4;
+
+// nextPick: the tap-cycle rule, pure. cands = [{ key, d }] — key unique per
+// pickable thing, d its distance from the tap. Nearest first, ties broken by
+// key order; when the current pick is in the list the NEXT one around wins,
+// wrapping. Deterministic, no rng.
+export function nextPick(cands, curKey) {
+  if (!cands || cands.length === 0) return null;
+  const sorted = cands.slice().sort((a, b) => (a.d - b.d) || (a.key < b.key ? -1 : 1));
+  if (curKey == null) return sorted[0];
+  const i = sorted.findIndex((c) => c.key === curKey);
+  return sorted[(i + 1) % sorted.length]; // absent current (-1) lands on the nearest
+}
+
+// SELECT ALL OF TYPE (owner): every squad of the type still holding a live
+// member. Sealed riders (P7 T4) are not tappable and not selectable here.
+export function squadIdsOfType(world, squads, type) {
+  const out = [];
+  for (const sq of squads) {
+    if (sq.type !== type || sq.ridingIn != null) continue;
+    if (sq.memberIds.some((id) => { const u = world.byId.get(id); return u && u.alive; })) out.push(sq.id);
+  }
+  return out;
+}
+
 // sandbagOrientAt: AUTO-CONTINUE. If (x,z) lands within 2.2m of an existing
 // live sandbag, orient along the line to the NEAREST such bag (|dx| >= |dz|
 // -> long axis x, orient 0; else orient 1) — overrides the toggle for that
