@@ -724,6 +724,13 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
       /drafting: S\._draftOpen && S\.draft && !S\._draftDone \? S\.draft\.map/.test(src2) );
     ok("T8v2(d6): the flag opens at TAKE COMMAND and closes at the confirm",
       /S\._draftOpen = true;/.test(src2) && /S\._draftOpen = false;/.test(src2));
+    const src3 = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
+    ok("T8v2(d7): picks hold by the card's name — highlight and un-pick both work, duplicates impossible",
+      /const on = picked\.includes\(c\.k\);/.test(src3) && /onConfirm\(cards\.filter\(\(c\) => picked\.includes\(c\.k\)\)\)/.test(src3));
+    ok("T8v2(d8): the game's own startup opens the till at 250",
+      /resources: 250, \/\/ the draft's richer opening \(owner\)/.test(src3));
+    ok("T8v2(d9): the draft is FREE to the last step — the deal placer never touches the till",
+      (() => { const m = src3.match(/const placePick = \(p\) => \{[\s\S]*?\n      \};/); return !!m && !/S\.resources/.test(m[0]); })());
   }
   // (e) the manual learns the draft
   {

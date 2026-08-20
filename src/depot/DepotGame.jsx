@@ -756,10 +756,10 @@ const PALETTE_LABEL = Object.fromEntries(PALETTE.map((p) => [p.key, p.label]));
 // (P.slot's build-bar card, ~44px touch target both platforms).
 function DraftScreen({ cards, onConfirm }) {
   const [picked, setPicked] = useState([]);
-  const toggle = (c) => {
-    if (picked.includes(c)) { setPicked(picked.filter((x) => x !== c)); return; }
+  const toggle = (k) => {
+    if (picked.includes(k)) { setPicked(picked.filter((x) => x !== k)); return; }
     if (picked.length >= 5) return;
-    setPicked([...picked, c]);
+    setPicked([...picked, k]);
   };
   return (
     <div style={P.ovl}>
@@ -770,10 +770,10 @@ function DraftScreen({ cards, onConfirm }) {
       <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 8, maxWidth: 520, marginBottom: 14 }}>
         {cards.map((c) => {
           const it = PALETTE_BY_KEY[c.k];
-          const on = picked.includes(c);
+          const on = picked.includes(c.k);
           return (
             <div key={c.k} data-draft-card={c.k} data-draft-kind={c.plan ? "plan" : "unit"}
-              onClick={() => toggle(c)}
+              onClick={() => toggle(c.k)}
               style={{ ...P.slot, minWidth: 88, minHeight: 44, borderColor: on ? "#4aff8c" : "#48515f", background: on ? "rgba(74,255,140,0.12)" : "#1a212b" }}>
               <div style={{ fontSize: 16 }}>{it ? it.icon : "?"}</div>
               <div>{it ? it.label : c.k}</div>
@@ -785,7 +785,7 @@ function DraftScreen({ cards, onConfirm }) {
       <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 10 }}>PICKED {picked.length} OF 5</div>
       <button data-draft-confirm disabled={picked.length !== 5}
         style={{ ...P.btn, fontSize: 15, padding: "10px 26px", minHeight: 44, minWidth: 44, borderColor: picked.length === 5 ? "#4aff8c" : "#48515f", color: picked.length === 5 ? "#4aff8c" : "#e6ebf1", opacity: picked.length === 5 ? 1 : 0.55 }}
-        onClick={() => onConfirm(picked)}>
+        onClick={() => onConfirm(cards.filter((c) => picked.includes(c.k)))}>
         FIELD THESE FIVE
       </button>
     </div>
@@ -1253,7 +1253,7 @@ export default function DepotGame({ onExit, resume = null }) {
       R.setHealth(healthOn);
 
       const S = {
-        resources: 120, kills: 0,
+        kills: 0, resources: 250, // the draft's richer opening (owner) // provisional (F5)
         cmdr: null, // P7 T8: the drawn armor doctrine — one boot draw (fresh war), restored on RESUME
         ws: makeDepotAssaultState(), spawnRR: 0,
         mode: null, sellMode: false, inspectId: null,
