@@ -8,7 +8,7 @@
 |---|------|------|-----------|-------|
 | 1 | Easier selection | mk1.80 | `p7-2-task-1-selection.md` | SHIPPED (e8d9c60) |
 | 2 | The hand | mk1.81 | `p7-2-task-2-the-hand.md` | SHIPPED (e965d1e; A1/A2) |
-| 3 | The calm window | mk1.82 | `p7-2-task-3-calm-window.md` | pending |
+| 3 | The calm window | mk1.82 | `p7-2-task-3-calm-window.md` | SHIPPED (9e01adc; A1) |
 | 4 | His hand | mk1.83 | `p7-2-task-4-his-hand.md` | pending |
 | 5 | The volunteer | mk1.84 | `p7-2-task-5-volunteer.md` | pending |
 | 6 | The medic | mk1.85 | `p7-2-task-6-medic.md` | pending |
