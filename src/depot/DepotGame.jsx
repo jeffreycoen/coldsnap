@@ -1310,7 +1310,7 @@ export default function DepotGame({ onExit, resume = null }) {
         S.starvedStreak = r.starvedStreak;
         S._reportedBreak = r.reportedBreak; S._reportedSpent = r.reportedSpent;
         S.cmdr = r.cmdr || "cautious"; // P7 T8: restored, never redrawn on resume
-        S.manifest = r.manifest; S.foe = r.foe;
+        S.manifest = r.manifest; S.manifest.armedAtWall = 0; S.foe = r.foe;
         S.intelUp = r.intelUp; S.intelArmedAt = r.intelArmedAt;
         S.lastDispatch = r.lastDispatch;
         S.pendingPlan = r.pendingPlan; S.intelPlan = r.intelPlan;
@@ -2443,6 +2443,7 @@ export default function DepotGame({ onExit, resume = null }) {
         if (!M || M.hand.length === 0) return;
         M.cardUp = true;
         M.armedAt = world.t + PENDING_ARM_S;
+        M.armedAtWall = performance.now() / 1000 + PENDING_ARM_S;
       };
       S.dismissManifest = () => { if (S.manifest) S.manifest.cardUp = false; };
       // P7.1 T4: THE INFO CARD — two doors, one state. The manifest door's
@@ -2451,7 +2452,7 @@ export default function DepotGame({ onExit, resume = null }) {
       S.openInfo = (key, door) => { S.infoKey = key; S.infoDoor = door; S.infoArmedAt = world.t + PENDING_ARM_S; S.infoArmedWall = performance.now() / 1000 + PENDING_ARM_S; };
       S.closeInfo = () => { S.infoKey = null; S.infoDoor = null; };
       S.confirmInfo = () => {
-        const armed = S.infoDoor === "deal" ? performance.now() / 1000 >= S.infoArmedWall : world.t >= S.infoArmedAt;
+        const armed = performance.now() / 1000 >= S.infoArmedWall;
         if (!armed) { toast("HOLD — ARMING"); return; }
         const k = S.infoKey, door = S.infoDoor;
         S.closeInfo();
@@ -2461,7 +2462,7 @@ export default function DepotGame({ onExit, resume = null }) {
       };
       S.pickManifest = (key) => {
         const M = S.manifest;
-        if (!M || world.t < M.armedAt) { toast("HOLD — ARMING"); return; }
+        if (!M || performance.now() / 1000 < (M.armedAtWall ?? 0)) { toast("HOLD — ARMING"); return; }
         // P7.2 T2 (owner): A PLAN COSTS HALF the live price — the ladder
         // itself gained a price; each build after pays full. The convoy's
         // window is EXEMPT from the one-buy-per-second law (the hand is
@@ -2482,7 +2483,7 @@ export default function DepotGame({ onExit, resume = null }) {
       // fields — the ✗ cancels, charges nothing, and reopens the hand.
       S.armHire = (key) => {
         const M = S.manifest;
-        if (!M || world.t < M.armedAt) { toast("HOLD — ARMING"); return; }
+        if (!M || performance.now() / 1000 < (M.armedAtWall ?? 0)) { toast("HOLD — ARMING"); return; }
         if (!M.hand.some((c) => c.k === key && c.hire === 1)) return;
         S.hirePlace = { key };
         M.cardUp = false; // the window steps aside for the placement tap
@@ -3166,7 +3167,7 @@ export default function DepotGame({ onExit, resume = null }) {
             // THE CLOCK. Read off world.t — the fixed-step sim clock — never
             // wall time and never a React value; a paused run holds the bell
             // exactly where it stood because world.t stops with it.
-            if (stepBell(S, world.t)) ringBell();
+            if (stepBell(S, world.t)) { ringBell(); S.manifest.armedAtWall = performance.now() / 1000 + PENDING_ARM_S; }
             // THE PRE-TOLL (Task 4). The last five seconds are counted out
             // loud. Edge-triggered on the countdown crossing each whole second
             // — ceiling-rounded exactly as the chip reads it — so it fires once
@@ -3439,7 +3440,7 @@ export default function DepotGame({ onExit, resume = null }) {
               // hud tick exactly the way the pending ✓ already is.
               unlocked: S.manifest.unlocked.slice(),
               manifest: S.manifest.hand.length > 0 ? {
-                up: !!S.manifest.cardUp, armed: world.t >= S.manifest.armedAt,
+                up: !!S.manifest.cardUp, armed: performance.now() / 1000 >= (S.manifest.armedAtWall ?? 0),
                 bell: S.manifest.offerBell,
                 hand: S.manifest.hand.map((c) => {
                   const base = (PALETTE_BY_KEY[c.k] || { cost: 10 }).cost;
@@ -3448,7 +3449,7 @@ export default function DepotGame({ onExit, resume = null }) {
                 }),
               } : null,
               hiring: S.hirePlace ? { key: S.hirePlace.key, label: (PALETTE_BY_KEY[S.hirePlace.key] || {}).label } : null,
-              info: S.infoKey ? { key: S.infoKey, door: S.infoDoor, armed: S.infoDoor === "deal" ? performance.now() / 1000 >= S.infoArmedWall : world.t >= S.infoArmedAt } : null,
+              info: S.infoKey ? { key: S.infoKey, door: S.infoDoor, armed: performance.now() / 1000 >= S.infoArmedWall } : null,
               intel: S.intelUp && S.lastDispatch ? { armed: world.t >= S.intelArmedAt } : null,
               started: S.started, gameOver: S.gameOver, victory: S.victory,
               placing: S._placeQueue ? (S._placeQueue[0] || "done") : null, // P7.1 T6 A1: place mode must survive the ticker
