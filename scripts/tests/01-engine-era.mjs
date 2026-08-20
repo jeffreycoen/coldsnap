@@ -114,24 +114,24 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
   // (a) the player starts with START and nothing else; the bell gates are dead.
   {
     const M = makeManifestState();
-    ok("hand: the starting kit is rifles + engineers",
-      M.unlocked.length === 2 && isUnlocked(M, "sq_rifles") && isUnlocked(M, "sq_engineers")
+    ok("hand: the bar starts bare — nothing is free (owner, re-taught P7.2 T3)",
+      M.unlocked.length === 0 && !isUnlocked(M, "sq_rifles") && !isUnlocked(M, "sq_engineers")
       && !isUnlocked(M, "wall") && !isUnlocked(M, "sandbag"), M.unlocked.join(","));
     ok("hand: nothing is offered before the first bell", M.hand.length === 0 && M.cardUp === false);
     const p0 = HAND_KEYS.filter((k) => M.unlocked.indexOf(k) < 0);
-    ok("hand: the plans pool ignores the bell entirely — one pool at any hour", p0.length === 13, p0.length);
+    ok("hand: the plans pool ignores the bell entirely — one pool at any hour", p0.length === 15, p0.length);
   }
 
   // (b) the pool: the full list minus what is owned. No tiers, no bells.
   {
     const M = makeManifestState();
     const pool = () => HAND_KEYS.filter((k) => M.unlocked.indexOf(k) < 0);
-    ok("hand: thirteen plans stand at bell one", pool().length === 13);
+    ok("hand: fifteen plans stand at bell one", pool().length === 15);
     M.unlocked.push("mg");
-    ok("hand: a bought plan leaves the pool", pool().indexOf("mg") < 0 && pool().length === 12);
+    ok("hand: a bought plan leaves the pool", pool().indexOf("mg") < 0 && pool().length === 14);
     ok("hand: heroes stand in the pool from the start (the gate is dead, owner)",
       pool().includes("hero_bison") && pool().includes("hero_apc"));
-    ok("hand: the kit's own keys are never plans", pool().indexOf("sq_rifles") < 0 && pool().indexOf("sq_engineers") < 0);
+    ok("hand: rifles and engineers are plans like everything else now (re-taught P7.2 T3)", pool().includes("sq_rifles") && pool().includes("sq_engineers"));
     ok("hand: hires ignore ownership — the full fifteen, always",
       dealConvoyHand(HAND_KEYS.slice(), HAND_KEYS, mulberry32(4)).every((c) => c.hire === 1));
   }
@@ -149,7 +149,7 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
     }
     let badN = 0, dupe = 0, foreign = 0;
     for (let seed = 1; seed <= 200; seed++) {
-      const h = dealConvoyHand(["sq_rifles", "sq_engineers"], HAND_KEYS, mulberry32(seed));
+      const h = dealConvoyHand([], HAND_KEYS, mulberry32(seed));
       const plans = h.filter((x) => !x.hire);
       if (h.length !== 5 || plans.length !== 3) badN++;
       if (new Set(plans.map((x) => x.k)).size !== plans.length) dupe++;
@@ -184,7 +184,7 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
     ok("hand: the bell deals five", first.length === 5 && S2.manifest.cardUp === true, first.map((c) => c.k).join(","));
     fireBell(S2, { reg: S2.reg, snap: {}, rng, t: 2 * BELL_PERIOD_S });
     ok("hand: an unread hand is overwritten at the next bell, not banked",
-      S2.manifest.offerBell === 2 && S2.manifest.unlocked.length === 2, `${S2.manifest.offerBell}/${S2.manifest.unlocked.length}`);
+      S2.manifest.offerBell === 2 && S2.manifest.unlocked.length === 0, `${S2.manifest.offerBell}/${S2.manifest.unlocked.length}`);
     ok("hand: the passed-over plans are still in the pool",
       first.filter((c) => !c.hire).every((c) => S2.manifest.unlocked.indexOf(c.k) < 0));
   }

@@ -1479,7 +1479,10 @@ export default function DepotGame({ onExit, resume = null }) {
       // ghost + reach polygon + ✓/✗, armed after 350ms, no scrap spent until
       // confirmPending. Walls stay exempt (instant, via buildAt directly) —
       // a ring/confirm pair on a 5-scrap wall is meaningless (brief).
-      const clearPending = () => { S.pending = null; };
+      const clearPending = () => {
+        if (S.pending && S.pending.hire) { S.hirePlace = null; if (S.openManifest) S.openManifest(); }
+        S.pending = null;
+      };
       const startPending = (gx, gz, mode, v) => {
         const spec = v.spec, wp = v.wp;
         const y = field.heightAt(wp.x, wp.z);
@@ -1508,6 +1511,10 @@ export default function DepotGame({ onExit, resume = null }) {
         // as the confirm), but an early ✓ tap SAYS so instead of vanishing —
         // and leaves the pending exactly as it was, so the next tap works.
         if (!pendingArmed(p, world.t)) { if (p) toast("HOLD — ARMING"); return; }
+        // P7.2 T3: the confirm ghosts — ✓ runs the REAL placer; a refusal
+        // (bad ground, too far, no scrap) leaves the ghost standing.
+        if (p.deal) { const n0 = S._placeQueue.length; placePick(p.wp); if (S._placeQueue.length !== n0) S.pending = null; return; }
+        if (p.hire) { placeHire(p.wp); if (!S.hirePlace) S.pending = null; return; }
         S.pending = null;
         if (p.squad) { placeSquadAt(p.gx, p.gz, p.squad); return; }
         buildAt(p.gx, p.gz, p.mode);
@@ -2142,14 +2149,17 @@ export default function DepotGame({ onExit, resume = null }) {
         if (!S.started && S._placeQueue && S._placeQueue.length) {
           if (S.infoKey) return; // P7.1 T8: the card is up — read it first (PLACE IT closes it)
           const p0 = groundPoint(cx, cy);
-          if (p0) placePick(p0);
+          // P7.2 T3 (owner): the tap sets or MOVES a confirm ghost — nothing
+          // fields until the ✓. Wall-clock arming: the sim is frozen here.
+          if (p0) S.pending = { deal: S._placeQueue[0], wp: { x: p0.x, z: p0.z }, y: field.heightAt(p0.x, p0.z), poly: null, ringR: 0, color: 0x4aff8c, cost: 0, wallArm: true, armedAtWall: performance.now() / 1000 + PENDING_ARM_S };
           return;
         }
         if (!S.started || S.gameOver || S.victory) return;
         // P7.2 T2: THE HIRE'S TAP — an armed placement owns the ground tap.
         if (S.hirePlace) {
           const ph = groundPoint(cx, cy);
-          if (ph) placeHire(ph);
+          // P7.2 T3 (owner): the tap sets or MOVES the confirm ghost.
+          if (ph) S.pending = { hire: S.hirePlace.key, wp: { x: ph.x, z: ph.z }, y: field.heightAt(ph.x, ph.z), poly: null, ringR: 0, color: 0x7dffa8, cost: priceNow(S.hirePlace.key, (PALETTE_BY_KEY[S.hirePlace.key] || { cost: 10 }).cost), armedAt: world.t + PENDING_ARM_S };
           return;
         }
         // any tap on the canvas while a placement is pending resolves it —
@@ -2967,7 +2977,12 @@ export default function DepotGame({ onExit, resume = null }) {
           // is still six world-seconds away when this runs.
           if (S.gameOver || S.victory) burnSave();
           const cardUp = endCardReady(S, world.t);
-          const sdt = S.paused || !S.started || cardUp ? 0 : dt * S.speed;
+          // P7.2 T3 (owner): THE WAR PAUSES FOR THE CONVOY — the whole sim
+          // freezes while the hand's window is up; LATER or buying out the
+          // hand resumes it. Prices and the bell freeze for free: every
+          // accumulator below feeds on sdt.
+          const convoyUp = !!(S.manifest && S.manifest.cardUp);
+          const sdt = S.paused || !S.started || cardUp || convoyUp ? 0 : dt * S.speed;
           const pan = 34 * dt / Math.max(0.5, S.zoom);
           // screen-relative like touch drag: W = screen-up whatever the Q/E yaw
           const cb = R.camBasis;
@@ -3974,7 +3989,7 @@ export default function DepotGame({ onExit, resume = null }) {
           <button data-pending-confirm
             style={{ ...P.btnBig, borderColor: "#4aff8c", color: "#4aff8c", opacity: hud.pending.armed ? 1 : 0.5, fontWeight: "bold" }}
             onClick={() => stateRef.current && stateRef.current.confirmPending()}>
-            ✓ ◆{hud.pending.cost}
+            {hud.pending.cost ? "✓ ◆" + hud.pending.cost : "✓ PLACE"}
           </button>
           <button data-pending-cancel
             style={{ ...P.btnBig, borderColor: "#ff6b5e", color: "#ff6b5e", fontWeight: "bold" }}

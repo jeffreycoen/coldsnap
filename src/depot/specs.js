@@ -161,7 +161,7 @@ export const ENEMY_FIRE = {
 // bar from bell 0 and never has to be won off the convoy. The enemy column is
 // untouched: engineers build, they do not fight, so nothing on the other side
 // mirrors them (the sapper split is the "Engineers & Arms" phase's business).
-export const PLAYER_START = ["sq_rifles", "sq_engineers"]; // mk1.12 (owner): masonry is engineer work — walls and sandbags come only off their lines
+export const PLAYER_START = []; // P7.2 T3 (owner): THE BAR STARTS EMPTY — the free starting plans die; every build option is bought off the hand. Supersedes the mk0.60/mk1.12 starting kit.
 export const PLAYER_TIERS = [
   // P7 T7 (mk1.36, owner): the tier-1 mirror closes — sq_runners and
   // sq_breakers join mg/sq_mg/frost, matching the enemy's own fast/heavy.

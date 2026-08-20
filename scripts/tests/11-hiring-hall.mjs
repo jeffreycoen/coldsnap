@@ -3,8 +3,8 @@
 import { ok } from "./harness.mjs";
 import { makeWorld, mulberry32 } from "../../src/engine/core.js";
 import { makeSquad } from "../../src/depot/squads.js";
-import { spawnSquadMembers, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType, dealConvoyHand, takeHandCard, HAND_DRAWS, FOE_DRAWS, makeManifestState, makeRunState, fireBell, BELL_PERIOD_S } from "../../src/depot/state.js";
-import { HAND_KEYS } from "../../src/depot/specs.js";
+import { spawnSquadMembers, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType, dealConvoyHand, takeHandCard, HAND_DRAWS, FOE_DRAWS, makeManifestState, makeRunState, fireBell, BELL_PERIOD_S, pendingArmed } from "../../src/depot/state.js";
+import { HAND_KEYS, PLAYER_START } from "../../src/depot/specs.js";
 import { PICK_POOL } from "../../src/depot/muster.js";
 import { fatReg } from "./shared.mjs";
 import fs from "node:fs";
@@ -56,12 +56,12 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
   const count = () => { let n = 0; const r = mulberry32(7); return { rng: () => { n++; return r(); }, n: () => n }; };
   {
     const c = count();
-    const hand = dealConvoyHand(["sq_rifles", "sq_engineers"], HAND_KEYS, c.rng);
+    const hand = dealConvoyHand(["mg", "gun"], HAND_KEYS, c.rng);
     ok("T2(b): a full pool spends exactly HAND_DRAWS (5)", c.n() === HAND_DRAWS && HAND_DRAWS === 5, c.n());
     const plans = hand.filter((x) => !x.hire), hires = hand.filter((x) => x.hire);
     ok("T2(b2): three plans and two hires, the fixed split", plans.length === 3 && hires.length === 2);
     ok("T2(b3): plans are distinct and never an owned key",
-      new Set(plans.map((x) => x.k)).size === 3 && plans.every((x) => x.k !== "sq_rifles" && x.k !== "sq_engineers"));
+      new Set(plans.map((x) => x.k)).size === 3 && plans.every((x) => x.k !== "mg" && x.k !== "gun"));
     ok("T2(b4): hires draw from the FULL list — owning the plan never blocks the hire",
       hires.every((x) => HAND_KEYS.includes(x.k)));
   }
@@ -79,7 +79,7 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
   {
     let heroHands = 0;
     for (let seed = 1; seed <= 200; seed++) {
-      const hand = dealConvoyHand(["sq_rifles", "sq_engineers"], HAND_KEYS, mulberry32(seed));
+      const hand = dealConvoyHand(["mg", "gun"], HAND_KEYS, mulberry32(seed));
       if (hand.some((x) => x.k === "hero_bison" || x.k === "hero_apc")) heroHands++;
     }
     ok("T2(b7): heroes appear from bell one — the tier gates are dead (owner)", heroHands > 0, heroHands);
@@ -110,7 +110,7 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
     const kept = S.manifest.hand.filter((x) => !x.hire).map((x) => x.k);
     fireBell(S, { reg: S.reg, snap: {}, rng, t: 2 * BELL_PERIOD_S });
     ok("T2(d3): a skipped bell is overwritten, and unpicked plans stay in the pool",
-      S.manifest.offerBell === 2 && S.manifest.unlocked.length === 2 &&
+      S.manifest.offerBell === 2 && S.manifest.unlocked.length === 0 &&
       kept.every((k) => HAND_KEYS.indexOf(k) >= 0 && S.manifest.unlocked.indexOf(k) < 0));
   }
 
@@ -137,4 +137,37 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
     ok("T2(f2): THE BELL card teaches plans and hires, and the header count is honest",
       /plans you buy once/.test(fm) && /hires that walk on at once/.test(fm) && /Nine linked cards/.test(fm));
   }
+}
+
+// ---- P7.2 T3 (mk1.82): THE CALM WINDOW
+{
+  // (a) the bare bar
+  ok("T3(a): PLAYER_START is empty — the bar starts bare (owner)", PLAYER_START.length === 0);
+  ok("T3(a2): the fresh manifest owns nothing", makeManifestState().unlocked.length === 0);
+  ok("T3(a3): the plans pool is the full fifteen",
+    dealConvoyHand([], HAND_KEYS, mulberry32(9)).filter((c) => !c.hire).length === 3 &&
+    HAND_KEYS.filter((k) => makeManifestState().unlocked.indexOf(k) < 0).length === 15);
+  // (b) the pause — one gate, source-pinned (the loop is unimportable)
+  {
+    const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
+    ok("T3(b): the convoy freezes the whole sim through the one gate",
+      /const convoyUp = !!\(S\.manifest && S\.manifest\.cardUp\);/.test(src) &&
+      /S\.paused \|\| !S\.started \|\| cardUp \|\| convoyUp \? 0 : dt \* S\.speed/.test(src));
+  }
+  // (c) the confirm ghost
+  {
+    const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
+    ok("T3(c): a pre-start tap sets the ghost, never fields", /S\.pending = \{ deal: S\._placeQueue\[0\]/.test(src));
+    ok("T3(c2): the deal ghost arms on the wall clock (the sim is frozen pre-start)",
+      /wallArm: true, armedAtWall: performance\.now\(\) \/ 1000 \+ PENDING_ARM_S/.test(src));
+    ok("T3(c3): a hire tap sets the ghost, never fields", /S\.pending = \{ hire: S\.hirePlace\.key/.test(src));
+    ok("T3(c4): the ✓ fields through the real placers, and refusal keeps the ghost",
+      /const n0 = S\._placeQueue\.length; placePick\(p\.wp\); if \(S\._placeQueue\.length !== n0\) S\.pending = null;/.test(src) &&
+      /placeHire\(p\.wp\); if \(!S\.hirePlace\) S\.pending = null;/.test(src));
+    ok("T3(c5): the ✗ returns a hire's card to the hand",
+      /if \(S\.pending && S\.pending\.hire\) \{ S\.hirePlace = null; if \(S\.openManifest\) S\.openManifest\(\); \}/.test(src));
+  }
+  // (d) the wall-armed pending law, tested for real
+  ok("T3(d): a wall-armed pending arms on real seconds, sim pendings on sim time",
+    pendingArmed({ wallArm: true, armedAtWall: 0 }, -1) === true && pendingArmed({ armedAt: 5 }, 4) === false);
 }

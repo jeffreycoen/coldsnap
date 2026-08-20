@@ -76,7 +76,12 @@ export function validatePlacement({ blocked, ice, held, resources, cost }) {
 // confirm. Purely a time constant — not RNG, so no depot-lint concern.
 export const PENDING_ARM_S = 0.35;
 export function pendingArmed(pending, nowT) {
-  return !!pending && nowT >= pending.armedAt;
+  if (!pending) return false;
+  // P7.2 T3: a WALL-ARMED pending (the deal's confirm ghost — the sim
+  // clock is frozen pre-start, the T8 lesson) arms on real seconds;
+  // every other pending stays on sim time, byte-identical.
+  if (pending.wallArm) return (typeof performance !== "undefined" ? performance.now() / 1000 : nowT) >= pending.armedAtWall;
+  return nowT >= pending.armedAt;
 }
 
 // --- confirm-tap thefts (mk0.27) --------------------------------------------

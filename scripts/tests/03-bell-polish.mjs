@@ -329,10 +329,7 @@ import fs from "node:fs";
     !INFANTRY_ARMS.engineers && !INFANTRY_ARMS.sappers);
 
   // (2) the starting kit: rifles + engineers only — masonry is engineer work.
-  ok("mk0.60/2 (re-pinned mk1.12): PLAYER_START is rifles + engineers — masonry is engineer work",
-    PLAYER_START.length === 2 && PLAYER_START.includes("sq_engineers") && PLAYER_START.includes("sq_rifles")
-    && !PLAYER_START.includes("wall") && !PLAYER_START.includes("sandbag"),
-    PLAYER_START.join(","));
+  ok("mk0.60/2 (re-taught P7.2 T3): PLAYER_START is EMPTY — the bare bar; every option is bought off the hand", PLAYER_START.length === 0, PLAYER_START.join(","));
   ok("mk0.60/2: the engineer team is NOT on the convoy's ladder (it is never offered twice)",
     PLAYER_TIERS.every((tier) => tier.indexOf("sq_engineers") < 0));
 
