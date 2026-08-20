@@ -1760,7 +1760,7 @@ export const MK = "mk1.00";
 
 - **Unit model:** most troops as single units (`SQUAD_SPECS` n:1 data experiment first — one-man squads are already supported machinery), sniper/spotter pair kept at 2. Combat re-tuning follows, `provisional (F5)` convention.
 - **Selection UI:** select-all-of-type through the pie (phone-first), drag-box on desktop later; group orders with destination spreading.
-- **The bell market (simple AMM):** design ratified — reprice at each bell off live standing stock, units and masonry both, enemy pays the same table, no rng; bell-cadence pricing supersedes real-time per-purchase movement (decision-record amendment rides its task when it lands).
+- **The bell market (simple AMM):** design ratified — reprice at each bell off live standing stock, units and masonry both, enemy pays the same table, no rng; bell-cadence pricing supersedes real-time per-purchase movement (the amendment rides its task when it lands).
 - **Body lists (typed pools):** spec below, implemented once to green gates, reverted at mk0.99. Findings: mean sim cost −15–17% at 60fps (reproducible); p95/worst not measurable on `diag-perf.mjs` under load (run-to-run spread wider than the effect — worst 452/494/559 across three runs). A future attempt needs a quieter measurement protocol first.
 - **Sleep-aware collision bookkeeping (owner, 2026-08-13 — TRIED FIRST among the P6 performance work):** sleeping blocks already skip their math, but every block is still filed into the collision lookup every tick, and every weld is still scanned once per tick to find the awake ones. Make both skip what sleeps — zero behavior change by construction. Engine change: rides the guarded-divergence law, `golden.mjs` green.
 

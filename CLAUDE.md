@@ -2,9 +2,11 @@
 
 The project owner directs design, reviews every plan, and is the sole playtester. His word overrides everything below; nothing here is provisional to an agent.
 
-**Precedence:** this file and `docs/superpowers/decision-record.md` outrank session memory and any compressed-conversation summary. Summaries and memories are history, not authority — where they disagree with these documents, these documents win, and the stale copy gets corrected, not followed.
+**Precedence:** this file outranks session memory and any compressed-conversation summary. Summaries and memories are history, not authority — where they disagree with this file, this file wins, and the stale copy gets corrected, not followed.
 
-**Session orientation (orchestrator only, before any work):** read `docs/superpowers/decision-record.md` whole, the ACTIVE phase's plan document (the record's CURRENT line names the phase), the vision document `docs/superpowers/plans/2026-08-11-winter-front-vision-2-slow-front.md`, and the last ~20 commit subjects (`git log --oneline -20`). Dispatched agents do NOT do this — they read only their brief's verified list. Code reading stays governed by the two standing laws: all affected code read in full at plan-writing time; per-task reading lists re-verified at dispatch.
+**Design truth (owner, 2026-08-20):** this file, the ACTIVE phase's plan documents, and the owner's word in the session. There is no separate decision log — the old one confused sessions and was removed. New rulings are written into the plan document they govern, plainly, at ruling time. Ship history lives in git.
+
+**Session orientation (orchestrator only, before any work):** read the ACTIVE phase's plan document (the newest phase skeleton in `docs/superpowers/plans/`), the vision document `docs/superpowers/plans/2026-08-11-winter-front-vision-2-slow-front.md`, and the last ~20 commit subjects (`git log --oneline -20`). Dispatched agents do NOT do this — they read only their brief's verified list. Code reading stays governed by the two standing laws: all affected code read in full at plan-writing time; per-task reading lists re-verified at dispatch.
 
 ## Speech
 

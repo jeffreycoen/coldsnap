@@ -395,7 +395,7 @@ A toggle on the pie: this squad prefers walls and towers over men — the wall-b
 
 hud.squadSel carries `structFirst: !!sq.prefStruct`; the wedge's lit state reads it.
 
-**Step 4.4 — the record.** `docs/superpowers/decision-record.md`, "Orders and command": append one dated line — Command phase shipped mk0.80-0.86, the pie live for squads and towers, proposed-line confirm on every two-point order, patrol and attack-structures in the vocabulary, phase awaiting the owner's playtest.
+**Step 4.4 — the record.** the design log (since removed): append one dated line — Command phase shipped mk0.80-0.86, the pie live for squads and towers, proposed-line confirm on every two-point order, patrol and attack-structures in the vocabulary, phase awaiting the owner's playtest.
 
 **Gates (ONLY these):** parse · lint:depot · test:depot (4.1 green) · build AFTER bump to "mk0.86" · SMOKE_ONLY=depot smoke. Commit "(mk0.86)", push, CI green, STOP.
 
