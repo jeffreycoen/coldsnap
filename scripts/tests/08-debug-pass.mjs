@@ -478,7 +478,7 @@ import fs from "node:fs";
   // (b)-(c) the bar's habits (source shape; the look and feel are the owner's
   // live acceptance, smoke's zero-page-errors covers the boot)
   {
-    ok("T17(b): the pick arms the bar, heroes stay two-tap", /if \(!key\.startsWith\("hero_"\)\) setMode\(key\);/.test(dgSrc17));
+    ok("T17(b) (re-taught mk1.95): the pick arms the bar for every key — heroes are placement modes", !/startsWith\("hero_"\)\) setMode/.test(dgSrc17) && /PLANS BOUGHT ◆" \+ price\);[\s\S]{0,240}setMode\(key\);/.test(dgSrc17));
     ok("T17(c): the active build button toggles off", /if \(S\.mode === m\) \{/.test(dgSrc17));
     ok("T17(a4): the lay loop is reach-gated (retargeted mk1.50, P7 T20: stepBuildLine moved to buildlines.js)",
       /if \(!memberNearRow\(world, sq, row, LAY_REACH\)\) break;/.test(blSrc17));

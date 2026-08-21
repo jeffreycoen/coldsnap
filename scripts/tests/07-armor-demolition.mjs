@@ -1141,7 +1141,7 @@ import fs from "node:fs";
     ok("T9(c2): hero_apc prices at its base 140 with zero hulls", p0.player.hero_apc === 140, p0.player.hero_apc);
     ok("T9(c2b): the foe table prices the same hero families", p0.foe.hero_bison === 200 && p0.foe.hero_apc === 140);
     const p1 = mkt9.computePrices({ heroBison: 1 });
-    ok("T9(c3): one standing bison at least doubles the price (either team, one shared market)", p1.player.hero_bison >= 2 * 200, p1.player.hero_bison);
+    ok("T9(c3) (re-taught mk1.95): one standing bison prices 240 — the ordinary curve at K 3 (owner supersedes the K-1 wall)", p1.player.hero_bison === 240, p1.player.hero_bison);
     const p2 = mkt9.computePrices({ heroBison: 1, _men: 44 });
     ok("T9(c4): the field wall multiplies further on top of the type wall", p2.player.hero_bison > p1.player.hero_bison, `${p1.player.hero_bison} -> ${p2.player.hero_bison}`);
     // marketCounts: a live bison on EITHER team counts into the one shared

@@ -312,8 +312,8 @@ const run = (w, grid, n, opts) => { for (let i = 0; i < n; i++) { stepDrivers(w,
   mkMech(w, 1, 0, 0);
   const counts1 = marketCounts(w, []);
   const p1 = computePrices(counts1);
-  ok("M26: computePrices carries hero_mech on both tables, and one standing machine doubles it",
-    p0.player.hero_mech === MECH.cost && p0.foe.hero_mech === MECH.cost && p1.player.hero_mech === MECH.cost * 2,
+  ok("M26: computePrices carries hero_mech on both tables, and one standing machine prices 480 (K 3, mk1.95)",
+    p0.player.hero_mech === MECH.cost && p0.foe.hero_mech === MECH.cost && p1.player.hero_mech === Math.round(MECH.cost * 1.2),
     `base p=${p0.player.hero_mech} f=${p0.foe.hero_mech} doubled=${p1.player.hero_mech}`);
 }
 

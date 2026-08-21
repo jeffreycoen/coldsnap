@@ -18,7 +18,7 @@ import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS, BISON, APC, MECH } from "./specs.js";
 import { cardFor } from "./infocards.js";
 import { windAt } from "./wind.js";
-import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, takeHandCard, TIER_BELLS, memberNearRow, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType, scoreKill } from "./state.js";
+import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, takeHandCard, TIER_BELLS, memberNearRow, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType, scoreKill, placeZoneMask } from "./state.js";
 import { marketCounts, computePrices, fieldPrices, priced } from "./market.js";
 import { stepMines, minePrices, mineSeedRoll, mineSeedPlace, MINE_COST, WIRE_COST } from "./mines.js";
 import { homeShare, pickHomeDetail, HOME_GUARD_CAP, cmdrOf, cmdrBellOrders, ferryDecide, flankDrop } from "./ai.js";
@@ -38,7 +38,7 @@ import Dispatch from "./Dispatch.jsx";
 import InfoCard from "./InfoCard.jsx";
 import FieldManual, { MANUAL_REV } from "../ui/FieldManual.jsx";
 import { GRID_CS, GRID_W, GRID_H, GRID_OX, GRID_OZ, RIM_HALF_U, RIM_HALF_V, ORIENT, fwdU, fwdDir, invW, clampToRim, OBJ_POS, SPAWN_POINTS, PONDS, ROCKS, TOWN, ROADS, PASSES, BANDS, MAP_SEED, SPAWN_U, STREAM, HILLS, genMap, makeMap, buildDepotTerrain, pondAt, rockAt, makeGrid, streamAt, planTrees, computeFlowField, checkConnectivity } from "./mapgen.js";
-import { armorSpread, armorStable, parkArmor, parkMech, MECH_SPREAD, musterFreshStart, PICK_POOL } from "./muster.js";
+import { armorSpread, armorStable, MECH_SPREAD, musterFreshStart, PICK_POOL } from "./muster.js";
 import { lineCells, pieceHalf, startBuildLine, linePieces, layPieceAt, stepBuildLine } from "./buildlines.js";
 import { ringBell as ringBellOut } from "./bell.js";
 import { buildMech, mechCommand, respawnMech, mechFallen, mechFire, mechMissiles, mechBarrage, mechPunt, mechAboutFace, mechPivot, mechAimDir } from "../engine/mech.js";
@@ -754,9 +754,8 @@ const PALETTE = [
   { key: "sq_medics", label: "MEDICS", icon: "✚", cost: SQUAD_SPECS.medics.cost },
   // P7.2 T7: the mechanic team — the paid wrench
   { key: "sq_mechanics", label: "MECHANICS", icon: "⚙", cost: SQUAD_SPECS.mechanics.cost },
-  // P7 T9: THE HERO TIER — bell 10, both ladders. Bar-visible only once
-  // unlocked like everything else; the buy is a two-tap arm (S.buyHero),
-  // never a build mode.
+  // P7 T9: THE HERO TIER — bar-visible only once unlocked like everything
+  // else. mk1.95: hero keys are placement modes under the one law.
   { key: "hero_bison", label: "BISON", icon: "⛨", cost: BISON.cost },
   { key: "hero_apc", label: "APC", icon: "⬒", cost: APC.cost },
   { key: "hero_mech", label: "MECH", icon: "✇", cost: MECH.cost },
@@ -989,7 +988,7 @@ export default function DepotGame({ onExit, resume = null }) {
       // sweep tracks the flattest clear cell it sees as its own backstop —
       // stability is preferred, never blocking. Deterministic; no rng
       // stream is touched.
-      // P7 T9 (owner): HOISTED TO MOUNT SCOPE — parkArmor/apcSeqN/depotP/
+      // P7 T9 (owner): HOISTED TO MOUNT SCOPE — apcSeqN/depotP/
       // depotE used to be boot-local (the `else` branch below, fresh boot
       // only). The hero tier's player buy and the enemy's draw-free
       // replacement both need to park a fresh hull long after boot, off
@@ -1102,6 +1101,7 @@ export default function DepotGame({ onExit, resume = null }) {
       // move) rather than re-converting every stall.
       const townUV = town.map((b) => { const c = invW(b.x, b.z); return { id: b.id, x: c.u, z: c.v, get ruined() { return b.ruined; } }; });
       let terrAcc = 0;
+      let zoneAcc = 0.25; // mk1.95: the zone's own wall-time accumulator — starts due
       const TERR_STEP = 0.25; // stepTerritory at ~4Hz — accumulated below, not every frame
       // Emitter list, rebuilt fresh each territory step from live bodies:
       // team-signed by kind -> EMIT weight (see territory.js). The depot's
@@ -1188,7 +1188,7 @@ export default function DepotGame({ onExit, resume = null }) {
         // Ring radius grown to 7.8m (P7 T3) — the depots got bigger.
         // P7.1 T6 (owner): THE BARE OPENING — the seeded bag rings and the
         // free starting armor die here. seedBags/parkArmor stay exported
-        // (parkArmor still parks the hero tier's buys and the enemy's
+        // (parkArmor still parks the enemy's
         // draw-free replacement; seedBags' export survives for Task 7).
       }
       const objG = grid.worldToGrid(OBJ_POS.x, OBJ_POS.z);
@@ -1310,7 +1310,6 @@ export default function DepotGame({ onExit, resume = null }) {
         })(),
         zoom: 1, acc: 0, t: 0, fps: 60, fpsAcc: 0, fpsN: 0,
         hover: null, pointer: null, toasts: [], pending: null,
-        heroArm: null, // P7 T9: the hero tier's two-tap arm ({ key, armedAt } or null)
         hirePlace: null, // P7.2 T2: the hire's armed placement ({ key } or null)
         infoKey: null, infoDoor: null, infoArmedAt: 0, // P7.1 T4: the info card's own state
         // Squads (Phase 5 Task 3): live squad rosters + selection/order UI
@@ -1461,34 +1460,6 @@ export default function DepotGame({ onExit, resume = null }) {
         if (world.t - S._buyAt < 1) { toast("THE MARKET PACES YOU — one purchase a second"); return false; }
         return true;
       };
-      // P7 T9: THE HERO TIER, player-side — a two-tap arm on the bar slot
-      // itself (3s, the menu-exit pattern): first tap arms and toasts the
-      // price, a second tap within the window buys. No ground tap, no
-      // pending ghost — the bought hull parks straight onto the depot,
-      // exactly like the starting pair (parkArmor, mount-scope now).
-      const HERO_ARM_S = 3; // provisional (F5)
-      S.buyHero = (key) => {
-        if (S.gameOver || S.victory) return;
-        const kind = key === "hero_apc" ? "apc" : key === "hero_mech" ? "mech" : "bison";
-        const spec = kind === "apc" ? APC : kind === "mech" ? MECH : BISON;
-        const label = PALETTE_BY_KEY[key].label;
-        const price = priceNow(key, spec.cost);
-        const armed = S.heroArm && S.heroArm.key === key && world.t < S.heroArm.armedAt;
-        if (!armed) {
-          S.heroArm = { key, armedAt: world.t + HERO_ARM_S };
-          toast(label + " — ◆" + price + " — TAP AGAIN TO ORDER");
-          return;
-        }
-        S.heroArm = null;
-        if (S.resources < price) { toast("NO SCRAP"); return; }
-        if (!buyPaced()) return;
-        if (kind === "mech") parkMech(world, grid, field, depotP, 1);
-        else parkArmor(world, grid, field, depotP, 1, kind, nextApcSeq);
-        S.resources -= price;
-        S._buyAt = world.t;
-        toast("THE CONVOY DELIVERS");
-      };
-
       const recomputeFlow = () => computeFlowField(grid, objG.gx, objG.gz);
       const buildAt = (gx, gz, mode) => {
         if (!grid.inBounds(gx, gz)) return;
@@ -1600,6 +1571,7 @@ export default function DepotGame({ onExit, resume = null }) {
         // (bad ground, too far, no scrap) leaves the ghost standing.
         if (p.deal) { const n0 = S._placeQueue.length; placePick(p.wp); if (S._placeQueue.length !== n0) S.pending = null; return; }
         if (p.hire) { placeHire(p.wp); if (!S.hirePlace) S.pending = null; return; }
+        if (p.hero) { if (placeHero(p.hero, p.wp)) S.pending = null; return; }
         S.pending = null;
         if (p.squad) { placeSquadAt(p.gx, p.gz, p.squad); return; }
         buildAt(p.gx, p.gz, p.mode);
@@ -1608,6 +1580,18 @@ export default function DepotGame({ onExit, resume = null }) {
       // Build-bar mode keys -> squad type. Prefixed (sq_mg vs mg) because the
       // MG TOWER already owns the bare "mg" mode key.
       const SQUAD_MODE = { sq_sniper: "sniper", sq_rifles: "rifles", sq_mg: "mg", sq_sappers: "sappers", sq_mortars: "mortars", sq_engineers: "engineers", sq_runners: "runners", sq_breakers: "breakers", sq_medics: "medics", sq_mechanics: "mechanics" };
+      // mk1.95 (owner): hero keys are placement modes — the one law.
+      const HERO_MODE = { hero_bison: "bison", hero_apc: "apc", hero_mech: "mech" };
+      // The ghost's true footprint, by key — a hull its hull, the mech its
+      // vetted spread, a tower its post, a squad the stand its men take.
+      const ghostFp = (key) => {
+        const pk = PICK_POOL.find((x) => x.key === key);
+        if (!pk) return null;
+        if (pk.kind === "hull") { const s = pk.vtype === "apc" ? APC : BISON; return { x: s.hx * 2, z: s.hz * 2, h: s.hy * 2 }; }
+        if (pk.kind === "mech") return { x: MECH_SPREAD.hx * 2, z: MECH_SPREAD.hz * 2, h: 4.2 };
+        if (pk.kind === "tower") { const s = TOWER_SPECS[pk.key]; return { x: 1.7, z: 1.7, h: s.hy * 2 }; }
+        return { x: 2.2, z: 2.2, h: 1.05 };
+      };
       // Infantry/sandbag placement checks: same validatePlacement gate as
       // towers (occupied/ice/held/afford) — men don't claim the grid cell
       // (no cell.blocked write, no connectivity re-check: bodies, not
@@ -2259,7 +2243,7 @@ export default function DepotGame({ onExit, resume = null }) {
           const p0 = groundPoint(cx, cy);
           // P7.2 T3 (owner): the tap sets or MOVES a confirm ghost — nothing
           // fields until the ✓. Wall-clock arming: the sim is frozen here.
-          if (p0) S.pending = { deal: S._placeQueue[0], wp: { x: p0.x, z: p0.z }, y: field.heightAt(p0.x, p0.z), poly: null, ringR: 0, color: 0x4aff8c, cost: 0, wallArm: true, armedAtWall: performance.now() / 1000 + PENDING_ARM_S };
+          if (p0) S.pending = { deal: S._placeQueue[0], wp: { x: p0.x, z: p0.z }, y: field.heightAt(p0.x, p0.z), poly: null, ringR: 0, color: 0x4aff8c, cost: 0, wallArm: true, armedAtWall: performance.now() / 1000 + PENDING_ARM_S, fp: ghostFp(S._placeQueue[0]) };
           return;
         }
         if (!S.started || S.gameOver || S.victory) return;
@@ -2267,7 +2251,7 @@ export default function DepotGame({ onExit, resume = null }) {
         if (S.hirePlace) {
           const ph = groundPoint(cx, cy);
           // P7.2 T3 (owner): the tap sets or MOVES the confirm ghost.
-          if (ph) S.pending = { hire: S.hirePlace.key, wp: { x: ph.x, z: ph.z }, y: field.heightAt(ph.x, ph.z), poly: null, ringR: 0, color: 0x7dffa8, cost: priceNow(S.hirePlace.key, (PALETTE_BY_KEY[S.hirePlace.key] || { cost: 10 }).cost), armedAt: world.t + PENDING_ARM_S };
+          if (ph) S.pending = { hire: S.hirePlace.key, wp: { x: ph.x, z: ph.z }, y: field.heightAt(ph.x, ph.z), poly: null, ringR: 0, color: 0x7dffa8, cost: priceNow(S.hirePlace.key, (PALETTE_BY_KEY[S.hirePlace.key] || { cost: 10 }).cost), armedAt: world.t + PENDING_ARM_S, fp: ghostFp(S.hirePlace.key) };
           return;
         }
         // any tap on the canvas while a placement is pending resolves it —
@@ -2358,6 +2342,13 @@ export default function DepotGame({ onExit, resume = null }) {
           const v = canPlaceInfantryAt(g.gx, g.gz, priceNow(S.mode, SQUAD_SPECS[SQUAD_MODE[S.mode]].cost));
           if (!v.ok) { toast(v.msg); return; }
           startPendingSquad(g.gx, g.gz, S.mode, v.wp);
+          return;
+        }
+        if (HERO_MODE[S.mode]) {
+          const price = priceNow(S.mode, PALETTE_BY_KEY[S.mode].cost);
+          const v = canPlaceInfantryAt(g.gx, g.gz, price);
+          if (!v.ok) { toast(v.msg); return; }
+          S.pending = { hero: S.mode, wp: v.wp, y: field.heightAt(v.wp.x, v.wp.z), poly: null, ringR: 0, color: 0x9fdcff, cost: price, armedAt: world.t + PENDING_ARM_S, fp: ghostFp(S.mode) };
           return;
         }
         if (S.mode && TOWER_SPECS[S.mode]) {
@@ -2612,8 +2603,8 @@ export default function DepotGame({ onExit, resume = null }) {
         S.resources -= price;
         cue("uitick"); // the plan is bought
         toast((PALETTE_LABEL[key] || key) + " — PLANS BOUGHT ◆" + price);
-        // P7 T17 (owner): THE PICK ARMS THE BAR — hero keys stay two-tap buys.
-        if (!key.startsWith("hero_")) setMode(key);
+        // mk1.95 (owner): THE PICK ARMS THE BAR — every key; hero keys are placement modes under the one law now.
+        setMode(key);
       };
       // P7.2 T2 (owner): A HIRE FIELDS AT ONCE, placed by your own ground
       // tap on held ground. Payment lands only when the unit actually
@@ -2686,6 +2677,60 @@ export default function DepotGame({ onExit, resume = null }) {
         if (S.manifest && S.manifest.hand.length && S.openManifest) S.openManifest(); // P7.2 HF mk1.86 (owner): multi-buy is one visit — the hand returns for the next card (the calm window returns with it, the ruled pause of an open hand)
         cue("uitick");
         toast("THE HIRE FIELDS — ◆" + price);
+      };
+      // mk1.95 (owner): THE HERO FIELDS BY THE ONE PLACEMENT LAW — the bar
+      // arms a mode, the ground tap sets the ghost, the ✓ runs this. The
+      // enemy's own heroes keep bell.js's replacement walk at its depot.
+      const placeHero = (key, p) => {
+        const pk = PICK_POOL.find((x) => x.key === key);
+        if (!pk) return true;
+        const price = priceNow(key, PALETTE_BY_KEY[key].cost);
+        if (S.resources < price) { toast("NO SCRAP"); return false; }
+        if (!buyPaced()) return false;
+        const g = grid.worldToGrid(p.x, p.z);
+        if (!grid.inBounds(g.gx, g.gz)) { toast("OFF THE FIELD"); return false; }
+        const cell = grid.cells[grid.idx(g.gx, g.gz)];
+        const wp = grid.gridToWorld(g.gx, g.gz);
+        const c0 = invW(wp.x, wp.z);
+        if (!canBuild(T, c0.u, c0.v)) { toast("GROUND NOT HELD"); return false; }
+        if (cell.water || cell.ice || cell.blocked || cell.wallId) { toast("NO GROUND"); return false; }
+        if (pk.kind === "mech") {
+          if (!(armorSpread(field, wp.x, wp.z, MECH_SPREAD) < 0.28)) { toast("TOO STEEP TO PARK"); return false; }
+          if (slotBlockedPublic(world, wp.x, wp.z, 4.5)) { toast("NO ROOM"); return false; }
+          const m = buildMech(world, { x: wp.x, z: wp.z, yaw: Math.atan2(-wp.x, -wp.z), team: 1, hp: MECH.hp });
+          m.thrustersOn = true; m.thrustAssist = true;
+          m.hull.drv = "mech"; m.hull.order = "defend"; m.hull.tracks = "careful";
+          m.hull.maxHp = MECH.hp; m.hull.homeX = wp.x; m.hull.homeZ = wp.z;
+        } else {
+          const spec = pk.vtype === "apc" ? APC : BISON;
+          if (!armorStable(field, wp.x, wp.z, spec)) { toast("TOO STEEP TO PARK"); return false; }
+          if (slotBlockedPublic(world, wp.x, wp.z, Math.hypot(spec.hx, spec.hz) + 1.0)) { toast("NO ROOM"); return false; }
+          const v = addBody(world, { kind: "vehicle", team: 1, mass: spec.mass, hx: spec.hx, hy: spec.hy, hz: spec.hz,
+            x: wp.x, y: field.heightAt(wp.x, wp.z) + spec.hy + 0.05, z: wp.z, hp: spec.hp, friction: 0.85,
+            q: heading(null, Math.atan2(-wp.x, -wp.z)) });
+          v.armor = spec.armor; v.vtype = pk.vtype; v.maxHp = spec.hp;
+          v.homeX = wp.x; v.homeZ = wp.z; v.sleeping = true;
+          if (pk.vtype === "apc") v.apcSeq = nextApcSeq();
+          v.drv = pk.vtype === "apc" ? "apc" : "armor"; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful"; v.driver = "player";
+        }
+        S.resources -= price;
+        S._buyAt = world.t;
+        cue("uitick");
+        toast("THE CONVOY DELIVERS — ◆" + price);
+        return true;
+      };
+      // mk1.95: THE PLACEMENT ZONE — while a confirm placement is armed, the
+      // ground it may take is shown: held ground for towers, squads, hires
+      // and heroes; the homeland ring for the pre-start deal. ~4Hz, wall time.
+      const refreshZone = () => {
+        if (!R) return;
+        const dealPhase = !S.started && S._placeQueue && S._placeQueue.length;
+        const armed = dealPhase || S.hirePlace || (S.mode && (TOWER_SPECS[S.mode] || SQUAD_MODE[S.mode] || HERO_MODE[S.mode]));
+        if (!armed || S.gameOver || S.victory) { R.overlay.setZone(false); return; }
+        const heldAt = dealPhase
+          ? (x, z) => Math.hypot(x - depotP.x, z - depotP.z) <= HOMELAND_R
+          : (x, z) => { const c = invW(x, z); return canBuild(T, c.u, c.v); };
+        R.overlay.setZone(true, grid, placeZoneMask(grid, heldAt), (x, z) => field.heightAt(x, z), dealPhase ? 0x4aff8c : 0x7dffa8);
       };
       const spawnOne = () => {
         const ws = S.ws;
@@ -3584,9 +3629,13 @@ export default function DepotGame({ onExit, resume = null }) {
             R.overlay.setHover(true, S.hover.x, S.hover.z, field.heightAt(S.hover.x, S.hover.z), S.hover.range, S.hover.valid, GRID_CS);
           }
           else R.overlay.setHover(false);
+          // mk1.95: THE PLACEMENT ZONE — its own ~4Hz WALL-time tick (the deal
+          // phase runs with the sim frozen, so sdt can never drive it).
+          zoneAcc += dt;
+          if (zoneAcc >= 0.25) { zoneAcc = 0; refreshZone(); }
           if (S.pending) {
             const P0 = S.pending;
-            R.overlay.setPending(true, P0.wp.x, P0.y, P0.wp.z, P0.poly, P0.ringR, P0.color);
+            R.overlay.setPending(true, P0.wp.x, P0.y, P0.wp.z, P0.poly, P0.ringR, P0.color, P0.fp);
           } else R.overlay.setPending(false);
           if (R.overlay.setReach) {
             // One overlay slot, one look: squad fan wins if a squad is
@@ -3916,10 +3965,7 @@ export default function DepotGame({ onExit, resume = null }) {
   const setMode = (m) => {
     const S = stateRef.current; if (!S) return;
     if (S.gameOver || S.victory) return;   // mk0.29: the war is over — nothing left to build
-    // P7 T9: hero keys are a two-tap ARM/BUY on the bar slot itself — never
-    // a build mode (no ground tap, no pending ghost). Branch before S.mode
-    // is ever touched.
-    if (m === "hero_bison" || m === "hero_apc" || m === "hero_mech") { if (S.buyHero) S.buyHero(m); return; }
+    // mk1.95: hero keys are ordinary placement modes — no special case.
     // P7 T17 (owner): TAP AGAIN TO PUT IT AWAY — the active build button is
     // a toggle; the second tap clears back to plain command.
     if (S.mode === m) {

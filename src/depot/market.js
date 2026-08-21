@@ -22,12 +22,12 @@ export const MARKET_K = {
   runner: 12, breaker: 6, tank: 3,
   mgtower: 4, guntower: 4, mortartower: 3, rockettower: 3, frosttower: 4,
   wall: 30, sandbag: 40,
-  // P7 T9 (owner): THE HERO TIER — K 1, pole 2. ONE standing hull doubles
-  // the price and the curve goes vertical approaching two; with the field
-  // wall on top, a second hero while yours lives is absurd — the ruling.
-  heroBison: 1, heroApc: 1,
-  // owner: one standing machine walls the second — both sides' counted together // provisional (F5)
-  heroMech: 1,
+  // P7 T9 set the hero tier at K 1 — one hull doubled, two hit the clamp.
+  // SUPERSEDED KNOWINGLY (owner, 2026-08-21, mk1.95): hero prices behave
+  // like every other price, symmetrically — K 3, the tank family's machine
+  // precedent. One shared table, both sides' iron, unchanged below.
+  heroBison: 3, heroApc: 3,
+  heroMech: 3, // provisional (F5)
   // P7 T10 (owner): mine/wire families — a per-side budget rides the market
   // so a mine war stays under the engine ceiling. Both sides' LIVE devices
   // count together, one shared table (provisional F5).

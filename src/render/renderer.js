@@ -1316,6 +1316,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
   let pathPool = null;
   const PATH_VERT_CAP = 4096;   // segment vertices — ~30 ordered units at full route length // provisional (F5)
   let retRing = null; // POSSESSION T5 (mk0.94): the possessed reticle's red circle
+  let zoneMesh = null; // mk1.95: THE PLACEMENT ZONE — lazy like everything here
   const overlay = {
     // POSSESSION T5 (mk0.94): the possessed reticle — its own red ring, not
     // the build ghost. Lazy like everything here; the game layer drives it
@@ -1372,7 +1373,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
     // reach polygon (or a plain aura ring for frost, which sets pts=null
     // and uses ringR instead — an aura isn't LOS-clipped, so no polygon).
     // Lazily built on first use, same pattern as hoverPad/hoverRing above.
-    setPending(on, x, y, z, pts, ringR, color) {
+    setPending(on, x, y, z, pts, ringR, color, fp) {
       if (!pendingPad) {
         pendingPad = new THREE.Mesh(new THREE.BoxGeometry(1, 1.8, 1), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.32, depthWrite: false }));
         pendingPad.layers.set(1); scene.add(pendingPad);
@@ -1393,7 +1394,8 @@ export function makeRenderer(canvas, world0, opts = {}) {
       pendingAuraRing.visible = haveAura;
       pendingAuraFill.visible = haveAura;
       if (!on) return;
-      pendingPad.position.set(x, y + 0.9, z);
+      if (fp) { pendingPad.scale.set(fp.x, fp.h / 1.8, fp.z); pendingPad.position.set(x, y + fp.h / 2, z); }
+      else { pendingPad.scale.set(1, 1, 1); pendingPad.position.set(x, y + 0.9, z); }
       if (havePoly) {
         const n = pts.length;
         const posArr = new Float32Array((n + 1) * 3);
@@ -1416,6 +1418,34 @@ export function makeRenderer(canvas, world0, opts = {}) {
         pendingAuraRing.position.set(x, y + 0.14, z); pendingAuraRing.scale.set(ringR, ringR, 1);
         pendingAuraFill.position.set(x, y + 0.12, z); pendingAuraFill.scale.set(ringR, ringR, 1);
       }
+    },
+    // mk1.95: THE PLACEMENT ZONE — the ground a confirm placement may take,
+    // shown while one is armed. Merged translucent quads over the game
+    // layer's passed grid mask; rebuilt only at its ~4Hz zone tick. The
+    // grid's cells are 2m and ORIENT is quarter-turns, so flat axis-aligned
+    // quads at cell-center height are exact.
+    setZone(on, grid, mask, heightAt, color) {
+      if (!zoneMesh) {
+        zoneMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: 0x7dffa8, transparent: true, opacity: 0.1, depthWrite: false, side: THREE.DoubleSide }));
+        zoneMesh.layers.set(1); scene.add(zoneMesh);
+      }
+      zoneMesh.visible = !!on;
+      if (!on) return;
+      const pos = [], idx = [];
+      const h = grid.cs * 0.5;
+      for (let gz = 0; gz < grid.h; gz++) for (let gx = 0; gx < grid.w; gx++) {
+        if (!mask[gz * grid.w + gx]) continue;
+        const wp = grid.gridToWorld(gx, gz);
+        const y = heightAt(wp.x, wp.z) + 0.14;
+        const b = pos.length / 3;
+        pos.push(wp.x - h, y, wp.z - h, wp.x + h, y, wp.z - h, wp.x + h, y, wp.z + h, wp.x - h, y, wp.z + h);
+        idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+      }
+      zoneMesh.geometry.dispose();
+      zoneMesh.geometry = new THREE.BufferGeometry();
+      zoneMesh.geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(pos), 3));
+      zoneMesh.geometry.setIndex(idx);
+      zoneMesh.material.color.setHex(color || 0x7dffa8);
     },
     // selected-squad reach fan (sniper): same fill+edge treatment as the
     // pending preview, minus the ghost pad — this marks sight, not a build.
