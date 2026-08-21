@@ -19,9 +19,15 @@ import { buildMech, mechCommand, respawnMech, mechFallen, mechFire, mechMissiles
 // ---- the wave tank — re-seated from units.js stepTank (mk1.30), verbatim.
 function tankGoal(world, grid, t, dt, fwdDir) {
   const cell = grid && grid.cellAt(t.pos.x, t.pos.z);
-  if (cell && cell.dist < 1e8 && (cell.dx || cell.dz)) {
-    const fd = fwdDir(cell.dx, cell.dz);
-    t.goal = { x: t.pos.x + fd.x * 9, z: t.pos.z + fd.z * 9 };
+  if (cell && cell.dist < 1e8) {
+    if (cell.dx || cell.dz) {
+      const fd = fwdDir(cell.dx, cell.dz);
+      t.goal = { x: t.pos.x + fd.x * 9, z: t.pos.z + fd.z * 9 };
+    } else {
+      // mk1.96: the flow rests at zero on the wall's face (the siege flow's
+      // seeds) and at the objective cell itself — stand and gun, never lost.
+      t.goal = { x: t.pos.x, z: t.pos.z };
+    }
     t.lostT = 0;
   } else {
     // off-grid write-off: same 12s window infantry uses. Without this a

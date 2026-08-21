@@ -555,6 +555,46 @@ export function computeFlowField(grid, objGx, objGz) {
       if (nd < cells[ni].dist - 1e-6) { cells[ni].dist = nd; q.push({ gx: nx, gz: nz }); }
     }
   }
+  // mk1.96: THE SIEGE FLOW (owner — "Leave them a road" expunged). Ground the
+  // objective cannot be reached from still owes the assault a direction: the
+  // player's own masonry. Every unreachable open cell beside a player claim
+  // (blocked, bTeam 1 — walls, towers, the depot's stones) seeds a second
+  // flood at a 1e6 base — far under the 1e8 pathable line, far over any real
+  // distance, and the two regions are sealed off from each other by
+  // definition, so the floods never mix. The march walks its pseudo-flow to
+  // the wall's face and halts there (a seed cell's descent rests at zero);
+  // the guns, satchels and rams already know the rest. A breach re-floods
+  // real distances through the gap on the standing recomputeFlow calls.
+  const q2 = [];
+  for (let gz = 0; gz < GRID_H; gz++) for (let gx = 0; gx < GRID_W; gx++) {
+    const ci = grid.idx(gx, gz);
+    if (cells[ci].blocked || cells[ci].dist < 1e8) continue;
+    let seed = false;
+    for (const d of dirs) {
+      const nx = gx + d[0], nz = gz + d[1];
+      if (!grid.inBounds(nx, nz)) continue;
+      const nc = cells[grid.idx(nx, nz)];
+      if (nc.blocked && nc.bTeam === 1) { seed = true; break; }
+    }
+    if (seed) { cells[ci].dist = 1e6; q2.push({ gx, gz }); }
+  }
+  head = 0;
+  while (head < q2.length) {
+    const cur = q2[head++];
+    const cd = cells[grid.idx(cur.gx, cur.gz)].dist;
+    for (const d of dirs) {
+      const nx = cur.gx + d[0], nz = cur.gz + d[1];
+      if (!grid.inBounds(nx, nz)) continue;
+      const ni = grid.idx(nx, nz);
+      if (cells[ni].blocked) continue;
+      if (d[0] !== 0 && d[1] !== 0) {
+        if (cells[grid.idx(cur.gx + d[0], cur.gz)].blocked || cells[grid.idx(cur.gx, cur.gz + d[1])].blocked) continue;
+      }
+      const step = (d[0] !== 0 && d[1] !== 0) ? 1.414 : 1;
+      const nd = cd + step * (cells[ni].ice ? 0.72 : 1) * (cells[ni].drop ? 3 : 1);
+      if (nd < cells[ni].dist - 1e-6) { cells[ni].dist = nd; q2.push({ gx: nx, gz: nz }); }
+    }
+  }
   for (let gz = 0; gz < GRID_H; gz++) for (let gx = 0; gx < GRID_W; gx++) {
     const ci = grid.idx(gx, gz);
     if (cells[ci].blocked || cells[ci].dist >= 1e8) continue;

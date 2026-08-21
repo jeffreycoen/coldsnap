@@ -22,7 +22,7 @@ import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag
 import { marketCounts, computePrices, fieldPrices, priced } from "./market.js";
 import { stepMines, minePrices, mineSeedRoll, mineSeedPlace, MINE_COST, WIRE_COST } from "./mines.js";
 import { homeShare, pickHomeDetail, HOME_GUARD_CAP, cmdrOf, cmdrBellOrders, ferryDecide, flankDrop } from "./ai.js";
-import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic, drivePossessedSquad, clearSlot, stepMedicTendSquad, stepMechanicTendSquad } from "./squads.js";
+import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic, roomMaskPublic, drivePossessedSquad, clearSlot, stepMedicTendSquad, stepMechanicTendSquad } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam } from "./units.js";
 import { stepDrivers, possessedArmorFire, possessedArmorMg, mechSighted } from "./drivers.js";
@@ -37,7 +37,7 @@ import { makeBodyLists, rebuildBodyLists } from "./lists.js";
 import Dispatch from "./Dispatch.jsx";
 import InfoCard from "./InfoCard.jsx";
 import FieldManual, { MANUAL_REV } from "../ui/FieldManual.jsx";
-import { GRID_CS, GRID_W, GRID_H, GRID_OX, GRID_OZ, RIM_HALF_U, RIM_HALF_V, ORIENT, fwdU, fwdDir, invW, clampToRim, OBJ_POS, SPAWN_POINTS, PONDS, ROCKS, TOWN, ROADS, PASSES, BANDS, MAP_SEED, SPAWN_U, STREAM, HILLS, genMap, makeMap, buildDepotTerrain, pondAt, rockAt, makeGrid, streamAt, planTrees, computeFlowField, checkConnectivity } from "./mapgen.js";
+import { GRID_CS, GRID_W, GRID_H, GRID_OX, GRID_OZ, RIM_HALF_U, RIM_HALF_V, ORIENT, fwdU, fwdDir, invW, clampToRim, OBJ_POS, SPAWN_POINTS, PONDS, ROCKS, TOWN, ROADS, PASSES, BANDS, MAP_SEED, SPAWN_U, STREAM, HILLS, genMap, makeMap, buildDepotTerrain, pondAt, rockAt, makeGrid, streamAt, planTrees, computeFlowField } from "./mapgen.js";
 import { armorSpread, armorStable, MECH_SPREAD, musterFreshStart, PICK_POOL } from "./muster.js";
 import { lineCells, pieceHalf, startBuildLine, linePieces, layPieceAt, stepBuildLine } from "./buildlines.js";
 import { ringBell as ringBellOut } from "./bell.js";
@@ -1475,11 +1475,8 @@ export default function DepotGame({ onExit, resume = null }) {
         const cost = spec ? priceNow(mode, spec.cost) : WALL_COST; // walls: no TOWER_SPECS row, state.js owns the price
         if (S.resources < cost) { toast("NO SCRAP"); return; }
         cell.blocked = true;
-        if (!checkConnectivity(grid, SPAWN_POINTS, objG.gx, objG.gz)) {
-          cell.blocked = false;
-          toast("Leave them a road");
-          return;
-        }
+        // mk1.96 (owner): the road rule EXPUNGED — a sealed map is the
+        // attacker's problem; the siege flow marches it onto the wall.
         if (!buyPaced()) { cell.blocked = false; return; }
         const wp = grid.gridToWorld(gx, gz);
         const y = field.heightAt(wp.x, wp.z);
@@ -1662,7 +1659,6 @@ export default function DepotGame({ onExit, resume = null }) {
         } else { // tower — free, rights-free (territory hasn't grown), road still owed
           if (cell.water || cell.ice || cell.blocked || cell.wallId) { toast("NO GROUND"); return; }
           cell.blocked = true;
-          if (!checkConnectivity(grid, SPAWN_POINTS, objG.gx, objG.gz)) { cell.blocked = false; toast("Leave them a road"); return; }
           const spec = TOWER_SPECS[pk.key];
           const b = addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: spec.hy, hz: 0.8, x: wp.x, y: field.heightAt(wp.x, wp.z) + spec.hy, z: wp.z, hp: spec.hp });
           b.towerType = pk.key; b.flagPole = true; b.maxHp = b.hp;
@@ -2663,7 +2659,6 @@ export default function DepotGame({ onExit, resume = null }) {
           m.hull.maxHp = MECH.hp; m.hull.homeX = wp.x; m.hull.homeZ = wp.z;
         } else { // tower — the build law: cell claim + the road owed
           cell.blocked = true;
-          if (!checkConnectivity(grid, SPAWN_POINTS, objG.gx, objG.gz)) { cell.blocked = false; toast("Leave them a road"); return; }
           const spec = TOWER_SPECS[pk.key];
           const b = addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: spec.hy, hz: 0.8, x: wp.x, y: field.heightAt(wp.x, wp.z) + spec.hy, z: wp.z, hp: spec.hp });
           b.towerType = pk.key; b.flagPole = true; b.maxHp = b.hp;
@@ -2725,12 +2720,29 @@ export default function DepotGame({ onExit, resume = null }) {
       const refreshZone = () => {
         if (!R) return;
         const dealPhase = !S.started && S._placeQueue && S._placeQueue.length;
-        const armed = dealPhase || S.hirePlace || (S.mode && (TOWER_SPECS[S.mode] || SQUAD_MODE[S.mode] || HERO_MODE[S.mode]));
-        if (!armed || S.gameOver || S.victory) { R.overlay.setZone(false); return; }
+        const armedKey = dealPhase ? S._placeQueue[0]
+          : S.hirePlace ? S.hirePlace.key
+          : S.mode && (TOWER_SPECS[S.mode] || SQUAD_MODE[S.mode] || HERO_MODE[S.mode]) ? S.mode : null;
+        if (!armedKey || S.gameOver || S.victory) { R.overlay.setZone(false); return; }
         const heldAt = dealPhase
           ? (x, z) => Math.hypot(x - depotP.x, z - depotP.z) <= HOMELAND_R
           : (x, z) => { const c = invW(x, z); return canBuild(T, c.u, c.v); };
-        R.overlay.setZone(true, grid, placeZoneMask(grid, heldAt), (x, z) => field.heightAt(x, z), dealPhase ? 0x4aff8c : 0x7dffa8);
+        // mk1.96 (owner): the zone tells the ARMED unit's own truth — the
+        // ground's permanent laws AND the room standing bodies take right
+        // now. Hulls vet their flat parking and their clearance; the mech
+        // its spread and its 4.5m; squads and towers place by the shared
+        // laws alone (their placers refuse on neither slope nor room).
+        const pk = PICK_POOL.find((x) => x.key === armedKey);
+        let vetAt = null, room = null;
+        if (pk && pk.kind === "hull") {
+          const spec = pk.vtype === "apc" ? APC : BISON;
+          vetAt = (x, z) => armorStable(field, x, z, spec);
+          room = roomMaskPublic(world, grid, Math.hypot(spec.hx, spec.hz) + 1.0);
+        } else if (pk && pk.kind === "mech") {
+          vetAt = (x, z) => armorStable(field, x, z, MECH_SPREAD);
+          room = roomMaskPublic(world, grid, 4.5);
+        }
+        R.overlay.setZone(true, grid, placeZoneMask(grid, heldAt, vetAt, room), (x, z) => field.heightAt(x, z), dealPhase ? 0x4aff8c : 0x7dffa8);
       };
       const spawnOne = () => {
         const ws = S.ws;

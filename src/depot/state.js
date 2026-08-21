@@ -86,13 +86,17 @@ export function validatePlacement({ blocked, ice, held, resources, cost }) {
 // mk1.95: THE PLACEMENT ZONE's mask — pure. One byte per grid cell: 1 where
 // a confirm placement may land — the caller's own held test, minus every
 // cell the ground itself refuses. The game layer hands it to the renderer.
-export function placeZoneMask(grid, heldAt) {
+export function placeZoneMask(grid, heldAt, vetAt, room) {
   const m = new Uint8Array(grid.w * grid.h);
   for (let gz = 0; gz < grid.h; gz++) for (let gx = 0; gx < grid.w; gx++) {
-    const c = grid.cells[grid.idx(gx, gz)];
+    const ci = grid.idx(gx, gz);
+    const c = grid.cells[ci];
     if (c.blocked || c.wallId || c.ice || c.water) continue;
+    if (room && room[ci]) continue;
     const wp = grid.gridToWorld(gx, gz);
-    if (heldAt(wp.x, wp.z)) m[grid.idx(gx, gz)] = 1;
+    if (!heldAt(wp.x, wp.z)) continue;
+    if (vetAt && !vetAt(wp.x, wp.z)) continue;
+    m[ci] = 1;
   }
   return m;
 }

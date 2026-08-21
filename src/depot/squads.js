@@ -224,6 +224,32 @@ export function clearSlot(world, x, z, clear) {
 const memberClear = (u) => (u.hx || 0.3) + SLOT_CLEAR_PAD;
 export const slotBlockedPublic = (world, x, z, clear) => slotBlocked(world, x, z, clear);
 
+// mk1.96: THE ROOM MASK — the zone's live-room truth at O(bodies + cells),
+// never bodies x cells. One pass over the same two pools slotBlocked reads,
+// each solid's clearance-inflated box rasterized onto the movement grid; a
+// cell is roomed out when its CENTER lies inside any inflated footprint —
+// slotBlocked's own box test, verbatim, minus the rim and water lines a
+// bare fixture skips anyway (the zone's caller masks those separately).
+export function roomMaskPublic(world, grid, clear) {
+  const m = new Uint8Array(grid.w * grid.h);
+  const stamp = (b) => {
+    const ex = b.hx + clear, ez = b.hz + clear;
+    const a = grid.worldToGrid(b.pos.x - ex, b.pos.z - ez);
+    const b2 = grid.worldToGrid(b.pos.x + ex, b.pos.z + ez);
+    const gx0 = Math.max(0, Math.min(a.gx, b2.gx)), gx1 = Math.min(grid.w - 1, Math.max(a.gx, b2.gx));
+    const gz0 = Math.max(0, Math.min(a.gz, b2.gz)), gz1 = Math.min(grid.h - 1, Math.max(a.gz, b2.gz));
+    for (let gz = gz0; gz <= gz1; gz++) for (let gx = gx0; gx <= gx1; gx++) {
+      const wp = grid.gridToWorld(gx, gz);
+      if (Math.abs(wp.x - b.pos.x) <= ex && Math.abs(wp.z - b.pos.z) <= ez) m[gz * grid.w + gx] = 1;
+    }
+  };
+  const pool = world._L ? world._L.statics : world.bodies;
+  for (const b of pool) { if (b.alive && !(b.invM > 0) && SOLID_KINDS.has(b.kind)) stamp(b); }
+  const vpool = world._L ? world._L.vehicles : world.bodies;
+  for (const b of vpool) { if (b.alive && (b.kind === "vehicle" || b.kind === "mech")) stamp(b); }
+  return m;
+}
+
 // ------------------------------------------------------- the reaction (P7.2 T5)
 // Fire from a shooter this man cannot answer still moves him: on a fresh
 // hit with a known origin (state.js hitOrigin), evaluate the current spot
