@@ -8,4 +8,4 @@ Deferred by the owner's word, collected here by standing order. Nothing folds in
 - Predictor solids are 2m sight-grid cells, not exact hitboxes.
 - ~~The flat-gun footprint strip~~ — accepted by the owner, 2026-08-21 (mk2.05 live check). Closed.
 - The grenade ring uses a fixed-size landing bound; the roll-and-fuse drift is unmodeled (mk2.03).
-- The README's check count re-verifies at phase close (said 1,707; the suite has grown since).
+- ~~The README's check count~~ — re-measured and updated by the owner's order, 2026-08-21 (1,771 checks, 1.36 MB / 431 KB). Closed.
