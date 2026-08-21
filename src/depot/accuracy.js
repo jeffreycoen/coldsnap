@@ -402,6 +402,9 @@ export function deflect(dir, a, m) {
 // r bounds every possible landing; rawDir feeds the renderer's face yaw.
 // mk2.02: 16-point footprint returned as pts; "auto" specs mirror
 // shooterFire's lob rule.
+// mk2.05 (owner): THE LASER FOOTPRINT — the bound draws as projected light,
+// so it walks enough rays to hug the surfaces it lands on. // provisional (F5)
+export const RING_RAYS = 48;
 export function predictRing(SG, muzzle, aim, spec, sigma, wind, toUV) {
   const solve = (hi) => {
     let ax = aim.x, az = aim.z;
@@ -451,8 +454,8 @@ export function predictRing(SG, muzzle, aim, spec, sigma, wind, toUV) {
   const cap = SCATTER_CAP * sigma;
   const pts = [];
   let r = 0.4;
-  for (let s = 0; s < 16; s++) {
-    const hit = flightImpact(SG, muzzle, deflect(rawDir, (s / 16) * Math.PI * 2, cap), fireV, spec, wind, toUV);
+  for (let s = 0; s < RING_RAYS; s++) {
+    const hit = flightImpact(SG, muzzle, deflect(rawDir, (s / RING_RAYS) * Math.PI * 2, cap), fireV, spec, wind, toUV);
     pts.push(hit);
     r = Math.max(r, Math.hypot(hit.x - center.x, hit.z - center.z));
   }

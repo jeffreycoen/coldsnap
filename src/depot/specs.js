@@ -109,6 +109,14 @@ export const BISON_FIRE = {
   gun: { projSpeed: 85, dmg: TANK.dmg, kind: "shell", weapon: "tank", blastR: TANK.blastR, kv: 8, crater: 0.5, acc: 0.070, windF: 0.9, windComp: 0.6, cd: 2.6, range: 30, occl: "auto" },  // mk2.02 (owner): THE AUTOMATIC LOB — flat when the flat arc reaches, mortar root when it cannot // provisional (F5)
   mg:  { projSpeed: 100, dmg: 5, dirDmg: 8, kind: "mg", weapon: "mg", blastR: 0.3, kv: 0.5, crater: 0, acc: 0.080, burst: 6, burstGap: 0.17, cd: 1.6, range: 18, occl: "arc", windF: 0.06, windComp: 0 },  // provisional (F5)
 };
+// mk2.05 (owner): THE TRUE MUZZLE — the shot and the laser leave the barrel
+// TIP. Numbers mirror the drawn meshes (renderer buildBison/buildWaveTank):
+// pivot height over hull center, pivot forward offset, tube length. The
+// Bison coax keeps its hull offset — a stub, not a tube. // provisional (F5)
+export const BARRELS = {
+  bison: { up: 1.47, fwd: 0.6, len: 3.6 },
+  tank:  { up: 1.05, fwd: 0.5, len: 2.8 },
+};
 
 // P7 T4 (mk1.33): THE APC — the starting transport, one parked at each
 // depot beside the Bison. Four seats: one squad of four or two teams of

@@ -23,7 +23,7 @@ import fs from "node:fs";
 // shell fire — byte-identical after the re-seat. Hash and draws captured on
 // the mk1.21 stepUnits path; the motor pool must not move either number.
 {
-  const PIN_HASH = 781775633, PIN_DRAWS = 12; // captured on the mk1.21 stepUnits path (pre-move)
+  const PIN_HASH = 782830233, PIN_DRAWS = 12; // re-pinned mk2.05 (named): the wave tank fires from the barrel TIP now — the rounds' new flight moves the world
   const field = makeField(80, 1.7, 5);
   const world = makeWorld({ field, seed: 91 });
   world.depotCombat = true; world._tdStruct = true;

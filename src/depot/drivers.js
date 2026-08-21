@@ -8,13 +8,29 @@
 // are not the pool's business. Every draw is world.rng(); iteration is
 // world.bodies order — deterministic. Future vehicles (the depot Bison,
 // the APC, heroes) add a DRIVERS row, never a second loop.
-import { applyDamage } from "../engine/core.js";
+import { applyDamage, aimSolve } from "../engine/core.js";
 import { shooterFire, fieldReaches, effRange, hostileStructure, snapTargetNear, POSSESS_ACC, hitOrigin } from "./state.js";
-import { arcClears } from "./accuracy.js";
-import { ENEMY_FIRE, BISON_FIRE } from "./specs.js";
+import { arcClears, ELEV_CAP } from "./accuracy.js";
+import { ENEMY_FIRE, BISON_FIRE, BARRELS } from "./specs.js";
 import { planRoute } from "./route.js";
 import { clearSlot } from "./squads.js";
 import { buildMech, mechCommand, respawnMech, mechFallen, mechFire, mechMissiles, mechBarrage, mechAimDir } from "../engine/mech.js";
+
+// mk2.05 (owner): barrelTip — where the drawn tube ends, yaw toward the
+// aim, pitch estimated from the low root capped at the elevation cap. The
+// muzzle the sim fires from and the muzzle the laser projects from are the
+// same point. Zero draws.
+export function barrelTip(v, aim, spec, B) {
+  const yaw = Math.atan2(aim.x - v.pos.x, aim.z - v.pos.z);
+  const px = v.pos.x + Math.sin(yaw) * B.fwd, py = v.pos.y + B.up, pz = v.pos.z + Math.cos(yaw) * B.fwd;
+  const d = Math.max(2, Math.hypot(aim.x - px, aim.z - pz));
+  const ay = aim.y != null ? aim.y : py;
+  let p = aimSolve(spec.projSpeed, d, ay - py, 9.8, false);
+  if (p == null) p = 0;
+  p = Math.min(Math.max(p, 0), ELEV_CAP);
+  const c = Math.cos(p);
+  return { x: px + Math.sin(yaw) * B.len * c, y: py + B.len * Math.sin(p), z: pz + Math.cos(yaw) * B.len * c };
+}
 
 // ---- the wave tank — re-seated from units.js stepTank (mk1.30), verbatim.
 function tankGoal(world, grid, t, dt, fwdDir) {
@@ -61,7 +77,7 @@ function tankGuns(world, t, dt, T, toUV) {
   // hitStruct is required to hit the target at all; without owner immunity
   // the round detonates on its own hull on the first tick, every time
   // (found by the tank-vs-tower fixture; full note in the mk1.21 units.js).
-  shooterFire(world, t, muzzle, tgt, fspec, { attacker: "enemy", hitStruct: true, owner: t.id });
+  shooterFire(world, t, barrelTip(t, tgt.pos, fspec, BARRELS.tank), tgt, fspec, { attacker: "enemy", hitStruct: true, owner: t.id });
 }
 
 export const DRIVERS = {
@@ -361,7 +377,7 @@ function armorGuns(world, v, dt, T, toUV) {
     if (tgt) {
       v.gunT = gun.cd;
       v._aimYaw = Math.atan2(tgt.pos.x - v.pos.x, tgt.pos.z - v.pos.z);
-      shooterFire(world, v, muzzle, tgt, gun, struct
+      shooterFire(world, v, barrelTip(v, tgt.pos, gun, BARRELS.bison), tgt, gun, struct
         ? { attacker, hitStruct: true, hitOnly: "structure", owner: v.id }
         : { attacker, hitStruct: true, owner: v.id });
     } else v.gunT = 0.5;
@@ -534,7 +550,7 @@ export function possessedArmorFire(world, v, aim, T, toUV = (x, z) => ({ u: x, v
   const tgt = live || { pos: { x: aim.x, y: sy, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: sy - world.field.heightAt(aim.x, aim.z) }; // mk2.02: ground aim targets the SURFACE (owner) — the phantom body is dead; hy carries roof height over field ground through shooterFire's lead refresh
   v.gunT = gun.cd;
   v._aimYaw = Math.atan2(aim.x - v.pos.x, aim.z - v.pos.z);
-  shooterFire(world, v, { x: v.pos.x, y: v.pos.y + 1.4, z: v.pos.z }, tgt, { ...gun, acc: gun.acc * POSSESS_ACC }, { attacker: "player", hitStruct: true, owner: v.id });
+  shooterFire(world, v, barrelTip(v, tgt.pos, gun, BARRELS.bison), tgt, { ...gun, acc: gun.acc * POSSESS_ACC }, { attacker: "player", hitStruct: true, owner: v.id });
   return true;
 }
 // POSSESSION (mk1.92): THE MECH's shared sight gate — one aim-point test for

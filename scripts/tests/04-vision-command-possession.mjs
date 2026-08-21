@@ -2,9 +2,10 @@ import { ok } from "./harness.mjs";
 import { identFwdDir, straightGrid } from "./shared.mjs";
 import { towerShot, shooterFire, squadFire, possessedVolley, possessedTowerFire, POSSESS_ACC, POSSESS_SNAP_R, snapTargetNear, stickyLock, mateBlocks, fieldReaches, effRange, PENDING_ARM_S, pendingArmed, spawnSquadMembers, spawnSandbag, pruneSquads, spawnWallCourses, WALL_HALF, WALL_THIN, WALL_COURSE_HY, friendlyFouls, throwGrenade, stepGrenades } from "../../src/depot/state.js";
 import { makeWorld, makeField, addBody, addWeld, stepWorld, applyDamage, CAUSE, mulberry32 } from "../../src/engine/core.js";
-import { reachPolygon, arcClears, scatterSigma, losGraze, bracedAt, applyScatter, SCATTER_CAP, deflect, flightImpact, predictRing, elevSolve, speedForPitch } from "../../src/depot/accuracy.js";
-import { TOWER_SPECS, ENEMY_FIRE, MASON, INFANTRY_ARMS, ENEMY_SPECS, MAN, BISON_FIRE, HAND_TAGS, GRENADE } from "../../src/depot/specs.js";
+import { reachPolygon, arcClears, scatterSigma, losGraze, bracedAt, applyScatter, SCATTER_CAP, deflect, flightImpact, predictRing, elevSolve, speedForPitch, RING_RAYS } from "../../src/depot/accuracy.js";
+import { TOWER_SPECS, ENEMY_FIRE, MASON, INFANTRY_ARMS, ENEMY_SPECS, MAN, BISON_FIRE, HAND_TAGS, GRENADE, BARRELS } from "../../src/depot/specs.js";
 import { stepUnits } from "../../src/depot/units.js";
+import { barrelTip } from "../../src/depot/drivers.js";
 import { SQUAD_SPECS, makeSquad, stepSquad, drivePossessedSquad, COHESION_M, clearSlot } from "../../src/depot/squads.js";
 import { makeTerritory, holderAt, valueAt, canBuild } from "../../src/depot/territory.js";
 import { SIGHT, eyeOf, canSee, fillMaps, gridEye, makeSight, seenAt, stepSight, RETICLE_SPEED, steerReticle, reclampReticle, surfaceAt } from "../../src/depot/sight.js";
@@ -2215,7 +2216,7 @@ import fs from "node:fs";
   // (a) the footprint: 16 landed points, each on the dirt it landed on.
   {
     const pr = predictRing(bareSG(), { x: -20, y: 1.5, z: 0 }, { x: 0, y: 0, z: 0 }, { projSpeed: 90, occl: "arc", windF: 0 }, 0.02, null, idUV);
-    ok("TALL ORDER mk2.02(a): the predictor returns the 16-point footprint", Array.isArray(pr.pts) && pr.pts.length === 16, pr.pts && pr.pts.length);
+    ok("TALL ORDER mk2.02(a): the predictor returns the 48-point laser footprint (re-taught mk2.05)", Array.isArray(pr.pts) && pr.pts.length === 48, pr.pts && pr.pts.length);
     ok("TALL ORDER mk2.02(a): on flat dirt every footprint point lies on the ground", pr.pts.every((p) => Math.abs(p.y) < 1e-6));
   }
   // (b) surface aim: the four possessed tgt lines carry the surface, no phantom.
@@ -2406,6 +2407,23 @@ import fs from "node:fs";
       /function setGrenades\(list, t\)/.test(rendSrc) && /0x35ff6a/.test(rendSrc) && /0xff2020/.test(rendSrc) && /period = 0\.05 \+ 0\.11 \* left/.test(rendSrc));
     ok("VISIBLE GRENADE mk2.04(h): the game feeds the live grenades every frame",
       /R\.setGrenades\(world\._grenades, world\.t\);/.test(gameSrc));
+  }
+
+  // (i) mk2.05: THE LASER FOOTPRINT — 48 rays, one exported constant.
+  ok("LASER mk2.05(i): the bound walks RING_RAYS = 48 rays", RING_RAYS === 48);
+  // (j) mk2.05: THE TRUE MUZZLE — the tip sits at the end of the drawn tube,
+  // forward of the hull and above the pivot, and the fire paths use it.
+  {
+    const v = { pos: { x: 0, y: 0.95, z: 0 } };
+    const m = barrelTip(v, { x: 20, y: 0, z: 0 }, { projSpeed: 85 }, BARRELS.bison);
+    ok("MUZZLE mk2.05(j): the Bison's tip sits ~4.2m forward of the hull center", m.x > 3.5 && m.x < 4.6 && Math.abs(m.z) < 0.3, JSON.stringify(m));
+    ok("MUZZLE mk2.05(j): the tip rides at the tube's height, not the hull's", m.y > 2.2, m.y);
+    const driversSrc = fs.readFileSync(new URL("../../src/depot/drivers.js", import.meta.url), "utf8");
+    const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("MUZZLE mk2.05(j) source pin: possessed and auto tank guns fire from the tip",
+      (driversSrc.match(/barrelTip\(/g) || []).length >= 4);
+    ok("MUZZLE mk2.05(j) source pin: the projector's light leaves the tip too",
+      /muzzle9 = pb0 && P9\.kind === "vehicle" \? barrelTip\(pb0, aim9, spec9, pb0\.vtype === "tank" \? BARRELS\.tank : BARRELS\.bison\)/.test(gameSrc));
   }
 }
 // ==== end THE GUN AND THE GRENADE (mk2.03) ==================================
