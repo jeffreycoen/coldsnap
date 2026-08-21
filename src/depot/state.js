@@ -5,7 +5,8 @@ import { aimSolve, fireProjectile, addBody, addWeld } from "../engine/core.js";
 import { SQUAD_SPECS, clearSlot } from "./squads.js";
 import { scatterSigma, applyScatter, arcClears, marchArc } from "./accuracy.js";
 import { planWave, MIN_WAVE_FLOOR, spawnDelayFor } from "./ai.js";
-import { STIPEND, payResults, combatIneffective, bookValue } from "./economy.js";
+import { STIPEND, payResults, combatIneffective, bookValue, KILL_CUT } from "./economy.js";
+import { killPrice } from "./market.js";
 import { composeIntel, openingIntel } from "./intel.js";
 import { TOWER_SPECS, ENEMY_SPECS, TANK, INFANTRY_ARMS, MASON, PLAYER_START, PLAYER_TIERS, HAND_KEYS, HAND_TAGS } from "./specs.js";
 import { seenAt } from "./sight.js";
@@ -1203,7 +1204,7 @@ export const ASSAULT_TIMEOUT = 75;
 
 export function makeRunState({ startResources = 250 } = {}) { // P7.2 T8 (owner): the draft's richer opening // provisional (F5)
   return {
-    resources: startResources, kills: 0,
+    resources: startResources, score: { p: { kills: 0, value: 0 }, e: { kills: 0, value: 0 } },
     ws: makeAssaultState(), spawnRR: 0,
     mode: "wall", sellMode: false, inspectId: null,
     started: false, gameOver: false, victory: false, attrition: false, ledgerLoss: false,
@@ -1327,15 +1328,18 @@ export function checkWin(S, snap = {}) {
 // means THEIR depot is rubble; loss means YOURS is. The retired verdict
 // branches (attrition, spent, ledger, final-wave) are gone with their
 // endings; extra fields in the argument object are tolerated and ignored.
-export function makeEndDispatch({ victory, kills = 0 }) {
+export function makeEndDispatch({ victory, score = null }) {
   const wo = "WO-9999";
+  const s = score || { pk: 0, pv: 0, ek: 0, ev: 0 };
+  const tally = `${s.pk} CONFIRMED, ◆${s.pv} DESTROYED. ITS COUNT: ${s.ek}, ◆${s.ev}.`;
   if (victory) {
     return {
       wo,
       lines: [
         "THE OPPOSING DEPOT IS BREACHED.",
         "The position opposite is rubble. The field belongs to the Bureau.",
-        `${kills} CONFIRMED. FIELD ORDER CLOSED.`,
+        tally,
+        "FIELD ORDER CLOSED.",
       ],
     };
   }
@@ -1344,8 +1348,37 @@ export function makeEndDispatch({ victory, kills = 0 }) {
     lines: [
       "THE DEPOT IS BREACHED.",
       "The position is lost. Withdrawal under fire.",
+      tally,
     ],
   };
+}
+
+// THE KILL LAW (owner, 2026-08-20): one attributed kill — the victim's live
+// market price scores the killer's ledger WHOLE, and KILL_CUT of it lands on
+// the killer's books. Attribution is the event's own attacker: "player" and
+// "enemy" are the two sides; "world" (craters, drowning, collapses, fire)
+// and friendly fire pay and score nobody. Men and machines count the kill
+// integer; masonry rides the value alone. A wall's upper courses never score
+// — one wall, one death (the WALL_UPPER_GROUP rule). A sandbag's side is
+// bagSide, never team (spawnSandbag stamps team 1 on every bag).
+// Pure over (S, ev, counts); returns what it did, or null. No rng.
+export function scoreKill(S, ev, counts) {
+  if (ev.type !== "kill") return null;
+  const att = ev.attacker === "player" ? 1 : ev.attacker === "enemy" ? 2 : 0;
+  if (!att) return null;
+  const victim = ev.sandbag ? ev.bagSide : ev.team;
+  if (victim !== 1 && victim !== 2) return null;
+  if (att === victim) return null; // friendly fire pays nobody
+  if (ev.kind === "wall" && ev.group === WALL_UPPER_GROUP) return null;
+  const kp = killPrice(ev, counts, WALL_COST, SANDBAG_COST);
+  if (!kp) return null;
+  const pay = kp.price * KILL_CUT;
+  const led = att === 1 ? S.score.p : S.score.e;
+  led.value += kp.price;
+  if (kp.counted) led.kills++;
+  if (att === 1) S.resources += pay;
+  else if (S.reg) S.reg.scrap += pay;
+  return { side: att, price: kp.price, pay, counted: !!kp.counted };
 }
 
 // The bell cycle — the single source of truth for when an assault marches.
@@ -1528,7 +1561,7 @@ export function fireBell(S, opts = {}) {
   ws.spawnDoneT = units > 0 ? null : t;
   ws.withdrawn = false;
   ws.withdrew = 0;
-  ws.results = { structureDmg: 0, towerKills: 0, wallKills: 0, buildingKills: 0, leaks: 0 };
+  ws.results = { structureDmg: 0, buildingKills: 0, leaks: 0 };
 
   // 6. the bureau's read. A broken or starved regiment does not END the war —
   // it just can't defend its depot. Each observation is a one-time dispatch
@@ -1610,7 +1643,7 @@ export function executeWithdrawal(S, world) {
 }
 
 export const HUD0 = {
-  fps: 0, bell: 1, bellT: BELL_PERIOD_S, enemies: 0, resources: 250, walls: 0, towers: 0, kills: 0,
+  fps: 0, bell: 1, bellT: BELL_PERIOD_S, enemies: 0, resources: 250, walls: 0, towers: 0, score: { pk: 0, pv: 0, ek: 0, ev: 0 },
   lastDispatch: null,
   started: false, gameOver: false, victory: false, breach: false, enemyBreach: false,
   mode: "wall", sellMode: false, sandbagOrient: 0, paused: false, speed: 1, inspect: null, toasts: [],

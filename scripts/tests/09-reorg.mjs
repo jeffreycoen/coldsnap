@@ -362,7 +362,7 @@ import fs from "node:fs";
     const T10e = makeTerritory(5, 5);
     const world10e = makeWorld({ field: makeField(9, 2.0, 1), seed: 405 });
     const S10e = {
-      bell: 0, resources: 0, kills: 0, spawnRR: 0, started: false, mode: "wall", sandbagOrient: 0,
+      bell: 0, resources: 0, score: { p: { kills: 0, value: 0 }, e: { kills: 0, value: 0 } }, spawnRR: 0, started: false, mode: "wall", sandbagOrient: 0,
       nextSquadId: 1, zoom: 1, focus: { x: 0, z: 0 }, depotCensusAcc: 0, depotStanding: 1, enemyStanding: 1,
       starvedStreak: 0, _reportedBreak: false, _reportedSpent: false,
       manifest: {}, foe: {}, intelUp: false, intelArmedAt: 0, lastDispatch: null,
@@ -484,7 +484,7 @@ import fs from "node:fs";
 
   const T11 = makeTerritory(5, 5);
   const S11 = {
-    bell: 7, resources: 300, kills: 12, spawnRR: 2, started: true, mode: null, sandbagOrient: 0,
+    bell: 7, resources: 300, score: { p: { kills: 12, value: 0 }, e: { kills: 0, value: 0 } }, spawnRR: 2, started: true, mode: null, sandbagOrient: 0,
     nextSquadId: 2, zoom: 1, focus: { x: 0, z: 0 }, depotCensusAcc: 0, depotStanding: 1, enemyStanding: 1,
     starvedStreak: 0, _reportedBreak: false, _reportedSpent: false,
     cmdr: "bold", // P7 T8's doctrine

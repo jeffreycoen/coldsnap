@@ -1,12 +1,13 @@
 import { ok } from "./harness.mjs";
 import { identFwdDir, straightGrid, fatReg, starvedReg } from "./shared.mjs";
-import { makeRunState, stepBell, fireBell, withdrawDue, BELL_PERIOD_S, TIER_BELLS, ENEMY_TIERS, enemyTierState, enemyTierOf, ASSAULT_TIMEOUT, HAND_DRAWS, dealConvoyHand, takeHandCard, makeManifestState, isUnlocked, tierOpenCount, regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, squadFire, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, censusDepotChunks, depotStandingFraction, checkDepotBreach, checkEnemyBreach, stepDepotCensus, spawnSquadMembers, spawnSandbag, SANDBAG_COST, pruneSquads, DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, DEPOT_CENSUS_HZ, friendlyFouls } from "../../src/depot/state.js";
+import { makeRunState, stepBell, fireBell, withdrawDue, BELL_PERIOD_S, TIER_BELLS, ENEMY_TIERS, enemyTierState, enemyTierOf, ASSAULT_TIMEOUT, HAND_DRAWS, dealConvoyHand, takeHandCard, makeManifestState, isUnlocked, tierOpenCount, regimentDestroyed, checkLoss, checkWin, makeEndDispatch, towerShot, squadFire, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, censusDepotChunks, depotStandingFraction, checkDepotBreach, checkEnemyBreach, stepDepotCensus, spawnSquadMembers, spawnSandbag, SANDBAG_COST, pruneSquads, DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, DEPOT_CENSUS_HZ, friendlyFouls, scoreKill } from "../../src/depot/state.js";
 import { makeWorld, addBody, fireProjectile, stepWorld, applyDamage, worldHash, CAUSE, mulberry32, aimSolve } from "../../src/engine/core.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "../../src/depot/accuracy.js";
 import { TOWER_SPECS, ENEMY_SPECS, ENEMY_FIRE, TANK, MASON, INFANTRY_ARMS, HAND_KEYS, HAND_TAGS } from "../../src/depot/specs.js";
-import { stepUnits, spawnUnit, payBounties, SNIPER_FIRE } from "../../src/depot/units.js";
+import { stepUnits, spawnUnit, SNIPER_FIRE } from "../../src/depot/units.js";
 import { SQUAD_SPECS, makeSquad, exposureAt, coverHop, stepSquad } from "../../src/depot/squads.js";
-import { makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue } from "../../src/depot/economy.js";
+import { makeRegiment, STIPEND, RESULTS, payResults, combatIneffective, bookValue, KILL_CUT } from "../../src/depot/economy.js";
+import { priced } from "../../src/depot/market.js";
 import { planWave, MIN_WAVE_FLOOR, snapSquads } from "../../src/depot/ai.js";
 import { composeIntel, openingIntel } from "../../src/depot/intel.js";
 import { makeTerritory, stepTerritory, holderAt, fogStateAt, valueAt, canBuild, DECAY_TAU, EMIT } from "../../src/depot/territory.js";
@@ -311,22 +312,29 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
     N.victory === false && !N.lastDispatch.lines.some((l) => /combat-ineffective/i.test(l)));
 }
 
-// bounty bug: killing a TANK (kind: "vehicle") must pay its bounty (25),
-// same as a killed infantry unit (kind: "unit") does.
+// THE KILL LAW re-teach (mk1.93): killing a TANK (kind: "vehicle") pays
+// through scoreKill now — KILL_CUT of its live market price, once.
 {
   const world = makeWorld({ seed: 1 });
+  world.depotCombat = true;
   const tank = spawnUnit(world, { x: 0, z: 10 }, "tank");
   ok("spawned tank carries the TANK bounty", tank.bounty === TANK.bounty, tank.bounty);
-  tank.alive = false;
-  const before = world.events.length;
-  payBounties(world);
-  const evs = world.events.slice(before);
-  const tdk = evs.find((e) => e.type === "tdkill");
-  ok("dead tank pays a tdkill bounty event", !!tdk, JSON.stringify(evs));
-  ok("tank bounty is 25 (TANK.bounty)", tdk && tdk.bounty === 25, tdk);
-  const before2 = world.events.length;
-  payBounties(world);
-  ok("bounty is paid only once (b._paid guard)", world.events.length === before2);
+  applyDamage(world, tank, 1e9, { cause: CAUSE.PROJECTILE, attacker: "player" });
+  const ev = world.events.find((e) => e.type === "kill" && e.id === tank.id);
+  ok("dead tank pushes exactly one kill event, tagged tank", !!ev && ev.tag === "tank", JSON.stringify(ev));
+  const S = { score: { p: { kills: 0, value: 0 }, e: { kills: 0, value: 0 } }, resources: 0, reg: { scrap: 0 } };
+  const r = scoreKill(S, ev, {});
+  const price = priced(TANK.bounty, "tank", {});
+  ok("scoreKill pays KILL_CUT x the live tank price and moves the ledger",
+    !!r && Math.abs(r.price - price) < 1e-9 && Math.abs(r.pay - price * KILL_CUT) < 1e-9
+    && S.score.p.kills === 1 && Math.abs(S.resources - price * KILL_CUT) < 1e-9, JSON.stringify({ r, S }));
+  // one event, one score; the corpse sweep (a later frame's drain, no new
+  // kill event) pushes no second event and moves nothing further.
+  world.events.length = 0;
+  const sweepEvs = world.events.slice();
+  for (const e of sweepEvs) scoreKill(S, e, {});
+  ok("the corpse sweep pushes no second event", sweepEvs.length === 0 && S.score.p.kills === 1
+    && Math.abs(S.resources - price * KILL_CUT) < 1e-9);
 }
 
 // The starved-muster streak: 3 CONSECUTIVE bells where the attacker cannot
@@ -436,7 +444,9 @@ const bellsOf = (S, reg, n, scrapEach, rng, snap = {}) => {
 
 // FRONT F1: the only victory card is the enemy-breach card, whatever flags ride along.
 {
-  const d = makeEndDispatch({ victory: true, kills: 12, wave: 6, totalWaves: 50, spent: true });
+  // mk1.93 re-teach: the argument's kills field is gone (a score object now)
+  // — the first-line pin itself holds unmoved.
+  const d = makeEndDispatch({ victory: true, score: { pk: 12, pv: 0, ek: 0, ev: 0 }, wave: 6, totalWaves: 50, spent: true });
   ok("victory card is always the opposing-depot breach card", d.lines[0] === "THE OPPOSING DEPOT IS BREACHED.", JSON.stringify(d.lines));
 }
 
@@ -602,19 +612,21 @@ function scriptedWaveRun(seed) {
     ok("makeRegiment: draws rng exactly twice", n === 2, `draws=${n}`);
   }
 
-  // payResults: fixture arithmetic
+  // payResults: fixture arithmetic — re-taught mk1.93: tower/wall kills pay
+  // through the kill law now (state.js scoreKill); RESULTS carries three
+  // surviving terms.
   {
     const reg = { scrap: 60, heads: 400, heads0: 400, tanks: 10, tanks0: 10 };
-    const ev = { structureDmg: 100, towerKills: 2, wallKills: 3, buildingKills: 1, leaks: 4 };
+    const ev = { structureDmg: 100, buildingKills: 1, leaks: 4 };
     payResults(reg, ev);
-    const expected = 60 + 100 * RESULTS.structureDmg + 2 * RESULTS.towerKill + 3 * RESULTS.wallKill + 1 * RESULTS.buildingKill + 4 * RESULTS.leak;
+    const expected = 60 + 100 * RESULTS.structureDmg + 1 * RESULTS.buildingKill + 4 * RESULTS.leak;
     ok("payResults: fixture arithmetic matches RESULTS weights", Math.abs(reg.scrap - expected) < 1e-9, `got=${reg.scrap} expected=${expected}`);
   }
   {
     // uncapped: results can push scrap arbitrarily high, no clamping
     const reg = { scrap: 0, heads: 1, heads0: 400, tanks: 0, tanks0: 10 };
-    payResults(reg, { structureDmg: 0, towerKills: 1000, wallKills: 0, buildingKills: 0, leaks: 0 });
-    ok("payResults: uncapped by decision — no ceiling on scrap gain", reg.scrap === 1000 * RESULTS.towerKill, reg.scrap);
+    payResults(reg, { structureDmg: 0, buildingKills: 1000, leaks: 0 });
+    ok("payResults: uncapped by decision — no ceiling on scrap gain", reg.scrap === 1000 * RESULTS.buildingKill, reg.scrap);
   }
 
   // combatIneffective: 12% boundary + tanks>0 blocking
@@ -757,12 +769,12 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   const S = makeRunState();
   S.started = true;
   S.reg = { heads: 0, tanks: 0, heads0: 300, tanks0: 8, scrap: 60 };
-  S.ws.results = { structureDmg: 100, towerKills: 2, wallKills: 3, buildingKills: 1, leaks: 2 };
+  S.ws.results = { structureDmg: 100, buildingKills: 1, leaks: 2 };
   const scrapBefore = S.reg.scrap;
   fireBell(S, { reg: S.reg, snap: {}, rng: mulberry32(9), t: BELL_PERIOD_S });
   // heads 0 -> the muster buys nothing, so the books show results + stipend.
-  const expected = scrapBefore + 100 * RESULTS.structureDmg + 2 * RESULTS.towerKill
-    + 3 * RESULTS.wallKill + 1 * RESULTS.buildingKill + 2 * RESULTS.leak + STIPEND;
+  const expected = scrapBefore + 100 * RESULTS.structureDmg
+    + 1 * RESULTS.buildingKill + 2 * RESULTS.leak + STIPEND;
   ok("fireBell pays the closing assault's results into reg.scrap", Math.abs(S.reg.scrap - expected) < 1e-9,
     `${S.reg.scrap} vs ${expected}`);
 }
@@ -793,7 +805,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   // in the kill-accounting path touches reg.heads/reg.tanks, so a bare
   // payResults call (the only thing DepotGame.jsx does with kill/leak
   // events on the regiment side) must leave heads/tanks untouched.
-  payResults(reg, { structureDmg: 50, towerKills: 3, wallKills: 4, buildingKills: 1, leaks: 0 });
+  payResults(reg, { structureDmg: 50, buildingKills: 1, leaks: 0 });
   ok("a wave's kills do not further deplete the regiment",
     reg.heads === afterBuy.heads && reg.tanks === afterBuy.tanks,
     `${reg.heads}/${reg.tanks} vs ${afterBuy.heads}/${afterBuy.tanks}`);
@@ -1017,8 +1029,8 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   // rerun a slice of the existing payResults contract untouched by Task 2.
   {
     const reg = { heads: 400, tanks: 10, heads0: 400, tanks0: 10, scrap: 0 };
-    payResults(reg, { structureDmg: 100, towerKills: 1, wallKills: 2, buildingKills: 0, leaks: 3 });
-    const expect = 100 * RESULTS.structureDmg + 1 * RESULTS.towerKill + 2 * RESULTS.wallKill + 3 * RESULTS.leak;
+    payResults(reg, { structureDmg: 100, buildingKills: 0, leaks: 3 });
+    const expect = 100 * RESULTS.structureDmg + 0 * RESULTS.buildingKill + 3 * RESULTS.leak;
     ok("Phase 3 economics unaffected: payResults still pays the same", Math.abs(reg.scrap - expect) < 1e-9, reg.scrap);
   }
 }
@@ -1450,10 +1462,13 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   ok("checkDepotBreach does not set victory", Sb.victory === false);
   ok("checkDepotBreach is idempotent (no-op once gameOver)", checkDepotBreach(Sb, 0) === false);
 
-  const breachCard = makeEndDispatch({ victory: false, kills: 4, wave: 3, totalWaves: 50, breach: true });
+  // mk1.93 re-teach: ruling 4 supersedes the old digit-free pin — the loss
+  // card now carries the tally line by name (score is live on both endings).
+  const breachCard = makeEndDispatch({ victory: false, score: { pk: 4, pv: 20, ek: 1, ev: 5 }, wave: 3, totalWaves: 50, breach: true });
   ok("breach end card leads with the depot-is-breached line", breachCard.lines[0] === "THE DEPOT IS BREACHED.");
   ok("breach end card carries the withdrawal-under-fire line", breachCard.lines.includes("The position is lost. Withdrawal under fire."));
-  ok("breach end card is digit-free (bureau voice, no wave/kill counters)", !breachCard.lines.some((l) => /\d/.test(l)));
+  ok("breach end card carries the tally line (ruling 4 supersedes the old digit-free pin)",
+    breachCard.lines.includes("4 CONFIRMED, ◆20 DESTROYED. ITS COUNT: 1, ◆5."), JSON.stringify(breachCard.lines));
 
   // FRONT F1: the lives track is gone — checkLoss (regiment stub only)
   // never fires, and a fully-standing depot never trips the breach.
@@ -1653,7 +1668,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
         const n = buys.reduce((s, b) => s + b.n, 0);
         if (solvent && n === 0) emptySolvent++;
         if (n > 0) everBought++;
-        payResults(reg, { structureDmg: 0, towerKills: 0, wallKills: 0, buildingKills: 0, leaks: 0 });
+        payResults(reg, { structureDmg: 0, buildingKills: 0, leaks: 0 });
         reg.scrap += STIPEND;
       }
     }
@@ -1675,7 +1690,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
         const solvent = reg.scrap >= conscriptC && reg.heads > 0;
         const { buys } = planWave(reg, snap, w, rng);
         if (solvent) { checked++; if (buys.reduce((s, b) => s + b.n, 0) === 0) violations++; }
-        payResults(reg, { structureDmg: 0, towerKills: 0, wallKills: 0, buildingKills: 0, leaks: 0 });
+        payResults(reg, { structureDmg: 0, buildingKills: 0, leaks: 0 });
         reg.scrap += STIPEND;
       }
     }
@@ -1780,17 +1795,27 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   // One team-1 member exercised against EVERY unit-body consumer.
   {
     const world = makeWorld({ field: flatField, seed: 7 });
+    world.depotCombat = true;
     const sq = makeSquad(1, "rifles", 1, 0, 40);
     spawnSquadMembers(world, sq);
     const member = world.byId.get(sq.memberIds[0]);
 
-    // (a) bounty: even with a bounty maliciously stamped on, a dead team-1
-    // member pays the attacker NOTHING (payBounties team gate does the work).
-    member.bounty = 4;
-    applyDamage(world, member, 1e9, { attacker: "enemy" });
+    // (a) mk1.93 re-teach: the kill law replaces payBounties/tdkill — an
+    // enemy-attributed team-1 death scores the enemy; a world-attributed one
+    // scores nobody.
+    applyDamage(world, member, 1e9, { cause: CAUSE.PROJECTILE, attacker: "enemy" });
+    const evA = world.events.find((e) => e.type === "kill" && e.id === member.id);
+    const Sa = { score: { p: { kills: 0, value: 0 }, e: { kills: 0, value: 0 } }, resources: 0, reg: { scrap: 0 } };
+    const rA = scoreKill(Sa, evA, {});
+    ok("sweep/kill law: an enemy-attributed team-1 death scores the enemy", !!rA && Sa.score.e.kills === 1, JSON.stringify({ rA, Sa }));
+
+    const m3 = world.byId.get(sq.memberIds[2]);
+    applyDamage(world, m3, 1e9, { cause: CAUSE.IMPACT, attacker: "world" });
+    const evW = world.events.find((e) => e.type === "kill" && e.id === m3.id);
+    const Sw = { score: { p: { kills: 0, value: 0 }, e: { kills: 0, value: 0 } }, resources: 0, reg: { scrap: 0 } };
+    const rW = scoreKill(Sw, evW, {});
+    ok("sweep/kill law: a world-attributed team-1 death scores nobody", rW === null && Sw.score.e.kills === 0 && Sw.score.p.kills === 0, JSON.stringify({ rW, Sw }));
     world.events.length = 0;
-    payBounties(world);
-    ok("sweep/bounty: no tdkill event for a dead team-1 member", !world.events.some((e) => e.type === "tdkill"));
 
     // (b) FRONT F1: leaks retired — a live member at the depot objective is
     // simply a body on the field; nothing removes him.

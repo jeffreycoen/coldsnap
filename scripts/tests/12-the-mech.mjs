@@ -18,7 +18,9 @@ import {
 } from "../../src/engine/mech.js";
 import { MECH, HAND_KEYS, HAND_TAGS } from "../../src/depot/specs.js";
 import { parkMech, MECH_SPREAD, PICK_POOL, mirrorFieldKey } from "../../src/depot/muster.js";
-import { computePrices, marketCounts } from "../../src/depot/market.js";
+import { computePrices, marketCounts, priced } from "../../src/depot/market.js";
+import { scoreKill } from "../../src/depot/state.js";
+import { KILL_CUT } from "../../src/depot/economy.js";
 import { eyeOf, SIGHT } from "../../src/depot/sight.js";
 import { makeBodyLists, rebuildBodyLists } from "../../src/depot/lists.js";
 import { DRIVERS, stepDrivers, mechSighted } from "../../src/depot/drivers.js";
@@ -146,14 +148,20 @@ const run = (w, grid, n, opts) => { for (let i = 0; i < n; i++) { stepDrivers(w,
     /e\.kind !== "vehicle" && e\.kind !== "mech"/.test(src));
 }
 {
+  // mk1.93 re-teach: payBounties is retired — scoreKill on a player-
+  // attributed mech kill pays KILL_CUT x the live heroMech price (120 at
+  // the base multiplier, the plan's own "a mech kill pays 120 off base").
   const w = makeWorld({ field: flatF, seed: 149 }); w.depotCombat = true;
-  const { payBounties } = await import("../../src/depot/units.js");
   const m2 = mkMech(w, 2, 0, 0);
   applyDamage(w, m2.hull, 1e6, { cause: CAUSE.PROJECTILE, attacker: "player" });
-  const ev0 = w.events.length;
-  payBounties(w);
-  const paid = w.events.filter((e) => e.type === "tdkill").map((e) => e.bounty);
-  ok("M12: payBounties pays 120 on a dead team-2 hull", paid.includes(120), JSON.stringify(paid));
+  const ev = w.events.find((e) => e.type === "kill" && e.id === m2.hull.id);
+  ok("M12a: a dead team-2 hull pushes a kill event carrying kind mech", !!ev && ev.kind === "mech", JSON.stringify(ev));
+  const S = { score: { p: { kills: 0, value: 0 }, e: { kills: 0, value: 0 } }, resources: 0, reg: { scrap: 0 } };
+  const r = scoreKill(S, ev, {});
+  const price = priced(MECH.cost, "heroMech", {});
+  ok("M12b: scoreKill pays KILL_CUT x the live heroMech price (120 at base)",
+    !!r && Math.abs(r.price - price) < 1e-9 && Math.abs(r.pay - price * KILL_CUT) < 1e-9
+    && price * KILL_CUT === 120 && S.score.p.kills === 1, JSON.stringify({ r, price }));
 }
 
 // ============================================================ PHASE E (M13-M15)
@@ -163,7 +171,7 @@ const run = (w, grid, n, opts) => { for (let i = 0; i < n; i++) { stepDrivers(w,
   const m1 = mkMech(w, 1, 3, -4);
   m1.hull.hp -= 100; m1.hull.order = "move"; m1.hull.dest = { x: 10, z: 10 };
   const T0 = { nx: 1, nz: 1, v: new Float32Array(1) };
-  const S0 = { bell: 1, resources: 0, kills: 0, spawnRR: 0, started: true, mode: null, zoom: 1, focus: { x: 0, z: 0 },
+  const S0 = { bell: 1, resources: 0, score: { p: { kills: 0, value: 0 }, e: { kills: 0, value: 0 } }, spawnRR: 0, started: true, mode: null, zoom: 1, focus: { x: 0, z: 0 },
     manifest: {}, foe: {}, ws: {}, reg: {}, squads: [], foeSquads: [], mines: [], nextSquadId: 1 };
   const raw = serializeFront({ S: S0,
     world: w, T: T0, town: [], census: [], census2: [], rocks: [], smears: [], mapSeed: 1, rngSeed: 2 });
@@ -194,7 +202,7 @@ const run = (w, grid, n, opts) => { for (let i = 0; i < n; i++) { stepDrivers(w,
   for (const L2 of m1.links) { L2.mechRef = null; L2.team = 0; }
   w.mechs.splice(w.mechs.indexOf(m1), 1);
   const T0 = { nx: 1, nz: 1, v: new Float32Array(1) };
-  const S0 = { bell: 1, resources: 0, kills: 0, spawnRR: 0, started: true, mode: null, zoom: 1, focus: { x: 0, z: 0 },
+  const S0 = { bell: 1, resources: 0, score: { p: { kills: 0, value: 0 }, e: { kills: 0, value: 0 } }, spawnRR: 0, started: true, mode: null, zoom: 1, focus: { x: 0, z: 0 },
     manifest: {}, foe: {}, ws: {}, reg: {}, squads: [], foeSquads: [], mines: [], nextSquadId: 1 };
   const raw = serializeFront({ S: S0,
     world: w, T: T0, town: [], census: [], census2: [], rocks: [], smears: [], mapSeed: 1, rngSeed: 2 });

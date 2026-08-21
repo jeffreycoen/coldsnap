@@ -80,22 +80,6 @@ function spawnTank(world, sp) {
   return t;
 }
 
-// Player kill-bounty payment: any dead team-2 combatant with a bounty pays
-// out once. Team 2 fields two kinds of dead bodies — conscript-class
-// infantry (b.kind === "unit", spawnUnit above) and wave armor
-// (b.kind === "vehicle", spawnTank above) — both carry a real b.bounty
-// (ENEMY_SPECS[tag].bounty / TANK.bounty). Pushes a "tdkill" event per body,
-// exactly once (b._paid guards re-payment on subsequent frames before the
-// corpse is swept). Called from DepotGame.jsx's stepDepot.
-export function payBounties(world) {
-  for (const b of world.bodies) {
-    if ((b.kind === "unit" || b.kind === "vehicle" || b.kind === "mech") && b.team === 2 && !b.alive && !b._paid && b.bounty) {
-      b._paid = true;
-      world.events.push({ type: "tdkill", bounty: b.bounty });
-    }
-  }
-}
-
 // ------------------------------------------------------------------ march
 // fwdDir is DepotGame.jsx's orientation-aware flow-field-to-world direction
 // helper (rotates by the map's ORIENT, one of DEPOT's 4 assault

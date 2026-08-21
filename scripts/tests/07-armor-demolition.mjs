@@ -485,7 +485,7 @@ import fs from "node:fs";
     for (let i = 0; i < 60; i++) stepWorld(worldA); // files the stones into A's books (_filed goes true)
 
     const S = {
-      bell: 0, resources: 0, kills: 0, spawnRR: 0, started: false, mode: "wall", sandbagOrient: 0,
+      bell: 0, resources: 0, score: { p: { kills: 0, value: 0 }, e: { kills: 0, value: 0 } }, spawnRR: 0, started: false, mode: "wall", sandbagOrient: 0,
       nextSquadId: 1, zoom: 1, focus: { x: 0, z: 0 }, depotCensusAcc: 0, depotStanding: 1, enemyStanding: 1,
       starvedStreak: 0, _reportedBreak: false, _reportedSpent: false,
       manifest: {}, foe: {}, intelUp: false, intelArmedAt: 0, lastDispatch: null,

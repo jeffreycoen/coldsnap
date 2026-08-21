@@ -601,7 +601,7 @@ import fs from "node:fs";
     addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: 1, hz: 0.8, x: 0, y: 1, z: 0, hp: 80 }).discipline = "free";
     const T = makeTerritory(5, 5);
     const S = {
-      bell: 0, resources: 0, kills: 0, spawnRR: 0, started: false, mode: "wall", sandbagOrient: 0,
+      bell: 0, resources: 0, score: { p: { kills: 0, value: 0 }, e: { kills: 0, value: 0 } }, spawnRR: 0, started: false, mode: "wall", sandbagOrient: 0,
       nextSquadId: 1, zoom: 1, focus: { x: 0, z: 0 }, depotCensusAcc: 0, depotStanding: 1, enemyStanding: 1,
       starvedStreak: 0, _reportedBreak: false, _reportedSpent: false,
       manifest: {}, foe: {}, intelUp: false, intelArmedAt: 0, lastDispatch: null,
@@ -849,7 +849,7 @@ import fs from "node:fs";
     sq.order = "patrol"; sq._patA = { x: 0, z: 0 }; sq._patB = { x: 0, z: 30 }; sq.dest = { x: 0, z: 30 };
     const T = makeTerritory(5, 5);
     const S = {
-      bell: 0, resources: 0, kills: 0, spawnRR: 0, started: false, mode: "wall", sandbagOrient: 0,
+      bell: 0, resources: 0, score: { p: { kills: 0, value: 0 }, e: { kills: 0, value: 0 } }, spawnRR: 0, started: false, mode: "wall", sandbagOrient: 0,
       nextSquadId: 2, zoom: 1, focus: { x: 0, z: 0 }, depotCensusAcc: 0, depotStanding: 1, enemyStanding: 1,
       starvedStreak: 0, _reportedBreak: false, _reportedSpent: false,
       manifest: {}, foe: {}, intelUp: false, intelArmedAt: 0, lastDispatch: null,
@@ -972,7 +972,7 @@ import fs from "node:fs";
     sq.prefStruct = true;
     const T = makeTerritory(5, 5);
     const S = {
-      bell: 0, resources: 0, kills: 0, spawnRR: 0, started: false, mode: "wall", sandbagOrient: 0,
+      bell: 0, resources: 0, score: { p: { kills: 0, value: 0 }, e: { kills: 0, value: 0 } }, spawnRR: 0, started: false, mode: "wall", sandbagOrient: 0,
       nextSquadId: 2, zoom: 1, focus: { x: 0, z: 0 }, depotCensusAcc: 0, depotStanding: 1, enemyStanding: 1,
       starvedStreak: 0, _reportedBreak: false, _reportedSpent: false,
       manifest: {}, foe: {}, intelUp: false, intelArmedAt: 0, lastDispatch: null,
@@ -1108,7 +1108,7 @@ import fs from "node:fs";
     const world = makeWorld({ field, seed: 1 });
     const T = makeTerritory(5, 5);
     const S = {
-      bell: 0, resources: 0, kills: 0, spawnRR: 0, started: false, mode: "wall", sandbagOrient: 0,
+      bell: 0, resources: 0, score: { p: { kills: 0, value: 0 }, e: { kills: 0, value: 0 } }, spawnRR: 0, started: false, mode: "wall", sandbagOrient: 0,
       nextSquadId: 1, zoom: 1, focus: { x: 0, z: 0 }, depotCensusAcc: 0, depotStanding: 1, enemyStanding: 1,
       starvedStreak: 0, _reportedBreak: false, _reportedSpent: false,
       manifest: {}, foe: {}, intelUp: false, intelArmedAt: 0, lastDispatch: null,

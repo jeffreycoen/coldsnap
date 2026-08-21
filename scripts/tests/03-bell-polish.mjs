@@ -253,6 +253,7 @@ import fs from "node:fs";
   {
     const wsrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     const usrc = fs.readFileSync(new URL("../../src/depot/units.js", import.meta.url), "utf8");
+    const ssrc = fs.readFileSync(new URL("../../src/depot/state.js", import.meta.url), "utf8");
     ok("mk0.55/f: buildAt lays oriented courses (auto-continue, broadside default)", /spawnWallCourses\(world, wp\.x, y, wp\.z, wallOrientAt\(world, wp\.x, wp\.z, ORIENT % 2\)\)\[0\]/.test(wsrc));
     ok("mk0.52/f: the support pass runs in stepDepot, after the dead are cleared",
       /structureLost[\s\S]{0,700}stepWallSupport\(world\)/.test(wsrc));
@@ -262,7 +263,11 @@ import fs from "node:fs";
     ok("mk0.52/f: one territory emitter per wall, not per course", /b\.kind === "wall" && b\.team === 1 && b\.alive && !b\.course/.test(wsrc));
     ok("mk0.52/f: the counters count walls, not courses",
       /if \(b\.kind === "wall"\) \{ if \(!b\.course\) walls\+\+; continue; \}/.test(wsrc) && /if \(b\.kind === "wall"\) \{ if \(!b\.course\) nw\+\+; \}/.test(wsrc));
-    ok("mk0.52/f: one wall pays one wallKill", /e\.kind === "wall" && e\.group !== WALL_UPPER_GROUP/.test(wsrc));
+    // mk1.93 re-teach: the one-wall-one-death shape moved off DepotGame's own
+    // wallKill counter (retired with the kill law) into scoreKill's own
+    // early-return — the upper courses never reach the killer's ledger.
+    ok("mk1.93/f: one wall pays one death (scoreKill's upper-course exclusion, state.js)",
+      /ev\.kind === "wall" && ev\.group === WALL_UPPER_GROUP\) return null;/.test(ssrc));
     ok("mk0.52/f: a course leaves a THIRD of the rubble (27 stones per wall, as before)",
       /ny: b\.kind === "tower" \? 4 : \(b\.course != null \? 1 : 3\)/.test(wsrc));
     ok("mk0.52/f: the breaker's ram works the BASE course only", /str\.kind === "wall" && str\.course > 0/.test(usrc));

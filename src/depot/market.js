@@ -107,3 +107,45 @@ export function computePrices(counts) {
 export function fieldPrices(counts, wallBase, bagBase) {
   return { wall: priced(wallBase, "wall", counts), bag: priced(bagBase, "sandbag", counts) };
 }
+
+// THE KILL PRICE (owner, 2026-08-20): what one death is worth — the victim's
+// live market price at the moment it dies, resolved from the kill event's own
+// identity fields (core.js stamps them under depotCombat). Men price per
+// head: a squad-family price over the men one buy fields (the sniper-pair
+// split generalized). Machines and masonry price whole; `counted` marks what
+// joins the kill integer (men and machines — masonry rides the value alone).
+// Unpriced things — town stones, flags, loose rubble — return null: the law
+// cannot reach them. wallBase/bagBase are threaded in like fieldPrices' own
+// (module purity — state.js owns those two numbers).
+export function killPrice(ev, counts, wallBase, bagBase) {
+  const c = counts || {};
+  if (ev.kind === "unit") {
+    if (ev.team === 2) {
+      const tag = ev.tag || "";
+      const fam = FAMILY_OF_TAG[tag];
+      const spec = ENEMY_SPECS[tag];
+      if (!fam || !spec) return null;
+      const per = tag === "sniper" ? 2 : 1; // one marksman buy fields two men
+      return { price: priced(spec.bounty, fam, c) / per, counted: true };
+    }
+    const sp = SQUAD_SPECS[ev.utype];
+    const fam = FAMILY_OF_SQUAD[ev.utype];
+    if (!sp || !fam) return null;
+    return { price: priced(sp.cost, fam, c) / sp.n, counted: true };
+  }
+  if (ev.kind === "mech") return { price: priced(MECH.cost, "heroMech", c), counted: true };
+  if (ev.kind === "vehicle") {
+    if (ev.vtype === "bison") return { price: priced(BISON.cost, "heroBison", c), counted: true };
+    if (ev.vtype === "apc") return { price: priced(APC.cost, "heroApc", c), counted: true };
+    if (ev.tag === "tank") return { price: priced(TANK.bounty, "tank", c), counted: true };
+    return null;
+  }
+  if (ev.kind === "tower") {
+    const fam = FAMILY_OF_TOWER[ev.towerType];
+    if (!fam) return null;
+    return { price: priced(TOWER_SPECS[ev.towerType].cost, fam, c), counted: false };
+  }
+  if (ev.kind === "wall") return { price: priced(wallBase, "wall", c), counted: false };
+  if (ev.kind === "chunk" && ev.sandbag) return { price: priced(bagBase, "sandbag", c), counted: false };
+  return null;
+}

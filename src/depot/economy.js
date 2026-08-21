@@ -30,19 +30,23 @@ export function makeRegiment(rng) {
 
 export const STIPEND = 90; // mk1.13 (owner): 1 scrap/second × the 90-second bell — the identical clock the player lives on, credited where the regiment spends
 
+// THE KILL CUT (owner, 2026-08-20): the fraction of a victim's live market
+// price the killing side banks. The score ledger takes the whole price;
+// the books take this cut of it. // provisional (F5)
+export const KILL_CUT = 0.30;
+
 export const RESULTS = {
   // uncapped by decision (Jeff)
   structureDmg: 0.06, // scrap per hp of wall/tower damage dealt
-  towerKill: 12,
-  wallKill: 2,
-  buildingKill: 8,
+  buildingKill: 8, // town buildings carry no market price — the law's named edge, hand-set
   leak: 10,
 };
 
 export function payResults(reg, ev) {
-  // ev: {structureDmg, towerKills, wallKills, buildingKills, leaks}
-  reg.scrap += ev.structureDmg * RESULTS.structureDmg + ev.towerKills * RESULTS.towerKill
-    + ev.wallKills * RESULTS.wallKill + ev.buildingKills * RESULTS.buildingKill + ev.leaks * RESULTS.leak;
+  // ev: {structureDmg, buildingKills, leaks} — tower and wall kills pay
+  // through the kill law now (state.js scoreKill), never twice.
+  reg.scrap += ev.structureDmg * RESULTS.structureDmg
+    + ev.buildingKills * RESULTS.buildingKill + (ev.leaks || 0) * RESULTS.leak;
 }
 
 export function combatIneffective(reg) {

@@ -866,6 +866,14 @@ function killBody(world, b, info) {
   const r = resolveCause(world, b, info);
   world.killCount++;
   const ev = { type: "kill", id: b.id, kind: b.kind, group: b.group, cause: r.cause, attacker: r.attacker, killerId: r.killerId, buildingId: r.buildingId, volley: r.volley, x: b.pos.x, y: b.pos.y, z: b.pos.z, t: world.t };
+  // DIVERGENCE (guarded, depot-only — the srcId/dmgT precedent): the kill
+  // event names its victim's side and type, so the game layer can price the
+  // death after the body is swept. Demo/campaign events stay byte-identical.
+  if (world.depotCombat) {
+    ev.team = b.team; ev.tag = b.tag; ev.utype = b.utype;
+    ev.vtype = b.vtype; ev.towerType = b.towerType;
+    if (b.sandbag) { ev.sandbag = 1; ev.bagSide = b.bagSide || 1; }
+  }
   world.events.push(ev);
   achOnKill(world, ev);
   if (b.kind === "vehicle") { b.kind = "wreck"; b.hp = 1e9; b.friction = 0.55; }

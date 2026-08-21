@@ -18,13 +18,13 @@ import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS, BISON, APC, MECH } from "./specs.js";
 import { cardFor } from "./infocards.js";
 import { windAt } from "./wind.js";
-import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, takeHandCard, TIER_BELLS, memberNearRow, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType } from "./state.js";
+import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, takeHandCard, TIER_BELLS, memberNearRow, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType, scoreKill } from "./state.js";
 import { marketCounts, computePrices, fieldPrices, priced } from "./market.js";
 import { stepMines, minePrices, mineSeedRoll, mineSeedPlace, MINE_COST, WIRE_COST } from "./mines.js";
 import { homeShare, pickHomeDetail, HOME_GUARD_CAP, cmdrOf, cmdrBellOrders, ferryDecide, flankDrop } from "./ai.js";
 import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic, drivePossessedSquad, clearSlot, stepMedicTendSquad, stepMechanicTendSquad } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accuracy.js";
-import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
+import { stepUnits, spawnUnit, stepBreakerRam } from "./units.js";
 import { stepDrivers, possessedArmorFire, possessedArmorMg, mechSighted } from "./drivers.js";
 import { stepTransports, unloadApc, apcSeated, unloadEnemyRiders } from "./transports.js";
 import { planRoute, stampTerrainMasks } from "./route.js";
@@ -610,12 +610,10 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
   // so a course that lost its footing this tick finds nothing under it and
   // comes down for real. Game-layer only — the engine knows nothing about it.
   stepWallSupport(world);
-  payBounties(world);
   // A DEAD MECH: one last magazine detonation, then the island lets go and
   // the pieces settle where they stood — the wreck is the trophy. (Placed
-  // after payBounties, not immediately after the dead-structure sweep, so
-  // the existing structureLost->stepWallSupport proximity pin (mk0.52/f)
-  // stays intact — "after the dead-structure sweep" is satisfied either way.)
+  // here so the existing structureLost->stepWallSupport proximity pin
+  // (mk0.52/f) stays intact.)
   if (world.mechs && world.mechs.length) for (let mi2 = world.mechs.length - 1; mi2 >= 0; mi2--) {
     const m = world.mechs[mi2];
     if (m.hull.alive) continue;
@@ -879,8 +877,8 @@ export default function DepotGame({ onExit, resume = null }) {
   // (The between-wave card was always fine: its dispatch is a stable object
   // carried on state.)
   const endDispatch = useMemo(
-    () => (hud.gameOver || hud.victory ? makeEndDispatch({ victory: hud.victory, kills: hud.kills }) : null),
-    [hud.gameOver, hud.victory, hud.kills],
+    () => (hud.gameOver || hud.victory ? makeEndDispatch({ victory: hud.victory, score: hud.score }) : null),
+    [hud.gameOver, hud.victory, hud.score.pk, hud.score.pv, hud.score.ek, hud.score.ev],
   );
   // mk0.29 — leaving a live battle is a two-tap decision (the NEW CAMPAIGN
   // pattern): first tap arms, five seconds of silence disarms.
@@ -1278,7 +1276,7 @@ export default function DepotGame({ onExit, resume = null }) {
       R.setHealth(healthOn);
 
       const S = {
-        kills: 0, resources: 250, // the draft's richer opening (owner) // provisional (F5)
+        score: { p: { kills: 0, value: 0 }, e: { kills: 0, value: 0 } }, resources: 250, // the draft's richer opening (owner) // provisional (F5)
         cmdr: null, // P7 T8: the drawn armor doctrine — one boot draw (fresh war), restored on RESUME
         ws: makeDepotAssaultState(), spawnRR: 0,
         mode: null, sellMode: false, inspectId: null,
@@ -1382,7 +1380,10 @@ export default function DepotGame({ onExit, resume = null }) {
       // spawn queue — is exactly what it was.
       if (RES) {
         const r = RES.run;
-        S.resources = r.resources; S.kills = r.kills; S.spawnRR = r.spawnRR;
+        S.resources = r.resources; S.spawnRR = r.spawnRR;
+        S.score = r.score
+          ? { p: { kills: r.score.pk, value: r.score.pv }, e: { kills: r.score.ek, value: r.score.ev } }
+          : { p: { kills: 0, value: 0 }, e: { kills: 0, value: 0 } };
         S.started = !!r.started; S.mode = r.mode; S.sandbagOrient = r.sandbagOrient || 0;
         S.zoom = r.zoom; R.setZoom(r.zoom);
         S.focus = { x: r.focus.x, y: field.heightAt(r.focus.x, r.focus.z), z: r.focus.z };
@@ -2754,19 +2755,12 @@ export default function DepotGame({ onExit, resume = null }) {
           for (const id of structHp.keys()) if (!world.byId.get(id)) structHp.delete(id);
         }
         for (const e of evs) {
-          if (e.type === "tdkill") {
-            S.resources += e.bounty; S.kills++;
-          } else if (e.type === "kill") {
-            if (e.attacker === "enemy" && S.ws.results) {
-              if (e.kind === "tower") S.ws.results.towerKills++;
-              // ONE wall pays ONE wallKill (P1.5 T2). A wall stands as three
-              // courses and the enemy can chew through more than one of them;
-              // the upper two carry WALL_UPPER_GROUP on the body, which rides
-              // out on the kill event, so only the wall's own death pays.
-              else if (e.kind === "wall" && e.group !== WALL_UPPER_GROUP) S.ws.results.wallKills++;
-              else if (e.kind === "building") S.ws.results.buildingKills++;
-            }
-          }
+          if (e.type !== "kill") continue;
+          // THE KILL LAW (mk1.93): every attributed death pays and scores here.
+          scoreKill(S, e, S._market ? S._market.counts : null);
+          // Town buildings are unpriced — their hand-set pay is the named edge
+          // outside the law. The branch is preserved as it was, not fixed.
+          if (e.attacker === "enemy" && S.ws.results && e.kind === "building") S.ws.results.buildingKills++;
         }
         // The single place a run flips to LOSS (depot destroyed, or the
         // stubbed regiment-destroyed hook) — same function depot-test.mjs
@@ -2775,7 +2769,7 @@ export default function DepotGame({ onExit, resume = null }) {
         return evs;
       };
 
-      window.__DEPOT__ = () => ({ t: world.t, scrap: S.resources, kills: S.kills, bell: S.bell, bellT: S.bellT, bodies: world.bodies.length, fps: S.fps, paused: S.paused, speed: S.speed, reg: { ...S.reg }, depotStanding: S.depotStanding != null ? S.depotStanding : 1, breach: !!S.breach, enemyStanding: S.enemyStanding != null ? S.enemyStanding : 1, enemyBreach: !!S.enemyBreach, withdrew: S.ws.withdrew || 0, endedAt: S.endedAt != null ? S.endedAt : null, endCard: endCardReady(S, world.t) });
+      window.__DEPOT__ = () => ({ t: world.t, scrap: S.resources, kills: S.score.p.kills, score: { pk: S.score.p.kills, pv: +S.score.p.value.toFixed(1), ek: S.score.e.kills, ev: +S.score.e.value.toFixed(1) }, bell: S.bell, bellT: S.bellT, bodies: world.bodies.length, fps: S.fps, paused: S.paused, speed: S.speed, reg: { ...S.reg }, depotStanding: S.depotStanding != null ? S.depotStanding : 1, breach: !!S.breach, enemyStanding: S.enemyStanding != null ? S.enemyStanding : 1, enemyBreach: !!S.enemyBreach, withdrew: S.ws.withdrew || 0, endedAt: S.endedAt != null ? S.endedAt : null, endCard: endCardReady(S, world.t) });
       // mk0.27 debug harness: the live pending + its screen anchor (smoke
       // asserts the tap-theft repairs through this).
       window.__DEPOTPENDING__ = () => (S.pending ? { armed: pendingArmed(S.pending, world.t), screen: S.pendingScreen, gx: S.pending.gx, gz: S.pending.gz } : null);
@@ -3726,7 +3720,8 @@ export default function DepotGame({ onExit, resume = null }) {
               // rang, so the top bar names the next one.
               fps: S.fps, bell: S.bell + 1, bellT: S.bellT, enemies: en,
               stones: R.chunkStats ? `${R.chunkStats().drawn}/${R.chunkStats().cap}` : "",
-              resources: Math.floor(S.resources), walls: nw, towers: nt, kills: S.kills,
+              resources: Math.floor(S.resources), walls: nw, towers: nt,
+              score: { pk: S.score.p.kills, pv: Math.round(S.score.p.value), ek: S.score.e.kills, ev: Math.round(S.score.e.value) },
               lastDispatch: S.lastDispatch,
               // THE LIVING MARKET (mk1.13): the bar and the manifest read
               // prices off this same cache, out to the render each hud tick.
@@ -4211,6 +4206,11 @@ export default function DepotGame({ onExit, resume = null }) {
           BELL {hud.bell} · {clockStr(hud.bellT)}
         </div>
         <div style={P.stat}>☠ {hud.enemies}</div>
+        <div data-score style={P.stat} title="the match score — kills and value destroyed, yours then the enemy's">
+          <span style={{ color: "#7dffa8" }}>⚔ {hud.score.pk} ◆{hud.score.pv}</span>
+          <span style={{ opacity: 0.5 }}>·</span>
+          <span style={{ color: "#ff7a7a" }}>{hud.score.ek} ◆{hud.score.ev}</span>
+        </div>
         {/* The dismissed manifest waits here — and only until the next bell,
             which re-pools the offer. A skipped bell is a skipped pick. */}
         {hud.manifest && !hud.manifest.up && !hud.gameOver && !hud.victory && (
