@@ -274,9 +274,9 @@ const run = (w, grid, n, opts) => { for (let i = 0; i < n; i++) { stepDrivers(w,
 
 // ============================================================ PHASE G (M22-M26)
 {
-  ok("M22: the pool and hand are eighteen with hero_mech in every seat",
-    PICK_POOL.length === 18 && PICK_POOL.some((p) => p.key === "hero_mech" && p.kind === "mech") &&
-    HAND_KEYS.length === 18 && HAND_KEYS.includes("hero_mech") && HAND_TAGS.hero_mech === "hero_mech",
+  ok("M22: the pool and hand are nineteen with hero_mech in every seat",
+    PICK_POOL.length === 19 && PICK_POOL.some((p) => p.key === "hero_mech" && p.kind === "mech") &&
+    HAND_KEYS.length === 19 && HAND_KEYS.includes("hero_mech") && HAND_TAGS.hero_mech === "hero_mech",
     `pool=${PICK_POOL.length} hand=${HAND_KEYS.length}`);
 }
 {

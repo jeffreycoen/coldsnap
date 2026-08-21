@@ -87,6 +87,10 @@ export const ENEMY_SPECS = {
   // provisional (F5).
   rocket: { ...MAN.rifle, bounty: 8, speed: 3.2, gain: 16, label: "rocket team" },
   mortar: { ...MAN.rifle, bounty: 8, speed: 3.2, gain: 14, label: "mortar team" },
+  // mk2.08 (owner): THE DAVY CROCKETT — the atomic crew, both sides, one
+  // price. bounty equals the player's 450 so the shared market prices the
+  // two sides identically. The slowest men on the map. // provisional (F5)
+  davy: { ...MAN.rifle, bounty: 450, speed: 2.0, gain: 14, label: "atomic crew" },
 };
 
 // Wave armor: an engine vehicle on the engine's own tread physics (see
@@ -200,18 +204,18 @@ export const PLAYER_TIERS = [
   ["mortar", "rocket", "sq_sappers", "sq_mechanics"],
   // P7 T9 (owner): THE HERO TIER — bell 10, replacement armor off the
   // convoy at a ruinous, market-walled price.
-  ["hero_bison", "hero_apc"],
+  ["hero_bison", "hero_apc", "sq_davy"],
 ];
 
 // P7.2 T2 (owner): THE HAND IS UNGATED — the full fifteen, one table, from
 // bell one; price and the market wall do all the refusing. The tier ladders
 // above stop gating offers (they remain as rows and price families).
-export const HAND_KEYS = ["mg", "gun", "mortar", "rocket", "frost", "sq_sniper", "sq_rifles", "sq_mg", "sq_sappers", "sq_mortars", "sq_engineers", "sq_rockets", "sq_grenadiers", "sq_medics", "sq_mechanics", "hero_bison", "hero_apc", "hero_mech"];
+export const HAND_KEYS = ["mg", "gun", "mortar", "rocket", "frost", "sq_sniper", "sq_rifles", "sq_mg", "sq_sappers", "sq_mortars", "sq_engineers", "sq_rockets", "sq_grenadiers", "sq_medics", "sq_mechanics", "sq_davy", "hero_bison", "hero_apc", "hero_mech"];
 
 // P7.2 T4: the key -> enemy-tag map for HIS side of the hand. Tower keys
 // are deliberately absent — a tower is not a wave tag: his tower plans
 // ROUTE to S.foe.towers (the plans ledger he builds from), full symmetry.
-export const HAND_TAGS = { sq_rifles: "", sq_rockets: "rocket", sq_grenadiers: "gren", sq_sappers: "sapper", sq_mortars: "mortar", sq_sniper: "sniper", sq_mg: "mg", sq_engineers: "eng", sq_medics: "medic", sq_mechanics: "mechanic", hero_bison: "hero_bison", hero_apc: "hero_apc", hero_mech: "hero_mech" };
+export const HAND_TAGS = { sq_rifles: "", sq_rockets: "rocket", sq_grenadiers: "gren", sq_sappers: "sapper", sq_mortars: "mortar", sq_sniper: "sniper", sq_mg: "mg", sq_engineers: "eng", sq_medics: "medic", sq_mechanics: "mechanic", sq_davy: "davy", hero_bison: "hero_bison", hero_apc: "hero_apc", hero_mech: "hero_mech" };
 
 export const MASON = { hcs: 0.40, pitch: 0.83, mass: 100, breakF: 8.0e4 };
 
@@ -292,3 +296,10 @@ export const INFANTRY_ARMS = {
 // mk2.03 (owner): THE GRENADE — one body, both sides. Fuse 2.0s from
 // release. // provisional (F5)
 export const GRENADE = { v: 11, fuse: 2.0, r: 2.0, dmg: 16, kv: 5, crater: 0.3, mass: 0.4, hx: 0.09, hy: 0.09, hz: 0.09 };
+
+// mk2.08 (owner): THE DAVY CROCKETT'S ROUND — one table, both sides. The
+// biggest blast in the game; crater 10 carves the ruled bowl (10 deep,
+// shallow rise to the blast's edge — the engine's standard carve shape).
+// The crew dies at the trigger (state.js stepDavyShot / units.js stepDavy),
+// never by this table. // provisional (F5)
+export const DAVY_FIRE = { projSpeed: 28, kind: "shell", weapon: "davy", dmg: 200, blastR: 25, kv: 40, crater: 10, range: 20, acc: 0.005, occl: "lofted", windF: 0.04, windComp: 0.6 };

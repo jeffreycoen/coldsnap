@@ -807,7 +807,7 @@ import fs from "node:fs";
   // (mk2.02, licensed — the ram mechanism is deleted).
   // (f) the ungated pool still deals eighteen, the new keys included
   {
-    ok("T7(f) (re-taught mk2.02): the ungated plans pool at bell one is eighteen — rockets and grenadiers included", (() => { const p = HAND_KEYS.filter((k) => makeManifestState().unlocked.indexOf(k) < 0); return p.length === 18 && p.includes("sq_rockets") && p.includes("sq_grenadiers"); })());
+    ok("T7(f) (re-taught mk2.02): the ungated plans pool at bell one is nineteen — rockets and grenadiers included", (() => { const p = HAND_KEYS.filter((k) => makeManifestState().unlocked.indexOf(k) < 0); return p.length === 19 && p.includes("sq_rockets") && p.includes("sq_grenadiers"); })());
   }
   // (g) one market: a live player rocket man and an enemy rocket man price
   // the same family (marketCounts merges them)

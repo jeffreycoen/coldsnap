@@ -34,9 +34,10 @@ export const MARKET_K = {
   mine: 12, wire: 16,
   medic: 6, // P7.2 T6 // provisional (F5)
   mechanic: 6, // P7.2 T7 // provisional (F5)
+  davy: 2, // mk2.08 — nukes double fast // provisional (F5)
 };
-const FAMILY_OF_SQUAD = { rifles: "rifles", sniper: "marksman", sappers: "sapper", mortars: "mortarcrew", mg: "mgteam", engineers: "engineer", rockets: "rocketteam", grenadiers: "grenadier", medics: "medic", mechanics: "mechanic" };
-const FAMILY_OF_TAG = { "": "rifles", sniper: "marksman", sapper: "sapper", gren: "grenadier", rocket: "rocketteam", mortar: "mortarcrew", mg: "mgteam", eng: "engineer", medic: "medic", mechanic: "mechanic" };
+const FAMILY_OF_SQUAD = { rifles: "rifles", sniper: "marksman", sappers: "sapper", mortars: "mortarcrew", mg: "mgteam", engineers: "engineer", rockets: "rocketteam", grenadiers: "grenadier", medics: "medic", mechanics: "mechanic", davy: "davy" };
+const FAMILY_OF_TAG = { "": "rifles", sniper: "marksman", sapper: "sapper", gren: "grenadier", rocket: "rocketteam", mortar: "mortarcrew", mg: "mgteam", eng: "engineer", medic: "medic", mechanic: "mechanic", davy: "davy" };
 const FAMILY_OF_TOWER = { mg: "mgtower", gun: "guntower", mortar: "mortartower", rocket: "rockettower", frost: "frosttower" };
 
 // marketCounts(world, squads, mines) -> { family: standing count }. Men for
@@ -125,7 +126,7 @@ export function killPrice(ev, counts, wallBase, bagBase) {
       const fam = FAMILY_OF_TAG[tag];
       const spec = ENEMY_SPECS[tag];
       if (!fam || !spec) return null;
-      const per = tag === "sniper" ? 2 : 1; // one marksman buy fields two men
+      const per = tag === "sniper" || tag === "davy" ? 2 : 1; // one buy fields two men — sniper pair, atomic crew
       return { price: priced(spec.bounty, fam, c) / per, counted: true };
     }
     const sp = SQUAD_SPECS[ev.utype];

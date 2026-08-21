@@ -354,8 +354,11 @@ import fs from "node:fs";
     // re-pinned mk1.30 (P7 T1): the tank's acquisition path moved verbatim to
     // drivers.js — 6 of the seven remain in units.js, the 7th (the tank's
     // structure scan) now lives in the motor pool, same gate, same law.
+    // re-pinned mk2.08 (Amendment 1): the atomic crew's two sight-gated scans
+    // (its man scan and its structure scan in the new stepDavy) joined
+    // units.js. Count moves 6 -> 8.
     ok("VISION T2(e): six of the seven enemy acquisition paths gate on sight in units.js",
-      (unitsSrc.match(/fieldReaches\(T,/g) || []).length === 6, (unitsSrc.match(/fieldReaches\(T,/g) || []).length);
+      (unitsSrc.match(/fieldReaches\(T,/g) || []).length === 8, (unitsSrc.match(/fieldReaches\(T,/g) || []).length);
     // re-pinned P7 T2 (mk1.31): the Bison's armor policy joined the motor
     // pool — armorGuns' two scans (unit/vehicle foes, hostile structures) and
     // the two possessed triggers (main gun, coax) all gate on sight, the same

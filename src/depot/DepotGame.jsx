@@ -18,7 +18,7 @@ import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS, BISON, APC, MECH, BISON_FIRE, BARRELS } from "./specs.js";
 import { cardFor } from "./infocards.js";
 import { windAt } from "./wind.js";
-import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, takeHandCard, TIER_BELLS, memberNearRow, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType, scoreKill, placeZoneMask, POSSESS_ACC, stickyLock, stepGrenades } from "./state.js";
+import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, takeHandCard, TIER_BELLS, memberNearRow, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType, scoreKill, placeZoneMask, POSSESS_ACC, stickyLock, stepGrenades, stepDavyShot } from "./state.js";
 import { marketCounts, computePrices, fieldPrices, priced } from "./market.js";
 import { stepMines, minePrices, mineSeedRoll, mineSeedPlace, MINE_COST, WIRE_COST } from "./mines.js";
 import { homeShare, pickHomeDetail, HOME_GUARD_CAP, cmdrOf, cmdrBellOrders, ferryDecide, flankDrop } from "./ai.js";
@@ -550,6 +550,8 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
       if (sq.type === "medics") stepMedicTendSquad(world, sq, world.dt);
       // P7.2 T7: the mechanics make their rounds — after the medic's own step.
       if (sq.type === "mechanics") stepMechanicTendSquad(world, sq, world.dt);
+      // mk2.08: the atomic crew's one shot — its own path (no arms row).
+      if (sq.type === "davy") stepDavyShot(world, sq, world.dt, T, invW);
       squadFire(world, sq, world.dt, T, invW);
       for (const id of sq.memberIds) {
         const u = world.byId.get(id);
@@ -754,6 +756,7 @@ const PALETTE = [
   { key: "sq_medics", label: "MEDICS", icon: "✚", cost: SQUAD_SPECS.medics.cost },
   // P7.2 T7: the mechanic team — the paid wrench
   { key: "sq_mechanics", label: "MECHANICS", icon: "⚙", cost: SQUAD_SPECS.mechanics.cost },
+  { key: "sq_davy", label: "DAVY CROCKETT", icon: "☢", cost: SQUAD_SPECS.davy.cost },
   // P7 T9: THE HERO TIER — bar-visible only once unlocked like everything
   // else. mk1.95: hero keys are placement modes under the one law.
   { key: "hero_bison", label: "BISON", icon: "⛨", cost: BISON.cost },
@@ -1579,7 +1582,7 @@ export default function DepotGame({ onExit, resume = null }) {
       // ---------------------------------------------- squads (Phase 5 Task 3)
       // Build-bar mode keys -> squad type. Prefixed (sq_mg vs mg) because the
       // MG TOWER already owns the bare "mg" mode key.
-      const SQUAD_MODE = { sq_sniper: "sniper", sq_rifles: "rifles", sq_mg: "mg", sq_sappers: "sappers", sq_mortars: "mortars", sq_engineers: "engineers", sq_rockets: "rockets", sq_grenadiers: "grenadiers", sq_medics: "medics", sq_mechanics: "mechanics" };
+      const SQUAD_MODE = { sq_sniper: "sniper", sq_rifles: "rifles", sq_mg: "mg", sq_sappers: "sappers", sq_mortars: "mortars", sq_engineers: "engineers", sq_rockets: "rockets", sq_grenadiers: "grenadiers", sq_medics: "medics", sq_mechanics: "mechanics", sq_davy: "davy" };
       // mk1.95 (owner): hero keys are placement modes — the one law.
       const HERO_MODE = { hero_bison: "bison", hero_apc: "apc", hero_mech: "mech" };
       // The ghost's true footprint, by key — a hull its hull, the mech its

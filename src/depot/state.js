@@ -1,14 +1,14 @@
 // COLDSNAP DEPOT — run state shape. Kept tiny and dependency-free so
 // DepotGame.jsx's loop can stuff a plain object in a ref (React state must
 // never be read from the closure — see ColdsnapTD.jsx for why).
-import { aimSolve, fireProjectile, addBody, addWeld, explode } from "../engine/core.js";
+import { aimSolve, fireProjectile, addBody, addWeld, explode, applyDamage } from "../engine/core.js";
 import { SQUAD_SPECS, clearSlot } from "./squads.js";
 import { scatterSigma, applyScatter, arcClears, marchArc, elevSolve } from "./accuracy.js";
 import { planWave, MIN_WAVE_FLOOR, spawnDelayFor } from "./ai.js";
 import { STIPEND, payResults, combatIneffective, bookValue, KILL_CUT } from "./economy.js";
 import { killPrice } from "./market.js";
 import { composeIntel, openingIntel } from "./intel.js";
-import { TOWER_SPECS, ENEMY_SPECS, TANK, INFANTRY_ARMS, MASON, PLAYER_START, PLAYER_TIERS, HAND_KEYS, HAND_TAGS, MAN, GRENADE } from "./specs.js";
+import { TOWER_SPECS, ENEMY_SPECS, TANK, INFANTRY_ARMS, MASON, PLAYER_START, PLAYER_TIERS, HAND_KEYS, HAND_TAGS, MAN, GRENADE, DAVY_FIRE } from "./specs.js";
 import { seenAt } from "./sight.js";
 
 // Targeting gate, symmetric, VISION era (mk0.72): a shooter of `team` (1 =
@@ -659,6 +659,54 @@ export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })
     shooterFire(world, u, muzzle, bestIsStruct && spec.occl === "lofted" ? aimTop(world, best) : best, fspec, bestIsStruct
       ? { attacker, volleyDelay: spec.burstGap, muzzleStep: 0, owner: u.id, hitStruct: true, hitOnly: "structure", high }
       : { attacker, volleyDelay: spec.burstGap, muzzleStep: 0, owner: u.id, high });
+  }
+}
+
+// mk2.08 (owner): THE DAVY CROCKETT'S ONE SHOT. Under the ATTACK order only
+// (the sapper's rule), the crew's lead man fires the atomic round at the
+// nearest target its side SEES — man, machine, or hostile structure — inside
+// the elevation-scaled range, then the whole crew dies at the trigger.
+// One round per hire; _davyFired latches on the squad and rides the save
+// (a plain boolean, the generic squad serializer). Draws: exactly the
+// round's own 2 (applyScatter), nothing else.
+export function stepDavyShot(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })) {
+  if (squad.type !== "davy" || squad._davyFired) return;
+  if (squad.order !== "attack") return;
+  squad._davyScanCd = (squad._davyScanCd || 0) - dt;
+  if (squad._davyScanCd > 0) return;
+  squad._davyScanCd = 0.25;
+  const shooter = squad.memberIds.map((id) => world.byId.get(id)).find((u) => u && u.alive);
+  if (!shooter) return;
+  const muzzle = { x: shooter.pos.x, y: shooter.pos.y + 0.5, z: shooter.pos.z };
+  const spec = DAVY_FIRE;
+  const eR = effRange(world, muzzle, spec);
+  const enemyTeam = squad.team === 1 ? 2 : 1;
+  let best = null, bd = eR * eR;
+  for (const e of world.bodies) {
+    if ((e.kind !== "unit" && e.kind !== "vehicle" && e.kind !== "mech") || !e.alive || e.team !== enemyTeam) continue;
+    const dx = e.pos.x - shooter.pos.x, dz = e.pos.z - shooter.pos.z, d2 = dx * dx + dz * dz;
+    if (d2 >= bd) continue;
+    const c = toUV(e.pos.x, e.pos.z);
+    if (!fieldReaches(T, c.u, c.v, squad.team)) continue;
+    bd = d2; best = e;
+  }
+  if (!best) for (const s of world.bodies) {
+    if (!hostileStructure(s, squad.team)) continue;
+    const dx = s.pos.x - shooter.pos.x, dz = s.pos.z - shooter.pos.z, d2 = dx * dx + dz * dz;
+    if (d2 >= bd) continue;
+    const cs = toUV(s.pos.x, s.pos.z);
+    if (!fieldReaches(T, cs.u, cs.v, squad.team)) continue;
+    bd = d2; best = s;
+  }
+  if (!best) return;
+  squad._davyFired = true;
+  const attacker = squad.team === 1 ? "player" : "enemy";
+  shooterFire(world, shooter, muzzle, best.kind !== "unit" && best.kind !== "vehicle" && best.kind !== "mech" ? aimTop(world, best) : best, spec, { high: true, attacker, hitStruct: true, owner: shooter.id });
+  // THE TRIGGER IS FATAL (owner): the crew dies with the shot, explicitly —
+  // the blast's falloff must never be trusted to do it.
+  for (const id of squad.memberIds) {
+    const u = world.byId.get(id);
+    if (u && u.alive) applyDamage(world, u, 1e9, { attacker });
   }
 }
 

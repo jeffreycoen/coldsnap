@@ -62,6 +62,10 @@ export const SQUAD_SPECS = {           // costs are scrap; members spawn as unit
   // not shooters: no INFANTRY_ARMS row, so squadFire skips them by
   // membership. // provisional (F5)
   mechanics: { n: 2, cost: 55, label: "MECHANIC TEAM" },
+  // mk2.08 (owner): THE DAVY CROCKETT — two men and the atomic tube. Tools,
+  // not shooters: no INFANTRY_ARMS row, so squadFire skips them; the one
+  // shot lives in state.js's stepDavyShot. The slowest crew on the map.
+  davy: { n: 2, cost: 450, speed: 2.0, label: "DAVY CROCKETT" }, // provisional (F5)
 };
 
 // THE PER-TYPE SPEED (P7 T7): a squad's march speed off its own SQUAD_SPECS

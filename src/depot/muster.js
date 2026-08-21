@@ -253,6 +253,7 @@ export const PICK_POOL = [
   { key: "sq_engineers", kind: "squad", type: "engineers", tag: "eng", n: 2 },
   { key: "sq_medics", kind: "squad", type: "medics", tag: "medic", n: 2 },
   { key: "sq_mechanics", kind: "squad", type: "mechanics", tag: "mechanic", n: 2 },
+  { key: "sq_davy", kind: "squad", type: "davy", tag: "davy", n: 2 },
   { key: "hero_bison", kind: "hull", vtype: "bison" },
   { key: "hero_apc", kind: "hull", vtype: "apc" },
   { key: "hero_mech", kind: "mech" },

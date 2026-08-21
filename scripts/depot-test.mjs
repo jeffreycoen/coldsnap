@@ -30,4 +30,5 @@ await import("./tests/13-the-score.mjs");
 await import("./tests/14-the-placement-law.mjs");
 await import("./tests/15-the-open-siege.mjs");
 await import("./tests/16-the-deep-floor.mjs");
+await import("./tests/17-the-davy-crockett.mjs");
 finish();

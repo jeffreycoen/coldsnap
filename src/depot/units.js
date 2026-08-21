@@ -17,7 +17,7 @@ import { arcClears } from "./accuracy.js";
 // stand-point scorer — the same documented-safe deferred cycle accuracy.js
 // and state.js already share (no top-level cross calls).
 import { exposureAt, surveyHighGround, bestStandPoint, reactShift, stepMedicTend, stepMechanicTend } from "./squads.js";
-import { ENEMY_SPECS, ENEMY_FIRE, TANK, INFANTRY_ARMS, SATCHEL, SAPPER_PLANT_PAD } from "./specs.js";
+import { ENEMY_SPECS, ENEMY_FIRE, TANK, INFANTRY_ARMS, SATCHEL, SAPPER_PLANT_PAD, DAVY_FIRE } from "./specs.js";
 
 // ---------------------------------------------------------------- spawning
 export function spawnUnit(world, sp, tag) {
@@ -445,6 +445,45 @@ function stepSapper(world, u, dt) {
   return false; // otherwise runs with the flow like everyone else
 }
 
+// mk2.08 (owner): ITS ATOMIC CREW — the sapper's shape, the davy's round.
+// One shot when a seen player target or structure is inside range, then the
+// crew dies at the trigger. u._davyFired latches per man; the pair fires as
+// one (the first man to acquire fires for both — his partner dies with him).
+function stepDavy(world, u, dt, T, toUV) {
+  if (u._davyFired) return true;
+  u.scanCd = (u.scanCd || 0) - dt;
+  if (u.scanCd > 0) return false;
+  u.scanCd = 0.25;
+  const muzzle = { x: u.pos.x, y: u.pos.y + 0.5, z: u.pos.z };
+  const spec = DAVY_FIRE;
+  const eR = effRange(world, muzzle, spec);
+  let best = null, bd = eR * eR;
+  for (const e of world.bodies) {
+    if ((e.kind !== "unit" && e.kind !== "vehicle" && e.kind !== "mech") || !e.alive || e.team !== 1) continue;
+    const c = toUV(e.pos.x, e.pos.z);
+    if (!fieldReaches(T, c.u, c.v, 2)) continue;
+    const dx = e.pos.x - u.pos.x, dz = e.pos.z - u.pos.z, d2 = dx * dx + dz * dz;
+    if (d2 < bd) { bd = d2; best = e; }
+  }
+  if (!best) for (const s of world.bodies) {
+    if (!hostileStructure(s, 2)) continue;
+    const cs = toUV(s.pos.x, s.pos.z);
+    if (!fieldReaches(T, cs.u, cs.v, 2)) continue;
+    const dx = s.pos.x - u.pos.x, dz = s.pos.z - u.pos.z, d2 = dx * dx + dz * dz;
+    if (d2 < bd) { bd = d2; best = s; }
+  }
+  if (!best) return false;
+  const aimT = best.kind !== "unit" && best.kind !== "vehicle" && best.kind !== "mech" ? aimTop(world, best) : best;
+  shooterFire(world, u, muzzle, aimT, spec, { high: true, attacker: "enemy", hitStruct: true, owner: u.id });
+  for (const o of world.bodies) {
+    if (o.kind !== "unit" || !o.alive || o.team !== 2 || o.tag !== "davy") continue;
+    if (o !== u && Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) > 6) continue;
+    o._davyFired = true;
+    applyDamage(world, o, 1e9, { attacker: "enemy" });
+  }
+  return true;
+}
+
 // ------------------------------------------------------------------- step
 // March + combat driver, called before the engine step (same ordering TD
 // uses: game-layer drivers, then stepWorld). grid supplies the flow field;
@@ -494,6 +533,7 @@ export function stepUnits(world, grid, fwdDir, T, toUV = (x, z) => ({ u: x, v: z
       continue;
     }
     if (u.tag === "sapper" && stepSapper(world, u, dt)) continue;
+    if (u.tag === "davy" && stepDavy(world, u, dt, T, toUV)) continue;
     // P7.1 T6 (owner): his engineers — unarmed shovels until Task 7 arms
     // their build lines. A held engineer stands; an unheld one marches.
     if (u.tag === "eng" && u.hold) {
@@ -541,7 +581,7 @@ export function stepUnits(world, grid, fwdDir, T, toUV = (x, z) => ({ u: x, v: z
         }
       }
     }
-    if (u.tag !== "gren" && u.tag !== "mortar" && u.tag !== "sapper" && u.tag !== "eng" && stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV)) continue;
+    if (u.tag !== "gren" && u.tag !== "mortar" && u.tag !== "sapper" && u.tag !== "eng" && u.tag !== "davy" && stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV)) continue;
     if ((u.tag === "gren" || u.tag === "mortar") && stepGrenadier(world, u, cell, dt, fwdDir, T, toUV)) continue;
 
     // lost / default march (also the fallback path when a rifleman/
