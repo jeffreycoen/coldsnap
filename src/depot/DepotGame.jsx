@@ -2742,7 +2742,7 @@ export default function DepotGame({ onExit, resume = null }) {
           vetAt = (x, z) => armorStable(field, x, z, MECH_SPREAD);
           room = roomMaskPublic(world, grid, 4.5);
         }
-        R.overlay.setZone(true, grid, placeZoneMask(grid, heldAt, vetAt, room), (x, z) => field.heightAt(x, z), dealPhase ? 0x4aff8c : 0x7dffa8);
+        R.overlay.setZone(true, grid, placeZoneMask(grid, heldAt, vetAt, room), (x, z) => field.heightAt(x, z), 0x4aff8c);
       };
       const spawnOne = () => {
         const ws = S.ws;

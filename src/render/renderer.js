@@ -1420,32 +1420,36 @@ export function makeRenderer(canvas, world0, opts = {}) {
       }
     },
     // mk1.95: THE PLACEMENT ZONE — the ground a confirm placement may take,
-    // shown while one is armed. Merged translucent quads over the game
-    // layer's passed grid mask; rebuilt only at its ~4Hz zone tick. The
-    // grid's cells are 2m and ORIENT is quarter-turns, so flat axis-aligned
-    // quads at cell-center height are exact.
+    // shown while one is armed. mk1.97 (owner): the whole field's verdict,
+    // two colors — legal in the passed color (the buildable green), everything
+    // else in the refusal red, 0.5 both. Merged vertex-colored quads over
+    // the game layer's passed grid mask; rebuilt only at its ~4Hz zone tick.
+    // The grid's cells are 2m and ORIENT is quarter-turns, so flat
+    // axis-aligned quads at cell-center height are exact.
     setZone(on, grid, mask, heightAt, color) {
       if (!zoneMesh) {
-        zoneMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: 0x7dffa8, transparent: true, opacity: 0.1, depthWrite: false, side: THREE.DoubleSide }));
+        zoneMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide }));
         zoneMesh.layers.set(1); scene.add(zoneMesh);
       }
       zoneMesh.visible = !!on;
       if (!on) return;
-      const pos = [], idx = [];
+      const legal = new THREE.Color(color || 0x4aff8c), illegal = new THREE.Color(0xff5544);
+      const pos = [], col = [], idx = [];
       const h = grid.cs * 0.5;
       for (let gz = 0; gz < grid.h; gz++) for (let gx = 0; gx < grid.w; gx++) {
-        if (!mask[gz * grid.w + gx]) continue;
+        const okC = mask[gz * grid.w + gx] ? legal : illegal;
         const wp = grid.gridToWorld(gx, gz);
         const y = heightAt(wp.x, wp.z) + 0.14;
         const b = pos.length / 3;
         pos.push(wp.x - h, y, wp.z - h, wp.x + h, y, wp.z - h, wp.x + h, y, wp.z + h, wp.x - h, y, wp.z + h);
+        for (let k = 0; k < 4; k++) col.push(okC.r, okC.g, okC.b);
         idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
       }
       zoneMesh.geometry.dispose();
       zoneMesh.geometry = new THREE.BufferGeometry();
       zoneMesh.geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(pos), 3));
+      zoneMesh.geometry.setAttribute("color", new THREE.BufferAttribute(new Float32Array(col), 3));
       zoneMesh.geometry.setIndex(idx);
-      zoneMesh.material.color.setHex(color || 0x7dffa8);
     },
     // selected-squad reach fan (sniper): same fill+edge treatment as the
     // pending preview, minus the ghost pad — this marks sight, not a build.
