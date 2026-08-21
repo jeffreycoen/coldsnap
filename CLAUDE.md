@@ -26,6 +26,7 @@ The owner directs design, reviews every plan, and is the sole playtester. His wo
 - Pause between the design questions and the writing — the owner says when the plan gets written. Every time.
 - Every amendment is served for review before any dispatch on it; approval of the original does not carry.
 - Decisions are served interactively — the question tool, one decision per question, a stated lean — never option matrices in prose.
+- Question options state their mechanism in the owner's own terms, never buried in jargon or a recommended label; if the owner asked for a thing, that thing is one of the options, verbatim, or the question says plainly why it cannot be (owner, 2026-08-21 — the mortar-root lob shipped inside a "recommended" option while the asked-for gradual elevation was never offered).
 - "No code yet" covers the whole message it appears in.
 
 ## Versioning
