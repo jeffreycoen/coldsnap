@@ -1546,8 +1546,8 @@ import fs from "node:fs";
 {
   const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-  ok("POSSESSION T5(a) source pin (re-taught mk1.99): the renderer owns a setReticle overlay drawn in the established red, solid",
-    /setReticle\(on, x, z, y, r, hit\)/.test(rendSrc) && /0xff6b5e/.test(String(rendSrc.match(/setReticle\(on, x, z, y, r, hit\) \{[\s\S]*?\n    \},/) || "")));
+  ok("POSSESSION T5(a) source pin (re-taught mk2.00): the renderer owns a setReticle overlay drawn in the brightened red, solid",
+    /setReticle\(on, x, z, y, r, hit\)/.test(rendSrc) && /0xff4a3c/.test(String(rendSrc.match(/setReticle\(on, x, z, y, r, hit\) \{[\s\S]*?\n    \},/) || "")));
   ok("possessed frames never paint the build hover (re-pinned mk1.12 — the old pin was a character-distance accident)",
     /R\.overlay\.setReticle\(/.test(gameSrc) && /if \(!S\.possess && S\.hover\)/.test(gameSrc));
   ok("POSSESSION T5(c) source pin: the build hover never paints while possessed",
@@ -2096,3 +2096,58 @@ import fs from "node:fs";
   }
 }
 // ==== end THE RETICLE (mk1.99) ==============================================
+
+// ==== THE RETICLE, SECOND PASS (mk2.00) =====================================
+// Playtest findings against mk1.99: the destination cell takes the hit (the
+// steer parks the reticle ON a wall's own cell — the one cell mk1.99 never
+// tested, so the ring fell flat at the wall's foot), the ring's band and red
+// re-tuned, and possession closes the build tree and holds it shut. Pure
+// helper on hand-built maps; JSX/renderer wiring pinned by source regex.
+{
+  const idUV = (x, z) => ({ u: x, v: z });
+  const bareSG = () => ({ nx: 32, nz: 32, cs: 2, halfU: 32, halfV: 32,
+    seen1: new Uint8Array(32 * 32).fill(1), seen2: new Uint8Array(32 * 32),
+    gnd: new Float32Array(32 * 32), occ: new Float32Array(32 * 32).fill(-Infinity) });
+
+  // (a) the reticle steered ONTO a 3m wall's own cell hits the face: the
+  // offset clamps half a cell short, wall true, impact at man height.
+  {
+    const SG = bareSG();
+    for (let iz = 0; iz < 32; iz++) SG.occ[iz * 32 + 21] = 3; // a wall at u≈11
+    const r = clampToImpact(SG, 0.5, { x: 0, z: 0 }, { dx: 11, dz: 0 }, idUV);
+    ok("RETICLE mk2.00(a): a reticle parked on the wall's own cell clamps to the face",
+      r.wall === true && r.dx > 0 && r.dx < 11, JSON.stringify(r));
+    ok("RETICLE mk2.00(a): the face impact sits at man height on the wall",
+      r.y > 0 && r.y < 3, r.y);
+  }
+  // (b) one cell out: a wall in the immediately adjacent cell (the old n<2
+  // early-out's blind spot) still clamps.
+  {
+    const SG = bareSG();
+    for (let iz = 0; iz < 32; iz++) SG.occ[iz * 32 + 21] = 3;
+    const r = clampToImpact(SG, 0.5, { x: 9, z: 0 }, { dx: 2, dz: 0 }, idUV);
+    ok("RETICLE mk2.00(b): a wall one cell from the shooter still takes the hit",
+      r.wall === true && r.dx > 0 && r.dx < 2, JSON.stringify(r));
+  }
+  // (c) source pin: the ring's re-tuned band and red.
+  {
+    const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
+    const block = String(rendSrc.match(/setReticle\(on, x, z, y, r, hit\) \{[\s\S]*?\n    \},/) || "");
+    ok("RETICLE mk2.00(c) source pin: the ring's band is 30% of radius in the brightened red",
+      /RingGeometry\(0\.7, 1\.0, 44\)/.test(block) && /0xff4a3c/.test(block), block.length);
+  }
+  // (d) source pins: every TAKE CONTROL closes the build tree with the take.
+  {
+    const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("RETICLE mk2.00(d) source pin: the squad's TAKE CONTROL closes the build tree",
+      /act: \(\) => \{ closeBuild\(\); const S = stateRef\.current; if \(S\) S\.takeControl\(\); \}/.test(gameSrc));
+    ok("RETICLE mk2.00(d) source pin: the tower's TAKE CONTROL closes the build tree",
+      /act: \(\) => \{ closeBuild\(\); const S = stateRef\.current; if \(S\) S\.takeControlTower\(tr\.id\); \},/.test(gameSrc));
+    ok("RETICLE mk2.00(d) source pin: the vehicle's TAKE CONTROL closes the build tree",
+      /act: \(\) => \{ closeBuild\(\); const S = stateRef\.current; if \(S\) S\.takeControlVehicle\(\); \} \},/.test(gameSrc));
+    // (e) source pin: the BUILD toggle refuses to open over a live possession.
+    ok("RETICLE mk2.00(e) source pin: the BUILD toggle refuses while possessed",
+      /if \(buildOpen\) \{ closeBuild\(\); return; \}[\s\S]{0,240}if \(S && S\.possess\) return;/.test(gameSrc));
+  }
+}
+// ==== end THE RETICLE, SECOND PASS (mk2.00) =================================

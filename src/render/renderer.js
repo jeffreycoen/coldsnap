@@ -1322,9 +1322,10 @@ export function makeRenderer(canvas, world0, opts = {}) {
     // the build ghost. Lazy like everything here; the game layer drives it
     // only while a possession is live.
     // mk1.99: solid, spread-sized, and standing on a wall hit.
+    // mk2.00 (owner): band 30% of radius, red brightened.
     setReticle(on, x, z, y, r, hit) {
       if (!retRing) {
-        retRing = new THREE.Mesh(new THREE.RingGeometry(0.82, 1.0, 44), new THREE.MeshBasicMaterial({ color: 0xff6b5e, depthWrite: false, side: THREE.DoubleSide }));
+        retRing = new THREE.Mesh(new THREE.RingGeometry(0.7, 1.0, 44), new THREE.MeshBasicMaterial({ color: 0xff4a3c, depthWrite: false, side: THREE.DoubleSide }));
         retRing.rotation.x = -Math.PI / 2; retRing.layers.set(1); scene.add(retRing);
       }
       retRing.visible = !!on;

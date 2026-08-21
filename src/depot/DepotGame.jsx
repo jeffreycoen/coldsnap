@@ -4503,7 +4503,8 @@ export default function DepotGame({ onExit, resume = null }) {
           // POSSESSION (P4 T1, mk0.90): TAKE CONTROL — every squad type,
           // instant like DEFEND (deselects on choose; the pie itself closes
           // via RadialMenu's onChoose regardless).
-          { key: "possess", icon: "✥", label: "TAKE CONTROL", color: "#7dffa8", on: false, act: () => { const S = stateRef.current; if (S) S.takeControl(); } },
+          // mk2.00 (owner): the build tree closes with the take — all three TAKE CONTROLs.
+          { key: "possess", icon: "✥", label: "TAKE CONTROL", color: "#7dffa8", on: false, act: () => { closeBuild(); const S = stateRef.current; if (S) S.takeControl(); } },
           { key: "select_all", icon: "∷", label: "SELECT ALL", color: "#9fdcff", on: sq.count > 1, act: () => { const S = stateRef.current; if (S) { S.selectAllType(); S._keepPie = true; } } },
         ];
         // COMMAND T3 (mk0.85): PATROL — two taps propose a route through the
@@ -4598,7 +4599,7 @@ export default function DepotGame({ onExit, resume = null }) {
             label: "TAKE CONTROL",
             color: "#7dffa8",
             on: false,
-            act: () => { const S = stateRef.current; if (S) S.takeControlTower(tr.id); },
+            act: () => { closeBuild(); const S = stateRef.current; if (S) S.takeControlTower(tr.id); },
           });
         }
         slots.push({
@@ -4623,7 +4624,7 @@ export default function DepotGame({ onExit, resume = null }) {
           { key: "patrol", icon: "⇄", label: "PATROL", color: "#7fd7ff", on: vr.aimingPatrol || vr.order === "patrol", act: () => stateRef.current && stateRef.current.orderVehicle("patrol") },
           { key: "escort", icon: "⛨", label: "ESCORT", color: "#c9a0ff", on: vr.aimingEscort || vr.order === "escort", act: () => stateRef.current && stateRef.current.orderVehicle("escort") },
           { key: "tracks", icon: vr.tracks === "free" ? "●" : "◐", label: vr.tracks === "free" ? "TRACKS FREE" : "TRACKS CAREFUL", color: vr.tracks === "free" ? "#ff7a7a" : "#4aff8c", on: true, toggle: vr.tracks !== "free", act: () => { const S = stateRef.current; if (S) { S.toggleTracks(); S.selVehId = null; } } },
-          { key: "possess", icon: "✥", label: "TAKE CONTROL", color: "#7dffa8", on: false, act: () => stateRef.current && stateRef.current.takeControlVehicle() },
+          { key: "possess", icon: "✥", label: "TAKE CONTROL", color: "#7dffa8", on: false, act: () => { closeBuild(); const S = stateRef.current; if (S) S.takeControlVehicle(); } },
         ];
         // P7 T4: LOAD/UNLOAD — APC only, offered only when there's a seat to
         // fill or a rider to drop.
@@ -4651,6 +4652,8 @@ export default function DepotGame({ onExit, resume = null }) {
             onClick={() => {
               if (buildOpen) { closeBuild(); return; }
               const S = stateRef.current;
+              // mk2.00 (owner): no build tree over a live possession.
+              if (S && S.possess) return;
               const b = S && S.mode ? branchOf(S.mode) : null;
               if (b) setBranch(b);
               setBuildOpen(true);

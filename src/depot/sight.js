@@ -190,6 +190,7 @@ export function reclampReticle(SG, team, center, radius, off, toUV) {
 // clamped offset plus the impact — its height and whether a solid face
 // (occ) took the hit — or wall:false with the offset untouched when the
 // line is clean. Pure, zero draws, map-resolution like all sight.
+// mk2.00: the destination cell is tested too — see below.
 export function clampToImpact(SG, eyeY, center, off, toUV) {
   const c0 = toUV(center.x, center.z);
   const c1 = toUV(center.x + off.dx, center.z + off.dz);
@@ -197,7 +198,7 @@ export function clampToImpact(SG, eyeY, center, off, toUV) {
   const iu1 = Math.floor((c1.u + SG.halfU) / SG.cs), iv1 = Math.floor((c1.v + SG.halfV) / SG.cs);
   const du = iu1 - iu0, dv = iv1 - iv0;
   const n = Math.max(Math.abs(du), Math.abs(dv));
-  if (n < 2) return { dx: off.dx, dz: off.dz, y: 0, wall: false };
+  if (n < 1) return { dx: off.dx, dz: off.dz, y: 0, wall: false };
   const ti = Math.min(SG.nz - 1, Math.max(0, iv1)) * SG.nx + Math.min(SG.nx - 1, Math.max(0, iu1));
   const ty = SG.gnd[ti] + SIGHT_TARGET_H;
   for (let k = 1; k < n; k++) {
@@ -210,6 +211,15 @@ export function clampToImpact(SG, eyeY, center, off, toUV) {
       const tc = Math.max(0, (k - 0.5) / n);
       return { dx: off.dx * tc, dz: off.dz * tc, y, wall: SG.occ[i] > y };
     }
+  }
+  // mk2.00: the destination cell itself. The steer parks the reticle ON a
+  // wall's own cell (the ground behind it is dark), and mk1.99's march —
+  // canSee's convention — never tested that cell, so the ring fell flat at
+  // the wall's foot. A solid standing taller than man height in the
+  // reticle's own cell takes the hit on its near face, half a cell short.
+  if (SG.occ[ti] > ty) {
+    const tc = Math.max(0, (n - 0.5) / n);
+    return { dx: off.dx * tc, dz: off.dz * tc, y: ty, wall: true };
   }
   return { dx: off.dx, dz: off.dz, y: 0, wall: false };
 }
