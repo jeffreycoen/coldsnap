@@ -39,6 +39,7 @@ The owner directs design, reviews every plan, and is the sole playtester. His wo
 - Stop after every task: report the landing, then the owner's word rules the next dispatch. A landing includes the deploy — gates green → commit → push, without asking; the owner's live check is the acceptance.
 - "Status" on a running agent means CHECK IT: real elapsed time, what the tree shows changed, which gates have run. Facts only; NO completion estimates ever; no vague times. Unknowable state is said plainly, with the real elapsed time anyway.
 - "Deep status" means a full operation report — done / in-flight / pending / open questions, agent reports, commits, the next gate — never re-verification runs.
+- Gates in dispatch briefs run through `node scripts/gate.mjs <name>`; every run appends one line to `.superpowers/gates.log`, and a status check on a running task reads that tail. CI calls the gates directly and never writes the log.
 - Every dispatch carries a pre-verified reading list, trap notes, and a required read-confirmation opening the agent's report.
 - Agents verify mechanics, never feel. Look, feel, and sound belong to the owner alone.
 
