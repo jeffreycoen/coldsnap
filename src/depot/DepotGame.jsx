@@ -21,6 +21,7 @@ import { windAt } from "./wind.js";
 import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, takeHandCard, TIER_BELLS, memberNearRow, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType, scoreKill, placeZoneMask, POSSESS_ACC, stickyLock, stepGrenades, stepDavyShot } from "./state.js";
 import { marketCounts, computePrices, fieldPrices, priced } from "./market.js";
 import { stepMines, minePrices, mineSeedRoll, mineSeedPlace, MINE_COST, WIRE_COST } from "./mines.js";
+import { addFogPatch, stepFog } from "./fog.js";
 import { homeShare, pickHomeDetail, HOME_GUARD_CAP, cmdrOf, cmdrBellOrders, ferryDecide, flankDrop } from "./ai.js";
 import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic, roomMaskPublic, drivePossessedSquad, clearSlot, stepMedicTendSquad, stepMechanicTendSquad } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached, scatterSigma, predictRing } from "./accuracy.js";
@@ -1331,6 +1332,9 @@ export default function DepotGame({ onExit, resume = null }) {
         // P7 T10: MINES AND TRIPWIRES — watched points, never bodies.
         // { x, z, team, kind: "mine"|"wire", live }. Saved verbatim (save.js).
         mines: [],
+        // mk2.09: THE GREEN FOG — the atomic blast's poison patches.
+        // Watched points, saved like mines. { x, z, r, until (sim clock) }.
+        fog: [],
         // P7 T2: the selected vehicle's own selection/order state — the
         // squad selection fields' exact shape, one Bison at a time.
         selVehId: null, vehOrderMode: null,
@@ -1409,6 +1413,7 @@ export default function DepotGame({ onExit, resume = null }) {
         S.nextSquadId = r.nextSquadId;
         // P7 T10: watched points restore verbatim, live flags included.
         S.mines = (r.mines || []).map((m) => ({ x: m.x, z: m.z, team: m.t, kind: m.k, live: !!m.l }));
+        S.fog = (r.fog || []).map((p) => ({ x: p.x, z: p.z, r: p.r, until: p.u }));
         // Step 6, last: the ground remembers. Every mark where a man fell is
         // replayed through the same paint the kill handler uses, so the snow
         // comes back stained exactly as it was left. Scorch and tread
@@ -2841,6 +2846,8 @@ export default function DepotGame({ onExit, resume = null }) {
           for (const id of structHp.keys()) if (!world.byId.get(id)) structHp.delete(id);
         }
         for (const e of evs) {
+          // mk2.09: the davy's boom seeds the poison ground where it burst.
+          if (e.type === "boom" && e.weapon === "davy") addFogPatch(S.fog, e.x, e.z, world.t);
           if (e.type !== "kill") continue;
           // THE KILL LAW (mk1.93): every attributed death pays and scores here.
           scoreKill(S, e, S._market ? S._market.counts : null);
@@ -3543,6 +3550,8 @@ export default function DepotGame({ onExit, resume = null }) {
           // accumulator (NOT per sim tick). Cheap: setMines only rewrites the
           // two instanced pools when a device actually fired this tick.
           if (terrGuard > 0) { stepMines(world, S.mines); R.setMines(S.mines); }
+          // mk2.09: THE GREEN FOG ticks on the same clock the mines do.
+          if (terrGuard > 0 && S.fog.length) stepFog(world, S.fog, TERR_STEP);
           // P7 T17: dead bags release their ground — same cadence as the
           // other derived overlays; bagId cells are few.
           if (terrGuard > 0) for (const c of grid.cells) {
@@ -3679,6 +3688,7 @@ export default function DepotGame({ onExit, resume = null }) {
           // land outside it. For a squad the bound is drawn from the
           // farthest living shooter — every member's cone lands inside.
           R.setGrenades(world._grenades, world.t); // mk2.04: the grenade is seen — green, blinking red, quickening
+          R.setGreenFog(S.fog, world.t); // mk2.09: the poison ground, seen
           let rr9 = 1.2, hit9 = null, ctr9 = null, pts9 = null;
           if (S.possess && S.reticle) {
             const P9 = S.possess;

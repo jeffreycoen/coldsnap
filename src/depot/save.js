@@ -278,6 +278,9 @@ export function serializeFront(ctx) {
       // other saved coordinate. Defaulted (S.mines || []) so a fixture/state
       // object built before this task (no mines field at all) still saves.
       mines: (S.mines || []).map((m) => ({ x: r3(m.x), z: r3(m.z), t: m.team, k: m.kind, l: m.live ? 1 : 0 })),
+      // mk2.09: THE GREEN FOG — poison patches, watched points like mines.
+      // `until` is an absolute sim-clock stamp; world.t rides the save too.
+      fog: (S.fog || []).map((p) => ({ x: r3(p.x), z: r3(p.z), r: r3(p.r), u: r3(p.until) })),
     },
     towns: town.map((b) => ({ id: b.id, n0: b.n0, ruined: !!b.ruined })),
     census: cens(census), census2: cens(census2),

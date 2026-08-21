@@ -1341,6 +1341,38 @@ export function makeRenderer(canvas, world0, opts = {}) {
     grenMesh.count = gi; grenMesh.instanceMatrix.needsUpdate = true;
   }
 
+  // mk2.09: THE GREEN FOG — poison ground haze. Camera-facing instanced
+  // planes over each patch; every offset and bob phase derives from the
+  // patch's own position and world time (no rng — house rule). The last
+  // five seconds thin to nothing. Phone and desktop draw the same pool.
+  const FOGP_CAP = 96, FOGP_PER = 12;
+  const fogpMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3, depthWrite: false });
+  const fogpMesh = pool(new THREE.PlaneGeometry(2.6, 1.6), fogpMat, FOGP_CAP, false); fogpMesh.layers.set(1);
+  const _fogG1 = new THREE.Color(0x39e05a), _fogG2 = new THREE.Color(0x1d7a33);
+  function setGreenFog(list, t) {
+    let fi = 0;
+    if (list) for (const p of list) {
+      const left = p.until - t;
+      if (left <= 0) continue;
+      const a = Math.min(1, left / 5);
+      for (let k = 0; k < FOGP_PER && fi < FOGP_CAP; k++) {
+        const ph = p.x * 3.7 + p.z * 1.9 + k * 2.399;
+        const rr = (0.25 + 0.65 * ((k * 37 % 16) / 16)) * p.r;
+        const az = ph + t * 0.13;
+        const bx = p.x + Math.cos(az) * rr, bz = p.z + Math.sin(az) * rr;
+        const by = F.heightAt(bx, bz) + 0.5 + 0.45 * Math.sin(t * 0.7 + ph);
+        dummy.position.set(bx, by, bz); dummy.quaternion.copy(camQ);
+        const s = (0.8 + 0.5 * Math.sin(t * 0.5 + ph * 1.7)) * a;
+        dummy.scale.set(s * 2.2, s, 1); dummy.updateMatrix();
+        fogpMesh.setMatrixAt(fi, dummy.matrix);
+        if (fogpMesh.setColorAt) fogpMesh.setColorAt(fi, k % 3 ? _fogG1 : _fogG2);
+        fi++;
+      }
+    }
+    fogpMesh.count = fi; fogpMesh.instanceMatrix.needsUpdate = true;
+    if (fogpMesh.instanceColor) fogpMesh.instanceColor.needsUpdate = true;
+  }
+
   // ---- build overlay (tower defense): ghost pad + range preview + objective
   // marker + spawn banners. Lazy nulls until the game layer calls them, so
   // nothing here exists for the other modes.
@@ -2386,5 +2418,5 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // never calls this and keeps the shipped look exactly
   function setGrade(g) { postMat.uniforms.uGrade.value = Math.max(-1, Math.min(1, g || 0)); }
   const project = (x, y, z) => { const v = new THREE.Vector3(x, y, z); v.project(cam); return { x: v.x, y: v.y }; };
-  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, overlay, setDressing, setMines, setGrenades, rotateStep, rotateBy, updateTerritory, setFog, setHealth, getFogDebug, chunkStats: () => chunkStats, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
+  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, overlay, setDressing, setMines, setGrenades, setGreenFog, rotateStep, rotateBy, updateTerritory, setFog, setHealth, getFogDebug, chunkStats: () => chunkStats, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
 }

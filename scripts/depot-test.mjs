@@ -31,4 +31,5 @@ await import("./tests/14-the-placement-law.mjs");
 await import("./tests/15-the-open-siege.mjs");
 await import("./tests/16-the-deep-floor.mjs");
 await import("./tests/17-the-davy-crockett.mjs");
+await import("./tests/18-the-green-fog.mjs");
 finish();

@@ -493,7 +493,13 @@ function segBoxHit(p0, p1, b, outAxis) {
   return tmin;
 }
 export function explode(world, x, y, z, spec) {
-  world.events.push({ type: "boom", x, y, z, r: spec.r, kind: spec.kind || "shell" });
+  const bev = { type: "boom", x, y, z, r: spec.r, kind: spec.kind || "shell" };
+  // DIVERGENCE (guarded, additive, mk2.09): the boom names WHICH GUN burst
+  // when the spec says so — the muzzle event's mk0.56 weapon-tag precedent,
+  // one event over. Events are never hashed; specs without the tag (the
+  // demo, tower defense, campaign) push the exact old shape.
+  if (spec.weapon) bev.weapon = spec.weapon;
+  world.events.push(bev);
   world.scare = { x, z, t: world.t };
   const c = v3(x, y, z);
   // blast occlusion: solids and terrain between the burst and a body cast a shadow.
