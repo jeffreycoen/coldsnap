@@ -21,6 +21,7 @@ The owner directs design, reviews every plan, and is the sole playtester. His wo
 - Every task plan carries its required-reading list and a suggested model (Sonnet or Fable, one-line reason); the owner rules on it at approval.
 - Verbatim-move tasks carry an INVENTORY of what moves, a SUBSTITUTION TABLE of every token allowed to differ (an unlisted difference stops the agent), and an ARITHMETIC acceptance — keystone hash and draw count, or the suite's exact pass count. Numbers ratify moves, never judgment.
 - **SYMMETRY IS LAW.** Whatever one side can do, buy, build, or suffer, the other can. Every asymmetry, however small or temporary, needs the owner's explicit ruling, recorded as knowing with its closing task named; a plan that finds symmetry inconvenient asks.
+- **Before any plan is served,** the plan-writer checks it: every code block gets a syntax pass, and every key name, field, and anchor in it is grepped against the live tree. A plan with unchecked code never reaches the owner.
 - The owner approves the plan before any code. No open design questions inside a plan.
 - Pause between the design questions and the writing — the owner says when the plan gets written. Every time.
 - Every amendment is served for review before any dispatch on it; approval of the original does not carry.
