@@ -17,7 +17,7 @@ import fs from "node:fs";
 
 // ==== P6 T1: the path that walks around =====================================
 // mk1.10 (Troops & Physics, Task 1). Squad marches follow a computed route
-// on the movement grid: around masonry, through the causeway. The leg
+// on the movement grid: around masonry. The leg
 // machine consumes waypoints; routes are drawn/redrawn by the game layer.
 // Zero new rng; the one-draw-per-leg contract is untouched.
 {
@@ -60,36 +60,8 @@ import fs from "node:fs";
   ok("P6T1: the map module extracts with planRoute and stepSquadRouting", M1ok);
 
   if (M1ok) {
-    // (a) the causeway: on 10 seeds, a route across the stream passes within
-    // the causeway's exemption (|u - bridgeU| < 3) as it crosses the water line.
-    let crossed = 0, attempted = 0;
-    for (let s = 1; s <= 10; s++) {
-      const Mi = mk1(); Mi.makeMap(s * 613);
-      const st = Mi.state();
-      const g = Mi.makeGrid(null);
-      const a = Mi.fwdU(0, st.STREAM.v + 20), d = Mi.fwdU(0, st.STREAM.v - 20);
-      const route = Mi.planRoute(g, a.x, a.z, d.x, d.z);
-      if (!route) continue;   // re-pinned mk1.32 (P7 T3): seed 10 (6130) now
-      // lands its fixed start point on a rock (genMap's shifted rng stream —
-      // the new cornerSide draw moves every downstream draw) — unrelated to
-      // the causeway itself, so it's excluded from the denominator below
-      // rather than counted as a causeway miss.
-      attempted++;
-      let okX = false;
-      let px = a.x, pz = a.z;
-      for (const p of route.pts) {
-        const segL = Math.hypot(p.x - px, p.z - pz);
-        for (let sd = 0; sd <= segL; sd += 0.5) {
-          const c = Mi.invW(px + (p.x - px) * (sd / (segL || 1)), pz + (p.z - pz) * (sd / (segL || 1)));
-          if (Math.abs(c.v - st.STREAM.v) < 3 && Math.abs(c.u - st.STREAM.bridgeU) < 3.5) { okX = true; break; }
-        }
-        if (okX) break;
-        px = p.x; pz = p.z;
-      }
-      if (okX) crossed++;
-    }
-    ok("P6T1(a) (re-pinned mk1.32, P7 T3): routes cross the stream at the causeway (9/9 reachable seeds; 1/10 starts on a rock)",
-      crossed === attempted && attempted >= 9, `${crossed}/${attempted} attempted (of 10 seeds)`);
+    // (a) RETIRED (mk1.94, owner): the stream is switched off — there is no
+    // causeway to cross. (b) below still proves routing around masonry.
 
     // (b) around, not through: a route past the biggest building never enters
     // a blocked cell, and ends within a cell of its destination.

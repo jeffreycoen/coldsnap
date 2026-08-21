@@ -163,11 +163,12 @@ import fs from "node:fs";
 }
 // ==== end FRONT T2 ===========================================================
 
-// ==== FRONT T3: the stream and the causeway =================================
-// mk1.02 (The Front, Task 3). One stream per map: full-width, carved, water
-// at 0.78 over a 0.2 bed, ONE causeway crossing at bridgeU. Water blocks the
-// grid (both sides' movement) and the squads' slot family; orders tapped on
-// water are refused; nothing drowns.
+// ==== FRONT T3: the water, switched off =====================================
+// mk1.02 (The Front, Task 3) drew one stream per map; mk1.94 (owner) switches
+// it off — the water made too many impassable places. The generator draws no
+// stream on any seed and the grid carries no water cell. The water machinery
+// (grid blocking, slot refusals, order toasts, ribbons) stays, dormant and
+// pinned below, for the day it returns.
 {
   console.log("\n[front t3: the stream and the causeway]");
   const src = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
@@ -204,57 +205,19 @@ import fs from "node:fs";
   ok("T3: the map module extracts with streamAt and STREAM state", M3ok);
 
   if (M3ok) {
-    // (a) every seed carries a full-width stream inside the safe band
-    let has = 0, safe = 0, blockedMid = 0, openCauseway = 0;
+    // (a) STREAM OFF (mk1.94, owner): no seed draws a stream; no grid cell
+    // carries water. Same 20 seeds the old stream sweep rode.
+    let drawn = 0, waterCells = 0;
     for (let s = 1; s <= 20; s++) {
       const Mi = mkMapT3(); Mi.makeMap(s * 331);
       const st = Mi.state();
-      if (!st.STREAM) continue;
-      has++;
-      if (Math.abs(st.STREAM.v) <= 33.01 && st.STREAM.pts[0].u === -90 && st.STREAM.pts[st.STREAM.pts.length - 1].u === 90) safe++;
-      // (b) the grid: mid-channel cells block; the causeway stays open
+      if (st.STREAM) drawn++;
       const g = Mi.makeGrid(null);
-      // a centerline point at least 12m from the causeway
-      const P = st.STREAM.pts.find((q) => Math.abs(q.u - st.STREAM.bridgeU) > 12);
-      if (P) {
-        const wMid = fwdUFor(st.ORIENT, P.u, P.v);
-        const gm = g.worldToGrid(wMid.x, wMid.z);
-        if (g.inBounds(gm.gx, gm.gz) && g.cells[g.idx(gm.gx, gm.gz)].blocked) blockedMid++;
-      } else blockedMid++; // no point that far out is a geometry fluke, not a fail
-      const wCw = fwdUFor(st.ORIENT, st.STREAM.bridgeU, st.STREAM.v);
-      const gc = g.worldToGrid(wCw.x, wCw.z);
-      if (g.inBounds(gc.gx, gc.gz) && !g.cells[g.idx(gc.gx, gc.gz)].blocked) openCauseway++;
+      for (const c of g.cells) if (c.water) waterCells++;
     }
-    ok("T3(a): every seed carries a stream", has === 20, `${has}/20`);
-    ok("T3(a): the stream spans the full width inside |v| <= 33", safe === 20, `${safe}/20`);
-    ok("T3(b): mid-channel grid cells are blocked", blockedMid === 20, `${blockedMid}/20`);
-    ok("T3(b): the causeway cell stays open", openCauseway === 20, `${openCauseway}/20`);
-
-    // (c) the carve: bed below the waterline mid-channel, causeway above it.
-    // re-pinned mk1.45 (P7 T15): the square grew — seed 13's causeway crown
-    // drifted to 0.80 (was comfortable); the old special-cased seed (the T6
-    // keystone's own) keeps solid margin (0.86) under the reshaped world.
-    // re-pinned mk1.72 (P7.1 T8): THE SEED PURGE — that old seed leaves the
-    // suite; seed 1001 (first of the 1001-1010 candidates) holds both
-    // thresholds under the reshaped world.
-    {
-      const Mi = mkMapT3(); Mi.makeMap(1001);
-      const st = Mi.state();
-      const field = makeField(181, 2.0, st.MAP_SEED);
-      Mi.buildDepotTerrain(field, st.MAP_SEED);
-      const P = st.STREAM.pts.find((q) => Math.abs(q.u - st.STREAM.bridgeU) > 12) || st.STREAM.pts[0];
-      const wMid = fwdUFor(st.ORIENT, P.u, P.v);
-      const wCw = fwdUFor(st.ORIENT, st.STREAM.bridgeU, st.STREAM.v);
-      ok("T3(c): mid-channel bed sits below the 0.78 waterline", field.heightAt(wMid.x, wMid.z) < 0.75, field.heightAt(wMid.x, wMid.z).toFixed(2));
-      ok("T3(c): the causeway crown sits above the waterline", field.heightAt(wCw.x, wCw.z) > 0.85, field.heightAt(wCw.x, wCw.z).toFixed(2));
-    }
-
-    // (d) determinism: same seed, identical stream
-    {
-      const A = mkMapT3(); A.makeMap(7717);
-      const B = mkMapT3(); B.makeMap(7717);
-      ok("T3(d): twin determinism — identical STREAM", JSON.stringify(A.state().STREAM) === JSON.stringify(B.state().STREAM));
-    }
+    ok("T3(a): the stream is off — no seed draws one", drawn === 0, `${drawn}/20 drawn`);
+    ok("T3(a): no grid cell carries water on any seed", waterCells === 0, `${waterCells} water cells`);
+    ok("T3(a): the off-switch exists and is off", /export const STREAM_ON = false;/.test(mgSrcT3));
   }
 
   // (e) squads refuse water ground: the slot family reads world.streamAt
@@ -476,7 +439,7 @@ import fs from "node:fs";
 
   if (M5ok) {
     // (a) the sweep: hills and trees inside their ruled bounds on every seed
-    let hillLo = 99, hillHi = 0, hillShape = 0, hillStream = 0, nHillsTotal = 0;
+    let hillLo = 99, hillHi = 0, hillShape = 0, nHillsTotal = 0;
     let treeLo = 9999, treeHi = 0, treeFoul = 0, woodedHills = 0, worstTreeSeed = 0;
     for (let s = 1; s <= 40; s++) {
       const Mi = mkMapT5(); Mi.makeMap(s * 907);
@@ -485,7 +448,6 @@ import fs from "node:fs";
       nHillsTotal += st.HILLS.length;
       for (const hb of st.HILLS) {
         if (hb.h >= 3 && hb.h <= 5.01 && hb.r >= 10 && hb.r <= 15.01) hillShape++;
-        if (Math.abs(hb.v - st.STREAM.v) >= hb.r + 9.9) hillStream++;
       }
       const plan = Mi.planTrees();
       if (plan.length > treeHi) { treeHi = plan.length; worstTreeSeed = s * 907; }
@@ -506,7 +468,7 @@ import fs from "node:fs";
     }
     ok("T5(a): every seed draws 1-3 hills, never zero", hillLo >= 1 && hillHi <= 3, `${hillLo}-${hillHi}`);
     ok("T5(a): every hill is demo-sized (h 3-5, r 10-15)", hillShape === nHillsTotal, `${hillShape}/${nHillsTotal}`);
-    ok("T5(a): every hill keeps its flank off the stream", hillStream === nHillsTotal, `${hillStream}/${nHillsTotal}`);
+    // (the hill-off-the-stream clearance retired with the stream, mk1.94)
     ok("T5(a): tree counts stay inside the budget (25-340 per seed)", treeLo >= 25 && treeHi <= 340, `${treeLo}-${treeHi} (worst seed ${worstTreeSeed})`);
     ok("T5(a): no planned tree stands in rock, water, a building, or off the rim", treeFoul === 0, `${treeFoul} fouls`);
     ok("T5(a): every hill is wooded (3+ trees on its flanks)", woodedHills === nHillsTotal, `${woodedHills}/${nHillsTotal}`);
@@ -575,8 +537,8 @@ import fs from "node:fs";
   // special-cased seed leaves the suite; the keystone's anchor moves to
   // 1000, an ordinary seed with no special standing. Hash and draws
   // re-measured off this block's own printed console log.
-  const T6_HASH = 843448507;   // was 3465970090 (old seed -> 1000)
-  const T6_DRAWS = 749;  // was 695 (old seed -> 1000)
+  const T6_HASH = 1818478037;   // was 843448507 (the stream switched off, mk1.94)
+  const T6_DRAWS = 461;  // was 749 (the stream switched off, mk1.94)
   const src6 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   // P7 T18: sliceFn6 checks DepotGame.jsx first, then mapgen.js for moved names.
   const mgSrc6 = fs.readFileSync(new URL("../../src/depot/mapgen.js", import.meta.url), "utf8");

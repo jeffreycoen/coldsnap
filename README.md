@@ -14,7 +14,7 @@ Destruction here is structural, not scripted. Every building is individual stone
 
 - **The physics engine is written from scratch in plain JavaScript.** No game engine, no physics library, no WebAssembly. Three.js pushes the triangles; React draws the menus.
 - **Deterministic to the bit.** No hidden randomness anywhere. Same seed, same valley; same actions, same war — provable by hash, and tested that way on every push.
-- **Every valley is drawn fresh.** A 180-meter square of hills, forests, a stream with one crossing, villages — and two fortress depots pressed into opposite corners. No two wars share ground. `?seed=` replays a specific one.
+- **Every valley is drawn fresh.** A 180-meter square of hills, forests, villages — and two fortress depots pressed into opposite corners. No two wars share ground. `?seed=` replays a specific one.
 - **The war deals your opening hand.** Four units dealt to each side, shown card by card — with a live portrait of the real model — and placed by hand near your depot. No two wars open alike. Armor, when dealt or bought, drives like the rest: order it like a squad or take the controls; riders seal into the hold and share the hull's fate. Replacement comes late and dear.
 - **The ground bites.** Sappers lay mines and tripwires that the other side never sees — minefields are learned by loss, in both directions.
 - **The enemy lives under your rules.** Same physics, same shared market, same prices, same purchase pacing — and a commander personality drawn fresh each war decides when their armor rides out. Symmetry is law.

@@ -36,6 +36,12 @@ export const clampToRim = (x, z) => clampToRimFor(ORIENT, x, z, RIM_HALF_U, RIM_
 export let OBJ_POS = { x: 0, z: 49 };
 export let SPAWN_POINTS = [], PONDS = [], ROCKS = [], TOWN = [], ROADS = [], PASSES = [], BANDS = [], MAP_SEED = 0, SPAWN_U = [];
 export let STREAM = null; // T3: { pts:[{u,v}...], w, v, bridgeU } — canonical, regrown from seed
+// STREAM OFF (mk1.94, owner): the water made too many impassable places. One
+// switch guards the draw, the road bend and every clearance in genMap; the
+// downstream machinery (the carve, grid water, slot and order refusals, the
+// ribbons) already keys off STREAM staying null and waits dormant. Flip to
+// true and the stream returns whole.
+export const STREAM_ON = false;
 export let HILLS = []; // T5: [{u, v, r, h}...] — canonical, regrown from seed
 
 export function genMap(seed) {
@@ -67,16 +73,19 @@ export function genMap(seed) {
   // Drawn here (right after the bands, ahead of rocks) so every clearance
   // chain below — rocks, spawns-adjacent ponds, benches, ruins — can read
   // streamV; genMap's rng is its own free stream, so the draw order is ours.
-  let streamV = (bands[0] + bands[1]) / 2;   // fallback: between the first two bands
-  for (let i = 0; i < 20; i++) {
-    const v = -33 + r() * 66;
-    if (bands.every((b) => Math.abs(v - b) >= 8)) { streamV = v; break; }
+  let stream = null, streamV = 0, bridgeU = 0;
+  if (STREAM_ON) {
+    streamV = (bands[0] + bands[1]) / 2;   // fallback: between the first two bands
+    for (let i = 0; i < 20; i++) {
+      const v = -33 + r() * 66;
+      if (bands.every((b) => Math.abs(v - b) >= 8)) { streamV = v; break; }
+    }
+    const streamW = 2.2 + r() * 1.8;         // half-width: a 4.4-8m channel // provisional (F5)
+    bridgeU = (r() - 0.5) * 135;
+    const streamPts = [];
+    for (let u = -90; u <= 90; u += 15) streamPts.push({ u, v: streamV + (r() - 0.5) * 6 });
+    stream = { pts: streamPts, w: streamW, v: streamV, bridgeU };
   }
-  const streamW = 2.2 + r() * 1.8;           // half-width: a 4.4-8m channel // provisional (F5)
-  const bridgeU = (r() - 0.5) * 135;
-  const streamPts = [];
-  for (let u = -90; u <= 90; u += 15) streamPts.push({ u, v: streamV + (r() - 0.5) * 6 });
-  const stream = { pts: streamPts, w: streamW, v: streamV, bridgeU };
   const rocks = [];
   for (let bi = 0; bi < bands.length; bi++) {
     const density = 0.35 + r() * 0.65;
@@ -86,7 +95,7 @@ export function genMap(seed) {
       if (passes[bi].some((g) => Math.abs(x - g.x) < 6.5)) continue;
       // T2: a wandering depot can meet a band — rocks keep 12m off both
       if (Math.hypot(x - depotU1, z - depotDepth) < 12 || Math.hypot(x - depotU2, z + depotDepth) < 12) continue;
-      if (Math.abs(z - streamV) < 9) continue; // T3: rocks stay clear of the stream
+      if (STREAM_ON && Math.abs(z - streamV) < 9) continue; // T3: rocks stay clear of the stream
       rocks.push({ x, z, r: 3.4 + r() * 1.2, h: 3.0 + r() * 0.9 });
     }
   }
@@ -104,10 +113,10 @@ export function genMap(seed) {
     let bridged = false;
     for (const band of passes) {
       const g = band[Math.floor(r() * band.length)];
-      if (!bridged && g.z > streamV) { pts.push([bridgeU, streamV]); bridged = true; }
+      if (STREAM_ON && !bridged && g.z > streamV) { pts.push([bridgeU, streamV]); bridged = true; }
       pts.push([g.x, g.z]);
     }
-    if (!bridged) pts.push([bridgeU, streamV]);
+    if (STREAM_ON && !bridged) pts.push([bridgeU, streamV]);
     pts.push([objU, objV]);
     roads.push(pts);
   }
@@ -130,7 +139,7 @@ export function genMap(seed) {
     // T2: clear of BOTH depots (the old check knew one fixed objective)
     if (Math.hypot(x - depotU1, z - depotDepth) < 16 || Math.hypot(x - depotU2, z + depotDepth) < 16) continue;
     if (ponds.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 6)) continue;
-    if (Math.abs(z - streamV) < rad + 10) continue; // T3: ponds stay clear of the stream
+    if (STREAM_ON && Math.abs(z - streamV) < rad + 10) continue; // T3: ponds stay clear of the stream
     ponds.push({ x, z, r: rad, level: 0 });
   }
   // T5: THE HIGH GROUND (owner's rulings: 1-3 hills, never zero; overlook
@@ -141,7 +150,7 @@ export function genMap(seed) {
   for (let k = 0, placed = 0; k < 60 && placed < nHills; k++) {
     const hu = -72 + r() * 144, hv = -69 + r() * 132;
     const hr = 10 + r() * 5, hh = 3 + r() * 2;
-    if (Math.abs(hv - streamV) < hr + 10) continue;
+    if (STREAM_ON && Math.abs(hv - streamV) < hr + 10) continue;
     if (ponds.some((q) => Math.hypot(hu - q.x, hv - q.z) < q.r + hr * 0.7 + 4)) continue;
     if (roadDist(hu, hv) < hr * 0.7 + 4) continue;
     hills.push({ u: hu, v: hv, r: hr, h: hh });
@@ -197,7 +206,7 @@ export function genMap(seed) {
     if (rocks.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 1.5)) continue;
     if (roadDist(x, z) < rad + 3) continue;
     if (town.some((q) => Math.hypot(x - q.x, z - q.z) < rad + Math.max(q.nx, q.nz) * MASON.pitch / 2 + 2.5)) continue;
-    if (Math.abs(z - streamV) < rad + 9) continue;
+    if (STREAM_ON && Math.abs(z - streamV) < rad + 9) continue;
     town.push({ id: tpl.t + bid++, x, z, nx, nz, ny: tpl.ny,
       door: tpl.drive ? -1 : (r() < 0.5 ? 0 : nx - 1),
       slab: tpl.slab, drive: tpl.drive, cols: tpl.cols });
@@ -220,7 +229,7 @@ export function genMap(seed) {
       if (ponds.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 3)) continue;
       if (rocks.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 1.5)) continue;
       if (town.some((q) => Math.hypot(x - q.x, z - q.z) < rad + Math.max(q.nx, q.nz) * MASON.pitch / 2 + 2.5)) continue;
-      if (Math.abs(z - streamV) < rad + 9) continue; // T3: bench buildings stay clear of the stream
+      if (STREAM_ON && Math.abs(z - streamV) < rad + 9) continue; // T3: bench buildings stay clear of the stream
       const decay = r() < 0.2 ? 0.12 + r() * 0.3 : 0;
       town.push({ id: tpl.t + bid++, x, z, nx, nz, ny: tpl.ny, door: r() < 0.5 ? 0 : nx - 1, roof: tpl.roof, ruin: decay || undefined, cols: tpl.cols });
       placed++;
@@ -231,7 +240,7 @@ export function genMap(seed) {
     const x = -75 + r() * 150, z = -depotDepth + r() * 30;
     if (spawns.some((sp) => Math.hypot(x - sp.x, z - sp.z) < 10)) continue;
     if (town.some((q) => Math.hypot(x - q.x, z - q.z) < 10)) continue;
-    if (Math.abs(z - streamV) < 9) continue; // T3: old ruins stay clear of the stream
+    if (STREAM_ON && Math.abs(z - streamV) < 9) continue; // T3: old ruins stay clear of the stream
     town.push({ id: "oldruin" + placed, x, z, nx: 4, nz: 4, ny: 3, door: 0, ruin: 0.5 });
     placed++;
   }
@@ -252,7 +261,7 @@ export function genMap(seed) {
     if (rocks.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 1.5)) continue;
     if (roadDist(x, z) < rad + 2.5) continue;
     if (town.some((q) => Math.hypot(x - q.x, z - q.z) < rad + Math.max(q.nx, q.nz) * MASON.pitch / 2 + 2)) continue;
-    if (Math.abs(z - streamV) < rad + 9) continue;
+    if (STREAM_ON && Math.abs(z - streamV) < rad + 9) continue;
     town.push({ id: "fwall" + placed, x, z, nx, nz, ny: H, door: -1, roof: false });
     placed++;
   }
