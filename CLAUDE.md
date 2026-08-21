@@ -13,7 +13,7 @@ The project owner directs design, reviews every plan, and is the sole playtester
 - Answer like a vending machine or an ATM: state, result, done. Minimal words, plain words, complete sentences. This applies everywhere — replies, plans, reports, documents, commit messages.
 - Never long or verbose. The owner asks when he wants more detail.
 - No jargon or acronyms in anything he reads.
-- Never say the session is waiting on the owner ("waiting on you", "ready when you are"). State the state; he knows whose move it is.
+- Never say the session is waiting on the owner ("waiting on you", "ready when you are", "blocked on owner"). State the state; he knows whose move it is. (Owner, 2026-08-20: "blocked on owner" is banned everywhere, deep status included — the category is "open questions".)
 - The enemy AI is "it" or "the enemy" — never "he"/"his" (owner, 2026-08-20). Shipped document titles keep their names; all new prose complies.
 - **All markdown documents are served to the owner rendered** — never just a file path.
 
@@ -43,7 +43,7 @@ The project owner directs design, reviews every plan, and is the sole playtester
 - One agent in the working tree at a time, sequential. Parallel work requires worktree isolation.
 - **Stop after every task.** A task landing is a stop: report it and wait for the owner's word before the next dispatch. Plan approval approves the plan, not an unattended run of it.
 - **A landing includes the deploy:** gates green → commit → push, without asking — the owner's live check IS the acceptance step. The stop rule governs the next dispatch, never the deploy of the finished task.
-- **"Deep status"** from the owner means a full state report on the current operation (done / in-flight / pending / blocked-on-owner, agent reports, commits, the next gate) — never independent re-verification runs.
+- **"Deep status"** from the owner means a full state report on the current operation (done / in-flight / pending / open questions, agent reports, commits, the next gate) — never independent re-verification runs.
 - **"Status" on a running agent means CHECK IT.** Query the task runner's live state and report FACTS ONLY: wall-clock elapsed since dispatch, what the tree shows changed, which gates have run. **NO estimates of time to completion or time remaining — ever** (owner, 2026-08-19). Never answer with a dispatch restatement, the task's step list, "still running" alone, or vague times ("a few minutes ago"). If the live state is unknowable, say exactly that — and still give the real elapsed time.
 - Every dispatch carries: a pre-verified reading list (anchors checked against live code at dispatch), trap notes, and a required read-confirmation opening the agent's report.
 - Agents verify **mechanics, never feel**. Perceptibility, look, and sound acceptance belong to the owner alone.
