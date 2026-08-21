@@ -4,7 +4,7 @@ The owner directs design, reviews every plan, and is the sole playtester. His wo
 
 **Authority:** this file, the ACTIVE phase's plan documents, and the owner's word — nothing else. This file outranks session memory and conversation summaries; a stale copy gets corrected, never followed. There is no decision log. New rulings are written into the plan document they govern, at ruling time. Ship history lives in git.
 
-**Orientation (orchestrator only, before any work):** read the last ~20 commit subjects. Dispatched agents read only their brief's verified list. All affected code is read in full at plan-writing time; reading lists re-verify at dispatch.
+**Orientation (orchestrator only, before any work):** read the last ~20 commit subjects — nothing more. Plan documents are read only when the owner directs it. Dispatched agents read only their brief's verified list. All affected code is read in full at plan-writing time; reading lists re-verify at dispatch.
 
 ## Speech
 
