@@ -792,7 +792,7 @@ function DraftScreen({ cards, onConfirm }) {
             <div key={c.k} data-draft-card={c.k} data-draft-kind={c.plan ? "plan" : "unit"}
               onClick={() => toggle(c.k)}
               style={{ ...P.slot, minWidth: 88, minHeight: 44, borderColor: on ? "#4aff8c" : "#48515f", background: on ? "rgba(74,255,140,0.12)" : "#1a212b" }}>
-              <div style={{ fontSize: 16 }}>{it ? it.icon : "?"}</div>
+              <div style={{ fontSize: 16, color: c.k === "sq_davy" ? "#f5d020" : undefined }}>{it ? it.icon : "?"}</div>
               <div>{it ? it.label : c.k}</div>
               <div style={{ fontSize: 10, opacity: 0.7, color: c.plan ? "#9fd4e4" : "#ffd27a" }}>{c.plan ? "PLAN" : "UNIT"}</div>
             </div>
@@ -4457,7 +4457,7 @@ export default function DepotGame({ onExit, resume = null }) {
                 <button key={ci + ":" + c.k} data-manifest-offer={c.k} data-hand-kind={c.hire ? "hire" : "plan"}
                   style={{ ...P.btnBig, width: "100%", marginBottom: 6, display: "flex", alignItems: "center", gap: 10, textAlign: "left", opacity: hud.manifest.armed ? 1 : 0.5 }}
                   onClick={() => { const S = stateRef.current; if (S && S.openInfo) S.openInfo(c.k, c.hire ? "hire" : "manifest"); }}>
-                  <span style={{ fontSize: 18 }}>{it.icon}</span>
+                  <span style={{ fontSize: 18, color: c.k === "sq_davy" ? "#f5d020" : undefined }}>{it.icon}</span>
                   <span style={{ flex: 1 }}>{it.label}</span>
                   <span style={{ color: c.hire ? "#7dffa8" : "#ffd27a", fontSize: 11, letterSpacing: 1 }}>{c.hire ? "HIRE" : "PLAN"} ◆{c.price}</span>
                 </button>
@@ -4710,7 +4710,7 @@ export default function DepotGame({ onExit, resume = null }) {
                 onClick={() => setMode(p.key)}>
                 <div data-info={p.key} onClick={(e) => { e.stopPropagation(); const S = stateRef.current; if (S && S.openInfo) S.openInfo(p.key, "bar"); }}
                   style={{ position: "absolute", top: 0, right: 2, fontSize: 12, opacity: 0.65, padding: "2px 4px", cursor: "pointer" }}>ⓘ</div>
-                <div style={{ fontSize: 16 }}>{p.icon}</div>
+                <div style={{ fontSize: 16, color: p.key === "sq_davy" ? "#f5d020" : undefined }}>{p.icon}</div>
                 <div>{p.label}</div>
                 <div style={{ color: "#ffd27a" }}>◆{priceP}</div>
               </div>
