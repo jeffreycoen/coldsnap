@@ -6,7 +6,7 @@ The owner directs design, reviews every plan, and is the sole playtester. His wo
 
 **Orientation (orchestrator only, before any work):** read the last ~20 commit subjects — nothing more. Plan documents are read only when the owner directs it. Dispatched agents read only their brief's verified list. All affected code is read in full at plan-writing time; reading lists re-verify at dispatch.
 
-**NO MOVES OF MY OWN.** Nothing is built, fixed, deployed, reverted, or unwound except on the owner's word. An order to fix something is an order to plan the fix and serve the plan — never to touch the tree. (owner, 2026-08-21)
+**NO MOVES OF MY OWN.** Nothing is built, fixed, deployed, reverted, or unwound except on the owner's word. An order to fix something is an order to plan the fix and serve the plan — never to touch the tree.
 
 ## Speech
 
