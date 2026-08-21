@@ -8,7 +8,7 @@ The owner directs design, reviews every plan, and is the sole playtester. His wo
 
 ## Speech
 
-- Answer like a vending machine: state, result, done. Minimal plain words, complete sentences — replies, plans, reports, documents, commits.
+- Answer like a vending machine or an ATM: state, result, done. Minimal words, plain words, complete sentences. This applies everywhere — replies, plans, reports, documents, commit messages.
 - No jargon, no acronyms.
 - Never "waiting on you", "ready when you are", "blocked on owner". State the state; he knows whose move it is.
 - The enemy is "it" or "the enemy", never "he".
@@ -41,7 +41,7 @@ The owner directs design, reviews every plan, and is the sole playtester. His wo
 - "Status" on a running agent means CHECK IT: real elapsed time, what the tree shows changed, which gates have run. Facts only; NO completion estimates ever; no vague times. Unknowable state is said plainly, with the real elapsed time anyway.
 - "Deep status" means a full operation report — done / in-flight / pending / open questions, agent reports, commits, the next gate — never re-verification runs.
 - Gates in dispatch briefs run through `node scripts/gate.mjs <name>`; every run appends one line to `.superpowers/gates.log`, and a status check on a running task reads that tail. CI calls the gates directly and never writes the log.
-- Every dispatch carries a pre-verified reading list, trap notes, and a required read-confirmation opening the agent's report.
+- Every dispatch carries a pre-verified reading list and a required read-confirmation opening the agent's report. No trap-notes section: a plan whose steps are copied verbatim carries any warning inside the step it guards (owner).
 - Agents verify mechanics, never feel. Look, feel, and sound belong to the owner alone.
 
 ## Verification
