@@ -1,5 +1,7 @@
 # DEPOT Phase 7 OUTLINE — The Bison (for Jeff's review; no code until approved)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 > This is an OUTLINE + option sets, not an implementation plan. Every fork below carries 2-3 options; Jeff picks or counter-proposes. After picks, this becomes the code-level plan (subagent-driven-development, per-task commits, scoped gates).
 
 ## ⚠ NUMBERING FLAG — read first

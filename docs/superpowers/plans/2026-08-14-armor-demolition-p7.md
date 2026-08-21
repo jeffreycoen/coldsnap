@@ -1,5 +1,7 @@
 # ARMOR & DEMOLITION — phase plan (P7)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 *2026-08-14. Governs the mk1.3x series. Every ruling in the decision record's "Armor & Demolition (P7)" section binds this plan; nothing there is open. Interface work ships phone AND desktop, every task. Sounds audition on the soundboard.*
 
 **STATUS (2026-08-15): this document is the skeleton and index — each task's full plan is its own file (owner's ruling, 2026-08-15), written at standing-orders detail and served ALONE for review. The reading debt was paid in full 2026-08-14 (core.js whole; all of src/depot/; the sandbox drive; the renderer vehicle regions; the depot-test harness).**

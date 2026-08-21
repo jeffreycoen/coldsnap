@@ -1,5 +1,7 @@
 # F1.6 — Vision Is Line of Sight (outline-level; full code-bearing plan written for Jeff's review after F1.5 closes; scheduled AFTER F1.5 Tasks 2-3, BEFORE F2)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 **Jeff's direction (2026-08-11):** fog and area-of-control are two different things wearing one coat. Vision must come from LINE OF SIGHT — what soldiers and towers physically see from where they stand, traced over real terrain by the same honest physics the guns use. Control (the influence field) keeps ownership: build rights, income, the red/green wash. They overlap most of the time and part exactly where the game gets interesting.
 
 ## The design

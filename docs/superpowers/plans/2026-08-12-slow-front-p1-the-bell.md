@@ -1,5 +1,7 @@
 # SLOW FRONT — Phase 1: The Bell
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 *2026-08-12 — second phase under Vision II. Phase mark **mk0.40** (new tenth); four tasks, +0.01 each, dispatched sequentially (one agent at a time — the shared-working-tree lesson from C0). All structure herein was ratified 2026-08-11; the tier table and every number marked provisional are content within that structure — approving this plan ratifies them as the starting values, and the balance pass (F5) owns their tuning.*
 
 ---

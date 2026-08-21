@@ -1,5 +1,7 @@
 # COLDSNAP — Pi performance baseline (WINTER FRONT, mk0.35)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 *Phase C0, Task 6. Measured 2026-08-11 on the Raspberry Pi, in a real Chromium window on the real graphics chip. These are numbers, not opinions. They exist so the map-widening phase can be planned against something measured.*
 
 **Graphics path actually used:** ANGLE / Broadcom V3D 7.1.10.2 (OpenGL ES 3.1), reported by the browser as `Google Inc. (Broadcom)`. This is the Pi's real graphics hardware, not the software fallback. The drawing numbers below are therefore usable. (The automated test suite runs on the software fallback; nothing here came from that.)

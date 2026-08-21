@@ -1,5 +1,7 @@
 # DEPOT Phase 5 Task 4 — The Enemy Mirror (exploded plan, code-bearing)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 > **For agentic workers:** superpowers:subagent-driven-development. One implementer at a time (all subtasks share units.js). Commit per subtask, PUSH per subtask (Jeff live-tests). Iteration budget: 3 implement-verify cycles per subtask, then BLOCKED with findings.
 
 **Goal:** Enemy infantry becomes real opposition for player squads: anti-personnel fire (fog-gated, parity-tuned), cover-aware halt points, an AI-bought sniper holding vantage ground, and intel that warns about all of it.

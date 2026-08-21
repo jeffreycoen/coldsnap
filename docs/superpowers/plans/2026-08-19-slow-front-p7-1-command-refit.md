@@ -1,5 +1,7 @@
 # WINTER FRONT — Phase 7.1: The Command Refit — CLOSED (owner, 2026-08-19, at mk1.75)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 *The skeleton. Scope and design rulings live in each task's own plan file. Six tasks, ruled order, marks mk1.60–mk1.69 (mk1.62/mk1.64 = amendments; mk1.66 = the sandbag fix; mk1.69/mk1.70 = the place-mode hotfixes; mk1.71 = enemy engineers build). Each task's full plan is its own file, written one at a time and served alone for review. Resource harvesting is NOT here — it is Phase 7.2. ARMS follows 7.2.*
 
 ## Status

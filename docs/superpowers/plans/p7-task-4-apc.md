@@ -1,5 +1,7 @@
 *Part of the P7 phase plan — `2026-08-14-armor-demolition-p7.md` holds the skeleton and binding rulings.*
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 # Task 4 — The APC (mk1.33) — FULL PLAN
 
 *(Renumbered 2026-08-14: the seat-of-the-war task cut ahead. Every "mk1.32" and "P7 T3" inside THIS section reads as "mk1.33" and "P7 T4" at dispatch; the version-bump step reads mk1.32 → mk1.33. Content otherwise stands as approved-for-review.)*

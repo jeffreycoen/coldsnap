@@ -1,5 +1,7 @@
 # P7.2 Task 3 — The Calm Window (mk1.82)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 **Suggested model: Sonnet** (interface + one sim gate, fully specced).
 **Scope (the owner's three convoy rulings, 2026-08-20):** (1) THE WAR PAUSES while the hand's window is up — clock, prices, combat, everything; LATER or buying out the hand resumes it. (2) THE BAR STARTS EMPTY — the free rifles and engineer plans die; every build option is bought off the hand; the dealt four still open the war; the plans pool grows to fifteen. (3) The dealt hand's start placements and the hire's placement gain the ✓/✗ CONFIRM GHOST — a tap sets the ghost, another ground tap MOVES it, ✓ fields it (refusal keeps the ghost), ✗ cancels (a cancelled hire's card returns to the hand). Bar builds already confirm and are untouched.
 **Ships phone AND desktop:** taps and clicks through the existing pending ✓/✗ idiom; no new binding.

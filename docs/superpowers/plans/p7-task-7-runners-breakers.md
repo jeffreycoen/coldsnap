@@ -1,5 +1,7 @@
 *Part of the P7 phase plan — `2026-08-14-armor-demolition-p7.md` holds the skeleton and binding rulings.*
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 # Task 7 — Runners and breakers for both sides (mk1.36) — FULL PLAN
 
 **What it does, in one line:** the runner and the breaker join YOUR production list at tier 1, mirroring the enemy's — runner squads of four who actually run (~5 m/s on a new per-type squad speed), breaker pairs of two heavies whose sustained shoulder-grind works enemy masonry's welds apart (one breaker can't crack a joint; the PAIR can — that is why they come in twos), with the ram rule gone symmetric for the hp-bearing structures the enemy will one day build.

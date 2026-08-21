@@ -6,7 +6,7 @@ The project owner directs design, reviews every plan, and is the sole playtester
 
 **Design truth (owner, 2026-08-20):** this file, the ACTIVE phase's plan documents, and the owner's word in the session. There is no separate decision log — the old one confused sessions and was removed. New rulings are written into the plan document they govern, plainly, at ruling time. Ship history lives in git.
 
-**Session orientation (orchestrator only, before any work):** read the ACTIVE phase's plan document (the newest phase skeleton in `docs/superpowers/plans/`), the vision document `docs/superpowers/plans/2026-08-11-winter-front-vision-2-slow-front.md`, and the last ~20 commit subjects (`git log --oneline -20`). Dispatched agents do NOT do this — they read only their brief's verified list. Code reading stays governed by the two standing laws: all affected code read in full at plan-writing time; per-task reading lists re-verified at dispatch.
+**Session orientation (orchestrator only, before any work):** read the ACTIVE phase's plan document (the newest phase skeleton in `docs/superpowers/plans/`) and the last ~20 commit subjects (`git log --oneline -20`). Dispatched agents do NOT do this — they read only their brief's verified list. Code reading stays governed by the two standing laws: all affected code read in full at plan-writing time; per-task reading lists re-verified at dispatch.
 
 ## Speech
 

@@ -1,5 +1,7 @@
 # DEPOT Marksmanship Batch — Two Diagnosed Fixes + The Sniper/Spotter Pair (for Jeff's review; no code until approved)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 > **For agentic workers:** superpowers:subagent-driven-development, tasks in order, one implementer at a time (Tasks 1-2 unblock Task 3 — do not reorder). Commit per task, PUSH per task (Jeff live-tests). Iteration budget: 3 implement-verify cycles per task, then BLOCKED with findings. No screenshot/verify loops beyond the named gates — Jeff is the playtester.
 
 **Goal:** Fix the two playtest-diagnosed defects (sleeping marchers, downslope veto) at their root, then ship the spotter: every sniper fields as a two-man pair, symmetric both sides — the spotter takes the best ground within 5m and directs the sniper to the best firing spot within the same radius; losses degrade the pair honestly.

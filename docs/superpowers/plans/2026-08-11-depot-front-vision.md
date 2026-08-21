@@ -1,5 +1,7 @@
 # COLDSNAP FRONT — Vision & Roadmap (Jeff's picks: all option A; for his review)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 ## The game in one paragraph
 Two depots face each other across a frozen valley. Both sides muster forces on a shared clock, hold ground, build on what they hold, and push a front line made of real physics — masonry that collapses, ice that breaks, rounds that fly true arcs. The war ends one way: a depot falls. Yours or theirs.
 

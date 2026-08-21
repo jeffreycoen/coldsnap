@@ -1,5 +1,7 @@
 # P7.2 Task 2 — The Hand (mk1.81)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 **Suggested model: Sonnet** (a specced contract change plus interface work; every draw, price, and re-teach pre-computed below).
 **Scope (ruled):** the bell's manifest pick becomes the convoy's five cards — THREE PLANS + TWO HIRES, every card its own seeded draw off the full ungated fifteen-type list. A plan costs HALF the live market price and unlocks the build bar (each build then pays full). A hire fields AT ONCE, placed by the player's own ground tap on held ground, paid only when it actually fields. Multi-buy while the scrap holds — the convoy window is EXEMPT from the one-buy-per-second law. Unpicked cards re-pool by construction. The enemy keeps his old one-draw pick until Task 3 — a knowing, one-task interim. The mech joins the pool in Task 7, not before.
 **Ships phone AND desktop:** every new control is a tap/click through the existing card and ticker idioms; no new key binding is needed.

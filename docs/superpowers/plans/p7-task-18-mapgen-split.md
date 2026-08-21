@@ -1,5 +1,7 @@
 # P7 Task 18 — the map moves out (mk1.48)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 *2026-08-18. First of the five reorganization tasks (owner's ruling): the map frame — constants, orientation state, generator, terrain builder, tree plan, grid builder, flow field, connectivity — moves VERBATIM from DepotGame.jsx into a new `src/depot/mapgen.js`. Zero behavior change is the whole contract: the T6 keystone's hash AND draw count must come out UNTOUCHED (3465970090 / 695) — they are the proof the move was byte-faithful. The route.js precedent (P7 T2, "moved verbatim out of DepotGame.jsx") is the pattern. No design freedom anywhere in this task.*
 
 **Suggested model: Sonnet** — a mechanical move with an explicit inventory.

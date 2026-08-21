@@ -1,5 +1,7 @@
 # THE FRONT — phase plan (P5)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 *2026-08-13. Governs the mk1.0x series. THIS PHASE IS MAP WORK ONLY (owner's ruling, second sitting): a **120×120 square map**, wilder procedural generation (roads optional, drawn per seed), a **stream with a bridge** (light version — obstacle water, no drowning), depot geometry work (evened depots, randomized-but-spaced), proving-grounds building forms, copses and forests.*
 
 *Everything troop-shaped moves to the NEXT phase, TROOPS & PHYSICS (P6): the unit-model question (most troops as singles, the sniper pair kept), the selection UI, combat re-tuning, the typed body-list perf work, AND the bell-repriced simple AMM (its design is ratified — repriced each bell off live standing stock, units and masonry, enemy pays the same table — it just does not land in the map phase). The body-list implementation ran to green gates and was REVERTED at the owner's word (tail metric unmeasurable on the probe); its full spec and findings are archived at the bottom of this document for resurrection.*

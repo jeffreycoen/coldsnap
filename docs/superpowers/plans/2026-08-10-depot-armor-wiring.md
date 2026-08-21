@@ -1,5 +1,7 @@
 # DEPOT Armor Wiring — Abbreviated Plan (Phase 5 interlude)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development, task-by-task. Commit locally; pushes happen at the Phase 5 closer.
 
 **Goal:** Make Phase 0's glancing + armor-threshold machinery actually govern DEPOT combat. Today every DEPOT round is `noImpact` → all damage rides the blast path → armor is never consulted and glancing almost never fires. Design: small-arms rounds gain a **direct-hit component** that replaces the struck body's blast damage — glancing obliquity and `b.armor` thresholds apply to it; blast still splashes *neighbors*. Tanks get armor. Net effect vs soft targets ≈ unchanged (no rebalance); vs armor, damage becomes principled instead of accidental.

@@ -1,5 +1,7 @@
 # P7.1 Task 4b — Mortal sandbags (mk1.66)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 The invincibility found at mk1.64 dies. Today a sandbag carries 60 hp that nothing can touch: direct hits pay only men, vehicles, and trucks; blasts add walls, towers, and rocks; a loose chunk body never takes damage. The fix: sandbags join the blast-damage family exactly as walls did — every round that bursts on or near a bag chips it (rifle fire ~5 a round, a shell most of it, a satchel outright), and a killed bag leaves the world and releases its ground. Both sides' bags, symmetric by construction.
 
 **Ruling executed here** (owner, 2026-08-19): the sandbag fix is its own task, next after the info cards.

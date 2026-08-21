@@ -1,5 +1,7 @@
 # TROOPS & PHYSICS — phase plan (P6)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 *2026-08-13. Governs the mk1.1x series. The owner's rulings shaping this phase (decision record, 2026-08-13): squads STAY the unit model (singles shelved); prices double at a half-full field; one order walks the stream crossing; ONE path system on the movement grid owns both the water detour and the mid-march stall; the masonry-contact kill is fixed in the physics rule; the site opens straight into Winter Front with all copy audited; the README leads with the showcase. The selection interface is deferred to polish. The frost tower's freeze-shot rework is deferred to the arms phase, paired with the rocket troopers.*
 
 *Marks: Task 1 = mk1.10, then +0.01 per task. Every deploy bumps `src/version.js` and builds AFTER the bump. Task 1's commit carries the roadmap flip (The Front → DONE; a new Troops & Physics card → IN PROGRESS) per the fold-in convention.*

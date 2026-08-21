@@ -1,5 +1,7 @@
 # P7.1 Task 4 — Market info cards (mk1.65)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 One card per buyable type: what it is, its numbers, its skills, its live price. Two doors, one component: a bell offer opens the card with CONFIRM PICK / cancel before anything is taken (ruled), and an ⓘ on any build-bar slot opens the same card for an owned type (ruled). Numbers are READ from the live spec tables so a card can never drift from the gun it describes; the prose is in this plan, word for word — the owner's approval of this plan approves the copy. Phone and desktop both, by construction (one DOM).
 
 **Rulings executed here** (decision record, 2026-08-19): confirm/cancel before the pick; manifest + build bar; one card component.

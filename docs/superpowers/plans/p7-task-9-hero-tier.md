@@ -1,5 +1,7 @@
 *Part of the P7 phase plan — the decision record's TASK 9 RULINGS entry binds every dial.*
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 # Task 9 — The hero tier and the fielded start (mk1.39) — FULL PLAN
 
 **What it does, in one line:** a fourth tier opens on both ladders at bell 10 — the Bison and the APC as convoy items at ruinous, market-walled prices (a standing hero walls the second to absurdity; in practice you buy back what you lost), delivered parked at the buyer's depot, the enemy replacing draw-free off the same table — and both bases now open with a runner squad and a breaker pair fielded free beside the depot.

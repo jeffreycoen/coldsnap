@@ -1,5 +1,7 @@
 # DEPOT Phase 2 Implementation Plan — Conditional Accuracy + Wind
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Diegetic, symmetric fire accuracy — a condition-driven scatter cone (range, elevation, LOS graze) replacing perfect aim, plus a seeded wind field that deflects projectiles and is readable from flags and tree sway. No visible percentages anywhere.

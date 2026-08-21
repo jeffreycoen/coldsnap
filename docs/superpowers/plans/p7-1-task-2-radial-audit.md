@@ -1,5 +1,7 @@
 # P7.1 Task 2 — The radial audit (mk1.61)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 Every wedge on every pie, verified working. The instrument is one new era file in the test suite: a behavior matrix driving the real machinery per wedge per type, plus wiring pins proving each wedge's tap reaches its handler. Whatever fails IS the defect list — this task fixes nothing. A clean matrix lands as mk1.61; any red row stops the task and the list goes to the owner, who rules the fixes (Phase B, its own amendment).
 
 **Rulings executed here** (decision record, 2026-08-19): existing buttons only; the shelved vocabulary stays shelved.

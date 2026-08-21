@@ -1,5 +1,7 @@
 # P7.1 Task 3 — Visible health (mk1.63)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 A health bar over everything with hp — men, hulls, towers, walls, sandbags — shown ONLY while the thing is hurt. Green draining to red, a dark plate behind it, billboarded above the body. The red hit-flash stays; towers keep their damage-shrink; the depot stays census-only (the building is the readout). A HEALTH toggle button sits beside FOG in the top bar (owner, 2026-08-19), default ON, persisted like FOG. DEPOT only — every other mode renders byte-identical.
 
 **Rulings executed here** (decision record, 2026-08-19): hurt-only bar, everything with hp, hit-flash stays; plus the toggle-beside-FOG addition.

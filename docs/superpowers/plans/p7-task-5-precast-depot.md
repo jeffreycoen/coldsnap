@@ -1,5 +1,7 @@
 *Part of the P7 phase plan — `2026-08-14-armor-demolition-p7.md` holds the skeleton and binding rulings.*
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 # Task 5 — The precast depot and the honest resume (mk1.34) — FULL PLAN
 
 **What it does, in one line:** kills the resume ghost (the save stops carrying the mk1.05 broadphase bookkeeping that left every resumed sleeping stone untouchable to contact physics) and rebuilds BOTH depots as column-and-panel precast — a quarter the bodies, the measured boom cost at the wall drops 5.3 → 1.6 ms, panels fall as whole slabs, columns drop the roof.

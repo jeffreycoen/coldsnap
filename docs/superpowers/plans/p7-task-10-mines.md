@@ -1,5 +1,7 @@
 *Part of the P7 phase plan — the decision record's MINES AND TRIPWIRES ruling binds every dial.*
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 # Task 10 — Mines and tripwires (mk1.40) — FULL PLAN
 
 **What it does, in one line:** the sapper team lays mines and tripwires on the two-point line — watched points, never physics bodies, invisible to the other side ALWAYS — troops never TRIP their own side's devices, but a tripped blast is a blast: anyone in the area is affected, both sides (owner's 2026-08-17 revision); tripwires fire a flare that lights the fog for the owner plus a small charge, prices ride the market as climbing families, and the enemy sapper brain seeds its approaches and contested ground on count-stable draws.

@@ -1,5 +1,7 @@
 *Part of the P7 phase plan — `2026-08-14-armor-demolition-p7.md` holds the skeleton and binding rulings.*
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 # Task 2 — The Bison musters (mk1.31) — FULL PLAN
 
 **What it does, in one line:** one Bison parks at each depot at war start; yours is a full citizen — radial orders (DEFEND, MOVE, PATROL, ESCORT), a TRACKS safety toggle with an indicator bulb, and TAKE CONTROL with twin-stick drive, main gun, and hull machine gun, phone and desktop both; the enemy's sits parked and killable until its commander arrives (Task 5).

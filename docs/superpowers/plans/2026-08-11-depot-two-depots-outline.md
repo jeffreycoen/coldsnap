@@ -1,5 +1,7 @@
 # DEPOT Two Depots — Capture the Flag Direction (OUTLINE for Jeff; options, not a plan; no code)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 **The idea (Jeff, 2026-08-11):** add a second depot for the enemy and move gameplay from tower-defense waves toward a capture-the-flag, real-time-strategy feel.
 
 **Why the codebase is ready for this:** the ground-holding field is already symmetric (either side can hold any cell); the enemy already has a real economy, finite manpower, and a buy brain; player infantry already takes attack orders; build rights already follow held ground; the depot-as-physical-building loss (masonry standing fraction) already exists and mirrors for free. The old roadmap's separate "attack mode" phase collapses into this: one symmetric game.

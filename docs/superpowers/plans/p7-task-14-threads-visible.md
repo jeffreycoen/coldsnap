@@ -1,5 +1,7 @@
 # P7 Task 14 — the threads become visible (mk1.44)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 *2026-08-18. The owner cannot see the mk1.43 green threads. Wiring verified correct (renderer method, camera layer 1, collector all live); the lines are simply too faint — 0.55 opacity, 1px, dashed — for the dot-matrix downsample, and green-on-green on held ground compounds it. Also fixes a deviation found in review: the collector runs per frame instead of at the 4Hz cadence the plan specified. The look is the owner's live acceptance.*
 
 **Suggested model: Sonnet.** **Scope:** `src/render/renderer.js`, `src/depot/DepotGame.jsx`, `scripts/depot-test.mjs` (one assert re-pin), `src/version.js`.

@@ -1,5 +1,7 @@
 # P7.2 Task 4 — His Hand (mk1.84)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 **Suggested model: Sonnet** (state-layer contract change plus one muster helper, fully specced).
 **Scope (ruled):** the full mirror, symmetry to the letter. The enemy's one-draw pick dies; every bell he is dealt his OWN five cards off the SAME fifteen — towers included (owner, 2026-08-20: the AI player gets towers; everything is symmetrical) — three plans and two hires, the same five-draw splice, count-stable. He pays HALF for plans and FULL for hires off his own books, priced off the PLAYER'S OWN table — one table. His buys are a deterministic walk in dealt order, zero draws, each kept above a muster floor. Bought SQUAD and HERO plans push his tags and his assaults field them AT ONCE — the old tier-bell clamp is DEAD (owner: "fields at once"). Bought TOWER plans join his plans ledger, and he BUILDS from it: one tower build per bell at full price, the reproducible path, exactly what a plan is. Hires — squads, armor, towers alike — field draw-free at his depot through the dealt-hand mirror's machinery. The Task 2 interim closes; no asymmetry remains in the hand.
 

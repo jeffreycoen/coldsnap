@@ -1,5 +1,7 @@
 # P7 Task 12 — spawn ground learns vehicles (mk1.42)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 *2026-08-17. The fielded-start kill, root-caused and reproduced (500-seed headless repro, `.superpowers/diag-fielded-start.mjs`): `slotBlocked`/`clearSlot` (squads.js) vet static solids only — a parked hull is invisible to every spawn and slot site. The free runner and breaker squads spawn overlapping the player's parked Bison or APC; the engine's shove-apart kills the overlapped men at second zero; a squad at zero men is silently deleted. 21% of wars lose men to this at boot, ~2% lose a whole squad. The fix goes in the one shared law, so every consumer — squad spawns, home guard, garrison replacements, unload rings, formation slots, the march steer-around — inherits it.*
 
 **Suggested model: Sonnet** — fully specced, mechanical execution, no design left open.

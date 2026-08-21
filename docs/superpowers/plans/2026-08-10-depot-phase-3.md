@@ -1,5 +1,7 @@
 # DEPOT Phase 3 Implementation Plan — Attacker Economy, Doctrine AI, Intel
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the static wave table with an opponent: a seed-varied finite regiment spending a mirrored scrap economy through one fixed counter-rule brain (banking toward tank pushes or surge waves), reported to the player as strength-word intel dispatches with one-wave delay and seeded gaps. Riflemen, grenadiers, sappers, breakers, and tanks return, all firing through the shared accuracy model at tower-equal aim.

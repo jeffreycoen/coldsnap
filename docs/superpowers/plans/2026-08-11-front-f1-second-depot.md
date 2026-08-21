@@ -1,5 +1,7 @@
 # FRONT F1 — The Second Depot (code-bearing plan; for Jeff's approval; no code until approved)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 > **For agentic workers:** superpowers:subagent-driven-development, tasks in order, one implementer at a time. Every task: write the failing asserts FIRST, verify they fail, implement, verify pass, run the gates, commit, PUSH, FOREGROUND CI poll, report. Max 3 implement-verify cycles then BLOCKED with findings. Reports to Jeff: plain language, no jargon, every nonconformity its own labeled bullet. Verify every line-number anchor by reading before editing — drift is expected.
 
 **Goal:** The enemy gets a depot — real masonry at their end, breachable by the same physics as yours — and the war gets its one true ending: a depot falls. Lands vision picks 2 and 5 (docs/superpowers/plans/2026-08-11-depot-front-vision.md). Waves stay (F2's job); the enemy doesn't defend its depot yet (F3's job) — in F1 its defense is distance and the army in the field.

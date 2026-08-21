@@ -1,5 +1,7 @@
 *Part of the P7 phase plan — hotfix, owner-approved 2026-08-15 ("knock it out"). Skeleton tasks 8-11 shift one mark.*
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 # Hotfix — The fault names itself (mk1.37)
 
 **What:** (1) the ENGINE FAULT overlay gains the error's top stack lines so the next screenshot names the throwing site; (2) platform/audio.js clamps every value it hands the browser to finite — the likeliest "non-finite" boundary becomes non-fatal.

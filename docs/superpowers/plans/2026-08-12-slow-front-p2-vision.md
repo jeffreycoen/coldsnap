@@ -1,5 +1,7 @@
 # SLOW FRONT — Phase 2: Vision (mk0.70)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 *2026-08-12. One plan, one audience. Every design decision in here was ratified by the owner today; nothing is open. Four tasks, sequential, sole agent each: mk0.70, mk0.71, mk0.72, mk0.73. All numbers marked provisional are tuned by the owner's playtests.*
 
 *AMENDED after Task 1 landed: its cost probe measured the plan's original see/not-see test at 2,284ms per recompute against a 4ms budget — the test asked every body in the world at every step of every sight line. Task 1b (mk0.71) replaces the ray's inner loop with two flat per-cell maps swept once per recompute; the gate swap and the look shift to mk0.72/mk0.73.*

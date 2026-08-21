@@ -1,5 +1,7 @@
 # P7 Task 16 — traffic (mk1.46)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 *2026-08-18. Executes the owner's traffic rulings (08-17/08-18): troops YIELD to friendly armor — standing men in a hull's lane sidestep clear and return once it passes; the overrun brake gains PATIENCE — after a few seconds waiting it routes around the blocker instead (the brake itself never weakens); same-team hulls closing head-on KEEP RIGHT; and a stalled squad marks its living blocker's cells and routes around them. All game-layer, on the mk1.43 machinery (avoid lists, planRoute opts, the manual channel). Enemy hulls and their men obey the identical rules — symmetry. All dials provisional (F5). No engine change — golden does not run.*
 
 **Scoped rule (stated, not hidden):** a POSSESSED squad never auto-yields — the owner's hands outrank the traffic law; the hull's brake and patience handle it. Enemy units marching the flow field don't need yield (they're already moving); yield covers the standers — squad members on defend and hold/garrison men, both sides.

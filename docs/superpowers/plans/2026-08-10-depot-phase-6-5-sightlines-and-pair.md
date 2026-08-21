@@ -1,5 +1,7 @@
 # DEPOT Phase 6.5 — Sightline Conformity + The Sniper/Spotter Pair (for Jeff's approval; no code until approved)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 > **For agentic workers:** superpowers:subagent-driven-development, tasks in order, one implementer at a time. Failing asserts first, always. Commit + PUSH per task (Jeff live-tests), FOREGROUND CI polls. Iteration budget 3 cycles/task then BLOCKED. Reports to Jeff: plain language, no jargon, every nonconformity its own labeled bullet.
 
 **Goal:** Close all five nonconformities from the 2026-08-10 line-of-sight audit, then ship the sniper/spotter pair (spec finalized in `2026-08-10-depot-marksmanship-batch.md` Task 3 — carried here unchanged, superseding that entry).

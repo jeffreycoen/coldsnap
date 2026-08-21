@@ -1,5 +1,7 @@
 # Rockets, the Contested-Ground Fix, and Two Small Repairs
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 ---
 
 # PART ONE — THE PLAIN VERSION (Jeff reads this)

@@ -1,5 +1,7 @@
 # P7.1 Task 6 — The starting pick (mk1.68) — PLAN v2
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 **THE BARE OPENING (owner, 2026-08-19):** nobody starts with anything. The player picks up to FOUR UNIQUE units from a pool of FIFTEEN — the 8 squad types, the Bison, the APC, and the 5 tower types — and places every pick BY HAND before TAKE COMMAND, each a ground tap within the homeland radius of his depot. The enemy is identical: no free armor, no home guard, no seeded sandbag rings — four seeded draws from the same fifteen (deduped: all four draws burn, duplicates field nothing, 2–4 distinct), auto-placed on his own homeland ring. Enemy towers FIGHT — the tower brain learns its team. The bell-10 hero tier stays the armor-replacement source; the bell-cadence defensive opening (his garrison growth from bell 1) stays.
 
 This v2 supersedes v1 whole (v1's free-kit framing died at review). Suggested model: **Sonnet** — every mechanism below is specced; the re-teach sweep is licensed by name.

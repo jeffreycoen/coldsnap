@@ -1,5 +1,7 @@
 # P7.1 Task 7 — His shovels dig (mk1.71)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 The enemy's engineers build (owner, 2026-08-19: "he can do anything I can do — that includes building defenses"). His engineer pick becomes a real team-2 squad; each bell, on two seeded draws, an idle engineer squad of his gets a sandbag or wall line on his held ground and lays it through the SAME two-point machinery the player's engineers use — the machinery learns its side. His walls emit red, join the shared market, fall to the same support rule, and his squads ride the save. Tower placement stays at Enemy Front.
 
 **One task by the owner's word** (2026-08-19). Suggested model: **Sonnet** — every parameterization is written below; the agent runs an internal suite checkpoint after the machinery steps before wiring the brain.

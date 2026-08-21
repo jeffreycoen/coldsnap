@@ -1,5 +1,7 @@
 # SLOW FRONT — Phase 1.5: Polish I
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 *2026-08-12 — third phase under Vision II, executing Playtest I's directives (all Jeff-ratified). Phase mark **mk0.50**; four tasks, +0.01 each, dispatched sequentially (sole agent in the tree). The bullet outline of this phase was reviewed by Jeff before writing.*
 
 ---

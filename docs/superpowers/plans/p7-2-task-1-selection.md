@@ -1,5 +1,7 @@
 # P7.2 Task 1 — Easier Selection (mk1.80)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 **Suggested model: Sonnet** (interface fan-out over existing handlers, fully specced below).
 **Scope (ruled, 2026-08-19):** bigger tap targets; tap-cycling through overlapping units; SELECT ALL OF TYPE with multi-squad orders. Drag-box is CUT — nothing in this plan builds one.
 **Ships phone AND desktop by one mechanism:** every change lives in the tap path and the pie, and a desktop click IS a tap (`onPointerUp` → `tapAt`). No new key or mouse binding is needed; the plan's acceptance names both platforms.

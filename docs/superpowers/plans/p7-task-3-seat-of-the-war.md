@@ -1,5 +1,7 @@
 *Part of the P7 phase plan — `2026-08-14-armor-demolition-p7.md` holds the skeleton and binding rulings.*
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 # Task 3 — The seat of the war (mk1.32) — FULL PLAN
 
 **What it does, in one line:** the depots grow to 12×9×7 and move to opposite corners of the valley; their welds go normal but the breach bar drops to 40% standing — a depot must be really knocked down; and the enemy's home fights back from second zero — an eight-man dug-in home guard off its own regiment books, its own seeded sandbag ring, its Bison armed at post — with the armor parking scan made fail-proof both sides.

@@ -1,5 +1,7 @@
 # P7.2 Task 7 — The Mechanic (mk1.88)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 **Suggested model: Sonnet** (Task 6's exact shape plus the repair-payment path, fully specced).
 **Scope (ruled 2026-08-19, both passes):** a new squad type, BOTH SIDES — the mechanic repairs MACHINES AND MASONRY: hulls, towers, walls, sandbags. Repair is SLOW, PAUSES UNDER FIRE, and PAYS SCRAP PER POINT off each side's own books — dear-to-replace keeps its teeth. Tier-3 row, ~55 scrap. He joins the hand's pool with his card and portrait. The pool grows SIXTEEN → SEVENTEEN — the Task 6 count sweep runs again over the same (now pre-known) sites. The enemy's mirror: mechanics arrive through its hand and the boot's dealt picks and repair its own iron off its own regiment books; they never march in waves (planWave untouched — the mg/engineer/medic precedent). Depot stones are structurally excluded (no hp ledger — the census is the depot's health, untouched). Zero rng anywhere; healing writes hp directly; the PAYMENT is the game layer's (a books callback stamped on the world at mount — squads.js's no-economy law holds, the module only asks).
 

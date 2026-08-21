@@ -1,5 +1,7 @@
 # P7 Task 20 — the build lines move out (mk1.50)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 *2026-08-18. Reorganization 3 of 5: the two-point lay machinery — constants, the staircase cell walk, piece footprints, line start, ghost pieces, the piece layer, the line driver — moves from DepotGame's mount into `src/depot/buildlines.js` as VERBATIM BODIES WITH EXPLICIT PARAMETERS (the muster.js pattern; every substitution named below). The interface glue — preview drawing, accept/reject, tap flow — STAYS in DepotGame and calls the imports. Zero behavior change: no rng lives anywhere in the moved code; the keystone, the boot pins, and the T10/T17 behavioral fixtures prove the move.*
 
 **Suggested model: Sonnet** — mechanical extraction with a named substitution table.

@@ -1,5 +1,7 @@
 # P7.1 Task 8 — the seed purge and the dealt hand (mk1.72)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 Two phases, one task, one mark.
 
 **PHASE A — THE SEED PURGE (owner, 2026-08-19: "remove this pollution now").** Seed 4242 leaves the test suite entirely. It seeded the T6 keystone, the engine-era suite's rng, two map-routing fixtures, one stream-carve fixture, and the T21 bell fixture's map. Every one re-seeds to an ordinary seed; measured pins re-measure and re-pin; thresholds are NEVER weakened — a candidate seed that fails a threshold is discarded for the next, exactly the T15 precedent (re-seed rather than weaken). **THE KEYSTONE RE-PIN IS OWNER-RATIFIED (2026-08-19): the engine law's anchor moves to a fresh seed; its hash and draw count re-measure and re-pin, reported old → new.** Phase A runs entirely under current (mk1.71) behavior, so every movement is isolated to the re-seeding.

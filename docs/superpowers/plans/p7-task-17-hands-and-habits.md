@@ -1,5 +1,7 @@
 # P7 Task 17 — hands and habits (mk1.47)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 *2026-08-18. Executes four pinned rulings: ENGINEERS BUILD WITH THEIR HANDS (a build-line row lays only while a live member stands within reach — the gate is on the piece, never the anchor; mines and wires inherit); THE PICK ARMS THE BAR (taking a type off the manifest switches the build bar to it — the next ground tap places it); BUILD BUTTONS TOGGLE (tapping the active button clears back to plain command); HULLS RESPECT FRIENDLY SANDBAGS (bag cells join the grid for hull routing only — own-side bags routed around, enemy bags rammable under the standing ruling, men and the enemy flow never affected). Interface work ships phone AND desktop — all three interface changes are the same tap targets and handlers on both. All dials provisional (F5). No engine change — golden does not run.*
 
 **Suggested model: Sonnet** — fully specced; every step carries its literal code.

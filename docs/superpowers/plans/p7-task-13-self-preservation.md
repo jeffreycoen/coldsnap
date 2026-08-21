@@ -1,5 +1,7 @@
 # P7 Task 13 — self-preservation (mk1.43)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 *2026-08-18. Executes the owner's rulings of 08-17/08-18: the movement grid learns steepness (hull no-go), squad routes avoid deadly drops (the ledge brake stays as last resort), hulls keep clearance from masonry and stop cutting corners, ordered driving goes around friendly and neutral masonry but follows a path through ENEMY masonry verbatim, a genuinely stuck hull backs out and replans, and the map's rim joins the slot law. All game-layer: core.js is READ ONLY — the back-out and the corner crawl ride the existing depotDrive "manual" channel (the possession precedent), so golden does not run.*
 
 **AMENDMENT 1 (owner, 2026-08-18, pre-approval): THE GREEN THREADS** — every friendly unit or hull with an active ordered path (move, attack-march, build, patrol, escort) draws its computed route as a green ground-hugging dashed line, all the time, refreshed at the derived-overlay cadence. Ships in this task (owner's packaging ruling) as Step 7; the source-shape asserts ride Step 1's (j) block. Same renderer path on phone and desktop. The look is accepted by the owner's eyes live.

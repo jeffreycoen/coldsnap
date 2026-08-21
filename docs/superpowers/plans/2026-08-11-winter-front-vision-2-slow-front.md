@@ -1,5 +1,7 @@
 # WINTER FRONT — Vision II: The Slow Front
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 *2026-08-11 — successor to `2026-08-11-depot-front-vision.md`. That document's law stands: two depots, destroy-to-win, symmetric war. This one layers pace, command, and terrain on top and re-sequences everything that remains. Every decision in here was ratified by Jeff on 2026-08-11; nothing is open.*
 
 *Amended 2026-08-12 off Playtest I (phases C0 + 1 shipped, mk0.43): starting kit gains engineers and seeded sandbags; the economy becomes the mercenary market (§2a); weapon-voice identity added to presentation; Vision phase moves ahead of Command. All amendments Jeff-ratified 2026-08-12.*

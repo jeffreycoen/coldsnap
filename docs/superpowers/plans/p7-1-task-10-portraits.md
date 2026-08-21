@@ -1,5 +1,7 @@
 # P7.1 Task 10 — live portraits (mk1.75)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 Every info card gains a small picture of the REAL unit — the game's own models, rendered live to a canvas on the card. No new art, no bundle bytes, never stale: men come from the same part table and troop kit the battlefield draws, towers and hulls from the renderer's own builders, exported under the guarded-divergence law. All three card doors (deal, manifest offer, build-bar ⓘ) inherit automatically — the picture rides the one card component.
 
 Ruled by the owner 2026-08-19 ("live portrait"). Suggested model: **Sonnet** — the builders move verbatim, the portrait module's code is written below in full.

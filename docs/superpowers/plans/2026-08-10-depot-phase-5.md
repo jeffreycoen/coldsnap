@@ -1,5 +1,7 @@
 # DEPOT Phase 5 Implementation Plan — Infantry (REVISED after Task 1)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Revision notes:** (post-Task-1, 2026-08-10): Task 1 shipped (`fb91e9e`) and falsified one plan assumption: units.js has NO reusable walk-to-point machinery (its march is flow-field + team-2 only). squads.js therefore owns its own `seekGoal` velocity steer, squads advance as a block (anchor cover-hops, members hold formation slots, ONE rng draw per attack leg), and sandbags need no new body kind (`chunk` masonry is already what exposure scoring sees). Tasks below are rewritten against the shipped module. Also folded in per Jeff: **wave timeout** — waves advance on annihilation OR a time trigger (stuck units must never wedge the run).

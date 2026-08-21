@@ -1,5 +1,7 @@
 # SLOW FRONT — Phase C0: Cleanup
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 *2026-08-11 — first phase under Vision II (`2026-08-11-winter-front-vision-2-slow-front.md`). Phase mark **mk0.30**; each task bumps +0.01. Every decision herein was ratified by Jeff on 2026-08-11; the one mid-phase decision point (the test manifest) is explicitly his gate.*
 
 ---

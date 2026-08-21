@@ -1,5 +1,7 @@
 # P7.2 Task 6 — The Medic (mk1.87)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 **Suggested model: Sonnet** (a new squad type on existing machinery, fully specced; one small render-kit addition).
 **Scope (ruled 2026-08-19, both passes):** a new squad type, BOTH SIDES — the medic walks to the nearest wounded man and KNEELS to treat him (the theater over the aura, the owner's call). Tier-1 row, ~55 scrap. Medic dress — the owner's eye accepts the look live. He joins the hand's pool with his info card and live portrait. The pool grows FIFTEEN → SIXTEEN — a licensed count sweep rides this task. The enemy's mirror: medics arrive through its hand (hires and plans, Task 4's machinery) and the boot's dealt picks; they never march in waves (planWave's roster is untouched — the mg/engineer precedent exactly). Healing is deterministic, zero rng, and writes hp directly — damage is the engine's, mending is the game's; no engine file changes.
 

@@ -1,5 +1,7 @@
 # P7.1 Task 5 — The build tree (mk1.67)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 The flat build bar collapses into ONE entry. BUILD opens the tree: three branch buttons — TROOPS / BUILDINGS / VEHICLES — plus SELL inside it (ruled); tapping a branch shows that branch's slots, exactly today's slots (price, ⓘ, the two-tap hero arm) unchanged. A branch stays open for repeat placement (ruled); tapping the active type slot still clears it (the standing toggle-off); tapping BUILD again closes the whole tree back to plain command. A manifest pick still arms the bar through the tree (the mk1.47 law): the mode arms immediately, the closed BUILD button names the armed type, and the tree opens on the right branch. Presentation only — `setMode`, `toggleSell`, the pick, the pending flow, and every price read are untouched underneath. One DOM: phone and desktop both, by construction.
 
 **Rulings executed here** (decision record, 2026-08-19): the tree with SELL inside; branches stay open; toggle-off kept; pick-arms-the-bar preserved.

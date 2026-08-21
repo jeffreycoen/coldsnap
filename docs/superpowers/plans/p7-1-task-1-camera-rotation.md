@@ -1,5 +1,7 @@
 # P7.1 Task 1 — Camera rotation (mk1.60)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 One task: the camera rotates continuously — a two-finger twist on touch, held Q/E on desktop. The view stays at any angle it is left at. A quick Q/E tap keeps today's 90° snap; the ⟳ button stays. Render and input only; the sim never reads the camera.
 
 **Rulings executed here** (decision record, 2026-08-19): free angle holds, no settle-back; tap snaps, hold swings; ⟳ stays.

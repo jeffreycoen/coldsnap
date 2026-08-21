@@ -1,5 +1,7 @@
 # DEPOT Save/Resume — Full-Fidelity Stall Snapshot (plan for Jeff's review)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 > **For agentic workers:** superpowers:subagent-driven-development, tasks in order, one implementer at a time (S1-S2 share state/DepotGame). Push per task. Iteration budget 3 cycles/task.
 
 **Goal (Jeff, locked):** close the browser mid-run, come back, continue — with the battlefield's scars intact. No clean-ground compromise: masonry damage, displaced rubble, terrain craters, burned/felled trees, and scorch decals all survive the round trip.

@@ -1,5 +1,7 @@
 *Part of the P7 phase plan — `2026-08-14-armor-demolition-p7.md` holds the skeleton and binding rulings.*
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 # Task 6 — The defensive opening (mk1.35) — FULL PLAN
 
 **What it does, in one line:** the enemy fights its opening defensively — half of each early muster digs in at home instead of marching, tapering to nothing by ~bell 8, with the standing garrison capped at 12 — and the precast census gets its teeth back: an upright slid piece still counts as standing, and the fraction is mass-weighted, so leveling a depot takes real demolition again.

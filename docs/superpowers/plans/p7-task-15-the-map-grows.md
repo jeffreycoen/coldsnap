@@ -1,5 +1,7 @@
 # P7 Task 15 — the map grows (mk1.45)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 *2026-08-18. Executes the owner's ruling: the square grows 120×120 → 180×180 (50% linear, 2.25× area) with today's feature COUNTS HELD — the same bands, buildings, hills, forests, one stream, road draw, spread across the bigger ground. Position ranges scale ×1.5; feature sizes, clearances, and counts do not move. The T3 perf gate is satisfied by the 2026-08-18 Pi probe (recorded in the decision record): steady overlay cost +~15 ms per second of play; the one caveat is +1.2 ms on the four sight frames each second at the 80-man ceiling. The owner's playtest judges pacing (marches +50% against the same 90s bell; sight ranges now relatively shorter) — no dial moves in this task.*
 
 **Suggested model: Sonnet** — a literal-for-literal edit table; zero design freedom.

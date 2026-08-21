@@ -1,5 +1,7 @@
 # F1 Verification Fixes — Findings 1-3 (code-bearing; for Jeff's approval; no code until approved)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 > **For agentic workers:** one implementer, one task, one commit (mk0.17). Failing asserts first. Scoped verification ONLY (the sections named below — never the full stack; the pipeline runs everything after push). FOREGROUND runs, never background-and-wait. Max 3 cycles then BLOCKED. Report plainly, every deviation its own labeled bullet.
 
 **Goal:** Close verification findings 1-3: (F1) the satchel side-effect measurements exist nowhere in the repo; (F2) mk0.16's "CAREFUL doesn't protect their depot" fix has no test; (F3) mk0.15's "sapper selection doesn't crash" fix has no test.

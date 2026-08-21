@@ -1,5 +1,7 @@
 # DEPOT Phase 5 Task 6 — Wave Timeout (code-bearing plan)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 > **For agentic workers:** superpowers:subagent-driven-development. Single implementer (state.js + DepotGame.jsx + economy touch). Commit + PUSH when green (Jeff live-tests). Iteration budget: 3 cycles, then BLOCKED.
 
 **Goal (Jeff, locked):** waves end by annihilation OR the clock — a stuck straggler must never wedge the run. At timeout, survivors *withdraw in order*: no deaths, no bounties, their manpower returns to the regiment, and the stall card says so.

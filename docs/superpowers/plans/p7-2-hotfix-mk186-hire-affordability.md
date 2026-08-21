@@ -1,5 +1,7 @@
 # P7.2 Hotfix — The Hire Answers Its Price (mk1.86)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 **Suggested model: Sonnet** (interface-side, three files, fully specced).
 **The defect (diagnosed live, 2026-08-20, repro `.superpowers/diag-hire-kinds.mjs`):** hires arm regardless of affordability, and the price check sits at the LAST step. A Bison hire at bell one (live price 200+, till ~126) walks the whole ceremony — info card, CONFIRM HIRE, ground tap, armed ghost, ✓ — then dies on a two-second "NO SCRAP" toast that also clears the armed hire, the ghost, and the ticker, with the hand window left closed. No scrap ever moves (verified to the digit) — but on a phone it reads exactly as "can't place, and it tried to charge me." Squad hires with a sufficient till work end to end on both platforms (verified).
 

@@ -1,5 +1,7 @@
 # P7 Task 21 — the bell moves out (mk1.51)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 *2026-08-18. Reorganization 4 of 5: the bell's ring — town pay, the fireBell sequence, the defensive-opening split, the commander's bell orders, the ferry, the enemy hero replacement, the enemy mine seeding, the cues and the save — moves from DepotGame's mount into `src/depot/bell.js` as ONE verbatim body with explicit parameters (the muster/buildlines pattern). The bell's cards (intel/manifest presentation, the pick) STAY in the mount — presentation, not the ring. Zero behavior change: the exact draw order inside the ring (planWave's 4, the ferry's 2, the sapper's 2, intel's variable draws through fireBell) is byte-fixed; keystone, boot pins, and the T8/T9/T10 fixtures prove it.*
 
 **Suggested model: Sonnet** — one-function extraction with a named substitution table.

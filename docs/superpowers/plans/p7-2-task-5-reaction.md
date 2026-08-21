@@ -1,5 +1,7 @@
 # P7.2 Task 5 — The Reaction (mk1.85)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 **Suggested model: Sonnet** (unit-behavior work on existing machinery, fully specced; one small guarded engine stamp).
 **Scope (ruled, 2026-08-20):** the enemy answers being attacked — and so does your side, identically. Three rulings: (1) BOTH, BY ROLE — garrison and hold men under fire from beyond their reach dive to nearby cover and keep their post; defending armor advances toward the fire's origin until its own eyes find the attacker. (2) UNITS ONLY — no commander escalation, no assault turning home; that doctrine stays with Enemy Front. (3) IDENTICAL BOTH SIDES — one rule, one code path per class, both teams; explicit orders always override. Fire stays sight-gated throughout — the reaction is MOVEMENT, never blind fire. The missing piece under everything is that a hit never says where it came from: the engine's damage stamp gains guarded origin fields (the dmgT precedent), and every reaction reads them through one pure helper.
 

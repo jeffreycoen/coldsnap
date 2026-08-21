@@ -1,5 +1,7 @@
 *Part of the P7 phase plan — the last task before the phase close.*
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 # Task 11 — The manual learns armor, and the audit (mk1.41) — FULL PLAN
 
 **What it does, in one line:** the field manual gains the armor card — your tank, your transport, yours to lose — and one save/resume audit fixture proves everything P7 added survives the bell round-trip (vehicles and their whole order state, sealed riders both kinds, mines, the commander, the garrison, the hero unlocks), fixing and naming any carriage defect it catches.

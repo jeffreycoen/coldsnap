@@ -1,5 +1,7 @@
 # P7 Task 19 — the muster moves out (mk1.49)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 *2026-08-18. Reorganization 2 of 5: the fresh-war boot block — armor parking with its flatness vetting, the seeded bag rings, the home guard, the commander draw, the fielded start — moves out of DepotGame's mount into `src/depot/muster.js`. Unlike mapgen this code lives in mount closures, so the move is VERBATIM BODIES WITH EXPLICIT PARAMETERS: each closure variable becomes an argument, nothing else changes, and every token substitution is named below. This block is where both of this pass's boot bugs hid — because fixtures could only REIMPLEMENT it; extracted, the suite calls the real thing, and this plan adds the first true boot-block fixture. Zero behavior change: boot draw order and count (45) unchanged, all existing pins green untouched.*
 
 **Suggested model: Sonnet** — a mechanical extraction with a named substitution table.

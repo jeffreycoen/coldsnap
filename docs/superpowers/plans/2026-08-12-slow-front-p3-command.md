@@ -1,5 +1,7 @@
 # SLOW FRONT — Phase 3: Command (mk0.80-0.82)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 *2026-08-12. One plan, one audience. Scope ratified by the owner today (decision record, "Orders and command"): a radial order menu for squads AND towers replaces the chip row and the order half of the inspect panel; new orders are PATROL and ATTACK STRUCTURES; engineers' build lines migrate into their radial; per-tower fire discipline replaces the global toggle; hold-fire is cut. Three tasks, sequential, one Sonnet 5 agent each, a stop after every landing: mk0.80-0.83 the radial and the pie (shipped), mk0.84 the proposed line, mk0.85 patrol, mk0.86 attack-structures. The next phase (Possession) adds a TAKE CONTROL button to every radial — the layout leaves room.*
 
 **Laws binding every task:** no new dice anywhere (the one leg-arrival draw in the squad machine is the only rng and it is untouched); engine/demo/renderer files untouched (the radial is game-layer interface — plain buttons, existing screen-anchor machinery); `__DEPOTORDER__` keeps driving the real order path; run ONLY the gates listed; every deviation its own labeled bullet; stop after landing.

@@ -1,5 +1,7 @@
 # P7.1 Task 9 — the gentle arc and the tight tube (mk1.74)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 The owner's artillery rulings (2026-08-19, on the record): MORTARS TIGHTEN HARD — spread 0.020 → 0.005 on all three lobbed tables together (his mortar tower, his mortar teams, the enemy grenadier's lob — the symmetry law). ROCKETS FLY A GENTLE ARC — the flat ballistic solution at a slower speed: a shallow, readable arc peaking a few meters up, honest terrain checks (rockets stop lobbing over tall obstructions and never waste a salvo into a hillside). The ruling carries forward to the ARMS-phase rocket teams when they arrive.
 
 **Ordering (set by the owner's "write the plan" at the artillery exchange):** the artillery retune is Task 9 (mk1.74); LIVE PORTRAITS shift to Task 10 (mk1.75). The record's earlier Task-9-portraits line gets its dated correction at this plan's approval commit.

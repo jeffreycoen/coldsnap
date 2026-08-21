@@ -1,5 +1,7 @@
 # COLDSNAP DEPOT — Master Roadmap
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 Spec: `docs/td-vision.md` (approved 2026-08-09). Each phase gets its own code-level plan in this directory, written just-in-time and **reviewed by Jeff before any coding starts**. Every phase ships playable; HOLD THE DEPOT's gates stay green throughout; verification is inline (gates + smoke + screenshots — no review fan-outs).
 
 | Phase | Name | Ships | Gate |

@@ -1,5 +1,7 @@
 # SLOW FRONT — Phase 4: Possession (mk0.90-0.93)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 *Written 2026-08-13. Tasks 1-3 executed under the owner's standing authorization; Task 4 added after his playtest of mk0.92. Every design point is a ratified owner ruling or the sandbox's established twin-stick convention. All feel acceptance is the owner's playtest. Sequential Sonnet dispatches. (Drift audits after each task RETIRED by the owner, 2026-08-13 — gates + CI are the verification; audits only on the owner's request.)*
 
 **The ruling this phase implements (decision record, "Possession"):** any friendly squad or tower is takeover-able — TAKE CONTROL on every pie. Twin-stick: the stick drives a squad as one body (stick = formation anchor; fire = squad volley at the aim), towers become manual fire control. The front fights on under standing orders; a bell save mid-possession releases to command view. The enemy needs no mirror. Vehicles wait for the Heroes phase (none exist player-side yet).

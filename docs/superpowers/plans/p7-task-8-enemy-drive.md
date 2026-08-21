@@ -1,5 +1,7 @@
 *Part of the P7 phase plan — `2026-08-14-armor-demolition-p7.md` holds the skeleton; the decision record's COMMANDER PROFILE + TASK 8 RULINGS entries bind every dial here.*
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 # Task 8 — The enemy learns to drive (mk1.38) — FULL PLAN
 
 **What it does, in one line:** the enemy draws a hidden commander once per war (CAUTIOUS / BOLD / STUBBORN) whose doctrine writes orders into its Bison through the same motor pool your armor rides — bold rides out with assaults, cautious commits at ~55% held ground or bell 8, stubborn never leaves, and committed armor drives home between bells — while its APC ferries assault infantry to a drawn flank on your half on a seeded ~40% roll per eligible bell, and the intel desk may whisper which commander you drew.

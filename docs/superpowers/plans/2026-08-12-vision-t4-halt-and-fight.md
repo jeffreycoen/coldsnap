@@ -1,5 +1,7 @@
 # Vision Task 4 — Halt and fight (mk0.74)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 *2026-08-12. The owner's playtest found troops ordered into enemy territory never shooting enemies beside them. Diagnosis: the fire rule only lets a squad shoot while "stationary" — order DEFEND, or ATTACK during a between-leg pause — and an attacking squad is almost never in a pause, so its weapons stay silent no matter what stands next to it. The rule predates Vision; Vision made deep orders possible and exposed it. The owner's ruling: **an attacking squad that sees enemies in range halts and fights until they are dead or gone, then resumes the advance. MOVE stays quiet.***
 
 One task, one agent, four steps. No new dice anywhere — the halt rides the squad's existing pause field, which the fire rule already respects.

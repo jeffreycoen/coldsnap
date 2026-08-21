@@ -1,5 +1,7 @@
 # P7 Task 23 — the manual learns the ground, and the tour returns (mk1.5X)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 *2026-08-18. Two owner-ordered documentation items that are code: THE MINES CARD — mines and tripwires shipped at mk1.40 with no card; the tour teaches them now — and THE PHASE-CHANGE RE-SHOW (pulled from Polish II on the owner's "fully"): the don't-show-again flag becomes a manual REVISION STAMP, so when a phase changes the cards, the tour greets every player once more — including those who ticked never — then honors the tick again until the next revision. Interface work: the manual is one overlay on phone and desktop alike. The mark: the next sequential +0.01 at landing (mk1.53 if this lands before the README rewrite, mk1.54 after — sequential, never skipped).*
 
 **Suggested model: Sonnet** — small, fully specced.

@@ -1,5 +1,7 @@
 # Sapper Siege Fix (code-bearing; for Jeff's approval; no code until approved)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 > **For agentic workers:** ONE Opus 5 implementer, one task, one commit (next mk bump at dispatch time). Failing asserts FIRST. SCOPED verification only. FOREGROUND everything. Max 3 cycles then BLOCKED. Report plainly, every deviation its own labeled bullet, and INCLUDE the "files read before first edit" list.
 
 **Jeff's directives (2026-08-11):**

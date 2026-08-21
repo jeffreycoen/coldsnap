@@ -1,5 +1,7 @@
 # DEPOT Balance Pass — Measure, Tune, Verify (for Jeff's approval; no code until approved)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 > **For agentic workers:** superpowers:subagent-driven-development, tasks in order, one implementer at a time. Failing/sanity gates before tuning, measurements before every change, numbers recorded in the report AND back into this plan. Commit + PUSH per task, FOREGROUND CI polls. Iteration budget 3 cycles/task then BLOCKED. Reports to Jeff: plain language, every nonconformity its own labeled bullet.
 
 **Goal:** Re-tune the game's difficulty and prices against everything shipped since the last tune (fire discipline fix, infantry, wave timeout, armor wiring, sleep fix, honest sightlines, absolute cover, the sniper/spotter pair). This is the phase 5 closer that never ran, widened to cover the physics changes since.

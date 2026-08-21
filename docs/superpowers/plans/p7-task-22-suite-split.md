@@ -1,5 +1,7 @@
 # P7 Task 22 — the suite splits (mk1.52)
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 *2026-08-18. Reorganization 5 of 5: `scripts/depot-test.mjs` (~8,600 lines) splits into per-era files under `scripts/tests/`, imported in order by a thin runner that KEEPS THE NAME — the gate command `node scripts/depot-test.mjs` does not change, so CI and every standing gate list stand. The cut rule is mechanical: CONTIGUOUS segments in original file order, boundaries at the era banners, block bodies verbatim. The proof is arithmetic: the pass count before equals the pass count after, exactly, plus the keystone unchanged. Zero test content changes of any kind.*
 
 **Suggested model: Sonnet** — a mechanical file split with a manifest step.

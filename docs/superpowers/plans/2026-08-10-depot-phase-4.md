@@ -1,5 +1,7 @@
 # DEPOT Phase 4 Implementation Plan — Territory + Fog of War
 
+*HISTORY (stamped 2026-08-20, owner's order): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** The ground takes sides. An influence field over the playable area drives: green/red grid-line tinting, build rights (green only), holder-paid town buildings, and three-state fog (held = full detail, seam = silhouettes, unheld = activity invisible) with a hard targeting boundary. Fog on by default with a feel toggle (visuals only — the targeting rule is not toggleable).
