@@ -1321,13 +1321,21 @@ export function makeRenderer(canvas, world0, opts = {}) {
     // POSSESSION T5 (mk0.94): the possessed reticle — its own red ring, not
     // the build ghost. Lazy like everything here; the game layer drives it
     // only while a possession is live.
-    setReticle(on, x, z, y) {
+    // mk1.99: solid, spread-sized, and standing on a wall hit.
+    setReticle(on, x, z, y, r, hit) {
       if (!retRing) {
-        retRing = new THREE.Mesh(new THREE.RingGeometry(0.82, 1.0, 44), new THREE.MeshBasicMaterial({ color: 0xff6b5e, transparent: true, opacity: 0.85, depthWrite: false }));
+        retRing = new THREE.Mesh(new THREE.RingGeometry(0.82, 1.0, 44), new THREE.MeshBasicMaterial({ color: 0xff6b5e, depthWrite: false, side: THREE.DoubleSide }));
         retRing.rotation.x = -Math.PI / 2; retRing.layers.set(1); scene.add(retRing);
       }
       retRing.visible = !!on;
-      if (on) { retRing.position.set(x, y + 0.1, z); retRing.scale.set(1.2, 1.2, 1); }
+      if (on) {
+        const rr = Math.max(0.4, r || 1.2);
+        retRing.scale.set(rr, rr, 1);
+        // mk1.99: a wall hit stands the ring upright on the face, its plane
+        // square to the fire line; clean ground keeps the flat ring.
+        if (hit) { retRing.position.set(x, hit.y, z); retRing.rotation.set(0, hit.yaw, 0); }
+        else { retRing.position.set(x, y + 0.1, z); retRing.rotation.set(-Math.PI / 2, 0, 0); }
+      }
     },
     // ghost build cursor: pad snapped to a cell (cs meters), ring/fill at range r
     setHover(on, x, z, y, r, okFlag, cs) {

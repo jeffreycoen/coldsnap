@@ -1,13 +1,13 @@
 import { ok } from "./harness.mjs";
 import { identFwdDir, straightGrid } from "./shared.mjs";
-import { towerShot, squadFire, possessedVolley, possessedTowerFire, POSSESS_ACC, POSSESS_SNAP_R, snapTargetNear, mateBlocks, fieldReaches, effRange, PENDING_ARM_S, pendingArmed, spawnSquadMembers, spawnSandbag, pruneSquads, spawnWallCourses, WALL_HALF, WALL_THIN, WALL_COURSE_HY, friendlyFouls } from "../../src/depot/state.js";
+import { towerShot, squadFire, possessedVolley, possessedTowerFire, POSSESS_ACC, POSSESS_SNAP_R, snapTargetNear, stickyLock, mateBlocks, fieldReaches, effRange, PENDING_ARM_S, pendingArmed, spawnSquadMembers, spawnSandbag, pruneSquads, spawnWallCourses, WALL_HALF, WALL_THIN, WALL_COURSE_HY, friendlyFouls } from "../../src/depot/state.js";
 import { makeWorld, makeField, addBody, addWeld, stepWorld, applyDamage, CAUSE, mulberry32 } from "../../src/engine/core.js";
 import { reachPolygon, arcClears, scatterSigma, losGraze, bracedAt } from "../../src/depot/accuracy.js";
 import { TOWER_SPECS, ENEMY_FIRE, MASON, INFANTRY_ARMS } from "../../src/depot/specs.js";
 import { stepUnits } from "../../src/depot/units.js";
 import { makeSquad, stepSquad, drivePossessedSquad, COHESION_M, clearSlot } from "../../src/depot/squads.js";
 import { makeTerritory, holderAt, valueAt, canBuild } from "../../src/depot/territory.js";
-import { SIGHT, eyeOf, canSee, fillMaps, gridEye, makeSight, seenAt, stepSight, RETICLE_SPEED, steerReticle, reclampReticle } from "../../src/depot/sight.js";
+import { SIGHT, eyeOf, canSee, fillMaps, gridEye, makeSight, seenAt, stepSight, RETICLE_SPEED, steerReticle, reclampReticle, clampToImpact } from "../../src/depot/sight.js";
 import { serializeFront, parseFront, restoreBodies, restoreSquads } from "../../src/depot/save.js";
 import { startBuildLine } from "../../src/depot/buildlines.js";
 import { ringBell } from "../../src/depot/bell.js";
@@ -1546,8 +1546,8 @@ import fs from "node:fs";
 {
   const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-  ok("POSSESSION T5(a) source pin: the renderer owns a setReticle overlay drawn in the established red",
-    /setReticle\(on, x, z, y\)/.test(rendSrc) && /0xff6b5e/.test(String(rendSrc.match(/setReticle\(on, x, z, y\) \{[\s\S]*?\n    \},/) || "")));
+  ok("POSSESSION T5(a) source pin (re-taught mk1.99): the renderer owns a setReticle overlay drawn in the established red, solid",
+    /setReticle\(on, x, z, y, r, hit\)/.test(rendSrc) && /0xff6b5e/.test(String(rendSrc.match(/setReticle\(on, x, z, y, r, hit\) \{[\s\S]*?\n    \},/) || "")));
   ok("possessed frames never paint the build hover (re-pinned mk1.12 — the old pin was a character-distance accident)",
     /R\.overlay\.setReticle\(/.test(gameSrc) && /if \(!S\.possess && S\.hover\)/.test(gameSrc));
   ok("POSSESSION T5(c) source pin: the build hover never paints while possessed",
@@ -1605,8 +1605,8 @@ import fs from "node:fs";
   // (a) the constants exist and are pinned — real imports, no mirrors.
   ok("POSSESSION T7(a): POSSESS_ACC is pinned at 0.25 (the sharpened hand)",
     POSSESS_ACC === 0.25, POSSESS_ACC);
-  ok("POSSESSION T7(a): POSSESS_SNAP_R is pinned at 2m",
-    POSSESS_SNAP_R === 2, POSSESS_SNAP_R);
+  ok("POSSESSION T7(a) (re-taught mk1.99): POSSESS_SNAP_R is pinned at 4m — the forgiving snap",
+    POSSESS_SNAP_R === 4, POSSESS_SNAP_R);
 
   // (b) possessed spread tightens to the hand (mean angle off the aim line
   // under 0.035 rad); the machine (squadFire) stays loose (mean > 0.06 rad).
@@ -2006,3 +2006,93 @@ import fs from "node:fs";
 }
 // ==== end LETHALITY T9 ========================================================
 
+// ==== THE RETICLE (mk1.99) ==================================================
+// The owner's aim pass: the ring is the spread drawn solid, a tap jumps the
+// reticle, the fire line stops at the first surface it would hit
+// (clampToImpact), and the enemy snap is 4m and sticky (stickyLock). Pure
+// helpers tested on hand-built maps and stub worlds; JSX/renderer wiring
+// pinned by source regex, the file's own convention.
+{
+  const flatField = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+  const idUV = (x, z) => ({ u: x, v: z });
+  // A bare 32x32 sight grid, 2m cells, flat ground, nothing standing.
+  const bareSG = () => ({ nx: 32, nz: 32, cs: 2, halfU: 32, halfV: 32,
+    seen1: new Uint8Array(32 * 32).fill(1), seen2: new Uint8Array(32 * 32),
+    gnd: new Float32Array(32 * 32), occ: new Float32Array(32 * 32).fill(-Infinity) });
+
+  // (a) a clean line: the offset passes through untouched, no wall.
+  {
+    const SG = bareSG();
+    const r = clampToImpact(SG, 0.5, { x: 0, z: 0 }, { dx: 24, dz: 0 }, idUV);
+    ok("RETICLE mk1.99(a): a clear fire line leaves the offset untouched",
+      r.dx === 24 && r.dz === 0 && r.wall === false, JSON.stringify(r));
+  }
+  // (b) a 3m-tall solid column across the line clamps the offset short of it
+  // and reports the face (wall true, impact height under the top).
+  {
+    const SG = bareSG();
+    for (let iz = 0; iz < 32; iz++) SG.occ[iz * 32 + 21] = 3; // a wall at u≈11
+    const r = clampToImpact(SG, 0.5, { x: 0, z: 0 }, { dx: 24, dz: 0 }, idUV);
+    ok("RETICLE mk1.99(b): a solid across the line clamps the offset short of the wall cell",
+      r.dx > 0 && r.dx < 11 && r.wall === true, JSON.stringify(r));
+    ok("RETICLE mk1.99(b): the impact height sits on the face, under the wall's top",
+      r.y > 0 && r.y < 3, r.y);
+  }
+  // (c) a ridge (raised ground) clamps too, but is not a wall face.
+  {
+    const SG = bareSG();
+    for (let iz = 0; iz < 32; iz++) SG.gnd[iz * 32 + 21] = 4;
+    const r = clampToImpact(SG, 0.5, { x: 0, z: 0 }, { dx: 24, dz: 0 }, idUV);
+    ok("RETICLE mk1.99(c): a ridge across the line clamps the offset, wall false",
+      r.dx > 0 && r.dx < 11 && r.wall === false, JSON.stringify(r));
+  }
+  // (d) stickyLock acquires a live enemy within the 4m snap radius.
+  {
+    const world = makeWorld({ field: flatField, seed: 61 });
+    const enemy = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 20, hp: 58 });
+    const lk = stickyLock(world, null, { x: 3, z: 20 }, null, idUV);
+    ok("RETICLE mk1.99(d): stickyLock acquires a live enemy 3m from the aim (4m radius)",
+      lk === enemy, lk && lk.id);
+  }
+  // (e) the hold: a locked man stays locked while the raw aim stays within
+  // 4m of him; past 4m the lock breaks and, with no other enemy near, drops.
+  {
+    const world = makeWorld({ field: flatField, seed: 62 });
+    const enemy = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 20, hp: 58 });
+    const held = stickyLock(world, enemy.id, { x: 3.5, z: 20 }, null, idUV);
+    ok("RETICLE mk1.99(e): a held lock survives the raw aim 3.5m off the man",
+      held === enemy, held && held.id);
+    const dropped = stickyLock(world, enemy.id, { x: 4.5, z: 20 }, null, idUV);
+    ok("RETICLE mk1.99(e): the raw aim steered past 4m breaks the lock",
+      dropped === null, dropped && dropped.id);
+  }
+  // (f) a dead man sheds the lock even at zero distance.
+  {
+    const world = makeWorld({ field: flatField, seed: 63 });
+    const enemy = addBody(world, { kind: "unit", team: 2, mass: 82, hx: 0.26, hy: 0.86, hz: 0.26, x: 0, y: 0.86, z: 20, hp: 58 });
+    enemy.alive = false;
+    const lk = stickyLock(world, enemy.id, { x: 0, z: 20 }, null, idUV);
+    ok("RETICLE mk1.99(f): a dead man sheds the lock", lk === null, lk && lk.id);
+  }
+  // (g) source pins: the tap jumps the reticle; the loop clamps to impact and
+  // runs the sticky lock; the ring reads the live scatter.
+  {
+    const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("RETICLE mk1.99(g) source pin: a possessed ground tap jumps the reticle through the sight-circle clamp and the seen test",
+      /if \(seenAt\(T\.sight, cc0\.u, cc0\.v, 1\)\) \{\s*S\.reticleOff = \{ dx: dx0, dz: dz0 \};/.test(gameSrc));
+    ok("RETICLE mk1.99(g) source pin: the frame loop clamps the offset through clampToImpact",
+      /const imp9 = clampToImpact\(T\.sight, eyeY9, rc, S\.reticleOff, invW\);/.test(gameSrc));
+    ok("RETICLE mk1.99(g) source pin: the frame loop derives the aim through stickyLock",
+      /const lk9 = stickyLock\(world, S\.reticleLockId, S\.reticle, T, invW\);/.test(gameSrc));
+    ok("RETICLE mk1.99(g) source pin: the ring radius reads the live scatterSigma under POSSESS_ACC",
+      /scatterSigma\(world, muzzle9, aim9, \{ \.\.\.spec9, acc: spec9\.acc \* POSSESS_ACC \}\)/.test(gameSrc));
+  }
+  // (h) source pin: the ring's material is solid — no opacity in its block.
+  {
+    const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
+    const block = String(rendSrc.match(/setReticle\(on, x, z, y, r, hit\) \{[\s\S]*?\n    \},/) || "");
+    ok("RETICLE mk1.99(h) source pin: the ring draws solid — its material carries no opacity",
+      block.length > 0 && !/opacity/.test(block) && /depthWrite: false/.test(block), block.length);
+  }
+}
+// ==== end THE RETICLE (mk1.99) ==============================================

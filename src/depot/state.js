@@ -643,7 +643,7 @@ export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })
 // speed, his height — through shooterFire's existing lead solve. The snap
 // obeys the sight law: a man on unseen ground is not snapped to.
 export const POSSESS_ACC = 0.25;   // spread multiplier under player control // provisional (F5)
-export const POSSESS_SNAP_R = 2;   // m — reticle-to-enemy snap radius // provisional (F5)
+export const POSSESS_SNAP_R = 4;   // m — reticle-to-enemy snap radius (mk1.99: widened 2 -> 4, the forgiving snap) // provisional (F5)
 export function snapTargetNear(world, aim, T, toUV, r = POSSESS_SNAP_R) {
   const pool = world._L ? world._L.foes : world.bodies;     // T10
   let best = null, bd = r * r;
@@ -656,6 +656,21 @@ export function snapTargetNear(world, aim, T, toUV, r = POSSESS_SNAP_R) {
     bd = d2; best = b;
   }
   return best;
+}
+
+// mk1.99: THE STICKY SNAP. A held lock outlives the frame: the man stays
+// locked while he lives, stays seen, and the RAW aim stays within the snap
+// radius of him — steering the raw point past the radius is the deliberate
+// escape. Otherwise the lock drops and the nearest snappable enemy takes it.
+export function stickyLock(world, lockId, aim, T, toUV, r = POSSESS_SNAP_R) {
+  if (lockId) {
+    const b = world.byId.get(lockId);
+    if (b && b.alive && (b.kind === "unit" || b.kind === "vehicle" || b.kind === "mech") && b.team === 2) {
+      const c = toUV(b.pos.x, b.pos.z);
+      if (fieldReaches(T, c.u, c.v, 1) && Math.hypot(b.pos.x - aim.x, b.pos.z - aim.z) < r) return b;
+    }
+  }
+  return snapTargetNear(world, aim, T, toUV, r);
 }
 
 // THE CORRIDOR (T7): a living teammate inside MATE_R of the muzzle->aim
