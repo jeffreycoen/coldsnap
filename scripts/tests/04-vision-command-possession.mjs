@@ -2396,5 +2396,16 @@ import fs from "node:fs";
     ok("mk2.03(g) source pin: the soundboard benches all three",
       /id: "gren-toss"/.test(boardSrc) && /id: "gren-bounce"/.test(boardSrc) && /id: "gren-blast"/.test(boardSrc));
   }
+
+  // (h) mk2.04: the grenade is SEEN — a per-frame pool setter exists and the
+  // game layer feeds it the live grenades.
+  {
+    const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
+    const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("VISIBLE GRENADE mk2.04(h): the renderer pools green grenades blinking red",
+      /function setGrenades\(list, t\)/.test(rendSrc) && /0x35ff6a/.test(rendSrc) && /0xff2020/.test(rendSrc) && /period = 0\.05 \+ 0\.11 \* left/.test(rendSrc));
+    ok("VISIBLE GRENADE mk2.04(h): the game feeds the live grenades every frame",
+      /R\.setGrenades\(world\._grenades, world\.t\);/.test(gameSrc));
+  }
 }
 // ==== end THE GUN AND THE GRENADE (mk2.03) ==================================

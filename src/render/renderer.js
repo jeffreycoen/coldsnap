@@ -1321,6 +1321,26 @@ export function makeRenderer(canvas, world0, opts = {}) {
     wirePegMesh.count = wi; wirePegMesh.instanceMatrix.needsUpdate = true;
   }
 
+  // mk2.04 (owner): THE GRENADE, SEEN — green, blinking red, and the blink
+  // QUICKENS as the fuse runs out (per grenade, its own clock). Instanced
+  // box fed per frame by the game layer (R.setGrenades). Render-only; the
+  // 2.0 here is a display mirror of GRENADE.fuse. // provisional (F5)
+  const GREN_CAP = 32;
+  const GREEN_C = new THREE.Color(0x35ff6a), RED_C = new THREE.Color(0xff2020);
+  const grenMesh = pool(new THREE.BoxGeometry(0.22, 0.22, 0.22), new THREE.MeshBasicMaterial({ color: 0xffffff }), GREN_CAP, false);
+  function setGrenades(list, t) {
+    let gi = 0;
+    if (list) for (const g of list) {
+      if (!g.alive || gi >= GREN_CAP) continue;
+      const left = g.grenade ? Math.max(0, 2.0 - (t - g.grenade.t0)) : 1;
+      const period = 0.05 + 0.11 * left;   // ~6Hz fresh, ~20Hz at the burst
+      grenMesh.setColorAt(gi, (performance.now() / 1000) % period < period / 2 ? RED_C : GREEN_C);
+      writeInst(grenMesh, gi++, g.pos.x, g.pos.y, g.pos.z, null, 1, 1, 1);
+    }
+    if (grenMesh.instanceColor) grenMesh.instanceColor.needsUpdate = true;
+    grenMesh.count = gi; grenMesh.instanceMatrix.needsUpdate = true;
+  }
+
   // ---- build overlay (tower defense): ghost pad + range preview + objective
   // marker + spawn banners. Lazy nulls until the game layer calls them, so
   // nothing here exists for the other modes.
@@ -2366,5 +2386,5 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // never calls this and keeps the shipped look exactly
   function setGrade(g) { postMat.uniforms.uGrade.value = Math.max(-1, Math.min(1, g || 0)); }
   const project = (x, y, z) => { const v = new THREE.Vector3(x, y, z); v.project(cam); return { x: v.x, y: v.y }; };
-  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, overlay, setDressing, setMines, rotateStep, rotateBy, updateTerritory, setFog, setHealth, getFogDebug, chunkStats: () => chunkStats, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
+  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, overlay, setDressing, setMines, setGrenades, rotateStep, rotateBy, updateTerritory, setFog, setHealth, getFogDebug, chunkStats: () => chunkStats, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
 }

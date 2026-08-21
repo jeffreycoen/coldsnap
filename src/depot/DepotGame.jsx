@@ -3672,6 +3672,7 @@ export default function DepotGame({ onExit, resume = null }) {
           // arithmetic), radius at applyScatter's hard cap. No shot can
           // land outside it. For a squad the bound is drawn from the
           // farthest living shooter — every member's cone lands inside.
+          R.setGrenades(world._grenades, world.t); // mk2.04: the grenade is seen — green, blinking red, quickening
           let rr9 = 1.2, hit9 = null, ctr9 = null, pts9 = null;
           if (S.possess && S.reticle) {
             const P9 = S.possess;
