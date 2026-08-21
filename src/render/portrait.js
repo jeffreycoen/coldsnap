@@ -75,12 +75,37 @@ export function buildPortraitMan(utype) {
   }
   return g;
 }
+// THE MECH (owner, 2026-08-20): boxes-first miniature — grey toon slabs at
+// the walker's own proportions (mech.js RIG, literal numbers — this card
+// never moves, so no rig import is worth the coupling).
+export function buildPortraitMech() {
+  const g = new THREE.Group();
+  const grey = toon(0x5f6e80), dark = toon(0x2f353d);
+  const box = (mat, hx, hy, hz, x, y, z) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(hx * 2, hy * 2, hz * 2), mat);
+    m.position.set(x, y, z);
+    g.add(m);
+  };
+  const ankleH = 0.42, L1 = 1.9, L2 = 1.7, hipX = 0.85;
+  const hipY = ankleH + L1 + L2;
+  for (const sx of [-1, 1]) {
+    box(dark, 0.60, 0.20, 0.78, sx * hipX, ankleH / 2, 0.14);
+    box(grey, 0.34, 0.85, 0.40, sx * hipX, ankleH + L2 / 2, 0);
+    box(grey, 0.42, 0.95, 0.50, sx * hipX, ankleH + L2 + L1 / 2, 0);
+  }
+  box(grey, 1.15, 0.62, 0.95, 0, hipY + 0.62, 0); // hull
+  box(grey, 2.05, 0.58, 1.15, 0, hipY + 1.24 + 0.58, 0); // torso
+  box(dark, 0.62, 0.30, 0.48, 0, hipY + 1.24 + 1.16 + 0.30, 0); // head
+  box(dark, 0.75, 0.58, 1.45, -1.35, hipY + 1.24 + 0.58, 0); // shoulder pod
+  return g;
+}
 // key -> model. sq_* are men off their own kit; towers and hulls are the
 // renderer's real builders, player dress.
 export function buildPortraitModel(key) {
   if (key && key.startsWith("sq_")) return buildPortraitMan(key.slice(3));
   if (key === "hero_bison") return buildBison(1);
   if (key === "hero_apc") return buildApc(1);
+  if (key === "hero_mech") return buildPortraitMech();
   return buildTowerMesh(key); // mg | gun | mortar | rocket | frost
 }
 // renderPortrait(cardCanvas, key): build, frame, paint once, blit, dispose

@@ -170,13 +170,19 @@ function readBody(world, s, rocks) {
 export function serializeFront(ctx) {
   const { S, world, T, town, census, census2, rocks, smears, mapSeed, rngSeed } = ctx;
 
+  // THE MECH's pieces are not loose boxes (Phase E, mk1.92): a live mech's
+  // links carry mechRef and are skipped here — the mechs[] row below writes
+  // the whole machine as one entity. A DEAD mech's pieces have had mechRef
+  // stripped (the death block, Phase F) and ride this generic sweep as
+  // plain boxes — a wreck is a wreck.
+  const list = world.bodies.filter((b) => !b.mechRef);
   const idx = new Map();
-  for (let i = 0; i < world.bodies.length; i++) idx.set(world.bodies[i].id, i);
+  for (let i = 0; i < list.length; i++) idx.set(list[i].id, i);
   const rockIdx = new Map();
   for (let i = 0; i < rocks.length; i++) rockIdx.set(rocks[i], i);
 
-  const bodies = new Array(world.bodies.length);
-  for (let i = 0; i < world.bodies.length; i++) bodies[i] = writeBody(world.bodies[i], idx, rockIdx);
+  const bodies = new Array(list.length);
+  for (let i = 0; i < list.length; i++) bodies[i] = writeBody(list[i], idx, rockIdx);
 
   // Welds by INDEX PAIR. rA/rB (the per-body anchor offsets addWeld derives
   // from the pose at weld time) travel with them so a lattice caught
@@ -276,6 +282,20 @@ export function serializeFront(ctx) {
     census: cens(census), census2: cens(census2),
     bodies, welds, squads: S.squads.map(squadRow), foeSquads: (S.foeSquads || []).map(squadRow),
     smears: (smears || []).map((m) => ({ u: r3(m.u), v: r3(m.v), s: m.style, x: r3(m.wx), z: r3(m.wz) })),
+    mechs: (world.mechs || []).map((m) => {
+      const o = { x: r3(m.hull.pos.x), z: r3(m.hull.pos.z),
+        yaw: r4(Math.atan2(m.hull.R[6], m.hull.R[8])), hp: r3(m.hull.hp), tm: m.team || 1 };
+      const ex = {}; // A1: the orders bag rides its OWN key — never the position's `x`
+      let any = false;
+      for (const key of ["drv", "order", "tracks", "homeX", "homeZ", "bounty", "maxHp", "escortId"]) {
+        const val = plainValue(m.hull[key]); if (val === undefined) continue; ex[key] = val; any = true;
+      }
+      if (m.hull.dest) { ex.dest = { x: r3(m.hull.dest.x), z: r3(m.hull.dest.z) }; any = true; }
+      if (m.hull._patA) { ex._patA = { x: r3(m.hull._patA.x), z: r3(m.hull._patA.z) }; any = true; }
+      if (m.hull._patB) { ex._patB = { x: r3(m.hull._patB.x), z: r3(m.hull._patB.z) }; any = true; }
+      if (any) o.ex = ex;
+      return o;
+    }),
   };
   return JSON.stringify(data);
 }

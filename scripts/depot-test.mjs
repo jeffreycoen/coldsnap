@@ -25,4 +25,5 @@ await import("./tests/08-debug-pass.mjs");
 await import("./tests/09-reorg.mjs");
 await import("./tests/10-command-refit.mjs");
 await import("./tests/11-hiring-hall.mjs");
+await import("./tests/12-the-mech.mjs");
 finish();

@@ -10,12 +10,13 @@
 // change.
 import { TOWN, ROADS, MAP_SEED, OBJ_POS, GRID_W, GRID_H } from "./mapgen.js";
 import { addBody, heading, mulberry32 } from "../engine/core.js";
-import { BISON, APC, MASON, ENEMY_SPECS, TOWER_SPECS, HAND_TAGS } from "./specs.js";
+import { BISON, APC, MECH, MASON, ENEMY_SPECS, TOWER_SPECS, HAND_TAGS } from "./specs.js";
 import { clearSlot, makeSquad, slotBlockedPublic, SQUAD_SPECS } from "./squads.js";
 import { spawnUnit } from "./units.js";
 import { spawnSandbag, spawnSquadMembers, SANDBAG_HX, effRange } from "./state.js";
 import { cmdrOf, draftPick } from "./ai.js";
 import { planRoute } from "./route.js";
+import { buildMech } from "../engine/mech.js";
 
 // P7 T2/T3/T4: THE STARTING ARMOR — a Bison AND an APC parked by
 // each depot, the enemy's ARMED AT POST (owner) — driving doctrine
@@ -159,6 +160,42 @@ export function parkTower(world, grid, field, depotT, team, towerType) {
   return best ? place(best.x, best.z) : null;
 }
 
+// THE MECH PARKS (owner, 2026-08-20): the armor law at crown scale.
+export const MECH_SPREAD = { hx: 2.2, hy: 1, hz: 2.2 }; // footprint vet // provisional (F5)
+export function parkMech(world, grid, field, depotT, team) {
+  if (!depotT) return null;
+  const place = (bx, bz) => {
+    const m = buildMech(world, { x: bx, z: bz, yaw: Math.atan2(-bx, -bz), team, hp: MECH.hp });
+    m.thrustersOn = true; m.thrustAssist = true;
+    m.hull.drv = "mech"; m.hull.order = "defend"; m.hull.tracks = "careful";
+    m.hull.maxHp = MECH.hp; m.hull.homeX = bx; m.hull.homeZ = bz;
+    if (team === 2) m.hull.bounty = MECH.bounty;
+    return m.hull;
+  };
+  const clearAt = (bx, bz) => {
+    const cell = grid.cellAt(bx, bz);
+    if (!cell || cell.blocked || cell.ice || cell.water || cell.wallId || cell.steep) return false;
+    if (Math.hypot(bx - OBJ_POS.x, bz - OBJ_POS.z) < 5) return false;
+    if (slotBlockedPublic(world, bx, bz, 4.5)) return false; // provisional (F5)
+    if (world.bodies.some((o) => (o.kind === "vehicle" || o.kind === "mech") && o.alive && Math.hypot(o.pos.x - bx, o.pos.z - bz) < 8)) return false;
+    return true;
+  };
+  for (let rr = 16; rr <= 32; rr += 1.5) for (let k = 0; k < 16; k++) {
+    const az = (k / 16) * Math.PI * 2 + 0.35;
+    const bx = depotT.x + Math.sin(az) * rr, bz = depotT.z + Math.cos(az) * rr;
+    if (clearAt(bx, bz) && armorSpread(field, bx, bz, MECH_SPREAD) < 0.28 && planRoute(grid, bx, bz, 0, 0, { hull: true, team })) return place(bx, bz);
+  }
+  let flat = null, flatSp = 1e9; // fail-proof: the flattest clear cell parks it anyway
+  for (let gz = 0; gz < GRID_H; gz++) for (let gx = 0; gx < GRID_W; gx++) {
+    const wp = grid.gridToWorld(gx, gz);
+    const d = Math.hypot(wp.x - depotT.x, wp.z - depotT.z);
+    if (d > 36 || d < 14 || !clearAt(wp.x, wp.z)) continue;
+    const sp = armorSpread(field, wp.x, wp.z, MECH_SPREAD);
+    if (sp < flatSp) { flatSp = sp; flat = wp; }
+  }
+  return flat ? place(flat.x, flat.z) : null;
+}
+
 // bag's own half-extent plus a man's clearance) plus the grid's verdict
 // — a blocked cell is the depot footprint or a rock, ice is water — plus
 // road and objective clearance. Each bag gets a fan of candidates around
@@ -218,6 +255,7 @@ export const PICK_POOL = [
   { key: "sq_mechanics", kind: "squad", type: "mechanics", tag: "mechanic", n: 2 },
   { key: "hero_bison", kind: "hull", vtype: "bison" },
   { key: "hero_apc", kind: "hull", vtype: "apc" },
+  { key: "hero_mech", kind: "mech" },
   { key: "mg", kind: "tower" }, { key: "gun", kind: "tower" }, { key: "mortar", kind: "tower" },
   { key: "rocket", kind: "tower" }, { key: "frost", kind: "tower" },
 ];
@@ -288,6 +326,7 @@ export function mirrorFieldKey(world, S, depotE, grid, field, key, nextApcSeq) {
   const pick = PICK_POOL.find((p) => p.key === key);
   if (!pick || !depotE || !grid || !field) return;
   if (pick.kind === "hull") { parkArmor(world, grid, field, depotE, 2, pick.vtype, nextApcSeq || (() => 1)); return; }
+  if (pick.kind === "mech") { parkMech(world, grid, field, depotE, 2); return; }
   if (pick.kind === "tower") { parkTower(world, grid, field, depotE, 2, pick.key); return; }
   const gR = Math.hypot(depotE.nx, depotE.nz) * MASON.pitch / 2 + 3.5;
   let mi = 0;

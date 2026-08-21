@@ -55,9 +55,9 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
 
 // ---- P7.2 T2 (mk1.81): THE HAND — five cards, three plans + two hires
 {
-  // (a) one table: the hand's seventeen are the pick pool's seventeen
-  ok("T2(a): HAND_KEYS is the seventeen, exactly the pick pool's keys",
-    HAND_KEYS.length === 17 && new Set(HAND_KEYS).size === 17 && PICK_POOL.every((p) => HAND_KEYS.includes(p.key)));
+  // (a) one table: the hand's eighteen are the pick pool's eighteen
+  ok("T2(a): HAND_KEYS is the eighteen, exactly the pick pool's keys",
+    HAND_KEYS.length === 18 && new Set(HAND_KEYS).size === 18 && PICK_POOL.every((p) => HAND_KEYS.includes(p.key)));
 
   // (b) the deal's contract — five draws, always, draw-then-clamp
   const count = () => { let n = 0; const r = mulberry32(7); return { rng: () => { n++; return r(); }, n: () => n }; };
@@ -74,7 +74,7 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
   }
   {
     const c = count();
-    const owned = HAND_KEYS.slice(0, 15); // two plans left in the pool
+    const owned = HAND_KEYS.slice(0, 16); // two plans left in the pool
     const hand = dealConvoyHand(owned, HAND_KEYS, c.rng);
     ok("T2(b5): a thin pool still burns five draws and deals what it has",
       c.n() === 5 && hand.filter((x) => !x.hire).length === 2 && hand.filter((x) => x.hire).length === 2);
@@ -140,9 +140,9 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
   // (f) the manual tells the hand's truth
   {
     const fm = fs.readFileSync("src/ui/FieldManual.jsx", "utf8");
-    ok("T2(f): the tour returns for the hand (re-taught P7.2 T8: MANUAL_REV 4 -> 5)", /export const MANUAL_REV = 5;/.test(fm));
+    ok("T2(f): the tour returns for the hand (re-taught mk1.92: MANUAL_REV 5 -> 6)", /export const MANUAL_REV = 6;/.test(fm));
     ok("T2(f2): THE BELL card teaches plans and hires, and the header count is honest",
-      /plans you buy once/.test(fm) && /hires that walk on at once/.test(fm) && /Nine linked cards/.test(fm));
+      /plans you buy once/.test(fm) && /hires that walk on at once/.test(fm) && /Ten linked cards/.test(fm));
   }
 }
 
@@ -151,9 +151,9 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
   // (a) the bare bar
   ok("T3(a): PLAYER_START is empty — the bar starts bare (owner)", PLAYER_START.length === 0);
   ok("T3(a2): the fresh manifest owns nothing", makeManifestState().unlocked.length === 0);
-  ok("T3(a3): the plans pool is the full seventeen",
+  ok("T3(a3): the plans pool is the full eighteen",
     dealConvoyHand([], HAND_KEYS, mulberry32(9)).filter((c) => !c.hire).length === 3 &&
-    HAND_KEYS.filter((k) => makeManifestState().unlocked.indexOf(k) < 0).length === 17);
+    HAND_KEYS.filter((k) => makeManifestState().unlocked.indexOf(k) < 0).length === 18);
   // (b) the pause — one gate, source-pinned (the loop is unimportable)
   {
     const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
@@ -191,8 +191,8 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
 {
   // (a) the tag map: squads and heroes map to wave tags; a tower key maps to
   // nothing because it ROUTES to his plans ledger instead — never an exclusion
-  ok("T4(a): HAND_TAGS covers the ten squads and both heroes; tower keys route to the ledger",
-    Object.keys(HAND_TAGS).length === 12 && ["mg", "gun", "mortar", "rocket", "frost"].every((k) => HAND_TAGS[k] === undefined));
+  ok("T4(a): HAND_TAGS covers the ten squads and all three heroes; tower keys route to the ledger",
+    Object.keys(HAND_TAGS).length === 13 && ["mg", "gun", "mortar", "rocket", "frost"].every((k) => HAND_TAGS[k] === undefined));
   // (b) his deal: five draws; owned plans of BOTH spaces never re-deal
   {
     let n = 0; const raw = mulberry32(84); const rng = () => { n++; return raw(); };
@@ -455,7 +455,7 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
 {
   // (a) the sixteenth key, every table
   ok("T6(a): the pool is seventeen and sq_medics is in every seat",
-    HAND_KEYS.length === 17 && HAND_KEYS.includes("sq_medics") && PICK_POOL.length === 17 &&
+    HAND_KEYS.length === 18 && HAND_KEYS.includes("sq_medics") && PICK_POOL.length === 18 &&
     PICK_POOL.some((p) => p.key === "sq_medics" && p.kind === "squad" && p.type === "medics" && p.tag === "medic" && p.n === 2));
   ok("T6(a2): the tag map routes his medic plan to the wave map like any squad", HAND_TAGS.sq_medics === "medic");
   ok("T6(a3): the squad row — two men at 55 // provisional (F5)", SQUAD_SPECS.medics.n === 2 && SQUAD_SPECS.medics.cost === 55);
@@ -557,7 +557,7 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
 {
   // (a) the seventeenth key, every table
   ok("T7v2(a): the pool is seventeen and sq_mechanics is in every seat",
-    HAND_KEYS.length === 17 && HAND_KEYS.includes("sq_mechanics") && PICK_POOL.length === 17 &&
+    HAND_KEYS.length === 18 && HAND_KEYS.includes("sq_mechanics") && PICK_POOL.length === 18 &&
     PICK_POOL.some((p) => p.key === "sq_mechanics" && p.kind === "squad" && p.type === "mechanics" && p.tag === "mechanic" && p.n === 2));
   ok("T7v2(a2): the tag map and the squad row — two men at 55, tag mechanic",
     HAND_TAGS.sq_mechanics === "mechanic" && SQUAD_SPECS.mechanics.n === 2 && SQUAD_SPECS.mechanics.cost === 55);
@@ -735,7 +735,7 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
   // (e) the manual learns the draft
   {
     const fm = fs.readFileSync("src/ui/FieldManual.jsx", "utf8");
-    ok("T8v2(e): the tour returns for the draft (MANUAL_REV 5) and the card tells it",
-      /export const MANUAL_REV = 5;/.test(fm) && /seven dealt cards/.test(fm) && /Pick five, free/.test(fm));
+    ok("T8v2(e): the tour returns for the draft (MANUAL_REV 6) and the card tells it",
+      /export const MANUAL_REV = 6;/.test(fm) && /seven dealt cards/.test(fm) && /Pick five, free/.test(fm));
   }
 }

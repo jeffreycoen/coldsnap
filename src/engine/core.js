@@ -668,6 +668,18 @@ export function explode(world, x, y, z, spec) {
     const reach = spec.r + 3.5;
     if (dd < reach && spec.dmg) mm.bossHp -= spec.dmg * Math.max(0, 1 - dd / reach);
   }
+  // DIVERGENCE (guarded, A2): a WAR mech's hull carries real hp — each blast
+  // wounds the machine ONCE, by hull proximity (the boss pool's shape), through
+  // applyDamage so attribution, lastHit, and the kill all ride the normal path.
+  // A boss (bossHp) keeps its own pool untouched; a direct-hit round's blast
+  // component never double-pays the body it already struck.
+  if (world.mechs) for (const mm of world.mechs) {
+    if (!mm.hull || !mm.hull.alive || mm.bossHp != null) continue;
+    if (!spec.dmg || mm.hull.id === spec._directHitId) continue;
+    const dd = Math.hypot(mm.hull.pos.x - x, mm.hull.pos.y - y, mm.hull.pos.z - z);
+    const reach = spec.r + 3.5;
+    if (dd < reach) applyDamage(world, mm.hull, spec.dmg * Math.max(0, 1 - dd / reach), { cause: CAUSE.BLAST, attacker: spec.attacker || "world", volley: spec.volley || 0, srcId: world.depotCombat ? spec.owner : undefined, srcX: world.depotCombat ? x : undefined, srcZ: world.depotCombat ? z : undefined });
+  }
   const groundH = world.field.heightAt(x, z);
   if (y - groundH < 1.4 && spec.crater) {
     world.field.carve(x, z, spec.crater * 2.4, spec.crater);
@@ -762,7 +774,7 @@ function stepProjectiles(world) {
       // armor actually gets to see (their blast damage is concussion and
       // bypasses armor by design). Only opened under world.depotCombat +
       // spec.dirDmg != null so TD's noImpact-only law is untouched elsewhere.
-      if (hitBody && hitBody.alive && (!p.spec.noImpact || (world.depotCombat && p.spec.dirDmg != null)) && (hitBody.kind === "unit" || hitBody.kind === "vehicle" || hitBody.kind === "truck")) {
+      if (hitBody && hitBody.alive && (!p.spec.noImpact || (world.depotCombat && p.spec.dirDmg != null)) && (hitBody.kind === "unit" || hitBody.kind === "vehicle" || hitBody.kind === "truck" || hitBody.kind === "mech" || hitBody.kind === "mechlink" || hitBody.kind === "mechfoot")) {
         let impactDmg = p.spec.dirDmg != null ? p.spec.dirDmg
           : p.spec.kind === "shell" ? 90 : p.spec.kind === "mg" ? 11 : 55;
         // DIVERGENCE (guarded): DEPOT combat scales direct impact damage by
@@ -825,6 +837,9 @@ function stepProjectiles(world) {
 
 // ------------------------------------------------------- damage & killing
 function applyDamage(world, b, dmg, info) {
+  // DIVERGENCE (guarded: no mechRef in the frozen demo): a mech takes every
+  // wound on ONE ledger — any hit on any limb is a hit on the hull.
+  if (b.mechRef && b.mechRef.hull && b !== b.mechRef.hull) b = b.mechRef.hull;
   if (!b.alive || dmg <= 0) return;
   // DIVERGENCE (guarded): DEPOT armor thresholds — a sub-armor ballistic hit
   // glances off (15% dmg); blast (concussion) bypasses armor entirely.
@@ -1744,7 +1759,7 @@ function classifyImpacts(world) {
     if (victim.kind === "unit" && other && (other.kind === "vehicle" || other.kind === "mechfoot") && other.pos.y > victim.pos.y + 0.2 && pn > 60) {
       // a tank bearing down from above is not a wrestling match: instant CRUSH —
       // (a mech foot doubly so — DIVERGENCE, guarded: no mechfoot in the demo)
-      if (victim.alive) applyDamage(world, victim, 1e6, { cause: CAUSE.CRUSH, attacker: other.id === world.bisonId || other.kind === "mechfoot" ? "player" : "world" });
+      if (victim.alive) applyDamage(world, victim, 1e6, { cause: CAUSE.CRUSH, attacker: other.kind === "mechfoot" ? (other.mechRef && other.mechRef.team === 2 ? "enemy" : "player") : other.id === world.bisonId ? "player" : "world" });
       // — and the hull grinds the body into the snow rather than beaching on it:
       // fast-forward the corpse's de-solidify clock so the tank settles in ~0.3s
       victim.deadT = Math.min(victim.deadT || world.t, world.t - 3.7);
@@ -1768,7 +1783,9 @@ function classifyImpacts(world) {
       dmg = dv * 20;
       info = { cause: CAUSE.COLLAPSE, attacker: (other.lastImp && other.lastImp.attacker) || "world", killerId: other.id, buildingId: other.group };
     } else if ((other.kind === "vehicle" || other.kind === "wreck" || other.mechRef) && V.len(other.v) > 2.0 && dv > 2.6 && victim.kind === "unit") {
-      const att = other.driver === "player" || other.mechRef ? "player" : world.t - other.lastPlayerTouch < 3.5 ? "player" : "world";
+      const att = other.driver === "player" ? "player"
+        : other.mechRef ? (other.mechRef.team === 2 ? "enemy" : "player")
+        : world.t - other.lastPlayerTouch < 3.5 ? "player" : "world";
       dmg = dv * 18;
       info = { cause: CAUSE.CRUSH, attacker: att, killerId: other.id };
     } else if (dv > (other && other.kind === "ice" ? 24 : 8) && !inertStone) {

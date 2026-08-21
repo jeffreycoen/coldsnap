@@ -205,7 +205,7 @@ function slotBlocked(world, x, z, clear) {
   // and steer-around site inherits it through this one law.
   const vpool = world._L ? world._L.vehicles : world.bodies;
   for (const b of vpool) {
-    if (!b.alive || b.kind !== "vehicle") continue;
+    if (!b.alive || (b.kind !== "vehicle" && b.kind !== "mech")) continue;
     if (Math.abs(x - b.pos.x) <= b.hx + clear && Math.abs(z - b.pos.z) <= b.hz + clear) return true;
   }
   return false;
@@ -502,7 +502,7 @@ export function squadThreatened(world, squad, members) {
   const pool = world._L ? world._L.foes : world.bodies;     // T10
   for (const b of pool) {
     if (!b.alive || b.team !== 2) continue;
-    if (b.kind !== "unit" && b.kind !== "vehicle") continue;
+    if (b.kind !== "unit" && b.kind !== "vehicle" && b.kind !== "mech") continue;
     if (Math.hypot(b.pos.x - squad.anchor.x, b.pos.z - squad.anchor.z) <= THREAT_RADIUS) return true;
   }
   return false;
@@ -891,7 +891,7 @@ export function stepMechanicTend(world, u, ax, az, dt) {
   let best = null, bd = Infinity, br = 0;
   for (const b of world.bodies) {
     if (!b.alive || b.team !== u.team) continue;
-    const machine = b.kind === "vehicle" || b.kind === "tower" || b.kind === "wall" || (b.kind === "chunk" && b.sandbag);
+    const machine = b.kind === "mech" || b.kind === "vehicle" || b.kind === "tower" || b.kind === "wall" || (b.kind === "chunk" && b.sandbag);
     if (!machine || b.maxHp == null || b.hp >= b.maxHp - 0.5) continue;
     if (Math.hypot(b.pos.x - ax, b.pos.z - az) > MECH_SEEK_M) continue;
     const d = Math.hypot(b.pos.x - u.pos.x, b.pos.z - u.pos.z);

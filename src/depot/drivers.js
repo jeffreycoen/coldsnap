@@ -14,6 +14,7 @@ import { arcClears } from "./accuracy.js";
 import { ENEMY_FIRE, BISON_FIRE } from "./specs.js";
 import { planRoute } from "./route.js";
 import { clearSlot } from "./squads.js";
+import { buildMech, mechCommand, respawnMech, mechFallen, mechFire, mechMissiles, mechBarrage, mechAimDir } from "../engine/mech.js";
 
 // ---- the wave tank — re-seated from units.js stepTank (mk1.30), verbatim.
 function tankGoal(world, grid, t, dt, fwdDir) {
@@ -318,7 +319,7 @@ function armorScanFoes(world, v, muzzle, spec, unitsOnly, T, toUV) {
   const pool = world._L ? (enemyTeam === 2 ? world._L.foes : world._L.friends) : world.bodies;
   let best = null, bd = eR * eR;
   for (const e of pool) {
-    if ((e.kind !== "unit" && (unitsOnly || e.kind !== "vehicle")) || !e.alive || e.team !== enemyTeam) continue;
+    if ((e.kind !== "unit" && (unitsOnly || (e.kind !== "vehicle" && e.kind !== "mech"))) || !e.alive || e.team !== enemyTeam) continue;
     const dx = e.pos.x - v.pos.x, dz = e.pos.z - v.pos.z, d2 = dx * dx + dz * dz;
     if (d2 >= bd) continue;
     const c = toUV(e.pos.x, e.pos.z);
@@ -390,6 +391,112 @@ function apcGuns(world, v, dt, T, toUV) {
 DRIVERS.apc = { goal: armorGoal, guns: apcGuns };
 // (stepDrivers' possessed skip already decays mgT — no change.)
 
+// ---- THE MECH (owner, 2026-08-20): the crown's seat. Goal = the armor's
+// route legs actuated as walker commands (the tower-defense boss precedent:
+// heading slewed, travel cut through turns). Fall tending per the ruling:
+// helpless, then stands where it fell — the fall itself never wounds.
+const MECH_ARRIVE = 3.5, MECH_DOWN_S = 6, MECH_GRACE_S = 5; // provisional (F5)
+const MECH_GUN = { range: 40, occl: "arc", projSpeed: 120 }; // scan pseudo-spec // provisional (F5)
+function mechFallenTend(world, b) {
+  const m = b.mechRef;
+  if (!m._downT) m._downT = world.t;
+  if (world.t - m._downT < MECH_DOWN_S) return;       // helpless — shells land, nothing answers
+  let rx = b.pos.x, rz = b.pos.z;
+  const wp = b._route && b._route.length ? b._route[0] : b.dest;
+  if (wp) { // repeated falls in one patch stand up FURTHER along the route (the boss lesson)
+    const dd = Math.hypot(wp.x - rx, wp.z - rz) || 1;
+    const adv = Math.min(2.5 + (m._fallN || 0) * 3, dd);
+    rx += (wp.x - rx) / dd * adv; rz += (wp.z - rz) / dd * adv;
+  }
+  m._fallN = (m._fallN || 0) + 1; m._downT = 0;
+  respawnMech(world, m, rx, rz, Math.atan2(b.R[6], b.R[8])); // hp untouched — wounds keep
+  m._fGrace = world.t + MECH_GRACE_S;
+}
+function mechGoal(world, grid, b, dt, fwdDir, opts) {
+  const m = b.mechRef;
+  if (!m) return;
+  if (mechFallen(m)) { mechFallenTend(world, b); return; }
+  if (world.t < (m._fGrace || 0)) { mechCommand(m, { travel: 0, lateral: 0 }); return; }
+  const blockers = b.tracks !== "free" ? armorBlockers(world, b) : null;
+  if (blockers) { // THE TRACKS LAW: own men in the lane stop the walk; they are told to step aside (the yield, verbatim reuse)
+    mechCommand(m, { travel: 0, lateral: 0 });
+    const fx = b.R[6], fz = b.R[8], fl = Math.hypot(fx, fz) || 1;
+    for (const u of blockers) {
+      if (u._yield && u._yield.until > world.t) continue;
+      if (u.riding || u.pinned || u._fuse != null) continue;
+      const side = ((u.pos.x - b.pos.x) * fz - (u.pos.z - b.pos.z) * fx) / fl >= 0 ? 1 : -1;
+      const px = (fz / fl) * side, pz = (-fx / fl) * side;
+      const p = clearSlot(world, u.pos.x + px * YIELD_M, u.pos.z + pz * YIELD_M, (u.hx || 0.28) + 0.35);
+      if (!u._yieldHome) u._yieldHome = { x: u.pos.x, z: u.pos.z };
+      u._yield = { x: p.x, z: p.z, until: world.t + YIELD_S };
+    }
+    return;
+  }
+  const order = b.order || "defend";
+  if (order === "defend" || !b.dest) { mechCommand(m, { travel: 0, lateral: 0 }); return; }
+  // MOVE/PATROL/ESCORT route legs — armorGoal's own bookkeeping shape on the hull
+  if (order === "escort") {
+    const sq = opts && opts.squads ? opts.squads.find((q) => q.id === b.escortId) : null;
+    if (!sq) { b.order = "defend"; return; }
+    const dx = sq.anchor.x - b.pos.x, dz = sq.anchor.z - b.pos.z, d = Math.hypot(dx, dz) || 1;
+    if (d <= ARMOR_ESCORT_BACK + 3) { mechCommand(m, { travel: 0, lateral: 0 }); return; }
+    b.dest = { x: sq.anchor.x - (dx / d) * ARMOR_ESCORT_BACK, z: sq.anchor.z - (dz / d) * ARMOR_ESCORT_BACK };
+  }
+  const destChanged = !b._routeDest || Math.hypot(b._routeDest.x - b.dest.x, b._routeDest.z - b.dest.z) > 0.5;
+  if (destChanged || !b._route) {
+    const r = planRoute(grid, b.pos.x, b.pos.z, b.dest.x, b.dest.z, { hull: true, team: b.team });
+    if (r && !r.reached && r.pts.length) { const end = r.pts[r.pts.length - 1]; b.dest = { x: end.x, z: end.z }; } // the honest clamp
+    b._route = r && r.pts.length ? r.pts : null;
+    b._routeDest = { x: b.dest.x, z: b.dest.z };
+  }
+  while (b._route && b._route.length && Math.hypot(b._route[0].x - b.pos.x, b._route[0].z - b.pos.z) < MECH_ARRIVE) b._route.shift();
+  if (Math.hypot(b.dest.x - b.pos.x, b.dest.z - b.pos.z) <= MECH_ARRIVE) {
+    if (b.order === "patrol" && b._patA && b._patB) {
+      const goingToB = Math.hypot(b.dest.x - b._patB.x, b.dest.z - b._patB.z) < 0.5;
+      b.dest = goingToB ? { x: b._patA.x, z: b._patA.z } : { x: b._patB.x, z: b._patB.z };
+      b._route = null; b._routeDest = null;
+    } else { b.order = "defend"; b.dest = null; mechCommand(m, { travel: 0, lateral: 0 }); return; }
+  }
+  const wp = b._route && b._route.length ? b._route[0] : b.dest;
+  const want = Math.atan2(wp.x - b.pos.x, wp.z - b.pos.z);
+  if (b._mHead == null) b._mHead = m.state.heading;
+  let herr = want - b._mHead;
+  while (herr > Math.PI) herr -= 2 * Math.PI;
+  while (herr < -Math.PI) herr += 2 * Math.PI;
+  b._mHead += Math.max(-0.45 * dt, Math.min(0.45 * dt, herr));
+  const turning = Math.abs(herr) > 0.5;
+  mechCommand(m, { travel: turning ? 0.35 : 0.9, heading: b._mHead }); // the boss numbers // provisional (F5)
+}
+function mechGuns(world, b, dt, T, toUV) {
+  const m = b.mechRef;
+  if (!m || mechFallen(m)) return;
+  const muzzle = { x: b.pos.x, y: b.pos.y + 2.0, z: b.pos.z };
+  let tgt = armorScanFoes(world, b, muzzle, MECH_GUN, false, T, toUV);
+  let struct = false;
+  if (!tgt) { tgt = armorScanStructs(world, b, muzzle, MECH_GUN, T, toUV); struct = !!tgt; }
+  if (!tgt) return;
+  const d = Math.hypot(tgt.pos.x - b.pos.x, tgt.pos.z - b.pos.z);
+  m.aimYaw = Math.atan2(tgt.pos.x - b.pos.x, tgt.pos.z - b.pos.z);
+  m.aimRange = d;
+  const torso = m.waist ? m.waist.b : m.hull;
+  let bear = m.aimYaw - Math.atan2(torso.R[6], torso.R[8]);
+  while (bear > Math.PI) bear -= 2 * Math.PI;
+  while (bear < -Math.PI) bear += 2 * Math.PI;
+  if (Math.abs(bear) > 0.12) return; // the waist is still turning
+  mechFire(world, m); // rate-limited inside
+  if (d > 14) mechMissiles(world, m);
+  // the barrage answers structures and packed ground // provisional (F5)
+  if (struct) { mechBarrage(world, m); return; }
+  const pool = world._L ? (b.team === 1 ? world._L.foes : world._L.friends) : world.bodies;
+  let near = 0;
+  for (const e of pool) {
+    if ((e.kind !== "unit" && e.kind !== "vehicle" && e.kind !== "mech") || !e.alive) continue;
+    if (Math.hypot(e.pos.x - tgt.pos.x, e.pos.z - tgt.pos.z) < 8) near++;
+  }
+  if (near >= 4) mechBarrage(world, m);
+}
+DRIVERS.mech = { goal: mechGoal, guns: mechGuns };
+
 // stepDrivers: once per sim tick, BEFORE stepUnits — tanks drew from
 // world.rng before infantry at mk1.21 and the draw-order contract holds.
 // opts.possessedId (P7 T2): a possessed hull skips its driver entirely
@@ -398,7 +505,7 @@ DRIVERS.apc = { goal: armorGoal, guns: apcGuns };
 export function stepDrivers(world, grid, fwdDir, T, toUV = (x, z) => ({ u: x, v: z }), opts = {}) {
   const dt = world.dt;
   for (const b of world.bodies) {
-    if (b.kind !== "vehicle" || !b.alive) continue;
+    if ((b.kind !== "vehicle" && b.kind !== "mech") || !b.alive) continue;
     const d = DRIVERS[b.drv];
     if (!d) continue;
     if (opts.possessedId === b.id) { b.gunT = (b.gunT || 0) - dt; b.mgT = (b.mgT || 0) - dt; continue; }
@@ -422,6 +529,16 @@ export function possessedArmorFire(world, v, aim, T, toUV = (x, z) => ({ u: x, v
   v._aimYaw = Math.atan2(aim.x - v.pos.x, aim.z - v.pos.z);
   shooterFire(world, v, { x: v.pos.x, y: v.pos.y + 1.4, z: v.pos.z }, tgt, { ...gun, acc: gun.acc * POSSESS_ACC }, { attacker: "player", hitStruct: true, owner: v.id });
   return true;
+}
+// POSSESSION (mk1.92): THE MECH's shared sight gate — one aim-point test for
+// all five triggers (FIRE/MSL/BRG/PUNT/180), the aim point mechAimDir
+// solves at the commanded range. Headless-testable in isolation; the game
+// layer (DepotGame.jsx) only decides which engine call to attempt.
+export function mechSighted(world, mech, T, toUV = (x, z) => ({ u: x, v: z })) {
+  const { muzzle, dir } = mechAimDir(world, mech);
+  const rng = mech.aimRange || 26;
+  const c = toUV(muzzle.x + dir.x * rng, muzzle.z + dir.z * rng);
+  return fieldReaches(T, c.u, c.v, (mech.team || 1) === 2 ? 2 : 1);
 }
 export function possessedArmorMg(world, v, aim, T, toUV = (x, z) => ({ u: x, v: z })) {
   const mg = BISON_FIRE.mg;

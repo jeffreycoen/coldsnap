@@ -494,7 +494,7 @@ export function buildMech(world, opts = {}) {
     return b;
   };
   // §5b: the CMG flywheel is REAL mass (~3% of machine), on the mount body
-  const hull = B({ kind: "mech", team: 1, group: opts.group || "mech", mass: (R.hull.m + 460) * s3, hx: R.hull.hx * s, hy: R.hull.hy * s, hz: R.hull.hz * s, x, y: hullY, z, hp: opts.hp != null ? opts.hp : 1e9, friction: 0.6, restitution: 0 });
+  const hull = B({ kind: "mech", team: opts.team || 1, group: opts.group || "mech", mass: (R.hull.m + 460) * s3, hx: R.hull.hx * s, hy: R.hull.hy * s, hz: R.hull.hz * s, x, y: hullY, z, hp: opts.hp != null ? opts.hp : 1e9, friction: 0.6, restitution: 0 });
   mech.hull = hull;
   const gains = {};
   for (const side of ["L", "R"]) {
@@ -502,12 +502,12 @@ export function buildMech(world, opts = {}) {
     const hx = x + sx * R.hipX * s, hipPt = v3(hx, hipYw, z);
     const kneePt = v3(hx, hipYw - R.L1 * s, z);
     const anklePt = v3(hx, hipYw - L, z);
-    const yawB = B({ kind: "mechlink", group: "mech", mass: R.yawBlock.m * s3, hx: R.yawBlock.h * s, hy: R.yawBlock.h * s, hz: R.yawBlock.h * s, x: hx, y: hipYw + 0.36 * s, z, friction: 0.6, restitution: 0 });
-    const hipB = B({ kind: "mechlink", group: "mech", mass: R.hipBlock.m * s3, hx: R.hipBlock.h * s, hy: R.hipBlock.h * s, hz: R.hipBlock.h * s, x: hx, y: hipYw, z, friction: 0.6, restitution: 0 });
-    const thigh = B({ kind: "mechlink", group: "mech", mass: R.thigh.m * s3, hx: R.thigh.hx * s, hy: R.thigh.hy * s, hz: R.thigh.hz * s, x: hx, y: hipYw - R.L1 * s / 2, z, friction: 0.6, restitution: 0 });
-    const shin = B({ kind: "mechlink", group: "mech", mass: R.shin.m * s3, hx: R.shin.hx * s, hy: R.shin.hy * s, hz: R.shin.hz * s, x: hx, y: kneePt.y - R.L2 * s / 2, z, friction: 0.6, restitution: 0 });
-    const ankB = B({ kind: "mechlink", group: "mech", mass: R.ankleBlock.m * s3, hx: R.ankleBlock.h * s, hy: R.ankleBlock.h * s, hz: R.ankleBlock.h * s, x: hx, y: anklePt.y, z, friction: 0.6, restitution: 0 });
-    const foot = B({ kind: "mechfoot", group: "mech", mass: R.foot.m * s3, hx: R.foot.hx * s, hy: R.foot.hy * s, hz: R.foot.hz * s, x: hx, y: anklePt.y - 0.19 * s, z: z + R.foot.fwdOff * s, friction: 0.95, restitution: 0 });
+    const yawB = B({ kind: "mechlink", group: "mech", mass: R.yawBlock.m * s3, hx: R.yawBlock.h * s, hy: R.yawBlock.h * s, hz: R.yawBlock.h * s, x: hx, y: hipYw + 0.36 * s, z, hp: 1e9, friction: 0.6, restitution: 0 });
+    const hipB = B({ kind: "mechlink", group: "mech", mass: R.hipBlock.m * s3, hx: R.hipBlock.h * s, hy: R.hipBlock.h * s, hz: R.hipBlock.h * s, x: hx, y: hipYw, z, hp: 1e9, friction: 0.6, restitution: 0 });
+    const thigh = B({ kind: "mechlink", group: "mech", mass: R.thigh.m * s3, hx: R.thigh.hx * s, hy: R.thigh.hy * s, hz: R.thigh.hz * s, x: hx, y: hipYw - R.L1 * s / 2, z, hp: 1e9, friction: 0.6, restitution: 0 });
+    const shin = B({ kind: "mechlink", group: "mech", mass: R.shin.m * s3, hx: R.shin.hx * s, hy: R.shin.hy * s, hz: R.shin.hz * s, x: hx, y: kneePt.y - R.L2 * s / 2, z, hp: 1e9, friction: 0.6, restitution: 0 });
+    const ankB = B({ kind: "mechlink", group: "mech", mass: R.ankleBlock.m * s3, hx: R.ankleBlock.h * s, hy: R.ankleBlock.h * s, hz: R.ankleBlock.h * s, x: hx, y: anklePt.y, z, hp: 1e9, friction: 0.6, restitution: 0 });
+    const foot = B({ kind: "mechfoot", group: "mech", mass: R.foot.m * s3, hx: R.foot.hx * s, hy: R.foot.hy * s, hz: R.foot.hz * s, x: hx, y: anklePt.y - 0.19 * s, z: z + R.foot.fwdOff * s, hp: 1e9, friction: 0.95, restitution: 0 });
     // servo gains from chain inertia + gait frequency: kp = I*(BW*omega)^2 —
     // derived, so Froude scaling falls out (kp ~ s^4, kd ~ s^4.5) and gamma
     // = kd/(kp*dt) is scale-invariant by construction.
@@ -563,7 +563,7 @@ export function buildMech(world, opts = {}) {
     const s3b = s * s * s;
     const torsoY = hullY + (R.hull.hy + 0.58) * s;
     // the WIDE FLAT slab of the reference silhouette
-    const torso = B({ kind: "mechlink", group: "mech", mass: 1800 * s3b, hx: 2.05 * s, hy: 0.58 * s, hz: 1.15 * s, x, y: torsoY, z, friction: 0.6, restitution: 0 });
+    const torso = B({ kind: "mechlink", group: "mech", mass: 1800 * s3b, hx: 2.05 * s, hy: 0.58 * s, hz: 1.15 * s, x, y: torsoY, z, hp: 1e9, friction: 0.6, restitution: 0 });
     const om0b = Math.sqrt(world.gravity / ((hullY - groundY) * 0.85));
     const AXY = v3(0, 1, 0), REFZ = v3(0, 0, 1);
     const Iw = chainInertia([torso], v3(x, hullY + R.hull.hy * s, z), AXY) + 2 * 340 * s3b * (2.25 * s) * (2.25 * s);
@@ -576,14 +576,14 @@ export function buildMech(world, opts = {}) {
     for (const sd of ["L", "R"]) {
       const sxA = sd === "L" ? 1 : -1;
       const ax0 = x + sxA * 2.25 * s;
-      const arm = B({ kind: "mechlink", group: "mech", mass: 340 * s3b, hx: 0.17 * s, hy: 0.80 * s, hz: 0.22 * s, x: ax0, y: shoulderY - 0.80 * s, z, friction: 0.6, restitution: 0 });
+      const arm = B({ kind: "mechlink", group: "mech", mass: 340 * s3b, hx: 0.17 * s, hy: 0.80 * s, hz: 0.22 * s, x: ax0, y: shoulderY - 0.80 * s, z, hp: 1e9, friction: 0.6, restitution: 0 });
       const Ia = chainInertia([arm], v3(ax0, shoulderY, z), v3(1, 0, 0));
       const dt0 = tuneDamper(340 * s3b / (mech.links.reduce((a, b) => a + b.mass, 0)), om0b, Ia, 340 * s3b, 0.62 * s, world.gravity, true);
       const gA = { kp: dt0.kp, kd: dt0.kd, kv: 0, tauMax: 3000 * s3b * s, Ichain: Ia };
       arms[sd] = addHinge(mech, torso, arm, v3(ax0, shoulderY, z), v3(1, 0, 0), v3(0, 1, 0), gA, -1.3, 1.3, sd + "armSwing");
     }
     mech.arms = arms;
-    const head = B({ kind: "mechlink", group: "mech", mass: 200 * s3b, hx: 0.62 * s, hy: 0.30 * s, hz: 0.48 * s, x, y: torsoY + (0.58 + 0.30) * s, z, friction: 0.6, restitution: 0 });
+    const head = B({ kind: "mechlink", group: "mech", mass: 200 * s3b, hx: 0.62 * s, hy: 0.30 * s, hz: 0.48 * s, x, y: torsoY + (0.58 + 0.30) * s, z, hp: 1e9, friction: 0.6, restitution: 0 });
     // §5e forgiveness: ordinary driving and falls must never tear — the
     // head popped on every faceplant at 8e4. Ordnance-scale damage (M4)
     // gets its own budget.
@@ -613,6 +613,7 @@ export function buildMech(world, opts = {}) {
   // torque ceilings from total machine weight
   const M = mech.links.reduce((a, b) => a + b.mass, 0);
   mech.mass = M;
+  mech.team = opts.team || 1;
   for (const j of mech.joints) {
     if (j.name === "waist" || j.name.includes("armSwing")) {
       if (j.name === "waist") { j.tauMax = 0.35 * M * world.gravity; j.kv = 0.1 * j.kd; }
@@ -2765,7 +2766,7 @@ export function mechFire(world, mech) {
   if (world.t - (mech._lastFire || -9) < 0.75) return false;
   const { muzzle, dir, torso } = mechAimDir(world, mech);
   const PM = 40, SPD = 120;
-  fireProjectile(world, muzzle, dir, SPD, { kind: "shell", pmass: PM, r: 2.4, kv: 16, dmg: 90, crater: 0.45, attacker: "player", ownerMech: mech });
+  fireProjectile(world, muzzle, dir, SPD, { kind: "shell", pmass: PM, r: 2.4, kv: 16, dmg: 90, crater: 0.45, attacker: (mech.team || 1) === 2 ? "enemy" : "player", ownerMech: mech });
   const J = PM * SPD;
   torso.v.x -= dir.x * J * torso.invM;
   torso.v.y -= dir.y * J * torso.invM;
@@ -2838,8 +2839,9 @@ export function mslAimPoint(world, mech) {
   const rng = clamp(mech.aimRange || 26, 6, 120);
   const rx = torso.pos.x + Math.sin(ty) * rng, rz = torso.pos.z + Math.cos(ty) * rng;
   let best = null, bestD = 12;
+  const foe = (mech.team || 1) === 1 ? 2 : 1;
   for (const b of world.bodies) {
-    if (!b.alive || b.team !== 2) continue;
+    if (!b.alive || b.team !== foe) continue;
     const d = Math.hypot(b.pos.x - rx, b.pos.z - rz);
     if (d < bestD) { bestD = d; best = b; }
   }
@@ -2878,12 +2880,48 @@ export function mechMissiles(world, mech) {
     const dir = v3(ux * cp + jx, sp2, uz * cp + jz);
     V.norm(dir, dir);
     fireProjectile(world, v3(m0.x + ux * 0.6, m0.y, m0.z + uz * 0.6), dir, spd,
-      { kind: "rocket", pmass: 15, r: 3.2, kv: 13, dmg: 62, crater: 0.8, attacker: "player", ownerMech: mech, delay: i * 0.14, vroll: true });
+      { kind: "rocket", pmass: 15, r: 3.2, kv: 13, dmg: 62, crater: 0.8, attacker: (mech.team || 1) === 2 ? "enemy" : "player", ownerMech: mech, delay: i * 0.14, vroll: true });
     torso.v.x -= dir.x * (15 * spd) * torso.invM;
     torso.v.z -= dir.z * (15 * spd) * torso.invM;
   }
   wake(torso);
   mech.telem.salvos = (mech.telem.salvos || 0) + 1;
+  return true;
+}
+// THE HEAVY SALVO (owner, 2026-08-20): the one added weapon — a saturation
+// barrage on a long cooldown. Nine rockets walk a deterministic ring around
+// the aim point; each flies the salvo's own fixed-loft solve. No rng.
+export function mechBarrage(world, mech) {
+  if (mech.state.mode === "FALLEN") return false;
+  if (world.t - (mech._lastBar || -99) < 30) return false; // provisional (F5)
+  const torso = mech.waist ? mech.waist.b : mech.hull;
+  const tgt = mslAimPoint(world, mech);
+  if (Math.hypot(tgt.x - torso.pos.x, tgt.z - torso.pos.z) < 10) return false; // danger-close
+  mech._lastBar = world.t;
+  mech.mslTarget = tgt; mech._lastMsl = world.t; // the pod tracks the strike
+  const Rm = torso.R;
+  const m0 = { x: torso.pos.x + Rm[0] * -1.35 + Rm[3] * 1.05, y: torso.pos.y + Rm[1] * -1.35 + Rm[4] * 1.05, z: torso.pos.z + Rm[2] * -1.35 + Rm[5] * 1.05 };
+  const SPREAD = 7, N = 9; // provisional (F5)
+  for (let i = 0; i < N; i++) {
+    const ring = i === 0 ? 0 : i < 4 ? 0.5 : 1.0;
+    const a = (i * 2.399963) % (Math.PI * 2); // golden-angle walk — even, deterministic
+    const ax = tgt.x + Math.sin(a) * ring * SPREAD, az = tgt.z + Math.cos(a) * ring * SPREAD;
+    const dx = ax - m0.x, dz = az - m0.z, d = Math.max(6, Math.hypot(dx, dz));
+    const h = m0.y - world.field.heightAt(ax, az);
+    const g = world.gravity, tanTh = 0.62;
+    const den = 2 * (d * tanTh + Math.max(0.5, h));
+    const spd = Math.min(90, Math.max(10, Math.sqrt(Math.max(100, g * d * d * (1 + tanTh * tanTh) / den))));
+    const th = Math.atan(tanTh), cp = Math.cos(th), sp2 = Math.sin(th);
+    const ux = dx / d, uz = dz / d;
+    const dir = v3(ux * cp, sp2, uz * cp);
+    V.norm(dir, dir);
+    fireProjectile(world, v3(m0.x + ux * 0.6, m0.y, m0.z + uz * 0.6), dir, spd,
+      { kind: "rocket", pmass: 15, r: 3.2, kv: 13, dmg: 62, crater: 0.8, attacker: (mech.team || 1) === 2 ? "enemy" : "player", ownerMech: mech, delay: i * 0.22, vroll: true });
+    torso.v.x -= dir.x * (15 * spd) * torso.invM;
+    torso.v.z -= dir.z * (15 * spd) * torso.invM;
+  }
+  wake(torso);
+  mech.telem.barrages = (mech.telem.barrages || 0) + 1;
   return true;
 }
 // POISE: raise one leg and stand on the other; call again to lower.

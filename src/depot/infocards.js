@@ -2,7 +2,7 @@
 // One card per buyable type. Numbers are READ from the live spec tables at
 // load — a card can never drift from the gun it describes. The prose is
 // owner-approved copy (the task plan carries it verbatim). Pure data.
-import { TOWER_SPECS, INFANTRY_ARMS, BISON, APC, SATCHEL } from "./specs.js";
+import { TOWER_SPECS, INFANTRY_ARMS, BISON, APC, MECH, SATCHEL } from "./specs.js";
 import { SQUAD_SPECS, squadSpeed } from "./squads.js";
 
 const ORDERS_ARMED = ["DEFEND", "MOVE", "ATTACK", "PATROL", "ATTACK STRUCTURES", "TAKE CONTROL"];
@@ -40,5 +40,7 @@ export const CARDS = {
     n: null, hp: BISON.hp, dmg: null, range: null, speed: null, skills: ORDERS_HULL },
   hero_apc:   { label: "APC", role: "The transport. Four sealed seats — riders see nothing, fire nothing, and die with the hull.",
     n: null, hp: APC.hp, dmg: null, range: null, speed: null, skills: [...ORDERS_HULL, "LOAD / UNLOAD"] },
+  hero_mech: { label: "MECH", role: "The crown machine. A walking siege engine — cannon, rocket salvo, and a saturation barrage; men die under its feet. Slow, dear, and answered only by another.",
+    n: null, hp: MECH.hp, dmg: null, range: null, speed: null, skills: ["DEFEND", "MOVE", "PATROL", "ESCORT", "TRACKS SAFETY", "TAKE CONTROL"] },
 };
 export const cardFor = (key) => CARDS[key] || null;

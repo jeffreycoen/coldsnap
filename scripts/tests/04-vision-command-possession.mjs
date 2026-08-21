@@ -360,8 +360,8 @@ import fs from "node:fs";
     // the two possessed triggers (main gun, coax) all gate on sight, the same
     // law every other shot obeys. Count moves 1 -> 5, honestly, four new
     // sight-gated call sites, none loosened.
-    ok("VISION T2(e): the tank's and the Bison's acquisition paths gate on sight in drivers.js (re-pinned mk1.31 — the armor policy joined the motor pool)",
-      (driversSrc.match(/fieldReaches\(T,/g) || []).length === 5, (driversSrc.match(/fieldReaches\(T,/g) || []).length);
+    ok("VISION T2(e): the tank's, the Bison's, and the mech's acquisition paths gate on sight in drivers.js (re-pinned mk1.92 — the mech's shared possessed-fire gate, mechSighted, joined the motor pool: 5 -> 6)",
+      (driversSrc.match(/fieldReaches\(T,/g) || []).length === 6, (driversSrc.match(/fieldReaches\(T,/g) || []).length);
     ok("VISION T2(e): the sapper's contact plant stays ungated (he IS the eye, at arm's length)",
       /stepSapper/.test(unitsSrc) && !/fieldReaches[\s\S]{0,200}SAPPER_PLANT_PAD/.test(unitsSrc));
   }

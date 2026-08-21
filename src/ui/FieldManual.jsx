@@ -1,18 +1,19 @@
 import React, { useState } from "react";
 import { FONT } from "./theme.js";
 
-// THE FIELD MANUAL (P6 T8, mk1.15). Nine linked cards, the first-entry tour.
+// THE FIELD MANUAL (P6 T8, mk1.15). Ten linked cards, the first-entry tour.
 // Owner-approved copy — do not edit a word without a ruling.
 // THE REVISION STAMP (P7 T23, owner): bumped whenever a phase changes the
 // cards — the tour then greets everyone once more, ticked-never included,
 // and honors the tick again until the next bump. Rev 1 = the pre-stamp era.
-export const MANUAL_REV = 5;
+export const MANUAL_REV = 6;
 const CARDS = [
   { title: "REAL STONE", body: "The whole battlefield is real physics. Collapse a wall on the men behind it. Drop a roof on a squad. Rubble is a weapon." },
   { title: "THE HAND YOU'RE DEALT", body: "Every war opens with seven dealt cards — units and plans together. Pick five, free. Units place by your hand near the depot; plans open your build bar. The enemy drafts five of its own. No two wars open alike." },
   { title: "YOUR MEN", body: "Tap a squad, give it orders. Men are your eyes — what they can't see, you can't see. Only engineers build." },
   { title: "TAKE CONTROL", body: "Any squad or tower can be yours. Drive it, aim it, fire it. The front fights on without you." },
   { title: "YOUR ARMOR", body: "Armor is dealt to you or bought off a late convoy, never free. Order a hull like a squad — or take the controls yourself. The tracks brake for your own men until you say otherwise. Dear iron: a lost hull returns only at a price." },
+  { title: "THE MECH", body: "The rarest card in the deck is a walking siege engine. Both sides can field one. It is slow — watch it come, and answer it with shells, mines, or its twin. Take control to drive it yourself; its feet are a weapon." },
   { title: "THE GROUND BITES", body: "Sappers lay mines and tripwires along a tapped line. Yours are invisible to them; theirs to you — always. A tripwire's flare lights the fog. A mine just waits. Minefields are learned by loss, both ways." },
   { title: "THE BELL", body: "Scrap flows every second. Every 90 seconds the bell rings and the convoy shows its hand — plans you buy once and build from after, hires that walk on at once, placed by your tap. Take what your scrap can carry." },
   { title: "THE MARKET", body: "One market, both armies. What the field is full of costs more. Buy out what they need before they can." },

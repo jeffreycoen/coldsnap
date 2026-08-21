@@ -3,7 +3,7 @@
 // cost times min(4, 1 + standing/K) — both armies' standing stock counted
 // together, one shared table both sides pay. Pure counting and arithmetic:
 // no rng, no world mutation, recomputed each second by the game layer.
-import { TOWER_SPECS, ENEMY_SPECS, TANK, BISON, APC } from "./specs.js";
+import { TOWER_SPECS, ENEMY_SPECS, TANK, BISON, APC, MECH } from "./specs.js";
 import { SQUAD_SPECS } from "./squads.js";
 
 // THE TWO WALLS (mk1.20, owner's rulings): both pressures are the same
@@ -26,6 +26,8 @@ export const MARKET_K = {
   // the price and the curve goes vertical approaching two; with the field
   // wall on top, a second hero while yours lives is absurd — the ruling.
   heroBison: 1, heroApc: 1,
+  // owner: one standing machine walls the second — both sides' counted together // provisional (F5)
+  heroMech: 1,
   // P7 T10 (owner): mine/wire families — a per-side budget rides the market
   // so a mine war stays under the engine ceiling. Both sides' LIVE devices
   // count together, one shared table (provisional F5).
@@ -62,6 +64,7 @@ export function marketCounts(world, squads, mines) {
     // has to see both sides' iron).
     else if (b.kind === "vehicle" && b.vtype === "bison") add("heroBison", 1);
     else if (b.kind === "vehicle" && b.vtype === "apc") add("heroApc", 1);
+    else if (b.kind === "mech" && b.alive) add("heroMech", 1);
     else if (b.kind === "tower" && FAMILY_OF_TOWER[b.towerType]) add(FAMILY_OF_TOWER[b.towerType], 1);
     else if (b.kind === "wall" && !b.course) add("wall", 1);
     else if (b.kind === "chunk" && b.sandbag) add("sandbag", 1);
@@ -90,11 +93,13 @@ export function computePrices(counts) {
   // P7 T9: THE HERO TIER — one price table, both sides, off the specs' own cost.
   player.hero_bison = priced(BISON.cost, "heroBison", counts);
   player.hero_apc = priced(APC.cost, "heroApc", counts);
+  player.hero_mech = priced(MECH.cost, "heroMech", counts);
   const foe = {};
   for (const t in FAMILY_OF_TAG) foe[t] = priced(ENEMY_SPECS[t].bounty, FAMILY_OF_TAG[t], counts);
   foe.tank = priced(TANK.bounty, "tank", counts);
   foe.hero_bison = priced(BISON.cost, "heroBison", counts);
   foe.hero_apc = priced(APC.cost, "heroApc", counts);
+  foe.hero_mech = priced(MECH.cost, "heroMech", counts);
   return { player, foe, counts };
 }
 

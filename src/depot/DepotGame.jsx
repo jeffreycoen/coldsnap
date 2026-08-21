@@ -10,12 +10,12 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { MK } from "../version.js";
 import {
   makeField, makeWorld, addBody, addWeld, stepWorld, fireProjectile,
-  applyDamage, mulberry32, heading,
+  applyDamage, mulberry32, heading, explode,
 } from "../engine/core.js";
 import { makeRenderer } from "../render/renderer.js";
 import { renderPortrait } from "../render/portrait.js";
 import { makeGameAudio } from "../platform/audio.js";
-import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS, BISON, APC } from "./specs.js";
+import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS, BISON, APC, MECH } from "./specs.js";
 import { cardFor } from "./infocards.js";
 import { windAt } from "./wind.js";
 import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, takeHandCard, TIER_BELLS, memberNearRow, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType } from "./state.js";
@@ -25,7 +25,7 @@ import { homeShare, pickHomeDetail, HOME_GUARD_CAP, cmdrOf, cmdrBellOrders, ferr
 import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic, drivePossessedSquad, clearSlot, stepMedicTendSquad, stepMechanicTendSquad } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam, payBounties } from "./units.js";
-import { stepDrivers, possessedArmorFire, possessedArmorMg } from "./drivers.js";
+import { stepDrivers, possessedArmorFire, possessedArmorMg, mechSighted } from "./drivers.js";
 import { stepTransports, unloadApc, apcSeated, unloadEnemyRiders } from "./transports.js";
 import { planRoute, stampTerrainMasks } from "./route.js";
 import { makeRegiment, payTown } from "./economy.js";
@@ -38,9 +38,10 @@ import Dispatch from "./Dispatch.jsx";
 import InfoCard from "./InfoCard.jsx";
 import FieldManual, { MANUAL_REV } from "../ui/FieldManual.jsx";
 import { GRID_CS, GRID_W, GRID_H, GRID_OX, GRID_OZ, RIM_HALF_U, RIM_HALF_V, ORIENT, fwdU, fwdDir, invW, clampToRim, OBJ_POS, SPAWN_POINTS, PONDS, ROCKS, TOWN, ROADS, PASSES, BANDS, MAP_SEED, SPAWN_U, STREAM, HILLS, genMap, makeMap, buildDepotTerrain, pondAt, rockAt, makeGrid, streamAt, planTrees, computeFlowField, checkConnectivity } from "./mapgen.js";
-import { armorSpread, armorStable, parkArmor, musterFreshStart, PICK_POOL } from "./muster.js";
+import { armorSpread, armorStable, parkArmor, parkMech, MECH_SPREAD, musterFreshStart, PICK_POOL } from "./muster.js";
 import { lineCells, pieceHalf, startBuildLine, linePieces, layPieceAt, stepBuildLine } from "./buildlines.js";
 import { ringBell as ringBellOut } from "./bell.js";
+import { buildMech, mechCommand, respawnMech, mechFallen, mechFire, mechMissiles, mechBarrage, mechPunt, mechAboutFace, mechPivot, mechAimDir } from "../engine/mech.js";
 
 // THE FIELD MANUAL's don't-show-again flag (P6 T8). "off" means never
 // auto-open again; anything else (including absent) means the tour greets
@@ -137,7 +138,7 @@ export function stepTowers(world, T, discipline, possessedId) {
     const eR = b.effRange != null ? b.effRange : spec.range;
     const muzzle = { x: b.pos.x, y: b.pos.y + b.hy + 0.45, z: b.pos.z };
     let best = b.targetId ? world.byId.get(b.targetId) : null;
-    if (best && (!best.alive || best.team !== foeTeam || (best.kind !== "unit" && best.kind !== "vehicle"))) best = null;
+    if (best && (!best.alive || best.team !== foeTeam || (best.kind !== "unit" && best.kind !== "vehicle" && best.kind !== "mech"))) best = null;
     if (best) {
       const dx = best.pos.x - b.pos.x, dz = best.pos.z - b.pos.z;
       if (dx * dx + dz * dz > eR * eR) best = null;
@@ -159,7 +160,7 @@ export function stepTowers(world, T, discipline, possessedId) {
       const pool = world._L ? (foeTeam === 2 ? world._L.foes : world._L.friends) : world.bodies; // T10
       let bd = eR * eR;
       for (const e of pool) {
-        if ((e.kind !== "unit" && e.kind !== "vehicle") || !e.alive || e.team !== foeTeam) continue;
+        if ((e.kind !== "unit" && e.kind !== "vehicle" && e.kind !== "mech") || !e.alive || e.team !== foeTeam) continue;
         const c = invW(e.pos.x, e.pos.z);
         if (!fieldReaches(T, c.u, c.v, tTeam)) continue;
         const dx = e.pos.x - b.pos.x, dz = e.pos.z - b.pos.z;
@@ -415,7 +416,7 @@ function shatterStructure(world, b, opts) {
 // field and the orientation-aware fwdDir/invW.
 function stepEnemies(world, grid, T, S) {
   stepDrivers(world, grid, fwdDir, T, invW, {
-    possessedId: S.possess && S.possess.kind === "vehicle" ? S.possess.id : 0,
+    possessedId: S.possess && (S.possess.kind === "vehicle" || S.possess.kind === "mech") ? S.possess.id : 0,
     squads: S.squads,
   });
   stepUnits(world, grid, fwdDir, T, invW);
@@ -610,6 +611,20 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
   // comes down for real. Game-layer only — the engine knows nothing about it.
   stepWallSupport(world);
   payBounties(world);
+  // A DEAD MECH: one last magazine detonation, then the island lets go and
+  // the pieces settle where they stood — the wreck is the trophy. (Placed
+  // after payBounties, not immediately after the dead-structure sweep, so
+  // the existing structureLost->stepWallSupport proximity pin (mk0.52/f)
+  // stays intact — "after the dead-structure sweep" is satisfied either way.)
+  if (world.mechs && world.mechs.length) for (let mi2 = world.mechs.length - 1; mi2 >= 0; mi2--) {
+    const m = world.mechs[mi2];
+    if (m.hull.alive) continue;
+    const h = m.hull.pos;
+    for (let i = 0; i < 3; i++) explode(world, h.x + (i - 1) * 1.5, h.y + i * 0.8, h.z, { r: 4.5, kv: 12, dmg: 20, crater: 0.8, attacker: m.team === 2 ? "player" : "enemy" });
+    if (S.possess && S.possess.kind === "mech" && S.possess.id === m.hull.id) S.releasePossession();
+    for (const L2 of m.links) { L2.mechRef = null; L2.team = 0; }
+    world.mechs.splice(mi2, 1);
+  }
   for (let i = world.bodies.length - 1; i >= 0; i--) {
     const b = world.bodies[i];
     if (b.kind === "unit" && !b.alive && world.t - (b.deadT || 0) > 2.5) { world.byId.delete(b.id); world.bodies.splice(i, 1); }
@@ -746,6 +761,7 @@ const PALETTE = [
   // never a build mode.
   { key: "hero_bison", label: "BISON", icon: "⛨", cost: BISON.cost },
   { key: "hero_apc", label: "APC", icon: "⬒", cost: APC.cost },
+  { key: "hero_mech", label: "MECH", icon: "✇", cost: MECH.cost },
 ];
 const PALETTE_BY_KEY = Object.fromEntries(PALETTE.map((p) => [p.key, p]));
 const PALETTE_LABEL = Object.fromEntries(PALETTE.map((p) => [p.key, p.label]));
@@ -995,6 +1011,14 @@ export default function DepotGame({ onExit, resume = null }) {
         restoreWelds(world, RES, resBodies);
         // P7 T17: resumed bags re-claim their ground for hull routing.
         for (const b of resBodies) if (b.sandbag && b.alive) stampBag(b, b.bagSide || 1);
+        // THE MECH RESUMES STANDING (owner's save law: never raw physics) — rebuilt
+        // at its spot and heading with its wounds, orders back on the hull.
+        for (const ms of RES.mechs || []) {
+          const m = buildMech(world, { x: ms.x, z: ms.z, yaw: ms.yaw, team: ms.tm, hp: ms.hp });
+          m.thrustersOn = true; m.thrustAssist = true;
+          m.hull.maxHp = MECH.hp;
+          if (ms.ex) for (const k in ms.ex) m.hull[k] = ms.ex[k]; // A1: the orders bag, own key
+        }
         // P7 T9 (owner): RESUME SEAT-COLLISION GUARD — the mount-scope
         // apcSeqN counter (hoisted above) must not hand out a seat number a
         // restored APC already carries, or a hero-tier replacement's riders
@@ -1119,6 +1143,7 @@ export default function DepotGame({ onExit, resume = null }) {
           else if (b.kind === "unit" && b.team === 2 && b.alive && !b.riding) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.unit.w, r: EMIT.unit.r, sign: -1 }); }
           else if (b.kind === "vehicle" && b.team === 2 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.vehicle.w, r: EMIT.vehicle.r, sign: -1 }); }
           else if (b.kind === "vehicle" && b.team === 1 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.vehicle.w, r: EMIT.vehicle.r, sign: 1 }); }
+          else if (b.kind === "mech" && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.vehicle.w, r: EMIT.vehicle.r, sign: b.team === 2 ? -1 : 1 }); }
         }
         // FRONT F1: the SPAWN_POINTS anchor emitters are gone — spawn points
         // are spawn locations only; the enemy's permanent red is its depot flag.
@@ -1443,8 +1468,8 @@ export default function DepotGame({ onExit, resume = null }) {
       const HERO_ARM_S = 3; // provisional (F5)
       S.buyHero = (key) => {
         if (S.gameOver || S.victory) return;
-        const kind = key === "hero_apc" ? "apc" : "bison";
-        const spec = kind === "apc" ? APC : BISON;
+        const kind = key === "hero_apc" ? "apc" : key === "hero_mech" ? "mech" : "bison";
+        const spec = kind === "apc" ? APC : kind === "mech" ? MECH : BISON;
         const label = PALETTE_BY_KEY[key].label;
         const price = priceNow(key, spec.cost);
         const armed = S.heroArm && S.heroArm.key === key && world.t < S.heroArm.armedAt;
@@ -1456,7 +1481,8 @@ export default function DepotGame({ onExit, resume = null }) {
         S.heroArm = null;
         if (S.resources < price) { toast("NO SCRAP"); return; }
         if (!buyPaced()) return;
-        parkArmor(world, grid, field, depotP, 1, kind, nextApcSeq);
+        if (kind === "mech") parkMech(world, grid, field, depotP, 1);
+        else parkArmor(world, grid, field, depotP, 1, kind, nextApcSeq);
         S.resources -= price;
         S._buyAt = world.t;
         toast("THE CONVOY DELIVERS");
@@ -1640,6 +1666,14 @@ export default function DepotGame({ onExit, resume = null }) {
           v.homeX = wp.x; v.homeZ = wp.z; v.sleeping = true;
           if (pk.vtype === "apc") v.apcSeq = nextApcSeq();
           v.drv = pk.vtype === "apc" ? "apc" : "armor"; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful"; v.driver = "player";
+        } else if (pk.kind === "mech") {
+          if (cell.water || cell.ice || cell.blocked || cell.wallId) { toast("NO GROUND"); return; }
+          if (!(armorSpread(field, wp.x, wp.z, MECH_SPREAD) < 0.28)) { toast("TOO STEEP TO PARK"); return; }
+          if (slotBlockedPublic(world, wp.x, wp.z, 4.5)) { toast("NO ROOM"); return; }
+          const m = buildMech(world, { x: wp.x, z: wp.z, yaw: Math.atan2(-wp.x, -wp.z), team: 1, hp: MECH.hp });
+          m.thrustersOn = true; m.thrustAssist = true;
+          m.hull.drv = "mech"; m.hull.order = "defend"; m.hull.tracks = "careful";
+          m.hull.maxHp = MECH.hp; m.hull.homeX = wp.x; m.hull.homeZ = wp.z;
         } else { // tower — free, rights-free (territory hasn't grown), road still owed
           if (cell.water || cell.ice || cell.blocked || cell.wallId) { toast("NO GROUND"); return; }
           cell.blocked = true;
@@ -1733,11 +1767,18 @@ export default function DepotGame({ onExit, resume = null }) {
         const v = selectedVehicle();
         if (!v || world.t < S.selArmedAt) return;
         v.order = "defend"; v.dest = null; v.goal = null; v._route = null; v._routeDest = null;
-        S.possess = { kind: "vehicle", id: v.id };
         S.fireHeld = false; S.mgHeld = false;
-        const pc2 = possessCenter();
-        S.reticleOff = pc2 ? reclampReticle(T.sight, 1, pc2, possessSightR(), { dx: 0, dz: 6 }, invW) : null;
-        S.reticle = pc2 && S.reticleOff ? { x: pc2.x + S.reticleOff.dx, z: pc2.z + S.reticleOff.dz } : null;
+        if (v.kind === "mech") {
+          // THE MECH (mk1.92): possessed as its own kind — no reticle, the
+          // torso+range convention (mechAimDir/aimRange) owns the aim.
+          S.possess = { kind: "mech", id: v.id };
+          S.reticleOff = null; S.reticle = null;
+        } else {
+          S.possess = { kind: "vehicle", id: v.id };
+          const pc2 = possessCenter();
+          S.reticleOff = pc2 ? reclampReticle(T.sight, 1, pc2, possessSightR(), { dx: 0, dz: 6 }, invW) : null;
+          S.reticle = pc2 && S.reticleOff ? { x: pc2.x + S.reticleOff.dx, z: pc2.z + S.reticleOff.dz } : null;
+        }
         S.selVehId = null; S.vehOrderMode = null; S.selSquadId = null; S.selSquadIds = null; S.orderMode = null; S.buildPt0 = null; S.linePending = null; S.pieOpen = false;
         R.overlay.setLinePreview(false);
       };
@@ -1876,6 +1917,14 @@ export default function DepotGame({ onExit, resume = null }) {
         if (S.possess.kind === "vehicle") {
           const pv = world.byId.get(S.possess.id);
           if (pv && pv.alive) { pv.depotDrive = "auto"; pv.order = "defend"; pv.dest = null; pv.goal = null; }
+        }
+        // THE MECH (mk1.92): released back to depotDrive-less auto — the
+        // driver's own goal policy (drivers.js DRIVERS.mech) resumes next
+        // tick off the hull's order/dest, no ctl channel involved.
+        if (S.possess.kind === "mech") {
+          const pm = world.byId.get(S.possess.id);
+          if (pm && pm.alive) { pm.order = "defend"; pm.dest = null; pm._route = null; pm._routeDest = null; }
+          R.setTraj(null); // the ballistic preview dies with the possession
         }
         S.possess = null; S.possessInput = null;
         // POSSESSION HYGIENE (mk0.91 audit item A, carried to T4/T5): the
@@ -2274,7 +2323,7 @@ export default function DepotGame({ onExit, resume = null }) {
         }
         for (const b of world.bodies) {
           if (!b.alive || b.team !== 1) continue;
-          if (b.kind === "vehicle") {
+          if (b.kind === "vehicle" || b.kind === "mech") {
             const d2 = Math.hypot(b.pos.x - p.x, b.pos.z - p.z);
             if (d2 <= TAP_HULL_M) cands.push({ key: "veh:" + b.id, d: d2 });
           } else if (b.kind === "tower" && !S.mode && !S.sellMode) {
@@ -2408,7 +2457,25 @@ export default function DepotGame({ onExit, resume = null }) {
       // accumulated time to decide tap-vs-hold.
       const ROT_HOLD_S = 0.22, ROT_SPEED = 1.6; // provisional (F5)
       const onKey = (e, down) => { S.keys[e.key.toLowerCase()] = down; };
-      const kd = (e) => { A.ensure(); if (e.key === "m" || e.key === "M") { A.setMuted(!A.muted); setHud((h) => ({ ...h, muted: A.muted })); } onKey(e, true); };
+      const kd = (e) => {
+        A.ensure();
+        if (e.key === "m" || e.key === "M") { A.setMuted(!A.muted); setHud((h) => ({ ...h, muted: A.muted })); }
+        // THE MECH (mk1.92): desktop one-shot triggers, active only while a
+        // mech is possessed — FIRE is the held left-click (already generic
+        // to any possession, above); these are edge-triggered here exactly
+        // like MechRange's own keydown bindings.
+        if (!e.repeat && S.possess && S.possess.kind === "mech") {
+          const k = e.key.toLowerCase();
+          if (k === "v" || k === "b" || k === "c" || k === "t") {
+            const w = S.mechWant || (S.mechWant = {});
+            if (k === "v") w.msl = true;
+            else if (k === "b") w.brg = true;
+            else if (k === "c") w.punt = true;
+            else if (k === "t") w.face = true;
+          }
+        }
+        onKey(e, true);
+      };
       const ku = (e) => {
         const k = e.key.toLowerCase();
         if (k === "q" || k === "e") {
@@ -2595,6 +2662,13 @@ export default function DepotGame({ onExit, resume = null }) {
           v.homeX = wp.x; v.homeZ = wp.z; v.sleeping = true;
           if (pk.vtype === "apc") v.apcSeq = nextApcSeq();
           v.drv = pk.vtype === "apc" ? "apc" : "armor"; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful"; v.driver = "player";
+        } else if (pk.kind === "mech") {
+          if (!(armorSpread(field, wp.x, wp.z, MECH_SPREAD) < 0.28)) { toast("TOO STEEP TO PARK"); return; }
+          if (slotBlockedPublic(world, wp.x, wp.z, 4.5)) { toast("NO ROOM"); return; }
+          const m = buildMech(world, { x: wp.x, z: wp.z, yaw: Math.atan2(-wp.x, -wp.z), team: 1, hp: MECH.hp });
+          m.thrustersOn = true; m.thrustAssist = true;
+          m.hull.drv = "mech"; m.hull.order = "defend"; m.hull.tracks = "careful";
+          m.hull.maxHp = MECH.hp; m.hull.homeX = wp.x; m.hull.homeZ = wp.z;
         } else { // tower — the build law: cell claim + the road owed
           cell.blocked = true;
           if (!checkConnectivity(grid, SPAWN_POINTS, objG.gx, objG.gz)) { cell.blocked = false; toast("Leave them a road"); return; }
@@ -2829,6 +2903,27 @@ export default function DepotGame({ onExit, resume = null }) {
         S.squads.push(sq);
         return sq.id;
       };
+      // THE PROBE'S INSTRUMENT (Phase A, mk1.92): field a mech for either
+      // team at a point, read every mech's state, order one directly — the
+      // same debug-harness pattern as every __DEPOT*__ hook, cost-free.
+      window.__DEPOTMECH__ = (team, x, z, yaw) => {
+        const m = buildMech(world, { x, z, yaw: yaw || 0, team: team || 1, hp: MECH.hp });
+        m.thrustersOn = true; m.thrustAssist = true;
+        m.hull.drv = "mech"; m.hull.order = "defend"; m.hull.tracks = "careful";
+        m.hull.maxHp = m.hull.hp; m.hull.homeX = x; m.hull.homeZ = z;
+        if (team === 2) m.hull.bounty = MECH.bounty;
+        return m.hull.id;
+      };
+      window.__DEPOTMECHS__ = () => (world.mechs || []).map((m) => ({
+        id: m.hull.id, team: m.team, hp: +m.hull.hp.toFixed(1), mode: m.state.mode,
+        x: +m.hull.pos.x.toFixed(2), z: +m.hull.pos.z.toFixed(2),
+        falls: m.telem.falls, steps: m.telem.steps, order: m.hull.order || null,
+      }));
+      window.__DEPOTMECHORDER__ = (id, kind, x, z) => {
+        const b = world.byId.get(id); if (!b || !b.mechRef) return null;
+        b.order = kind; b.dest = x != null ? { x, z } : null; b._route = null; b._routeDest = null;
+        return { order: b.order, dest: b.dest };
+      };
       window.__DEPOTORDER__ = (id, kind, pts) => {
         // debug harness (P1.5 T4): give a squad an order through the REAL order
         // path — S.orderSquad arms the chip, consumeOrderTap eats the ground
@@ -3036,6 +3131,63 @@ export default function DepotGame({ onExit, resume = null }) {
         };
         window.__DEPOTPERF__.reset = () => { pI = 0; pN = 0; };
       }
+      // THE MECH (mk1.92): possessed commands, ported from MechRange.jsx's
+      // feedCommands (jets omitted — no jet mode in the war). Fed once per
+      // SIM TICK from inside the accumulator loop below — the range's own
+      // cadence law: per-frame feeds fall the machine. Left stick/WASD walk
+      // (screen-relative, like the possessed vehicle above); right
+      // stick/A,D turn with the steering lock and the hard-over pivot; aim
+      // range/yaw from the touch trim+slider or the desktop mouse
+      // (groundPoint — the same raycast the reticle uses, not a synthetic
+      // screen-offset: the camera is hull-locked, so the mouse already
+      // points at the world the way it does for every other possession).
+      const feedMechCommands = (mech, cdt) => {
+        let tf = S.keys.w ? 0.6 : S.keys.s ? -0.42 : 0;
+        let tl = 0;
+        if (S.joy && S.joy.active && (Math.abs(S.joy.s) > 0.12 || Math.abs(S.joy.t) > 0.12)) {
+          const cb = R.camBasis;
+          const fl = Math.hypot(cb.up.x, cb.up.z) || 1, rl = Math.hypot(cb.right.x, cb.right.z) || 1;
+          const wxS = (cb.right.x / rl) * S.joy.s + (cb.up.x / fl) * S.joy.t;
+          const wzS = (cb.right.z / rl) * S.joy.s + (cb.up.z / fl) * S.joy.t;
+          const hS = mech.state.heading;
+          const fS = wxS * Math.sin(hS) + wzS * Math.cos(hS);
+          const lS = wxS * Math.cos(hS) - wzS * Math.sin(hS);
+          tf = fS >= 0 ? Math.min(0.6, fS * 0.6) : Math.max(-0.42, fS * 0.42);
+          tl = Math.max(-0.22, Math.min(0.22, lS * 0.26));
+        }
+        if (S.mechYawT == null) S.mechYawT = mech.state.heading;
+        if (S.keys.a) S.mechYawT += 0.7 * cdt;
+        if (S.keys.d) S.mechYawT -= 0.7 * cdt;
+        S.mechKeyTurnT = (S.keys.a || S.keys.d) ? (S.mechKeyTurnT || 0) + cdt : 0;
+        if (S.mechKeyTurnT > 0.6 && mech.state.mode === "WALK" && !mech.state.aboutFace) { mechPivot(world, mech); S.mechKeyTurnT = 0; }
+        if (!S.keys.a && !S.keys.d && S.mechKeyTurnPrev && mech.state.afLive && mech.state.aboutFace) { mech.state.aboutFace = null; mech.state.headingT = mech.state.heading; S.mechYawT = mech.state.heading; mech.state.recoverT = Math.max(mech.state.recoverT || 0, 0.5); }
+        S.mechKeyTurnPrev = S.keys.a || S.keys.d;
+        if (S.joyR && S.joyR.active && Math.abs(S.joyR.s) > 0.15) S.mechYawT -= S.joyR.s * 0.9 * cdt;
+        S.mechHardT = S.joyR && S.joyR.active && Math.abs(S.joyR.s) > 0.5 ? (S.mechHardT || 0) + cdt : 0;
+        if (S.mechHardT > 0.6 && mech.state.mode === "WALK" && !mech.state.aboutFace) { mechPivot(world, mech); S.mechHardT = 0; }
+        {
+          const anchor = mech.state.heading;
+          let lead = S.mechYawT - anchor;
+          while (lead > Math.PI) lead -= 2 * Math.PI;
+          while (lead < -Math.PI) lead += 2 * Math.PI;
+          S.mechYawT = anchor + Math.max(-0.5, Math.min(0.5, lead));
+        }
+        if (isTouch) {
+          if (S.mechAimHeld) S.mechAimOff = Math.max(-0.85, Math.min(0.85, (S.mechAimOff || 0) + S.mechAimHeld * 0.9 * cdt));
+          mech.aimYaw = mech.state.heading + (S.mechAimOff || 0);
+          mech.aimRange = S.mechAimRange || 26;
+        } else if (S.pointer) {
+          const torso = mech.waist ? mech.waist.b : mech.hull;
+          const gp = groundPoint(S.pointer.x, S.pointer.y);
+          if (gp) {
+            mech.aimYaw = Math.atan2(gp.x - torso.pos.x, gp.z - torso.pos.z);
+            mech.aimRange = Math.max(6, Math.min(120, Math.hypot(gp.x - torso.pos.x, gp.z - torso.pos.z)));
+          }
+        }
+        if (mech.waist && Math.abs(mech.waist.target) > 0.6 * 0.87 && Math.hypot(tf, tl) > 0.05)
+          S.mechYawT += Math.sign(mech.waist.target) * 0.12 * cdt;
+        mechCommand(mech, { travel: tf, lateral: tl, heading: mech.state.aboutFace ? null : S.mechYawT });
+      };
       const frame = (now) => {
         if (disposed) return;
         raf = requestAnimationFrame(frame);
@@ -3134,6 +3286,13 @@ export default function DepotGame({ onExit, resume = null }) {
                 pv.ctl.brake = false;
               } else { pv.ctl.throttle = 0; pv.ctl.steer = 0; pv.ctl.brake = false; }
             }
+          } else if (S.possess && S.possess.kind === "mech") {
+            // THE MECH (mk1.92): camera locks to the hull, exactly as a
+            // possessed tower or vehicle — the stick/keys/mouse are read at
+            // SIM-TICK cadence inside feedMechCommands below, not here
+            // (per-frame feeds fall the machine, the range's own law).
+            const pm = world.byId.get(S.possess.id);
+            if (pm) { S.focus.x = pm.pos.x; S.focus.z = pm.pos.z; S.focus.y = field.heightAt(S.focus.x, S.focus.z); }
           }
           if (S.possess) {
             // POSSESSION T4/T5 (mk0.93/0.94): THE CARRIED RETICLE. The right
@@ -3335,6 +3494,13 @@ export default function DepotGame({ onExit, resume = null }) {
           let guard = 0;
           while (S.acc >= STEP && guard++ < 6) {
             S.acc -= STEP;
+            // THE MECH (mk1.92): commands feed BEFORE stepDepot's stepWorld
+            // call, exactly like MechRange's own feedCommands-then-stepWorld
+            // order — mechCommand must land before the tick it drives.
+            if (S.possess && S.possess.kind === "mech") {
+              const pm0 = world.byId.get(S.possess.id);
+              if (pm0 && pm0.mechRef) feedMechCommands(pm0.mechRef, STEP);
+            }
             stepDepot(world, grid, onStructureLost, town, onRuin, T, S.discipline, S);
             // POSSESSION (P4 T2, mk0.91): THE TRIGGER. At most one volley
             // attempt per sim tick — cooldowns (possessedVolley's own
@@ -3361,6 +3527,26 @@ export default function DepotGame({ onExit, resume = null }) {
                 // main gun to fire), and there is no separate MG trigger.
                 if (S.fireHeld) { if (pv.vtype === "apc") possessedArmorMg(world, pv, S.reticle, T, invW); else possessedArmorFire(world, pv, S.reticle, T, invW); }
                 if (S.mgHeld && pv.vtype !== "apc") possessedArmorMg(world, pv, S.reticle, T, invW);
+              }
+            }
+            // THE MECH (mk1.92): five triggers, one attempt each per sim
+            // tick — FIRE (held), MSL/BRG/PUNT/180 (one-shot want flags set
+            // by the touch buttons/desktop keys below), each SIGHT-GATED at
+            // the current aim point before the engine call (the possessed-
+            // fire law — fieldReaches at the aim point mechAimDir solves).
+            if (S.possess && S.possess.kind === "mech") {
+              const pm = world.byId.get(S.possess.id);
+              if (pm && pm.mechRef) {
+                const mech = pm.mechRef;
+                if (mechSighted(world, mech, T, invW)) {
+                  if (S.fireHeld) mechFire(world, mech);
+                  const w = S.mechWant;
+                  if (w && w.msl) mechMissiles(world, mech);
+                  if (w && w.brg) mechBarrage(world, mech);
+                  if (w && w.punt) mechPunt(world, mech);
+                  if (w && w.face) mechAboutFace(world, mech);
+                }
+                if (S.mechWant) { S.mechWant.msl = false; S.mechWant.brg = false; S.mechWant.punt = false; S.mechWant.face = false; }
               }
             }
           }
@@ -3414,6 +3600,39 @@ export default function DepotGame({ onExit, resume = null }) {
             const fan = S.selReach || (S.inspectReach && S.inspectReach.pts ? S.inspectReach : null);
             if (fan) R.overlay.setReach(true, fan.cx, field.heightAt(fan.cx, fan.cz), fan.cz, fan.pts, 0xffd27a);
             else R.overlay.setReach(false);
+          }
+          // THE MECH (mk1.92): the trajectory preview, ported from
+          // MechRange.jsx :418-441 — a low-passed ballistic arc from muzzle
+          // to the commanded range, drawn through the war renderer's own
+          // R.setTraj. Render-only; cleared on release (S.releasePossession).
+          if (S.possess && S.possess.kind === "mech") {
+            const pmR = world.byId.get(S.possess.id);
+            if (pmR && pmR.mechRef) {
+              try {
+                const mech = pmR.mechRef;
+                const raw = mechAimDir(world, mech);
+                if (!S.pv) S.pv = { m: { ...raw.muzzle }, d: { ...raw.dir } };
+                const k3 = Math.min(1, dt / 0.45);
+                for (const ax of ["x", "y", "z"]) {
+                  S.pv.m[ax] += (raw.muzzle[ax] - S.pv.m[ax]) * k3;
+                  S.pv.d[ax] += (raw.dir[ax] - S.pv.d[ax]) * k3;
+                }
+                const dn = Math.hypot(S.pv.d.x, S.pv.d.y, S.pv.d.z) || 1;
+                const muzzle = S.pv.m, dir = { x: S.pv.d.x / dn, y: S.pv.d.y / dn, z: S.pv.d.z / dn };
+                const pts = [];
+                let px = muzzle.x, py = muzzle.y, pz = muzzle.z;
+                let vx = dir.x * 120, vy = dir.y * 120, vz = dir.z * 120;
+                let hitIdx = -1;
+                const st2 = ((mech.aimRange || 26) / 120) / 14;
+                for (let k2 = 0; k2 < 22; k2++) {
+                  pts.push({ x: px, y: py, z: pz });
+                  vy -= 9.81 * st2;
+                  px += vx * st2; py += vy * st2; pz += vz * st2;
+                  if (py <= world.field.heightAt(px, pz)) { pts.push({ x: px, y: world.field.heightAt(px, pz), z: pz }); hitIdx = pts.length - 1; break; }
+                }
+                R.setTraj(pts, hitIdx);
+              } catch (e) {}
+            }
           }
           // mk0.53: the mk0.34 draw gate is gone — every frame draws (the
           // evidence run showed physics, not drawing, owns the frame budget).
@@ -3579,6 +3798,14 @@ export default function DepotGame({ onExit, resume = null }) {
               possessed: !S.possess ? null
                 : S.possess.kind === "squad" ? (() => { const psq = S.squads.find((q) => q.id === S.possess.id); return psq ? { kind: "squad", label: SQUAD_SPECS[psq.type].label } : null; })()
                 : S.possess.kind === "vehicle" ? (() => { const pv = world.byId.get(S.possess.id); return pv && pv.alive ? { kind: "vehicle", vtype: pv.vtype, label: pv.vtype === "apc" ? "APC" : "BISON" } : null; })()
+                : S.possess.kind === "mech" ? (() => {
+                    const pm = world.byId.get(S.possess.id);
+                    if (!pm || !pm.alive || !pm.mechRef) return null;
+                    return { kind: "mech", label: "MECH",
+                      mslCd: Math.max(0, 6 - (world.t - (pm.mechRef._lastMsl ?? -99))),
+                      brgCd: Math.max(0, 30 - (world.t - (pm.mechRef._lastBar ?? -99))),
+                      aimRange: pm.mechRef.aimRange || 26 };
+                  })()
                 : (() => { const ptw = world.byId.get(S.possess.id); return ptw && ptw.kind === "tower" ? { kind: "tower", label: TOWER_SPECS[ptw.towerType].label } : null; })(),
               // P7 T2: the Bison's own pie, projected off the hull top (the
               // towerScreen recipe) — null unless a vehicle is selected.
@@ -3587,7 +3814,7 @@ export default function DepotGame({ onExit, resume = null }) {
                 const v = world.byId.get(S.selVehId);
                 if (!v || !v.alive) return null;
                 return { id: v.id, x: S.vehScreen.x, y: S.vehScreen.y, order: v.order || "defend", tracks: v.tracks || "careful",
-                  vtype: v.vtype, seatsFree: v.vtype === "apc" ? APC.seats - apcSeated(world, S.squads, v.apcSeq) : 0,
+                  kind: v.kind, vtype: v.vtype, seatsFree: v.vtype === "apc" ? APC.seats - apcSeated(world, S.squads, v.apcSeq) : 0,
                   riders: v.vtype === "apc" ? apcSeated(world, S.squads, v.apcSeq) : 0, aimingLoad: S.vehOrderMode === "load",
                   aimingMove: S.vehOrderMode === "move", aimingPatrol: S.vehOrderMode === "patrol", aimingEscort: S.vehOrderMode === "escort",
                   patrolStart: !!S.buildPt0, armed: world.t >= S.selArmedAt, showPie: !!S.pieOpen, linePending: !!S.linePending };
@@ -3697,7 +3924,7 @@ export default function DepotGame({ onExit, resume = null }) {
     // P7 T9: hero keys are a two-tap ARM/BUY on the bar slot itself — never
     // a build mode (no ground tap, no pending ghost). Branch before S.mode
     // is ever touched.
-    if (m === "hero_bison" || m === "hero_apc") { if (S.buyHero) S.buyHero(m); return; }
+    if (m === "hero_bison" || m === "hero_apc" || m === "hero_mech") { if (S.buyHero) S.buyHero(m); return; }
     // P7 T17 (owner): TAP AGAIN TO PUT IT AWAY — the active build button is
     // a toggle; the second tap clears back to plain command.
     if (S.mode === m) {
@@ -3920,6 +4147,61 @@ export default function DepotGame({ onExit, resume = null }) {
           onPointerCancel={(e) => { e.stopPropagation(); setMgHeld(false); }}>
           MG
         </button>
+      )}
+      {/* THE MECH (mk1.92): PUNT/MSL/BRG stack above FIRE, cooldown-grey on
+          MSL/BRG; the range slider + trim pair set S.mechAimRange/mechAimHeld,
+          consumed by feedMechCommands at sim-tick cadence. */}
+      {isTouch && hud.possessed && hud.possessed.kind === "mech" && (
+        <>
+          <button data-mech-punt
+            onPointerDown={(e) => { e.stopPropagation(); const S = stateRef.current; if (S) (S.mechWant || (S.mechWant = {})).punt = true; }}
+            style={{ ...P.btnBig, position: "absolute", right: 132, bottom: 100, zIndex: 7, touchAction: "none" }}>
+            PUNT
+          </button>
+          <button data-mech-msl
+            onPointerDown={(e) => { e.stopPropagation(); const S = stateRef.current; if (S) (S.mechWant || (S.mechWant = {})).msl = true; }}
+            style={{ ...P.btnBig, position: "absolute", right: 132, bottom: 152, zIndex: 7, touchAction: "none", opacity: hud.possessed.mslCd > 0.1 ? 0.5 : 1, color: hud.possessed.mslCd > 0.1 ? "#7a6055" : "#e8c9b8" }}>
+            {hud.possessed.mslCd > 0.1 ? "▲▲ " + Math.ceil(hud.possessed.mslCd) + "s" : "▲▲ MSL"}
+          </button>
+          <button data-mech-brg
+            onPointerDown={(e) => { e.stopPropagation(); const S = stateRef.current; if (S) (S.mechWant || (S.mechWant = {})).brg = true; }}
+            style={{ ...P.btnBig, position: "absolute", right: 132, bottom: 204, zIndex: 7, touchAction: "none", opacity: hud.possessed.brgCd > 0.1 ? 0.5 : 1, color: hud.possessed.brgCd > 0.1 ? "#7a6055" : "#e8c9b8" }}>
+            {hud.possessed.brgCd > 0.1 ? "▲▲▲ " + Math.ceil(hud.possessed.brgCd) + "s" : "▲▲▲ BRG"}
+          </button>
+          <div data-mech-rangeslider
+            onPointerDown={(e) => {
+              e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId);
+              const S = stateRef.current; if (!S) return;
+              S._mechRngGrab = true;
+              const r = e.currentTarget.getBoundingClientRect();
+              S.mechAimRange = 6 + Math.max(0, Math.min(1, (r.bottom - e.clientY) / r.height)) * 74;
+            }}
+            onPointerMove={(e) => {
+              e.stopPropagation();
+              const S = stateRef.current; if (!S || !S._mechRngGrab) return;
+              const r = e.currentTarget.getBoundingClientRect();
+              S.mechAimRange = 6 + Math.max(0, Math.min(1, (r.bottom - e.clientY) / r.height)) * 74;
+            }}
+            onPointerUp={(e) => { e.stopPropagation(); const S = stateRef.current; if (S) S._mechRngGrab = false; }}
+            onPointerCancel={(e) => { e.stopPropagation(); const S = stateRef.current; if (S) S._mechRngGrab = false; }}
+            style={{ position: "absolute", right: 12, bottom: 292, width: 44, height: 150, borderRadius: 8, background: "rgba(28,33,41,0.75)", border: "1px solid #7a6a4e", touchAction: "none", zIndex: 7 }}>
+            <div style={{ position: "absolute", left: 20, top: 6, bottom: 6, width: 3, background: "#5f6e80" }} />
+            <div style={{ position: "absolute", left: 4, width: 36, height: 22, borderRadius: 5, background: "#b89a5e", bottom: Math.max(0, Math.min(128, ((hud.possessed.aimRange - 6) / 74) * 128)) }} />
+          </div>
+          <div style={{ position: "absolute", right: 8, bottom: 446, width: 52, textAlign: "center", color: "#e8d9b8", fontSize: 13, textShadow: "0 1px 2px #000", zIndex: 7, pointerEvents: "none" }}>{Math.round(hud.possessed.aimRange)}m</div>
+          <button data-mech-aiml
+            onPointerDown={(e) => { e.stopPropagation(); const S = stateRef.current; if (S) S.mechAimHeld = -1; }}
+            onPointerUp={(e) => { e.stopPropagation(); const S = stateRef.current; if (S) S.mechAimHeld = 0; }}
+            onPointerLeave={() => { const S = stateRef.current; if (S) S.mechAimHeld = 0; }}
+            onPointerCancel={() => { const S = stateRef.current; if (S) S.mechAimHeld = 0; }}
+            style={{ ...P.btnBig, position: "absolute", left: "calc(50% - 100px)", bottom: 16, width: 56, zIndex: 7, touchAction: "none" }}>{"◀"}</button>
+          <button data-mech-aimr
+            onPointerDown={(e) => { e.stopPropagation(); const S = stateRef.current; if (S) S.mechAimHeld = 1; }}
+            onPointerUp={(e) => { e.stopPropagation(); const S = stateRef.current; if (S) S.mechAimHeld = 0; }}
+            onPointerLeave={() => { const S = stateRef.current; if (S) S.mechAimHeld = 0; }}
+            onPointerCancel={() => { const S = stateRef.current; if (S) S.mechAimHeld = 0; }}
+            style={{ ...P.btnBig, position: "absolute", left: "calc(50% + 44px)", bottom: 16, width: 56, zIndex: 7, touchAction: "none" }}>{"▶"}</button>
+        </>
       )}
       <div style={P.top}>
         <div style={P.stat}><span style={{ color: "#ffd27a" }}>◆</span>{hud.resources}</div>
@@ -4222,7 +4504,7 @@ export default function DepotGame({ onExit, resume = null }) {
 
       {hud.vehRadial && (() => {
         const vr = hud.vehRadial;
-        const vLabel = vr.vtype === "apc" ? "APC" : "BISON";   // P7 T4: label by vtype
+        const vLabel = vr.kind === "mech" ? "MECH" : vr.vtype === "apc" ? "APC" : "BISON";   // P7 T4/mk1.92: label by kind, then vtype
         const slots = [
           { key: "defend", icon: "∴", label: "DEFEND", color: "#7dffa8", on: vr.order === "defend", act: () => { const S = stateRef.current; if (S) { S.orderVehicle("defend"); S.selVehId = null; } } },
           { key: "move", icon: "→", label: "MOVE", color: "#7fd7ff", on: vr.aimingMove || vr.order === "move", act: () => stateRef.current && stateRef.current.orderVehicle("move") },

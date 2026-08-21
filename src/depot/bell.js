@@ -17,9 +17,9 @@ import { fireBell, WALL_FIELD_COST, SANDBAG_FIELD_COST } from "./state.js";
 import { homeShare, pickHomeDetail, HOME_GUARD_CAP, cmdrBellOrders, ferryDecide, flankDrop, engBuildDecide, engBuildKind, engSeedPlace } from "./ai.js";
 import { clearSlot } from "./squads.js";
 import { spawnUnit } from "./units.js";
-import { parkArmor, mirrorFieldKey } from "./muster.js";
+import { parkArmor, parkMech, mirrorFieldKey } from "./muster.js";
 import { mineSeedRoll, mineSeedPlace, MINE_COST } from "./mines.js";
-import { MASON, BISON, APC } from "./specs.js";
+import { MASON, BISON, APC, MECH } from "./specs.js";
 import { startBuildLine } from "./buildlines.js";
 import { fieldPrices } from "./market.js";
 
@@ -129,7 +129,7 @@ export function ringBell(world, grid, field, T, S, ctx) {
   // same table, one hull a bell, Bison first. The commander's own
   // doctrine finds the new hull on its own (it scans live bodies).
   {
-    const heroPrice = (k) => (S._market ? S._market.foe[k] : (k === "hero_bison" ? BISON.cost : APC.cost));
+    const heroPrice = (k) => (S._market ? S._market.foe[k] : (k === "hero_bison" ? BISON.cost : k === "hero_mech" ? MECH.cost : APC.cost));
     const has = (vt) => world.bodies.some((b) => b.kind === "vehicle" && b.team === 2 && b.vtype === vt && b.alive);
     const open = (tag) => S.foe.unlocked.indexOf(tag) >= 0; // P7.2 T4 (owner): a bought hero plan re-parks at ANY bell — the clamp is dead
     const depotE4 = TOWN.find((tt) => tt.depot && tt.team === 2);
@@ -137,6 +137,8 @@ export function ringBell(world, grid, field, T, S, ctx) {
       S.reg.scrap -= heroPrice("hero_bison"); parkArmor(world, grid, field, depotE4, 2, "bison", ctx.nextApcSeq);
     } else if (depotE4 && !has("apc") && open("hero_apc") && S.reg.scrap >= heroPrice("hero_apc")) {
       S.reg.scrap -= heroPrice("hero_apc"); parkArmor(world, grid, field, depotE4, 2, "apc", ctx.nextApcSeq);
+    } else if (depotE4 && !(world.mechs || []).some((m) => m.team === 2 && m.hull.alive) && open("hero_mech") && S.reg.scrap >= heroPrice("hero_mech")) {
+      S.reg.scrap -= heroPrice("hero_mech"); parkMech(world, grid, field, depotE4, 2);
     }
   }
   // P7 T10: THE ENEMY SAPPER BRAIN — two draws every bell (the law);

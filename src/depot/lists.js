@@ -28,10 +28,10 @@ export function rebuildBodyLists(world, L) {
   for (const b of world.bodies) {
     if (!b.alive) continue;
     const k = b.kind;
-    if (k === "unit" || k === "vehicle") {
+    if (k === "unit" || k === "vehicle" || k === "mech") {
       // P7 T12: hulls get their own small pool — slotBlocked's hull test
       // (squads.js) reads it; the statics pool can never carry one (dynamic).
-      if (k === "vehicle") L.vehicles.push(b);
+      if (k === "vehicle" || k === "mech") L.vehicles.push(b);
       if (b.team === 1) L.friends.push(b);
       else if (b.team === 2) L.foes.push(b);
       continue;

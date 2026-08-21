@@ -89,7 +89,7 @@ function spawnTank(world, sp) {
 // corpse is swept). Called from DepotGame.jsx's stepDepot.
 export function payBounties(world) {
   for (const b of world.bodies) {
-    if ((b.kind === "unit" || b.kind === "vehicle") && b.team === 2 && !b.alive && !b._paid && b.bounty) {
+    if ((b.kind === "unit" || b.kind === "vehicle" || b.kind === "mech") && b.team === 2 && !b.alive && !b._paid && b.bounty) {
       b._paid = true;
       world.events.push({ type: "tdkill", bounty: b.bounty });
     }

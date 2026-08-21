@@ -23,11 +23,13 @@ export const SIGHT = {
   vehicle: 36,     // tank commander, above ENEMY_FIRE.tank.range 34
   tower: 32,       // tall — covers every tower gun's range
   flag: 36,        // the depot garrison, watching from the yard
+  mech: 40,        // the crown's tall eye // provisional (F5)
 };
 // The eye sits above the body: a man's eyes, a tower's top, the banner.
 export function eyeOf(b) {
   if (b.kind === "tower") return { x: b.pos.x, y: b.pos.y + b.hy + 0.45, z: b.pos.z, r: SIGHT.tower };
   if (b.kind === "flag")  return { x: b.pos.x, y: b.pos.y + 4.0, z: b.pos.z, r: SIGHT.flag };
+  if (b.kind === "mech") return { x: b.pos.x, y: b.pos.y + 2.6, z: b.pos.z, r: SIGHT.mech };
   if (b.kind === "vehicle") return { x: b.pos.x, y: b.pos.y + 1.4, z: b.pos.z, r: SIGHT.vehicle };
   const r = b.role === "spotter" ? SIGHT.spotter
           : (b.role === "sniper" || b.tag === "sniper") ? SIGHT.sniper : SIGHT.unit;

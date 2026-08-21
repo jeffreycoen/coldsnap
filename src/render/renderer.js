@@ -895,7 +895,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const chunkMesh = pool(chunkGeo, toon(0xa6b2c0), CHUNK_CAP, true);
   chunkMesh.receiveShadow = true;
   // mech walker links: plain instanced steel boxes (rig art comes later)
-  const mechMesh = pool(new THREE.BoxGeometry(1, 1, 1), toon(0xffffff), 40, true);
+  const mechMesh = pool(new THREE.BoxGeometry(1, 1, 1), toon(0xffffff), 96, true);
   mechMesh.receiveShadow = true;
   const MECH_HULL_C = new THREE.Color(0x5f6e80), MECH_LINK_C = new THREE.Color(0x434c58), MECH_FOOT_C = new THREE.Color(0x2f353d);
   const POD_LOCK_C = new THREE.Color(0x6b3226); // rust-red while the rack holds a live lock
@@ -1897,19 +1897,25 @@ export function makeRenderer(canvas, world0, opts = {}) {
       if (barFillMesh.instanceColor) barFillMesh.instanceColor.needsUpdate = true;
     }
     // mech links (kind filter lesson: name EVERY kind explicitly)
-    let torsoB = null;
+    const torsos = [];
     let mi = 0;
     for (const b of world.bodies) {
-      if ((b.kind !== "mech" && b.kind !== "mechlink" && b.kind !== "mechfoot") || mi >= 32) continue;
-      if (b.visTag === "torso") torsoB = b;
+      if ((b.kind !== "mech" && b.kind !== "mechlink" && b.kind !== "mechfoot") || mi >= 88) continue;
+      if (b.visTag === "torso") torsos.push(b);
+      if (b.kind === "mech") pushBar(b, 3.2, 7.5); // hull only — the one mech kind carrying maxHp // provisional (F5)
       writeInst(mechMesh, mi, b.pos.x, b.pos.y, b.pos.z, b.q, b.hx * 2, b.hy * 2, b.hz * 2);
       if (mechMesh.setColorAt) mechMesh.setColorAt(mi, b.kind === "mech" ? MECH_HULL_C : b.kind === "mechfoot" ? MECH_FOOT_C : MECH_LINK_C);
       mi++;
     }
+    // per-mech hardware (P7 T "the mech", mk1.92): the pod + thruster block
+    // runs once per torso now — pool indices (mi/pli/sni) thread across
+    // every mech on the field instead of resetting.
+    let pli = 0, sni = 0;
+    for (const torsoB of torsos) {
     // GINORMOUS shoulder missile pod (design 2026-08-01): an MLRS-scale
     // rack on the RIGHT shoulder, drawn as two boxes riding the torso frame
     // (render-only — physics keeps the logical mount)
-    if (torsoB && mi < 23) {
+    if (torsoB && mi < 84) {
       _bq.set(torsoB.q.x, torsoB.q.y, torsoB.q.z, torsoB.q.w);
       const _off = new THREE.Vector3(-1.35, 0.62, -0.05).applyQuaternion(_bq);
       const plx = torsoB.pos.x + _off.x, ply = torsoB.pos.y + _off.y, plz = torsoB.pos.z + _off.z;
@@ -1933,13 +1939,11 @@ export function makeRenderer(canvas, world0, opts = {}) {
     // thruster hardware + plumes: bells always visible; burning nozzles get
     // an additive flame stretched along the exhaust and a snow blast where
     // the plume meets the pad
-    let pli = 0;
     if (torsoB && torsoB.mechRef && torsoB.mechRef.thrusters) {
       const mch2 = torsoB.mechRef;
       const tq = _bq; // torso quaternion already set above
       const nowT = performance.now() * 0.001;
-      let sni = 0;
-      for (let ti2 = 0; ti2 < mch2.thrusters.length && mi < 40; ti2++) {
+      for (let ti2 = 0; ti2 < mch2.thrusters.length && mi < 96; ti2++) {
         const th = mch2.thrusters[ti2];
         const mp = new THREE.Vector3(th.p.x, th.p.y, th.p.z).applyQuaternion(tq);
         const mx = torsoB.pos.x + mp.x, my = torsoB.pos.y + mp.y, mz = torsoB.pos.z + mp.z;
@@ -1990,9 +1994,9 @@ export function makeRenderer(canvas, world0, opts = {}) {
           }
         }
       }
-      snowMesh.count = sni; snowMesh.instanceMatrix.needsUpdate = true;
     }
-    if (!torsoB || !torsoB.mechRef || !torsoB.mechRef.thrusters) snowMesh.count = 0;
+    }
+    snowMesh.count = sni; snowMesh.instanceMatrix.needsUpdate = true;
     plumeMesh.count = pli; plumeMesh.instanceMatrix.needsUpdate = true;
     if (plumeMesh.instanceColor) plumeMesh.instanceColor.needsUpdate = true;
     mechMesh.count = mi; mechMesh.instanceMatrix.needsUpdate = true;

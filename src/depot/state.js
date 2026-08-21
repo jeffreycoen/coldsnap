@@ -556,7 +556,7 @@ export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })
       const pool = world._L ? (enemyTeam === 2 ? world._L.foes : world._L.friends) : world.bodies; // T10
       let best = null, bd = eR * eR;
       for (const e of pool) {
-        if ((e.kind !== "unit" && e.kind !== "vehicle") || !e.alive || e.team !== enemyTeam) continue;
+        if ((e.kind !== "unit" && e.kind !== "vehicle" && e.kind !== "mech") || !e.alive || e.team !== enemyTeam) continue;
         const dx = e.pos.x - u.pos.x, dz = e.pos.z - u.pos.z;
         const d2 = dx * dx + dz * dz;
         if (d2 >= bd) continue;
@@ -629,7 +629,7 @@ export function snapTargetNear(world, aim, T, toUV, r = POSSESS_SNAP_R) {
   const pool = world._L ? world._L.foes : world.bodies;     // T10
   let best = null, bd = r * r;
   for (const b of pool) {
-    if ((b.kind !== "unit" && b.kind !== "vehicle") || !b.alive || b.team !== 2) continue;
+    if ((b.kind !== "unit" && b.kind !== "vehicle" && b.kind !== "mech") || !b.alive || b.team !== 2) continue;
     const dx = b.pos.x - aim.x, dz = b.pos.z - aim.z, d2 = dx * dx + dz * dz;
     if (d2 >= bd) continue;
     const c = toUV(b.pos.x, b.pos.z);
