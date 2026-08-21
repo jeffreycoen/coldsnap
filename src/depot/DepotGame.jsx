@@ -927,6 +927,9 @@ export default function DepotGame({ onExit, resume = null }) {
         : Number.isFinite(urlSeed) ? urlSeed : Math.floor(Date.now() % 1000000);
       makeMap(seed);
       const field = makeField(181, 2.0, MAP_SEED);
+      // mk2.07 (owner): THE DEEP FLOOR — the atomic crater needs room. Base
+      // ground sits near +2; -12 leaves the full 10m pit plus overlap slack.
+      field.carveFloor = -12; // provisional (F5)
       buildDepotTerrain(field, MAP_SEED);
       if (RES) {
         // The heightfield goes back OVER the freshly grown terrain — same

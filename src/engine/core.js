@@ -116,6 +116,12 @@ export function makeField(n, cs, seed = 7) {
   const half = ((n - 1) * cs) / 2;
   const F = {
     n, cs, h, half,
+    // DIVERGENCE (guarded, mk2.07): the carve floor is a per-field dial.
+    // Default is the frozen demo's own -1.5, so every mode that never sets
+    // it — demo, sandbox, tower defense, campaign — carves byte-identically
+    // (golden proves it). The war (DepotGame.jsx) dials it deeper for the
+    // atomic crater.
+    carveFloor: -1.5,
     idx: (i, j) => j * n + i,
     heightAt(x, z) {
       const fx = (x + half) / cs, fz = (z + half) / cs;
@@ -140,7 +146,7 @@ export function makeField(n, cs, seed = 7) {
         const d2 = (px - x) * (px - x) + (pz - z) * (pz - z);
         if (d2 > rad * rad) continue;
         const k = Math.exp(-(d2 / (rad * rad)) * 3);
-        h[j * n + i] = Math.max(-1.5, h[j * n + i] - depth * k);
+        h[j * n + i] = Math.max(F.carveFloor, h[j * n + i] - depth * k);
       }
       F.dirty = true;
     },
