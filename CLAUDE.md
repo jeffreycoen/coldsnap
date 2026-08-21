@@ -12,7 +12,7 @@ The owner directs design, reviews every plan, and is the sole playtester. His wo
 - No jargon, no acronyms.
 - Never "waiting on you", "ready when you are", "blocked on owner". State the state; he knows whose move it is.
 - The enemy is "it" or "the enemy", never "he".
-- Markdown documents are served to the owner rendered, never as a file path.
+- Everything served to the owner is markdown — plans, reports, documents, replies — rendered, never as a file path.
 
 ## Plans
 
