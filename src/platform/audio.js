@@ -24,7 +24,7 @@
 // note, forensic gunshot structure, wind turbulence spectra, and the ISO 226
 // equal-loudness contours that say what any of it costs to hear. The spec of
 // record, with every number's citation and every gap left open rather than
-// guessed, is docs/superpowers/2026-08-12-sound-profiles-reference.md; the
+// guessed, is docs/superpowers/sound-profiles-reference.md; the
 // section numbers in the comments below point into its PART TWO. The MUZZLE
 // table (keyed on what the ROUND is) is deliberately untouched, so the demo,
 // tower defense, the campaign and the mech keep the sounds they shipped with.
@@ -195,7 +195,7 @@ export function makeGameAudio() {
     taps.sort((a, b2) => b2.k - a.k);
     for (const tp of taps.slice(0, 3)) fire(tp.x, tp.z, tp.delay, Math.min(0.5, tp.k * 3));
   };
-  // A SHOT (mk0.58 retune — docs/superpowers/2026-08-12-sound-profiles-reference.md
+  // A SHOT (mk0.58 retune — docs/superpowers/sound-profiles-reference.md
   // §3.3). Forensic acoustics says a small-arms report is two events, not one:
   // the MUZZLE BLAST — the gas explosion at the barrel, under 5 ms long, peak
   // energy between 500 and 1000 Hz — and the CRACK, the bullet's shockwave,
