@@ -546,6 +546,15 @@ export function hostileStructure(b, team) {
   return b.kind === "chunk" && b.town === "depot";
 }
 
+// mk2.06 (owner): THE ROOFTOP AIM. A lofted shot at a structure aims at its
+// TOP — the roof — not a center the lead refresh flattens to the base. hy
+// carries roof-over-ground so shooterFire's ay2 refresh lands on the roof
+// (the mk2.02 surface-aim convention). Zero draws.
+export function aimTop(world, b) {
+  const top = b.pos.y + b.hy;
+  return { pos: { x: b.pos.x, y: top, z: b.pos.z }, v: b.v || { x: 0, y: 0, z: 0 }, hy: top - world.field.heightAt(b.pos.x, b.pos.z) };
+}
+
 const INFANTRY_BLAST_R = 0.3, INFANTRY_KV = 0.5;
 export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })) {
   if (squad.type === "sappers") return; // F1 Task 4.5: tools, not shooters — sappers never rifle-fire (draws nothing)
@@ -616,7 +625,7 @@ export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })
         if (!fieldReaches(T, cs.u, cs.v, squad.team)) continue;
         const dx = s.pos.x - u.pos.x, dz = s.pos.z - u.pos.z, d2 = dx * dx + dz * dz;
         if (d2 >= bs) continue;
-        if (!arcClears(world, muzzle, s.pos, spec, u.id)) continue;
+        if (!arcClears(world, muzzle, spec.occl === "lofted" ? { x: s.pos.x, y: s.pos.y + s.hy, z: s.pos.z } : s.pos, spec, u.id)) continue;
         bs = d2; best = s;
       }
       return best;
@@ -647,7 +656,7 @@ export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })
     // spent exactly as a shot would spend it (fireCd is set just above).
     if (squad.type === "grenadiers") { throwGrenade(world, u, muzzle, best); continue; }
     const high = spec.occl === "lofted";
-    shooterFire(world, u, muzzle, best, fspec, bestIsStruct
+    shooterFire(world, u, muzzle, bestIsStruct && spec.occl === "lofted" ? aimTop(world, best) : best, fspec, bestIsStruct
       ? { attacker, volleyDelay: spec.burstGap, muzzleStep: 0, owner: u.id, hitStruct: true, hitOnly: "structure", high }
       : { attacker, volleyDelay: spec.burstGap, muzzleStep: 0, owner: u.id, high });
   }

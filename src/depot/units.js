@@ -10,7 +10,7 @@
 // is world.rng() (mulberry32, seeded); an unseeded Math dot random() call is
 // forbidden in src/depot (scripts/depot-lint.mjs).
 import { addBody, applyDamage, explode } from "../engine/core.js";
-import { shooterFire, fieldReaches, effRange, hostileStructure, standingStructure, throwGrenade } from "./state.js";
+import { shooterFire, fieldReaches, effRange, hostileStructure, standingStructure, throwGrenade, aimTop } from "./state.js";
 import { arcClears } from "./accuracy.js";
 // exposureAt + the pair's shared survey/direction solvers (6.5 Task 6: ONE
 // behavior module, both signs). squads.js now imports accuracy/state for the
@@ -354,7 +354,7 @@ function stepGrenadier(world, u, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, 
     // on his side can see — the loudest change this gate makes.
     const c = toUV(tgt.pos.x, tgt.pos.z);
     if (!hostileStructure(tgt, 2) || dx * dx + dz * dz > R2 || !fieldReaches(T, c.u, c.v, 2) ||
-        !arcClears(world, muzzle, tgt.pos, fspec, u.id)) tgt = null;
+        !arcClears(world, muzzle, { x: tgt.pos.x, y: tgt.pos.y + tgt.hy, z: tgt.pos.z }, fspec, u.id)) tgt = null;
   }
   if (!tgt && u.scanCd <= 0) {
     // seq, not id: b.id is a module-global counter (differs across worlds
@@ -374,7 +374,7 @@ function stepGrenadier(world, u, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, 
       const c = toUV(b.pos.x, b.pos.z);
       if (!fieldReaches(T, c.u, c.v, 2)) continue;
       const dx = b.pos.x - u.pos.x, dz = b.pos.z - u.pos.z, d2 = dx * dx + dz * dz;
-      if (d2 < td && arcClears(world, muzzle, b.pos, fspec, u.id)) { td = d2; tgt = b; }
+      if (d2 < td && arcClears(world, muzzle, { x: b.pos.x, y: b.pos.y + b.hy, z: b.pos.z }, fspec, u.id)) { td = d2; tgt = b; }
     }
     // anti-personnel: same 60% urgency radius as the riflemen, fog-gated
     const man = nearestPlayerUnit(world, u, muzzle, fspec, R2, URGENCY, T, toUV);
@@ -392,8 +392,9 @@ function stepGrenadier(world, u, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, 
     // vetoing grenadier-vs-wall acquisition (scripts/depot-test.mjs's
     // rifleman/grenadier-vs-wall fixtures).
     // Unit shots keep hitStruct and carry NO hitOnly — blast is blast.
-    if (u.tag === "gren") throwGrenade(world, u, muzzle, tgt); // mk2.03: the grenade is thrown, both sides
-    else shooterFire(world, u, muzzle, tgt, fspec, { high: true, attacker: "enemy", hitStruct: true, owner: u.id });
+    const aimT = tgt.kind !== "unit" ? aimTop(world, tgt) : tgt; // mk2.06: structures take the shell on the roof
+    if (u.tag === "gren") throwGrenade(world, u, muzzle, aimT); // mk2.03: the grenade is thrown, both sides
+    else shooterFire(world, u, muzzle, aimT, fspec, { high: true, attacker: "enemy", hitStruct: true, owner: u.id });
   }
   if (tgt && cell && cell.dist < 1e8) {
     const sp = 1.3 * u.frostMul;

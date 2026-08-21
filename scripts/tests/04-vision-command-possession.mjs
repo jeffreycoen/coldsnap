@@ -1,6 +1,6 @@
 import { ok } from "./harness.mjs";
 import { identFwdDir, straightGrid } from "./shared.mjs";
-import { towerShot, shooterFire, squadFire, possessedVolley, possessedTowerFire, POSSESS_ACC, POSSESS_SNAP_R, snapTargetNear, stickyLock, mateBlocks, fieldReaches, effRange, PENDING_ARM_S, pendingArmed, spawnSquadMembers, spawnSandbag, pruneSquads, spawnWallCourses, WALL_HALF, WALL_THIN, WALL_COURSE_HY, friendlyFouls, throwGrenade, stepGrenades } from "../../src/depot/state.js";
+import { towerShot, shooterFire, squadFire, possessedVolley, possessedTowerFire, POSSESS_ACC, POSSESS_SNAP_R, snapTargetNear, stickyLock, mateBlocks, fieldReaches, effRange, PENDING_ARM_S, pendingArmed, spawnSquadMembers, spawnSandbag, pruneSquads, spawnWallCourses, WALL_HALF, WALL_THIN, WALL_COURSE_HY, friendlyFouls, throwGrenade, stepGrenades, aimTop } from "../../src/depot/state.js";
 import { makeWorld, makeField, addBody, addWeld, stepWorld, applyDamage, CAUSE, mulberry32 } from "../../src/engine/core.js";
 import { reachPolygon, arcClears, scatterSigma, losGraze, bracedAt, applyScatter, SCATTER_CAP, deflect, flightImpact, predictRing, elevSolve, speedForPitch, RING_RAYS } from "../../src/depot/accuracy.js";
 import { TOWER_SPECS, ENEMY_FIRE, MASON, INFANTRY_ARMS, ENEMY_SPECS, MAN, BISON_FIRE, HAND_TAGS, GRENADE, BARRELS } from "../../src/depot/specs.js";
@@ -2385,8 +2385,8 @@ import fs from "node:fs";
     const boardSrc = fs.readFileSync(new URL("../../src/ui/SoundBoard.jsx", import.meta.url), "utf8");
     ok("mk2.03(g) source pin: squadFire and possessedVolley throw for grenadiers",
       (stateSrc.match(/throwGrenade\(world, u, muzzle/g) || []).length === 2);
-    ok("mk2.03(g) source pin: the enemy grenadier throws the same grenade",
-      /throwGrenade\(world, u, muzzle, tgt\)/.test(unitsSrc));
+    ok("mk2.03(g) source pin (re-taught mk2.06): the enemy grenadier throws the same grenade",
+      /throwGrenade\(world, u, muzzle, aimT\)/.test(unitsSrc));
     ok("mk2.03(g) source pin: the sim steps the fuses", /stepGrenades\(world\);/.test(gameSrc));
     ok("mk2.03(g) source pin: vehicle and tower barrels wear the live pitch",
       (rendSrc.match(/g\.userData\.gunPitch\.rotation\.x = -\(b\._aimPitch \|\| 0\);/g) || []).length === 2);
@@ -2424,6 +2424,43 @@ import fs from "node:fs";
       (driversSrc.match(/barrelTip\(/g) || []).length >= 4);
     ok("MUZZLE mk2.05(j) source pin: the projector's light leaves the tip too",
       /muzzle9 = pb0 && P9\.kind === "vehicle" \? barrelTip\(pb0, aim9, spec9, pb0\.vtype === "tank" \? BARRELS\.tank : BARRELS\.bison\)/.test(gameSrc));
+  }
+  // (k) mk2.06: THE ROOFTOP AIM — lofted auto fire at a structure aims at
+  // its top, so a mortar can finally shell a stacked building.
+  {
+    const flatF6 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+    const world = makeWorld({ field: flatF6, seed: 101 });
+    world.depotCombat = true;
+    // a 3-course enemy stack 14m out — the roof is the only honest aim
+    for (let iy = 0; iy < 3; iy++) {
+      const c = addBody(world, { kind: "chunk", team: 0, mass: 100, hx: 0.4, hy: 0.4, hz: 0.4, x: 14, y: 0.42 + iy * 0.83, z: 0, friction: 0.65, restitution: 0.02 });
+      c.sleeping = true; c.town = "depot2";
+    }
+    const top = world.bodies[world.bodies.length - 1];
+    const at = aimTop(world, top);
+    ok("ROOFTOP mk2.06(k): aimTop carries the roof over the ground through hy",
+      Math.abs(at.pos.y - (top.pos.y + top.hy)) < 1e-9 && Math.abs(at.hy - at.pos.y) < 1e-9, JSON.stringify(at));
+    const sq = makeSquad(1, "mortars", 1, 0, 0);
+    spawnSquadMembers(world, sq);
+    sq.order = "defend"; sq.prefStruct = true;
+    let fired = 0;
+    for (let i = 0; i < 700; i++) {
+      world.events.length = 0;
+      squadFire(world, sq, world.dt, null);
+      fired += world.events.filter((e) => e.type === "muzzle").length;
+      stepWorld(world);
+      if (fired) break;
+    }
+    ok("ROOFTOP mk2.06(k): the mortar squad opens fire on the stack", fired > 0, fired);
+  }
+  // (l) source pins: both sides' lofted structure fire aims at the top.
+  {
+    const stateSrc = fs.readFileSync(new URL("../../src/depot/state.js", import.meta.url), "utf8");
+    const unitsSrc = fs.readFileSync(new URL("../../src/depot/units.js", import.meta.url), "utf8");
+    ok("ROOFTOP mk2.06(l) source pin: squadFire's structure shot rides aimTop",
+      /bestIsStruct && spec\.occl === "lofted" \? aimTop\(world, best\) : best/.test(stateSrc));
+    ok("ROOFTOP mk2.06(l) source pin: the enemy mortar team's shot rides aimTop",
+      /const aimT = tgt\.kind !== "unit" \? aimTop\(world, tgt\) : tgt;/.test(unitsSrc));
   }
 }
 // ==== end THE GUN AND THE GRENADE (mk2.03) ==================================
