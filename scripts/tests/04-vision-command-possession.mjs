@@ -2,12 +2,12 @@ import { ok } from "./harness.mjs";
 import { identFwdDir, straightGrid } from "./shared.mjs";
 import { towerShot, squadFire, possessedVolley, possessedTowerFire, POSSESS_ACC, POSSESS_SNAP_R, snapTargetNear, stickyLock, mateBlocks, fieldReaches, effRange, PENDING_ARM_S, pendingArmed, spawnSquadMembers, spawnSandbag, pruneSquads, spawnWallCourses, WALL_HALF, WALL_THIN, WALL_COURSE_HY, friendlyFouls } from "../../src/depot/state.js";
 import { makeWorld, makeField, addBody, addWeld, stepWorld, applyDamage, CAUSE, mulberry32 } from "../../src/engine/core.js";
-import { reachPolygon, arcClears, scatterSigma, losGraze, bracedAt } from "../../src/depot/accuracy.js";
+import { reachPolygon, arcClears, scatterSigma, losGraze, bracedAt, applyScatter, SCATTER_CAP, deflect, flightImpact, predictRing } from "../../src/depot/accuracy.js";
 import { TOWER_SPECS, ENEMY_FIRE, MASON, INFANTRY_ARMS } from "../../src/depot/specs.js";
 import { stepUnits } from "../../src/depot/units.js";
 import { makeSquad, stepSquad, drivePossessedSquad, COHESION_M, clearSlot } from "../../src/depot/squads.js";
 import { makeTerritory, holderAt, valueAt, canBuild } from "../../src/depot/territory.js";
-import { SIGHT, eyeOf, canSee, fillMaps, gridEye, makeSight, seenAt, stepSight, RETICLE_SPEED, steerReticle, reclampReticle, clampToImpact } from "../../src/depot/sight.js";
+import { SIGHT, eyeOf, canSee, fillMaps, gridEye, makeSight, seenAt, stepSight, RETICLE_SPEED, steerReticle, reclampReticle, surfaceAt } from "../../src/depot/sight.js";
 import { serializeFront, parseFront, restoreBodies, restoreSquads } from "../../src/depot/save.js";
 import { startBuildLine } from "../../src/depot/buildlines.js";
 import { ringBell } from "../../src/depot/bell.js";
@@ -1546,8 +1546,8 @@ import fs from "node:fs";
 {
   const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-  ok("POSSESSION T5(a) source pin (re-taught mk2.00): the renderer owns a setReticle overlay drawn in the brightened red, solid",
-    /setReticle\(on, x, z, y, r, hit\)/.test(rendSrc) && /0xff4a3c/.test(String(rendSrc.match(/setReticle\(on, x, z, y, r, hit\) \{[\s\S]*?\n    \},/) || "")));
+  ok("POSSESSION T5(a) source pin (re-taught mk2.01): the renderer owns a setReticle overlay drawn in crimson, solid",
+    /setReticle\(on, x, z, y, r, hit\)/.test(rendSrc) && /0xf0143c/.test(String(rendSrc.match(/setReticle\(on, x, z, y, r, hit\) \{[\s\S]*?\n    \},/) || "")));
   ok("possessed frames never paint the build hover (re-pinned mk1.12 — the old pin was a character-distance accident)",
     /R\.overlay\.setReticle\(/.test(gameSrc) && /if \(!S\.possess && S\.hover\)/.test(gameSrc));
   ok("POSSESSION T5(c) source pin: the build hover never paints while possessed",
@@ -2015,37 +2015,7 @@ import fs from "node:fs";
 {
   const flatField = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
   const idUV = (x, z) => ({ u: x, v: z });
-  // A bare 32x32 sight grid, 2m cells, flat ground, nothing standing.
-  const bareSG = () => ({ nx: 32, nz: 32, cs: 2, halfU: 32, halfV: 32,
-    seen1: new Uint8Array(32 * 32).fill(1), seen2: new Uint8Array(32 * 32),
-    gnd: new Float32Array(32 * 32), occ: new Float32Array(32 * 32).fill(-Infinity) });
 
-  // (a) a clean line: the offset passes through untouched, no wall.
-  {
-    const SG = bareSG();
-    const r = clampToImpact(SG, 0.5, { x: 0, z: 0 }, { dx: 24, dz: 0 }, idUV);
-    ok("RETICLE mk1.99(a): a clear fire line leaves the offset untouched",
-      r.dx === 24 && r.dz === 0 && r.wall === false, JSON.stringify(r));
-  }
-  // (b) a 3m-tall solid column across the line clamps the offset short of it
-  // and reports the face (wall true, impact height under the top).
-  {
-    const SG = bareSG();
-    for (let iz = 0; iz < 32; iz++) SG.occ[iz * 32 + 21] = 3; // a wall at u≈11
-    const r = clampToImpact(SG, 0.5, { x: 0, z: 0 }, { dx: 24, dz: 0 }, idUV);
-    ok("RETICLE mk1.99(b): a solid across the line clamps the offset short of the wall cell",
-      r.dx > 0 && r.dx < 11 && r.wall === true, JSON.stringify(r));
-    ok("RETICLE mk1.99(b): the impact height sits on the face, under the wall's top",
-      r.y > 0 && r.y < 3, r.y);
-  }
-  // (c) a ridge (raised ground) clamps too, but is not a wall face.
-  {
-    const SG = bareSG();
-    for (let iz = 0; iz < 32; iz++) SG.gnd[iz * 32 + 21] = 4;
-    const r = clampToImpact(SG, 0.5, { x: 0, z: 0 }, { dx: 24, dz: 0 }, idUV);
-    ok("RETICLE mk1.99(c): a ridge across the line clamps the offset, wall false",
-      r.dx > 0 && r.dx < 11 && r.wall === false, JSON.stringify(r));
-  }
   // (d) stickyLock acquires a live enemy within the 4m snap radius.
   {
     const world = makeWorld({ field: flatField, seed: 61 });
@@ -2080,8 +2050,6 @@ import fs from "node:fs";
     const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     ok("RETICLE mk1.99(g) source pin: a possessed ground tap jumps the reticle through the sight-circle clamp and the seen test",
       /if \(seenAt\(T\.sight, cc0\.u, cc0\.v, 1\)\) \{\s*S\.reticleOff = \{ dx: dx0, dz: dz0 \};/.test(gameSrc));
-    ok("RETICLE mk1.99(g) source pin: the frame loop clamps the offset through clampToImpact",
-      /const imp9 = clampToImpact\(T\.sight, eyeY9, rc, S\.reticleOff, invW\);/.test(gameSrc));
     ok("RETICLE mk1.99(g) source pin: the frame loop derives the aim through stickyLock",
       /const lk9 = stickyLock\(world, S\.reticleLockId, S\.reticle, T, invW\);/.test(gameSrc));
     ok("RETICLE mk1.99(g) source pin: the ring radius reads the live scatterSigma under POSSESS_ACC",
@@ -2104,37 +2072,12 @@ import fs from "node:fs";
 // re-tuned, and possession closes the build tree and holds it shut. Pure
 // helper on hand-built maps; JSX/renderer wiring pinned by source regex.
 {
-  const idUV = (x, z) => ({ u: x, v: z });
-  const bareSG = () => ({ nx: 32, nz: 32, cs: 2, halfU: 32, halfV: 32,
-    seen1: new Uint8Array(32 * 32).fill(1), seen2: new Uint8Array(32 * 32),
-    gnd: new Float32Array(32 * 32), occ: new Float32Array(32 * 32).fill(-Infinity) });
-
-  // (a) the reticle steered ONTO a 3m wall's own cell hits the face: the
-  // offset clamps half a cell short, wall true, impact at man height.
-  {
-    const SG = bareSG();
-    for (let iz = 0; iz < 32; iz++) SG.occ[iz * 32 + 21] = 3; // a wall at u≈11
-    const r = clampToImpact(SG, 0.5, { x: 0, z: 0 }, { dx: 11, dz: 0 }, idUV);
-    ok("RETICLE mk2.00(a): a reticle parked on the wall's own cell clamps to the face",
-      r.wall === true && r.dx > 0 && r.dx < 11, JSON.stringify(r));
-    ok("RETICLE mk2.00(a): the face impact sits at man height on the wall",
-      r.y > 0 && r.y < 3, r.y);
-  }
-  // (b) one cell out: a wall in the immediately adjacent cell (the old n<2
-  // early-out's blind spot) still clamps.
-  {
-    const SG = bareSG();
-    for (let iz = 0; iz < 32; iz++) SG.occ[iz * 32 + 21] = 3;
-    const r = clampToImpact(SG, 0.5, { x: 9, z: 0 }, { dx: 2, dz: 0 }, idUV);
-    ok("RETICLE mk2.00(b): a wall one cell from the shooter still takes the hit",
-      r.wall === true && r.dx > 0 && r.dx < 2, JSON.stringify(r));
-  }
   // (c) source pin: the ring's re-tuned band and red.
   {
     const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
     const block = String(rendSrc.match(/setReticle\(on, x, z, y, r, hit\) \{[\s\S]*?\n    \},/) || "");
-    ok("RETICLE mk2.00(c) source pin: the ring's band is 30% of radius in the brightened red",
-      /RingGeometry\(0\.7, 1\.0, 44\)/.test(block) && /0xff4a3c/.test(block), block.length);
+    ok("RETICLE mk2.00(c) source pin (re-taught mk2.01): the ring's band is 30% of radius in crimson",
+      /RingGeometry\(0\.7, 1\.0, 44\)/.test(block) && /0xf0143c/.test(block), block.length);
   }
   // (d) source pins: every TAKE CONTROL closes the build tree with the take.
   {
@@ -2151,3 +2094,109 @@ import fs from "node:fs";
   }
 }
 // ==== end THE RETICLE, SECOND PASS (mk2.00) =================================
+
+// ==== THE TRUE RETICLE (mk2.01) =============================================
+// The ring is the landing bound: nominal trajectory integrated with the
+// engine's own arithmetic, radius at applyScatter's hard cap. The surface
+// law aims the guns at whatever the reticle rests on (rooftops included);
+// nothing blocks the steer. Pure helpers on hand-built maps; wiring pinned
+// by source regex, the file's own convention.
+{
+  const flatField = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+  const idUV = (x, z) => ({ u: x, v: z });
+  const bareSG = () => ({ nx: 32, nz: 32, cs: 2, halfU: 32, halfV: 32,
+    seen1: new Uint8Array(32 * 32).fill(1), seen2: new Uint8Array(32 * 32),
+    gnd: new Float32Array(32 * 32), occ: new Float32Array(32 * 32).fill(-Infinity) });
+  const wallSG = () => { const SG = bareSG(); for (let iz = 0; iz < 32; iz++) SG.occ[iz * 32 + 21] = 3; return SG; }; // a 3m wall at u≈11
+
+  // (a) the cap is the formula's own tail: sqrt(-2 ln 1e-4) x 0.6.
+  ok("TRUE RETICLE mk2.01(a): SCATTER_CAP pins the draw's hard edge (~2.5751)",
+    Math.abs(SCATTER_CAP - Math.sqrt(-2 * Math.log(1e-4)) * 0.6) < 1e-9, SCATTER_CAP);
+
+  // (b) no real draw exceeds it: 500 draws at sigma 0.1, every deflection
+  // angle at or under atan(cap x 0.1).
+  {
+    const world = makeWorld({ field: flatField, seed: 71 });
+    const dir = { x: 0, y: 0, z: 1 };
+    let worst = 0;
+    for (let i = 0; i < 500; i++) {
+      const d2 = applyScatter(world, dir, 0.1);
+      worst = Math.max(worst, Math.acos(Math.max(-1, Math.min(1, d2.z))));
+    }
+    ok("TRUE RETICLE mk2.01(b): 500 applyScatter draws all sit inside the cap angle",
+      worst <= Math.atan(SCATTER_CAP * 0.1) + 1e-9, worst);
+  }
+  // (c) still air, flat gun: the round flies level, drops under 9.8, and
+  // lands on the dirt where the fall time says — not at the aim's chest line.
+  {
+    const hit = flightImpact(bareSG(), { x: -30, y: 1.5, z: 0 }, { x: 1, y: 0, z: 0 }, 100, { windF: 0 }, null, idUV);
+    ok("TRUE RETICLE mk2.01(c): a level 100 m/s round from 1.5m lands ~55m out on the ground",
+      hit.wall === false && Math.abs(hit.y) < 1e-6 && hit.x > 20 && hit.x < 32, JSON.stringify(hit));
+  }
+  // (d) a flat shot into a 3m wall terminates on its near face.
+  {
+    const hit = flightImpact(wallSG(), { x: 0, y: 1.5, z: 0 }, { x: 1, y: 0, z: 0 }, 100, { windF: 0 }, null, idUV);
+    ok("TRUE RETICLE mk2.01(d): a flat round into the wall stops on the face",
+      hit.wall === true && hit.x >= 10 && hit.x <= 12.5 && hit.y > 0 && hit.y < 3, JSON.stringify(hit));
+  }
+  // (e) the same wall, a lofted round: the arc clears it and lands behind.
+  {
+    const hit = flightImpact(wallSG(), { x: -30, y: 0.5, z: 0 }, { x: Math.cos(75 * Math.PI / 180), y: Math.sin(75 * Math.PI / 180), z: 0 }, 33, { windF: 0 }, null, idUV);
+    ok("TRUE RETICLE mk2.01(e): a 75-degree mortar round clears the 3m wall and lands behind it",
+      hit.wall === false && hit.x > 12.5, JSON.stringify(hit));
+  }
+  // (f) surfaceAt: dirt reads ground; a solid's cell reads its top.
+  {
+    const SG = wallSG();
+    const s0 = surfaceAt(SG, 0, 0, idUV), s1 = surfaceAt(SG, 11, 0, idUV);
+    ok("TRUE RETICLE mk2.01(f): open dirt reads ground height, not solid", s0.y === 0 && s0.solid === false, JSON.stringify(s0));
+    ok("TRUE RETICLE mk2.01(f): the wall's cell reads its top — the rooftop", s1.y === 3 && s1.solid === true, JSON.stringify(s1));
+  }
+  // (g) THE LAW: 100 real scatter draws through the real flight, mortar in
+  // a crosswind — every landing inside the ring the predictor promised.
+  {
+    const world = makeWorld({ field: flatField, seed: 72 });
+    const SG = bareSG();
+    const spec = { projSpeed: 33, occl: "lofted", windF: 0.04, windComp: 0.6 };
+    const wind = { x: 2.5, z: 0, mag: 2.5 };
+    const muzzle = { x: -20, y: 0.5, z: 0 }, aim = { x: 6, y: 0.9, z: 0 };
+    const pr = predictRing(SG, muzzle, aim, spec, 0.02, wind, idUV);
+    let worst = 0;
+    for (let i = 0; i < 100; i++) {
+      const dir = applyScatter(world, pr.rawDir, 0.02);
+      const hit = flightImpact(SG, muzzle, dir, spec.projSpeed, spec, wind, idUV);
+      worst = Math.max(worst, Math.hypot(hit.x - pr.center.x, hit.z - pr.center.z));
+    }
+    ok("TRUE RETICLE mk2.01(g): 100 drawn mortar rounds in a crosswind all land inside the predicted ring",
+      worst <= pr.r + 0.25, `worst=${worst.toFixed(3)} r=${pr.r.toFixed(3)}`);
+  }
+  // (h) the rooftop: a mortar aimed at the wall's TOP lands ON the top —
+  // flat ring on the roof, not a face hit.
+  {
+    const SG = wallSG();
+    const spec = { projSpeed: 33, occl: "lofted", windF: 0 };
+    const pr = predictRing(SG, { x: -20, y: 0.5, z: 0 }, { x: 11, y: 3.9, z: 0 }, spec, 0.005, null, idUV);
+    ok("TRUE RETICLE mk2.01(h): a mortar aimed at the rooftop lands on the roof, flat",
+      pr.center.wall === false && Math.abs(pr.center.y - 3) < 0.01 && pr.center.x >= 10 && pr.center.x <= 12.5,
+      JSON.stringify(pr.center));
+  }
+  // (i) source pins: the surface law aims the guns, the fire paths honor
+  // aim.y, the ring is the predictor's, the crosshair rides the ring.
+  {
+    const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    const stateSrc = fs.readFileSync(new URL("../../src/depot/state.js", import.meta.url), "utf8");
+    const driversSrc = fs.readFileSync(new URL("../../src/depot/drivers.js", import.meta.url), "utf8");
+    const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
+    ok("TRUE RETICLE mk2.01(i) source pin: the frame loop reads the surface under the reticle",
+      /S\.reticle\.y = surfaceAt\(T\.sight, S\.reticle\.x, S\.reticle\.z, invW\)\.y;/.test(gameSrc));
+    ok("TRUE RETICLE mk2.01(i) source pin: all four possessed fire paths aim at the surface (aim.y)",
+      (stateSrc.match(/aim\.y != null \? aim\.y : world\.field\.heightAt\(aim\.x, aim\.z\)/g) || []).length === 2 &&
+      (driversSrc.match(/aim\.y != null \? aim\.y : world\.field\.heightAt\(aim\.x, aim\.z\)/g) || []).length === 2);
+    ok("TRUE RETICLE mk2.01(i) source pin: the ring is the predictor's landing bound",
+      /const pr9 = predictRing\(T\.sight, muzzle9, aim9, spec9, sig9, world\.wind, invW\);/.test(gameSrc));
+    const block = String(rendSrc.match(/setReticle\(on, x, z, y, r, hit\) \{[\s\S]*?\n    \},/) || "");
+    ok("TRUE RETICLE mk2.01(i) source pin: the crosshair bars ride the ring, fog opted out",
+      /PlaneGeometry\(0\.12, 0\.85\)/.test(block) && /fog: false/.test(block), block.length);
+  }
+}
+// ==== end THE TRUE RETICLE (mk2.01) =========================================

@@ -1315,7 +1315,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
   let lineGroup = null; // COMMAND T2 (mk0.84): the proposed line's group, rebuilt on endpoint taps only.
   let pathPool = null;
   const PATH_VERT_CAP = 4096;   // segment vertices — ~30 ordered units at full route length // provisional (F5)
-  let retRing = null; // POSSESSION T5 (mk0.94): the possessed reticle's red circle
+  let retRing = null; // POSSESSION T5 (mk0.94) / mk2.01: the possessed crosshair group — ring + bars, crimson, fog-proof
   let zoneMesh = null; // mk1.95: THE PLACEMENT ZONE — lazy like everything here
   const overlay = {
     // POSSESSION T5 (mk0.94): the possessed reticle — its own red ring, not
@@ -1325,15 +1325,30 @@ export function makeRenderer(canvas, world0, opts = {}) {
     // mk2.00 (owner): band 30% of radius, red brightened.
     setReticle(on, x, z, y, r, hit) {
       if (!retRing) {
-        retRing = new THREE.Mesh(new THREE.RingGeometry(0.7, 1.0, 44), new THREE.MeshBasicMaterial({ color: 0xff4a3c, depthWrite: false, side: THREE.DoubleSide }));
-        retRing.rotation.x = -Math.PI / 2; retRing.layers.set(1); scene.add(retRing);
+        // mk2.01: BLAZING CRIMSON — fog: false (the scene fog was washing
+        // the red toward the sky color at distance); one shared material.
+        const rmat = new THREE.MeshBasicMaterial({ color: 0xf0143c, depthWrite: false, side: THREE.DoubleSide, fog: false });
+        retRing = new THREE.Group();
+        retRing.add(new THREE.Mesh(new THREE.RingGeometry(0.7, 1.0, 44), rmat));
+        // mk2.01: THE LARGE CROSSHAIR — four bars riding the ring, spanning
+        // past its edge, scaling and tilting with it.
+        for (let ci = 0; ci < 4; ci++) {
+          const bar = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.85), rmat);
+          const ca = (ci * Math.PI) / 2;
+          bar.position.set(Math.sin(ca) * 1.35, Math.cos(ca) * 1.35, 0);
+          bar.rotation.z = -ca;
+          retRing.add(bar);
+        }
+        retRing.rotation.x = -Math.PI / 2;
+        for (const ch of retRing.children) ch.layers.set(1);
+        scene.add(retRing);
       }
       retRing.visible = !!on;
       if (on) {
         const rr = Math.max(0.4, r || 1.2);
         retRing.scale.set(rr, rr, 1);
-        // mk1.99: a wall hit stands the ring upright on the face, its plane
-        // square to the fire line; clean ground keeps the flat ring.
+        // a wall hit stands the crosshair upright on the face, square to
+        // the fire line; ground and rooftops keep it flat at the landing.
         if (hit) { retRing.position.set(x, hit.y, z); retRing.rotation.set(0, hit.yaw, 0); }
         else { retRing.position.set(x, y + 0.1, z); retRing.rotation.set(-Math.PI / 2, 0, 0); }
       }

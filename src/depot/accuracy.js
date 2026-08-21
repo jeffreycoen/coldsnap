@@ -299,3 +299,86 @@ export function applyScatter(world, dir, sigma) {
   const nl = Math.hypot(nx, ny, nz);
   return { x: nx / nl, y: ny / nl, z: nz / nl };
 }
+
+// mk2.01: THE TRUE RETICLE — the landing predictor. The nominal trajectory
+// is integrated with the engine's own arithmetic (gravity 9.8, core.js's
+// wind-drag line at :720-721, the 1/120 sim step), and the ring's radius
+// rides applyScatter's hard cap: its deflection magnitude can never exceed
+// SCATTER_CAP x sigma (the 1e-4 tail of the draw), so cap rays integrated
+// to the ground bound every possible impact. Landing points only — blast
+// reaches beyond the ring (owner, 2026-08-21). Solids are map-resolution
+// (the sight grid's occ), the accepted trade everywhere in sight. Pure,
+// zero rng draws.
+export const SCATTER_CAP = Math.sqrt(-2 * Math.log(1e-4)) * 0.6;
+// The first 2.5m of flight ignores solids — losGraze's own muzzle-cover
+// exemption, so a braced shooter's sandbag never eats the prediction.
+const PREDICT_SKIP_M = 2.5;
+export function flightImpact(SG, muzzle, dir, speed, spec, wind, toUV, dt = 1 / 120) {
+  const p = { x: muzzle.x, y: muzzle.y, z: muzzle.z };
+  const v = { x: dir.x * speed, y: dir.y * speed, z: dir.z * speed };
+  for (let k = 0; k < 1800; k++) {
+    v.y -= 9.8 * dt;
+    if (wind && spec.windF) {
+      v.x += (wind.x - v.x * 0.02) * spec.windF * dt;
+      v.z += (wind.z - v.z * 0.02) * spec.windF * dt;
+    }
+    p.x += v.x * dt; p.y += v.y * dt; p.z += v.z * dt;
+    const c = toUV(p.x, p.z);
+    const ix = Math.floor((c.u + SG.halfU) / SG.cs), iz = Math.floor((c.v + SG.halfV) / SG.cs);
+    if (ix < 0 || ix >= SG.nx || iz < 0 || iz >= SG.nz) return { x: p.x, y: p.y, z: p.z, wall: false };
+    const i = iz * SG.nx + ix;
+    if (SG.occ[i] > SG.gnd[i] && p.y <= SG.occ[i] &&
+        Math.hypot(p.x - muzzle.x, p.z - muzzle.z) > PREDICT_SKIP_M) {
+      // under the top by more than one step's fall: the near face; else the
+      // roof — a descending round parks flat ON the solid's top.
+      const face = p.y < SG.occ[i] - 0.4;
+      return { x: p.x, y: face ? Math.max(p.y, SG.gnd[i] + 0.2) : SG.occ[i], z: p.z, wall: face };
+    }
+    if (p.y <= SG.gnd[i]) return { x: p.x, y: SG.gnd[i], z: p.z, wall: false };
+  }
+  return { x: p.x, y: p.y, z: p.z, wall: false };
+}
+// deflect: applyScatter's own tangent-plane rotation with a CHOSEN azimuth
+// and magnitude instead of drawn ones — the cone's edge, ray by ray.
+export function deflect(dir, a, m) {
+  const up = Math.abs(dir.y) < 0.95 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
+  let ux = dir.z * up.y - dir.y * up.z, uy = dir.x * up.z - dir.z * up.x, uz = dir.y * up.x - dir.x * up.y;
+  const ul = Math.hypot(ux, uy, uz); ux /= ul; uy /= ul; uz /= ul;
+  const vx = dir.y * uz - dir.z * uy, vy = dir.z * ux - dir.x * uz, vz = dir.x * uy - dir.y * ux;
+  const ox = Math.cos(a) * m, oy = Math.sin(a) * m;
+  const nx = dir.x + ux * ox + vx * oy, ny = dir.y + uy * ox + vy * oy, nz = dir.z + uz * ox + vz * oy;
+  const nl = Math.hypot(nx, ny, nz);
+  return { x: nx / nl, y: ny / nl, z: nz / nl };
+}
+// predictRing: shooterFire's own pre-shot math (target at rest — the
+// possessed ground aim never moves), then the nominal impact and 16 cap
+// rays. center is the ring's center (wall true = a vertical face took it);
+// r bounds every possible landing; rawDir feeds the renderer's face yaw.
+export function predictRing(SG, muzzle, aim, spec, sigma, wind, toUV) {
+  const high = spec.occl === "lofted";
+  let ax = aim.x, az = aim.z;
+  for (let li = 0; li < 2; li++) {
+    const ld = Math.max(2, Math.hypot(ax - muzzle.x, az - muzzle.z));
+    const lp = aimSolve(spec.projSpeed, ld, aim.y - muzzle.y, 9.8, high);
+    if (lp == null) break;
+    const tof = ld / Math.max(1e-3, spec.projSpeed * Math.cos(lp));
+    ax = aim.x; az = aim.z;
+    if (wind && spec.windF && spec.windComp) {
+      ax -= wind.x * spec.windF * tof * spec.windComp;
+      az -= wind.z * spec.windF * tof * spec.windComp;
+    }
+  }
+  const dx = ax - muzzle.x, dz = az - muzzle.z, dy = aim.y - muzzle.y;
+  const d = Math.max(2, Math.hypot(dx, dz));
+  let pitch = aimSolve(spec.projSpeed, d, dy, 9.8, high);
+  if (pitch == null) pitch = high ? 1.1 : 0.45;
+  const rawDir = { x: (dx / d) * Math.cos(pitch), y: Math.sin(pitch), z: (dz / d) * Math.cos(pitch) };
+  const center = flightImpact(SG, muzzle, rawDir, spec.projSpeed, spec, wind, toUV);
+  const cap = SCATTER_CAP * sigma;
+  let r = 0.4;
+  for (let s = 0; s < 16; s++) {
+    const hit = flightImpact(SG, muzzle, deflect(rawDir, (s / 16) * Math.PI * 2, cap), spec.projSpeed, spec, wind, toUV);
+    r = Math.max(r, Math.hypot(hit.x - center.x, hit.z - center.z));
+  }
+  return { center, r, rawDir };
+}

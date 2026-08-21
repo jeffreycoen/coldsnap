@@ -530,7 +530,7 @@ export function possessedArmorFire(world, v, aim, T, toUV = (x, z) => ({ u: x, v
   const c = toUV(aim.x, aim.z);
   if (!fieldReaches(T, c.u, c.v, v.team)) return false;
   const live = snapTargetNear(world, aim, T, toUV);
-  const tgt = live || { pos: { x: aim.x, y: world.field.heightAt(aim.x, aim.z) + 0.9, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: 0.9 };
+  const tgt = live || { pos: { x: aim.x, y: (aim.y != null ? aim.y : world.field.heightAt(aim.x, aim.z)) + 0.9, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: 0.9 }; // mk2.01: aim.y is the surface under the reticle — rooftops are targets
   v.gunT = gun.cd;
   v._aimYaw = Math.atan2(aim.x - v.pos.x, aim.z - v.pos.z);
   shooterFire(world, v, { x: v.pos.x, y: v.pos.y + 1.4, z: v.pos.z }, tgt, { ...gun, acc: gun.acc * POSSESS_ACC }, { attacker: "player", hitStruct: true, owner: v.id });
@@ -553,7 +553,7 @@ export function possessedArmorMg(world, v, aim, T, toUV = (x, z) => ({ u: x, v: 
   const c = toUV(aim.x, aim.z);
   if (!fieldReaches(T, c.u, c.v, v.team)) return false;
   const live = snapTargetNear(world, aim, T, toUV);
-  const tgt = live || { pos: { x: aim.x, y: world.field.heightAt(aim.x, aim.z) + 0.9, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: 0.9 };
+  const tgt = live || { pos: { x: aim.x, y: (aim.y != null ? aim.y : world.field.heightAt(aim.x, aim.z)) + 0.9, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: 0.9 }; // mk2.01: aim.y is the surface under the reticle — rooftops are targets
   v.mgT = mg.cd;
   v._aimYaw = Math.atan2(aim.x - v.pos.x, aim.z - v.pos.z);
   shooterFire(world, v, { x: v.pos.x, y: v.pos.y + 1.4, z: v.pos.z }, tgt, { ...mg, acc: mg.acc * POSSESS_ACC, volley: mg.burst }, { attacker: "player", owner: v.id, volleyDelay: mg.burstGap, muzzleStep: 0 });

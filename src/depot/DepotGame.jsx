@@ -23,14 +23,14 @@ import { marketCounts, computePrices, fieldPrices, priced } from "./market.js";
 import { stepMines, minePrices, mineSeedRoll, mineSeedPlace, MINE_COST, WIRE_COST } from "./mines.js";
 import { homeShare, pickHomeDetail, HOME_GUARD_CAP, cmdrOf, cmdrBellOrders, ferryDecide, flankDrop } from "./ai.js";
 import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic, roomMaskPublic, drivePossessedSquad, clearSlot, stepMedicTendSquad, stepMechanicTendSquad } from "./squads.js";
-import { reachPolygon, arcClears, squadReach, towerReachCached, scatterSigma } from "./accuracy.js";
+import { reachPolygon, arcClears, squadReach, towerReachCached, scatterSigma, predictRing } from "./accuracy.js";
 import { stepUnits, spawnUnit, stepBreakerRam } from "./units.js";
 import { stepDrivers, possessedArmorFire, possessedArmorMg, mechSighted } from "./drivers.js";
 import { stepTransports, unloadApc, apcSeated, unloadEnemyRiders } from "./transports.js";
 import { planRoute, stampTerrainMasks } from "./route.js";
 import { makeRegiment, payTown } from "./economy.js";
 import { makeTerritory, stepTerritory, holderAt, canBuild, fogStateFor, valueAt, EMIT } from "./territory.js";
-import { makeSight, stepSight, seenAt, eyeOf, steerReticle, reclampReticle, clampToImpact } from "./sight.js";
+import { makeSight, stepSight, seenAt, eyeOf, steerReticle, reclampReticle, surfaceAt } from "./sight.js";
 import { fwdUFor, fwdDirFor, invWFor, clampToRimFor } from "./orient.js";
 import { SAVE_KEY, serializeFront, burnFront, restoreBodies, restoreWelds, restoreCensus, restoreSquads } from "./save.js";
 import { makeBodyLists, rebuildBodyLists } from "./lists.js";
@@ -1340,7 +1340,7 @@ export default function DepotGame({ onExit, resume = null }) {
         // the unit's own sight circle on seen ground. joyR is the right
         // stick's own live drag state; fireHeld mirrors the FIRE
         // button/pointer state — true while held, read once per sim tick.
-        reticle: null, reticleOff: null, reticleLockId: null, reticleHit: null, joyR: null, fireHeld: false,
+        reticle: null, reticleOff: null, reticleLockId: null, joyR: null, fireHeld: false,
         // P7 T2: the Bison's coax — its own held state, mirroring fireHeld.
         mgHeld: false,
         linePending: null, // COMMAND T2 (mk0.84): the proposed line, awaiting accept/reject
@@ -1749,7 +1749,7 @@ export default function DepotGame({ onExit, resume = null }) {
         if (!v || world.t < S.selArmedAt) return;
         v.order = "defend"; v.dest = null; v.goal = null; v._route = null; v._routeDest = null;
         S.fireHeld = false; S.mgHeld = false;
-        S.reticleLockId = null; S.reticleHit = null;
+        S.reticleLockId = null;
         if (v.kind === "mech") {
           // THE MECH (mk1.92): possessed as its own kind — no reticle, the
           // torso+range convention (mechAimDir/aimRange) owns the aim.
@@ -1870,7 +1870,7 @@ export default function DepotGame({ onExit, resume = null }) {
         // as on release; the offset is then freshly seeded 4m ahead
         // (reclampReticle legalizes any seed) and the world point derived.
         S.fireHeld = false;
-        S.reticleLockId = null; S.reticleHit = null;
+        S.reticleLockId = null;
         const pc0 = possessCenter();
         S.reticleOff = pc0 ? reclampReticle(T.sight, 1, pc0, possessSightR(), { dx: 0, dz: 4 }, invW) : null;
         S.reticle = pc0 && S.reticleOff ? { x: pc0.x + S.reticleOff.dx, z: pc0.z + S.reticleOff.dz } : null;
@@ -1885,7 +1885,7 @@ export default function DepotGame({ onExit, resume = null }) {
         if (!b || b.kind !== "tower") return;
         S.possess = { kind: "tower", id: b.id };
         S.fireHeld = false;
-        S.reticleLockId = null; S.reticleHit = null;
+        S.reticleLockId = null;
         const pc1 = possessCenter();
         S.reticleOff = pc1 ? reclampReticle(T.sight, 1, pc1, possessSightR(), { dx: 0, dz: 4 }, invW) : null;
         S.reticle = pc1 && S.reticleOff ? { x: pc1.x + S.reticleOff.dx, z: pc1.z + S.reticleOff.dz } : null;
@@ -1916,7 +1916,7 @@ export default function DepotGame({ onExit, resume = null }) {
         // offset die with the possession, fireHeld can't stick from a
         // mid-hold bell release.
         S.reticle = null; S.reticleOff = null; S.fireHeld = false; S.mgHeld = false;
-        S.reticleLockId = null; S.reticleHit = null;
+        S.reticleLockId = null;
         if (sq) {
           // released where you left them: dig in — the intrinsic default
           sq.order = "defend"; sq.dest = null; sq._legTarget = null; sq._threatSig = undefined;
@@ -3393,22 +3393,19 @@ export default function DepotGame({ onExit, resume = null }) {
                 if (gp) S.reticleOff = { dx: gp.x - rc.x, dz: gp.z - rc.z };
               }
               S.reticleOff = reclampReticle(T.sight, 1, rc, rR, S.reticleOff, invW);
-              // mk1.99: THE IMPACT SURFACE — the offset stops at the first
-              // cell the fire line cannot clear; the hit (height + facing)
-              // rides to the ring.
-              const pb9 = S.possess.kind === "squad" ? null : world.byId.get(S.possess.id);
-              const eyeY9 = pb9 ? (S.possess.kind === "tower" ? pb9.pos.y + pb9.hy + 0.45 : pb9.pos.y + 1.4)
-                                : field.heightAt(rc.x, rc.z) + 0.5;
-              const imp9 = clampToImpact(T.sight, eyeY9, rc, S.reticleOff, invW);
-              S.reticleOff = { dx: imp9.dx, dz: imp9.dz };
-              S.reticleHit = imp9.wall ? { y: imp9.y, yaw: Math.atan2(imp9.dx, imp9.dz) } : null;
               S.reticle = { x: rc.x + S.reticleOff.dx, z: rc.z + S.reticleOff.dz };
+              // mk2.01: THE SURFACE LAW — nothing blocks the steer; the
+              // ground the reticle rests on aims the guns: a solid's top
+              // when it sits on one (rooftops, wall tops), the dirt
+              // otherwise. Where the shot truly ends is the predictor's
+              // ring, never a steering clamp.
+              S.reticle.y = surfaceAt(T.sight, S.reticle.x, S.reticle.z, invW).y;
               // mk1.99: THE STICKY SNAP — the RAW offset steers; the lock
               // only bends the derived aim onto the man, so pulling the raw
               // point past the radius is the deliberate escape.
               const lk9 = stickyLock(world, S.reticleLockId, S.reticle, T, invW);
               S.reticleLockId = lk9 ? lk9.id : null;
-              if (lk9) { S.reticle = { x: lk9.pos.x, z: lk9.pos.z }; S.reticleHit = null; }
+              if (lk9) S.reticle = { x: lk9.pos.x, z: lk9.pos.z };
               // P7 T2: keep the turret honest while possessed — the hull's
               // own aim yaw follows the live reticle every frame, not just
               // on a shot.
@@ -3666,31 +3663,39 @@ export default function DepotGame({ onExit, resume = null }) {
           A.consume(evs);
           A.tick(world, dt);
           // POSSESSION T5 (mk0.94): the reticle draws through its own red
-          // ring (the owner's ruling — a red circle, not the build ghost's
-          // square), and the build hover never paints while possessed.
-          // Squad and tower share the ring. mk1.99: THE RING IS THE SPREAD —
-          // radius = distance x live two-sigma cone through the one scatter
-          // model every shooter uses (scatterSigma under POSSESS_ACC),
-          // floored at 0.4m; drawn solid; standing on a wall hit.
-          let rr9 = 1.2, hit9 = null;
+          // ring, and the build hover never paints while possessed. mk2.01:
+          // THE TRUE RETICLE — the ring is the LANDING BOUND: center at the
+          // predicted impact (predictRing — the engine's own flight
+          // arithmetic), radius at applyScatter's hard cap. No shot can
+          // land outside it. For a squad the bound is drawn from the
+          // farthest living shooter — every member's cone lands inside.
+          let rr9 = 1.2, hit9 = null, ctr9 = null;
           if (S.possess && S.reticle) {
             const P9 = S.possess;
             let spec9 = null, pb0 = null;
-            if (P9.kind === "squad") { const sq9 = S.squads.find((q) => q.id === P9.id); spec9 = sq9 ? INFANTRY_ARMS[sq9.type] : null; }
+            if (P9.kind === "squad") {
+              const sq9 = S.squads.find((q) => q.id === P9.id); spec9 = sq9 ? INFANTRY_ARMS[sq9.type] : null;
+              if (sq9) for (const id of sq9.memberIds) {
+                const u = world.byId.get(id);
+                if (u && u.alive && u.role !== "spotter" && (!pb0 || Math.hypot(u.pos.x - S.reticle.x, u.pos.z - S.reticle.z) > Math.hypot(pb0.pos.x - S.reticle.x, pb0.pos.z - S.reticle.z))) pb0 = u;
+              }
+            }
             else { pb0 = world.byId.get(P9.id); if (pb0) spec9 = P9.kind === "tower" ? TOWER_SPECS[pb0.towerType] : P9.kind === "vehicle" ? BISON_FIRE.gun : null; }
             const rc9 = possessCenter();
             if (spec9 && spec9.acc != null && rc9) {
-              const muzzle9 = pb0 ? { x: pb0.pos.x, y: pb0.pos.y + (P9.kind === "tower" ? pb0.hy + 0.45 : 1.4), z: pb0.pos.z }
+              const muzzle9 = pb0 ? { x: pb0.pos.x, y: pb0.pos.y + (P9.kind === "tower" ? pb0.hy + 0.45 : P9.kind === "vehicle" ? 1.4 : 0.5), z: pb0.pos.z }
                                   : { x: rc9.x, y: field.heightAt(rc9.x, rc9.z) + 0.5, z: rc9.z };
-              const aim9 = { x: S.reticle.x, y: field.heightAt(S.reticle.x, S.reticle.z) + 0.9, z: S.reticle.z };
+              const aim9 = { x: S.reticle.x, y: (S.reticle.y != null ? S.reticle.y : field.heightAt(S.reticle.x, S.reticle.z)) + 0.9, z: S.reticle.z };
               const sig9 = scatterSigma(world, muzzle9, aim9, { ...spec9, acc: spec9.acc * POSSESS_ACC });
-              rr9 = Math.max(0.4, Math.hypot(aim9.x - muzzle9.x, aim9.z - muzzle9.z) * sig9 * 2);
+              const pr9 = predictRing(T.sight, muzzle9, aim9, spec9, sig9, world.wind, invW);
+              ctr9 = pr9.center;
+              rr9 = Math.max(0.4, pr9.r);
+              hit9 = pr9.center.wall ? { y: pr9.center.y, yaw: Math.atan2(pr9.rawDir.x, pr9.rawDir.z) } : null;
             }
-            hit9 = S.reticleHit || null;
           }
           R.overlay.setReticle(!!(S.possess && S.reticle),
-            S.reticle ? S.reticle.x : 0, S.reticle ? S.reticle.z : 0,
-            S.reticle ? (hit9 ? hit9.y : field.heightAt(S.reticle.x, S.reticle.z)) : 0, rr9, hit9);
+            ctr9 ? ctr9.x : (S.reticle ? S.reticle.x : 0), ctr9 ? ctr9.z : (S.reticle ? S.reticle.z : 0),
+            ctr9 ? ctr9.y : (S.reticle ? field.heightAt(S.reticle.x, S.reticle.z) : 0), rr9, hit9);
           if (!S.possess && S.hover) {
             R.overlay.setHover(true, S.hover.x, S.hover.z, field.heightAt(S.hover.x, S.hover.z), S.hover.range, S.hover.valid, GRID_CS);
           }

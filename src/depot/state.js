@@ -711,7 +711,7 @@ export function possessedVolley(world, squad, aim, T, toUV = (x, z) => ({ u: x, 
   // velocity, real height, shooterFire's own lead solve — falling back to
   // the synthetic ground point exactly as before when nothing is near.
   const live = snapTargetNear(world, aim, T, toUV);
-  const tgt = live || { pos: { x: aim.x, y: world.field.heightAt(aim.x, aim.z) + 0.9, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: 0.9 };
+  const tgt = live || { pos: { x: aim.x, y: (aim.y != null ? aim.y : world.field.heightAt(aim.x, aim.z)) + 0.9, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: 0.9 }; // mk2.01: aim.y is the surface under the reticle — rooftops are targets
   let fired = 0;
   for (const id of squad.memberIds) {
     const u = world.byId.get(id);
@@ -743,7 +743,7 @@ export function possessedTowerFire(world, tower, aim, T, toUV = (x, z) => ({ u: 
   const c = toUV(aim.x, aim.z);
   if (!fieldReaches(T, c.u, c.v, 1)) return false;
   const live = snapTargetNear(world, aim, T, toUV);
-  const tgt = live || { pos: { x: aim.x, y: world.field.heightAt(aim.x, aim.z) + 0.9, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: 0.9 };
+  const tgt = live || { pos: { x: aim.x, y: (aim.y != null ? aim.y : world.field.heightAt(aim.x, aim.z)) + 0.9, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: 0.9 }; // mk2.01: aim.y is the surface under the reticle — rooftops are targets
   tower.fireCd = spec.fireRate;
   tower.flashT = world.t;
   towerShot(world, tower, tgt, { ...spec, acc: spec.acc * POSSESS_ACC });

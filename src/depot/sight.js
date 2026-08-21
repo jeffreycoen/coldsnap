@@ -184,42 +184,14 @@ export function reclampReticle(SG, team, center, radius, off, toUV) {
   return { dx: 0, dz: 0 };   // its ground went dark — home to the unit's own cell
 }
 
-// mk1.99: THE IMPACT SURFACE. March the fire line from the shooter's eye
-// height toward the steered point over the same gnd/occ maps canSee reads,
-// and stop the offset at the first cell the line cannot clear. Returns the
-// clamped offset plus the impact — its height and whether a solid face
-// (occ) took the hit — or wall:false with the offset untouched when the
-// line is clean. Pure, zero draws, map-resolution like all sight.
-// mk2.00: the destination cell is tested too — see below.
-export function clampToImpact(SG, eyeY, center, off, toUV) {
-  const c0 = toUV(center.x, center.z);
-  const c1 = toUV(center.x + off.dx, center.z + off.dz);
-  const iu0 = Math.floor((c0.u + SG.halfU) / SG.cs), iv0 = Math.floor((c0.v + SG.halfV) / SG.cs);
-  const iu1 = Math.floor((c1.u + SG.halfU) / SG.cs), iv1 = Math.floor((c1.v + SG.halfV) / SG.cs);
-  const du = iu1 - iu0, dv = iv1 - iv0;
-  const n = Math.max(Math.abs(du), Math.abs(dv));
-  if (n < 1) return { dx: off.dx, dz: off.dz, y: 0, wall: false };
-  const ti = Math.min(SG.nz - 1, Math.max(0, iv1)) * SG.nx + Math.min(SG.nx - 1, Math.max(0, iu1));
-  const ty = SG.gnd[ti] + SIGHT_TARGET_H;
-  for (let k = 1; k < n; k++) {
-    const t = k / n;
-    const iu = Math.min(SG.nx - 1, Math.max(0, Math.round(iu0 + du * t)));
-    const iv = Math.min(SG.nz - 1, Math.max(0, Math.round(iv0 + dv * t)));
-    const i = iv * SG.nx + iu;
-    const y = eyeY + (ty - eyeY) * t;
-    if (SG.gnd[i] > y || SG.occ[i] > y) {
-      const tc = Math.max(0, (k - 0.5) / n);
-      return { dx: off.dx * tc, dz: off.dz * tc, y, wall: SG.occ[i] > y };
-    }
-  }
-  // mk2.00: the destination cell itself. The steer parks the reticle ON a
-  // wall's own cell (the ground behind it is dark), and mk1.99's march —
-  // canSee's convention — never tested that cell, so the ring fell flat at
-  // the wall's foot. A solid standing taller than man height in the
-  // reticle's own cell takes the hit on its near face, half a cell short.
-  if (SG.occ[ti] > ty) {
-    const tc = Math.max(0, (n - 0.5) / n);
-    return { dx: off.dx * tc, dz: off.dz * tc, y: ty, wall: true };
-  }
-  return { dx: off.dx, dz: off.dz, y: 0, wall: false };
+// mk2.01: THE SURFACE LAW. What the reticle rests on is what the guns aim
+// at: a solid's top when it sits on one (rooftops, wall tops), the ground
+// otherwise. Nothing clamps the steer any more — the landing predictor
+// (accuracy.js) shows where the shot truly ends. Pure, zero draws.
+export function surfaceAt(SG, x, z, toUV) {
+  const c = toUV(x, z);
+  const ix = Math.floor((c.u + SG.halfU) / SG.cs), iz = Math.floor((c.v + SG.halfV) / SG.cs);
+  if (ix < 0 || ix >= SG.nx || iz < 0 || iz >= SG.nz) return { y: 0, solid: false };
+  const i = iz * SG.nx + ix;
+  return SG.occ[i] > SG.gnd[i] ? { y: SG.occ[i], solid: true } : { y: SG.gnd[i], solid: false };
 }
