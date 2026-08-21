@@ -15,7 +15,7 @@
 | 6 | The medic | mk1.87 | `p7-2-task-6-medic.md` | SHIPPED (92ad73b; A1) |
 | 7 | The mechanic | mk1.88 | `p7-2-task-7-mechanic.md` | SHIPPED (733db8c; A1) |
 | 8 | The opening draft | mk1.89 | `p7-2-task-8-opening-draft.md` | SHIPPED (ee95bee; A1, A2 mk1.90, A3 mk1.91 8b90fa2) |
-| — | The mech | — | — | LEFT THE QUEUE (owner, 2026-08-20: the old mech design is struck; the redesigned mech starts clean under the twelve rulings written below — unpackaged, no task number or mark until he rules) |
+| — | The mech | mk1.92 | `2026-08-20-the-mech.md` | SHIPPED (de51b4b; probe over-line accepted by the owner at landing — performance work deferred to its own later task) |
 | — | The volunteer | — | — | HELD (owner, 2026-08-20: "hold off for now" — returns on his word, takes the next open mark) |
 
 Every deploy bumps `src/version.js` first, builds after. One agent in the tree at a time; stop after every task.
