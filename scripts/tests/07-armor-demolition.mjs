@@ -3,7 +3,7 @@ import { identFwdDir, straightGrid, fatReg } from "./shared.mjs";
 import { makeRunState, executeWithdrawal, nextSpawnTag, TIER_BELLS, ENEMY_TIERS, makeManifestState, possessedVolley, censusDepotChunks, depotStandingFraction, checkDepotBreach, checkEnemyBreach, spawnSquadMembers, DEPOT_STANDING_TOL, DEPOT_BREACH_FRAC, spawnWallCourses } from "../../src/depot/state.js";
 import { makeWorld, makeField, addBody, addWeld, stepWorld, applyDamage, worldHash, mulberry32, explode } from "../../src/engine/core.js";
 import { ENEMY_SPECS, MASON, INFANTRY_ARMS, PLAYER_TIERS, BISON, BISON_FIRE, APC, SATCHEL, HAND_KEYS, HAND_TAGS } from "../../src/depot/specs.js";
-import { stepUnits, spawnUnit, stepBreakerRam } from "../../src/depot/units.js";
+import { stepUnits, spawnUnit } from "../../src/depot/units.js";
 import { stepDrivers, possessedArmorFire, possessedArmorMg } from "../../src/depot/drivers.js";
 import { stepTransports, unloadApc, apcSeated, unloadEnemyRiders } from "../../src/depot/transports.js";
 import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic, clearSlot } from "../../src/depot/squads.js";
@@ -667,9 +667,9 @@ import fs from "node:fs";
   ok("T6(a3): gone by bell 9", homeShare(9) === 0 && homeShare(20) === 0);
   // (b) the picker: rifle-family only, front of the bag, deterministic
   {
-    const bag = ["gren", "", "fast", "sapper", "", "heavy", "sniper", ""];
+    const bag = ["gren", "", "rocket", "sapper", "", "mortar", "sniper", ""];
     const picked = pickHomeDetail(bag, 3);
-    ok("T6(b): picks the first three rifle-family tags", picked.join(",") === ",fast,", JSON.stringify(picked));
+    ok("T6(b): picks the first three rifle-family tags", picked.join(",") === ",rocket,", JSON.stringify(picked));
     ok("T6(b2): the bag keeps its grenadiers and sappers", bag.includes("gren") && bag.includes("sapper") && bag.length === 5);
     ok("T6(b3): a bag with no riflemen yields an empty detail", pickHomeDetail(["gren", "sapper"], 2).length === 0);
   }
@@ -780,17 +780,16 @@ import fs from "node:fs";
 }
 // ==== end P7 T6 ==============================================================
 
-// ==== P7 T7: RUNNERS AND BREAKERS ===========================================
+// ==== P7 T7: ROCKETS AND GRENADIERS (re-taught mk2.02 — the roster surgery) =
 {
   const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
-  // (a) the mirror stats
-  ok("T7(a): runner squad is 4 who run", SQUAD_SPECS.runners.n === 4 && SQUAD_SPECS.runners.speed === 5.0);
-  ok("T7(a2): breaker pair is 2 heavies", SQUAD_SPECS.breakers.n === 2 && SQUAD_SPECS.breakers.member.mass === 340 && SQUAD_SPECS.breakers.member.hp === 290);
-  ok("T7(a3): both carry the rifle table", INFANTRY_ARMS.runners.weapon === "rifle" && INFANTRY_ARMS.breakers.weapon === "rifle");
-  // (b)/(c) march timing: same order, same distance. "time" is shared by
-  // both — (b) proves runners actually run, (c) is the PRE-CHANGE pin
-  // (captured on the unmodified code before this task touched squads.js —
-  // see the task report) proving rifles' march is byte-identical to before.
+  // (a) the mirror stats (re-taught mk2.02: rockets and grenadiers hold the seats)
+  ok("T7(a) (re-taught mk2.02): rocket team is 2 at cost 45", SQUAD_SPECS.rockets.n === 2 && SQUAD_SPECS.rockets.cost === 45);
+  ok("T7(a2) (re-taught mk2.02): grenadier squad is 4 at cost 40", SQUAD_SPECS.grenadiers.n === 4 && SQUAD_SPECS.grenadiers.cost === 40);
+  ok("T7(a3) (re-taught mk2.02): each carries its own table — the rocket and the grenade", INFANTRY_ARMS.rockets.weapon === "rocket" && INFANTRY_ARMS.grenadiers.weapon === "mortar");
+  // (c) the PRE-CHANGE pin (captured on the unmodified code before P7 T7
+  // touched squads.js) proving rifles' march is byte-identical to before.
+  // (b), the runner-speed check, died with the runners (mk2.02, licensed).
   const time = (type) => {
     const w = makeWorld({ field: flatF, seed: 51 }); w.depotCombat = true;
     const sq = makeSquad(1, type, 1, 0, 0);
@@ -800,93 +799,29 @@ import fs from "node:fs";
     while (sq.order === "move" && steps < 4800) { stepSquad(w, sq, w.dt); stepWorld(w); steps++; }
     return steps;
   };
-  const RIFLES_PIN_STEPS = 1425; // captured pre-change (Task 1's pin protocol) — must not move
-  const tR = time("rifles"), tRun = time("runners");
-  // RE-PINNED (P7 T7, agent-flagged, named): the plan's literal "under 2/3"
-  // (0.67) was measured false — 977 vs 1425 is 0.686. The pure speed ratio
-  // (3.2/5.0 = 0.64) is diluted by fixed per-leg/arrival overhead common to
-  // every squad regardless of speed (measured: same-speed squads of
-  // different member counts already land at different step counts — rifles
-  // n=4 at 1425, mg/sniper n=2 at 1283, all speed 3.2). Re-pinned to 3/4
-  // (0.75), comfortable margin over the measured 0.686, still proving
-  // runners cross meaningfully faster.
-  ok("T7(b): runners cross in under 3/4 the rifles' time (re-pinned from 2/3, named)", tRun < tR * 0.75, `${tRun} vs ${tR}`);
-  ok("T7(c): rifles march the same 30m in the exact PRE-CHANGE pinned step count (fallback exactly 3.2, byte-identical)",
+  const RIFLES_PIN_STEPS = 1389; // re-captured mk2.02 (named): the 2m body moves the march's contact arithmetic; was 1425
+  const tR = time("rifles");
+  ok("T7(c) (re-captured mk2.02): rifles march the same 30m in the exact pinned step count (fallback exactly 3.2)",
     tR === RIFLES_PIN_STEPS, `${tR}`);
-  // (d) THE PAIR'S GRIND: a welded stone wall (7x3, town "depot2", MASON's
-  // own breakF — the T5(a)/T6(d) lattice shape, one stone deep facing the
-  // approach); ONE breaker grinding never breaks a weld in 20s (2400 steps
-  // at world.dt); TWO grinding the same stones break welds.
+  // (d)/(e), the breaker grind and ram suite, died with the breakers
+  // (mk2.02, licensed — the ram mechanism is deleted).
+  // (f) the ungated pool still deals eighteen, the new keys included
   {
-    const wallUp = (w) => {
-      const { hcs, pitch, mass, breakF } = MASON;
-      const stones = [];
-      for (let ix = 0; ix < 7; ix++) for (let iy = 0; iy < 3; iy++) {
-        const c = addBody(w, { kind: "chunk", team: 0, mass, hx: hcs, hy: hcs, hz: hcs,
-          x: (ix - 3) * pitch, y: hcs + 0.02 + iy * pitch, z: 4, friction: 0.65, restitution: 0.02 });
-        c.sleeping = true; c.town = "depot2"; c.gpos = [ix, iy, 0];
-        stones.push(c);
-      }
-      const key = (a, b) => a + "," + b;
-      const map = new Map(stones.map((c) => [key(c.gpos[0], c.gpos[1]), c]));
-      for (const c of stones) for (const [dx, dy] of [[1, 0], [0, 1]]) {
-        const o = map.get(key(c.gpos[0] + dx, c.gpos[1] + dy));
-        if (o) addWeld(w, c, o, breakF);
-      }
-    };
-    const grindRun = (nBreakers) => {
-      const w = makeWorld({ field: flatF, seed: 52 }); w.depotCombat = true;
-      wallUp(w);
-      const sq = makeSquad(1, "breakers", 1, 0, -3);
-      spawnSquadMembers(w, sq);
-      if (nBreakers === 1) { const u = w.byId.get(sq.memberIds[1]); if (u) applyDamage(w, u, 1e9, { attacker: "world" }); }
-      sq.order = "attack"; sq.dest = { x: 0, z: 8 };
-      for (let i = 0; i < 2400; i++) { stepSquad(w, sq, w.dt); stepBreakerRam(w); stepWorld(w); }
-      return w.welds.filter((wd) => wd.broken).length;
-    };
-    ok("T7(d): one breaker cannot crack a joint", grindRun(1) === 0);
-    ok("T7(d2): the pair works welds apart", grindRun(2) > 0);
+    ok("T7(f) (re-taught mk2.02): the ungated plans pool at bell one is eighteen — rockets and grenadiers included", (() => { const p = HAND_KEYS.filter((k) => makeManifestState().unlocked.indexOf(k) < 0); return p.length === 18 && p.includes("sq_rockets") && p.includes("sq_grenadiers"); })());
   }
-  // (e) the symmetric ram: a player breaker vs a team-2 wall body (F3-shape
-  // fixture) grinds its hp down, exactly the formula the enemy heavy uses
-  // against the player's own walls — same drive, same damage.
-  {
-    const w1 = makeWorld({ field: flatF, seed: 53 });
-    const wall1 = addBody(w1, { kind: "wall", team: 1, mass: 0, hx: 0.9, hy: 0.9, hz: 0.9, x: 0, y: 0.9, z: 2, hp: 999 });
-    const heavy = addBody(w1, { kind: "unit", team: 2, mass: ENEMY_SPECS.heavy.mass, hx: ENEMY_SPECS.heavy.hx, hy: ENEMY_SPECS.heavy.hy, hz: ENEMY_SPECS.heavy.hz, x: 0, y: ENEMY_SPECS.heavy.hy, z: 0, hp: ENEMY_SPECS.heavy.hp });
-    heavy.tag = "heavy";
-    for (let i = 0; i < 90; i++) { heavy.v.x = 0; heavy.v.z = 2.1; stepWorld(w1); stepBreakerRam(w1); }
-    const enemyDmg = 999 - wall1.hp;
-
-    const w2 = makeWorld({ field: flatF, seed: 53 });
-    const wall2 = addBody(w2, { kind: "wall", team: 2, mass: 0, hx: 0.9, hy: 0.9, hz: 0.9, x: 0, y: 0.9, z: 2, hp: 999 });
-    const breaker = addBody(w2, { kind: "unit", team: 1, mass: SQUAD_SPECS.breakers.member.mass, hx: SQUAD_SPECS.breakers.member.hx, hy: SQUAD_SPECS.breakers.member.hy, hz: SQUAD_SPECS.breakers.member.hz, x: 0, y: SQUAD_SPECS.breakers.member.hy, z: 0, hp: SQUAD_SPECS.breakers.member.hp });
-    breaker.utype = "breakers";
-    for (let i = 0; i < 90; i++) { breaker.v.x = 0; breaker.v.z = 2.1; stepWorld(w2); stepBreakerRam(w2); }
-    const playerDmg = 999 - wall2.hp;
-
-    ok("T7(e): the player breaker grinds a team-2 wall's hp down", playerDmg > 0, `dmg=${playerDmg}`);
-    ok("T7(e2): symmetric — equal drive deals the enemy's own damage exactly", Math.abs(playerDmg - enemyDmg) < 1e-6, `enemy=${enemyDmg} player=${playerDmg}`);
-  }
-  // (f) tier 1 is a 5-item pool now
-  {
-    ok("T7(f): the ungated plans pool at bell one is eighteen — the bare bar (re-taught P7.2 T3), runners and breakers included", (() => { const p = HAND_KEYS.filter((k) => makeManifestState().unlocked.indexOf(k) < 0); return p.length === 18 && p.includes("sq_runners") && p.includes("sq_breakers"); })());
-  }
-  // (g) one market: a live player runner and an enemy runner price the same
-  // family (marketCounts merges them)
+  // (g) one market: a live player rocket man and an enemy rocket man price
+  // the same family (marketCounts merges them)
   {
     const mkt = await import("../../src/depot/market.js");
     const w = makeWorld({ field: flatF, seed: 54 });
-    spawnUnit(w, { x: 0, z: 0 }, "fast"); // one enemy runner
-    const sq = makeSquad(2, "runners", 1, 10, 10);
-    spawnSquadMembers(w, sq); // four player runners
+    spawnUnit(w, { x: 0, z: 0 }, "rocket"); // one enemy rocket man
+    const sq = makeSquad(2, "rockets", 1, 10, 10);
+    spawnSquadMembers(w, sq); // two player rocket men
     const counts = mkt.marketCounts(w, [sq]);
-    ok("T7(g): the runner family counts both armies' men", counts.runner === 5, `runner=${counts.runner}`);
+    ok("T7(g) (re-taught mk2.02): the rocketteam family counts both armies' men", counts.rocketteam === 3, `rocketteam=${counts.rocketteam}`);
   }
-  // (h) the pie gates: runners/breakers get PATROL and STRUCTURES (armed,
-  // not engineers/sappers) by membership, not a per-type whitelist; the
-  // reach ring falls out of the same INFANTRY_ARMS membership; possessedVolley
-  // fires for both new types.
+  // (h) the pie gates stay membership-driven; possessedVolley fires for both
+  // new types.
   {
     const dgSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     ok("T7(h): patrolOk stays membership-driven (excludes only engineers/sappers, no per-type whitelist)",
@@ -898,17 +833,17 @@ import fs from "node:fs";
 
     const flatField = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
     const w = makeWorld({ field: flatField, seed: 24 });
-    const rsq = makeSquad(1, "runners", 1, 0, 0);
+    const rsq = makeSquad(1, "rockets", 1, 0, 0);
     spawnSquadMembers(w, rsq);
     w.events.length = 0;
     const firedR = possessedVolley(w, rsq, { x: 10, z: 0 }, null);
-    ok("T7(h): a runner squad's possessedVolley fires", firedR > 0, `fired=${firedR}`);
+    ok("T7(h) (re-taught mk2.02): a rocket team's possessedVolley fires", firedR > 0, `fired=${firedR}`);
 
-    const bsq = makeSquad(2, "breakers", 1, 0, 0);
+    const bsq = makeSquad(2, "grenadiers", 1, 0, 0);
     spawnSquadMembers(w, bsq);
     w.events.length = 0;
     const firedB = possessedVolley(w, bsq, { x: 10, z: 0 }, null);
-    ok("T7(h): a breaker pair's possessedVolley fires", firedB > 0, `fired=${firedB}`);
+    ok("T7(h) (re-taught mk2.02): a grenadier squad's possessedVolley fires", firedB > 0, `fired=${firedB}`);
   }
 }
 // ==== end P7 T7 ==============================================================
@@ -1089,7 +1024,7 @@ import fs from "node:fs";
 //      gated on a dead hull, the tier's own bell, the enemy's own pick, and
 //      affordability (a poor regiment fails the same AND-chain); Bison
 //      first; the replacement APC's seat arithmetic is proven fresh
-//  (e) the fielded start: a player runners squad + breakers pair on defend
+//  (e) the fielded start: a player rocket team + grenadier squad on defend
 //      near the depot, and 4 fast + 2 heavy garrison-held at the enemy's —
 //      built off the SAME real primitives DepotGame's boot calls (matches
 //      how T3's garrison fixtures asserted it)
@@ -1114,7 +1049,7 @@ import fs from "node:fs";
   // (b) planWave never shops heroes; nextSpawnTag never yields one
   {
     let anyHeroBuy = false, anyHeroSpawn = false;
-    const tags9b = ["", "fast", "heavy", "gren", "sapper", "sniper", "tank", "hero_bison", "hero_apc"];
+    const tags9b = ["", "rocket", "mortar", "gren", "sapper", "sniper", "tank", "hero_bison", "hero_apc"];
     for (let seed = 1; seed <= 40; seed++) {
       const rng = mulberry32(seed * 991);
       const reg = { heads: 300, tanks: 10, heads0: 300, tanks0: 10, scrap: 5000 };
@@ -1207,8 +1142,8 @@ import fs from "node:fs";
       const depotE9 = { x: 40, z: 40, nx: 12, nz: 9 };
       const squads = [];
       let nextSquadId = 1;
-      for (const type of ["runners", "breakers"]) {
-        const a0 = type === "runners" ? 0.9 : 2.3;
+      for (const type of ["rockets", "grenadiers"]) { // mk2.02: the roster surgery
+        const a0 = type === "rockets" ? 0.9 : 2.3;
         const p0 = clearSlot(w, depotP9.x + Math.sin(a0) * 11, depotP9.z + Math.cos(a0) * 11, 0.5);
         const sq = makeSquad(nextSquadId++, type, 1, p0.x, p0.z);
         spawnSquadMembers(w, sq);
@@ -1216,7 +1151,7 @@ import fs from "node:fs";
       }
       const gR5 = Math.hypot(depotE9.nx, depotE9.nz) * MASON.pitch / 2 + 5.5;
       const garrison = [];
-      ["fast", "fast", "fast", "fast", "heavy", "heavy"].forEach((tag, i) => {
+      ["rocket", "rocket", "gren", "gren", "gren", "gren"].forEach((tag, i) => { // mk2.02: the roster surgery
         const a = (i / 6) * Math.PI * 2 + 2.0;
         const p = clearSlot(w, depotE9.x + Math.sin(a) * gR5, depotE9.z + Math.cos(a) * gR5, 0.5);
         const u = spawnUnit(w, { x: p.x, z: p.z }, tag);
@@ -1226,13 +1161,13 @@ import fs from "node:fs";
       return { w, squads, garrison, draws };
     };
     const r1 = fieldedStart(801);
-    ok("T9(e): the player fields a runners squad + a breakers pair, on defend, near the depot",
+    ok("T9(e) (re-taught mk2.02): the player fields a rocket team + a grenadier squad, on defend, near the depot",
       r1.squads.length === 2 && r1.squads.every((sq) => sq.order === "defend" && sq.memberIds.length > 0) &&
-      r1.squads.find((sq) => sq.type === "runners").memberIds.length === 4 &&
-      r1.squads.find((sq) => sq.type === "breakers").memberIds.length === 2);
-    ok("T9(e2): the enemy fields 4 fast + 2 heavy, held, garrisoned",
-      r1.garrison.length === 6 && r1.garrison.filter((u) => u.tag === "fast").length === 4 &&
-      r1.garrison.filter((u) => u.tag === "heavy").length === 2 &&
+      r1.squads.find((sq) => sq.type === "rockets").memberIds.length === 2 &&
+      r1.squads.find((sq) => sq.type === "grenadiers").memberIds.length === 4);
+    ok("T9(e2) (re-taught mk2.02): the enemy fields 2 rocket + 4 gren, held, garrisoned",
+      r1.garrison.length === 6 && r1.garrison.filter((u) => u.tag === "rocket").length === 2 &&
+      r1.garrison.filter((u) => u.tag === "gren").length === 4 &&
       r1.garrison.every((u) => u.hold === true && u.garrison === true));
     ok("T9(e3): the fielded start draws exactly 18 world-rng values (6 spawnUnit x 3; squads draw-free)", r1.draws === 18, r1.draws);
     const r2 = fieldedStart(801);

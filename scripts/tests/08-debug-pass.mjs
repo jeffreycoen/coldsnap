@@ -44,8 +44,8 @@ import fs from "node:fs";
     v.vtype = "bison"; v.sleeping = true;
     const squads = [];
     let nextSquadId = 1;
-    for (const type of ["runners", "breakers"]) {
-      const a = type === "runners" ? 0.9 : 2.3;
+    for (const type of ["rockets", "grenadiers"]) { // mk2.02: the roster surgery
+      const a = type === "rockets" ? 0.9 : 2.3;
       const p0 = clearSlot(w, depotP.x + Math.sin(a) * 11, depotP.z + Math.cos(a) * 11, 0.5);
       const sq = makeSquad(nextSquadId++, type, 1, p0.x, p0.z);
       spawnSquadMembers(w, sq);

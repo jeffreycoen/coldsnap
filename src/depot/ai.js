@@ -9,7 +9,7 @@
 import { ENEMY_SPECS, TANK } from "./specs.js";
 
 // Infantry types this brain shops from (ENEMY_SPECS keys, minus the boss).
-const INF_TYPES = ["", "fast", "heavy", "gren", "sapper"];
+const INF_TYPES = ["", "rocket", "gren", "sapper", "mortar"];
 const cost = (type) => (type === "tank" ? TANK.bounty : ENEMY_SPECS[type].bounty);
 
 const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
@@ -68,20 +68,23 @@ function dominantCounter(sig) {
 // Base doctrine, then additive counter deltas, then renormalized — additive
 // deltas only ever push shares up, so renormalizing dilutes everything
 // else proportionally: a blend, never a pure hard-counter swap.
+// mk2.02 (owner): the roster surgery — rockets take the fast seat, the
+// mortar team joins, sappers inherit the heavy's wall signal (the breach
+// role). // provisional (F5)
 function computeShares(snap, jitter) {
   const sig = signals(snap);
-  const base = { "": 0.30, fast: 0.175, heavy: 0.175, gren: 0.175, sapper: 0.175 };
+  const base = { "": 0.30, rocket: 0.175, gren: 0.175, sapper: 0.175, mortar: 0.175 };
   const raw = { ...base };
-  raw.fast += 0.35 * sig.mortar;
+  raw.rocket += 0.35 * sig.mortar;
   raw.sapper += 0.22 * sig.wall;
-  raw.heavy += 0.18 * sig.wall;
+  raw.sapper += 0.18 * sig.wall;
   raw.gren += 0.30 * sig.frost;
   // small deterministic jitter (bounded, well under counter-delta scale)
   // so the doctrine isn't perfectly rigid without swamping the counters.
   const j = (jitter - 0.5) * 0.06;
-  raw.fast = Math.max(0.02, raw.fast + j);
+  raw.rocket = Math.max(0.02, raw.rocket + j);
   raw.gren = Math.max(0.02, raw.gren - j);
-  const sum = raw[""] + raw.fast + raw.heavy + raw.gren + raw.sapper;
+  const sum = raw[""] + raw.rocket + raw.gren + raw.sapper + raw.mortar;
   const shares = {};
   for (const t of INF_TYPES) shares[t] = raw[t] / sum;
   shares.tankPref = sig.mg; // 0..1, drives tank eagerness outside banking too
@@ -271,7 +274,7 @@ export function homeShare(bell) {
 // The home detail: rifle-family tags only — grenadiers and sappers carry no
 // hold discipline (units.js) and would march off the post. Splices from the
 // FRONT of the mix bag (nextSpawnTag pops the back), deterministic.
-const HOLD_TAGS = ["", "fast", "heavy", "sniper"];
+const HOLD_TAGS = ["", "rocket", "sniper", "mortar"];
 export function pickHomeDetail(mixBag, n) {
   const out = [];
   for (let i = 0; i < mixBag.length && out.length < n; ) {

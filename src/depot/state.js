@@ -8,7 +8,7 @@ import { planWave, MIN_WAVE_FLOOR, spawnDelayFor } from "./ai.js";
 import { STIPEND, payResults, combatIneffective, bookValue, KILL_CUT } from "./economy.js";
 import { killPrice } from "./market.js";
 import { composeIntel, openingIntel } from "./intel.js";
-import { TOWER_SPECS, ENEMY_SPECS, TANK, INFANTRY_ARMS, MASON, PLAYER_START, PLAYER_TIERS, HAND_KEYS, HAND_TAGS } from "./specs.js";
+import { TOWER_SPECS, ENEMY_SPECS, TANK, INFANTRY_ARMS, MASON, PLAYER_START, PLAYER_TIERS, HAND_KEYS, HAND_TAGS, MAN } from "./specs.js";
 import { seenAt } from "./sight.js";
 
 // Targeting gate, symmetric, VISION era (mk0.72): a shooter of `team` (1 =
@@ -385,7 +385,12 @@ export function stepWallSupport(world) {
 //         detonates at the muzzle, 0 range, every time; found live while
 //         building squadFire below) }
 export function shooterFire(world, shooter, muzzle, target, spec, opts = {}) {
-  const high = !!opts.high;
+  let high = !!opts.high;
+  // mk2.02: THE AUTOMATIC LOB (owner) — an "auto" spec (both tank guns, the
+  // tower GUN) fires the flat root when the flat arc reaches the aim and
+  // takes the mortar root when it cannot (arcClears, the reach preview's
+  // own march). A lobbed fast shell hangs long — priced in knowingly.
+  if (!high && spec.occl === "auto" && !arcClears(world, muzzle, target.pos, { ...spec, occl: "arc" }, opts.owner)) high = true;
   const attacker = opts.attacker || "player";
   let ax2 = target.pos.x, az2 = target.pos.z, ay2 = target.pos.y;
   for (let li = 0; li < 2; li++) {
@@ -711,7 +716,8 @@ export function possessedVolley(world, squad, aim, T, toUV = (x, z) => ({ u: x, 
   // velocity, real height, shooterFire's own lead solve — falling back to
   // the synthetic ground point exactly as before when nothing is near.
   const live = snapTargetNear(world, aim, T, toUV);
-  const tgt = live || { pos: { x: aim.x, y: (aim.y != null ? aim.y : world.field.heightAt(aim.x, aim.z)) + 0.9, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: 0.9 }; // mk2.01: aim.y is the surface under the reticle — rooftops are targets
+  const sy = aim.y != null ? aim.y : world.field.heightAt(aim.x, aim.z);
+  const tgt = live || { pos: { x: aim.x, y: sy, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: sy - world.field.heightAt(aim.x, aim.z) }; // mk2.02: ground aim targets the SURFACE (owner) — the phantom body is dead; hy carries roof height over field ground through shooterFire's lead refresh
   let fired = 0;
   for (const id of squad.memberIds) {
     const u = world.byId.get(id);
@@ -743,7 +749,8 @@ export function possessedTowerFire(world, tower, aim, T, toUV = (x, z) => ({ u: 
   const c = toUV(aim.x, aim.z);
   if (!fieldReaches(T, c.u, c.v, 1)) return false;
   const live = snapTargetNear(world, aim, T, toUV);
-  const tgt = live || { pos: { x: aim.x, y: (aim.y != null ? aim.y : world.field.heightAt(aim.x, aim.z)) + 0.9, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: 0.9 }; // mk2.01: aim.y is the surface under the reticle — rooftops are targets
+  const sy = aim.y != null ? aim.y : world.field.heightAt(aim.x, aim.z);
+  const tgt = live || { pos: { x: aim.x, y: sy, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: sy - world.field.heightAt(aim.x, aim.z) }; // mk2.02: ground aim targets the SURFACE (owner) — the phantom body is dead; hy carries roof height over field ground through shooterFire's lead refresh
   tower.fireCd = spec.fireRate;
   tower.flashT = world.t;
   towerShot(world, tower, tgt, { ...spec, acc: spec.acc * POSSESS_ACC });
@@ -767,9 +774,8 @@ export function spawnSquadMembers(world, squad) {
     const p = clearSlot(world, squad.anchor.x + Math.cos(a) * r, squad.anchor.z + Math.sin(a) * r, 0.28 + 0.35);
     // P7 T7: member stats read per-type off SQUAD_SPECS[type].member,
     // falling back to today's literals — every existing type spawns
-    // byte-identical. Runners mirror ENEMY_SPECS.fast, breakers mirror
-    // ENEMY_SPECS.heavy.
-    const M = spec.member || { mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, hp: 58 };
+    // byte-identical. mk2.02: every man reads the one MAN row.
+    const M = spec.member || MAN.rifle; // mk2.02: the one body — every man 2m
     const u = addBody(world, { kind: "unit", team: squad.team || 1, mass: M.mass, hx: M.hx, hy: M.hy, hz: M.hz,
       x: p.x, y: world.field.heightAt(p.x, p.z) + M.hy + 0.02, z: p.z, hp: M.hp, friction: 0.5 });
     u.utype = squad.type; u.squadId = squad.id; u.dress = "human"; // player side reads human
@@ -1126,8 +1132,8 @@ export const TIER_BELLS = [1, 3, 5, 10];
 // has anything. Task 2 writes the player's mirrored table in specs.js against
 // these exact rows; both sides climb on the same bells.
 export const ENEMY_TIERS = [
-  ["fast", "heavy"],    // tier 1 — runners, breakers
-  ["gren", "sapper"],   // tier 2 — grenadiers, sappers
+  ["rocket", "gren"],   // tier 1 — rocket troops, grenadiers (mk2.02: the roster surgery)
+  ["mortar", "sapper"], // tier 2 — mortar team, sappers
   ["sniper", "tank"],   // tier 3 — marksmen, armour
   ["hero_bison", "hero_apc"], // tier 4 — THE HERO TIER (owner): lost armor returns off the convoy, dear
 ];
@@ -1515,7 +1521,7 @@ export function fireBell(S, opts = {}) {
     const M = S.manifest;
     M.hand = dealConvoyHand(M.unlocked, HAND_KEYS, rng);
     M.offerBell = S.bell;
-    M.cardUp = M.hand.length > 0;
+    M.cardUp = M.hand.length > 0 && !S.possess; // mk2.02: THE CONVOY WAITS (owner) — no deal opens over a live possession; release opens it
     M.armedAt = nowT + PENDING_ARM_S;
   }
 

@@ -65,9 +65,9 @@ import fs from "node:fs";
     const sqsrc = fs.readFileSync(new URL("../../src/depot/squads.js", import.meta.url), "utf8");
     ok("mk0.50/3: the interim cost asymmetry is written down beside the raised prices",
       /ASYMMETRY/.test(sqsrc) && /mercenary market/.test(sqsrc));
-    ok("mk0.50/3: enemy bounties were NOT raised with them",
-      ENEMY_SPECS.heavy.bounty === 12 && ENEMY_SPECS.gren.bounty === 8 && ENEMY_SPECS.sapper.bounty === 7
-      && ENEMY_SPECS.fast.bounty === 5 && ENEMY_SPECS[""].bounty === 4 && TANK.bounty === 25);
+    ok("mk0.50/3 (re-taught mk2.02): enemy bounties were NOT raised with them — surviving rows pinned, the roster surgery's rows at their born values",
+      ENEMY_SPECS.gren.bounty === 8 && ENEMY_SPECS.sapper.bounty === 7
+      && ENEMY_SPECS.rocket.bounty === 8 && ENEMY_SPECS[""].bounty === 4 && TANK.bounty === 25);
   }
 
   // (4) the intel card stops auto-raising — pinned at the fireBell asserts
@@ -270,7 +270,6 @@ import fs from "node:fs";
       /ev\.kind === "wall" && ev\.group === WALL_UPPER_GROUP\) return null;/.test(ssrc));
     ok("mk0.52/f: a course leaves a THIRD of the rubble (27 stones per wall, as before)",
       /ny: b\.kind === "tower" \? 4 : \(b\.course != null \? 1 : 3\)/.test(wsrc));
-    ok("mk0.52/f: the breaker's ram works the BASE course only", /str\.kind === "wall" && str\.course > 0/.test(usrc));
   }
 
   // (h) The crater re-seat. core.js drops static structures onto the ground

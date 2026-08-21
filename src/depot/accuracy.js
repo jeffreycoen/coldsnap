@@ -316,7 +316,7 @@ const PREDICT_SKIP_M = 2.5;
 export function flightImpact(SG, muzzle, dir, speed, spec, wind, toUV, dt = 1 / 120) {
   const p = { x: muzzle.x, y: muzzle.y, z: muzzle.z };
   const v = { x: dir.x * speed, y: dir.y * speed, z: dir.z * speed };
-  for (let k = 0; k < 1800; k++) {
+  for (let k = 0; k < 2600; k++) { // mk2.02: ~21.7s of flight — a lobbed 85 m/s shell hangs ~17.3s and must land inside the march
     v.y -= 9.8 * dt;
     if (wind && spec.windF) {
       v.x += (wind.x - v.x * 0.02) * spec.windF * dt;
@@ -354,31 +354,46 @@ export function deflect(dir, a, m) {
 // possessed ground aim never moves), then the nominal impact and 16 cap
 // rays. center is the ring's center (wall true = a vertical face took it);
 // r bounds every possible landing; rawDir feeds the renderer's face yaw.
+// mk2.02: 16-point footprint returned as pts; "auto" specs mirror
+// shooterFire's lob rule.
 export function predictRing(SG, muzzle, aim, spec, sigma, wind, toUV) {
-  const high = spec.occl === "lofted";
-  let ax = aim.x, az = aim.z;
-  for (let li = 0; li < 2; li++) {
-    const ld = Math.max(2, Math.hypot(ax - muzzle.x, az - muzzle.z));
-    const lp = aimSolve(spec.projSpeed, ld, aim.y - muzzle.y, 9.8, high);
-    if (lp == null) break;
-    const tof = ld / Math.max(1e-3, spec.projSpeed * Math.cos(lp));
-    ax = aim.x; az = aim.z;
-    if (wind && spec.windF && spec.windComp) {
-      ax -= wind.x * spec.windF * tof * spec.windComp;
-      az -= wind.z * spec.windF * tof * spec.windComp;
+  const solve = (hi) => {
+    let ax = aim.x, az = aim.z;
+    for (let li = 0; li < 2; li++) {
+      const ld = Math.max(2, Math.hypot(ax - muzzle.x, az - muzzle.z));
+      const lp = aimSolve(spec.projSpeed, ld, aim.y - muzzle.y, 9.8, hi);
+      if (lp == null) break;
+      const tof = ld / Math.max(1e-3, spec.projSpeed * Math.cos(lp));
+      ax = aim.x; az = aim.z;
+      if (wind && spec.windF && spec.windComp) {
+        ax -= wind.x * spec.windF * tof * spec.windComp;
+        az -= wind.z * spec.windF * tof * spec.windComp;
+      }
+    }
+    const dx = ax - muzzle.x, dz = az - muzzle.z, dy = aim.y - muzzle.y;
+    const d = Math.max(2, Math.hypot(dx, dz));
+    let pitch = aimSolve(spec.projSpeed, d, dy, 9.8, hi);
+    if (pitch == null) pitch = hi ? 1.1 : 0.45;
+    return { x: (dx / d) * Math.cos(pitch), y: Math.sin(pitch), z: (dz / d) * Math.cos(pitch) };
+  };
+  let high = spec.occl === "lofted";
+  let rawDir = solve(high);
+  let center = flightImpact(SG, muzzle, rawDir, spec.projSpeed, spec, wind, toUV);
+  if (!high && spec.occl === "auto") {
+    const shortfall = Math.hypot(aim.x - muzzle.x, aim.z - muzzle.z) - Math.hypot(center.x - muzzle.x, center.z - muzzle.z);
+    if (center.wall || shortfall > 1.5) {
+      high = true;
+      rawDir = solve(true);
+      center = flightImpact(SG, muzzle, rawDir, spec.projSpeed, spec, wind, toUV);
     }
   }
-  const dx = ax - muzzle.x, dz = az - muzzle.z, dy = aim.y - muzzle.y;
-  const d = Math.max(2, Math.hypot(dx, dz));
-  let pitch = aimSolve(spec.projSpeed, d, dy, 9.8, high);
-  if (pitch == null) pitch = high ? 1.1 : 0.45;
-  const rawDir = { x: (dx / d) * Math.cos(pitch), y: Math.sin(pitch), z: (dz / d) * Math.cos(pitch) };
-  const center = flightImpact(SG, muzzle, rawDir, spec.projSpeed, spec, wind, toUV);
   const cap = SCATTER_CAP * sigma;
+  const pts = [];
   let r = 0.4;
   for (let s = 0; s < 16; s++) {
     const hit = flightImpact(SG, muzzle, deflect(rawDir, (s / 16) * Math.PI * 2, cap), spec.projSpeed, spec, wind, toUV);
+    pts.push(hit);
     r = Math.max(r, Math.hypot(hit.x - center.x, hit.z - center.z));
   }
-  return { center, r, rawDir };
+  return { center, r, pts, rawDir, high };
 }

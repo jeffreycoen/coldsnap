@@ -328,7 +328,7 @@ import fs from "node:fs";
   const nProps = (k) => k.props.filter(Boolean).length;
 
   // --- non-DEPOT parity: the frozen demo / sandbox / TD / campaign look
-  for (const b of [mk({ team: 1, utype: "rifles" }), mk({ tag: "heavy" }), mk({ tag: "fast" }),
+  for (const b of [mk({ team: 1, utype: "rifles" }),
                    mk({ utype: "gren" }), mk({ team: 1, utype: "mg", role: "gunner" })]) {
     const k = troopKit(b, false);
     ok(`kit: non-DEPOT ${b.utype || b.tag || "conscript"} is untouched (base palette, no bulk, rifle 1, zero props)`,
@@ -342,9 +342,7 @@ import fs from "node:fs";
 
   // --- bulk
   {
-    const h = troopKit(mk({ tag: "heavy" }), true), f = troopKit(mk({ tag: "fast" }), true), c = troopKit(mk({ tag: "" }), true);
-    ok("kit: the breaker is 1.35x wide / 1.15x tall", h.bw === 1.35 && h.bh === 1.15);
-    ok("kit: the runner is 0.9x slim", f.bw === 0.9 && f.bh === 1);
+    const c = troopKit(mk({ tag: "" }), true);
     ok("kit: the conscript keeps his own frame", c.bw === 1 && c.bh === 1);
   }
 
@@ -352,7 +350,6 @@ import fs from "node:fs";
   const cases = [
     ["player rifleman", mk({ team: 1, utype: "rifles" }), 1, 0],
     ["enemy conscript", mk({ tag: "" }), 1, 0],
-    ["enemy runner", mk({ tag: "fast" }), 1, 0],
     ["player sniper", mk({ team: 1, utype: "sniper", role: "sniper" }), 1, 2],
     ["enemy marksman", mk({ tag: "sniper", role: "sniper", dress: "android" }), 1, 2],
     ["player sapper", mk({ team: 1, utype: "sappers" }), 0, 1],
@@ -360,7 +357,6 @@ import fs from "node:fs";
     ["mortar man", mk({ team: 1, utype: "mortars" }), 0, 1],
     ["MG gunner", mk({ team: 1, utype: "mg", role: "gunner" }), 0.8, 3],
     ["MG loader", mk({ team: 1, utype: "mg", role: "loader" }), 0, 0],
-    ["enemy breaker", mk({ tag: "heavy" }), 0, 0],
   ];
   for (const [name, b, rifle, np] of cases) {
     const k = troopKit(b, true);
@@ -407,12 +403,11 @@ import fs from "node:fs";
     ok("kit: the MG gun is short (uniform scale, no shear)", troopKit(mk({ team: 1, utype: "mg", role: "gunner" }), true).rifle < 1);
   }
 
-  // --- fog: bulk survives the seam by design, everything else does not
+  // --- fog: every prop and weapon goes back to the generic man-shape
   {
-    const h = troopKit(mk({ tag: "heavy" }), true, true), s = troopKit(mk({ team: 1, utype: "sniper", role: "sniper" }), true, true);
-    ok("kit: STATED DECISION — the breaker's bulk shows through the fog seam", h.bw === 1.35 && h.bh === 1.15);
+    const g = troopKit(mk({ tag: "gren" }), true, true), s = troopKit(mk({ team: 1, utype: "sniper", role: "sniper" }), true, true);
     ok("kit: the fog seam takes every prop and weapon back to the generic man-shape",
-      nProps(h) === 0 && nProps(s) === 0 && h.rifle === 1 && s.rifle === 1);
+      nProps(g) === 0 && nProps(s) === 0 && g.rifle === 1 && s.rifle === 1);
   }
 
   // --- determinism: same body in, same look out; no hidden state

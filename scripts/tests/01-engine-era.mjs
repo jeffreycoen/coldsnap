@@ -661,8 +661,8 @@ function scriptedWaveRun(seed) {
   ok("ENEMY_FIRE.lob windComp matches TOWER_SPECS.mortar", ENEMY_FIRE.lob.windComp === TOWER_SPECS.mortar.windComp);
   ok("ENEMY_FIRE.tank acc/windF match TOWER_SPECS.gun exactly", ENEMY_FIRE.tank.acc === TOWER_SPECS.gun.acc && ENEMY_FIRE.tank.acc === 0.070 && ENEMY_FIRE.tank.windF === TOWER_SPECS.gun.windF && ENEMY_FIRE.tank.windF === 0.9);
   ok("ENEMY_FIRE.tank windComp matches TOWER_SPECS.gun", ENEMY_FIRE.tank.windComp === TOWER_SPECS.gun.windComp);
-  ok("ENEMY_SPECS carries the full roster (conscript/runner/breaker/grenadier/sapper)", ["", "fast", "heavy", "gren", "sapper"].every((k) => ENEMY_SPECS[k]));
-  ok("ENEMY_SPECS bounty === TD price (spot check: heavy 12, gren 8, sapper 7, fast 5)", ENEMY_SPECS.heavy.bounty === 12 && ENEMY_SPECS.gren.bounty === 8 && ENEMY_SPECS.sapper.bounty === 7 && ENEMY_SPECS.fast.bounty === 5);
+  ok("ENEMY_SPECS carries the full roster (re-taught mk2.02: conscript/rocket team/grenadier/sapper/mortar team)", ["", "rocket", "gren", "sapper", "mortar"].every((k) => ENEMY_SPECS[k]));
+  ok("ENEMY_SPECS bounty spot check (re-taught mk2.02: gren 8, sapper 7, rocket 8, mortar 8)", ENEMY_SPECS.gren.bounty === 8 && ENEMY_SPECS.sapper.bounty === 7 && ENEMY_SPECS.rocket.bounty === 8 && ENEMY_SPECS.mortar.bounty === 8);
   ok("TANK bounty === TD price (25)", TANK.bounty === 25);
   // (DELETED, P1 T1 mk0.40: "later waves reach the new unit types" pinned the
   // static WAVES table's seeded mixes. The table is gone — nothing seeds a
@@ -676,8 +676,8 @@ function scriptedWaveRun(seed) {
     // dress re-pinned (C0 T4, mk0.33): the marksman pair lost `dress:
     // "android"` — they are ordinary men in the enemy slate coat now, so the
     // spec must carry NO dress field at all and let troopkit palette them.
-    ok("4C spec: ENEMY_SPECS.sniper fielded (speed 2.9, hp 44, bounty 45 = the pair price, no dress — ordinary men)",
-      !!sp && sp.speed === 2.9 && sp.hp === 44 && sp.bounty === 45 && sp.dress === undefined, JSON.stringify(sp));
+    ok("4C spec (re-taught mk2.02): ENEMY_SPECS.sniper fielded (speed 2.9, hp 58 — the one MAN row, bounty 45 = the pair price, no dress — ordinary men)",
+      !!sp && sp.speed === 2.9 && sp.hp === 58 && sp.bounty === 45 && sp.dress === undefined, JSON.stringify(sp));
     ok("4C spec: enemy sniper fires INFANTRY_ARMS.sniper verbatim (acc/windF/windComp/dirDmg/range pin)",
       SNIPER_FIRE.acc === INFANTRY_ARMS.sniper.acc && SNIPER_FIRE.windF === INFANTRY_ARMS.sniper.windF &&
       SNIPER_FIRE.windComp === INFANTRY_ARMS.sniper.windComp && SNIPER_FIRE.dirDmg === INFANTRY_ARMS.sniper.dirDmg &&
@@ -821,7 +821,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     const n = 1 + Math.floor(rng() * 40);
     const shapes = [
       { buys: [{ type: "tank", n }], banked: false },
-      { buys: [{ type: "", n }, { type: "fast", n }, { type: "sapper", n }], banked: false },
+      { buys: [{ type: "", n }, { type: "rocket", n }, { type: "sapper", n }], banked: false }, // mk2.02: the roster surgery
       { buys: [{ type: "sapper", n }], banked: true },
       { buys: [], banked: true },
       null,

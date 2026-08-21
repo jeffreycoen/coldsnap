@@ -52,12 +52,8 @@ export const SQUAD_SPECS = {           // costs are scrap; members spawn as unit
   // BUILD order (DepotGame.jsx): walk a line and lay bags or walls along it.
   // Every match starts with a team (PLAYER_START, specs.js). // provisional (F5)
   engineers: { n: 2, cost: 30, label: "ENGINEER TEAM" },
-  // P7 T7 (owner): the enemy's tier-1 types join YOUR list — mirrors of
-  // ENEMY_SPECS.fast/heavy, squads of 4 and 2, at tier 1 both sides.
-  runners:  { n: 4, cost: 34, label: "RUNNER SQUAD", speed: 5.0,             // provisional (F5)
-              member: { mass: 62, hx: 0.24, hy: 0.82, hz: 0.24, hp: 36 } },
-  breakers: { n: 2, cost: 40, label: "BREAKER PAIR", speed: 2.1,             // provisional (F5)
-              member: { mass: 340, hx: 0.46, hy: 1.02, hz: 0.46, hp: 290 } },
+  rockets: { n: 2, cost: 45, label: "ROCKET TEAM" },        // mk2.02 (owner): rocket troops replace runners // provisional (F5)
+  grenadiers: { n: 4, cost: 40, label: "GRENADIER SQUAD" }, // mk2.02 (owner): breakers become grenadiers // provisional (F5)
   // P7.2 T6 (owner): THE MEDIC TEAM — two medics with a bag; they walk to
   // the wounded and kneel to treat. Tools, not shooters: no INFANTRY_ARMS
   // row, so squadFire skips them by membership. // provisional (F5)
@@ -81,7 +77,7 @@ export const squadSpeed = (type) => (SQUAD_SPECS[type] && SQUAD_SPECS[type].spee
 // from inside function bodies invoked long after evaluation.
 import { arcClears } from "./accuracy.js";
 import { effRange, hostileStructure, standingStructure, hitOrigin } from "./state.js";
-import { INFANTRY_ARMS, SATCHEL, SAPPER_PLANT_PAD } from "./specs.js";
+import { INFANTRY_ARMS, SATCHEL, SAPPER_PLANT_PAD, MAN } from "./specs.js";
 // FRONT F1 (Task 4.5): the player sapper's satchel — same core explode/
 // applyDamage the enemy sapper uses (units.js stepSapper), sign-flipped.
 import { applyDamage, explode } from "../engine/core.js";

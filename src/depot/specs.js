@@ -36,21 +36,26 @@ export const TOWER_SPECS = {
   // than rifles; a six-round burst kills a conscript. The ±10% replaces-not-
   // adds calibration this line once carried is superseded.
   mg:     { range: 15, fireRate: 0.17, projSpeed: 95, dmg: 5, dirDmg: 8, blastR: 0.3, kv: 0.5, cost: 23, hp: 80,  crater: 0, label: "MG",     icon: "⊞", kind: "mg",    weapon: "mg",     hy: 1.0, acc: 0.090, windF: 0.06, windComp: 0,   blurb: "Fast, cheap, short reach", occl: "arc" },
-  gun:    { range: 19, fireRate: 1.05, projSpeed: 58, dmg: 25, blastR: 2.3, kv: 8,   cost: 38, hp: 130, crater: 0.55, label: "GUN",    icon: "⚑", kind: "shell", weapon: "shell",  hy: 1.5, acc: 0.07, windF: 0.9,  windComp: 0.6, blurb: "Flat-trajectory workhorse", occl: "arc" },
+  gun:    { range: 19, fireRate: 1.05, projSpeed: 58, dmg: 25, blastR: 2.3, kv: 8,   cost: 38, hp: 130, crater: 0.55, label: "GUN",    icon: "⚑", kind: "shell", weapon: "shell",  hy: 1.5, acc: 0.07, windF: 0.9,  windComp: 0.6, blurb: "Flat-trajectory workhorse", occl: "auto" /* mk2.02 (owner): THE AUTOMATIC LOB — flat when the flat arc reaches, mortar root when it cannot */ },
   mortar: { range: 26, fireRate: 4.6 /* halved cadence (C0 T4) // provisional (F5) */ /* mk1.74 (owner): tightened 0.020 -> 0.005 — the lob lands where it looks */,  projSpeed: 33, dmg: 38, blastR: 3.8, kv: 10,  cost: 53, hp: 95,  crater: 0.8, label: "MORTAR", icon: "◎", kind: "shell", weapon: "mortar", hy: 0.8, acc: 0.005, windF: 0.04, windComp: 0.6, blurb: "Arcs over walls, big blast", occl: "lofted" },
   rocket: { range: 23, fireRate: 8.8 /* halved cadence (C0 T4) // provisional (F5) */,  projSpeed: 18, dmg: 27, blastR: 3.4, kv: 9,   cost: 75, hp: 110, volley: 4, crater: 0.7, label: "ROCKET", icon: "▲", kind: "shell", weapon: "rocket", hy: 1.2, acc: 0.021, windF: 1.3  /* lobbed retune (mk0.25): swept 0.020-0.035 vs the pinned flat baseline 2.4592, curve in the F1.5 artillery plan // provisional (F5) */, windComp: 0.5, blurb: "Four-round salvo, slow reload", occl: "arc" /* mk1.74 (owner): THE GENTLE ARC — flat solve at 18 m/s, ~22° and a 2.3m apex at full reach; terrain checks honest */ },
   frost:  { range: 12, fireRate: 0,    projSpeed: 0,  dmg: 0,  blastR: 0,   kv: 0,   cost: 30, hp: 85,  label: "FROST",  icon: "❄", kind: "mg",    slow: 0.42, hy: 1.35, blurb: "Halves their pace in radius" },
 };
 export const TOWER_ORDER = ["mg", "gun", "mortar", "rocket", "frost"];
 
+// mk2.02: ONE BODY TABLE (owner) — every man, both sides, reads this row;
+// the player's numbers seed it and every man stands 2m. Speeds/bounties
+// stay per-side rows; the speed audit is the roster-mirror closing task.
+export const MAN = {
+  rifle: { mass: 80, hx: 0.28, hy: 1.0, hz: 0.28, hp: 58 },
+};
+
 // The zoo returns (Phase 3 Task 2) — ported straight from ColdsnapTD.jsx's
 // ENEMY_SPECS (:569-574) and TANK (:836). bounty === TD's price value.
 export const ENEMY_SPECS = {
-  "":     { mass: 82,  hx: 0.26, hy: 0.86, hz: 0.26, hp: 58,  bounty: 4,  speed: 3.2, gain: 14, label: "conscript" },
-  fast:   { mass: 62,  hx: 0.24, hy: 0.82, hz: 0.24, hp: 36,  bounty: 5,  speed: 5.1, gain: 18, label: "runner" },
-  heavy:  { mass: 340, hx: 0.46, hy: 1.02, hz: 0.46, hp: 290, bounty: 12, speed: 2.1, gain: 11, label: "breaker" },
-  gren:   { mass: 84,  hx: 0.26, hy: 0.92, hz: 0.26, hp: 66,  bounty: 8,  speed: 2.6, gain: 12, label: "grenadier" },
-  sapper: { mass: 70,  hx: 0.25, hy: 0.84, hz: 0.25, hp: 30,  bounty: 7,  speed: 3.8, gain: 16, label: "sapper" },
+  "":     { ...MAN.rifle, bounty: 4,  speed: 3.2, gain: 14, label: "conscript" },
+  gren:   { ...MAN.rifle, bounty: 8,  speed: 2.6, gain: 12, label: "grenadier" },
+  sapper: { ...MAN.rifle, bounty: 7,  speed: 3.8, gain: 16, label: "sapper" },
   // Their sniper (Phase 5 Task 4C): marches until VANTAGE (units.js), then
   // holds and works with INFANTRY_ARMS.sniper — one table, both sides.
   // The pair (6.5 Task 6): a marksman buy fields TWO men — sniper + spotter
@@ -66,17 +71,22 @@ export const ENEMY_SPECS = {
   // all. units.js's spotter copies dress from this same spec, so the one
   // deletion re-dresses the whole pair. Campaign androids are unaffected —
   // that dress lives on scenario bodies (src/game/scenario.js), not here.
-  sniper: { mass: 82,  hx: 0.26, hy: 0.86, hz: 0.26, hp: 44,  bounty: 45, speed: 2.9, gain: 14, label: "marksman" },
+  sniper: { ...MAN.rifle, bounty: 45, speed: 2.9, gain: 14, label: "marksman" },
   // P7.1 T6 (owner): the pick pool is the player's full list — his MG team
   // and his engineers join the roster. Bounties provisional (F5).
-  mg:  { mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, hp: 58, bounty: 8, speed: 3.2, gain: 14, label: "mg team" },
-  eng: { mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, hp: 58, bounty: 6, speed: 3.2, gain: 14, label: "engineer" },
+  mg:  { ...MAN.rifle, bounty: 8, speed: 3.2, gain: 14, label: "mg team" },
+  eng: { ...MAN.rifle, bounty: 6, speed: 3.2, gain: 14, label: "engineer" },
   // P7.2 T6: his medic — the conscript frame, no weapon (units.js's medic
   // branch never fires). Bounty is the kill payout. // provisional (F5)
-  medic: { mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, hp: 58, bounty: 8, speed: 3.2, gain: 14, label: "medic" },
+  medic: { ...MAN.rifle, bounty: 8, speed: 3.2, gain: 14, label: "medic" },
   // P7.2 T7: his mechanic — the conscript frame, no weapon (units.js's
   // mechanic branch never fires). Bounty is the kill payout. // provisional (F5)
-  mechanic: { mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, hp: 58, bounty: 8, speed: 3.2, gain: 14, label: "mechanic" },
+  mechanic: { ...MAN.rifle, bounty: 8, speed: 3.2, gain: 14, label: "mechanic" },
+  // mk2.02 (owner): the roster surgery — rocket troops replace runners,
+  // the mortar team joins so the player's tube has its mirror. Dials
+  // provisional (F5).
+  rocket: { ...MAN.rifle, bounty: 8, speed: 3.2, gain: 16, label: "rocket team" },
+  mortar: { ...MAN.rifle, bounty: 8, speed: 3.2, gain: 14, label: "mortar team" },
 };
 
 // Wave armor: an engine vehicle on the engine's own tread physics (see
@@ -96,7 +106,7 @@ export const BISON = { mass: 3800, hx: 2.2, hy: 0.95, hz: 3.3, hp: 420, armor: 1
 // DEPOT. The main gun is the wave tank's round on a hero cadence; the coax
 // is the mg family's stream. weapon tags are voice only.
 export const BISON_FIRE = {
-  gun: { projSpeed: 85, dmg: TANK.dmg, kind: "shell", weapon: "tank", blastR: TANK.blastR, kv: 8, crater: 0.5, acc: 0.070, windF: 0.9, windComp: 0.6, cd: 2.6, range: 30, occl: "arc" },  // provisional (F5)
+  gun: { projSpeed: 85, dmg: TANK.dmg, kind: "shell", weapon: "tank", blastR: TANK.blastR, kv: 8, crater: 0.5, acc: 0.070, windF: 0.9, windComp: 0.6, cd: 2.6, range: 30, occl: "auto" },  // mk2.02 (owner): THE AUTOMATIC LOB — flat when the flat arc reaches, mortar root when it cannot // provisional (F5)
   mg:  { projSpeed: 100, dmg: 5, dirDmg: 8, kind: "mg", weapon: "mg", blastR: 0.3, kv: 0.5, crater: 0, acc: 0.080, burst: 6, burstGap: 0.17, cd: 1.6, range: 18, occl: "arc", windF: 0.06, windComp: 0 },  // provisional (F5)
 };
 
@@ -138,7 +148,7 @@ export const ENEMY_FIRE = {
   // so their lob slows exactly as much as ours. cdVar is a separate dial and
   // was not moved. // provisional (F5)
   lob:   { projSpeed: 28, dmg: 20, kind: "shell", weapon: "mortar", blastR: 2.6, kv: 6, crater: 0.45, acc: 0.005 /* mk1.74 (owner): tightened 0.020 -> 0.005 — the lob lands where it looks */, windF: 0.04, windComp: 0.6, cd: 6.0, cdVar: 0.6, range: 21, occl: "lofted" },
-  tank:  { projSpeed: 85, dmg: TANK.dmg, kind: "shell", weapon: "tank", blastR: TANK.blastR, kv: 8, crater: 0.5, acc: 0.070, windF: 0.9, windComp: 0.6, cd: TANK.gunCd, cdVar: 1.2, range: TANK.gunRange, occl: "arc" },
+  tank:  { projSpeed: 85, dmg: TANK.dmg, kind: "shell", weapon: "tank", blastR: TANK.blastR, kv: 8, crater: 0.5, acc: 0.070, windF: 0.9, windComp: 0.6, cd: TANK.gunCd, cdVar: 1.2, range: TANK.gunRange, occl: "auto" }, // mk2.02 (owner): THE AUTOMATIC LOB — flat when the flat arc reaches, mortar root when it cannot
 };
 
 // The 50-row WAVES table is DELETED (P1 Task 1, mk0.40). Nothing composes an
@@ -152,8 +162,8 @@ export const ENEMY_FIRE = {
 //
 //              PLAYER (build-menu keys)                    ENEMY (ENEMY_SPECS tags)
 //   START      sq_rifles · sq_engineers                    "" conscripts (never gated)
-//   TIER 1     mg · sq_mg · frost · sq_runners · sq_breakers   fast (runner) · heavy (breaker)
-//   TIER 2     gun · sq_sniper · sq_mortars                gren · sapper
+//   TIER 1     mg · sq_mg · frost · sq_rockets · sq_grenadiers   rocket · gren
+//   TIER 2     gun · sq_sniper · sq_mortars                mortar · sapper
 //   TIER 3     mortar · rocket · sq_sappers                sniper (marksman) · tank
 //   TIER 4     hero_bison · hero_apc                       hero_bison · hero_apc (P7 T9, bell 10 — the hero tier)
 //
@@ -173,10 +183,10 @@ export const ENEMY_FIRE = {
 // mirrors them (the sapper split is the "Engineers & Arms" phase's business).
 export const PLAYER_START = []; // P7.2 T3 (owner): THE BAR STARTS EMPTY — the free starting plans die; every build option is bought off the hand. Supersedes the mk0.60/mk1.12 starting kit.
 export const PLAYER_TIERS = [
-  // P7 T7 (mk1.36, owner): the tier-1 mirror closes — sq_runners and
-  // sq_breakers join mg/sq_mg/frost, matching the enemy's own fast/heavy.
+  // P7 T7 (mk1.36, owner): the tier-1 mirror closes — sq_rockets and
+  // sq_grenadiers join mg/sq_mg/frost, matching the enemy's own rocket/gren.
   // P7.2 T6: the medic's price-family seat — rows gate nothing since T2
-  ["mg", "sq_mg", "frost", "sq_runners", "sq_breakers", "sq_medics"],
+  ["mg", "sq_mg", "frost", "sq_rockets", "sq_grenadiers", "sq_medics"],
   ["gun", "sq_sniper", "sq_mortars"],
   // P7.2 T7: the mechanic's price-family seat — the ruled tier-3 row
   ["mortar", "rocket", "sq_sappers", "sq_mechanics"],
@@ -188,12 +198,12 @@ export const PLAYER_TIERS = [
 // P7.2 T2 (owner): THE HAND IS UNGATED — the full fifteen, one table, from
 // bell one; price and the market wall do all the refusing. The tier ladders
 // above stop gating offers (they remain as rows and price families).
-export const HAND_KEYS = ["mg", "gun", "mortar", "rocket", "frost", "sq_sniper", "sq_rifles", "sq_mg", "sq_sappers", "sq_mortars", "sq_engineers", "sq_runners", "sq_breakers", "sq_medics", "sq_mechanics", "hero_bison", "hero_apc", "hero_mech"];
+export const HAND_KEYS = ["mg", "gun", "mortar", "rocket", "frost", "sq_sniper", "sq_rifles", "sq_mg", "sq_sappers", "sq_mortars", "sq_engineers", "sq_rockets", "sq_grenadiers", "sq_medics", "sq_mechanics", "hero_bison", "hero_apc", "hero_mech"];
 
 // P7.2 T4: the key -> enemy-tag map for HIS side of the hand. Tower keys
 // are deliberately absent — a tower is not a wave tag: his tower plans
 // ROUTE to S.foe.towers (the plans ledger he builds from), full symmetry.
-export const HAND_TAGS = { sq_rifles: "", sq_runners: "fast", sq_breakers: "heavy", sq_sappers: "sapper", sq_mortars: "gren", sq_sniper: "sniper", sq_mg: "mg", sq_engineers: "eng", sq_medics: "medic", sq_mechanics: "mechanic", hero_bison: "hero_bison", hero_apc: "hero_apc", hero_mech: "hero_mech" };
+export const HAND_TAGS = { sq_rifles: "", sq_rockets: "rocket", sq_grenadiers: "gren", sq_sappers: "sapper", sq_mortars: "mortar", sq_sniper: "sniper", sq_mg: "mg", sq_engineers: "eng", sq_medics: "medic", sq_mechanics: "mechanic", hero_bison: "hero_bison", hero_apc: "hero_apc", hero_mech: "hero_mech" };
 
 export const MASON = { hcs: 0.40, pitch: 0.83, mass: 100, breakF: 8.0e4 };
 
@@ -261,11 +271,12 @@ export const INFANTRY_ARMS = {
   // one-for-one: 3.0 -> 6.0 with the C0 T4 cadence halving. // provisional (F5)
   mortars: { projSpeed: 28, kind: "shell", weapon: "mortar", dmg: 20, blastR: 2.6, kv: 6, crater: 0.45,
              fireRate: 6.0, range: 21, acc: 0.005 /* mk1.74 (owner): tightened 0.020 -> 0.005 — the lob lands where it looks */, occl: "lofted", windF: 0.04, windComp: 0.6 },
-  // P7 T7 (owner): the enemy's tier-1 types join the player's own arms
-  // table — one gun, four hands for the runner squad; the breaker pair
-  // works at the enemy heavy's own 1.1s cadence. Rifle table verbatim.
-  runners:  { projSpeed: 90, kind: "mg", weapon: "rifle", dmg: 5, dirDmg: 15, fireRate: 1.3, range: 15,
-              acc: 0.090, occl: "arc", windF: 0.06, windComp: 0.6 },
-  breakers: { projSpeed: 90, kind: "mg", weapon: "rifle", dmg: 5, dirDmg: 15, fireRate: 1.1, range: 15,
-              acc: 0.090, occl: "arc", windF: 0.06, windComp: 0.6 },
+  // mk2.02 (owner): THE SHOULDER ROCKET — rocket troops replace runners,
+  // both sides, one row. The tower rocket's round on infantry legs. // provisional (F5)
+  rockets: { projSpeed: 18, kind: "shell", weapon: "rocket", dmg: 27, blastR: 3.4, kv: 9, crater: 0.7,
+             fireRate: 8.8, range: 18, acc: 0.021, occl: "arc", windF: 1.3, windComp: 0.5 },
+  // mk2.02 (owner): THE GRENADE — grenadiers are not mortars; a short live
+  // throw, one row both sides. // provisional (F5)
+  grenadiers: { projSpeed: 20, kind: "shell", weapon: "mortar", dmg: 16, blastR: 2.0, kv: 5, crater: 0.3,
+                fireRate: 3.2, range: 12, acc: 0.010, occl: "lofted", windF: 0.03, windComp: 0.6 },
 };

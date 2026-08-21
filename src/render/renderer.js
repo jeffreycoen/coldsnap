@@ -1315,7 +1315,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
   let lineGroup = null; // COMMAND T2 (mk0.84): the proposed line's group, rebuilt on endpoint taps only.
   let pathPool = null;
   const PATH_VERT_CAP = 4096;   // segment vertices — ~30 ordered units at full route length // provisional (F5)
-  let retRing = null; // POSSESSION T5 (mk0.94) / mk2.01: the possessed crosshair group — ring + bars, crimson, fog-proof
+  let retRing = null, retPoly = null; // POSSESSION T5 / mk2.02: the crosshair group + the footprint loop
   let zoneMesh = null; // mk1.95: THE PLACEMENT ZONE — lazy like everything here
   const overlay = {
     // POSSESSION T5 (mk0.94): the possessed reticle — its own red ring, not
@@ -1323,15 +1323,11 @@ export function makeRenderer(canvas, world0, opts = {}) {
     // only while a possession is live.
     // mk1.99: solid, spread-sized, and standing on a wall hit.
     // mk2.00 (owner): band 30% of radius, red brightened.
-    setReticle(on, x, z, y, r, hit) {
+    setReticle(on, x, z, y, r, hit, pts) {
       if (!retRing) {
-        // mk2.01: BLAZING CRIMSON — fog: false (the scene fog was washing
-        // the red toward the sky color at distance); one shared material.
         const rmat = new THREE.MeshBasicMaterial({ color: 0xf0143c, depthWrite: false, side: THREE.DoubleSide, fog: false });
         retRing = new THREE.Group();
-        retRing.add(new THREE.Mesh(new THREE.RingGeometry(0.7, 1.0, 44), rmat));
-        // mk2.01: THE LARGE CROSSHAIR — four bars riding the ring, spanning
-        // past its edge, scaling and tilting with it.
+        // THE LARGE CROSSHAIR (mk2.01) — four bars, scaling and tilting as one.
         for (let ci = 0; ci < 4; ci++) {
           const bar = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.85), rmat);
           const ca = (ci * Math.PI) / 2;
@@ -1342,8 +1338,15 @@ export function makeRenderer(canvas, world0, opts = {}) {
         retRing.rotation.x = -Math.PI / 2;
         for (const ch of retRing.children) ch.layers.set(1);
         scene.add(retRing);
+        // mk2.02: THE FOOTPRINT POLYGON — the landing bound drawn through
+        // its 16 landed points, each at its own ground, hugging hillsides.
+        // The circle band is dead; the truth has corners.
+        retPoly = new THREE.LineLoop(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xf0143c, fog: false }));
+        retPoly.layers.set(1); scene.add(retPoly);
       }
       retRing.visible = !!on;
+      const havePts = !!(on && !hit && pts && pts.length > 2);
+      retPoly.visible = havePts;
       if (on) {
         const rr = Math.max(0.4, r || 1.2);
         retRing.scale.set(rr, rr, 1);
@@ -1351,6 +1354,13 @@ export function makeRenderer(canvas, world0, opts = {}) {
         // the fire line; ground and rooftops keep it flat at the landing.
         if (hit) { retRing.position.set(x, hit.y, z); retRing.rotation.set(0, hit.yaw, 0); }
         else { retRing.position.set(x, y + 0.1, z); retRing.rotation.set(-Math.PI / 2, 0, 0); }
+      }
+      if (havePts) {
+        const arr = new Float32Array(pts.length * 3);
+        for (let i = 0; i < pts.length; i++) { arr[i * 3] = pts[i].x; arr[i * 3 + 1] = pts[i].y + 0.14; arr[i * 3 + 2] = pts[i].z; }
+        retPoly.geometry.dispose();
+        retPoly.geometry = new THREE.BufferGeometry();
+        retPoly.geometry.setAttribute("position", new THREE.BufferAttribute(arr, 3));
       }
     },
     // ghost build cursor: pad snapped to a cell (cs meters), ring/fill at range r
@@ -1839,7 +1849,9 @@ export function makeRenderer(canvas, world0, opts = {}) {
       // (core.js applyDamage); every other mode renders byte-identical.
       const hurtAge = world.depotCombat && b.alive && b.dmgT != null ? world.t - b.dmgT : 1;
       const hurtK = hurtAge < 0.18 ? 1 - hurtAge / 0.18 : 0;
-      const bw = KIT.bw, bh = KIT.bh;
+      // mk2.02: TWO-METER MEN (owner) — depot bodies are 2m (hy 1.0); the
+      // drawn man stretches to match. Demo modes render byte-identical.
+      const bw = KIT.bw, bh = KIT.bh * (world.depotCombat ? 2.0 / 1.44 : 1);
       const kitPal = KIT.pal;
       for (let pi = 0; pi < spec.length; pi++) {
         const p = spec[pi];

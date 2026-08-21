@@ -244,10 +244,10 @@ export function seedBags(world, grid, depotT, streamKey, stampBag) {
 // table both sides. kind routes the placer; tag/n shape the enemy's men.
 export const PICK_POOL = [
   { key: "sq_rifles", kind: "squad", type: "rifles", tag: "", n: 4 },
-  { key: "sq_runners", kind: "squad", type: "runners", tag: "fast", n: 4 },
-  { key: "sq_breakers", kind: "squad", type: "breakers", tag: "heavy", n: 2 },
+  { key: "sq_rockets", kind: "squad", type: "rockets", tag: "rocket", n: 2 },
+  { key: "sq_grenadiers", kind: "squad", type: "grenadiers", tag: "gren", n: 4 },
   { key: "sq_sappers", kind: "squad", type: "sappers", tag: "sapper", n: 2 },
-  { key: "sq_mortars", kind: "squad", type: "mortars", tag: "gren", n: 2 },
+  { key: "sq_mortars", kind: "squad", type: "mortars", tag: "mortar", n: 2 },
   { key: "sq_sniper", kind: "squad", type: "sniper", tag: "sniper", n: 2 },
   { key: "sq_mg", kind: "squad", type: "mg", tag: "mg", n: 2 },
   { key: "sq_engineers", kind: "squad", type: "engineers", tag: "eng", n: 2 },

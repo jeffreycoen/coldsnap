@@ -37,7 +37,7 @@ const mkGridA = (blocked = []) => {
     gridToWorld: (gx, gz) => ({ x: OX + (gx + 0.5) * CS, z: OZ + (gz + 0.5) * CS }),
     cellAt(x, z) { const g = this.worldToGrid(x, z); return this.inBounds(g.gx, g.gz) ? cells[this.idx(g.gx, g.gz)] : null; } };
 };
-const ARMED = ["sniper", "rifles", "mg", "mortars", "runners", "breakers"];
+const ARMED = ["sniper", "rifles", "mg", "mortars", "rockets", "grenadiers"]; // mk2.02: the roster surgery
 const TOOLS = ["engineers", "sappers"];
 const ALL = [...ARMED, ...TOOLS];
 
@@ -241,7 +241,7 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "frost"]) {
 
 // ---- P7.1 T4: the info cards tell the truth
 {
-  const want = ["mg", "gun", "mortar", "rocket", "frost", "sq_sniper", "sq_rifles", "sq_mg", "sq_sappers", "sq_mortars", "sq_engineers", "sq_runners", "sq_breakers", "hero_bison", "hero_apc"];
+  const want = ["mg", "gun", "mortar", "rocket", "frost", "sq_sniper", "sq_rifles", "sq_mg", "sq_sappers", "sq_mortars", "sq_engineers", "sq_rockets", "sq_grenadiers", "hero_bison", "hero_apc"]; // mk2.02
   ok("T4: every buyable has a card", want.every((k) => !!cardFor(k)));
   ok("T4: the rifle card matches its spec", CARDS.sq_rifles.hp === 58 && CARDS.sq_rifles.dmg === INFANTRY_ARMS.rifles.dirDmg && CARDS.sq_rifles.range === INFANTRY_ARMS.rifles.range && CARDS.sq_rifles.n === 4);
   ok("T4: the gun tower card matches its spec", CARDS.gun.hp === TOWER_SPECS.gun.hp && CARDS.gun.dmg === TOWER_SPECS.gun.dmg && CARDS.gun.range === TOWER_SPECS.gun.range);
@@ -396,7 +396,7 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "frost"]) {
   ok("T10: a rifleman composes from the real part table", man10.children.length >= 10);
   const mg10 = buildPortraitMan("mg"), sn10 = buildPortraitMan("sniper");
   ok("T10: kits differ by trade (the mg carries more iron than the marksman's glass)", mg10.children.length !== sn10.children.length || mg10.children.length > 0);
-  ok("T10: every card key resolves to a model", ["sq_rifles", "sq_sniper", "sq_mg", "sq_sappers", "sq_mortars", "sq_engineers", "sq_runners", "sq_breakers", "mg", "gun", "mortar", "rocket", "frost", "hero_bison", "hero_apc"].every((k) => buildPortraitModel(k).children.length > 0));
+  ok("T10: every card key resolves to a model", ["sq_rifles", "sq_sniper", "sq_mg", "sq_sappers", "sq_mortars", "sq_engineers", "sq_rockets", "sq_grenadiers", "mg", "gun", "mortar", "rocket", "frost", "hero_bison", "hero_apc"].every((k) => buildPortraitModel(k).children.length > 0));
   const src10 = fs.readFileSync("src/depot/InfoCard.jsx", "utf8");
   ok("T10: the card carries the portrait canvas", /data-info-portrait/.test(src10) && /portrait\(cv\)/.test(src10));
   const dg10 = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");

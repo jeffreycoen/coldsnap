@@ -33,7 +33,7 @@ export function eyeOf(b) {
   if (b.kind === "vehicle") return { x: b.pos.x, y: b.pos.y + 1.4, z: b.pos.z, r: SIGHT.vehicle };
   const r = b.role === "spotter" ? SIGHT.spotter
           : (b.role === "sniper" || b.tag === "sniper") ? SIGHT.sniper : SIGHT.unit;
-  return { x: b.pos.x, y: b.pos.y + 0.5, z: b.pos.z, r };
+  return { x: b.pos.x, y: b.pos.y + 0.8, z: b.pos.z, r }; // mk2.02: the 2m man's eye — 1.8m over his feet
 }
 // TARGET_H: a spot is "seen" at man height, not at the dirt — the same 1.2m
 // convention the reach preview uses (accuracy.js TARGET_H).

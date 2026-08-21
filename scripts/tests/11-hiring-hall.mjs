@@ -196,12 +196,12 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
   // (b) his deal: five draws; owned plans of BOTH spaces never re-deal
   {
     let n = 0; const raw = mulberry32(84); const rng = () => { n++; return raw(); };
-    const foe = { unlocked: ["fast"], towers: ["gun"] };
+    const foe = { unlocked: ["rocket"], towers: ["gun"] }; // mk2.02: the roster surgery
     const owned = HAND_KEYS.filter((k) => (HAND_TAGS[k] === undefined ? foe.towers.indexOf(k) >= 0 : (HAND_TAGS[k] === "" || foe.unlocked.indexOf(HAND_TAGS[k]) >= 0)));
     const hand = dealConvoyHand(owned, HAND_KEYS, rng);
     ok("T4(b): his deal burns five draws like the player's", n === 5, n);
     ok("T4(b2): an owned tag and an owned tower plan never re-deal; unowned towers CAN deal (symmetry)",
-      hand.filter((c) => !c.hire).every((c) => c.k !== "gun" && (HAND_TAGS[c.k] === undefined || HAND_TAGS[c.k] !== "fast")));
+      hand.filter((c) => !c.hire).every((c) => c.k !== "gun" && (HAND_TAGS[c.k] === undefined || HAND_TAGS[c.k] !== "rocket")));
     ok("T4(b3): the conscript key is born-owned — his rifles plan never deals (his conscripts march from bell zero; a rifles plan is dead money)",
       hand.filter((c) => !c.hire).every((c) => c.k !== "sq_rifles"));
   }

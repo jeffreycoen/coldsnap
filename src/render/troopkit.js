@@ -114,13 +114,9 @@ const KIT_MEDIC = { rifle: 0, props: P(MEDIC_BAG, CROSS_V, CROSS_H) };
 const KIT_MECHANIC = { rifle: 0, props: P(TOOLBOX) };
 
 // ---- bulk -----------------------------------------------------------
-// STATED DECISION (director, mk0.23): bulk is the ONE identity cue that
-// survives the fog seam. A fog-seam silhouette drops palette and every prop
-// back to the generic man-shape, but the breaker's 1.35x/1.15x frame and the
-// runner's 0.9x frame still read through it — you can tell a breaker is
-// coming without holding the ground. That is the accepted cost of showing
-// weight at all; it is not a leak to be fixed.
-const BULK = { heavy: [1.35, 1.15], fast: [0.9, 1.0] };
+// mk2.02: the heavy and fast frames died with their troops — one 2m frame,
+// kit palettes carry identity.
+const BULK = {};
 
 /**
  * troopKit(b, depot) -> { pal, bw, bh, rifle, props }
@@ -134,7 +130,7 @@ const BULK = { heavy: [1.35, 1.15], fast: [0.9, 1.0] };
  * @param sil   true in the fog seam: generic shape, bulk only
  */
 export function troopKit(b, depot, sil = false) {
-  const gren = b.utype === "gren";
+  const gren = b.utype === "gren" || b.utype === "grenadiers";
   const base = gren ? "gren" : "con";
   if (!depot) return { pal: base, bw: 1, bh: 1, rifle: 1, props: KIT_PLAIN.props };
   // COAT = SIDE (DEPOT only): the player's infantry keep the warm rust coat,
@@ -165,8 +161,7 @@ export function troopKit(b, depot, sil = false) {
       : b.tag === "sapper" ? KIT_SAPPER
       : b.tag === "medic" ? KIT_MEDIC
       : b.tag === "mechanic" ? KIT_MECHANIC
-      : b.tag === "heavy" ? KIT_NONE                          // breaker: hands free
-      : KIT_PLAIN;                                            // conscript, runner
+      : KIT_PLAIN;                                            // conscript, rocket, mortar
   }
   return { pal, bw, bh, rifle: k.rifle, props: k.props };
 }

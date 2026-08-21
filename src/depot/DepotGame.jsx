@@ -24,7 +24,7 @@ import { stepMines, minePrices, mineSeedRoll, mineSeedPlace, MINE_COST, WIRE_COS
 import { homeShare, pickHomeDetail, HOME_GUARD_CAP, cmdrOf, cmdrBellOrders, ferryDecide, flankDrop } from "./ai.js";
 import { SQUAD_SPECS, makeSquad, stepSquad, slotBlockedPublic, roomMaskPublic, drivePossessedSquad, clearSlot, stepMedicTendSquad, stepMechanicTendSquad } from "./squads.js";
 import { reachPolygon, arcClears, squadReach, towerReachCached, scatterSigma, predictRing } from "./accuracy.js";
-import { stepUnits, spawnUnit, stepBreakerRam } from "./units.js";
+import { stepUnits, spawnUnit } from "./units.js";
 import { stepDrivers, possessedArmorFire, possessedArmorMg, mechSighted } from "./drivers.js";
 import { stepTransports, unloadApc, apcSeated, unloadEnemyRiders } from "./transports.js";
 import { planRoute, stampTerrainMasks } from "./route.js";
@@ -592,7 +592,6 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
   // windAt is a pure function and the toggle draws nothing.
   world.wind = S.windOn === false ? { x: 0, z: 0, mag: 0 } : windAt(MAP_SEED, world.t);
   stepWorld(world);
-  stepBreakerRam(world); // heavies (breakers) ram walls/towers — TD's ColdsnapTD.jsx :964-972
   for (let i = world.bodies.length - 1; i >= 0; i--) {
     const b = world.bodies[i];
     if ((b.kind === "wall" || b.kind === "tower") && !b.alive) {
@@ -747,9 +746,9 @@ const PALETTE = [
   // P1.5 T4: the engineer team — in the starting kit, so this slot is on the
   // bar from the first frame of every match.
   { key: "sq_engineers", label: "ENGINEERS", icon: "⚒", cost: SQUAD_SPECS.engineers.cost },
-  // P7 T7: the tier-1 mirror — runners and breakers join the player's own list.
-  { key: "sq_runners", label: "RUNNERS", icon: "⇶", cost: SQUAD_SPECS.runners.cost },
-  { key: "sq_breakers", label: "BREAKERS", icon: "⨳", cost: SQUAD_SPECS.breakers.cost },
+  // mk2.02 (owner): the roster surgery — rockets and grenadiers hold the tier-1 seats.
+  { key: "sq_rockets", label: "ROCKETS", icon: "▲", cost: SQUAD_SPECS.rockets.cost },
+  { key: "sq_grenadiers", label: "GRENADIERS", icon: "◎", cost: SQUAD_SPECS.grenadiers.cost },
   // P7.2 T6: the medic team — mercy on the bar
   { key: "sq_medics", label: "MEDICS", icon: "✚", cost: SQUAD_SPECS.medics.cost },
   // P7.2 T7: the mechanic team — the paid wrench
@@ -1576,7 +1575,7 @@ export default function DepotGame({ onExit, resume = null }) {
       // ---------------------------------------------- squads (Phase 5 Task 3)
       // Build-bar mode keys -> squad type. Prefixed (sq_mg vs mg) because the
       // MG TOWER already owns the bare "mg" mode key.
-      const SQUAD_MODE = { sq_sniper: "sniper", sq_rifles: "rifles", sq_mg: "mg", sq_sappers: "sappers", sq_mortars: "mortars", sq_engineers: "engineers", sq_runners: "runners", sq_breakers: "breakers", sq_medics: "medics", sq_mechanics: "mechanics" };
+      const SQUAD_MODE = { sq_sniper: "sniper", sq_rifles: "rifles", sq_mg: "mg", sq_sappers: "sappers", sq_mortars: "mortars", sq_engineers: "engineers", sq_rockets: "rockets", sq_grenadiers: "grenadiers", sq_medics: "medics", sq_mechanics: "mechanics" };
       // mk1.95 (owner): hero keys are placement modes — the one law.
       const HERO_MODE = { hero_bison: "bison", hero_apc: "apc", hero_mech: "mech" };
       // The ghost's true footprint, by key — a hull its hull, the mech its
@@ -1917,6 +1916,9 @@ export default function DepotGame({ onExit, resume = null }) {
         // mid-hold bell release.
         S.reticle = null; S.reticleOff = null; S.fireHeld = false; S.mgHeld = false;
         S.reticleLockId = null;
+        // mk2.02: THE CONVOY WAITS (owner) — a hand dealt during the
+        // possession opens the moment the possession ends.
+        if (S.manifest && S.manifest.hand.length && !S.manifest.cardUp) { S.manifest.cardUp = true; S.manifest.armedAt = world.t + PENDING_ARM_S; }
         if (sq) {
           // released where you left them: dig in — the intrinsic default
           sq.order = "defend"; sq.dest = null; sq._legTarget = null; sq._threatSig = undefined;
@@ -3669,7 +3671,7 @@ export default function DepotGame({ onExit, resume = null }) {
           // arithmetic), radius at applyScatter's hard cap. No shot can
           // land outside it. For a squad the bound is drawn from the
           // farthest living shooter — every member's cone lands inside.
-          let rr9 = 1.2, hit9 = null, ctr9 = null;
+          let rr9 = 1.2, hit9 = null, ctr9 = null, pts9 = null;
           if (S.possess && S.reticle) {
             const P9 = S.possess;
             let spec9 = null, pb0 = null;
@@ -3685,17 +3687,18 @@ export default function DepotGame({ onExit, resume = null }) {
             if (spec9 && spec9.acc != null && rc9) {
               const muzzle9 = pb0 ? { x: pb0.pos.x, y: pb0.pos.y + (P9.kind === "tower" ? pb0.hy + 0.45 : P9.kind === "vehicle" ? 1.4 : 0.5), z: pb0.pos.z }
                                   : { x: rc9.x, y: field.heightAt(rc9.x, rc9.z) + 0.5, z: rc9.z };
-              const aim9 = { x: S.reticle.x, y: (S.reticle.y != null ? S.reticle.y : field.heightAt(S.reticle.x, S.reticle.z)) + 0.9, z: S.reticle.z };
+              const aim9 = { x: S.reticle.x, y: S.reticle.y != null ? S.reticle.y : field.heightAt(S.reticle.x, S.reticle.z), z: S.reticle.z }; // mk2.02: the surface itself — no phantom
               const sig9 = scatterSigma(world, muzzle9, aim9, { ...spec9, acc: spec9.acc * POSSESS_ACC });
               const pr9 = predictRing(T.sight, muzzle9, aim9, spec9, sig9, world.wind, invW);
               ctr9 = pr9.center;
               rr9 = Math.max(0.4, pr9.r);
+              pts9 = pr9.pts;
               hit9 = pr9.center.wall ? { y: pr9.center.y, yaw: Math.atan2(pr9.rawDir.x, pr9.rawDir.z) } : null;
             }
           }
           R.overlay.setReticle(!!(S.possess && S.reticle),
             ctr9 ? ctr9.x : (S.reticle ? S.reticle.x : 0), ctr9 ? ctr9.z : (S.reticle ? S.reticle.z : 0),
-            ctr9 ? ctr9.y : (S.reticle ? field.heightAt(S.reticle.x, S.reticle.z) : 0), rr9, hit9);
+            ctr9 ? ctr9.y : (S.reticle ? field.heightAt(S.reticle.x, S.reticle.z) : 0), rr9, hit9, pts9);
           if (!S.possess && S.hover) {
             R.overlay.setHover(true, S.hover.x, S.hover.z, field.heightAt(S.hover.x, S.hover.z), S.hover.range, S.hover.valid, GRID_CS);
           }

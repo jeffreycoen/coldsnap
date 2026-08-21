@@ -1,11 +1,11 @@
 import { ok } from "./harness.mjs";
 import { identFwdDir, straightGrid } from "./shared.mjs";
-import { towerShot, squadFire, possessedVolley, possessedTowerFire, POSSESS_ACC, POSSESS_SNAP_R, snapTargetNear, stickyLock, mateBlocks, fieldReaches, effRange, PENDING_ARM_S, pendingArmed, spawnSquadMembers, spawnSandbag, pruneSquads, spawnWallCourses, WALL_HALF, WALL_THIN, WALL_COURSE_HY, friendlyFouls } from "../../src/depot/state.js";
+import { towerShot, shooterFire, squadFire, possessedVolley, possessedTowerFire, POSSESS_ACC, POSSESS_SNAP_R, snapTargetNear, stickyLock, mateBlocks, fieldReaches, effRange, PENDING_ARM_S, pendingArmed, spawnSquadMembers, spawnSandbag, pruneSquads, spawnWallCourses, WALL_HALF, WALL_THIN, WALL_COURSE_HY, friendlyFouls } from "../../src/depot/state.js";
 import { makeWorld, makeField, addBody, addWeld, stepWorld, applyDamage, CAUSE, mulberry32 } from "../../src/engine/core.js";
 import { reachPolygon, arcClears, scatterSigma, losGraze, bracedAt, applyScatter, SCATTER_CAP, deflect, flightImpact, predictRing } from "../../src/depot/accuracy.js";
-import { TOWER_SPECS, ENEMY_FIRE, MASON, INFANTRY_ARMS } from "../../src/depot/specs.js";
+import { TOWER_SPECS, ENEMY_FIRE, MASON, INFANTRY_ARMS, ENEMY_SPECS, MAN, BISON_FIRE, HAND_TAGS } from "../../src/depot/specs.js";
 import { stepUnits } from "../../src/depot/units.js";
-import { makeSquad, stepSquad, drivePossessedSquad, COHESION_M, clearSlot } from "../../src/depot/squads.js";
+import { SQUAD_SPECS, makeSquad, stepSquad, drivePossessedSquad, COHESION_M, clearSlot } from "../../src/depot/squads.js";
 import { makeTerritory, holderAt, valueAt, canBuild } from "../../src/depot/territory.js";
 import { SIGHT, eyeOf, canSee, fillMaps, gridEye, makeSight, seenAt, stepSight, RETICLE_SPEED, steerReticle, reclampReticle, surfaceAt } from "../../src/depot/sight.js";
 import { serializeFront, parseFront, restoreBodies, restoreSquads } from "../../src/depot/save.js";
@@ -41,8 +41,8 @@ import fs from "node:fs";
   {
     const flat = { field: { heightAt: () => 0 }, bodies: [] };
     const eye = eyeOf({ kind: "unit", pos: { x: 0, y: 0, z: 0 } });
-    ok("VISION T1(a): a plain infantryman's eye carries SIGHT.unit and sits 0.5m up",
-      eye.r === SIGHT.unit && eye.y === 0.5);
+    ok("VISION T1(a) (re-taught mk2.02): a plain infantryman's eye carries SIGHT.unit and sits 0.8m up — the 2m man",
+      eye.r === SIGHT.unit && eye.y === 0.8);
     ok("VISION T1(a): clear open ground 20m off is seen", sees(flat, eye, 0, 20) === true);
     ok("VISION T1(a): the same open ground 30m off is past the eye's reach", sees(flat, eye, 0, 30) === false);
     ok("VISION T1(a): a spotter's glasses reach farther than a sniper's scope, which reaches farther than a rifleman",
@@ -302,14 +302,14 @@ import fs from "node:fs";
     const ridgeF = { heightAt: (x, z) => (Math.abs(z - 10) < 1.5 && Math.abs(x) < 6 ? 6 : 0), dirty: false };
     const world = makeWorld({ field: ridgeF, seed: 72 });
     const gren = addBody(world, { kind: "unit", team: 2, mass: 80, hx: 0.3, hy: 0.9, hz: 0.3, x: 0, y: 0.9, z: 0, hp: 40 });
-    gren.tag = "gren"; gren.utype = "gren"; gren.wph = 0;
+    gren.tag = "mortar"; gren.utype = "mortar"; gren.wph = 0; // mk2.02: the mortar team holds the long lob now; the grenadier's throw is 12m
     const wall = addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.9, hy: 0.9, hz: 0.9, x: 0, y: 0.9, z: 18, hp: 70 });
     const T = makeTerritory(29, 57);
     T.sight = makeSight(T);
     stepSight(world, T.sight, idUV, idW);
     ok("VISION T2(b): the attacker's side cannot see the wall behind the ridge", fieldReaches(T, 0, 18, 2) === false);
     for (let i = 0; i < 30; i++) stepUnits(world, straightGrid(0, 1), identFwdDir, T, idUV);
-    ok("VISION T2(b): so the grenadier takes no target", gren.tgtId == null);
+    ok("VISION T2(b) (re-taught mk2.02): so the mortar man takes no target", gren.tgtId == null);
     ok("VISION T2(b): and nothing is fired at it", world.projectiles.length === 0);
     // one of theirs comes round the flank, far enough off that his own rifle
     // never reaches the wall — he brings eyes, nothing else
@@ -317,7 +317,7 @@ import fs from "node:fs";
     stepSight(world, T.sight, idUV, idW);
     ok("VISION T2(b): the flanker sees the wall for his whole side", fieldReaches(T, 0, 18, 2) === true);
     for (let i = 0; i < 30; i++) stepUnits(world, straightGrid(0, 1), identFwdDir, T, idUV);
-    ok("VISION T2(b): the grenadier takes the wall the moment his side can see it", gren.tgtId === wall.id);
+    ok("VISION T2(b) (re-taught mk2.02): the mortar man takes the wall the moment his side can see it", gren.tgtId === wall.id);
     ok("VISION T2(b): and the shell is away", world.projectiles.length > 0);
   }
 
@@ -1547,7 +1547,7 @@ import fs from "node:fs";
   const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
   ok("POSSESSION T5(a) source pin (re-taught mk2.01): the renderer owns a setReticle overlay drawn in crimson, solid",
-    /setReticle\(on, x, z, y, r, hit\)/.test(rendSrc) && /0xf0143c/.test(String(rendSrc.match(/setReticle\(on, x, z, y, r, hit\) \{[\s\S]*?\n    \},/) || "")));
+    /setReticle\(on, x, z, y, r, hit, pts\)/.test(rendSrc) && /0xf0143c/.test(String(rendSrc.match(/setReticle\(on, x, z, y, r, hit, pts\) \{[\s\S]*?\n    \},/) || "")));
   ok("possessed frames never paint the build hover (re-pinned mk1.12 — the old pin was a character-distance accident)",
     /R\.overlay\.setReticle\(/.test(gameSrc) && /if \(!S\.possess && S\.hover\)/.test(gameSrc));
   ok("POSSESSION T5(c) source pin: the build hover never paints while possessed",
@@ -1628,8 +1628,8 @@ import fs from "node:fs";
       for (const id of sq.memberIds) { const u = world.byId.get(id); if (u) u.fireCd = 0; }
     }
     const mean = angles.reduce((a, b) => a + b, 0) / angles.length;
-    ok("POSSESSION T7(b): possessed volley mean angle off the aim line is under 0.035 rad",
-      angles.length > 0 && mean < 0.035, `n=${angles.length} mean=${mean.toFixed(4)}`);
+    ok("POSSESSION T7(b) (re-pinned mk2.02, named): possessed volley mean angle off the aim line is under 0.045 rad — the 2m muzzle (1.5m) grazes lower cover on the way down; measured 0.0399 vs the old geometry's 0.031",
+      angles.length > 0 && mean < 0.045, `n=${angles.length} mean=${mean.toFixed(4)}`);
   }
   {
     const world = makeWorld({ field: flatField, seed: 31 });
@@ -1699,7 +1699,7 @@ import fs from "node:fs";
     for (let v = 0; v < 10; v++) {
       world.events.length = 0;
       possessedVolley(world, sq, aim, T, idUV);
-      const gy = world.field.heightAt(aim.x, aim.z) + 0.9;
+      const gy = world.field.heightAt(aim.x, aim.z); // mk2.02: ground aim targets the SURFACE
       for (const ev of muzzlesOf(world)) {
         groundDevs.push(angleOff(ev, aim.x, gy, aim.z));
         enemyDevs.push(angleOff(ev, enemy.pos.x, enemy.hy, enemy.pos.z));
@@ -2058,7 +2058,7 @@ import fs from "node:fs";
   // (h) source pin: the ring's material is solid — no opacity in its block.
   {
     const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-    const block = String(rendSrc.match(/setReticle\(on, x, z, y, r, hit\) \{[\s\S]*?\n    \},/) || "");
+    const block = String(rendSrc.match(/setReticle\(on, x, z, y, r, hit, pts\) \{[\s\S]*?\n    \},/) || "");
     ok("RETICLE mk1.99(h) source pin: the ring draws solid — its material carries no opacity",
       block.length > 0 && !/opacity/.test(block) && /depthWrite: false/.test(block), block.length);
   }
@@ -2075,9 +2075,9 @@ import fs from "node:fs";
   // (c) source pin: the ring's re-tuned band and red.
   {
     const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-    const block = String(rendSrc.match(/setReticle\(on, x, z, y, r, hit\) \{[\s\S]*?\n    \},/) || "");
-    ok("RETICLE mk2.00(c) source pin (re-taught mk2.01): the ring's band is 30% of radius in crimson",
-      /RingGeometry\(0\.7, 1\.0, 44\)/.test(block) && /0xf0143c/.test(block), block.length);
+    const block = String(rendSrc.match(/setReticle\(on, x, z, y, r, hit, pts\) \{[\s\S]*?\n    \},/) || "");
+    ok("RETICLE mk2.00(c) source pin (re-taught mk2.02): the crosshair draws in crimson — the band is dead",
+      /PlaneGeometry\(0\.12, 0\.85\)/.test(block) && /0xf0143c/.test(block), block.length);
   }
   // (d) source pins: every TAKE CONTROL closes the build tree with the take.
   {
@@ -2194,9 +2194,108 @@ import fs from "node:fs";
       (driversSrc.match(/aim\.y != null \? aim\.y : world\.field\.heightAt\(aim\.x, aim\.z\)/g) || []).length === 2);
     ok("TRUE RETICLE mk2.01(i) source pin: the ring is the predictor's landing bound",
       /const pr9 = predictRing\(T\.sight, muzzle9, aim9, spec9, sig9, world\.wind, invW\);/.test(gameSrc));
-    const block = String(rendSrc.match(/setReticle\(on, x, z, y, r, hit\) \{[\s\S]*?\n    \},/) || "");
+    const block = String(rendSrc.match(/setReticle\(on, x, z, y, r, hit, pts\) \{[\s\S]*?\n    \},/) || "");
     ok("TRUE RETICLE mk2.01(i) source pin: the crosshair bars ride the ring, fog opted out",
       /PlaneGeometry\(0\.12, 0\.85\)/.test(block) && /fog: false/.test(block), block.length);
   }
 }
 // ==== end THE TRUE RETICLE (mk2.01) =========================================
+
+// ==== THE TALL ORDER (mk2.02) ===============================================
+// Footprint polygon, surface aim, automatic lob, convoy lockout, 2m men on
+// one shared body table, and the ruled roster: grenadiers with their own
+// throw, rocket troops for runners, mortars for the enemy, no heavy at all.
+{
+  const flatField = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+  const idUV = (x, z) => ({ u: x, v: z });
+  const bareSG = () => ({ nx: 32, nz: 32, cs: 2, halfU: 32, halfV: 32,
+    seen1: new Uint8Array(32 * 32).fill(1), seen2: new Uint8Array(32 * 32),
+    gnd: new Float32Array(32 * 32), occ: new Float32Array(32 * 32).fill(-Infinity) });
+
+  // (a) the footprint: 16 landed points, each on the dirt it landed on.
+  {
+    const pr = predictRing(bareSG(), { x: -20, y: 1.5, z: 0 }, { x: 0, y: 0, z: 0 }, { projSpeed: 90, occl: "arc", windF: 0 }, 0.02, null, idUV);
+    ok("TALL ORDER mk2.02(a): the predictor returns the 16-point footprint", Array.isArray(pr.pts) && pr.pts.length === 16, pr.pts && pr.pts.length);
+    ok("TALL ORDER mk2.02(a): on flat dirt every footprint point lies on the ground", pr.pts.every((p) => Math.abs(p.y) < 1e-6));
+  }
+  // (b) surface aim: the four possessed tgt lines carry the surface, no phantom.
+  {
+    const stateSrc = fs.readFileSync(new URL("../../src/depot/state.js", import.meta.url), "utf8");
+    const driversSrc = fs.readFileSync(new URL("../../src/depot/drivers.js", import.meta.url), "utf8");
+    ok("TALL ORDER mk2.02(b) source pin: ground aim targets the surface in all four fire paths",
+      (stateSrc.match(/hy: sy - world\.field\.heightAt\(aim\.x, aim\.z\)/g) || []).length === 2 &&
+      (driversSrc.match(/hy: sy - world\.field\.heightAt\(aim\.x, aim\.z\)/g) || []).length === 2);
+  }
+  // (c) THE AUTOMATIC LOB: clear line flat, walled line takes the mortar root.
+  {
+    const world = makeWorld({ field: flatField, seed: 81 });
+    world.depotCombat = true;
+    const shooter = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 1.0, hz: 0.28, x: 0, y: 1.0, z: 0, hp: 58 });
+    const tgt = { pos: { x: 20, y: 0, z: 0 }, v: { x: 0, y: 0, z: 0 }, hy: 0 };
+    world.events.length = 0;
+    shooterFire(world, shooter, { x: 0, y: 1.5, z: 0 }, tgt, { ...BISON_FIRE.gun }, { attacker: "player", owner: shooter.id });
+    const flat = world.events.find((e) => e.type === "muzzle");
+    ok("TALL ORDER mk2.02(c): a clear line fires the flat root", flat && flat.dy < 0.35, flat && flat.dy);
+    addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.9, hy: 1.8, hz: 0.2, x: 10, y: 1.8, z: 0, hp: 200 });
+    world.events.length = 0;
+    shooterFire(world, shooter, { x: 0, y: 1.5, z: 0 }, tgt, { ...BISON_FIRE.gun }, { attacker: "player", owner: shooter.id });
+    const lob = world.events.find((e) => e.type === "muzzle");
+    ok("TALL ORDER mk2.02(c): a wall across the line takes the mortar root", lob && lob.dy > 0.7, lob && lob.dy);
+  }
+  // (d) the grant is exact; the rocket tower keeps the gentle arc.
+  ok("TALL ORDER mk2.02(d): both tank guns and the tower GUN lob automatically",
+    BISON_FIRE.gun.occl === "auto" && ENEMY_FIRE.tank.occl === "auto" && TOWER_SPECS.gun.occl === "auto");
+  ok("TALL ORDER mk2.02(d): the rocket tower keeps the gentle arc", TOWER_SPECS.rocket.occl === "arc");
+  // (e) THE CONVOY WAITS: the bell gate and the release-opens, pinned.
+  {
+    const stateSrc = fs.readFileSync(new URL("../../src/depot/state.js", import.meta.url), "utf8");
+    const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    ok("TALL ORDER mk2.02(e) source pin: the bell's deal never opens over a live possession",
+      /M\.cardUp = M\.hand\.length > 0 && !S\.possess;/.test(stateSrc));
+    ok("TALL ORDER mk2.02(e) source pin: release opens the held deal",
+      /if \(S\.manifest && S\.manifest\.hand\.length && !S\.manifest\.cardUp\) \{ S\.manifest\.cardUp = true;/.test(gameSrc));
+  }
+  // (f) ONE BODY: every enemy row IS MAN.rifle's body, and 2m.
+  {
+    const FIELDS = ["mass", "hx", "hy", "hz", "hp"];
+    ok("TALL ORDER mk2.02(f): every enemy body reads the one MAN row",
+      Object.keys(ENEMY_SPECS).every((k) => FIELDS.every((fd) => ENEMY_SPECS[k][fd] === MAN.rifle[fd])));
+    ok("TALL ORDER mk2.02(f): the man stands two meters", MAN.rifle.hy === 1.0);
+  }
+  // (g) the 2m eye rides at 1.8m.
+  {
+    const e = eyeOf({ kind: "unit", pos: { x: 0, y: 1.0, z: 0 } });
+    ok("TALL ORDER mk2.02(g): the infantry eye rides at 1.8m", Math.abs(e.y - 1.8) < 1e-9, e.y);
+  }
+  // (h) the drawn man stretches to the 2m body, depot-gated.
+  {
+    const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
+    ok("TALL ORDER mk2.02(h) source pin: depot troops draw at the 2m stretch, demo untouched",
+      /KIT\.bh \* \(world\.depotCombat \? 2\.0 \/ 1\.44 : 1\)/.test(rendSrc));
+  }
+  // (i) THE ROSTER: paired, armed, and the old names gone.
+  {
+    ok("TALL ORDER mk2.02(i): the rosters pair one-to-one, no heavy, no fast",
+      !ENEMY_SPECS.heavy && !ENEMY_SPECS.fast && !!ENEMY_SPECS.mortar && !!ENEMY_SPECS.rocket &&
+      !SQUAD_SPECS.runners && !SQUAD_SPECS.breakers && !!SQUAD_SPECS.rockets && !!SQUAD_SPECS.grenadiers);
+    ok("TALL ORDER mk2.02(i): the grenade is its own throw — short, lofted, not the mortar table",
+      INFANTRY_ARMS.grenadiers.range === 12 && INFANTRY_ARMS.grenadiers.occl === "lofted" &&
+      INFANTRY_ARMS.grenadiers.range < INFANTRY_ARMS.mortars.range);
+    ok("TALL ORDER mk2.02(i): the shoulder rocket is armed on both sides' row",
+      INFANTRY_ARMS.rockets.weapon === "rocket" && INFANTRY_ARMS.rockets.kind === "shell");
+    ok("TALL ORDER mk2.02(i): the hand maps the new keys to the new tags",
+      HAND_TAGS.sq_rockets === "rocket" && HAND_TAGS.sq_grenadiers === "gren" && HAND_TAGS.sq_mortars === "mortar" && HAND_TAGS.sq_breakers === undefined && HAND_TAGS.sq_runners === undefined);
+  }
+  // (j) the enemy's new hands fire: a mortar-team man lobs the mortar table,
+  // a rocket man fires the rocket row — through the real branches.
+  {
+    const stateSrc = fs.readFileSync(new URL("../../src/depot/units.js", import.meta.url), "utf8");
+    ok("TALL ORDER mk2.02(j) source pin: the grenadier/mortar branch reads the shared arms table",
+      /INFANTRY_ARMS\[u\.tag === "mortar" \? "mortars" : "grenadiers"\]/.test(stateSrc));
+    ok("TALL ORDER mk2.02(j) source pin: the rocket man fires the shared rocket row",
+      /u\.tag === "rocket" \? INFANTRY_ARMS\.rockets/.test(stateSrc));
+    ok("TALL ORDER mk2.02(j) source pin: the breaker ram is dead",
+      !/stepBreakerRam/.test(stateSrc) && !/BREAKER_GRIND/.test(stateSrc));
+  }
+}
+// ==== end THE TALL ORDER (mk2.02) ===========================================
