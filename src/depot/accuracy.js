@@ -310,11 +310,57 @@ export function applyScatter(world, dir, sigma) {
 // (the sight grid's occ), the accepted trade everywhere in sight. Pure,
 // zero rng draws.
 export const SCATTER_CAP = Math.sqrt(-2 * Math.log(1e-4)) * 0.6;
+// mk2.03 (owner): ACTUAL ELEVATION. For a chosen pitch the speed landing the
+// shell on the target is fixed by the parabola; raising the barrel lowers
+// the fitted speed toward the 45° minimum. elevSolve walks pitch from the
+// low root to the 35° cap in 3° steps and returns the first arc that clears
+// terrain and solids, or null — past the cap the gun holds its fire. The
+// mortar root belongs to the mortars alone. Zero draws.
+export const ELEV_CAP = 35 * Math.PI / 180;
+export const ELEV_STEP = 3 * Math.PI / 180;
+export function speedForPitch(d, dy, p, g = 9.8) {
+  const den = 2 * Math.cos(p) * Math.cos(p) * (d * Math.tan(p) - dy);
+  if (den <= 0) return null;
+  return Math.sqrt(g * d * d / den);
+}
+export function arcAtPitchClears(world, muzzle, target, p, v, selfId) {
+  const dx = target.x - muzzle.x, dz = target.z - muzzle.z;
+  const d = Math.max(1e-3, Math.hypot(dx, dz));
+  const ux = dx / d, uz = dz / d;
+  const vh = Math.max(1e-3, v * Math.cos(p)), vy0 = v * Math.sin(p);
+  const tof = d / vh;
+  const N = Math.max(8, Math.ceil(d / 0.9));
+  for (let k = 1; k < N; k++) {
+    const t = (k / N) * tof;
+    const hx = muzzle.x + ux * vh * t, hz = muzzle.z + uz * vh * t;
+    const hy = muzzle.y + vy0 * t - 4.9 * t * t;
+    // the last 3m is the landing itself — never ground-tested (a shot aimed
+    // at the dirt must be allowed to descend into it); the first 2.5m keeps
+    // losGraze's own muzzle-cover exemption
+    if ((k / N) * d < d - 3.0 && hy <= world.field.heightAt(hx, hz) + 0.05) return false;
+    if ((k / N) * d > 2.5 && solidBlocksPoint(world, hx, hy, hz, selfId)) return false;
+  }
+  return true;
+}
+export function elevSolve(world, muzzle, target, spec, selfId) {
+  const d = Math.max(2, Math.hypot(target.x - muzzle.x, target.z - muzzle.z));
+  const dy = target.y - muzzle.y;
+  let p0 = aimSolve(spec.projSpeed, d, dy, 9.8, false);
+  if (p0 == null) p0 = 0.1;
+  for (let p = p0; p <= ELEV_CAP + 1e-9; p += ELEV_STEP) {
+    const v = p === p0 ? spec.projSpeed : speedForPitch(d, dy, p);
+    if (v == null || v > spec.projSpeed) continue;
+    if (arcAtPitchClears(world, muzzle, target, p, v, selfId)) return { pitch: p, v };
+  }
+  return null;
+}
+
 // The first 2.5m of flight ignores solids — losGraze's own muzzle-cover
 // exemption, so a braced shooter's sandbag never eats the prediction.
 const PREDICT_SKIP_M = 2.5;
 export function flightImpact(SG, muzzle, dir, speed, spec, wind, toUV, dt = 1 / 120) {
   const p = { x: muzzle.x, y: muzzle.y, z: muzzle.z };
+  let py = muzzle.y;
   const v = { x: dir.x * speed, y: dir.y * speed, z: dir.z * speed };
   for (let k = 0; k < 2600; k++) { // mk2.02: ~21.7s of flight — a lobbed 85 m/s shell hangs ~17.3s and must land inside the march
     v.y -= 9.8 * dt;
@@ -322,16 +368,16 @@ export function flightImpact(SG, muzzle, dir, speed, spec, wind, toUV, dt = 1 / 
       v.x += (wind.x - v.x * 0.02) * spec.windF * dt;
       v.z += (wind.z - v.z * 0.02) * spec.windF * dt;
     }
-    p.x += v.x * dt; p.y += v.y * dt; p.z += v.z * dt;
+    py = p.y; p.x += v.x * dt; p.y += v.y * dt; p.z += v.z * dt;
     const c = toUV(p.x, p.z);
     const ix = Math.floor((c.u + SG.halfU) / SG.cs), iz = Math.floor((c.v + SG.halfV) / SG.cs);
     if (ix < 0 || ix >= SG.nx || iz < 0 || iz >= SG.nz) return { x: p.x, y: p.y, z: p.z, wall: false };
     const i = iz * SG.nx + ix;
     if (SG.occ[i] > SG.gnd[i] && p.y <= SG.occ[i] &&
         Math.hypot(p.x - muzzle.x, p.z - muzzle.z) > PREDICT_SKIP_M) {
-      // under the top by more than one step's fall: the near face; else the
-      // roof — a descending round parks flat ON the solid's top.
-      const face = p.y < SG.occ[i] - 0.4;
+      // mk2.03: entry direction decides — a round that crossed the top from
+      // above took the roof; one that came in under it took the FACE.
+      const face = py <= SG.occ[i];
       return { x: p.x, y: face ? Math.max(p.y, SG.gnd[i] + 0.2) : SG.occ[i], z: p.z, wall: face };
     }
     if (p.y <= SG.gnd[i]) return { x: p.x, y: SG.gnd[i], z: p.z, wall: false };
@@ -379,19 +425,34 @@ export function predictRing(SG, muzzle, aim, spec, sigma, wind, toUV) {
   let high = spec.occl === "lofted";
   let rawDir = solve(high);
   let center = flightImpact(SG, muzzle, rawDir, spec.projSpeed, spec, wind, toUV);
+  let fireV = spec.projSpeed;
   if (!high && spec.occl === "auto") {
     const shortfall = Math.hypot(aim.x - muzzle.x, aim.z - muzzle.z) - Math.hypot(center.x - muzzle.x, center.z - muzzle.z);
     if (center.wall || shortfall > 1.5) {
-      high = true;
-      rawDir = solve(true);
-      center = flightImpact(SG, muzzle, rawDir, spec.projSpeed, spec, wind, toUV);
+      // mk2.03: raise the barrel inside the cap, speed fitted — the SG-map
+      // mirror of elevSolve; null keeps the low root and the ring parks on
+      // the obstruction, saying "no lawful arc".
+      const d = Math.max(2, Math.hypot(aim.x - muzzle.x, aim.z - muzzle.z));
+      const dy = aim.y - muzzle.y;
+      let found = null;
+      let p0 = aimSolve(spec.projSpeed, d, dy, 9.8, false);
+      if (p0 == null) p0 = 0.1;
+      for (let p = p0 + ELEV_STEP; p <= ELEV_CAP + 1e-9 && !found; p += ELEV_STEP) {
+        const v = speedForPitch(d, dy, p);
+        if (v == null || v > spec.projSpeed) continue;
+        const dxn = (aim.x - muzzle.x) / d, dzn = (aim.z - muzzle.z) / d;
+        const dir = { x: dxn * Math.cos(p), y: Math.sin(p), z: dzn * Math.cos(p) };
+        const hit = flightImpact(SG, muzzle, dir, v, spec, wind, toUV);
+        if (!hit.wall && Math.hypot(hit.x - aim.x, hit.z - aim.z) < 2.5) found = { dir, v, hit };
+      }
+      if (found) { rawDir = found.dir; fireV = found.v; center = found.hit; }
     }
   }
   const cap = SCATTER_CAP * sigma;
   const pts = [];
   let r = 0.4;
   for (let s = 0; s < 16; s++) {
-    const hit = flightImpact(SG, muzzle, deflect(rawDir, (s / 16) * Math.PI * 2, cap), spec.projSpeed, spec, wind, toUV);
+    const hit = flightImpact(SG, muzzle, deflect(rawDir, (s / 16) * Math.PI * 2, cap), fireV, spec, wind, toUV);
     pts.push(hit);
     r = Math.max(r, Math.hypot(hit.x - center.x, hit.z - center.z));
   }

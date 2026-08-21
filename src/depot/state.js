@@ -1,14 +1,14 @@
 // COLDSNAP DEPOT — run state shape. Kept tiny and dependency-free so
 // DepotGame.jsx's loop can stuff a plain object in a ref (React state must
 // never be read from the closure — see ColdsnapTD.jsx for why).
-import { aimSolve, fireProjectile, addBody, addWeld } from "../engine/core.js";
+import { aimSolve, fireProjectile, addBody, addWeld, explode } from "../engine/core.js";
 import { SQUAD_SPECS, clearSlot } from "./squads.js";
-import { scatterSigma, applyScatter, arcClears, marchArc } from "./accuracy.js";
+import { scatterSigma, applyScatter, arcClears, marchArc, elevSolve } from "./accuracy.js";
 import { planWave, MIN_WAVE_FLOOR, spawnDelayFor } from "./ai.js";
 import { STIPEND, payResults, combatIneffective, bookValue, KILL_CUT } from "./economy.js";
 import { killPrice } from "./market.js";
 import { composeIntel, openingIntel } from "./intel.js";
-import { TOWER_SPECS, ENEMY_SPECS, TANK, INFANTRY_ARMS, MASON, PLAYER_START, PLAYER_TIERS, HAND_KEYS, HAND_TAGS, MAN } from "./specs.js";
+import { TOWER_SPECS, ENEMY_SPECS, TANK, INFANTRY_ARMS, MASON, PLAYER_START, PLAYER_TIERS, HAND_KEYS, HAND_TAGS, MAN, GRENADE } from "./specs.js";
 import { seenAt } from "./sight.js";
 
 // Targeting gate, symmetric, VISION era (mk0.72): a shooter of `team` (1 =
@@ -386,11 +386,14 @@ export function stepWallSupport(world) {
 //         building squadFire below) }
 export function shooterFire(world, shooter, muzzle, target, spec, opts = {}) {
   let high = !!opts.high;
-  // mk2.02: THE AUTOMATIC LOB (owner) — an "auto" spec (both tank guns, the
-  // tower GUN) fires the flat root when the flat arc reaches the aim and
-  // takes the mortar root when it cannot (arcClears, the reach preview's
-  // own march). A lobbed fast shell hangs long — priced in knowingly.
-  if (!high && spec.occl === "auto" && !arcClears(world, muzzle, target.pos, { ...spec, occl: "arc" }, opts.owner)) high = true;
+  // mk2.03 (owner): ACTUAL ELEVATION — no mortar root for guns. An "auto"
+  // spec raises the barrel inside the 35° cap at a fitted speed (elevSolve);
+  // with no lawful arc the gun HOLDS its fire.
+  let elev = null;
+  if (!high && spec.occl === "auto") {
+    elev = elevSolve(world, muzzle, target.pos, spec, opts.owner);
+    if (!elev) return;
+  }
   const attacker = opts.attacker || "player";
   let ax2 = target.pos.x, az2 = target.pos.z, ay2 = target.pos.y;
   for (let li = 0; li < 2; li++) {
@@ -417,6 +420,12 @@ export function shooterFire(world, shooter, muzzle, target, spec, opts = {}) {
   let pitch = aimSolve(spec.projSpeed, d, dy, 9.8, high);
   if (pitch == null) pitch = high ? 1.1 : 0.45;
   const rawDir = { x: (dx / d) * Math.cos(pitch), y: Math.sin(pitch), z: (dz / d) * Math.cos(pitch) };
+  if (elev) {
+    const du = Math.hypot(dx, dz) || 1;
+    rawDir.x = (dx / du) * Math.cos(elev.pitch); rawDir.y = Math.sin(elev.pitch); rawDir.z = (dz / du) * Math.cos(elev.pitch);
+  }
+  // mk2.03: the barrel mesh wears the fired pitch (render-only field).
+  shooter._aimPitch = Math.asin(Math.max(-1, Math.min(1, rawDir.y)));
   const shots = spec.volley || 1;
   const muzzleStep = opts.muzzleStep != null ? opts.muzzleStep : 0.28;
   // volleyDelay: seconds between successive rounds of a multi-shot trigger
@@ -428,7 +437,7 @@ export function shooterFire(world, shooter, muzzle, target, spec, opts = {}) {
   const volleyDelay = opts.volleyDelay != null ? opts.volleyDelay : 0.12;
   for (let si = 0; si < shots; si++) {
     const dir = applyScatter(world, rawDir, sigma);
-    fireProjectile(world, { x: muzzle.x, y: muzzle.y + si * muzzleStep, z: muzzle.z }, dir, spec.projSpeed,
+    fireProjectile(world, { x: muzzle.x, y: muzzle.y + si * muzzleStep, z: muzzle.z }, dir, elev ? elev.v : spec.projSpeed,
       {
         kind: spec.kind, r: spec.blastR, kv: spec.kv, dmg: spec.dmg, dirDmg: spec.dirDmg, crater: spec.crater,
         // P1.5 Task 3 (mk0.56): WHICH GUN this is, carried through to the
@@ -634,6 +643,9 @@ export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })
     // Fire discipline note (shipped as-is, flagged for playtest): squadFire
     // has no friendlyFouls check (that's a tower doctrine) — your own
     // mortars CAN hit your own men.
+    // mk2.03: grenadiers THROW — the shot dies, the body flies. Cooldown
+    // spent exactly as a shot would spend it (fireCd is set just above).
+    if (squad.type === "grenadiers") { throwGrenade(world, u, muzzle, best); continue; }
     const high = spec.occl === "lofted";
     shooterFire(world, u, muzzle, best, fspec, bestIsStruct
       ? { attacker, volleyDelay: spec.burstGap, muzzleStep: 0, owner: u.id, hitStruct: true, hitOnly: "structure", high }
@@ -729,6 +741,7 @@ export function possessedVolley(world, squad, aim, T, toUV = (x, z) => ({ u: x, 
     // holds the shot (cooldown untouched); mortars are exempt.
     if (fspec.occl !== "lofted" && mateBlocks(world, squad, u, muzzle, tgt.pos)) continue;
     u.fireCd = spec.fireRate;
+    if (squad.type === "grenadiers") { throwGrenade(world, u, muzzle, tgt); fired++; continue; }
     const high = spec.occl === "lofted";
     shooterFire(world, u, muzzle, tgt, fspec, { attacker: "player", volleyDelay: spec.burstGap, muzzleStep: 0, owner: u.id, high });
     fired++;
@@ -755,6 +768,48 @@ export function possessedTowerFire(world, tower, aim, T, toUV = (x, z) => ({ u: 
   tower.flashT = world.t;
   towerShot(world, tower, tgt, { ...spec, acc: spec.acc * POSSESS_ACC });
   return true;
+}
+
+// mk2.03 (owner): THE GRENADE — a thrown BODY on a 2.0s fuse from release.
+// Physics owns the flight and the roll (bounce, settle, slide downhill);
+// stepGrenades owns the clock. Airbursts happen; impact detonation never
+// does. One throw, both sides. Two draws per throw (applyScatter's own),
+// draw-count stable against the shot it replaces.
+export function throwGrenade(world, thrower, muzzle, tgt) {
+  const dx = tgt.pos.x - muzzle.x, dz = tgt.pos.z - muzzle.z;
+  const d = Math.max(1, Math.hypot(dx, dz));
+  const pitch = aimSolve(GRENADE.v, d, tgt.pos.y - muzzle.y, 9.8, false);
+  const p = pitch == null ? 0.7 : Math.max(0.35, pitch); // a throw is always lobbed
+  const raw = { x: (dx / d) * Math.cos(p), y: Math.sin(p), z: (dz / d) * Math.cos(p) };
+  const dir = applyScatter(world, raw, 0.03);
+  const g = addBody(world, { kind: "grenade", team: thrower.team, mass: GRENADE.mass, hx: GRENADE.hx, hy: GRENADE.hy, hz: GRENADE.hz,
+    x: muzzle.x + dir.x * 0.6, y: muzzle.y + dir.y * 0.6, z: muzzle.z + dir.z * 0.6, hp: 999, friction: 0.5, restitution: 0.45 });
+  g.v.x = dir.x * GRENADE.v; g.v.y = dir.y * GRENADE.v; g.v.z = dir.z * GRENADE.v;
+  g.grenade = { t0: world.t, attacker: thrower.team === 2 ? "enemy" : "player", bounced: false };
+  world.events.push({ type: "muzzle", x: muzzle.x, y: muzzle.y, z: muzzle.z, dx: dir.x, dy: dir.y, dz: dir.z, kind: "mg", weapon: "grenade" });
+  if (!world._grenades) world._grenades = [];
+  world._grenades.push(g);
+  return g;
+}
+export function stepGrenades(world) {
+  const L = world._grenades;
+  if (!L || !L.length) return;
+  for (let i = L.length - 1; i >= 0; i--) {
+    const g = L[i];
+    if (!g.alive) { L.splice(i, 1); continue; }
+    if (!g.grenade.bounced && g.v.y > 0.5 && world.t - g.grenade.t0 > 0.2) {
+      g.grenade.bounced = true;
+      world.events.push({ type: "gbounce", x: g.pos.x, z: g.pos.z }); // audio-only, never hashed
+    }
+    if (world.t - g.grenade.t0 >= GRENADE.fuse) {
+      explode(world, g.pos.x, g.pos.y, g.pos.z, { r: GRENADE.r, dmg: GRENADE.dmg, kv: GRENADE.kv, crater: GRENADE.crater, kind: "grenade", hitStruct: true, attacker: g.grenade.attacker });
+      g.alive = false;
+      const bi = world.bodies.indexOf(g);
+      if (bi >= 0) world.bodies.splice(bi, 1);
+      world.byId.delete(g.id);
+      L.splice(i, 1);
+    }
+  }
 }
 
 // ------------------------------------------------------------ squad wiring

@@ -61,7 +61,10 @@ export function buildBison(team) {
   blade.position.set(0, -0.45, 3.5); blade.rotation.x = -0.24; blade.castShadow = true; g.add(blade);
   const tur = new THREE.Group(); tur.position.y = 1.35;
   const turBox = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.95, 2.7), toon(team === 2 ? 0x5a2f2a : 0x2a5082)); turBox.castShadow = true; tur.add(turBox);
-  const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.36, 3.6), toon(0x33383d)); barrel.position.set(0, 0.12, 2.4); barrel.castShadow = true; tur.add(barrel);
+  // mk2.03 (owner): the barrel rises and falls — a pivot at the mantlet,
+  // the tube a child, pitch driven by b._aimPitch in the sync below.
+  const gpiv = new THREE.Group(); gpiv.position.set(0, 0.12, 0.6); tur.add(gpiv); g.userData.gunPitch = gpiv;
+  const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.36, 3.6), toon(0x33383d)); barrel.position.set(0, 0, 1.8); barrel.castShadow = true; gpiv.add(barrel);
   const star = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.14, 0.9), toon(0xe0c34a)); star.position.set(0, 1.13, 0); g.add(star);
   // coax .50 stub riding right of the main gun
   const coax = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.5, 6), tur.material);
@@ -75,6 +78,18 @@ export function buildBison(team) {
   bulb.position.set(0, 0.62, -1.2);
   tur.add(bulb); g.userData.bulb = bulb;
   g.add(tur); g.userData.turret = tur;
+  return g;
+}
+// mk2.03 (owner): the wave tank finally shows its gun — hull, turret, and a
+// barrel that elevates. DEPOT-only (vtype "tank"); the demo's scouts and
+// trucks render untouched.
+export function buildWaveTank(team) {
+  const g = new THREE.Group();
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.1, 4.2), toon(team === 2 ? 0x6e3a34 : 0x3f5a78)); hull.position.y = 0.15; hull.castShadow = true; g.add(hull);
+  const tur = new THREE.Group(); tur.position.y = 0.95; g.add(tur); g.userData.turret = tur;
+  const box = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.7, 2.0), toon(team === 2 ? 0x5a2f2a : 0x2a5082)); box.castShadow = true; tur.add(box);
+  const gp = new THREE.Group(); gp.position.set(0, 0.1, 0.5); tur.add(gp); g.userData.gunPitch = gp;
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, 2.8), toon(0x33383d)); bar.position.z = 1.4; bar.castShadow = true; gp.add(bar);
   return g;
 }
 // P7 T4 (mk1.33): the APC — four seats, one coax. team parameterizes the
@@ -144,8 +159,9 @@ export function buildTowerMesh(type) {
     const deck = new THREE.Mesh(new THREE.BoxGeometry(2.16, 0.3, 2.16), dark); deck.position.y = spec.hy * 0.72; deck.castShadow = true; g.add(deck);
     const t = new THREE.Group(); t.position.y = spec.hy * 1.05; g.add(t); g.userData.turret = t;
     const mant = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.62, 1.15), dark); mant.castShadow = true; t.add(mant);
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 2.3), iron); bar.position.z = 1.2; t.add(bar);
-    const brake = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.26, 0.3), iron); brake.position.z = 2.25; t.add(brake);
+    const gp = new THREE.Group(); t.add(gp); g.userData.gunPitch = gp; // mk2.03: the tube elevates
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 2.3), iron); bar.position.z = 1.2; gp.add(bar);
+    const brake = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.26, 0.3), iron); brake.position.z = 2.25; gp.add(brake);
   } else if (type === "mortar") {
     const lip = new THREE.Mesh(new THREE.CylinderGeometry(1.24, 1.24, 0.2, 8), snowM); lip.position.y = spec.hy * 0.72; g.add(lip);
     const t = new THREE.Group(); t.position.y = spec.hy * 0.5; g.add(t); g.userData.turret = t;
@@ -1632,7 +1648,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
         // sides) joins the demo-global bisonId path — buildBison/buildApc
         // dress each side; the demo's undefined team is untouched (parity
         // by construction).
-        g = b.vtype === "apc" ? buildApc(b.team) : (b.vtype === "bison" || b.id === world.bisonId) ? buildBison(b.team) : (b.vtype === "truck" ? buildTruck() : buildScout());
+        g = b.vtype === "apc" ? buildApc(b.team) : b.vtype === "tank" ? buildWaveTank(b.team) : (b.vtype === "bison" || b.id === world.bisonId) ? buildBison(b.team) : (b.vtype === "truck" ? buildTruck() : buildScout());
         vehMap.set(b.id, g); scene.add(g);
       }
       // DEPOT fog (opts.territory, gated by fogOn): unheld enemy vehicles
@@ -1667,6 +1683,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
       // carries the hull quaternion); falls back to the demo's turretYaw
       // when b._aimYaw is absent (parity by construction).
       if (g.userData.turret) g.userData.turret.rotation.y = b._aimYaw != null ? b._aimYaw - Math.atan2(b.R[6], b.R[8]) : turretYaw;
+      if (g.userData.gunPitch) g.userData.gunPitch.rotation.x = -(b._aimPitch || 0);
       // THE BULB (P7 T2): GREEN with the tracks safety on, RED with it off.
       // A body with no b.tracks (the demo, the enemy's Bison before Task 5)
       // reads green.
@@ -1691,6 +1708,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
         if (tgt && tgt.alive) g.userData.turret.rotation.y = Math.atan2(tgt.pos.x - b.pos.x, tgt.pos.z - b.pos.z);
         const since = world.t - (b.flashT || -9);
         g.userData.turret.position.z = since < 0.14 ? -(1 - since / 0.14) * 0.3 : 0;
+        if (g.userData.gunPitch) g.userData.gunPitch.rotation.x = -(b._aimPitch || 0);
       }
       if (g.userData.spin) g.rotation.y = world.t * 0.5;
       g.scale.setScalar(hurt < 0.999 ? 0.94 + 0.06 * hurt : 1);

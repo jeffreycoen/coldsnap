@@ -10,7 +10,7 @@
 // is world.rng() (mulberry32, seeded); an unseeded Math dot random() call is
 // forbidden in src/depot (scripts/depot-lint.mjs).
 import { addBody, applyDamage, explode } from "../engine/core.js";
-import { shooterFire, fieldReaches, effRange, hostileStructure, standingStructure } from "./state.js";
+import { shooterFire, fieldReaches, effRange, hostileStructure, standingStructure, throwGrenade } from "./state.js";
 import { arcClears } from "./accuracy.js";
 // exposureAt + the pair's shared survey/direction solvers (6.5 Task 6: ONE
 // behavior module, both signs). squads.js now imports accuracy/state for the
@@ -73,6 +73,7 @@ function spawnTank(world, sp) {
   t.armor = 140;
   t.maxHp = TANK.hp;
   t.tag = "tank";
+  t.vtype = "tank"; // mk2.03: the wave tank finally shows its gun
   t.squad = "waveArmor"; // engine's stepDrive/aiDrive picks this up generically
   t.drv = "waveArmor"; // P7 T1: the motor pool's policy key (drivers.js)
   t.driverSpec = { throttleHabit: 0.8 };
@@ -391,7 +392,8 @@ function stepGrenadier(world, u, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, 
     // vetoing grenadier-vs-wall acquisition (scripts/depot-test.mjs's
     // rifleman/grenadier-vs-wall fixtures).
     // Unit shots keep hitStruct and carry NO hitOnly — blast is blast.
-    shooterFire(world, u, muzzle, tgt, fspec, { high: true, attacker: "enemy", hitStruct: true, owner: u.id });
+    if (u.tag === "gren") throwGrenade(world, u, muzzle, tgt); // mk2.03: the grenade is thrown, both sides
+    else shooterFire(world, u, muzzle, tgt, fspec, { high: true, attacker: "enemy", hitStruct: true, owner: u.id });
   }
   if (tgt && cell && cell.dist < 1e8) {
     const sp = 1.3 * u.frostMul;

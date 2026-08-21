@@ -53,7 +53,7 @@ export const SQUAD_SPECS = {           // costs are scrap; members spawn as unit
   // Every match starts with a team (PLAYER_START, specs.js). // provisional (F5)
   engineers: { n: 2, cost: 30, label: "ENGINEER TEAM" },
   rockets: { n: 2, cost: 45, label: "ROCKET TEAM" },        // mk2.02 (owner): rocket troops replace runners // provisional (F5)
-  grenadiers: { n: 4, cost: 40, label: "GRENADIER SQUAD" }, // mk2.02 (owner): breakers become grenadiers // provisional (F5)
+  grenadiers: { n: 2, cost: 40, label: "GRENADIER SQUAD" }, // mk2.03 (owner): a pair // provisional (F5)
   // P7.2 T6 (owner): THE MEDIC TEAM — two medics with a bag; they walk to
   // the wounded and kneel to treat. Tools, not shooters: no INFANTRY_ARMS
   // row, so squadFire skips them by membership. // provisional (F5)

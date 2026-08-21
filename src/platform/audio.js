@@ -263,6 +263,15 @@ export function makeGameAudio() {
     if (big > 0.4) noise(x, z, { f0: 210, f1: 55, dur: 1.0 + big * 0.4, gain: 0.24 * big, delay: 0.13, wet: 0.6, dark: 0.6 });
     if (echo) echoes(x, z, (ex, ez, dly, k) => noise(ex, ez, { f0: 500, f1: 90, dur: 0.3 + big * 0.2, gain: (0.3 + big * 0.25) * k, delay: dly, wet: 0.7, dark: 0.5 }));
   };
+  // mk2.03: THE GRENADE BLAST — per the acoustics reference: the energy in
+  // the 150-1200Hz band the ear reads as a real blast, short, one hard
+  // crack on top, the map answering behind. // provisional, owner's ear rules
+  function gblast(x, z) {
+    noise(x, z, { f0: 3000, type: "highpass", dur: 0.02, gain: 0.18, wet: 0.15 });
+    noise(x, z, { f0: 900, f1: 150, dur: 0.28, gain: 0.5, delay: 0.008, wet: 0.45 });
+    tone(x, z, { f0: 96, f1: 44, type: "sine", dur: 0.16, gain: 0.3, atk: 0.006 });
+    echoes(x, z, (ex, ez, dly, k) => noise(ex, ez, { f0: 480, f1: 90, dur: 0.22, gain: 0.24 * k, delay: dly, wet: 0.7, dark: 0.5 }));
+  }
   const MUZZLE = {
     mg:     (x, z, mass = 1) => { noise(x, z, { f0: 1900, type: "highpass", dur: 0.03 + mass * 0.012, gain: 0.13 + mass * 0.05, wet: 0.2 }); if (mass > 1.5) noise(x, z, { f0: 900, type: "bandpass", q: 1.2, dur: 0.05 + mass * 0.02, gain: 0.08 * mass, delay: 0.012, wet: 0.3 }); },
     shell:  (x, z, mass = 1) => {
@@ -325,6 +334,9 @@ export function makeGameAudio() {
     rocket: (x, z, mass = 1) => MUZZLE.rocket(x, z, mass),
     shell:  (x, z, mass = 1) => MUZZLE.shell(x, z, mass),
     tank:   (x, z, mass = 1) => MUZZLE.shell(x, z, mass),
+    // mk2.03: THE TOSS — no whistle anywhere in a grenade's life. A soft,
+    // low, short puff of effort. // provisional, the owner's ear rules
+    grenade: (x, z) => { noise(x, z, { f0: 300, f1: 120, dur: 0.08, gain: 0.10, wet: 0.3 }); },
   };
   // granite/masonry: three inharmonic modes, pitch scattered per stone
   const STONE_MODES = [{ f: 840, q: 20, g: 1 }, { f: 1310, q: 26, g: 0.6 }, { f: 2140, q: 30, g: 0.35 }];
@@ -527,7 +539,8 @@ export function makeGameAudio() {
         g.n++; g.x += e.x; g.z += e.z;
         continue;
       }
-      if (e.type === "boom") explosion(e.x, e.z, e.r || 2);
+      if (e.type === "boom") e.kind === "grenade" ? gblast(e.x, e.z) : explosion(e.x, e.z, e.r || 2);
+      else if (e.type === "gbounce") modal(e.x, e.z, [{ f: 1450, q: 18, g: 1 }, { f: 2300, q: 20, g: 0.4 }], 0.05, 0.12, { wet: 0.25 }); // mk2.03: the clatter
       else if (e.type === "splash") { noise(e.x, e.z, { f0: 1300, f1: 300, dur: 0.3, gain: 0.2, wet: 0.4 }); tone(e.x, e.z, { f0: 420, f1: 130, dur: 0.22, gain: 0.08, delay: 0.03 }); }
       else if (e.type === "kill" && e.kind === "unit") bodyFall(e.x, e.z);
       else if (e.type === "collapse") { noise(e.x, e.z, { f0: 480, f1: 75, dur: 1.2, gain: 0.4, wet: 0.55, dark: 0.7 }); tone(e.x, e.z, { f0: 58, f1: 30, dur: 0.9, gain: 0.3, delay: 0.05 }); echoes(e.x, e.z, (ex, ez, dly, k) => noise(ex, ez, { f0: 350, f1: 80, dur: 0.5, gain: 0.3 * k, delay: dly, wet: 0.7, dark: 0.5 })); }

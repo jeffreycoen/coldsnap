@@ -245,7 +245,7 @@ export function seedBags(world, grid, depotT, streamKey, stampBag) {
 export const PICK_POOL = [
   { key: "sq_rifles", kind: "squad", type: "rifles", tag: "", n: 4 },
   { key: "sq_rockets", kind: "squad", type: "rockets", tag: "rocket", n: 2 },
-  { key: "sq_grenadiers", kind: "squad", type: "grenadiers", tag: "gren", n: 4 },
+  { key: "sq_grenadiers", kind: "squad", type: "grenadiers", tag: "gren", n: 2 },
   { key: "sq_sappers", kind: "squad", type: "sappers", tag: "sapper", n: 2 },
   { key: "sq_mortars", kind: "squad", type: "mortars", tag: "mortar", n: 2 },
   { key: "sq_sniper", kind: "squad", type: "sniper", tag: "sniper", n: 2 },

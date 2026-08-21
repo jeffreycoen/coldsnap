@@ -275,8 +275,12 @@ export const INFANTRY_ARMS = {
   // both sides, one row. The tower rocket's round on infantry legs. // provisional (F5)
   rockets: { projSpeed: 18, kind: "shell", weapon: "rocket", dmg: 27, blastR: 3.4, kv: 9, crater: 0.7,
              fireRate: 8.8, range: 18, acc: 0.021, occl: "arc", windF: 1.3, windComp: 0.5 },
-  // mk2.02 (owner): THE GRENADE — grenadiers are not mortars; a short live
-  // throw, one row both sides. // provisional (F5)
+  // mk2.03: thrown — see GRENADE; projectile fields below are dead weight
+  // kept for the pie/reach displays.
   grenadiers: { projSpeed: 20, kind: "shell", weapon: "mortar", dmg: 16, blastR: 2.0, kv: 5, crater: 0.3,
-                fireRate: 3.2, range: 12, acc: 0.010, occl: "lofted", windF: 0.03, windComp: 0.6 },
+                fireRate: 3.2, range: 12, acc: 0.010, occl: "lofted", windF: 0.03, windComp: 0.6, thrown: true },
 };
+
+// mk2.03 (owner): THE GRENADE — one body, both sides. Fuse 2.0s from
+// release. // provisional (F5)
+export const GRENADE = { v: 11, fuse: 2.0, r: 2.0, dmg: 16, kv: 5, crater: 0.3, mass: 0.4, hx: 0.09, hy: 0.09, hz: 0.09 };

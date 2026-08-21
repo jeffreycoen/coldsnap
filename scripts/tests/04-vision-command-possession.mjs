@@ -1,9 +1,9 @@
 import { ok } from "./harness.mjs";
 import { identFwdDir, straightGrid } from "./shared.mjs";
-import { towerShot, shooterFire, squadFire, possessedVolley, possessedTowerFire, POSSESS_ACC, POSSESS_SNAP_R, snapTargetNear, stickyLock, mateBlocks, fieldReaches, effRange, PENDING_ARM_S, pendingArmed, spawnSquadMembers, spawnSandbag, pruneSquads, spawnWallCourses, WALL_HALF, WALL_THIN, WALL_COURSE_HY, friendlyFouls } from "../../src/depot/state.js";
+import { towerShot, shooterFire, squadFire, possessedVolley, possessedTowerFire, POSSESS_ACC, POSSESS_SNAP_R, snapTargetNear, stickyLock, mateBlocks, fieldReaches, effRange, PENDING_ARM_S, pendingArmed, spawnSquadMembers, spawnSandbag, pruneSquads, spawnWallCourses, WALL_HALF, WALL_THIN, WALL_COURSE_HY, friendlyFouls, throwGrenade, stepGrenades } from "../../src/depot/state.js";
 import { makeWorld, makeField, addBody, addWeld, stepWorld, applyDamage, CAUSE, mulberry32 } from "../../src/engine/core.js";
-import { reachPolygon, arcClears, scatterSigma, losGraze, bracedAt, applyScatter, SCATTER_CAP, deflect, flightImpact, predictRing } from "../../src/depot/accuracy.js";
-import { TOWER_SPECS, ENEMY_FIRE, MASON, INFANTRY_ARMS, ENEMY_SPECS, MAN, BISON_FIRE, HAND_TAGS } from "../../src/depot/specs.js";
+import { reachPolygon, arcClears, scatterSigma, losGraze, bracedAt, applyScatter, SCATTER_CAP, deflect, flightImpact, predictRing, elevSolve, speedForPitch } from "../../src/depot/accuracy.js";
+import { TOWER_SPECS, ENEMY_FIRE, MASON, INFANTRY_ARMS, ENEMY_SPECS, MAN, BISON_FIRE, HAND_TAGS, GRENADE } from "../../src/depot/specs.js";
 import { stepUnits } from "../../src/depot/units.js";
 import { SQUAD_SPECS, makeSquad, stepSquad, drivePossessedSquad, COHESION_M, clearSlot } from "../../src/depot/squads.js";
 import { makeTerritory, holderAt, valueAt, canBuild } from "../../src/depot/territory.js";
@@ -2240,7 +2240,8 @@ import fs from "node:fs";
     world.events.length = 0;
     shooterFire(world, shooter, { x: 0, y: 1.5, z: 0 }, tgt, { ...BISON_FIRE.gun }, { attacker: "player", owner: shooter.id });
     const lob = world.events.find((e) => e.type === "muzzle");
-    ok("TALL ORDER mk2.02(c): a wall across the line takes the mortar root", lob && lob.dy > 0.7, lob && lob.dy);
+    ok("TALL ORDER mk2.02(c): a wall across the line raises the barrel inside the 35° cap (re-taught mk2.03)",
+      lob && lob.dy > flat.dy + 0.02 && lob.dy < Math.sin(35 * Math.PI / 180) + 0.02, lob && lob.dy);
   }
   // (d) the grant is exact; the rocket tower keeps the gentle arc.
   ok("TALL ORDER mk2.02(d): both tank guns and the tower GUN lob automatically",
@@ -2278,8 +2279,8 @@ import fs from "node:fs";
     ok("TALL ORDER mk2.02(i): the rosters pair one-to-one, no heavy, no fast",
       !ENEMY_SPECS.heavy && !ENEMY_SPECS.fast && !!ENEMY_SPECS.mortar && !!ENEMY_SPECS.rocket &&
       !SQUAD_SPECS.runners && !SQUAD_SPECS.breakers && !!SQUAD_SPECS.rockets && !!SQUAD_SPECS.grenadiers);
-    ok("TALL ORDER mk2.02(i): the grenade is its own throw — short, lofted, not the mortar table",
-      INFANTRY_ARMS.grenadiers.range === 12 && INFANTRY_ARMS.grenadiers.occl === "lofted" &&
+    ok("TALL ORDER mk2.02(i): a thrown body on a 2s fuse (re-taught mk2.03)",
+      INFANTRY_ARMS.grenadiers.thrown === true && GRENADE.fuse === 2.0 &&
       INFANTRY_ARMS.grenadiers.range < INFANTRY_ARMS.mortars.range);
     ok("TALL ORDER mk2.02(i): the shoulder rocket is armed on both sides' row",
       INFANTRY_ARMS.rockets.weapon === "rocket" && INFANTRY_ARMS.rockets.kind === "shell");
@@ -2299,3 +2300,101 @@ import fs from "node:fs";
   }
 }
 // ==== end THE TALL ORDER (mk2.02) ===========================================
+
+// ==== THE GUN AND THE GRENADE (mk2.03) ======================================
+// Actual elevation (the mortar root returns to the mortars), faces on every
+// vertical, and the thrown 2.0s-fuse grenade.
+{
+  const flatField = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
+  const idUV = (x, z) => ({ u: x, v: z });
+  const bareSG = () => ({ nx: 32, nz: 32, cs: 2, halfU: 32, halfV: 32,
+    seen1: new Uint8Array(32 * 32).fill(1), seen2: new Uint8Array(32 * 32),
+    gnd: new Float32Array(32 * 32), occ: new Float32Array(32 * 32).fill(-Infinity) });
+
+  // (a) elevation solves: clear ground takes the low root at full speed; a
+  // wall raises the pitch inside the cap at a fitted, lower speed.
+  {
+    const world = makeWorld({ field: flatField, seed: 91 });
+    const clear = elevSolve(world, { x: 0, y: 1.5, z: 0 }, { x: 20, y: 0, z: 0 }, { projSpeed: 85 }, 0);
+    ok("GUN mk2.03(a): clear ground fires the low root at full speed", clear && clear.v === 85 && clear.pitch < 0.1, JSON.stringify(clear));
+    addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.9, hy: 1.8, hz: 0.2, x: 10, y: 1.8, z: 0, hp: 200 });
+    const walled = elevSolve(world, { x: 0, y: 1.5, z: 0 }, { x: 20, y: 0, z: 0 }, { projSpeed: 85 }, 0);
+    ok("GUN mk2.03(a): the wall raises the barrel inside the 35° cap, speed fitted under full",
+      walled && walled.pitch > 0.1 && walled.pitch <= 35 * Math.PI / 180 + 1e-9 && walled.v < 85, JSON.stringify(walled));
+  }
+  // (b) past the cap the gun holds: a tall wall right at the target's feet.
+  {
+    const world = makeWorld({ field: flatField, seed: 92 });
+    addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.9, hy: 9, hz: 0.2, x: 18, y: 9, z: 0, hp: 999 });
+    const sol = elevSolve(world, { x: 0, y: 1.5, z: 0 }, { x: 20, y: 0, z: 0 }, { projSpeed: 85 }, 0);
+    ok("GUN mk2.03(b): an arc the cap cannot clear returns null — the gun holds its fire", sol === null, JSON.stringify(sol));
+    world.events.length = 0;
+    const shooter = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 1.0, hz: 0.28, x: 0, y: 1.0, z: 5, hp: 58 });
+    shooterFire(world, shooter, { x: 0, y: 1.5, z: 0 }, { pos: { x: 20, y: 0, z: 0 }, v: { x: 0, y: 0, z: 0 }, hy: 0 }, { ...BISON_FIRE.gun }, { attacker: "player", owner: shooter.id });
+    ok("GUN mk2.03(b): shooterFire fires nothing when no lawful arc exists", world.events.filter((e) => e.type === "muzzle").length === 0);
+  }
+  // (c) the barrel pitch rides the shooter: a fired auto shot writes _aimPitch.
+  {
+    const world = makeWorld({ field: flatField, seed: 93 });
+    const shooter = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 1.0, hz: 0.28, x: 0, y: 1.0, z: 5, hp: 58 });
+    shooterFire(world, shooter, { x: 0, y: 1.5, z: 0 }, { pos: { x: 20, y: 0, z: 0 }, v: { x: 0, y: 0, z: 0 }, hy: 0 }, { ...BISON_FIRE.gun }, { attacker: "player", owner: shooter.id });
+    ok("GUN mk2.03(c): the fired pitch is written to the shooter for the barrel mesh", typeof shooter._aimPitch === "number");
+  }
+  // (d) faces by entry direction: a flat round entering below the top hits
+  // the FACE even in the last 0.4m; a descending round takes the roof.
+  {
+    const SG = bareSG();
+    for (let iz = 0; iz < 32; iz++) SG.occ[iz * 32 + 21] = 3;
+    const grazeTop = flightImpact(SG, { x: 0, y: 2.8, z: 0 }, { x: 1, y: 0, z: 0 }, 100, { windF: 0 }, null, idUV);
+    ok("GUN mk2.03(d): a flat round entering 0.2m under the top still hits the FACE", grazeTop.wall === true, JSON.stringify(grazeTop));
+    const drop = flightImpact(SG, { x: 6, y: 26, z: 0 }, { x: 0.232, y: -0.97, z: 0 }, 25, { windF: 0 }, null, idUV);
+    ok("GUN mk2.03(d): a descending round crossing the top takes the ROOF, flat", drop.wall === false && Math.abs(drop.y - 3) < 0.01, JSON.stringify(drop));
+  }
+  // (e) THE GRENADE: thrown as a body with exactly 2 draws; the fuse is 2.0s
+  // from release; it never detonates on impact; a long lob bursts in the air.
+  {
+    const world = makeWorld({ field: flatField, seed: 94 });
+    world.depotCombat = true;
+    const man = addBody(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 1.0, hz: 0.28, x: 0, y: 1.0, z: 0, hp: 58 });
+    let draws = 0; const raw = world.rng; world.rng = () => { draws++; return raw(); };
+    const g = throwGrenade(world, man, { x: 0, y: 1.5, z: 0 }, { pos: { x: 8, y: 0, z: 0 }, v: { x: 0, y: 0, z: 0 } });
+    ok("GRENADE mk2.03(e): the throw draws exactly twice (applyScatter's contract)", draws === 2, draws);
+    ok("GRENADE mk2.03(e): the grenade is a live body owned by physics", g && g.alive && world.byId.get(g.id) === g);
+    let boomed = null;
+    for (let i = 0; i < 400; i++) {
+      world.events.length = 0;
+      stepWorld(world); stepGrenades(world);
+      const b = world.events.find((e) => e.type === "boom" && e.kind === "grenade");
+      if (b) { boomed = { t: world.t, e: b }; break; }
+    }
+    ok("GRENADE mk2.03(e): the fuse fires at 2.0s from release, not on impact",
+      boomed && Math.abs(boomed.t - (g.grenade.t0 + 2.0)) < 0.03, boomed && (boomed.t - g.grenade.t0).toFixed(3));
+    ok("GRENADE mk2.03(e): the spent grenade leaves the world", world.byId.get(g.id) === undefined);
+  }
+  // (f) the pair and the tables.
+  ok("GRENADE mk2.03(f): grenadier squads are pairs", SQUAD_SPECS.grenadiers.n === 2);
+  ok("GRENADE mk2.03(f): the grenade's dials — 2.0s fuse, 12m throw ceiling", GRENADE.fuse === 2.0 && INFANTRY_ARMS.grenadiers.range === 12);
+  // (g) source pins: both sides throw; the barrels pitch; the sounds exist.
+  {
+    const stateSrc = fs.readFileSync(new URL("../../src/depot/state.js", import.meta.url), "utf8");
+    const unitsSrc = fs.readFileSync(new URL("../../src/depot/units.js", import.meta.url), "utf8");
+    const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
+    const audioSrc = fs.readFileSync(new URL("../../src/platform/audio.js", import.meta.url), "utf8");
+    const boardSrc = fs.readFileSync(new URL("../../src/ui/SoundBoard.jsx", import.meta.url), "utf8");
+    ok("mk2.03(g) source pin: squadFire and possessedVolley throw for grenadiers",
+      (stateSrc.match(/throwGrenade\(world, u, muzzle/g) || []).length === 2);
+    ok("mk2.03(g) source pin: the enemy grenadier throws the same grenade",
+      /throwGrenade\(world, u, muzzle, tgt\)/.test(unitsSrc));
+    ok("mk2.03(g) source pin: the sim steps the fuses", /stepGrenades\(world\);/.test(gameSrc));
+    ok("mk2.03(g) source pin: vehicle and tower barrels wear the live pitch",
+      (rendSrc.match(/g\.userData\.gunPitch\.rotation\.x = -\(b\._aimPitch \|\| 0\);/g) || []).length === 2);
+    ok("mk2.03(g) source pin: the wave tank has a barrel to raise",
+      /buildWaveTank/.test(rendSrc) && /b\.vtype === "tank" \? buildWaveTank\(b\.team\)/.test(rendSrc));
+    ok("mk2.03(g) source pin: toss, bounce, and the grenade's own blast are voiced",
+      /grenade: \(x, z\)/.test(audioSrc) && /gbounce/.test(audioSrc) && /function gblast/.test(audioSrc));
+    ok("mk2.03(g) source pin: the soundboard benches all three",
+      /id: "gren-toss"/.test(boardSrc) && /id: "gren-bounce"/.test(boardSrc) && /id: "gren-blast"/.test(boardSrc));
+  }
+}
+// ==== end THE GUN AND THE GRENADE (mk2.03) ==================================

@@ -60,6 +60,9 @@ const CARDS = [
   { id: "mortar", name: "MORTAR", desc: "A hollow, deep THOOMP — a tube, not a gun. Unchanged by the retune.", ev: () => [muzzle("mortar", "shell", NEAR)] },
   { id: "rocket", name: "ROCKET", desc: "A whooshing roar as the salvo leaves the rail. Unchanged by the retune.", ev: () => [muzzle("rocket", "shell", NEAR)] },
   { id: "tank", name: "TANK / SHELL", desc: "A heavy, flat BANG with real chest to it. The biggest single gun on the field. Unchanged by the retune.", ev: () => [muzzle("tank", "shell", NEAR)] },
+  { id: "gren-toss", name: "GRENADE TOSS", desc: "A short soft throw — cloth and effort, no machine in it. Blink and you miss it.", ev: () => [{ type: "muzzle", x: 0, y: 1.5, z: 6, dx: 0, dy: 0.6, dz: 0.8, kind: "mg", weapon: "grenade" }] },
+  { id: "gren-bounce", name: "GRENADE BOUNCE", desc: "A hard little clink off frozen ground — one knock, bright, gone.", ev: () => [{ type: "gbounce", x: 0, z: 8 }] },
+  { id: "gren-blast", name: "GRENADE BLAST", desc: "A real blast in the middle of your hearing, shorter and sharper than a shell — a crack, a thump, and the map answering.", ev: () => [{ type: "boom", x: 0, z: 10, r: 2, kind: "grenade" }] },
 ];
 
 const WIND = {

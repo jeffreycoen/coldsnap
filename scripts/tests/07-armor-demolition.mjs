@@ -785,7 +785,7 @@ import fs from "node:fs";
   const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
   // (a) the mirror stats (re-taught mk2.02: rockets and grenadiers hold the seats)
   ok("T7(a) (re-taught mk2.02): rocket team is 2 at cost 45", SQUAD_SPECS.rockets.n === 2 && SQUAD_SPECS.rockets.cost === 45);
-  ok("T7(a2) (re-taught mk2.02): grenadier squad is 4 at cost 40", SQUAD_SPECS.grenadiers.n === 4 && SQUAD_SPECS.grenadiers.cost === 40);
+  ok("T7(a2) (re-taught mk2.03): grenadier pair is 2 at cost 40", SQUAD_SPECS.grenadiers.n === 2 && SQUAD_SPECS.grenadiers.cost === 40);
   ok("T7(a3) (re-taught mk2.02): each carries its own table — the rocket and the grenade", INFANTRY_ARMS.rockets.weapon === "rocket" && INFANTRY_ARMS.grenadiers.weapon === "mortar");
   // (c) the PRE-CHANGE pin (captured on the unmodified code before P7 T7
   // touched squads.js) proving rifles' march is byte-identical to before.
@@ -1142,7 +1142,7 @@ import fs from "node:fs";
       const depotE9 = { x: 40, z: 40, nx: 12, nz: 9 };
       const squads = [];
       let nextSquadId = 1;
-      for (const type of ["rockets", "grenadiers"]) { // mk2.02: the roster surgery
+      for (const type of ["rockets", "grenadiers"]) { // mk2.03: the pair (re-taught)
         const a0 = type === "rockets" ? 0.9 : 2.3;
         const p0 = clearSlot(w, depotP9.x + Math.sin(a0) * 11, depotP9.z + Math.cos(a0) * 11, 0.5);
         const sq = makeSquad(nextSquadId++, type, 1, p0.x, p0.z);
@@ -1151,8 +1151,8 @@ import fs from "node:fs";
       }
       const gR5 = Math.hypot(depotE9.nx, depotE9.nz) * MASON.pitch / 2 + 5.5;
       const garrison = [];
-      ["rocket", "rocket", "gren", "gren", "gren", "gren"].forEach((tag, i) => { // mk2.02: the roster surgery
-        const a = (i / 6) * Math.PI * 2 + 2.0;
+      ["rocket", "rocket", "gren", "gren"].forEach((tag, i) => { // mk2.03: the pair (re-taught)
+        const a = (i / 4) * Math.PI * 2 + 2.0;
         const p = clearSlot(w, depotE9.x + Math.sin(a) * gR5, depotE9.z + Math.cos(a) * gR5, 0.5);
         const u = spawnUnit(w, { x: p.x, z: p.z }, tag);
         u.hold = true; u.garrison = true;
@@ -1161,15 +1161,15 @@ import fs from "node:fs";
       return { w, squads, garrison, draws };
     };
     const r1 = fieldedStart(801);
-    ok("T9(e) (re-taught mk2.02): the player fields a rocket team + a grenadier squad, on defend, near the depot",
+    ok("T9(e) (re-taught mk2.03): the player fields a rocket team + a grenadier pair, on defend, near the depot",
       r1.squads.length === 2 && r1.squads.every((sq) => sq.order === "defend" && sq.memberIds.length > 0) &&
       r1.squads.find((sq) => sq.type === "rockets").memberIds.length === 2 &&
-      r1.squads.find((sq) => sq.type === "grenadiers").memberIds.length === 4);
-    ok("T9(e2) (re-taught mk2.02): the enemy fields 2 rocket + 4 gren, held, garrisoned",
-      r1.garrison.length === 6 && r1.garrison.filter((u) => u.tag === "rocket").length === 2 &&
-      r1.garrison.filter((u) => u.tag === "gren").length === 4 &&
+      r1.squads.find((sq) => sq.type === "grenadiers").memberIds.length === 2);
+    ok("T9(e2) (re-taught mk2.03): the enemy fields 2 rocket + 2 gren, held, garrisoned",
+      r1.garrison.length === 4 && r1.garrison.filter((u) => u.tag === "rocket").length === 2 &&
+      r1.garrison.filter((u) => u.tag === "gren").length === 2 &&
       r1.garrison.every((u) => u.hold === true && u.garrison === true));
-    ok("T9(e3): the fielded start draws exactly 18 world-rng values (6 spawnUnit x 3; squads draw-free)", r1.draws === 18, r1.draws);
+    ok("T9(e3) (re-taught mk2.03): the fielded start draws exactly 12 world-rng values (4 spawnUnit x 3; squads draw-free)", r1.draws === 12, r1.draws);
     const r2 = fieldedStart(801);
     ok("T9(f): the boot's draw count is fixed across two same-seed boots", r1.draws === r2.draws, `${r1.draws} vs ${r2.draws}`);
     ok("T9(f2): the twin worlds hash identical", worldHash(r1.w) === worldHash(r2.w), `${worldHash(r1.w)} vs ${worldHash(r2.w)}`);
