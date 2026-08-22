@@ -73,6 +73,7 @@ The owner directs design, reviews every plan, and is the sole playtester. His wo
 ## Process
 
 - No momentum: stop and check before each next step.
+- Saves are never migrated (owner, 2026-08-22). Old saves ride as they are: internal keys and field shapes that live in saves stay stable, and a plan that would need a save migration finds another way or asks.
 - Phase closeout re-checks the README's claims and screenshots against the shipped game.
 - Deferred items collect in the polish queue, never folded in opportunistically.
 - Frozen laws: `src/demo/coldsnap-proving-grounds.jsx` is byte-frozen; `core.js`/`renderer.js` changes are guarded additive divergences with `golden.mjs` green; no `Math.random` in `src/depot` (seeded rng, draw-count stability, `depot-lint` gates CI).
