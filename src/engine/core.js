@@ -709,7 +709,10 @@ export function explode(world, x, y, z, spec) {
     // courses onto the ground and the wall imploded into a single block.
     const seatR = spec.crater * 2.4 + 1.5;
     for (const s of world.bodies) {
-      if (s.kind !== "wall" && s.kind !== "tower") continue;
+      // DIVERGENCE (guarded, additive, mk2.14): rocks re-seat too — same
+      // terrain-grade masonry, same loop. No demo or campaign world holds a
+      // "rock" body, so those modes are byte-identical.
+      if (s.kind !== "wall" && s.kind !== "tower" && s.kind !== "rock") continue;
       if (Math.hypot(s.pos.x - x, s.pos.z - z) > seatR) continue;
       s.pos.y = world.field.heightAt(s.pos.x, s.pos.z) + (s.seatY != null ? s.seatY : s.hy);
     }

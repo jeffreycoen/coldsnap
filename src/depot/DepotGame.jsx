@@ -1166,8 +1166,9 @@ export default function DepotGame({ onExit, resume = null }) {
       // path below is untouched.
       if (!RES) {
         for (const k of ROCKS) {
-          const b = addBody(world, { kind: "rock", team: 0, mass: 0, hx: k.r * 0.55, hy: k.h * 0.8, hz: k.r * 0.55, x: k.x, y: field.heightAt(k.x, k.z) - k.h * 0.2, z: k.z, hp: 380 + k.r * 90 });
+          const b = addBody(world, { kind: "rock", team: 0, mass: 0, hx: k.r * 0.55, hy: k.h * 0.8, hz: k.r * 0.55, x: k.x, y: field.heightAt(k.x, k.z) - k.h * 0.2, z: k.z, hp: 90 + k.r * 20 }); // mk2.14 (owner): one atomic blast breaks a near rock // provisional (F5)
           b.maxHp = b.hp; b.rockRef = k;
+          b.seatY = b.pos.y - field.heightAt(k.x, k.z); // mk2.14: the crater re-seat drops a surviving rock to the carved ground, not half-height up
         }
         // T5: the whole tree plan, planted (planTrees carries the treeline,
         // the hill copses, the drawn copses and the forests — one function,
@@ -2830,6 +2831,13 @@ export default function DepotGame({ onExit, resume = null }) {
             world.byId.delete(rb.id);
             world.bodies.splice(i, 1);
           }
+        }
+        // mk2.14 (owner): a davy burst carved the ground — re-lay the rock
+        // dressing so surviving boulders sink to the new surface instead of
+        // floating over the crater. Bodies re-seat in the engine; this is
+        // their drawn twin.
+        if (evs.some((e) => e.type === "boom" && e.weapon === "davy")) {
+          R.setDressing({ rocks: rocksLive, ponds: PONDS, streams: streamRibs });
         }
         // Structure damage dealt this frame, attributed via b.lastHit —
         // there's no discrete per-hit damage event, so this rides the hp
