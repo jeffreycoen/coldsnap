@@ -2193,8 +2193,8 @@ import fs from "node:fs";
     const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
     ok("TRUE RETICLE mk2.01(i) source pin: the frame loop reads the surface under the reticle",
       /S\.reticle\.y = surfaceAt\(T\.sight, S\.reticle\.x, S\.reticle\.z, invW\)\.y;/.test(gameSrc));
-    ok("TRUE RETICLE mk2.01(i) source pin: all four possessed fire paths aim at the surface (aim.y)",
-      (stateSrc.match(/aim\.y != null \? aim\.y : world\.field\.heightAt\(aim\.x, aim\.z\)/g) || []).length === 2 &&
+    ok("TRUE RETICLE mk2.01(i) source pin: all five possessed fire paths aim at the surface (aim.y)",
+      (stateSrc.match(/aim\.y != null \? aim\.y : world\.field\.heightAt\(aim\.x, aim\.z\)/g) || []).length === 3 &&
       (driversSrc.match(/aim\.y != null \? aim\.y : world\.field\.heightAt\(aim\.x, aim\.z\)/g) || []).length === 2);
     ok("TRUE RETICLE mk2.01(i) source pin: the ring is the predictor's landing bound",
       /const pr9 = predictRing\(T\.sight, muzzle9, aim9, spec9, sig9, world\.wind, invW\);/.test(gameSrc));
@@ -2222,12 +2222,12 @@ import fs from "node:fs";
     ok("TALL ORDER mk2.02(a): the predictor returns the 48-point laser footprint (re-taught mk2.05)", Array.isArray(pr.pts) && pr.pts.length === 48, pr.pts && pr.pts.length);
     ok("TALL ORDER mk2.02(a): on flat dirt every footprint point lies on the ground", pr.pts.every((p) => Math.abs(p.y) < 1e-6));
   }
-  // (b) surface aim: the four possessed tgt lines carry the surface, no phantom.
+  // (b) surface aim: the five possessed tgt lines carry the surface, no phantom.
   {
     const stateSrc = fs.readFileSync(new URL("../../src/depot/state.js", import.meta.url), "utf8");
     const driversSrc = fs.readFileSync(new URL("../../src/depot/drivers.js", import.meta.url), "utf8");
-    ok("TALL ORDER mk2.02(b) source pin: ground aim targets the surface in all four fire paths",
-      (stateSrc.match(/hy: sy - world\.field\.heightAt\(aim\.x, aim\.z\)/g) || []).length === 2 &&
+    ok("TALL ORDER mk2.02(b) source pin: ground aim targets the surface in all five fire paths",
+      (stateSrc.match(/hy: sy - world\.field\.heightAt\(aim\.x, aim\.z\)/g) || []).length === 3 &&
       (driversSrc.match(/hy: sy - world\.field\.heightAt\(aim\.x, aim\.z\)/g) || []).length === 2);
   }
   // (c) THE AUTOMATIC LOB: clear line flat, walled line takes the mortar root.

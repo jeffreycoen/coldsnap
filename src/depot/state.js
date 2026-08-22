@@ -774,6 +774,29 @@ export function mateBlocks(world, squad, shooter, muzzle, aimPos) {
 // exactly as they do to every other shot in the game. Sight-gated at the
 // aim cell: you shoot only what your side sees. Returns muzzles fired.
 export function possessedVolley(world, squad, aim, T, toUV = (x, z) => ({ u: x, v: z })) {
+  // mk2.11 (owner): THE CREW FIRES UNDER THE STICK like every unit — the
+  // one atomic round at the reticle, sight-gated at the aim like every
+  // possessed shot, the crew dead at the trigger. The _davyFired latch is
+  // shared with the ATTACK path (stepDavyShot): one round per hire,
+  // whichever path fires first spends it.
+  if (squad.type === "davy") {
+    if (squad._davyFired) return 0;
+    const cD = toUV(aim.x, aim.z);
+    if (!fieldReaches(T, cD.u, cD.v, squad.team)) return 0;
+    const shooter = squad.memberIds.map((id) => world.byId.get(id)).find((u) => u && u.alive);
+    if (!shooter) return 0;
+    squad._davyFired = true;
+    const attacker = squad.team === 1 ? "player" : "enemy";
+    const muzzle = { x: shooter.pos.x, y: shooter.pos.y + 0.5, z: shooter.pos.z };
+    const sy = aim.y != null ? aim.y : world.field.heightAt(aim.x, aim.z);
+    const tgt = { pos: { x: aim.x, y: sy, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: sy - world.field.heightAt(aim.x, aim.z) };
+    shooterFire(world, shooter, muzzle, tgt, DAVY_FIRE, { high: true, attacker, hitStruct: true, owner: shooter.id });
+    for (const id of squad.memberIds) {
+      const u = world.byId.get(id);
+      if (u && u.alive) applyDamage(world, u, 1e9, { attacker });
+    }
+    return 1;
+  }
   const spec = INFANTRY_ARMS[squad.type];
   if (!spec) return 0;
   const c = toUV(aim.x, aim.z);
