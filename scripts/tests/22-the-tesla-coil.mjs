@@ -110,3 +110,16 @@ const walk = (world, arcs, s) => { for (let i = 0; i < Math.round(s / 0.05); i++
   const foe2 = m2(6, 0, 2); m2(14, 0, 1);
   ok("tesla: a friend clear of the spread holds nothing", teslaWouldCatchFriend(w2, t2, foe2) === false);
 }
+{ // Amendment 3: the ground strike — always a bolt, chain from the snow
+  const field = makeField(41, 2.0, 13);
+  const world = makeWorld({ field, seed: 13 });
+  world.depotCombat = true;
+  const near = addBody(world, { kind: "unit", team: 2, mass: 80, hx: 0.28, hy: 1.0, hz: 0.28, x: 3, y: field.heightAt(3, 0) + 1, z: 0, hp: 100 });
+  near.smearStyle = "human";
+  const arcs = [{ nextAt: 0, hits: 0, dmg: 35, fx: 0, fy: 3, fz: 0, atk: "player", tid: 0, gx: 1, gy: field.heightAt(1, 0), gz: 0, hitIds: [], waters: [] }];
+  world.t = 0.01; stepTesla(world, arcs);
+  ok("ground strike: the bolt lands with no victim", world.events.some((e) => e.type === "zap" && e.hop === 0));
+  ok("ground strike: the snow takes no damage call", near.hp === 100);
+  for (let i = 0; i < 10; i++) { world.t += 0.05; stepTesla(world, arcs); }
+  ok("ground strike: the chain walks from the snow at full 35", near.hp === 65);
+}

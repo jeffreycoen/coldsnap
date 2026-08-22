@@ -835,13 +835,20 @@ export function possessedTowerFire(world, tower, aim, T, toUV = (x, z) => ({ u: 
   const c = toUV(aim.x, aim.z);
   if (!fieldReaches(T, c.u, c.v, 1)) return false;
   const live = snapTargetNear(world, aim, T, toUV);
-  // mk2.15: the possessed coil fires only at a LIVE seen enemy — a chain has
-  // no ground to shell; no target, no bolt, no cooldown spent.
+  // Amendment 3 (owner): the possessed coil ALWAYS discharges — at the
+  // snapped enemy when one is near the reticle, into the ground at the
+  // reticle otherwise. The chain walks from wherever the bolt lands.
   if (spec.tesla) {
-    if (!live || !arcs) return false;
+    if (!arcs) return false;
     tower.fireCd = spec.fireRate;
     tower.flashT = world.t;
-    teslaStrike(world, arcs, tower, live);
+    if (live) { teslaStrike(world, arcs, tower, live); return true; }
+    const gy = world.field.heightAt(aim.x, aim.z);
+    arcs.push({
+      nextAt: world.t, hits: 0, dmg: TOWER_SPECS.tesla.dmg,
+      fx: tower.pos.x, fy: tower.pos.y + tower.hy + 0.9, fz: tower.pos.z,
+      atk: tower.team === 2 ? "enemy" : "player", tid: 0, gx: aim.x, gy, gz: aim.z, hitIds: [], waters: [],
+    });
     return true;
   }
   const sy = aim.y != null ? aim.y : world.field.heightAt(aim.x, aim.z);
@@ -952,6 +959,22 @@ export function stepTesla(world, arcs) {
     while (a.nextAt <= world.t && a.hits < TESLA.maxHits) {
       const hit = new Set(a.hitIds), waters = new Set(a.waters);
       let victim = null;
+      if (a.hits === 0 && !a.tid && a.gx != null) {
+        // Amendment 3: a GROUND strike — the bolt lands on snow, damages
+        // nothing itself, and the chain (damage ladder intact) walks from
+        // the strike point if anything stands in hop range. Water at the
+        // strike point conducts exactly as a body hit would.
+        world.events.push({ type: "zap", x: a.fx, y: a.fy, z: a.fz, x2: a.gx, y2: a.gy + 0.2, z2: a.gz, hop: 0 });
+        const w0 = onWater(a.gx, a.gz);
+        if (w0) {
+          a.waters.push(w0 === "stream" ? "stream" : w0);
+          world.events.push({ type: "pondzap", x: w0 === "stream" ? a.gx : w0.x, z: w0 === "stream" ? a.gz : w0.z, r: w0 === "stream" ? 3 : w0.r });
+        }
+        a.fx = a.gx; a.fy = a.gy + 0.2; a.fz = a.gz;
+        a.hits = 1;
+        a.nextAt += TESLA.hopS;
+        continue;
+      }
       if (a.hits === 0) { // the strike: the acquired enemy, if it still lives
         const t = world.byId.get(a.tid);
         victim = t && chainBody(t) ? t : null;

@@ -1072,7 +1072,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // this exact failure); the tracer pools are the proven-visible idiom.
   // White core inside a fat saturated-blue halo — the blue is what reads
   // against snow. pool() adds to the scene and pre-fills instanceColor.
-  const BOLT_SEG_CAP = BOLT_CAP * (BOLT_SEGS + 2);
+  const BOLT_SEG_CAP = 2048; // Amendment 3: fractal bolts run ~40 segments each
   const boltCoreMesh = pool(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false }), BOLT_SEG_CAP, false);
   const boltHaloMesh = pool(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0x2e9bff, transparent: true, opacity: 0.42, depthWrite: false }), BOLT_SEG_CAP, false);
   boltCoreMesh.layers.set(1); boltHaloMesh.layers.set(1);
@@ -1100,18 +1100,24 @@ export function makeRenderer(canvas, world0, opts = {}) {
       b.age += dt;
       if (b.age >= b.life) { bolts.splice(i, 1); continue; }
       const fade = 1 - b.age / b.life;
-      const th = 0.11 * sMin * (0.6 + 0.4 * fade) * (0.75 + Math.random() * 0.5);
-      const pts = [{ x: b.ax, y: b.ay, z: b.az }];
-      for (let k = 1; k < BOLT_SEGS; k++) {
-        const t = k / BOLT_SEGS, j = b.amp * fade * Math.sin(Math.PI * t);
-        pts.push({ x: b.ax + (b.bx - b.ax) * t + (Math.random() - 0.5) * j, y: b.ay + (b.by - b.ay) * t + (Math.random() - 0.5) * j * 0.6, z: b.az + (b.bz - b.az) * t + (Math.random() - 0.5) * j });
-      }
-      pts.push({ x: b.bx, y: b.by, z: b.bz });
-      for (let k = 0; k < pts.length - 1; k++) put(pts[k].x, pts[k].y, pts[k].z, pts[k + 1].x, pts[k + 1].y, pts[k + 1].z, th);
-      const f = pts[1 + ((Math.random() * (BOLT_SEGS - 2)) | 0)];
-      const fl = 0.5 + Math.random() * b.amp;
-      put(f.x, f.y, f.z, f.x + (Math.random() - 0.5) * fl * 2, f.y - fl * (0.4 + Math.random() * 0.8), f.z + (Math.random() - 0.5) * fl * 2, th * 0.7);
-      put(f.x, f.y, f.z, f.x + (Math.random() - 0.5) * fl, f.y - fl * 0.3, f.z + (Math.random() - 0.5) * fl, th * 0.7);
+      const th = 0.34 * sMin * (0.55 + 0.45 * fade) * (0.8 + Math.random() * 0.4);
+      // Amendment 3 (owner): FRACTAL GROWTH. Recursive midpoint splitting:
+      // each level displaces the midpoint and may throw a fork that splits
+      // again, thinner each generation. Fresh dice every frame — the bolt
+      // crawls and crackles for its whole life.
+      const grow = (x1, y1, z1, x2, y2, z2, amp, depth, w2) => {
+        if (depth <= 0 || amp < 0.12) { put(x1, y1, z1, x2, y2, z2, w2); return; }
+        const mx = (x1 + x2) / 2 + (Math.random() - 0.5) * amp;
+        const my = (y1 + y2) / 2 + (Math.random() - 0.5) * amp * 0.6;
+        const mz = (z1 + z2) / 2 + (Math.random() - 0.5) * amp;
+        grow(x1, y1, z1, mx, my, mz, amp * 0.55, depth - 1, w2);
+        grow(mx, my, mz, x2, y2, z2, amp * 0.55, depth - 1, w2);
+        if (Math.random() < 0.45) {
+          const fl = amp * (0.8 + Math.random());
+          grow(mx, my, mz, mx + (Math.random() - 0.5) * fl * 2, my - fl * (0.2 + Math.random() * 0.9), mz + (Math.random() - 0.5) * fl * 2, amp * 0.5, depth - 2, w2 * 0.55);
+        }
+      };
+      grow(b.ax, b.ay, b.az, b.bx, b.by, b.bz, b.amp * fade, 4, th);
     }
     boltCoreMesh.count = bi; boltCoreMesh.instanceMatrix.needsUpdate = true;
     boltHaloMesh.count = bi; boltHaloMesh.instanceMatrix.needsUpdate = true;
@@ -1310,7 +1316,11 @@ export function makeRenderer(canvas, world0, opts = {}) {
         fire.push({ x: e.x, y: e.y + 0.4, z: e.z, s: 0.8, life: 0.1, age: 0 });
       } else if (e.type === "weldbreak") puff(e.x, e.y, e.z, e.ice ? 3 : 2, e.ice ? 0xe8f4fb : 0x8a8f96);
       else if (e.type === "zap") {
-        spawnBolt(e.x, e.y, e.z, e.x2, e.y2 + 0.6, e.z2, 0.26, 1.4);
+        // Amendment 3 (owner): the strike bolt lives ONE FULL SECOND and
+        // crackles (re-jagged every frame); hops ride shorter so the march
+        // still reads. Amplitude scales with span — long bolts fork wide.
+        const span = Math.hypot(e.x2 - e.x, e.z2 - e.z);
+        spawnBolt(e.x, e.y, e.z, e.x2, e.y2 + 0.6, e.z2, e.hop ? 0.6 : 1.0, Math.max(1.8, span * 0.3));
         fire.push({ x: e.x2, y: e.y2 + 0.8, z: e.z2, s: 0.9, life: 0.14, age: 0 });
         shake = Math.min(1.5, shake + 0.1);
       } else if (e.type === "pondzap") {
@@ -1909,11 +1919,11 @@ export function makeRenderer(canvas, world0, opts = {}) {
         // mk2.16: the coil breathes — and crawls with small arcs at a loose
         // regular interval, denser in the half-second before the trigger
         g.userData.glow.material.opacity = 0.45 + 0.3 * Math.sin(world.t * 6 + b.id) + (b.fireCd != null && b.fireCd < 0.6 ? 0.25 : 0);
-        if (Math.random() < dt * 2.2) {
+        if (Math.random() < dt * 3.5) {
           const cy = b.pos.y + g.userData.crownY;
           const a2 = Math.random() * Math.PI * 2, a3 = a2 + 1 + Math.random() * 3;
-          spawnBolt(b.pos.x + Math.cos(a2) * 0.55, cy + (Math.random() - 0.5) * 0.3, b.pos.z + Math.sin(a2) * 0.55,
-            b.pos.x + Math.cos(a3) * 0.55, cy + (Math.random() - 0.5) * 0.3, b.pos.z + Math.sin(a3) * 0.55, 0.12, 0.35);
+          spawnBolt(b.pos.x + Math.cos(a2) * 0.8, cy + (Math.random() - 0.5) * 0.3, b.pos.z + Math.sin(a2) * 0.8,
+            b.pos.x + Math.cos(a3) * 0.8, cy + (Math.random() - 0.5) * 0.3, b.pos.z + Math.sin(a3) * 0.8, 0.3, 0.35);
         }
       }
       g.scale.setScalar(hurt < 0.999 ? 0.94 + 0.06 * hurt : 1);

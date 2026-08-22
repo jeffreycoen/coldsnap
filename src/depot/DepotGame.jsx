@@ -1416,7 +1416,7 @@ export default function DepotGame({ onExit, resume = null }) {
         // P7 T10: watched points restore verbatim, live flags included.
         S.mines = (r.mines || []).map((m) => ({ x: m.x, z: m.z, team: m.t, kind: m.k, live: !!m.l }));
         S.fog = (r.fog || []).map((p) => ({ x: p.x, z: p.z, r: p.r, until: p.u }));
-        S.arcs = (r.arcs || []).map((a) => ({ nextAt: a.n, hits: a.h, dmg: a.d, fx: a.x, fy: a.y, fz: a.z, atk: a.k, tid: a.t, hitIds: (a.ids || []).slice(), waters: [] }));
+        S.arcs = (r.arcs || []).map((a) => ({ nextAt: a.n, hits: a.h, dmg: a.d, fx: a.x, fy: a.y, fz: a.z, atk: a.k, tid: a.t, hitIds: (a.ids || []).slice(), waters: [], gx: a.gx, gy: a.gy, gz: a.gz }));
         // Step 6, last: the ground remembers. Every mark where a man fell is
         // replayed through the same paint the kill handler uses, so the snow
         // comes back stained exactly as it was left. Scorch and tread
