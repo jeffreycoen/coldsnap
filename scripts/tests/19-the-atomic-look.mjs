@@ -21,6 +21,7 @@ import { troopKit, DAVY_HEX } from "../../src/render/troopkit.js";
   ok("look: the flash uniform exists", r.includes("uFlash"));
   ok("look: the boom branch knows the davy", r.includes('e.weapon === "davy"'));
   ok("look: the davy palette joins the man loop", r.includes("DAVY_LIVE"));
+  ok("look: the cloud is white — drift particles paint their own color", r.includes("SMOKE_WHITE"));
   const p = fs.readFileSync(new URL("../../src/render/portrait.js", import.meta.url), "utf8");
   ok("look: the portrait wears the orange too", p.includes("DAVY_HEX"));
 }

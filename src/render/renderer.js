@@ -943,11 +943,16 @@ export function makeRenderer(canvas, world0, opts = {}) {
   iceMesh.receiveShadow = false;
   const wreckTint = new THREE.Color(0x3c4046);
   const debrisMesh = pool(new THREE.BoxGeometry(0.18, 0.18, 0.18), toon(0x6a6f76), 200, false);
-  const smokeMat = new THREE.MeshBasicMaterial({ color: 0x2c3036, transparent: true, opacity: 0.55, depthWrite: false });
+  // mk2.13 (owner): THE WHITE CLOUD — the material goes white and every
+  // instance paints itself (instance color multiplies material color, the
+  // infantry pools' rule). Battle smoke keeps the old dark grey; the
+  // mushroom cloud's drift particles wear white. // provisional (F5)
+  const smokeMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, depthWrite: false });
+  const SMOKE_GREY = new THREE.Color(0x2c3036), SMOKE_WHITE = new THREE.Color(0xf2f4f6);
   // mk2.12: SMOKE_CAP — 128 carried every battle until the mushroom cloud
   // needed a sky's worth. One constant, every guard reads it.
   const SMOKE_CAP = 384;
-  const smokeMesh = pool(new THREE.PlaneGeometry(1, 1), smokeMat, SMOKE_CAP, false); smokeMesh.layers.set(1);
+  const smokeMesh = pool(new THREE.PlaneGeometry(1, 1), smokeMat, SMOKE_CAP, true); smokeMesh.layers.set(1);
   const fireMat = new THREE.MeshBasicMaterial({ color: 0xffb257, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
   const fireMesh = pool(new THREE.PlaneGeometry(1, 1), fireMat, 96, false); fireMesh.layers.set(1);
   // NORMAL blending: additive ADDED the hue to bright snow and every round
@@ -1086,13 +1091,13 @@ export function makeRenderer(canvas, world0, opts = {}) {
       if (smoke.length >= SMOKE_CAP) break;
       const t = i / 90;
       smoke.push({ x: x + (Math.random() - 0.5) * (2 + t * 3), y: y + 0.5 + t * 20, z: z + (Math.random() - 0.5) * (2 + t * 3),
-        vy: 4.5 + Math.random() * 2.5, s: 2.2 + Math.random() * 2 + t * 2, life: 6 + Math.random() * 3, age: 0, drift: true });
+        vy: 2.2 + Math.random() * 1.2, s: 2.2 + Math.random() * 2 + t * 2, life: 12 + Math.random() * 6, age: 0, drift: true }); // mk2.13 (owner): half the climb, twice the life // provisional (F5)
     }
     for (let i = 0; i < 140; i++) {                    // the cap
       if (smoke.length >= SMOKE_CAP) break;
       const a = Math.random() * Math.PI * 2, rr = Math.pow(Math.random(), 0.5) * 11;
       smoke.push({ x: x + Math.cos(a) * rr, y: y + 20 + Math.random() * 5 - rr * 0.18, z: z + Math.sin(a) * rr,
-        vy: 0.35 + Math.random() * 0.3, s: 3.5 + Math.random() * 3, life: 13 + Math.random() * 5, age: 0, drift: true });
+        vy: 0.35 + Math.random() * 0.3, s: 3.5 + Math.random() * 3, life: 26 + Math.random() * 10, age: 0, drift: true }); // mk2.13 (owner): the cap hangs twice as long // provisional (F5)
     }
     for (let i = 0; i < 24; i++) {                     // the base fire
       if (fire.length >= 96) break;
@@ -2239,9 +2244,10 @@ export function makeRenderer(canvas, world0, opts = {}) {
       const t = p.age / p.life, s = p.s * (0.6 + t * 1.8);
       dummy.position.set(p.x, p.y, p.z); dummy.quaternion.copy(camQ);
       dummy.scale.set(s, s, 1); dummy.updateMatrix();
-      if (si < SMOKE_CAP) smokeMesh.setMatrixAt(si++, dummy.matrix);
+      if (si < SMOKE_CAP) { smokeMesh.setColorAt(si, p.drift ? SMOKE_WHITE : SMOKE_GREY); smokeMesh.setMatrixAt(si++, dummy.matrix); }
     }
     smokeMesh.count = si; smokeMesh.instanceMatrix.needsUpdate = true;
+    if (smokeMesh.instanceColor) smokeMesh.instanceColor.needsUpdate = true;
     let fi = 0;
     for (let i = fire.length - 1; i >= 0; i--) {
       const p = fire[i];
