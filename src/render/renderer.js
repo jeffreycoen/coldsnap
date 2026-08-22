@@ -1067,41 +1067,56 @@ export function makeRenderer(canvas, world0, opts = {}) {
     if (bolts.length >= BOLT_CAP) bolts.shift();
     bolts.push({ ax, ay, az, bx, by, bz, life, age: 0, amp });
   }
-  const boltGeo = new THREE.BufferGeometry();
-  const boltPos = new Float32Array(BOLT_CAP * (BOLT_SEGS + 3) * 2 * 3); // main run + one fork per bolt
-  boltGeo.setAttribute("position", new THREE.BufferAttribute(boltPos, 3));
-  const boltCore = new THREE.LineSegments(boltGeo, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95 }));
-  const boltHalo = new THREE.LineSegments(boltGeo, new THREE.LineBasicMaterial({ color: 0x7fd0ff, transparent: true, opacity: 0.4 }));
-  boltHalo.scale.setScalar(1.001);
-  boltCore.frustumCulled = false; boltHalo.frustumCulled = false;
-  boltCore.layers.set(1); boltHalo.layers.set(1);
-  scene.add(boltCore); scene.add(boltHalo);
+  // Amendment 2: BOXES, NOT LINES. A GL line is one RT pixel and drowns in
+  // the dither/quantize post pass (the edge-contour comment above documents
+  // this exact failure); the tracer pools are the proven-visible idiom.
+  // White core inside a fat saturated-blue halo — the blue is what reads
+  // against snow. pool() adds to the scene and pre-fills instanceColor.
+  const BOLT_SEG_CAP = BOLT_CAP * (BOLT_SEGS + 2);
+  const boltCoreMesh = pool(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false }), BOLT_SEG_CAP, false);
+  const boltHaloMesh = pool(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0x2e9bff, transparent: true, opacity: 0.42, depthWrite: false }), BOLT_SEG_CAP, false);
+  boltCoreMesh.layers.set(1); boltHaloMesh.layers.set(1);
+  const boltFrom = new THREE.Vector3(), boltTo = new THREE.Vector3(), boltAxis = new THREE.Vector3(0, 0, 1), boltDir = new THREE.Vector3();
   function writeBolts(dt) {
-    let w = 0;
-    const seg = (x1, y1, z1, x2, y2, z2) => { boltPos[w++] = x1; boltPos[w++] = y1; boltPos[w++] = z1; boltPos[w++] = x2; boltPos[w++] = y2; boltPos[w++] = z2; };
+    let bi = 0;
+    const sMin = Math.max(1, 1.35 / zoom); // the tracer pass's screen floor
+    const put = (x1, y1, z1, x2, y2, z2, th) => {
+      if (bi >= BOLT_SEG_CAP) return;
+      boltFrom.set(x1, y1, z1); boltTo.set(x2, y2, z2);
+      const len = boltFrom.distanceTo(boltTo);
+      if (len < 1e-4) return;
+      boltDir.subVectors(boltTo, boltFrom).divideScalar(len);
+      dummy.position.set((x1 + x2) / 2, (y1 + y2) / 2, (z1 + z2) / 2);
+      dummy.quaternion.setFromUnitVectors(boltAxis, boltDir);
+      dummy.scale.set(th, th, len);
+      dummy.updateMatrix();
+      boltCoreMesh.setMatrixAt(bi, dummy.matrix);
+      dummy.scale.set(th * 2.4, th * 2.4, len);
+      dummy.updateMatrix();
+      boltHaloMesh.setMatrixAt(bi++, dummy.matrix);
+    };
     for (let i = bolts.length - 1; i >= 0; i--) {
       const b = bolts[i];
       b.age += dt;
       if (b.age >= b.life) { bolts.splice(i, 1); continue; }
       const fade = 1 - b.age / b.life;
-      // fresh jag every frame: midpoint displacement along the run
+      const th = 0.11 * sMin * (0.6 + 0.4 * fade) * (0.75 + Math.random() * 0.5);
       const pts = [{ x: b.ax, y: b.ay, z: b.az }];
       for (let k = 1; k < BOLT_SEGS; k++) {
         const t = k / BOLT_SEGS, j = b.amp * fade * Math.sin(Math.PI * t);
         pts.push({ x: b.ax + (b.bx - b.ax) * t + (Math.random() - 0.5) * j, y: b.ay + (b.by - b.ay) * t + (Math.random() - 0.5) * j * 0.6, z: b.az + (b.bz - b.az) * t + (Math.random() - 0.5) * j });
       }
       pts.push({ x: b.bx, y: b.by, z: b.bz });
-      for (let k = 0; k < pts.length - 1; k++) seg(pts[k].x, pts[k].y, pts[k].z, pts[k + 1].x, pts[k + 1].y, pts[k + 1].z);
-      // one fork off a random midpoint, downward-biased
+      for (let k = 0; k < pts.length - 1; k++) put(pts[k].x, pts[k].y, pts[k].z, pts[k + 1].x, pts[k + 1].y, pts[k + 1].z, th);
       const f = pts[1 + ((Math.random() * (BOLT_SEGS - 2)) | 0)];
       const fl = 0.5 + Math.random() * b.amp;
-      seg(f.x, f.y, f.z, f.x + (Math.random() - 0.5) * fl * 2, f.y - fl * (0.4 + Math.random() * 0.8), f.z + (Math.random() - 0.5) * fl * 2);
-      seg(f.x, f.y, f.z, f.x + (Math.random() - 0.5) * fl, f.y - fl * 0.3, f.z + (Math.random() - 0.5) * fl);
+      put(f.x, f.y, f.z, f.x + (Math.random() - 0.5) * fl * 2, f.y - fl * (0.4 + Math.random() * 0.8), f.z + (Math.random() - 0.5) * fl * 2, th * 0.7);
+      put(f.x, f.y, f.z, f.x + (Math.random() - 0.5) * fl, f.y - fl * 0.3, f.z + (Math.random() - 0.5) * fl, th * 0.7);
     }
-    for (let k = w; k < boltPos.length; k++) boltPos[k] = 0;
-    boltGeo.attributes.position.needsUpdate = true;
-    boltCore.material.opacity = bolts.length ? 0.75 + Math.random() * 0.25 : 0;
-    boltHalo.material.opacity = bolts.length ? 0.25 + Math.random() * 0.2 : 0;
+    boltCoreMesh.count = bi; boltCoreMesh.instanceMatrix.needsUpdate = true;
+    boltHaloMesh.count = bi; boltHaloMesh.instanceMatrix.needsUpdate = true;
+    boltCoreMesh.material.opacity = 0.55 + Math.random() * 0.4;
+    boltHaloMesh.material.opacity = 0.3 + Math.random() * 0.22;
   }
   function spawnBoom(x, y, z, r) {
     for (let i = 0; i < 12; i++) {
