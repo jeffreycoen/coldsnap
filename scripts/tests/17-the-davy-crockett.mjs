@@ -1,5 +1,5 @@
 // COLDSNAP suite era 17 — THE DAVY CROCKETT (mk2.08). Two men, one atomic
-// round: the blast hurts both sides, the crew dies at the trigger, the
+// round: the blast hurts both sides, the crew lives to run and reloads, the
 // crater reaches the deep floor, the kill law pays nobody for the crew.
 // Fixture seeds: 7 (the firing world), 9 (the blast world). No seed is special.
 import { ok } from "./harness.mjs";
@@ -29,7 +29,7 @@ import { spawnSquadMembers, stepDavyShot, scoreKill, makeRunState } from "../../
   ok("davy: the crater floor is deep", field.heightAt(0, 0) < -6);
 }
 {
-  // the crew fires once under attack and dies at the trigger (seed 7)
+  // the crew fires under attack, lives at the trigger, reloads 30s (seed 7)
   const field = makeField(41, 2.0, 7);
   const world = makeWorld({ field, seed: 7 });
   world.depotCombat = true; world._tdStruct = true;
@@ -39,10 +39,17 @@ import { spawnSquadMembers, stepDavyShot, scoreKill, makeRunState } from "../../
   const tgt = addBody(world, { kind: "unit", team: 2, mass: 80, hx: 0.28, hy: 1.0, hz: 0.28, x: 0, y: 1.1, z: 15, hp: 58 });
   void tgt;
   const before = world.projectiles.length;
-  for (let i = 0; i < 300 && !sq._davyFired; i++) stepDavyShot(world, sq, 1 / 120, null);
-  ok("davy: one round leaves the tube", sq._davyFired === true && world.projectiles.length === before + 1);
+  for (let i = 0; i < 300 && world.projectiles.length === before; i++) { stepDavyShot(world, sq, 1 / 120, null); world.t += 1 / 120; }
+  ok("davy: one round leaves the tube", world.projectiles.length === before + 1);
   const crew = sq.memberIds.map((id) => world.byId.get(id));
-  ok("davy: the crew dies with the shot", crew.every((u) => u && !u.alive));
+  ok("davy: the crew lives at the trigger", crew.every((u) => u && u.alive));
+  ok("davy: the reload clock is stamped", sq._davyReadyAt > world.t + 25);
+  const mid = world.projectiles.length;
+  for (let i = 0; i < 240; i++) { stepDavyShot(world, sq, 1 / 120, null); world.t += 1 / 120; }
+  ok("davy: no second round during the reload", world.projectiles.length === mid);
+  world.t = sq._davyReadyAt + 0.01;
+  for (let i = 0; i < 300 && world.projectiles.length === mid; i++) { stepDavyShot(world, sq, 1 / 120, null); world.t += 1 / 120; }
+  ok("davy: the reloaded crew fires again", world.projectiles.length === mid + 1);
   // the crew's death pays and scores nobody (friendly fire under the kill law)
   const S = makeRunState();
   const paid = scoreKill(S, { type: "kill", attacker: "player", team: 1, kind: "unit", utype: "davy" }, null);

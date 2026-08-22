@@ -3,7 +3,7 @@
 // imports the single-file version got from its own top-of-file scope.
 import * as THREE from "three";
 import { POOL, INFANTRY, BAYER4, snapCam, ICE_CREEP, ICE_CREEP_T } from "../engine/core.js";
-import { troopKit, RIFLE_PREROT, MEDIC_HEX } from "./troopkit.js";
+import { troopKit, RIFLE_PREROT, MEDIC_HEX, DAVY_HEX } from "./troopkit.js";
 
 // ==================================================================== render
 const PAL = { bisonBlue: 0x33619c, scoutRed: 0x8a4a44, snow: 0xe9edf2, uiRed: 0xd8433a }; // player is blue steel; the enemy wears the red now
@@ -424,7 +424,7 @@ function makeSplat(town, span) {
 const POST_VERT = "varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }";
 const POST_FRAG = `
 uniform sampler2D tCol; uniform sampler2D tNor; uniform sampler2D tDep; uniform sampler2D tBayer;
-uniform vec2 uRes; uniform vec2 uShift; uniform float uOutline; uniform float uDither; uniform float uPalette; uniform float uLevels;
+uniform vec2 uRes; uniform vec2 uShift; uniform float uOutline; uniform float uDither; uniform float uPalette; uniform float uLevels; uniform float uFlash;
 uniform float uGrade; uniform float uT;
 varying vec2 vUv;
 void main(){
@@ -458,6 +458,8 @@ void main(){
              + vec3(0.08, 0.03, 0.14) * (0.5 + 0.5 * sin(vUv.x * 4.6 - uT * 0.12 + 1.7));
     c += aur * band * g * 0.55;
   }
+  // mk2.12: THE ATOMIC FLASH — the whole frame washes white and decays.
+  c = mix(c, vec3(1.0), uFlash);
   float bay = texture2D(tBayer, fract(uv * uRes / 4.0)).r - 0.5;
   vec3 q = floor(c * uLevels + bay * uDither + 0.5) / uLevels;
   c = mix(c, q, step(0.5, uPalette));
@@ -805,6 +807,11 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const strikeRing = new THREE.Mesh(new THREE.RingGeometry(1.6, 2.1, 24), new THREE.MeshBasicMaterial({ color: 0xffa24a, transparent: true, opacity: 0, depthWrite: false }));
   strikeRing.rotation.x = -Math.PI / 2; strikeRing.layers.set(1); strikeRing.visible = false;
   scene.add(strikeRing);
+  // mk2.12: the shockwave ring — born at the davy's burst, out past the
+  // blast radius in under a second, gone.
+  const davyRing = new THREE.Mesh(new THREE.RingGeometry(0.92, 1.0, 64), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+  davyRing.rotation.x = -Math.PI / 2; davyRing.layers.set(1); davyRing.visible = false;
+  scene.add(davyRing);
   // trial focus marker: pulsing gold ring at the current objective
   let treadAcc = 0;
   // vehicles (individual groups by body id)
@@ -875,6 +882,10 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // (skin inherits), and a winter-kill grey of the same dress for the dead.
   const MED_LIVE = mkPal({ ...INFANTRY.pal.con, ...MEDIC_HEX });
   const MED_DEAD = mkPal({ ...INFANTRY.dead.con, dom: 0x8f9498, sec: 0x7d8286, acc: 0x6e3531, gun: 0x101214 });
+  // mk2.12: the atomic crew's orange — DAVY_HEX over the con palette, and a
+  // scorched grey-orange for the dead.
+  const DAVY_LIVE = mkPal({ ...INFANTRY.pal.con, ...DAVY_HEX });
+  const DAVY_DEAD = mkPal({ ...INFANTRY.dead.con, dom: 0x7a4a20, sec: 0x5c3816, acc: 0x8a7430, gun: 0x101214 });
   // DIVERGENCE (guarded, mk0.99): HIT FEEDBACK palette — a struck man flashes
   // toward this red for 0.18s (see hurtK below).
   const HIT_C = new THREE.Color(0xff5230), _hitC = new THREE.Color();
@@ -933,7 +944,10 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const wreckTint = new THREE.Color(0x3c4046);
   const debrisMesh = pool(new THREE.BoxGeometry(0.18, 0.18, 0.18), toon(0x6a6f76), 200, false);
   const smokeMat = new THREE.MeshBasicMaterial({ color: 0x2c3036, transparent: true, opacity: 0.55, depthWrite: false });
-  const smokeMesh = pool(new THREE.PlaneGeometry(1, 1), smokeMat, 128, false); smokeMesh.layers.set(1);
+  // mk2.12: SMOKE_CAP — 128 carried every battle until the mushroom cloud
+  // needed a sky's worth. One constant, every guard reads it.
+  const SMOKE_CAP = 384;
+  const smokeMesh = pool(new THREE.PlaneGeometry(1, 1), smokeMat, SMOKE_CAP, false); smokeMesh.layers.set(1);
   const fireMat = new THREE.MeshBasicMaterial({ color: 0xffb257, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
   const fireMesh = pool(new THREE.PlaneGeometry(1, 1), fireMat, 96, false); fireMesh.layers.set(1);
   // NORMAL blending: additive ADDED the hue to bright snow and every round
@@ -1031,7 +1045,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
       debris.push({ x, y: y + 0.3, z, vx: Math.cos(a) * (2 + Math.random() * 5), vy: up, vz: Math.sin(a) * (2 + Math.random() * 5), rot: Math.random() * 6, spin: (Math.random() - 0.5) * 10, life: 1.3 + Math.random() * 0.5 });
     }
     for (let i = 0; i < 9; i++) {
-      if (smoke.length >= 128) break;
+      if (smoke.length >= SMOKE_CAP) break;
       smoke.push({ x: x + (Math.random() - 0.5) * r * 0.5, y: y + 0.4, z: z + (Math.random() - 0.5) * r * 0.5, vy: 1.6 + Math.random() * 1.4, s: 0.8 + Math.random() * 0.9, life: 1.5 + Math.random() * 0.7, age: 0 });
     }
     for (let i = 0; i < 6; i++) {
@@ -1052,7 +1066,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
       debris.push({ x, y: y + 0.3, z, vx: Math.cos(a) * (3 + Math.random() * 10), vy: up, vz: Math.sin(a) * (3 + Math.random() * 10), rot: Math.random() * 6, spin: (Math.random() - 0.5) * 16, life: 1.8 + Math.random() * 1.2 });
     }
     for (let i = 0; i < 26; i++) {                      // the column: stacked, rising, slow
-      if (smoke.length >= 128) break;
+      if (smoke.length >= SMOKE_CAP) break;
       const t = i / 26;
       smoke.push({ x: x + (Math.random() - 0.5) * r * (0.5 + t), y: y + 0.4 + t * r * 1.6, z: z + (Math.random() - 0.5) * r * (0.5 + t), vy: 2.6 + Math.random() * 2.2, s: 1.4 + Math.random() * 1.6 + t * 1.2, life: 2.4 + Math.random() * 1.4, age: 0 });
     }
@@ -1061,9 +1075,34 @@ export function makeRenderer(canvas, world0, opts = {}) {
       fire.push({ x: x + (Math.random() - 0.5) * r * 0.9, y: y + 0.3 + Math.random() * 1.6, z: z + (Math.random() - 0.5) * r * 0.9, s: 1.4 + Math.random() * r * 0.8, life: 0.5, age: 0 });
     }
   }
+  // mk2.12 (owner): THE ATOMIC BLAST — the demolition column's idiom driven
+  // to the sky. A stem climbs hard from the crater; the cap spawns high,
+  // spreads wide, hangs (long life), and the smoke step below drifts every
+  // `drift` particle with the wind until it thins to nothing. Fire floods
+  // the base. Dials are the owner's, live. // provisional (F5)
+  function spawnNuke(x, y, z) {
+    spawnDemo(x, y, z, 8);
+    for (let i = 0; i < 90; i++) {                     // the stem
+      if (smoke.length >= SMOKE_CAP) break;
+      const t = i / 90;
+      smoke.push({ x: x + (Math.random() - 0.5) * (2 + t * 3), y: y + 0.5 + t * 20, z: z + (Math.random() - 0.5) * (2 + t * 3),
+        vy: 4.5 + Math.random() * 2.5, s: 2.2 + Math.random() * 2 + t * 2, life: 6 + Math.random() * 3, age: 0, drift: true });
+    }
+    for (let i = 0; i < 140; i++) {                    // the cap
+      if (smoke.length >= SMOKE_CAP) break;
+      const a = Math.random() * Math.PI * 2, rr = Math.pow(Math.random(), 0.5) * 11;
+      smoke.push({ x: x + Math.cos(a) * rr, y: y + 20 + Math.random() * 5 - rr * 0.18, z: z + Math.sin(a) * rr,
+        vy: 0.35 + Math.random() * 0.3, s: 3.5 + Math.random() * 3, life: 13 + Math.random() * 5, age: 0, drift: true });
+    }
+    for (let i = 0; i < 24; i++) {                     // the base fire
+      if (fire.length >= 96) break;
+      fire.push({ x: x + (Math.random() - 0.5) * 6, y: y + 0.4 + Math.random() * 3, z: z + (Math.random() - 0.5) * 6,
+        s: 2 + Math.random() * 3, life: 0.8, age: 0 });
+    }
+  }
   function puff(x, y, z, n, col) {
     for (let i = 0; i < n; i++) {
-      if (smoke.length >= 128) break;
+      if (smoke.length >= SMOKE_CAP) break;
       smoke.push({ x: x + (Math.random() - 0.5) * 0.8, y, z: z + (Math.random() - 0.5) * 0.8, vy: 1.2, s: 0.5 + Math.random() * 0.5, life: 0.9, age: 0, col });
     }
   }
@@ -1079,7 +1118,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
       tCol: { value: null }, tNor: { value: null }, tDep: { value: null }, tBayer: { value: bayerTex },
       uRes: { value: new THREE.Vector2(320, 200) }, uShift: { value: new THREE.Vector2(0, 0) },
       uOutline: { value: 1 }, uDither: { value: 1 }, uPalette: { value: 1 }, uLevels: { value: 7 },
-      uGrade: { value: 0 }, uT: { value: 0 },
+      uGrade: { value: 0 }, uT: { value: 0 }, uFlash: { value: 0 },
     },
     depthTest: false, depthWrite: false,
   });
@@ -1150,11 +1189,21 @@ export function makeRenderer(canvas, world0, opts = {}) {
   let fogDbgTotal = 0, fogDbgVisible = 0;
   function getFogDebug() { return { total: fogDbgTotal, visible: fogDbgVisible }; }
   let shake = 0;
+  let flashV = 0, davyFx = null;
   function consume(events) {
     for (const e of events) {
       if (e.type === "boom") {
-        spawnBoom(e.x, e.y, e.z, e.r);
-        shake = Math.min(1.5, shake + 0.28 + e.r * 0.1);
+        // mk2.12: the davy's burst is its own event — flash, ring, cloud,
+        // and the shake pinned at its ceiling.
+        if (e.weapon === "davy") {
+          spawnNuke(e.x, e.y, e.z);
+          flashV = 1.25;                    // a beat of pure white before the decay shows
+          shake = 1.5;
+          davyFx = { x: e.x, z: e.z, t0: world.t };
+        } else {
+          spawnBoom(e.x, e.y, e.z, e.r);
+          shake = Math.min(1.5, shake + 0.28 + e.r * 0.1);
+        }
       } else if (e.type === "demo") {
         // SIEGE FIX (mk0.21) — DEPOT's demolition charge (squads.js/units.js
         // push this beside core's own boom; core.js is frozen and its boom
@@ -1977,7 +2026,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
         if (pools[pi].setColorAt) {
           if (fogSil) pools[pi].setColorAt(idx, SIL_C);
           else {
-            const pal = b.dress === "android" ? (b.alive ? AND_LIVE : AND_DEAD) : kitPal === "medic" ? (b.alive ? MED_LIVE : MED_DEAD) : (b.alive ? INF_LIVE : INF_DEAD)[kitPal];
+            const pal = b.dress === "android" ? (b.alive ? AND_LIVE : AND_DEAD) : kitPal === "medic" ? (b.alive ? MED_LIVE : MED_DEAD) : kitPal === "davy" ? (b.alive ? DAVY_LIVE : DAVY_DEAD) : (b.alive ? INF_LIVE : INF_DEAD)[kitPal];
             if (hurtK > 0) { _hitC.copy(pal[propRole || p.role]).lerp(HIT_C, 0.7 * hurtK); pools[pi].setColorAt(idx, _hitC); }
             else pools[pi].setColorAt(idx, pal[propRole || p.role]);
           }
@@ -2184,11 +2233,13 @@ export function makeRenderer(canvas, world0, opts = {}) {
     for (let i = smoke.length - 1; i >= 0; i--) {
       const p = smoke[i];
       p.age += dt; p.y += p.vy * dt;
+      // mk2.12: cloud particles ride the wind and thin downwind.
+      if (p.drift && world.wind) { p.x += world.wind.x * 0.35 * dt; p.z += world.wind.z * 0.35 * dt; }
       if (p.age >= p.life) { smoke.splice(i, 1); continue; }
       const t = p.age / p.life, s = p.s * (0.6 + t * 1.8);
       dummy.position.set(p.x, p.y, p.z); dummy.quaternion.copy(camQ);
       dummy.scale.set(s, s, 1); dummy.updateMatrix();
-      if (si < 128) smokeMesh.setMatrixAt(si++, dummy.matrix);
+      if (si < SMOKE_CAP) smokeMesh.setMatrixAt(si++, dummy.matrix);
     }
     smokeMesh.count = si; smokeMesh.instanceMatrix.needsUpdate = true;
     let fi = 0;
@@ -2355,6 +2406,18 @@ export function makeRenderer(canvas, world0, opts = {}) {
       strikeRing.scale.set(sc, sc, 1);
       strikeRing.material.opacity = 0.55 + 0.4 * (1 - ph);
     } else strikeRing.visible = false;
+    // mk2.12: the davy ring travels
+    if (davyFx) {
+      const age = world.t - davyFx.t0;
+      if (age > 1.0) { davyFx = null; davyRing.visible = false; }
+      else {
+        const rr = 2 + 28 * age;
+        davyRing.visible = true;
+        davyRing.position.set(davyFx.x, F.heightAt(davyFx.x, davyFx.z) + 0.25, davyFx.z);
+        davyRing.scale.set(rr, rr, 1);
+        davyRing.material.opacity = 0.9 * (1 - age);
+      }
+    }
     // camera: snap position to view texels; residual + shake go to screen shift
     shake = Math.max(0, shake - dt * 4.2);
     // yaw tween toward the commanded 90° step
@@ -2385,6 +2448,9 @@ export function makeRenderer(canvas, world0, opts = {}) {
       postMat.uniforms.uShift.value.set(-sr.errX + shx, -sr.errY + shy);
     }
     postMat.uniforms.uT.value = world.t; // aurora clock (inert at uGrade 0)
+    // mk2.12: the flash holds a beat, then dies in about half a second.
+    flashV = Math.max(0, flashV - dt * 2.2);
+    postMat.uniforms.uFlash.value = Math.min(1, flashV);
     // sun rig follows focus
     sun.position.set(focus.x + 38, focus.y + 52, focus.z + 22);
     sun.target.position.set(focus.x, focus.y, focus.z);

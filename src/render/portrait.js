@@ -6,7 +6,7 @@
 // blank corner, never a dead card. Pure render layer — no sim, no rng.
 import * as THREE from "three";
 import { INFANTRY } from "../engine/core.js";
-import { troopKit, MEDIC_HEX } from "./troopkit.js";
+import { troopKit, MEDIC_HEX, DAVY_HEX } from "./troopkit.js";
 import { toon, buildBison, buildApc, buildTowerMesh } from "./renderer.js";
 
 const SIZE = 128;
@@ -43,7 +43,7 @@ export function buildPortraitMan(utype) {
   const b = { team: 1, utype, alive: true };
   const KIT = troopKit(b, true, false);
   const spec = INFANTRY.con;
-  const pal = KIT.pal === "medic" ? { ...INFANTRY.pal.con, ...MEDIC_HEX } : INFANTRY.pal[KIT.pal];
+  const pal = KIT.pal === "medic" ? { ...INFANTRY.pal.con, ...MEDIC_HEX } : KIT.pal === "davy" ? { ...INFANTRY.pal.con, ...DAVY_HEX } : INFANTRY.pal[KIT.pal];
   const g = new THREE.Group();
   const riflePre = spec.find((p) => p.key === "rifle").preRot;
   for (const p of spec) {

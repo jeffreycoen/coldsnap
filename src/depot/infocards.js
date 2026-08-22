@@ -36,7 +36,7 @@ export const CARDS = {
   sq_grenadiers: sq("grenadiers", "Four throwers. Short live grenades over the near wall.", ORDERS_ARMED),
   sq_medics:    sq("medics", "Two medics in white, the red cross front and back, a black bag in hand. They walk to the wounded and kneel to treat — no rifle, no fight.", ["DEFEND", "MOVE", "PATROL", "TREAT THE WOUNDED", "TAKE CONTROL"], null),
   sq_mechanics: sq("mechanics", "Two mechanics with a toolbox. They kneel at broken machines and masonry — hulls, towers, walls, bags — and every point of repair is paid in scrap.", ["DEFEND", "MOVE", "PATROL", "REPAIR — PAID IN SCRAP", "TAKE CONTROL"], null),
-  sq_davy: sq("davy", "Two men in orange and the smallest atomic weapon ever fielded. One shot per hire; the crew dies with it. The blast spares nobody.", ["DEFEND", "MOVE", "ATTACK (THE ONE SHOT)", "TAKE CONTROL"], 200),
+  sq_davy: sq("davy", "Two men in orange and the smallest atomic weapon ever fielded. The blast spares nobody — outrun it or die with it. Thirty seconds to reload.", ["DEFEND", "MOVE", "ATTACK", "TAKE CONTROL"], 200),
   hero_bison: { label: "BISON", role: "The Bison. Main gun, coax, and tracks that brake for your own. Dear, and dearer to replace.",
     n: null, hp: BISON.hp, dmg: null, range: null, speed: null, skills: ORDERS_HULL },
   hero_apc:   { label: "APC", role: "The transport. Four sealed seats — riders see nothing, fire nothing, and die with the hull.",

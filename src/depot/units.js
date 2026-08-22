@@ -446,11 +446,12 @@ function stepSapper(world, u, dt) {
 }
 
 // mk2.08 (owner): ITS ATOMIC CREW — the sapper's shape, the davy's round.
-// One shot when a seen player target or structure is inside range, then the
-// crew dies at the trigger. u._davyFired latches per man; the pair fires as
-// one (the first man to acquire fires for both — his partner dies with him).
+// Fires when a seen player target or structure is inside range. mk2.12
+// (owner): no fatal trigger — the blast alone rules; the pair reloads as
+// one, DAVY_FIRE.reloadS seconds (_davyReadyAt per man, the generic body
+// sweep).
 function stepDavy(world, u, dt, T, toUV) {
-  if (u._davyFired) return true;
+  if ((u._davyReadyAt || 0) > world.t) return false;
   u.scanCd = (u.scanCd || 0) - dt;
   if (u.scanCd > 0) return false;
   u.scanCd = 0.25;
@@ -478,8 +479,7 @@ function stepDavy(world, u, dt, T, toUV) {
   for (const o of world.bodies) {
     if (o.kind !== "unit" || !o.alive || o.team !== 2 || o.tag !== "davy") continue;
     if (o !== u && Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) > 6) continue;
-    o._davyFired = true;
-    applyDamage(world, o, 1e9, { attacker: "enemy" });
+    o._davyReadyAt = world.t + DAVY_FIRE.reloadS;
   }
   return true;
 }

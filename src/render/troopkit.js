@@ -84,6 +84,14 @@ const MEDIC_BAG = { off: [0.17, 0.02, 0.0], s: [1.4, 1.8, 1.1], role: "gun" };
 const CROSS_V = { off: [0, 0.32, 0], s: [0.7, 2.6, 2.9], role: "acc" };
 const CROSS_H = { off: [0, 0.32, 0], s: [2.2, 0.7, 2.9], role: "acc" };
 const TOOLBOX = { off: [0.17, 0.0, 0.05], s: [1.6, 1.2, 1.0], role: "gun" }; // P7.2 T7: the mechanic's black box — side coats stay, the tool is the identity
+// mk2.12 (owner): THE ATOMIC CREW'S DRESS — orange jumpsuits, the radiation
+// mark. The mark is a yellow chest placard with a black center (box props
+// cannot draw lobes; the owner's eye rules the placard live). The tube is
+// the mortar's carried-prop idiom, fatter. // provisional (F5), every hex
+export const DAVY_HEX = { dom: 0xe8791e, sec: 0xb45510, acc: 0xf5d020, gun: 0x141414 };
+const DAVY_TUBE = { off: [0.26, 0.28, 0.06], s: [2.2, 12, 2.2], tilt: [0, 0.42] };
+const DAVY_PLATE = { off: [0, 0.28, 0.17], s: [1.8, 1.8, 0.5], role: "acc" };
+const DAVY_MARK = { off: [0, 0.28, 0.21], s: [0.9, 0.9, 0.3], role: "gun" };
 // The medic palette, plain hexes, one home — the renderer's mkPal and the
 // portrait's material pick both consume it (spread over the con palette, so
 // skin and any unnamed role inherit). // provisional (F5) — the owner's eye
@@ -112,6 +120,7 @@ const KIT_MORTAR = { rifle: 0, props: P(MORTAR_TUBE) };
 const KIT_MG = { rifle: 0.8, props: P(MG_RECEIVER, MG_LEG_L, MG_LEG_R) };
 const KIT_MEDIC = { rifle: 0, props: P(MEDIC_BAG, CROSS_V, CROSS_H) };
 const KIT_MECHANIC = { rifle: 0, props: P(TOOLBOX) };
+const KIT_DAVY = { rifle: 0, props: P(DAVY_TUBE, DAVY_PLATE, DAVY_MARK) };
 
 // ---- bulk -----------------------------------------------------------
 // mk2.02: the heavy and fast frames died with their troops — one 2m frame,
@@ -136,7 +145,9 @@ export function troopKit(b, depot, sil = false) {
   // COAT = SIDE (DEPOT only): the player's infantry keep the warm rust coat,
   // the enemy's wear the cold slate one. The enemy grenadier already wore
   // slate, so he is unchanged; androids ignore both and keep their silver.
-  const pal = (b.utype === "medics" || b.tag === "medic") ? "medic" : gren || b.team === 2 ? "gren" : "con"; // P7.2 T6 (owner): the cross outranks the coat — both sides' medics wear the white
+  const pal = (b.utype === "medics" || b.tag === "medic") ? "medic"
+    : (b.utype === "davy" || b.tag === "davy") ? "davy" // mk2.12: the orange outranks the coat — both sides' atomic crews
+    : gren || b.team === 2 ? "gren" : "con"; // P7.2 T6 (owner): the cross outranks the coat — both sides' medics wear the white
   const bulk = BULK[b.tag] || null;
   let bw = bulk ? bulk[0] : 1, bh = bulk ? bulk[1] : 1;
   // P7.2 T6/T7: the kneel — the medic and the mechanic drop low while
@@ -154,6 +165,7 @@ export function troopKit(b, depot, sil = false) {
       : b.utype === "mortars" ? KIT_MORTAR
       : b.utype === "medics" ? KIT_MEDIC
       : b.utype === "mechanics" ? KIT_MECHANIC
+      : b.utype === "davy" ? KIT_DAVY
       : KIT_PLAIN;                                            // rifles
   } else {
     // enemy waves (tag)
@@ -161,6 +173,7 @@ export function troopKit(b, depot, sil = false) {
       : b.tag === "sapper" ? KIT_SAPPER
       : b.tag === "medic" ? KIT_MEDIC
       : b.tag === "mechanic" ? KIT_MECHANIC
+      : b.tag === "davy" ? KIT_DAVY
       : KIT_PLAIN;                                            // conscript, rocket, mortar
   }
   return { pal, bw, bh, rifle: k.rifle, props: k.props };

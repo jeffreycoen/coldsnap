@@ -662,15 +662,15 @@ export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })
   }
 }
 
-// mk2.08 (owner): THE DAVY CROCKETT'S ONE SHOT. Under the ATTACK order only
+// mk2.08 (owner): THE DAVY CROCKETT'S SHOT. Under the ATTACK order only
 // (the sapper's rule), the crew's lead man fires the atomic round at the
 // nearest target its side SEES — man, machine, or hostile structure — inside
-// the elevation-scaled range, then the whole crew dies at the trigger.
-// One round per hire; _davyFired latches on the squad and rides the save
-// (a plain boolean, the generic squad serializer). Draws: exactly the
-// round's own 2 (applyScatter), nothing else.
+// the elevation-scaled range. mk2.12 (owner): THE ESCAPE AND THE RELOAD —
+// the trigger no longer kills; the blast alone rules, and the crew reloads
+// DAVY_FIRE.reloadS seconds (_davyReadyAt, a world-time stamp riding the
+// generic squad serializer). Draws: exactly the round's own 2 (applyScatter).
 export function stepDavyShot(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })) {
-  if (squad.type !== "davy" || squad._davyFired) return;
+  if (squad.type !== "davy" || (squad._davyReadyAt || 0) > world.t) return;
   if (squad.order !== "attack") return;
   squad._davyScanCd = (squad._davyScanCd || 0) - dt;
   if (squad._davyScanCd > 0) return;
@@ -699,15 +699,11 @@ export function stepDavyShot(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z
     bd = d2; best = s;
   }
   if (!best) return;
-  squad._davyFired = true;
+  squad._davyReadyAt = world.t + spec.reloadS;
   const attacker = squad.team === 1 ? "player" : "enemy";
   shooterFire(world, shooter, muzzle, best.kind !== "unit" && best.kind !== "vehicle" && best.kind !== "mech" ? aimTop(world, best) : best, spec, { high: true, attacker, hitStruct: true, owner: shooter.id });
-  // THE TRIGGER IS FATAL (owner): the crew dies with the shot, explicitly —
-  // the blast's falloff must never be trusted to do it.
-  for (const id of squad.memberIds) {
-    const u = world.byId.get(id);
-    if (u && u.alive) applyDamage(world, u, 1e9, { attacker });
-  }
+  // mk2.12 (owner): THE ESCAPE — no fatal trigger. Outrun the blast or die
+  // inside it with everyone else.
 }
 
 // POSSESSION T7 (mk0.97): THE SHARPENED HAND. Under the owner's control a
@@ -776,25 +772,21 @@ export function mateBlocks(world, squad, shooter, muzzle, aimPos) {
 export function possessedVolley(world, squad, aim, T, toUV = (x, z) => ({ u: x, v: z })) {
   // mk2.11 (owner): THE CREW FIRES UNDER THE STICK like every unit — the
   // one atomic round at the reticle, sight-gated at the aim like every
-  // possessed shot, the crew dead at the trigger. The _davyFired latch is
-  // shared with the ATTACK path (stepDavyShot): one round per hire,
-  // whichever path fires first spends it.
+  // possessed shot. The _davyReadyAt reload clock is shared with the
+  // ATTACK path (stepDavyShot): one reload clock, whichever path fires
+  // starts it. mk2.12: the trigger no longer kills.
   if (squad.type === "davy") {
-    if (squad._davyFired) return 0;
+    if ((squad._davyReadyAt || 0) > world.t) return 0;
     const cD = toUV(aim.x, aim.z);
     if (!fieldReaches(T, cD.u, cD.v, squad.team)) return 0;
     const shooter = squad.memberIds.map((id) => world.byId.get(id)).find((u) => u && u.alive);
     if (!shooter) return 0;
-    squad._davyFired = true;
+    squad._davyReadyAt = world.t + DAVY_FIRE.reloadS;
     const attacker = squad.team === 1 ? "player" : "enemy";
     const muzzle = { x: shooter.pos.x, y: shooter.pos.y + 0.5, z: shooter.pos.z };
     const sy = aim.y != null ? aim.y : world.field.heightAt(aim.x, aim.z);
     const tgt = { pos: { x: aim.x, y: sy, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: sy - world.field.heightAt(aim.x, aim.z) };
     shooterFire(world, shooter, muzzle, tgt, DAVY_FIRE, { high: true, attacker, hitStruct: true, owner: shooter.id });
-    for (const id of squad.memberIds) {
-      const u = world.byId.get(id);
-      if (u && u.alive) applyDamage(world, u, 1e9, { attacker });
-    }
     return 1;
   }
   const spec = INFANTRY_ARMS[squad.type];

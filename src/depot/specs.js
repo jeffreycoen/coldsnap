@@ -300,6 +300,6 @@ export const GRENADE = { v: 11, fuse: 2.0, r: 2.0, dmg: 16, kv: 5, crater: 0.3, 
 // mk2.08 (owner): THE DAVY CROCKETT'S ROUND — one table, both sides. The
 // biggest blast in the game; crater 10 carves the ruled bowl (10 deep,
 // shallow rise to the blast's edge — the engine's standard carve shape).
-// The crew dies at the trigger (state.js stepDavyShot / units.js stepDavy),
-// never by this table. // provisional (F5)
-export const DAVY_FIRE = { projSpeed: 28, kind: "shell", weapon: "davy", dmg: 200, blastR: 25, kv: 40, crater: 10, range: 20, acc: 0.005, occl: "lofted", windF: 0.04, windComp: 0.6 };
+// mk2.12 (owner): the trigger no longer kills — the blast alone rules, and
+// a surviving crew reloads reloadS seconds, both sides. // provisional (F5)
+export const DAVY_FIRE = { projSpeed: 28, kind: "shell", weapon: "davy", dmg: 200, blastR: 25, kv: 40, crater: 10, range: 20, acc: 0.005, occl: "lofted", windF: 0.04, windComp: 0.6, reloadS: 30 };

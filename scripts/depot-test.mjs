@@ -32,5 +32,6 @@ await import("./tests/15-the-open-siege.mjs");
 await import("./tests/16-the-deep-floor.mjs");
 await import("./tests/17-the-davy-crockett.mjs");
 await import("./tests/18-the-green-fog.mjs");
+await import("./tests/19-the-atomic-look.mjs");
 await import("./tests/20-the-possessed-trigger.mjs");
 finish();
