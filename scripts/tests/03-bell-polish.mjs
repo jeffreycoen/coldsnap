@@ -44,9 +44,9 @@ import fs from "node:fs";
       SQUAD_SPECS.sniper.cost === 68 && SQUAD_SPECS.rifles.cost === 30 && SQUAD_SPECS.mg.cost === 38
       && SQUAD_SPECS.sappers.cost === 38 && SQUAD_SPECS.mortars.cost === 45,
       JSON.stringify(Object.fromEntries(Object.entries(SQUAD_SPECS).map(([k, v]) => [k, v.cost]))));
-    ok("mk0.50/3: tower prices raised (mg 23, gun 38, mortar 53, rocket 75, frost 30)",
+    ok("mk0.50/3: tower prices raised (mg 23, gun 38, mortar 53, rocket 75)",
       TOWER_SPECS.mg.cost === 23 && TOWER_SPECS.gun.cost === 38 && TOWER_SPECS.mortar.cost === 53
-      && TOWER_SPECS.rocket.cost === 75 && TOWER_SPECS.frost.cost === 30,
+      && TOWER_SPECS.rocket.cost === 75,
       JSON.stringify(Object.fromEntries(Object.entries(TOWER_SPECS).map(([k, v]) => [k, v.cost]))));
     ok("mk0.50/3: WALL_COST 8 and SANDBAG_COST 5", WALL_COST === 8 && SANDBAG_COST === 5, `${WALL_COST}/${SANDBAG_COST}`);
     ok("mk0.50/3: every raised price is an integer",

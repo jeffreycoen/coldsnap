@@ -20,7 +20,7 @@ export const WALL_CLAMP = 50;
 export const MARKET_K = {
   rifles: 16, marksman: 4, sapper: 4, mortarcrew: 6, mgteam: 6, engineer: 6,
   rocketteam: 6, grenadier: 8, tank: 3,
-  mgtower: 4, guntower: 4, mortartower: 3, rockettower: 3, frosttower: 4,
+  mgtower: 4, guntower: 4, mortartower: 3, rockettower: 3, teslatower: 4,
   wall: 30, sandbag: 40,
   // P7 T9 set the hero tier at K 1 — one hull doubled, two hit the clamp.
   // SUPERSEDED KNOWINGLY (owner, 2026-08-21, mk1.95): hero prices behave
@@ -38,7 +38,7 @@ export const MARKET_K = {
 };
 const FAMILY_OF_SQUAD = { rifles: "rifles", sniper: "marksman", sappers: "sapper", mortars: "mortarcrew", mg: "mgteam", engineers: "engineer", rockets: "rocketteam", grenadiers: "grenadier", medics: "medic", mechanics: "mechanic", davy: "davy" };
 const FAMILY_OF_TAG = { "": "rifles", sniper: "marksman", sapper: "sapper", gren: "grenadier", rocket: "rocketteam", mortar: "mortarcrew", mg: "mgteam", eng: "engineer", medic: "medic", mechanic: "mechanic", davy: "davy" };
-const FAMILY_OF_TOWER = { mg: "mgtower", gun: "guntower", mortar: "mortartower", rocket: "rockettower", frost: "frosttower" };
+const FAMILY_OF_TOWER = { mg: "mgtower", gun: "guntower", mortar: "mortartower", rocket: "rockettower", tesla: "teslatower" };
 
 // marketCounts(world, squads, mines) -> { family: standing count }. Men for
 // infantry families (live bodies), things for the rest. One pass over

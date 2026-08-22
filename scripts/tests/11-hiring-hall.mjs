@@ -192,7 +192,7 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
   // (a) the tag map: squads and heroes map to wave tags; a tower key maps to
   // nothing because it ROUTES to his plans ledger instead — never an exclusion
   ok("T4(a): HAND_TAGS covers the eleven squads and all three heroes; tower keys route to the ledger",
-    Object.keys(HAND_TAGS).length === 14 && ["mg", "gun", "mortar", "rocket", "frost"].every((k) => HAND_TAGS[k] === undefined));
+    Object.keys(HAND_TAGS).length === 14 && ["mg", "gun", "mortar", "rocket", "tesla"].every((k) => HAND_TAGS[k] === undefined));
   // (b) his deal: five draws; owned plans of BOTH spaces never re-deal
   {
     let n = 0; const raw = mulberry32(84); const rng = () => { n++; return raw(); };
@@ -683,14 +683,14 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
   {
     const cards = [
       { k: "sq_rifles", plan: 0 }, { k: "gun", plan: 0 }, { k: "mortar", plan: 1 },
-      { k: "sq_mg", plan: 0 }, { k: "hero_bison", plan: 0 }, { k: "sq_sappers", plan: 1 }, { k: "frost", plan: 1 },
+      { k: "sq_mg", plan: 0 }, { k: "hero_bison", plan: 0 }, { k: "sq_sappers", plan: 1 }, { k: "tesla", plan: 1 },
     ];
     const bold = draftPick(cards, "bold"), caut = draftPick(cards, "cautious"), stub = draftPick(cards, "stubborn");
     ok("T8v2(b): every profile picks exactly five", bold.length === 5 && caut.length === 5 && stub.length === 5);
     ok("T8v2(b2): bold takes every unit before any plan",
       cards.filter((c) => !c.plan).every((c) => bold.includes(c)));
     ok("T8v2(b3): cautious leads with towers and plans; stubborn with standing towers",
-      caut.filter((c) => ["mg", "gun", "mortar", "rocket", "frost"].includes(c.k)).length === 3 &&
+      caut.filter((c) => ["mg", "gun", "mortar", "rocket", "tesla"].includes(c.k)).length === 3 &&
       stub.includes(cards[1]) && stub.includes(cards[6]));
     ok("T8v2(b4): the pick is pure — same cards, same commander, same five",
       JSON.stringify(draftPick(cards, "cautious")) === JSON.stringify(caut));

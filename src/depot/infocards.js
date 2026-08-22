@@ -25,7 +25,7 @@ export const CARDS = {
   gun:    tw("gun", "The flat-trajectory workhorse. Cracks men and masonry alike.", ORDERS_TOWER),
   mortar: tw("mortar", "Arcs over walls. Big blast, slow reload.", ORDERS_TOWER),
   rocket: tw("rocket", "A four-rocket salvo, then a long reload. Saturation over precision.", ORDERS_TOWER),
-  frost:  tw("frost", "Halves their pace in its radius.", ["SELL"]),
+  tesla:  tw("tesla", "Halves their pace in its radius.", ["SELL"]),
   sq_sniper:    sq("sniper", "A marksman and his spotter. The longest rifle on the field; the spotter's binoculars are the farthest eyes.", ORDERS_ARMED),
   sq_rifles:    sq("rifles", "Four riflemen. The working infantry of the line.", ORDERS_ARMED),
   sq_mg:        sq("mg", "A gunner and his loader. Six-round bursts that stop a rush.", ORDERS_ARMED),

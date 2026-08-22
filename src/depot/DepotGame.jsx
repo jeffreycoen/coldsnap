@@ -18,7 +18,7 @@ import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS, BISON, APC, MECH, BISON_FIRE, BARRELS } from "./specs.js";
 import { cardFor } from "./infocards.js";
 import { windAt } from "./wind.js";
-import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, takeHandCard, TIER_BELLS, memberNearRow, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType, scoreKill, placeZoneMask, POSSESS_ACC, stickyLock, stepGrenades, stepDavyShot } from "./state.js";
+import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, takeHandCard, TIER_BELLS, memberNearRow, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType, scoreKill, placeZoneMask, POSSESS_ACC, stickyLock, stepGrenades, stepDavyShot, teslaStrike, stepTesla } from "./state.js";
 import { marketCounts, computePrices, fieldPrices, priced } from "./market.js";
 import { stepMines, minePrices, mineSeedRoll, mineSeedPlace, MINE_COST, WIRE_COST } from "./mines.js";
 import { addFogPatch, stepFog } from "./fog.js";
@@ -113,7 +113,7 @@ function stepSquadRouting(grid, sq, world) {
 }
 
 // ================================================================ towers
-export function stepTowers(world, T, discipline, possessedId) {
+export function stepTowers(world, T, discipline, possessedId, arcs) {
   const dt = world.dt;
   for (const b of world.bodies) {
     if (b.kind !== "tower" || !b.alive) continue;
@@ -181,7 +181,7 @@ export function stepTowers(world, T, discipline, possessedId) {
     }
     b.fireCd = spec.fireRate;
     b.flashT = world.t;
-    towerShot(world, b, best, spec);
+    if (spec.tesla && arcs) teslaStrike(world, arcs, b, best); else towerShot(world, b, best, spec);
   }
 }
 
@@ -588,8 +588,9 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
     const pv = world.byId.get(S.possess.id);
     if (!pv || !pv.alive) S.releasePossession();
   }
-  stepTowers(world, T, discipline, S.possess && S.possess.kind === "tower" ? S.possess.id : undefined);
+  stepTowers(world, T, discipline, S.possess && S.possess.kind === "tower" ? S.possess.id : undefined, S.arcs);
   stepGrenades(world); // mk2.03: the grenade fuses — 2.0s from each release
+  stepTesla(world, S.arcs); // mk2.15: the chains walk, 0.15s a hop
   // WIND TOGGLE (mk0.95, owner's accuracy-tuning request): off = dead calm
   // for BOTH sides' shots and shells (drift and hold-off zero out through
   // the same world.wind every shooter reads). Deterministic either way —
@@ -1415,6 +1416,7 @@ export default function DepotGame({ onExit, resume = null }) {
         // P7 T10: watched points restore verbatim, live flags included.
         S.mines = (r.mines || []).map((m) => ({ x: m.x, z: m.z, team: m.t, kind: m.k, live: !!m.l }));
         S.fog = (r.fog || []).map((p) => ({ x: p.x, z: p.z, r: p.r, until: p.u }));
+        S.arcs = (r.arcs || []).map((a) => ({ nextAt: a.n, hits: a.h, dmg: a.d, fx: a.x, fy: a.y, fz: a.z, atk: a.k, tid: a.t, hitIds: (a.ids || []).slice(), waters: [] }));
         // Step 6, last: the ground remembers. Every mark where a man fell is
         // replayed through the same paint the kill handler uses, so the snow
         // comes back stained exactly as it was left. Scorch and tread
@@ -1442,7 +1444,7 @@ export default function DepotGame({ onExit, resume = null }) {
         // cost — rockets are NOT gun-priced here (Phase 3 Task 7 fix). The
         // AI's counter-play read (ai.js's signals()) never looks at either
         // field, so this split changes nothing about wave-planning pressure.
-        let mortars = 0, mgs = 0, guns = 0, rockets = 0, frosts = 0, walls = 0, elevSum = 0, elevN = 0;
+        let mortars = 0, mgs = 0, guns = 0, rockets = 0, teslas = 0, walls = 0, elevSum = 0, elevN = 0;
         for (const b of world.bodies) {
           // WALLS, not courses (P1.5 T2): three would treble planWave's read and playerBookValue.
           if (b.kind === "wall") { if (!b.course) walls++; continue; }
@@ -1451,14 +1453,14 @@ export default function DepotGame({ onExit, resume = null }) {
           else if (b.towerType === "mg") mgs++;
           else if (b.towerType === "gun") guns++;
           else if (b.towerType === "rocket") rockets++;
-          else if (b.towerType === "frost") frosts++;
+          else if (b.towerType === "tesla") teslas++;
           elevSum += b.pos.y; elevN++;
         }
         // squads: live player squads (ai.js snapSquads — the sniper-buy
         // gate). S.squads is already pruned each sim tick, but count only
         // squads holding a live member so a same-tick wipe can't inflate it.
         const squads = S.squads.filter((sq) => sq.memberIds.some((id) => { const u = world.byId.get(id); return u && u.alive; })).length;
-        return { mortars, mgs, guns, rockets, frosts, walls, squads, towerElev: elevN ? elevSum / elevN : 0 };
+        return { mortars, mgs, guns, rockets, teslas, walls, squads, towerElev: elevN ? elevSum / elevN : 0 };
       };
 
       const toast = (txt) => { S.toasts.push({ txt, t: performance.now() / 1000 }); if (S.toasts.length > 4) S.toasts.shift(); };
@@ -1556,7 +1558,7 @@ export default function DepotGame({ onExit, resume = null }) {
         // the preview's sightlines originate where the tower will fire from.
         const muzzle = { x: wp.x, y: y + spec.hy * 2 + 0.45, z: wp.z };
         let poly = null, ringR = 0, color = 0xff5544;
-        if (mode === "frost") {
+        if (mode === "tesla") {
           // aura, not a gun: plain radius, no LOS clipping, blue-white —
           // "honest about what it does" (brief).
           ringR = spec.range;
@@ -3456,7 +3458,7 @@ export default function DepotGame({ onExit, resume = null }) {
             if (!ib) { S.inspectId = null; S.inspectReach = null; }
             else {
               const ispec = ib.kind === "tower" ? TOWER_SPECS[ib.towerType] : null;
-              if (ispec && ib.towerType !== "frost") {
+              if (ispec && ib.towerType !== "tesla") {
                 // Task 2b: an inspected GUN tower shows its true reach fan
                 // (towerReachCached: real muzzle, fog-independent, computed
                 // once per selection — static body). Frost keeps its aura
@@ -3624,7 +3626,7 @@ export default function DepotGame({ onExit, resume = null }) {
             // consulted while possessed — your trigger, your responsibility.
             if (S.fireHeld && S.possess && S.possess.kind === "tower" && S.reticle) {
               const ptw = world.byId.get(S.possess.id);
-              if (ptw) possessedTowerFire(world, ptw, S.reticle, T, invW);
+              if (ptw) possessedTowerFire(world, ptw, S.reticle, T, invW, S.arcs);
             }
             // POSSESSION (P7 T2): the Bison's two triggers — same
             // one-attempt-per-tick flags, real cooldowns, through
@@ -4004,7 +4006,6 @@ export default function DepotGame({ onExit, resume = null }) {
                   label: ispec.label,
                   discipline: b.discipline || discipline || "careful",
                   refund: Math.floor(ispec.cost * 0.6),
-                  frost: b.towerType === "frost",
                   // POSSESSION (P4 T3, mk0.92): TAKE CONTROL — gun towers
                   // only. Frost's fireRate is 0 (no gun to man).
                   canPossess: ispec.fireRate > 0,
@@ -4617,7 +4618,7 @@ export default function DepotGame({ onExit, resume = null }) {
         // COMMAND 1b (mk0.82): both tower actions are instant — each act
         // also fully deselects (S.inspectId = null). sellById already nulls
         // it internally; the discipline flip does so explicitly here.
-        if (!tr.frost) {
+        {
           slots.push({
             key: "discipline",
             icon: tr.discipline === "free" ? "●" : "◐",

@@ -10,6 +10,7 @@ import { killPrice } from "./market.js";
 import { composeIntel, openingIntel } from "./intel.js";
 import { TOWER_SPECS, ENEMY_SPECS, TANK, INFANTRY_ARMS, MASON, PLAYER_START, PLAYER_TIERS, HAND_KEYS, HAND_TAGS, MAN, GRENADE, DAVY_FIRE } from "./specs.js";
 import { seenAt } from "./sight.js";
+import { pondAt, streamAt } from "./mapgen.js";
 
 // Targeting gate, symmetric, VISION era (mk0.72): a shooter of `team` (1 =
 // player tower/squad, 2 = attacker rifleman/grenadier/tank) may only acquire
@@ -826,7 +827,7 @@ export function possessedVolley(world, squad, aim, T, toUV = (x, z) => ({ u: x, 
 // at the aim like every shot. T7: acc sharpens by POSSESS_ACC and the aim
 // snaps to a live, seen enemy exactly like a possessed squad's volley —
 // towers have no squadmates, so there is no corridor check.
-export function possessedTowerFire(world, tower, aim, T, toUV = (x, z) => ({ u: x, v: z })) {
+export function possessedTowerFire(world, tower, aim, T, toUV = (x, z) => ({ u: x, v: z }), arcs) {
   const spec = TOWER_SPECS[tower.towerType];
   if (!spec || spec.fireRate <= 0) return false;
   tower.fireCd = tower.fireCd || 0;
@@ -834,6 +835,15 @@ export function possessedTowerFire(world, tower, aim, T, toUV = (x, z) => ({ u: 
   const c = toUV(aim.x, aim.z);
   if (!fieldReaches(T, c.u, c.v, 1)) return false;
   const live = snapTargetNear(world, aim, T, toUV);
+  // mk2.15: the possessed coil fires only at a LIVE seen enemy — a chain has
+  // no ground to shell; no target, no bolt, no cooldown spent.
+  if (spec.tesla) {
+    if (!live || !arcs) return false;
+    tower.fireCd = spec.fireRate;
+    tower.flashT = world.t;
+    teslaStrike(world, arcs, tower, live);
+    return true;
+  }
   const sy = aim.y != null ? aim.y : world.field.heightAt(aim.x, aim.z);
   const tgt = live || { pos: { x: aim.x, y: sy, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: sy - world.field.heightAt(aim.x, aim.z) }; // mk2.02: ground aim targets the SURFACE (owner) — the phantom body is dead; hy carries roof height over field ground through shooterFire's lead refresh
   tower.fireCd = spec.fireRate;
@@ -882,6 +892,110 @@ export function stepGrenades(world) {
       L.splice(i, 1);
     }
   }
+}
+
+// mk2.15 (owner): THE TESLA COIL. The tower's trigger starts a chain row on
+// S.arcs; stepTesla walks the rows against LIVE positions, one hop every
+// TESLA.hopS seconds — nearest body not yet hit, TESLA.hopR meters from the
+// last victim, TESLA.maxHits total, damage stepping down TESLA.dmgStep to
+// TESLA.dmgFloor. The spread is blind: any alive solid or soft body, either
+// team, sight unchecked (the first strike was sight-checked at acquisition).
+// A victim standing on a pond (or the dormant stream) electrifies the whole
+// surface: every body on that water joins the reachable set, nearest first.
+// Selection is nearest-first over live positions — deterministic, ZERO rng
+// draws, so every stream stays byte-stable however the chain runs.
+export const TESLA = { hopR: 4, maxHits: 8, dmgStep: 5, dmgFloor: 10, hopS: 0.15 }; // provisional (F5)
+
+// what the chain may touch: units, crews, vehicles, mechs, towers, walls,
+// masonry chunks, rocks, trees — "anything" (owner). Mech limbs resolve to
+// the hull through applyDamage; the visited set tracks the HULL id so a
+// mech is one body to the chain, not five.
+function chainBody(b) {
+  if (!b.alive) return false;
+  return b.kind === "unit" || b.kind === "vehicle" || b.kind === "mech" || b.kind === "tower" || b.kind === "wall" || b.kind === "chunk" || b.kind === "rock" || b.kind === "tree";
+}
+const chainId = (b) => (b.mechRef && b.mechRef.hull ? b.mechRef.hull.id : b.id);
+
+function onWater(x, z) { return pondAt(x, z) || (streamAt(x, z) ? "stream" : null); }
+
+// one hop's pick, shared by the live walk and the hold-check: nearest body
+// not in `hit`, within hopR of `from` OR standing on any water surface in
+// `waters`. Pure — reads positions, mutates nothing.
+function teslaNext(world, from, hit, waters) {
+  let best = null, bd = Infinity;
+  for (const b of world.bodies) {
+    if (!chainBody(b) || hit.has(chainId(b))) continue;
+    const dx = b.pos.x - from.x, dz = b.pos.z - from.z;
+    const d2 = dx * dx + dz * dz;
+    const w = waters.size ? onWater(b.pos.x, b.pos.z) : null;
+    if (d2 > TESLA.hopR * TESLA.hopR && !(w && waters.has(w))) continue;
+    if (d2 < bd) { bd = d2; best = b; }
+  }
+  return best;
+}
+
+// the trigger pull: one row, first hit due NOW (stepTesla lands it on the
+// same tick the tower fires). `arcs` is S.arcs — plain rows, serialized as
+// they stand (save.js), so a mid-chain save resumes mid-chain.
+export function teslaStrike(world, arcs, tower, target) {
+  arcs.push({
+    nextAt: world.t, hits: 0, dmg: TOWER_SPECS.tesla.dmg,
+    fx: tower.pos.x, fy: tower.pos.y + tower.hy + 0.9, fz: tower.pos.z,
+    atk: tower.team === 2 ? "enemy" : "player", tid: target.id, hitIds: [], waters: [],
+  });
+}
+
+export function stepTesla(world, arcs) {
+  if (!arcs || !arcs.length) return;
+  for (let i = arcs.length - 1; i >= 0; i--) {
+    const a = arcs[i];
+    while (a.nextAt <= world.t && a.hits < TESLA.maxHits) {
+      const hit = new Set(a.hitIds), waters = new Set(a.waters);
+      let victim = null;
+      if (a.hits === 0) { // the strike: the acquired enemy, if it still lives
+        const t = world.byId.get(a.tid);
+        victim = t && chainBody(t) ? t : null;
+      } else {
+        victim = teslaNext(world, { x: a.fx, z: a.fz }, hit, waters);
+      }
+      if (!victim) { a.hits = TESLA.maxHits; break; }
+      const vx = victim.pos.x, vy = victim.pos.y, vz = victim.pos.z;
+      world.events.push({ type: "zap", x: a.fx, y: a.fy, z: a.fz, x2: vx, y2: vy, z2: vz, hop: a.hits });
+      applyDamage(world, victim, a.dmg, { cause: "ZAP", attacker: a.atk, srcX: a.fx, srcZ: a.fz });
+      const w = onWater(vx, vz);
+      if (w && !waters.has(w)) {
+        a.waters.push(w === "stream" ? "stream" : w); // pond object identity holds within a session; see the save row below
+        world.events.push({ type: "pondzap", x: w === "stream" ? vx : w.x, z: w === "stream" ? vz : w.z, r: w === "stream" ? 3 : w.r });
+      }
+      a.hitIds.push(chainId(victim));
+      a.hits++;
+      a.dmg = Math.max(TESLA.dmgFloor, a.dmg - TESLA.dmgStep);
+      a.fx = vx; a.fy = vy; a.fz = vz;
+      a.nextAt += TESLA.hopS;
+    }
+    if (a.hits >= TESLA.maxHits) arcs.splice(i, 1);
+  }
+}
+
+// the hold-check for the avoid-friendlies switch (Task 4 wires the switch;
+// the check ships now so the suite pins it): plan the chain the trigger
+// WOULD start, on current positions, and answer whether any friendly soft
+// body gets caught. Pure, zero draws, no events.
+export function teslaWouldCatchFriend(world, tower, target) {
+  const own = tower.team === 2 ? 2 : 1;
+  const hit = new Set(), waters = new Set();
+  let from = { x: target.pos.x, z: target.pos.z }, dmgSteps = 1;
+  let victim = target;
+  while (victim && dmgSteps <= TESLA.maxHits) {
+    if ((victim.kind === "unit" || victim.kind === "vehicle" || victim.kind === "mech") && victim.team === own) return true;
+    hit.add(chainId(victim));
+    const w = onWater(victim.pos.x, victim.pos.z);
+    if (w) waters.add(w);
+    from = { x: victim.pos.x, z: victim.pos.z };
+    victim = teslaNext(world, from, hit, waters);
+    dmgSteps++;
+  }
+  return false;
 }
 
 // ------------------------------------------------------------ squad wiring
@@ -1372,6 +1486,7 @@ export function makeRunState({ startResources = 250 } = {}) { // P7.2 T8 (owner)
   return {
     resources: startResources, score: { p: { kills: 0, value: 0 }, e: { kills: 0, value: 0 } },
     ws: makeAssaultState(), spawnRR: 0,
+    arcs: [], // mk2.15: live tesla chains — plain rows, saved as they stand
     mode: "wall", sellMode: false, inspectId: null,
     started: false, gameOver: false, victory: false, attrition: false, ledgerLoss: false,
     starvedStreak: 0, spent: false,
@@ -1411,7 +1526,7 @@ export function makeDispatch(bell, intelLines = []) {
 
 // Player-side book value: scrap on hand plus the build cost of every
 // standing structure. snap is the same shape DepotGame.jsx's buildSnapshot()
-// produces ({mortars, mgs, guns, rockets, frosts, walls}) — live body counts
+// produces ({mortars, mgs, guns, rockets, teslas, walls}) — live body counts
 // by type, read fresh at the moment of the verdict. guns and rockets are
 // counted separately and valued at each tower's own real spec cost — the
 // AI's counter-play signal elsewhere still lumps gun+rocket together (that's
@@ -1424,7 +1539,7 @@ function playerBookValue(S, snap) {
     (s.mgs || 0) * TOWER_SPECS.mg.cost +
     (s.guns || 0) * TOWER_SPECS.gun.cost +
     (s.rockets || 0) * TOWER_SPECS.rocket.cost +
-    (s.frosts || 0) * TOWER_SPECS.frost.cost +
+    (s.teslas || 0) * TOWER_SPECS.tesla.cost +
     (s.walls || 0) * WALL_COST;
   return bookValue({ scrap: S.resources, assets });
 }

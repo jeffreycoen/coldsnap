@@ -29,8 +29,8 @@
 // projectile spec, core.js's fireProjectile hangs it on the muzzle event, and
 // src/platform/audio.js gives each tag its own voice. Purely a sound label:
 // nothing mechanical reads it, and no spec's numbers moved to add it.
-// frost is deliberately untagged — it has no projectile at all (fireRate 0,
-// projSpeed 0) and never emits a muzzle event to give a voice to.
+// tesla carries weapon:"tesla" from mk2.15 — the tag names the voice; the
+// chain itself never fires a projectile (state.js teslaStrike/stepTesla).
 export const TOWER_SPECS = {
   // mk0.99 (owner's lethality ruling): 3.4 -> 8 — the MG tower rises flatter
   // than rifles; a six-round burst kills a conscript. The ±10% replaces-not-
@@ -39,9 +39,9 @@ export const TOWER_SPECS = {
   gun:    { range: 19, fireRate: 1.05, projSpeed: 58, dmg: 25, blastR: 2.3, kv: 8,   cost: 38, hp: 130, crater: 0.55, label: "GUN",    icon: "⚑", kind: "shell", weapon: "shell",  hy: 1.5, acc: 0.07, windF: 0.9,  windComp: 0.6, blurb: "Flat-trajectory workhorse", occl: "auto" /* mk2.02 (owner): THE AUTOMATIC LOB — flat when the flat arc reaches, mortar root when it cannot */ },
   mortar: { range: 26, fireRate: 4.6 /* halved cadence (C0 T4) // provisional (F5) */ /* mk1.74 (owner): tightened 0.020 -> 0.005 — the lob lands where it looks */,  projSpeed: 33, dmg: 38, blastR: 3.8, kv: 10,  cost: 53, hp: 95,  crater: 0.8, label: "MORTAR", icon: "◎", kind: "shell", weapon: "mortar", hy: 0.8, acc: 0.005, windF: 0.04, windComp: 0.6, blurb: "Arcs over walls, big blast", occl: "lofted" },
   rocket: { range: 23, fireRate: 8.8 /* halved cadence (C0 T4) // provisional (F5) */,  projSpeed: 18, dmg: 27, blastR: 3.4, kv: 9,   cost: 75, hp: 110, volley: 4, crater: 0.7, label: "ROCKET", icon: "▲", kind: "shell", weapon: "rocket", hy: 1.2, acc: 0.021, windF: 1.3  /* lobbed retune (mk0.25): swept 0.020-0.035 vs the pinned flat baseline 2.4592, curve in the F1.5 artillery plan // provisional (F5) */, windComp: 0.5, blurb: "Four-round salvo, slow reload", occl: "arc" /* mk1.74 (owner): THE GENTLE ARC — flat solve at 18 m/s, ~22° and a 2.3m apex at full reach; terrain checks honest */ },
-  frost:  { range: 12, fireRate: 0,    projSpeed: 0,  dmg: 0,  blastR: 0,   kv: 0,   cost: 30, hp: 85,  label: "FROST",  icon: "❄", kind: "mg",    slow: 0.42, hy: 1.35, blurb: "Halves their pace in radius" },
+  tesla:  { range: 16, fireRate: 5, projSpeed: 95, dmg: 35, blastR: 0, kv: 0, cost: 55, hp: 85, label: "TESLA", icon: "⚡", kind: "mg", weapon: "tesla", tesla: true, hy: 1.35, blurb: "Chain lightning arcs to everything near" }, // mk2.15 (owner): THE TESLA COIL replaces frost — key renamed, no save migration (standing orders). projSpeed is sight-math only (arcClears/effRange run the mg's flat check); no projectile ever flies.
 };
-export const TOWER_ORDER = ["mg", "gun", "mortar", "rocket", "frost"];
+export const TOWER_ORDER = ["mg", "gun", "mortar", "rocket", "tesla"];
 
 // mk2.02: ONE BODY TABLE (owner) — every man, both sides, reads this row;
 // the player's numbers seed it and every man stands 2m. Speeds/bounties
@@ -198,7 +198,7 @@ export const PLAYER_TIERS = [
   // P7 T7 (mk1.36, owner): the tier-1 mirror closes — sq_rockets and
   // sq_grenadiers join mg/sq_mg/frost, matching the enemy's own rocket/gren.
   // P7.2 T6: the medic's price-family seat — rows gate nothing since T2
-  ["mg", "sq_mg", "frost", "sq_rockets", "sq_grenadiers", "sq_medics"],
+  ["mg", "sq_mg", "tesla", "sq_rockets", "sq_grenadiers", "sq_medics"],
   ["gun", "sq_sniper", "sq_mortars"],
   // P7.2 T7: the mechanic's price-family seat — the ruled tier-3 row
   ["mortar", "rocket", "sq_sappers", "sq_mechanics"],
@@ -210,7 +210,7 @@ export const PLAYER_TIERS = [
 // P7.2 T2 (owner): THE HAND IS UNGATED — the full fifteen, one table, from
 // bell one; price and the market wall do all the refusing. The tier ladders
 // above stop gating offers (they remain as rows and price families).
-export const HAND_KEYS = ["mg", "gun", "mortar", "rocket", "frost", "sq_sniper", "sq_rifles", "sq_mg", "sq_sappers", "sq_mortars", "sq_engineers", "sq_rockets", "sq_grenadiers", "sq_medics", "sq_mechanics", "sq_davy", "hero_bison", "hero_apc", "hero_mech"];
+export const HAND_KEYS = ["mg", "gun", "mortar", "rocket", "tesla", "sq_sniper", "sq_rifles", "sq_mg", "sq_sappers", "sq_mortars", "sq_engineers", "sq_rockets", "sq_grenadiers", "sq_medics", "sq_mechanics", "sq_davy", "hero_bison", "hero_apc", "hero_mech"];
 
 // P7.2 T4: the key -> enemy-tag map for HIS side of the hand. Tower keys
 // are deliberately absent — a tower is not a wave tag: his tower plans

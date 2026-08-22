@@ -284,15 +284,26 @@ function makeSplat(town, span) {
     const ang = rnd() * Math.PI * 2, len = 10 + rnd() * 7;
     const dx = Math.cos(ang), dy = Math.sin(ang);
     cx.globalAlpha = 1;
-    cx.fillStyle = style === "human" ? "rgba(206,22,16,0.9)" : "rgba(22,24,28,0.85)";
-    for (let i = 0; i < len; i++) {
-      const w = Math.max(1, Math.round(3.6 * (1 - i / len) + rnd()));
-      cx.fillRect(Math.round(u + dx * i - w / 2), Math.round(v + dy * i - w / 2), w, w);
+    cx.fillStyle = style === "human" ? "rgba(206,22,16,0.9)" : style === "scorch" ? "rgba(10,10,12,0.92)" : "rgba(22,24,28,0.85)";
+    if (style === "scorch") {
+      // the black smudge: a charred round blot, not a streak — soot rings
+      // stamped tight around the fall, thinning outward. Same position-hashed
+      // rnd(), so identical runs paint identical ground.
+      for (let i = 0; i < 26; i++) {
+        const a2 = rnd() * Math.PI * 2, rr = Math.pow(rnd(), 1.6) * 7;
+        const w = Math.max(1, Math.round(3 * (1 - rr / 7) + rnd()));
+        cx.fillRect(Math.round(u + Math.cos(a2) * rr - w / 2), Math.round(v + Math.sin(a2) * rr - w / 2), w, w);
+      }
+    } else {
+      for (let i = 0; i < len; i++) {
+        const w = Math.max(1, Math.round(3.6 * (1 - i / len) + rnd()));
+        cx.fillRect(Math.round(u + dx * i - w / 2), Math.round(v + dy * i - w / 2), w, w);
+      }
     }
     if (style === "human") {
       cx.fillStyle = "rgba(228,48,30,0.85)"; // spray droplets past the streak
       for (let i = 0; i < 5; i++) cx.fillRect(Math.round(u + (rnd() - 0.5) * len * 1.7), Math.round(v + (rnd() - 0.5) * len * 1.7), 1, 1);
-    } else {
+    } else if (style !== "scorch") {
       // silver has to READ against scorch marks: bright dashes down the
       // streak, not lone pixels — spilled machinery, unmistakably not soot
       cx.fillStyle = "rgba(216,224,234,0.95)";
@@ -1226,7 +1237,8 @@ export function makeRenderer(canvas, world0, opts = {}) {
         splat.scorch(u, v, (e.r / Wd) * 1024);
       } else if (e.type === "kill") {
         const kb = world.byId.get(e.id);
-        if (kb && kb.smearStyle) splat.smear(((e.x + F.half) / Wd) * 1024, ((e.z + F.half) / Wd) * 1024, kb.smearStyle, e.x, e.z);
+        // mk2.15: a lightning kill scorches — black smudge, no matter the dress
+        if (kb && kb.smearStyle) splat.smear(((e.x + F.half) / Wd) * 1024, ((e.z + F.half) / Wd) * 1024, e.cause === "ZAP" ? "scorch" : kb.smearStyle, e.x, e.z);
       } else if (e.type === "muzzle") {
         fire.push({ x: e.x, y: e.y, z: e.z, s: 1.1, life: 0.12, age: 0 });
         shake = Math.min(1.5, shake + 0.12);

@@ -113,14 +113,14 @@ for (const type of ALL) {
   if (TOOLS.includes(type)) ok(`audit(f2) ${type}: tools volley nothing (by design)`, fired === 0);
   else ok(`audit(f2) ${type}: the volley fires`, fired > 0, `${fired}`);
 }
-// ---- AUDIT (g): possessed towers — every gun mans; frost refuses (no gun)
-for (const tt of ["mg", "gun", "mortar", "rocket", "frost"]) {
+// ---- AUDIT (g): possessed towers — every gun mans; tesla holds with no live target
+for (const tt of ["mg", "gun", "mortar", "rocket", "tesla"]) {
   const w = makeWorld({ field: flatF, seed: 26 }); w.depotCombat = true;
   const spec = TOWER_SPECS[tt];
   const b = addBody(w, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: spec.hy, hz: 0.8, x: 0, y: spec.hy, z: 0, hp: spec.hp });
   b.towerType = tt;
   const shot = possessedTowerFire(w, b, { x: 0, z: 10 }, null);
-  if (tt === "frost") ok("audit(g) frost: TAKE CONTROL is refused (no gun, by design)", shot === false);
+  if (tt === "tesla") ok("audit(g) tesla: TAKE CONTROL fires nothing with no live target (mk2.15 rename, was frost/no gun)", shot === false);
   else ok(`audit(g) tower ${tt}: manual fire control fires`, shot === true && b.fireCd > 0);
 }
 
@@ -241,7 +241,7 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "frost"]) {
 
 // ---- P7.1 T4: the info cards tell the truth
 {
-  const want = ["mg", "gun", "mortar", "rocket", "frost", "sq_sniper", "sq_rifles", "sq_mg", "sq_sappers", "sq_mortars", "sq_engineers", "sq_rockets", "sq_grenadiers", "hero_bison", "hero_apc"]; // mk2.02
+  const want = ["mg", "gun", "mortar", "rocket", "tesla", "sq_sniper", "sq_rifles", "sq_mg", "sq_sappers", "sq_mortars", "sq_engineers", "sq_rockets", "sq_grenadiers", "hero_bison", "hero_apc"]; // mk2.02, frost -> tesla mk2.15
   ok("T4: every buyable has a card", want.every((k) => !!cardFor(k)));
   ok("T4: the rifle card matches its spec", CARDS.sq_rifles.hp === 58 && CARDS.sq_rifles.dmg === INFANTRY_ARMS.rifles.dirDmg && CARDS.sq_rifles.range === INFANTRY_ARMS.rifles.range && CARDS.sq_rifles.n === 4);
   ok("T4: the gun tower card matches its spec", CARDS.gun.hp === TOWER_SPECS.gun.hp && CARDS.gun.dmg === TOWER_SPECS.gun.dmg && CARDS.gun.range === TOWER_SPECS.gun.range);
@@ -390,13 +390,13 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "frost"]) {
 
 // ---- P7.1 T10: LIVE PORTRAITS
 {
-  ok("T10: every tower builds a populated portrait group", ["mg", "gun", "mortar", "rocket", "frost"].every((t) => buildTowerMesh(t).children.length > 0));
+  ok("T10: every tower builds a populated portrait group", ["mg", "gun", "mortar", "rocket", "tesla"].every((t) => buildTowerMesh(t).children.length > 0));
   ok("T10: the hulls build with their fittings", buildBison(1).userData.turret != null && buildApc(1).userData.ramp != null);
   const man10 = buildPortraitMan("rifles");
   ok("T10: a rifleman composes from the real part table", man10.children.length >= 10);
   const mg10 = buildPortraitMan("mg"), sn10 = buildPortraitMan("sniper");
   ok("T10: kits differ by trade (the mg carries more iron than the marksman's glass)", mg10.children.length !== sn10.children.length || mg10.children.length > 0);
-  ok("T10: every card key resolves to a model", ["sq_rifles", "sq_sniper", "sq_mg", "sq_sappers", "sq_mortars", "sq_engineers", "sq_rockets", "sq_grenadiers", "mg", "gun", "mortar", "rocket", "frost", "hero_bison", "hero_apc"].every((k) => buildPortraitModel(k).children.length > 0));
+  ok("T10: every card key resolves to a model", ["sq_rifles", "sq_sniper", "sq_mg", "sq_sappers", "sq_mortars", "sq_engineers", "sq_rockets", "sq_grenadiers", "mg", "gun", "mortar", "rocket", "tesla", "hero_bison", "hero_apc"].every((k) => buildPortraitModel(k).children.length > 0));
   const src10 = fs.readFileSync("src/depot/InfoCard.jsx", "utf8");
   ok("T10: the card carries the portrait canvas", /data-info-portrait/.test(src10) && /portrait\(cv\)/.test(src10));
   const dg10 = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");

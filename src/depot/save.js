@@ -281,6 +281,10 @@ export function serializeFront(ctx) {
       // mk2.09: THE GREEN FOG — poison patches, watched points like mines.
       // `until` is an absolute sim-clock stamp; world.t rides the save too.
       fog: (S.fog || []).map((p) => ({ x: r3(p.x), z: r3(p.z), r: r3(p.r), u: r3(p.until) })),
+      // mk2.15: live tesla chains — a save mid-chain resumes mid-chain.
+      // `n` is nextAt (absolute sim clock, rides with world.t like fog's
+      // `until`); water references re-attach on the next wet hop.
+      arcs: (S.arcs || []).map((a) => ({ n: r3(a.nextAt), h: a.hits, d: r3(a.dmg), x: r3(a.fx), y: r3(a.fy), z: r3(a.fz), k: a.atk, t: a.tid, ids: a.hitIds.slice() })),
     },
     towns: town.map((b) => ({ id: b.id, n0: b.n0, ruined: !!b.ruined })),
     census: cens(census), census2: cens(census2),

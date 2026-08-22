@@ -258,7 +258,7 @@ export const PICK_POOL = [
   { key: "hero_apc", kind: "hull", vtype: "apc" },
   { key: "hero_mech", kind: "mech" },
   { key: "mg", kind: "tower" }, { key: "gun", kind: "tower" }, { key: "mortar", kind: "tower" },
-  { key: "rocket", kind: "tower" }, { key: "frost", kind: "tower" },
+  { key: "rocket", kind: "tower" }, { key: "tesla", kind: "tower" },
 ];
 // P7.2 T8 (owner): THE OPENING DRAFT — seven cards each side, seven splice
 // draws, seven DISTINCT types; each card's unit-or-plan kind derives from

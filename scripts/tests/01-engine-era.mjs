@@ -173,9 +173,9 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
   // (d) taking cards: only what the hand holds, and MORE THAN ONCE (owner).
   {
     const M = makeManifestState();
-    M.hand = [{ k: "mg", hire: 0 }, { k: "frost", hire: 0 }, { k: "mg", hire: 1 }]; M.cardUp = true;
+    M.hand = [{ k: "mg", hire: 0 }, { k: "tesla", hire: 0 }, { k: "mg", hire: 1 }]; M.cardUp = true;
     ok("hand: a card the convoy never dealt cannot be taken", takeHandCard(M, "rocket", 0) === false && M.hand.length === 3);
-    ok("hand: taking a plan removes that row alone", takeHandCard(M, "frost", 0) === true && M.hand.length === 2);
+    ok("hand: taking a plan removes that row alone", takeHandCard(M, "tesla", 0) === true && M.hand.length === 2);
     ok("hand: a SECOND card off the same bell is taken — multi-buy is the law (owner)", takeHandCard(M, "mg", 0) === true && M.hand.length === 1);
     ok("hand: the last card leaving closes the window", takeHandCard(M, "mg", 1) === true && M.cardUp === false);
   }
@@ -272,7 +272,7 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
 // number of bells ends the run — nothing in the cycle calls checkWin.
 // checkWin itself stays exported (the probe reads it) with its old verdict.
 {
-  const snap = { mortars: 2, mgs: 3, guns: 2, frosts: 1, walls: 10 };
+  const snap = { mortars: 2, mgs: 3, guns: 2, teslas: 1, walls: 10 };
   const G = makeRunState({ startResources: 999999 });
   G.started = true;
   G.reg = { heads: 60, tanks: 1, heads0: 400, tanks0: 10, scrap: 20 };
@@ -686,7 +686,7 @@ function scriptedWaveRun(seed) {
 }
 
 // --- ai.js: the buy brain -------------------------------------------------
-const BASE_SNAP = { mortars: 0, mgs: 0, guns: 0, frosts: 0, walls: 0, towerElev: 0 };
+const BASE_SNAP = { mortars: 0, mgs: 0, guns: 0, teslas: 0, walls: 0, towerElev: 0 };
 function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 
 // determinism: same reg/snap/waveIdx/rng-stream -> identical plan
@@ -715,7 +715,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 {
   const reg = makeRegiment(mulberry32(11));
   const rng = mulberry32(12);
-  const snap = { mortars: 3, mgs: 2, guns: 4, frosts: 1, walls: 2, towerElev: 0 };
+  const snap = { mortars: 3, mgs: 2, guns: 4, teslas: 1, walls: 2, towerElev: 0 };
   let totalIncome = reg.scrap;
   let negative = false;
   for (let w = 0; w < 50; w++) {
@@ -1685,7 +1685,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     for (let seed = 1; seed <= 50; seed++) {
       const rng = mulberry32(seed * 7919);
       const reg = makeRegiment(rng);
-      const snap = { mortars: seed % 7, mgs: seed % 9, guns: seed % 5, frosts: seed % 6, walls: seed % 9, towerElev: 0 };
+      const snap = { mortars: seed % 7, mgs: seed % 9, guns: seed % 5, teslas: seed % 6, walls: seed % 9, towerElev: 0 };
       for (let w = 0; w < 10; w++) {
         const solvent = reg.scrap >= conscriptC && reg.heads > 0;
         const { buys } = planWave(reg, snap, w, rng);

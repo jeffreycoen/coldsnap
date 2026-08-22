@@ -51,14 +51,14 @@ function signals(snap) {
   return {
     mortar: clamp01((snap.mortars || 0) / 6),
     wall: clamp01((snap.walls || 0) / 8),
-    frost: clamp01((snap.frosts || 0) / 5),
+    tesla: clamp01((snap.teslas || 0) / 5),
     mg: clamp01((snap.mgs || 0) / 8),
   };
 }
 
 function dominantCounter(sig) {
   let best = null, bestV = 0.15; // deadband: no dominant signal below this
-  for (const k of ["mortar", "wall", "frost", "mg"]) {
+  for (const k of ["mortar", "wall", "tesla", "mg"]) {
     if (sig[k] > bestV) { bestV = sig[k]; best = k; }
   }
   return best;
@@ -78,7 +78,7 @@ function computeShares(snap, jitter) {
   raw.rocket += 0.35 * sig.mortar;
   raw.sapper += 0.22 * sig.wall;
   raw.sapper += 0.18 * sig.wall;
-  raw.gren += 0.30 * sig.frost;
+  raw.gren += 0.30 * sig.tesla; // the enemy still counters coil clusters with spread grenadiers
   // small deterministic jitter (bounded, well under counter-delta scale)
   // so the doctrine isn't perfectly rigid without swamping the counters.
   const j = (jitter - 0.5) * 0.06;
@@ -308,7 +308,7 @@ export function cmdrBellOrders(profile, ctx) {
 // P7.2 T8 (owner): THE DRAFT PICK, commander-colored — pure, ZERO draws.
 // Bold takes units; cautious takes towers and plans; stubborn takes
 // standing defensive iron first. Stable sort; deal order breaks ties.
-const DRAFT_TOWERS = ["mg", "gun", "mortar", "rocket", "frost"];
+const DRAFT_TOWERS = ["mg", "gun", "mortar", "rocket", "tesla"];
 export function draftPick(cards, cmdr) {
   const score = (c) => {
     const tower = DRAFT_TOWERS.indexOf(c.k) >= 0;

@@ -493,7 +493,7 @@ export function stepUnits(world, grid, fwdDir, T, toUV = (x, z) => ({ u: x, v: z
   for (const u of world.bodies) {
     if (u.kind !== "unit" || !u.alive || u.team !== 2) continue;
     if (u.squadId) continue; // P7.1 T7: his squad men take squad goals, not the flow
-    u.frostMul = u.frostMul == null ? 1 : u.frostMul; // frost towers arrive later; default no-slow
+    u.frostMul = u.frostMul == null ? 1 : u.frostMul; // frost towers arrive later; default no-slow (mk2.15: no tower sets this since the tesla conversion; the name is historical)
     const supported = u.grounded || Math.abs(u.v.y) < 0.6;
     if (supported && u.R[4] > -0.5) {
       if (u.R[4] < 0.995) {

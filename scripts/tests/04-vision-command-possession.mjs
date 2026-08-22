@@ -1322,7 +1322,7 @@ import fs from "node:fs";
     const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     const stepTowersBody = (gameSrc.match(/export function stepTowers\([\s\S]*?\n\}/) || [""])[0];
     ok("POSSESSION T3(a) source pin: stepTowers takes a possessedId argument",
-      /export function stepTowers\(world, T, discipline, possessedId\)/.test(gameSrc));
+      /export function stepTowers\(world, T, discipline, possessedId, arcs\)/.test(gameSrc)); // mk2.15: fifth param `arcs` added for the tesla chain
     ok("POSSESSION T3(a) source pin: the guard skips the possessed body — no acquisition, no fire",
       /if \(possessedId === b\.id\) \{ b\.fireCd = \(b\.fireCd \|\| 0\) - dt; continue; \}/.test(stepTowersBody), stepTowersBody.length);
   }
@@ -1520,7 +1520,7 @@ import fs from "node:fs";
     ok("POSSESSION T4(f) source pin: the squad volley trigger reads S.reticle",
       /possessedVolley\(world, psq, S\.reticle, T, invW\)/.test(gameSrc));
     ok("POSSESSION T4(f) source pin: the tower fire trigger reads S.reticle",
-      /possessedTowerFire\(world, ptw, S\.reticle, T, invW\)/.test(gameSrc));
+      /possessedTowerFire\(world, ptw, S\.reticle, T, invW, S\.arcs\)/.test(gameSrc)); // mk2.15: trailing S.arcs added for the tesla chain
     ok("POSSESSION T4(f) source pin: possessAim appears nowhere in DepotGame.jsx",
       !/possessAim/.test(gameSrc));
   }
