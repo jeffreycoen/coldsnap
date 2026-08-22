@@ -178,19 +178,22 @@ export function buildTowerMesh(type) {
     }
     t.rotation.x = -0.22;
   } else {
-    // frost: a growth of ice on a stone plinth
-    const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.95, 0), new THREE.MeshToonMaterial({ color: 0x9fe0ff, gradientMap: grad, transparent: true, opacity: 0.9 }));
-    core.position.y = spec.hy * 0.25; core.castShadow = true; g.add(core);
-    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.5, 5), new THREE.MeshToonMaterial({ color: 0xd6f2ff, gradientMap: grad, transparent: true, opacity: 0.92 }));
-    spike.position.y = spec.hy * 0.95; g.add(spike);
-    for (let i = 0; i < 3; i++) {
-      const s = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.8, 4), new THREE.MeshToonMaterial({ color: 0xbfe8ff, gradientMap: grad, transparent: true, opacity: 0.85 }));
-      const a = i * 2.09;
-      s.position.set(Math.cos(a) * 0.65, -spec.hy * 0.1, Math.sin(a) * 0.65);
-      s.rotation.z = Math.cos(a) * -0.45; s.rotation.x = Math.sin(a) * 0.45;
-      g.add(s);
+    // tesla (mk2.16): a squat plinth, a wound coil, a bright toroid crown —
+    // and a glow bulb the frame loop pulses (userData.glow).
+    const plinth = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.9, 0.7, 8), new THREE.MeshToonMaterial({ color: 0x3a4250, gradientMap: grad }));
+    plinth.position.y = 0.35; plinth.castShadow = true; g.add(plinth);
+    const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.42, spec.hy * 1.1, 8), new THREE.MeshToonMaterial({ color: 0x6b7686, gradientMap: grad }));
+    stack.position.y = 0.7 + spec.hy * 0.55; stack.castShadow = true; g.add(stack);
+    for (let i = 0; i < 4; i++) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.44, 0.05, 6, 14), new THREE.MeshToonMaterial({ color: 0x9fb6c8, gradientMap: grad }));
+      ring.rotation.x = Math.PI / 2; ring.position.y = 0.75 + i * spec.hy * 0.26; g.add(ring);
     }
-    g.userData.spin = true;
+    const crown = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.14, 8, 18), new THREE.MeshToonMaterial({ color: 0xcfe6f4, gradientMap: grad }));
+    crown.rotation.x = Math.PI / 2; crown.position.y = 0.75 + spec.hy * 1.12; g.add(crown);
+    const glow = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), new THREE.MeshBasicMaterial({ color: 0xdff2ff, transparent: true, opacity: 0.7 }));
+    glow.position.y = 0.75 + spec.hy * 1.12; g.add(glow);
+    g.userData.glow = glow;
+    g.userData.crownY = 0.75 + spec.hy * 1.12;
   }
   return g;
 }
@@ -1054,6 +1057,52 @@ export function makeRenderer(canvas, world0, opts = {}) {
 
   // particles
   const debris = [], smoke = [], fire = [];
+  // mk2.16: TESLA BOLTS. Each row is one live bolt (strike, hop, idle arc or
+  // pond flash), REGENERATED EVERY FRAME from fresh Math.random midpoint
+  // displacement — no two frames, no two strikes alike (owner). Renderer
+  // dice are lawful; the sim never reads any of this.
+  const bolts = [];
+  const BOLT_SEGS = 14, BOLT_CAP = 48;
+  function spawnBolt(ax, ay, az, bx, by, bz, life, amp) {
+    if (bolts.length >= BOLT_CAP) bolts.shift();
+    bolts.push({ ax, ay, az, bx, by, bz, life, age: 0, amp });
+  }
+  const boltGeo = new THREE.BufferGeometry();
+  const boltPos = new Float32Array(BOLT_CAP * (BOLT_SEGS + 3) * 2 * 3); // main run + one fork per bolt
+  boltGeo.setAttribute("position", new THREE.BufferAttribute(boltPos, 3));
+  const boltCore = new THREE.LineSegments(boltGeo, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95 }));
+  const boltHalo = new THREE.LineSegments(boltGeo, new THREE.LineBasicMaterial({ color: 0x7fd0ff, transparent: true, opacity: 0.4 }));
+  boltHalo.scale.setScalar(1.001);
+  boltCore.frustumCulled = false; boltHalo.frustumCulled = false;
+  boltCore.layers.set(1); boltHalo.layers.set(1);
+  scene.add(boltCore); scene.add(boltHalo);
+  function writeBolts(dt) {
+    let w = 0;
+    const seg = (x1, y1, z1, x2, y2, z2) => { boltPos[w++] = x1; boltPos[w++] = y1; boltPos[w++] = z1; boltPos[w++] = x2; boltPos[w++] = y2; boltPos[w++] = z2; };
+    for (let i = bolts.length - 1; i >= 0; i--) {
+      const b = bolts[i];
+      b.age += dt;
+      if (b.age >= b.life) { bolts.splice(i, 1); continue; }
+      const fade = 1 - b.age / b.life;
+      // fresh jag every frame: midpoint displacement along the run
+      const pts = [{ x: b.ax, y: b.ay, z: b.az }];
+      for (let k = 1; k < BOLT_SEGS; k++) {
+        const t = k / BOLT_SEGS, j = b.amp * fade * Math.sin(Math.PI * t);
+        pts.push({ x: b.ax + (b.bx - b.ax) * t + (Math.random() - 0.5) * j, y: b.ay + (b.by - b.ay) * t + (Math.random() - 0.5) * j * 0.6, z: b.az + (b.bz - b.az) * t + (Math.random() - 0.5) * j });
+      }
+      pts.push({ x: b.bx, y: b.by, z: b.bz });
+      for (let k = 0; k < pts.length - 1; k++) seg(pts[k].x, pts[k].y, pts[k].z, pts[k + 1].x, pts[k + 1].y, pts[k + 1].z);
+      // one fork off a random midpoint, downward-biased
+      const f = pts[1 + ((Math.random() * (BOLT_SEGS - 2)) | 0)];
+      const fl = 0.5 + Math.random() * b.amp;
+      seg(f.x, f.y, f.z, f.x + (Math.random() - 0.5) * fl * 2, f.y - fl * (0.4 + Math.random() * 0.8), f.z + (Math.random() - 0.5) * fl * 2);
+      seg(f.x, f.y, f.z, f.x + (Math.random() - 0.5) * fl, f.y - fl * 0.3, f.z + (Math.random() - 0.5) * fl);
+    }
+    for (let k = w; k < boltPos.length; k++) boltPos[k] = 0;
+    boltGeo.attributes.position.needsUpdate = true;
+    boltCore.material.opacity = bolts.length ? 0.75 + Math.random() * 0.25 : 0;
+    boltHalo.material.opacity = bolts.length ? 0.25 + Math.random() * 0.2 : 0;
+  }
   function spawnBoom(x, y, z, r) {
     for (let i = 0; i < 12; i++) {
       if (debris.length >= 200) break;
@@ -1245,6 +1294,18 @@ export function makeRenderer(canvas, world0, opts = {}) {
       } else if (e.type === "gmuzzle") {
         fire.push({ x: e.x, y: e.y + 0.4, z: e.z, s: 0.8, life: 0.1, age: 0 });
       } else if (e.type === "weldbreak") puff(e.x, e.y, e.z, e.ice ? 3 : 2, e.ice ? 0xe8f4fb : 0x8a8f96);
+      else if (e.type === "zap") {
+        spawnBolt(e.x, e.y, e.z, e.x2, e.y2 + 0.6, e.z2, 0.26, 1.4);
+        fire.push({ x: e.x2, y: e.y2 + 0.8, z: e.z2, s: 0.9, life: 0.14, age: 0 });
+        shake = Math.min(1.5, shake + 0.1);
+      } else if (e.type === "pondzap") {
+        // the surface lights: radial bolts flat across the ice
+        for (let pi = 0; pi < 6; pi++) {
+          const a2 = Math.random() * Math.PI * 2, rr = e.r * (0.5 + Math.random() * 0.5);
+          const py = F.heightAt(e.x, e.z) + 0.25;
+          spawnBolt(e.x, py, e.z, e.x + Math.cos(a2) * rr, py, e.z + Math.sin(a2) * rr, 0.4, 0.9);
+        }
+      }
       else if (e.type === "splash") puff(e.x, POOL.level + 0.2, e.z, 4, 0x9fc4d8);
     }
   }
@@ -1829,6 +1890,17 @@ export function makeRenderer(canvas, world0, opts = {}) {
         if (g.userData.gunPitch) g.userData.gunPitch.rotation.x = -(b._aimPitch || 0);
       }
       if (g.userData.spin) g.rotation.y = world.t * 0.5;
+      if (g.userData.glow) {
+        // mk2.16: the coil breathes — and crawls with small arcs at a loose
+        // regular interval, denser in the half-second before the trigger
+        g.userData.glow.material.opacity = 0.45 + 0.3 * Math.sin(world.t * 6 + b.id) + (b.fireCd != null && b.fireCd < 0.6 ? 0.25 : 0);
+        if (Math.random() < dt * 2.2) {
+          const cy = b.pos.y + g.userData.crownY;
+          const a2 = Math.random() * Math.PI * 2, a3 = a2 + 1 + Math.random() * 3;
+          spawnBolt(b.pos.x + Math.cos(a2) * 0.55, cy + (Math.random() - 0.5) * 0.3, b.pos.z + Math.sin(a2) * 0.55,
+            b.pos.x + Math.cos(a3) * 0.55, cy + (Math.random() - 0.5) * 0.3, b.pos.z + Math.sin(a3) * 0.55, 0.12, 0.35);
+        }
+      }
       g.scale.setScalar(hurt < 0.999 ? 0.94 + 0.06 * hurt : 1);
       if (world.t - (b.hitT || -9) < 0.12) g.scale.multiplyScalar(1.06);
       if (b.towerType === "frost" && b.alive && fri < 16 && b.auraR) {
@@ -2271,6 +2343,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
       if (fi < 96) fireMesh.setMatrixAt(fi++, dummy.matrix);
     }
     fireMesh.count = fi; fireMesh.instanceMatrix.needsUpdate = true;
+    writeBolts(dt);
     // tracers from live projectiles
     let ti = 0, ri = 0;
     for (const p of world.projectiles) {
