@@ -58,8 +58,8 @@ import fs from "node:fs";
     // now reads the living market's live price, the harness fallback still
     // pays WALL_COST flat).
     const wsrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("mk0.50/3: DepotGame reads WALL_COST instead of carrying its own literal (re-pinned mk1.13 — the spec path prices live, the harness fallback remains)",
-      /spec \? priceNow\(mode, spec\.cost\) : WALL_COST/.test(wsrc));
+    ok("mk0.50/3: DepotGame reads WALL_COST instead of carrying its own literal (re-pinned mk1.13 — the spec path prices live, the harness fallback remains; re-pinned mk2.24 — the sandbox's dev switch zeroes the fallback too)",
+      /spec \? priceNow\(mode, spec\.cost\) : \(dev \? 0 : WALL_COST\)/.test(wsrc));
     // The knowing asymmetry is documented where the raise is, not just in the
     // plan — a reader who finds a rich enemy finds the reason.
     const sqsrc = fs.readFileSync(new URL("../../src/depot/squads.js", import.meta.url), "utf8");

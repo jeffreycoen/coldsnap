@@ -6,7 +6,7 @@ import { probeFront, burnFront } from "../depot/save.js";
 // THE FRONT DOOR (P6 T7, mk1.14). The site opens on WINTER FRONT — one
 // identity, one dominant action, three true laws — and the tech demos this
 // war was built on live one quiet link away (DemosScreen).
-export default function StartScreen({ onDepot, onDepotResume, onDemos, onControls }) {
+export default function StartScreen({ onDepot, onDepotResume, onDemos, onDevSandbox, onControls }) {
   const [isTouch] = useState(detectTouch);
   // THE SAVED FRONT (P1 Task 3). null until the async probe lands — the menu
   // renders its normal self meanwhile and RESUME FRONT simply appears when
@@ -104,6 +104,10 @@ export default function StartScreen({ onDepot, onDepotResume, onDemos, onControl
 
         <button data-menu="controls" style={{ ...option(), marginTop: 8, opacity: 0.7, fontSize: 12 }} onClick={onControls}>
           CONTROLS — keys and remapping →
+        </button>
+
+        <button data-menu="devsandbox" style={{ ...option(), marginTop: 8, opacity: 0.7, fontSize: 12 }} onClick={onDevSandbox}>
+          SANDBOX — test any weapon on a fresh valley →
         </button>
 
         <div style={{ textAlign: "center", marginTop: 18, fontSize: 11, opacity: 0.55 }}>

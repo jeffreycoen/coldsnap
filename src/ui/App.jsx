@@ -75,7 +75,7 @@ export default function App() {
   // ESC leaves a game for the menu. Registered in bubble phase so the
   // remapper (capture) runs first — Escape is unbindable, so it always lands.
   useEffect(() => {
-    if (!GAME_SCREENS.has(screen) && screen !== "campaign" && screen !== "mechrange" && screen !== "towerdef" && screen !== "depot") return; // the order book and the mech range exit on ESC too (range stays out of GAME_SCREENS: it reads raw key codes, no remap)
+    if (!GAME_SCREENS.has(screen) && screen !== "campaign" && screen !== "mechrange" && screen !== "towerdef" && screen !== "depot" && screen !== "devsandbox") return; // the order book and the mech range exit on ESC too (range stays out of GAME_SCREENS: it reads raw key codes, no remap)
     const onEsc = (e) => { if (e.key === "Escape") setScreen(screen === "mission" ? "campaign" : "menu"); };
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
@@ -118,6 +118,11 @@ export default function App() {
   if (screen === "depot") {
     return <DepotGame resume={depotResume} onExit={() => { setDepotResume(null); setScreen("menu"); }} />;
   }
+  if (screen === "devsandbox") {
+    // the developer sandbox (mk2.24): the war screen under its dev switch —
+    // never in RESUME_SCREENS, so a reload lands on the menu, never here.
+    return <DepotGame dev onExit={() => setScreen("menu")} />;
+  }
   if (screen === "controls") {
     return <Controls keymap={keymap} onChange={applyKeymap} onBack={() => setScreen("menu")} />;
   }
@@ -146,5 +151,6 @@ export default function App() {
     onDepot={() => { setDepotResume(null); setScreen("depot"); }}
     onDepotResume={(data) => { setDepotResume(data); setScreen("depot"); }}
     onDemos={() => setScreen("demos")}
+    onDevSandbox={() => setScreen("devsandbox")}
     onControls={() => setScreen("controls")} />;
 }

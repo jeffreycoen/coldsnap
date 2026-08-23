@@ -832,7 +832,7 @@ const branchOf = (key) => { const b = TREE_BRANCHES.find((x) => x.match(key)); r
 // and hands the data down already validated, so this mount effect stays
 // synchronous — a boot that awaited storage mid-construction would be a world
 // half-built for however long the read took.
-export default function DepotGame({ onExit, resume = null }) {
+export default function DepotGame({ onExit, resume = null, dev = false }) {
   const canvasRef = useRef(null);
   const stateRef = useRef(null);
   // POSSESSION (P4 T1, mk0.90): the knob's screen position is pushed
@@ -863,7 +863,7 @@ export default function DepotGame({ onExit, resume = null }) {
   const [buildOpen, setBuildOpen] = useState(false);
   const [branch, setBranch] = useState("troops");
   useEffect(() => {
-    if (resumeRef.current) return; // a resumed war is not a first entry
+    if (resumeRef.current || dev) return; // a resumed war is not a first entry; the sandbox never tours
     let live = true;
     (async () => {
       try {
@@ -937,6 +937,7 @@ export default function DepotGame({ onExit, resume = null }) {
       const RES = resumeRef.current;
       const urlSeed = parseInt(new URLSearchParams(window.location.search).get("seed"), 10);
       const seed = RES ? RES.map.seed
+        : dev ? Math.floor(Date.now() % 1000000)
         : Number.isFinite(urlSeed) ? urlSeed : Math.floor(Date.now() % 1000000);
       makeMap(seed);
       const field = makeField(181, 2.0, MAP_SEED);
@@ -1389,8 +1390,16 @@ export default function DepotGame({ onExit, resume = null }) {
         // a formation it already has.
         reg: RES ? { ...RES.run.reg } : makeRegiment(world.rng),
       };
-      if (!RES) {
+      if (!RES && !dev) {
         musterFreshStart(world, S, depotP, grid, field, nextApcSeq);
+      }
+      if (dev) {
+        // mk2.24: THE SANDBOX OPENING — no draft, no enemy opening, no
+        // commander (nothing bell-driven ever reads S.cmdr here). The war
+        // starts standing, every plan unlocked, and the till is dead weight:
+        // priceNow answers 0 on the bench.
+        S.started = true;
+        S.manifest.unlocked = PALETTE.map((p) => p.key);
       }
       // Step 5. The run state itself, straight off the file. The bell is the
       // ONE deliberate exception: the countdown restarts at a full period
@@ -1480,8 +1489,9 @@ export default function DepotGame({ onExit, resume = null }) {
       // (the first second of a run). buyPaced is the once-a-second purchase
       // limiter — towers and squads only (interpretation line 3: engineer
       // line pieces are priced live but not paced).
-      const priceNow = (key, base) => (S._market && S._market.player[key] != null ? S._market.player[key] : base);
+      const priceNow = (key, base) => (dev ? 0 : S._market && S._market.player[key] != null ? S._market.player[key] : base);
       const buyPaced = () => {
+        if (dev) return true;
         if (world.t - S._buyAt < 1) { toast("THE MARKET PACES YOU — one purchase a second"); return false; }
         return true;
       };
@@ -1494,10 +1504,10 @@ export default function DepotGame({ onExit, resume = null }) {
         if (cell.ice) { toast("NO GROUND — frozen water"); return; }
         {
           const wp0 = grid.gridToWorld(gx, gz), c0 = invW(wp0.x, wp0.z);
-          if (!canBuild(T, c0.u, c0.v)) { toast("GROUND NOT HELD"); return; }
+          if (!(dev || canBuild(T, c0.u, c0.v))) { toast("GROUND NOT HELD"); return; }
         }
         const spec = mode === "wall" ? null : TOWER_SPECS[mode];
-        const cost = spec ? priceNow(mode, spec.cost) : WALL_COST; // walls: no TOWER_SPECS row, state.js owns the price
+        const cost = spec ? priceNow(mode, spec.cost) : (dev ? 0 : WALL_COST); // walls: no TOWER_SPECS row, state.js owns the price
         if (S.resources < cost) { toast("NO SCRAP"); return; }
         cell.blocked = true;
         // mk1.96 (owner): the road rule EXPUNGED — a sealed map is the
@@ -1549,7 +1559,7 @@ export default function DepotGame({ onExit, resume = null }) {
         const spec = TOWER_SPECS[mode];
         const v = validatePlacement({
           blocked: !!(cell.blocked || cell.wallId), ice: !!cell.ice,
-          held: canBuild(T, c0.u, c0.v), resources: S.resources, cost: priceNow(mode, spec.cost),
+          held: (dev || canBuild(T, c0.u, c0.v)), resources: S.resources, cost: priceNow(mode, spec.cost),
         });
         return v.ok ? { ok: true, spec, wp } : v;
       };
@@ -1625,7 +1635,7 @@ export default function DepotGame({ onExit, resume = null }) {
         const wp = grid.gridToWorld(gx, gz), c0 = invW(wp.x, wp.z);
         const v = validatePlacement({
           blocked: !!(cell.blocked || cell.wallId), ice: !!cell.ice,
-          held: canBuild(T, c0.u, c0.v), resources: S.resources, cost,
+          held: (dev || canBuild(T, c0.u, c0.v)), resources: S.resources, cost,
         });
         return v.ok ? { ok: true, wp } : v;
       };
@@ -2559,6 +2569,7 @@ export default function DepotGame({ onExit, resume = null }) {
 
       let saveStat = null;
       const saveFront = () => {
+        if (dev) return; // mk2.24: the sandbox never saves — the one rng draw below is never drawn either (no live stream compares against a sandbox run)
         const rngSeed = Math.floor(world.rng() * 4294967296); // THE ONE DRAW — 1/bell, always
         try {
           const t0 = performance.now();
@@ -2583,6 +2594,7 @@ export default function DepotGame({ onExit, resume = null }) {
       // BEFORE the end card mounts. Idempotent — the first verdict tick owns
       // it, same discipline as stampEnd.
       const burnSave = () => {
+        if (dev) return; // the sandbox owns no slot to burn — a real front's save must survive a sandbox session untouched
         if (S._saveBurned) return;
         S._saveBurned = true;
         burnFront();
@@ -2680,7 +2692,7 @@ export default function DepotGame({ onExit, resume = null }) {
         const cell = grid.cells[grid.idx(g.gx, g.gz)];
         const wp = grid.gridToWorld(g.gx, g.gz);
         const c0 = invW(wp.x, wp.z);
-        if (!canBuild(T, c0.u, c0.v)) { toast("GROUND NOT HELD"); return; }
+        if (!(dev || canBuild(T, c0.u, c0.v))) { toast("GROUND NOT HELD"); return; }
         if (cell.water || cell.ice || cell.blocked || cell.wallId) { toast("NO GROUND"); return; }
         if (pk.kind === "squad") {
           const sq = makeSquad(S.nextSquadId++, pk.type, 1, wp.x, wp.z);
@@ -2735,7 +2747,7 @@ export default function DepotGame({ onExit, resume = null }) {
         const cell = grid.cells[grid.idx(g.gx, g.gz)];
         const wp = grid.gridToWorld(g.gx, g.gz);
         const c0 = invW(wp.x, wp.z);
-        if (!canBuild(T, c0.u, c0.v)) { toast("GROUND NOT HELD"); return false; }
+        if (!(dev || canBuild(T, c0.u, c0.v))) { toast("GROUND NOT HELD"); return false; }
         if (cell.water || cell.ice || cell.blocked || cell.wallId) { toast("NO GROUND"); return false; }
         if (pk.kind === "mech") {
           if (!(armorSpread(field, wp.x, wp.z, MECH_SPREAD) < 0.28)) { toast("TOO STEEP TO PARK"); return false; }
@@ -2774,6 +2786,7 @@ export default function DepotGame({ onExit, resume = null }) {
         if (!armedKey || S.gameOver || S.victory) { R.overlay.setZone(false); return; }
         const heldAt = dealPhase
           ? (x, z) => Math.hypot(x - depotP.x, z - depotP.z) <= HOMELAND_R
+          : dev ? () => true
           : (x, z) => { const c = invW(x, z); return canBuild(T, c.u, c.v); };
         // mk1.96 (owner): the zone tells the ARMED unit's own truth — the
         // ground's permanent laws AND the room standing bodies take right
@@ -3524,7 +3537,7 @@ export default function DepotGame({ onExit, resume = null }) {
             // THE CLOCK. Read off world.t — the fixed-step sim clock — never
             // wall time and never a React value; a paused run holds the bell
             // exactly where it stood because world.t stops with it.
-            if (stepBell(S, world.t)) { ringBell(); S.manifest.armedAtWall = performance.now() / 1000 + PENDING_ARM_S; }
+            if (!dev && stepBell(S, world.t)) { ringBell(); S.manifest.armedAtWall = performance.now() / 1000 + PENDING_ARM_S; }
             // THE PRE-TOLL (Task 4). The last five seconds are counted out
             // loud. Edge-triggered on the countdown crossing each whole second
             // — ceiling-rounded exactly as the chip reads it — so it fires once
@@ -3685,7 +3698,7 @@ export default function DepotGame({ onExit, resume = null }) {
           // of the sim clock, so it doesn't run while paused/pre-start/
           // post-game. Fraction is exposed on hud for the smoke test; there
           // is deliberately no health-bar UI — the building is the readout.
-          stepDepotCensus(S, sdt, () => ({
+          if (!dev) stepDepotCensus(S, sdt, () => ({
             player: depotStandingFraction(depotCensus, world.byId),
             enemy: depotStandingFraction(depotCensus2, world.byId),
           }));
@@ -4371,11 +4384,13 @@ export default function DepotGame({ onExit, resume = null }) {
       )}
       <div style={P.top}>
         <div style={P.stat}><span style={{ color: "#ffd27a" }}>◆</span>{hud.resources}</div>
-        <div data-bell style={{ ...P.stat, cursor: hud.lastDispatch ? "pointer" : "default" }}
-          onClick={() => { if (hud.lastDispatch) setRereadDispatch(true); }}
-          title={hud.lastDispatch ? "re-read last dispatch" : undefined}>
-          BELL {hud.bell} · {clockStr(hud.bellT)}
-        </div>
+        {!dev && (
+          <div data-bell style={{ ...P.stat, cursor: hud.lastDispatch ? "pointer" : "default" }}
+            onClick={() => { if (hud.lastDispatch) setRereadDispatch(true); }}
+            title={hud.lastDispatch ? "re-read last dispatch" : undefined}>
+            BELL {hud.bell} · {clockStr(hud.bellT)}
+          </div>
+        )}
         <div style={P.stat}>☠ {hud.enemies}</div>
         <div data-score style={P.stat} title="the match score — kills and value destroyed, yours then the enemy's">
           <span style={{ color: "#7dffa8" }}>⚔ {hud.score.pk} ◆{hud.score.pv}</span>
@@ -4403,7 +4418,12 @@ export default function DepotGame({ onExit, resume = null }) {
             </button>
           </>
         )}
-        <button style={{ ...P.btn, marginLeft: "auto", padding: isTouch ? "5px 10px" : "4px 10px" }} title="rotate view (Q/E)"
+        {dev && (
+          <button data-dev-reroll style={{ ...P.btn, marginLeft: "auto", padding: isTouch ? "5px 10px" : "4px 10px", borderColor: "#c9a04e", color: "#ffd27a" }} title="a fresh random valley — everything here is discarded" onClick={restart}>
+            NEW VALLEY
+          </button>
+        )}
+        <button style={{ ...P.btn, marginLeft: dev ? undefined : "auto", padding: isTouch ? "5px 10px" : "4px 10px" }} title="rotate view (Q/E)"
           onClick={() => { const S = stateRef.current; if (S && S.rotate) S.rotate(1); }}>⟳</button>
         <button style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.fogOn ? "#7fd7ff" : "#48515f", opacity: hud.fogOn ? 1 : 0.6 }} title="fog of war (visual only)" onClick={toggleFog}>
           FOG {hud.fogOn ? "ON" : "OFF"}
@@ -4760,7 +4780,7 @@ export default function DepotGame({ onExit, resume = null }) {
         </div>
       )}
 
-      {!hud.started && !hud.placing && !hud.drafting && !fatal && (
+      {!hud.started && !hud.placing && !hud.drafting && !fatal && !dev && (
         <div style={P.ovl}>
           <div style={{ fontSize: 26, letterSpacing: 4, color: "#9fdcff" }}>COLDSNAP</div>
           <div style={{ fontSize: 13, letterSpacing: 8, color: "#ffd27a", marginBottom: 14 }}>WINTER FRONT</div>
@@ -4782,7 +4802,7 @@ export default function DepotGame({ onExit, resume = null }) {
         </div>
       )}
 
-      {!hud.started && !hud.placing && !hud.drafting && !fatal && manualOpen && <FieldManual onClose={closeManual} />}
+      {!hud.started && !hud.placing && !hud.drafting && !fatal && !dev && manualOpen && <FieldManual onClose={closeManual} />}
 
       {hud.drafting && !fatal && (
         <DraftScreen cards={hud.drafting} onConfirm={(picked) => { const S = stateRef.current; if (S && S.confirmDraft) S.confirmDraft(picked); }} />

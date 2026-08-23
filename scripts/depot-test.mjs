@@ -36,4 +36,5 @@ await import("./tests/19-the-atomic-look.mjs");
 await import("./tests/20-the-possessed-trigger.mjs");
 await import("./tests/21-the-broken-ridge.mjs");
 await import("./tests/22-the-tesla-coil.mjs");
+await import("./tests/23-the-sandbox.mjs");
 finish();
