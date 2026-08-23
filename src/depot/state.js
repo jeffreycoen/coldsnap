@@ -842,7 +842,19 @@ export function possessedTowerFire(world, tower, aim, T, toUV = (x, z) => ({ u: 
     if (!arcs) return false;
     tower.fireCd = spec.fireRate;
     tower.flashT = world.t;
-    if (live) { teslaStrike(world, arcs, tower, live); return true; }
+    // Amendment 4 (owner): the possessed coil strikes ANY living body under
+    // the crosshair — his own men included. snapTargetNear only locks
+    // enemies, so scan both sides here; sight is already ruled at the aim.
+    let mark = live;
+    if (!mark) {
+      let bd = POSSESS_SNAP_R * POSSESS_SNAP_R;
+      for (const b of world.bodies) {
+        if ((b.kind !== "unit" && b.kind !== "vehicle" && b.kind !== "mech") || !b.alive) continue;
+        const dx = b.pos.x - aim.x, dz = b.pos.z - aim.z, d2 = dx * dx + dz * dz;
+        if (d2 < bd) { bd = d2; mark = b; }
+      }
+    }
+    if (mark) { teslaStrike(world, arcs, tower, mark); return true; }
     const gy = world.field.heightAt(aim.x, aim.z);
     arcs.push({
       nextAt: world.t, hits: 0, dmg: TOWER_SPECS.tesla.dmg,

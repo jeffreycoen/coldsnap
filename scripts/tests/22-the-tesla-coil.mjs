@@ -123,3 +123,20 @@ const walk = (world, arcs, s) => { for (let i = 0; i < Math.round(s / 0.05); i++
   for (let i = 0; i < 10; i++) { world.t += 0.05; stepTesla(world, arcs); }
   ok("ground strike: the chain walks from the snow at full 35", near.hp === 65);
 }
+{ // Amendment 4: the possessed snap takes any body — own men included
+  const { makeField: mf4, makeWorld: mw4, addBody: ab4 } = await import("../../src/engine/core.js");
+  const { possessedTowerFire: ptf4, stepTesla: st4 } = await import("../../src/depot/state.js");
+  const { TOWER_SPECS: TS4 } = await import("../../src/depot/specs.js");
+  ok("a4: the spec carries acc", TS4.tesla.acc != null);
+  const field = mf4(41, 2.0, 13);
+  const world = mw4({ field, seed: 13 });
+  world.depotCombat = true;
+  const tower = ab4(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: TS4.tesla.hy, hz: 0.8, x: 0, y: field.heightAt(0, 0) + TS4.tesla.hy, z: 0, hp: 85 });
+  tower.towerType = "tesla";
+  const own = ab4(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 1, hz: 0.28, x: 8, y: field.heightAt(8, 0) + 1, z: 0, hp: 100 });
+  own.smearStyle = "human";
+  const arcs = [];
+  ok("a4: FIRE on an own man fires", ptf4(world, tower, { x: 8, z: 0 }, null, undefined, arcs) === true);
+  for (let i = 0; i < 4; i++) { world.t += 0.05; st4(world, arcs); }
+  ok("a4: the own man takes the strike", own.hp === 65);
+}

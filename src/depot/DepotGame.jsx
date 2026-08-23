@@ -2881,6 +2881,7 @@ export default function DepotGame({ onExit, resume = null }) {
       // at a point __DEPOTFINDBUILDABLE__ handed it without driving the tap UI.
       window.__DEPOTGRIDAT__ = (x, z) => grid.worldToGrid(x, z);
       window.__DEPOTSPAWN__ = (n) => { for (let i = 0; i < (n || 1); i++) spawnEnemy(world, SPAWN_POINTS[S.spawnRR++ % SPAWN_POINTS.length]); };
+      window.__DEPOTTESLA__ = () => { const S = stateRef.current; return { arcs: S && S.arcs ? S.arcs.length : -1, fired: S ? S._teslaFired || 0 : -1, zaps: S ? S._teslaZaps || 0 : -1, held: !!(S && S.fireHeld), pk: S && S.possess ? S.possess.kind : null }; };
       window.__DEPOTSTART__ = () => { S.started = true; };
       window.__DEPOTSETT__ = (t) => { world.t = t; world.wind = windAt(MAP_SEED, world.t); };
       window.__DEPOTFLAGS__ = () => world.bodies.filter((b) => b.flagPole).map((b) => ({ id: b.id, kind: b.kind, x: +b.pos.x.toFixed(2), y: +b.pos.y.toFixed(2), z: +b.pos.z.toFixed(2) }));
@@ -3626,7 +3627,7 @@ export default function DepotGame({ onExit, resume = null }) {
             // consulted while possessed — your trigger, your responsibility.
             if (S.fireHeld && S.possess && S.possess.kind === "tower" && S.reticle) {
               const ptw = world.byId.get(S.possess.id);
-              if (ptw) possessedTowerFire(world, ptw, S.reticle, T, invW, S.arcs);
+              if (ptw && possessedTowerFire(world, ptw, S.reticle, T, invW, S.arcs)) S._teslaFired = (S._teslaFired || 0) + 1;
             }
             // POSSESSION (P7 T2): the Bison's two triggers — same
             // one-attempt-per-tick flags, real cooldowns, through
@@ -3664,6 +3665,7 @@ export default function DepotGame({ onExit, resume = null }) {
           if (perf) pSim = performance.now() - pSim0; // ...and closes
           if (S.acc > STEP * 6) S.acc = 0;
           const evs = drainEvents();
+          for (const e of evs) if (e.type === "zap") S._teslaZaps = (S._teslaZaps || 0) + 1;
           // ...and the frame's audio-only cues join the stream here, after the
           // wipe that would have eaten them (see the cue queue above).
           if (cues.length) { for (const c of cues) evs.push(c); cues.length = 0; }
