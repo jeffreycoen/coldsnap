@@ -663,6 +663,18 @@ export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })
   }
 }
 
+// mk2.18: the davy's own hold — any friendly soft body in the blast ring,
+// the firing crew itself excepted (the ring is wider than the range; the
+// crew is ALWAYS inside its own blast, and the escape is the game).
+export function friendInBlast(world, x, z, team, exceptSquad) {
+  for (const b of world.bodies) {
+    if ((b.kind !== "unit" && b.kind !== "vehicle" && b.kind !== "mech") || !b.alive || b.team !== team) continue;
+    if (exceptSquad && b.squadId === exceptSquad.id) continue;
+    if (Math.hypot(b.pos.x - x, b.pos.z - z) < DAVY_FIRE.blastR) return true;
+  }
+  return false;
+}
+
 // mk2.08 (owner): THE DAVY CROCKETT'S SHOT. Under the ATTACK order only
 // (the sapper's rule), the crew's lead man fires the atomic round at the
 // nearest target its side SEES — man, machine, or hostile structure — inside
@@ -700,6 +712,8 @@ export function stepDavyShot(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z
     bd = d2; best = s;
   }
   if (!best) return;
+  const holdA = world._holdArea;
+  if (holdA && holdA[squad.team] && friendInBlast(world, best.pos.x, best.pos.z, squad.team, squad)) return;
   squad._davyReadyAt = world.t + spec.reloadS;
   const attacker = squad.team === 1 ? "player" : "enemy";
   shooterFire(world, shooter, muzzle, best.kind !== "unit" && best.kind !== "vehicle" && best.kind !== "mech" ? aimTop(world, best) : best, spec, { high: true, attacker, hitStruct: true, owner: shooter.id });
@@ -1522,6 +1536,7 @@ export function makeRunState({ startResources = 250 } = {}) { // P7.2 T8 (owner)
     resources: startResources, score: { p: { kills: 0, value: 0 }, e: { kills: 0, value: 0 } },
     ws: makeAssaultState(), spawnRR: 0,
     arcs: [], // mk2.15: live tesla chains — plain rows, saved as they stand
+    holdArea: { 1: false, 2: false }, // mk2.18 (owner): area weapons hold fire with a friendly in the spread — tesla chain + davy blast; per side, both start OFF; nothing flips side 2 today
     mode: "wall", sellMode: false, inspectId: null,
     started: false, gameOver: false, victory: false, attrition: false, ledgerLoss: false,
     starvedStreak: 0, spent: false,
@@ -1963,7 +1978,7 @@ export const HUD0 = {
   lastDispatch: null,
   started: false, gameOver: false, victory: false, breach: false, enemyBreach: false,
   mode: "wall", sellMode: false, sandbagOrient: 0, paused: false, speed: 1, inspect: null, toasts: [],
-  pending: null, fogOn: true, healthOn: true, discipline: "careful", depotStanding: 1, enemyStanding: 1,
+  pending: null, fogOn: true, healthOn: true, holdAreaOn: false, discipline: "careful", depotStanding: 1, enemyStanding: 1,
   squadSel: null, squadFlag: null,
   // The manifest's React mirror. unlocked seeds from PLAYER_START so the very
   // first render — before the hud tick has run once — already draws the right

@@ -285,6 +285,7 @@ export function serializeFront(ctx) {
       // `n` is nextAt (absolute sim clock, rides with world.t like fog's
       // `until`); water references re-attach on the next wet hop.
       arcs: (S.arcs || []).map((a) => ({ n: r3(a.nextAt), h: a.hits, d: r3(a.dmg), x: r3(a.fx), y: r3(a.fy), z: r3(a.fz), k: a.atk, t: a.tid, ids: a.hitIds.slice(), gx: a.gx != null ? r3(a.gx) : undefined, gy: a.gy != null ? r3(a.gy) : undefined, gz: a.gz != null ? r3(a.gz) : undefined })),
+      holdArea: { 1: !!(S.holdArea && S.holdArea[1]), 2: !!(S.holdArea && S.holdArea[2]) },
     },
     towns: town.map((b) => ({ id: b.id, n0: b.n0, ruined: !!b.ruined })),
     census: cens(census), census2: cens(census2),

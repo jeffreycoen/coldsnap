@@ -1322,7 +1322,7 @@ import fs from "node:fs";
     const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     const stepTowersBody = (gameSrc.match(/export function stepTowers\([\s\S]*?\n\}/) || [""])[0];
     ok("POSSESSION T3(a) source pin: stepTowers takes a possessedId argument",
-      /export function stepTowers\(world, T, discipline, possessedId, arcs\)/.test(gameSrc)); // mk2.15: fifth param `arcs` added for the tesla chain
+      /export function stepTowers\(world, T, discipline, possessedId, arcs, holdArea\)/.test(gameSrc)); // mk2.18: sixth param `holdArea` added for the switch
     ok("POSSESSION T3(a) source pin: the guard skips the possessed body — no acquisition, no fire",
       /if \(possessedId === b\.id\) \{ b\.fireCd = \(b\.fireCd \|\| 0\) - dt; continue; \}/.test(stepTowersBody), stepTowersBody.length);
   }

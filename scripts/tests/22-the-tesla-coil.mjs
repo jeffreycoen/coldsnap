@@ -1,6 +1,6 @@
 // COLDSNAP suite era 22 — THE TESLA COIL (mk2.15). The frost tower is a
 // lightning weapon now: one strike on an acquired enemy, then the chain
-// walks 0.15s a hop to the nearest body not yet hit, 4m reach, 8 hits, one
+// walks 0.15s a hop to the nearest body not yet hit, 8m reach, 8 hits, one
 // hit per body, 35 damage stepping down 5 to a floor of 10, blind to team
 // and sight past the first strike. Zero rng draws. Fixture seed: 13. No
 // seed is special.
@@ -144,4 +144,21 @@ const walk = (world, arcs, s) => { for (let i = 0; i < Math.round(s / 0.05); i++
   // does not boot through makeRunState, so the field is pinned at the source.
   const dg = (await import("node:fs")).readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   ok("a5: the game state carries arcs", /ws: makeDepotAssaultState\(\), spawnRR: 0,\s*\n\s*arcs: \[\]/.test(dg));
+}
+{ // Task 4: the switch — davy holds with a friend in the ring, never on its own crew
+  const g = (await import("node:fs")).readFileSync(new URL("../../src/depot/state.js", import.meta.url), "utf8");
+  ok("switch: davy reads the hold", g.includes("holdArea") && g.includes("friendInBlast"));
+  const dg = (await import("node:fs")).readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  ok("switch: the button exists", dg.includes("data-holdarea"));
+  ok("switch: tesla trigger reads the hold", dg.includes("teslaWouldCatchFriend"));
+}
+{ // davy behavior: the hold spares the plan when a rifleman stands in the ring
+  const { makeField: mf, makeWorld: mw, addBody: ab } = await import("../../src/engine/core.js");
+  const { friendInBlast } = await import("../../src/depot/state.js");
+  const field = mf(41, 2.0, 13);
+  const world = mw({ field, seed: 13 });
+  const friend = ab(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 1, hz: 0.28, x: 10, y: 1, z: 0, hp: 100 });
+  friend.squadId = 7;
+  ok("switch: a friend inside 25m holds the davy", friendInBlast(world, 0, 0, 1, null) === true);
+  ok("switch: the crew itself never holds its own shot", friendInBlast(world, 0, 0, 1, { id: 7 }) === false);
 }

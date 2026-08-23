@@ -18,7 +18,7 @@ import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS, BISON, APC, MECH, BISON_FIRE, BARRELS } from "./specs.js";
 import { cardFor } from "./infocards.js";
 import { windAt } from "./wind.js";
-import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, takeHandCard, TIER_BELLS, memberNearRow, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType, scoreKill, placeZoneMask, POSSESS_ACC, stickyLock, stepGrenades, stepDavyShot, teslaStrike, stepTesla } from "./state.js";
+import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, takeHandCard, TIER_BELLS, memberNearRow, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType, scoreKill, placeZoneMask, POSSESS_ACC, stickyLock, stepGrenades, stepDavyShot, teslaStrike, stepTesla, teslaWouldCatchFriend } from "./state.js";
 import { marketCounts, computePrices, fieldPrices, priced } from "./market.js";
 import { stepMines, minePrices, mineSeedRoll, mineSeedPlace, MINE_COST, WIRE_COST } from "./mines.js";
 import { addFogPatch, stepFog } from "./fog.js";
@@ -113,7 +113,7 @@ function stepSquadRouting(grid, sq, world) {
 }
 
 // ================================================================ towers
-export function stepTowers(world, T, discipline, possessedId, arcs) {
+export function stepTowers(world, T, discipline, possessedId, arcs, holdArea) {
   const dt = world.dt;
   for (const b of world.bodies) {
     if (b.kind !== "tower" || !b.alive) continue;
@@ -179,9 +179,16 @@ export function stepTowers(world, T, discipline, possessedId, arcs) {
       b.fireCd = spec.fireRate;
       continue;
     }
+    if (spec.tesla && arcs) {
+      if (holdArea && holdArea[tTeam] && teslaWouldCatchFriend(world, b, best)) { b.fireCd = spec.fireRate; continue; }
+      b.fireCd = spec.fireRate;
+      b.flashT = world.t;
+      teslaStrike(world, arcs, b, best);
+      continue;
+    }
     b.fireCd = spec.fireRate;
     b.flashT = world.t;
-    if (spec.tesla && arcs) teslaStrike(world, arcs, b, best); else towerShot(world, b, best, spec);
+    towerShot(world, b, best, spec);
   }
 }
 
@@ -511,6 +518,7 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
         return;
       }
     };
+    world._holdArea = S.holdArea; // mk2.18: area weapons' hold, read by stepDavyShot below
     for (const sq of S.squads) {
       if (sq.ridingIn != null || sq.order === "ride") continue; // P7 T4: the hold is sealed — no legs, no eyes, no rifles
       if (S.possess && S.possess.kind === "squad" && sq.id === S.possess.id) {
@@ -588,7 +596,7 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
     const pv = world.byId.get(S.possess.id);
     if (!pv || !pv.alive) S.releasePossession();
   }
-  stepTowers(world, T, discipline, S.possess && S.possess.kind === "tower" ? S.possess.id : undefined, S.arcs);
+  stepTowers(world, T, discipline, S.possess && S.possess.kind === "tower" ? S.possess.id : undefined, S.arcs, S.holdArea);
   stepGrenades(world); // mk2.03: the grenade fuses — 2.0s from each release
   stepTesla(world, S.arcs); // mk2.15: the chains walk, 0.15s a hop
   // WIND TOGGLE (mk0.95, owner's accuracy-tuning request): off = dead calm
@@ -1289,6 +1297,7 @@ export default function DepotGame({ onExit, resume = null }) {
         cmdr: null, // P7 T8: the drawn armor doctrine — one boot draw (fresh war), restored on RESUME
         ws: makeDepotAssaultState(), spawnRR: 0,
         arcs: [], // mk2.20: live tesla chains — THE game state's row (state.js makeRunState serves fixtures only; Amendment 5)
+        holdArea: { 1: false, 2: false }, // mk2.18 (owner): area weapons hold fire with a friendly in the spread
         mode: null, sellMode: false, inspectId: null,
         started: false, gameOver: false, victory: false,
         paused: false, speed: 1, fogOn, discipline, windOn, healthOn,
@@ -1418,6 +1427,7 @@ export default function DepotGame({ onExit, resume = null }) {
         S.mines = (r.mines || []).map((m) => ({ x: m.x, z: m.z, team: m.t, kind: m.k, live: !!m.l }));
         S.fog = (r.fog || []).map((p) => ({ x: p.x, z: p.z, r: p.r, until: p.u }));
         S.arcs = (r.arcs || []).map((a) => ({ nextAt: a.n, hits: a.h, dmg: a.d, fx: a.x, fy: a.y, fz: a.z, atk: a.k, tid: a.t, hitIds: (a.ids || []).slice(), waters: [], gx: a.gx, gy: a.gy, gz: a.gz }));
+        S.holdArea = r.holdArea || { 1: false, 2: false };
         // Step 6, last: the ground remembers. Every mark where a man fell is
         // replayed through the same paint the kill handler uses, so the snow
         // comes back stained exactly as it was left. Scorch and tread
@@ -3908,7 +3918,7 @@ export default function DepotGame({ onExit, resume = null }) {
               enemyStanding: S.enemyStanding != null ? S.enemyStanding : 1,
               mode: S.mode, sellMode: S.sellMode, sandbagOrient: S.sandbagOrient || 0,
               paused: S.paused, speed: S.speed,
-              muted: A.muted, fogOn: S.fogOn, windOn: S.windOn, healthOn: S.healthOn, discipline: S.discipline, seed: MAP_SEED,
+              muted: A.muted, fogOn: S.fogOn, windOn: S.windOn, healthOn: S.healthOn, holdAreaOn: !!(S.holdArea && S.holdArea[1]), discipline: S.discipline, seed: MAP_SEED,
               toasts: S.toasts.map((t) => t.txt),
               squadSel: (() => {
                 const sq = S.selSquadId != null ? S.squads.find((q) => q.id === S.selSquadId) : null;
@@ -4139,6 +4149,14 @@ export default function DepotGame({ onExit, resume = null }) {
     const S = stateRef.current; if (!S || !S.setHealth) return;
     S.setHealth(!S.healthOn);
     setHud((h) => ({ ...h, healthOn: S.healthOn }));
+  };
+  // mk2.18: THE SWITCH — area weapons (tesla chain, davy blast) hold fire
+  // with a friendly in the spread. Per side; only side 1 (the player) ever
+  // flips (owner: symmetry is capability, side 2's row stays OFF, untouched).
+  const toggleHoldArea = () => {
+    const S = stateRef.current; if (!S || !S.holdArea) return;
+    S.holdArea[1] = !S.holdArea[1];
+    setHud((h) => ({ ...h, holdAreaOn: S.holdArea[1] }));
   };
   // FIRE FEEDBACK (mk0.96): the held state, and the LOOK of the held state,
   // set in one place — direct DOM writes (the joystick knob's discipline, no
@@ -4395,6 +4413,9 @@ export default function DepotGame({ onExit, resume = null }) {
         </button>
         <button data-wind style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.windOn ? "#7fd7ff" : "#48515f", opacity: hud.windOn ? 1 : 0.6 }} title="wind (drift on every shot, both sides)" onClick={toggleWind}>
           WIND {hud.windOn ? "ON" : "OFF"}
+        </button>
+        <button data-holdarea style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.holdAreaOn ? "#7fd7ff" : "#48515f", opacity: hud.holdAreaOn ? 1 : 0.6 }} title="area weapons (tesla chain, davy blast) hold fire while one of your own stands in the spread" onClick={toggleHoldArea}>
+          SPARE OURS {hud.holdAreaOn ? "ON" : "OFF"}
         </button>
         <button style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", opacity: hud.muted ? 0.5 : 1 }} onClick={toggleMute}>
           {hud.muted ? "🔇" : "🔊"}
