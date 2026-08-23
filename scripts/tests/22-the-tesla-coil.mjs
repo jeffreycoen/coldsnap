@@ -140,3 +140,8 @@ const walk = (world, arcs, s) => { for (let i = 0; i < Math.round(s / 0.05); i++
   for (let i = 0; i < 4; i++) { world.t += 0.05; st4(world, arcs); }
   ok("a4: the own man takes the strike", own.hp === 65);
 }
+{ // Amendment 5: the LIVE state literal carries the arcs array — the game
+  // does not boot through makeRunState, so the field is pinned at the source.
+  const dg = (await import("node:fs")).readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  ok("a5: the game state carries arcs", /ws: makeDepotAssaultState\(\), spawnRR: 0,\s*\n\s*arcs: \[\]/.test(dg));
+}

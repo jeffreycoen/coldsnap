@@ -1288,6 +1288,7 @@ export default function DepotGame({ onExit, resume = null }) {
         score: { p: { kills: 0, value: 0 }, e: { kills: 0, value: 0 } }, resources: 250, // the draft's richer opening (owner) // provisional (F5)
         cmdr: null, // P7 T8: the drawn armor doctrine — one boot draw (fresh war), restored on RESUME
         ws: makeDepotAssaultState(), spawnRR: 0,
+        arcs: [], // mk2.20: live tesla chains — THE game state's row (state.js makeRunState serves fixtures only; Amendment 5)
         mode: null, sellMode: false, inspectId: null,
         started: false, gameOver: false, victory: false,
         paused: false, speed: 1, fogOn, discipline, windOn, healthOn,
