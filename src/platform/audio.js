@@ -272,6 +272,33 @@ export function makeGameAudio() {
     tone(x, z, { f0: 96, f1: 44, type: "sine", dur: 0.16, gain: 0.3, atk: 0.006 });
     echoes(x, z, (ex, ez, dly, k) => noise(ex, ez, { f0: 480, f1: 90, dur: 0.22, gain: 0.24 * k, delay: dly, wet: 0.7, dark: 0.5 }));
   }
+  // mk2.21: THE TESLA VOICE — provisional throughout (reference §6: no
+  // published profile for an electric arc or for thunder; the owner's ear
+  // rules on the soundboard). Two parts per hit: the sizzle (a bright
+  // crackling burst at the bolt) and the thunder (a long rumble that
+  // deepens and stretches as the chain walks — `hop` is the hit's index).
+  //
+  // Reference laws obeyed (sound-profiles-reference.md):
+  // - §1/§5: nothing load-bearing below ~150 Hz. The rumble's BODY sits at
+  //   340->150 Hz (audible on open-fit earbuds); the 88->60 Hz tone is
+  //   weight under it, not the message. Gains lean toward the low body per
+  //   the §1 correction (200 Hz owes ~+13 dB against the 3 kHz sizzle).
+  // - §2.2(g): VOICE_CAP is 26 and overruns drop sounds SILENTLY. One zap
+  //   spends exactly 3 voices (sizzle, body, weight); a full 8-hit chain
+  //   with second-long tails overlaps ~9-12 voices across its 1.2s — inside
+  //   budget beside a firefight. NO echoes() on zap (each tap is another
+  //   voice; eight rolling thunders would starve the cap and kill the bell).
+  function zap(x, z, hop = 0, dly = 0) {
+    const deep = Math.min(1, hop * 0.15);
+    noise(x, z, { f0: 5200, f1: 2600, type: "highpass", dur: 0.10, gain: 0.28, delay: dly, wet: 0.15 });
+    noise(x, z, { f0: 340 - deep * 120, f1: 150, dur: 1.0 + deep * 0.8, gain: 0.42 + deep * 0.1, delay: dly + 0.05, wet: 0.55, dark: 0.6 });
+    tone(x, z, { f0: 88, f1: 60, type: "sine", dur: 0.8 + deep * 0.5, gain: 0.16, delay: dly + 0.06, atk: 0.02 });
+  }
+  // the electrified pond: a wide fizzing wash, no thunder of its own (2 voices)
+  function pondzap(x, z) {
+    noise(x, z, { f0: 4200, f1: 1800, type: "highpass", dur: 0.45, gain: 0.24, wet: 0.3 });
+    noise(x, z, { f0: 2200, type: "bandpass", q: 1.6, dur: 0.35, gain: 0.16, delay: 0.05, wet: 0.35 });
+  }
   const MUZZLE = {
     mg:     (x, z, mass = 1) => { noise(x, z, { f0: 1900, type: "highpass", dur: 0.03 + mass * 0.012, gain: 0.13 + mass * 0.05, wet: 0.2 }); if (mass > 1.5) noise(x, z, { f0: 900, type: "bandpass", q: 1.2, dur: 0.05 + mass * 0.02, gain: 0.08 * mass, delay: 0.012, wet: 0.3 }); },
     shell:  (x, z, mass = 1) => {
@@ -545,6 +572,8 @@ export function makeGameAudio() {
       else if (e.type === "kill" && e.kind === "unit") bodyFall(e.x, e.z);
       else if (e.type === "collapse") { noise(e.x, e.z, { f0: 480, f1: 75, dur: 1.2, gain: 0.4, wet: 0.55, dark: 0.7 }); tone(e.x, e.z, { f0: 58, f1: 30, dur: 0.9, gain: 0.3, delay: 0.05 }); echoes(e.x, e.z, (ex, ez, dly, k) => noise(ex, ez, { f0: 350, f1: 80, dur: 0.5, gain: 0.3 * k, delay: dly, wet: 0.7, dark: 0.5 })); }
       else if (e.type === "strike") siren(e.x, e.z);
+      else if (e.type === "zap") zap(e.x2 != null ? e.x2 : e.x, e.z2 != null ? e.z2 : e.z, e.hop || 0, e.dly || 0);
+      else if (e.type === "pondzap") pondzap(e.x, e.z);
       // The garrison's own cues (DEPOT's bell cycle). No coordinates: these
       // three carry nothing but a type — they play at the listener.
       else if (e.type === "bell") bellToll();

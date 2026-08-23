@@ -63,6 +63,9 @@ const CARDS = [
   { id: "gren-toss", name: "GRENADE TOSS", desc: "A short soft throw — cloth and effort, no machine in it. Blink and you miss it.", ev: () => [{ type: "muzzle", x: 0, y: 1.5, z: 6, dx: 0, dy: 0.6, dz: 0.8, kind: "mg", weapon: "grenade" }] },
   { id: "gren-bounce", name: "GRENADE BOUNCE", desc: "A hard little clink off frozen ground — one knock, bright, gone.", ev: () => [{ type: "gbounce", x: 0, z: 8 }] },
   { id: "gren-blast", name: "GRENADE BLAST", desc: "A real blast in the middle of your hearing, shorter and sharper than a shell — a crack, a thump, and the map answering.", ev: () => [{ type: "boom", x: 0, z: 10, r: 2, kind: "grenade" }] },
+  { id: "tesla-strike", name: "TESLA STRIKE", desc: "The first bolt: a bright electrical sizzle — frying, crackling, right at the arc — and under it the first thunder, a long low rumble that outlasts the crack.", ev: () => [{ type: "zap", x: 0, z: 6, x2: 4, z2: 6, hop: 0 }] },
+  { id: "tesla-chain", name: "TESLA CHAIN", desc: "Five hits walking away at 150ms steps. Each hit sizzles and then rolls its own thunder, each a shade deeper and longer than the last — a storm rolling across the field, never one clap.", ev: () => Array.from({ length: 5 }, (_, i) => ({ type: "zap", x: i * 3, z: 6, x2: (i + 1) * 3, z2: 6, hop: i, dly: i * 0.15 })) },
+  { id: "tesla-pond", name: "ELECTRIFIED POND", desc: "A frozen pond taking the chain: a wide fizzing wash across the whole surface, hissing, no thunder of its own.", ev: () => [{ type: "pondzap", x: 0, z: 8, r: 6 }] },
 ];
 
 const WIND = {
