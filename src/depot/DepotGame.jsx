@@ -776,6 +776,35 @@ const PALETTE = [
 const PALETTE_BY_KEY = Object.fromEntries(PALETTE.map((p) => [p.key, p]));
 const PALETTE_LABEL = Object.fromEntries(PALETTE.map((p) => [p.key, p.label]));
 
+// mk2.25: THE ENEMY RACK (sandbox only). Every kind the enemy can field,
+// placeable by tap on the bench. tag rows spawn through units.js spawnUnit
+// (the marksman pair and the wave tank come out of it whole); hull/mech/
+// tower rows mirror the enemy's own park shapes at the tapped cell. n is
+// men per tap — the same head-count one enemy buy fields.
+const FOE_RACK = [
+  { key: "foe_rifle", label: "CONSCRIPT", icon: "∴", tag: "", n: 1 },
+  { key: "foe_rocket", label: "ROCKETS", icon: "▲", tag: "rocket", n: 2 },
+  { key: "foe_gren", label: "GRENADIERS", icon: "◎", tag: "gren", n: 2 },
+  { key: "foe_sapper", label: "SAPPERS", icon: "✸", tag: "sapper", n: 2 },
+  { key: "foe_mortar", label: "MORTARS", icon: "◎", tag: "mortar", n: 2 },
+  { key: "foe_sniper", label: "MARKSMAN PAIR", icon: "✛", tag: "sniper", n: 1 },
+  { key: "foe_mg", label: "MG TEAM", icon: "≣", tag: "mg", n: 2 },
+  { key: "foe_eng", label: "ENGINEER", icon: "⚒", tag: "eng", n: 1 },
+  { key: "foe_medic", label: "MEDIC", icon: "✚", tag: "medic", n: 1 },
+  { key: "foe_mechanic", label: "MECHANIC", icon: "⚙", tag: "mechanic", n: 1 },
+  { key: "foe_davy", label: "ATOMIC CREW", icon: "☢", tag: "davy", n: 2 },
+  { key: "foe_tank", label: "WAVE TANK", icon: "⛨", tag: "tank", n: 1 },
+  { key: "foe_bison", label: "BISON", icon: "⛨", hull: "bison" },
+  { key: "foe_apc", label: "APC", icon: "⬒", hull: "apc" },
+  { key: "foe_mech", label: "MECH", icon: "✇", mech: true },
+  { key: "foe_t_mg", label: "MG TOWER", icon: "⊞", tower: "mg" },
+  { key: "foe_t_gun", label: "GUN TOWER", icon: "⚑", tower: "gun" },
+  { key: "foe_t_mortar", label: "MORTAR TOWER", icon: "◎", tower: "mortar" },
+  { key: "foe_t_rocket", label: "ROCKET TOWER", icon: "▲", tower: "rocket" },
+  { key: "foe_t_tesla", label: "TESLA TOWER", icon: "⚡", tower: "tesla" },
+];
+const FOE_RACK_BY_KEY = Object.fromEntries(FOE_RACK.map((f) => [f.key, f]));
+
 // P7.2 T8 (owner): THE DRAFT SCREEN — a NEW pre-start surface, shared DOM
 // phone and desktop. Seven cards up, tap toggles a pick, five max; CONFIRM
 // arms at exactly five. Styled on the pre-start overlay's own P.btn idiom
@@ -1331,6 +1360,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
         zoom: 1, acc: 0, t: 0, fps: 60, fpsAcc: 0, fpsN: 0,
         hover: null, pointer: null, toasts: [], pending: null,
         hirePlace: null, // P7.2 T2: the hire's armed placement ({ key } or null)
+        devSpawn: null, // mk2.25: the armed enemy-rack pick (sandbox only)
         infoKey: null, infoDoor: null, infoArmedAt: 0, // P7.1 T4: the info card's own state
         // Squads (Phase 5 Task 3): live squad rosters + selection/order UI
         // state. selArmedAt mirrors pending's 350ms trailing-tap guard so
@@ -2284,6 +2314,13 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
           if (p0) S.pending = { deal: S._placeQueue[0], wp: { x: p0.x, z: p0.z }, y: field.heightAt(p0.x, p0.z), poly: null, ringR: 0, color: 0x4aff8c, cost: 0, wallArm: true, armedAtWall: performance.now() / 1000 + PENDING_ARM_S, fp: ghostFp(S._placeQueue[0]) };
           return;
         }
+        // mk2.25: an armed enemy-rack pick owns every ground tap — repeated
+        // taps keep placing until the rack button is tapped again.
+        if (dev && S.devSpawn) {
+          const pd = groundPoint(cx, cy);
+          if (pd) devSpawnAt(pd);
+          return;
+        }
         if (!S.started || S.gameOver || S.victory) return;
         // P7.2 T2: THE HIRE'S TAP — an armed placement owns the ground tap.
         if (S.hirePlace) {
@@ -2732,6 +2769,50 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
         if (S.manifest && S.manifest.hand.length && S.openManifest) S.openManifest(); // P7.2 HF mk1.86 (owner): multi-buy is one visit — the hand returns for the next card (the calm window returns with it, the ruled pause of an open hand)
         cue("uitick");
         toast("THE HIRE FIELDS — ◆" + price);
+      };
+      // mk2.25: THE ENEMY RACK's placer — sandbox only. Real spawners, real
+      // vets where the kind has one (a hull still refuses a slope), team 2
+      // throughout. rng draws are lawful here: the sandbox is its own
+      // stream and never saves.
+      const devSpawnAt = (p) => {
+        const it = FOE_RACK_BY_KEY[S.devSpawn];
+        if (!it) return;
+        const d = clampToRim(p.x, p.z);
+        if (streamAt(d.x, d.z)) { toast("OPEN WATER"); return; }
+        if (it.tower) {
+          const g = grid.worldToGrid(d.x, d.z);
+          if (!grid.inBounds(g.gx, g.gz)) { toast("OFF THE FIELD"); return; }
+          const cell = grid.cells[grid.idx(g.gx, g.gz)];
+          if (cell.water || cell.ice || cell.blocked || cell.wallId) { toast("NO GROUND"); return; }
+          const wp = grid.gridToWorld(g.gx, g.gz);
+          const spec = TOWER_SPECS[it.tower];
+          const b = addBody(world, { kind: "tower", team: 2, mass: 0, hx: 0.8, hy: spec.hy, hz: 0.8, x: wp.x, y: field.heightAt(wp.x, wp.z) + spec.hy, z: wp.z, hp: spec.hp });
+          b.towerType = it.tower; b.flagPole = true; b.maxHp = b.hp;
+          b.effRange = effRange(world, { x: b.pos.x, y: b.pos.y + b.hy + 0.45, z: b.pos.z }, spec);
+          b.discipline = "free"; // the enemy's doctrine (muster.js parkTower's own stamp)
+          cell.blocked = true; cell.wallId = b.id; cell.bTeam = 2;
+          recomputeFlow();
+        } else if (it.hull) {
+          const spec = it.hull === "apc" ? APC : BISON;
+          if (!armorStable(field, d.x, d.z, spec)) { toast("TOO STEEP TO PARK"); return; }
+          if (slotBlockedPublic(world, d.x, d.z, Math.hypot(spec.hx, spec.hz) + 1.0)) { toast("NO ROOM"); return; }
+          const v = addBody(world, { kind: "vehicle", team: 2, mass: spec.mass, hx: spec.hx, hy: spec.hy, hz: spec.hz,
+            x: d.x, y: field.heightAt(d.x, d.z) + spec.hy + 0.05, z: d.z, hp: spec.hp, friction: 0.85,
+            q: heading(null, Math.atan2(-d.x, -d.z)) });
+          v.armor = spec.armor; v.vtype = it.hull; v.maxHp = spec.hp; v.bounty = spec.bounty;
+          v.homeX = d.x; v.homeZ = d.z; v.sleeping = true;
+          if (it.hull === "apc") v.apcSeq = nextApcSeq();
+          v.drv = it.hull === "apc" ? "apc" : "armor"; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful";
+        } else if (it.mech) {
+          if (!(armorSpread(field, d.x, d.z, MECH_SPREAD) < 0.28)) { toast("TOO STEEP TO PARK"); return; }
+          if (slotBlockedPublic(world, d.x, d.z, 4.5)) { toast("NO ROOM"); return; }
+          const m = buildMech(world, { x: d.x, z: d.z, yaw: Math.atan2(-d.x, -d.z), team: 2, hp: MECH.hp });
+          m.thrustersOn = true; m.thrustAssist = true;
+          m.hull.drv = "mech"; m.hull.order = "defend"; m.hull.tracks = "careful";
+          m.hull.maxHp = MECH.hp; m.hull.homeX = d.x; m.hull.homeZ = d.z; m.hull.bounty = MECH.bounty;
+        } else {
+          for (let k = 0; k < it.n; k++) spawnUnit(world, { x: d.x, z: d.z }, it.tag);
+        }
       };
       // mk1.95 (owner): THE HERO FIELDS BY THE ONE PLACEMENT LAW — the bar
       // arms a mode, the ground tap sets the ghost, the ✓ runs this. The
@@ -3929,7 +4010,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
               breach: S.breach, enemyBreach: S.enemyBreach,
               depotStanding: S.depotStanding != null ? S.depotStanding : 1,
               enemyStanding: S.enemyStanding != null ? S.enemyStanding : 1,
-              mode: S.mode, sellMode: S.sellMode, sandbagOrient: S.sandbagOrient || 0,
+              mode: S.mode, sellMode: S.sellMode, sandbagOrient: S.sandbagOrient || 0, devSpawn: S.devSpawn,
               paused: S.paused, speed: S.speed,
               muted: A.muted, fogOn: S.fogOn, windOn: S.windOn, healthOn: S.healthOn, holdAreaOn: !!(S.holdArea && S.holdArea[1]), discipline: S.discipline, seed: MAP_SEED,
               toasts: S.toasts.map((t) => t.txt),
@@ -4100,16 +4181,16 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
     // a toggle; the second tap clears back to plain command.
     if (S.mode === m) {
       if (S.linePending && S.rejectLine) S.rejectLine();
-      S.mode = null; S.pending = null; S.buildPt0 = null;
-      setHud((h) => ({ ...h, mode: null }));
+      S.mode = null; S.pending = null; S.buildPt0 = null; S.devSpawn = null;
+      setHud((h) => ({ ...h, mode: null, devSpawn: null }));
       return;
     }
     // COMMAND T2 (mk0.84): switching build-menu mode with a line still up
     // clears it through the same door ✗ uses (rejectLine also disposes the
     // renderer's preview group) — it never lingers behind the new mode.
     if (S.linePending && S.rejectLine) S.rejectLine();
-    S.mode = m; S.sellMode = false; S.inspectId = null; S.pending = null; S.selSquadId = null; S.selSquadIds = null; S.orderMode = null; S.buildPt0 = null;
-    setHud((h) => ({ ...h, mode: m, sellMode: false }));
+    S.mode = m; S.sellMode = false; S.inspectId = null; S.pending = null; S.selSquadId = null; S.selSquadIds = null; S.orderMode = null; S.buildPt0 = null; S.devSpawn = null;
+    setHud((h) => ({ ...h, mode: m, sellMode: false, devSpawn: null }));
     // P7.1 T5: the pick arms the bar — the tree lands on the armed type's branch.
     const b = branchOf(m);
     if (b) setBranch(b);
@@ -4126,8 +4207,8 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
     setBuildOpen(false);
     const S = stateRef.current; if (!S) return;
     if (S.linePending && S.rejectLine) S.rejectLine();
-    S.mode = null; S.pending = null; S.buildPt0 = null; S.sellMode = false;
-    setHud((h) => ({ ...h, mode: null, sellMode: false }));
+    S.mode = null; S.pending = null; S.buildPt0 = null; S.sellMode = false; S.devSpawn = null;
+    setHud((h) => ({ ...h, mode: null, sellMode: false, devSpawn: null }));
   };
   const startGame = () => {
     const S = stateRef.current; if (!S) return;
@@ -4744,15 +4825,29 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
             <div>{buildOpen ? "CLOSE" : "BUILD"}</div>
             <div style={{ color: "#ffd27a", fontSize: 10 }}>{!buildOpen && hud.mode ? (PALETTE_LABEL[hud.mode] || "") : " "}</div>
           </div>
-          {buildOpen && TREE_BRANCHES.map((b) => palette.some((p) => b.match(p.key)) ? (
+          {buildOpen && (dev ? [...TREE_BRANCHES, { key: "foes", label: "THE ENEMY", icon: "☠", match: () => false }] : TREE_BRANCHES).map((b) => (dev && b.key === "foes") || palette.some((p) => b.match(p.key)) ? (
             <div key={b.key} data-branch={b.key}
               style={{ ...P.slot, minWidth: isTouch ? 64 : 60, borderColor: branch === b.key ? "#9fdcff" : "#48515f", color: branch === b.key ? "#9fdcff" : "#e6ebf1", animation: "cs-unfurl 0.14s ease-out backwards", animationDelay: (TREE_BRANCHES.indexOf(b) * 0.03) + "s" }}
               onClick={() => setBranch(b.key)}>
               <div style={{ fontSize: 16 }}>{b.icon}</div>
               <div>{b.label}</div>
-              <div style={{ opacity: 0.6, fontSize: 10 }}>{palette.filter((p) => b.match(p.key)).length}</div>
+              <div style={{ opacity: 0.6, fontSize: 10 }}>{b.key === "foes" ? FOE_RACK.length : palette.filter((p) => b.match(p.key)).length}</div>
             </div>
           ) : null)}
+          {buildOpen && dev && branch === "foes" && FOE_RACK.map((f) => (
+            <div key={f.key} data-foe-key={f.key}
+              style={{ ...P.slot, borderColor: hud.devSpawn === f.key ? "#ff6b5e" : "#48515f", color: hud.devSpawn === f.key ? "#ff6b5e" : "#e6ebf1", minWidth: isTouch ? 56 : 52 }}
+              onClick={() => {
+                const S = stateRef.current; if (!S) return;
+                S.devSpawn = S.devSpawn === f.key ? null : f.key;
+                S.mode = null; S.pending = null; S.sellMode = false;
+                setHud((h) => ({ ...h, devSpawn: S.devSpawn, mode: null, sellMode: false }));
+              }}>
+              <div style={{ fontSize: 16 }}>{f.icon}</div>
+              <div>{f.label}</div>
+              <div style={{ color: "#ff7a7a", fontSize: 10 }}>ENEMY</div>
+            </div>
+          ))}
           {buildOpen && palette.filter((p) => { const b = TREE_BRANCHES.find((x) => x.key === branch); return b && b.match(p.key); }).map((p, pi) => {
             const sel = !hud.sellMode && hud.mode === p.key;
             const priceP = hud.prices?.[p.key] ?? p.cost;

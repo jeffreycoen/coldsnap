@@ -433,8 +433,10 @@ import fs from "node:fs";
     // Count moves back 3 -> 2, honestly, one caller lost, not loosened.
     // re-pinned P7 T2 (mk1.31): consumeVehOrderTap (the Bison's MOVE/PATROL
     // ground tap) joined the same clamp shape — a fourth caller, count 2 -> 3.
+    // re-pinned mk2.25: devSpawnAt (the enemy rack's placer, sandbox only)
+    // joined the same clamp shape — a fifth caller, count 3 -> 4.
     ok("mk0.60/6: build points clamp to the rim through the same clamp shape",
-      /const d = clampToRim\(p\.x, p\.z\);/.test(dsrc) && (dsrc.match(/clampToRim\(p\.x, p\.z\)/g) || []).length === 3);
+      /const d = clampToRim\(p\.x, p\.z\);/.test(dsrc) && (dsrc.match(/clampToRim\(p\.x, p\.z\)/g) || []).length === 4);
     ok("mk0.60/6: the cell walk steps ONE axis at a time (consecutive cells share an EDGE) (retargeted mk1.50, P7 T20: lineCells moved to buildlines.js)",
       /const stepX = z === g1\.gz \? true : x === g1\.gx \? false : 2 \* err > -dz;/.test(blSrc60));
     // Jeff, 2026-08-12: ONE rotation for the whole line — the dominant axis of
