@@ -121,6 +121,9 @@ export function stepTowers(world, T, discipline, possessedId, arcs, holdArea) {
     // the owner's aim is its aim now (possessedTowerFire, called from the
     // frame loop). Cooldown still decays here; nothing else runs.
     if (possessedId === b.id) { b.fireCd = (b.fireCd || 0) - dt; continue; }
+    // mk2.26: a dummy enemy tower holds everything — no scan, no trigger;
+    // cooldown decays so the flip back to FIGHT resumes clean.
+    if (world._devDummies && b.team === 2) { b.fireCd = (b.fireCd || 0) - dt; continue; }
     // P7.1 T6 (owner): THE TOWER BRAIN LEARNS ITS TEAM — every tower targets
     // the OPPOSITE team and sight-gates on its OWN side. tTeam is the
     // tower's own side, foeTeam who it hunts.
@@ -464,7 +467,13 @@ function uprightMember(u, dt) {
 }
 
 function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S) {
-  stepEnemies(world, grid, T, S);
+  // mk2.26: THE FIGHT SWITCH (sandbox). Dummies = no enemy drivers, no
+  // enemy fire; bodies stay real (physics, damage, the chain). The flag
+  // rides the world so stepTowers reads it without a signature change;
+  // undefined in the live war — every existing caller unchanged.
+  world._devDummies = !!S.devDummies;
+  if (!S.devDummies) stepEnemies(world, grid, T, S);
+  else for (const b of world.bodies) if (b.kind === "unit" && b.team === 2 && b.alive) uprightMember(b, world.dt);
   // Squads (Phase 5 Task 3), after enemies, before towers — the brief's
   // loop-order contract: prune dead members -> delete empty squads ->
   // stepSquad (movement) -> squadFire (combat). squadFire threads T + invW
@@ -571,7 +580,7 @@ function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S)
   // P7.1 T7: HIS SQUADS — the enemy's engineer roster, squad-driven like the
   // player's (routing, legs, the build driver), never tappable (squadAtPoint
   // scans S.squads alone). Engineers fire nothing; no squadFire call.
-  if (S.foeSquads && S.foeSquads.length) {
+  if (!S.devDummies && S.foeSquads && S.foeSquads.length) {
     S.foeSquads = pruneSquads(world, S.foeSquads);
     for (const sq of S.foeSquads) {
       stepSquadRouting(grid, sq, world);
@@ -1361,6 +1370,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
         hover: null, pointer: null, toasts: [], pending: null,
         hirePlace: null, // P7.2 T2: the hire's armed placement ({ key } or null)
         devSpawn: null, // mk2.25: the armed enemy-rack pick (sandbox only)
+        devDummies: false, // mk2.26: THEY FIGHT by default; true = dummies (sandbox only)
         infoKey: null, infoDoor: null, infoArmedAt: 0, // P7.1 T4: the info card's own state
         // Squads (Phase 5 Task 3): live squad rosters + selection/order UI
         // state. selArmedAt mirrors pending's 350ms trailing-tap guard so
@@ -4010,7 +4020,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
               breach: S.breach, enemyBreach: S.enemyBreach,
               depotStanding: S.depotStanding != null ? S.depotStanding : 1,
               enemyStanding: S.enemyStanding != null ? S.enemyStanding : 1,
-              mode: S.mode, sellMode: S.sellMode, sandbagOrient: S.sandbagOrient || 0, devSpawn: S.devSpawn,
+              mode: S.mode, sellMode: S.sellMode, sandbagOrient: S.sandbagOrient || 0, devSpawn: S.devSpawn, devDummies: S.devDummies,
               paused: S.paused, speed: S.speed,
               muted: A.muted, fogOn: S.fogOn, windOn: S.windOn, healthOn: S.healthOn, holdAreaOn: !!(S.holdArea && S.holdArea[1]), discipline: S.discipline, seed: MAP_SEED,
               toasts: S.toasts.map((t) => t.txt),
@@ -4251,6 +4261,12 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
     const S = stateRef.current; if (!S || !S.holdArea) return;
     S.holdArea[1] = !S.holdArea[1];
     setHud((h) => ({ ...h, holdAreaOn: S.holdArea[1] }));
+  };
+  // mk2.26: THE FIGHT SWITCH — sandbox only, live, any time.
+  const toggleDevFight = () => {
+    const S = stateRef.current; if (!S) return;
+    S.devDummies = !S.devDummies;
+    setHud((h) => ({ ...h, devDummies: S.devDummies }));
   };
   // FIRE FEEDBACK (mk0.96): the held state, and the LOOK of the held state,
   // set in one place — direct DOM writes (the joystick knob's discipline, no
@@ -4502,6 +4518,11 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
         {dev && (
           <button data-dev-reroll style={{ ...P.btn, marginLeft: "auto", padding: isTouch ? "5px 10px" : "4px 10px", borderColor: "#c9a04e", color: "#ffd27a" }} title="a fresh random valley — everything here is discarded" onClick={restart}>
             NEW VALLEY
+          </button>
+        )}
+        {dev && (
+          <button data-dev-fight style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.devDummies ? "#48515f" : "#ff6b5e", color: hud.devDummies ? "#e6ebf1" : "#ff6b5e" }} title="whether placed enemies fight back — flips live" onClick={toggleDevFight}>
+            {hud.devDummies ? "THEY STAND" : "THEY FIGHT"}
           </button>
         )}
         <button style={{ ...P.btn, marginLeft: dev ? undefined : "auto", padding: isTouch ? "5px 10px" : "4px 10px" }} title="rotate view (Q/E)"

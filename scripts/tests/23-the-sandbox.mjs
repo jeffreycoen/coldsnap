@@ -30,3 +30,15 @@ ok("sandbox: the reroll button exists", dg.includes("data-dev-reroll"));
   ok("rack: a ground tap spawns", dg2.includes("devSpawnAt"));
   ok("rack: every infantry tag is racked", ["rocket", "gren", "sapper", "mortar", "sniper", "mg", "eng", "medic", "mechanic", "davy", "tank"].every((t) => dg2.match(new RegExp("FOE_RACK[\\s\\S]{0,2400}tag: \"" + t + "\""))));
 }
+
+{ // mk2.26: the fight switch — the one headless seam is stepTowers' world
+  // flag; the rest are wiring pins.
+  const { makeField, makeWorld, addBody } = await import("../../src/engine/core.js");
+  const { stepTowers } = await import("../../src/depot/DepotGame.jsx").catch(() => ({}));
+  const dg3 = src("src/depot/DepotGame.jsx");
+  ok("fight: the switch exists", dg3.includes("data-dev-fight"));
+  ok("fight: dummies skip the enemy drivers", dg3.includes("if (!S.devDummies) stepEnemies"));
+  ok("fight: standing dummies still upright", dg3.match(/devDummies[\s\S]{0,400}uprightMember/));
+  ok("fight: enemy towers read the flag", dg3.includes("world._devDummies && b.team === 2"));
+  ok("fight: the flag is stamped each tick", dg3.includes("world._devDummies = "));
+}
