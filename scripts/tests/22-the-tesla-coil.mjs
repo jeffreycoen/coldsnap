@@ -49,12 +49,12 @@ const walk = (world, arcs, s) => { for (let i = 0; i < Math.round(s / 0.05); i++
 }
 { // the reach limit and the floor
   const { world, tower, man } = rig();
-  const a = man(6, 0, 2); man(11.5, 0, 2); // 5.5m past the victim: out of hop reach
+  const a = man(6, 0, 2); man(16, 0, 2); // 10m past the victim: out of hop reach
   const far = world.bodies[world.bodies.length - 1];
   const arcs = [];
   teslaStrike(world, arcs, tower, a);
   walk(world, arcs, 2.0);
-  ok("tesla: 4m is the hop's whole reach", far.hp === 100);
+  ok("tesla: 8m is the hop's whole reach", far.hp === 100);
   const ladder = [35, 30, 25, 20, 15, 10, 10, 10];
   ok("tesla: the ladder floors at 10", ladder[7] === TESLA.dmgFloor);
 }
@@ -107,7 +107,7 @@ const walk = (world, arcs, s) => { for (let i = 0; i < Math.round(s / 0.05); i++
   const foe = man(6, 0, 2); man(8, 0, 1);
   ok("tesla: the hold sees the friend in the spread", teslaWouldCatchFriend(world, tower, foe) === true);
   const { world: w2, tower: t2, man: m2 } = rig();
-  const foe2 = m2(6, 0, 2); m2(14, 0, 1);
+  const foe2 = m2(6, 0, 2); m2(22, 0, 1);
   ok("tesla: a friend clear of the spread holds nothing", teslaWouldCatchFriend(w2, t2, foe2) === false);
 }
 { // Amendment 3: the ground strike — always a bolt, chain from the snow

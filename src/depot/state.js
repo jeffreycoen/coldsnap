@@ -923,7 +923,7 @@ export function stepGrenades(world) {
 // surface: every body on that water joins the reachable set, nearest first.
 // Selection is nearest-first over live positions — deterministic, ZERO rng
 // draws, so every stream stays byte-stable however the chain runs.
-export const TESLA = { hopR: 4, maxHits: 8, dmgStep: 5, dmgFloor: 10, hopS: 0.15 }; // provisional (F5)
+export const TESLA = { hopR: 8, maxHits: 8, dmgStep: 5, dmgFloor: 10, hopS: 0.15 }; // provisional (F5)
 
 // what the chain may touch: units, crews, vehicles, mechs, towers, walls,
 // masonry chunks, rocks, trees — "anything" (owner). Mech limbs resolve to
