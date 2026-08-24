@@ -72,6 +72,7 @@ ok("names: the enemy rack follows",
 { // mk2.33: the convoy on paper
   const dg7 = src("src/depot/DepotGame.jsx");
   ok("convoy: the hand rows are paper", dg7.match(/<StockTag[^>]*data-manifest-offer/) != null && dg7.includes('data-hand-kind={c.hire ? "hire" : "plan"}'));
+  ok("convoy: the paper stays on the card", dg7.match(/data-manifest-offer[\s\S]{0,300}boxSizing: "border-box"/) != null);
 }
 
 { // mk2.34: the draft deal
