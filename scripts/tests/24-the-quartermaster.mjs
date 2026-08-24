@@ -14,10 +14,10 @@ ok("names: the five towers wear proper nouns",
   TOWER_SPECS.mg.label === "SPITTER" && TOWER_SPECS.gun.label === "FIELD GUN" &&
   TOWER_SPECS.mortar.label === "MORTAR" && TOWER_SPECS.rocket.label === "SALVO RACK" &&
   TOWER_SPECS.tesla.label === "TESLA COIL");
-ok("names: the colliding trades re-sign", SQUAD_SPECS.mg.label === "GUNNERS" && SQUAD_SPECS.sniper.label === "MARKSMEN");
+ok("names: the colliding trades re-sign", SQUAD_SPECS.mg.label === "GUNNERS" && SQUAD_SPECS.sniper.label === "SNIPERS");
 ok("names: his mg men match the trade", ENEMY_SPECS.mg.label === "gunners");
 ok("names: the bar follows the trades",
-  dg.includes('key: "sq_mg", label: "GUNNERS"') && dg.includes('key: "sq_sniper", label: "MARKSMEN"') &&
+  dg.includes('key: "sq_mg", label: "GUNNERS"') && dg.includes('key: "sq_sniper", label: "SNIPERS"') &&
   dg.includes('key: "sq_rockets", label: "ROCKET TEAM"'));
 ok("names: the enemy rack follows",
   dg.includes('key: "foe_t_mg", label: "SPITTER"') && dg.includes('key: "foe_t_rocket", label: "SALVO RACK"') &&
@@ -52,4 +52,18 @@ ok("names: the enemy rack follows",
   ok("desk: the bar's slots left the box chrome", !dg5.match(/data-tower-key[\s\S]{0,200}P\.slot/) && !dg5.match(/data-sell-toggle[\s\S]{0,200}P\.slot/) && !dg5.match(/data-foe-key[\s\S]{0,200}P\.slot/));
   ok("desk: the tags rest tilted, the deal respects it", dg5.includes("--restT") && dg5.match(/cs-deal[^"]*both/) == null);
   ok("desk: every door survived", dg5.includes("data-build-toggle") && dg5.includes("data-branch") && dg5.includes("data-tower-key") && dg5.includes("data-info=") && dg5.includes("data-sell-toggle") && dg5.includes("data-foe-key"));
+}
+
+{ // mk2.31: the lattice — rungs by price, the fold, the sniper's true name
+  const dg6 = src("src/depot/DepotGame.jsx");
+  ok("lattice: snipers are snipers", (() => { const s = src("src/depot/squads.js"); return /sniper: \{ n: 2, cost: 68, label: "SNIPERS" \}/.test(s); })());
+  ok("lattice: the enemy pair follows", dg6.includes('label: "SNIPER PAIR"') && src("src/depot/specs.js").includes('label: "sniper"'));
+  ok("lattice: the rungs stand as ruled", dg6.includes("const LATTICE = {") &&
+    dg6.match(/troops:[\s\S]{0,400}\["sq_rifles", "sq_engineers", "sq_mg", "sq_sappers"\]/) != null &&
+    dg6.match(/troops:[\s\S]{0,600}\["sq_davy"\]/) != null &&
+    dg6.match(/vehicles:[\s\S]{0,200}\["hero_apc"\]/) != null &&
+    dg6.match(/vehicles:[\s\S]{0,300}\["hero_bison", "hero_mech"\]/) != null);
+  ok("lattice: the trunk climbs and the pack folds", dg6.includes("cs-climb") && dg6.includes("cs-pack") && dg6.includes("data-lattice"));
+  ok("lattice: packing is inert and finishes on the trunk", dg6.match(/pointerEvents: packing/) != null && dg6.match(/onAnimationEnd=\{packing \? finishPack/) != null);
+  ok("lattice: every door survived", dg6.includes("data-build-toggle") && dg6.includes("data-branch") && dg6.includes("data-tower-key") && dg6.includes("data-info=") && dg6.includes("data-sell-toggle") && dg6.includes("data-foe-key"));
 }

@@ -71,7 +71,7 @@ export const ENEMY_SPECS = {
   // all. units.js's spotter copies dress from this same spec, so the one
   // deletion re-dresses the whole pair. Campaign androids are unaffected —
   // that dress lives on scenario bodies (src/game/scenario.js), not here.
-  sniper: { ...MAN.rifle, bounty: 45, speed: 2.9, gain: 14, label: "marksman" },
+  sniper: { ...MAN.rifle, bounty: 45, speed: 2.9, gain: 14, label: "sniper" },
   // P7.1 T6 (owner): the pick pool is the player's full list — his MG team
   // and his engineers join the roster. Bounties provisional (F5).
   mg:  { ...MAN.rifle, bounty: 8, speed: 3.2, gain: 14, label: "gunners" },

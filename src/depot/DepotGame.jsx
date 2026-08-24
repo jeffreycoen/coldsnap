@@ -761,7 +761,7 @@ function RadialMenu({ cx, cy, label, slots, armed, onChoose }) {
 const PALETTE = [
   ...TOWER_ORDER.map((k) => ({ key: k, label: TOWER_SPECS[k].label, icon: TOWER_SPECS[k].icon, cost: TOWER_SPECS[k].cost })),
   // Squads (Phase 5 Task 3): mode keys prefixed sq_ — the MG tower owns "mg"
-  { key: "sq_sniper", label: "MARKSMEN", icon: "✛", cost: SQUAD_SPECS.sniper.cost },
+  { key: "sq_sniper", label: "SNIPERS", icon: "✛", cost: SQUAD_SPECS.sniper.cost },
   { key: "sq_rifles", label: "RIFLES", icon: "∴", cost: SQUAD_SPECS.rifles.cost },
   { key: "sq_mg", label: "GUNNERS", icon: "≣", cost: SQUAD_SPECS.mg.cost },
   // F1 Task 4.5: the demolition team — the only player weapon that moves
@@ -801,7 +801,7 @@ const FOE_RACK = [
   { key: "foe_gren", label: "GRENADIERS", icon: "◎", tag: "gren", n: 2 },
   { key: "foe_sapper", label: "SAPPERS", icon: "✸", tag: "sapper", n: 2 },
   { key: "foe_mortar", label: "MORTARS", icon: "◎", tag: "mortar", n: 2 },
-  { key: "foe_sniper", label: "MARKSMAN PAIR", icon: "✛", tag: "sniper", n: 1 },
+  { key: "foe_sniper", label: "SNIPER PAIR", icon: "✛", tag: "sniper", n: 1 },
   { key: "foe_mg", label: "GUNNERS", icon: "≣", tag: "mg", n: 2 },
   { key: "foe_eng", label: "ENGINEER", icon: "⚒", tag: "eng", n: 1 },
   { key: "foe_medic", label: "MEDIC", icon: "✚", tag: "medic", n: 1 },
@@ -871,6 +871,34 @@ const TREE_BRANCHES = [
 const branchOf = (key) => { const b = TREE_BRANCHES.find((x) => x.match(key)); return b ? b.key : null; };
 // mk2.28 (owner): the quartermaster's purpose lines — first war only.
 const QM_LINES = { troops: "men you order", buildings: "iron that stands", vehicles: "iron that moves", foes: "targets for the bench" };
+// mk2.31 (owner): THE LATTICE — rungs cut by BASE price (v5 mockup),
+// bottom-up in array order, cheap→dear inside a rung. Presentation only;
+// the price-family rows in specs.js are untouched and a tag never jumps
+// rungs on a live price. DAVY is the hero-tier troop; the APC is rung II
+// iron, not hero (owner, 2026-08-24).
+const LATTICE = {
+  troops: [
+    { name: "I", keys: ["sq_rifles", "sq_engineers", "sq_mg", "sq_sappers"] },
+    { name: "II", keys: ["sq_grenadiers", "sq_rockets", "sq_mortars"] },
+    { name: "III", keys: ["sq_medics", "sq_mechanics", "sq_sniper"] },
+    { name: "HERO", keys: ["sq_davy"] },
+  ],
+  buildings: [
+    { name: "I", keys: ["mg", "gun"] },
+    { name: "II", keys: ["mortar", "tesla"] },
+    { name: "III", keys: ["rocket"] },
+  ],
+  vehicles: [
+    { name: "II", keys: ["hero_apc"] },
+    { name: "HERO", keys: ["hero_bison", "hero_mech"] },
+  ],
+  // the bench's rack, by kind — sandbox only
+  foes: [
+    { name: "MEN", keys: ["foe_rifle", "foe_rocket", "foe_gren", "foe_sapper", "foe_mortar", "foe_sniper", "foe_mg", "foe_eng", "foe_medic", "foe_mechanic", "foe_davy"] },
+    { name: "IRON", keys: ["foe_tank", "foe_bison", "foe_apc", "foe_mech"] },
+    { name: "TOWERS", keys: ["foe_t_mg", "foe_t_gun", "foe_t_mortar", "foe_t_rocket", "foe_t_tesla"] },
+  ],
+};
 
 // `resume` (P1 Task 3): a PARSED save object, or null for a fresh front. The
 // start screen does the async probe and the mark check (save.js's probeFront)
@@ -910,6 +938,18 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
   // P7.1 T5: the tree's presentation state — never the sim's business.
   const [buildOpen, setBuildOpen] = useState(false);
   const [branch, setBranch] = useState("troops");
+  // mk2.31: THE FOLD — packing plays every exit animation, then the trunk's
+  // onAnimationEnd unmounts. _packNext carries what stands after the fold:
+  // null = all closed; a category key = switch to it. Pure presentation.
+  const [packing, setPacking] = useState(false);
+  const packNextRef = useRef({ next: null, closeAll: false });
+  const beginPack = (next, closeAll) => { if (packing) return; packNextRef.current = { next, closeAll }; setPacking(true); };
+  const finishPack = () => {
+    const t = packNextRef.current;
+    setPacking(false);
+    setBranch(t.next);
+    if (t.closeAll) setBuildOpen(false);
+  };
   useEffect(() => {
     if (resumeRef.current || dev) return; // a resumed war is not a first entry; the sandbox never tours
     let live = true;
@@ -4238,7 +4278,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
   // P7.1 T5: closing the tree clears back to plain command — the ruled
   // toggle-off, one door for mode, pending, half-given lines, and sell.
   const closeBuild = () => {
-    setBuildOpen(false);
+    beginPack(null, true);
     const S = stateRef.current; if (!S) return;
     if (S.linePending && S.rejectLine) S.rejectLine();
     S.mode = null; S.pending = null; S.buildPt0 = null; S.sellMode = false; S.devSpawn = null;
@@ -4368,6 +4408,52 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
   // arrives in the same slot position it will keep for the rest of the match.
   const unlocked = hud.unlocked || [];
   const palette = PALETTE.filter((p) => unlocked.indexOf(p.key) >= 0);
+
+  // mk2.31: THE LATTICE's rung tags — a rack tag (foes) or a palette tag,
+  // today's whole bodies carried over verbatim, packing appended on tap.
+  const renderLatticeTag = (cat, k, ti, ri) => {
+    const entranceDelay = (0.17 + ri * 0.06 + ti * 0.035) + "s";
+    const tilt = ti % 2 ? 1.5 : -2;
+    const packStyle = packing ? { animation: "cs-pack 0.12s ease-in forwards", animationDelay: (ti * 0.02) + "s" } : {};
+    if (cat === "foes") {
+      const f = FOE_RACK.find((x) => x.key === k);
+      if (!f) return null;
+      return (
+        <StockTag key={f.key} data-foe-key={f.key}
+          tilt={tilt} delay={entranceDelay}
+          style={{ minWidth: isTouch ? 56 : 52, borderColor: hud.devSpawn === f.key ? "#ff6b5e" : "#8f8768", background: hud.devSpawn === f.key ? "#d8c9a5" : "#cfc6a5", ...packStyle }}
+          onClick={() => {
+            const S = stateRef.current; if (!S) return;
+            S.devSpawn = S.devSpawn === f.key ? null : f.key;
+            S.mode = null; S.pending = null; S.sellMode = false;
+            setHud((h) => ({ ...h, devSpawn: S.devSpawn, mode: null, sellMode: false }));
+            beginPack(null, true);
+          }}>
+          <div style={{ fontSize: 15 }}>{f.icon}</div>
+          <div>{f.label}</div>
+          <div style={{ color: "#8a2f2f", fontSize: 10, fontWeight: 600 }}>ENEMY</div>
+        </StockTag>
+      );
+    }
+    const p = palette.find((x) => x.key === k);
+    if (!p) return null;
+    const k2 = p.key;
+    const sel = !hud.sellMode && hud.mode === k2;
+    const priceP = hud.prices?.[k2] ?? p.cost;
+    const afford = hud.resources >= priceP;
+    return (
+      <StockTag key={cat + ":" + k2} data-tower-key={k2}
+        tilt={tilt} delay={entranceDelay}
+        style={{ minWidth: isTouch ? 56 : 52, opacity: afford ? 1 : 0.45, borderColor: sel ? "#2f7a44" : "#8f8768", background: sel ? "#d3d6a8" : "#cfc6a5", ...packStyle }}
+        onClick={() => { setMode(k2); beginPack(null, true); }}>
+        <div data-info={k2} onClick={(e) => { e.stopPropagation(); const S = stateRef.current; if (S && S.openInfo) S.openInfo(k2, "bar"); }}
+          style={{ position: "absolute", top: 1, right: 3, fontSize: 12, opacity: 0.6, padding: "2px 4px", cursor: "pointer" }}>ⓘ</div>
+        <div style={{ fontSize: 15 }}>{p.icon}</div>
+        <div>{p.label}</div>
+        <div style={{ color: "#7a5a1e" }}>◆{priceP}</div>
+      </StockTag>
+    );
+  };
 
   return (
     <div style={P.root}>
@@ -4857,12 +4943,41 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
           : <div style={{ position: "absolute", left: vr.x, top: vr.y + 26, transform: "translate(-50%,0)", fontSize: 10, letterSpacing: 1, color: "#7dffa8", background: "rgba(14,18,24,0.85)", padding: "1px 6px", borderRadius: 4, zIndex: 7, pointerEvents: "none" }}>{vLabel + status}</div>;
       })()}
 
+      {hud.started && !hud.gameOver && !hud.victory && !hud.possessed && buildOpen && branch && (
+        <div data-lattice style={{ position: "absolute", left: 6, right: 6, bottom: "calc(96px + env(safe-area-inset-bottom, 0px))", zIndex: 4, display: "flex", flexDirection: "column-reverse", gap: 2, pointerEvents: packing ? "none" : "auto" }}>
+          <div data-trunk style={{ position: "absolute", left: 14, top: -4, bottom: -10, width: 2, background: "#8f9aa8", transformOrigin: "bottom",
+            animation: packing ? "cs-packtrunk 0.12s ease-in forwards" : "cs-climb 0.15s ease-out backwards",
+            animationDelay: packing ? "0.22s" : "0s" }}
+            onAnimationEnd={packing ? finishPack : undefined} />
+          {(LATTICE[branch] || []).map((rung, ri) => (
+            <div key={branch + ":" + rung.name} style={{ display: "flex", alignItems: "center", gap: 6, paddingLeft: 10 }}>
+              <div style={{ fontSize: 9, letterSpacing: 1, color: "#b9a86a", border: "1px solid #6a5f3a", borderRadius: 2, padding: "1px 4px", background: "rgba(14,18,24,0.85)", zIndex: 1,
+                animation: packing ? "cs-pack 0.1s ease-in forwards" : "cs-deal 0.1s ease-out backwards",
+                animationDelay: packing ? "0.12s" : (0.12 + ri * 0.06) + "s", "--restT": "none" }}>{rung.name}</div>
+              <div style={{ height: 2, width: 16, background: "#8f9aa8", transformOrigin: "left",
+                animation: packing ? "cs-packline 0.1s ease-in forwards" : "cs-line 0.1s ease-out backwards",
+                animationDelay: packing ? "0.12s" : (0.12 + ri * 0.06) + "s" }} />
+              <div style={{ display: "flex", gap: 6, overflowX: "auto", padding: "6px 2px", alignItems: "center" }}>
+                {rung.keys.map((k, ti) => renderLatticeTag(branch, k, ti, ri))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {hud.started && !hud.gameOver && !hud.victory && !hud.possessed && (
-        <div style={P.bar}>
-          <style>{`@keyframes cs-deal { from { opacity: 0; transform: translate(-16px, 12px) rotate(-8deg) scale(0.85); } to { opacity: 1; transform: var(--restT, none); } }`}</style>
+        <div style={{ ...P.bar, pointerEvents: packing ? "none" : "auto" }}>
+          <style>{`
+@keyframes cs-deal { from { opacity: 0; transform: translate(-16px, 12px) rotate(-8deg) scale(0.85); } to { opacity: 1; transform: var(--restT, none); } }
+@keyframes cs-climb { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes cs-line { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes cs-pack { to { opacity: 0; transform: translate(-16px, 12px) rotate(-8deg) scale(0.85); } }
+@keyframes cs-packline { to { transform: scaleX(0); } }
+@keyframes cs-packtrunk { to { transform: scaleY(0); } }
+`}</style>
           <CrateChip data-build-toggle
             label={buildOpen ? "CLOSE" : "BUILD"} icon="⚒" open={buildOpen} active={buildOpen}
-            line={!buildOpen && hud.mode ? (PALETTE_LABEL[hud.mode] || "") : ""}
+            line={!buildOpen ? (hud.sellMode ? "SELL" : hud.mode ? (PALETTE_LABEL[hud.mode] || "") : "") : ""}
             onClick={() => {
               if (buildOpen) { closeBuild(); return; }
               const S = stateRef.current;
@@ -4877,45 +4992,17 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
               label={b.label} icon={b.icon} open={branch === b.key} active={branch === b.key}
               count={b.key === "foes" ? FOE_RACK.length : palette.filter((p) => b.match(p.key)).length}
               line={!qmQuiet ? QM_LINES[b.key] : null}
-              style={{ animation: "cs-deal 0.14s ease-out backwards", animationDelay: (TREE_BRANCHES.indexOf(b) * 0.04) + "s" }}
-              onClick={() => setBranch(b.key)} />
+              style={packing && packNextRef.current.closeAll
+                ? { animation: "cs-pack 0.1s ease-in forwards", animationDelay: "0.18s" }
+                : { animation: "cs-deal 0.14s ease-out backwards", animationDelay: (TREE_BRANCHES.indexOf(b) * 0.04) + "s" }}
+              onClick={() => { branch === b.key ? beginPack(null, false) : (branch ? beginPack(b.key, false) : setBranch(b.key)); }} />
           ) : null)}
-          {buildOpen && dev && branch === "foes" && FOE_RACK.map((f, fi) => (
-            <StockTag key={f.key} data-foe-key={f.key}
-              tilt={fi % 2 ? 1.5 : -2} delay={(0.10 + fi * 0.04) + "s"}
-              style={{ minWidth: isTouch ? 56 : 52, borderColor: hud.devSpawn === f.key ? "#ff6b5e" : "#8f8768", background: hud.devSpawn === f.key ? "#d8c9a5" : "#cfc6a5" }}
-              onClick={() => {
-                const S = stateRef.current; if (!S) return;
-                S.devSpawn = S.devSpawn === f.key ? null : f.key;
-                S.mode = null; S.pending = null; S.sellMode = false;
-                setHud((h) => ({ ...h, devSpawn: S.devSpawn, mode: null, sellMode: false }));
-              }}>
-              <div style={{ fontSize: 15 }}>{f.icon}</div>
-              <div>{f.label}</div>
-              <div style={{ color: "#8a2f2f", fontSize: 10, fontWeight: 600 }}>ENEMY</div>
-            </StockTag>
-          ))}
-          {buildOpen && palette.filter((p) => { const b = TREE_BRANCHES.find((x) => x.key === branch); return b && b.match(p.key); }).map((p, pi) => {
-            const sel = !hud.sellMode && hud.mode === p.key;
-            const priceP = hud.prices?.[p.key] ?? p.cost;
-            const afford = hud.resources >= priceP;
-            return (
-              <StockTag key={branch + ":" + p.key} data-tower-key={p.key}
-                tilt={pi % 2 ? 1.5 : -2} delay={(0.10 + pi * 0.04) + "s"}
-                style={{ minWidth: isTouch ? 56 : 52, opacity: afford ? 1 : 0.45, borderColor: sel ? "#2f7a44" : "#8f8768", background: sel ? "#d3d6a8" : "#cfc6a5" }}
-                onClick={() => setMode(p.key)}>
-                <div data-info={p.key} onClick={(e) => { e.stopPropagation(); const S = stateRef.current; if (S && S.openInfo) S.openInfo(p.key, "bar"); }}
-                  style={{ position: "absolute", top: 1, right: 3, fontSize: 12, opacity: 0.6, padding: "2px 4px", cursor: "pointer" }}>ⓘ</div>
-                <div style={{ fontSize: 15 }}>{p.icon}</div>
-                <div>{p.label}</div>
-                <div style={{ color: "#7a5a1e" }}>◆{priceP}</div>
-              </StockTag>
-            );
-          })}
           {buildOpen && (
             <StockTag data-sell-toggle tilt={1.5} delay="0.09s"
-              style={{ minWidth: isTouch ? 56 : 52, borderColor: hud.sellMode ? "#a85c1e" : "#8f8768", background: hud.sellMode ? "#dcc9a0" : "#cfc6a5" }}
-              onClick={toggleSell}>
+              style={packing && packNextRef.current.closeAll
+                ? { minWidth: isTouch ? 56 : 52, borderColor: hud.sellMode ? "#a85c1e" : "#8f8768", background: hud.sellMode ? "#dcc9a0" : "#cfc6a5", animation: "cs-pack 0.1s ease-in forwards", animationDelay: "0.18s" }
+                : { minWidth: isTouch ? 56 : 52, borderColor: hud.sellMode ? "#a85c1e" : "#8f8768", background: hud.sellMode ? "#dcc9a0" : "#cfc6a5" }}
+              onClick={() => { toggleSell(); beginPack(null, true); }}>
               <div style={{ fontSize: 15 }}>✕</div>
               <div>SELL</div>
               <div style={{ opacity: 0.7 }}>60%</div>
