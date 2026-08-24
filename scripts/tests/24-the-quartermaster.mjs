@@ -40,7 +40,7 @@ ok("names: the enemy rack follows",
 
 { // mk2.29: the convoy crate
   const dg3 = src("src/depot/DepotGame.jsx");
-  ok("convoy: the hand deals out of a crate", dg3.match(/data-manifest-offer[\s\S]{0,600}cs-deal/) != null);
+  ok("convoy: the hand deals out of a crate (re-taught mk2.33: the deal rides StockTag)", dg3.match(/<StockTag[^>]*data-manifest-offer/) != null && src("src/depot/Crate.jsx").includes("cs-deal"));
   ok("convoy: the hand rows kept their kinds", dg3.includes('data-hand-kind={c.hire ? "hire" : "plan"}'));
 }
 
@@ -67,4 +67,9 @@ ok("names: the enemy rack follows",
   ok("lattice: packing is inert and finishes on the trunk", dg6.match(/pointerEvents: packing/) != null && dg6.match(/onAnimationEnd=\{packing \? finishPack/) != null);
   ok("lattice: every door survived", dg6.includes("data-build-toggle") && dg6.includes("data-branch") && dg6.includes("data-tower-key") && dg6.includes("data-info=") && dg6.includes("data-sell-toggle") && dg6.includes("data-foe-key"));
   ok("lattice: a fold with no trunk closes at once", dg6.match(/if \(!branch\) \{ setBranch\(next\); if \(closeAll\) setBuildOpen\(false\); return; \}/) != null);
+}
+
+{ // mk2.33: the convoy on paper
+  const dg7 = src("src/depot/DepotGame.jsx");
+  ok("convoy: the hand rows are paper", dg7.match(/<StockTag[^>]*data-manifest-offer/) != null && dg7.includes('data-hand-kind={c.hire ? "hire" : "plan"}'));
 }

@@ -4706,7 +4706,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
       {hud.manifest && hud.manifest.up && !hud.gameOver && !hud.victory && (
         <div style={P.cardWrap}>
           <div data-manifest-card style={{ ...P.panel, position: "static", pointerEvents: "auto", borderColor: "#ffd27a", width: "min(300px, 44vw)" }}>
-            <style>{`@keyframes cs-deal { from { opacity: 0; transform: translate(-14px, 10px) rotate(var(--dealR, -4deg)) scale(0.88); } to { opacity: 1; transform: none; } }`}</style>
+            <style>{`@keyframes cs-deal { from { opacity: 0; transform: translate(-14px, 10px) rotate(-6deg) scale(0.88); } to { opacity: 1; transform: var(--restT, none); } }`}</style>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, marginBottom: 10, borderBottom: "1px solid #2c3846", paddingBottom: 8 }}>
               <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <CrateChip label="THE CONVOY" icon="⚒" open={true} style={{ minWidth: 0, minHeight: 0, padding: "2px 6px", background: "transparent", border: "none" }} />
@@ -4730,14 +4730,14 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
               const it = PALETTE_BY_KEY[c.k];
               if (!it) return null;
               return (
-                <button key={ci + ":" + c.k} data-manifest-offer={c.k} data-hand-kind={c.hire ? "hire" : "plan"}
-                  style={{ ...P.btnBig, width: "100%", marginBottom: 6, display: "flex", alignItems: "center", gap: 10, textAlign: "left", opacity: hud.manifest.armed ? 1 : 0.5,
-                    animation: "cs-deal 0.16s ease-out backwards", animationDelay: (ci * 0.05) + "s", "--dealR": (ci % 2 ? "3deg" : "-4deg") }}
+                <StockTag key={ci + ":" + c.k} data-manifest-offer={c.k} data-hand-kind={c.hire ? "hire" : "plan"}
+                  tilt={ci % 2 ? 0.8 : -1.2} delay={(ci * 0.05) + "s"}
+                  style={{ width: "100%", minHeight: 44, marginBottom: 6, flexDirection: "row", alignItems: "center", gap: 10, textAlign: "left", padding: "8px 10px 8px 22px", opacity: hud.manifest.armed ? 1 : 0.5 }}
                   onClick={() => { const S = stateRef.current; if (S && S.openInfo) S.openInfo(c.k, c.hire ? "hire" : "manifest"); }}>
                   <span style={{ fontSize: 18 }}>{it.icon}</span>
                   <span style={{ flex: 1 }}>{it.label}</span>
-                  <span style={{ color: c.hire ? "#7dffa8" : "#ffd27a", fontSize: 11, letterSpacing: 1 }}>{c.hire ? "HIRE" : "PLAN"} ◆{c.price}</span>
-                </button>
+                  <span style={{ color: c.hire ? "#2f6a3a" : "#7a5a1e", fontSize: 11, letterSpacing: 1, fontWeight: 600 }}>{c.hire ? "HIRE" : "PLAN"} ◆{c.price}</span>
+                </StockTag>
               );
             })}
             <button data-manifest-later
