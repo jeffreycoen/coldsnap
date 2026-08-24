@@ -66,4 +66,5 @@ ok("names: the enemy rack follows",
   ok("lattice: the trunk climbs and the pack folds", dg6.includes("cs-climb") && dg6.includes("cs-pack") && dg6.includes("data-lattice"));
   ok("lattice: packing is inert and finishes on the trunk", dg6.match(/pointerEvents: packing/) != null && dg6.match(/onAnimationEnd=\{packing \? finishPack/) != null);
   ok("lattice: every door survived", dg6.includes("data-build-toggle") && dg6.includes("data-branch") && dg6.includes("data-tower-key") && dg6.includes("data-info=") && dg6.includes("data-sell-toggle") && dg6.includes("data-foe-key"));
+  ok("lattice: a fold with no trunk closes at once", dg6.match(/if \(!branch\) \{ setBranch\(next\); if \(closeAll\) setBuildOpen\(false\); return; \}/) != null);
 }

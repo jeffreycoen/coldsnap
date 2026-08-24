@@ -943,7 +943,14 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
   // null = all closed; a category key = switch to it. Pure presentation.
   const [packing, setPacking] = useState(false);
   const packNextRef = useRef({ next: null, closeAll: false });
-  const beginPack = (next, closeAll) => { if (packing) return; packNextRef.current = { next, closeAll }; setPacking(true); };
+  const beginPack = (next, closeAll) => {
+    if (packing) return;
+    // mk2.32: no lattice standing = nothing to fold — close without
+    // ceremony (the trunk's onAnimationEnd is the only finisher).
+    if (!branch) { setBranch(next); if (closeAll) setBuildOpen(false); return; }
+    packNextRef.current = { next, closeAll };
+    setPacking(true);
+  };
   const finishPack = () => {
     const t = packNextRef.current;
     setPacking(false);
