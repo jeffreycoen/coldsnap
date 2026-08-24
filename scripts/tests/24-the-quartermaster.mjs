@@ -37,3 +37,9 @@ ok("names: the enemy rack follows",
   ok("crates: the bar's doors survived", dg2.includes("data-build-toggle") && dg2.includes("data-sell-toggle") && dg2.includes("data-tower-key") && dg2.includes("data-foe-key") && dg2.includes("data-dev-reroll"));
   ok("crates: the quartermaster lines exist and go quiet", dg2.includes("QM_KEY") && dg2.includes("qmQuiet"));
 }
+
+{ // mk2.29: the convoy crate
+  const dg3 = src("src/depot/DepotGame.jsx");
+  ok("convoy: the hand deals out of a crate", dg3.match(/data-manifest-offer[\s\S]{0,600}cs-deal/) != null);
+  ok("convoy: the hand rows kept their kinds", dg3.includes('data-hand-kind={c.hire ? "hire" : "plan"}'));
+}

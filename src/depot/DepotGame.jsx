@@ -4613,8 +4613,12 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
       {hud.manifest && hud.manifest.up && !hud.gameOver && !hud.victory && (
         <div style={P.cardWrap}>
           <div data-manifest-card style={{ ...P.panel, position: "static", pointerEvents: "auto", borderColor: "#ffd27a", width: "min(300px, 44vw)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 10, borderBottom: "1px solid #2c3846", paddingBottom: 8 }}>
-              <span style={{ color: "#ffd27a", letterSpacing: 2 }}>CONVOY MANIFEST</span>
+            <style>{`@keyframes cs-deal { from { opacity: 0; transform: translate(-14px, 10px) rotate(var(--dealR, -4deg)) scale(0.88); } to { opacity: 1; transform: none; } }`}</style>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, marginBottom: 10, borderBottom: "1px solid #2c3846", paddingBottom: 8 }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <CrateChip label="THE CONVOY" icon="⚒" open={true} style={{ minWidth: 0, minHeight: 0, padding: "2px 6px", background: "transparent", border: "none" }} />
+                <span style={{ color: "#ffd27a", letterSpacing: 2 }}>CONVOY MANIFEST</span>
+              </span>
               <span style={{ opacity: 0.6 }}>BELL {hud.manifest.bell}</span>
             </div>
             <div style={{ fontSize: 11, opacity: 0.8, marginBottom: 10, lineHeight: 1.5 }}>
@@ -4634,7 +4638,8 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
               if (!it) return null;
               return (
                 <button key={ci + ":" + c.k} data-manifest-offer={c.k} data-hand-kind={c.hire ? "hire" : "plan"}
-                  style={{ ...P.btnBig, width: "100%", marginBottom: 6, display: "flex", alignItems: "center", gap: 10, textAlign: "left", opacity: hud.manifest.armed ? 1 : 0.5 }}
+                  style={{ ...P.btnBig, width: "100%", marginBottom: 6, display: "flex", alignItems: "center", gap: 10, textAlign: "left", opacity: hud.manifest.armed ? 1 : 0.5,
+                    animation: "cs-deal 0.16s ease-out backwards", animationDelay: (ci * 0.05) + "s", "--dealR": (ci % 2 ? "3deg" : "-4deg") }}
                   onClick={() => { const S = stateRef.current; if (S && S.openInfo) S.openInfo(c.k, c.hire ? "hire" : "manifest"); }}>
                   <span style={{ fontSize: 18 }}>{it.icon}</span>
                   <span style={{ flex: 1 }}>{it.label}</span>
