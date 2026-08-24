@@ -1902,10 +1902,26 @@ export function makeRenderer(canvas, world0, opts = {}) {
     let fri = 0;
     for (const b of world.bodies) {
       if (b.kind !== "tower") continue;
+      // mk2.37: DEPOT fog — the tower loop learns the vehicles' law. An
+      // unheld enemy tower is not rendered (group hidden, bar/aura/sparks
+      // skip with it); a SEAM tower draws whole but drops its bar — towers
+      // wear no team dress (one mesh both sides), so there is no color to
+      // silhouette. Live team-2 only; render-only; DEPOT-only (opts.territory).
+      let fogSilT = false;
+      if (opts.territory && b.team === 2 && b.alive) {
+        fogDbgTotal++;
+        if (fogOn) {
+          const st = opts.territory.sample(b.pos.x, b.pos.z);
+          if (st === "unheld") { const g0 = towerGroups.get(b.id); if (g0) g0.visible = false; continue; }
+          fogSilT = st === "seam";
+        }
+        fogDbgVisible++;
+      }
       let g = towerGroups.get(b.id);
       if (!g) { g = buildTowerMesh(b.towerType); towerGroups.set(b.id, g); scene.add(g); }
+      g.visible = true;
       g.position.set(b.pos.x, b.pos.y, b.pos.z);
-      pushBar(b, 1.6, 1.0); // provisional (F5)
+      if (!fogSilT) pushBar(b, 1.6, 1.0); // provisional (F5)
       const hurt = b.maxHp ? b.hp / b.maxHp : 1;
       if (g.userData.turret) {
         const tgt = b.targetId ? world.byId.get(b.targetId) : null;
@@ -2204,10 +2220,23 @@ export function makeRenderer(canvas, world0, opts = {}) {
     let mi = 0;
     for (const b of world.bodies) {
       if ((b.kind !== "mech" && b.kind !== "mechlink" && b.kind !== "mechfoot") || mi >= 88) continue;
+      // mk2.37: DEPOT fog — unheld enemy mech pieces write no instance (the
+      // pod/thruster hardware skips with its torso); seam pieces write the
+      // flat silhouette and no bar. Live team-2 only; render-only.
+      let fogSilM = false;
+      if (opts.territory && b.team === 2 && b.alive) {
+        fogDbgTotal++;
+        if (fogOn) {
+          const st = opts.territory.sample(b.pos.x, b.pos.z);
+          if (st === "unheld") continue;
+          fogSilM = st === "seam";
+        }
+        fogDbgVisible++;
+      }
       if (b.visTag === "torso") torsos.push(b);
-      if (b.kind === "mech") pushBar(b, 3.2, 7.5); // hull only — the one mech kind carrying maxHp // provisional (F5)
+      if (b.kind === "mech" && !fogSilM) pushBar(b, 3.2, 7.5); // hull only — the one mech kind carrying maxHp // provisional (F5)
       writeInst(mechMesh, mi, b.pos.x, b.pos.y, b.pos.z, b.q, b.hx * 2, b.hy * 2, b.hz * 2);
-      if (mechMesh.setColorAt) mechMesh.setColorAt(mi, b.kind === "mech" ? MECH_HULL_C : b.kind === "mechfoot" ? MECH_FOOT_C : MECH_LINK_C);
+      if (mechMesh.setColorAt) mechMesh.setColorAt(mi, fogSilM ? SIL_C : (b.kind === "mech" ? MECH_HULL_C : b.kind === "mechfoot" ? MECH_FOOT_C : MECH_LINK_C));
       mi++;
     }
     // per-mech hardware (P7 T "the mech", mk1.92): the pod + thruster block

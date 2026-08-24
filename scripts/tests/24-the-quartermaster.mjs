@@ -86,3 +86,10 @@ ok("names: the enemy rack follows",
   ok("standdown: the helper exists and all three placers call it", dg9.includes("const standDown = ") && dg9.match(/recomputeFlow\(\);\n\s+standDown\(\);/) != null && dg9.match(/S\._buyAt = world\.t;\n\s+standDown\(\);/) != null && dg9.match(/standDown\(\);\n\s+return true;/) != null);
   ok("standdown: the lattice clears the lids", dg9.includes('bottom: "calc(150px + env(safe-area-inset-bottom, 0px))"'));
 }
+
+{ // mk2.37: the fog holds its secrets — towers and the mech learn the law
+  const rr = src("src/render/renderer.js");
+  ok("fog: enemy towers hide unheld", rr.match(/kind !== "tower"[\s\S]{0,900}st === "unheld"/) != null);
+  ok("fog: mech pieces hide unheld", rr.match(/mechfoot[\s\S]{0,700}st === "unheld"/) != null);
+  ok("fog: all four loops feed the counters", (rr.match(/fogDbgTotal\+\+/g) || []).length === 4);
+}
