@@ -1658,6 +1658,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
         S.resources -= cost;
         S._buyAt = world.t;
         recomputeFlow();
+        standDown();
       };
       // Validate-only twin of buildAt's early checks (Task 3): used to gate
       // entry into the pending-confirm flow WITHOUT mutating anything —
@@ -1706,6 +1707,14 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
           poly = reachPolygon(world, null, muzzle, spec, 1, invW);
         }
         S.pending = { gx, gz, mode, wp, y, poly, ringR, color, cost: priceNow(mode, spec.cost), armedAt: world.t + PENDING_ARM_S };
+      };
+      // mk2.36 (owner): A PLACEMENT STANDS THE MENU DOWN — success clears
+      // the armed mode and its ground tint back to plain command. Knowingly
+      // reverses mk1.67's stays-armed-for-repeat ruling (owner, 2026-08-24).
+      // The bench's enemy rack keeps repeat placement; refusals keep the arm.
+      const standDown = () => {
+        S.mode = null; S.pending = null; S.buildPt0 = null;
+        setHud((h) => ({ ...h, mode: null }));
       };
       const confirmPending = () => {
         const p = S.pending;
@@ -1768,6 +1777,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
         S.selSquadId = sq.id; S.selSquadIds = null; S.selArmedAt = world.t + PENDING_ARM_S; S.pieOpen = true;
         S.resources -= price;
         S._buyAt = world.t;
+        standDown();
       };
       // P7.1 T6 (owner): one picked unit onto the ground — vetted per kind, free
       // (the starting kit costs nothing), inside the homeland only.
@@ -2937,6 +2947,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
         S._buyAt = world.t;
         cue("uitick");
         toast("THE CONVOY DELIVERS — ◆" + price);
+        standDown();
         return true;
       };
       // mk1.95: THE PLACEMENT ZONE — while a confirm placement is armed, the
@@ -4954,7 +4965,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
       })()}
 
       {hud.started && !hud.gameOver && !hud.victory && !hud.possessed && buildOpen && branch && (
-        <div data-lattice style={{ position: "absolute", left: 6, right: 6, bottom: "calc(96px + env(safe-area-inset-bottom, 0px))", zIndex: 4, display: "flex", flexDirection: "column-reverse", gap: 2, pointerEvents: packing ? "none" : "auto" }}>
+        <div data-lattice style={{ position: "absolute", left: 6, right: 6, bottom: "calc(150px + env(safe-area-inset-bottom, 0px))", zIndex: 4, display: "flex", flexDirection: "column-reverse", gap: 2, pointerEvents: packing ? "none" : "auto" }}>
           <div data-trunk style={{ position: "absolute", left: 14, top: -4, bottom: -10, width: 2, background: "#8f9aa8", transformOrigin: "bottom",
             animation: packing ? "cs-packtrunk 0.12s ease-in forwards" : "cs-climb 0.15s ease-out backwards",
             animationDelay: packing ? "0.22s" : "0s" }}
