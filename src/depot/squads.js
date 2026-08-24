@@ -35,9 +35,9 @@ export const SQUAD_SPECS = {           // costs are scrap; members spawn as unit
   // spotter. Was 45 (30 sniper + half a rifles squad for the spotter), and the
   // mirror of the enemy marksman's 45 bounty; 68 breaks that mirror per the
   // asymmetry note above. // provisional (F5)
-  sniper: { n: 2, cost: 68, label: "SNIPER" },
+  sniper: { n: 2, cost: 68, label: "MARKSMEN" },
   rifles: { n: 4, cost: 30, label: "RIFLE SQUAD" },  // provisional (F5)
-  mg:     { n: 2, cost: 38, label: "MG TEAM" },      // provisional (F5)
+  mg:     { n: 2, cost: 38, label: "GUNNERS" },      // provisional (F5)
   // FRONT F1 (Task 4.5): the demolition team — the exact mirror of the
   // enemy's satchel sapper. Tools, not shooters: no rifle (squadFire skips
   // the type), one charge per man, the charge consumes the planter.

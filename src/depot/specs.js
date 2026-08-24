@@ -35,11 +35,11 @@ export const TOWER_SPECS = {
   // mk0.99 (owner's lethality ruling): 3.4 -> 8 — the MG tower rises flatter
   // than rifles; a six-round burst kills a conscript. The ±10% replaces-not-
   // adds calibration this line once carried is superseded.
-  mg:     { range: 15, fireRate: 0.17, projSpeed: 95, dmg: 5, dirDmg: 8, blastR: 0.3, kv: 0.5, cost: 23, hp: 80,  crater: 0, label: "MG",     icon: "⊞", kind: "mg",    weapon: "mg",     hy: 1.0, acc: 0.090, windF: 0.06, windComp: 0,   blurb: "Fast, cheap, short reach", occl: "arc" },
-  gun:    { range: 19, fireRate: 1.05, projSpeed: 58, dmg: 25, blastR: 2.3, kv: 8,   cost: 38, hp: 130, crater: 0.55, label: "GUN",    icon: "⚑", kind: "shell", weapon: "shell",  hy: 1.5, acc: 0.07, windF: 0.9,  windComp: 0.6, blurb: "Flat-trajectory workhorse", occl: "auto" /* mk2.02 (owner): THE AUTOMATIC LOB — flat when the flat arc reaches, mortar root when it cannot */ },
+  mg:     { range: 15, fireRate: 0.17, projSpeed: 95, dmg: 5, dirDmg: 8, blastR: 0.3, kv: 0.5, cost: 23, hp: 80,  crater: 0, label: "SPITTER",     icon: "⊞", kind: "mg",    weapon: "mg",     hy: 1.0, acc: 0.090, windF: 0.06, windComp: 0,   blurb: "Fast, cheap, short reach", occl: "arc" },
+  gun:    { range: 19, fireRate: 1.05, projSpeed: 58, dmg: 25, blastR: 2.3, kv: 8,   cost: 38, hp: 130, crater: 0.55, label: "FIELD GUN",    icon: "⚑", kind: "shell", weapon: "shell",  hy: 1.5, acc: 0.07, windF: 0.9,  windComp: 0.6, blurb: "Flat-trajectory workhorse", occl: "auto" /* mk2.02 (owner): THE AUTOMATIC LOB — flat when the flat arc reaches, mortar root when it cannot */ },
   mortar: { range: 26, fireRate: 4.6 /* halved cadence (C0 T4) // provisional (F5) */ /* mk1.74 (owner): tightened 0.020 -> 0.005 — the lob lands where it looks */,  projSpeed: 33, dmg: 38, blastR: 3.8, kv: 10,  cost: 53, hp: 95,  crater: 0.8, label: "MORTAR", icon: "◎", kind: "shell", weapon: "mortar", hy: 0.8, acc: 0.005, windF: 0.04, windComp: 0.6, blurb: "Arcs over walls, big blast", occl: "lofted" },
-  rocket: { range: 23, fireRate: 8.8 /* halved cadence (C0 T4) // provisional (F5) */,  projSpeed: 18, dmg: 27, blastR: 3.4, kv: 9,   cost: 75, hp: 110, volley: 4, crater: 0.7, label: "ROCKET", icon: "▲", kind: "shell", weapon: "rocket", hy: 1.2, acc: 0.021, windF: 1.3  /* lobbed retune (mk0.25): swept 0.020-0.035 vs the pinned flat baseline 2.4592, curve in the F1.5 artillery plan // provisional (F5) */, windComp: 0.5, blurb: "Four-round salvo, slow reload", occl: "arc" /* mk1.74 (owner): THE GENTLE ARC — flat solve at 18 m/s, ~22° and a 2.3m apex at full reach; terrain checks honest */ },
-  tesla:  { range: 16, fireRate: 5, projSpeed: 95, dmg: 35, blastR: 0, kv: 0, cost: 55, hp: 85, label: "TESLA", icon: "⚡", kind: "mg", weapon: "tesla", acc: 0.02, windF: 0, windComp: 0, tesla: true, hy: 1.35, blurb: "Chain lightning arcs to everything near" }, // mk2.15 (owner): THE TESLA COIL replaces frost — key renamed, no save migration (standing orders). projSpeed is sight-math only (arcClears/effRange run the mg's flat check); no projectile ever flies.
+  rocket: { range: 23, fireRate: 8.8 /* halved cadence (C0 T4) // provisional (F5) */,  projSpeed: 18, dmg: 27, blastR: 3.4, kv: 9,   cost: 75, hp: 110, volley: 4, crater: 0.7, label: "SALVO RACK", icon: "▲", kind: "shell", weapon: "rocket", hy: 1.2, acc: 0.021, windF: 1.3  /* lobbed retune (mk0.25): swept 0.020-0.035 vs the pinned flat baseline 2.4592, curve in the F1.5 artillery plan // provisional (F5) */, windComp: 0.5, blurb: "Four-round salvo, slow reload", occl: "arc" /* mk1.74 (owner): THE GENTLE ARC — flat solve at 18 m/s, ~22° and a 2.3m apex at full reach; terrain checks honest */ },
+  tesla:  { range: 16, fireRate: 5, projSpeed: 95, dmg: 35, blastR: 0, kv: 0, cost: 55, hp: 85, label: "TESLA COIL", icon: "⚡", kind: "mg", weapon: "tesla", acc: 0.02, windF: 0, windComp: 0, tesla: true, hy: 1.35, blurb: "Chain lightning arcs to everything near" }, // mk2.15 (owner): THE TESLA COIL replaces frost — key renamed, no save migration (standing orders). projSpeed is sight-math only (arcClears/effRange run the mg's flat check); no projectile ever flies.
 };
 export const TOWER_ORDER = ["mg", "gun", "mortar", "rocket", "tesla"];
 
@@ -74,7 +74,7 @@ export const ENEMY_SPECS = {
   sniper: { ...MAN.rifle, bounty: 45, speed: 2.9, gain: 14, label: "marksman" },
   // P7.1 T6 (owner): the pick pool is the player's full list — his MG team
   // and his engineers join the roster. Bounties provisional (F5).
-  mg:  { ...MAN.rifle, bounty: 8, speed: 3.2, gain: 14, label: "mg team" },
+  mg:  { ...MAN.rifle, bounty: 8, speed: 3.2, gain: 14, label: "gunners" },
   eng: { ...MAN.rifle, bounty: 6, speed: 3.2, gain: 14, label: "engineer" },
   // P7.2 T6: his medic — the conscript frame, no weapon (units.js's medic
   // branch never fires). Bounty is the kill payout. // provisional (F5)

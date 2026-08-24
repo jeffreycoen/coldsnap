@@ -756,9 +756,9 @@ function RadialMenu({ cx, cy, label, slots, armed, onChoose }) {
 const PALETTE = [
   ...TOWER_ORDER.map((k) => ({ key: k, label: TOWER_SPECS[k].label, icon: TOWER_SPECS[k].icon, cost: TOWER_SPECS[k].cost })),
   // Squads (Phase 5 Task 3): mode keys prefixed sq_ — the MG tower owns "mg"
-  { key: "sq_sniper", label: "SNIPER", icon: "✛", cost: SQUAD_SPECS.sniper.cost },
+  { key: "sq_sniper", label: "MARKSMEN", icon: "✛", cost: SQUAD_SPECS.sniper.cost },
   { key: "sq_rifles", label: "RIFLES", icon: "∴", cost: SQUAD_SPECS.rifles.cost },
-  { key: "sq_mg", label: "MG TEAM", icon: "≣", cost: SQUAD_SPECS.mg.cost },
+  { key: "sq_mg", label: "GUNNERS", icon: "≣", cost: SQUAD_SPECS.mg.cost },
   // F1 Task 4.5: the demolition team — the only player weapon that moves
   // reinforced depot masonry (rifles measured at zero).
   { key: "sq_sappers", label: "SAPPERS", icon: "✸", cost: SQUAD_SPECS.sappers.cost },
@@ -769,7 +769,7 @@ const PALETTE = [
   // bar from the first frame of every match.
   { key: "sq_engineers", label: "ENGINEERS", icon: "⚒", cost: SQUAD_SPECS.engineers.cost },
   // mk2.02 (owner): the roster surgery — rockets and grenadiers hold the tier-1 seats.
-  { key: "sq_rockets", label: "ROCKETS", icon: "▲", cost: SQUAD_SPECS.rockets.cost },
+  { key: "sq_rockets", label: "ROCKET TEAM", icon: "▲", cost: SQUAD_SPECS.rockets.cost },
   { key: "sq_grenadiers", label: "GRENADIERS", icon: "◎", cost: SQUAD_SPECS.grenadiers.cost },
   // P7.2 T6: the medic team — mercy on the bar
   { key: "sq_medics", label: "MEDICS", icon: "✚", cost: SQUAD_SPECS.medics.cost },
@@ -792,12 +792,12 @@ const PALETTE_LABEL = Object.fromEntries(PALETTE.map((p) => [p.key, p.label]));
 // men per tap — the same head-count one enemy buy fields.
 const FOE_RACK = [
   { key: "foe_rifle", label: "CONSCRIPT", icon: "∴", tag: "", n: 1 },
-  { key: "foe_rocket", label: "ROCKETS", icon: "▲", tag: "rocket", n: 2 },
+  { key: "foe_rocket", label: "ROCKET TEAM", icon: "▲", tag: "rocket", n: 2 },
   { key: "foe_gren", label: "GRENADIERS", icon: "◎", tag: "gren", n: 2 },
   { key: "foe_sapper", label: "SAPPERS", icon: "✸", tag: "sapper", n: 2 },
   { key: "foe_mortar", label: "MORTARS", icon: "◎", tag: "mortar", n: 2 },
   { key: "foe_sniper", label: "MARKSMAN PAIR", icon: "✛", tag: "sniper", n: 1 },
-  { key: "foe_mg", label: "MG TEAM", icon: "≣", tag: "mg", n: 2 },
+  { key: "foe_mg", label: "GUNNERS", icon: "≣", tag: "mg", n: 2 },
   { key: "foe_eng", label: "ENGINEER", icon: "⚒", tag: "eng", n: 1 },
   { key: "foe_medic", label: "MEDIC", icon: "✚", tag: "medic", n: 1 },
   { key: "foe_mechanic", label: "MECHANIC", icon: "⚙", tag: "mechanic", n: 1 },
@@ -806,11 +806,11 @@ const FOE_RACK = [
   { key: "foe_bison", label: "BISON", icon: "⛨", hull: "bison" },
   { key: "foe_apc", label: "APC", icon: "⬒", hull: "apc" },
   { key: "foe_mech", label: "MECH", icon: "✇", mech: true },
-  { key: "foe_t_mg", label: "MG TOWER", icon: "⊞", tower: "mg" },
-  { key: "foe_t_gun", label: "GUN TOWER", icon: "⚑", tower: "gun" },
-  { key: "foe_t_mortar", label: "MORTAR TOWER", icon: "◎", tower: "mortar" },
-  { key: "foe_t_rocket", label: "ROCKET TOWER", icon: "▲", tower: "rocket" },
-  { key: "foe_t_tesla", label: "TESLA TOWER", icon: "⚡", tower: "tesla" },
+  { key: "foe_t_mg", label: "SPITTER", icon: "⊞", tower: "mg" },
+  { key: "foe_t_gun", label: "FIELD GUN", icon: "⚑", tower: "gun" },
+  { key: "foe_t_mortar", label: "MORTAR", icon: "◎", tower: "mortar" },
+  { key: "foe_t_rocket", label: "SALVO RACK", icon: "▲", tower: "rocket" },
+  { key: "foe_t_tesla", label: "TESLA COIL", icon: "⚡", tower: "tesla" },
 ];
 const FOE_RACK_BY_KEY = Object.fromEntries(FOE_RACK.map((f) => [f.key, f]));
 
