@@ -2,7 +2,7 @@
 
 **A full physics war game that fits on a floppy disk.** 💾
 
-The whole thing — the war, the engine, five tech demos, every sound — is one 1.38 MB bundle, about 437 KB over the wire. A 1.44 MB floppy holds it with room left over.
+The whole thing — the war, the engine, five tech demos, every sound — is one 1.39 MB bundle, about 439 KB over the wire. A 1.44 MB floppy still holds it.
 
 **PLAY:** https://jeffreycoen.github.io/coldsnap/
 
@@ -17,6 +17,7 @@ Destruction here is structural, not scripted. Every building is individual stone
 - **Every valley is drawn fresh.** A 180-meter square of hills, forests, villages — and two fortress depots pressed into opposite corners. No two wars share ground. `?seed=` replays a specific one.
 - **The war opens with a draft.** Seven cards dealt each side, units and plans together — pick five, free, and place your units by hand on your ground; the enemy's commander drafts its own five. No two wars open alike. Armor, when drafted or bought, drives like the rest: order it like a squad or take the controls; riders seal into the hold and share the hull's fate.
 - **Placement is honest.** Arming any build, hire, or hull paints the whole field's verdict — green where that unit may stand, red where it may not, judged by that unit's own laws: held ground, slope it can park on, room it fits this instant. A footprint-true ghost and a confirm stand between every tap and every coin spent.
+- **The menu is the quartermaster's stores.** BUILD opens drawn wireframe crates; a crate's lid swings and its stock deals out as paper tags on a price-tier lattice; placing a unit folds the whole desk away. The convoy's hand and the opening draft deal the same paper.
 - **No rule protects the attacker's road.** Wall the valley shut if you like — the assault masses on your masonry and cuts its way through. Breaches reopen the march.
 - **The ground bites.** Sappers lay mines and tripwires that the other side never sees — minefields are learned by loss, in both directions.
 - **The enemy lives under your rules.** Same physics, same shared market, same prices, same purchase pacing — and a commander personality drawn fresh each war decides when their armor rides out. Symmetry is law.
@@ -32,7 +33,7 @@ The war itself: every 90 seconds the muster bell rings and the convoy deals a fi
 
 - **Engine** (`src/engine/core.js`, ~2,500 dependency-free lines): sequential-impulse rigid-body solver — boxes, quaternions, friction, stacking — with welds that carry break forces, sleeping bodies, and a fixed 120 Hz timestep.
 - **Two-tier collision books**: sleeping and immovable stones file into the broadphase once and stay filed — a cell of settled masonry does no pair work. Measured on the Pi: idle simulation 5.0 → 3.1 ms, assault plus collapse 10.8 → 7.3 ms, physics bit-identical before and after.
-- **Determinism culture**: every random draw is seeded and draw-count-stable (a lint gate forbids `Math.random` in game logic); the original demo is byte-frozen and `scripts/golden.mjs` re-extracts the engine from it on every push, asserting bit-identical world-state hashes; behavior changes are pinned by keystone hashes. 1,873 headless checks run green behind seven CI gates on every push.
+- **Determinism culture**: every random draw is seeded and draw-count-stable (a lint gate forbids `Math.random` in game logic); the original demo is byte-frozen and `scripts/golden.mjs` re-extracts the engine from it on every push, asserting bit-identical world-state hashes; behavior changes are pinned by keystone hashes. 1,909 headless checks run green behind seven CI gates on every push.
 - **Renderer** (`src/render/renderer.js`): one Three.js scene, instanced pools with fixed caps sized by measurement — 3,000 stones, 360 trees — and a fog pass that draws only what a living eye can see.
 - **The save**: bodies, welds mid-break, craters, squad rosters, minefields, the dice — serialized at each bell into a single JSON string in browser storage.
 - Winter Front was built on five playable tech demos — driving, contracts, a campaign, a tower defense, and a walking biped mech — all still on the site behind THE PROVING RANGE.
