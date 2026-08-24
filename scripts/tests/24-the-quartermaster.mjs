@@ -92,4 +92,5 @@ ok("names: the enemy rack follows",
   ok("fog: enemy towers hide unheld", rr.match(/kind !== "tower"[\s\S]{0,900}st === "unheld"/) != null);
   ok("fog: mech pieces hide unheld", rr.match(/mechfoot[\s\S]{0,700}st === "unheld"/) != null);
   ok("fog: all four loops feed the counters", (rr.match(/fogDbgTotal\+\+/g) || []).length === 4);
+  ok("fog: the whole mech gates by its mech's team, not the body's", rr.match(/mechfoot[\s\S]{0,700}b\.mechRef && b\.mechRef\.team === 2/) != null);
 }

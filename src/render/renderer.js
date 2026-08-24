@@ -2224,7 +2224,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
       // pod/thruster hardware skips with its torso); seam pieces write the
       // flat silhouette and no bar. Live team-2 only; render-only.
       let fogSilM = false;
-      if (opts.territory && b.team === 2 && b.alive) {
+      if (opts.territory && b.mechRef && b.mechRef.team === 2 && b.alive) {
         fogDbgTotal++;
         if (fogOn) {
           const st = opts.territory.sample(b.pos.x, b.pos.z);
