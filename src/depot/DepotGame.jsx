@@ -37,6 +37,7 @@ import { SAVE_KEY, serializeFront, burnFront, restoreBodies, restoreWelds, resto
 import { makeBodyLists, rebuildBodyLists } from "./lists.js";
 import Dispatch from "./Dispatch.jsx";
 import InfoCard from "./InfoCard.jsx";
+import CrateChip from "./Crate.jsx";
 import FieldManual, { MANUAL_REV } from "../ui/FieldManual.jsx";
 import { GRID_CS, GRID_W, GRID_H, GRID_OX, GRID_OZ, RIM_HALF_U, RIM_HALF_V, ORIENT, fwdU, fwdDir, invW, clampToRim, OBJ_POS, SPAWN_POINTS, PONDS, ROCKS, TOWN, ROADS, PASSES, BANDS, MAP_SEED, SPAWN_U, STREAM, HILLS, genMap, makeMap, buildDepotTerrain, pondAt, rockAt, makeGrid, streamAt, planTrees, computeFlowField } from "./mapgen.js";
 import { armorSpread, armorStable, MECH_SPREAD, musterFreshStart, PICK_POOL } from "./muster.js";
@@ -48,6 +49,10 @@ import { buildMech, mechCommand, respawnMech, mechFallen, mechFire, mechMissiles
 // auto-open again; anything else (including absent) means the tour greets
 // every fresh war. A resumed war never auto-opens it either way.
 const MANUAL_KEY = "coldsnap-wf-manual";
+
+// mk2.28: the quartermaster's quiet flag — the purpose lines speak in the
+// first war only, then go quiet for good once the first bell has rung.
+const QM_KEY = "coldsnap-qm-quiet";
 
 
 // P6 T1: route bookkeeping, one squad, once per sim tick (stepDepot calls
@@ -864,6 +869,8 @@ const TREE_BRANCHES = [
   { key: "vehicles", label: "VEHICLES", icon: "⛨", match: (k) => k.startsWith("hero_") },
 ];
 const branchOf = (key) => { const b = TREE_BRANCHES.find((x) => x.match(key)); return b ? b.key : null; };
+// mk2.28 (owner): the quartermaster's purpose lines — first war only.
+const QM_LINES = { troops: "men you order", buildings: "iron that stands", vehicles: "iron that moves", foes: "targets for the bench" };
 
 // `resume` (P1 Task 3): a PARSED save object, or null for a fresh front. The
 // start screen does the async probe and the mark check (save.js's probeFront)
@@ -897,6 +904,9 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
   const [rereadDispatch, setRereadDispatch] = useState(false);
   // P6 T8: the field manual. React state only — the sim never sees it.
   const [manualOpen, setManualOpen] = useState(false);
+  // mk2.28: the quartermaster's purpose lines — quiet by default; the probe
+  // opens them only for a first-timer.
+  const [qmQuiet, setQmQuiet] = useState(true);
   // P7.1 T5: the tree's presentation state — never the sim's business.
   const [buildOpen, setBuildOpen] = useState(false);
   const [branch, setBranch] = useState("troops");
@@ -911,12 +921,26 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
       }
       catch (e) { if (live) setManualOpen(true); }
     })();
+    (async () => {
+      try {
+        const r = await window.storage.get(QM_KEY);
+        if (live && !r) setQmQuiet(false);
+      }
+      catch (e) {}
+    })();
     return () => { live = false; };
   }, []);
   const closeManual = (never) => {
     setManualOpen(false);
     if (never) { try { window.storage.set(MANUAL_KEY, String(MANUAL_REV)); } catch (e) {} }
   };
+  // mk2.28: the quartermaster's lines go quiet for good once the first bell rings.
+  useEffect(() => {
+    if (hud.bell >= 1 && !qmQuiet) {
+      try { window.storage.set(QM_KEY, "1"); } catch (e) {}
+      setQmQuiet(true);
+    }
+  }, [hud.bell, qmQuiet]);
   const restart = () => { setFatal(null); setHud({ ...HUD0 }); setRunId((r) => r + 1); };
   // mk0.29 — THE DEAD BUTTON, diagnosed: makeEndDispatch() was called inline
   // in the render, so every HUD tick (~8Hz) handed Dispatch a brand-new
@@ -4830,9 +4854,11 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
 
       {hud.started && !hud.gameOver && !hud.victory && !hud.possessed && (
         <div style={P.bar}>
-          <style>{`@keyframes cs-unfurl { from { opacity: 0; transform: translateY(10px) scale(0.92); } to { opacity: 1; transform: none; } }`}</style>
-          <div data-build-toggle
-            style={{ ...P.slot, borderColor: buildOpen ? "#4aff8c" : "#48515f", color: buildOpen ? "#4aff8c" : "#e6ebf1", minWidth: isTouch ? 64 : 60 }}
+          <style>{`@keyframes cs-deal { from { opacity: 0; transform: translate(-14px, 10px) rotate(var(--dealR, -4deg)) scale(0.88); } to { opacity: 1; transform: none; } }`}</style>
+          <CrateChip data-build-toggle
+            label={buildOpen ? "CLOSE" : "BUILD"} icon="⚒" open={buildOpen} active={buildOpen}
+            line={!buildOpen && hud.mode ? (PALETTE_LABEL[hud.mode] || "") : ""}
+            style={{ minWidth: isTouch ? 64 : 60 }}
             onClick={() => {
               if (buildOpen) { closeBuild(); return; }
               const S = stateRef.current;
@@ -4841,23 +4867,18 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
               const b = S && S.mode ? branchOf(S.mode) : null;
               if (b) setBranch(b);
               setBuildOpen(true);
-            }}>
-            <div style={{ fontSize: 16 }}>⚒</div>
-            <div>{buildOpen ? "CLOSE" : "BUILD"}</div>
-            <div style={{ color: "#ffd27a", fontSize: 10 }}>{!buildOpen && hud.mode ? (PALETTE_LABEL[hud.mode] || "") : " "}</div>
-          </div>
+            }} />
           {buildOpen && (dev ? [...TREE_BRANCHES, { key: "foes", label: "THE ENEMY", icon: "☠", match: () => false }] : TREE_BRANCHES).map((b) => (dev && b.key === "foes") || palette.some((p) => b.match(p.key)) ? (
-            <div key={b.key} data-branch={b.key}
-              style={{ ...P.slot, minWidth: isTouch ? 64 : 60, borderColor: branch === b.key ? "#9fdcff" : "#48515f", color: branch === b.key ? "#9fdcff" : "#e6ebf1", animation: "cs-unfurl 0.14s ease-out backwards", animationDelay: (TREE_BRANCHES.indexOf(b) * 0.03) + "s" }}
-              onClick={() => setBranch(b.key)}>
-              <div style={{ fontSize: 16 }}>{b.icon}</div>
-              <div>{b.label}</div>
-              <div style={{ opacity: 0.6, fontSize: 10 }}>{b.key === "foes" ? FOE_RACK.length : palette.filter((p) => b.match(p.key)).length}</div>
-            </div>
+            <CrateChip key={b.key} data-branch={b.key}
+              label={b.label} icon={b.icon} open={branch === b.key} active={branch === b.key}
+              count={b.key === "foes" ? FOE_RACK.length : palette.filter((p) => b.match(p.key)).length}
+              line={!qmQuiet ? QM_LINES[b.key] : null}
+              style={{ minWidth: isTouch ? 64 : 60, animation: "cs-deal 0.14s ease-out backwards", animationDelay: (TREE_BRANCHES.indexOf(b) * 0.04) + "s" }}
+              onClick={() => setBranch(b.key)} />
           ) : null)}
-          {buildOpen && dev && branch === "foes" && FOE_RACK.map((f) => (
+          {buildOpen && dev && branch === "foes" && FOE_RACK.map((f, fi) => (
             <div key={f.key} data-foe-key={f.key}
-              style={{ ...P.slot, borderColor: hud.devSpawn === f.key ? "#ff6b5e" : "#48515f", color: hud.devSpawn === f.key ? "#ff6b5e" : "#e6ebf1", minWidth: isTouch ? 56 : 52 }}
+              style={{ ...P.slot, borderColor: hud.devSpawn === f.key ? "#ff6b5e" : "#48515f", color: hud.devSpawn === f.key ? "#ff6b5e" : "#e6ebf1", minWidth: isTouch ? 56 : 52, borderRadius: 3, letterSpacing: 1, animation: "cs-deal 0.16s ease-out backwards", animationDelay: (0.10 + fi * 0.04) + "s", "--dealR": (fi % 2 ? "3deg" : "-4deg") }}
               onClick={() => {
                 const S = stateRef.current; if (!S) return;
                 S.devSpawn = S.devSpawn === f.key ? null : f.key;
@@ -4875,7 +4896,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
             const afford = hud.resources >= priceP;
             return (
               <div key={branch + ":" + p.key} data-tower-key={p.key}
-                style={{ ...P.slot, position: "relative", borderColor: sel ? "#4aff8c" : "#48515f", opacity: afford ? 1 : 0.45, minWidth: isTouch ? 56 : 52, animation: "cs-unfurl 0.14s ease-out backwards", animationDelay: (0.09 + pi * 0.03) + "s" }}
+                style={{ ...P.slot, position: "relative", borderColor: sel ? "#4aff8c" : "#48515f", opacity: afford ? 1 : 0.45, minWidth: isTouch ? 56 : 52, borderRadius: 3, letterSpacing: 1, animation: "cs-deal 0.16s ease-out backwards", animationDelay: (0.10 + pi * 0.04) + "s", "--dealR": (pi % 2 ? "3deg" : "-4deg") }}
                 onClick={() => setMode(p.key)}>
                 <div data-info={p.key} onClick={(e) => { e.stopPropagation(); const S = stateRef.current; if (S && S.openInfo) S.openInfo(p.key, "bar"); }}
                   style={{ position: "absolute", top: 0, right: 2, fontSize: 12, opacity: 0.65, padding: "2px 4px", cursor: "pointer" }}>ⓘ</div>
@@ -4886,7 +4907,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
             );
           })}
           {buildOpen && (
-            <div data-sell-toggle style={{ ...P.slot, borderColor: hud.sellMode ? "#ffb45e" : "#48515f", color: hud.sellMode ? "#ffb45e" : "#e6ebf1", minWidth: isTouch ? 56 : 52, animation: "cs-unfurl 0.14s ease-out backwards", animationDelay: "0.09s" }}
+            <div data-sell-toggle style={{ ...P.slot, borderColor: hud.sellMode ? "#ffb45e" : "#48515f", color: hud.sellMode ? "#ffb45e" : "#e6ebf1", minWidth: isTouch ? 56 : 52, borderRadius: 3, letterSpacing: 1, animation: "cs-deal 0.16s ease-out backwards", animationDelay: "0.09s", "--dealR": "3deg" }}
               onClick={toggleSell}>
               <div style={{ fontSize: 16 }}>✕</div>
               <div>SELL</div>

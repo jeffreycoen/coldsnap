@@ -26,3 +26,14 @@ ok("names: the enemy rack follows",
   const all = [...Object.values(TOWER_SPECS).map((s) => s.label), ...Object.values(SQUAD_SPECS).map((s) => s.label)];
   ok("names: no two labels on the stock list collide", new Set(all).size === all.length, all.join("|"));
 }
+
+{ // mk2.28: the crate desk — wiring pins (the component cannot run headless)
+  const dg2 = src("src/depot/DepotGame.jsx");
+  const cr = src("src/depot/Crate.jsx");
+  ok("crates: the crate file exists and draws a hinged lid", cr.includes("CrateChip") && cr.includes("transformOrigin"));
+  ok("crates: the deal keyframe replaced the unfurl", dg2.includes("cs-deal") && !dg2.includes("cs-unfurl"));
+  ok("crates: the deal never pins its final frame", !dg2.match(/cs-deal[^"]*both/));
+  ok("crates: the branches are crates", dg2.includes("<CrateChip") && dg2.includes('import CrateChip'));
+  ok("crates: the bar's doors survived", dg2.includes("data-build-toggle") && dg2.includes("data-sell-toggle") && dg2.includes("data-tower-key") && dg2.includes("data-foe-key") && dg2.includes("data-dev-reroll"));
+  ok("crates: the quartermaster lines exist and go quiet", dg2.includes("QM_KEY") && dg2.includes("qmQuiet"));
+}
