@@ -73,3 +73,9 @@ ok("names: the enemy rack follows",
   const dg7 = src("src/depot/DepotGame.jsx");
   ok("convoy: the hand rows are paper", dg7.match(/<StockTag[^>]*data-manifest-offer/) != null && dg7.includes('data-hand-kind={c.hire ? "hire" : "plan"}'));
 }
+
+{ // mk2.34: the draft deal
+  const dg8 = src("src/depot/DepotGame.jsx");
+  ok("draft: the seven deal as paper from the crate", dg8.match(/<StockTag[^>]*data-draft-card/) != null && dg8.match(/DraftScreen[\s\S]{0,900}<CrateChip/) != null);
+  ok("draft: the pick machinery stands", dg8.includes("data-draft-confirm") && dg8.includes("picked.length === 5"));
+}

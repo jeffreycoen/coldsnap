@@ -832,22 +832,25 @@ function DraftScreen({ cards, onConfirm }) {
   };
   return (
     <div style={P.ovl}>
-      <div style={{ fontSize: 20, letterSpacing: 3, color: "#9fdcff", marginBottom: 6 }}>THE OPENING DRAFT</div>
+      <style>{`@keyframes cs-deal { from { opacity: 0; transform: translate(-16px, 12px) rotate(-8deg) scale(0.85); } to { opacity: 1; transform: var(--restT, none); } }`}</style>
+      <div style={{ fontSize: 20, letterSpacing: 3, color: "#9fdcff", marginBottom: 4 }}>THE OPENING DRAFT</div>
+      <CrateChip label="THE CONVOY" icon="⚒" open={true} style={{ marginBottom: 6 }} />
       <div style={{ fontSize: 12, opacity: 0.85, maxWidth: 460, lineHeight: 1.6, marginBottom: 14 }}>
         Seven cards dealt — units and plans together. Pick five, free.
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 8, maxWidth: 520, marginBottom: 14 }}>
-        {cards.map((c) => {
+        {cards.map((c, ci) => {
           const it = PALETTE_BY_KEY[c.k];
           const on = picked.includes(c.k);
           return (
-            <div key={c.k} data-draft-card={c.k} data-draft-kind={c.plan ? "plan" : "unit"}
+            <StockTag key={c.k} data-draft-card={c.k} data-draft-kind={c.plan ? "plan" : "unit"}
+              tilt={ci % 2 ? 1.5 : -2} delay={(ci * 0.06) + "s"}
               onClick={() => toggle(c.k)}
-              style={{ ...P.slot, minWidth: 88, minHeight: 44, borderColor: on ? "#4aff8c" : "#48515f", background: on ? "rgba(74,255,140,0.12)" : "#1a212b" }}>
+              style={{ minWidth: 88, minHeight: 56, borderColor: on ? "#2f7a44" : "#8f8768", background: on ? "#d3d6a8" : "#cfc6a5" }}>
               <div style={{ fontSize: 16 }}>{it ? it.icon : "?"}</div>
               <div>{it ? it.label : c.k}</div>
-              <div style={{ fontSize: 10, opacity: 0.7, color: c.plan ? "#9fd4e4" : "#ffd27a" }}>{c.plan ? "PLAN" : "UNIT"}</div>
-            </div>
+              <div style={{ fontSize: 10, fontWeight: 600, color: c.plan ? "#31556a" : "#7a5a1e" }}>{c.plan ? "PLAN" : "UNIT"}</div>
+            </StockTag>
           );
         })}
       </div>
