@@ -43,3 +43,13 @@ ok("names: the enemy rack follows",
   ok("convoy: the hand deals out of a crate", dg3.match(/data-manifest-offer[\s\S]{0,600}cs-deal/) != null);
   ok("convoy: the hand rows kept their kinds", dg3.includes('data-hand-kind={c.hire ? "hire" : "plan"}'));
 }
+
+{ // mk2.30: the desk drawn properly — the box chrome dies on the bar
+  const dg5 = src("src/depot/DepotGame.jsx");
+  const cr5 = src("src/depot/Crate.jsx");
+  ok("desk: the stock tag exists on paper", cr5.includes("StockTag") && cr5.includes("clipPath"));
+  ok("desk: the crate paints its own label", cr5.match(/<text[\s\S]{0,200}\{label\}/) != null);
+  ok("desk: the bar's slots left the box chrome", !dg5.match(/data-tower-key[\s\S]{0,200}P\.slot/) && !dg5.match(/data-sell-toggle[\s\S]{0,200}P\.slot/) && !dg5.match(/data-foe-key[\s\S]{0,200}P\.slot/));
+  ok("desk: the tags rest tilted, the deal respects it", dg5.includes("--restT") && dg5.match(/cs-deal[^"]*both/) == null);
+  ok("desk: every door survived", dg5.includes("data-build-toggle") && dg5.includes("data-branch") && dg5.includes("data-tower-key") && dg5.includes("data-info=") && dg5.includes("data-sell-toggle") && dg5.includes("data-foe-key"));
+}

@@ -37,7 +37,7 @@ import { SAVE_KEY, serializeFront, burnFront, restoreBodies, restoreWelds, resto
 import { makeBodyLists, rebuildBodyLists } from "./lists.js";
 import Dispatch from "./Dispatch.jsx";
 import InfoCard from "./InfoCard.jsx";
-import CrateChip from "./Crate.jsx";
+import CrateChip, { StockTag } from "./Crate.jsx";
 import FieldManual, { MANUAL_REV } from "../ui/FieldManual.jsx";
 import { GRID_CS, GRID_W, GRID_H, GRID_OX, GRID_OZ, RIM_HALF_U, RIM_HALF_V, ORIENT, fwdU, fwdDir, invW, clampToRim, OBJ_POS, SPAWN_POINTS, PONDS, ROCKS, TOWN, ROADS, PASSES, BANDS, MAP_SEED, SPAWN_U, STREAM, HILLS, genMap, makeMap, buildDepotTerrain, pondAt, rockAt, makeGrid, streamAt, planTrees, computeFlowField } from "./mapgen.js";
 import { armorSpread, armorStable, MECH_SPREAD, musterFreshStart, PICK_POOL } from "./muster.js";
@@ -4859,11 +4859,10 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
 
       {hud.started && !hud.gameOver && !hud.victory && !hud.possessed && (
         <div style={P.bar}>
-          <style>{`@keyframes cs-deal { from { opacity: 0; transform: translate(-14px, 10px) rotate(var(--dealR, -4deg)) scale(0.88); } to { opacity: 1; transform: none; } }`}</style>
+          <style>{`@keyframes cs-deal { from { opacity: 0; transform: translate(-16px, 12px) rotate(-8deg) scale(0.85); } to { opacity: 1; transform: var(--restT, none); } }`}</style>
           <CrateChip data-build-toggle
             label={buildOpen ? "CLOSE" : "BUILD"} icon="⚒" open={buildOpen} active={buildOpen}
             line={!buildOpen && hud.mode ? (PALETTE_LABEL[hud.mode] || "") : ""}
-            style={{ minWidth: isTouch ? 64 : 60 }}
             onClick={() => {
               if (buildOpen) { closeBuild(); return; }
               const S = stateRef.current;
@@ -4878,46 +4877,49 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
               label={b.label} icon={b.icon} open={branch === b.key} active={branch === b.key}
               count={b.key === "foes" ? FOE_RACK.length : palette.filter((p) => b.match(p.key)).length}
               line={!qmQuiet ? QM_LINES[b.key] : null}
-              style={{ minWidth: isTouch ? 64 : 60, animation: "cs-deal 0.14s ease-out backwards", animationDelay: (TREE_BRANCHES.indexOf(b) * 0.04) + "s" }}
+              style={{ animation: "cs-deal 0.14s ease-out backwards", animationDelay: (TREE_BRANCHES.indexOf(b) * 0.04) + "s" }}
               onClick={() => setBranch(b.key)} />
           ) : null)}
           {buildOpen && dev && branch === "foes" && FOE_RACK.map((f, fi) => (
-            <div key={f.key} data-foe-key={f.key}
-              style={{ ...P.slot, borderColor: hud.devSpawn === f.key ? "#ff6b5e" : "#48515f", color: hud.devSpawn === f.key ? "#ff6b5e" : "#e6ebf1", minWidth: isTouch ? 56 : 52, borderRadius: 3, letterSpacing: 1, animation: "cs-deal 0.16s ease-out backwards", animationDelay: (0.10 + fi * 0.04) + "s", "--dealR": (fi % 2 ? "3deg" : "-4deg") }}
+            <StockTag key={f.key} data-foe-key={f.key}
+              tilt={fi % 2 ? 1.5 : -2} delay={(0.10 + fi * 0.04) + "s"}
+              style={{ minWidth: isTouch ? 56 : 52, borderColor: hud.devSpawn === f.key ? "#ff6b5e" : "#8f8768", background: hud.devSpawn === f.key ? "#d8c9a5" : "#cfc6a5" }}
               onClick={() => {
                 const S = stateRef.current; if (!S) return;
                 S.devSpawn = S.devSpawn === f.key ? null : f.key;
                 S.mode = null; S.pending = null; S.sellMode = false;
                 setHud((h) => ({ ...h, devSpawn: S.devSpawn, mode: null, sellMode: false }));
               }}>
-              <div style={{ fontSize: 16 }}>{f.icon}</div>
+              <div style={{ fontSize: 15 }}>{f.icon}</div>
               <div>{f.label}</div>
-              <div style={{ color: "#ff7a7a", fontSize: 10 }}>ENEMY</div>
-            </div>
+              <div style={{ color: "#8a2f2f", fontSize: 10, fontWeight: 600 }}>ENEMY</div>
+            </StockTag>
           ))}
           {buildOpen && palette.filter((p) => { const b = TREE_BRANCHES.find((x) => x.key === branch); return b && b.match(p.key); }).map((p, pi) => {
             const sel = !hud.sellMode && hud.mode === p.key;
             const priceP = hud.prices?.[p.key] ?? p.cost;
             const afford = hud.resources >= priceP;
             return (
-              <div key={branch + ":" + p.key} data-tower-key={p.key}
-                style={{ ...P.slot, position: "relative", borderColor: sel ? "#4aff8c" : "#48515f", opacity: afford ? 1 : 0.45, minWidth: isTouch ? 56 : 52, borderRadius: 3, letterSpacing: 1, animation: "cs-deal 0.16s ease-out backwards", animationDelay: (0.10 + pi * 0.04) + "s", "--dealR": (pi % 2 ? "3deg" : "-4deg") }}
+              <StockTag key={branch + ":" + p.key} data-tower-key={p.key}
+                tilt={pi % 2 ? 1.5 : -2} delay={(0.10 + pi * 0.04) + "s"}
+                style={{ minWidth: isTouch ? 56 : 52, opacity: afford ? 1 : 0.45, borderColor: sel ? "#2f7a44" : "#8f8768", background: sel ? "#d3d6a8" : "#cfc6a5" }}
                 onClick={() => setMode(p.key)}>
                 <div data-info={p.key} onClick={(e) => { e.stopPropagation(); const S = stateRef.current; if (S && S.openInfo) S.openInfo(p.key, "bar"); }}
-                  style={{ position: "absolute", top: 0, right: 2, fontSize: 12, opacity: 0.65, padding: "2px 4px", cursor: "pointer" }}>ⓘ</div>
-                <div style={{ fontSize: 16 }}>{p.icon}</div>
+                  style={{ position: "absolute", top: 1, right: 3, fontSize: 12, opacity: 0.6, padding: "2px 4px", cursor: "pointer" }}>ⓘ</div>
+                <div style={{ fontSize: 15 }}>{p.icon}</div>
                 <div>{p.label}</div>
-                <div style={{ color: "#ffd27a" }}>◆{priceP}</div>
-              </div>
+                <div style={{ color: "#7a5a1e" }}>◆{priceP}</div>
+              </StockTag>
             );
           })}
           {buildOpen && (
-            <div data-sell-toggle style={{ ...P.slot, borderColor: hud.sellMode ? "#ffb45e" : "#48515f", color: hud.sellMode ? "#ffb45e" : "#e6ebf1", minWidth: isTouch ? 56 : 52, borderRadius: 3, letterSpacing: 1, animation: "cs-deal 0.16s ease-out backwards", animationDelay: "0.09s", "--dealR": "3deg" }}
+            <StockTag data-sell-toggle tilt={1.5} delay="0.09s"
+              style={{ minWidth: isTouch ? 56 : 52, borderColor: hud.sellMode ? "#a85c1e" : "#8f8768", background: hud.sellMode ? "#dcc9a0" : "#cfc6a5" }}
               onClick={toggleSell}>
-              <div style={{ fontSize: 16 }}>✕</div>
+              <div style={{ fontSize: 15 }}>✕</div>
               <div>SELL</div>
               <div style={{ opacity: 0.7 }}>60%</div>
-            </div>
+            </StockTag>
           )}
         </div>
       )}
