@@ -1544,6 +1544,16 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         if (!thing || !S._teachSeen || S._teachSeen.has("*")) return;
         for (const k of PIE_CARDS[kind](thing)) S.teachFire(k);
       };
+      // Task 10 (mk2.48): THE WALK — the ruled taught order. SHOW ME THE
+      // FRONT fills the queue whole (seen-state deliberately not consulted:
+      // the walk replays for whoever asks); the paging chrome does the rest,
+      // NEXT marks each seen, SKIP the remainder, and an empty queue lands
+      // back on the overlay. Touch skips the desktop-only keys card.
+      const WALK = ["desktop_keys", "the_hand", "placing", "scrap", "bell", "convoy", "market", "sell", "defend", "move", "attack", "patrol", "engineer_lines", "structures", "select_all", "fog"];
+      S.teachWalk = () => {
+        S._teachQ = WALK.filter((k) => TEACH[k] && !(TEACH[k].desktopOnly && isTouch));
+        S._teachIdx = 0;
+      };
       // The seen set loads once, async, off the shim — rev mismatch resets.
       (async () => {
         let seen = [];
@@ -5143,6 +5153,10 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           <div style={{ fontSize: 13, letterSpacing: 8, color: "#ffd27a", marginBottom: 18 }}>WINTER FRONT</div>
           <button style={{ ...P.btn, fontSize: 15, padding: "10px 26px", borderColor: "#4aff8c", color: "#4aff8c" }} onClick={startGame}>
             TAKE COMMAND
+          </button>
+          <button data-menu="walk" style={{ ...P.btn, marginTop: 14, opacity: 0.8, fontSize: 12, letterSpacing: 1 }}
+            onClick={() => { const S = stateRef.current; if (S && S.teachWalk) S.teachWalk(); }}>
+            SHOW ME THE FRONT
           </button>
           <div style={{ fontSize: 10, opacity: 0.55, marginTop: 12, letterSpacing: 2 }}>FIELD ORDER #{hud.seed || "—"} · ?seed= replays a map</div>
         </div>

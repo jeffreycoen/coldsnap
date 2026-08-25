@@ -100,3 +100,15 @@ ok("T1: an unknown door falls to CLOSE (the teach door needs no code)",
     /\nexport \{ buildTown \};/.test(dg) && /\nfunction buildTown\(world, grid, field\) \{/.test(dg));
   ok("T9: the capture sizes off-DOM through the renderer's own door", /cv\.dataset\.w = String\(w\)/.test(src("src/ui/startview.js")));
 }
+
+// ---- Task 10 (mk2.48): THE WALK
+{
+  const dg = src("src/depot/DepotGame.jsx");
+  const WALK_KEYS = ["desktop_keys", "the_hand", "placing", "scrap", "bell", "convoy", "market", "sell", "defend", "move", "attack", "patrol", "engineer_lines", "structures", "select_all", "fog"];
+  ok("T10w: the walk list is the ruled sixteen, in order",
+    (() => { const m = dg.match(/const WALK = \[([^\]]+)\]/); if (!m) return false; const got = m[1].match(/"[a-z_]+"/g).map((s) => s.slice(1, -1)); return got.length === 16 && got.every((k, i) => k === WALK_KEYS[i]); })());
+  ok("T10w: the walk fills the queue and skips the desktop card on touch", /S\.teachWalk = /.test(dg) && /desktopOnly && isTouch/.test(dg));
+  ok("T10w: the overlay offers the walk", /data-menu="walk"/.test(dg) && /SHOW ME THE FRONT/.test(dg));
+  ok("T10w: the card carries the hint line", /data-card-hint/.test(src("src/depot/InfoCard.jsx")));
+  ok("T10w: every walked card carries its hint", WALK_KEYS.every((k) => typeof TEACH[k].hint === "string" && TEACH[k].hint.length > 0));
+}

@@ -33,6 +33,7 @@ export default function InfoCard({ card, price, armed, door, portrait, onConfirm
       {row("RANGE", card.range)}
       {row("SPEED", card.speed != null ? card.speed + " m/s" : null)}
       {row("PRICE", price != null ? "◆" + price : null)}
+      {card.hint && <div data-card-hint style={{ marginTop: 8, fontSize: 11, letterSpacing: 1, color: "#9fdcff", opacity: 0.85 }}>{card.hint}</div>}
       <div style={{ marginTop: 8, fontSize: 10, letterSpacing: 1, opacity: 0.7 }}>SKILLS</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
         {card.skills.map((s) => <span key={s} style={{ fontSize: 10, letterSpacing: 1, border: "1px solid #2c3846", borderRadius: 4, padding: "2px 6px", color: "#ffd27a" }}>{s}</span>)}
