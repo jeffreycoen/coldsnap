@@ -130,10 +130,12 @@ function unitTargetValid(world, u, muzzle, tgt, fspec, R2, T, toUV) {
   return arcClears(world, muzzle, tgt.pos, fspec, u.id);
 }
 
-// The one new tunable Task 4 introduces: a player soldier inside 60% of
-// effective range outranks any structure target (pinned on both sides of
-// the boundary by depot-test.mjs's "4A priority" asserts).
-const URGENCY = 0.6;
+// mk2.51 (owner): THE URGENCY LAW — a man in weapon range outranks any
+// structure at FULL effective range, the player's own squadFire law
+// mirrored (units first, structures on an empty scan). The old 0.6 radius
+// refused 62% of the enemy's real in-range shots at player men (the
+// probe's measurement); snipers always ran at 1, and now everyone does.
+const URGENCY = 1;
 
 // ------------------------------------------------------- cover halt (4B)
 // When engaging and TAKING FIRE, evaluate 5 candidate stand points: the

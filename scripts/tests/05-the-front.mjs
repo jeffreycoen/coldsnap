@@ -537,8 +537,8 @@ import fs from "node:fs";
   // special-cased seed leaves the suite; the keystone's anchor moves to
   // 1000, an ordinary seed with no special standing. Hash and draws
   // re-measured off this block's own printed console log.
-  const T6_HASH = 2573479645;   // was 1818478037 (re-captured mk2.02: the roster surgery + 2m bodies move the stream)
-  const T6_DRAWS = 470;  // was 461 (re-captured mk2.02: the roster surgery + 2m bodies move the stream)
+  const T6_HASH = 879989108;   // was 2573479645 (re-captured mk2.51: THE URGENCY LAW — conscripts now engage the marching squad at full range, the stream moves)
+  const T6_DRAWS = 572;  // was 470 (re-captured mk2.51: THE URGENCY LAW moves the stream)
   const src6 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   // P7 T18: sliceFn6 checks DepotGame.jsx first, then mapgen.js for moved names.
   const mgSrc6 = fs.readFileSync(new URL("../../src/depot/mapgen.js", import.meta.url), "utf8");

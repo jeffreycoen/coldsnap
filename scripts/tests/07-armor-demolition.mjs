@@ -259,9 +259,8 @@ import fs from "node:fs";
     const g = spawnUnit(w, { x: 0, z: 0 }, "");
     g.hold = true; g.garrison = true;
     const x0 = g.pos.x, z0 = g.pos.z;
-    // re-pinned mk1.32: 9m sits outside the rifle's URGENCY-scaled
-    // anti-personnel radius (13m range * 0.6 = 7.8m) — a held non-sniper
-    // rifleman never engages a man past it. 6m keeps the fixture live.
+    // re-pinned mk2.51: the urgency radius is the whole effective range
+    // now (THE URGENCY LAW); 6m keeps the fixture well inside it either way.
     addBody(w, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x: x0, y: 0.74, z: z0 + 6, hp: 500 });
     for (let i = 0; i < 2400; i++) { stepUnits(w, straightGrid(0, 1), identFwdDir, null); stepWorld(w); }
     ok("T3(e): the garrison man holds his post", g.alive && Math.hypot(g.pos.x - x0, g.pos.z - z0) < 2, `${g.pos.x.toFixed(1)},${g.pos.z.toFixed(1)}`);
