@@ -38,4 +38,5 @@ await import("./tests/21-the-broken-ridge.mjs");
 await import("./tests/22-the-tesla-coil.mjs");
 await import("./tests/23-the-sandbox.mjs");
 await import("./tests/24-the-quartermaster.mjs");
+await import("./tests/25-the-teaching-cards.mjs");
 finish();
