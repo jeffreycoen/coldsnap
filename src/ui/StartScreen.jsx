@@ -1,11 +1,52 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { COLORS, FONT, btn, detectTouch } from "./theme.js";
 import { MK } from "../version.js";
 import { probeFront, burnFront } from "../depot/save.js";
+import { makeMap, MAP_SEED, TOWN, ROCKS, PONDS, ROADS, HILLS, STREAM, fwdU } from "../depot/mapgen.js";
+import { MASON } from "../depot/specs.js";
 
 // THE FRONT DOOR (P6 T7, mk1.14). The site opens on WINTER FRONT — one
 // identity, one dominant action, three true laws — and the tech demos this
 // war was built on live one quiet link away (DemosScreen).
+// THE MENU MAP (Task 7, mk2.45): the valley about to be played, drawn flat
+// from the same generator the war uses. makeMap bumps a fouled seed, so the
+// number returned — and shown, and handed on — is ALWAYS the installed
+// MAP_SEED, never the request. Muted tones plus a final dim so the buttons
+// carry; the owner's live look is the acceptance.
+const drawMap = (cv, seed) => {
+  makeMap(seed);
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth * dpr, h = cv.clientHeight * dpr;
+  cv.width = w; cv.height = h;
+  const g = cv.getContext("2d");
+  const sc = Math.min(w, h) / 195;
+  const X = (x) => w / 2 + x * sc, Z = (z) => h / 2 + z * sc;
+  g.fillStyle = "#12161c"; g.fillRect(0, 0, w, h);
+  g.fillStyle = "#161c23"; g.fillRect(X(-90), Z(-90), 180 * sc, 180 * sc);
+  for (const k of HILLS) { const p = fwdU(k.u, k.v); g.fillStyle = "rgba(38,46,55,0.8)"; g.beginPath(); g.arc(X(p.x), Z(p.z), k.r * sc, 0, 7); g.fill(); }
+  for (const k of PONDS) { g.fillStyle = "#1c2a38"; g.beginPath(); g.arc(X(k.x), Z(k.z), k.r * sc, 0, 7); g.fill(); }
+  g.strokeStyle = "#242b33"; g.lineWidth = Math.max(1, 2.2 * sc);
+  for (const route of ROADS) { g.beginPath(); route.forEach(([x, z], i) => (i ? g.lineTo(X(x), Z(z)) : g.moveTo(X(x), Z(z)))); g.stroke(); }
+  if (STREAM) {
+    g.strokeStyle = "#1c3040"; g.lineWidth = (STREAM.w + 1) * sc; g.beginPath();
+    STREAM.pts.forEach((p, i) => { const wp = fwdU(p.u, p.v); i ? g.lineTo(X(wp.x), Z(wp.z)) : g.moveTo(X(wp.x), Z(wp.z)); });
+    g.stroke();
+  }
+  for (const k of ROCKS) { g.fillStyle = "#2b323b"; g.beginPath(); g.arc(X(k.x), Z(k.z), k.r * sc, 0, 7); g.fill(); }
+  for (const t of TOWN) {
+    const hx = (t.nx * MASON.pitch) / 2, hz = (t.nz * MASON.pitch) / 2;
+    g.fillStyle = t.depot ? (t.team === 2 ? "#43333a" : "#33413a") : "#343b45";
+    g.fillRect(X(t.x - hx), Z(t.z - hz), hx * 2 * sc, hz * 2 * sc);
+    if (t.depot) {
+      g.strokeStyle = t.team === 2 ? "#7a3a3a" : "#3a6a4a";
+      g.lineWidth = Math.max(1, 1.5 * sc);
+      g.strokeRect(X(t.x - hx), Z(t.z - hz), hx * 2 * sc, hz * 2 * sc);
+    }
+  }
+  g.fillStyle = "rgba(14,16,20,0.52)"; g.fillRect(0, 0, w, h); // the dim — the buttons carry
+  return MAP_SEED;
+};
+
 export default function StartScreen({ onDepot, onDepotResume, onDemos, onDevSandbox, onControls }) {
   const [isTouch] = useState(detectTouch);
   // THE SAVED FRONT (P1 Task 3). null until the async probe lands — the menu
@@ -22,6 +63,31 @@ export default function StartScreen({ onDepot, onDepotResume, onDemos, onDevSand
     return () => clearTimeout(t);
   }, [burnArmed]);
 
+  // THE MENU MAP's state: the canvas, the rolled seed (installed value),
+  // and the FIELD ORDER # on display. Resume shows the SAVE's map; arming
+  // the burn previews the fresh valley; disarming restores the save's.
+  const mapCvRef = useRef(null);
+  const newSeedRef = useRef(null);
+  const [ord, setOrd] = useState(null);
+  const paint = (s) => {
+    const cv = mapCvRef.current;
+    if (cv == null || s == null) return null;
+    const inst = drawMap(cv, s);
+    setOrd(inst);
+    return inst;
+  };
+  useEffect(() => {
+    const url = parseInt(new URLSearchParams(window.location.search).get("seed"), 10);
+    const s = Number.isFinite(url) ? url : Math.floor(Date.now() % 1000000);
+    const inst = paint(s);
+    newSeedRef.current = inst != null ? inst : s;
+  }, []);
+  useEffect(() => { if (front && front.has && !burnArmed) paint(front.data.map.seed); }, [front]);
+  useEffect(() => {
+    if (burnArmed) paint(newSeedRef.current);
+    else if (front && front.has) paint(front.data.map.seed);
+  }, [burnArmed]);
+
   useEffect(() => {
     let live = true;
     // probeFront burns a save from another mark itself and reports it gone —
@@ -32,12 +98,12 @@ export default function StartScreen({ onDepot, onDepotResume, onDemos, onDevSand
 
   const hasFront = !!(front && front.has);
   const startNewFront = () => {
-    if (!hasFront) { onDepot(); return; }
+    if (!hasFront) { onDepot(newSeedRef.current); return; }
     if (!burnArmed) { setBurnArmed(true); return; }
     setBurnArmed(false);
     burnFront();
     setFront({ has: false });
-    onDepot();
+    onDepot(newSeedRef.current);
   };
 
   const option = (extra) => ({
@@ -52,11 +118,13 @@ export default function StartScreen({ onDepot, onDepotResume, onDemos, onDevSand
 
   return (
     <div style={{ position: "fixed", inset: 0, background: COLORS.bg, fontFamily: FONT, color: COLORS.text, display: "flex", overflow: "auto", userSelect: "none", WebkitUserSelect: "none" }}>
-      <div style={{ width: "min(420px, 92vw)", padding: "24px 0", margin: "auto" }}>
+      <canvas ref={mapCvRef} data-menu-map style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
+      <div style={{ width: "min(420px, 92vw)", padding: "24px 0", margin: "auto", position: "relative", zIndex: 1 }}>
         <div style={{ textAlign: "center", marginBottom: 8 }}>
           <div style={{ fontSize: 34, color: COLORS.red, letterSpacing: 8 }}>COLDSNAP</div>
           <div style={{ fontSize: 13, letterSpacing: 8, color: COLORS.gold, marginTop: 2 }}>WINTER FRONT</div>
           <div data-mk style={{ opacity: 0.5, letterSpacing: 2, fontSize: 10, marginTop: 4 }}>{MK}</div>
+          <div data-field-order style={{ fontSize: 10, opacity: 0.6, letterSpacing: 2, marginTop: 6 }}>FIELD ORDER #{ord ?? "—"}</div>
         </div>
 
         {hasFront && (

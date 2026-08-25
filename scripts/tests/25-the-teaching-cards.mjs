@@ -71,3 +71,15 @@ ok("T1: an unknown door falls to CLOSE (the teach door needs no code)",
   ok("T6: the lookup serves the phone voice and skips the portrait on teaching cards",
     /c\.roleTouch \? \{ \.\.\.c, role: c\.roleTouch \}/.test(dg) && /TEACH\[hud\.info\.key\] \? undefined :/.test(dg));
 }
+
+// ---- Task 7 (mk2.45): THE MENU MAP
+{
+  const ss = src("src/ui/StartScreen.jsx");
+  const app = src("src/ui/App.jsx");
+  const dg = src("src/depot/DepotGame.jsx");
+  ok("T7: the menu draws the valley", /data-menu-map/.test(ss) && /makeMap\(seed\)/.test(ss) && /return MAP_SEED;/.test(ss));
+  ok("T7: the burn arm previews the fresh valley", /if \(burnArmed\) paint\(newSeedRef\.current\);/.test(ss));
+  ok("T7: the shell hands the menu's seed to the war", /setDepotSeed/.test(app) && /seed=\{depotSeed\}/.test(app));
+  ok("T7: the war takes the menu's seed, URL still winning", /menuSeedRef\.current != null \? menuSeedRef\.current/.test(dg) && /Number\.isFinite\(urlSeed\) \? urlSeed/.test(dg));
+  ok("T7: the smoke pins the one menu canvas", /data-menu-map/.test(src("scripts/smoke.mjs")));
+}

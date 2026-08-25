@@ -28,6 +28,7 @@ export default function App() {
   // fresh front. Cleared on the way out so a second entry never resumes a run
   // that has already been left.
   const [depotResume, setDepotResume] = useState(null);
+  const [depotSeed, setDepotSeed] = useState(null);
   const mapRef = useRef(DEFAULTS);
   const remapRef = useRef(null);
   const dirtyRef = useRef(false); // a user rebind outranks the async load
@@ -116,7 +117,7 @@ export default function App() {
     return <ColdsnapTD />;
   }
   if (screen === "depot") {
-    return <DepotGame resume={depotResume} onExit={() => { setDepotResume(null); setScreen("menu"); }} />;
+    return <DepotGame resume={depotResume} seed={depotSeed} onExit={() => { setDepotResume(null); setScreen("menu"); }} />;
   }
   if (screen === "devsandbox") {
     // the developer sandbox (mk2.24): the war screen under its dev switch —
@@ -148,7 +149,7 @@ export default function App() {
     );
   }
   return <StartScreen
-    onDepot={() => { setDepotResume(null); setScreen("depot"); }}
+    onDepot={(s) => { setDepotResume(null); setDepotSeed(s != null ? s : null); setScreen("depot"); }}
     onDepotResume={(data) => { setDepotResume(data); setScreen("depot"); }}
     onDemos={() => setScreen("demos")}
     onDevSandbox={() => setScreen("devsandbox")}

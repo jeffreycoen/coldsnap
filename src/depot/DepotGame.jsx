@@ -911,7 +911,7 @@ const LATTICE = {
 // and hands the data down already validated, so this mount effect stays
 // synchronous — a boot that awaited storage mid-construction would be a world
 // half-built for however long the read took.
-export default function DepotGame({ onExit, resume = null, dev = false }) {
+export default function DepotGame({ onExit, resume = null, dev = false, seed: menuSeed = null }) {
   const canvasRef = useRef(null);
   const stateRef = useRef(null);
   // POSSESSION (P4 T1, mk0.90): the knob's screen position is pushed
@@ -931,6 +931,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
   // every other loop input is: the effect must never close over a value React
   // can change under it. Captured once, at mount.
   const resumeRef = useRef(resume);
+  const menuSeedRef = useRef(menuSeed);
   const [isTouch] = useState(detectTouch);
   const [hud, setHud] = useState(HUD0);
   const [fatal, setFatal] = useState(null);
@@ -1039,7 +1040,9 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
       const urlSeed = parseInt(new URLSearchParams(window.location.search).get("seed"), 10);
       const seed = RES ? RES.map.seed
         : dev ? Math.floor(Date.now() % 1000000)
-        : Number.isFinite(urlSeed) ? urlSeed : Math.floor(Date.now() % 1000000);
+        : Number.isFinite(urlSeed) ? urlSeed
+        : menuSeedRef.current != null ? menuSeedRef.current
+        : Math.floor(Date.now() % 1000000);
       makeMap(seed);
       const field = makeField(181, 2.0, MAP_SEED);
       // mk2.07 (owner): THE DEEP FLOOR — the atomic crater needs room. Base

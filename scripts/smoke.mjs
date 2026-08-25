@@ -82,7 +82,7 @@ try {
     ok("start screen is quiet — the laws teach in the war", !body.includes("The muster bell rings every 90 seconds") && !body.includes("The save burns"));
     ok("start screen offers NEW FRONT — TAKE COMMAND", body.includes("TAKE COMMAND"));
     ok("start screen links to the demos page", body.includes("THE PROVING RANGE"));
-    ok("no game canvas on the start screen", (await page.$("canvas")) === null);
+    ok("the menu carries exactly the map canvas", (await page.$$("canvas")).length === 1 && (await page.$("[data-menu-map]")) !== null);
     const mk = await page.evaluate(() => { const e = document.querySelector("[data-mk]"); return e ? e.textContent.trim() : null; });
     ok(`start screen shows the deployment mark [${mk}]`, mk === MK);
   }
@@ -96,7 +96,7 @@ try {
     await page.waitForFunction(() => !!window.__COLDSNAP__);
     ok("demo boots from the menu", true);
     await page.keyboard.press("Escape");
-    await page.waitForFunction(() => !document.querySelector("canvas"));
+    await page.waitForFunction(() => !!document.querySelector('[data-menu="depot"]'));
     await toDemos("demo");
     ok("ESC returns to the start screen", true);
   }
@@ -116,7 +116,7 @@ try {
     const csState = await page.evaluate(() => window.__COLDSNAP__.getState());
     ok("sandbox world builds fully (1030 bodies)", csState.bodies === 1030);
     await page.keyboard.press("Escape");
-    await page.waitForFunction(() => !document.querySelector("canvas"));
+    await page.waitForFunction(() => !!document.querySelector('[data-menu="depot"]'));
     ok("ESC returns from the sandbox", true);
   }
 
