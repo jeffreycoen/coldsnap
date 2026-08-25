@@ -1222,6 +1222,10 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // territory reads canonical (u, v) — precompute once (buildings don't
       // move) rather than re-converting every stall.
       const townUV = town.map((b) => { const c = invW(b.x, b.z); return { id: b.id, x: c.u, z: c.v, get ruined() { return b.ruined; } }; });
+      // mk2.50: TOWN FLAGS — per-building lookup for the holder-flag rows:
+      // roof height and the two exclusions (depots fly their real flag
+      // bodies; field walls are screens, not buildings).
+      const townFlagMeta = new Map(TOWN.map((t) => [t.id, { ny: t.ny, depot: !!t.depot, fwall: t.id.startsWith("fwall") }]));
       let terrAcc = 0;
       let zoneAcc = 0.25; // mk1.95: the zone's own wall-time accumulator — starts due
       const TERR_STEP = 0.25; // stepTerritory at ~4Hz — accumulated below, not every frame
@@ -3845,6 +3849,22 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           // accumulator (NOT per sim tick). Cheap: setMines only rewrites the
           // two instanced pools when a device actually fired this tick.
           if (terrGuard > 0) { stepMines(world, S.mines); R.setMines(S.mines); }
+          // mk2.50: TOWN FLAGS — holder-colored, render-only; neutral and
+          // contested ground fly nothing, ruined buildings fly nothing
+          // (they already pay nothing — economy.js payTown). Territory
+          // cadence; derived, never saved.
+          if (terrGuard > 0 && R.setTownFlags) {
+            const rows = [];
+            for (const b of town) {
+              const m = townFlagMeta.get(b.id);
+              if (!m || m.depot || m.fwall || b.ruined) continue;
+              const c = invW(b.x, b.z);
+              const h = holderAt(T, c.u, c.v);
+              if (h !== 1 && h !== 2) continue;
+              rows.push({ x: b.x, y: field.heightAt(b.x, b.z) + m.ny * MASON.pitch, z: b.z, team: h });
+            }
+            R.setTownFlags(rows);
+          }
           // mk2.09: THE GREEN FOG ticks on the same clock the mines do.
           if (terrGuard > 0 && S.fog.length) stepFog(world, S.fog, TERR_STEP);
           // P7 T17: dead bags release their ground — same cadence as the

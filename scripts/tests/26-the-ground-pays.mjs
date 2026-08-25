@@ -24,3 +24,15 @@ ok("G1: held ground scales continuously, fractions included",
   ok("G2: the bell stipend is dead", !/reg\.scrap \+= STIPEND/.test(src("src/depot/state.js")));
   ok("G2: STIPEND stands only as the fixtures' shorthand", STIPEND === 90);
 }
+
+// ---- Task 2 (mk2.50): THE TOWN FLAGS — render-only holder markers.
+{
+  const dg = src("src/depot/DepotGame.jsx");
+  const rr = src("src/render/renderer.js");
+  ok("F1: the renderer takes render-only town flags (setter + draw loop)",
+    /function setTownFlags\(list\)/.test(rr) && /for \(const f of townFlags\)/.test(rr) && /setTownFlags,/.test(rr));
+  ok("F2: the game layer hands holder rows on the territory clock",
+    /R\.setTownFlags\(rows\)/.test(dg) && /if \(h !== 1 && h !== 2\) continue;/.test(dg));
+  ok("F2: ruined buildings, depots and field walls fly nothing",
+    /m\.depot \|\| m\.fwall \|\| b\.ruined\) continue;/.test(dg));
+}
