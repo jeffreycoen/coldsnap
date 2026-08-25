@@ -5,7 +5,7 @@
 // prop (the Dispatch.jsx discipline).
 import React from "react";
 
-export default function InfoCard({ card, price, armed, door, portrait, onConfirm, onCancel, afford }) {
+export default function InfoCard({ card, price, armed, door, portrait, onConfirm, onCancel, afford, onBack, series }) {
   if (!card) return null;
   const B = { background: "#1a212b", border: "1px solid #48515f", color: "#e6ebf1", borderRadius: 8, padding: "10px 16px", fontFamily: "inherit", fontSize: 14, minHeight: 44, minWidth: 44, cursor: "pointer" };
   const row = (k, v) => (v == null ? null : (
@@ -15,6 +15,12 @@ export default function InfoCard({ card, price, armed, door, portrait, onConfirm
   ));
   return (
     <div data-info-card={door} style={{ position: "absolute", top: 52, right: 10, zIndex: 7, width: "min(300px, 62vw)", background: "rgba(14,18,24,0.96)", border: "1px solid #9fdcff", borderRadius: 8, padding: 12, fontFamily: "ui-monospace, Menlo, Consolas, monospace", color: "#e6ebf1" }}>
+      {door === "teach" && series && series.n > 1 && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+          <span style={{ fontSize: 10, letterSpacing: 2, opacity: 0.6 }}>{series.i + 1}/{series.n}</span>
+          <button data-teach-skip style={{ ...B, minHeight: 0, minWidth: 0, padding: "2px 8px", fontSize: 10, opacity: 0.8 }} onClick={onCancel}>SKIP ✕</button>
+        </div>
+      )}
       <div style={{ color: "#9fdcff", letterSpacing: 2, fontSize: 14 }}>{card.label}</div>
       {portrait && (
         <canvas data-info-portrait width={128} height={128}
@@ -44,6 +50,13 @@ export default function InfoCard({ card, price, armed, door, portrait, onConfirm
           </>
         ) : door === "deal" ? (
           <button data-info-place style={{ ...B, flex: 1, borderColor: "#4aff8c", color: "#4aff8c", opacity: armed ? 1 : 0.5 }} onClick={onConfirm}>PLACE IT</button>
+        ) : door === "teach" ? (
+          <>
+            {series && series.i > 0 && <button data-teach-back style={B} onClick={onBack}>← BACK</button>}
+            <button data-teach-next style={{ ...B, flex: 1, borderColor: "#9fd4e4", color: "#9fd4e4" }} onClick={onConfirm}>
+              {series && series.i < series.n - 1 ? "NEXT →" : "CLOSE"}
+            </button>
+          </>
         ) : (
           <button data-info-close style={{ ...B, flex: 1 }} onClick={onCancel}>CLOSE</button>
         )}

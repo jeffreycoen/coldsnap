@@ -1451,7 +1451,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
         devSpawn: null, // mk2.25: the armed enemy-rack pick (sandbox only)
         devDummies: false, // mk2.26: THEY FIGHT by default; true = dummies (sandbox only)
         infoKey: null, infoDoor: null, infoArmedAt: 0, // P7.1 T4: the info card's own state
-        _teachQ: [], _teachSeen: null, // Task 3: the first-encounter door — queue renders head; seen null until the async load lands (nothing fires before it)
+        _teachQ: [], _teachIdx: 0, _teachSeen: null, // Task 3/4: the door — the queue pages by index; seen null until the load lands
         // Squads (Phase 5 Task 3): live squad rosters + selection/order UI
         // state. selArmedAt mirrors pending's 350ms trailing-tap guard so
         // the tap that selected a squad can't double-fire an order chip.
@@ -1521,12 +1521,22 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
         if (!S._teachSeen || S._teachSeen.has("*") || S._teachSeen.has(key) || S._teachQ.includes(key)) return;
         S._teachQ.push(key);
       };
-      S.teachClose = () => {
-        const k = S._teachQ.shift();
+      S.teachNext = () => {
+        const k = S._teachQ[S._teachIdx];
         if (k && S._teachSeen) {
           S._teachSeen.add(k);
           try { window.storage.set(CARDS_KEY, JSON.stringify({ rev: TEACH_REV, seen: [...S._teachSeen] })); } catch (e) {}
         }
+        S._teachIdx++;
+        if (S._teachIdx >= S._teachQ.length) { S._teachQ = []; S._teachIdx = 0; }
+      };
+      S.teachBack = () => { if (S._teachIdx > 0) S._teachIdx--; };
+      S.teachSkip = () => {
+        if (S._teachSeen) {
+          for (const k of S._teachQ) S._teachSeen.add(k);
+          try { window.storage.set(CARDS_KEY, JSON.stringify({ rev: TEACH_REV, seen: [...S._teachSeen] })); } catch (e) {}
+        }
+        S._teachQ = []; S._teachIdx = 0;
       };
       // The pie's teaching order — the first unseen wedge card, one per
       // open. Wedge cards shared across pies (defend, move, patrol) are
@@ -1544,9 +1554,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
       };
       S.teachPie = (kind, thing) => {
         if (!thing || !S._teachSeen || S._teachSeen.has("*")) return;
-        for (const k of PIE_CARDS[kind](thing)) {
-          if (!S._teachSeen.has(k)) { S.teachFire(k); return; }
-        }
+        for (const k of PIE_CARDS[kind](thing)) S.teachFire(k);
       };
       // The seen set loads once, async, off the shim — rev mismatch resets.
       (async () => {
@@ -1554,7 +1562,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
         try {
           const r = await window.storage.get(CARDS_KEY);
           const d = JSON.parse(r.value);
-          if (d && d.rev === TEACH_REV && Array.isArray(d.seen)) seen = d.seen;
+          if (d && Array.isArray(d.seen) && (d.rev === TEACH_REV || d.seen.includes("*"))) seen = d.seen;
         } catch (e) {}
         if (!disposed) S._teachSeen = new Set(seen);
       })();
@@ -4160,7 +4168,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
               } : null,
               hiring: S.hirePlace ? { key: S.hirePlace.key, label: (PALETTE_BY_KEY[S.hirePlace.key] || {}).label } : null,
               info: S.infoKey ? { key: S.infoKey, door: S.infoDoor, armed: performance.now() / 1000 >= S.infoArmedWall } : null,
-              teach: S._teachQ.length ? { key: S._teachQ[0] } : null,
+              teach: S._teachQ.length ? { key: S._teachQ[S._teachIdx], i: S._teachIdx, n: S._teachQ.length } : null,
               intel: S.intelUp && S.lastDispatch ? { armed: world.t >= S.intelArmedAt } : null,
               started: S.started, gameOver: S.gameOver, victory: S.victory,
               placing: S._placeQueue ? (S._placeQueue[0] || "done") : null, // P7.1 T6 A1: place mode must survive the ticker
@@ -4856,8 +4864,10 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
         return (
           <div data-teach-card={hud.teach.key} style={{ position: "absolute", inset: 0, zIndex: 10, pointerEvents: "none" }}>
             <div style={{ pointerEvents: "auto" }}>
-              <InfoCard card={card} door="teach"
-                onCancel={() => { const S = stateRef.current; if (S && S.teachClose) S.teachClose(); }} />
+              <InfoCard card={card} door="teach" series={{ i: hud.teach.i, n: hud.teach.n }}
+                onConfirm={() => { const S = stateRef.current; if (S && S.teachNext) S.teachNext(); }}
+                onBack={() => { const S = stateRef.current; if (S && S.teachBack) S.teachBack(); }}
+                onCancel={() => { const S = stateRef.current; if (S && S.teachSkip) S.teachSkip(); }} />
             </div>
           </div>
         );
