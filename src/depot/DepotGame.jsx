@@ -17,6 +17,7 @@ import { renderPortrait } from "../render/portrait.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, ENEMY_SPECS, MASON, INFANTRY_ARMS, BISON, APC, MECH, BISON_FIRE, BARRELS } from "./specs.js";
 import { cardFor } from "./infocards.js";
+import { TEACH, TEACH_REV } from "./cards.js";
 import { windAt } from "./wind.js";
 import { makeAssaultState, HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, sandbagOrientAt, SANDBAG_COST, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_LAY_PAUSE_S, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, stepWallSupport, forgetWelds, WALL_UPPER_GROUP, pruneSquads, makeManifestState, makeFoeState, takeHandCard, TIER_BELLS, memberNearRow, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType, scoreKill, placeZoneMask, POSSESS_ACC, stickyLock, stepGrenades, stepDavyShot, teslaStrike, stepTesla, teslaWouldCatchFriend } from "./state.js";
 import { marketCounts, computePrices, fieldPrices, priced } from "./market.js";
@@ -53,6 +54,10 @@ const MANUAL_KEY = "coldsnap-wf-manual";
 // mk2.28: the quartermaster's quiet flag — the purpose lines speak in the
 // first war only, then go quiet for good once the first bell has rung.
 const QM_KEY = "coldsnap-qm-quiet";
+// Task 3 (mk2.41): the teaching cards' seen store — one key, rev-gated
+// (the MANUAL_REV law). seen may carry the sentinel "*": every card
+// silenced, the smoke test's scripted wars ride under it.
+const CARDS_KEY = "coldsnap-wf-cards";
 
 
 // P6 T1: route bookkeeping, one squad, once per sim tick (stepDepot calls
@@ -1446,6 +1451,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
         devSpawn: null, // mk2.25: the armed enemy-rack pick (sandbox only)
         devDummies: false, // mk2.26: THEY FIGHT by default; true = dummies (sandbox only)
         infoKey: null, infoDoor: null, infoArmedAt: 0, // P7.1 T4: the info card's own state
+        _teachQ: [], _teachSeen: null, // Task 3: the first-encounter door — queue renders head; seen null until the async load lands (nothing fires before it)
         // Squads (Phase 5 Task 3): live squad rosters + selection/order UI
         // state. selArmedAt mirrors pending's 350ms trailing-tap guard so
         // the tap that selected a squad can't double-fire an order chip.
@@ -1504,6 +1510,54 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
         // a formation it already has.
         reg: RES ? { ...RES.run.reg } : makeRegiment(world.rng),
       };
+      // Task 3 (mk2.41): THE FIRST-ENCOUNTER DOOR. A card fires once, the
+      // first time its moment comes; the war pauses while it is up (the
+      // convoy idiom, in the frame loop's sdt gate). The sandbox never
+      // fires one; the "*" sentinel silences the door for scripted runs.
+      S.teachFire = (key) => {
+        if (dev) return;
+        const tc = TEACH[key];
+        if (!tc || (tc.desktopOnly && isTouch)) return;
+        if (!S._teachSeen || S._teachSeen.has("*") || S._teachSeen.has(key) || S._teachQ.includes(key)) return;
+        S._teachQ.push(key);
+      };
+      S.teachClose = () => {
+        const k = S._teachQ.shift();
+        if (k && S._teachSeen) {
+          S._teachSeen.add(k);
+          try { window.storage.set(CARDS_KEY, JSON.stringify({ rev: TEACH_REV, seen: [...S._teachSeen] })); } catch (e) {}
+        }
+      };
+      // The pie's teaching order — the first unseen wedge card, one per
+      // open. Wedge cards shared across pies (defend, move, patrol) are
+      // seen once and cover both.
+      const PIE_CARDS = {
+        squad: (sq) => ["defend", "move", "attack", "possess_squad", "select_all",
+          ...(sq.type !== "engineers" && sq.type !== "sappers" ? ["patrol"] : []),
+          ...(INFANTRY_ARMS[sq.type] ? ["structures"] : []),
+          ...(sq.type === "engineers" ? ["engineer_lines"] : []),
+          ...(sq.type === "sappers" ? ["sapper_lines"] : [])],
+        tower: () => ["discipline", "possess_tower", "sell"],
+        veh: (b) => ["defend", "move", "patrol", "escort", "tracks",
+          b.kind === "mech" ? "possess_mech" : "possess_vehicle",
+          ...(b.vtype === "apc" ? ["load"] : [])],
+      };
+      S.teachPie = (kind, thing) => {
+        if (!thing || !S._teachSeen || S._teachSeen.has("*")) return;
+        for (const k of PIE_CARDS[kind](thing)) {
+          if (!S._teachSeen.has(k)) { S.teachFire(k); return; }
+        }
+      };
+      // The seen set loads once, async, off the shim — rev mismatch resets.
+      (async () => {
+        let seen = [];
+        try {
+          const r = await window.storage.get(CARDS_KEY);
+          const d = JSON.parse(r.value);
+          if (d && d.rev === TEACH_REV && Array.isArray(d.seen)) seen = d.seen;
+        } catch (e) {}
+        if (!disposed) S._teachSeen = new Set(seen);
+      })();
       if (!RES && !dev) {
         musterFreshStart(world, S, depotP, grid, field, nextApcSeq);
       }
@@ -1775,6 +1829,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
         // its radial open — defend-here is already its standing order (the
         // intrinsic default, no tap needed).
         S.selSquadId = sq.id; S.selSquadIds = null; S.selArmedAt = world.t + PENDING_ARM_S; S.pieOpen = true;
+        S.teachPie("squad", sq);
         S.resources -= price;
         S._buyAt = world.t;
         standDown();
@@ -2513,6 +2568,9 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
           if (pick.key.startsWith("sq:")) S.selSquadId = id;
           else if (pick.key.startsWith("veh:")) S.selVehId = id;
           else S.inspectId = id;
+          if (pick.key.startsWith("sq:")) S.teachPie("squad", S.squads.find((q) => q.id === id));
+          else if (pick.key.startsWith("veh:")) S.teachPie("veh", world.byId.get(id));
+          else S.teachPie("tower", world.byId.get(id));
           return;
         }
         if (S.selSquadId != null) { S.selSquadId = null; S.selSquadIds = null; S.orderMode = null; S.buildPt0 = null; S.pieOpen = false; return; }
@@ -2771,6 +2829,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
         for (const c of picked) if (c.plan && S.manifest.unlocked.indexOf(c.k) < 0) S.manifest.unlocked.push(c.k);
         S._placeQueue = picked.filter((c) => !c.plan).map((c) => c.k);
         S._placeTotal = S._placeQueue.length;
+        if (S._placeQueue.length) S.teachFire("placing");
         S._draftDone = true; S._draftOpen = false; S.draft = null;
         setHud((h) => ({ ...h, drafting: null, unlocked: S.manifest.unlocked.slice(), placing: S._placeQueue[0] || "done" }));
         if (S._placeQueue.length && S.openInfo) S.openInfo(S._placeQueue[0], "deal");
@@ -2830,6 +2889,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
           spawnSquadMembers(world, sq);
           S.squads.push(sq);
           S.selSquadId = sq.id; S.selSquadIds = null; S.selArmedAt = world.t + PENDING_ARM_S; S.pieOpen = true;
+          S.teachPie("squad", sq);
         } else if (pk.kind === "hull") {
           const spec = pk.vtype === "apc" ? APC : BISON;
           if (!armorStable(field, wp.x, wp.z, spec)) { toast("TOO STEEP TO PARK"); return; }
@@ -3059,6 +3119,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
           // mk2.09: the davy's boom seeds the poison ground where it burst.
           if (e.type === "boom" && e.weapon === "davy") addFogPatch(S.fog, e.x, e.z, world.t);
           if (e.type !== "kill") continue;
+          S.teachFire("kill_price");
           // THE KILL LAW (mk1.93): every attributed death pays and scores here.
           scoreKill(S, e, S._market ? S._market.counts : null);
           // Town buildings are unpriced — their hand-set pay is the named edge
@@ -3510,7 +3571,8 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
           // hand resumes it. Prices and the bell freeze for free: every
           // accumulator below feeds on sdt.
           const convoyUp = !!(S.manifest && S.manifest.cardUp);
-          const sdt = S.paused || !S.started || cardUp || convoyUp ? 0 : dt * S.speed;
+          const teachUp = S._teachQ.length > 0; // Task 3: a teaching card freezes the sim, the convoy's own law
+          const sdt = S.paused || !S.started || cardUp || convoyUp || teachUp ? 0 : dt * S.speed;
           const pan = 34 * dt / Math.max(0.5, S.zoom);
           // screen-relative like touch drag: W = screen-up whatever the Q/E yaw
           const cb = R.camBasis;
@@ -3713,7 +3775,8 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
             // THE CLOCK. Read off world.t — the fixed-step sim clock — never
             // wall time and never a React value; a paused run holds the bell
             // exactly where it stood because world.t stops with it.
-            if (!dev && stepBell(S, world.t)) { ringBell(); S.manifest.armedAtWall = performance.now() / 1000 + PENDING_ARM_S; }
+            if (!dev && stepBell(S, world.t)) { S.teachFire("bell"); ringBell(); S.manifest.armedAtWall = performance.now() / 1000 + PENDING_ARM_S; }
+            if (S.manifest && S.manifest.cardUp) S.teachFire("convoy"); // idempotent — seen/queue gates inside
             // THE PRE-TOLL (Task 4). The last five seconds are counted out
             // loud. Edge-triggered on the countdown crossing each whole second
             // — ceiling-rounded exactly as the chip reads it — so it fires once
@@ -4097,6 +4160,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
               } : null,
               hiring: S.hirePlace ? { key: S.hirePlace.key, label: (PALETTE_BY_KEY[S.hirePlace.key] || {}).label } : null,
               info: S.infoKey ? { key: S.infoKey, door: S.infoDoor, armed: performance.now() / 1000 >= S.infoArmedWall } : null,
+              teach: S._teachQ.length ? { key: S._teachQ[0] } : null,
               intel: S.intelUp && S.lastDispatch ? { armed: world.t >= S.intelArmedAt } : null,
               started: S.started, gameOver: S.gameOver, victory: S.victory,
               placing: S._placeQueue ? (S._placeQueue[0] || "done") : null, // P7.1 T6 A1: place mode must survive the ticker
@@ -4294,6 +4358,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
     const S = stateRef.current; if (!S) return;
     if (S.linePending && S.rejectLine) S.rejectLine();
     S.sellMode = !S.sellMode; S.inspectId = null; S.pending = null;
+    if (S.sellMode && S.teachFire) S.teachFire("sell");
     setHud((h) => ({ ...h, sellMode: S.sellMode }));
   };
   // P7.1 T5: closing the tree clears back to plain command — the ruled
@@ -4311,11 +4376,13 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
     if (S.draft && S.draft.length && !S._draftDone) {
       // P7.2 T8: THE DRAFT — seven cards up, five picks, all free.
       S._draftOpen = true;
+      if (S.teachFire) S.teachFire("the_hand");
       setHud((h) => ({ ...h, drafting: S.draft.map((c) => ({ k: c.k, plan: c.plan })) }));
       return;
     }
     S._placeQueue = null; // P7.1 T6 A2: the war has begun — the ticker must yield nothing
     S.started = true;
+    if (S.teachFire) S.teachFire("desktop_keys");
     setHud((h) => ({ ...h, started: true, placing: null }));
   };
   const toggleMute = () => {
@@ -4327,11 +4394,13 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
   const toggleFog = () => {
     const S = stateRef.current; if (!S || !S.setFog) return;
     S.setFog(!S.fogOn);
+    if (S.teachFire) S.teachFire("fog");
     setHud((h) => ({ ...h, fogOn: S.fogOn }));
   };
   const toggleWind = () => {
     const S = stateRef.current; if (!S || !S.setWind) return;
     S.setWind(!S.windOn);
+    if (S.teachFire) S.teachFire("wind");
     setHud((h) => ({ ...h, windOn: S.windOn }));
   };
   const toggleHealth = () => {
@@ -4345,6 +4414,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
   const toggleHoldArea = () => {
     const S = stateRef.current; if (!S || !S.holdArea) return;
     S.holdArea[1] = !S.holdArea[1];
+    if (S.teachFire) S.teachFire("spare_ours");
     setHud((h) => ({ ...h, holdAreaOn: S.holdArea[1] }));
   };
   // mk2.26: THE FIGHT SWITCH — sandbox only, live, any time.
@@ -4776,6 +4846,23 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
           onCancel={() => { const S = stateRef.current; if (S && S.closeInfo) S.closeInfo(); }} />
       )}
 
+      {/* Task 3: the teaching card — head of the fire queue, above every
+          overlay (the draft sits at zIndex 8). The war is frozen while it
+          is up; CLOSE marks it seen and resumes. */}
+      {hud.teach && !hud.info && (() => {
+        const tc = TEACH[hud.teach.key];
+        if (!tc) return null;
+        const card = { ...tc, role: isTouch && tc.roleTouch ? tc.roleTouch : tc.role };
+        return (
+          <div data-teach-card={hud.teach.key} style={{ position: "absolute", inset: 0, zIndex: 10, pointerEvents: "none" }}>
+            <div style={{ pointerEvents: "auto" }}>
+              <InfoCard card={card} door="teach"
+                onCancel={() => { const S = stateRef.current; if (S && S.teachClose) S.teachClose(); }} />
+            </div>
+          </div>
+        );
+      })()}
+
       {hud.pending && (
         <div style={{ position: "absolute", left: hud.pending.x, top: hud.pending.y, transform: "translate(-50%, -50%)", zIndex: 7, display: "flex", gap: 6, pointerEvents: "auto" }}>
           <button data-pending-confirm
@@ -5007,6 +5094,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
               const b = S && S.mode ? branchOf(S.mode) : null;
               if (b) setBranch(b);
               setBuildOpen(true);
+              if (S && S.teachFire) { S.teachFire("market"); S.teachFire("scrap"); }
             }} />
           {buildOpen && (dev ? [...TREE_BRANCHES, { key: "foes", label: "THE ENEMY", icon: "☠", match: () => false }] : TREE_BRANCHES).map((b) => (dev && b.key === "foes") || palette.some((p) => b.match(p.key)) ? (
             <CrateChip key={b.key} data-branch={b.key}

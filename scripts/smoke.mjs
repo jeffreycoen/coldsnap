@@ -217,6 +217,9 @@ try {
     // and a leftover save would turn the menu's one-tap WINTER FRONT into the
     // two-tap NEW FRONT burn confirm.
     await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (k.startsWith("coldsnap-depot")) localStorage.removeItem(k); localStorage.removeItem("coldsnap-front-save"); localStorage.removeItem("coldsnap-wf-manual"); });
+    // Task 3: the teaching-card door is silenced with its own sentinel —
+    // a scripted war must never be paused by a first-encounter card.
+    await page.evaluate(() => localStorage.setItem("coldsnap-wf-cards", JSON.stringify({ rev: 1, seen: ["*"] })));
     await page.evaluate(() => localStorage.setItem("coldsnap-screen", "menu"));
     await page.goto(depotURL, { waitUntil: "networkidle0" });
     await clickMenu("depot");

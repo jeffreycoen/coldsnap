@@ -159,7 +159,7 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
     const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
     ok("T3(b): the convoy freezes the whole sim through the one gate",
       /const convoyUp = !!\(S\.manifest && S\.manifest\.cardUp\);/.test(src) &&
-      /S\.paused \|\| !S\.started \|\| cardUp \|\| convoyUp \? 0 : dt \* S\.speed/.test(src));
+      /S\.paused \|\| !S\.started \|\| cardUp \|\| convoyUp \|\| teachUp \? 0 : dt \* S\.speed/.test(src));
   }
   // (c) the confirm ghost
   {

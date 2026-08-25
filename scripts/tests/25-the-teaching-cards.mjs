@@ -22,3 +22,17 @@ ok("T2: the desktop-keys card is marked desktop-only", TEACH.desktop_keys && TEA
 ok("T1: cardFor reads teaching cards after market cards", /TEACH\[key\] \|\| CARDS\[key\] \|\| null/.test(src("src/depot/cards.js")));
 ok("T1: an unknown door falls to CLOSE (the teach door needs no code)",
   /data-info-close/.test(src("src/depot/InfoCard.jsx")));
+
+// ---- Task 3 (mk2.41): THE FIRST-ENCOUNTER DOOR
+{
+  const dg = src("src/depot/DepotGame.jsx");
+  ok("T3: cards.js stamps the revision", /export const TEACH_REV = 1;/.test(src("src/depot/cards.js")));
+  ok("T3: the seen store has its own key", /const CARDS_KEY = "coldsnap-wf-cards";/.test(dg));
+  ok("T3: a card up freezes the sim (the convoy idiom)", /const teachUp = S\._teachQ\.length > 0;/.test(dg) && /cardUp \|\| convoyUp \|\| teachUp \? 0 :/.test(dg));
+  ok("T3: firing is sandbox-silent, seen-gated, and honors the silence sentinel",
+    /S\.teachFire = \(key\) => \{\n\s+if \(dev\) return;/.test(dg) && /S\._teachSeen\.has\("\*"\)/.test(dg));
+  ok("T3: closing marks seen and persists the set", /S\._teachSeen\.add\(k\);[\s\S]{0,220}window\.storage\.set\(CARDS_KEY/.test(dg));
+  ok("T3: the phone voice serves on touch", /isTouch && tc\.roleTouch \? tc\.roleTouch : tc\.role/.test(dg));
+  ok("T3: the pie teaches one card per open", /S\.teachPie = \(kind, thing\) => \{/.test(dg) && /PIE_CARDS/.test(dg));
+  ok("T3: the smoke silences the door with the sentinel", /coldsnap-wf-cards/.test(src("scripts/smoke.mjs")));
+}

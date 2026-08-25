@@ -50,6 +50,10 @@ export const CARDS = {
 // without a ruling). label/role/skills is InfoCard's own contract; roleTouch
 // is the phone voice where the controls differ; desktopOnly marks the one
 // card phones never see. Tasks 3/4/7 serve these; nothing reads them yet.
+// TEACH_REV — the teaching cards' revision stamp (the MANUAL_REV law):
+// bumped when the cards change materially, the door then greets everyone
+// once more. Rev 1 = Task 3, the door opens.
+export const TEACH_REV = 1;
 export const TEACH = {
   the_hand: { label: "THE HAND YOU'RE DEALT", role: "Every war opens with seven dealt cards — units and plans together. Pick five, free. Units place by your hand near the depot; plans open your build bar. The enemy drafts five of its own.", skills: [] },
   placing: { label: "PLACING YOUR MEN", role: "Tap ground near your depot to set a ghost. ✓ fields it, ✗ puts it back. The green wash is where you may place. Each pick shows its card first.", skills: [] },
