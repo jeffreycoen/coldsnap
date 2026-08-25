@@ -58,8 +58,8 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
   const before = I.resources, regBefore = I.reg.scrap;
   fireBell(I, { reg: I.reg, snap: {}, rng: mulberry32(1), t: BELL_PERIOD_S });
   ok("the bell pays nothing; income is the clock (re-pinned mk1.13)", I.resources === before, `${I.resources} vs ${before}`);
-  ok("bell pays the regiment's stipend before the muster spends it",
-    I.reg.scrap <= regBefore + STIPEND, `${I.reg.scrap}`);
+  ok("the bell pays the regiment nothing; income is the clock both sides (mk2.49)",
+    I.reg.scrap <= regBefore, `${I.reg.scrap}`);
 }
 
 // --- tier caps: OWNERSHIP IS THE GATE NOW (P7.2 T4, owner) — the bell
@@ -647,7 +647,7 @@ function scriptedWaveRun(seed) {
     ok("bookValue: scrap + assets sums directly", bookValue({ scrap: 60, assets: 40 }) === 100);
     ok("bookValue: symmetric under swapping scrap/assets values", bookValue({ scrap: 60, assets: 40 }) === bookValue({ scrap: 40, assets: 60 }));
     ok("bookValue: zero assets reduces to scrap alone", bookValue({ scrap: 77, assets: 0 }) === 77);
-    ok("bookValue: STIPEND is the 1-scrap/second clock, credited at the bell (re-pinned mk1.13)", STIPEND === 90);
+    ok("bookValue: STIPEND retired from the bell — kept as the fixtures' floor-income shorthand (mk2.49)", STIPEND === 90);
   }
 }
 
@@ -747,14 +747,10 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   // whole tier — read it off the run's own foe state.
   ok("fireBell: the muster only fields tier-open tags",
     S.ws.mixBag.every((t) => enemyTierState(1, S.foe.unlocked).tags.includes(t)), JSON.stringify([...new Set(S.ws.mixBag)]));
-  // The prediction has to be taken off the SAME books the bell hands planWave
-  // — i.e. after the stipend the bell pays — or the counts can't match.
-  // P7.2 T4 re-pin: the bell now spends HAND_DRAWS + HAND_DRAWS (his five
-  // draws replace his one) off the same stream BEFORE the muster (and, at
-  // bell 1, zero intel draws — openingIntel takes no rng), so the
-  // prediction burns exactly those first.
+  // The prediction is taken off the SAME books the bell hands planWave —
+  // the raw regiment (mk2.49: the bell pays no stipend; income is the
+  // frame clock, both sides).
   const regP = makeRegiment(mulberry32(7));
-  regP.scrap += STIPEND;
   const rngP = mulberry32(8);
   for (let i = 0; i < HAND_DRAWS + HAND_DRAWS; i++) rngP();
   const predicted = planWave(regP, BASE_SNAP, 1, rngP, enemyTierState(1, S.foe.unlocked).tags);
@@ -774,19 +770,20 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   fireBell(S, { reg: S.reg, snap: {}, rng: mulberry32(9), t: BELL_PERIOD_S });
   // heads 0 -> the muster buys nothing, so the books show results + stipend.
   const expected = scrapBefore + 100 * RESULTS.structureDmg
-    + 1 * RESULTS.buildingKill + 2 * RESULTS.leak + STIPEND;
+    + 1 * RESULTS.buildingKill + 2 * RESULTS.leak;
   ok("fireBell pays the closing assault's results into reg.scrap", Math.abs(S.reg.scrap - expected) < 1e-9,
     `${S.reg.scrap} vs ${expected}`);
 }
 
-// STIPEND paid at the bell (moved off the retired stall's advance()).
+// The bell pays NO stipend (mk2.49) — income is the per-second clock, both
+// sides, in the frame loop; the bell's only regiment credit is payResults.
 {
   const S = makeRunState();
   S.started = true;
   S.reg = { heads: 0, tanks: 0, heads0: 300, tanks0: 8, scrap: 60 };
   const before = S.reg.scrap;
   fireBell(S, { reg: S.reg, snap: {}, rng: mulberry32(10), t: BELL_PERIOD_S });
-  ok("the bell pays STIPEND into reg.scrap", S.reg.scrap === before + STIPEND, `${S.reg.scrap} vs ${before + STIPEND}`);
+  ok("the bell pays no stipend into reg.scrap (mk2.49)", S.reg.scrap === before, `${S.reg.scrap} vs ${before}`);
 }
 
 // Regiment depletion happens ONLY at muster (planWave's buys), never at

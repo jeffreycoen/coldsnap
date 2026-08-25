@@ -289,7 +289,7 @@ import fs from "node:fs";
   // (e) income + limit + wiring: source pins
   const srcT4 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   const stT4 = fs.readFileSync(new URL("../../src/depot/state.js", import.meta.url), "utf8");
-  ok("T4(e): the player's income is the clock — 1 scrap/second", /S\.resources \+= 1 \* sdt;/.test(srcT4) && !/S\.resources \+= 2\.2 \* sdt;/.test(srcT4));
+  ok("T4(e): the player's income is the clock — ground-scaled, floor 1/second (re-taught mk2.49)", /S\.resources \+= S\._groundRate1 \* sdt;/.test(srcT4) && !/S\.resources \+= 1 \* sdt;/.test(srcT4));
   ok("T4(e): the bell pays no lump", !/S\.resources \+= BELL_SCRAP;/.test(stT4));
   ok("T4(e): one purchase per second, toasted", /THE MARKET PACES YOU/.test(srcT4) && /S\._buyAt = world\.t;/.test(srcT4));
   ok("T4(e): purchases charge the live price", /const priceNow = /.test(srcT4));

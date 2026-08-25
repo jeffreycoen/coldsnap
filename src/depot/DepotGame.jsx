@@ -30,7 +30,7 @@ import { stepUnits, spawnUnit } from "./units.js";
 import { stepDrivers, possessedArmorFire, possessedArmorMg, mechSighted, barrelTip } from "./drivers.js";
 import { stepTransports, unloadApc, apcSeated, unloadEnemyRiders } from "./transports.js";
 import { planRoute, stampTerrainMasks } from "./route.js";
-import { makeRegiment, payTown } from "./economy.js";
+import { makeRegiment, payTown, groundRate } from "./economy.js";
 import { makeTerritory, stepTerritory, holderAt, canBuild, fogStateFor, valueAt, EMIT } from "./territory.js";
 import { makeSight, stepSight, seenAt, eyeOf, steerReticle, reclampReticle, surfaceAt } from "./sight.js";
 import { fwdUFor, fwdDirFor, invWFor, clampToRimFor } from "./orient.js";
@@ -1484,6 +1484,11 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         // stamp. Transient run state, never serialized — a resumed run
         // rebuilds both within a second (no save.js edits).
         _market: null, _marketAcc: 0, _buyAt: -9,
+        // mk2.49: THE GROUND PAYS — income rates per second, ground-scaled
+        // (groundRate over the territory field's held-cell counts). Derived
+        // on the territory tick, never saved; 1 (the floor) until the first
+        // tick, which is also every fresh boot's true opening rate.
+        _groundRate1: 1, _groundRate2: 1,
         _minePrices: null, // P7 T10: computed beside _market, same 1Hz cadence
         // P6 T10 / Task 5 Amendment 1 (mk1.19): the idle gate — true once
         // the war goes hot (stashed by the hud census pass); starts false.
@@ -3808,7 +3813,8 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             }
             // Between bells nothing pauses: build, orders and combat with
             // whatever is still standing all run straight through.
-            S.resources += 1 * sdt; // mk1.13 (owner): income is the clock — 1 scrap/second, both sides
+            S.resources += S._groundRate1 * sdt; // mk2.49 (owner): income is the clock, scaled by held ground — floor 1/second
+            if (S.reg) S.reg.scrap += S._groundRate2 * sdt; // one law, one schedule, both sides — the bell stipend is dead
           }
           S.acc += sdt;
           terrAcc += sdt;
@@ -3822,6 +3828,15 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           // it: a recompute reads only the world's current bodies, so running
           // it twice in a row would burn the time and give the same map.
           if (terrGuard > 0) stepSight(world, T.sight, invW, fwdU);
+          // mk2.49: THE GROUND PAYS — held-cell counts on the territory
+          // clock (bell.js's commander-read loop, verbatim), cached as
+          // per-second rates for the income lines below. One law, both signs.
+          if (terrGuard > 0) {
+            let pc = 0, ec = 0;
+            for (let i = 0; i < T.v.length; i++) { if (T.v[i] > 0.15) pc++; else if (T.v[i] < -0.15) ec++; }
+            S._groundRate1 = groundRate(pc);
+            S._groundRate2 = groundRate(ec);
+          }
           // grid-line retint + terrain fog wash: same 4Hz cadence as the
           // territory field itself, not per frame (see renderer.js
           // updateTerritory/retintTerritory/updateFogWash).

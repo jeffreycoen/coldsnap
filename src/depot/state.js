@@ -5,7 +5,7 @@ import { aimSolve, fireProjectile, addBody, addWeld, explode, applyDamage } from
 import { SQUAD_SPECS, clearSlot } from "./squads.js";
 import { scatterSigma, applyScatter, arcClears, marchArc, elevSolve } from "./accuracy.js";
 import { planWave, MIN_WAVE_FLOOR, spawnDelayFor } from "./ai.js";
-import { STIPEND, payResults, combatIneffective, bookValue, KILL_CUT } from "./economy.js";
+import { payResults, combatIneffective, bookValue, KILL_CUT } from "./economy.js";
 import { killPrice } from "./market.js";
 import { composeIntel, openingIntel } from "./intel.js";
 import { TOWER_SPECS, ENEMY_SPECS, TANK, INFANTRY_ARMS, MASON, PLAYER_START, PLAYER_TIERS, HAND_KEYS, HAND_TAGS, MAN, GRENADE, DAVY_FIRE } from "./specs.js";
@@ -1798,11 +1798,9 @@ export function fireBell(S, opts = {}) {
   S.intelUp = false;
   S.intelArmedAt = nowT + PENDING_ARM_S;
 
-  // 3. the income — the player's income is the clock (1 scrap/second, the
-  // frame loop); the bell pays only what the held ground earns (payTown,
-  // applied by the caller). The attacker's stipend still lands here, BEFORE
-  // the muster, so the regiment can spend what it was just paid.
-  if (reg) reg.scrap += STIPEND;
+  // 3. the income — the per-second clock, ground-scaled, both sides, in the
+  // frame loop (mk2.49). The bell pays neither side; its only regiment
+  // credit is payResults in step 1 and the town pay the caller applies.
 
   // 4. the hand. Five cards — three plans, two hires — dealt fresh every
   // bell. A skipped bell is overwritten; unpicked plans are still in the

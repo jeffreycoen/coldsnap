@@ -1,6 +1,6 @@
 // src/depot/economy.js — the attacker's books + the book-value verdict.
 // Pure state-in/state-out; rng only in makeRegiment (exactly 2 draws).
-import { holderAt } from "./territory.js";
+import { holderAt, EMIT } from "./territory.js";
 
 const TOWN_PAY = 4; // scrap/scrap per standing building per wave (Task 5 may retune)
 
@@ -28,7 +28,19 @@ export function makeRegiment(rng) {
   return { heads, tanks, heads0: heads, tanks0: tanks, scrap: 60 };
 }
 
-export const STIPEND = 90; // mk1.13 (owner): 1 scrap/second × the 90-second bell — the identical clock the player lives on, credited where the regiment spends
+export const STIPEND = 90; // mk2.49 (owner): RETIRED FROM THE BELL — income is the per-second clock, both sides, ground-scaled (groundRate below). The constant stands as the fixtures' floor-income shorthand (1/second x the 90-second bell) and for the one source pin that guards it.
+
+// THE GROUND PAYS (mk2.49, owner): income is the clock, scaled by held
+// ground — one law, one schedule, both sides. INCOME_CELLS is the ground
+// worth 1 scrap/second: one full depot-emitter disc of territory cells
+// (radius EMIT.depot.r, cell area 4 m^2) — a shared number derived from
+// the same table both depots emit with, so neither side's divisor can
+// drift. groundRate never falls under 1 (owner: the floor) and scales
+// continuously above it, fractions included.
+export const INCOME_CELLS = Math.round(Math.PI * EMIT.depot.r * EMIT.depot.r / 4);
+export function groundRate(heldCells) {
+  return Math.max(1, heldCells / INCOME_CELLS);
+}
 
 // THE KILL CUT (owner, 2026-08-20): the fraction of a victim's live market
 // price the killing side banks. The score ledger takes the whole price;
