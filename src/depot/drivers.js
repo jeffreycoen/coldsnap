@@ -59,6 +59,16 @@ function tankGuns(world, t, dt, T, toUV) {
   const fspec = ENEMY_FIRE.tank;
   const muzzle = { x: t.pos.x, y: t.pos.y + 1.2, z: t.pos.z };
   const eR = effRange(world, muzzle, fspec);
+  // mk2.52 (owner): THE ONE TARGET LAW — the wave tank fights like the rest
+  // of the armor: soft targets first (the shared armor scan, draw-free),
+  // masonry only when none stands. The 07 T1 pin holds: its fixture fields
+  // no player soft body, so the scan finds nothing and nothing moves.
+  const live = armorScanFoes(world, t, muzzle, fspec, false, T, toUV);
+  if (live) {
+    t.gunT = fspec.cd + world.rng() * (fspec.cdVar || 0);
+    shooterFire(world, t, barrelTip(t, live.pos, fspec, BARRELS.tank), live, fspec, { attacker: "enemy", hitStruct: true, owner: t.id });
+    return;
+  }
   let tgt = null, td = eR * eR;
   const pool = world._L ? world._L.structsFor2 : world.bodies; // T10
   for (const s of pool) {

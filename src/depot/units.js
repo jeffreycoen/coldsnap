@@ -101,15 +101,18 @@ function faceTravel(u, dt) {
 }
 
 // ---------------------------------------------------- anti-personnel pass
-// A player soldier inside `urgency` of effective range is a more urgent
+// A player soft target (man, hull, or mech) inside `urgency` of effective range is a more urgent
 // target than any wall — IF our side can SEE him (VISION mk0.72: one law,
 // men and masonry alike). fieldReaches is read with the ATTACKER's own team
 // (2); arcClears threads the shooter's own id (self-hit law).
+// mk2.52 (owner): THE ONE TARGET LAW — the enemy's soft-target set is the
+// player's own (state.js squadFire's scan): men, hulls, and mechs alike.
+const soft = (b) => b.kind === "unit" || b.kind === "vehicle" || b.kind === "mech";
 function nearestPlayerUnit(world, u, muzzle, fspec, R2, urgency, T, toUV) {
   const pool = world._L ? world._L.friends : world.bodies;  // T10
   let best = null, bd = R2 * urgency * urgency; // (urgency*R)^2
   for (const s of pool) {
-    if (s.kind !== "unit" || !s.alive || s.team !== 1) continue;
+    if (!soft(s) || !s.alive || s.team !== 1) continue;
     const c = toUV(s.pos.x, s.pos.z);
     if (!fieldReaches(T, c.u, c.v, 2)) continue; // attacker-sign fog gate
     const dx = s.pos.x - u.pos.x, dz = s.pos.z - u.pos.z, d2 = dx * dx + dz * dz;
@@ -122,7 +125,7 @@ function nearestPlayerUnit(world, u, muzzle, fspec, R2, urgency, T, toUV) {
 // in range, still SEEN by our side (revalidated every tick — structures now
 // revalidate the same way, VISION mk0.72), LOS clear.
 function unitTargetValid(world, u, muzzle, tgt, fspec, R2, T, toUV) {
-  if (!tgt || !tgt.alive || tgt.kind !== "unit" || tgt.team !== 1) return false;
+  if (!tgt || !tgt.alive || !soft(tgt) || tgt.team !== 1) return false;
   const dx = tgt.pos.x - u.pos.x, dz = tgt.pos.z - u.pos.z;
   if (dx * dx + dz * dz > R2) return false;
   const c = toUV(tgt.pos.x, tgt.pos.z);
@@ -230,7 +233,7 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u
   // sticky-target validity check in between scans (u._effR).
   let R2 = (u._effR != null ? u._effR : fspec.range) ** 2;
   let tgt = u.tgtId ? world.byId.get(u.tgtId) : null;
-  if (tgt && tgt.kind === "unit") {
+  if (tgt && soft(tgt)) {
     // sticky UNIT target: revalidate on sight each tick — and so does the
     // structure branch below, since mk0.72 (one law).
     if (!unitTargetValid(world, u, muzzle, tgt, fspec, R2, T, toUV)) tgt = null;
@@ -277,7 +280,7 @@ function stepRifleman(world, u, spec, cell, dt, fwdDir, T, toUV = (x, z) => ({ u
       // unit target: NO hitOnly — the round hits whatever it physically
       // hits (law of the world). Structure target: hitOnly kept. Both carry
       // owner: u.id (self-hit law — uniform muzzle-clearing immunity).
-      shooterFire(world, u, muzzle, tgt, fspec, tgt.kind === "unit"
+      shooterFire(world, u, muzzle, tgt, fspec, soft(tgt)
         ? { attacker: "enemy", owner: u.id }
         : { attacker: "enemy", hitStruct: true, hitOnly: "structure", owner: u.id });
     }
@@ -345,7 +348,7 @@ function stepGrenadier(world, u, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, 
   const muzzle = { x: u.pos.x, y: u.pos.y + 1.0, z: u.pos.z };
   let R2 = (u._effR != null ? u._effR : fspec.range) ** 2;
   let tgt = u.tgtId ? world.byId.get(u.tgtId) : null;
-  if (tgt && tgt.kind === "unit") {
+  if (tgt && soft(tgt)) {
     // sticky UNIT target: sight-gated revalidation every tick (same law as
     // stepRifleman above).
     if (!unitTargetValid(world, u, muzzle, tgt, fspec, R2, T, toUV)) tgt = null;
@@ -394,7 +397,7 @@ function stepGrenadier(world, u, cell, dt, fwdDir, T, toUV = (x, z) => ({ u: x, 
     // vetoing grenadier-vs-wall acquisition (scripts/depot-test.mjs's
     // rifleman/grenadier-vs-wall fixtures).
     // Unit shots keep hitStruct and carry NO hitOnly — blast is blast.
-    const aimT = tgt.kind !== "unit" ? aimTop(world, tgt) : tgt; // mk2.06: structures take the shell on the roof
+    const aimT = !soft(tgt) ? aimTop(world, tgt) : tgt; // mk2.06 roofs; mk2.52: a hull is a body, aimed direct with its own speed
     if (u.tag === "gren") throwGrenade(world, u, muzzle, aimT); // mk2.03: the grenade is thrown, both sides
     else shooterFire(world, u, muzzle, aimT, fspec, { high: true, attacker: "enemy", hitStruct: true, owner: u.id });
   }

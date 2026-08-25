@@ -2462,8 +2462,8 @@ import fs from "node:fs";
     const unitsSrc = fs.readFileSync(new URL("../../src/depot/units.js", import.meta.url), "utf8");
     ok("ROOFTOP mk2.06(l) source pin: squadFire's structure shot rides aimTop",
       /bestIsStruct && spec\.occl === "lofted" \? aimTop\(world, best\) : best/.test(stateSrc));
-    ok("ROOFTOP mk2.06(l) source pin: the enemy mortar team's shot rides aimTop",
-      /const aimT = tgt\.kind !== "unit" \? aimTop\(world, tgt\) : tgt;/.test(unitsSrc));
+    ok("ROOFTOP mk2.06(l) source pin: the enemy mortar team's structure shot rides aimTop (re-taught mk2.52: soft targets aimed direct)",
+      /const aimT = !soft\(tgt\) \? aimTop\(world, tgt\) : tgt;/.test(unitsSrc));
   }
 }
 // ==== end THE GUN AND THE GRENADE (mk2.03) ==================================
