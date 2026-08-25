@@ -382,6 +382,7 @@ function buildTown(world, grid, field) {
   }
   return out;
 }
+export { buildTown }; // Task 9 (mk2.47): the menu's opening-view capture boots the same town — a named export ONLY; the function line above is pinned by three test slicers and never changes
 function stepTown(world, grid, town, onRuin) {
   for (const b of town) {
     if (b.ruined) continue;
