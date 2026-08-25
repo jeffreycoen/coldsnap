@@ -83,3 +83,12 @@ ok("T1: an unknown door falls to CLOSE (the teach door needs no code)",
   ok("T7: the war takes the menu's seed, URL still winning", /menuSeedRef\.current != null \? menuSeedRef\.current/.test(dg) && /Number\.isFinite\(urlSeed\) \? urlSeed/.test(dg));
   ok("T7: the smoke pins the one menu canvas", /data-menu-map/.test(src("scripts/smoke.mjs")));
 }
+
+// ---- Task 8 (mk2.46): THE MENU MAP WEARS THE REAL LOOK
+{
+  const ss = src("src/ui/StartScreen.jsx");
+  ok("T8: the menu builds the war's own ground", /makeField\(181, 2\.0, MAP_SEED\)/.test(ss) && /buildDepotTerrain\(field, MAP_SEED\)/.test(ss));
+  ok("T8: the trees are the war's own plan", /planTrees\(\)/.test(ss));
+  ok("T8: the snow is shaded like the renderer's", /1 - Math\.min\(0\.45, g2 \* 0\.9\)/.test(ss));
+  ok("T8: the column sits on its own glass", /rgba\(10,13,18,0\.78\)/.test(ss));
+}
