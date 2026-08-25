@@ -2,7 +2,7 @@
 // registry. cards.js is the one home; infocards.js is a re-export shim so
 // the older eras' import path stands. No seed is special; no seed is used.
 import { ok } from "./harness.mjs";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { CARDS, cardFor, TEACH } from "../../src/depot/cards.js";
 import { CARDS as CARDS_SHIM, cardFor as cardFor_shim } from "../../src/depot/infocards.js";
 
@@ -46,4 +46,14 @@ ok("T1: an unknown door falls to CLOSE (the teach door needs no code)",
   ok("T4: the queue pages by index", /_teachIdx/.test(dg) && /S\.teachBack = /.test(dg) && /S\.teachSkip = /.test(dg));
   ok("T4: the sentinel survives any revision", /d\.rev === TEACH_REV \|\| d\.seen\.includes\("\*"\)/.test(dg));
   ok("T4: every body is brief", Object.values(TEACH).every((c) => c.role.length <= 180 && (!c.roleTouch || c.roleTouch.length <= 180)));
+}
+
+// ---- Task 5 (mk2.43): THE MANUAL RETIRES; THE DOORS GO QUIET
+{
+  const dg = src("src/depot/DepotGame.jsx");
+  const ss = src("src/ui/StartScreen.jsx");
+  ok("T5: the manual is gone from the tree", !existsSync(new URL("../../src/ui/FieldManual.jsx", import.meta.url)));
+  ok("T5: the game forgot the manual", !/FieldManual/.test(dg) && !/MANUAL_KEY/.test(dg) && !/manualOpen/.test(dg));
+  ok("T5: the front door is quiet", !/muster bell rings/.test(ss) && !/A winter war in real stone/.test(ss) && !/The save burns/.test(ss));
+  ok("T5: the overlay is buttons and the seed line", !/They are coming for your depot/.test(dg) && !/The convoy deals seven cards/.test(dg) && /FIELD ORDER #/.test(dg));
 }

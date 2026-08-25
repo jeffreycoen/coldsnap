@@ -39,17 +39,11 @@ import { makeBodyLists, rebuildBodyLists } from "./lists.js";
 import Dispatch from "./Dispatch.jsx";
 import InfoCard from "./InfoCard.jsx";
 import CrateChip, { StockTag } from "./Crate.jsx";
-import FieldManual, { MANUAL_REV } from "../ui/FieldManual.jsx";
 import { GRID_CS, GRID_W, GRID_H, GRID_OX, GRID_OZ, RIM_HALF_U, RIM_HALF_V, ORIENT, fwdU, fwdDir, invW, clampToRim, OBJ_POS, SPAWN_POINTS, PONDS, ROCKS, TOWN, ROADS, PASSES, BANDS, MAP_SEED, SPAWN_U, STREAM, HILLS, genMap, makeMap, buildDepotTerrain, pondAt, rockAt, makeGrid, streamAt, planTrees, computeFlowField } from "./mapgen.js";
 import { armorSpread, armorStable, MECH_SPREAD, musterFreshStart, PICK_POOL } from "./muster.js";
 import { lineCells, pieceHalf, startBuildLine, linePieces, layPieceAt, stepBuildLine } from "./buildlines.js";
 import { ringBell as ringBellOut } from "./bell.js";
 import { buildMech, mechCommand, respawnMech, mechFallen, mechFire, mechMissiles, mechBarrage, mechPunt, mechAboutFace, mechPivot, mechAimDir } from "../engine/mech.js";
-
-// THE FIELD MANUAL's don't-show-again flag (P6 T8). "off" means never
-// auto-open again; anything else (including absent) means the tour greets
-// every fresh war. A resumed war never auto-opens it either way.
-const MANUAL_KEY = "coldsnap-wf-manual";
 
 // mk2.28: the quartermaster's quiet flag — the purpose lines speak in the
 // first war only, then go quiet for good once the first bell has rung.
@@ -938,8 +932,6 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
   const [fatal, setFatal] = useState(null);
   const [runId, setRunId] = useState(0);
   const [rereadDispatch, setRereadDispatch] = useState(false);
-  // P6 T8: the field manual. React state only — the sim never sees it.
-  const [manualOpen, setManualOpen] = useState(false);
   // mk2.28: the quartermaster's purpose lines — quiet by default; the probe
   // opens them only for a first-timer.
   const [qmQuiet, setQmQuiet] = useState(true);
@@ -966,16 +958,8 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
     if (t.closeAll) setBuildOpen(false);
   };
   useEffect(() => {
-    if (resumeRef.current || dev) return; // a resumed war is not a first entry; the sandbox never tours
+    if (resumeRef.current || dev) return; // a resumed war is not a first entry; the sandbox never speaks
     let live = true;
-    (async () => {
-      try {
-        const r = await window.storage.get(MANUAL_KEY);
-        const seen = r ? (r.value === "off" ? 1 : parseInt(r.value, 10) || 0) : 0;
-        if (live && !(seen >= MANUAL_REV)) setManualOpen(true);
-      }
-      catch (e) { if (live) setManualOpen(true); }
-    })();
     (async () => {
       try {
         const r = await window.storage.get(QM_KEY);
@@ -985,10 +969,6 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
     })();
     return () => { live = false; };
   }, []);
-  const closeManual = (never) => {
-    setManualOpen(false);
-    if (never) { try { window.storage.set(MANUAL_KEY, String(MANUAL_REV)); } catch (e) {} }
-  };
   // mk2.28: the quartermaster's lines go quiet for good once the first bell rings.
   useEffect(() => {
     if (hud.bell >= 1 && !qmQuiet) {
@@ -5133,26 +5113,13 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
       {!hud.started && !hud.placing && !hud.drafting && !fatal && !dev && (
         <div style={P.ovl}>
           <div style={{ fontSize: 26, letterSpacing: 4, color: "#9fdcff" }}>COLDSNAP</div>
-          <div style={{ fontSize: 13, letterSpacing: 8, color: "#ffd27a", marginBottom: 14 }}>WINTER FRONT</div>
-          <div style={{ fontSize: 12, opacity: 0.85, maxWidth: 420, lineHeight: 1.6, marginBottom: 18 }}>
-            They are coming for your depot across the valley — wall your ground, gun the choke points.
-            Rock is free cover. The frozen ponds carry them faster — and you cannot build on ice.
-            {isTouch ? " Drag to pan, pinch to zoom, twist to rotate, tap to build. Tap a tower to inspect it." : " WASD pans, wheel zooms, Q/E rotates (tap snaps, hold swings), click builds. Click a tower to inspect it."}
-          </div>
-          <div style={{ fontSize: 11, opacity: 0.85, maxWidth: 460, marginBottom: 10 }}>
-            The convoy deals seven cards — pick five, free. Units place by your hand near the depot; plans open your build bar.
-          </div>
+          <div style={{ fontSize: 13, letterSpacing: 8, color: "#ffd27a", marginBottom: 18 }}>WINTER FRONT</div>
           <button style={{ ...P.btn, fontSize: 15, padding: "10px 26px", borderColor: "#4aff8c", color: "#4aff8c" }} onClick={startGame}>
             TAKE COMMAND
-          </button>
-          <button data-menu="manual" style={{ ...P.btn, marginTop: 14, opacity: 0.75, fontSize: 11, letterSpacing: 1 }} onClick={() => setManualOpen(true)}>
-            FIELD MANUAL
           </button>
           <div style={{ fontSize: 10, opacity: 0.55, marginTop: 12, letterSpacing: 2 }}>FIELD ORDER #{hud.seed || "—"} · ?seed= replays a map</div>
         </div>
       )}
-
-      {!hud.started && !hud.placing && !hud.drafting && !fatal && !dev && manualOpen && <FieldManual onClose={closeManual} />}
 
       {hud.drafting && !fatal && (
         <DraftScreen cards={hud.drafting} onConfirm={(picked) => { const S = stateRef.current; if (S && S.confirmDraft) S.confirmDraft(picked); }} />

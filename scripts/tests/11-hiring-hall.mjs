@@ -137,12 +137,10 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
     ok("T2(e7): the card carries the hire door", /door === "hire"/.test(ic) && /CONFIRM HIRE/.test(ic));
   }
 
-  // (f) the manual tells the hand's truth
+  // (f) the manual retired (mk2.43) — the hand's truth lives in the cards
   {
-    const fm = fs.readFileSync("src/ui/FieldManual.jsx", "utf8");
-    ok("T2(f): the tour returns for the hand (re-taught mk1.92: MANUAL_REV 5 -> 6)", /export const MANUAL_REV = 6;/.test(fm));
-    ok("T2(f2): THE BELL card teaches plans and hires, and the header count is honest",
-      /plans you buy once/.test(fm) && /hires that walk on at once/.test(fm) && /Ten linked cards/.test(fm));
+    const cj = fs.readFileSync("src/depot/cards.js", "utf8");
+    ok("T2(f) (re-taught mk2.43): the convoy's lesson is a card now", /the convoy's offer/.test(cj) && /hires field at once/.test(cj));
   }
 }
 
@@ -732,10 +730,9 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
     ok("T8v2(d9): the draft is FREE to the last step — the deal placer never touches the till",
       (() => { const m = src3.match(/const placePick = \(p\) => \{[\s\S]*?\n      \};/); return !!m && !/S\.resources/.test(m[0]); })());
   }
-  // (e) the manual learns the draft
+  // (e) the manual retired (mk2.43) — the draft's truth lives in the cards
   {
-    const fm = fs.readFileSync("src/ui/FieldManual.jsx", "utf8");
-    ok("T8v2(e): the tour returns for the draft (MANUAL_REV 6) and the card tells it",
-      /export const MANUAL_REV = 6;/.test(fm) && /seven dealt cards/.test(fm) && /Pick five, free/.test(fm));
+    const cj = fs.readFileSync("src/depot/cards.js", "utf8");
+    ok("T8v2(e) (re-taught mk2.43): the draft's lesson is a card now", /Seven cards dealt\. Pick five, free\./.test(cj));
   }
 }

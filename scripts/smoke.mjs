@@ -79,7 +79,7 @@ try {
   // the three laws, it offers NEW FRONT — TAKE COMMAND and the one quiet
   // link to the demos.
   if (sectionEnabled("start")) {
-    ok("start screen carries the three laws", body.includes("The muster bell rings every 90 seconds") && body.includes("real masonry") && body.includes("The save burns"));
+    ok("start screen is quiet — the laws teach in the war", !body.includes("The muster bell rings every 90 seconds") && !body.includes("The save burns"));
     ok("start screen offers NEW FRONT — TAKE COMMAND", body.includes("TAKE COMMAND"));
     ok("start screen links to the demos page", body.includes("THE PROVING RANGE"));
     ok("no game canvas on the start screen", (await page.$("canvas")) === null);
@@ -225,11 +225,7 @@ try {
     await clickMenu("depot");
     await page.waitForFunction(() => typeof window.__DEPOT__ === "function", { timeout: 20000 });
     ok("depot: mounts", true);
-    await page.waitForSelector("[data-manual]", { timeout: 10000 });
-    ok("depot: the field manual greets a fresh war", true);
-    await page.click("[data-manual-skip]");
-    await page.waitForFunction(() => !document.querySelector("[data-manual]"), { timeout: 5000 });
-    ok("depot: SKIP closes the manual", true);
+    ok("depot: no manual greets the war — the teaching cards took its place", (await page.$("[data-manual]")) === null);
     await page.evaluate(() => window.__DEPOTSTART__());
     await page.waitForFunction(() => window.__DEPOT__().t > 0.2, { timeout: 20000 });
     body = await text();

@@ -305,7 +305,7 @@ import fs from "node:fs";
   const ss = fs.readFileSync(new URL("../../src/ui/StartScreen.jsx", import.meta.url), "utf8");
   const app = fs.readFileSync(new URL("../../src/ui/App.jsx", import.meta.url), "utf8");
   ok("T7: the range subtitle is dead", !/WINTER RANGE COMMAND/.test(ss));
-  ok("T7: the door carries the three laws", /muster bell rings every 90 seconds/.test(ss) && /real masonry/.test(ss) && /The save burns/.test(ss));
+  ok("T7 (re-taught mk2.43): the laws left the door for the teaching cards", !/muster bell rings/.test(ss) && !/real masonry/.test(ss) && !/The save burns/.test(ss));
   ok("T7: the demos left the door", !/PROVING GROUNDS/.test(ss) && !/MECH TEST RANGE/.test(ss) && !/HOLD THE DEPOT/.test(ss));
   ok("T7: one quiet link leads to the range", /data-menu="demos"/.test(ss));
   ok("T7: the demos page routes from the app shell", /DemosScreen/.test(app) && /data-menu="demos"/.test(ss));

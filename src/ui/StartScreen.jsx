@@ -57,13 +57,6 @@ export default function StartScreen({ onDepot, onDepotResume, onDemos, onDevSand
           <div style={{ fontSize: 34, color: COLORS.red, letterSpacing: 8 }}>COLDSNAP</div>
           <div style={{ fontSize: 13, letterSpacing: 8, color: COLORS.gold, marginTop: 2 }}>WINTER FRONT</div>
           <div data-mk style={{ opacity: 0.5, letterSpacing: 2, fontSize: 10, marginTop: 4 }}>{MK}</div>
-          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 10 }}>A winter war in real stone.</div>
-        </div>
-
-        <div style={{ fontSize: 11, lineHeight: 1.7, opacity: 0.75, marginTop: 14 }}>
-          <div>The muster bell rings every 90 seconds. Everything that reaches this war comes off that truck.</div>
-          <div style={{ marginTop: 6 }}>Every wall is real masonry. What you break stays broken — what falls, falls for real.</div>
-          <div style={{ marginTop: 6 }}>When a depot falls, its war is over. The save burns. No rewinds.</div>
         </div>
 
         {hasFront && (
