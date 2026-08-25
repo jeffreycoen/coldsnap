@@ -12,7 +12,13 @@ ok("T1: the registry holds the nineteen market cards", Object.keys(CARDS).length
 ok("T1: the shim serves the identical object", CARDS === CARDS_SHIM && cardFor === cardFor_shim);
 ok("T1: the shim is one re-export and nothing else",
   /^export \{ CARDS, cardFor, TEACH \} from "\.\/cards\.js";\s*$/m.test(src("src/depot/infocards.js").replace(/^\/\/.*$/gm, "").trim()));
-ok("T1: the teaching table stands, empty until Task 2", TEACH && typeof TEACH === "object" && Object.keys(TEACH).length === 0);
+ok("T2: the teaching table holds the twenty-eight", Object.keys(TEACH).length === 28);
+ok("T2: every teaching card carries the card contract",
+  Object.values(TEACH).every((c) => typeof c.label === "string" && c.label.length > 0 && typeof c.role === "string" && c.role.length > 0 && Array.isArray(c.skills)));
+ok("T2: the phone-voiced cards carry both voices",
+  ["possess_squad", "possess_tower", "possess_vehicle", "possess_mech"].every((k) => TEACH[k] && typeof TEACH[k].roleTouch === "string" && TEACH[k].roleTouch.length > 0));
+ok("T2: no teaching key shadows a market key", Object.keys(TEACH).every((k) => !CARDS[k]));
+ok("T2: the desktop-keys card is marked desktop-only", TEACH.desktop_keys && TEACH.desktop_keys.desktopOnly === true);
 ok("T1: cardFor reads teaching cards after market cards", /TEACH\[key\] \|\| CARDS\[key\] \|\| null/.test(src("src/depot/cards.js")));
 ok("T1: an unknown door falls to CLOSE (the teach door needs no code)",
   /data-info-close/.test(src("src/depot/InfoCard.jsx")));
