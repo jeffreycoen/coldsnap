@@ -1708,7 +1708,7 @@ export function scoreKill(S, ev, counts) {
   led.value += kp.price;
   if (kp.counted) led.kills++;
   if (att === 1) S.resources += pay;
-  else if (S.reg) S.reg.scrap += pay;
+  else if (S.reg) { S.reg.scrap += pay; S.reg.earned = (S.reg.earned || 0) + pay; } // mk2.53: kill pay is earnings
   return { side: att, price: kp.price, pay, counted: !!kp.counted };
 }
 
@@ -1877,6 +1877,7 @@ export function fireBell(S, opts = {}) {
     units = plan.buys.reduce((s, b) => s + b.n, 0);
     mix = plan.buys.map((b) => [b.type, b.n]);
     S.pendingPlan = plan;
+    if (reg.earned != null) reg.earned = 0; // mk2.53: the muster spent the earnings; the next bell's budget accrues fresh
   }
   ws.fielded = units;
   ws.spawnQueue = units;

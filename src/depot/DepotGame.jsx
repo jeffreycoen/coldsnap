@@ -3818,7 +3818,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             // Between bells nothing pauses: build, orders and combat with
             // whatever is still standing all run straight through.
             S.resources += S._groundRate1 * sdt; // mk2.49 (owner): income is the clock, scaled by held ground — floor 1/second
-            if (S.reg) S.reg.scrap += S._groundRate2 * sdt; // one law, one schedule, both sides — the bell stipend is dead
+            if (S.reg) { S.reg.scrap += S._groundRate2 * sdt; S.reg.earned = (S.reg.earned || 0) + S._groundRate2 * sdt; } // one law, one schedule, both sides — and the earned till the muster budgets from (mk2.53)
           }
           S.acc += sdt;
           terrAcc += sdt;

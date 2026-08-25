@@ -17,6 +17,8 @@ const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
 // bellBudget(bell) — baseline scrap-spend ramp: ~20 at the first bell, ~120
 // by bell 50. Curve shape is tunable (F5 owns it); export kept so callers/
 // tests can reference the same baseline the brain uses.
+// mk2.53: superseded as the LIVE baseline by reg.earned (THE EARNED MUSTER);
+// stands as the fixture fallback and the pre-income-era reference curve.
 export function bellBudget(bell) {
   const w = Math.max(0, bell);
   return 20 + 100 * Math.pow(Math.min(w, 50) / 50, 0.85) + Math.max(0, w - 50) * 0.6;
@@ -193,7 +195,11 @@ export function planWave(reg, snap, bell, rng, tags = null, priceOf = null) {
   const tanksOpen = allow("tank");
   const snipersOpen = allow("sniper");
 
-  const baseline = bellBudget(bell);
+  // mk2.53 (owner): THE EARNED MUSTER — the budget is what the ground paid
+  // since the last bell (reg.earned, accrued at every credit site, zeroed by
+  // fireBell after the spend). A regiment with no accumulator — every test
+  // fixture, an old save's first resumed bell — takes the old curve exactly.
+  const baseline = reg.earned != null ? reg.earned : bellBudget(bell);
   const shares = tierShares(computeShares(snap, jitterShare), infTypes);
   const sig = signals(snap);
   const dominant = dominantCounter(sig);

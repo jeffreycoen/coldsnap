@@ -57,8 +57,10 @@ export const RESULTS = {
 export function payResults(reg, ev) {
   // ev: {structureDmg, buildingKills, leaks} — tower and wall kills pay
   // through the kill law now (state.js scoreKill), never twice.
-  reg.scrap += ev.structureDmg * RESULTS.structureDmg
+  const won = ev.structureDmg * RESULTS.structureDmg
     + ev.buildingKills * RESULTS.buildingKill + (ev.leaks || 0) * RESULTS.leak;
+  reg.scrap += won;
+  if (won > 0) reg.earned = (reg.earned || 0) + won; // mk2.53: the earned muster's till — a zero credit accrues NOTHING (a defined 0 would defeat the fixtures' curve fallback)
 }
 
 export function combatIneffective(reg) {

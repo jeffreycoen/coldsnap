@@ -31,7 +31,7 @@ export function ringBell(world, grid, field, T, S, ctx) {
   ctx.cue("bell"); // the toll itself, at the ring — before anything it causes
   const paid = payTown(ctx.townUV, T);
   S.resources += paid.player;
-  if (S.reg) S.reg.scrap += paid.regiment;
+  if (S.reg) { S.reg.scrap += paid.regiment; if (paid.regiment > 0) S.reg.earned = (S.reg.earned || 0) + paid.regiment; } // mk2.53: town pay is earnings; a zero pay accrues nothing
   // fireBell runs the whole sequence and raises both cards; the assault
   // it musters marches regardless of whether either is ever read. The
   // regiment's own muster now pays the living market's price for

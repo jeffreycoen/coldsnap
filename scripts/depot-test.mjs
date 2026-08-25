@@ -41,4 +41,5 @@ await import("./tests/24-the-quartermaster.mjs");
 await import("./tests/25-the-teaching-cards.mjs");
 await import("./tests/26-the-ground-pays.mjs");
 await import("./tests/27-the-urgency-law.mjs");
+await import("./tests/28-the-earned-muster.mjs");
 finish();
