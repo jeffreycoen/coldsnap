@@ -703,7 +703,7 @@ const P = {
 // wedge's onClick runs its action, then onChoose (the call site sets
 // S.pieOpen = false there), one mechanism for every slot rather than
 // repeating a close in each act.
-function RadialMenu({ cx, cy, label, slots, armed, onChoose }) {
+function RadialMenu({ cx, cy, label, slots, armed, onChoose, press, onCard, showInfo }) {
   const N = slots.length, R0 = 36, R1 = 104;
   const wedge = (i) => {
     const a0 = -Math.PI / 2 + (i - 0.5) * (2 * Math.PI / N);
@@ -718,7 +718,7 @@ function RadialMenu({ cx, cy, label, slots, armed, onChoose }) {
         const mid = -Math.PI / 2 + i * (2 * Math.PI / N);
         const lx = cx + Math.cos(mid) * 72, ly = cy + Math.sin(mid) * 72;
         return (
-          <g key={s.key} data-radial={s.key} style={{ pointerEvents: "auto", cursor: "pointer" }} onClick={() => { s.act(); onChoose && onChoose(); }} opacity={armed ? 1 : 0.5}>
+          <g key={s.key} data-radial={s.key} style={{ pointerEvents: "auto", cursor: "pointer" }} onClick={() => { s.act(); onChoose && onChoose(); }} opacity={armed ? 1 : 0.5} {...(s.card && press ? press(s.card) : {})}>
             {/* mk0.83 (owner: "green text on green background is illegible"):
                 the wedge keeps its dark panel fill even when lit — the lit
                 state is the accent BORDER and a faint tint, and every label
@@ -728,6 +728,10 @@ function RadialMenu({ cx, cy, label, slots, armed, onChoose }) {
             {s.on && <path d={wedge(i)} fill={s.color} fillOpacity="0.14" stroke="none" />}
             <text x={lx} y={ly - 4} textAnchor="middle" fontSize="15" fill={s.color} stroke="#0e1218" strokeWidth="3" paintOrder="stroke" style={{ userSelect: "none" }}>{s.icon || ""}</text>
             <text x={lx} y={ly + 12} textAnchor="middle" fontSize="10" letterSpacing="1" fill={s.color} stroke="#0e1218" strokeWidth="3" paintOrder="stroke" fontFamily="inherit" style={{ userSelect: "none" }}>{s.label}</text>
+            {s.card && showInfo && (
+              <text data-wedge-info={s.card} x={lx} y={s.toggle != null ? ly - 22 : ly + 26} textAnchor="middle" fontSize="11" fill="#9fdcff" stroke="#0e1218" strokeWidth="3" paintOrder="stroke" style={{ cursor: "pointer" }}
+                onClick={(e) => { e.stopPropagation(); onCard && onCard(s.card); }}>ⓘ</text>
+            )}
             {/* P7.1 T2 (owner): a toggle wedge wears a slider — black at
                 rest, slid over and bright green in use. Only slots that
                 carry s.toggle draw it; every other wedge is untouched. */}
@@ -4432,6 +4436,19 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
   };
   const sellInspected = () => { const S = stateRef.current; if (S && S.inspectId && S.sellById) S.sellById(S.inspectId); };
 
+  // Task 6 (mk2.44): THE ON-DEMAND DOOR — hold a carded control 450ms and
+  // its card opens through the market-card door (no pause, nothing marked
+  // seen); the release's click is swallowed. Press state rides a ref keyed
+  // by card, so the 8Hz interface refresh can't strand a timer.
+  const lpRef = useRef({});
+  const teachPress = (k) => ({
+    onPointerDown: () => { const o = lpRef.current[k] = lpRef.current[k] || {}; o.fired = false; o.t = setTimeout(() => { o.fired = true; const S = stateRef.current; if (S && S.openInfo) S.openInfo(k, "bar"); }, 450); },
+    onPointerUp: () => { const o = lpRef.current[k]; if (o && o.t) clearTimeout(o.t); },
+    onPointerLeave: () => { const o = lpRef.current[k]; if (o && o.t) clearTimeout(o.t); },
+    onPointerCancel: () => { const o = lpRef.current[k]; if (o && o.t) clearTimeout(o.t); }, // phones cancel pointers (gestures, second fingers) — a cancelled press must not open the card
+    onClickCapture: (e) => { const o = lpRef.current[k]; if (o && o.fired) { o.fired = false; e.preventDefault(); e.stopPropagation(); } },
+  });
+
   // POSSESSION (P4 T1, mk0.90): the touch stick. Depot-styled port of the
   // sandbox's own joystick (ContractSandbox.jsx :365-380, :429-437) — radius
   // 56, deadzone 0.15, knob clamped to the radius and following the finger.
@@ -4669,16 +4686,17 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
         </>
       )}
       <div style={P.top}>
-        <div style={P.stat}><span style={{ color: "#ffd27a" }}>◆</span>{hud.resources}</div>
+        <div style={P.stat} {...teachPress("scrap")}><span style={{ color: "#ffd27a" }}>◆</span>{hud.resources}</div>
         {!dev && (
           <div data-bell style={{ ...P.stat, cursor: hud.lastDispatch ? "pointer" : "default" }}
             onClick={() => { if (hud.lastDispatch) setRereadDispatch(true); }}
-            title={hud.lastDispatch ? "re-read last dispatch" : undefined}>
+            title={hud.lastDispatch ? "re-read last dispatch" : undefined}
+            {...teachPress("bell")}>
             BELL {hud.bell} · {clockStr(hud.bellT)}
           </div>
         )}
         <div style={P.stat}>☠ {hud.enemies}</div>
-        <div data-score style={P.stat} title="the match score — kills and value destroyed, yours then the enemy's">
+        <div data-score style={P.stat} title="the match score — kills and value destroyed, yours then the enemy's" {...teachPress("kill_price")}>
           <span style={{ color: "#7dffa8" }}>⚔ {hud.score.pk} ◆{hud.score.pv}</span>
           <span style={{ opacity: 0.5 }}>·</span>
           <span style={{ color: "#ff7a7a" }}>{hud.score.ek} ◆{hud.score.ev}</span>
@@ -4716,16 +4734,16 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
         )}
         <button style={{ ...P.btn, marginLeft: dev ? undefined : "auto", padding: isTouch ? "5px 10px" : "4px 10px" }} title="rotate view (Q/E)"
           onClick={() => { const S = stateRef.current; if (S && S.rotate) S.rotate(1); }}>⟳</button>
-        <button style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.fogOn ? "#7fd7ff" : "#48515f", opacity: hud.fogOn ? 1 : 0.6 }} title="fog of war (visual only)" onClick={toggleFog}>
+        <button style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.fogOn ? "#7fd7ff" : "#48515f", opacity: hud.fogOn ? 1 : 0.6 }} title="fog of war (visual only)" onClick={toggleFog} {...teachPress("fog")}>
           FOG {hud.fogOn ? "ON" : "OFF"}
         </button>
         <button data-health style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.healthOn ? "#7fd7ff" : "#48515f", opacity: hud.healthOn ? 1 : 0.6 }} title="health bars on hurt things (visual only)" onClick={toggleHealth}>
           HEALTH {hud.healthOn ? "ON" : "OFF"}
         </button>
-        <button data-wind style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.windOn ? "#7fd7ff" : "#48515f", opacity: hud.windOn ? 1 : 0.6 }} title="wind (drift on every shot, both sides)" onClick={toggleWind}>
+        <button data-wind style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.windOn ? "#7fd7ff" : "#48515f", opacity: hud.windOn ? 1 : 0.6 }} title="wind (drift on every shot, both sides)" onClick={toggleWind} {...teachPress("wind")}>
           WIND {hud.windOn ? "ON" : "OFF"}
         </button>
-        <button data-holdarea style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.holdAreaOn ? "#7fd7ff" : "#48515f", opacity: hud.holdAreaOn ? 1 : 0.6 }} title="area weapons (tesla chain, davy blast) hold fire while one of your own stands in the spread" onClick={toggleHoldArea}>
+        <button data-holdarea style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.holdAreaOn ? "#7fd7ff" : "#48515f", opacity: hud.holdAreaOn ? 1 : 0.6 }} title="area weapons (tesla chain, davy blast) hold fire while one of your own stands in the spread" onClick={toggleHoldArea} {...teachPress("spare_ours")}>
           SPARE OURS {hud.holdAreaOn ? "ON" : "OFF"}
         </button>
         <button style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", opacity: hud.muted ? 0.5 : 1 }} onClick={toggleMute}>
@@ -4822,14 +4840,14 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
       )}
 
       {hud.info && !hud.gameOver && !hud.victory && (
-        <InfoCard card={cardFor(hud.info.key)} door={hud.info.door} armed={hud.info.armed}
+        <InfoCard card={(() => { const c = cardFor(hud.info.key); return c && isTouch && c.roleTouch ? { ...c, role: c.roleTouch } : c; })()} door={hud.info.door} armed={hud.info.armed}
           afford={hud.info.door === "hire" ? hud.resources >= ((hud.prices?.[hud.info.key] ?? PALETTE_BY_KEY[hud.info.key]?.cost) || 0) : undefined}
           price={(() => {
             if (hud.info.door === "deal") return null;
             const base = hud.prices?.[hud.info.key] ?? PALETTE_BY_KEY[hud.info.key]?.cost;
             return hud.info.door === "manifest" ? Math.max(1, Math.ceil(base / 2)) : base;
           })()}
-          portrait={(cv) => renderPortrait(cv, hud.info.key)}
+          portrait={TEACH[hud.info.key] ? undefined : (cv) => renderPortrait(cv, hud.info.key)}
           onConfirm={() => { const S = stateRef.current; if (S && S.confirmInfo) S.confirmInfo(); }}
           onCancel={() => { const S = stateRef.current; if (S && S.closeInfo) S.closeInfo(); }} />
       )}
@@ -4894,41 +4912,41 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
         // they arm S.orderMode and consumeOrderTap's ground tap(s) finish
         // them (and deselect there, at completion).
         const slots = [
-          { key: "defend", icon: "∴", label: "DEFEND", color: "#7dffa8", on: sq.order === "defend", act: () => { const S = stateRef.current; if (S) { S.orderSquad("defend"); S.selSquadId = null; S.selSquadIds = null; } } },
-          { key: "move", icon: "→", label: "MOVE", color: "#7fd7ff", on: sq.aimingMove || sq.order === "move", act: () => stateRef.current && stateRef.current.orderSquad("move") },
-          { key: "attack", icon: "⚑", label: "ATTACK", color: "#ff6b5e", on: sq.aiming, act: () => stateRef.current && stateRef.current.orderSquad("attack") },
+          { key: "defend", icon: "∴", label: "DEFEND", color: "#7dffa8", on: sq.order === "defend", card: "defend", act: () => { const S = stateRef.current; if (S) { S.orderSquad("defend"); S.selSquadId = null; S.selSquadIds = null; } } },
+          { key: "move", icon: "→", label: "MOVE", color: "#7fd7ff", on: sq.aimingMove || sq.order === "move", card: "move", act: () => stateRef.current && stateRef.current.orderSquad("move") },
+          { key: "attack", icon: "⚑", label: "ATTACK", color: "#ff6b5e", on: sq.aiming, card: "attack", act: () => stateRef.current && stateRef.current.orderSquad("attack") },
           // POSSESSION (P4 T1, mk0.90): TAKE CONTROL — every squad type,
           // instant like DEFEND (deselects on choose; the pie itself closes
           // via RadialMenu's onChoose regardless).
           // mk2.00 (owner): the build tree closes with the take — all three TAKE CONTROLs.
-          { key: "possess", icon: "✥", label: "TAKE CONTROL", color: "#7dffa8", on: false, act: () => { closeBuild(); const S = stateRef.current; if (S) S.takeControl(); } },
-          { key: "select_all", icon: "∷", label: "SELECT ALL", color: "#9fdcff", on: sq.count > 1, act: () => { const S = stateRef.current; if (S) { S.selectAllType(); S._keepPie = true; } } },
+          { key: "possess", icon: "✥", label: "TAKE CONTROL", color: "#7dffa8", on: false, card: "possess_squad", act: () => { closeBuild(); const S = stateRef.current; if (S) S.takeControl(); } },
+          { key: "select_all", icon: "∷", label: "SELECT ALL", color: "#9fdcff", on: sq.count > 1, card: "select_all", act: () => { const S = stateRef.current; if (S) { S.selectAllType(); S._keepPie = true; } } },
         ];
         // COMMAND T3 (mk0.85): PATROL — two taps propose a route through the
         // same proposed-line confirm the build orders use; accept and the
         // squad walks it forever. Every type except engineers and sappers.
         if (sq.patrolOk) {
-          slots.push({ key: "patrol", icon: "⇄", label: "PATROL", color: "#7fd7ff", on: sq.aimingPatrol || sq.order === "patrol", act: () => stateRef.current && stateRef.current.orderSquad("patrol") });
+          slots.push({ key: "patrol", icon: "⇄", label: "PATROL", color: "#7fd7ff", on: sq.aimingPatrol || sq.order === "patrol", card: "patrol", act: () => stateRef.current && stateRef.current.orderSquad("patrol") });
         }
         // COMMAND T4 (mk0.86): STRUCTURES — instant toggle, armed types
         // only (an INFANTRY_ARMS row; not engineers, not sappers). Lit when
         // on. Its act also fully deselects, the DEFEND/SELL/CAREFUL-FREE
         // rule for instant pie actions.
         if (sq.structOk) {
-          slots.push({ key: "structures", icon: "▨", label: "ATTACK STRUCTURES", color: "#c9a0ff", on: sq.structFirst, toggle: sq.structFirst, act: () => { const S = stateRef.current; if (S) { S.toggleStructFirst(); S.selSquadId = null; S.selSquadIds = null; } } });
+          slots.push({ key: "structures", icon: "▨", label: "ATTACK STRUCTURES", color: "#c9a0ff", on: sq.structFirst, toggle: sq.structFirst, card: "structures", act: () => { const S = stateRef.current; if (S) { S.toggleStructFirst(); S.selSquadId = null; S.selSquadIds = null; } } });
         }
         if (sq.engineer) {
           slots.push(
-            { key: "build_bags", icon: "▬", label: "BAGS", color: "#ffd27a", on: sq.building === "bags", act: () => stateRef.current && stateRef.current.orderSquad("build_bags") },
-            { key: "build_walls", icon: "▦", label: "WALLS", color: "#ffd27a", on: sq.building === "walls", act: () => stateRef.current && stateRef.current.orderSquad("build_walls") },
+            { key: "build_bags", icon: "▬", label: "BAGS", color: "#ffd27a", on: sq.building === "bags", card: "engineer_lines", act: () => stateRef.current && stateRef.current.orderSquad("build_bags") },
+            { key: "build_walls", icon: "▦", label: "WALLS", color: "#ffd27a", on: sq.building === "walls", card: "engineer_lines", act: () => stateRef.current && stateRef.current.orderSquad("build_walls") },
           );
         }
         // P7 T10: MINES and WIRES — the sapper team's own two wedges, the
         // identical two-tap build shape the engineer wedges above use.
         if (sq.sapper) {
           slots.push(
-            { key: "build_mines", icon: "◆", label: "MINES", color: "#ffb45e", on: sq.building === "mines", act: () => stateRef.current && stateRef.current.orderSquad("build_mines") },
-            { key: "build_wires", icon: "⌁", label: "WIRES", color: "#ffb45e", on: sq.building === "wires", act: () => stateRef.current && stateRef.current.orderSquad("build_wires") },
+            { key: "build_mines", icon: "◆", label: "MINES", color: "#ffb45e", on: sq.building === "mines", card: "sapper_lines", act: () => stateRef.current && stateRef.current.orderSquad("build_mines") },
+            { key: "build_wires", icon: "⌁", label: "WIRES", color: "#ffb45e", on: sq.building === "wires", card: "sapper_lines", act: () => stateRef.current && stateRef.current.orderSquad("build_wires") },
           );
         }
         // COMMAND T2 (mk0.84): a proposed line up takes over the status —
@@ -4947,7 +4965,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
         // still selected (an aiming order armed) -> the center label chip
         // alone, so the ground stays fully tappable for the follow-up taps.
         return sq.showPie
-          ? <RadialMenu cx={sq.x} cy={sq.y} label={lbl + status} slots={slots} armed={sq.armed} onChoose={() => { const S = stateRef.current; if (S) { if (S._keepPie) S._keepPie = false; else S.pieOpen = false; } }} />
+          ? <RadialMenu cx={sq.x} cy={sq.y} label={lbl + status} slots={slots} armed={sq.armed} onChoose={() => { const S = stateRef.current; if (S) { if (S._keepPie) S._keepPie = false; else S.pieOpen = false; } }} press={teachPress} showInfo={!isTouch} onCard={(k) => { const S = stateRef.current; if (S && S.openInfo) S.openInfo(k, "bar"); }} />
           : <div style={{ position: "absolute", left: sq.x, top: sq.y + 26, transform: "translate(-50%,0)", fontSize: 10, letterSpacing: 1, color: "#7dffa8", background: "rgba(14,18,24,0.85)", padding: "1px 6px", borderRadius: 4, zIndex: 7, pointerEvents: "none" }}>{lbl + status}</div>;
       })()}
       {hud.squadFlag && (
@@ -4984,6 +5002,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
             label: tr.discipline === "free" ? "FREE" : "CAREFUL",
             color: tr.discipline === "free" ? "#ff7a7a" : "#4aff8c",
             on: true,
+            card: "discipline",
             act: () => { const S = stateRef.current; if (S) { S.setTowerDiscipline(tr.id); S.inspectId = null; } },
           });
         }
@@ -4996,6 +5015,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
             label: "TAKE CONTROL",
             color: "#7dffa8",
             on: false,
+            card: "possess_tower",
             act: () => { closeBuild(); const S = stateRef.current; if (S) S.takeControlTower(tr.id); },
           });
         }
@@ -5005,10 +5025,11 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
           label: `SELL ◆${tr.refund}`,
           color: "#ffb45e",
           on: true,
+          card: "sell",
           act: () => stateRef.current && stateRef.current.sellById(tr.id),
         });
         return tr.showPie
-          ? <RadialMenu cx={tr.x} cy={tr.y} label={tr.label} slots={slots} armed={true} onChoose={() => { const S = stateRef.current; if (S) S.pieOpen = false; }} />
+          ? <RadialMenu cx={tr.x} cy={tr.y} label={tr.label} slots={slots} armed={true} onChoose={() => { const S = stateRef.current; if (S) S.pieOpen = false; }} press={teachPress} showInfo={!isTouch} onCard={(k) => { const S = stateRef.current; if (S && S.openInfo) S.openInfo(k, "bar"); }} />
           : null;
       })()}
 
@@ -5016,20 +5037,20 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
         const vr = hud.vehRadial;
         const vLabel = vr.kind === "mech" ? "MECH" : vr.vtype === "apc" ? "APC" : "BISON";   // P7 T4/mk1.92: label by kind, then vtype
         const slots = [
-          { key: "defend", icon: "∴", label: "DEFEND", color: "#7dffa8", on: vr.order === "defend", act: () => { const S = stateRef.current; if (S) { S.orderVehicle("defend"); S.selVehId = null; } } },
-          { key: "move", icon: "→", label: "MOVE", color: "#7fd7ff", on: vr.aimingMove || vr.order === "move", act: () => stateRef.current && stateRef.current.orderVehicle("move") },
-          { key: "patrol", icon: "⇄", label: "PATROL", color: "#7fd7ff", on: vr.aimingPatrol || vr.order === "patrol", act: () => stateRef.current && stateRef.current.orderVehicle("patrol") },
-          { key: "escort", icon: "⛨", label: "ESCORT", color: "#c9a0ff", on: vr.aimingEscort || vr.order === "escort", act: () => stateRef.current && stateRef.current.orderVehicle("escort") },
-          { key: "tracks", icon: vr.tracks === "free" ? "●" : "◐", label: vr.tracks === "free" ? "TRACKS FREE" : "TRACKS CAREFUL", color: vr.tracks === "free" ? "#ff7a7a" : "#4aff8c", on: true, toggle: vr.tracks !== "free", act: () => { const S = stateRef.current; if (S) { S.toggleTracks(); S.selVehId = null; } } },
-          { key: "possess", icon: "✥", label: "TAKE CONTROL", color: "#7dffa8", on: false, act: () => { closeBuild(); const S = stateRef.current; if (S) S.takeControlVehicle(); } },
+          { key: "defend", icon: "∴", label: "DEFEND", color: "#7dffa8", on: vr.order === "defend", card: "defend", act: () => { const S = stateRef.current; if (S) { S.orderVehicle("defend"); S.selVehId = null; } } },
+          { key: "move", icon: "→", label: "MOVE", color: "#7fd7ff", on: vr.aimingMove || vr.order === "move", card: "move", act: () => stateRef.current && stateRef.current.orderVehicle("move") },
+          { key: "patrol", icon: "⇄", label: "PATROL", color: "#7fd7ff", on: vr.aimingPatrol || vr.order === "patrol", card: "patrol", act: () => stateRef.current && stateRef.current.orderVehicle("patrol") },
+          { key: "escort", icon: "⛨", label: "ESCORT", color: "#c9a0ff", on: vr.aimingEscort || vr.order === "escort", card: "escort", act: () => stateRef.current && stateRef.current.orderVehicle("escort") },
+          { key: "tracks", icon: vr.tracks === "free" ? "●" : "◐", label: vr.tracks === "free" ? "TRACKS FREE" : "TRACKS CAREFUL", color: vr.tracks === "free" ? "#ff7a7a" : "#4aff8c", on: true, toggle: vr.tracks !== "free", card: "tracks", act: () => { const S = stateRef.current; if (S) { S.toggleTracks(); S.selVehId = null; } } },
+          { key: "possess", icon: "✥", label: "TAKE CONTROL", color: "#7dffa8", on: false, card: vr.kind === "mech" ? "possess_mech" : "possess_vehicle", act: () => { closeBuild(); const S = stateRef.current; if (S) S.takeControlVehicle(); } },
         ];
         // P7 T4: LOAD/UNLOAD — APC only, offered only when there's a seat to
         // fill or a rider to drop.
         if (vr.vtype === "apc" && vr.seatsFree > 0) {
-          slots.push({ key: "load", icon: "⬒", label: "LOAD (" + vr.seatsFree + ")", color: "#ffd27a", on: vr.aimingLoad, act: () => stateRef.current && stateRef.current.orderVehicle("load") });
+          slots.push({ key: "load", icon: "⬒", label: "LOAD (" + vr.seatsFree + ")", color: "#ffd27a", on: vr.aimingLoad, card: "load", act: () => stateRef.current && stateRef.current.orderVehicle("load") });
         }
         if (vr.vtype === "apc" && vr.riders > 0) {
-          slots.push({ key: "unload", icon: "⬓", label: "UNLOAD (" + vr.riders + ")", color: "#ffd27a", on: false, act: () => { const S = stateRef.current; if (S) { S.unloadVehicle(); S.selVehId = null; } } });
+          slots.push({ key: "unload", icon: "⬓", label: "UNLOAD (" + vr.riders + ")", color: "#ffd27a", on: false, card: "load", act: () => { const S = stateRef.current; if (S) { S.unloadVehicle(); S.selVehId = null; } } });
         }
         const status = vr.linePending ? " — ACCEPT OR ADJUST THE LINE"
           : vr.aimingPatrol ? (vr.patrolStart ? " — TAP THE FAR END" : " — TAP THE PATROL START")
@@ -5037,7 +5058,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
           : vr.aimingLoad ? " — TAP A SQUAD"
           : vr.aimingMove ? " — TAP GROUND" : "";
         return vr.showPie
-          ? <RadialMenu cx={vr.x} cy={vr.y} label={vLabel + status} slots={slots} armed={vr.armed} onChoose={() => { const S = stateRef.current; if (S) S.pieOpen = false; }} />
+          ? <RadialMenu cx={vr.x} cy={vr.y} label={vLabel + status} slots={slots} armed={vr.armed} onChoose={() => { const S = stateRef.current; if (S) S.pieOpen = false; }} press={teachPress} showInfo={!isTouch} onCard={(k) => { const S = stateRef.current; if (S && S.openInfo) S.openInfo(k, "bar"); }} />
           : <div style={{ position: "absolute", left: vr.x, top: vr.y + 26, transform: "translate(-50%,0)", fontSize: 10, letterSpacing: 1, color: "#7dffa8", background: "rgba(14,18,24,0.85)", padding: "1px 6px", borderRadius: 4, zIndex: 7, pointerEvents: "none" }}>{vLabel + status}</div>;
       })()}
 
@@ -5076,6 +5097,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
           <CrateChip data-build-toggle
             label={buildOpen ? "CLOSE" : "BUILD"} icon="⚒" open={buildOpen} active={buildOpen}
             line={!buildOpen ? (hud.sellMode ? "SELL" : hud.mode ? (PALETTE_LABEL[hud.mode] || "") : "") : ""}
+            {...teachPress("market")}
             onClick={() => {
               if (buildOpen) { closeBuild(); return; }
               const S = stateRef.current;
@@ -5101,6 +5123,7 @@ export default function DepotGame({ onExit, resume = null, dev = false }) {
               style={packing && packNextRef.current.closeAll
                 ? { minWidth: isTouch ? 56 : 52, borderColor: hud.sellMode ? "#a85c1e" : "#8f8768", background: hud.sellMode ? "#dcc9a0" : "#cfc6a5", animation: "cs-pack 0.1s ease-in forwards", animationDelay: "0.18s" }
                 : { minWidth: isTouch ? 56 : 52, borderColor: hud.sellMode ? "#a85c1e" : "#8f8768", background: hud.sellMode ? "#dcc9a0" : "#cfc6a5" }}
+              {...teachPress("sell")}
               onClick={() => { toggleSell(); beginPack(null, true); }}>
               <div style={{ fontSize: 15 }}>✕</div>
               <div>SELL</div>

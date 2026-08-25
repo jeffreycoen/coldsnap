@@ -57,3 +57,17 @@ ok("T1: an unknown door falls to CLOSE (the teach door needs no code)",
   ok("T5: the front door is quiet", !/muster bell rings/.test(ss) && !/A winter war in real stone/.test(ss) && !/The save burns/.test(ss));
   ok("T5: the overlay is buttons and the seed line", !/They are coming for your depot/.test(dg) && !/The convoy deals seven cards/.test(dg) && /FIELD ORDER #/.test(dg));
 }
+
+// ---- Task 6 (mk2.44): THE ON-DEMAND DOOR
+{
+  const dg = src("src/depot/DepotGame.jsx");
+  ok("T6: the long-press helper exists and swallows the trailing click",
+    /const teachPress = \(k\) => \(\{/.test(dg) && /onClickCapture/.test(dg) && /450/.test(dg));
+  ok("T6: the top bar and build bar carry their cards",
+    ["scrap", "bell", "kill_price", "fog", "wind", "spare_ours", "market", "sell"].every((k) => dg.includes('teachPress("' + k + '")')));
+  ok("T6: the wedges carry their cards",
+    /card: "possess_squad"/.test(dg) && /card: "engineer_lines"/.test(dg) && /card: "sapper_lines"/.test(dg) && /card: "discipline"/.test(dg) && /card: "escort"/.test(dg) && /card: "load"/.test(dg) && /vr\.kind === "mech" \? "possess_mech" : "possess_vehicle"/.test(dg));
+  ok("T6: the wedge opens its card by press or ⓘ", /data-wedge-info/.test(dg) && /press\(s\.card\)/.test(dg));
+  ok("T6: the lookup serves the phone voice and skips the portrait on teaching cards",
+    /c\.roleTouch \? \{ \.\.\.c, role: c\.roleTouch \}/.test(dg) && /TEACH\[hud\.info\.key\] \? undefined :/.test(dg));
+}

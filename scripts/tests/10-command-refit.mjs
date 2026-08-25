@@ -400,5 +400,5 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "tesla"]) {
   const src10 = fs.readFileSync("src/depot/InfoCard.jsx", "utf8");
   ok("T10: the card carries the portrait canvas", /data-info-portrait/.test(src10) && /portrait\(cv\)/.test(src10));
   const dg10 = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
-  ok("T10: the game wires the painter to the card", /portrait=\{\(cv\) => renderPortrait\(cv, hud\.info\.key\)\}/.test(dg10));
+  ok("T10: the game wires the painter to the card", /portrait=\{TEACH\[hud\.info\.key\] \? undefined : \(cv\) => renderPortrait\(cv, hud\.info\.key\)\}/.test(dg10));
 }
