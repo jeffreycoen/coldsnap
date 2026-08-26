@@ -108,7 +108,17 @@ export function canSee(SG, eye, tu, tv) {
   if (n * SG.cs > eye.r + SG.cs) return false;          // coarse reject, in cells
   const cu = -SG.halfU + (tu + 0.5) * SG.cs, cv = -SG.halfV + (tv + 0.5) * SG.cs;
   if (Math.hypot(cu - eye.u, cv - eye.v) > eye.r) return false;   // the true reach, in meters
-  const ty = SG.gnd[tv * SG.nx + tu] + SIGHT_TARGET_H;
+  // mk2.57 (owner): THE LIT ROOF — an occupied cell is seen at its SURFACE.
+  // The old law tested the ground under the building (always walled off by
+  // the building itself), so every roof was dark and the possessed reticle
+  // stopped at the wall's base while the owner looked straight at the roof.
+  // Now the eye tests to the surface the reticle would rest on (sight.js
+  // surfaceAt's own rule: a solid's top when one stands there, the ground
+  // otherwise) plus the same man-height allowance either way. Honest line
+  // of sight is kept: ground hidden BEHIND a building stays dark, and a big
+  // roof lights only as far as the eye can truly see over its near rim.
+  const ti = tv * SG.nx + tu;
+  const ty = (SG.occ[ti] > SG.gnd[ti] ? SG.occ[ti] : SG.gnd[ti]) + SIGHT_TARGET_H;
   for (let k = 1; k < n; k++) {
     const t = k / n;
     // clamped: an eye shoved past the rim would otherwise round to a negative
