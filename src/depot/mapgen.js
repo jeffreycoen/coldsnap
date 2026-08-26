@@ -43,7 +43,9 @@ export let STREAM = null; // T3: { pts:[{u,v}...], w, v, bridgeU } — canonical
 // true and the stream returns whole.
 export const STREAM_ON = false;
 export let HILLS = []; // T5: [{u, v, r, h}...] — canonical, regrown from seed
+export let CLUSTERS = []; // mk2.63: [{kind, x, z, r, n}] — the named ground
 
+export const TOWN_STONE_CAP = 3000; // owner, 2026-08-26 — provisional until the Pi collapse capture // provisional (F5)
 export function genMap(seed) {
   const r = mulberry32(seed);
   // THE SEAT OF THE WAR (P7 T3, owner): the depots press into OPPOSITE
@@ -156,13 +158,35 @@ export function genMap(seed) {
     hills.push({ u: hu, v: hv, r: hr, h: hh });
     placed++;
   }
-  const TPL = [
-    { t: "croft", nx: 4, nz: 3, ny: 3 }, { t: "house", nx: 6, nz: 5, ny: 4, cols: true },
-    { t: "house", nx: 5, nz: 4, ny: 4 }, { t: "long", nx: 8, nz: 4, ny: 3, cols: true },
-    { t: "watch", nx: 2, nz: 2, ny: 8 }, { t: "granary", nx: 3, nz: 3, ny: 7 },
-    { t: "yard", nx: 6, nz: 5, ny: 2, roof: false }, { t: "shed", nx: 4, nz: 4, ny: 3 },
-    { t: "chapel", nx: 5, nz: 6, ny: 5, cols: true }, { t: "keep", nx: 7, nz: 6, ny: 5, cols: true },
-  ];
+  // THE FORM BOOK (mk2.63, owner): every shape the valley can lay. The old
+  // ten stay; the new forms join — row houses with partition walls, the inn
+  // with its yard, the smithy with its chimney, the well, the mill, the bell
+  // tower and graveyard as chapel children, the wayside cross, the gateposts,
+  // the springhouse. marker: no flag, no pay (the field walls' standing).
+  const F = {
+    croft: { t: "croft", nx: 4, nz: 3, ny: 3 },
+    house6: { t: "house", nx: 6, nz: 5, ny: 4, cols: true },
+    house5: { t: "house", nx: 5, nz: 4, ny: 4 },
+    long: { t: "long", nx: 8, nz: 4, ny: 3, cols: true },
+    watch: { t: "watch", nx: 2, nz: 2, ny: 8 },
+    granary: { t: "granary", nx: 3, nz: 3, ny: 7 },
+    yard: { t: "yard", nx: 6, nz: 5, ny: 2, roof: false },
+    shed: { t: "shed", nx: 4, nz: 4, ny: 3 },
+    chapel: { t: "chapel", nx: 5, nz: 6, ny: 5, cols: true },
+    keep: { t: "keep", nx: 7, nz: 6, ny: 5, cols: true },
+    row: { t: "row", nx: 9, nz: 4, ny: 3, parts: [3, 6], noswap: true },
+    inn: { t: "inn", nx: 6, nz: 5, ny: 4, cols: true, child: "innyard" },
+    innyard: { t: "innyard", nx: 6, nz: 5, ny: 2, roof: false, door: -1 },
+    smithy: { t: "smithy", nx: 4, nz: 3, ny: 3, child: "chimneyc" },
+    chimneyc: { t: "chimneyc", nx: 1, nz: 1, ny: 5, roof: false, door: -1, marker: true },
+    well: { t: "well", nx: 2, nz: 2, ny: 1, roof: false, door: -1 },
+    mill: { t: "mill", nx: 3, nz: 3, ny: 6 },
+    belltower: { t: "belltower", nx: 2, nz: 2, ny: 8, roof: false, door: -1 },
+    graveyard: { t: "graveyard", nx: 6, nz: 5, ny: 2, roof: false, door: -1, stones: true },
+    cross: { t: "cross", nx: 1, nz: 1, ny: 2, roof: false, door: -1, marker: true },
+    gatepost: { t: "gatepost", nx: 1, nz: 1, ny: 3, roof: false, door: -1, marker: true },
+    spring: { t: "spring", nx: 2, nz: 2, ny: 2, marker: true },  // 9 stones — under the marker line (ruling 3)
+  };
   // T2: both depots at their DRAWN positions — same lattice, same template.
   const town = [
     { id: "depot", x: depotU1, z: depotDepth, nx: 12, nz: 9, ny: 7, door: 5, depot: true },
@@ -212,41 +236,180 @@ export function genMap(seed) {
       slab: tpl.slab, drive: tpl.drive, cols: tpl.cols });
     placed++;
   }
-  // T2: benches between consecutive bands, plus the last band to depot ground.
+  // THE SETTLED VALLEY (mk2.63, owner): clusters replace the bench scatter —
+  // one town, hamlets, dead hamlets, singles. Places, not sprinkles.
+  // Placement plans in stones (stoneCount) and stops at TOWN_STONE_CAP.
   const benches = [];
   for (let i = 0; i + 1 < bands.length; i++) benches.push([bands[i] + 8, bands[i + 1] - 7]);
   benches.push([bands[bands.length - 1] + 8, depotDepth - 8]);
-  for (let bi = 0; bi < benches.length; bi++) {
-    const want = 2 + Math.floor(r() * 4);
-    for (let k = 0, placed = 0; k < 90 && placed < want; k++) {
-      const tpl = TPL[Math.floor(r() * TPL.length)];
-      const swap = r() < 0.5;
+  const CL = [];
+  let plannedStones = 0;
+  // the one vet every placement runs — the standing foul checks, shared.
+  const vetAt = (x, z, nx, nz, offRoad) => {
+    const rad = Math.max(nx, nz) * MASON.pitch / 2 + 2;
+    if (x < -78 || x > 78 || z < -69 || z > 69) return false;
+    if (passes.flat().some((g) => Math.abs(x - g.x) < rad + 4 && Math.abs(z - g.z) < 12)) return false;
+    if (spawns.some((sp) => Math.hypot(x - sp.x, z - sp.z) < rad + 4)) return false;
+    if (ponds.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 3)) return false;
+    if (rocks.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 1.5)) return false;
+    if (offRoad && roadDist(x, z) < rad + 3) return false;
+    if (STREAM_ON && Math.abs(z - streamV) < rad + 9) return false;
+    if (town.some((q) => Math.hypot(x - q.x, z - q.z) < rad + Math.max(q.nx, q.nz) * MASON.pitch / 2 + 2.5)) return false;
+    return true;
+  };
+  // put: one entry down if it vets and the stone budget allows. Doors face
+  // the cluster's center when one is given; door -1 templates keep no door.
+  const put = (fk, x, z, opts) => {
+    const tpl = F[fk];
+    const swap = tpl.noswap ? false : r() < 0.5;
+    const nx = swap ? tpl.nz : tpl.nx, nz = swap ? tpl.nx : tpl.nz;
+    if (!vetAt(x, z, nx, nz, !(opts && opts.onRoad))) return null;
+    const e = { id: tpl.t + bid++, x, z, nx, nz, ny: tpl.ny,
+      door: tpl.door === -1 ? -1 : (opts && opts.face != null ? (x > opts.face.x ? 0 : nx - 1) : (r() < 0.5 ? 0 : nx - 1)),
+      roof: tpl.roof, cols: tpl.cols, parts: tpl.parts, stones: tpl.stones, marker: tpl.marker,
+      dead: opts && opts.dead ? true : undefined, form: opts && opts.form };
+    const cost = stoneCount(e);
+    if (plannedStones + cost > TOWN_STONE_CAP) return null;
+    plannedStones += cost;
+    town.push(e);
+    return e;
+  };
+  // a child stands against its parent — tried on four sides, first that vets.
+  const putChild = (fk, p, opts) => {
+    const tpl = F[fk];
+    // snug against the parent: the shared vet would push a child a building's
+    // width away, so a child vets against everything EXCEPT its own parent.
+    const gap = ((Math.max(p.nx, p.nz) + Math.max(tpl.nx, tpl.nz)) / 2) * MASON.pitch + 0.9;
+    const s0 = Math.floor(r() * 4);
+    for (let i = 0; i < 4; i++) {
+      const a = ((s0 + i) % 4) * Math.PI / 2;
+      const x = p.x + Math.sin(a) * gap, z = p.z + Math.cos(a) * gap;
+      const swap = tpl.noswap ? false : r() < 0.5;
       const nx = swap ? tpl.nz : tpl.nx, nz = swap ? tpl.nx : tpl.nz;
-      const x = -78 + r() * 156;
-      const z = benches[bi][0] + r() * Math.max(2, benches[bi][1] - benches[bi][0]);
+      const pi = town.indexOf(p);
+      const others = town.filter((q, qi) => qi !== pi);
       const rad = Math.max(nx, nz) * MASON.pitch / 2 + 2;
+      if (x < -78 || x > 78 || z < -69 || z > 69) continue;
       if (passes.flat().some((g) => Math.abs(x - g.x) < rad + 4 && Math.abs(z - g.z) < 12)) continue;
+      if (spawns.some((sp) => Math.hypot(x - sp.x, z - sp.z) < rad + 4)) continue;
       if (ponds.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 3)) continue;
       if (rocks.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 1.5)) continue;
-      if (town.some((q) => Math.hypot(x - q.x, z - q.z) < rad + Math.max(q.nx, q.nz) * MASON.pitch / 2 + 2.5)) continue;
-      if (STREAM_ON && Math.abs(z - streamV) < rad + 9) continue; // T3: bench buildings stay clear of the stream
-      const decay = r() < 0.2 ? 0.12 + r() * 0.3 : 0;
-      // T2 (mk2.62, owner): a decayed bench building is BORN DEAD — same two
-      // draws, reinterpreted: the drawn decay value picks the ruin form, so
-      // the draw count is untouched and every seed keeps its stream.
-      const form = !decay ? undefined : decay < 0.195 ? "shell" : decay < 0.27 ? "stump" : decay < 0.345 ? "mound" : "chimney";
-      town.push({ id: tpl.t + bid++, x, z, nx, nz, ny: tpl.ny, door: r() < 0.5 ? 0 : nx - 1, roof: tpl.roof, dead: decay ? true : undefined, form, cols: tpl.cols });
-      placed++;
+      if (roadDist(x, z) < rad + 3) continue;
+      if (STREAM_ON && Math.abs(z - streamV) < rad + 9) continue;
+      if (others.some((q) => Math.hypot(x - q.x, z - q.z) < rad + Math.max(q.nx, q.nz) * MASON.pitch / 2 + 1.2)) continue;
+      const e = { id: tpl.t + bid++, x, z, nx, nz, ny: tpl.ny, door: tpl.door === -1 ? -1 : (r() < 0.5 ? 0 : nx - 1),
+        roof: tpl.roof, cols: tpl.cols, parts: tpl.parts, stones: tpl.stones, marker: tpl.marker,
+        dead: opts && opts.dead ? true : undefined, form: opts && opts.form };
+      const cost = stoneCount(e);
+      if (plannedStones + cost > TOWN_STONE_CAP) return null;
+      plannedStones += cost;
+      town.push(e);
+      return e;
+    }
+    return null;
+  };
+  // a cluster: a center form, then members rung around it. Returns the row
+  // CLUSTERS carries so later work can name the ground.
+  const cluster = (kind, centerFk, pool, nMin, nMax, seat, opts) => {
+    for (let k = 0; k < 40; k++) {
+      const cx = seat.x0 + r() * (seat.x1 - seat.x0), cz = seat.z0 + r() * (seat.z1 - seat.z0);
+      if (opts && opts.nearRoad && roads.length && k < 25 && (roadDist(cx, cz) < 5 || roadDist(cx, cz) > 20)) continue;
+      if (opts && opts.nearHill && hills.length && k < 25 && !hills.some((h) => Math.hypot(cx - h.u, cz - h.v) < h.r + 28)) continue;
+      const cf = F[centerFk];
+      if (!vetAt(cx, cz, cf.nx, cf.nz, true)) continue;
+      const center = put(centerFk, cx, cz, opts && opts.dead ? { dead: true, form: "shell" } : null);
+      if (!center) continue;
+      if (cf.child) putChild(cf.child, center);
+      const want = nMin + Math.floor(r() * (nMax - nMin + 1));
+      let got = 0;
+      for (let m = 0; m < want * 6 && got < want; m++) {
+        const fk = pool[Math.floor(r() * pool.length)];
+        const a = r() * 6.28, d = 9 + r() * 8;
+        const dd = opts && opts.dead ? { dead: true, form: ["shell", "stump", "mound", "chimney"][Math.floor(r() * 4)] } : { face: center };
+        const e = put(fk, cx + Math.sin(a) * d, cz + Math.cos(a) * d, dd);
+        if (e) { got++; if (F[fk].child && !dd.dead) putChild(F[fk].child, e); }
+      }
+      const row = { kind, x: cx, z: cz, r: 18, n: got + 1 };
+      CL.push(row);
+      return row;
+    }
+    return null;
+  };
+  const midBench = benches[Math.floor(benches.length / 2)];
+  // THE TOWN — one, near a road when the map drew one, the chapel (with its
+  // tower or its graveyard) or the inn at the center, gateposts on the road.
+  const centerPick = r();
+  const townCenterFk = centerPick < 0.4 ? "chapel" : centerPick < 0.7 ? "inn" : "chapel";
+  const TOWN_POOL = ["row", "house6", "house5", "croft", "long", "shed", "smithy", "cross"];
+  let townRow = cluster("town", townCenterFk, TOWN_POOL,
+    4, 7, { x0: -60, z0: midBench[0], x1: 60, z1: Math.max(midBench[0] + 4, midBench[1]) },
+    roads.length ? { nearRoad: true } : null);
+  // a refused middle bench does not leave the valley townless — every bench
+  // gets its turn, roads-near first, then anywhere.
+  for (let bi = 0; !townRow && bi < benches.length; bi++) {
+    townRow = cluster("town", townCenterFk, TOWN_POOL,
+      4, 7, { x0: -70, z0: benches[bi][0], x1: 70, z1: Math.max(benches[bi][0] + 4, benches[bi][1]) }, null);
+  }
+  if (townRow) {
+    const ct = town.find((q) => Math.hypot(q.x - townRow.x, q.z - townRow.z) < 4);
+    if (ct && ct.id.indexOf("chapel") === 0) putChild(centerPick < 0.4 ? "belltower" : "graveyard", ct);
+    if (roads.length) { // the gateposts flank the road at the town's edge
+      for (const sgn of [-1, 1]) {
+        for (let g = 0; g < 12; g++) {
+          const gx = townRow.x + (r() - 0.5) * 30, gz = townRow.z + (r() - 0.5) * 30;
+          if (roadDist(gx, gz) > 4.5 || roadDist(gx, gz) < 2.5) continue;
+          if (put("gatepost", gx, gz, { onRoad: true })) break;
+        }
+      }
     }
   }
-  const nRuin = Math.floor(r() * 3);
-  for (let k = 0, placed = 0; k < 14 && placed < nRuin; k++) {
-    const x = -75 + r() * 150, z = -depotDepth + r() * 30;
-    if (spawns.some((sp) => Math.hypot(x - sp.x, z - sp.z) < 10)) continue;
-    if (town.some((q) => Math.hypot(x - q.x, z - q.z) < 10)) continue;
-    if (STREAM_ON && Math.abs(z - streamV) < 9) continue; // T3: old ruins stay clear of the stream
-    town.push({ id: "oldruin" + placed, x, z, nx: 4, nz: 4, ny: 3, door: 0, dead: true, form: "shell" }); // T2: born shells
-    placed++;
+  // THE HAMLETS — two or three, off the roads, crofts and sheds about a yard
+  // or a well.
+  const nHam = 2 + Math.floor(r() * 2);
+  for (let h = 0; h < nHam; h++) {
+    const b0 = Math.floor(r() * benches.length);
+    const ctr = r() < 0.5 ? "yard" : "well";
+    // a refused bench does not lose the hamlet — every bench gets its turn.
+    for (let bi = 0; bi < benches.length; bi++) {
+      const b = benches[(b0 + bi) % benches.length];
+      if (cluster("hamlet", ctr, ["croft", "shed", "croft", "smithy"],
+        2, 4, { x0: -70, z0: b[0], x1: 70, z1: Math.max(b[0] + 4, b[1]) }, null)) break;
+    }
+  }
+  // THE DEAD HAMLETS — one or two, born ruins with a mound and a chimney,
+  // against a hill when the map has one.
+  const nDead = 1 + Math.floor(r() * 2);
+  for (let h = 0; h < nDead; h++) {
+    const bi = Math.floor(r() * benches.length);
+    cluster("dead", "croft", ["croft", "shed", "house5"],
+      2, 3, { x0: -70, z0: benches[bi][0], x1: 70, z1: Math.max(benches[bi][0] + 4, benches[bi][1]) },
+      { dead: true, nearHill: hills.length > 0 });
+  }
+  // THE SINGLES — one to three lone forms on open ground.
+  const nSingle = 1 + Math.floor(r() * 3);
+  const SINGLES = ["mill", "keep", "watch", "granary", "long"];
+  for (let i = 0, got = 0; i < 40 && got < nSingle; i++) {
+    const bi = Math.floor(r() * benches.length);
+    const x = -70 + r() * 140, z = benches[bi][0] + r() * Math.max(2, benches[bi][1] - benches[bi][0]);
+    if (put(SINGLES[Math.floor(r() * SINGLES.length)], x, z, null)) got++;
+  }
+  // THE SPRINGHOUSE — beside the first pond, its own vet (it belongs at the
+  // water the shared vet keeps everything else away from).
+  if (ponds.length) {
+    for (let g = 0; g < 12; g++) {
+      const q = ponds[0], a = r() * 6.28;
+      const sx = q.x + Math.sin(a) * (q.r + 2.2), sz = q.z + Math.cos(a) * (q.r + 2.2);
+      const rad = F.spring.nx * MASON.pitch / 2 + 1;
+      if (spawns.some((sp) => Math.hypot(sx - sp.x, sz - sp.z) < rad + 4)) continue;
+      if (rocks.some((k) => Math.hypot(sx - k.x, sz - k.z) < k.r + rad + 1.5)) continue;
+      if (roadDist(sx, sz) < rad + 3) continue;
+      if (town.some((t2) => Math.hypot(sx - t2.x, sz - t2.z) < rad + Math.max(t2.nx, t2.nz) * MASON.pitch / 2 + 2)) continue;
+      const e = { id: "spring" + bid++, x: sx, z: sz, nx: 2, nz: 2, ny: 2, door: 0, marker: true };
+      const cost = stoneCount(e);
+      if (plannedStones + cost > TOWN_STONE_CAP) break;
+      plannedStones += cost; town.push(e);
+      break;
+    }
   }
   // T4: FIELD WALLS (owner's rulings: they block the grid; axis-aligned) —
   // freestanding masonry screens, 3-8 stones long, 2-4 courses, one stone
@@ -277,7 +440,8 @@ export function genMap(seed) {
   for (const sp of spawns) T(sp);
   for (const band of passes) for (const g of band) T(g);
   for (const route of roads) for (const pt of route) { const w = fwdU(pt[0], pt[1]); pt[0] = w.x; pt[1] = w.z; }
-  return { seed, bands, passes, rocks, ponds, spawns, spawnU, town, roads, depotFoul, objU, objV, depotU1, depotU2, depotDepth, stream, hills };
+  for (const c of CL) { const w = fwdU(c.x, c.z); c.x = w.x; c.z = w.z; }
+  return { seed, bands, passes, rocks, ponds, spawns, spawnU, town, roads, depotFoul, objU, objV, depotU1, depotU2, depotDepth, stream, hills, clusters: CL };
 }
 export function makeMap(seed) {
   for (let attempt = 0; attempt < 24; attempt++) {   // T2: wilder maps foul more — a deeper retry pocket
@@ -287,10 +451,10 @@ export function makeMap(seed) {
     OBJ_POS = fwdU(m.objU, m.objV);                  // T2: the objective follows the DRAWN depot, set after genMap
     MAP_SEED = sd; BANDS = m.bands; PASSES = m.passes; ROCKS = m.rocks;
     PONDS = m.ponds; SPAWN_POINTS = m.spawns; TOWN = m.town; ROADS = m.roads;
-    SPAWN_U = m.spawnU; STREAM = m.stream; HILLS = m.hills;
+    SPAWN_U = m.spawnU; STREAM = m.stream; HILLS = m.hills; CLUSTERS = m.clusters;
     const g = makeGrid(null);
     for (const t of TOWN) {
-      if (t.dead) continue; // T2: a born ruin blocks no cell — connectivity judges the true ground
+      if (t.dead && t.form !== "mound") continue; // T2: a born ruin blocks no cell — except the mound (owner): the router goes around
       const hx = (t.nx * MASON.pitch) / 2, hz = (t.nz * MASON.pitch) / 2;
       for (let gz = 0; gz < GRID_H; gz++) for (let gx = 0; gx < GRID_W; gx++) {
         const wp = g.gridToWorld(gx, gz);
@@ -427,7 +591,6 @@ export function rockAt(x, z) { for (const k of ROCKS) if (Math.hypot(x - k.x, z 
 // are outside this count by design (the suite excludes them too).
 // Mirror discipline: any change to buildTown's lay rules changes this
 // function in the same task, and era 33's equality sweep is the proof.
-export const TOWN_STONE_CAP = 3000; // owner, 2026-08-26 — provisional until the Pi collapse capture // provisional (F5)
 export function stoneCount(t) {
   // BORN RUINS (T2, mk2.62): a dead entry plans by its ruin form's own lay.
   if (t.dead) {
@@ -471,7 +634,9 @@ export function stoneCount(t) {
   let n = 0;
   for (let ix = 0; ix < t.nx; ix++) for (let iy = 0; iy <= t.ny; iy++) for (let iz = 0; iz < t.nz; iz++) {
     const perim = ix === 0 || ix === t.nx - 1 || iz === 0 || iz === t.nz - 1;
-    if (iy < t.ny && !perim && !colAt(ix, iz)) continue;
+    const part = t.parts && t.parts.indexOf(ix) >= 0;
+    const stone0 = t.stones && iy === 0 && !perim && ((ix * 31 + iz * 7) % 100) / 100 < 0.35;
+    if (iy < t.ny && !perim && !colAt(ix, iz) && !part && !stone0) continue;
     if (iy === t.ny && (t.roof === false || t.slab)) continue;
     if (ix === t.door && (iz === 1 || iz === 2) && iy <= 2) continue;
     if (t.drive && iy < t.ny - 1 && (driveZ

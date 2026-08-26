@@ -230,7 +230,7 @@ import fs from "node:fs";
   const header15 = mgSrc15.slice(mgSrc15.indexOf("const GRID_CS"), mgSrc15.indexOf("function genMap")).replace(/^export /gm, "");
   const mapSrc15 = [
     header15,
-    sliceFn15("genMap"), sliceFn15("makeMap"), sliceFn15("streamAt"), sliceFn15("planTrees"),
+    sliceFn15("stoneCount"), sliceFn15("genMap"), sliceFn15("makeMap"), sliceFn15("streamAt"), sliceFn15("planTrees"),
     sliceFn15("pondAt"), sliceFn15("rockAt"),
     sliceFn15("makeGrid"), sliceFn15("checkConnectivity"), sliceFn15("townFootprint"), sliceFn15("buildTown"),
     `return { genMap, makeMap, makeGrid, checkConnectivity, buildTown, planTrees, invW, fwdU,

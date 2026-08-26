@@ -33,6 +33,6 @@ ok("G1: held ground scales continuously, fractions included",
     /function setTownFlags\(list\)/.test(rr) && /for \(const f of townFlags\)/.test(rr) && /setTownFlags,/.test(rr));
   ok("F2: the game layer hands holder rows on the territory clock",
     /R\.setTownFlags\(rows\)/.test(dg) && /if \(h !== 1 && h !== 2\) continue;/.test(dg));
-  ok("F2: ruined buildings, depots and field walls fly nothing",
-    /m\.depot \|\| m\.fwall \|\| b\.ruined\) continue;/.test(dg));
+  ok("F2: ruined buildings, depots, field walls and markers fly nothing (re-taught mk2.63, the markers join)",
+    /m\.depot \|\| m\.fwall \|\| m\.marker \|\| b\.ruined\) continue;/.test(dg));
 }

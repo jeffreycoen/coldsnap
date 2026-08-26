@@ -1,23 +1,20 @@
-// COLDSNAP suite era 33 — THE SETTLED GROUND Task 1 (mk2.61): the stone
-// count. mapgen plans in the currency the builder pays: stoneCount(t) is
-// the count of what buildTown lays for a town entry, by the builder's own
-// lay rules, and TOWN_STONE_CAP 3000 is the planner's ceiling (owner,
-// 2026-08-26; the pool rises to 4000 beside it). Fixture seeds: 1-200 for
-// the equality sweep, 1-500 for the cap. No seed is special: the cap is
-// asserted over the whole sweep, the worst value reported, never pinned.
+// COLDSNAP suite file 33 — THE SETTLED GROUND. Re-taught mk2.63 (the settled
+// valley): the sweep draws its maps AT RANDOM every run — no specific seeds,
+// no exact totals (owner, 2026-08-26) — and asserts laws that hold on any
+// map. Drawn seeds are logged so a red is traceable. Template pins are pure
+// arithmetic, no map involved. World-rng constants seed physics fixtures
+// only, never a map.
 import { ok } from "./harness.mjs";
 import fs from "node:fs";
-import { makeWorld, addBody, addWeld, mulberry32, stepWorld } from "../../src/engine/core.js";
+import { makeWorld, addBody, addWeld, stepWorld, mulberry32 } from "../../src/engine/core.js";
 import { MASON } from "../../src/depot/specs.js";
 import { fwdUFor, fwdDirFor, invWFor } from "../../src/depot/orient.js";
 import { stoneCount, TOWN_STONE_CAP } from "../../src/depot/mapgen.js";
 import { makeSquad, stepSquad } from "../../src/depot/squads.js";
 import { spawnSquadMembers } from "../../src/depot/state.js";
 import { payTown } from "../../src/depot/economy.js";
+import { planRoute } from "../../src/depot/route.js";
 
-// The era-05 extraction machinery, a fresh copy scoped here: buildTown lives
-// in DepotGame.jsx (a React module no test imports whole), so the suite
-// slices it from source and runs it against the sliced mapgen frame.
 const src = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
 const mgSrc = fs.readFileSync(new URL("../../src/depot/mapgen.js", import.meta.url), "utf8");
 const sliceFn = (name) => {
@@ -25,30 +22,29 @@ const sliceFn = (name) => {
   if (start >= 0) { rest = src.slice(start + 1); }
   else {
     start = mgSrc.indexOf(`\nexport function ${name}(`);
-    if (start < 0) throw new Error("era 33 extract: missing function " + name);
+    if (start < 0) throw new Error("file 33 extract: missing function " + name);
     rest = mgSrc.slice(start + 1).replace(/^export /, "");
   }
   const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
   return rest.slice(0, m < 0 ? rest.length : m + 9);
 };
-const header = mgSrc.slice(mgSrc.indexOf("const GRID_CS"), mgSrc.indexOf("function genMap")).replace(/^export /gm, "");
+const header = mgSrc.slice(mgSrc.indexOf("const GRID_CS"), mgSrc.indexOf("const TOWN_STONE_CAP")).replace(/^export /gm, "");
 const mapSrc = [
   header,
+  "const TOWN_STONE_CAP = " + TOWN_STONE_CAP + ";",
+  sliceFn("stoneCount"),
   sliceFn("genMap"), sliceFn("makeMap"), sliceFn("streamAt"), sliceFn("pondAt"), sliceFn("rockAt"),
-  sliceFn("makeGrid"), sliceFn("checkConnectivity"), sliceFn("townFootprint"), sliceFn("buildTown"),
-  `return { makeMap, makeGrid, buildTown, state: () => ({ TOWN, MAP_SEED }) };`,
+  sliceFn("makeGrid"), sliceFn("checkConnectivity"), sliceFn("stepSquadRouting"), sliceFn("townFootprint"), sliceFn("buildTown"),
+  `return { makeMap, makeGrid, buildTown, checkConnectivity, stepSquadRouting, state: () => ({ TOWN, MAP_SEED, OBJ_POS, SPAWN_POINTS, CLUSTERS }) };`,
 ].join("\n");
 const mkMap = () => new Function(
-  "mulberry32", "MASON", "fwdUFor", "fwdDirFor", "invWFor", "addBody", "addWeld", mapSrc,
-)(mulberry32, MASON, fwdUFor, fwdDirFor, invWFor, addBody, addWeld);
+  "mulberry32", "MASON", "fwdUFor", "fwdDirFor", "invWFor", "addBody", "addWeld", "planRoute", mapSrc,
+)(mulberry32, MASON, fwdUFor, fwdDirFor, invWFor, addBody, addWeld, planRoute);
 const flatF = { heightAt: () => 0 };
 
-// ==== T1a: the twelve template costs ========================================
-// The whole-template stone costs, hand-derived from the lay rules and pinned
-// as the phase's measured table. door 0 (both door ends count identically);
-// the hangar drives through and slabs (door -1).
+// ==== the template pins: pure arithmetic, no map =============================
 {
-  console.log("\n[settled t1: the stone count]");
+  console.log("\n[settled: the template pins]");
   const TPLS = [
     ["croft", { nx: 4, nz: 3, ny: 3, door: 0 }, 36],
     ["watch", { nx: 2, nz: 2, ny: 8, door: 0 }, 33],
@@ -62,19 +58,39 @@ const flatF = { heightAt: () => 0 };
     ["chapel", { nx: 5, nz: 6, ny: 5, door: 0, cols: true }, 124],
     ["warehouse", { nx: 8, nz: 6, ny: 4, door: 0, cols: true }, 146],
     ["keep", { nx: 7, nz: 6, ny: 5, door: 0, cols: true }, 156],
+    ["shell 4x4x3", { nx: 4, nz: 4, ny: 3, door: 0, dead: true, form: "shell" }, 26],
+    ["stump 4x4x3", { nx: 4, nz: 4, ny: 3, door: 0, dead: true, form: "stump" }, 14],
+    ["mound 4x4x3", { nx: 4, nz: 4, ny: 3, door: 0, dead: true, form: "mound" }, 10],
+    ["chimney 4x4x3", { nx: 4, nz: 4, ny: 3, door: 0, dead: true, form: "chimney" }, 5],
+    ["row houses", { nx: 9, nz: 4, ny: 3, door: 0, parts: [3, 6] }, 108],
+    ["inn", { nx: 6, nz: 5, ny: 4, door: 0, cols: true }, 104],
+    ["inn yard", { nx: 6, nz: 5, ny: 2, door: -1, roof: false }, 36],
+    ["smithy", { nx: 4, nz: 3, ny: 3, door: 0 }, 36],
+    ["smithy chimney", { nx: 1, nz: 1, ny: 5, door: -1, roof: false }, 5],
+    ["well", { nx: 2, nz: 2, ny: 1, door: -1, roof: false }, 4],
+    ["mill", { nx: 3, nz: 3, ny: 6, door: 0 }, 51],
+    ["bell tower", { nx: 2, nz: 2, ny: 8, door: -1, roof: false }, 32],
+    ["graveyard", { nx: 6, nz: 5, ny: 2, door: -1, roof: false, stones: true }, 40],
+    ["wayside cross", { nx: 1, nz: 1, ny: 2, door: -1, roof: false }, 2],
+    ["gatepost", { nx: 1, nz: 1, ny: 3, door: -1, roof: false }, 3],
+    ["springhouse", { nx: 2, nz: 2, ny: 2, door: 0 }, 9],
   ];
   for (const [name, t, want] of TPLS) {
     const got = stoneCount(t);
-    ok(`T1a: ${name} costs ${want} stones`, got === want, String(got));
+    ok(`templates: ${name} costs ${want} stones`, got === want, String(got));
   }
 }
 
-// ==== T1b: the plan equals the lay, every building, 200 seeds ===============
-// stoneCount against the sliced buildTown's own n0, every non-depot entry.
-// The depots are the precast branch and are deliberately outside stoneCount.
+// ==== THE RANDOM SWEEP: laws on ground nobody chose ==========================
+let sweepMound = null;
 {
-  let buildings = 0, mismatches = 0, firstMiss = null;
-  for (let s = 1; s <= 200; s++) {
+  console.log("\n[settled: the random sweep]");
+  const seeds = Array.from({ length: 40 }, () => 1 + Math.floor(Math.random() * 1000000));
+  console.log("[settled sweep] seeds: " + seeds.join(","));
+  let mism = 0, firstMiss = null, badRow = 0, badCell = 0, over = 0, worstPlan = 0;
+  let townless = 0, hamletless = 0, badMarker = 0, conn = 0, moundOpen = 0;
+  const forms = new Set();
+  for (const s of seeds) {
     const Mi = mkMap();
     Mi.makeMap(s);
     const st = Mi.state();
@@ -82,133 +98,83 @@ const flatF = { heightAt: () => 0 };
     world._tdStruct = true;
     const g = Mi.makeGrid(null);
     const out = Mi.buildTown(world, g, flatF);
+    let planned = 0;
     for (let i = 0; i < st.TOWN.length; i++) {
       const t = st.TOWN[i];
       if (t.depot) continue;
-      buildings++;
       const plan = stoneCount(t);
-      if (plan !== out[i].n0) {
-        mismatches++;
-        if (!firstMiss) firstMiss = `${t.id} seed ${s}: plan ${plan}, laid ${out[i].n0}`;
+      planned += plan;
+      if (plan !== out[i].n0) { mism++; if (!firstMiss) firstMiss = `${t.id} seed ${s}: plan ${plan}, laid ${out[i].n0}`; }
+      if (t.dead) {
+        forms.add(t.form);
+        if (out[i].ruined !== true) badRow++;
+        if (t.form !== "mound") { for (const ci of out[i].cells) if (g.cells[ci].blocked) badCell++; }
+        else { for (const ci of out[i].cells) if (!g.cells[ci].blocked) moundOpen++; }
+        if (t.form === "mound" && !sweepMound) sweepMound = { Mi, m: t };
       }
+      if (t.marker && out[i].marker !== true) badMarker++;
     }
+    if (planned > TOWN_STONE_CAP) over++;
+    if (planned > worstPlan) worstPlan = planned;
+    if (!st.CLUSTERS.some((c) => c.kind === "town")) townless++;
+    if (!st.CLUSTERS.some((c) => c.kind === "hamlet")) hamletless++;
+    const og = g.worldToGrid(st.OBJ_POS.x, st.OBJ_POS.z);
+    if (Mi.checkConnectivity(g, st.SPAWN_POINTS, og.gx, og.gz)) conn++;
   }
-  ok("T1b: the plan equals the lay on every building over 200 seeds",
-    mismatches === 0, firstMiss || `${buildings} buildings`);
-  ok("T1b: 3,586 buildings measured over seeds 1-200", buildings === 3586, String(buildings));
+  ok("sweep law: the plan equals the lay on every building", mism === 0, firstMiss || "0 mismatches");
+  ok("sweep law: every born ruin is ruined from its first frame", badRow === 0, String(badRow));
+  ok("sweep law: no born ruin blocks a cell", badCell === 0, String(badCell));
+  ok("sweep law: every mound blocks its ground", moundOpen === 0, String(moundOpen));
+  ok("sweep law: all four ruin forms occur on random ground", forms.size === 4, [...forms].sort().join(","));
+  ok("sweep law: no map plans past TOWN_STONE_CAP", over === 0, `worst ${worstPlan}`);
+  ok("sweep law: every map seats a town", townless === 0, String(townless));
+  ok("sweep law: every map raises hamlets", hamletless === 0, String(hamletless));
+  ok("sweep law: every marker entry carries its marker", badMarker === 0, String(badMarker));
+  ok("sweep law: spawns reach the objective on every map", conn === 40, `${conn}/40`);
 }
 
-// ==== T1c: no seed plans past the cap, 500 seeds ============================
-// No seed is special: the law is the cap, asserted over the whole sweep; the
-// worst value is REPORTED in the detail, never pinned to a named seed.
+// ==== the way around: a squad ordered past a mound arrives ==================
+// The mound blocks its cells (owner, 2026-08-26: too dense to walk, men go
+// around); the real router carries the squad past it. Routing every tick,
+// then the legs — the live game's own loop.
 {
-  let worst = 0, over = 0;
-  for (let s = 1; s <= 500; s++) {
-    const Mi = mkMap();
-    Mi.makeMap(s);
-    const st = Mi.state();
-    let n = 0;
-    for (const t of st.TOWN) if (!t.depot) n += stoneCount(t);
-    if (n > worst) worst = n;
-    if (n > TOWN_STONE_CAP) over++;
-  }
-  ok("T1c: no seed plans past TOWN_STONE_CAP over 500 seeds", over === 0, `worst ${worst}`);
-}
-
-// ==== T1d: the constants ====================================================
-{
-  const rsrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-  ok("T1d: the pool rises to 4000 (owner, 2026-08-26)", /const CHUNK_CAP = 4000;/.test(rsrc));
-  ok("T1d: TOWN_STONE_CAP is 3000", TOWN_STONE_CAP === 3000);
-}
-
-// ==== T2: BORN RUINS (mk2.62) ===============================================
-// A dead entry lays as one of four ruin forms; it is ruined from its first
-// frame — no flag, no pay, open cells. No draw moves: the form derives from
-// the already-drawn decay value. Fixture seeds 1-200; the crossing's map is
-// DISCOVERED by the sweep (first map holding a mound), never named.
-
-// T2a: the four forms' arithmetic on one exemplar entry.
-{
-  console.log("\n[settled t2: born ruins]");
-  const EX = [["shell", 26], ["stump", 14], ["mound", 10], ["chimney", 5]];
-  for (const [form, want] of EX) {
-    const got = stoneCount({ nx: 4, nz: 4, ny: 3, door: 0, dead: true, form });
-    ok(`T2a: the ${form} costs ${want} stones on the 4x4x3 exemplar`, got === want, String(got));
-  }
-}
-
-// T2b/T2c: the sweep — every form appears, every born ruin is ruined with
-// open cells, and the T1b equality pin above already holds over dead entries.
-{
-  let dead = 0, badRow = 0, badCell = 0;
-  const seen = new Set();
-  for (let s = 1; s <= 200; s++) {
-    const Mi = mkMap();
-    Mi.makeMap(s);
-    const st = Mi.state();
-    const world = makeWorld({ field: flatF, seed: 7 });
-    world._tdStruct = true;
-    const g = Mi.makeGrid(null);
-    const out = Mi.buildTown(world, g, flatF);
-    for (let i = 0; i < st.TOWN.length; i++) {
-      const t = st.TOWN[i];
-      if (!t.dead) continue;
-      dead++;
-      seen.add(t.form);
-      if (out[i].ruined !== true) badRow++;
-      for (const ci of out[i].cells) if (g.cells[ci].blocked) badCell++;
-    }
-  }
-  ok("T2b: 607 born ruins over seeds 1-200, all four forms drawn", dead === 607 && seen.size === 4, `${dead} dead, forms ${[...seen].sort().join(",")}`);
-  ok("T2c: every born ruin is ruined from its first frame", badRow === 0, String(badRow));
-  ok("T2c: no born ruin blocks a cell", badCell === 0, String(badCell));
-}
-
-// T2d: a born ruin pays neither side, even on held ground.
-{
-  const T = { cs: 2, nx: 4, nz: 4, halfU: 4, halfV: 4, v: new Float32Array(16).fill(1) };
-  const pay = payTown([{ x: 0, z: 0, ruined: true }], T);
-  ok("T2d: a born ruin pays nothing", pay.player === 0 && pay.regiment === 0, `p${pay.player} r${pay.regiment}`);
-}
-
-// T2e: THE CROSSING — a rifle squad marches straight through a rubble mound
-// and arrives whole. The mound's map is the first the sweep finds holding
-// one; the seed is discovered each run, never pinned.
-{
-  const flatW = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
-  let found = null;
-  for (let s = 1; s <= 200 && !found; s++) {
-    const Mi = mkMap();
-    Mi.makeMap(s);
-    const m = Mi.state().TOWN.find((t) => t.dead && t.form === "mound");
-    if (m) found = { Mi, m };
-  }
-  ok("T2e: a mound exists to cross", !!found);
-  if (found) {
-    const { Mi, m } = found;
+  ok("around: the random sweep turned up a mound", !!sweepMound);
+  if (sweepMound) {
+    const { Mi, m } = sweepMound;
+    const flatW = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
     const world = makeWorld({ field: flatW, seed: 9 });
     world._tdStruct = true; world.depotCombat = true;
     world.inRim = () => true; world.pondAt = () => false; world.streamAt = () => false;
-    Mi.buildTown(world, Mi.makeGrid(null), flatW);
+    const g = Mi.makeGrid(null);
+    Mi.buildTown(world, g, flatW);
     const sq = makeSquad(1, "rifles", 1, m.x - 8, m.z);
     spawnSquadMembers(world, sq);
     const DEST = { x: m.x + 8, z: m.z };
     sq.order = "move"; sq.dest = { ...DEST };
-    for (let i = 0; i < 60 * 120; i++) { stepSquad(world, sq, 1 / 120); stepWorld(world); }
+    for (let i = 0; i < 60 * 120; i++) { Mi.stepSquadRouting(g, sq, world); stepSquad(world, sq, 1 / 120); stepWorld(world); }
     let worst = 0, alive = 0;
     for (const id of sq.memberIds) {
       const u = world.byId.get(id);
       if (u && u.alive) { alive++; worst = Math.max(worst, Math.hypot(u.pos.x - DEST.x, u.pos.z - DEST.z)); }
     }
-    ok("T2e: all four men cross the mound alive and arrive within 3.5m in 60s", alive === 4 && worst < 3.5, `alive ${alive}, worst ${worst.toFixed(2)}m`);
+    ok("around: all four men arrive past the mound, within 3.5m in 60s", alive === 4 && worst < 3.5, `alive ${alive}, worst ${worst.toFixed(2)}m`);
   }
 }
 
-// T2f: source pins — the generation seams.
+// ==== pay laws: born ruins and markers pay nobody ============================
 {
-  const mg = fs.readFileSync(new URL("../../src/depot/mapgen.js", import.meta.url), "utf8");
-  ok("T2f: the old ruins are born shells", /"oldruin" \+ placed, x, z, nx: 4, nz: 4, ny: 3, door: 0, dead: true, form: "shell"/.test(mg));
-  ok("T2f: makeMap's stamp loop skips the dead", /if \(t\.dead\) continue; \/\/ T2: a born ruin blocks no cell/.test(mg));
-  ok("T2f: the bench form derives from the drawn decay value, no new draw", /decay < 0\.195 \? "shell" : decay < 0\.27 \? "stump" : decay < 0\.345 \? "mound" : "chimney"/.test(mg));
+  const T = { cs: 2, nx: 4, nz: 4, halfU: 4, halfV: 4, v: new Float32Array(16).fill(1) };
+  const pay = payTown([{ x: 0, z: 0, ruined: true }, { x: 0, z: 0, marker: true }], T);
+  ok("pay law: born ruins and markers pay nothing", pay.player === 0 && pay.regiment === 0, `p${pay.player} r${pay.regiment}`);
+  const pay2 = payTown([{ x: 0, z: 0 }], T);
+  ok("pay law: a standing building still pays its holder", pay2.player > 0, String(pay2.player));
+}
+
+// ==== source pins: the seams and the constants ===============================
+{
+  const rsrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
+  ok("pins: makeMap's stamp loop skips the dead, bar the mound (owner, 2026-08-26)", /if \(t\.dead && t\.form !== "mound"\) continue;/.test(mgSrc));
+  ok("pins: the flag rows skip markers", /m\.depot \|\| m\.fwall \|\| m\.marker \|\| b\.ruined/.test(src));
+  ok("pins: the pool is 4000", /const CHUNK_CAP = 4000;/.test(rsrc));
+  ok("pins: TOWN_STONE_CAP is 3000", TOWN_STONE_CAP === 3000);
 }

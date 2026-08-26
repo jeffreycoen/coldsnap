@@ -371,7 +371,11 @@ function buildTown(world, grid, field) {
       for (let ix = 0; ix < t.nx; ix++) for (let iy = 0; iy <= t.ny; iy++) for (let iz = 0; iz < t.nz; iz++) {
         const perim = ix === 0 || ix === t.nx - 1 || iz === 0 || iz === t.nz - 1;
         const corner = (ix <= 1 || ix >= t.nx - 2) && (iz <= 1 || iz >= t.nz - 2);
-        if (iy < t.ny && !perim && !colAt(ix, iz)) continue;
+        // mk2.63: partition walls (t.parts) stand full height; a graveyard's
+        // headstones (t.stones) are single interior stones on the ground.
+        const part = t.parts && t.parts.indexOf(ix) >= 0;
+        const stone0 = t.stones && iy === 0 && !perim && ((ix * 31 + iz * 7) % 100) / 100 < 0.35;
+        if (iy < t.ny && !perim && !colAt(ix, iz) && !part && !stone0) continue;
         if (iy === t.ny && (t.roof === false || t.slab)) continue; // T4: a slab replaces the granular roof below
         if (ix === t.door && (iz === 1 || iz === 2) && iy <= 2) continue;
         // T4: drive-through — doors carved through BOTH end walls of the long
@@ -420,7 +424,7 @@ function buildTown(world, grid, field) {
       }
     }
     const cells = townFootprint(grid, t);
-    if (!t.dead) for (const ci of cells) { const c = grid.cells[ci]; c.blocked = true; c.building = t.id; c.bTeam = t.team === 2 ? 2 : (t.depot ? 1 : 0); } // T2: a born ruin blocks no cell
+    if (!t.dead || t.form === "mound") for (const ci of cells) { const c = grid.cells[ci]; c.blocked = true; c.building = t.id; c.bTeam = t.team === 2 ? 2 : (t.depot ? 1 : 0); } // T2: a born ruin blocks no cell — EXCEPT the mound (owner, 2026-08-26): too dense to walk, the router goes around
     if (t.depot) {
       // roof-peak flag anchor: kinematic marker body, no collision role —
       // the renderer draws pole+cloth at any body with flagPole === true
@@ -431,7 +435,7 @@ function buildTown(world, grid, field) {
       });
       flag.sleeping = true; flag.flagPole = true;
     }
-    out.push({ id: t.id, cells, stones: grid3, n0: grid3.length, ruined: !!t.dead, x: t.x, z: t.z }); // T2: ruined from the first frame
+    out.push({ id: t.id, cells, stones: grid3, n0: grid3.length, ruined: !!t.dead, marker: !!t.marker, x: t.x, z: t.z }); // T2: ruined from the first frame
   }
   return out;
 }
@@ -1211,9 +1215,9 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           const saved = (RES.towns || []).find((s) => s.id === t.id) || {};
           const cells = townFootprint(grid, t);
           const ruined = !!saved.ruined;
-          if (!ruined) for (const ci of cells) { const c = grid.cells[ci]; c.blocked = true; c.building = t.id; c.bTeam = t.team === 2 ? 2 : (t.depot ? 1 : 0); }
+          if (!ruined || t.form === "mound") for (const ci of cells) { const c = grid.cells[ci]; c.blocked = true; c.building = t.id; c.bTeam = t.team === 2 ? 2 : (t.depot ? 1 : 0); } // the mound's exception (owner, 2026-08-26)
           const stones = stonesBy.get(t.id) || [];
-          return { id: t.id, cells, stones, n0: saved.n0 != null ? saved.n0 : stones.length, ruined, x: t.x, z: t.z };
+          return { id: t.id, cells, stones, n0: saved.n0 != null ? saved.n0 : stones.length, ruined, marker: !!t.marker, x: t.x, z: t.z };
         });
         // The censuses keep their ORIGINAL rows (including rows whose stone is
         // gone — see save.js's -1 rule) and their built-time homes. Re-taking
@@ -1274,11 +1278,11 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // town buildings' (x, z) are rotated WORLD space (same as any body);
       // territory reads canonical (u, v) — precompute once (buildings don't
       // move) rather than re-converting every stall.
-      const townUV = town.map((b) => { const c = invW(b.x, b.z); return { id: b.id, x: c.u, z: c.v, get ruined() { return b.ruined; } }; });
+      const townUV = town.map((b) => { const c = invW(b.x, b.z); return { id: b.id, x: c.u, z: c.v, marker: b.marker, get ruined() { return b.ruined; } }; });
       // mk2.50: TOWN FLAGS — per-building lookup for the holder-flag rows:
       // roof height and the two exclusions (depots fly their real flag
       // bodies; field walls are screens, not buildings).
-      const townFlagMeta = new Map(TOWN.map((t) => [t.id, { ny: t.ny, depot: !!t.depot, fwall: t.id.startsWith("fwall") }]));
+      const townFlagMeta = new Map(TOWN.map((t) => [t.id, { ny: t.ny, depot: !!t.depot, fwall: t.id.startsWith("fwall"), marker: !!t.marker }]));
       let terrAcc = 0;
       let zoneAcc = 0.25; // mk1.95: the zone's own wall-time accumulator — starts due
       const TERR_STEP = 0.25; // stepTerritory at ~4Hz — accumulated below, not every frame
@@ -3910,7 +3914,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             const rows = [];
             for (const b of town) {
               const m = townFlagMeta.get(b.id);
-              if (!m || m.depot || m.fwall || b.ruined) continue;
+              if (!m || m.depot || m.fwall || m.marker || b.ruined) continue;
               const c = invW(b.x, b.z);
               const h = holderAt(T, c.u, c.v);
               if (h !== 1 && h !== 2) continue;

@@ -13,7 +13,7 @@ const TOWN_PAY = 4; // scrap/scrap per standing building per wave (Task 5 may re
 export function payTown(buildings, T) {
   let player = 0, regiment = 0;
   for (const b of buildings) {
-    if (b.ruined) continue;
+    if (b.ruined || b.marker) continue; // mk2.63: markers pay nobody (the field walls' standing; the well is a building and pays)
     const h = holderAt(T, b.x, b.z);
     if (h === 1) player += TOWN_PAY;
     else if (h === 2) regiment += TOWN_PAY;

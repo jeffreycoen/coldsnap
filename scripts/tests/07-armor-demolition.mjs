@@ -211,7 +211,7 @@ import fs from "node:fs";
   const headerT3 = mgSrcT3b.slice(mgSrcT3b.indexOf("const GRID_CS"), mgSrcT3b.indexOf("function genMap")).replace(/^export /gm, "");
   const mapSrcT3 = [
     headerT3,
-    sliceFn4("genMap"), sliceFn4("makeMap"), sliceFn4("streamAt"), sliceFn4("pondAt"), sliceFn4("rockAt"),
+    sliceFn4("stoneCount"), sliceFn4("genMap"), sliceFn4("makeMap"), sliceFn4("streamAt"), sliceFn4("pondAt"), sliceFn4("rockAt"),
     sliceFn4("makeGrid"), sliceFn4("checkConnectivity"), sliceFn4("townFootprint"), sliceFn4("buildTown"),
     `return { makeMap, makeGrid, checkConnectivity, invW,
       state: () => ({ ORIENT, OBJ_POS, SPAWN_POINTS, ROCKS, PONDS, TOWN, ROADS, BANDS, MAP_SEED }) };`,
@@ -539,7 +539,7 @@ import fs from "node:fs";
     const header5 = mgSrcT5b.slice(mgSrcT5b.indexOf("const GRID_CS"), mgSrcT5b.indexOf("function genMap")).replace(/^export /gm, "");
     const mapSrc5 = [
       header5,
-      sliceFn5("genMap"), sliceFn5("makeMap"), sliceFn5("streamAt"), sliceFn5("pondAt"), sliceFn5("rockAt"),
+      sliceFn5("stoneCount"), sliceFn5("genMap"), sliceFn5("makeMap"), sliceFn5("streamAt"), sliceFn5("pondAt"), sliceFn5("rockAt"),
       sliceFn5("makeGrid"), sliceFn5("checkConnectivity"), sliceFn5("townFootprint"), sliceFn5("buildTown"),
       `return { makeMap, makeGrid, buildTown, invW, state: () => ({ ORIENT, TOWN, MAP_SEED }) };`,
     ].join("\n");
@@ -712,7 +712,7 @@ import fs from "node:fs";
     const header6 = mgSrcT6b.slice(mgSrcT6b.indexOf("const GRID_CS"), mgSrcT6b.indexOf("function genMap")).replace(/^export /gm, "");
     const mapSrc6 = [
       header6,
-      sliceFn6("genMap"), sliceFn6("makeMap"), sliceFn6("streamAt"), sliceFn6("pondAt"), sliceFn6("rockAt"),
+      sliceFn6("stoneCount"), sliceFn6("genMap"), sliceFn6("makeMap"), sliceFn6("streamAt"), sliceFn6("pondAt"), sliceFn6("rockAt"),
       sliceFn6("makeGrid"), sliceFn6("checkConnectivity"), sliceFn6("townFootprint"), sliceFn6("buildTown"),
       `return { makeMap, makeGrid, buildTown, invW, state: () => ({ ORIENT, TOWN, MAP_SEED }) };`,
     ].join("\n");

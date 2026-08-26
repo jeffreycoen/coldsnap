@@ -51,7 +51,7 @@ import fs from "node:fs";
   const headerT1 = mgSrcT1.slice(mgSrcT1.indexOf("const GRID_CS"), mgSrcT1.indexOf("function genMap")).replace(/^export /gm, "");
   const mapSrcT1 = [
     headerT1,
-    sliceFn2("genMap"), sliceFn2("makeMap"), sliceFn2("streamAt"), sliceFn2("pondAt"), sliceFn2("rockAt"),
+    sliceFn2("stoneCount"), sliceFn2("genMap"), sliceFn2("makeMap"), sliceFn2("streamAt"), sliceFn2("pondAt"), sliceFn2("rockAt"),
     sliceFn2("makeGrid"), sliceFn2("checkConnectivity"), sliceFn2("townFootprint"), sliceFn2("buildTown"),
     `return { makeMap, makeGrid, checkConnectivity, invW,
       state: () => ({ ORIENT, OBJ_POS, SPAWN_POINTS, ROCKS, TOWN, MAP_SEED }) };`,
@@ -121,7 +121,7 @@ import fs from "node:fs";
   const headerT2 = mgSrcT2.slice(mgSrcT2.indexOf("const GRID_CS"), mgSrcT2.indexOf("function genMap")).replace(/^export /gm, "");
   const mapSrcT2 = [
     headerT2,
-    sliceFn3("genMap"), sliceFn3("makeMap"), sliceFn3("streamAt"), sliceFn3("pondAt"), sliceFn3("rockAt"),
+    sliceFn3("stoneCount"), sliceFn3("genMap"), sliceFn3("makeMap"), sliceFn3("streamAt"), sliceFn3("pondAt"), sliceFn3("rockAt"),
     sliceFn3("makeGrid"), sliceFn3("checkConnectivity"), sliceFn3("townFootprint"), sliceFn3("buildTown"),
     `return { makeMap, makeGrid, checkConnectivity, invW,
       state: () => ({ ORIENT, OBJ_POS, SPAWN_POINTS, ROCKS, PONDS, TOWN, ROADS, BANDS, MAP_SEED }) };`,
@@ -192,7 +192,7 @@ import fs from "node:fs";
     if (!/let STREAM = null;/.test(header3)) throw new Error("T3: STREAM state not in header");
     const mapSrc3 = [
       header3,
-      sliceFn3("genMap"), sliceFn3("makeMap"), sliceFn3("streamAt"), sliceFn3("pondAt"), sliceFn3("rockAt"),
+      sliceFn3("stoneCount"), sliceFn3("genMap"), sliceFn3("makeMap"), sliceFn3("streamAt"), sliceFn3("pondAt"), sliceFn3("rockAt"),
       sliceFn3("makeGrid"), sliceFn3("checkConnectivity"), sliceFn3("townFootprint"), sliceFn3("buildTown"),
       sliceFn3("buildDepotTerrain"),
       `return { makeMap, makeGrid, checkConnectivity, buildDepotTerrain, streamAt, invW,
@@ -276,7 +276,7 @@ import fs from "node:fs";
   const header4 = mgSrcT4.slice(mgSrcT4.indexOf("const GRID_CS"), mgSrcT4.indexOf("function genMap")).replace(/^export /gm, "");
   const mapSrc4 = [
     header4,
-    sliceFn4("genMap"), sliceFn4("makeMap"), sliceFn4("streamAt"), sliceFn4("pondAt"), sliceFn4("rockAt"),
+    sliceFn4("stoneCount"), sliceFn4("genMap"), sliceFn4("makeMap"), sliceFn4("streamAt"), sliceFn4("pondAt"), sliceFn4("rockAt"),
     sliceFn4("makeGrid"), sliceFn4("checkConnectivity"), sliceFn4("townFootprint"), sliceFn4("buildTown"),
     `return { makeMap, makeGrid, buildTown, invW, state: () => ({ ORIENT, TOWN, MAP_SEED }) };`,
   ].join("\n");
@@ -387,8 +387,8 @@ import fs from "node:fs";
   }
 
   // (g) source pins: the hooks and the raised cap exist where claimed
-  ok("T4(g): the wide templates and the warehouse carry the cols flag (5 sites)",
-    (mgSrcT4.match(/cols: true/g) || []).length === 5);
+  ok("T4(g): the wide templates, the warehouse, and the inn carry the cols flag (6 sites — re-taught mk2.63, the inn joins)",
+    (mgSrcT4.match(/cols: true/g) || []).length === 6);
   ok("T4(g): the drive doors bind to the long axis by live dimensions",
     /const driveZ = t\.drive && t\.nz >= t\.nx;/.test(src));
   ok("T4(g): the town debug hook exists", /__DEPOTTOWN__/.test(src));
@@ -424,6 +424,7 @@ import fs from "node:fs";
     if (!/let HILLS = \[\];/.test(header5)) throw new Error("T5: HILLS state not in header");
     const mapSrc5 = [
       header5,
+      sliceFn5("stoneCount"),
       sliceFn5("genMap"), sliceFn5("makeMap"), sliceFn5("streamAt"), sliceFn5("planTrees"),
       sliceFn5("pondAt"), sliceFn5("rockAt"),
       sliceFn5("makeGrid"), sliceFn5("checkConnectivity"), sliceFn5("townFootprint"), sliceFn5("buildTown"),
@@ -511,36 +512,14 @@ import fs from "node:fs";
 }
 // ==== end FRONT T5 ===========================================================
 
-// ==== FRONT T6: the keystone and the quiet books =============================
-// mk1.05 (The Front, Task 6). The broadphase learns two tiers (sleeping and
-// zero-mass bodies file once and stay filed); the physics must not move by
-// one bit. This block pins a heavy real-map battle's exact world hash and
-// draw count BEFORE the engine change — the change must reproduce both.
+// ==== FRONT T6: the twin battle ==============================================
+// mk2.63, THE RANDOM GROUND (owner, 2026-08-26): the pinned map-1000
+// keystone retires — a pinned map is a chosen map. One RANDOM seed, logged;
+// the same heavy battle fought twice from scratch; identical world hash and
+// draw count is the determinism law. The mk1.05 quiet-books source pins stay.
 {
-  console.log("\n[front t6: the keystone and the quiet books]");
-  // re-pinned mk1.32 (P7 T3): genMap draws one more rng value up front now
-  // (cornerSide) — every downstream draw (bands/rocks/spawns/roads/ponds/
-  // hills/town) shifts for a fixed seed, so the keystone's whole map (and
-  // thus the keystone battle it fights) is a different map. Recaptured off
-  // this block's own printed console log.
-  // re-pinned mk1.34 (P7 T5): both depots rebuild as column-and-panel
-  // precast — a different body count/order in the same world.bodies array
-  // this keystone hashes over, even though the fixture's own battle (a
-  // non-depot building) never touches depot masonry. Recaptured off this
-  // block's own printed console log.
-  // re-pinned mk1.45 (P7 T15, Amendment 1): the square grew 120->180 —
-  // the keystone's reshaped map sorts a DIFFERENT biggest non-depot building
-  // (warehouse0 6x8, not hangar0 9x10), so the battle's own draw count
-  // legitimately moves too (hash AND draws re-pin together, the T3/T5
-  // precedent). Recaptured off this block's own printed console log.
-  // re-pinned mk1.72 (P7.1 T8, owner-ratified): THE SEED PURGE — the old
-  // special-cased seed leaves the suite; the keystone's anchor moves to
-  // 1000, an ordinary seed with no special standing. Hash and draws
-  // re-measured off this block's own printed console log.
-  const T6_HASH = 183285727;   // was 879989108 (re-captured mk2.62: BORN RUINS — seed 1000's map holds a chimney and a shell)
-  const T6_DRAWS = 566;  // was 572 (re-captured mk2.62: BORN RUINS — seed 1000's map holds a chimney and a shell)
+  console.log("\n[front t6: the twin battle]");
   const src6 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  // P7 T18: sliceFn6 checks DepotGame.jsx first, then mapgen.js for moved names.
   const mgSrc6 = fs.readFileSync(new URL("../../src/depot/mapgen.js", import.meta.url), "utf8");
   const sliceFn6 = (name) => {
     let start = src6.indexOf(`\nfunction ${name}(`), rest;
@@ -556,6 +535,7 @@ import fs from "node:fs";
   const header6 = mgSrc6.slice(mgSrc6.indexOf("const GRID_CS"), mgSrc6.indexOf("function genMap")).replace(/^export /gm, "");
   const mapSrc6 = [
     header6,
+    sliceFn6("stoneCount"),
     sliceFn6("genMap"), sliceFn6("makeMap"), sliceFn6("streamAt"), sliceFn6("planTrees"),
     sliceFn6("pondAt"), sliceFn6("rockAt"),
     sliceFn6("makeGrid"), sliceFn6("checkConnectivity"), sliceFn6("townFootprint"), sliceFn6("buildTown"),
@@ -563,42 +543,42 @@ import fs from "node:fs";
     `return { makeMap, makeGrid, buildTown, buildDepotTerrain, invW, fwdU,
       state: () => ({ ORIENT, TOWN, MAP_SEED }) };`,
   ].join("\n");
-  const M6 = new Function(
-    "mulberry32", "MASON", "fwdUFor", "fwdDirFor", "invWFor", "addBody", "addWeld", mapSrc6,
-  )(mulberry32, MASON, fwdUFor, fwdDirFor, invWFor, addBody, addWeld);
-
-  M6.makeMap(1000);
-  const st6 = M6.state();
-  const field6 = makeField(181, 2.0, st6.MAP_SEED);
-  M6.buildDepotTerrain(field6, st6.MAP_SEED);
-  const world = makeWorld({ field: field6, seed: 1000 });
-  world._tdStruct = true; world.depotCombat = true;
-  M6.buildTown(world, M6.makeGrid(null), field6);
-  let draws = 0; const raw6 = world.rng;
-  world.rng = () => { draws++; return raw6(); };
-  // the battle: a squad marching through town, eight conscripts on a straight
-  // flow, six shells into the biggest building — collapse, contacts, corpses.
-  const big6 = st6.TOWN.filter((t) => !t.depot).sort((a, b) => b.nx * b.nz - a.nx * a.nz)[0];
-  const sq6 = makeSquad(1, "rifles", 1, big6.x - 20, big6.z);
-  spawnSquadMembers(world, sq6);
-  sq6.order = "move"; sq6.dest = { x: big6.x + 20, z: big6.z };
-  for (let i = 0; i < 8; i++) spawnUnit(world, { x: big6.x - 24 + i * 2, z: big6.z - 18 }, "");
-  for (let s = 0; s < 6; s++) {
-    const from = { x: big6.x - 12, y: field6.heightAt(big6.x, big6.z) + 6, z: big6.z + (s - 2.5) * 1.2 };
-    fireProjectile(world, from, { x: 0.86, y: -0.5, z: 0 }, 60,
-      { kind: "shell", r: 3.2, kv: 12, dmg: 55, crater: 0.6, hitStruct: true, attacker: "player" });
-  }
-  for (let i = 0; i < 1200; i++) {
-    stepSquad(world, sq6, 1 / 120);
-    stepUnits(world, straightGrid(0, 1), identFwdDir, null, (x, z) => ({ u: x, v: z }));
-    stepWorld(world);
-  }
-  const h6 = worldHash(world);
-  console.log(`[t6 keystone] hash=${h6} draws=${draws}`);
-  ok("T6: the keystone battle broke real welds (the fixture fights)", world.welds.filter((w) => w.broken).length > 20, `${world.welds.filter((w) => w.broken).length} broken`);
-  ok("T6 KEYSTONE: world hash identical before and after the quiet books", h6 === T6_HASH, `${h6} vs pinned ${T6_HASH}`);
-  ok("T6 KEYSTONE: draw count identical before and after", draws === T6_DRAWS, `${draws} vs pinned ${T6_DRAWS}`);
-  // source pins: the two-tier books exist where claimed
+  const battle6 = (seed) => {
+    const M6 = new Function(
+      "mulberry32", "MASON", "fwdUFor", "fwdDirFor", "invWFor", "addBody", "addWeld", mapSrc6,
+    )(mulberry32, MASON, fwdUFor, fwdDirFor, invWFor, addBody, addWeld);
+    M6.makeMap(seed);
+    const st6 = M6.state();
+    const field6 = makeField(181, 2.0, st6.MAP_SEED);
+    M6.buildDepotTerrain(field6, st6.MAP_SEED);
+    const world = makeWorld({ field: field6, seed });
+    world._tdStruct = true; world.depotCombat = true;
+    M6.buildTown(world, M6.makeGrid(null), field6);
+    let draws = 0; const raw6 = world.rng;
+    world.rng = () => { draws++; return raw6(); };
+    const big6 = st6.TOWN.filter((t) => !t.depot && !t.dead).sort((a, b) => b.nx * b.nz - a.nx * a.nz)[0];
+    const sq6 = makeSquad(1, "rifles", 1, big6.x - 20, big6.z);
+    spawnSquadMembers(world, sq6);
+    sq6.order = "move"; sq6.dest = { x: big6.x + 20, z: big6.z };
+    for (let i = 0; i < 8; i++) spawnUnit(world, { x: big6.x - 24 + i * 2, z: big6.z - 18 }, "");
+    for (let s = 0; s < 6; s++) {
+      const from = { x: big6.x - 12, y: field6.heightAt(big6.x, big6.z) + 6, z: big6.z + (s - 2.5) * 1.2 };
+      fireProjectile(world, from, { x: 0.86, y: -0.5, z: 0 }, 60,
+        { kind: "shell", r: 3.2, kv: 12, dmg: 55, crater: 0.6, hitStruct: true, attacker: "player" });
+    }
+    for (let i = 0; i < 1200; i++) {
+      stepSquad(world, sq6, 1 / 120);
+      stepUnits(world, straightGrid(0, 1), identFwdDir, null, (x, z) => ({ u: x, v: z }));
+      stepWorld(world);
+    }
+    return { hash: worldHash(world), draws, broken: world.welds.filter((w) => w.broken).length };
+  };
+  const seed6 = 1 + Math.floor(Math.random() * 1000000);
+  const run1 = battle6(seed6), run2 = battle6(seed6);
+  console.log(`[t6 twin] seed ${seed6} hash ${run1.hash}/${run2.hash} draws ${run1.draws}/${run2.draws}`);
+  ok("T6: the twin battle broke real welds (the fixture fights)", run1.broken > 20, `${run1.broken} broken`);
+  ok("T6 TWIN: the same seed fights the same war — identical world hash", run1.hash === run2.hash, `${run1.hash} vs ${run2.hash}`);
+  ok("T6 TWIN: identical draw count", run1.draws === run2.draws, `${run1.draws} vs ${run2.draws}`);
   const csrc6 = fs.readFileSync(new URL("../../src/engine/core.js", import.meta.url), "utf8");
   ok("T6: the persistent tier exists in the engine", /the sleeping stone is already on the books/.test(csrc6));
   ok("T6: the unfile helper exists beside wake", /function unfileBody\(world, b\)/.test(csrc6));

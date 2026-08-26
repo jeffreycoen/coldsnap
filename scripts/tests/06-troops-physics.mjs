@@ -42,7 +42,7 @@ import fs from "node:fs";
     const headerP = mgSrcP.slice(mgSrcP.indexOf("const GRID_CS"), mgSrcP.indexOf("function genMap")).replace(/^export /gm, "");
     const mapSrcP = [
       headerP,
-      sliceFnP("genMap"), sliceFnP("makeMap"), sliceFnP("streamAt"), sliceFnP("planTrees"),
+      sliceFnP("stoneCount"), sliceFnP("genMap"), sliceFnP("makeMap"), sliceFnP("streamAt"), sliceFnP("planTrees"),
       sliceFnP("pondAt"), sliceFnP("rockAt"),
       sliceFnP("makeGrid"), sliceFnP("checkConnectivity"), sliceFnP("stepSquadRouting"),
       sliceFnP("townFootprint"), sliceFnP("buildTown"),
