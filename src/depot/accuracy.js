@@ -133,6 +133,12 @@ export function marchArc(world, muzzle, target, spec, hit) {
 
 export function arcClears(world, muzzle, target, spec, selfId) {
   const tgh = world.field.heightAt(target.x, target.z);
+  // mk2.60: the lane pool (mk2.55, elevSolve's own filter) joins the base
+  // predictor — one pass keeps only the solids a sample on this lane could
+  // sit inside, so each flight sample tests a handful of boxes, not the
+  // whole town. Verdict identical (lanePool's proof above); this is why a
+  // rocket's reach fan no longer hitches the frame.
+  const pool = lanePool(world, muzzle, target, selfId);
   const blocked = marchArc(world, muzzle, target, spec, (x, y, z) => {
     if (spec.occl !== "lofted") {                      // lofted flight ignores terrain entirely
       const h = world.field.heightAt(x, z);
@@ -140,7 +146,7 @@ export function arcClears(world, muzzle, target, spec, selfId) {
           !(y > h && y <= tgh + TARGET_BODY_H))        // …unless it's the final descent onto the target's body
         return true;
     }
-    return solidBlocksPoint(world, x, y, z, selfId);   // solid at arc height
+    return solidBlocksPoint(world, x, y, z, selfId, pool); // solid at arc height, lane pool only
   });
   return blocked === null ? false : !blocked;          // no solution -> not clear
 }
