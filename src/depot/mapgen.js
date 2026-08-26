@@ -231,7 +231,11 @@ export function genMap(seed) {
       if (town.some((q) => Math.hypot(x - q.x, z - q.z) < rad + Math.max(q.nx, q.nz) * MASON.pitch / 2 + 2.5)) continue;
       if (STREAM_ON && Math.abs(z - streamV) < rad + 9) continue; // T3: bench buildings stay clear of the stream
       const decay = r() < 0.2 ? 0.12 + r() * 0.3 : 0;
-      town.push({ id: tpl.t + bid++, x, z, nx, nz, ny: tpl.ny, door: r() < 0.5 ? 0 : nx - 1, roof: tpl.roof, ruin: decay || undefined, cols: tpl.cols });
+      // T2 (mk2.62, owner): a decayed bench building is BORN DEAD — same two
+      // draws, reinterpreted: the drawn decay value picks the ruin form, so
+      // the draw count is untouched and every seed keeps its stream.
+      const form = !decay ? undefined : decay < 0.195 ? "shell" : decay < 0.27 ? "stump" : decay < 0.345 ? "mound" : "chimney";
+      town.push({ id: tpl.t + bid++, x, z, nx, nz, ny: tpl.ny, door: r() < 0.5 ? 0 : nx - 1, roof: tpl.roof, dead: decay ? true : undefined, form, cols: tpl.cols });
       placed++;
     }
   }
@@ -241,7 +245,7 @@ export function genMap(seed) {
     if (spawns.some((sp) => Math.hypot(x - sp.x, z - sp.z) < 10)) continue;
     if (town.some((q) => Math.hypot(x - q.x, z - q.z) < 10)) continue;
     if (STREAM_ON && Math.abs(z - streamV) < 9) continue; // T3: old ruins stay clear of the stream
-    town.push({ id: "oldruin" + placed, x, z, nx: 4, nz: 4, ny: 3, door: 0, ruin: 0.5 });
+    town.push({ id: "oldruin" + placed, x, z, nx: 4, nz: 4, ny: 3, door: 0, dead: true, form: "shell" }); // T2: born shells
     placed++;
   }
   // T4: FIELD WALLS (owner's rulings: they block the grid; axis-aligned) —
@@ -286,6 +290,7 @@ export function makeMap(seed) {
     SPAWN_U = m.spawnU; STREAM = m.stream; HILLS = m.hills;
     const g = makeGrid(null);
     for (const t of TOWN) {
+      if (t.dead) continue; // T2: a born ruin blocks no cell — connectivity judges the true ground
       const hx = (t.nx * MASON.pitch) / 2, hz = (t.nz * MASON.pitch) / 2;
       for (let gz = 0; gz < GRID_H; gz++) for (let gx = 0; gx < GRID_W; gx++) {
         const wp = g.gridToWorld(gx, gz);
@@ -424,6 +429,37 @@ export function rockAt(x, z) { for (const k of ROCKS) if (Math.hypot(x - k.x, z 
 // function in the same task, and era 33's equality sweep is the proof.
 export const TOWN_STONE_CAP = 3000; // owner, 2026-08-26 — provisional until the Pi collapse capture // provisional (F5)
 export function stoneCount(t) {
+  // BORN RUINS (T2, mk2.62): a dead entry plans by its ruin form's own lay.
+  if (t.dead) {
+    if (t.form === "chimney") return 5;
+    if (t.form === "mound") {
+      let n = 0;
+      for (let ix = 0; ix < t.nx; ix++) for (let iz = 0; iz < t.nz; iz++) {
+        const h = ((ix * 31 + iz * 7 + t.nx * 13) % 100) / 100;
+        if (h < 0.55) n++;
+        if (h < 0.2) n++;
+      }
+      return n;
+    }
+    if (t.form === "stump") {
+      let n = t.ny;
+      for (let ix = 0; ix < t.nx; ix++) for (let iz = 0; iz < t.nz; iz++) {
+        const perim = ix === 0 || ix === t.nx - 1 || iz === 0 || iz === t.nz - 1;
+        if (perim && !(ix === 0 && iz === 0)) n++;
+      }
+      return n;
+    }
+    const H = Math.min(3, t.ny); // the shell
+    let n = 0;
+    for (let ix = 0; ix < t.nx; ix++) for (let iy = 0; iy < H; iy++) for (let iz = 0; iz < t.nz; iz++) {
+      const perim = ix === 0 || ix === t.nx - 1 || iz === 0 || iz === t.nz - 1;
+      if (!perim) continue;
+      if (ix === t.door && (iz === 1 || iz === 2) && iy <= 2) continue;
+      if (iy === H - 1 && ((ix * 31 + iy * 17 + iz * 7) % 100) / 100 < 0.4) continue;
+      n++;
+    }
+    return n;
+  }
   const colAt = t.cols
     ? (() => {
         const c1x = Math.floor(t.nx / 3), c1z = Math.floor(t.nz / 3);

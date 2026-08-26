@@ -314,6 +314,59 @@ function buildTown(world, grid, field) {
           below = c;
         }
       }
+    } else if (t.dead) {
+      // BORN RUINS (Settled Ground T2, mk2.62, owner): a dead entry lays as
+      // one of four ruin forms instead of the live lay. No draw: the form
+      // rides the entry (mapgen derives it from already-drawn values).
+      // Welded by the same neighbor pass the live lay uses — except the
+      // mound, which is loose by design (sleeping, unwelded).
+      const lay = (ix, iy, iz, jx, jz) => {
+        const c = addBody(world, { kind: "chunk", team: 0, mass, hx: hcs, hy: hcs, hz: hcs,
+          x: t.x + (ix - (t.nx - 1) / 2) * pitch + (jx || 0),
+          y: base + iy * pitch,
+          z: t.z + (iz - (t.nz - 1) / 2) * pitch + (jz || 0),
+          friction: 0.65, restitution: 0.02 });
+        c.sleeping = true; c.town = t.id; c.gpos = [ix, iy, iz];
+        grid3.push(c);
+      };
+      if (t.form === "chimney") {
+        const cx = Math.floor(t.nx / 2), cz = Math.floor(t.nz / 2);
+        for (let iy = 0; iy < 5; iy++) lay(cx, iy, cz);
+      } else if (t.form === "mound") {
+        for (let ix = 0; ix < t.nx; ix++) for (let iz = 0; iz < t.nz; iz++) {
+          const h = ((ix * 31 + iz * 7 + t.nx * 13) % 100) / 100;
+          const j = (((ix * 17 + iz * 29) % 7) - 3) * 0.05; // deterministic jitter, ±0.15m — loose, not a lattice
+          if (h < 0.55) lay(ix, 0, iz, j, -j);
+          if (h < 0.2) lay(ix, 1, iz, -j, j);
+        }
+      } else if (t.form === "stump") {
+        for (let iy = 0; iy < t.ny; iy++) lay(0, iy, 0);
+        for (let ix = 0; ix < t.nx; ix++) for (let iz = 0; iz < t.nz; iz++) {
+          const perim = ix === 0 || ix === t.nx - 1 || iz === 0 || iz === t.nz - 1;
+          if (!perim || (ix === 0 && iz === 0)) continue;
+          lay(ix, 0, iz);
+        }
+      } else { // the shell
+        const H = Math.min(3, t.ny);
+        for (let ix = 0; ix < t.nx; ix++) for (let iy = 0; iy < H; iy++) for (let iz = 0; iz < t.nz; iz++) {
+          const perim = ix === 0 || ix === t.nx - 1 || iz === 0 || iz === t.nz - 1;
+          if (!perim) continue;
+          if (ix === t.door && (iz === 1 || iz === 2) && iy <= 2) continue;
+          if (iy === H - 1 && ((ix * 31 + iy * 17 + iz * 7) % 100) / 100 < 0.4) continue;
+          lay(ix, iy, iz);
+        }
+      }
+      if (t.form !== "mound") {
+        const key = (a, b, c2) => a + "," + b + "," + c2;
+        const map = new Map(grid3.map((c) => [key(c.gpos[0], c.gpos[1], c.gpos[2]), c]));
+        for (const c of grid3) {
+          const g = c.gpos;
+          for (const d of [[1, 0, 0], [0, 1, 0], [0, 0, 1]]) {
+            const o = map.get(key(g[0] + d[0], g[1] + d[1], g[2] + d[2]));
+            if (o) addWeld(world, c, o, breakF);
+          }
+        }
+      }
     } else {
       for (let ix = 0; ix < t.nx; ix++) for (let iy = 0; iy <= t.ny; iy++) for (let iz = 0; iz < t.nz; iz++) {
         const perim = ix === 0 || ix === t.nx - 1 || iz === 0 || iz === t.nz - 1;
@@ -367,7 +420,7 @@ function buildTown(world, grid, field) {
       }
     }
     const cells = townFootprint(grid, t);
-    for (const ci of cells) { const c = grid.cells[ci]; c.blocked = true; c.building = t.id; c.bTeam = t.team === 2 ? 2 : (t.depot ? 1 : 0); }
+    if (!t.dead) for (const ci of cells) { const c = grid.cells[ci]; c.blocked = true; c.building = t.id; c.bTeam = t.team === 2 ? 2 : (t.depot ? 1 : 0); } // T2: a born ruin blocks no cell
     if (t.depot) {
       // roof-peak flag anchor: kinematic marker body, no collision role —
       // the renderer draws pole+cloth at any body with flagPole === true
@@ -378,7 +431,7 @@ function buildTown(world, grid, field) {
       });
       flag.sleeping = true; flag.flagPole = true;
     }
-    out.push({ id: t.id, cells, stones: grid3, n0: grid3.length, ruined: false, x: t.x, z: t.z });
+    out.push({ id: t.id, cells, stones: grid3, n0: grid3.length, ruined: !!t.dead, x: t.x, z: t.z }); // T2: ruined from the first frame
   }
   return out;
 }
