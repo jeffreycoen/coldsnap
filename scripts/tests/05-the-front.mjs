@@ -393,7 +393,7 @@ import fs from "node:fs";
     /const driveZ = t\.drive && t\.nz >= t\.nx;/.test(src));
   ok("T4(g): the town debug hook exists", /__DEPOTTOWN__/.test(src));
   const rsrc4 = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-  ok("T4(g): the chunk pool is raised to 3000", /const CHUNK_CAP = 3000;/.test(rsrc4));
+  ok("T4(g): the chunk pool is raised to 4000 (re-taught mk2.61, owner 2026-08-26)", /const CHUNK_CAP = 4000;/.test(rsrc4));
 }
 // ==== end FRONT T4 ===========================================================
 

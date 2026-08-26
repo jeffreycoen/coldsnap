@@ -414,6 +414,40 @@ export function buildDepotTerrain(field, seed = 11) {
 export function pondAt(x, z) { for (const p of PONDS) if (Math.hypot(x - p.x, z - p.z) < p.r) return p; return null; }
 export function rockAt(x, z) { for (const k of ROCKS) if (Math.hypot(x - k.x, z - k.z) < k.r * 0.78) return k; return null; }
 
+// THE STONE COUNT (Settled Ground T1, mk2.61): the planned stone cost of one
+// town entry, by buildTown's OWN lay rules (DepotGame.jsx, the non-depot
+// branch) — perimeter walls, interior columns, the granular roof, the door
+// carve, the drive-through carve, the decay hash, the slab. mapgen plans in
+// the currency the renderer pays. The two depots are the precast branch and
+// are outside this count by design (the suite excludes them too).
+// Mirror discipline: any change to buildTown's lay rules changes this
+// function in the same task, and era 33's equality sweep is the proof.
+export const TOWN_STONE_CAP = 3000; // owner, 2026-08-26 — provisional until the Pi collapse capture // provisional (F5)
+export function stoneCount(t) {
+  const colAt = t.cols
+    ? (() => {
+        const c1x = Math.floor(t.nx / 3), c1z = Math.floor(t.nz / 3);
+        const c2x = t.nx - 1 - c1x, c2z = t.nz - 1 - c1z;
+        return (ix, iz) => (ix === c1x && iz === c1z) || (ix === c2x && iz === c2z);
+      })()
+    : () => false;
+  const driveZ = t.drive && t.nz >= t.nx;
+  let n = 0;
+  for (let ix = 0; ix < t.nx; ix++) for (let iy = 0; iy <= t.ny; iy++) for (let iz = 0; iz < t.nz; iz++) {
+    const perim = ix === 0 || ix === t.nx - 1 || iz === 0 || iz === t.nz - 1;
+    if (iy < t.ny && !perim && !colAt(ix, iz)) continue;
+    if (iy === t.ny && (t.roof === false || t.slab)) continue;
+    if (ix === t.door && (iz === 1 || iz === 2) && iy <= 2) continue;
+    if (t.drive && iy < t.ny - 1 && (driveZ
+      ? (iz === 0 || iz === t.nz - 1) && ix >= 1 && ix <= t.nx - 2
+      : (ix === 0 || ix === t.nx - 1) && iz >= 1 && iz <= t.nz - 2)) continue;
+    if (t.ruin && ((ix * 31 + iy * 17 + iz * 7) % 100) / 100 < t.ruin && iy > 0) continue;
+    n++;
+  }
+  if (t.slab) n++; // the slab is ONE body, counted like buildTown's grid3 counts it
+  return n;
+}
+
 // ========================================================== grid + flow
 export function makeGrid(field) {
   const cells = new Array(GRID_W * GRID_H);

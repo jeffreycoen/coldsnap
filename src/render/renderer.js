@@ -931,7 +931,11 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // (2-4 big buildings, columns in the wide templates, field walls) push a
   // dense seed's boot stones past the old pool. The Pi collapse capture is
   // the judge of the raised cap; the stones counter stays the alarm.
-  const CHUNK_CAP = 3000;
+  // Settled Ground T1 (mk2.61, owner 2026-08-26): 3000 -> 4000 beside
+  // TOWN_STONE_CAP 3000 (mapgen.js) — physics sleeps boot stones, the pool
+  // is a draw limit. Provisional until the Pi collapse capture; the stones
+  // counter stays the alarm.
+  const CHUNK_CAP = 4000;
   let chunkStats = { drawn: 0, cap: CHUNK_CAP, total: 0 };
   const chunkMesh = pool(chunkGeo, toon(0xa6b2c0), CHUNK_CAP, true);
   chunkMesh.receiveShadow = true;
