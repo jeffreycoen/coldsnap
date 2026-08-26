@@ -101,7 +101,7 @@ ok("L1: the field gun and the wave tank carry no cap of their own — ELEV_CAP (
   const speed = p ? Math.hypot(p.v.x, p.v.y, p.v.z) : 0;
   ok("L5: one shell leaves, lobbed (muzzle dy > sin 35°)", mz.length === 1 && mz[0].dy > SIN35, JSON.stringify(mz[0]));
   ok("L5: the shell flies at the fitted speed, under 85 m/s", speed > 5 && speed < 84, speed.toFixed(2));
-  ok("L5: the lob draws exactly twice (seed 285)", draws === 2, draws);
+  ok("L5, re-taught mk2.56: the lob draws exactly three times — applyScatter's two and the charge draw", draws === 3, draws);
   ok("L5: the fired pitch rides the shooter, above 35°", shooter._aimPitch > SIN35, shooter._aimPitch);
 }
 

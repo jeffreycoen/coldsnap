@@ -10,7 +10,7 @@
 // the APC, heroes) add a DRIVERS row, never a second loop.
 import { applyDamage, aimSolve } from "../engine/core.js";
 import { shooterFire, fieldReaches, effRange, hostileStructure, snapTargetNear, POSSESS_ACC, hitOrigin } from "./state.js";
-import { arcClears, shotClears, elevSolve, elevCapOf } from "./accuracy.js";
+import { arcClears, shotClears, elevSolve, tightSolve, elevCapOf } from "./accuracy.js";
 import { ENEMY_FIRE, BISON_FIRE, BARRELS } from "./specs.js";
 import { planRoute } from "./route.js";
 import { clearSlot } from "./squads.js";
@@ -44,7 +44,7 @@ export function barrelTip(v, aim, spec, B, pitch) {
 export function liftedTip(world, v, aim, spec, B) {
   const flat = barrelTip(v, aim, spec, B);
   if (spec.elevCap == null) return flat;
-  const e = elevSolve(world, flat, aim, spec, v.id);
+  const e = spec.chargeSig != null ? tightSolve(world, flat, aim, spec, v.id) : elevSolve(world, flat, aim, spec, v.id); // mk2.56: the tube ends at the CHOSEN arc
   return e ? barrelTip(v, aim, spec, B, e.pitch) : flat;
 }
 

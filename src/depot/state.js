@@ -3,7 +3,7 @@
 // never be read from the closure — see ColdsnapTD.jsx for why).
 import { aimSolve, fireProjectile, addBody, addWeld, explode, applyDamage } from "../engine/core.js";
 import { SQUAD_SPECS, clearSlot } from "./squads.js";
-import { scatterSigma, applyScatter, arcClears, marchArc, elevSolve } from "./accuracy.js";
+import { scatterSigma, applyScatter, arcClears, marchArc, elevSolve, tightSolve, CHARGE_CAP } from "./accuracy.js";
 import { planWave, MIN_WAVE_FLOOR, spawnDelayFor } from "./ai.js";
 import { payResults, combatIneffective, bookValue, KILL_CUT } from "./economy.js";
 import { killPrice } from "./market.js";
@@ -394,7 +394,15 @@ export function shooterFire(world, shooter, muzzle, target, spec, opts = {}) {
   // (accuracy.js elevCapOf): the Bison's gun rises to 85°, the field gun
   // keeps 35°. Same search, same hold.
   let elev = null;
-  if (!high && spec.occl === "auto") {
+  // mk2.56 (owner): THE TIGHTEST ARC — a spec carrying chargeSig solves
+  // charge and angle together (accuracy.js tightSolve) and fires the arc
+  // with the tightest landing group; the mortar root and the flattest-first
+  // walk both retire for these guns. With no lawful arc the gun HOLDS.
+  if (spec.chargeSig != null) {
+    high = false;
+    elev = tightSolve(world, muzzle, target.pos, spec, opts.owner);
+    if (!elev) return;
+  } else if (!high && spec.occl === "auto") {
     elev = elevSolve(world, muzzle, target.pos, spec, opts.owner);
     if (!elev) return;
   }
@@ -441,7 +449,10 @@ export function shooterFire(world, shooter, muzzle, target, spec, opts = {}) {
   const volleyDelay = opts.volleyDelay != null ? opts.volleyDelay : 0.12;
   for (let si = 0; si < shots; si++) {
     const dir = applyScatter(world, rawDir, sigma);
-    fireProjectile(world, { x: muzzle.x, y: muzzle.y + si * muzzleStep, z: muzzle.z }, dir, elev ? elev.v : spec.projSpeed,
+    // mk2.56 (owner): the propellant varies — one bounded uniform draw per
+    // round on chargeSig specs (the third draw; applyScatter keeps its two).
+    const chg = spec.chargeSig != null ? 1 + (world.rng() * 2 - 1) * spec.chargeSig * CHARGE_CAP : 1;
+    fireProjectile(world, { x: muzzle.x, y: muzzle.y + si * muzzleStep, z: muzzle.z }, dir, (elev ? elev.v : spec.projSpeed) * chg,
       {
         kind: spec.kind, r: spec.blastR, kv: spec.kv, dmg: spec.dmg, dirDmg: spec.dirDmg, crater: spec.crater,
         // P1.5 Task 3 (mk0.56): WHICH GUN this is, carried through to the

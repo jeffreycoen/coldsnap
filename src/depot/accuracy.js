@@ -397,6 +397,53 @@ export function shotClears(world, muzzle, target, spec, selfId) {
   return arcClears(world, muzzle, target, spec, selfId);
 }
 
+// mk2.56 (owner): THE TIGHTEST ARC — the gun chooses charge and angle
+// TOGETHER to land the tightest possible group on the aim. Every lawful
+// pitch keeps one fitted speed; each candidate is scored by how far the
+// landing moves under the shot's two real errors — barrel wobble (the
+// spec's acc, applyScatter's own sigma) and propellant variation (the
+// spec's chargeSig, a relative speed error) — and the minimizer fires.
+// A short lob needs little charge, and a small error on a small charge is
+// a small miss: accuracy at short lobs comes from firing WEAKLY, not from
+// a steadier barrel (owner, 2026-08-25). The landing plane is the aim's
+// own height (a roof counts); a candidate whose weak-side charge cannot
+// even reach that plane scores Infinity and is never chosen while any
+// honest arc stands. Zero draws.
+export const CHARGE_CAP = 3;   // the fired charge error is bounded at ±CHARGE_CAP x chargeSig // provisional (F5)
+function landRTo(p, v, my, ty) {
+  const vy = v * Math.sin(p);
+  const disc = vy * vy - 2 * 9.8 * (ty - my);
+  if (disc < 0) return null;
+  return v * Math.cos(p) * (vy + Math.sqrt(disc)) / 9.8;
+}
+export function rangeSigma(p, v, my, ty, sp, sv) {
+  const R0 = landRTo(p, v, my, ty);
+  if (R0 == null) return Infinity;
+  const dp = 0.01, dv = Math.max(1e-6, v * 0.01);
+  const Rp = landRTo(p + dp, v, my, ty), Rm = landRTo(p - dp, v, my, ty);
+  const Rv = landRTo(p, v + dv, my, ty), Rw = landRTo(p, v - dv, my, ty);
+  if (Rp == null || Rm == null || Rv == null || Rw == null) return Infinity;
+  const dRdp = (Rp - Rm) / (2 * dp), dRdv = (Rv - Rw) / (2 * dv);
+  return Math.hypot(dRdp * sp, dRdv * v * sv);
+}
+export function tightSolve(world, muzzle, target, spec, selfId) {
+  const d = Math.max(2, Math.hypot(target.x - muzzle.x, target.z - muzzle.z));
+  const dy = target.y - muzzle.y;
+  const cap = elevCapOf(spec);
+  const pool = lanePool(world, muzzle, target, selfId);
+  let p0 = aimSolve(spec.projSpeed, d, dy, 9.8, false);
+  if (p0 == null) p0 = 0.1;
+  let best = null;
+  for (let p = p0; p <= cap + 1e-9; p += ELEV_STEP) {
+    const v = p === p0 ? spec.projSpeed : speedForPitch(d, dy, p);
+    if (v == null || v > spec.projSpeed) continue;
+    if (!arcAtPitchClears(world, muzzle, target, p, v, selfId, pool)) continue;
+    const s = rangeSigma(p, v, muzzle.y, target.y, spec.acc, spec.chargeSig || 0);
+    if (!best || s < best.s) best = { pitch: p, v, s };
+  }
+  return best;
+}
+
 // The first 2.5m of flight ignores solids — losGraze's own muzzle-cover
 // exemption, so a braced shooter's sandbag never eats the prediction.
 const PREDICT_SKIP_M = 2.5;
@@ -471,7 +518,31 @@ export function predictRing(SG, muzzle, aim, spec, sigma, wind, toUV) {
   let rawDir = solve(high);
   let center = flightImpact(SG, muzzle, rawDir, spec.projSpeed, spec, wind, toUV);
   let fireV = spec.projSpeed;
-  if (!high && spec.occl === "auto") {
+  // mk2.56 (owner): THE TIGHTEST ARC — a chargeSig spec's ring mirrors
+  // tightSolve on the sight map: every pitch from the low root up is scored
+  // by rangeSigma, candidates must land on the aim in STILL air, and the
+  // minimizer wins — clear ground lobs gently now too, so this walk runs on
+  // every aim, not only blocked ones. The chosen arc then flies once more
+  // in the wind for the center (the wind stays on the shell).
+  if (spec.chargeSig != null && !high) {
+    const d = Math.max(2, Math.hypot(aim.x - muzzle.x, aim.z - muzzle.z));
+    const dy = aim.y - muzzle.y;
+    const cap = elevCapOf(spec);
+    let p0 = aimSolve(spec.projSpeed, d, dy, 9.8, false);
+    if (p0 == null) p0 = 0.1;
+    const yd0 = Math.max(1e-3, Math.hypot(rawDir.x, rawDir.z)), azx0 = rawDir.x / yd0, azz0 = rawDir.z / yd0;
+    let found = null;
+    for (let p = p0; p <= cap + 1e-9; p += ELEV_STEP) {
+      const v = p === p0 ? spec.projSpeed : speedForPitch(d, dy, p);
+      if (v == null || v > spec.projSpeed) continue;
+      const sc = rangeSigma(p, v, muzzle.y, aim.y, spec.acc, spec.chargeSig);
+      if (found && sc >= found.s) continue;
+      const dir = { x: azx0 * Math.cos(p), y: Math.sin(p), z: azz0 * Math.cos(p) };
+      const still = flightImpact(SG, muzzle, dir, v, spec, null, toUV);
+      if (!still.wall && Math.hypot(still.x - aim.x, still.z - aim.z) < 2.5) found = { dir, v, s: sc };
+    }
+    if (found) { rawDir = found.dir; fireV = found.v; center = flightImpact(SG, muzzle, rawDir, fireV, spec, wind, toUV); }
+  } else if (!high && spec.occl === "auto") {
     const shortfall = Math.hypot(aim.x - muzzle.x, aim.z - muzzle.z) - Math.hypot(center.x - muzzle.x, center.z - muzzle.z);
     if (center.wall || shortfall > 1.5) {
       // mk2.03: raise the barrel inside the cap, speed fitted — the SG-map
@@ -503,8 +574,12 @@ export function predictRing(SG, muzzle, aim, spec, sigma, wind, toUV) {
   const cap = SCATTER_CAP * sigma;
   const pts = [];
   let r = 0.4;
+  // mk2.56: chargeSig rays also walk the charge error's rim (weak/true/hot
+  // by turns) so the footprint hugs the full landing bound.
+  const cs = spec.chargeSig != null ? spec.chargeSig * CHARGE_CAP : 0;
   for (let s = 0; s < RING_RAYS; s++) {
-    const hit = flightImpact(SG, muzzle, deflect(rawDir, (s / RING_RAYS) * Math.PI * 2, cap), fireV, spec, wind, toUV);
+    const chg = cs ? 1 + cs * (s % 3 - 1) : 1;
+    const hit = flightImpact(SG, muzzle, deflect(rawDir, (s / RING_RAYS) * Math.PI * 2, cap), fireV * chg, spec, wind, toUV);
     pts.push(hit);
     r = Math.max(r, Math.hypot(hit.x - center.x, hit.z - center.z));
   }

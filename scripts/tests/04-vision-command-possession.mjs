@@ -2239,13 +2239,13 @@ import fs from "node:fs";
     world.events.length = 0;
     shooterFire(world, shooter, { x: 0, y: 1.5, z: 0 }, tgt, { ...BISON_FIRE.gun }, { attacker: "player", owner: shooter.id });
     const flat = world.events.find((e) => e.type === "muzzle");
-    ok("TALL ORDER mk2.02(c): a clear line fires the flat root", flat && flat.dy < 0.35, flat && flat.dy);
+    ok("TALL ORDER mk2.02(c), re-taught mk2.56: a clear line fires the TIGHTEST arc — a gentle reduced-charge lob, not the flat root", flat && flat.dy > 0.5 && flat.dy < 0.75, flat && flat.dy);
     addBody(world, { kind: "wall", team: 1, mass: 0, hx: 0.9, hy: 1.8, hz: 0.2, x: 10, y: 1.8, z: 0, hp: 200 });
     world.events.length = 0;
     shooterFire(world, shooter, { x: 0, y: 1.5, z: 0 }, tgt, { ...BISON_FIRE.gun }, { attacker: "player", owner: shooter.id });
     const lob = world.events.find((e) => e.type === "muzzle");
-    ok("TALL ORDER mk2.02(c): a wall across the line raises the barrel inside the 35° cap (re-taught mk2.03)",
-      lob && lob.dy > flat.dy + 0.02 && lob.dy < Math.sin(35 * Math.PI / 180) + 0.02, lob && lob.dy);
+    ok("TALL ORDER mk2.02(c), re-taught mk2.56: a wall across the line keeps a lawful tight arc at or above the clear pick, under the 85° cap",
+      lob && lob.dy >= flat.dy - 0.05 && lob.dy < Math.sin(85 * Math.PI / 180), lob && lob.dy);
   }
   // (d) the grant is exact; the rocket tower keeps the gentle arc.
   ok("TALL ORDER mk2.02(d): both tank guns and the tower GUN lob automatically",
