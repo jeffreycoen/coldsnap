@@ -1708,7 +1708,7 @@ export function scoreKill(S, ev, counts) {
   led.value += kp.price;
   if (kp.counted) led.kills++;
   if (att === 1) S.resources += pay;
-  else if (S.reg) { S.reg.scrap += pay; S.reg.earned = (S.reg.earned || 0) + pay; } // mk2.53: kill pay is earnings
+  else if (S.reg) { S.reg.scrap += pay; if (pay > 0) S.reg.earned = (S.reg.earned || 0) + pay; } // mk2.53: kill pay is earnings; mk2.54: a zero credit accrues nothing — the ruled guard, every credit site
   return { side: att, price: kp.price, pay, counted: !!kp.counted };
 }
 

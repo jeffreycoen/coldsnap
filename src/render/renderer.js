@@ -1004,9 +1004,10 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // driven by world.wind instead of a fixed flutter — heading tracks
   // atan2(wind.z, wind.x), ripple amplitude/stiffness track wind.mag. No
   // world.wind means no flags drawn (TD/campaign/demo untouched).
-  const flagPoleMesh = pool(new THREE.BoxGeometry(0.1, 2.6, 0.1), toon(0x4a4038), 96, true);
+  // mk2.54: 96 -> 192 — towers share this pool with town flags; a late war's tower count starved the town of its flags
+  const flagPoleMesh = pool(new THREE.BoxGeometry(0.1, 2.6, 0.1), toon(0x4a4038), 192, true);
   const flagClothGeo = new THREE.BoxGeometry(1.0, 0.6, 0.04); flagClothGeo.translate(0.52, 0, 0);
-  const flagClothMesh = pool(flagClothGeo, toon(0xffc95c), 96, false);
+  const flagClothMesh = pool(flagClothGeo, toon(0xffc95c), 192, false);
   const _flagUp = new THREE.Vector3(0, 1, 0);
   const _flagQ1 = new THREE.Quaternion(), _flagQ2 = new THREE.Quaternion();
   // FRONT F1: cloth tint keys on the flag body's team. instanceColor
@@ -2491,7 +2492,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
         const amp = Math.min(0.55, mag * 0.13); // no floor: dead calm = limp cloth // provisional (F5)
         const stiff = 2.2 + mag * 0.9; // stronger wind = faster flutter (looser stiffness reads as quicker snap)
         for (const b of world.bodies) {
-          if (!b.flagPole || fi >= 96) continue;
+          if (!b.flagPole || fi >= 192) continue;
           dummy.position.set(b.pos.x, b.pos.y + 1.3, b.pos.z);
           dummy.quaternion.identity();
           dummy.scale.set(1, 1, 1);
@@ -2512,7 +2513,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
         // mk2.50: the town's holder flags — same pole, same cloth, same
         // wind; f.y is the building's roof height (game-layer supplied).
         for (const f of townFlags) {
-          if (fi >= 96) break;
+          if (fi >= 192) break;
           dummy.position.set(f.x, f.y + 1.3, f.z);
           dummy.quaternion.identity();
           dummy.scale.set(1, 1, 1);
