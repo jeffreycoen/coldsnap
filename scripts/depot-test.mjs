@@ -45,4 +45,5 @@ await import("./tests/28-the-earned-muster.mjs");
 await import("./tests/29-the-lobbed-shell.mjs");
 await import("./tests/30-the-tightest-arc.mjs");
 await import("./tests/31-the-lit-roof.mjs");
+await import("./tests/32-the-commanders-eye.mjs");
 finish();

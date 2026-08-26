@@ -805,9 +805,7 @@ export function possessedVolley(world, squad, aim, T, toUV = (x, z) => ({ u: x, 
   // ATTACK path (stepDavyShot): one reload clock, whichever path fires
   // starts it. mk2.12: the trigger no longer kills.
   if (squad.type === "davy") {
-    if ((squad._davyReadyAt || 0) > world.t) return 0;
-    const cD = toUV(aim.x, aim.z);
-    if (!fieldReaches(T, cD.u, cD.v, squad.team)) return 0;
+    if ((squad._davyReadyAt || 0) > world.t) return 0; // mk2.58 (owner): THE COMMANDER'S EYE — possession is the player's own sight; no seen-gate on a possessed aim
     const shooter = squad.memberIds.map((id) => world.byId.get(id)).find((u) => u && u.alive);
     if (!shooter) return 0;
     squad._davyReadyAt = world.t + DAVY_FIRE.reloadS;
@@ -819,9 +817,7 @@ export function possessedVolley(world, squad, aim, T, toUV = (x, z) => ({ u: x, 
     return 1;
   }
   const spec = INFANTRY_ARMS[squad.type];
-  if (!spec) return 0;
-  const c = toUV(aim.x, aim.z);
-  if (!fieldReaches(T, c.u, c.v, squad.team)) return 0;
+  if (!spec) return 0; // mk2.58 (owner): THE COMMANDER'S EYE — possession is the player's own sight; no seen-gate on a possessed aim
   const fspec = { ...spec, acc: spec.acc * POSSESS_ACC, volley: spec.burst || 1,
     blastR: spec.blastR != null ? spec.blastR : INFANTRY_BLAST_R,
     kv: spec.kv != null ? spec.kv : INFANTRY_KV };
@@ -859,9 +855,7 @@ export function possessedTowerFire(world, tower, aim, T, toUV = (x, z) => ({ u: 
   const spec = TOWER_SPECS[tower.towerType];
   if (!spec || spec.fireRate <= 0) return false;
   tower.fireCd = tower.fireCd || 0;
-  if (tower.fireCd > 0) return false;
-  const c = toUV(aim.x, aim.z);
-  if (!fieldReaches(T, c.u, c.v, 1)) return false;
+  if (tower.fireCd > 0) return false; // mk2.58 (owner): THE COMMANDER'S EYE — possession is the player's own sight; no seen-gate on a possessed aim
   const live = snapTargetNear(world, aim, T, toUV);
   // Amendment 3 (owner): the possessed coil ALWAYS discharges — at the
   // snapped enemy when one is near the reticle, into the ground at the

@@ -181,17 +181,16 @@ export function steerReticle(SG, team, center, radius, off, vx, vz, dt, toUV) {
   let dx = off.dx + vx * RETICLE_SPEED * dt, dz = off.dz + vz * RETICLE_SPEED * dt;
   const d = Math.hypot(dx, dz);
   if (d > radius && d > 1e-9) { dx *= radius / d; dz *= radius / d; }
-  const c = toUV(center.x + dx, center.z + dz);
-  if (!seenAt(SG, c.u, c.v, team)) return { dx: off.dx, dz: off.dz };   // stopped dead at the dark
+  // mk2.58 (owner): THE COMMANDER'S EYE — the possessed reticle is the
+  // player's own sight; it roams the whole circle, dark ground included.
+  // The radius clamp above is the only law left here.
   return { dx, dz };
 }
 export function reclampReticle(SG, team, center, radius, off, toUV) {
   let dx = off.dx, dz = off.dz;
   const d = Math.hypot(dx, dz);
   if (d > radius && d > 1e-9) { dx *= radius / d; dz *= radius / d; }
-  const c = toUV(center.x + dx, center.z + dz);
-  if (seenAt(SG, c.u, c.v, team)) return { dx, dz };
-  return { dx: 0, dz: 0 };   // its ground went dark — home to the unit's own cell
+  return { dx, dz }; // mk2.58 (owner): THE COMMANDER'S EYE — no dark-ground home; the circle is the only law
 }
 
 // mk2.01: THE SURFACE LAW. What the reticle rests on is what the guns aim

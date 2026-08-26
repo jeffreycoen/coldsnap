@@ -364,8 +364,12 @@ import fs from "node:fs";
     // the two possessed triggers (main gun, coax) all gate on sight, the same
     // law every other shot obeys. Count moves 1 -> 5, honestly, four new
     // sight-gated call sites, none loosened.
-    ok("VISION T2(e): the tank's, the Bison's, and the mech's acquisition paths gate on sight in drivers.js (re-pinned mk1.92 — the mech's shared possessed-fire gate, mechSighted, joined the motor pool: 5 -> 6)",
-      (driversSrc.match(/fieldReaches\(T,/g) || []).length === 6, (driversSrc.match(/fieldReaches\(T,/g) || []).length);
+    // re-pinned mk2.58 (owner): THE COMMANDER'S EYE — the three POSSESSED
+    // gates (main gun, coax, mechSighted) leave; possession is the player's
+    // own sight. The three AUTONOMOUS gates (tank struct loop, both armor
+    // scans) stand. Count moves 6 -> 3, every remaining one autonomous.
+    ok("VISION T2(e): the autonomous acquisition paths still gate on sight in drivers.js; the possessed triggers do not (re-pinned mk2.58 — the commander's eye)",
+      (driversSrc.match(/fieldReaches\(T,/g) || []).length === 3, (driversSrc.match(/fieldReaches\(T,/g) || []).length);
     ok("VISION T2(e): the sapper's contact plant stays ungated (he IS the eye, at arm's length)",
       /stepSapper/.test(unitsSrc) && !/fieldReaches[\s\S]{0,200}SAPPER_PLANT_PAD/.test(unitsSrc));
   }
@@ -1212,13 +1216,18 @@ import fs from "node:fs";
       if (u < 8) T.sight.seen1[iz * T.sight.nx + ix] = 1;
     }
     world.events.length = 0;
-    const firedDark = possessedVolley(world, sq, { x: 20, z: 0 }, T, idUV);
-    ok("POSSESSION T2(b): a dark aim cell (unseen) draws zero muzzles",
-      firedDark === 0 && muzzlesOf(world).length === 0, `fired=${firedDark}`);
+    // the dark aim sits at x=12 — inside the rifles' 15 m reach (range law
+    // untouched by mk2.58), and inside the dark band (lit only west of 8).
+    const firedDark = possessedVolley(world, sq, { x: 12, z: 0 }, T, idUV);
+    // 3 of the 4 fire: the T7 corridor law (a live teammate in the lane
+    // holds a shot, cooldown untouched) still rules — sight is what mk2.58
+    // removed, nothing else.
+    ok("POSSESSION T2(b), re-taught mk2.58: a dark aim cell FIRES under the stick — possession is the player's own sight (the commander's eye)",
+      firedDark >= 3, `fired=${firedDark}`);
     world.events.length = 0;
-    const firedLit = possessedVolley(world, sq, { x: 0, z: 0 }, T, idUV);
-    ok("POSSESSION T2(b) control: the identical squad, aim in a SEEN cell, fires normally",
-      firedLit === 4, `fired=${firedLit}`);
+    const firedAgain = possessedVolley(world, sq, { x: 0, z: 0 }, T, idUV);
+    ok("POSSESSION T2(b) control, re-taught mk2.58: the member cooldowns still rule — at most the corridor-held man is cold for a second immediate pull",
+      firedAgain <= 1, `fired=${firedAgain}`);
   }
 
   // (c) spotters and unarmed types never fire: a sniper pair volleys once
@@ -1359,12 +1368,12 @@ import fs from "node:fs";
     }
     world.events.length = 0;
     const firedDark = possessedTowerFire(world, tower, { x: 20, z: 0 }, T, idUV);
-    ok("POSSESSION T3(c): a dark aim cell (unseen) refuses — zero muzzles",
-      firedDark === false && muzzlesOf(world).length === 0, `fired=${firedDark}`);
+    ok("POSSESSION T3(c), re-taught mk2.58: a dark aim cell FIRES under manual control — the commander's eye",
+      firedDark === true && muzzlesOf(world).length === 1, `fired=${firedDark}`);
     world.events.length = 0;
-    const firedLit = possessedTowerFire(world, tower, { x: 0, z: 0 }, T, idUV);
-    ok("POSSESSION T3(c) control: the identical tower, aim in a SEEN cell, fires normally",
-      firedLit === true && muzzlesOf(world).length === 1, `fired=${firedLit}`);
+    const firedAgain = possessedTowerFire(world, tower, { x: 0, z: 0 }, T, idUV);
+    ok("POSSESSION T3(c) control, re-taught mk2.58: the cooldown still rules — an immediate second pull is refused",
+      firedAgain === false && muzzlesOf(world).length === 0, `fired=${firedAgain}`);
   }
 
   // (d) source pin: frost offers no possession — the tower pie's possess
@@ -1481,8 +1490,8 @@ import fs from "node:fs";
     const T = bandTerritory(-29, 8);
     const cur = { dx: 0, dz: 0 };
     const r = steerReticle(T.sight, 1, { x: 0, z: 0 }, 50, cur, 1, 0, 1, idUV);
-    ok("POSSESSION T4(c): steering into an unseen cell leaves the reticle exactly where it was",
-      r.dx === cur.dx && r.dz === cur.dz, `r=(${r.dx},${r.dz})`);
+    ok("POSSESSION T4(c), re-taught mk2.58: the reticle crosses dark ground freely — the radius is the only law (the commander's eye)",
+      r.dx > cur.dx && r.dx <= 50, `r=(${r.dx},${r.dz})`);
   }
 
   // (d) the carry law (T5, mk0.94, replacing the old drag-behind test): the
@@ -1509,8 +1518,8 @@ import fs from "node:fs";
   {
     const T = bandTerritory(-2, 2);
     const r = reclampReticle(T.sight, 1, { x: 0, z: 0 }, 10, { dx: 50, dz: 0 }, idUV);
-    ok("POSSESSION T4(e): a reclamp that would land on dark ground falls all the way back to the unit",
-      r.dx === 0 && r.dz === 0, `r=(${r.dx},${r.dz})`);
+    ok("POSSESSION T4(e), re-taught mk2.58: dark ground strands nothing — the reclamp holds the circle's edge",
+      r.dx === 10 && r.dz === 0, `r=(${r.dx},${r.dz})`);
   }
 
   // (f) source pin: both fire paths read S.reticle, and possessAim appears

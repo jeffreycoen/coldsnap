@@ -569,9 +569,7 @@ export function possessedArmorFire(world, v, aim, T, toUV = (x, z) => ({ u: x, v
   const gun = BISON_FIRE.gun;
   v.gunT = v.gunT || 0;
   if (v.gunT > 0) return false;
-  const c = toUV(aim.x, aim.z);
-  if (!fieldReaches(T, c.u, c.v, v.team)) return false;
-  const live = snapTargetNear(world, aim, T, toUV);
+  const live = snapTargetNear(world, aim, T, toUV); // mk2.58 (owner): THE COMMANDER'S EYE — possession is the player's own sight; no seen-gate on a possessed aim
   const sy = aim.y != null ? aim.y : world.field.heightAt(aim.x, aim.z);
   const tgt = live || { pos: { x: aim.x, y: sy, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: sy - world.field.heightAt(aim.x, aim.z) }; // mk2.02: ground aim targets the SURFACE (owner) — the phantom body is dead; hy carries roof height over field ground through shooterFire's lead refresh
   v.gunT = gun.cd;
@@ -584,18 +582,13 @@ export function possessedArmorFire(world, v, aim, T, toUV = (x, z) => ({ u: x, v
 // solves at the commanded range. Headless-testable in isolation; the game
 // layer (DepotGame.jsx) only decides which engine call to attempt.
 export function mechSighted(world, mech, T, toUV = (x, z) => ({ u: x, v: z })) {
-  const { muzzle, dir } = mechAimDir(world, mech);
-  const rng = mech.aimRange || 26;
-  const c = toUV(muzzle.x + dir.x * rng, muzzle.z + dir.z * rng);
-  return fieldReaches(T, c.u, c.v, (mech.team || 1) === 2 ? 2 : 1);
+  return true; // mk2.58 (owner): THE COMMANDER'S EYE — possession is the player's own sight; no seen-gate on a possessed aim (mechAimDir's aim point included; the five triggers all read this)
 }
 export function possessedArmorMg(world, v, aim, T, toUV = (x, z) => ({ u: x, v: z })) {
   const mg = BISON_FIRE.mg;
   v.mgT = v.mgT || 0;
   if (v.mgT > 0) return false;
-  const c = toUV(aim.x, aim.z);
-  if (!fieldReaches(T, c.u, c.v, v.team)) return false;
-  const live = snapTargetNear(world, aim, T, toUV);
+  const live = snapTargetNear(world, aim, T, toUV); // mk2.58 (owner): THE COMMANDER'S EYE — possession is the player's own sight; no seen-gate on a possessed aim
   const sy = aim.y != null ? aim.y : world.field.heightAt(aim.x, aim.z);
   const tgt = live || { pos: { x: aim.x, y: sy, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: sy - world.field.heightAt(aim.x, aim.z) }; // mk2.02: ground aim targets the SURFACE (owner) — the phantom body is dead; hy carries roof height over field ground through shooterFire's lead refresh
   v.mgT = mg.cd;

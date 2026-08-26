@@ -334,8 +334,8 @@ const run = (w, grid, n, opts) => { for (let i = 0; i < n; i++) { stepDrivers(w,
   if (sighted) mechFire(w, m1);
   T0.sight.seen1[0] = 1;
   const sighted2 = mechSighted(w, m1, T0, idUV);
-  ok("M28: the possessed sight gate refuses a fire at unseen ground, and opens once the ground is seen (fixture is live, not vacuous)",
-    sighted === false && m1._lastFire === before && sighted2 === true, `sighted=${sighted} fire=${m1._lastFire} sighted2=${sighted2}`);
+  ok("M28, re-taught mk2.58: the possessed sight gate is gone — the commander's eye answers at unseen ground too (fixture is live, the trigger really pulled)",
+    sighted === true && m1._lastFire !== before && sighted2 === true, `sighted=${sighted} fire=${m1._lastFire} sighted2=${sighted2}`);
 }
 {
   const w = makeWorld({ field: flatF, seed: 161 }); w.depotCombat = true;

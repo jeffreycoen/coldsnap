@@ -50,7 +50,11 @@ const mkBison = (w, team, x, z) => {
   let off = { dx: 0, dz: 0 };
   for (let i = 0; i < 400; i++) off = steerReticle(SG, 1, { x: 0, z: 0 }, 26, off, 1, 0, 1 / 60, idUV);
   ok("R2: the reticle steers past the wall's base onto the roof (seed 312)", off.dx > 9, off.dx.toFixed(1));
-  ok("R2: it rests on the roof surface", surfaceAt(SG, off.dx, 0, idUV).y === 7);
+  // re-taught mk2.58 (the commander's eye): the steer no longer stops on the
+  // roof — it roams to the circle's edge; the SURFACE law still reports the
+  // roof under any reticle cell on the footprint.
+  ok("R2, re-taught mk2.58: the reticle roams to the circle's edge — dark ground stops nothing", off.dx > 25, off.dx.toFixed(1));
+  ok("R2: the surface under a roof cell is still the roof", surfaceAt(SG, 11, 0, idUV).y === 7);
 }
 
 // R3 — the shot follows: with the roof lit, the possessed Bison FIRES at
