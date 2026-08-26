@@ -2,7 +2,7 @@
 
 **A full physics war game that fits on a floppy disk.** 💾
 
-The whole thing — the war, the engine, five tech demos, every sound — is one 1.40 MB bundle, about 441 KB over the wire. A 1.44 MB floppy still holds it.
+The whole thing — the war, the engine, five tech demos, every sound — is one 1.30 MB bundle, about 413 KB over the wire. A 1.44 MB floppy still holds it.
 
 **PLAY:** https://jeffreycoen.github.io/coldsnap/
 
