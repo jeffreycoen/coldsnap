@@ -110,7 +110,7 @@ export const BISON = { mass: 3800, hx: 2.2, hy: 0.95, hz: 3.3, hp: 420, armor: 1
 // DEPOT. The main gun is the wave tank's round on a hero cadence; the coax
 // is the mg family's stream. weapon tags are voice only.
 export const BISON_FIRE = {
-  gun: { projSpeed: 85, dmg: TANK.dmg, kind: "shell", weapon: "tank", blastR: TANK.blastR, kv: 8, crater: 0.5, acc: 0.070, windF: 0.9, windComp: 0.6, cd: 2.6, range: 30, occl: "auto" },  // mk2.02 (owner): THE AUTOMATIC LOB — flat when the flat arc reaches, mortar root when it cannot // provisional (F5)
+  gun: { projSpeed: 85, dmg: TANK.dmg, kind: "shell", weapon: "tank", blastR: TANK.blastR, kv: 8, crater: 0.5, acc: 0.070, windF: 0.9, windComp: 0.6, cd: 2.6, range: 30, occl: "auto", elevCap: 85 },  // mk2.02 (owner): THE AUTOMATIC LOB — flat when the flat arc reaches, mortar root when it cannot // mk2.55 (owner): THE LOBBED SHELL — elevCap in degrees, this gun alone; the barrel rises to 85° at a fitted speed and the shell lands where the reticle stands (accuracy.js elevCapOf). The wind stays on the shell (owner, 2026-08-25): the ring shows the drift. // provisional (F5)
   mg:  { projSpeed: 100, dmg: 5, dirDmg: 8, kind: "mg", weapon: "mg", blastR: 0.3, kv: 0.5, crater: 0, acc: 0.080, burst: 6, burstGap: 0.17, cd: 1.6, range: 18, occl: "arc", windF: 0.06, windComp: 0 },  // provisional (F5)
 };
 // mk2.05 (owner): THE TRUE MUZZLE — the shot and the laser leave the barrel

@@ -10,7 +10,7 @@
 // the APC, heroes) add a DRIVERS row, never a second loop.
 import { applyDamage, aimSolve } from "../engine/core.js";
 import { shooterFire, fieldReaches, effRange, hostileStructure, snapTargetNear, POSSESS_ACC, hitOrigin } from "./state.js";
-import { arcClears, ELEV_CAP } from "./accuracy.js";
+import { arcClears, shotClears, elevSolve, elevCapOf } from "./accuracy.js";
 import { ENEMY_FIRE, BISON_FIRE, BARRELS } from "./specs.js";
 import { planRoute } from "./route.js";
 import { clearSlot } from "./squads.js";
@@ -20,16 +20,32 @@ import { buildMech, mechCommand, respawnMech, mechFallen, mechFire, mechMissiles
 // aim, pitch estimated from the low root capped at the elevation cap. The
 // muzzle the sim fires from and the muzzle the laser projects from are the
 // same point. Zero draws.
-export function barrelTip(v, aim, spec, B) {
+// mk2.55 (owner): THE LOBBED SHELL — the cap is the spec's own (elevCapOf),
+// and a caller that has already solved the shot passes its pitch so the
+// tube ends where the drawn barrel ends. No pitch given: the low-root
+// estimate as before.
+export function barrelTip(v, aim, spec, B, pitch) {
   const yaw = Math.atan2(aim.x - v.pos.x, aim.z - v.pos.z);
   const px = v.pos.x + Math.sin(yaw) * B.fwd, py = v.pos.y + B.up, pz = v.pos.z + Math.cos(yaw) * B.fwd;
   const d = Math.max(2, Math.hypot(aim.x - px, aim.z - pz));
   const ay = aim.y != null ? aim.y : py;
-  let p = aimSolve(spec.projSpeed, d, ay - py, 9.8, false);
+  let p = pitch != null ? pitch : aimSolve(spec.projSpeed, d, ay - py, 9.8, false);
   if (p == null) p = 0;
-  p = Math.min(Math.max(p, 0), ELEV_CAP);
+  p = Math.min(Math.max(p, 0), elevCapOf(spec));
   const c = Math.cos(p);
   return { x: px + Math.sin(yaw) * B.len * c, y: py + B.len * Math.sin(p), z: pz + Math.cos(yaw) * B.len * c };
+}
+// mk2.55 (owner): THE TIP FOLLOWS THE PITCH (the mk2.05 true-muzzle law
+// kept for a lob) — solve once from the flat tip, then place the tip at the
+// found pitch; shooterFire solves again from there and may settle one 3°
+// step away (0.19 m of tube). No lawful arc: the flat tip, and shooterFire
+// holds its fire as before. Zero draws. Only a capped spec (the Bison's
+// gun) lifts — every other spec keeps the flat tip.
+export function liftedTip(world, v, aim, spec, B) {
+  const flat = barrelTip(v, aim, spec, B);
+  if (spec.elevCap == null) return flat;
+  const e = elevSolve(world, flat, aim, spec, v.id);
+  return e ? barrelTip(v, aim, spec, B, e.pitch) : flat;
 }
 
 // ---- the wave tank — re-seated from units.js stepTank (mk1.30), verbatim.
@@ -356,7 +372,7 @@ function armorScanFoes(world, v, muzzle, spec, unitsOnly, T, toUV) {
     if (d2 >= bd) continue;
     const c = toUV(e.pos.x, e.pos.z);
     if (!fieldReaches(T, c.u, c.v, v.team)) continue;
-    if (!arcClears(world, muzzle, e.pos, spec, v.id)) continue;
+    if (!shotClears(world, muzzle, e.pos, spec, v.id)) continue; // mk2.55: a capped gun counts any lawful arc under its cap
     bd = d2; best = e;
   }
   return best;
@@ -371,7 +387,7 @@ function armorScanStructs(world, v, muzzle, spec, T, toUV) {
     if (!fieldReaches(T, cs.u, cs.v, v.team)) continue;
     const dx = s.pos.x - v.pos.x, dz = s.pos.z - v.pos.z, d2 = dx * dx + dz * dz;
     if (d2 >= bs) continue;
-    if (!arcClears(world, muzzle, s.pos, spec, v.id)) continue;
+    if (!shotClears(world, muzzle, s.pos, spec, v.id)) continue; // mk2.55: same gate as the foe scan
     bs = d2; best = s;
   }
   return best;
@@ -387,7 +403,7 @@ function armorGuns(world, v, dt, T, toUV) {
     if (tgt) {
       v.gunT = gun.cd;
       v._aimYaw = Math.atan2(tgt.pos.x - v.pos.x, tgt.pos.z - v.pos.z);
-      shooterFire(world, v, barrelTip(v, tgt.pos, gun, BARRELS.bison), tgt, gun, struct
+      shooterFire(world, v, liftedTip(world, v, tgt.pos, gun, BARRELS.bison), tgt, gun, struct // mk2.55: the tip follows the pitch
         ? { attacker, hitStruct: true, hitOnly: "structure", owner: v.id }
         : { attacker, hitStruct: true, owner: v.id });
     } else v.gunT = 0.5;
@@ -560,7 +576,7 @@ export function possessedArmorFire(world, v, aim, T, toUV = (x, z) => ({ u: x, v
   const tgt = live || { pos: { x: aim.x, y: sy, z: aim.z }, v: { x: 0, y: 0, z: 0 }, hy: sy - world.field.heightAt(aim.x, aim.z) }; // mk2.02: ground aim targets the SURFACE (owner) — the phantom body is dead; hy carries roof height over field ground through shooterFire's lead refresh
   v.gunT = gun.cd;
   v._aimYaw = Math.atan2(aim.x - v.pos.x, aim.z - v.pos.z);
-  shooterFire(world, v, barrelTip(v, tgt.pos, gun, BARRELS.bison), tgt, { ...gun, acc: gun.acc * POSSESS_ACC }, { attacker: "player", hitStruct: true, owner: v.id });
+  shooterFire(world, v, liftedTip(world, v, tgt.pos, gun, BARRELS.bison), tgt, { ...gun, acc: gun.acc * POSSESS_ACC }, { attacker: "player", hitStruct: true, owner: v.id }); // mk2.55: the tip follows the pitch
   return true;
 }
 // POSSESSION (mk1.92): THE MECH's shared sight gate — one aim-point test for

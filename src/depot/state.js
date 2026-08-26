@@ -390,6 +390,9 @@ export function shooterFire(world, shooter, muzzle, target, spec, opts = {}) {
   // mk2.03 (owner): ACTUAL ELEVATION — no mortar root for guns. An "auto"
   // spec raises the barrel inside the 35° cap at a fitted speed (elevSolve);
   // with no lawful arc the gun HOLDS its fire.
+  // mk2.55 (owner): THE LOBBED SHELL — the cap is the spec's own
+  // (accuracy.js elevCapOf): the Bison's gun rises to 85°, the field gun
+  // keeps 35°. Same search, same hold.
   let elev = null;
   if (!high && spec.occl === "auto") {
     elev = elevSolve(world, muzzle, target.pos, spec, opts.owner);

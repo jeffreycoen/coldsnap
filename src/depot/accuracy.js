@@ -41,8 +41,8 @@ const SOLID_KINDS = new Set(["rock", "wall", "tower", "tree", "chunk"]);
 // Units/vehicles stay excluded (dynamic AND not in SOLID_KINDS). Loose
 // battlefield debris (shattered chunks) now also blocks aiming — correct
 // physics (rubble is cover), and exposureAt already treated it as cover.
-export function solidBlocksPoint(world, x, y, z, selfId) {
-  const pool = world._L ? world._L.solids : world.bodies;   // T10: typed pool, full-scan fallback
+export function solidBlocksPoint(world, x, y, z, selfId, pool) {
+  if (!pool) pool = world._L ? world._L.solids : world.bodies;   // T10: typed pool, full-scan fallback; mk2.55: a caller's lane pool (lanePool below) when given
   for (const b of pool) {
     if (!b.alive || (selfId != null && b.id === selfId)) continue;
     if (!SOLID_KINDS.has(b.kind)) continue;
@@ -318,12 +318,42 @@ export const SCATTER_CAP = Math.sqrt(-2 * Math.log(1e-4)) * 0.6;
 // mortar root belongs to the mortars alone. Zero draws.
 export const ELEV_CAP = 35 * Math.PI / 180;
 export const ELEV_STEP = 3 * Math.PI / 180;
+// mk2.55 (owner): THE LOBBED SHELL — a spec may carry its own cap in
+// degrees (elevCap); every other auto gun keeps ELEV_CAP. The Bison's gun
+// rises to 85° so the shell clears roofs and walls and lands where the
+// reticle stands. The search below is unchanged: the flattest lawful arc
+// first, so a straight shot stays straight.
+export function elevCapOf(spec) { return spec.elevCap != null ? spec.elevCap * Math.PI / 180 : ELEV_CAP; }
 export function speedForPitch(d, dy, p, g = 9.8) {
   const den = 2 * Math.cos(p) * Math.cos(p) * (d * Math.tan(p) - dy);
   if (den <= 0) return null;
   return Math.sqrt(g * d * d / den);
 }
-export function arcAtPitchClears(world, muzzle, target, p, v, selfId) {
+// mk2.55 (owner): THE LANE POOL — one pass over the solids keeps only those a
+// sample on the muzzle→target lane could sit inside (center within
+// hypot(hx,hz) of the lane's ground segment). Every pitch of the search then
+// tests its samples against this short list instead of the whole town
+// (1,731 masonry solids on seed 11). The verdict is identical to the full
+// pool — a sample inside a box is within hypot(hx,hz) of the box's center,
+// and every sample lies on the segment — era 29 proves it on a seeded field.
+export function lanePool(world, muzzle, target, selfId) {
+  const pool = world._L ? world._L.solids : world.bodies;
+  const ax = muzzle.x, az = muzzle.z, dx = target.x - ax, dz = target.z - az;
+  const L2 = dx * dx + dz * dz || 1;
+  const out = [];
+  for (const b of pool) {
+    if (!b.alive || (selfId != null && b.id === selfId)) continue;
+    if (!SOLID_KINDS.has(b.kind)) continue;
+    if (b.invM > 0 && b.kind !== "chunk" && b.kind !== "tree") continue;
+    let t = ((b.pos.x - ax) * dx + (b.pos.z - az) * dz) / L2;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const px = ax + dx * t - b.pos.x, pz = az + dz * t - b.pos.z;
+    const r = b.hx * b.hx + b.hz * b.hz;
+    if (px * px + pz * pz <= r) out.push(b);
+  }
+  return out;
+}
+export function arcAtPitchClears(world, muzzle, target, p, v, selfId, pool) {
   const dx = target.x - muzzle.x, dz = target.z - muzzle.z;
   const d = Math.max(1e-3, Math.hypot(dx, dz));
   const ux = dx / d, uz = dz / d;
@@ -338,7 +368,7 @@ export function arcAtPitchClears(world, muzzle, target, p, v, selfId) {
     // at the dirt must be allowed to descend into it); the first 2.5m keeps
     // losGraze's own muzzle-cover exemption
     if ((k / N) * d < d - 3.0 && hy <= world.field.heightAt(hx, hz) + 0.05) return false;
-    if ((k / N) * d > 2.5 && solidBlocksPoint(world, hx, hy, hz, selfId)) return false;
+    if ((k / N) * d > 2.5 && solidBlocksPoint(world, hx, hy, hz, selfId, pool)) return false;
   }
   return true;
 }
@@ -347,12 +377,24 @@ export function elevSolve(world, muzzle, target, spec, selfId) {
   const dy = target.y - muzzle.y;
   let p0 = aimSolve(spec.projSpeed, d, dy, 9.8, false);
   if (p0 == null) p0 = 0.1;
-  for (let p = p0; p <= ELEV_CAP + 1e-9; p += ELEV_STEP) {
+  const cap = elevCapOf(spec); // mk2.55: the spec's own cap
+  const pool = lanePool(world, muzzle, target, selfId); // mk2.55: the lane's solids, once
+  for (let p = p0; p <= cap + 1e-9; p += ELEV_STEP) {
     const v = p === p0 ? spec.projSpeed : speedForPitch(d, dy, p);
     if (v == null || v > spec.projSpeed) continue;
-    if (arcAtPitchClears(world, muzzle, target, p, v, selfId)) return { pitch: p, v };
+    if (arcAtPitchClears(world, muzzle, target, p, v, selfId, pool)) return { pitch: p, v };
   }
   return null;
+}
+// mk2.55 (owner): THE LAWFUL SHOT — one gate for every armor target scan.
+// Only a spec carrying its own cap (the Bison's gun) asks elevSolve — any
+// pitch under that cap counts; every other spec, the wave tank's auto gun
+// included, asks arcClears exactly as today (owner, 2026-08-25: Bison
+// only). Both sides' armor scans read this, so the enemy's Bison seeks the
+// same lobbed targets the player's does.
+export function shotClears(world, muzzle, target, spec, selfId) {
+  if (spec.elevCap != null) return elevSolve(world, muzzle, target, spec, selfId) !== null;
+  return arcClears(world, muzzle, target, spec, selfId);
 }
 
 // The first 2.5m of flight ignores solids — losGraze's own muzzle-cover
@@ -435,20 +477,27 @@ export function predictRing(SG, muzzle, aim, spec, sigma, wind, toUV) {
       // mk2.03: raise the barrel inside the cap, speed fitted — the SG-map
       // mirror of elevSolve; null keeps the low root and the ring parks on
       // the obstruction, saying "no lawful arc".
+      // mk2.55 (owner): the cap is the spec's own (elevCapOf), and the arc
+      // is CHOSEN in still air exactly as elevSolve chooses it — then the
+      // chosen arc is flown once more in the wind for the ring's center.
+      // The wind stays on the shell (owner, 2026-08-25): a lob drifts, and
+      // the ring shows where it lands, not where the reticle stands. The
+      // azimuth is shooterFire's own wind-held aim (its low-root hold-off).
       const d = Math.max(2, Math.hypot(aim.x - muzzle.x, aim.z - muzzle.z));
       const dy = aim.y - muzzle.y;
+      const cap = elevCapOf(spec);
       let found = null;
       let p0 = aimSolve(spec.projSpeed, d, dy, 9.8, false);
       if (p0 == null) p0 = 0.1;
-      for (let p = p0 + ELEV_STEP; p <= ELEV_CAP + 1e-9 && !found; p += ELEV_STEP) {
+      const yd = Math.max(1e-3, Math.hypot(rawDir.x, rawDir.z)), azx = rawDir.x / yd, azz = rawDir.z / yd;
+      for (let p = p0 + ELEV_STEP; p <= cap + 1e-9 && !found; p += ELEV_STEP) {
         const v = speedForPitch(d, dy, p);
         if (v == null || v > spec.projSpeed) continue;
-        const dxn = (aim.x - muzzle.x) / d, dzn = (aim.z - muzzle.z) / d;
-        const dir = { x: dxn * Math.cos(p), y: Math.sin(p), z: dzn * Math.cos(p) };
-        const hit = flightImpact(SG, muzzle, dir, v, spec, wind, toUV);
-        if (!hit.wall && Math.hypot(hit.x - aim.x, hit.z - aim.z) < 2.5) found = { dir, v, hit };
+        const dir = { x: azx * Math.cos(p), y: Math.sin(p), z: azz * Math.cos(p) };
+        const still = flightImpact(SG, muzzle, dir, v, spec, null, toUV);
+        if (!still.wall && Math.hypot(still.x - aim.x, still.z - aim.z) < 2.5) found = { dir, v };
       }
-      if (found) { rawDir = found.dir; fireV = found.v; center = found.hit; }
+      if (found) { rawDir = found.dir; fireV = found.v; center = flightImpact(SG, muzzle, rawDir, fireV, spec, wind, toUV); }
     }
   }
   const cap = SCATTER_CAP * sigma;
