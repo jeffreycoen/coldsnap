@@ -26,9 +26,9 @@ on approval.
 | T1 | mk2.70 | 1 | `depot/sim.js` — the twelve top-level sim functions + `STONE`/`STONE_PITCH`; `src/ui/startview.js` repointed; api.js entry guard made bundler-safe; 16 test files re-taught | depot-test, golden, smoke, depot-lint | LANDED — commit 063a8b0, gates 2,091/0 + 7/7 + 30/0, build green; DepotGame readFileSync count 87→78 |
 | T2a | mk2.71 | 2 | `makeMap` returns `GameMap`; `assertMap` into mapgen; api.js part 3 deleted; the two mapFromGlobals call sites migrated; shim intact (6 export lets) | depot-test, golden, smoke, depot-lint | LANDED — commit e2abb96, gates 2,091/0 + 7/7 + 30/0. Open sweep item for T2b: sim.js line-5 header comment still names mapFromGlobals (stale prose, no call site) |
 | T2b | mk2.72 | 2 | every consumer takes `map` as a parameter — state/muster/bell/buildlines/sim/DepotGame/startview migrated; 14 signatures changed; ~45 test re-teaches across 11 files | depot-test, golden, smoke, depot-lint | LANDED — commit 6e9f316, final gates 2,091/0 + 7/7 + 30/0. Surviving mapgen imports under src are builders only (checkConnectivity, layDressing, makeMap/buildDepotTerrain/makeGrid/planTrees/computeFlowField) |
-| T3 | mk2.73 | 3 | `S` split run / view / input; `serializeRun` filled; byte-equal saves | depot-test, golden, smoke | DISPATCHED 2026-08-27 — plan `2026-08-27-wee-t3-state-split.md`, agent running |
+| T3 | mk2.73 | 3 | `S` split run / view / input; `serializeRun` filled; byte-equal saves | depot-test, golden, smoke | LANDED — commit e8938d8, gates 2,089/0 + 7/0 + 30/0, build green |
 | T4+T5 | mk2.74 | 4+5 | `depot/boot.js` (`bootWar`) and `depot/tick.js` (`tickWar`); `node src/depot/api.js gate` boots headless, runs, exits 0 | depot-test, golden, smoke | LANDED |
-| Closeout | mk2.75 | — | phase closeout: README claims and screenshots re-checked against the shipped game | — | pending |
+| Closeout | mk2.75 | — | phase closeout: README claims and screenshots re-checked against the shipped game | — | LANDED |
 | T6 | — | 6 | — | — | OFF THE BOARD (owner, 2026-08-27) |
 | T7 | — | 7 | — | — | OFF THE BOARD (owner, 2026-08-27) |
 | T8 | — | 8 | — | — | OFF THE BOARD (owner, 2026-08-27) |
@@ -72,3 +72,6 @@ as measured at mk2.68. 2026-08-27, owner's ruling: tasks 4 and 5 combine
 into one task at mk2.74; the closeout follows at mk2.75; tasks 6 through
 11 are off the board. T4+T5 landed 2026-08-27, gates depot-test 2,089/0,
 golden 7/0, smoke 30/0; keystone re-proof equal at seed 1 and seed 7.
+Phase closed 2026-08-27 at mk2.75: the war engine boots, ticks, and
+saves headless through src/depot/api.js; claims re-measured at
+closeout.

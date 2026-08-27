@@ -2,7 +2,7 @@
 
 **A full physics war game that fits on a floppy disk.** 💾
 
-The whole thing — the war, the engine, five tech demos, every sound — is one 1.31 MB bundle, about 418 KB over the wire. A 1.44 MB floppy still holds it.
+The whole thing — the war, the engine, five tech demos, every sound — is one 1.39 MB bundle, about 422 KB over the wire. A 1.44 MB floppy still holds it.
 
 **PLAY:** https://jeffreycoen.github.io/coldsnap/
 
@@ -37,7 +37,7 @@ The war itself: every 90 seconds the muster bell rings and the convoy deals a fi
 
 - **Engine** (`src/engine/core.js`, ~2,500 dependency-free lines): sequential-impulse rigid-body solver — boxes, quaternions, friction, stacking — with welds that carry break forces, sleeping bodies, and a fixed 120 Hz timestep.
 - **Two-tier collision books**: sleeping and immovable stones file into the broadphase once and stay filed — a cell of settled masonry does no pair work. Measured on the Pi: idle simulation 5.0 → 3.1 ms, assault plus collapse 10.8 → 7.3 ms, physics bit-identical before and after.
-- **Determinism culture**: every random draw is seeded and draw-count-stable (a lint gate forbids `Math.random` in game logic); the original demo is byte-frozen and `scripts/golden.mjs` re-extracts the engine from it on every push, asserting bit-identical world-state hashes; behavior laws are asserted over freshly drawn random maps on every run — no chosen seeds, no pinned battles. 2,091 headless checks run green behind seven CI gates on every push.
+- **Determinism culture**: every random draw is seeded and draw-count-stable (a lint gate forbids `Math.random` in game logic); the original demo is byte-frozen and `scripts/golden.mjs` re-extracts the engine from it on every push, asserting bit-identical world-state hashes; behavior laws are asserted over freshly drawn random maps on every run — no chosen seeds, no pinned battles. 2,089 headless checks run green behind seven CI gates on every push.
 - **Renderer** (`src/render/renderer.js`): one Three.js scene, instanced pools with fixed caps sized by measurement — 7,000 stones, 800 trees — and a fog pass that draws only what a living eye can see.
 - **The save**: bodies, welds mid-break, craters, squad rosters, minefields, the dice — serialized at each bell into a single JSON string in browser storage.
 - Winter Front was built on five playable tech demos — driving, contracts, a campaign, a tower defense, and a walking biped mech — all still on the site behind THE PROVING RANGE.
