@@ -26,13 +26,20 @@ import fs from "node:fs";
   // stripping the "export " prefix so the extracted text is byte-identical
   // to what it was pre-move).
   const mgSrcF1 = fs.readFileSync(new URL("../../src/depot/mapgen.js", import.meta.url), "utf8");
+  // sim.js (war-engine-extraction task 1): townFootprint/buildTown moved out
+  // of DepotGame.jsx here — sliceFn's third fallback.
+  const simSrcF1 = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
   const sliceFn = (name) => {
     let start = depotSrcF1.indexOf(`\nfunction ${name}(`), rest;
     if (start >= 0) { rest = depotSrcF1.slice(start + 1); }
     else {
       start = mgSrcF1.indexOf(`\nexport function ${name}(`);
-      if (start < 0) throw new Error("F1 extract: missing function " + name);
-      rest = mgSrcF1.slice(start + 1).replace(/^export /, "");
+      if (start >= 0) { rest = mgSrcF1.slice(start + 1).replace(/^export /, ""); }
+      else {
+        start = simSrcF1.indexOf(`\nexport function ${name}(`);
+        if (start < 0) throw new Error("F1 extract: missing function " + name);
+        rest = simSrcF1.slice(start + 1).replace(/^export /, "");
+      }
     }
     const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
     return rest.slice(0, m < 0 ? rest.length : m + 9);
@@ -48,7 +55,7 @@ import fs from "node:fs";
     // stone. buildTown calls it, so the extraction must carry it.
     // streamAt (T3, mk1.02): makeGrid's water branch calls it now.
     sliceFn("makeGrid"), sliceFn("checkConnectivity"), sliceFn("townFootprint"), sliceFn("buildTown"),
-    `return { genMap, makeMap, makeGrid, checkConnectivity, buildTown, invW,
+    `    return { genMap, makeMap, makeGrid, checkConnectivity, buildTown: (w, g, f) => buildTown(w, g, f, { TOWN, OBJ_POS, MAP_SEED, GRID_W, GRID_H }), invW,
       state: () => ({ ORIENT, OBJ_POS, SPAWN_POINTS, PONDS, ROCKS, TOWN, ROADS, MAP_SEED }) };`,
   ].join("\n");
   const makeMapModule = () => new Function(

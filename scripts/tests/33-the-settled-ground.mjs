@@ -17,13 +17,20 @@ import { planRoute } from "../../src/depot/route.js";
 
 const src = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
 const mgSrc = fs.readFileSync(new URL("../../src/depot/mapgen.js", import.meta.url), "utf8");
+// stepSquadRouting/townFootprint/buildTown moved to sim.js (war-engine-
+// extraction task 1) — sliceFn's third fallback.
+const simSrc = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
 const sliceFn = (name) => {
   let start = src.indexOf(`\nfunction ${name}(`), rest;
   if (start >= 0) { rest = src.slice(start + 1); }
   else {
     start = mgSrc.indexOf(`\nexport function ${name}(`);
-    if (start < 0) throw new Error("file 33 extract: missing function " + name);
-    rest = mgSrc.slice(start + 1).replace(/^export /, "");
+    if (start >= 0) { rest = mgSrc.slice(start + 1).replace(/^export /, ""); }
+    else {
+      start = simSrc.indexOf(`\nexport function ${name}(`);
+      if (start < 0) throw new Error("file 33 extract: missing function " + name);
+      rest = simSrc.slice(start + 1).replace(/^export /, "");
+    }
   }
   const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
   return rest.slice(0, m < 0 ? rest.length : m + 9);
@@ -35,7 +42,7 @@ const mapSrc = [
   sliceFn("formOf"), sliceFn("layDressing"), sliceFn("stoneCount"),
   sliceFn("genMap"), sliceFn("makeMap"), sliceFn("streamAt"), sliceFn("pondAt"), sliceFn("rockAt"),
   sliceFn("makeGrid"), sliceFn("checkConnectivity"), sliceFn("stepSquadRouting"), sliceFn("townFootprint"), sliceFn("buildTown"),
-  `return { makeMap, makeGrid, buildTown, checkConnectivity, stepSquadRouting, state: () => ({ TOWN, MAP_SEED, OBJ_POS, SPAWN_POINTS, CLUSTERS }) };`,
+  `  return { makeMap, makeGrid, buildTown: (w, g, f) => buildTown(w, g, f, { TOWN, OBJ_POS, MAP_SEED, GRID_W, GRID_H }), checkConnectivity, stepSquadRouting, state: () => ({ TOWN, MAP_SEED, OBJ_POS, SPAWN_POINTS, CLUSTERS }) };`,
 ].join("\n");
 const mkMap = () => new Function(
   "mulberry32", "MASON", "fwdUFor", "fwdDirFor", "invWFor", "addBody", "addWeld", "planRoute", mapSrc,

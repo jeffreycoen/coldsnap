@@ -37,13 +37,20 @@ import fs from "node:fs";
   // P7 T18: sliceFn2 checks DepotGame.jsx first (unmoved names), then
   // mapgen.js (moved names, stripping the "export " prefix).
   const mgSrcT1 = mgSrcT1pin;
+  // townFootprint/buildTown moved to sim.js (war-engine-extraction task 1) —
+  // sliceFn2's third fallback.
+  const simSrcT1 = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
   const sliceFn2 = (name) => {
     let start = src.indexOf(`\nfunction ${name}(`), rest;
     if (start >= 0) { rest = src.slice(start + 1); }
     else {
       start = mgSrcT1.indexOf(`\nexport function ${name}(`);
-      if (start < 0) throw new Error("T1 extract: missing function " + name);
-      rest = mgSrcT1.slice(start + 1).replace(/^export /, "");
+      if (start >= 0) { rest = mgSrcT1.slice(start + 1).replace(/^export /, ""); }
+      else {
+        start = simSrcT1.indexOf(`\nexport function ${name}(`);
+        if (start < 0) throw new Error("T1 extract: missing function " + name);
+        rest = simSrcT1.slice(start + 1).replace(/^export /, "");
+      }
     }
     const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
     return rest.slice(0, m < 0 ? rest.length : m + 9);
@@ -107,13 +114,20 @@ import fs from "node:fs";
   const srcT2 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   // P7 T18: sliceFn3 checks DepotGame.jsx first, then mapgen.js for moved names.
   const mgSrcT2 = fs.readFileSync(new URL("../../src/depot/mapgen.js", import.meta.url), "utf8");
+  // townFootprint/buildTown moved to sim.js (war-engine-extraction task 1) —
+  // sliceFn3's third fallback.
+  const simSrcT2 = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
   const sliceFn3 = (name) => {
     let start = srcT2.indexOf(`\nfunction ${name}(`), rest;
     if (start >= 0) { rest = srcT2.slice(start + 1); }
     else {
       start = mgSrcT2.indexOf(`\nexport function ${name}(`);
-      if (start < 0) throw new Error("T2 extract: missing function " + name);
-      rest = mgSrcT2.slice(start + 1).replace(/^export /, "");
+      if (start >= 0) { rest = mgSrcT2.slice(start + 1).replace(/^export /, ""); }
+      else {
+        start = simSrcT2.indexOf(`\nexport function ${name}(`);
+        if (start < 0) throw new Error("T2 extract: missing function " + name);
+        rest = simSrcT2.slice(start + 1).replace(/^export /, "");
+      }
     }
     const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
     return rest.slice(0, m < 0 ? rest.length : m + 9);
@@ -175,6 +189,9 @@ import fs from "node:fs";
   // extraction: the T1/T2 pattern, plus streamAt and the STREAM module state.
   // P7 T18: sliceFn3 checks DepotGame.jsx first, then mapgen.js for moved names.
   const mgSrcT3 = fs.readFileSync(new URL("../../src/depot/mapgen.js", import.meta.url), "utf8");
+  // townFootprint/buildTown moved to sim.js (war-engine-extraction task 1) —
+  // sliceFn3's third fallback.
+  const simSrcT3 = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
   let M3ok = true, mkMapT3 = null;
   try {
     const sliceFn3 = (name) => {
@@ -182,8 +199,12 @@ import fs from "node:fs";
       if (start >= 0) { rest = src.slice(start + 1); }
       else {
         start = mgSrcT3.indexOf(`\nexport function ${name}(`);
-        if (start < 0) throw new Error("T3 extract: missing function " + name);
-        rest = mgSrcT3.slice(start + 1).replace(/^export /, "");
+        if (start >= 0) { rest = mgSrcT3.slice(start + 1).replace(/^export /, ""); }
+        else {
+          start = simSrcT3.indexOf(`\nexport function ${name}(`);
+          if (start < 0) throw new Error("T3 extract: missing function " + name);
+          rest = simSrcT3.slice(start + 1).replace(/^export /, "");
+        }
       }
       const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
       return rest.slice(0, m < 0 ? rest.length : m + 9);
@@ -262,13 +283,20 @@ import fs from "node:fs";
   const src = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   // P7 T18: sliceFn4 checks DepotGame.jsx first, then mapgen.js for moved names.
   const mgSrcT4 = fs.readFileSync(new URL("../../src/depot/mapgen.js", import.meta.url), "utf8");
+  // townFootprint/buildTown moved to sim.js (war-engine-extraction task 1) —
+  // sliceFn4's third fallback.
+  const simSrcT4 = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
   const sliceFn4 = (name) => {
     let start = src.indexOf(`\nfunction ${name}(`), rest;
     if (start >= 0) { rest = src.slice(start + 1); }
     else {
       start = mgSrcT4.indexOf(`\nexport function ${name}(`);
-      if (start < 0) throw new Error("T4 extract: missing function " + name);
-      rest = mgSrcT4.slice(start + 1).replace(/^export /, "");
+      if (start >= 0) { rest = mgSrcT4.slice(start + 1).replace(/^export /, ""); }
+      else {
+        start = simSrcT4.indexOf(`\nexport function ${name}(`);
+        if (start < 0) throw new Error("T4 extract: missing function " + name);
+        rest = simSrcT4.slice(start + 1).replace(/^export /, "");
+      }
     }
     const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
     return rest.slice(0, m < 0 ? rest.length : m + 9);
@@ -278,7 +306,7 @@ import fs from "node:fs";
     header4,
     sliceFn4("formOf"), sliceFn4("layDressing"), sliceFn4("stoneCount"), sliceFn4("genMap"), sliceFn4("makeMap"), sliceFn4("streamAt"), sliceFn4("pondAt"), sliceFn4("rockAt"),
     sliceFn4("makeGrid"), sliceFn4("checkConnectivity"), sliceFn4("townFootprint"), sliceFn4("buildTown"),
-    `return { makeMap, makeGrid, buildTown, invW, state: () => ({ ORIENT, TOWN, MAP_SEED }) };`,
+    `    return { makeMap, makeGrid, buildTown: (w, g, f) => buildTown(w, g, f, { TOWN, OBJ_POS, MAP_SEED, GRID_W, GRID_H }), invW, state: () => ({ ORIENT, TOWN, MAP_SEED }) };`,
   ].join("\n");
   const mkMapT4 = () => new Function(
     "mulberry32", "MASON", "fwdUFor", "fwdDirFor", "invWFor", "addBody", "addWeld", mapSrc4,
@@ -389,8 +417,10 @@ import fs from "node:fs";
   // (g) source pins: the hooks and the raised cap exist where claimed
   ok("T4(g): the wide templates, the warehouse, and the inn carry the cols flag (6 sites — re-taught mk2.63, the inn joins)",
     (mgSrcT4.match(/cols: true/g) || []).length === 6);
+  // the driveZ derivation lives inside buildTown, moved to sim.js
+  // (war-engine-extraction task 1).
   ok("T4(g): the drive doors bind to the long axis by live dimensions",
-    /const driveZ = t\.drive && t\.nz >= t\.nx;/.test(src));
+    /const driveZ = t\.drive && t\.nz >= t\.nx;/.test(simSrcT4));
   ok("T4(g): the town debug hook exists", /__DEPOTTOWN__/.test(src));
   const rsrc4 = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
   ok("T4(g): the chunk pool is raised to 7000 (re-taught mk2.65, the crowded valley)", /const CHUNK_CAP = 7000;/.test(rsrc4));
@@ -407,6 +437,9 @@ import fs from "node:fs";
   const src = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   // P7 T18: sliceFn5 checks DepotGame.jsx first, then mapgen.js for moved names.
   const mgSrcT5 = fs.readFileSync(new URL("../../src/depot/mapgen.js", import.meta.url), "utf8");
+  // townFootprint/buildTown moved to sim.js (war-engine-extraction task 1) —
+  // sliceFn5's third fallback.
+  const simSrcT5 = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
   let M5ok = true, mkMapT5 = null;
   try {
     const sliceFn5 = (name) => {
@@ -414,8 +447,12 @@ import fs from "node:fs";
       if (start >= 0) { rest = src.slice(start + 1); }
       else {
         start = mgSrcT5.indexOf(`\nexport function ${name}(`);
-        if (start < 0) throw new Error("T5 extract: missing function " + name);
-        rest = mgSrcT5.slice(start + 1).replace(/^export /, "");
+        if (start >= 0) { rest = mgSrcT5.slice(start + 1).replace(/^export /, ""); }
+        else {
+          start = simSrcT5.indexOf(`\nexport function ${name}(`);
+          if (start < 0) throw new Error("T5 extract: missing function " + name);
+          rest = simSrcT5.slice(start + 1).replace(/^export /, "");
+        }
       }
       const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
       return rest.slice(0, m < 0 ? rest.length : m + 9);
@@ -521,13 +558,20 @@ import fs from "node:fs";
   console.log("\n[front t6: the twin battle]");
   const src6 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   const mgSrc6 = fs.readFileSync(new URL("../../src/depot/mapgen.js", import.meta.url), "utf8");
+  // townFootprint/buildTown moved to sim.js (war-engine-extraction task 1) —
+  // sliceFn6's third fallback.
+  const simSrc6 = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
   const sliceFn6 = (name) => {
     let start = src6.indexOf(`\nfunction ${name}(`), rest;
     if (start >= 0) { rest = src6.slice(start + 1); }
     else {
       start = mgSrc6.indexOf(`\nexport function ${name}(`);
-      if (start < 0) throw new Error("T6 extract: missing function " + name);
-      rest = mgSrc6.slice(start + 1).replace(/^export /, "");
+      if (start >= 0) { rest = mgSrc6.slice(start + 1).replace(/^export /, ""); }
+      else {
+        start = simSrc6.indexOf(`\nexport function ${name}(`);
+        if (start < 0) throw new Error("T6 extract: missing function " + name);
+        rest = simSrc6.slice(start + 1).replace(/^export /, "");
+      }
     }
     const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
     return rest.slice(0, m < 0 ? rest.length : m + 9);
@@ -540,7 +584,7 @@ import fs from "node:fs";
     sliceFn6("pondAt"), sliceFn6("rockAt"),
     sliceFn6("makeGrid"), sliceFn6("checkConnectivity"), sliceFn6("townFootprint"), sliceFn6("buildTown"),
     sliceFn6("buildDepotTerrain"),
-    `return { makeMap, makeGrid, buildTown, buildDepotTerrain, invW, fwdU,
+    `    return { makeMap, makeGrid, buildTown: (w, g, f) => buildTown(w, g, f, { TOWN, OBJ_POS, MAP_SEED, GRID_W, GRID_H }), buildDepotTerrain, invW, fwdU,
       state: () => ({ ORIENT, TOWN, MAP_SEED }) };`,
   ].join("\n");
   const battle6 = (seed) => {

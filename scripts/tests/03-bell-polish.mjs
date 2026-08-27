@@ -254,9 +254,12 @@ import fs from "node:fs";
     const wsrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     const usrc = fs.readFileSync(new URL("../../src/depot/units.js", import.meta.url), "utf8");
     const ssrc = fs.readFileSync(new URL("../../src/depot/state.js", import.meta.url), "utf8");
+    // stepDepot moved to sim.js (war-engine-extraction task 1) — the support
+    // pass and the rubble-count pin below read its new home.
+    const simSrc = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
     ok("mk0.55/f: buildAt lays oriented courses (auto-continue, broadside default)", /spawnWallCourses\(world, wp\.x, y, wp\.z, wallOrientAt\(world, wp\.x, wp\.z, ORIENT % 2\)\)\[0\]/.test(wsrc));
     ok("mk0.52/f: the support pass runs in stepDepot, after the dead are cleared",
-      /structureLost[\s\S]{0,700}stepWallSupport\(world\)/.test(wsrc));
+      /structureLost[\s\S]{0,700}stepWallSupport\(world\)/.test(simSrc));
     ok("mk0.52/f: selling takes the whole stack, matched by footprint not id",
       /const stack = b\.kind === "wall"/.test(wsrc) && /wg\.gx === gx && wg\.gz === gz/.test(wsrc));
     ok("mk0.52/f: resume re-claims the cell with the BOTTOM course", /if \(b\.course > 0\) continue;/.test(wsrc));
@@ -269,7 +272,7 @@ import fs from "node:fs";
     ok("mk1.93/f: one wall pays one death (scoreKill's upper-course exclusion, state.js)",
       /ev\.kind === "wall" && ev\.group === WALL_UPPER_GROUP\) return null;/.test(ssrc));
     ok("mk0.52/f: a course leaves a THIRD of the rubble (27 stones per wall, as before)",
-      /ny: b\.kind === "tower" \? 4 : \(b\.course != null \? 1 : 3\)/.test(wsrc));
+      /ny: b\.kind === "tower" \? 4 : \(b\.course != null \? 1 : 3\)/.test(simSrc));
   }
 
   // (h) The crater re-seat. core.js drops static structures onto the ground

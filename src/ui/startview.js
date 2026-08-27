@@ -8,7 +8,8 @@
 import { makeField, makeWorld, addBody } from "../engine/core.js";
 import { makeRenderer } from "../render/renderer.js";
 import { makeMap, MAP_SEED, TOWN, ROCKS, PONDS, ROADS, STREAM, RIM_HALF_U, RIM_HALF_V, fwdU, invW, buildDepotTerrain, makeGrid, planTrees } from "../depot/mapgen.js";
-import { buildTown } from "../depot/DepotGame.jsx";
+import { buildTown } from "../depot/sim.js";
+import { mapFromGlobals } from "../depot/api.js";
 
 export function captureStartView(target, seed) {
   makeMap(seed);
@@ -18,7 +19,7 @@ export function captureStartView(target, seed) {
   const grid = makeGrid(field);
   const world = makeWorld({ field, seed: MAP_SEED });
   world._tdStruct = true;
-  buildTown(world, grid, field);
+  buildTown(world, grid, field, mapFromGlobals());
   // rocks and trees exactly as the fresh boot lays them — bodies, so the
   // renderer gives them their real silhouettes and shadows
   for (const k of ROCKS) {

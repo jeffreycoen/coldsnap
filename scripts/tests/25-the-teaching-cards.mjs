@@ -95,9 +95,12 @@ ok("T1: an unknown door falls to CLOSE (the teach door needs no code)",
 
 // ---- Task 9 (mk2.47): THE OPENING VIEW
 {
-  const dg = src("src/depot/DepotGame.jsx");
+  // buildTown moved to sim.js (war-engine-extraction task 1); the separate
+  // `export { buildTown };` line is gone — `export function buildTown`
+  // replaces it (the task's substitution table).
+  const simSrc = src("src/depot/sim.js");
   ok("T9: the town builder is shared by statement, its pinned line untouched",
-    /\nexport \{ buildTown \};/.test(dg) && /\nfunction buildTown\(world, grid, field\) \{/.test(dg));
+    /\nexport function buildTown\(world, grid, field, map\) \{/.test(simSrc));
   ok("T9: the capture sizes off-DOM through the renderer's own door", /cv\.dataset\.w = String\(w\)/.test(src("src/ui/startview.js")));
 }
 

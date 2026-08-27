@@ -1832,8 +1832,11 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     // keeps the roster consistent when it does. Source-assert the sweep is
     // team-agnostic by design, not accidentally team-2-only.
     const depotSrc3 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    // the corpse sweep and the tower scan below live in stepDepot/stepTowers,
+    // moved to sim.js (war-engine-extraction task 1).
+    const simSrc3 = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
     ok("sweep/corpse: DepotGame corpse sweep is kind-gated, team-agnostic",
-      depotSrc3.includes('b.kind === "unit" && !b.alive && world.t - (b.deadT || 0) > 2.5'));
+      simSrc3.includes('b.kind === "unit" && !b.alive && world.t - (b.deadT || 0) > 2.5'));
 
     // (e) emitters: team-1 members must emit GREEN influence (EMIT.unit,
     // sign +1) and sandbags must emit under EMIT.wall — buildEmitters is a
@@ -1855,7 +1858,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     // range is invisible to friendly guns (source assert; stepTowers lives
     // in DepotGame.jsx which node can't import as JSX).
     ok("sweep/towerscan: stepTowers scan filters to team 2",
-      depotSrc3.includes('(e.kind !== "unit" && e.kind !== "vehicle") || !e.alive || e.team !== 2'));
+      simSrc3.includes('(e.kind !== "unit" && e.kind !== "vehicle") || !e.alive || e.team !== 2'));
 
     // (g) __DEPOTTHIN__ (the wave-drain harness) kills team 2 only.
     ok("sweep/thin: __DEPOTTHIN__ kills only team-2 units",

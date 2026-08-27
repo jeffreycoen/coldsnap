@@ -545,9 +545,12 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
     ok("T6(h): the card carries the owner's copy and the treat skill",
       !!CARDS.sq_medics && /kneel to treat/.test(CARDS.sq_medics.role) && CARDS.sq_medics.skills.includes("TREAT THE WOUNDED") && CARDS.sq_medics.dmg === null);
     const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
+    // the tend call lives inside stepDepot, moved to sim.js (war-engine-
+    // extraction task 1).
+    const simSrc = fs.readFileSync("src/depot/sim.js", "utf8");
     ok("T6(h2): the bar, the mode map, and the tend call are wired",
       /key: "sq_medics", label: "MEDICS", icon: "✚"/.test(src) && /sq_medics: "medics"/.test(src) &&
-      /if \(sq\.type === "medics"\) stepMedicTendSquad\(world, sq, world\.dt\);/.test(src));
+      /if \(sq\.type === "medics"\) stepMedicTendSquad\(world, sq, world\.dt\);/.test(simSrc));
   }
 }
 
@@ -652,9 +655,12 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
     ok("T7v2(i): the card carries the owner's copy and the paid-repair skill",
       !!CARDS.sq_mechanics && /paid in scrap/.test(CARDS.sq_mechanics.role) && CARDS.sq_mechanics.skills.includes("REPAIR — PAID IN SCRAP"));
     const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
+    // the loop call lives inside stepDepot, moved to sim.js (war-engine-
+    // extraction task 1); the books stamp (world._mech) stays in the boot.
+    const simSrc = fs.readFileSync("src/depot/sim.js", "utf8");
     ok("T7v2(i2): the bar, the mode map, the loop call, and the books stamp are wired",
       /key: "sq_mechanics", label: "MECHANICS", icon: "⚙"/.test(src) && /sq_mechanics: "mechanics"/.test(src) &&
-      /if \(sq\.type === "mechanics"\) stepMechanicTendSquad\(world, sq, world\.dt\);/.test(src) &&
+      /if \(sq\.type === "mechanics"\) stepMechanicTendSquad\(world, sq, world\.dt\);/.test(simSrc) &&
       /world\._mech = \{ take: \(team, n\) => \{/.test(src));
   }
 }

@@ -1025,7 +1025,9 @@ import fs from "node:fs";
 // the convention COMMAND T1-T4 already use.
 {
   const flatField = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
-  const dsrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  // stepDepot moved to sim.js (war-engine-extraction task 1) — its source pin
+  // reads its new home.
+  const dsrc = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
 
   // (a) mirror+pin: driving a squad straight for 2 sim-seconds moves the
   // anchor ~6.4m (MOVE_SPEED 3.2 * 2s), and every live member holds within
@@ -1094,7 +1096,7 @@ import fs from "node:fs";
   // instead) as the loop's FIRST line, and a squad whose members all die
   // while possessed releases automatically right after pruneSquads.
   {
-    const stepDepotBody = (dsrc.match(/function stepDepot\(world, grid, onStructureLost, town, onRuin, T, discipline, S\) \{[\s\S]*?\n\}/) || [""])[0];
+    const stepDepotBody = (dsrc.match(/function stepDepot\(world, grid, onStructureLost, town, onRuin, T, discipline, S, map\) \{[\s\S]*?\n\}/) || [""])[0];
     const guardIdx = stepDepotBody.indexOf('if (S.possess && S.possess.kind === "squad" && sq.id === S.possess.id) {');
     const engageIdx = stepDepotBody.indexOf("engageCheck(sq);");
     ok("POSSESSION T1(b): stepDepot's squad loop carries a possession guard",
@@ -1328,10 +1330,12 @@ import fs from "node:fs";
   // the loop's first body line after the kind/alive filter — skips straight
   // past the possessed tower, no acquisition, no fire.
   {
-    const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    // stepTowers moved to sim.js (war-engine-extraction task 1) — the pin
+    // reads its new home.
+    const gameSrc = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
     const stepTowersBody = (gameSrc.match(/export function stepTowers\([\s\S]*?\n\}/) || [""])[0];
     ok("POSSESSION T3(a) source pin: stepTowers takes a possessedId argument",
-      /export function stepTowers\(world, T, discipline, possessedId, arcs, holdArea\)/.test(gameSrc)); // mk2.18: sixth param `holdArea` added for the switch
+      /export function stepTowers\(world, T, discipline, possessedId, arcs, holdArea, map\)/.test(gameSrc)); // mk2.18: sixth param `holdArea` added for the switch; mk2.70: `map` (sim lift)
     ok("POSSESSION T3(a) source pin: the guard skips the possessed body — no acquisition, no fire",
       /if \(possessedId === b\.id\) \{ b\.fireCd = \(b\.fireCd \|\| 0\) - dt; continue; \}/.test(stepTowersBody), stepTowersBody.length);
   }
@@ -1573,9 +1577,12 @@ import fs from "node:fs";
 // the ONE world.wind assignment every shooter reads — not a second wind
 // source somewhere. Source pins (JSX, T1-T3's convention).
 {
+  // stepDepot's wind assignment moved to sim.js (war-engine-extraction task
+  // 1); MAP_SEED reads through the map parameter there (map.MAP_SEED).
   const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  const simSrc = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
   ok("WIND TOGGLE source pin: stepDepot's one wind assignment is gated by S.windOn",
-    /world\.wind = S\.windOn === false \? \{ x: 0, z: 0, mag: 0 \} : windAt\(MAP_SEED, world\.t\);/.test(gameSrc));
+    /world\.wind = S\.windOn === false \? \{ x: 0, z: 0, mag: 0 \} : windAt\(map\.MAP_SEED, world\.t\);/.test(simSrc));
   ok("WIND TOGGLE source pin: no other stepDepot-path windAt assignment exists",
     (gameSrc.match(/world\.wind = windAt/g) || []).length === 1); // the __DEPOTSETT__ debug hook only
   // mk0.96 (Task 6): OFF must also be QUIET and STILL — the audible bed and
@@ -1923,7 +1930,9 @@ import fs from "node:fs";
   // branch captures the pre-drive anchor and reverts when the clamped cell
   // is blocked or a wall.
   {
-    const dsrc8 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    // this branch lives in stepDepot, moved to sim.js (war-engine-extraction
+    // task 1).
+    const dsrc8 = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
     ok("POSSESSION T8(e) source pin: the possessed branch captures the pre-drive anchor",
       /const a0 = \{ x: sq\.anchor\.x, z: sq\.anchor\.z \};/.test(dsrc8));
     ok("POSSESSION T8(e) source pin: the anchor reverts when the clamped cell is blocked or a wall",
@@ -2391,7 +2400,9 @@ import fs from "node:fs";
   {
     const stateSrc = fs.readFileSync(new URL("../../src/depot/state.js", import.meta.url), "utf8");
     const unitsSrc = fs.readFileSync(new URL("../../src/depot/units.js", import.meta.url), "utf8");
-    const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    // the sim's fuse step lives in stepDepot, moved to sim.js (war-engine-
+    // extraction task 1).
+    const gameSrc = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
     const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
     const audioSrc = fs.readFileSync(new URL("../../src/platform/audio.js", import.meta.url), "utf8");
     const boardSrc = fs.readFileSync(new URL("../../src/ui/SoundBoard.jsx", import.meta.url), "utf8");

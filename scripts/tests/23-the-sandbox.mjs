@@ -32,13 +32,17 @@ ok("sandbox: the reroll button exists", dg.includes("data-dev-reroll"));
 }
 
 { // mk2.26: the fight switch — the one headless seam is stepTowers' world
-  // flag; the rest are wiring pins.
+  // flag; the rest are wiring pins. The switch's own reads (devDummies,
+  // stepEnemies, uprightMember, the tower guard) live inside stepDepot/
+  // stepTowers, moved to sim.js (war-engine-extraction task 1); only the
+  // button itself stays in DepotGame.jsx.
   const { makeField, makeWorld, addBody } = await import("../../src/engine/core.js");
-  const { stepTowers } = await import("../../src/depot/DepotGame.jsx").catch(() => ({}));
+  const { stepTowers } = await import("../../src/depot/sim.js").catch(() => ({}));
   const dg3 = src("src/depot/DepotGame.jsx");
+  const sim3 = src("src/depot/sim.js");
   ok("fight: the switch exists", dg3.includes("data-dev-fight"));
-  ok("fight: dummies skip the enemy drivers", dg3.includes("if (!S.devDummies) stepEnemies"));
-  ok("fight: standing dummies still upright", dg3.match(/devDummies[\s\S]{0,400}uprightMember/));
-  ok("fight: enemy towers read the flag", dg3.includes("world._devDummies && b.team === 2"));
-  ok("fight: the flag is stamped each tick", dg3.includes("world._devDummies = "));
+  ok("fight: dummies skip the enemy drivers", sim3.includes("if (!S.devDummies) stepEnemies"));
+  ok("fight: standing dummies still upright", sim3.match(/devDummies[\s\S]{0,400}uprightMember/));
+  ok("fight: enemy towers read the flag", sim3.includes("world._devDummies && b.team === 2"));
+  ok("fight: the flag is stamped each tick", sim3.includes("world._devDummies = "));
 }

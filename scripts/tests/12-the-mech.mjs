@@ -127,9 +127,9 @@ const run = (w, grid, n, opts) => { for (let i = 0; i < n; i++) { stepDrivers(w,
     L.friends.includes(m1.hull) && L.foes.includes(m2.hull) && L.vehicles.includes(m1.hull) && L.vehicles.includes(m2.hull));
 }
 {
-  // stepTowers lives in DepotGame.jsx (JSX, not importable) — source-pinned,
-  // the established pattern (era 10's "stepTowers derives its team").
-  const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
+  // stepTowers moved to sim.js (war-engine-extraction task 1) — source-
+  // pinned, the established pattern (era 10's "stepTowers derives its team").
+  const src = fs.readFileSync("src/depot/sim.js", "utf8");
   const m = src.match(/function stepTowers[\s\S]{0,4000}/);
   const body = m ? m[0] : "";
   const site1 = /best\.kind !== "unit" && best\.kind !== "vehicle" && best\.kind !== "mech"/.test(body);
@@ -267,7 +267,8 @@ const run = (w, grid, n, opts) => { for (let i = 0; i < n; i++) { stepDrivers(w,
   ok("M20: the driver's guns kill a seen conscript", !foe.alive, `alive=${foe.alive} steps=${steps}`);
 }
 {
-  const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
+  // stepDepot moved to sim.js (war-engine-extraction task 1).
+  const src = fs.readFileSync("src/depot/sim.js", "utf8");
   ok("M21: a dead hull detonates, leaves world.mechs, and leaves loose pieces (source-pinned, stepDepot's death block)",
     /A DEAD MECH[\s\S]{0,900}L2\.mechRef = null; L2\.team = 0;[\s\S]{0,100}world\.mechs\.splice\(mi2, 1\);/.test(src));
 }

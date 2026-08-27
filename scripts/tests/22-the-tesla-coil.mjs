@@ -150,7 +150,10 @@ const walk = (world, arcs, s) => { for (let i = 0; i < Math.round(s / 0.05); i++
   ok("switch: davy reads the hold", g.includes("holdArea") && g.includes("friendInBlast"));
   const dg = (await import("node:fs")).readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   ok("switch: the button exists", dg.includes("data-holdarea"));
-  ok("switch: tesla trigger reads the hold", dg.includes("teslaWouldCatchFriend"));
+  // the trigger's own read lives inside stepTowers, moved to sim.js
+  // (war-engine-extraction task 1).
+  const simDg = (await import("node:fs")).readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
+  ok("switch: tesla trigger reads the hold", simDg.includes("teslaWouldCatchFriend"));
 }
 { // davy behavior: the hold spares the plan when a rifleman stands in the ring
   const { makeField: mf, makeWorld: mw, addBody: ab } = await import("../../src/engine/core.js");

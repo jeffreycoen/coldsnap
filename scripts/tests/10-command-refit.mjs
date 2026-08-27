@@ -298,7 +298,9 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "tesla"]) {
 // ---- P7.1 T6 v2: the tower brain's team lesson (wiring pins — stepTowers
 // lives in DepotGame.jsx, unimportable headlessly; the audit precedent)
 {
-  const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
+  // stepTowers moved to sim.js (war-engine-extraction task 1) — the wiring
+  // pins below read its new home.
+  const src = fs.readFileSync("src/depot/sim.js", "utf8");
   ok("T6v2 wiring: stepTowers derives its team", /const tTeam = b\.team === 2 \? 2 : 1/.test(src));
   ok("T6v2 wiring: acquisition hunts the foe team", /e\.team !== foeTeam/.test(src));
   ok("T6v2 wiring: sight gates on the tower's own side", /fieldReaches\(T, c\.u, c\.v, tTeam\)/.test(src));

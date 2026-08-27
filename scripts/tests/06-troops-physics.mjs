@@ -22,9 +22,12 @@ import fs from "node:fs";
 // Zero new rng; the one-draw-per-leg contract is untouched.
 {
   console.log("\n[p6 t1: the path that walks around]");
-  const src = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  // P7 T18: sliceFnP checks DepotGame.jsx first (stepSquadRouting/townFootprint/
-  // buildTown stayed), then mapgen.js for moved names.
+  // stepSquadRouting/townFootprint/buildTown moved to sim.js (war-engine-
+  // extraction task 1) — sliceFnP's first check reads their new home; the
+  // (f) source pin below reads the same text.
+  const src = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
+  // P7 T18: sliceFnP checks sim.js first (stepSquadRouting/townFootprint/
+  // buildTown live there now), then mapgen.js for moved names.
   const mgSrcP = fs.readFileSync(new URL("../../src/depot/mapgen.js", import.meta.url), "utf8");
   let M1ok = true, mk1 = null;
   try {
@@ -32,9 +35,13 @@ import fs from "node:fs";
       let start = src.indexOf(`\nfunction ${name}(`), rest;
       if (start >= 0) { rest = src.slice(start + 1); }
       else {
-        start = mgSrcP.indexOf(`\nexport function ${name}(`);
-        if (start < 0) throw new Error("P6T1 extract: missing function " + name);
-        rest = mgSrcP.slice(start + 1).replace(/^export /, "");
+        start = src.indexOf(`\nexport function ${name}(`);
+        if (start >= 0) { rest = src.slice(start + 1).replace(/^export /, ""); }
+        else {
+          start = mgSrcP.indexOf(`\nexport function ${name}(`);
+          if (start < 0) throw new Error("P6T1 extract: missing function " + name);
+          rest = mgSrcP.slice(start + 1).replace(/^export /, "");
+        }
       }
       const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
       return rest.slice(0, m < 0 ? rest.length : m + 9);
@@ -46,7 +53,7 @@ import fs from "node:fs";
       sliceFnP("pondAt"), sliceFnP("rockAt"),
       sliceFnP("makeGrid"), sliceFnP("checkConnectivity"), sliceFnP("stepSquadRouting"),
       sliceFnP("townFootprint"), sliceFnP("buildTown"),
-      `return { makeMap, makeGrid, buildTown, planRoute, stepSquadRouting, streamAt, invW, fwdU,
+      `      return { makeMap, makeGrid, buildTown: (w, g, f) => buildTown(w, g, f, { TOWN, OBJ_POS, MAP_SEED, GRID_W, GRID_H }), planRoute, stepSquadRouting, streamAt, invW, fwdU,
         state: () => ({ ORIENT, TOWN, STREAM, MAP_SEED }) };`,
     ].join("\n");
     // P7 T2 (mk1.31): planRoute moved out of DepotGame.jsx into route.js —

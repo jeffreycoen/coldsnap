@@ -450,9 +450,14 @@ async function main() {
   process.exit(2);
 }
 
-// main() runs only when this file is the entry point. The node:url import
-// stays dynamic and inside the guard so a browser bundle never touches it.
-if (typeof process !== "undefined" && process.versions && process.versions.node && process.argv[1]) {
-  const { pathToFileURL } = await import("node:url");
-  if (import.meta.url === pathToFileURL(process.argv[1]).href) await main();
+// main() runs only when this file is the entry point. No top-level await and
+// no node: import up here — a browser bundle must transpile this file clean
+// (the sim-lift build finding); the node:fs import stays dynamic inside main().
+function runningAsEntry() {
+  if (typeof process === "undefined" || !process.versions || !process.versions.node || !process.argv[1]) return false;
+  const here = decodeURIComponent(import.meta.url.replace(/^file:\/\//, ""));
+  const arg = process.argv[1];
+  const argAbs = arg.startsWith("/") ? arg : process.cwd() + "/" + arg;
+  return here === argAbs;
 }
+if (runningAsEntry()) main();

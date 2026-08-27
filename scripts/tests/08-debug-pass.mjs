@@ -216,13 +216,20 @@ import fs from "node:fs";
   // a hope. The F1 Task 1 / T5 boot harness idiom, regrowing maps headless
   // off the real shipped source.
   // P7 T18: sliceFn15 checks DepotGame.jsx first, then mapgen.js for moved names.
+  // townFootprint/buildTown moved to sim.js (war-engine-extraction task 1) —
+  // sliceFn15's third fallback.
+  const simSrc15 = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
   const sliceFn15 = (name) => {
     let start = dgSrc15.indexOf(`\nfunction ${name}(`), rest;
     if (start >= 0) { rest = dgSrc15.slice(start + 1); }
     else {
       start = mgSrc15.indexOf(`\nexport function ${name}(`);
-      if (start < 0) throw new Error("T15 extract: missing function " + name);
-      rest = mgSrc15.slice(start + 1).replace(/^export /, "");
+      if (start >= 0) { rest = mgSrc15.slice(start + 1).replace(/^export /, ""); }
+      else {
+        start = simSrc15.indexOf(`\nexport function ${name}(`);
+        if (start < 0) throw new Error("T15 extract: missing function " + name);
+        rest = simSrc15.slice(start + 1).replace(/^export /, "");
+      }
     }
     const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
     return rest.slice(0, m < 0 ? rest.length : m + 9);
@@ -233,7 +240,7 @@ import fs from "node:fs";
     sliceFn15("formOf"), sliceFn15("layDressing"), sliceFn15("stoneCount"), sliceFn15("genMap"), sliceFn15("makeMap"), sliceFn15("streamAt"), sliceFn15("planTrees"),
     sliceFn15("pondAt"), sliceFn15("rockAt"),
     sliceFn15("makeGrid"), sliceFn15("checkConnectivity"), sliceFn15("townFootprint"), sliceFn15("buildTown"),
-    `return { genMap, makeMap, makeGrid, checkConnectivity, buildTown, planTrees, invW, fwdU,
+    `    return { genMap, makeMap, makeGrid, checkConnectivity, buildTown: (w, g, f) => buildTown(w, g, f, { TOWN, OBJ_POS, MAP_SEED, GRID_W, GRID_H }), planTrees, invW, fwdU,
       state: () => ({ ORIENT, OBJ_POS, SPAWN_POINTS, TOWN, MAP_SEED }) };`,
   ].join("\n");
   const mkMap15 = () => new Function(
@@ -336,11 +343,13 @@ import fs from "node:fs";
   // T15 idiom, source-sliced and evaluated. stepSquadRouting now takes world
   // (threaded from its one call site) and is otherwise unexported (the
   // extraction anchors on a bare `function`, not `export function`).
-  const dgSrc16 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  // stepSquadRouting moved to sim.js (war-engine-extraction task 1), export
+  // function now — the extraction anchors on the `export function` form.
+  const dgSrc16 = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
   const sliceFn16 = (name) => {
-    const start = dgSrc16.indexOf(`\nfunction ${name}(`);
+    const start = dgSrc16.indexOf(`\nexport function ${name}(`);
     if (start < 0) throw new Error("T16 extract: missing function " + name);
-    const rest = dgSrc16.slice(start + 1);
+    const rest = dgSrc16.slice(start + 1).replace(/^export /, "");
     const m = rest.slice(9).search(/\n(?:function |export |const [A-Z])/);
     return rest.slice(0, m < 0 ? rest.length : m + 9);
   };
