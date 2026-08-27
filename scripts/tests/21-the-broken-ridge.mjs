@@ -25,7 +25,9 @@ import { DAVY_FIRE } from "../../src/depot/specs.js";
 }
 {
   const g = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  ok("ridge: rock health is the soft table", g.includes("hp: 90 + k.r * 20"));
-  ok("ridge: rocks carry their seat depth", g.includes("b.seatY = b.pos.y - field.heightAt(k.x, k.z)"));
-  ok("ridge: a davy burst re-lays the rock dressing", g.includes('e.weapon === "davy"') && g.includes("setDressing({ rocks: rocksLive"));
+  const bootSrcR = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
+  const tickSrcR = fs.readFileSync(new URL("../../src/depot/tick.js", import.meta.url), "utf8");
+  ok("ridge: rock health is the soft table", bootSrcR.includes("hp: 90 + k.r * 20"));
+  ok("ridge: rocks carry their seat depth", bootSrcR.includes("b.seatY = b.pos.y - field.heightAt(k.x, k.z)"));
+  ok("ridge: a davy burst re-lays the rock dressing", tickSrcR.includes('e.weapon === "davy"') && g.includes("setDressing({ rocks: rocksLive"));
 }

@@ -43,6 +43,8 @@ import { startBuildLine, linePieces, stepBuildLine } from "./buildlines.js";
 import { ringBell as ringBellOut } from "./bell.js";
 import { buildMech, mechCommand, mechFire, mechMissiles, mechBarrage, mechPunt, mechAboutFace, mechPivot, mechAimDir } from "../engine/mech.js";
 import { stepDepot, buildTown, townFootprint, makeDepotAssaultState, clockStr, spawnEnemy } from "./sim.js";
+import { bootWar, stampBag as bootStampBag } from "./boot.js";
+import { tickWar, buildSnapshotOf } from "./tick.js";
 
 // mk2.28: the quartermaster's quiet flag — the purpose lines speak in the
 // first war only, then go quiet for good once the first bell has rung.
@@ -408,19 +410,10 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
     let R = null;
     try {
       // ------------------------------------------------------- THE BOOT ORDER
-      // RES non-null means this mount is a RESUME (P1 Task 3) — the start
-      // screen handed us a parsed save. The order below is the contract, and
-      // it is the order the save was written against; nothing in the game
-      // layer runs until every line of it has:
-      //   1. makeMap(saved seed) — map.ORIENT, map.ROCKS, map.PONDS, map.TOWN, map.ROADS, SPAWNS
-      //      all regrow from the seed (the map is never serialized)
-      //   2. buildDepotTerrain, THEN the saved heightfield over the top —
-      //      craters and breached ridges are what the war did to the terrain
-      //   3. the grid off that terrain, then the world, reseeded + re-clocked
-      //   4. bodies -> welds -> town bookkeeping -> censuses -> grid claims
-      //   5. territory field, squads, run state
-      //   6. flow field, renderer, smear replay
-      // Only then does the frame loop start.
+      // T4 (war-engine-extraction): the boot moved out to boot.js's bootWar.
+      // The component resolves the seed and the resume/dev flags, calls
+      // through the one door, then re-derives its own pure reads off the
+      // returned war (map/town/grid are static; these are cheap).
       const RES = resumeRef.current;
       const urlSeed = parseInt(new URLSearchParams(window.location.search).get("seed"), 10);
       const seed = RES ? RES.map.seed
@@ -428,282 +421,25 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         : Number.isFinite(urlSeed) ? urlSeed
         : menuSeedRef.current != null ? menuSeedRef.current
         : Math.floor(Date.now() % 1000000);
-      const map = makeMap(seed);
-      const field = makeField(181, 2.0, map.MAP_SEED);
-      // mk2.07 (owner): THE DEEP FLOOR — the atomic crater needs room. Base
-      // ground sits near +2; -12 leaves the full 10m pit plus overlap slack.
-      field.carveFloor = -12; // provisional (F5)
-      buildDepotTerrain(field, map.MAP_SEED);
-      if (RES) {
-        // The heightfield goes back OVER the freshly grown terrain — same
-        // grid, so a straight copy. Craters, the depot mound's dents, the
-        // hollow a breached ridge left: all of it lives here and nowhere else.
-        const hs = RES.field.h;
-        const n = Math.min(field.h.length, hs.length);
-        for (let i = 0; i < n; i++) field.h[i] = hs[i];
-        field.dirty = true;
-      }
-      const grid = makeGrid(field);
-      const world = makeWorld({ field, seed: map.MAP_SEED });
-      // P7 T17 (owner): HULLS RESPECT FRIENDLY SANDBAGS — a bag claims its
-      // cell for HULL routing only (men still fight over bags; foot routing,
-      // the enemy flow, and connectivity never read c.bag). The side rides
-      // the body (bagSide) so a resumed war re-stamps honestly — b.team is 1
-      // on every bag by spawnSandbag's old shape and must not be trusted.
-      // Defined here (grid exists, ahead of both the resume and fresh-boot
-      // branches below) rather than beside seedBags — the resume branch
-      // stamps resumed bags before seedBags' fresh-boot-only block ever runs.
-      const stampBag = (b, side) => {
-        b.bagSide = side;
-        const cell = grid.cellAt(b.pos.x, b.pos.z);
-        if (cell) { cell.bag = side; cell.bagId = b.id; }
-      };
-      if (RES) {
-        // Law 2 (save.js): a fresh stream from the seed the save drew at the
-        // bell. A return, not a replay. world.t comes back too — every stamp
-        // in the file (spawn-done, corpse ages, card arm times, the wind) is
-        // an absolute sim-clock reading and would be nonsense against 0.
-        world.rng = mulberry32(RES.rng.seed);
-        world.t = RES.world.t;
-      }
-      world._tdStruct = true;
-      world.depotCombat = true; // Phase 0 combat hooks: glancing, armor, tree fire/shredding
-      // The pair's survey vets (6.5 Task 6): thread the mode's pond test and
-      // playable rim onto the world so squads.js's surveyHighGround /
-      // bestStandPoint can reject ice and off-rim candidates without
-      // importing mode-local map state. Pure functions of the static map —
-      // twin worlds read identically (determinism-safe).
-      world.pondAt = (x, z) => !!map.pondAt(x, z);
-      world.inRim = (x, z) => { const c = map.invW(x, z); return Math.abs(c.u) <= map.RIM_HALF_U && Math.abs(c.v) <= map.RIM_HALF_V; };
-      world.streamAt = (x, z) => map.streamAt(x, z);
-      // P7.2 T7: THE REPAIR BOOKS — the mechanic's wrench asks here; each
-      // side pays its own till, one scrap at a time. Game-layer money, so
-      // squads.js's no-economy law holds (the module only invokes this).
-      world._mech = { take: (team, n) => {
-        if (team === 1) { if (run.resources < n) return false; run.resources -= n; return true; }
-        if (!run.reg || run.reg.scrap < n) return false; run.reg.scrap -= n; return true;
-      } };
-      // P7 T2/T3/T4: THE STARTING ARMOR — a Bison AND an APC parked by
-      // each depot, the enemy's ARMED AT POST (owner) — driving doctrine
-      // still waits for its commander (Task 6). FAIL-PROOF (P7 T3): a
-      // widened fixed ring (10-26m) first, then a brute nearest-clear-cell
-      // sweep (8-30m) backstops it — a hemmed ring must never leave a side
-      // tankless. AMENDMENT 1 (P7 T4, owner): armor parks STABLE — every
-      // clear cell is also vetted for a flat footprint (stableAt), and the
-      // hull spawns asleep (no creep, no slide, no jitter). The brute
-      // sweep tracks the flattest clear cell it sees as its own backstop —
-      // stability is preferred, never blocking. Deterministic; no rng
-      // stream is touched.
-      // P7 T9 (owner): HOISTED TO MOUNT SCOPE — apcSeqN/depotP/
-      // depotE used to be boot-local (the `else` branch below, fresh boot
-      // only). The hero tier's player buy and the enemy's draw-free
-      // replacement both need to park a fresh hull long after boot, off
-      // the SAME apcSeq counter — a replacement APC must never seat-collide
-      // with a surviving one. Same closure over world/grid/field/map.TOWN, same
-      // body, unchanged.
-      let apcSeqN = 0;
-      const nextApcSeq = () => ++apcSeqN;
+      const war = bootWar({ seed, resume: RES, dev });
+      const { map, field, grid, world, T, town, run } = war;
+      const depotCensus = war.census, depotCensus2 = war.census2;
+      const rocksLive = war.rocksLive;
+      const nextApcSeq = () => ++war.seq.apc;
+      const stampBag = (b, side) => bootStampBag(grid, b, side);
       const depotP = map.TOWN.find((t) => t.depot && t.team !== 2), depotE = map.TOWN.find((t) => t.depot && t.team === 2);
-      // town / censuses / rocks: laid fresh, or lifted back off the save.
-      let town, depotCensus, depotCensus2, rocksLive, resBodies = null;
-      if (RES) {
-        // Step 4. Every body in the file goes back in saved order (ids are
-        // reassigned, so everything that pointed at one points at an INDEX);
-        // then the welds, by index pair, with their original joint anchors.
-        resBodies = restoreBodies(world, RES, map.ROCKS);
-        restoreWelds(world, RES, resBodies);
-        // P7 T17: resumed bags re-claim their ground for hull routing.
-        for (const b of resBodies) if (b.sandbag && b.alive) stampBag(b, b.bagSide || 1);
-        // THE MECH RESUMES STANDING (owner's save law: never raw physics) — rebuilt
-        // at its spot and heading with its wounds, orders back on the hull.
-        for (const ms of RES.mechs || []) {
-          const m = buildMech(world, { x: ms.x, z: ms.z, yaw: ms.yaw, team: ms.tm, hp: ms.hp });
-          m.thrustersOn = true; m.thrustAssist = true;
-          m.hull.maxHp = MECH.hp;
-          if (ms.ex) for (const k in ms.ex) m.hull[k] = ms.ex[k]; // A1: the orders bag, own key
-        }
-        // P7 T9 (owner): RESUME SEAT-COLLISION GUARD — the mount-scope
-        // apcSeqN counter (hoisted above) must not hand out a seat number a
-        // restored APC already carries, or a hero-tier replacement's riders
-        // could stash onto the wrong hull. Seeded past the highest restored
-        // seat; a war with no surviving APC leaves it at 0, exactly the
-        // fresh-boot start.
-        for (const b of resBodies) if (b.kind === "vehicle" && b.vtype === "apc" && b.apcSeq > apcSeqN) apcSeqN = b.apcSeq;
-        // The town array is bookkeeping over bodies that are already back:
-        // stones by b.town, n0 and ruined off the file, footprint cells
-        // recomputed from the regrown map.TOWN layout. A ruined building has
-        // already had its cells released (stepTown does that once) — restoring
-        // it blocked would wall off ground the player can walk and build on.
-        const stonesBy = new Map();
-        for (const b of resBodies) if (b.kind === "chunk" && b.town) {
-          const arr = stonesBy.get(b.town); if (arr) arr.push(b); else stonesBy.set(b.town, [b]);
-        }
-        town = map.TOWN.map((t) => {
-          const saved = (RES.towns || []).find((s) => s.id === t.id) || {};
-          const cells = townFootprint(grid, t, map);
-          const ruined = !!saved.ruined;
-          if (!ruined || t.form === "mound") for (const ci of cells) { const c = grid.cells[ci]; c.blocked = true; c.building = t.id; c.bTeam = t.team === 2 ? 2 : (t.depot ? 1 : 0); } // the mound's exception (owner, 2026-08-26)
-          const stones = stonesBy.get(t.id) || [];
-          return { id: t.id, cells, stones, n0: saved.n0 != null ? saved.n0 : stones.length, ruined, marker: !!t.marker, x: t.x, z: t.z };
-        });
-        // The censuses keep their ORIGINAL rows (including rows whose stone is
-        // gone — see save.js's -1 rule) and their built-time homes. Re-taking
-        // a census here would stamp displaced stone as "home" and forgive
-        // every hit the depot has taken.
-        depotCensus = restoreCensus(RES.census, resBodies);
-        depotCensus2 = restoreCensus(RES.census2, resBodies);
-        // The player's own structures re-claim their grid cells (buildAt does
-        // this at build time; nothing else would).
-        for (const b of resBodies) {
-          if ((b.kind !== "wall" && b.kind !== "tower") || !b.alive) continue;
-          // A wall's upper courses share the bottom course's cell (P1.5 T2) —
-          // cell.wallId must come back pointing at the BOTTOM one, exactly as
-          // buildAt set it, or a shot-off top course would release the ground
-          // under a wall that is still standing.
-          if (b.course > 0) continue;
-          const g = grid.worldToGrid(b.pos.x, b.pos.z);
-          if (!grid.inBounds(g.gx, g.gz)) continue;
-          const c = grid.cells[grid.idx(g.gx, g.gz)];
-          c.blocked = true; c.wallId = b.id; c.bTeam = b.team || 1;
-        }
-        // Rocks: the live set is whatever rock bodies came back. A ridge that
-        // was breached during the run has no body in the file, so its cells
-        // must be released here exactly as breachRock released them — the
-        // saved heightfield already carries the hole it left.
-        rocksLive = resBodies.filter((b) => b.kind === "rock" && b.alive && b.rockRef).map((b) => b.rockRef);
-        for (const k of map.ROCKS) {
-          if (rocksLive.indexOf(k) >= 0) continue;
-          for (let gz = 0; gz < map.GRID_H; gz++) for (let gx = 0; gx < map.GRID_W; gx++) {
-            const wp = grid.gridToWorld(gx, gz);
-            if (Math.hypot(wp.x - k.x, wp.z - k.z) < k.r * 0.78 + 0.9) {
-              const c = grid.cells[grid.idx(gx, gz)];
-              if (c.terrain) { c.blocked = false; c.terrain = false; }
-            }
-          }
-        }
-      } else {
-        town = buildTown(world, grid, field, map);
-        // Structural loss (Task 5): the depot's own chunk lattice IS its health
-        // bar — census taken once here (ids + home world positions), read back
-        // at ~1Hz via stepDepotCensus below against world.byId (live pos/alive).
-        depotCensus = censusDepotChunks(world.bodies);
-        // FRONT F1: the enemy depot's own census — same snapshot moment, read
-        // back through the same 1Hz gate (no second timer).
-        depotCensus2 = censusDepotChunks(world.bodies, "depot2");
-        rocksLive = map.ROCKS.slice();
-      }
-      // Territory (Phase 4 Task 2): who holds the ground. Cells over the
-      // same playable rim the renderer clips to (halfU 60 / halfV 60, see
-      // makeRenderer's rim opt above) — reuse rather than reinvent extents.
-      const T = makeTerritory(map.RIM_HALF_U, map.RIM_HALF_V);
-      if (RES && RES.terr && RES.terr.v && RES.terr.v.length === T.v.length) T.v.set(RES.terr.v);
-      // VISION (mk0.72): who can SEE what, on the territory grid's own frame
-      // and carried on the territory object — so every function already
-      // handed T gets sight for free. Purely derived: nothing saves it, and a
-      // resumed run rebuilds it on the first territory tick below.
-      T.sight = makeSight(T);
-      // town buildings' (x, z) are rotated WORLD space (same as any body);
-      // territory reads canonical (u, v) — precompute once (buildings don't
-      // move) rather than re-converting every stall.
-      const townUV = town.map((b) => { const c = map.invW(b.x, b.z); return { id: b.id, x: c.u, z: c.v, marker: b.marker, get ruined() { return b.ruined; } }; });
-      // mk2.50: map.TOWN FLAGS — per-building lookup for the holder-flag rows:
-      // roof height and the two exclusions (depots fly their real flag
-      // bodies; field walls are screens, not buildings).
-      const townFlagMeta = new Map(map.TOWN.map((t) => [t.id, { ny: t.ny, depot: !!t.depot, fwall: t.id.startsWith("fwall"), marker: !!t.marker }]));
-      let terrAcc = 0;
-      let zoneAcc = 0.25; // mk1.95: the zone's own wall-time accumulator — starts due
-      const TERR_STEP = 0.25; // stepTerritory at ~4Hz — accumulated below, not every frame
-      // Emitter list, rebuilt fresh each territory step from live bodies:
-      // team-signed by kind -> EMIT weight (see territory.js). The depot's
-      // own emitter is its roof-peak flag body (kind "flag", team 1 — built
-      // in buildTown above; towers also carry flagPole=true for the
-      // renderer's pole overlay, so this checks kind, not the flag). Each
-      // depot's flag is its side's permanent anchor (FRONT F1) — team 2's
-      // flag at depot2 replaces the old spawn-point anchor emitters.
-      // territory.js is CANONICAL (u,v) space (the un-rotated map frame, same
-      // as the renderer's rim) — every body/spawn position here is rotated
-      // WORLD space, so every emitter goes through map.invW (DEPOT's
-      // world-to-canonical transform) before it's pushed.
-      const buildEmitters = () => {
-        const out = [];
-        for (const b of world.bodies) {
-          // Towers repel fog by HALF THEIR SIGHT (effRange/2, cached at
-          // build off the true muzzle) instead of the flat EMIT.tower.r:
-          // gun ~9.5, mortar ~13, rocket ~11.5, mg ~7.5 on flat ground,
-          // scaled up on high ground. Frost has no fire range — its
-          // spec.range IS its slow-field radius, so the same effRange/2
-          // rule gives it slow-radius/2 (~6). EMIT.tower.r stays as the
-          // fallback for any tower missing the cache.
-          if (b.kind === "tower" && b.team === 1 && b.alive) { const c = map.invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.tower.w, r: (b.effRange != null ? b.effRange : TOWER_SPECS[b.towerType].range) / 2, sign: 1 }); }
-          // ONE emitter per WALL, not per course (P1.5 T2): the bottom course
-          // carries it, so three stacked bodies push the same green influence
-          // one body used to.
-          else if (b.kind === "wall" && b.team === 1 && b.alive && !b.course) { const c = map.invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.wall.w, r: EMIT.wall.r, sign: 1 }); }
-          else if (b.kind === "wall" && b.team === 2 && b.alive && !b.course) { const c = map.invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.wall.w, r: EMIT.wall.r, sign: -1 }); }
-          // FRONT F1: flags emit their OWN team's influence at homeland
-          // strength — the enemy depot IS the enemy anchor now.
-          // P7 T10 guard: a tripwire's flare is also kind "flag" (a temporary
-          // sight-only eye, sight.js's eyeOf) — b._dieT != null marks it, and
-          // it must NEVER emit territory (it lights sight, not ground).
-          else if (b.kind === "flag" && b._dieT == null) { const c = map.invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.depot.w, r: EMIT.depot.r, sign: b.team === 2 ? -1 : 1 }); }
-          else if (b.kind === "unit" && b.team === 1 && b.alive && !b.riding) { const c = map.invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.unit.w, r: EMIT.unit.r, sign: 1 }); }
-          else if (b.kind === "chunk" && b.sandbag && b.alive) { const c = map.invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.wall.w, r: EMIT.wall.r, sign: b.bagSide === 2 ? -1 : 1 }); }
-          else if (b.kind === "unit" && b.team === 2 && b.alive && !b.riding) { const c = map.invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.unit.w, r: EMIT.unit.r, sign: -1 }); }
-          else if (b.kind === "vehicle" && b.team === 2 && b.alive) { const c = map.invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.vehicle.w, r: EMIT.vehicle.r, sign: -1 }); }
-          else if (b.kind === "vehicle" && b.team === 1 && b.alive) { const c = map.invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.vehicle.w, r: EMIT.vehicle.r, sign: 1 }); }
-          else if (b.kind === "mech" && b.alive) { const c = map.invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.vehicle.w, r: EMIT.vehicle.r, sign: b.team === 2 ? -1 : 1 }); }
-        }
-        // FRONT F1: the map.SPAWN_POINTS anchor emitters are gone — spawn points
-        // are spawn locations only; the enemy's permanent red is its depot flag.
-        return out;
-      };
-      const treeAt = (tx, tz) => {
-        const ty = field.heightAt(tx, tz);
-        const u = addBody(world, { kind: "tree", team: 0, mass: 260, hx: 0.28, hy: 1.6, hz: 0.28, x: tx, y: ty + 1.62, z: tz, hp: 70, friction: 0.5 });
-        u.sleeping = true;
-        return u;
-      };
-      // Rocks and trees are BODIES, and bodies come off the save — a burnt
-      // treeline and a breached ridge are things the war did, not things the
-      // seed says. On a resume both blocks are skipped entirely; the fresh
-      // path below is untouched.
-      if (!RES) {
-        for (const k of map.ROCKS) {
-          const b = addBody(world, { kind: "rock", team: 0, mass: 0, hx: k.r * 0.55, hy: k.h * 0.8, hz: k.r * 0.55, x: k.x, y: field.heightAt(k.x, k.z) - k.h * 0.2, z: k.z, hp: 90 + k.r * 20 }); // mk2.14 (owner): one atomic blast breaks a near rock // provisional (F5)
-          b.maxHp = b.hp; b.rockRef = k;
-          b.seatY = b.pos.y - field.heightAt(k.x, k.z); // mk2.14: the crater re-seat drops a surviving rock to the carved ground, not half-height up
-        }
-        // T5: the whole tree plan, planted (planTrees carries the treeline,
-        // the hill copses, the drawn copses and the forests — one function,
-        // shared with the test suite).
-        for (const p of planTrees()) treeAt(p.x, p.z);
-        // P1.5 T4 (mk0.60) — THE DEPOT COMES WITH COVER. Four to six sandbags
-        // ringed on each depot at map-build time, so a fresh front opens with
-        // something to lie behind instead of bare ground. P7 T3 (owner):
-        // generalized to both depots — the enemy's was never dressed before,
-        // symmetry now — same rules, its own derived stream.
-        //
-        // Drawn off a DEDICATED map-seed stream (the same mulberry32(map.MAP_SEED ^
-        // k) pattern the treeline above uses) and never world.rng: the world
-        // stream's draw counts are a determinism contract and this feature must
-        // not appear in them at all. Draw count is fixed at 1 + 2 per bag
-        // whatever the vetting rejects, so the stream is stable too.
-        //
-        // Vetting is clearSlot's rule (squads.js's own static-solid test, at a
-        // bag's own half-extent plus a man's clearance) plus the grid's verdict
-        // — a blocked cell is the depot footprint or a rock, ice is water — plus
-        // road and objective clearance. Each bag gets a fan of candidates around
-        // its drawn spot (four radii out, then the same four either side of the
-        // azimuth) because the depot's own approach road and mound reject a lot
-        // of the ring; a bag that clears none of the twelve is simply dropped.
-        // Ring radius grown to 7.8m (P7 T3) — the depots got bigger.
-        // P7.1 T6 (owner): THE BARE OPENING — the seeded bag rings and the
-        // free starting armor die here. seedBags/parkArmor stay exported
-        // (parkArmor still parks the enemy's
-        // draw-free replacement; seedBags' export survives for Task 7).
-      }
       const objG = grid.worldToGrid(map.OBJ_POS.x, map.OBJ_POS.z);
-      computeFlowField(grid, objG.gx, objG.gz);
+      const townUV = town.map((b) => { const c = map.invW(b.x, b.z); return { id: b.id, x: c.u, z: c.v, marker: b.marker, get ruined() { return b.ruined; } }; });
+      const townFlagMeta = new Map(map.TOWN.map((t) => [t.id, { ny: t.ny, depot: !!t.depot, fwall: t.id.startsWith("fwall"), marker: !!t.marker }]));
+      if (dev) {
+        // mk2.24: THE SANDBOX OPENING — no draft, no enemy opening, no
+        // commander (nothing bell-driven ever reads run.cmdr here). The war
+        // starts standing, every plan unlocked, and the till is dead weight:
+        // priceNow answers 0 on the bench.
+        run.started = true;
+        run.manifest.unlocked = PALETTE.map((p) => p.key);
+      }
+      let zoneAcc = 0.25; // mk1.95: the zone's own wall-time accumulator — starts due
       R = makeRenderer(canvas, world, {
         town: false, camera: "tactical", fadeDecals: true,
         // playable rim (matches buildDepotTerrain's falloff box, 60x60
@@ -787,72 +523,6 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       try { healthOn = window.localStorage.getItem("coldsnap-depot-health") !== "0"; } catch (e) {}
       R.setHealth(healthOn);
 
-      // T3 SPLIT (war-engine-extraction): the sim's run state, exactly the
-      // fields save.js touches plus the unsaved sim-side fields the tick
-      // reads and writes.
-      const run = {
-        score: { p: { kills: 0, value: 0 }, e: { kills: 0, value: 0 } }, resources: 250, // the draft's richer opening (owner) // provisional (F5)
-        cmdr: null, // P7 T8: the drawn armor doctrine — one boot draw (fresh war), restored on RESUME
-        ws: makeDepotAssaultState(), spawnRR: 0,
-        arcs: [], // mk2.20: live tesla chains — THE game state's row (state.js makeRunState serves fixtures only; Amendment 5)
-        holdArea: { 1: false, 2: false }, // mk2.18 (owner): area weapons hold fire with a friendly in the spread
-        mode: null,
-        started: false, gameOver: false, victory: false,
-        // The clock (P1 Task 1): bellAt is the absolute SIM-clock stamp the
-        // next bell is due at, bellT the readout stepBell derives from it.
-        bell: 0, bellT: BELL_PERIOD_S, bellAt: BELL_PERIOD_S, lastDispatch: null,
-        // The two ladders (P1 Task 2). manifest holds what the player has
-        // unlocked (START only, at mount) plus this bell's live offer; foe
-        // holds the attacker's own picks, which feed the assault's tier cap.
-        // Both start EMPTY of any card: a fresh mount is bell 0, nothing rung,
-        // nothing on screen.
-        manifest: makeManifestState(), foe: makeFoeState(),
-        intelUp: false, intelArmedAt: 0,
-        // Opens on the depot, not the middle of the field. map.TOWN[i].x/z for
-        // the depot entry ({id:"depot", x:0, z:52, ...} in genMap) are
-        // already WORLD-space — genMap's T() helper runs every town entry
-        // through map.fwdU before storing it — so this is exactly the same
-        // point map.fwdU(0, 52) would give under the map's live map.ORIENT; reading
-        // it off map.TOWN directly (rather than re-deriving via map.fwdU(0, 52))
-        // can't drift out of sync with wherever genMap actually placed it.
-        focus: (() => {
-          const depotT = map.TOWN.find((t) => t.depot);
-          const w = depotT ? { x: depotT.x, z: depotT.z } : map.fwdU(0, 52);
-          return { x: w.x, y: field.heightAt(w.x, w.z), z: w.z };
-        })(),
-        zoom: 1,
-        // Squads (Phase 5 Task 3): live squad rosters.
-        squads: [], foeSquads: [], nextSquadId: 1,
-        // P7 T10: MINES AND TRIPWIRES — watched points, never bodies.
-        // { x, z, team, kind: "mine"|"wire", live }. Saved verbatim (save.js).
-        mines: [],
-        // mk2.09: THE GREEN FOG — the atomic blast's poison patches.
-        // Watched points, saved like mines. { x, z, r, until (sim clock) }.
-        fog: [],
-        // THE LIVING MARKET (mk1.13): the price cache, its own 1Hz
-        // accumulator (beside the census's), and the once-a-second purchase
-        // stamp. Transient run state, never serialized — a resumed run
-        // rebuilds both within a second (no save.js edits).
-        _market: null, _marketAcc: 0, _buyAt: -9,
-        // mk2.49: THE GROUND PAYS — income rates per second, ground-scaled
-        // (groundRate over the territory field's held-cell counts). Derived
-        // on the territory tick, never saved; 1 (the floor) until the first
-        // tick, which is also every fresh boot's true opening rate.
-        _groundRate1: 1, _groundRate2: 1,
-        _minePrices: null, // P7 T10: computed beside _market, same 1Hz cadence
-        // P6 T10 / Task 5 Amendment 1 (mk1.19): the idle gate — true once
-        // the war goes hot (stashed by the hud census pass); starts false.
-        _hot: false,
-        // The attacker's economy — seeded off the run's own rng stream, not
-        // an unseeded generator, so ?seed= replays reproduce the same
-        // regiment. Mutated in place by planWave (buy-time depletion — the
-        // only depletion path; a fielded unit's cost is spent at muster
-        // and never returns, dead or alive) and payResults; never replaced.
-        // On a RESUME the saved regiment is the regiment — makeRegiment is not
-        // called at all, so the resumed run doesn't spend two draws re-rolling
-        // a formation it already has.
-        reg: RES ? { ...RES.run.reg } : makeRegiment(world.rng),
-      };
       // T3 SPLIT: presentation — nothing the sim reads. Every UI method the
       // mount hangs on the state hangs here.
       const view = {
@@ -903,6 +573,8 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         devDummies: false, // mk2.26: THEY FIGHT by default; true = dummies (sandbox only)
         windOn, discipline,
         releasePossession: null, stepBuildLine: null, stepFoeBuildLine: null,
+        feedMech: (mech, cdt) => feedMechCommands(mech, cdt),
+        bellCtx: null,
       };
       // setDiscipline/setWind: dead code (never called via view.setDiscipline/
       // view.setWind anywhere in this file) — kept as view-hung methods,
@@ -976,100 +648,18 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         } catch (e) {}
         if (!disposed) view._teachSeen = new Set(seen);
       })();
-      if (!RES && !dev) {
-        musterFreshStart(world, run, depotP, grid, field, nextApcSeq, map);
-      }
-      if (dev) {
-        // mk2.24: THE SANDBOX OPENING — no draft, no enemy opening, no
-        // commander (nothing bell-driven ever reads run.cmdr here). The war
-        // starts standing, every plan unlocked, and the till is dead weight:
-        // priceNow answers 0 on the bench.
-        run.started = true;
-        run.manifest.unlocked = PALETTE.map((p) => p.key);
-      }
-      // Step 5. The run state itself, straight off the file. The bell is the
-      // ONE deliberate exception: the countdown restarts at a full period
-      // rather than resuming a half-elapsed one (ratified — simpler, and
-      // kinder than dropping the player into a bell that rings in nine
-      // seconds). Everything else — scrap, kills, the unlocked set, the
-      // convoy's live offer, the enemy's pick list, the mustered assault's
-      // spawn queue — is exactly what it was.
-      if (RES) {
-        const r = RES.run;
-        run.resources = r.resources; run.spawnRR = r.spawnRR;
-        run.score = r.score
-          ? { p: { kills: r.score.pk, value: r.score.pv }, e: { kills: r.score.ek, value: r.score.ev } }
-          : { p: { kills: 0, value: 0 }, e: { kills: 0, value: 0 } };
-        run.started = !!r.started; run.mode = r.mode; run.sandbagOrient = r.sandbagOrient || 0;
-        run.zoom = r.zoom; R.setZoom(r.zoom);
-        run.focus = { x: r.focus.x, y: field.heightAt(r.focus.x, r.focus.z), z: r.focus.z };
-        run.bell = r.bell;
-        run.bellAt = world.t + BELL_PERIOD_S; run.bellT = BELL_PERIOD_S;
-        run.depotCensusAcc = r.depotCensusAcc;
-        run.depotStanding = r.depotStanding; run.enemyStanding = r.enemyStanding;
-        run.starvedStreak = r.starvedStreak;
-        run._reportedBreak = r.reportedBreak; run._reportedSpent = r.reportedSpent;
-        run.cmdr = r.cmdr || "cautious"; // P7 T8: restored, never redrawn on resume
-        run.manifest = r.manifest; run.manifest.armedAtWall = 0; run.foe = r.foe;
-        run.intelUp = r.intelUp; run.intelArmedAt = r.intelArmedAt;
-        run.lastDispatch = r.lastDispatch;
-        run.pendingPlan = r.pendingPlan; run.intelPlan = r.intelPlan;
-        run.ws = r.ws;
-        run.squads = restoreSquads(RES, resBodies);
-        run.foeSquads = RES.foeSquads ? restoreSquads({ squads: RES.foeSquads }, resBodies) : [];
-        run.nextSquadId = r.nextSquadId;
-        // P7 T10: watched points restore verbatim, live flags included.
-        run.mines = (r.mines || []).map((m) => ({ x: m.x, z: m.z, team: m.t, kind: m.k, live: !!m.l }));
-        run.fog = (r.fog || []).map((p) => ({ x: p.x, z: p.z, r: p.r, until: p.u }));
-        run.arcs = (r.arcs || []).map((a) => ({ nextAt: a.n, hits: a.h, dmg: a.d, fx: a.x, fy: a.y, fz: a.z, atk: a.k, tid: a.t, hitIds: (a.ids || []).slice(), waters: [], gx: a.gx, gy: a.gy, gz: a.gz }));
-        run.holdArea = r.holdArea || { 1: false, 2: false };
-        // Step 6, last: the ground remembers. Every mark where a man fell is
-        // replayed through the same paint the kill handler uses, so the snow
-        // comes back stained exactly as it was left. Scorch and tread
-        // staining are NOT in the ledger and do not come back — the accepted
-        // visual loss, stated in the plan.
-        if (R._splat && R._splat.smear) for (const m of RES.smears || []) R._splat.smear(m.u, m.v, m.s, m.x, m.z);
-      }
-      // the War (api.js typedef) — T4's bootWar will return this same shape
-      const war = { map, field, grid, world, T, town, census: depotCensus, census2: depotCensus2, run };
+      if (RES) R.setZoom(run.zoom);
       stateRef.current = { run, view, input };
       // P7 T10: R.setMines is a setDressing-style setter — called once here
       // at boot/restore (fresh boot: run.mines is empty, harmless), then again
       // on every lay and every trigger tick.
       R.setMines(run.mines);
-      // id -> last-observed hp for wall/tower/building bodies, so structure
-      // damage dealt (not just kills) can be attributed to the attacker
-      // across ticks — there is no discrete "damage" event to read instead
-      // (see applyDamage in engine/core.js: it sets b.lastHit but pushes no
-      // event unless the hit is lethal).
-      const structHp = new Map();
-
-      // buildSnapshot: the counter-signal read planWave uses to weight its
-      // buy — a fresh count of the player's live defenses every stall.
-      const buildSnapshot = () => {
-        // guns and rockets are counted separately so the book-value verdict
-        // (state.js's playerBookValue) can price each at its own real spec
-        // cost — rockets are NOT gun-priced here (Phase 3 Task 7 fix). The
-        // AI's counter-play read (ai.js's signals()) never looks at either
-        // field, so this split changes nothing about wave-planning pressure.
-        let mortars = 0, mgs = 0, guns = 0, rockets = 0, teslas = 0, walls = 0, elevSum = 0, elevN = 0;
-        for (const b of world.bodies) {
-          // WALLS, not courses (P1.5 T2): three would treble planWave's read and playerBookValue.
-          if (b.kind === "wall") { if (!b.course) walls++; continue; }
-          if (b.kind !== "tower") continue;
-          if (b.towerType === "mortar") mortars++;
-          else if (b.towerType === "mg") mgs++;
-          else if (b.towerType === "gun") guns++;
-          else if (b.towerType === "rocket") rockets++;
-          else if (b.towerType === "tesla") teslas++;
-          elevSum += b.pos.y; elevN++;
-        }
-        // squads: live player squads (ai.js snapSquads — the sniper-buy
-        // gate). run.squads is already pruned each sim tick, but count only
-        // squads holding a live member so a same-tick wipe can't inflate it.
-        const squads = run.squads.filter((sq) => sq.memberIds.some((id) => { const u = world.byId.get(id); return u && u.alive; })).length;
-        return { mortars, mgs, guns, rockets, teslas, walls, squads, towerElev: elevN ? elevSum / elevN : 0 };
-      };
+      // Step 6, last: the ground remembers. Every mark where a man fell is
+      // replayed through the same paint the kill handler uses, so the snow
+      // comes back stained exactly as it was left. Scorch and tread
+      // staining are NOT in the ledger and do not come back — the accepted
+      // visual loss, stated in the plan.
+      if (RES && R._splat && R._splat.smear) for (const m of RES.smears || []) R._splat.smear(m.u, m.v, m.s, m.x, m.z);
 
       const toast = (txt) => { view.toasts.push({ txt, t: performance.now() / 1000 }); if (view.toasts.length > 4) view.toasts.shift(); };
       // THE LIVING MARKET (mk1.13): the live price for a bar key, falling
@@ -2207,8 +1797,8 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // THE BELL rings here and nowhere else. Town pay closes the cycle
       // alongside the assault's results (fireBell books those): green ground
       // pays the player, red ground pays the regiment, seam ground nobody.
-      const bellCtx = { cue, toast, townUV, buildSnapshot, nextApcSeq, saveFront: () => saveFront(), possessed: () => !!input.possess };
-      const ringBell = () => ringBellOut(world, grid, field, T, run, bellCtx, map);
+      const bellCtx = { cue, toast, townUV, buildSnapshot: () => buildSnapshotOf(war), nextApcSeq, saveFront: () => saveFront(), possessed: () => !!input.possess };
+      input.bellCtx = bellCtx;
       // --- the bell's cards (Task 2). Nothing here touches the sim: they are
       // presentation state, armed on WORLD time via the same trailing-tap law
       // the ✓/✗ confirm pair lives under (PENDING_ARM_S), and they never gate
@@ -2455,97 +2045,6 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           room = roomMaskPublic(world, grid, 4.5);
         }
         R.overlay.setZone(true, grid, placeZoneMask(grid, heldAt, vetAt, room), (x, z) => field.heightAt(x, z), 0x4aff8c);
-      };
-      const spawnOne = () => {
-        const ws = run.ws;
-        const tag = nextSpawnTag(run);
-        const sp = map.SPAWN_POINTS[run.spawnRR++ % map.SPAWN_POINTS.length];
-        spawnEnemy(world, sp, tag);
-        ws.spawnQueue--;
-        // The withdrawal clock starts at spawn-completion, not at the bell —
-        // a long assault gets its full window; only the aftermath is clamped
-        // (withdrawDue's ASSAULT_TIMEOUT clause reads this).
-        if (ws.spawnQueue <= 0) ws.spawnDoneT = world.t;
-      };
-
-      const breachRock = (b) => {
-        const k = b.rockRef;
-        if (!k) return;
-        const { n, cs, h, half } = field;
-        const i0 = Math.max(0, Math.floor((k.x - k.r * 1.7 + half) / cs)), i1 = Math.min(n - 1, Math.ceil((k.x + k.r * 1.7 + half) / cs));
-        const j0 = Math.max(0, Math.floor((k.z - k.r * 1.7 + half) / cs)), j1 = Math.min(n - 1, Math.ceil((k.z + k.r * 1.7 + half) / cs));
-        for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-          const px = i * cs - half, pz = j * cs - half;
-          const d = Math.hypot(px - k.x, pz - k.z) / k.r;
-          if (d < 1.6) h[j * n + i] -= k.h * Math.exp(-d * d * 2.1);
-        }
-        field.dirty = true;
-        for (let gz = 0; gz < map.GRID_H; gz++) for (let gx = 0; gx < map.GRID_W; gx++) {
-          const wp = grid.gridToWorld(gx, gz);
-          if (Math.hypot(wp.x - k.x, wp.z - k.z) < k.r * 0.78 + 0.9) {
-            const c = grid.cells[grid.idx(gx, gz)];
-            if (c.terrain) { c.blocked = false; c.terrain = false; }
-          }
-        }
-        for (let i = 0; i < 9; i++) {
-          const a = (i / 9) * 6.28, rr = k.r * (0.2 + 0.5 * ((i * 7) % 5) / 5);
-          const c = addBody(world, { kind: "chunk", team: 0, mass: 320, hx: 0.55, hy: 0.55, hz: 0.55, x: k.x + Math.cos(a) * rr, y: field.heightAt(k.x, k.z) + 1.2 + (i % 3) * 0.9, z: k.z + Math.sin(a) * rr, friction: 0.7, restitution: 0.02 });
-          c.bornT = world.t;
-        }
-        const ri = rocksLive.indexOf(k);
-        if (ri >= 0) rocksLive.splice(ri, 1);
-        R.setDressing({ rocks: rocksLive, ponds: map.PONDS, streams: streamRibs });
-        recomputeFlow();
-        toast("THE RIDGE IS BREACHED");
-      };
-      const drainEvents = () => {
-        const evs = world.events.slice();
-        world.events.length = 0;
-        for (let i = world.bodies.length - 1; i >= 0; i--) {
-          const rb = world.bodies[i];
-          if (rb.kind === "rock" && !rb.alive) {
-            breachRock(rb);
-            world.byId.delete(rb.id);
-            world.bodies.splice(i, 1);
-          }
-        }
-        // mk2.14 (owner): a davy burst carved the ground — re-lay the rock
-        // dressing so surviving boulders sink to the new surface instead of
-        // floating over the crater. Bodies re-seat in the engine; this is
-        // their drawn twin.
-        if (evs.some((e) => e.type === "boom" && e.weapon === "davy")) {
-          R.setDressing({ rocks: rocksLive, ponds: map.PONDS, streams: streamRibs });
-        }
-        // Structure damage dealt this frame, attributed via b.lastHit —
-        // there's no discrete per-hit damage event, so this rides the hp
-        // delta since the last frame's snapshot (see structHp above).
-        if (run.ws.results) {
-          for (const b of world.bodies) {
-            if (b.kind !== "wall" && b.kind !== "tower" && b.kind !== "building") continue;
-            const prev = structHp.get(b.id);
-            if (prev != null && b.hp < prev && b.lastHit && b.lastHit.attacker === "enemy") {
-              run.ws.results.structureDmg += prev - b.hp;
-            }
-            structHp.set(b.id, b.hp);
-          }
-          for (const id of structHp.keys()) if (!world.byId.get(id)) structHp.delete(id);
-        }
-        for (const e of evs) {
-          // mk2.09: the davy's boom seeds the poison ground where it burst.
-          if (e.type === "boom" && e.weapon === "davy") addFogPatch(run.fog, e.x, e.z, world.t);
-          if (e.type !== "kill") continue;
-          view.teachFire("kill_price");
-          // THE KILL LAW (mk1.93): every attributed death pays and scores here.
-          scoreKill(run, e, run._market ? run._market.counts : null);
-          // Town buildings are unpriced — their hand-set pay is the named edge
-          // outside the law. The branch is preserved as it was, not fixed.
-          if (e.attacker === "enemy" && run.ws.results && e.kind === "building") run.ws.results.buildingKills++;
-        }
-        // The single place a run flips to LOSS (depot destroyed, or the
-        // stubbed regiment-destroyed hook) — same function depot-test.mjs
-        // drives headlessly.
-        checkLoss(run);
-        return evs;
       };
 
       window.__DEPOT__ = () => ({ t: world.t, scrap: run.resources, kills: run.score.p.kills, score: { pk: run.score.p.kills, pv: +run.score.p.value.toFixed(1), ek: run.score.e.kills, ev: +run.score.e.value.toFixed(1) }, bell: run.bell, bellT: run.bellT, bodies: world.bodies.length, fps: view.fps, paused: view.paused, speed: view.speed, reg: { ...run.reg }, depotStanding: run.depotStanding != null ? run.depotStanding : 1, breach: !!run.breach, enemyStanding: run.enemyStanding != null ? run.enemyStanding : 1, enemyBreach: !!run.enemyBreach, withdrew: run.ws.withdrew || 0, endedAt: run.endedAt != null ? run.endedAt : null, endCard: endCardReady(run, world.t) });
@@ -2976,7 +2475,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           // It stamps the clock; the collapse plays out for END_CARD_DELAY_S
           // of world time, and only when the card is actually up does the sim
           // stop. Orders and building are locked from the verdict itself.
-          stampEnd(run, world.t);
+          // (stampEnd itself now runs inside tickWar, once per fixed step.)
           // The record burns with the war, and it burns FIRST — the end card
           // is still six world-seconds away when this runs.
           if (run.gameOver || run.victory) burnSave();
@@ -3185,12 +2684,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             }
             view.hover = { x: sqCx, z: sqCz, valid: true, range: 0 };
           } else view.selReach = null;
-          const ws = run.ws;
           if (run.started && !run.gameOver && !run.victory) {
-            // THE CLOCK. Read off world.t — the fixed-step sim clock — never
-            // wall time and never a React value; a paused run holds the bell
-            // exactly where it stood because world.t stops with it.
-            if (!dev && stepBell(run, world.t)) { view.teachFire("bell"); ringBell(); run.manifest.armedAtWall = performance.now() / 1000 + PENDING_ARM_S; }
             if (run.manifest && run.manifest.cardUp) view.teachFire("convoy"); // idempotent — seen/queue gates inside
             // THE PRE-TOLL (Task 4). The last five seconds are counted out
             // loud. Edge-triggered on the countdown crossing each whole second
@@ -3204,56 +2698,44 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
               if (preTollSec != null && bellSec < preTollSec && bellSec >= 1 && bellSec <= 5) cue("pretoll");
               preTollSec = bellSec;
             }
-            if (ws.spawnQueue > 0) {
-              ws.spawnTimer -= sdt;
-              if (ws.spawnTimer <= 0) { ws.spawnTimer = ws.spawnDelay; spawnOne(); }
-            } else if (withdrawDue(run, world.t)) {
-              // A spent assault breaks contact on its own clock. Silent exit
-              // — no kill events, no bounty, no smears; heads/tanks return to
-              // the regiment inside executeWithdrawal. The bell is unmoved by
-              // it: the next assault comes on schedule regardless.
-              const w = executeWithdrawal(run, world);
-              if (w.inf + w.tanks > 0) toast("THEY BREAK CONTACT");
-            }
-            // Between bells nothing pauses: build, orders and combat with
-            // whatever is still standing all run straight through.
-            run.resources += run._groundRate1 * sdt; // mk2.49 (owner): income is the clock, scaled by held ground — floor 1/second
-            if (run.reg) { run.reg.scrap += run._groundRate2 * sdt; run.reg.earned = (run.reg.earned || 0) + run._groundRate2 * sdt; } // one law, one schedule, both sides — and the earned till the muster budgets from (mk2.53)
           }
           view.acc += sdt;
-          terrAcc += sdt;
-          let terrGuard = 0;
-          while (terrAcc >= TERR_STEP && terrGuard++ < 8) {
-            terrAcc -= TERR_STEP;
-            stepTerritory(T, buildEmitters(), TERR_STEP);
+          // T4 (war-engine-extraction): the bell, spawn/withdrawal, income,
+          // territory/sight, mines, fog, dead-bag release, the pool rebuild,
+          // stepDepot, the possessed triggers, the event drain, the census
+          // and the market all moved into tickWar — one call per fixed
+          // sub-step below. TickFlags tells the component which renderer
+          // twins to refresh.
+          let terrFlagged = false, dressFlagged = false;
+          const frameEvents = [];
+          const pSim0 = perf ? performance.now() : 0; // stopwatch: sim bracket opens
+          let guard = 0;
+          while (view.acc >= STEP && guard++ < 6) {
+            view.acc -= STEP;
+            const { events, flags } = tickWar(war, STEP, input);
+            frameEvents.push(...events);
+            if (flags.bell) { view.teachFire("bell"); run.manifest.armedAtWall = performance.now() / 1000 + PENDING_ARM_S; }
+            if (flags.territory) terrFlagged = true;
+            if (flags.dressing) dressFlagged = true;
+            if (flags.withdrew) toast("THEY BREAK CONTACT");
+            if (flags.teslaFired) view._teslaFired = (view._teslaFired || 0) + 1;
+            for (const e of events) if (e.type === "kill") view.teachFire("kill_price");
           }
-          // Sight rides the same 4Hz clock the territory field does. ONE
-          // recompute per frame, after the catch-up loop rather than inside
-          // it: a recompute reads only the world's current bodies, so running
-          // it twice in a row would burn the time and give the same map.
-          if (terrGuard > 0) stepSight(world, T.sight, map.invW, map.fwdU);
-          // mk2.49: THE GROUND PAYS — held-cell counts on the territory
-          // clock (bell.js's commander-read loop, verbatim), cached as
-          // per-second rates for the income lines below. One law, both signs.
-          if (terrGuard > 0) {
-            let pc = 0, ec = 0;
-            for (let i = 0; i < T.v.length; i++) { if (T.v[i] > 0.15) pc++; else if (T.v[i] < -0.15) ec++; }
-            run._groundRate1 = groundRate(pc);
-            run._groundRate2 = groundRate(ec);
-          }
+          if (perf) pSim = performance.now() - pSim0; // ...and closes
+          if (view.acc > STEP * 6) view.acc = 0;
           // grid-line retint + terrain fog wash: same 4Hz cadence as the
           // territory field itself, not per frame (see renderer.js
           // updateTerritory/retintTerritory/updateFogWash).
-          if (terrGuard > 0 && R.updateTerritory) R.updateTerritory();
+          if (terrFlagged && R.updateTerritory) R.updateTerritory();
           // P7 T10: TRIGGERS — a 4Hz game-layer step, beside the territory
           // accumulator (NOT per sim tick). Cheap: setMines only rewrites the
           // two instanced pools when a device actually fired this tick.
-          if (terrGuard > 0) { stepMines(world, run.mines); R.setMines(run.mines); }
+          if (terrFlagged) R.setMines(run.mines);
           // mk2.50: map.TOWN FLAGS — holder-colored, render-only; neutral and
           // contested ground fly nothing, ruined buildings fly nothing
           // (they already pay nothing — economy.js payTown). Territory
           // cadence; derived, never saved.
-          if (terrGuard > 0 && R.setTownFlags) {
+          if (terrFlagged && R.setTownFlags) {
             const rows = [];
             for (const b of town) {
               const m = townFlagMeta.get(b.id);
@@ -3265,18 +2747,9 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             }
             R.setTownFlags(rows);
           }
-          // mk2.09: THE GREEN FOG ticks on the same clock the mines do.
-          if (terrGuard > 0 && run.fog.length) stepFog(world, run.fog, TERR_STEP);
-          // P7 T17: dead bags release their ground — same cadence as the
-          // other derived overlays; bagId cells are few.
-          if (terrGuard > 0) for (const c of grid.cells) {
-            if (c.bagId == null) continue;
-            const b = world.byId.get(c.bagId);
-            if (!b || !b.alive) { c.bag = null; c.bagId = null; }
-          }
           // P7 T13 (owner): THE GREEN THREADS — every friendly ordered path,
           // green on the ground, refreshed with the other derived overlays.
-          if (terrGuard > 0) {
+          if (terrFlagged) {
             const paths = [];
             for (const sq of run.squads) {
               if (!sq.dest || sq.ridingIn != null) continue;
@@ -3290,84 +2763,10 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             }
             R.overlay.setOrderPaths(paths);
           }
-          world.events.length = 0;
-          const pSim0 = perf ? performance.now() : 0; // stopwatch: sim bracket opens
-          // P6 T10 (mk1.19): the pool rebuild runs ONCE PER FRAME, not once
-          // per sub-step (Task 5's Amendment 1 finding — a catch-up frame
-          // running six sub-steps paid six rebuilds in exactly the frames
-          // that were already worst). Staleness widens from one tick to one
-          // frame; still deterministic. THE IDLE GATE (Task 5 Amendment 1
-          // Step A1-1): the pools exist only while the war is hot — squads,
-          // towers, or enemies afield. Cold frames null the lists and every
-          // consumer full-scans exactly as before the pools existed
-          // (pools-vs-full-scan is proven identical, so the gate can be
-          // cheap and even frame-paced without touching determinism of
-          // outcomes). _hot is stashed by the hud census pass below.
-          if (view.acc >= STEP) {
-            if (run._hot) rebuildBodyLists(world, world._L || makeBodyLists());
-            else world._L = null;
-          }
-          let guard = 0;
-          while (view.acc >= STEP && guard++ < 6) {
-            view.acc -= STEP;
-            // THE MECH (mk1.92): commands feed BEFORE stepDepot's stepWorld
-            // call, exactly like MechRange's own feedCommands-then-stepWorld
-            // order — mechCommand must land before the tick it drives.
-            if (input.possess && input.possess.kind === "mech") {
-              const pm0 = world.byId.get(input.possess.id);
-              if (pm0 && pm0.mechRef) feedMechCommands(pm0.mechRef, STEP);
-            }
-            stepDepot(world, grid, onStructureLost, town, onRuin, T, input.discipline, run, input, map);
-            // POSSESSION (P4 T2, mk0.91): THE TRIGGER. At most one volley
-            // attempt per sim tick — cooldowns (possessedVolley's own
-            // u.fireCd gate) do the real limiting, not this flag.
-            if (input.fireHeld && input.possess && input.possess.kind === "squad" && input.reticle) {
-              const psq = run.squads.find((q) => q.id === input.possess.id);
-              if (psq) possessedVolley(world, psq, input.reticle, T, map.invW);
-            }
-            // POSSESSION (P4 T3, mk0.92): a possessed tower's trigger — same
-            // one-attempt-per-tick flag, real spec, real cooldown, through
-            // possessedTowerFire. Discipline note: friendlyFouls is NOT
-            // consulted while possessed — your trigger, your responsibility.
-            if (input.fireHeld && input.possess && input.possess.kind === "tower" && input.reticle) {
-              const ptw = world.byId.get(input.possess.id);
-              if (ptw && possessedTowerFire(world, ptw, input.reticle, T, map.invW, run.arcs, map)) view._teslaFired = (view._teslaFired || 0) + 1;
-            }
-            // POSSESSION (P7 T2): the Bison's two triggers — same
-            // one-attempt-per-tick flags, real cooldowns, through
-            // possessedArmorFire/possessedArmorMg.
-            if (input.possess && input.possess.kind === "vehicle" && input.reticle) {
-              const pv = world.byId.get(input.possess.id);
-              if (pv) {
-                // P7 T4: the APC's only gun is the coax — FIRE streams it (no
-                // main gun to fire), and there is no separate MG trigger.
-                if (input.fireHeld) { if (pv.vtype === "apc") possessedArmorMg(world, pv, input.reticle, T, map.invW); else possessedArmorFire(world, pv, input.reticle, T, map.invW); }
-                if (input.mgHeld && pv.vtype !== "apc") possessedArmorMg(world, pv, input.reticle, T, map.invW);
-              }
-            }
-            // THE MECH (mk1.92): five triggers, one attempt each per sim
-            // tick — FIRE (held), MSL/BRG/PUNT/180 (one-shot want flags set
-            // by the touch buttons/desktop keys below), each SIGHT-GATED at
-            // the current aim point before the engine call (the possessed-
-            // fire law — fieldReaches at the aim point mechAimDir solves).
-            if (input.possess && input.possess.kind === "mech") {
-              const pm = world.byId.get(input.possess.id);
-              if (pm && pm.mechRef) {
-                const mech = pm.mechRef;
-                if (mechSighted(world, mech, T, map.invW)) {
-                  if (input.fireHeld) mechFire(world, mech);
-                  const w = input.mechWant;
-                  if (w && w.msl) mechMissiles(world, mech);
-                  if (w && w.brg) mechBarrage(world, mech);
-                  if (w && w.punt) mechPunt(world, mech);
-                  if (w && w.face) mechAboutFace(world, mech);
-                }
-                if (input.mechWant) { input.mechWant.msl = false; input.mechWant.brg = false; input.mechWant.punt = false; input.mechWant.face = false; }
-              }
-            }
-          }
-          if (perf) pSim = performance.now() - pSim0; // ...and closes
-          if (view.acc > STEP * 6) view.acc = 0;
+          // mk2.14 (owner): a davy burst carved the ground, or a rock
+          // breached — re-lay the rock dressing so surviving boulders sink
+          // to the new surface instead of floating over the crater.
+          if (dressFlagged) { R.setDressing({ rocks: rocksLive, ponds: map.PONDS, streams: streamRibs }); toast("THE RIDGE IS BREACHED"); }
           // THE MOVED BLOCK (T3 split, step 4.3): selection pruning is view
           // work — it left stepDepot and lands here, once per frame instead
           // of once per sim tick (a presentation-only cadence change).
@@ -3377,30 +2776,11 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             if (nextId != null) view.selSquadId = nextId;
             else { view.selSquadId = null; view.orderMode = null; view.buildPt0 = null; view.selSquadIds = null; }
           }
-          const evs = drainEvents();
+          const evs = frameEvents;
           for (const e of evs) if (e.type === "zap") view._teslaZaps = (view._teslaZaps || 0) + 1;
           // ...and the frame's audio-only cues join the stream here, after the
           // wipe that would have eaten them (see the cue queue above).
           if (cues.length) { for (const c of cues) evs.push(c); cues.length = 0; }
-          // Structural loss census — ~1Hz (stepDepotCensus's own accumulator
-          // gate, not this per-frame call site) — gated by sdt like the rest
-          // of the sim clock, so it doesn't run while paused/pre-start/
-          // post-game. Fraction is exposed on hud for the smoke test; there
-          // is deliberately no health-bar UI — the building is the readout.
-          if (!dev) stepDepotCensus(run, sdt, () => ({
-            player: depotStandingFraction(depotCensus, world.byId),
-            enemy: depotStandingFraction(depotCensus2, world.byId),
-          }));
-          // THE LIVING MARKET (mk1.13): its own 1Hz accumulator, sdt-gated
-          // like the census above (a paused game freezes prices) — kept
-          // separate from stepDepotCensus's accumulator (different
-          // consumers) per the brief.
-          run._marketAcc += sdt;
-          if (run._marketAcc >= 1) {
-            run._marketAcc -= 1;
-            run._market = computePrices(marketCounts(world, run.squads, run.mines));
-            run._minePrices = minePrices(run._market.counts, priced); // P7 T10: beside _market, same cadence
-          }
           R.consume(evs);
           A.setListener(run.focus.x, run.focus.z, 46 / Math.max(0.6, run.zoom));
           A.consume(evs);

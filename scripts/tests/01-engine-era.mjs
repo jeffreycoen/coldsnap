@@ -1835,6 +1835,8 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     // the corpse sweep and the tower scan below live in stepDepot/stepTowers,
     // moved to sim.js (war-engine-extraction task 1).
     const simSrc3 = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
+    // buildEmitters moved to boot.js (task 4: the engine leaves the screen).
+    const bootSrc1 = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
     ok("sweep/corpse: DepotGame corpse sweep is kind-gated, team-agnostic",
       simSrc3.includes('b.kind === "unit" && !b.alive && world.t - (b.deadT || 0) > 2.5'));
 
@@ -1843,11 +1845,11 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     // DepotGame closure, so source-assert the branches exist, and
     // functionally prove a green unit-weight emitter holds ground.
     ok("sweep/emitters: buildEmitters includes team-1 units at EMIT.unit sign +1",
-      depotSrc3.includes('b.kind === "unit" && b.team === 1 && b.alive') &&
-      /team === 1[\s\S]{0,220}EMIT\.unit\.w, r: EMIT\.unit\.r, sign: 1/.test(depotSrc3));
+      bootSrc1.includes('b.kind === "unit" && b.team === 1 && b.alive') &&
+      /team === 1[\s\S]{0,220}EMIT\.unit\.w, r: EMIT\.unit\.r, sign: 1/.test(bootSrc1));
     ok("sweep/emitters: buildEmitters includes sandbags under EMIT.wall (re-taught P7.1 T7)",
-      depotSrc3.includes("b.sandbag") &&
-      /sandbag[\s\S]{0,220}EMIT\.wall\.w, r: EMIT\.wall\.r, sign: b\.bagSide === 2 \? -1 : 1/.test(depotSrc3));
+      bootSrc1.includes("b.sandbag") &&
+      /sandbag[\s\S]{0,220}EMIT\.wall\.w, r: EMIT\.wall\.r, sign: b\.bagSide === 2 \? -1 : 1/.test(bootSrc1));
     {
       const T3 = makeTerritory(29, 57);
       for (let i = 0; i < 40; i++) stepTerritory(T3, [{ x: 0, z: 0, w: EMIT.unit.w, r: EMIT.unit.r, sign: 1 }], 0.25);
@@ -1978,7 +1980,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   ok("snap-squads: 2 live squads -> snapshot squads=2", snapSquads({ squads: liveCount(squads) }) === 2);
   for (const id of squads[1].memberIds) { const u = world.byId.get(id); if (u) u.alive = false; }
   ok("snap-squads: wiped squad drops from the count", snapSquads({ squads: liveCount(squads) }) === 1);
-  const src = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  const src = fs.readFileSync(new URL("../../src/depot/tick.js", import.meta.url), "utf8");
   ok("snap-squads: buildSnapshot wires the squads field",
     /buildSnapshot[\s\S]{0,1600}squads, towerElev/.test(src));
   void SQ;

@@ -13,6 +13,6 @@ import { makeField } from "../../src/engine/core.js";
   f2.carveFloor = -12;
   f2.carve(0, 0, 4, 20);
   ok("deep floor: a dialed field carves past the old clamp", Math.abs(f2.heightAt(0, 0) - -12) < 1e-4);
-  const src = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  const src = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
   ok("deep floor: the war sets its own floor at boot", src.includes("field.carveFloor = -12"));
 }

@@ -17,7 +17,7 @@ ok("G1: held ground scales continuously, fractions included",
   groundRate(2 * INCOME_CELLS) === 2 &&
   Math.abs(groundRate(Math.round(1.5 * INCOME_CELLS)) - 1.5) < 0.01);
 {
-  const dg = src("src/depot/DepotGame.jsx");
+  const dg = src("src/depot/tick.js");
   ok("G2: the player's income line reads the ground rate", /run\.resources \+= run\._groundRate1 \* sdt/.test(dg));
   ok("G2: the regiment accrues on the same clock, the same gate", /run\.reg\.scrap \+= run\._groundRate2 \* sdt/.test(dg));
   ok("G2: the rates ride the territory tick", /run\._groundRate1 = groundRate\(pc\)/.test(dg) && /run\._groundRate2 = groundRate\(ec\)/.test(dg));

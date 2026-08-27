@@ -331,9 +331,10 @@ import fs from "node:fs";
   {
     const saveSrc = fs.readFileSync(new URL("../../src/depot/save.js", import.meta.url), "utf8");
     ok("VISION T2(d): save.js stores no sight at all (derived, rebuilt on resume)", !/\bsight\b/i.test(saveSrc));
-    const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("VISION T2(d): the sight map is made where the territory is made", /T\.sight\s*=\s*makeSight\(T\)/.test(gameSrc));
-    ok("VISION T2(d): and it recomputes on the territory clock", /stepSight\(world,\s*T\.sight/.test(gameSrc));
+    const bootSrcV2d = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
+    ok("VISION T2(d): the sight map is made where the territory is made", /T\.sight\s*=\s*makeSight\(T\)/.test(bootSrcV2d));
+    const tickSrcV2d = fs.readFileSync(new URL("../../src/depot/tick.js", import.meta.url), "utf8");
+    ok("VISION T2(d): and it recomputes on the territory clock", /stepSight\(world,\s*T\.sight/.test(tickSrcV2d));
   }
 
   // (e) THE GATE ITSELF, AND THE CARVE-OUTS THAT DIED. Structure fire used to
@@ -1530,10 +1531,11 @@ import fs from "node:fs";
   // nowhere in DepotGame.jsx — it is fully replaced by the steered reticle.
   {
     const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+    const tickSrcT4f = fs.readFileSync(new URL("../../src/depot/tick.js", import.meta.url), "utf8");
     ok("POSSESSION T4(f) source pin: the squad volley trigger reads input.reticle (wee-t2b: map.invW)",
-      /possessedVolley\(world, psq, input\.reticle, T, map\.invW\)/.test(gameSrc));
+      /possessedVolley\(world, psq, input\.reticle, T, map\.invW\)/.test(tickSrcT4f));
     ok("POSSESSION T4(f) source pin: the tower fire trigger reads input.reticle",
-      /possessedTowerFire\(world, ptw, input\.reticle, T, map\.invW, run\.arcs, map\)/.test(gameSrc)); // mk2.15: trailing run.arcs added for the tesla chain; wee-t2b: map.invW + trailing map
+      /possessedTowerFire\(world, ptw, input\.reticle, T, map\.invW, run\.arcs, map\)/.test(tickSrcT4f)); // mk2.15: trailing run.arcs added for the tesla chain; wee-t2b: map.invW + trailing map
     ok("POSSESSION T4(f) source pin: possessAim appears nowhere in DepotGame.jsx",
       !/possessAim/.test(gameSrc));
   }

@@ -143,7 +143,7 @@ const walk = (world, arcs, s) => { for (let i = 0; i < Math.round(s / 0.05); i++
 }
 { // Amendment 5: the LIVE state literal carries the arcs array — the game
   // does not boot through makeRunState, so the field is pinned at the source.
-  const dg = (await import("node:fs")).readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  const dg = (await import("node:fs")).readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
   ok("a5: the game state carries arcs", /ws: makeDepotAssaultState\(\), spawnRR: 0,\s*\n\s*arcs: \[\]/.test(dg));
 }
 { // Task 4: the switch — davy holds with a friend in the ring, never on its own crew

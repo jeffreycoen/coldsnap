@@ -178,10 +178,12 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
   // ---- AMENDMENT 2 (mk1.83): the convoy arms on the wall clock
   {
     const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
-    ok("T3-A2: the ring stamps the wall arm", /ringBell\(\); run\.manifest\.armedAtWall = performance\.now\(\) \/ 1000 \+ PENDING_ARM_S;/.test(src));
+    ok("T3-A2: the ring stamps the wall arm (re-taught: the bell flag from tickWar, DepotGame.jsx:2717)",
+      /if \(flags\.bell\) \{ view\.teachFire\("bell"\); run\.manifest\.armedAtWall = performance\.now\(\) \/ 1000 \+ PENDING_ARM_S; \}/.test(src));
     ok("T3-A2b: both buy gates read the wall clock", (src.match(/performance\.now\(\) \/ 1000 < \(M\.armedAtWall \?\? 0\)/g) || []).length === 2);
     ok("T3-A2c: the info card arms on the wall for every door", /const armed = performance\.now\(\) \/ 1000 >= view\.infoArmedWall;/.test(src));
-    ok("T3-A2d: a resumed hand re-arms instantly (dead-session stamps never block)", /run\.manifest\.armedAtWall = 0;/.test(src));
+    const bootSrcA2 = fs.readFileSync("src/depot/boot.js", "utf8");
+    ok("T3-A2d: a resumed hand re-arms instantly (dead-session stamps never block)", /run\.manifest\.armedAtWall = 0;/.test(bootSrcA2));
   }
 }
 
@@ -658,10 +660,11 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
     // the loop call lives inside stepDepot, moved to sim.js (war-engine-
     // extraction task 1); the books stamp (world._mech) stays in the boot.
     const simSrc = fs.readFileSync("src/depot/sim.js", "utf8");
+    const bootSrcT7v2 = fs.readFileSync("src/depot/boot.js", "utf8");
     ok("T7v2(i2): the bar, the mode map, the loop call, and the books stamp are wired",
       /key: "sq_mechanics", label: "MECHANICS", icon: "⚙"/.test(src) && /sq_mechanics: "mechanics"/.test(src) &&
       /if \(sq\.type === "mechanics"\) stepMechanicTendSquad\(world, sq, world\.dt\);/.test(simSrc) &&
-      /world\._mech = \{ take: \(team, n\) => \{/.test(src));
+      /world\._mech = \{ take: \(team, n\) => \{/.test(bootSrcT7v2));
   }
 }
 
@@ -731,8 +734,9 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
     const src3 = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
     ok("T8v2(d7): picks hold by the card's name — highlight and un-pick both work, duplicates impossible",
       /const on = picked\.includes\(c\.k\);/.test(src3) && /onConfirm\(cards\.filter\(\(c\) => picked\.includes\(c\.k\)\)\)/.test(src3));
+    const bootSrcD8 = fs.readFileSync("src/depot/boot.js", "utf8");
     ok("T8v2(d8): the game's own startup opens the till at 250",
-      /resources: 250, \/\/ the draft's richer opening \(owner\)/.test(src3));
+      /resources: 250, \/\/ the draft's richer opening \(owner\)/.test(bootSrcD8));
     ok("T8v2(d9): the draft is FREE to the last step — the deal placer never touches the till",
       (() => { const m = src3.match(/const placePick = \(p\) => \{[\s\S]*?\n      \};/); return !!m && !/run\.resources/.test(m[0]); })());
   }

@@ -257,15 +257,17 @@ import fs from "node:fs";
     // stepDepot moved to sim.js (war-engine-extraction task 1) — the support
     // pass and the rubble-count pin below read its new home.
     const simSrc = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
+    const bootSrc = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
+    const tickSrc = fs.readFileSync(new URL("../../src/depot/tick.js", import.meta.url), "utf8");
     ok("mk0.55/f: buildAt lays oriented courses (auto-continue, broadside default; wee-t2b: map.ORIENT)", /spawnWallCourses\(world, wp\.x, y, wp\.z, wallOrientAt\(world, wp\.x, wp\.z, map\.ORIENT % 2\)\)\[0\]/.test(wsrc));
     ok("mk0.52/f: the support pass runs in stepDepot, after the dead are cleared",
       /structureLost[\s\S]{0,700}stepWallSupport\(world\)/.test(simSrc));
     ok("mk0.52/f: selling takes the whole stack, matched by footprint not id",
       /const stack = b\.kind === "wall"/.test(wsrc) && /wg\.gx === gx && wg\.gz === gz/.test(wsrc));
-    ok("mk0.52/f: resume re-claims the cell with the BOTTOM course", /if \(b\.course > 0\) continue;/.test(wsrc));
-    ok("mk0.52/f: one territory emitter per wall, not per course", /b\.kind === "wall" && b\.team === 1 && b\.alive && !b\.course/.test(wsrc));
+    ok("mk0.52/f: resume re-claims the cell with the BOTTOM course", /if \(b\.course > 0\) continue;/.test(bootSrc));
+    ok("mk0.52/f: one territory emitter per wall, not per course", /b\.kind === "wall" && b\.team === 1 && b\.alive && !b\.course/.test(bootSrc));
     ok("mk0.52/f: the counters count walls, not courses",
-      /if \(b\.kind === "wall"\) \{ if \(!b\.course\) walls\+\+; continue; \}/.test(wsrc) && /if \(b\.kind === "wall"\) \{ if \(!b\.course\) nw\+\+; \}/.test(wsrc));
+      /if \(b\.kind === "wall"\) \{ if \(!b\.course\) walls\+\+; continue; \}/.test(tickSrc) && /if \(b\.kind === "wall"\) \{ if \(!b\.course\) nw\+\+; \}/.test(wsrc));
     // mk1.93 re-teach: the one-wall-one-death shape moved off DepotGame's own
     // wallKill counter (retired with the kill law) into scoreKill's own
     // early-return — the upper courses never reach the killer's ledger.

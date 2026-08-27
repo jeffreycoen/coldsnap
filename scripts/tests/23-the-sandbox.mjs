@@ -10,6 +10,7 @@ const src = (p) => readFileSync(new URL("../../" + p, import.meta.url), "utf8");
 const dg = src("src/depot/DepotGame.jsx");
 const app = src("src/ui/App.jsx");
 const start = src("src/ui/StartScreen.jsx");
+const tickSrc = src("src/depot/tick.js");
 
 ok("sandbox: the war screen takes the dev switch", dg.includes("dev = false"));
 ok("sandbox: the app routes the sandbox screen", app.includes('"devsandbox"') && app.includes("<DepotGame dev"));
@@ -17,9 +18,9 @@ ok("sandbox: a reload never resumes into it", !app.match(/RESUME_SCREENS = new S
 ok("sandbox: the menu has the door", start.includes('data-menu="devsandbox"'));
 ok("sandbox: prices are free on the bench", dg.includes("dev ? 0 :"));
 ok("sandbox: the pace gate opens", dg.match(/buyPaced = \(\) => \{\s*\n\s*if \(dev\) return true;/));
-ok("sandbox: the bell never rings", dg.includes("if (!dev && stepBell(run, world.t))"));
+ok("sandbox: the bell never rings (re-taught: !war.dev, tick.js)", tickSrc.includes("if (!war.dev && stepBell(run, world.t))"));
 ok("sandbox: the save is never written", dg.match(/const saveFront = \(\) => \{\s*\n\s*if \(dev\) return;/));
-ok("sandbox: the war never ends on the bench", dg.includes("if (!dev) stepDepotCensus"));
+ok("sandbox: the war never ends on the bench (re-taught: !war.dev, tick.js)", tickSrc.includes("if (!war.dev) stepDepotCensus"));
 ok("sandbox: everything is unlocked", dg.includes("run.manifest.unlocked = PALETTE.map((p) => p.key)"));
 ok("sandbox: the reroll button exists", dg.includes("data-dev-reroll"));
 

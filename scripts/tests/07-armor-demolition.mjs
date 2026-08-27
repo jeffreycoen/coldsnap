@@ -1145,8 +1145,9 @@ import fs from "node:fs";
     for (const s of seatsRestored9) if (s > apcSeqN9) apcSeqN9 = s;
     const freshSeq9 = ++apcSeqN9;
     ok("T9(d10): a replacement APC's seat is fresh — past every restored seat", freshSeq9 > Math.max(...seatsRestored9), freshSeq9);
-    ok("T9(d11): the mount-scope reseed formula is in source (max restored + 1)",
-      /if \(b\.kind === "vehicle" && b\.vtype === "apc" && b\.apcSeq > apcSeqN\) apcSeqN = b\.apcSeq;/.test(dsrc9));
+    const bootSrc9 = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
+    ok("T9(d11): the mount-scope reseed formula is in source (max restored + 1, re-taught: war.seq.apc, boot.js)",
+      /if \(b\.kind === "vehicle" && b\.vtype === "apc" && b\.apcSeq > war\.seq\.apc\) war\.seq\.apc = b\.apcSeq;/.test(bootSrc9));
   }
 
   // (e)/(f) the fielded start + draw/hash stability — built off the SAME real

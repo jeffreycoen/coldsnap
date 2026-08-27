@@ -8,6 +8,9 @@
 
 import { worldHash } from "../engine/core.js";
 import { serializeFront } from "./save.js";
+import { bootWar } from "./boot.js";
+import { tickWar } from "./tick.js";
+export { bootWar, tickWar };
 
 // ============================================================ part 1: shapes
 // JSDoc only — nothing in this part runs.
@@ -164,6 +167,11 @@ import { serializeFront } from "./save.js";
  * @property {Run} run
  * @property {Array} census        the player depot's stone census (censusDepotChunks)
  * @property {Array} census2       the enemy depot's census
+ * @property {Object} seq          never saved — {apc: number}, the armored-carrier seat counter
+ * @property {Object} clock        never saved — holds the territory accumulator (terrAcc) and
+ *   the structure-damage snapshot (_structHp, a Map)
+ * @property {Array} rocksLive     the live ridge list; regrown on boot, culled on breach
+ * @property {boolean} dev         sandbox mode, never saved
  */
 
 /**
@@ -176,6 +184,9 @@ import { serializeFront } from "./save.js";
  * @property {boolean} townFlags   holder flags changed — R.setTownFlags
  * @property {boolean} orderPaths  ordered routes changed — R.overlay.setOrderPaths
  * @property {boolean} dressing    a rock breached or the ground re-carved — R.setDressing
+ * @property {boolean} bell        the bell rang this call
+ * @property {boolean} withdrew    a spent assault broke contact this call
+ * @property {boolean} teslaFired  a possessed tower's tesla trigger fired this call
  */
 
 /**
@@ -196,6 +207,10 @@ import { serializeFront } from "./save.js";
  * @property {function():void} releasePossession
  * @property {?function(Object):void} stepBuildLine      the player build-line driver, or null
  * @property {?function(Object):void} stepFoeBuildLine   the enemy build-line driver, or null
+ * @property {?function(Object,number):void} feedMech    per-tick callback (mech, dt) => void
+ *   the component installs to feed the possessed walker's controls, or null
+ * @property {?Object} bellCtx      the bell's side-effect context (cue/toast/townUV/...), or null —
+ *   headless callers pass null and tickWar builds a silent one from the war itself
  */
 
 /**
@@ -280,24 +295,6 @@ export function assertSpecs(specs) {
 // and delete the step note.
 
 /**
- * Boot one war. @param {Object} opts {seed, resume, dev}
- * @returns {War}
- */
-export function bootWar(opts = {}) {
-  void opts;
-  throw new Error("bootWar: filled by step 4 of the war-engine-extraction plan (depot/boot.js)");
-}
-
-/**
- * Advance the war one fixed step. @param {War} war @param {number} sdt
- * @param {TickInput} input @returns {TickFlags}
- */
-export function tickWar(war, sdt, input) {
-  void war; void sdt; void input;
-  throw new Error("tickWar: filled by step 5 of the war-engine-extraction plan");
-}
-
-/**
  * Serialize the war's run state — the same context the component's save
  * built, byte-equal to save.js's serializeFront by construction (this is
  * a pure argument mapping; serializeFront is untouched).
@@ -325,6 +322,7 @@ export function defaultTickInput() {
     fireHeld: false, mgHeld: false, mechWant: null,
     devDummies: false, windOn: true, discipline: "careful",
     releasePossession: () => {}, stepBuildLine: null, stepFoeBuildLine: null,
+    feedMech: null, bellCtx: null,
   };
 }
 

@@ -1,5 +1,8 @@
 # WINTER FRONT — The Settled Ground (fresh skeleton)
 
+**NOTICE (owner, 2026-08-27): this document is very poor quality. Do not
+use it for reference unless the owner explicitly directs it.**
+
 *ACTIVE (owner, 2026-08-26): this skeleton governs the phase; the 2026-08-25 skeleton is superseded and is not used. Written by Claude Fable 5 against mk2.60 (commit b12611b) after a full read of every affected file; rulings taken and amended by the owner through the day are recorded in place. Task plans are written one at a time on the owner's word and served alone.*
 
 ## Status

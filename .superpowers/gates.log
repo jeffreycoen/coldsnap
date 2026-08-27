@@ -494,3 +494,8 @@
 2026-08-27T19:21:39.028Z golden ok 7 PASS / 0 FAIL — GOLDEN GATE: ALL PASS (19.7s)
 2026-08-27T19:25:13.089Z smoke FAIL(1) 29 PASS / 1 FAIL — 1 FAILURE(S) (195.7s)
 2026-08-27T19:46:19.114Z smoke ok 30 PASS / 0 FAIL — BOOT-LOAD SMOKE: ALL PASS (187.6s)
+2026-08-27T21:24:14.160Z depot-test FAIL(1) 2047 PASS / 42 FAIL — 42 FAILURE(S): sweep/emitters: buildEmitters includes team-1 units at EMIT.unit sign +1, sweep/emitters: buildEmitters i (216.1s)
+2026-08-27T22:08:06.447Z depot-test FAIL(1) 2084 PASS / 5 FAIL — 5 FAILURE(S): mk0.52/f: resume re-claims the cell with the BOTTOM course, mk0.52/f: one territory emitter per wall, not  (206.9s)
+2026-08-27T22:32:40.011Z depot-test ok 2089 PASS / 0 FAIL — depot-test PASS (201.6s)
+2026-08-27T22:33:12.392Z golden ok 7 PASS / 0 FAIL — GOLDEN GATE: ALL PASS (24.3s)
+2026-08-27T22:36:43.023Z smoke ok 30 PASS / 0 FAIL — BOOT-LOAD SMOKE: ALL PASS (191.5s)

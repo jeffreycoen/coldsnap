@@ -37,7 +37,7 @@ import { DAVY_FIRE } from "../../src/depot/specs.js";
   const b2 = plain.events.find((e) => e.type === "boom");
   ok("fog: an untagged boom keeps the old shape", !!b2 && !("weapon" in b2));
   // the wiring pins: the boom hook, the territory-clock tick, the save row
-  const dg = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
+  const dg = fs.readFileSync(new URL("../../src/depot/tick.js", import.meta.url), "utf8");
   ok("fog: the game layer hooks the davy boom", dg.includes("addFogPatch(run.fog, e.x, e.z"));
   ok("fog: the patches tick on the territory clock", dg.includes("stepFog(world, run.fog"));
   const sv = fs.readFileSync(new URL("../../src/depot/save.js", import.meta.url), "utf8");

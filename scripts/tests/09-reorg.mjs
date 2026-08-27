@@ -57,8 +57,10 @@ import fs from "node:fs";
   ok("T19(a2): DepotGame no longer defines what it now imports",
     !/const parkArmor = /.test(dgSrc19) && !/const seedBags = /.test(dgSrc19) &&
     !/THE HOME GUARD \(owner\)/.test(dgSrc19) && /from "\.\/muster\.js"/.test(dgSrc19));
-  ok("T19(a3): the seat counter stays a mount let with its pinned reseed",
-    /let apcSeqN = 0;/.test(dgSrc19) && /const nextApcSeq = \(\) => \+\+apcSeqN;/.test(dgSrc19));
+  let bootSrc19 = "";
+  try { bootSrc19 = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8"); } catch (e) {}
+  ok("T19(a3): the seat counter lives on the war (task 4) with its pinned reseed",
+    /seq: \{ apc: 0 \}/.test(bootSrc19) && /const nextApcSeq = \(\) => \+\+war\.seq\.apc;/.test(bootSrc19));
   // (b) the boot block, called for real — the first true muster fixture.
   // Re-taught (P7.2 T8, the sweep license): THE OPENING DRAFT — the player's
   // seven, then its seven, its five picked and applied (15 draws: commander
@@ -174,9 +176,10 @@ import fs from "node:fs";
   ok("T21(a): bell.js owns the ring (wee-t2b: + map)",
     /export function ringBell\(world, grid, field, T, run, ctx, map\)/.test(beSrc21) &&
     /ctx\.saveFront\(\);/.test(beSrc21) && /payTown\(ctx\.townUV, T\)/.test(beSrc21));
-  ok("T21(a2): DepotGame keeps only the wrapper and the cards (wee-t2b: + map)",
-    !/const ringBell = \(\) => \{/.test(dgSrc21) &&
-    /const ringBell = \(\) => ringBellOut\(world, grid, field, T, run, bellCtx, map\);/.test(dgSrc21) &&
+  const tickSrc21 = fs.readFileSync(new URL("../../src/depot/tick.js", import.meta.url), "utf8");
+  ok("T21(a2): DepotGame keeps only the cards; the ring itself moved to tick.js's fixed step (re-taught, task 4: the engine leaves the screen)",
+    !/const ringBell = /.test(dgSrc21) &&
+    /if \(!war\.dev && stepBell\(run, world\.t\)\) \{ flags\.bell = true; ringBellOut\(world, grid, field, T, run, bellCtx, map\); \}/.test(tickSrc21) &&
     /view\.pickManifest = /.test(dgSrc21));
   // (b) two bells rung through the real ring — structure, not feel
   // re-pinned mk1.72 (P7.1 T8): THE SEED PURGE — the old special-cased seed
@@ -603,12 +606,14 @@ import fs from "node:fs";
   }
 
   // (11) mid-possession resumes to command view: the RES restore block
-  // (DepotGame.jsx) never assigns S.possess from the file — the base S
-  // object's possess:null is the only initializer, unconditional.
+  // (boot.js, task 4: the engine leaves the screen) never assigns
+  // S.possess from the file — the base S object's possess:null is the
+  // only initializer, unconditional.
   const dsrc11 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  const start11 = dsrc11.indexOf("const r = RES.run;");
-  const end11 = dsrc11.indexOf("stateRef.current = { run, view, input };");
-  const resBlock11 = start11 >= 0 && end11 > start11 ? dsrc11.slice(start11, end11) : "";
+  const bootSrc11 = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
+  const start11 = bootSrc11.indexOf("const r = RES.run;");
+  const end11 = bootSrc11.indexOf("run.holdArea = r.holdArea || { 1: false, 2: false };");
+  const resBlock11 = start11 >= 0 && end11 > start11 ? bootSrc11.slice(start11, end11) : "";
   ok("T11(11a): the RES restore block source-extracts", resBlock11.length > 0);
   ok("T11(11b): the RES restore block never assigns input.possess (a mid-possession save resumes to command view)",
     !/input\.possess\s*=/.test(resBlock11));

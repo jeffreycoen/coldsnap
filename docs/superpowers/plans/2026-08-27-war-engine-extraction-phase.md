@@ -1,5 +1,8 @@
 # War Engine Extraction — Phase Document
 
+**NOTICE (owner, 2026-08-27): this document is very poor quality. Do not
+use it for reference unless the owner explicitly directs it.**
+
 Opened 2026-08-27. The consulted plan is `2026-08-27-war-engine-extraction.md`
 in this directory — the owner's document with the three rulings of 2026-08-27
 applied. This file holds the task index, the status, and the baselines. Task
@@ -24,14 +27,14 @@ on approval.
 | T2a | mk2.71 | 2 | `makeMap` returns `GameMap`; `assertMap` into mapgen; api.js part 3 deleted; the two mapFromGlobals call sites migrated; shim intact (6 export lets) | depot-test, golden, smoke, depot-lint | LANDED — commit e2abb96, gates 2,091/0 + 7/7 + 30/0. Open sweep item for T2b: sim.js line-5 header comment still names mapFromGlobals (stale prose, no call site) |
 | T2b | mk2.72 | 2 | every consumer takes `map` as a parameter — state/muster/bell/buildlines/sim/DepotGame/startview migrated; 14 signatures changed; ~45 test re-teaches across 11 files | depot-test, golden, smoke, depot-lint | LANDED — commit 6e9f316, final gates 2,091/0 + 7/7 + 30/0. Surviving mapgen imports under src are builders only (checkConnectivity, layDressing, makeMap/buildDepotTerrain/makeGrid/planTrees/computeFlowField) |
 | T3 | mk2.73 | 3 | `S` split run / view / input; `serializeRun` filled; byte-equal saves | depot-test, golden, smoke | DISPATCHED 2026-08-27 — plan `2026-08-27-wee-t3-state-split.md`, agent running |
-| T4 | mk2.74 | 4 | `depot/boot.js`; `bootWar` filled; resume-hash proof | depot-test, golden, smoke | pending — plan unwritten |
-| T5 | mk2.75 | 5 | `tickWar(war, sdt, input)`; `TickFlags` finalized from dispatch derivation; `node src/depot/api.js gate` exits 0 | depot-test, golden, smoke | pending — plan unwritten |
-| T6 | mk2.76 | 6 | `engine/index.js` + `depot/legacy.js`; name-count acceptance; damage-law ruling taken here | depot-test, golden | pending — plan unwritten; carries an owner ruling |
-| T7 | mk2.77 | 7 | `SPECS_CONTRACT` narrowed to read keys; `bootWar` calls `assertSpecs` | depot-test, golden | pending — plan unwritten |
-| T8 | mk2.78 | 8 | `ColdsnapTD` diff report; byte-identical copies deleted; diverged copies to the owner; reading gate exercised | depot-test, golden | pending — plan unwritten; carries owner rulings |
-| T9 | mk2.79 | 9 | renderer `kind → builder` registry; `vtype ===` count 0 | depot-test, golden, smoke | pending — plan unwritten |
-| T10 | mk2.80 | 2 close | `export let` shim deleted; gate: `grep -c 'export let' src/depot/mapgen.js` = 0 | depot-test, golden | pending — plan unwritten |
-| T11 | mk2.81 | — | phase closeout: README claims and screenshots re-checked against the shipped game | — | pending |
+| T4+T5 | mk2.74 | 4+5 | `depot/boot.js` (`bootWar`) and `depot/tick.js` (`tickWar`); `node src/depot/api.js gate` boots headless, runs, exits 0 | depot-test, golden, smoke | LANDED |
+| Closeout | mk2.75 | — | phase closeout: README claims and screenshots re-checked against the shipped game | — | pending |
+| T6 | — | 6 | — | — | OFF THE BOARD (owner, 2026-08-27) |
+| T7 | — | 7 | — | — | OFF THE BOARD (owner, 2026-08-27) |
+| T8 | — | 8 | — | — | OFF THE BOARD (owner, 2026-08-27) |
+| T9 | — | 9 | — | — | OFF THE BOARD (owner, 2026-08-27) |
+| T10 | — | 2 close | — | — | OFF THE BOARD (owner, 2026-08-27) |
+| T11 | — | — | — | — | OFF THE BOARD (owner, 2026-08-27) |
 
 `placeStructure`/`removeStructure` join api.js part 4 when T5 lands, inside T5's task plan.
 
@@ -65,4 +68,7 @@ Phase open. T0–T2b landed and pushed (see the index). T3 dispatched
 orchestrator: the mound-routing check and its setup check deleted from
 file 33 (ruling recorded in the consulted plan) — the suite's pass count
 is 2,089 from mk2.73 on; the depot-test baseline row above reads 2,091
-as measured at mk2.68.
+as measured at mk2.68. 2026-08-27, owner's ruling: tasks 4 and 5 combine
+into one task at mk2.74; the closeout follows at mk2.75; tasks 6 through
+11 are off the board. T4+T5 landed 2026-08-27, gates depot-test 2,089/0,
+golden 7/0, smoke 30/0; keystone re-proof equal at seed 1 and seed 7.

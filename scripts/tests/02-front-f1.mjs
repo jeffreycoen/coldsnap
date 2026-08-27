@@ -95,7 +95,9 @@ import fs from "node:fs";
   }
 
   // source pins: the emitter rule and the deleted anchor push
-  ok("F1/1c: buildEmitters flags emit by team sign", /b\.kind === "flag"[^\n]*sign: b\.team === 2 \? -1 : 1/.test(depotSrcF1));
+  // buildEmitters moved to boot.js (task 4: the engine leaves the screen).
+  const bootSrcF1 = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
+  ok("F1/1c: buildEmitters flags emit by team sign", /b\.kind === "flag"[^\n]*sign: b\.team === 2 \? -1 : 1/.test(bootSrcF1));
   ok("F1/1c: the SPAWN_POINTS anchor push is deleted", !/for \(const sp of SPAWN_POINTS\)[^\n]*EMIT\.anchor/.test(depotSrcF1));
 
   // renderer: cloth tint keys on the flag body's team (DEPOT-gated by the

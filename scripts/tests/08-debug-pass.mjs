@@ -185,14 +185,20 @@ import fs from "node:fs";
     // P7 T20: layPieceAt (one .bTeam = stamp) moved to buildlines.js — the
     // count below sums both files, unchanged threshold (sweep license).
     const blSrcT13 = fs.readFileSync(new URL("../../src/depot/buildlines.js", import.meta.url), "utf8");
-    ok("T13(i3): every structure stamp carries its team (retargeted mk1.50, P7 T20: layPieceAt's stamp moved to buildlines.js — counted across both files)",
-      (dgSrc.match(/\.bTeam = /g) || []).length + (blSrcT13.match(/\.bTeam = /g) || []).length >= 8);
+    // Amendment 5 (task 4: the engine leaves the screen) split boot.js (2
+    // hits) and tick.js (1 hit) out of DepotGame.jsx — the sum now spans
+    // four files, threshold unchanged at 8.
+    const bootSrcT13 = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
+    const tickSrcT13 = fs.readFileSync(new URL("../../src/depot/tick.js", import.meta.url), "utf8");
+    ok("T13(i3): every structure stamp carries its team (retargeted mk1.50, P7 T20: layPieceAt's stamp moved to buildlines.js — counted across all four files)",
+      (dgSrc.match(/\.bTeam = /g) || []).length + (blSrcT13.match(/\.bTeam = /g) || []).length + (bootSrcT13.match(/\.bTeam = /g) || []).length + (tickSrcT13.match(/\.bTeam = /g) || []).length >= 8);
   }
   // (j) Amendment 1 — the green threads (source shape; the look is the
   // owner's live acceptance, smoke's zero-page-errors gate covers the boot)
   {
     ok("T13(j): the renderer carries the order-path overlay", /setOrderPaths\(paths\)/.test(rSrc) && /0x4aff8c/.test(rSrc) && /0x0c2416/.test(rSrc));
-    ok("T13(j2): the game feeds it at the derived-overlay cadence", /THE GREEN THREADS[\s\S]{0,200}?if \(terrGuard > 0\) \{/.test(dgSrc));
+    const tickSrcJ2 = fs.readFileSync(new URL("../../src/depot/tick.js", import.meta.url), "utf8");
+    ok("T13(j2): the game feeds it at the derived-overlay cadence", /THE GREEN THREADS[\s\S]{0,200}?if \(terrGuard > 0\) flags\.orderPaths = true;/.test(tickSrcJ2) && /THE GREEN THREADS[\s\S]{0,200}?if \(terrFlagged\) \{/.test(dgSrc));
   }
 }
 // ==== end P7 T13 =============================================================
@@ -208,7 +214,8 @@ import fs from "node:fs";
   const mgSrc15 = fs.readFileSync(new URL("../../src/depot/mapgen.js", import.meta.url), "utf8");
   ok("T15(a): the rim halves grew to 90", /const RIM_HALF_U = 90, RIM_HALF_V = 90;/.test(mgSrc15));
   ok("T15(a2): the grid grew to 90x90 at the same 2m cell", /const GRID_CS = 2\.0, GRID_W = 90, GRID_H = 90;/.test(mgSrc15));
-  ok("T15(a3): the heightfield grew with its apron (wee-t2b: map.MAP_SEED)", /makeField\(181, 2\.0, map\.MAP_SEED\)/.test(dgSrc15));
+  const bootSrc15 = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
+  ok("T15(a3): the heightfield grew with its apron (wee-t2b: map.MAP_SEED)", /makeField\(181, 2\.0, map\.MAP_SEED\)/.test(bootSrc15));
   ok("T15(a4): the depot-separation floor scaled", /2 \* m\.depotDepth\) >= 105/.test(mgSrc15));
 
   // (b) 25-seed census: every map accepts, stays connected, and fits its
@@ -530,11 +537,15 @@ import fs from "node:fs";
   }
   // (f) the bag lifecycle is wired (source shape) and the side rides the save
   {
-    ok("T17(f): the stamp helper exists and stamps side + cell", /const stampBag = \(b, side\) => \{/.test(dgSrc17));
+    const bootSrc17 = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
+    const tickSrc17 = fs.readFileSync(new URL("../../src/depot/tick.js", import.meta.url), "utf8");
+    ok("T17(f): the stamp helper exists and stamps side + cell (re-taught: exported with grid param, boot.js)",
+      /export function stampBag\(grid, b, side\) \{/.test(bootSrc17));
     ok("T17(f2): the seeded rings stamp their depot's side (retargeted mk1.50, P7 T20: layPieceAt moved to buildlines.js — dgSrc loses its last matching site; muster.js's seeded-ring stamp is the surviving one)",
       /stampBag\(spawnSandbag\(/.test(muSrc17));
-    ok("T17(f3): a resumed bag re-stamps its cell", /if \(b\.sandbag && b\.alive\) stampBag\(b, b\.bagSide \|\| 1\);/.test(dgSrc17));
-    ok("T17(f4): dead bags release their ground at the derived cadence", /c\.bagId == null/.test(dgSrc17));
+    ok("T17(f3): a resumed bag re-stamps its cell (re-taught: stampBag(grid, b, ...), boot.js)",
+      /if \(b\.sandbag && b\.alive\) stampBag\(grid, b, b\.bagSide \|\| 1\);/.test(bootSrc17));
+    ok("T17(f4): dead bags release their ground at the derived cadence", /c\.bagId == null/.test(tickSrc17));
     ok("T17(f5): bagSide RIDES the save (never in the drop list)", !/BODY_HANDLED[\s\S]{0,600}bagSide/.test(saveSrc17));
   }
 }

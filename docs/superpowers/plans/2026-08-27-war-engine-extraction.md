@@ -1,5 +1,8 @@
 # COLDSNAP — War Engine Extraction (Claude Fable 5)
 
+**NOTICE (owner, 2026-08-27): this document is very poor quality. Do not
+use it for reference unless the owner explicitly directs it.**
+
 The consulted plan for the extraction phase. The owner's document, checked in on
 2026-08-27, with three rulings of that date applied where they land. The phase
 document beside this file (2026-08-27-war-engine-extraction-phase.md) holds the
