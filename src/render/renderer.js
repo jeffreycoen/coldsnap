@@ -935,7 +935,8 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // TOWN_STONE_CAP 3000 (mapgen.js) — physics sleeps boot stones, the pool
   // is a draw limit. Provisional until the Pi collapse capture; the stones
   // counter stays the alarm.
-  const CHUNK_CAP = 4000;
+  // mk2.65 (owner): the crowded valley — 6000 town + depots + rubble headroom.
+  const CHUNK_CAP = 7000;
   let chunkStats = { drawn: 0, cap: CHUNK_CAP, total: 0 };
   const chunkMesh = pool(chunkGeo, toon(0xa6b2c0), CHUNK_CAP, true);
   chunkMesh.receiveShadow = true;
@@ -1382,7 +1383,8 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // rises behind ONE constant (trunk, canopy, canopy colors, flames, and
   // both loop guards read it; a missed site silently truncates). The old
   // cap was a set of bare literals; the suite forbids them returning.
-  const TREE_CAP = 360;
+  // mk2.65 (owner): four times the trees.
+  const TREE_CAP = 800;
   const treeTrunkMesh = pool(new THREE.BoxGeometry(0.3, 1.4, 0.3), toon(0x4a3626), TREE_CAP, true);
   const treeCanopyMesh = pool(new THREE.ConeGeometry(1.05, 2.6, 6), toon(0xffffff), TREE_CAP, true);
   treeCanopyMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(TREE_CAP * 3).fill(1), 3);

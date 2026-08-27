@@ -45,7 +45,7 @@ export const STREAM_ON = false;
 export let HILLS = []; // T5: [{u, v, r, h}...] — canonical, regrown from seed
 export let CLUSTERS = []; // mk2.63: [{kind, x, z, r, n}] — the named ground
 
-export const TOWN_STONE_CAP = 3000; // owner, 2026-08-26 — provisional until the Pi collapse capture // provisional (F5)
+export const TOWN_STONE_CAP = 6000; // owner, 2026-08-26 — provisional until the Pi collapse capture // provisional (F5)
 export function genMap(seed) {
   const r = mulberry32(seed);
   // THE SEAT OF THE WAR (P7 T3, owner): the depots press into OPPOSITE
@@ -250,6 +250,9 @@ export function genMap(seed) {
   const vetAt = (x, z, nx, nz, offRoad) => {
     const rad = Math.max(nx, nz) * MASON.pitch / 2 + 2;
     if (x < -78 || x > 78 || z < -69 || z > 69) return false;
+    // mk2.65: THE YARD STANDS CLEAR — no placed building crowds either
+    // depot's ground; the bag ring and the armor parking ring stay open.
+    if (Math.hypot(x - depotU1, z - depotDepth) < rad + 32 || Math.hypot(x - depotU2, z + depotDepth) < rad + 32) return false;
     if (passes.flat().some((g) => Math.abs(x - g.x) < rad + 4 && Math.abs(z - g.z) < 12)) return false;
     if (spawns.some((sp) => Math.hypot(x - sp.x, z - sp.z) < rad + 4)) return false;
     if (ponds.some((q) => Math.hypot(x - q.x, z - q.z) < q.r + rad + 3)) return false;
@@ -417,14 +420,21 @@ export function genMap(seed) {
   // clusters, real houses join around the drawn centers until the valley
   // carries its mass. Markers and ruins are done; this pass lays LIVE forms
   // only, and stops at the fill line or when the ground refuses.
-  const FILL_TARGET = 2600; // provisional (F5)
+  const FILL_TARGET = 5200; // provisional (F5)
   const FILL_POOL = ["croft", "shed", "house5", "house6", "long", "row"];
-  for (let k = 0; k < 900 && plannedStones < FILL_TARGET && CL.length; k++) {
+  for (let k = 0; k < 2400 && plannedStones < FILL_TARGET && CL.length; k++) {
     const c = CL[Math.floor(r() * CL.length)];
     if (c.kind === "dead") continue;
     const a = r() * 6.28, d = 6 + r() * 26;
     const e = put(FILL_POOL[Math.floor(r() * FILL_POOL.length)], c.x + Math.sin(a) * d, c.z + Math.cos(a) * d, { face: c });
     if (e) c.n++;
+  }
+  // THE SECOND FILL (mk2.65): the clusters' rings run out of legal ground
+  // long before the doubled line — the rest of the mass spreads across the
+  // open valley, anywhere the vet allows.
+  for (let k = 0; k < 3000 && plannedStones < FILL_TARGET; k++) {
+    const x = -76 + r() * 152, z = -66 + r() * 126;
+    put(FILL_POOL[Math.floor(r() * FILL_POOL.length)], x, z, null);
   }
   // T4: FIELD WALLS (owner's rulings: they block the grid; axis-aligned) —
   // freestanding masonry screens, 3-8 stones long, 2-4 courses, one stone
@@ -746,14 +756,14 @@ export function planTrees() {
     return true;
   };
   // the rim treeline — the old edge dressing, kept (draws before tests, as before)
-  for (let tu = -86; tu <= 86; tu += 3.2) {
+  for (let tu = -86; tu <= 86; tu += 1.6) {
     const w = fwdU(tu + (rT() - 0.5) * 1.6, -84.5 + rT() * 3.2);
     if (clearAt(w.x, w.z)) out.push({ x: w.x, z: w.z });
   }
   // a copse on every hill's flanks (the owner's wooded hills) — these RETRY
   // until planted (free stream) so a hill is never bald by bad luck.
   for (const hb of HILLS) {
-    const n = 6 + Math.floor(rT() * 4);
+    const n = 24 + Math.floor(rT() * 16);
     for (let i = 0, got = 0; i < 24 && got < n; i++) {
       const a = rT() * 6.28, rr = hb.r * (0.35 + rT() * 0.75);
       const w = fwdU(hb.u + Math.cos(a) * rr, hb.v + Math.sin(a) * rr);
@@ -761,10 +771,10 @@ export function planTrees() {
     }
   }
   // drawn copses: 2-5, anywhere clear on the map
-  const nCop = 2 + Math.floor(rT() * 4);
+  const nCop = 12 + Math.floor(rT() * 12);
   for (let c = 0; c < nCop; c++) {
     const cu = -78 + rT() * 156, cv = -78 + rT() * 156;
-    const n = 5 + Math.floor(rT() * 5);
+    const n = 10 + Math.floor(rT() * 10);
     for (let i = 0; i < n; i++) {
       const a = rT() * 6.28, rr = 1.5 + rT() * 4.5;
       const w = fwdU(cu + Math.cos(a) * rr, cv + Math.sin(a) * rr);
@@ -772,7 +782,7 @@ export function planTrees() {
     }
   }
   // rare forests: 0-2, 20-40 trees
-  const nFor = Math.floor(rT() * 3);
+  const nFor = 2 + Math.floor(rT() * 3);
   for (let f = 0; f < nFor; f++) {
     const fu = -72 + rT() * 144, fv = -72 + rT() * 144;
     const n = 20 + Math.floor(rT() * 21);

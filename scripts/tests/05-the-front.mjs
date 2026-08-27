@@ -308,7 +308,7 @@ import fs from "node:fs";
   ok("T4(a): every seed draws 2-4 big forms", bigLo >= 2 && bigHi <= 4, `${bigLo}-${bigHi}`);
   ok("T4(a): every seed draws 2-5 field walls", wallLo >= 2 && wallHi <= 5, `${wallLo}-${wallHi}`);
   ok("T4(a): both big kinds appear across the sweep", sawHangar >= 5 && sawWarehouse >= 5, `hangar ${sawHangar}/40, warehouse ${sawWarehouse}/40`);
-  ok("T4(a): worst boot stone count stays under the 4000 pool with rubble headroom (re-taught mk2.64, the full valley)", worstStones <= 3200, `${worstStones} stones (seed ${worstSeed})`);
+  ok("T4(a): worst boot stone count stays under the 7000 pool with rubble headroom (re-taught mk2.65, the crowded valley)", worstStones <= 6200, `${worstStones} stones (seed ${worstSeed})`);
 
   // (b) the hangar: one 800kg slab welded to the top two courses, no
   // granular roof, drive doors open at ground level through both end walls.
@@ -393,7 +393,7 @@ import fs from "node:fs";
     /const driveZ = t\.drive && t\.nz >= t\.nx;/.test(src));
   ok("T4(g): the town debug hook exists", /__DEPOTTOWN__/.test(src));
   const rsrc4 = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-  ok("T4(g): the chunk pool is raised to 4000 (re-taught mk2.61, owner 2026-08-26)", /const CHUNK_CAP = 4000;/.test(rsrc4));
+  ok("T4(g): the chunk pool is raised to 7000 (re-taught mk2.65, the crowded valley)", /const CHUNK_CAP = 7000;/.test(rsrc4));
 }
 // ==== end FRONT T4 ===========================================================
 
@@ -470,7 +470,7 @@ import fs from "node:fs";
     ok("T5(a): every seed draws 1-3 hills, never zero", hillLo >= 1 && hillHi <= 3, `${hillLo}-${hillHi}`);
     ok("T5(a): every hill is demo-sized (h 3-5, r 10-15)", hillShape === nHillsTotal, `${hillShape}/${nHillsTotal}`);
     // (the hill-off-the-stream clearance retired with the stream, mk1.94)
-    ok("T5(a): tree counts stay inside the budget (25-340 per seed)", treeLo >= 25 && treeHi <= 340, `${treeLo}-${treeHi} (worst seed ${worstTreeSeed})`);
+    ok("T5(a): tree counts stay inside the budget (25-700 per seed — re-taught mk2.65, four times the wood)", treeLo >= 25 && treeHi <= 700, `${treeLo}-${treeHi} (worst seed ${worstTreeSeed})`);
     ok("T5(a): no planned tree stands in rock, water, a building, or off the rim", treeFoul === 0, `${treeFoul} fouls`);
     ok("T5(a): every hill is wooded (3+ trees on its flanks)", woodedHills === nHillsTotal, `${woodedHills}/${nHillsTotal}`);
 
@@ -507,7 +507,7 @@ import fs from "node:fs";
   ok("T5(d): buildDepotTerrain lifts the drawn hills", /hb\.h \* Math\.exp\(-dh\)/.test(mgSrcT5));
   ok("T5(d): the boot plants the plan and nothing else", /for \(const p of planTrees\(\)\) treeAt\(p\.x, p\.z\);/.test(src));
   const rsrc5 = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-  ok("T5(d): the tree pool is one constant at 360", /const TREE_CAP = 360;/.test(rsrc5));
+  ok("T5(d): the tree pool is one constant at 800 (re-taught mk2.65)", /const TREE_CAP = 800;/.test(rsrc5));
   ok("T5(d): no bare 144 survives in the renderer (all six sites read TREE_CAP)", !/144/.test(rsrc5));
 }
 // ==== end FRONT T5 ===========================================================

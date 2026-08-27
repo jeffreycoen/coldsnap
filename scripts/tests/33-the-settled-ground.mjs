@@ -179,6 +179,6 @@ let sweepMound = null;
   const rsrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
   ok("pins: makeMap's stamp loop skips the dead, bar the mound (owner, 2026-08-26)", /if \(t\.dead && t\.form !== "mound"\) continue;/.test(mgSrc));
   ok("pins: the flag rows skip markers", /m\.depot \|\| m\.fwall \|\| m\.marker \|\| b\.ruined/.test(src));
-  ok("pins: the pool is 4000", /const CHUNK_CAP = 4000;/.test(rsrc));
-  ok("pins: TOWN_STONE_CAP is 3000", TOWN_STONE_CAP === 3000);
+  ok("pins: the pool is 7000 (re-taught mk2.65)", /const CHUNK_CAP = 7000;/.test(rsrc));
+  ok("pins: TOWN_STONE_CAP is 6000 (re-taught mk2.65)", TOWN_STONE_CAP === 6000);
 }

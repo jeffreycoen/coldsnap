@@ -269,7 +269,7 @@ import fs from "node:fs";
     Mi.buildTown(world, Mi.makeGrid(null), flatF15);
     const stones = world.bodies.filter((b) => b.kind === "chunk").length;
     stoneLo = Math.min(stoneLo, stones); stoneHi = Math.max(stoneHi, stones);
-    if (stones >= 3400) allInRim = false; // re-taught mk2.64 — the pool is 4000
+    if (stones >= 6500) allInRim = false; // re-taught mk2.65 — the pool is 7000
     const trees = Mi.planTrees().length;
     treeLo15 = Math.min(treeLo15, trees); treeHi15 = Math.max(treeHi15, trees);
     const d1 = st.TOWN.find((t) => t.id === "depot"), d2 = st.TOWN.find((t) => t.id === "depot2");
@@ -294,10 +294,10 @@ import fs from "node:fs";
     if (!Mi.checkConnectivity(g, st.SPAWN_POINTS, dg.gx, dg.gz)) allReachable = false;
   }
   ok("T15(b): every one of 25 seeds accepts within its 24 attempts", allAccepted, `worst attempt count ${attemptHi}`);
-  ok("T15(b2): boot stone count stays under the 4000 chunk pool on every seed (re-taught mk2.64, the full valley)",
-    stoneHi < 3400, `${stoneLo}-${stoneHi}`);
-  ok("T15(b3): planted tree count stays under the 360 tree pool on every seed",
-    treeHi15 < 360, `${treeLo15}-${treeHi15}`);
+  ok("T15(b2): boot stone count stays under the 7000 chunk pool on every seed (re-taught mk2.65, the crowded valley)",
+    stoneHi < 6500, `${stoneLo}-${stoneHi}`);
+  ok("T15(b3): planted tree count stays under the 800 tree pool on every seed (re-taught mk2.65)",
+    treeHi15 < 700, `${treeLo15}-${treeHi15}`);
   ok("T15(b4): both depots sit inside the 90 rim on every seed", allInRim);
   ok("T15(b5): every spawn reaches the objective and the enemy doorway on every seed", allReachable);
   console.log(`[t15 census] stones ${stoneLo}-${stoneHi}, trees ${treeLo15}-${treeHi15}, worst attempts ${attemptHi}`);
