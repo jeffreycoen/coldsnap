@@ -121,8 +121,8 @@ import fs from "node:fs";
     ok("mk0.50/6: a destination already on the field is returned untouched", untouched);
     ok("mk0.50/6: only the out-of-bounds axis moves (canonical clamp, not a world-space box)", cornerOK);
     const src = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("mk0.50/6: the order flow clamps at the ONE site where a tap becomes a dest",
-      /const d = clampToRim\(p\.x, p\.z\);/.test(src) && /gsq\.dest = \{ x: d\.x, z: d\.z \}/.test(src));
+    ok("mk0.50/6: the order flow clamps at the ONE site where a tap becomes a dest (wee-t2b: map.clampToRim)",
+      /const d = map\.clampToRim\(p\.x, p\.z\);/.test(src) && /gsq\.dest = \{ x: d\.x, z: d\.z \}/.test(src));
     // P7 T18: RIM_HALF_U/V moved to mapgen.js.
     const mgSrc050 = fs.readFileSync(new URL("../../src/depot/mapgen.js", import.meta.url), "utf8");
     ok("mk0.50/6: the rim half-extents exist once (inRim and the clamp share them)",
@@ -257,7 +257,7 @@ import fs from "node:fs";
     // stepDepot moved to sim.js (war-engine-extraction task 1) — the support
     // pass and the rubble-count pin below read its new home.
     const simSrc = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
-    ok("mk0.55/f: buildAt lays oriented courses (auto-continue, broadside default)", /spawnWallCourses\(world, wp\.x, y, wp\.z, wallOrientAt\(world, wp\.x, wp\.z, ORIENT % 2\)\)\[0\]/.test(wsrc));
+    ok("mk0.55/f: buildAt lays oriented courses (auto-continue, broadside default; wee-t2b: map.ORIENT)", /spawnWallCourses\(world, wp\.x, y, wp\.z, wallOrientAt\(world, wp\.x, wp\.z, map\.ORIENT % 2\)\)\[0\]/.test(wsrc));
     ok("mk0.52/f: the support pass runs in stepDepot, after the dead are cleared",
       /structureLost[\s\S]{0,700}stepWallSupport\(world\)/.test(simSrc));
     ok("mk0.52/f: selling takes the whole stack, matched by footprint not id",
@@ -438,8 +438,8 @@ import fs from "node:fs";
     // ground tap) joined the same clamp shape — a fourth caller, count 2 -> 3.
     // re-pinned mk2.25: devSpawnAt (the enemy rack's placer, sandbox only)
     // joined the same clamp shape — a fifth caller, count 3 -> 4.
-    ok("mk0.60/6: build points clamp to the rim through the same clamp shape",
-      /const d = clampToRim\(p\.x, p\.z\);/.test(dsrc) && (dsrc.match(/clampToRim\(p\.x, p\.z\)/g) || []).length === 4);
+    ok("mk0.60/6: build points clamp to the rim through the same clamp shape (wee-t2b: map.clampToRim)",
+      /const d = map\.clampToRim\(p\.x, p\.z\);/.test(dsrc) && (dsrc.match(/map\.clampToRim\(p\.x, p\.z\)/g) || []).length === 4);
     ok("mk0.60/6: the cell walk steps ONE axis at a time (consecutive cells share an EDGE) (retargeted mk1.50, P7 T20: lineCells moved to buildlines.js)",
       /const stepX = z === g1\.gz \? true : x === g1\.gx \? false : 2 \* err > -dz;/.test(blSrc60));
     // Jeff, 2026-08-12: ONE rotation for the whole line — the dominant axis of
@@ -461,9 +461,10 @@ import fs from "node:fs";
     ok("mk0.60/6 (re-pinned mk1.32, P7 T3: seedBags(depotT, streamKey) generalized to both depots;" +
       " retargeted mk1.49, P7 T19: seedBags moved to muster.js;" +
       " re-taught P7.1 T6: THE BARE OPENING kills the seeded bag rings — the call sites left" +
-      " DepotGame, the function's own draw-off-a-MAP-seed-stream shape stays exported for Task 7)" +
+      " DepotGame, the function's own draw-off-a-MAP-seed-stream shape stays exported for Task 7;" +
+      " wee-t2b: seedBags takes map, streams off map.MAP_SEED)" +
       " the seeded depot bags draw off a MAP-seed stream, never world.rng",
-      /mulberry32\(MAP_SEED \^ streamKey\)/.test(muSrc60) &&
+      /mulberry32\(map\.MAP_SEED \^ streamKey\)/.test(muSrc60) &&
       !/seedBags\(world, grid, TOWN\.find\(\(t\) => t\.depot && t\.team !== 2\), 0x5ba6, stampBag\);/.test(dsrc) &&
       !/seedBags\(world, grid, TOWN\.find\(\(t\) => t\.depot && t\.team === 2\), 0x5ba7, stampBag\);/.test(dsrc) &&
       /const nBags = 4 \+ Math\.floor\(bagR\(\) \* 3\);/.test(muSrc60));

@@ -8,7 +8,6 @@
 // (guard 24 draws -> commander 1 -> fielded 18) is byte-fixed. Boot draws
 // stay 45; the T9(e3)/(f)/(f2) and T19(b) pins prove it. Zero behavior
 // change.
-import { TOWN, ROADS, MAP_SEED, OBJ_POS, GRID_W, GRID_H } from "./mapgen.js";
 import { addBody, heading, mulberry32 } from "../engine/core.js";
 import { BISON, APC, MECH, MASON, ENEMY_SPECS, TOWER_SPECS, HAND_TAGS } from "./specs.js";
 import { clearSlot, makeSquad, slotBlockedPublic, SQUAD_SPECS } from "./squads.js";
@@ -46,7 +45,7 @@ export function armorSpread(field, bx, bz, spec) {
   return hi - lo;
 }
 export const armorStable = (field, bx, bz, spec) => armorSpread(field, bx, bz, spec) < 0.28; // AMENDMENT 1 (owner): flat ground, no sliding boots // provisional (F5)
-export function parkArmor(world, grid, field, depotT, team, kind, nextSeq) {
+export function parkArmor(world, grid, field, depotT, team, kind, nextSeq, map) {
   if (!depotT) return;
   const spec = kind === "apc" ? APC : BISON;
   const place = (bx, bz) => {
@@ -71,7 +70,7 @@ export function parkArmor(world, grid, field, depotT, team, kind, nextSeq) {
   const clearAt = (bx, bz) => {
     const cell = grid.cellAt(bx, bz);
     if (!cell || cell.blocked || cell.ice || cell.water || cell.wallId) return false;
-    if (Math.hypot(bx - OBJ_POS.x, bz - OBJ_POS.z) < 4) return false;
+    if (Math.hypot(bx - map.OBJ_POS.x, bz - map.OBJ_POS.z) < 4) return false;
     if (slotBlockedPublic(world, bx, bz, Math.hypot(spec.hx, spec.hz) + 2.5)) return false;   // provisional (F5) — the bag ring (chunk-kind) now stands off the whole hull
     if (world.bodies.some((o) => o.kind === "vehicle" && o.alive && Math.hypot(o.pos.x - bx, o.pos.z - bz) < 7)) return false;
     // P7 T24: the parking law adopts the routing law — a spot the router
@@ -105,7 +104,7 @@ export function parkArmor(world, grid, field, depotT, team, kind, nextSeq) {
   // stable cell; if none is stable, the flattest clear cell parks
   // the hull anyway.
   let best = null, bd = 1e9, flat = null, flatSp = 1e9;
-  for (let gz = 0; gz < GRID_H; gz++) for (let gx = 0; gx < GRID_W; gx++) {
+  for (let gz = 0; gz < map.GRID_H; gz++) for (let gx = 0; gx < map.GRID_W; gx++) {
     const wp = grid.gridToWorld(gx, gz);
     const d = Math.hypot(wp.x - depotT.x, wp.z - depotT.z);
     if (d > 34 || d < 12 || !clearAt(wp.x, wp.z)) continue;
@@ -123,7 +122,7 @@ export function parkArmor(world, grid, field, depotT, team, kind, nextSeq) {
 // back to a brute nearest-clear-cell sweep (8-34m), so paid tower money
 // always buys a standing tower on a real map. A grid with no clear cell
 // at all still returns null (bare fixtures).
-export function parkTower(world, grid, field, depotT, team, towerType) {
+export function parkTower(world, grid, field, depotT, team, towerType, map) {
   if (!depotT) return null;
   const spec = TOWER_SPECS[towerType];
   const clearAt = (bx, bz) => {
@@ -162,7 +161,7 @@ export function parkTower(world, grid, field, depotT, team, towerType) {
 
 // THE MECH PARKS (owner, 2026-08-20): the armor law at crown scale.
 export const MECH_SPREAD = { hx: 2.2, hy: 1, hz: 2.2 }; // footprint vet // provisional (F5)
-export function parkMech(world, grid, field, depotT, team) {
+export function parkMech(world, grid, field, depotT, team, map) {
   if (!depotT) return null;
   const place = (bx, bz) => {
     const m = buildMech(world, { x: bx, z: bz, yaw: Math.atan2(-bx, -bz), team, hp: MECH.hp });
@@ -175,7 +174,7 @@ export function parkMech(world, grid, field, depotT, team) {
   const clearAt = (bx, bz) => {
     const cell = grid.cellAt(bx, bz);
     if (!cell || cell.blocked || cell.ice || cell.water || cell.wallId || cell.steep) return false;
-    if (Math.hypot(bx - OBJ_POS.x, bz - OBJ_POS.z) < 5) return false;
+    if (Math.hypot(bx - map.OBJ_POS.x, bz - map.OBJ_POS.z) < 5) return false;
     if (slotBlockedPublic(world, bx, bz, 4.5)) return false; // provisional (F5)
     if (world.bodies.some((o) => (o.kind === "vehicle" || o.kind === "mech") && o.alive && Math.hypot(o.pos.x - bx, o.pos.z - bz) < 8)) return false;
     return true;
@@ -186,7 +185,7 @@ export function parkMech(world, grid, field, depotT, team) {
     if (clearAt(bx, bz) && armorSpread(field, bx, bz, MECH_SPREAD) < 0.28 && planRoute(grid, bx, bz, 0, 0, { hull: true, team })) return place(bx, bz);
   }
   let flat = null, flatSp = 1e9; // fail-proof: the flattest clear cell parks it anyway
-  for (let gz = 0; gz < GRID_H; gz++) for (let gx = 0; gx < GRID_W; gx++) {
+  for (let gz = 0; gz < map.GRID_H; gz++) for (let gx = 0; gx < map.GRID_W; gx++) {
     const wp = grid.gridToWorld(gx, gz);
     const d = Math.hypot(wp.x - depotT.x, wp.z - depotT.z);
     if (d > 36 || d < 14 || !clearAt(wp.x, wp.z)) continue;
@@ -203,12 +202,12 @@ export function parkMech(world, grid, field, depotT, team) {
 // azimuth) because the depot's own approach road and mound reject a lot
 // of the ring; a bag that clears none of the twelve is simply dropped.
 // Ring radius grown to 7.8m (P7 T3) — the depots got bigger.
-export function seedBags(world, grid, depotT, streamKey, stampBag) {
+export function seedBags(world, grid, depotT, streamKey, stampBag, map) {
   if (!depotT) return;
-  const bagR = mulberry32(MAP_SEED ^ streamKey);
+  const bagR = mulberry32(map.MAP_SEED ^ streamKey);
   const roadClear = (x, z) => {
     let best = 1e9;
-    for (const route of ROADS) for (let i = 0; i < route.length - 1; i++) {
+    for (const route of map.ROADS) for (let i = 0; i < route.length - 1; i++) {
       const a2 = route[i], b2 = route[i + 1];
       const rdx = b2[0] - a2[0], rdz = b2[1] - a2[1];
       const tt = Math.max(0, Math.min(1, ((x - a2[0]) * rdx + (z - a2[1]) * rdz) / (rdx * rdx + rdz * rdz || 1)));
@@ -228,7 +227,7 @@ export function seedBags(world, grid, depotT, streamKey, stampBag) {
         const bx = depotT.x + Math.sin(az) * rr, bz = depotT.z + Math.cos(az) * rr;
         const cell = grid.cellAt(bx, bz);
         if (!cell || cell.blocked || cell.ice) continue;
-        if (Math.hypot(bx - OBJ_POS.x, bz - OBJ_POS.z) < 3) continue;
+        if (Math.hypot(bx - map.OBJ_POS.x, bz - map.OBJ_POS.z) < 3) continue;
         if (roadClear(bx, bz) < 3) continue;
         if (slotBlockedPublic(world, bx, bz, SANDBAG_HX + 0.35)) continue;
         // laid ACROSS the radius, so the ring reads as cover facing out
@@ -290,7 +289,7 @@ function spawnMirrorMan(world, x, z, tag, i) {
   u.hold = true; u.garrison = true;
   return u;
 }
-export function musterFreshStart(world, S, depotP, grid, field, nextApcSeq) {
+export function musterFreshStart(world, S, depotP, grid, field, nextApcSeq, map) {
   // P7 T8: THE COMMANDER — one draw per war, after makeRegiment's 2.
   // A RESUME never reaches this branch.
   S.cmdr = cmdrOf(world.rng);
@@ -303,7 +302,7 @@ export function musterFreshStart(world, S, depotP, grid, field, nextApcSeq) {
   // early return.
   S.draft = draftDeal(world.rng, PICK_POOL.map((p) => p.key));
   const eCards = draftDeal(world.rng, PICK_POOL.map((p) => p.key));
-  const depotE = TOWN.find((tt) => tt.depot && tt.team === 2);
+  const depotE = map.TOWN.find((tt) => tt.depot && tt.team === 2);
   if (!depotE || !grid || !field) return;
   if (!S.foe) S.foe = { unlocked: [], hired: [], towers: [] };
   if (!S.foe.towers) S.foe.towers = [];
@@ -312,7 +311,7 @@ export function musterFreshStart(world, S, depotP, grid, field, nextApcSeq) {
       if (HAND_TAGS[c.k] === undefined) { if (S.foe.towers.indexOf(c.k) < 0) S.foe.towers.push(c.k); }
       else if (S.foe.unlocked.indexOf(HAND_TAGS[c.k]) < 0) S.foe.unlocked.push(HAND_TAGS[c.k]);
     } else {
-      mirrorFieldKey(world, S, depotE, grid, field, c.k, nextApcSeq);
+      mirrorFieldKey(world, S, depotE, grid, field, c.k, nextApcSeq, map);
     }
   }
 }
@@ -323,12 +322,12 @@ export function musterFreshStart(world, S, depotP, grid, field, nextApcSeq) {
 // roster so two hires can never collide — resume included (counters do
 // not ride the save; the apcSeq reseed precedent). Boot squads sit at
 // 9000+, hires from 9501 up; restored squads keep their ids.
-export function mirrorFieldKey(world, S, depotE, grid, field, key, nextApcSeq) {
+export function mirrorFieldKey(world, S, depotE, grid, field, key, nextApcSeq, map) {
   const pick = PICK_POOL.find((p) => p.key === key);
   if (!pick || !depotE || !grid || !field) return;
-  if (pick.kind === "hull") { parkArmor(world, grid, field, depotE, 2, pick.vtype, nextApcSeq || (() => 1)); return; }
-  if (pick.kind === "mech") { parkMech(world, grid, field, depotE, 2); return; }
-  if (pick.kind === "tower") { parkTower(world, grid, field, depotE, 2, pick.key); return; }
+  if (pick.kind === "hull") { parkArmor(world, grid, field, depotE, 2, pick.vtype, nextApcSeq || (() => 1), map); return; }
+  if (pick.kind === "mech") { parkMech(world, grid, field, depotE, 2, map); return; }
+  if (pick.kind === "tower") { parkTower(world, grid, field, depotE, 2, pick.key, map); return; }
   const gR = Math.hypot(depotE.nx, depotE.nz) * MASON.pitch / 2 + 3.5;
   let mi = 0;
   for (const b of world.bodies) if (b.kind === "unit" && b.team === 2 && b.garrison && b.alive) mi++;

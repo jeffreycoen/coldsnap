@@ -36,7 +36,7 @@ import { makeBodyLists, rebuildBodyLists } from "./lists.js";
 import Dispatch from "./Dispatch.jsx";
 import InfoCard from "./InfoCard.jsx";
 import CrateChip, { StockTag } from "./Crate.jsx";
-import { GRID_CS, GRID_W, GRID_H, RIM_HALF_U, RIM_HALF_V, ORIENT, fwdU, invW, clampToRim, OBJ_POS, SPAWN_POINTS, PONDS, ROCKS, TOWN, ROADS, MAP_SEED, STREAM, genMap, makeMap, buildDepotTerrain, pondAt, makeGrid, streamAt, planTrees, computeFlowField } from "./mapgen.js";
+import { makeMap, buildDepotTerrain, makeGrid, planTrees, computeFlowField } from "./mapgen.js";
 import { armorSpread, armorStable, MECH_SPREAD, musterFreshStart, PICK_POOL } from "./muster.js";
 import { startBuildLine, linePieces, stepBuildLine } from "./buildlines.js";
 import { ringBell as ringBellOut } from "./bell.js";
@@ -411,7 +411,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // screen handed us a parsed save. The order below is the contract, and
       // it is the order the save was written against; nothing in the game
       // layer runs until every line of it has:
-      //   1. makeMap(saved seed) — ORIENT, ROCKS, PONDS, TOWN, ROADS, SPAWNS
+      //   1. makeMap(saved seed) — map.ORIENT, map.ROCKS, map.PONDS, map.TOWN, map.ROADS, SPAWNS
       //      all regrow from the seed (the map is never serialized)
       //   2. buildDepotTerrain, THEN the saved heightfield over the top —
       //      craters and breached ridges are what the war did to the terrain
@@ -428,11 +428,11 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         : menuSeedRef.current != null ? menuSeedRef.current
         : Math.floor(Date.now() % 1000000);
       const map = makeMap(seed);
-      const field = makeField(181, 2.0, MAP_SEED);
+      const field = makeField(181, 2.0, map.MAP_SEED);
       // mk2.07 (owner): THE DEEP FLOOR — the atomic crater needs room. Base
       // ground sits near +2; -12 leaves the full 10m pit plus overlap slack.
       field.carveFloor = -12; // provisional (F5)
-      buildDepotTerrain(field, MAP_SEED);
+      buildDepotTerrain(field, map.MAP_SEED);
       if (RES) {
         // The heightfield goes back OVER the freshly grown terrain — same
         // grid, so a straight copy. Craters, the depot mound's dents, the
@@ -443,7 +443,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         field.dirty = true;
       }
       const grid = makeGrid(field);
-      const world = makeWorld({ field, seed: MAP_SEED });
+      const world = makeWorld({ field, seed: map.MAP_SEED });
       // P7 T17 (owner): HULLS RESPECT FRIENDLY SANDBAGS — a bag claims its
       // cell for HULL routing only (men still fight over bags; foot routing,
       // the enemy flow, and connectivity never read c.bag). The side rides
@@ -472,9 +472,9 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // bestStandPoint can reject ice and off-rim candidates without
       // importing mode-local map state. Pure functions of the static map —
       // twin worlds read identically (determinism-safe).
-      world.pondAt = (x, z) => !!pondAt(x, z);
-      world.inRim = (x, z) => { const c = invW(x, z); return Math.abs(c.u) <= RIM_HALF_U && Math.abs(c.v) <= RIM_HALF_V; };
-      world.streamAt = (x, z) => streamAt(x, z);
+      world.pondAt = (x, z) => !!map.pondAt(x, z);
+      world.inRim = (x, z) => { const c = map.invW(x, z); return Math.abs(c.u) <= map.RIM_HALF_U && Math.abs(c.v) <= map.RIM_HALF_V; };
+      world.streamAt = (x, z) => map.streamAt(x, z);
       // P7.2 T7: THE REPAIR BOOKS — the mechanic's wrench asks here; each
       // side pays its own till, one scrap at a time. Game-layer money, so
       // squads.js's no-economy law holds (the module only invokes this).
@@ -498,18 +498,18 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // only). The hero tier's player buy and the enemy's draw-free
       // replacement both need to park a fresh hull long after boot, off
       // the SAME apcSeq counter — a replacement APC must never seat-collide
-      // with a surviving one. Same closure over world/grid/field/TOWN, same
+      // with a surviving one. Same closure over world/grid/field/map.TOWN, same
       // body, unchanged.
       let apcSeqN = 0;
       const nextApcSeq = () => ++apcSeqN;
-      const depotP = TOWN.find((t) => t.depot && t.team !== 2), depotE = TOWN.find((t) => t.depot && t.team === 2);
+      const depotP = map.TOWN.find((t) => t.depot && t.team !== 2), depotE = map.TOWN.find((t) => t.depot && t.team === 2);
       // town / censuses / rocks: laid fresh, or lifted back off the save.
       let town, depotCensus, depotCensus2, rocksLive, resBodies = null;
       if (RES) {
         // Step 4. Every body in the file goes back in saved order (ids are
         // reassigned, so everything that pointed at one points at an INDEX);
         // then the welds, by index pair, with their original joint anchors.
-        resBodies = restoreBodies(world, RES, ROCKS);
+        resBodies = restoreBodies(world, RES, map.ROCKS);
         restoreWelds(world, RES, resBodies);
         // P7 T17: resumed bags re-claim their ground for hull routing.
         for (const b of resBodies) if (b.sandbag && b.alive) stampBag(b, b.bagSide || 1);
@@ -530,14 +530,14 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         for (const b of resBodies) if (b.kind === "vehicle" && b.vtype === "apc" && b.apcSeq > apcSeqN) apcSeqN = b.apcSeq;
         // The town array is bookkeeping over bodies that are already back:
         // stones by b.town, n0 and ruined off the file, footprint cells
-        // recomputed from the regrown TOWN layout. A ruined building has
+        // recomputed from the regrown map.TOWN layout. A ruined building has
         // already had its cells released (stepTown does that once) — restoring
         // it blocked would wall off ground the player can walk and build on.
         const stonesBy = new Map();
         for (const b of resBodies) if (b.kind === "chunk" && b.town) {
           const arr = stonesBy.get(b.town); if (arr) arr.push(b); else stonesBy.set(b.town, [b]);
         }
-        town = TOWN.map((t) => {
+        town = map.TOWN.map((t) => {
           const saved = (RES.towns || []).find((s) => s.id === t.id) || {};
           const cells = townFootprint(grid, t, map);
           const ruined = !!saved.ruined;
@@ -570,9 +570,9 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         // must be released here exactly as breachRock released them — the
         // saved heightfield already carries the hole it left.
         rocksLive = resBodies.filter((b) => b.kind === "rock" && b.alive && b.rockRef).map((b) => b.rockRef);
-        for (const k of ROCKS) {
+        for (const k of map.ROCKS) {
           if (rocksLive.indexOf(k) >= 0) continue;
-          for (let gz = 0; gz < GRID_H; gz++) for (let gx = 0; gx < GRID_W; gx++) {
+          for (let gz = 0; gz < map.GRID_H; gz++) for (let gx = 0; gx < map.GRID_W; gx++) {
             const wp = grid.gridToWorld(gx, gz);
             if (Math.hypot(wp.x - k.x, wp.z - k.z) < k.r * 0.78 + 0.9) {
               const c = grid.cells[grid.idx(gx, gz)];
@@ -589,12 +589,12 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         // FRONT F1: the enemy depot's own census — same snapshot moment, read
         // back through the same 1Hz gate (no second timer).
         depotCensus2 = censusDepotChunks(world.bodies, "depot2");
-        rocksLive = ROCKS.slice();
+        rocksLive = map.ROCKS.slice();
       }
       // Territory (Phase 4 Task 2): who holds the ground. Cells over the
       // same playable rim the renderer clips to (halfU 60 / halfV 60, see
       // makeRenderer's rim opt above) — reuse rather than reinvent extents.
-      const T = makeTerritory(RIM_HALF_U, RIM_HALF_V);
+      const T = makeTerritory(map.RIM_HALF_U, map.RIM_HALF_V);
       if (RES && RES.terr && RES.terr.v && RES.terr.v.length === T.v.length) T.v.set(RES.terr.v);
       // VISION (mk0.72): who can SEE what, on the territory grid's own frame
       // and carried on the territory object — so every function already
@@ -604,11 +604,11 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // town buildings' (x, z) are rotated WORLD space (same as any body);
       // territory reads canonical (u, v) — precompute once (buildings don't
       // move) rather than re-converting every stall.
-      const townUV = town.map((b) => { const c = invW(b.x, b.z); return { id: b.id, x: c.u, z: c.v, marker: b.marker, get ruined() { return b.ruined; } }; });
-      // mk2.50: TOWN FLAGS — per-building lookup for the holder-flag rows:
+      const townUV = town.map((b) => { const c = map.invW(b.x, b.z); return { id: b.id, x: c.u, z: c.v, marker: b.marker, get ruined() { return b.ruined; } }; });
+      // mk2.50: map.TOWN FLAGS — per-building lookup for the holder-flag rows:
       // roof height and the two exclusions (depots fly their real flag
       // bodies; field walls are screens, not buildings).
-      const townFlagMeta = new Map(TOWN.map((t) => [t.id, { ny: t.ny, depot: !!t.depot, fwall: t.id.startsWith("fwall"), marker: !!t.marker }]));
+      const townFlagMeta = new Map(map.TOWN.map((t) => [t.id, { ny: t.ny, depot: !!t.depot, fwall: t.id.startsWith("fwall"), marker: !!t.marker }]));
       let terrAcc = 0;
       let zoneAcc = 0.25; // mk1.95: the zone's own wall-time accumulator — starts due
       const TERR_STEP = 0.25; // stepTerritory at ~4Hz — accumulated below, not every frame
@@ -621,7 +621,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // flag at depot2 replaces the old spawn-point anchor emitters.
       // territory.js is CANONICAL (u,v) space (the un-rotated map frame, same
       // as the renderer's rim) — every body/spawn position here is rotated
-      // WORLD space, so every emitter goes through invW (DEPOT's
+      // WORLD space, so every emitter goes through map.invW (DEPOT's
       // world-to-canonical transform) before it's pushed.
       const buildEmitters = () => {
         const out = [];
@@ -633,26 +633,26 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           // spec.range IS its slow-field radius, so the same effRange/2
           // rule gives it slow-radius/2 (~6). EMIT.tower.r stays as the
           // fallback for any tower missing the cache.
-          if (b.kind === "tower" && b.team === 1 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.tower.w, r: (b.effRange != null ? b.effRange : TOWER_SPECS[b.towerType].range) / 2, sign: 1 }); }
+          if (b.kind === "tower" && b.team === 1 && b.alive) { const c = map.invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.tower.w, r: (b.effRange != null ? b.effRange : TOWER_SPECS[b.towerType].range) / 2, sign: 1 }); }
           // ONE emitter per WALL, not per course (P1.5 T2): the bottom course
           // carries it, so three stacked bodies push the same green influence
           // one body used to.
-          else if (b.kind === "wall" && b.team === 1 && b.alive && !b.course) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.wall.w, r: EMIT.wall.r, sign: 1 }); }
-          else if (b.kind === "wall" && b.team === 2 && b.alive && !b.course) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.wall.w, r: EMIT.wall.r, sign: -1 }); }
+          else if (b.kind === "wall" && b.team === 1 && b.alive && !b.course) { const c = map.invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.wall.w, r: EMIT.wall.r, sign: 1 }); }
+          else if (b.kind === "wall" && b.team === 2 && b.alive && !b.course) { const c = map.invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.wall.w, r: EMIT.wall.r, sign: -1 }); }
           // FRONT F1: flags emit their OWN team's influence at homeland
           // strength — the enemy depot IS the enemy anchor now.
           // P7 T10 guard: a tripwire's flare is also kind "flag" (a temporary
           // sight-only eye, sight.js's eyeOf) — b._dieT != null marks it, and
           // it must NEVER emit territory (it lights sight, not ground).
-          else if (b.kind === "flag" && b._dieT == null) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.depot.w, r: EMIT.depot.r, sign: b.team === 2 ? -1 : 1 }); }
-          else if (b.kind === "unit" && b.team === 1 && b.alive && !b.riding) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.unit.w, r: EMIT.unit.r, sign: 1 }); }
-          else if (b.kind === "chunk" && b.sandbag && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.wall.w, r: EMIT.wall.r, sign: b.bagSide === 2 ? -1 : 1 }); }
-          else if (b.kind === "unit" && b.team === 2 && b.alive && !b.riding) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.unit.w, r: EMIT.unit.r, sign: -1 }); }
-          else if (b.kind === "vehicle" && b.team === 2 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.vehicle.w, r: EMIT.vehicle.r, sign: -1 }); }
-          else if (b.kind === "vehicle" && b.team === 1 && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.vehicle.w, r: EMIT.vehicle.r, sign: 1 }); }
-          else if (b.kind === "mech" && b.alive) { const c = invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.vehicle.w, r: EMIT.vehicle.r, sign: b.team === 2 ? -1 : 1 }); }
+          else if (b.kind === "flag" && b._dieT == null) { const c = map.invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.depot.w, r: EMIT.depot.r, sign: b.team === 2 ? -1 : 1 }); }
+          else if (b.kind === "unit" && b.team === 1 && b.alive && !b.riding) { const c = map.invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.unit.w, r: EMIT.unit.r, sign: 1 }); }
+          else if (b.kind === "chunk" && b.sandbag && b.alive) { const c = map.invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.wall.w, r: EMIT.wall.r, sign: b.bagSide === 2 ? -1 : 1 }); }
+          else if (b.kind === "unit" && b.team === 2 && b.alive && !b.riding) { const c = map.invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.unit.w, r: EMIT.unit.r, sign: -1 }); }
+          else if (b.kind === "vehicle" && b.team === 2 && b.alive) { const c = map.invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.vehicle.w, r: EMIT.vehicle.r, sign: -1 }); }
+          else if (b.kind === "vehicle" && b.team === 1 && b.alive) { const c = map.invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.vehicle.w, r: EMIT.vehicle.r, sign: 1 }); }
+          else if (b.kind === "mech" && b.alive) { const c = map.invW(b.pos.x, b.pos.z); out.push({ x: c.u, z: c.v, w: EMIT.vehicle.w, r: EMIT.vehicle.r, sign: b.team === 2 ? -1 : 1 }); }
         }
-        // FRONT F1: the SPAWN_POINTS anchor emitters are gone — spawn points
+        // FRONT F1: the map.SPAWN_POINTS anchor emitters are gone — spawn points
         // are spawn locations only; the enemy's permanent red is its depot flag.
         return out;
       };
@@ -667,7 +667,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // seed says. On a resume both blocks are skipped entirely; the fresh
       // path below is untouched.
       if (!RES) {
-        for (const k of ROCKS) {
+        for (const k of map.ROCKS) {
           const b = addBody(world, { kind: "rock", team: 0, mass: 0, hx: k.r * 0.55, hy: k.h * 0.8, hz: k.r * 0.55, x: k.x, y: field.heightAt(k.x, k.z) - k.h * 0.2, z: k.z, hp: 90 + k.r * 20 }); // mk2.14 (owner): one atomic blast breaks a near rock // provisional (F5)
           b.maxHp = b.hp; b.rockRef = k;
           b.seatY = b.pos.y - field.heightAt(k.x, k.z); // mk2.14: the crater re-seat drops a surviving rock to the carved ground, not half-height up
@@ -682,7 +682,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         // generalized to both depots — the enemy's was never dressed before,
         // symmetry now — same rules, its own derived stream.
         //
-        // Drawn off a DEDICATED map-seed stream (the same mulberry32(MAP_SEED ^
+        // Drawn off a DEDICATED map-seed stream (the same mulberry32(map.MAP_SEED ^
         // k) pattern the treeline above uses) and never world.rng: the world
         // stream's draw counts are a determinism contract and this feature must
         // not appear in them at all. Draw count is fixed at 1 + 2 per bag
@@ -701,60 +701,60 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         // (parkArmor still parks the enemy's
         // draw-free replacement; seedBags' export survives for Task 7).
       }
-      const objG = grid.worldToGrid(OBJ_POS.x, OBJ_POS.z);
+      const objG = grid.worldToGrid(map.OBJ_POS.x, map.OBJ_POS.z);
       computeFlowField(grid, objG.gx, objG.gz);
       R = makeRenderer(canvas, world, {
         town: false, camera: "tactical", fadeDecals: true,
         // playable rim (matches buildDepotTerrain's falloff box, 60x60
         // canonical): ground/grid/decals beyond it get no geometry to
         // paint on (see renderer.js). TD/campaign/demo pass no rim.
-        rim: { halfU: RIM_HALF_U, halfV: RIM_HALF_V, toCanonical: invW, toWorld: fwdU },
+        rim: { halfU: map.RIM_HALF_U, halfV: map.RIM_HALF_V, toCanonical: map.invW, toWorld: map.fwdU },
         // Grid-line faction tint + fog. sample() (WORLD space) drives
         // per-frame enemy visibility and the terrain fog cast; sampleUV
         // (CANONICAL space, matches T's own grid) drives the 4Hz splat-line
         // retint + terrain fog wash via R.updateTerritory().
         territory: {
           T,
-          toWorld: fwdU,
+          toWorld: map.fwdU,
           // VISION (mk0.73): what the screen hides now follows what your side
           // SEES, not what it holds. Binary — a spot is seen or it is not, so
           // the renderer's "seam" silhouette branch never fires again.
-          sample: (x, z) => { const c = invW(x, z); return seenAt(T.sight, c.u, c.v, 1) ? "held" : "unheld"; },
+          sample: (x, z) => { const c = map.invW(x, z); return seenAt(T.sight, c.u, c.v, 1) ? "held" : "unheld"; },
           sampleUV: (u, v) => fogStateFor(T, u, v, 1),   // grid tint: ownership, unchanged
           // Raw signed field strength (world space), feeding the area-wash
           // alpha ramp — the ground wash still shows who HOLDS the ground,
           // which is also what build rights read.
-          sampleVal: (x, z) => { const c = invW(x, z); return valueAt(T, c.u, c.v); },
+          sampleVal: (x, z) => { const c = map.invW(x, z); return valueAt(T, c.u, c.v); },
         },
       });
       const EXT = { x: 95, z: 95 }; // square rim 90 + 5m margin; same at every rotation
       const A = makeGameAudio();
       A.setReflectors([
-        ...ROCKS.filter((k) => k.r >= 4),
-        ...TOWN.map((t) => ({ x: t.x, z: t.z, r: Math.max(t.nx, t.nz) * MASON.pitch * 0.6 })),
+        ...map.ROCKS.filter((k) => k.r >= 4),
+        ...map.TOWN.map((t) => ({ x: t.x, z: t.z, r: Math.max(t.nx, t.nz) * MASON.pitch * 0.6 })),
       ]);
       // T3: the stream's visible water — the canonical centerline sampled at
       // 2m, split at the causeway, widened, world-transformed, at 0.78.
       const streamRibs = [];
-      if (STREAM) {
+      if (map.STREAM) {
         let run = [];
-        const flush = () => { if (run.length >= 2) streamRibs.push({ pts: run, w: STREAM.w + 1 }); run = []; };
+        const flush = () => { if (run.length >= 2) streamRibs.push({ pts: run, w: map.STREAM.w + 1 }); run = []; };
         for (let u = -90; u <= 90; u += 2) {
-          if (Math.abs(u - STREAM.bridgeU) < 3) { flush(); continue; }
-          const i2 = Math.max(0, Math.min(STREAM.pts.length - 2, Math.floor((u + 90) / 15)));
-          const a = STREAM.pts[i2], b = STREAM.pts[i2 + 1];
+          if (Math.abs(u - map.STREAM.bridgeU) < 3) { flush(); continue; }
+          const i2 = Math.max(0, Math.min(map.STREAM.pts.length - 2, Math.floor((u + 90) / 15)));
+          const a = map.STREAM.pts[i2], b = map.STREAM.pts[i2 + 1];
           const t = Math.max(0, Math.min(1, (u - a.u) / (b.u - a.u || 1)));
-          const w = fwdU(u, a.v + (b.v - a.v) * t);
+          const w = map.fwdU(u, a.v + (b.v - a.v) * t);
           run.push({ x: w.x, y: 0.78, z: w.z });
         }
         flush();
       }
-      // rocksLive, not ROCKS: on a resume a ridge the war already breached
+      // rocksLive, not map.ROCKS: on a resume a ridge the war already breached
       // must not be painted back onto the ground it no longer occupies.
-      R.setDressing({ rocks: rocksLive, ponds: PONDS, streams: streamRibs });
-      R.setRoads(ROADS); // mk2.67: the roads painted — kept ribbons and broken ones, before any smear replays
-      R.overlay.setObjective(OBJ_POS.x, OBJ_POS.z, field.heightAt(OBJ_POS.x, OBJ_POS.z));
-      R.overlay.setBanners(SPAWN_POINTS);
+      R.setDressing({ rocks: rocksLive, ponds: map.PONDS, streams: streamRibs });
+      R.setRoads(map.ROADS); // mk2.67: the roads painted — kept ribbons and broken ones, before any smear replays
+      R.overlay.setObjective(map.OBJ_POS.x, map.OBJ_POS.z, field.heightAt(map.OBJ_POS.x, map.OBJ_POS.z));
+      R.overlay.setBanners(map.SPAWN_POINTS);
       const AIM_OFF = { x: 0, z: -500 };
       // FOG toggle: visuals only (see renderer.js setFog) — default ON,
       // persisted with the same localStorage-key pattern CampaignRunner uses
@@ -809,16 +809,16 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         // nothing on screen.
         manifest: makeManifestState(), foe: makeFoeState(),
         intelUp: false, intelArmedAt: 0,
-        // Opens on the depot, not the middle of the field. TOWN[i].x/z for
+        // Opens on the depot, not the middle of the field. map.TOWN[i].x/z for
         // the depot entry ({id:"depot", x:0, z:52, ...} in genMap) are
         // already WORLD-space — genMap's T() helper runs every town entry
-        // through fwdU before storing it — so this is exactly the same
-        // point fwdU(0, 52) would give under the map's live ORIENT; reading
-        // it off TOWN directly (rather than re-deriving via fwdU(0, 52))
+        // through map.fwdU before storing it — so this is exactly the same
+        // point map.fwdU(0, 52) would give under the map's live map.ORIENT; reading
+        // it off map.TOWN directly (rather than re-deriving via map.fwdU(0, 52))
         // can't drift out of sync with wherever genMap actually placed it.
         focus: (() => {
-          const depotT = TOWN.find((t) => t.depot);
-          const w = depotT ? { x: depotT.x, z: depotT.z } : fwdU(0, 52);
+          const depotT = map.TOWN.find((t) => t.depot);
+          const w = depotT ? { x: depotT.x, z: depotT.z } : map.fwdU(0, 52);
           return { x: w.x, y: field.heightAt(w.x, w.z), z: w.z };
         })(),
         zoom: 1, acc: 0, t: 0, fps: 60, fpsAcc: 0, fpsN: 0,
@@ -958,7 +958,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         if (!disposed) S._teachSeen = new Set(seen);
       })();
       if (!RES && !dev) {
-        musterFreshStart(world, S, depotP, grid, field, nextApcSeq);
+        musterFreshStart(world, S, depotP, grid, field, nextApcSeq, map);
       }
       if (dev) {
         // mk2.24: THE SANDBOX OPENING — no draft, no enemy opening, no
@@ -1070,7 +1070,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         if (cell.blocked || cell.wallId) { toast("OCCUPIED"); return; }
         if (cell.ice) { toast("NO GROUND — frozen water"); return; }
         {
-          const wp0 = grid.gridToWorld(gx, gz), c0 = invW(wp0.x, wp0.z);
+          const wp0 = grid.gridToWorld(gx, gz), c0 = map.invW(wp0.x, wp0.z);
           if (!(dev || canBuild(T, c0.u, c0.v))) { toast("GROUND NOT HELD"); return; }
         }
         const spec = mode === "wall" ? null : TOWER_SPECS[mode];
@@ -1101,9 +1101,9 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           // releases the ground and brings the rest down.
           // mk0.55: walls are thin faces now — default broadside to the
           // enemy's advance (canonical v is the advance axis, so the long
-          // axis lies along canonical u: world x when ORIENT is even, world
+          // axis lies along canonical u: world x when map.ORIENT is even, world
           // z when odd), and a wall built next to a wall continues its line.
-          b = spawnWallCourses(world, wp.x, y, wp.z, wallOrientAt(world, wp.x, wp.z, ORIENT % 2))[0];
+          b = spawnWallCourses(world, wp.x, y, wp.z, wallOrientAt(world, wp.x, wp.z, map.ORIENT % 2))[0];
         }
         b.maxHp = b.hp;
         cell.wallId = b.id;
@@ -1123,7 +1123,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         if (!grid.inBounds(gx, gz)) return { ok: false };
         const cell = grid.cells[grid.idx(gx, gz)];
         if (cell.water) return { ok: false, msg: "NO GROUND — open water" };
-        const wp = grid.gridToWorld(gx, gz), c0 = invW(wp.x, wp.z);
+        const wp = grid.gridToWorld(gx, gz), c0 = map.invW(wp.x, wp.z);
         const spec = TOWER_SPECS[mode];
         const v = validatePlacement({
           blocked: !!(cell.blocked || cell.wallId), ice: !!cell.ice,
@@ -1157,7 +1157,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           // tower COULD reach — terrain/solid clipping only (arcClears is
           // unconditional inside reachPolygon). Live acquisition stays
           // fog-gated (stepTowers' own fieldReaches) — the guns obey what is.
-          poly = reachPolygon(world, null, muzzle, spec, 1, invW);
+          poly = reachPolygon(world, null, muzzle, spec, 1, map.invW);
         }
         S.pending = { gx, gz, mode, wp, y, poly, ringR, color, cost: priceNow(mode, spec.cost), armedAt: world.t + PENDING_ARM_S };
       };
@@ -1208,7 +1208,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         if (!grid.inBounds(gx, gz)) return { ok: false, msg: "OFF THE FIELD" };
         const cell = grid.cells[grid.idx(gx, gz)];
         if (cell.water) return { ok: false, msg: "NO GROUND — open water" };
-        const wp = grid.gridToWorld(gx, gz), c0 = invW(wp.x, wp.z);
+        const wp = grid.gridToWorld(gx, gz), c0 = map.invW(wp.x, wp.z);
         const v = validatePlacement({
           blocked: !!(cell.blocked || cell.wallId), ice: !!cell.ice,
           held: (dev || canBuild(T, c0.u, c0.v)), resources: S.resources, cost,
@@ -1298,7 +1298,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         let poly = null, ringR = 0;
         if (type === "sniper") {
           const muzzle = { x: wp.x, y: y + 1.24, z: wp.z }; // ground + 0.74 seat + 0.5 squadFire muzzle
-          poly = reachPolygon(world, null, muzzle, arms, 1, invW);
+          poly = reachPolygon(world, null, muzzle, arms, 1, map.invW);
         } else {
           // sappers carry no arms entry (no rifle) — no reach preview at all;
           // their reach is their feet.
@@ -1371,7 +1371,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         } else {
           S.possess = { kind: "vehicle", id: v.id };
           const pc2 = possessCenter();
-          S.reticleOff = pc2 ? reclampReticle(T.sight, 1, pc2, possessSightR(), { dx: 0, dz: 6 }, invW) : null;
+          S.reticleOff = pc2 ? reclampReticle(T.sight, 1, pc2, possessSightR(), { dx: 0, dz: 6 }, map.invW) : null;
           S.reticle = pc2 && S.reticleOff ? { x: pc2.x + S.reticleOff.dx, z: pc2.z + S.reticleOff.dz } : null;
         }
         S.selVehId = null; S.vehOrderMode = null; S.selSquadId = null; S.selSquadIds = null; S.orderMode = null; S.buildPt0 = null; S.linePending = null; S.pieOpen = false;
@@ -1485,7 +1485,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         S.fireHeld = false;
         S.reticleLockId = null;
         const pc0 = possessCenter();
-        S.reticleOff = pc0 ? reclampReticle(T.sight, 1, pc0, possessSightR(), { dx: 0, dz: 4 }, invW) : null;
+        S.reticleOff = pc0 ? reclampReticle(T.sight, 1, pc0, possessSightR(), { dx: 0, dz: 4 }, map.invW) : null;
         S.reticle = pc0 && S.reticleOff ? { x: pc0.x + S.reticleOff.dx, z: pc0.z + S.reticleOff.dz } : null;
         S.selSquadId = null; S.selSquadIds = null; S.orderMode = null; S.buildPt0 = null; S.linePending = null;
         R.overlay.setLinePreview(false);
@@ -1500,7 +1500,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         S.fireHeld = false;
         S.reticleLockId = null;
         const pc1 = possessCenter();
-        S.reticleOff = pc1 ? reclampReticle(T.sight, 1, pc1, possessSightR(), { dx: 0, dz: 4 }, invW) : null;
+        S.reticleOff = pc1 ? reclampReticle(T.sight, 1, pc1, possessSightR(), { dx: 0, dz: 4 }, map.invW) : null;
         S.reticle = pc1 && S.reticleOff ? { x: pc1.x + S.reticleOff.dx, z: pc1.z + S.reticleOff.dz } : null;
         S.inspectId = null; S.pieOpen = false;
       };
@@ -1545,7 +1545,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // start, lays end-to-end along the line, and digs in at the far end.
       //
       // GEOMETRY, stated once because it is the whole design constraint: the
-      // build grid's pitch is GRID_CS (2.0m) and BOTH pieces are 1.8m along
+      // build grid's pitch is map.GRID_CS (2.0m) and BOTH pieces are 1.8m along
       // their long axis (a bag is 1.8 x 0.9 x 0.7; a wall course is a 1.8m-wide
       // face, WALL_HALF 0.9 / WALL_THIN 0.35). So a straight run lays pieces
       // 2.0m apart that are each 1.8m long: end-to-end bar a 0.2m joint at every
@@ -1572,7 +1572,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       const refreshLinePreview = () => {
         const lp = S.linePending;
         if (!lp) { R.overlay.setLinePreview(false); return; }
-        const pieces = linePieces(grid, field, T, lp.kind, lp.a, lp.b);
+        const pieces = linePieces(grid, field, T, lp.kind, lp.a, lp.b, map);
         lp.count = pieces.length;
         const fpPrev = S._market ? fieldPrices(S._market.counts, WALL_FIELD_COST, SANDBAG_FIELD_COST) : { wall: WALL_FIELD_COST, bag: SANDBAG_FIELD_COST };
         const mpPrev = S._minePrices || { mine: MINE_COST, wire: WIRE_COST }; // P7 T10
@@ -1631,12 +1631,12 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       S.acceptLine = acceptLine; S.rejectLine = rejectLine;
       // The driver, once per sim tick per squad carrying a job.
       const layCtx = { stampBag, recomputeFlow, objG, setMines: (m) => R.setMines(m) };
-      S.stepBuildLine = (sq) => stepBuildLine(world, grid, field, T, S, sq, layCtx, toast);
+      S.stepBuildLine = (sq) => stepBuildLine(world, grid, field, T, S, sq, layCtx, toast, map);
       // P7.1 T7: the enemy's build driver — same machinery, his books. The
       // façade carries reg.scrap through S-shaped fields and settles after.
       S.stepFoeBuildLine = (sq) => {
         const SE = { resources: S.reg.scrap, mines: S.mines, sandbagOrient: 0, _market: S._market, _minePrices: S._minePrices };
-        stepBuildLine(world, grid, field, T, SE, sq, { stampBag, recomputeFlow, objG, setMines: (m) => R.setMines(m) }, () => {});
+        stepBuildLine(world, grid, field, T, SE, sq, { stampBag, recomputeFlow, objG, setMines: (m) => R.setMines(m) }, () => {}, map);
         S.reg.scrap = SE.resources;
       };
       // The order flow's ground taps, in one place. tapAt calls this with the
@@ -1650,9 +1650,9 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         // the playable rim, and a squad ordered out there walks off the field
         // and never arrives. BOTH points of a build order clamp through here
         // too — this is THE site where a ground tap becomes a destination.
-        const d = clampToRim(p.x, p.z);
+        const d = map.clampToRim(p.x, p.z);
         // T3: open water takes no orders — the river is ground for nobody.
-        if (streamAt(d.x, d.z)) { toast("OPEN WATER — find the crossing"); return true; }
+        if (map.streamAt(d.x, d.z)) { toast("OPEN WATER — find the crossing"); return true; }
         if (om === "attack" || om === "move") {
           for (const gsq of selectedGroup()) { gsq.order = om; gsq.dest = { x: d.x, z: d.z }; gsq._legTarget = null; gsq._pauseT = 0; gsq._build = null; }
           S.orderMode = null;
@@ -1730,8 +1730,8 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           S.vehOrderMode = null; S.selVehId = null;
           return true;
         }
-        const d = clampToRim(p.x, p.z);
-        if (streamAt(d.x, d.z)) { toast("OPEN WATER — find the crossing"); return true; }
+        const d = map.clampToRim(p.x, p.z);
+        if (map.streamAt(d.x, d.z)) { toast("OPEN WATER — find the crossing"); return true; }
         if (om === "move") {
           v.order = "move"; v.dest = { x: d.x, z: d.z }; v._route = null; v._routeDest = null;
           S.vehOrderMode = null; S.selVehId = null;
@@ -1901,7 +1901,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             let dx0 = p.x - rc0.x, dz0 = p.z - rc0.z;
             const rR0 = possessSightR(), d0 = Math.hypot(dx0, dz0);
             if (d0 > rR0 && d0 > 1e-9) { dx0 *= rR0 / d0; dz0 *= rR0 / d0; }
-            const cc0 = invW(rc0.x + dx0, rc0.z + dz0);
+            const cc0 = map.invW(rc0.x + dx0, rc0.z + dz0);
             if (seenAt(T.sight, cc0.u, cc0.v, 1)) {
               S.reticleOff = { dx: dx0, dz: dz0 };
               S.reticle = { x: rc0.x + dx0, z: rc0.z + dz0 };
@@ -1916,7 +1916,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         if (S.linePending) {
           const lp = S.linePending;
           if (lp.moving) {
-            const m = clampToRim(p.x, p.z);
+            const m = map.clampToRim(p.x, p.z);
             lp[lp.moving] = { x: m.x, z: m.z };
             lp.moving = null;
             lp.armedAt = world.t + PENDING_ARM_S;
@@ -2163,8 +2163,8 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           const t0 = performance.now();
           const json = serializeFront({
             S, world, T, town, census: depotCensus, census2: depotCensus2,
-            rocks: ROCKS, smears: R._splat ? R._splat.log : [],
-            mapSeed: MAP_SEED, rngSeed,
+            rocks: map.ROCKS, smears: R._splat ? R._splat.log : [],
+            mapSeed: map.MAP_SEED, rngSeed,
           });
           saveStat = { ms: +(performance.now() - t0).toFixed(2), bytes: json.length, bell: S.bell };
           cue("uitick"); // the record was written — the one acknowledgement it gets
@@ -2192,7 +2192,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // alongside the assault's results (fireBell books those): green ground
       // pays the player, red ground pays the regiment, seam ground nobody.
       const bellCtx = { cue, toast, townUV, buildSnapshot, nextApcSeq, saveFront: () => saveFront() };
-      const ringBell = () => ringBellOut(world, grid, field, T, S, bellCtx);
+      const ringBell = () => ringBellOut(world, grid, field, T, S, bellCtx, map);
       // --- the bell's cards (Task 2). Nothing here touches the sim: they are
       // presentation state, armed on WORLD time via the same trailing-tap law
       // the ✓/✗ confirm pair lives under (PENDING_ARM_S), and they never gate
@@ -2280,7 +2280,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         if (!grid.inBounds(g.gx, g.gz)) { toast("OFF THE FIELD"); return; }
         const cell = grid.cells[grid.idx(g.gx, g.gz)];
         const wp = grid.gridToWorld(g.gx, g.gz);
-        const c0 = invW(wp.x, wp.z);
+        const c0 = map.invW(wp.x, wp.z);
         if (!(dev || canBuild(T, c0.u, c0.v))) { toast("GROUND NOT HELD"); return; }
         if (cell.water || cell.ice || cell.blocked || cell.wallId) { toast("NO GROUND"); return; }
         if (pk.kind === "squad") {
@@ -2330,8 +2330,8 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       const devSpawnAt = (p) => {
         const it = FOE_RACK_BY_KEY[S.devSpawn];
         if (!it) return;
-        const d = clampToRim(p.x, p.z);
-        if (streamAt(d.x, d.z)) { toast("OPEN WATER"); return; }
+        const d = map.clampToRim(p.x, p.z);
+        if (map.streamAt(d.x, d.z)) { toast("OPEN WATER"); return; }
         if (it.tower) {
           const g = grid.worldToGrid(d.x, d.z);
           if (!grid.inBounds(g.gx, g.gz)) { toast("OFF THE FIELD"); return; }
@@ -2380,7 +2380,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         if (!grid.inBounds(g.gx, g.gz)) { toast("OFF THE FIELD"); return false; }
         const cell = grid.cells[grid.idx(g.gx, g.gz)];
         const wp = grid.gridToWorld(g.gx, g.gz);
-        const c0 = invW(wp.x, wp.z);
+        const c0 = map.invW(wp.x, wp.z);
         if (!(dev || canBuild(T, c0.u, c0.v))) { toast("GROUND NOT HELD"); return false; }
         if (cell.water || cell.ice || cell.blocked || cell.wallId) { toast("NO GROUND"); return false; }
         if (pk.kind === "mech") {
@@ -2422,7 +2422,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         const heldAt = dealPhase
           ? (x, z) => Math.hypot(x - depotP.x, z - depotP.z) <= HOMELAND_R
           : dev ? () => true
-          : (x, z) => { const c = invW(x, z); return canBuild(T, c.u, c.v); };
+          : (x, z) => { const c = map.invW(x, z); return canBuild(T, c.u, c.v); };
         // mk1.96 (owner): the zone tells the ARMED unit's own truth — the
         // ground's permanent laws AND the room standing bodies take right
         // now. Hulls vet their flat parking and their clearance; the mech
@@ -2443,7 +2443,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       const spawnOne = () => {
         const ws = S.ws;
         const tag = nextSpawnTag(S);
-        const sp = SPAWN_POINTS[S.spawnRR++ % SPAWN_POINTS.length];
+        const sp = map.SPAWN_POINTS[S.spawnRR++ % map.SPAWN_POINTS.length];
         spawnEnemy(world, sp, tag);
         ws.spawnQueue--;
         // The withdrawal clock starts at spawn-completion, not at the bell —
@@ -2464,7 +2464,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           if (d < 1.6) h[j * n + i] -= k.h * Math.exp(-d * d * 2.1);
         }
         field.dirty = true;
-        for (let gz = 0; gz < GRID_H; gz++) for (let gx = 0; gx < GRID_W; gx++) {
+        for (let gz = 0; gz < map.GRID_H; gz++) for (let gx = 0; gx < map.GRID_W; gx++) {
           const wp = grid.gridToWorld(gx, gz);
           if (Math.hypot(wp.x - k.x, wp.z - k.z) < k.r * 0.78 + 0.9) {
             const c = grid.cells[grid.idx(gx, gz)];
@@ -2478,7 +2478,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         }
         const ri = rocksLive.indexOf(k);
         if (ri >= 0) rocksLive.splice(ri, 1);
-        R.setDressing({ rocks: rocksLive, ponds: PONDS, streams: streamRibs });
+        R.setDressing({ rocks: rocksLive, ponds: map.PONDS, streams: streamRibs });
         recomputeFlow();
         toast("THE RIDGE IS BREACHED");
       };
@@ -2498,7 +2498,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         // floating over the crater. Bodies re-seat in the engine; this is
         // their drawn twin.
         if (evs.some((e) => e.type === "boom" && e.weapon === "davy")) {
-          R.setDressing({ rocks: rocksLive, ponds: PONDS, streams: streamRibs });
+          R.setDressing({ rocks: rocksLive, ponds: map.PONDS, streams: streamRibs });
         }
         // Structure damage dealt this frame, attributed via b.lastHit —
         // there's no discrete per-hit damage event, so this rides the hp
@@ -2540,12 +2540,12 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // debug harness: world point -> grid cell, so a staging script can build
       // at a point __DEPOTFINDBUILDABLE__ handed it without driving the tap UI.
       window.__DEPOTGRIDAT__ = (x, z) => grid.worldToGrid(x, z);
-      window.__DEPOTSPAWN__ = (n) => { for (let i = 0; i < (n || 1); i++) spawnEnemy(world, SPAWN_POINTS[S.spawnRR++ % SPAWN_POINTS.length]); };
+      window.__DEPOTSPAWN__ = (n) => { for (let i = 0; i < (n || 1); i++) spawnEnemy(world, map.SPAWN_POINTS[S.spawnRR++ % map.SPAWN_POINTS.length]); };
       window.__DEPOTTESLA__ = () => { const S = stateRef.current; return { arcs: S && S.arcs ? S.arcs.length : -1, fired: S ? S._teslaFired || 0 : -1, zaps: S ? S._teslaZaps || 0 : -1, held: !!(S && S.fireHeld), pk: S && S.possess ? S.possess.kind : null }; };
       window.__DEPOTSTART__ = () => { S.started = true; };
-      window.__DEPOTSETT__ = (t) => { world.t = t; world.wind = windAt(MAP_SEED, world.t); };
+      window.__DEPOTSETT__ = (t) => { world.t = t; world.wind = windAt(map.MAP_SEED, world.t); };
       window.__DEPOTFLAGS__ = () => world.bodies.filter((b) => b.flagPole).map((b) => ({ id: b.id, kind: b.kind, x: +b.pos.x.toFixed(2), y: +b.pos.y.toFixed(2), z: +b.pos.z.toFixed(2) }));
-      window.__DEPOTTOWN__ = () => TOWN.map((t) => ({ id: t.id, x: +t.x.toFixed(2), z: +t.z.toFixed(2), nx: t.nx, nz: t.nz, ny: t.ny, slab: !!t.slab, cols: !!t.cols }));
+      window.__DEPOTTOWN__ = () => map.TOWN.map((t) => ({ id: t.id, x: +t.x.toFixed(2), z: +t.z.toFixed(2), nx: t.nx, nz: t.nz, ny: t.ny, slab: !!t.slab, cols: !!t.cols }));
       window.__DEPOTTREES__ = () => world.bodies.filter((b) => b.kind === "tree").map((b) => ({ id: b.id, x: +b.pos.x.toFixed(2), z: +b.pos.z.toFixed(2), y: +b.pos.y.toFixed(2), hp: +b.hp.toFixed(1), alive: b.alive, burning: b.burning }));
       // P1.5 T2 staging harness: the live wall courses, the welds holding them
       // and the loose rubble — so a save/resume run can prove three courses,
@@ -2647,7 +2647,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         const g = grid.worldToGrid(x, z);
         if (!grid.inBounds(g.gx, g.gz)) return null;
         const cell = grid.cells[grid.idx(g.gx, g.gz)];
-        const wp = grid.gridToWorld(g.gx, g.gz), c0 = invW(wp.x, wp.z);
+        const wp = grid.gridToWorld(g.gx, g.gz), c0 = map.invW(wp.x, wp.z);
         return { gx: g.gx, gz: g.gz, x: +wp.x.toFixed(2), z: +wp.z.toFixed(2),
           blocked: !!(cell.blocked || cell.wallId), ice: !!cell.ice, held: canBuild(T, c0.u, c0.v) };
       };
@@ -2715,7 +2715,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // point) — used by the smoke test's rotation-invariance check to know
       // the intended build cell without racing the render loop's tween.
       window.__DEPOTGETFOCUS__ = () => ({ x: S.focus.x, z: S.focus.z });
-      window.__DEPOTHOLD__ = (x, z) => { const c = invW(x, z); return holderAt(T, c.u, c.v); };
+      window.__DEPOTHOLD__ = (x, z) => { const c = map.invW(x, z); return holderAt(T, c.u, c.v); };
       // VISION (mk0.72): the sight census — how many cells each side can see
       // right now. Sight is derived and never saved, so this is also the
       // resume check: after a reload the count comes back on the first
@@ -2748,11 +2748,11 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         const flag = world.bodies.find((b) => b.kind === "flag");
         if (!flag) return null;
         let best = null, bestD = 1e9;
-        for (let gz = 0; gz < GRID_H; gz++) for (let gx = 0; gx < GRID_W; gx++) {
+        for (let gz = 0; gz < map.GRID_H; gz++) for (let gx = 0; gx < map.GRID_W; gx++) {
           const cell = grid.cells[grid.idx(gx, gz)];
           if (cell.blocked || cell.wallId || cell.ice) continue;
           const wp = grid.gridToWorld(gx, gz);
-          const c = invW(wp.x, wp.z);
+          const c = map.invW(wp.x, wp.z);
           if (!canBuild(T, c.u, c.v)) continue;
           if (clearR && world.bodies.some((b) => b.alive && (b.kind === "tower" || b.kind === "wall" || b.kind === "rock" || b.kind === "tree" || b.kind === "chunk") &&
             Math.hypot(wp.x - b.pos.x, wp.z - b.pos.z) < clearR)) continue;
@@ -2770,11 +2770,11 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         const flag = world.bodies.find((b) => b.kind === "flag");
         if (!flag) return null;
         let best = null, bestY = -1e9;
-        for (let gz = 0; gz < GRID_H; gz++) for (let gx = 0; gx < GRID_W; gx++) {
+        for (let gz = 0; gz < map.GRID_H; gz++) for (let gx = 0; gx < map.GRID_W; gx++) {
           const cell = grid.cells[grid.idx(gx, gz)];
           if (cell.blocked || cell.wallId || cell.ice) continue;
           const wp = grid.gridToWorld(gx, gz);
-          const c = invW(wp.x, wp.z);
+          const c = map.invW(wp.x, wp.z);
           if (!canBuild(T, c.u, c.v)) continue;
           if (Math.hypot(wp.x - flag.pos.x, wp.z - flag.pos.z) > 40) continue;
           const y = field.heightAt(wp.x, wp.z);
@@ -2785,11 +2785,11 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       window.__DEPOTFINDNEARROCK__ = () => {
         const rocks = world.bodies.filter((b) => b.kind === "rock" && b.alive);
         let best = null, bestD = 1e9;
-        for (let gz = 0; gz < GRID_H; gz++) for (let gx = 0; gx < GRID_W; gx++) {
+        for (let gz = 0; gz < map.GRID_H; gz++) for (let gx = 0; gx < map.GRID_W; gx++) {
           const cell = grid.cells[grid.idx(gx, gz)];
           if (cell.blocked || cell.wallId || cell.ice) continue;
           const wp = grid.gridToWorld(gx, gz);
-          const c = invW(wp.x, wp.z);
+          const c = map.invW(wp.x, wp.z);
           if (!canBuild(T, c.u, c.v)) continue;
           for (const r of rocks) {
             const d = Math.hypot(wp.x - r.pos.x, wp.z - r.pos.z);
@@ -2804,7 +2804,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // by fog when unheld) — no pixel sampling needed. __DEPOTFOGAT__
       // exposes fogStateFor at a world point for direct state checks.
       window.__DEPOTFOGDBG__ = () => R.getFogDebug();
-      window.__DEPOTFOGAT__ = (x, z) => { const c = invW(x, z); return fogStateFor(T, c.u, c.v, 1); };
+      window.__DEPOTFOGAT__ = (x, z) => { const c = map.invW(x, z); return fogStateFor(T, c.u, c.v, 1); };
       // Task 3 debug hooks: squad + sandbag state reads for smoke.mjs, plus
       // the live center-ray ground point — the camera pivot TWEENS toward
       // S.focus, so a fixed post-focus sleep lands taps meters off under
@@ -3075,23 +3075,23 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
                   vx: (cb3.right.x / rl3) * S.joyR.s + (cb3.up.x / fl3) * S.joyR.t,
                   vz: (cb3.right.z / rl3) * S.joyR.s + (cb3.up.z / fl3) * S.joyR.t,
                 };
-                S.reticleOff = steerReticle(T.sight, 1, rc, rR, S.reticleOff, rv.vx, rv.vz, dt, invW);
+                S.reticleOff = steerReticle(T.sight, 1, rc, rR, S.reticleOff, rv.vx, rv.vz, dt, map.invW);
               } else if (!isTouch && S.pointer) {
                 const gp = groundPoint(S.pointer.x, S.pointer.y);
                 if (gp) S.reticleOff = { dx: gp.x - rc.x, dz: gp.z - rc.z };
               }
-              S.reticleOff = reclampReticle(T.sight, 1, rc, rR, S.reticleOff, invW);
+              S.reticleOff = reclampReticle(T.sight, 1, rc, rR, S.reticleOff, map.invW);
               S.reticle = { x: rc.x + S.reticleOff.dx, z: rc.z + S.reticleOff.dz };
               // mk2.01: THE SURFACE LAW — nothing blocks the steer; the
               // ground the reticle rests on aims the guns: a solid's top
               // when it sits on one (rooftops, wall tops), the dirt
               // otherwise. Where the shot truly ends is the predictor's
               // ring, never a steering clamp.
-              S.reticle.y = surfaceAt(T.sight, S.reticle.x, S.reticle.z, invW).y;
+              S.reticle.y = surfaceAt(T.sight, S.reticle.x, S.reticle.z, map.invW).y;
               // mk1.99: THE STICKY SNAP — the RAW offset steers; the lock
               // only bends the derived aim onto the man, so pulling the raw
               // point past the radius is the deliberate escape.
-              const lk9 = stickyLock(world, S.reticleLockId, S.reticle, T, invW);
+              const lk9 = stickyLock(world, S.reticleLockId, S.reticle, T, map.invW);
               S.reticleLockId = lk9 ? lk9.id : null;
               if (lk9) S.reticle = { x: lk9.pos.x, z: lk9.pos.z };
               // P7 T2: keep the turret honest while possessed — the hull's
@@ -3126,7 +3126,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
                 // once per selection — static body). Frost keeps its aura
                 // ring below (it is not a gun); walls keep no fan.
                 if (!S.inspectReach) S.inspectReach = {};
-                towerReachCached(S.inspectReach, world, ib, ispec, invW);
+                towerReachCached(S.inspectReach, world, ib, ispec, map.invW);
                 S.hover = { x: ib.pos.x, z: ib.pos.z, valid: true, range: 0 };
               } else {
                 S.inspectReach = null;
@@ -3164,7 +3164,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             // 1Hz refresh: defend micro-shuffles and attack legs move him.
             if (!S.selReach || S.selReach.id !== selSq.id || world.t - S.selReach.t > 1) {
               const u0 = selSq.memberIds.map((id) => world.byId.get(id)).find((u) => u && u.alive);
-              const pts = u0 ? squadReach(world, selSq, null, invW) : null;
+              const pts = u0 ? squadReach(world, selSq, null, map.invW) : null;
               S.selReach = pts ? { id: selSq.id, t: world.t, pts, cx: u0.pos.x, cz: u0.pos.z } : null;
             }
             S.hover = { x: sqCx, z: sqCz, valid: true, range: 0 };
@@ -3215,7 +3215,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           // recompute per frame, after the catch-up loop rather than inside
           // it: a recompute reads only the world's current bodies, so running
           // it twice in a row would burn the time and give the same map.
-          if (terrGuard > 0) stepSight(world, T.sight, invW, fwdU);
+          if (terrGuard > 0) stepSight(world, T.sight, map.invW, map.fwdU);
           // mk2.49: THE GROUND PAYS — held-cell counts on the territory
           // clock (bell.js's commander-read loop, verbatim), cached as
           // per-second rates for the income lines below. One law, both signs.
@@ -3233,7 +3233,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           // accumulator (NOT per sim tick). Cheap: setMines only rewrites the
           // two instanced pools when a device actually fired this tick.
           if (terrGuard > 0) { stepMines(world, S.mines); R.setMines(S.mines); }
-          // mk2.50: TOWN FLAGS — holder-colored, render-only; neutral and
+          // mk2.50: map.TOWN FLAGS — holder-colored, render-only; neutral and
           // contested ground fly nothing, ruined buildings fly nothing
           // (they already pay nothing — economy.js payTown). Territory
           // cadence; derived, never saved.
@@ -3242,7 +3242,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             for (const b of town) {
               const m = townFlagMeta.get(b.id);
               if (!m || m.depot || m.fwall || m.marker || b.ruined) continue;
-              const c = invW(b.x, b.z);
+              const c = map.invW(b.x, b.z);
               const h = holderAt(T, c.u, c.v);
               if (h !== 1 && h !== 2) continue;
               rows.push({ x: b.x, y: field.heightAt(b.x, b.z) + m.ny * MASON.pitch, z: b.z, team: h });
@@ -3307,7 +3307,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             // u.fireCd gate) do the real limiting, not this flag.
             if (S.fireHeld && S.possess && S.possess.kind === "squad" && S.reticle) {
               const psq = S.squads.find((q) => q.id === S.possess.id);
-              if (psq) possessedVolley(world, psq, S.reticle, T, invW);
+              if (psq) possessedVolley(world, psq, S.reticle, T, map.invW);
             }
             // POSSESSION (P4 T3, mk0.92): a possessed tower's trigger — same
             // one-attempt-per-tick flag, real spec, real cooldown, through
@@ -3315,7 +3315,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             // consulted while possessed — your trigger, your responsibility.
             if (S.fireHeld && S.possess && S.possess.kind === "tower" && S.reticle) {
               const ptw = world.byId.get(S.possess.id);
-              if (ptw && possessedTowerFire(world, ptw, S.reticle, T, invW, S.arcs)) S._teslaFired = (S._teslaFired || 0) + 1;
+              if (ptw && possessedTowerFire(world, ptw, S.reticle, T, map.invW, S.arcs, map)) S._teslaFired = (S._teslaFired || 0) + 1;
             }
             // POSSESSION (P7 T2): the Bison's two triggers — same
             // one-attempt-per-tick flags, real cooldowns, through
@@ -3325,8 +3325,8 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
               if (pv) {
                 // P7 T4: the APC's only gun is the coax — FIRE streams it (no
                 // main gun to fire), and there is no separate MG trigger.
-                if (S.fireHeld) { if (pv.vtype === "apc") possessedArmorMg(world, pv, S.reticle, T, invW); else possessedArmorFire(world, pv, S.reticle, T, invW); }
-                if (S.mgHeld && pv.vtype !== "apc") possessedArmorMg(world, pv, S.reticle, T, invW);
+                if (S.fireHeld) { if (pv.vtype === "apc") possessedArmorMg(world, pv, S.reticle, T, map.invW); else possessedArmorFire(world, pv, S.reticle, T, map.invW); }
+                if (S.mgHeld && pv.vtype !== "apc") possessedArmorMg(world, pv, S.reticle, T, map.invW);
               }
             }
             // THE MECH (mk1.92): five triggers, one attempt each per sim
@@ -3338,7 +3338,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
               const pm = world.byId.get(S.possess.id);
               if (pm && pm.mechRef) {
                 const mech = pm.mechRef;
-                if (mechSighted(world, mech, T, invW)) {
+                if (mechSighted(world, mech, T, map.invW)) {
                   if (S.fireHeld) mechFire(world, mech);
                   const w = S.mechWant;
                   if (w && w.msl) mechMissiles(world, mech);
@@ -3408,7 +3408,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
                                   : pb0 ? { x: pb0.pos.x, y: pb0.pos.y + (P9.kind === "tower" ? pb0.hy + 0.45 : 0.5), z: pb0.pos.z }
                                   : { x: rc9.x, y: field.heightAt(rc9.x, rc9.z) + 0.5, z: rc9.z };
               const sig9 = scatterSigma(world, muzzle9, aim9, { ...spec9, acc: spec9.acc * POSSESS_ACC });
-              const pr9 = predictRing(T.sight, muzzle9, aim9, spec9, sig9, world.wind, invW);
+              const pr9 = predictRing(T.sight, muzzle9, aim9, spec9, sig9, world.wind, map.invW);
               ctr9 = pr9.center;
               rr9 = Math.max(0.4, pr9.r);
               pts9 = pr9.pts;
@@ -3421,7 +3421,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             ctr9 ? ctr9.x : (S.reticle ? S.reticle.x : 0), ctr9 ? ctr9.z : (S.reticle ? S.reticle.z : 0),
             ctr9 ? ctr9.y : (S.reticle ? field.heightAt(S.reticle.x, S.reticle.z) : 0), rr9, hit9, pts9);
           if (!S.possess && S.hover) {
-            R.overlay.setHover(true, S.hover.x, S.hover.z, field.heightAt(S.hover.x, S.hover.z), S.hover.range, S.hover.valid, GRID_CS);
+            R.overlay.setHover(true, S.hover.x, S.hover.z, field.heightAt(S.hover.x, S.hover.z), S.hover.range, S.hover.valid, map.GRID_CS);
           }
           else R.overlay.setHover(false);
           // mk1.95: THE PLACEMENT ZONE — its own ~4Hz WALL-time tick (the deal
@@ -3596,7 +3596,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
               enemyStanding: S.enemyStanding != null ? S.enemyStanding : 1,
               mode: S.mode, sellMode: S.sellMode, sandbagOrient: S.sandbagOrient || 0, devSpawn: S.devSpawn, devDummies: S.devDummies,
               paused: S.paused, speed: S.speed,
-              muted: A.muted, fogOn: S.fogOn, windOn: S.windOn, healthOn: S.healthOn, holdAreaOn: !!(S.holdArea && S.holdArea[1]), discipline: S.discipline, seed: MAP_SEED,
+              muted: A.muted, fogOn: S.fogOn, windOn: S.windOn, healthOn: S.healthOn, holdAreaOn: !!(S.holdArea && S.holdArea[1]), discipline: S.discipline, seed: map.MAP_SEED,
               toasts: S.toasts.map((t) => t.txt),
               squadSel: (() => {
                 const sq = S.selSquadId != null ? S.squads.find((q) => q.id === S.selSquadId) : null;

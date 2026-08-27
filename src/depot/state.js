@@ -10,7 +10,6 @@ import { killPrice } from "./market.js";
 import { composeIntel, openingIntel } from "./intel.js";
 import { TOWER_SPECS, ENEMY_SPECS, TANK, INFANTRY_ARMS, MASON, PLAYER_START, PLAYER_TIERS, HAND_KEYS, HAND_TAGS, MAN, GRENADE, DAVY_FIRE } from "./specs.js";
 import { seenAt } from "./sight.js";
-import { pondAt, streamAt } from "./mapgen.js";
 
 // Targeting gate, symmetric, VISION era (mk0.72): a shooter of `team` (1 =
 // player tower/squad, 2 = attacker rifleman/grenadier/tank) may only acquire
@@ -851,7 +850,7 @@ export function possessedVolley(world, squad, aim, T, toUV = (x, z) => ({ u: x, 
 // at the aim like every shot. T7: acc sharpens by POSSESS_ACC and the aim
 // snaps to a live, seen enemy exactly like a possessed squad's volley —
 // towers have no squadmates, so there is no corridor check.
-export function possessedTowerFire(world, tower, aim, T, toUV = (x, z) => ({ u: x, v: z }), arcs) {
+export function possessedTowerFire(world, tower, aim, T, toUV = (x, z) => ({ u: x, v: z }), arcs, map) {
   const spec = TOWER_SPECS[tower.towerType];
   if (!spec || spec.fireRate <= 0) return false;
   tower.fireCd = tower.fireCd || 0;
@@ -957,18 +956,18 @@ function chainBody(b) {
 }
 const chainId = (b) => (b.mechRef && b.mechRef.hull ? b.mechRef.hull.id : b.id);
 
-function onWater(x, z) { return pondAt(x, z) || (streamAt(x, z) ? "stream" : null); }
+function onWater(x, z, map) { return map.pondAt(x, z) || (map.streamAt(x, z) ? "stream" : null); }
 
 // one hop's pick, shared by the live walk and the hold-check: nearest body
 // not in `hit`, within hopR of `from` OR standing on any water surface in
 // `waters`. Pure — reads positions, mutates nothing.
-function teslaNext(world, from, hit, waters) {
+function teslaNext(world, from, hit, waters, map) {
   let best = null, bd = Infinity;
   for (const b of world.bodies) {
     if (!chainBody(b) || hit.has(chainId(b))) continue;
     const dx = b.pos.x - from.x, dz = b.pos.z - from.z;
     const d2 = dx * dx + dz * dz;
-    const w = waters.size ? onWater(b.pos.x, b.pos.z) : null;
+    const w = waters.size ? onWater(b.pos.x, b.pos.z, map) : null;
     if (d2 > TESLA.hopR * TESLA.hopR && !(w && waters.has(w))) continue;
     if (d2 < bd) { bd = d2; best = b; }
   }
@@ -986,7 +985,7 @@ export function teslaStrike(world, arcs, tower, target) {
   });
 }
 
-export function stepTesla(world, arcs) {
+export function stepTesla(world, arcs, map) {
   if (!arcs || !arcs.length) return;
   for (let i = arcs.length - 1; i >= 0; i--) {
     const a = arcs[i];
@@ -999,7 +998,7 @@ export function stepTesla(world, arcs) {
         // the strike point if anything stands in hop range. Water at the
         // strike point conducts exactly as a body hit would.
         world.events.push({ type: "zap", x: a.fx, y: a.fy, z: a.fz, x2: a.gx, y2: a.gy + 0.2, z2: a.gz, hop: 0 });
-        const w0 = onWater(a.gx, a.gz);
+        const w0 = onWater(a.gx, a.gz, map);
         if (w0) {
           a.waters.push(w0 === "stream" ? "stream" : w0);
           world.events.push({ type: "pondzap", x: w0 === "stream" ? a.gx : w0.x, z: w0 === "stream" ? a.gz : w0.z, r: w0 === "stream" ? 3 : w0.r });
@@ -1013,13 +1012,13 @@ export function stepTesla(world, arcs) {
         const t = world.byId.get(a.tid);
         victim = t && chainBody(t) ? t : null;
       } else {
-        victim = teslaNext(world, { x: a.fx, z: a.fz }, hit, waters);
+        victim = teslaNext(world, { x: a.fx, z: a.fz }, hit, waters, map);
       }
       if (!victim) { a.hits = TESLA.maxHits; break; }
       const vx = victim.pos.x, vy = victim.pos.y, vz = victim.pos.z;
       world.events.push({ type: "zap", x: a.fx, y: a.fy, z: a.fz, x2: vx, y2: vy, z2: vz, hop: a.hits });
       applyDamage(world, victim, a.dmg, { cause: "ZAP", attacker: a.atk, srcX: a.fx, srcZ: a.fz });
-      const w = onWater(vx, vz);
+      const w = onWater(vx, vz, map);
       if (w && !waters.has(w)) {
         a.waters.push(w === "stream" ? "stream" : w); // pond object identity holds within a session; see the save row below
         world.events.push({ type: "pondzap", x: w === "stream" ? vx : w.x, z: w === "stream" ? vz : w.z, r: w === "stream" ? 3 : w.r });
@@ -1038,7 +1037,7 @@ export function stepTesla(world, arcs) {
 // the check ships now so the suite pins it): plan the chain the trigger
 // WOULD start, on current positions, and answer whether any friendly soft
 // body gets caught. Pure, zero draws, no events.
-export function teslaWouldCatchFriend(world, tower, target) {
+export function teslaWouldCatchFriend(world, tower, target, map) {
   const own = tower.team === 2 ? 2 : 1;
   const hit = new Set(), waters = new Set();
   let from = { x: target.pos.x, z: target.pos.z }, dmgSteps = 1;
@@ -1046,10 +1045,10 @@ export function teslaWouldCatchFriend(world, tower, target) {
   while (victim && dmgSteps <= TESLA.maxHits) {
     if ((victim.kind === "unit" || victim.kind === "vehicle" || victim.kind === "mech") && victim.team === own) return true;
     hit.add(chainId(victim));
-    const w = onWater(victim.pos.x, victim.pos.z);
+    const w = onWater(victim.pos.x, victim.pos.z, map);
     if (w) waters.add(w);
     from = { x: victim.pos.x, z: victim.pos.z };
-    victim = teslaNext(world, from, hit, waters);
+    victim = teslaNext(world, from, hit, waters, map);
     dmgSteps++;
   }
   return false;

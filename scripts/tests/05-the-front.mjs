@@ -24,8 +24,8 @@ import fs from "node:fs";
     /const GRID_CS = 2\.0, GRID_W = 90, GRID_H = 90;/.test(mgSrcT1pin));
   ok("FRONT T1: the terrain falloff reads the rim constants, not literals",
     /Math\.abs\(cuv\.u\) - RIM_HALF_U, Math\.abs\(cuv\.v\) - RIM_HALF_V/.test(mgSrcT1pin));
-  ok("FRONT T1: territory is built from the rim constants",
-    /makeTerritory\(RIM_HALF_U, RIM_HALF_V\)/.test(src));
+  ok("FRONT T1: territory is built from the rim constants (wee-t2b: map.RIM_HALF_U/V)",
+    /makeTerritory\(map\.RIM_HALF_U, map\.RIM_HALF_V\)/.test(src));
   ok("FRONT T1: camera pan extents are square", /const EXT = \{ x: 95, z: 95 \};/.test(src));
   const rsrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
   ok("FRONT T1: the splat grid span derives from the field under the rim option (188.7 fallback kept)",
@@ -258,12 +258,12 @@ import fs from "node:fs";
   }
 
   // (g) source pins: the game layer's water rules exist where claimed
-  ok("T3(g): a ground order tapped on water is refused with the open-water toast",
-    /if \(streamAt\(d\.x, d\.z\)\) \{ toast\("OPEN WATER — find the crossing"\); return true; \}/.test(src));
+  ok("T3(g): a ground order tapped on water is refused with the open-water toast (wee-t2b: map.streamAt)",
+    /if \(map\.streamAt\(d\.x, d\.z\)\) \{ toast\("OPEN WATER — find the crossing"\); return true; \}/.test(src));
   ok("T3(g): buildAt refuses open water in its own words",
     /NO GROUND — open water/.test(src));
-  ok("T3(g): the world threads streamAt beside pondAt/inRim",
-    /world\.streamAt = \(x, z\) => streamAt\(x, z\);/.test(src));
+  ok("T3(g): the world threads streamAt beside pondAt/inRim (wee-t2b: map.streamAt)",
+    /world\.streamAt = \(x, z\) => map\.streamAt\(x, z\);/.test(src));
   const rsrc3 = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
   ok("T3(g): setDressing builds water ribbons when streams are supplied",
     /spec\.streams \|\| \[\]/.test(rsrc3));

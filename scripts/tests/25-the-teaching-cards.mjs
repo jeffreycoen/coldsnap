@@ -77,7 +77,7 @@ ok("T1: an unknown door falls to CLOSE (the teach door needs no code)",
   const ss = src("src/ui/StartScreen.jsx");
   const app = src("src/ui/App.jsx");
   const dg = src("src/depot/DepotGame.jsx");
-  ok("T7/T9: the menu shows the captured opening view", /data-menu-map/.test(ss) && /captureStartView/.test(ss) && /makeMap\(seed\)/.test(src("src/ui/startview.js")) && /return MAP_SEED;/.test(src("src/ui/startview.js")));
+  ok("T7/T9: the menu shows the captured opening view (wee-t2b: map.MAP_SEED)", /data-menu-map/.test(ss) && /captureStartView/.test(ss) && /makeMap\(seed\)/.test(src("src/ui/startview.js")) && /return map\.MAP_SEED;/.test(src("src/ui/startview.js")));
   ok("T7: the burn arm previews the fresh valley", /if \(burnArmed\) paint\(newSeedRef\.current\);/.test(ss));
   ok("T7: the shell hands the menu's seed to the war", /setDepotSeed/.test(app) && /seed=\{depotSeed\}/.test(app));
   ok("T7: the war takes the menu's seed, URL still winning", /menuSeedRef\.current != null \? menuSeedRef\.current/.test(dg) && /Number\.isFinite\(urlSeed\) \? urlSeed/.test(dg));
@@ -87,7 +87,7 @@ ok("T1: an unknown door falls to CLOSE (the teach door needs no code)",
 // ---- Task 8 (mk2.46): THE MENU MAP WEARS THE REAL LOOK
 {
   const ss = src("src/ui/StartScreen.jsx");
-  ok("T8/T9: the capture boots the war's own ground", /makeField\(181, 2\.0, MAP_SEED\)/.test(src("src/ui/startview.js")) && /buildDepotTerrain\(field, MAP_SEED\)/.test(src("src/ui/startview.js")));
+  ok("T8/T9: the capture boots the war's own ground (wee-t2b: map.MAP_SEED)", /makeField\(181, 2\.0, map\.MAP_SEED\)/.test(src("src/ui/startview.js")) && /buildDepotTerrain\(field, map\.MAP_SEED\)/.test(src("src/ui/startview.js")));
   ok("T8/T9: the trees are the war's own plan", /planTrees\(\)/.test(src("src/ui/startview.js")));
   ok("T8/T9: the war renderer draws the frame and is dropped", /makeRenderer\(cv, world/.test(src("src/ui/startview.js")) && /R\.dispose\(\)/.test(src("src/ui/startview.js")));
   ok("T8: the column sits on its own glass", /rgba\(10,13,18,0\.78\)/.test(ss));

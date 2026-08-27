@@ -6,7 +6,7 @@
 // cell order is Bresenham, the advance is a projection of the squad anchor
 // onto the line, and every rejection is a deterministic test. Zero
 // behavior change.
-import { invW, ORIENT, SPAWN_POINTS, checkConnectivity } from "./mapgen.js";
+import { checkConnectivity } from "./mapgen.js";
 import {
   validatePlacement, spawnWallCourses, spawnSandbag, wallOrientAt, sandbagOrientAt, memberNearRow,
   WALL_HALF, WALL_THIN, SANDBAG_HX, SANDBAG_HY, SANDBAG_HZ, WALL_FIELD_COST, SANDBAG_FIELD_COST, WALL_LAY_PAUSE_S,
@@ -95,7 +95,7 @@ export function startBuildLine(grid, sq, kind, a, b, toast, team = 1) {
 // two-point order proposes; nothing walks until the owner of the tap
 // accepts. Ghost pieces skip exactly the cells laying would skip
 // (scrap aside — that is walk-time), so the preview never lies.
-export function linePieces(grid, field, T, kind, a, b) {
+export function linePieces(grid, field, T, kind, a, b, map) {
   if (kind === "patrol") return [];
   const isDevice = kind === "mines" || kind === "wires"; // P7 T10
   const orient = Math.abs(b.x - a.x) >= Math.abs(b.z - a.z) ? 0 : 1;
@@ -105,7 +105,7 @@ export function linePieces(grid, field, T, kind, a, b) {
   for (const c of lineCells(grid, a, b)) {
     if (!grid.inBounds(c.gx, c.gz)) continue;
     const cell = grid.cells[grid.idx(c.gx, c.gz)];
-    const wp = grid.gridToWorld(c.gx, c.gz), c0 = invW(wp.x, wp.z);
+    const wp = grid.gridToWorld(c.gx, c.gz), c0 = map.invW(wp.x, wp.z);
     // P7 T10: a device is a watched point, never a body — no cell
     // claim, no validatePlacement (no held-ground gate); the ghost
     // must skip exactly what layPieceAt's device branch skips: water/
@@ -120,7 +120,7 @@ export function linePieces(grid, field, T, kind, a, b) {
 // spawners and the REAL gate (validatePlacement, the same four checks the
 // build menu makes) — a cell that is occupied, iced or unheld is skipped,
 // never double-filled; running out of scrap stops the line for good.
-export function layPieceAt(world, grid, field, T, S, job, row, ctx) {
+export function layPieceAt(world, grid, field, T, S, job, row, ctx, map) {
   const team = job.team || 1;
   // P7 T10: THE TRIGGER IS THE PROTECTION — a mine/wire is a watched
   // point, never a physics body: no cell claim, no validatePlacement
@@ -140,7 +140,7 @@ export function layPieceAt(world, grid, field, T, S, job, row, ctx) {
   }
   if (!grid.inBounds(row.gx, row.gz)) return "skip";
   const cell = grid.cells[grid.idx(row.gx, row.gz)];
-  const c0 = invW(row.x, row.z);
+  const c0 = map.invW(row.x, row.z);
   const fp = S._market ? fieldPrices(S._market.counts, WALL_FIELD_COST, SANDBAG_FIELD_COST) : { wall: WALL_FIELD_COST, bag: SANDBAG_FIELD_COST };
   const cost = job.kind === "walls" ? fp.wall : fp.bag;
   const v = validatePlacement({
@@ -153,7 +153,7 @@ export function layPieceAt(world, grid, field, T, S, job, row, ctx) {
   // degenerate order only — they must never override the line's angle, or
   // a run laid beside an older line would turn to match the wrong thing.
   const orient = job.orient != null ? job.orient
-    : job.kind === "walls" ? wallOrientAt(world, row.x, row.z, ORIENT % 2)
+    : job.kind === "walls" ? wallOrientAt(world, row.x, row.z, map.ORIENT % 2)
       : sandbagOrientAt(world, row.x, row.z, S.sandbagOrient || 0);
   // Never lay a piece around a living man. A static body spawned over a
   // dynamic one gets him depenetration-ejected, and the impact classifier
@@ -171,7 +171,7 @@ export function layPieceAt(world, grid, field, T, S, job, row, ctx) {
     // A wall claims the cell, so it owes the same road the build menu
     // owes: a line that seals the map off is refused cell by cell.
     cell.blocked = true;
-    if (!checkConnectivity(grid, SPAWN_POINTS, ctx.objG.gx, ctx.objG.gz)) { cell.blocked = false; return "skip"; }
+    if (!checkConnectivity(grid, map.SPAWN_POINTS, ctx.objG.gx, ctx.objG.gz)) { cell.blocked = false; return "skip"; }
     const b = spawnWallCourses(world, row.x, field.heightAt(row.x, row.z), row.z, orient, team)[0];
     cell.wallId = b.id;
     cell.bTeam = team;
@@ -183,7 +183,7 @@ export function layPieceAt(world, grid, field, T, S, job, row, ctx) {
   return "laid";
 }
 // The driver, once per sim tick per squad carrying a job.
-export function stepBuildLine(world, grid, field, T, S, sq, ctx, toast) {
+export function stepBuildLine(world, grid, field, T, S, sq, ctx, toast, map) {
   const job = sq._build;
   if (!job) return;
   if (job.phase === "toStart") {
@@ -212,7 +212,7 @@ export function stepBuildLine(world, grid, field, T, S, sq, ctx, toast) {
       // walking (its escape stands) — rows it outruns lay late, when
       // hands pass them, or die unlaid with the job. Skips never charge.
       if (!memberNearRow(world, sq, row, LAY_REACH)) break;
-      const r = layPieceAt(world, grid, field, T, S, job, row, ctx);
+      const r = layPieceAt(world, grid, field, T, S, job, row, ctx, map);
       if (r === "dry") { job.dry = true; toast("NO SCRAP — THE LINE STOPS HERE"); break; }
       job.i++;
       if (r === "laid") {

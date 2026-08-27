@@ -2,10 +2,9 @@
 // out of DepotGame.jsx (the war-engine-extraction plan's step 1 — the
 // mapgen.js / muster.js precedent). The one licensed signature change:
 // functions that read mapgen globals take a `map` parameter of api.js's
-// GameMap shape, built by the caller with mapFromGlobals() after
-// makeMap(seed); the plan's step 2 replaces the source of `map`, never
-// these signatures. Moved code keeps its names and comments; only the
-// task's substitution table's tokens differ.
+// GameMap shape, handed back by makeMap(seed); the plan's step 2 replaces
+// the source of `map`, never these signatures. Moved code keeps its names
+// and comments; only the task's substitution table's tokens differ.
 import { addBody, addWeld, stepWorld, explode } from "../engine/core.js";
 import { TOWER_SPECS, MASON, INFANTRY_ARMS } from "./specs.js";
 import {
@@ -155,7 +154,7 @@ export function stepTowers(world, T, discipline, possessedId, arcs, holdArea, ma
       continue;
     }
     if (spec.tesla && arcs) {
-      if (holdArea && holdArea[tTeam] && teslaWouldCatchFriend(world, b, best)) { b.fireCd = spec.fireRate; continue; }
+      if (holdArea && holdArea[tTeam] && teslaWouldCatchFriend(world, b, best, map)) { b.fireCd = spec.fireRate; continue; }
       b.fireCd = spec.fireRate;
       b.flashT = world.t;
       teslaStrike(world, arcs, b, best);
@@ -668,7 +667,7 @@ export function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipl
   }
   stepTowers(world, T, discipline, S.possess && S.possess.kind === "tower" ? S.possess.id : undefined, S.arcs, S.holdArea, map);
   stepGrenades(world); // mk2.03: the grenade fuses — 2.0s from each release
-  stepTesla(world, S.arcs); // mk2.15: the chains walk, 0.15s a hop
+  stepTesla(world, S.arcs, map); // mk2.15: the chains walk, 0.15s a hop
   // WIND TOGGLE (mk0.95, owner's accuracy-tuning request): off = dead calm
   // for BOTH sides' shots and shells (drift and hold-off zero out through
   // the same world.wind every shooter reads). Deterministic either way —

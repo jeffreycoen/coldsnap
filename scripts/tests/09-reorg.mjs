@@ -11,7 +11,7 @@ import { makeSight, seenAt, stepSight } from "../../src/depot/sight.js";
 import { minesToDraw } from "../../src/render/renderer.js";
 import { serializeFront, parseFront, restoreBodies, restoreWelds, restoreSquads } from "../../src/depot/save.js";
 import { stepMines, minePrices, mineSeedRoll, mineSeedPlace, FLARE_S, MINE_COST, WIRE_COST } from "../../src/depot/mines.js";
-import { makeMap, TOWN, OBJ_POS, buildDepotTerrain, makeGrid, MAP_SEED, RIM_HALF_U, RIM_HALF_V, fwdDir, invW, streamAt, pondAt } from "../../src/depot/mapgen.js";
+import { makeMap, TOWN, OBJ_POS, buildDepotTerrain, makeGrid, MAP_SEED, RIM_HALF_U, RIM_HALF_V, fwdDir, invW, streamAt, pondAt, ORIENT, SPAWN_POINTS } from "../../src/depot/mapgen.js";
 import { musterFreshStart, parkArmor, seedBags } from "../../src/depot/muster.js";
 import { startBuildLine, stepBuildLine } from "../../src/depot/buildlines.js";
 import { ringBell } from "../../src/depot/bell.js";
@@ -49,10 +49,10 @@ import fs from "node:fs";
   let muSrc19 = "";
   try { muSrc19 = fs.readFileSync(new URL("../../src/depot/muster.js", import.meta.url), "utf8"); } catch (e) {}
   const dgSrc19 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  ok("T19(a): muster.js owns the boot block (re-taught P7.1 T6: musterFreshStart re-signed for THE BARE OPENING)",
-    /export function parkArmor\(world, grid, field, depotT, team, kind, nextSeq\)/.test(muSrc19) &&
-    /export function seedBags\(world, grid, depotT, streamKey, stampBag\)/.test(muSrc19) &&
-    /export function musterFreshStart\(world, S, depotP, grid, field, nextApcSeq\)/.test(muSrc19) &&
+  ok("T19(a): muster.js owns the boot block (re-taught P7.1 T6: musterFreshStart re-signed for THE BARE OPENING; wee-t2b: + map)",
+    /export function parkArmor\(world, grid, field, depotT, team, kind, nextSeq, map\)/.test(muSrc19) &&
+    /export function seedBags\(world, grid, depotT, streamKey, stampBag, map\)/.test(muSrc19) &&
+    /export function musterFreshStart\(world, S, depotP, grid, field, nextApcSeq, map\)/.test(muSrc19) &&
     /export function armorSpread\(field, bx, bz, spec\)/.test(muSrc19));
   ok("T19(a2): DepotGame no longer defines what it now imports",
     !/const parkArmor = /.test(dgSrc19) && !/const seedBags = /.test(dgSrc19) &&
@@ -64,14 +64,14 @@ import fs from "node:fs";
   // seven, then its seven, its five picked and applied (15 draws: commander
   // 1 + 7 + 7), on seed 91.
   {
-    makeMap(91);
+    const map19 = makeMap(91);
     const flatF19 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
     const w = makeWorld({ field: flatF19, seed: 91 });
     let draws = 0; const raw = w.rng;
     w.rng = () => { draws++; return raw(); };
     const S19 = { reg: { heads: 60 }, squads: [], nextSquadId: 1, cmdr: null };
     const G19 = makeGrid(flatF19);
-    musterFreshStart(w, S19, TOWN.find((t) => t.depot && t.team !== 2), G19, flatF19, () => 1);
+    musterFreshStart(w, S19, TOWN.find((t) => t.depot && t.team !== 2), G19, flatF19, () => 1, map19);
     ok("T19(b): the fresh start draws exactly 15 (commander 1 + seven + seven) (re-taught P7.2 T8: 9 -> 15)", draws === 15, draws);
     ok("T19(b2): nothing player-side musters (re-taught P7.1 T6: two player squads -> zero — the player picks by hand now)",
       S19.squads.length === 0 && !w.bodies.some((b) => b.team === 1 && b.alive));
@@ -92,21 +92,22 @@ import fs from "node:fs";
   let blSrc20 = "";
   try { blSrc20 = fs.readFileSync(new URL("../../src/depot/buildlines.js", import.meta.url), "utf8"); } catch (e) {}
   const dgSrc20 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  ok("T20(a): buildlines.js owns the machinery (re-taught P7.1 T7)",
-    /export function stepBuildLine\(world, grid, field, T, S, sq, ctx, toast\)/.test(blSrc20) &&
-    /export function layPieceAt\(world, grid, field, T, S, job, row, ctx\)/.test(blSrc20) &&
+  ok("T20(a): buildlines.js owns the machinery (re-taught P7.1 T7; wee-t2b: + map)",
+    /export function stepBuildLine\(world, grid, field, T, S, sq, ctx, toast, map\)/.test(blSrc20) &&
+    /export function layPieceAt\(world, grid, field, T, S, job, row, ctx, map\)/.test(blSrc20) &&
     /export function startBuildLine\(grid, sq, kind, a, b, toast, team = 1\)/.test(blSrc20) &&
-    /export function linePieces\(grid, field, T, kind, a, b\)/.test(blSrc20) &&
+    /export function linePieces\(grid, field, T, kind, a, b, map\)/.test(blSrc20) &&
     /export function lineCells\(grid, a, b\)/.test(blSrc20) && /export function pieceHalf\(kind, orient\)/.test(blSrc20));
   ok("T20(a2): DepotGame no longer defines what it now imports",
     !/const layPieceAt = /.test(dgSrc20) && !/const lineCells = /.test(dgSrc20) &&
     !/const startBuildLine = /.test(dgSrc20) && /from "\.\/buildlines\.js"/.test(dgSrc20));
-  ok("T20(a3): the mount wires the driver through the context",
+  ok("T20(a3): the mount wires the driver through the context (wee-t2b: + map)",
     /const layCtx = \{ stampBag, recomputeFlow, objG, setMines: \(m\) => R\.setMines\(m\) \};/.test(dgSrc20) &&
-    /S\.stepBuildLine = \(sq\) => stepBuildLine\(world, grid, field, T, S, sq, layCtx, toast\);/.test(dgSrc20));
+    /S\.stepBuildLine = \(sq\) => stepBuildLine\(world, grid, field, T, S, sq, layCtx, toast, map\);/.test(dgSrc20));
   // (b) the machinery, called for real — a wall line on a synthetic world
   // lays through the imported driver end to end.
   {
+    const map19 = { invW, ORIENT, SPAWN_POINTS }; // wee-t2b: bags only — ORIENT/SPAWN_POINTS unread on this path
     const flatF20 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
     const w = makeWorld({ field: flatF20, seed: 41 });
     // identity-mapped mini grid, cs 2 — the T16/T17 mkGrid shape, local name
@@ -138,7 +139,7 @@ import fs from "node:fs";
     startBuildLine(G, sq, "bags", { x: -5, z: 1 }, { x: 5, z: 1 }, () => {});
     ok("T20(b): the order arms — rows planned, phase toStart", !!sq._build && sq._build.rows.length >= 5 && sq._build.phase === "toStart");
     sq.order = "defend"; sq.dest = null;                        // simulate the arrival handoff
-    stepBuildLine(w, G, flatF20, T20, S20, sq, ctx20, () => {}); // flips to laying
+    stepBuildLine(w, G, flatF20, T20, S20, sq, ctx20, () => {}, map19); // flips to laying
     // T20 deviation (Step 1, licensed fit 2 — arrival flow): the literal
     // "hands present at the far end" step deadlocks the real driver — once
     // arrived, layPieceAt's while loop drains job.rows in ONE call, in
@@ -154,7 +155,7 @@ import fs from "node:fs";
     mem20[1].pos.x = 2.5; mem20[1].pos.z = 2;
     sq.anchor = { x: 5, z: 1 };                                  // anchor at the far end
     sq.order = "defend";                                         // arrived
-    for (let i = 0; i < 80; i++) { sq._pauseT = 0; stepBuildLine(w, G, flatF20, T20, S20, sq, ctx20, () => {}); if (!sq._build) break; }
+    for (let i = 0; i < 80; i++) { sq._pauseT = 0; stepBuildLine(w, G, flatF20, T20, S20, sq, ctx20, () => {}, map19); if (!sq._build) break; }
     let bags = 0;
     for (const b of w.bodies) if (b.sandbag && b.alive) bags++;
     ok("T20(b2): the line laid real bags through the real driver", bags >= 3, bags);
@@ -170,19 +171,19 @@ import fs from "node:fs";
 {
   const beSrc21 = (() => { try { return fs.readFileSync(new URL("../../src/depot/bell.js", import.meta.url), "utf8"); } catch (e) { return ""; } })();
   const dgSrc21 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  ok("T21(a): bell.js owns the ring",
-    /export function ringBell\(world, grid, field, T, S, ctx\)/.test(beSrc21) &&
+  ok("T21(a): bell.js owns the ring (wee-t2b: + map)",
+    /export function ringBell\(world, grid, field, T, S, ctx, map\)/.test(beSrc21) &&
     /ctx\.saveFront\(\);/.test(beSrc21) && /payTown\(ctx\.townUV, T\)/.test(beSrc21));
-  ok("T21(a2): DepotGame keeps only the wrapper and the cards",
+  ok("T21(a2): DepotGame keeps only the wrapper and the cards (wee-t2b: + map)",
     !/const ringBell = \(\) => \{/.test(dgSrc21) &&
-    /const ringBell = \(\) => ringBellOut\(world, grid, field, T, S, bellCtx\);/.test(dgSrc21) &&
+    /const ringBell = \(\) => ringBellOut\(world, grid, field, T, S, bellCtx, map\);/.test(dgSrc21) &&
     /S\.pickManifest = /.test(dgSrc21));
   // (b) two bells rung through the real ring — structure, not feel
   // re-pinned mk1.72 (P7.1 T8): THE SEED PURGE — the old special-cased seed
   // leaves the suite; the map seed moves to 1001 (its floors/properties
   // asserts hold).
   {
-    makeMap(1001);
+    const map21 = makeMap(1001);
     const flatF21 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
     const w = makeWorld({ field: flatF21, seed: 51 });
     let draws = 0; const raw = w.rng; w.rng = () => { draws++; return raw(); };
@@ -210,8 +211,8 @@ import fs from "node:fs";
     let saves = 0;
     const ctx21 = { cue: () => {}, toast: () => {}, townUV: [], buildSnapshot: () => ({ }), nextApcSeq: () => 99, saveFront: () => { saves++; } };
     const d0 = draws;
-    ringBell(w, null, flatF21, T21, S21, ctx21);
-    ringBell(w, null, flatF21, T21, S21, ctx21);
+    ringBell(w, null, flatF21, T21, S21, ctx21, map21);
+    ringBell(w, null, flatF21, T21, S21, ctx21, map21);
     ok("T21(b): two rings, two saves, no throw", saves === 2);
     ok("T21(b2): the unconditional pairs drew — at least 16 draws across two bells (4 planWave + 2 ferry + 2 sapper each, intel on top)", draws - d0 >= 16, draws - d0);
     ok("T21(b3): the muster filled the queue", S21.ws.spawnQueue > 0 || S21.ws.mixBag.length > 0);
@@ -335,7 +336,7 @@ import fs from "node:fs";
 
     // retargeted mk1.51, P7 T21: ringBell moved to bell.js.
     const dsrc10 = fs.readFileSync(new URL("../../src/depot/bell.js", import.meta.url), "utf8");
-    const ringBellBody10 = (dsrc10.match(/export function ringBell\(world, grid, field, T, S, ctx\) \{[\s\S]*?\n\}/) || [""])[0];
+    const ringBellBody10 = (dsrc10.match(/export function ringBell\(world, grid, field, T, S, ctx, map\) \{[\s\S]*?\n\}/) || [""])[0];
     ok("T10(d10): ringBell extracts (source pin base)", ringBellBody10.length > 0);
     ok("T10(d11): TWO unconditional draws every bell (mineRoll, minePlaceRoll — the law)",
       /const mineRoll = world\.rng\(\), minePlaceRoll = world\.rng\(\);/.test(ringBellBody10));
@@ -709,7 +710,7 @@ import fs from "node:fs";
     let worstGap = 1e9, nullRoutes = 0;
     for (let s = 0; s < 40; s++) {
       const seed = 7000 + s;
-      makeMap(seed);
+      const map = makeMap(seed);
       const field = makeField(181, 2.0, MAP_SEED);
       buildDepotTerrain(field, MAP_SEED);
       const grid = makeGrid(field);
@@ -736,14 +737,14 @@ import fs from "node:fs";
         }
       }
       const depotP = TOWN.find((t) => t.depot && t.team !== 2), depotE = TOWN.find((t) => t.depot && t.team === 2);
-      seedBags(world, grid, depotP, 0x5ba6, stampBag);
-      seedBags(world, grid, depotE, 0x5ba7, stampBag);
+      seedBags(world, grid, depotP, 0x5ba6, stampBag, map);
+      seedBags(world, grid, depotE, 0x5ba7, stampBag, map);
       let apcSeqN = 0;
       const nextApcSeq = () => ++apcSeqN;
-      parkArmor(world, grid, field, depotP, 1, "bison", nextApcSeq);
-      parkArmor(world, grid, field, depotP, 1, "apc", nextApcSeq);
-      parkArmor(world, grid, field, depotE, 2, "bison", nextApcSeq);
-      parkArmor(world, grid, field, depotE, 2, "apc", nextApcSeq);
+      parkArmor(world, grid, field, depotP, 1, "bison", nextApcSeq, map);
+      parkArmor(world, grid, field, depotP, 1, "apc", nextApcSeq, map);
+      parkArmor(world, grid, field, depotE, 2, "bison", nextApcSeq, map);
+      parkArmor(world, grid, field, depotE, 2, "apc", nextApcSeq, map);
       const bags = world.bodies.filter((b) => b.kind === "chunk" && b.sandbag && b.alive);
       for (const hull of world.bodies) {
         if (hull.kind !== "vehicle" || hull.team !== 1 || !hull.alive) continue;

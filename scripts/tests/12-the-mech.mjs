@@ -27,6 +27,10 @@ import { DRIVERS, stepDrivers, mechSighted } from "../../src/depot/drivers.js";
 import fs from "node:fs";
 
 const idUV = (x, z) => ({ u: x, v: z });
+// wee-t2b: no real GameMap built in this suite — parkMech's fail-proof
+// sweep reads GRID_W/GRID_H/OBJ_POS only if the ring scan fails; this
+// mirrors mkGrid's own 40x40 span so the sweep (if ever reached) covers it.
+const map12 = { GRID_W: 40, GRID_H: 40, OBJ_POS: { x: 1e9, z: 1e9 } };
 const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
 // the era-07 mini-grid: 40x40 cells of 2m centered on the origin.
 const mkGrid = (blocked = []) => {
@@ -285,7 +289,7 @@ const run = (w, grid, n, opts) => { for (let i = 0; i < n; i++) { stepDrivers(w,
   const w = makeWorld({ field, seed: 157 });
   const grid = mkGrid();
   const depotT = { x: 0, z: 0 };
-  const hull = parkMech(w, grid, field, depotT, 2);
+  const hull = parkMech(w, grid, field, depotT, 2, map12);
   ok("M23: parkMech stands a team-2 mech inside 36m of the depot with drv/order/tracks/bounty set",
     !!hull && hull.team === 2 && hull.drv === "mech" && hull.order === "defend" && hull.tracks === "careful" && hull.bounty === MECH.bounty &&
     Math.hypot(hull.pos.x - depotT.x, hull.pos.z - depotT.z) <= 36,
@@ -296,14 +300,14 @@ const run = (w, grid, n, opts) => { for (let i = 0; i < n; i++) { stepDrivers(w,
   const w = makeWorld({ field, seed: 158 });
   const grid = mkGrid();
   const depotE = { x: 0, z: 0 };
-  mirrorFieldKey(w, {}, depotE, grid, field, "hero_mech", () => 1);
+  mirrorFieldKey(w, {}, depotE, grid, field, "hero_mech", () => 1, map12);
   ok("M24: mirrorFieldKey(\"hero_mech\") fields it", w.mechs && w.mechs.length === 1 && w.mechs[0].team === 2, w.mechs ? w.mechs.length : 0);
 }
 {
   const src = fs.readFileSync("src/depot/bell.js", "utf8");
-  ok("M25: the bell's replacement walk re-parks a dead team-2 mech (source-pinned, the hero-tier block)",
+  ok("M25: the bell's replacement walk re-parks a dead team-2 mech (source-pinned, the hero-tier block; wee-t2b: + map)",
     /open\("hero_mech"\) && S\.reg\.scrap >= heroPrice\("hero_mech"\)/.test(src) &&
-    /parkMech\(world, grid, field, depotE4, 2\)/.test(src) &&
+    /parkMech\(world, grid, field, depotE4, 2, map\)/.test(src) &&
     /k === "hero_mech" \? MECH\.cost/.test(src));
 }
 {

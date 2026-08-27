@@ -16,11 +16,12 @@ import { engBuildDecide, engBuildKind, engSeedPlace } from "../../src/depot/ai.j
 import { marketCounts } from "../../src/depot/market.js";
 import { CARDS, cardFor } from "../../src/depot/infocards.js";
 import { musterFreshStart, parkTower, PICK_POOL, draftDeal } from "../../src/depot/muster.js";
-import { makeMap, TOWN } from "../../src/depot/mapgen.js";
+import { makeMap, TOWN, invW, ORIENT, SPAWN_POINTS } from "../../src/depot/mapgen.js";
 import { buildBison, buildApc, buildTowerMesh } from "../../src/render/renderer.js";
 import { buildPortraitMan, buildPortraitModel } from "../../src/render/portrait.js";
 import fs from "node:fs";
 
+const map = { invW, ORIENT, SPAWN_POINTS }; // wee-t2b: no real map built here — the shim's own pre-boot values
 const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
 // the era-07 mkGrid idiom, cs 2, no blocks — copied verbatim from
 // 07-armor-demolition.mjs:90-101, lifted to module scope (P7.1 T6) so both
@@ -162,13 +163,13 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "tesla"]) {
     const T = makeTerritory(90, 90); T.v.fill(1);
     startBuildLine(G, sq, row.kind, { x: -5, z: 1 }, { x: 5, z: 1 }, () => {});
     sq.order = "defend"; sq.dest = null;                        // simulate the arrival handoff
-    stepBuildLine(w, G, flatF20, T, S, sq, ctx, () => {});       // flips to laying
+    stepBuildLine(w, G, flatF20, T, S, sq, ctx, () => {}, map);       // flips to laying
     const mem = sq.memberIds.map((id) => w.byId.get(id));
     mem[0].pos.x = -2.5; mem[0].pos.z = 2;
     mem[1].pos.x = 2.5; mem[1].pos.z = 2;
     sq.anchor = { x: 5, z: 1 };                                  // anchor at the far end
     sq.order = "defend";                                         // arrived
-    for (let i = 0; i < 80; i++) { sq._pauseT = 0; stepBuildLine(w, G, flatF20, T, S, sq, ctx, () => {}); if (!sq._build) break; }
+    for (let i = 0; i < 80; i++) { sq._pauseT = 0; stepBuildLine(w, G, flatF20, T, S, sq, ctx, () => {}, map); if (!sq._build) break; }
     const n = row.count(w, S);
     ok(`audit(h) ${row.kind.toUpperCase()} lay through the real driver`, n >= row.min, `${n}`);
     ok(`audit(h) ${row.kind.toUpperCase()}: resources charged`, S.resources < 500, S.resources);
@@ -263,14 +264,14 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "tesla"]) {
 
 // ---- P7.1 T6 v2: THE BARE OPENING
 {
-  makeMap(92);
+  const map6 = makeMap(92);
   const flatF6 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
   const w = makeWorld({ field: flatF6, seed: 92 });
   let draws = 0; const raw = w.rng;
   w.rng = () => { draws++; return raw(); };
   const S6 = { reg: { heads: 60 }, squads: [], nextSquadId: 1, cmdr: null };
   const G6 = mkGridA(); // the era-07 mini-grid helper already local to this file
-  musterFreshStart(w, S6, TOWN.find((t) => t.depot && t.team !== 2), G6, flatF6, () => 1);
+  musterFreshStart(w, S6, TOWN.find((t) => t.depot && t.team !== 2), G6, flatF6, () => 1, map6);
   ok("T6v2: the fresh start draws exactly 15 (commander 1 + seven + seven) (re-taught P7.2 T8: 9 -> 15)", draws === 15, draws);
   ok("T6v2: nothing player-side fields at boot", S6.squads.length === 0 && !w.bodies.some((b) => b.team === 1 && b.alive));
   ok("T6v2: the pool is nineteen, unique keys", PICK_POOL.length === 19 && new Set(PICK_POOL.map((p) => p.key)).size === 19);
@@ -305,7 +306,7 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "tesla"]) {
   ok("T6v2 wiring: acquisition hunts the foe team", /e\.team !== foeTeam/.test(src));
   ok("T6v2 wiring: sight gates on the tower's own side", /fieldReaches\(T, c\.u, c\.v, tTeam\)/.test(src));
   ok("T6v2 wiring: careful stays team-1 machinery", /tTeam === 1 && disc !== "free"/.test(src));
-  ok("T6v2 wiring: parkTower stands in muster.js", /export function parkTower\(world, grid, field, depotT, team, towerType\)/.test(fs.readFileSync("src/depot/muster.js", "utf8")));
+  ok("T6v2 wiring: parkTower stands in muster.js", /export function parkTower\(world, grid, field, depotT, team, towerType, map\)/.test(fs.readFileSync("src/depot/muster.js", "utf8")));
 }
 // ---- P7.1 T7: HIS SHOVELS DIG
 {
@@ -320,11 +321,11 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "tesla"]) {
   const ctx7 = { stampBag: (b, s) => { b.bagSide = s; }, recomputeFlow: () => {}, objG: { gx: 10, gz: 19 }, setMines: () => {} };
   startBuildLine(G7, sq, "bags", { x: -5, z: 1 }, { x: 5, z: 1 }, () => {}, 2);
   sq.order = "defend"; sq.dest = null;
-  stepBuildLine(w, G7, flatF, T7, SE, sq, ctx7, () => {});
+  stepBuildLine(w, G7, flatF, T7, SE, sq, ctx7, () => {}, map);
   const m7 = sq.memberIds.map((id) => w.byId.get(id));
   m7[0].pos.x = -2.5; m7[0].pos.z = 2; m7[1].pos.x = 2.5; m7[1].pos.z = 2;
   sq.anchor = { x: 5, z: 1 }; sq.order = "defend";
-  for (let i = 0; i < 80; i++) { sq._pauseT = 0; stepBuildLine(w, G7, flatF, T7, SE, sq, ctx7, () => {}); if (!sq._build) break; }
+  for (let i = 0; i < 80; i++) { sq._pauseT = 0; stepBuildLine(w, G7, flatF, T7, SE, sq, ctx7, () => {}, map); if (!sq._build) break; }
   const bags7 = w.bodies.filter((b) => b.sandbag && b.alive);
   ok("T7: his line laid real bags on his own ground", bags7.length >= 3 && bags7.every((b) => b.bagSide === 2), bags7.length);
   ok("T7: his books were charged", SE.resources < 300, SE.resources);

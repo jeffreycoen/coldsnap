@@ -11,7 +11,6 @@
 // ferry's unconditional 2, the sapper's unconditional 2, and intel's
 // variable draws on top — their order and count per bell are byte-fixed.
 // Zero behavior change.
-import { TOWN, PASSES, OBJ_POS, invW, fwdU } from "./mapgen.js";
 import { payTown } from "./economy.js";
 import { fireBell, WALL_FIELD_COST, SANDBAG_FIELD_COST } from "./state.js";
 import { homeShare, pickHomeDetail, HOME_GUARD_CAP, cmdrBellOrders, ferryDecide, flankDrop, engBuildDecide, engBuildKind, engSeedPlace } from "./ai.js";
@@ -23,7 +22,7 @@ import { MASON, BISON, APC, MECH } from "./specs.js";
 import { startBuildLine } from "./buildlines.js";
 import { fieldPrices } from "./market.js";
 
-export function ringBell(world, grid, field, T, S, ctx) {
+export function ringBell(world, grid, field, T, S, ctx, map) {
   // POSSESSION T5 (mk0.94), REVERSING the mk0.90 rule by the owner's
   // playtest ruling: the bell does NOT release possession — the round
   // changes under your hands. The save it writes still never carries
@@ -49,8 +48,8 @@ export function ringBell(world, grid, field, T, S, ctx) {
   // depot, the dealt-hand mirror's own machinery, draw-free. Bare fixtures
   // with no grid skip the fielding (the books were charged; state-layer only).
   if (S.foe && S.foe.hired && S.foe.hired.length) {
-    const depotH = TOWN.find((tt) => tt.depot && tt.team === 2);
-    if (grid && field && depotH) for (const k of S.foe.hired) mirrorFieldKey(world, S, depotH, grid, field, k, ctx.nextApcSeq);
+    const depotH = map.TOWN.find((tt) => tt.depot && tt.team === 2);
+    if (grid && field && depotH) for (const k of S.foe.hired) mirrorFieldKey(world, S, depotH, grid, field, k, ctx.nextApcSeq, map);
     S.foe.hired = [];
   }
   // P7 T6 (owner): THE DEFENSIVE OPENING — part of an early muster
@@ -66,7 +65,7 @@ export function ringBell(world, grid, field, T, S, ctx) {
       const want = Math.min(Math.round(S.ws.spawnQueue * share), Math.max(0, HOME_GUARD_CAP - liveG));
       const detail = want > 0 ? pickHomeDetail(S.ws.mixBag, want) : [];
       S.ws.spawnQueue -= detail.length;
-      const depotE3 = TOWN.find((tt) => tt.depot && tt.team === 2);
+      const depotE3 = map.TOWN.find((tt) => tt.depot && tt.team === 2);
       if (depotE3) {
         const gR3 = Math.hypot(depotE3.nx, depotE3.nz) * MASON.pitch / 2 + 3.5;
         detail.forEach((tag, i) => {
@@ -91,7 +90,7 @@ export function ringBell(world, grid, field, T, S, ctx) {
       const order = cmdrBellOrders(S.cmdr, { bell: S.bell, fielded: S.ws.fielded > 0, heldRatio, atFront, committed: !!eb.committed });
       if (order === "forward") {
         eb.committed = 1;
-        eb.order = "move"; eb.dest = { x: OBJ_POS.x, z: OBJ_POS.z }; eb._route = null; eb._routeDest = null;
+        eb.order = "move"; eb.dest = { x: map.OBJ_POS.x, z: map.OBJ_POS.z }; eb._route = null; eb._routeDest = null;
       } else if (atFront || eb.order !== "defend") {
         eb.order = "move"; eb.dest = { x: eb.homeX != null ? eb.homeX : eb.pos.x, z: eb.homeZ != null ? eb.homeZ : eb.pos.z }; eb._route = null; eb._routeDest = null;
       }
@@ -107,9 +106,9 @@ export function ringBell(world, grid, field, T, S, ctx) {
     const eligible = !!(ea && !ea.ferry && seated === 0 && S.ws.mixBag.length >= 4);
     if (ferryDecide(ferryRoll, eligible)) {
       const cands = [];
-      for (const band of PASSES) for (const g of band) { const c = invW(g.x, g.z); if (c.v > 0 && c.v < 40) cands.push({ x: g.x, z: g.z, u: c.u }); }
-      const depotP2 = TOWN.find((tt) => tt.depot && tt.team !== 2);
-      const depotRef = depotP2 ? { x: depotP2.x, z: depotP2.z, u: invW(depotP2.x, depotP2.z).u } : null;
+      for (const band of map.PASSES) for (const g of band) { const c = map.invW(g.x, g.z); if (c.v > 0 && c.v < 40) cands.push({ x: g.x, z: g.z, u: c.u }); }
+      const depotP2 = map.TOWN.find((tt) => tt.depot && tt.team !== 2);
+      const depotRef = depotP2 ? { x: depotP2.x, z: depotP2.z, u: map.invW(depotP2.x, depotP2.z).u } : null;
       const drop = flankDrop(cands, dropRoll, depotRef);
       if (drop) {
         const four = [];
@@ -132,13 +131,13 @@ export function ringBell(world, grid, field, T, S, ctx) {
     const heroPrice = (k) => (S._market ? S._market.foe[k] : (k === "hero_bison" ? BISON.cost : k === "hero_mech" ? MECH.cost : APC.cost));
     const has = (vt) => world.bodies.some((b) => b.kind === "vehicle" && b.team === 2 && b.vtype === vt && b.alive);
     const open = (tag) => S.foe.unlocked.indexOf(tag) >= 0; // P7.2 T4 (owner): a bought hero plan re-parks at ANY bell — the clamp is dead
-    const depotE4 = TOWN.find((tt) => tt.depot && tt.team === 2);
+    const depotE4 = map.TOWN.find((tt) => tt.depot && tt.team === 2);
     if (depotE4 && !has("bison") && open("hero_bison") && S.reg.scrap >= heroPrice("hero_bison")) {
-      S.reg.scrap -= heroPrice("hero_bison"); parkArmor(world, grid, field, depotE4, 2, "bison", ctx.nextApcSeq);
+      S.reg.scrap -= heroPrice("hero_bison"); parkArmor(world, grid, field, depotE4, 2, "bison", ctx.nextApcSeq, map);
     } else if (depotE4 && !has("apc") && open("hero_apc") && S.reg.scrap >= heroPrice("hero_apc")) {
-      S.reg.scrap -= heroPrice("hero_apc"); parkArmor(world, grid, field, depotE4, 2, "apc", ctx.nextApcSeq);
+      S.reg.scrap -= heroPrice("hero_apc"); parkArmor(world, grid, field, depotE4, 2, "apc", ctx.nextApcSeq, map);
     } else if (depotE4 && !(world.mechs || []).some((m) => m.team === 2 && m.hull.alive) && open("hero_mech") && S.reg.scrap >= heroPrice("hero_mech")) {
-      S.reg.scrap -= heroPrice("hero_mech"); parkMech(world, grid, field, depotE4, 2);
+      S.reg.scrap -= heroPrice("hero_mech"); parkMech(world, grid, field, depotE4, 2, map);
     }
   }
   // P7 T10: THE ENEMY SAPPER BRAIN — two draws every bell (the law);
@@ -153,10 +152,10 @@ export function ringBell(world, grid, field, T, S, ctx) {
     const hasSapper = S.ws.mixBag.indexOf("sapper") >= 0;
     if (mineSeedRoll(mineRoll, hasSapper, S.reg.scrap, price3)) {
       const cands = [];
-      for (const band of PASSES) for (const g of band) { const c = invW(g.x, g.z); if (c.v < 0) cands.push({ x: g.x, z: g.z }); }
+      for (const band of map.PASSES) for (const g of band) { const c = map.invW(g.x, g.z); if (c.v < 0) cands.push({ x: g.x, z: g.z }); }
       for (let iz2 = 0; iz2 < T.nz; iz2 += 4) for (let ix2 = 0; ix2 < T.nx; ix2 += 4) {
         const vv = T.v[iz2 * T.nx + ix2];
-        if (vv > -0.15 && vv < 0.15) { const w2 = fwdU(-T.halfU + (ix2 + 0.5) * T.cs, -T.halfV + (iz2 + 0.5) * T.cs); cands.push({ x: w2.x, z: w2.z }); }
+        if (vv > -0.15 && vv < 0.15) { const w2 = map.fwdU(-T.halfU + (ix2 + 0.5) * T.cs, -T.halfV + (iz2 + 0.5) * T.cs); cands.push({ x: w2.x, z: w2.z }); }
       }
       const picks = mineSeedPlace(cands, minePlaceRoll);
       if (picks.length) {
@@ -176,19 +175,19 @@ export function ringBell(world, grid, field, T, S, ctx) {
     const kind2 = engBuildKind(lineRoll);
     const est = 6 * (kind2 === "walls" ? fp2.wall : fp2.bag);
     if (engBuildDecide(lineRoll, !!eng, S.reg.scrap, est)) {
-      const depotE6 = TOWN.find((tt) => tt.depot && tt.team === 2);
+      const depotE6 = map.TOWN.find((tt) => tt.depot && tt.team === 2);
       const cands = [];
       for (let iz3 = 0; iz3 < T.nz; iz3 += 4) for (let ix3 = 0; ix3 < T.nx; ix3 += 4) {
         if (T.v[iz3 * T.nx + ix3] >= -0.15) continue; // his ground only
-        const w3 = fwdU(-T.halfU + (ix3 + 0.5) * T.cs, -T.halfV + (iz3 + 0.5) * T.cs);
+        const w3 = map.fwdU(-T.halfU + (ix3 + 0.5) * T.cs, -T.halfV + (iz3 + 0.5) * T.cs);
         if (depotE6 && Math.hypot(w3.x - depotE6.x, w3.z - depotE6.z) > 50) continue;
         cands.push({ x: w3.x, z: w3.z });
       }
-      if (!cands.length) for (const band of PASSES) for (const g of band) { const c = invW(g.x, g.z); if (c.v < 0) cands.push({ x: g.x, z: g.z }); }
+      if (!cands.length) for (const band of map.PASSES) for (const g of band) { const c = map.invW(g.x, g.z); if (c.v < 0) cands.push({ x: g.x, z: g.z }); }
       const spot = engSeedPlace(cands, placeRoll);
       if (spot && eng) {
-        const cs2 = invW(spot.x, spot.z);
-        const a2 = fwdU(cs2.u - 6, cs2.v), b3 = fwdU(cs2.u + 6, cs2.v);
+        const cs2 = map.invW(spot.x, spot.z);
+        const a2 = map.fwdU(cs2.u - 6, cs2.v), b3 = map.fwdU(cs2.u + 6, cs2.v);
         startBuildLine(grid, eng, kind2, { x: a2.x, z: a2.z }, { x: b3.x, z: b3.z }, () => {}, 2);
       }
     }

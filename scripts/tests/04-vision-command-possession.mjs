@@ -1141,7 +1141,7 @@ import fs from "node:fs";
     // retargeted mk1.51, P7 T21: ringBell moved to bell.js — the body is
     // read off its new home, and the save call re-teaches to ctx.saveFront().
     const bellSrcT1d = fs.readFileSync(new URL("../../src/depot/bell.js", import.meta.url), "utf8");
-    const ringBellBody = (bellSrcT1d.match(/export function ringBell\(world, grid, field, T, S, ctx\) \{[\s\S]*?\n\}/) || [""])[0];
+    const ringBellBody = (bellSrcT1d.match(/export function ringBell\(world, grid, field, T, S, ctx, map\) \{[\s\S]*?\n\}/) || [""])[0];
     ok("POSSESSION T1(d): ringBell no longer releases possession — the bell keeps your hands on the unit",
       ringBellBody.length > 0 && !ringBellBody.includes("releasePossession"), ringBellBody.slice(0, 80));
     ok("POSSESSION T1(d): the bell still writes the save",
@@ -1297,8 +1297,8 @@ import fs from "node:fs";
     const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     const takeControlBody = (gameSrc.match(/S\.takeControl = \(\) => \{[\s\S]*?\n      \};/) || [""])[0];
     const releaseBody = (gameSrc.match(/S\.releasePossession = \(\) => \{[\s\S]*?\n      \};/) || [""])[0];
-    ok("POSSESSION T4 audit item A source pin (re-pinned from T2): S.takeControl clears fireHeld and seeds a fresh offset reticle",
-      /S\.fireHeld = false;/.test(takeControlBody) && /S\.reticleOff = pc0 \? reclampReticle\(T\.sight, 1, pc0, possessSightR\(\), \{ dx: 0, dz: 4 \}, invW\) : null;/.test(takeControlBody),
+    ok("POSSESSION T4 audit item A source pin (re-pinned from T2): S.takeControl clears fireHeld and seeds a fresh offset reticle (wee-t2b: map.invW)",
+      /S\.fireHeld = false;/.test(takeControlBody) && /S\.reticleOff = pc0 \? reclampReticle\(T\.sight, 1, pc0, possessSightR\(\), \{ dx: 0, dz: 4 \}, map\.invW\) : null;/.test(takeControlBody),
       takeControlBody.length);
     ok("POSSESSION T4 audit item A source pin (re-pinned from T2): S.releasePossession clears reticle/offset/fireHeld",
       /S\.reticle = null; S\.reticleOff = null; S\.fireHeld = false;/.test(releaseBody), releaseBody.length);
@@ -1530,10 +1530,10 @@ import fs from "node:fs";
   // nowhere in DepotGame.jsx — it is fully replaced by the steered reticle.
   {
     const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("POSSESSION T4(f) source pin: the squad volley trigger reads S.reticle",
-      /possessedVolley\(world, psq, S\.reticle, T, invW\)/.test(gameSrc));
+    ok("POSSESSION T4(f) source pin: the squad volley trigger reads S.reticle (wee-t2b: map.invW)",
+      /possessedVolley\(world, psq, S\.reticle, T, map\.invW\)/.test(gameSrc));
     ok("POSSESSION T4(f) source pin: the tower fire trigger reads S.reticle",
-      /possessedTowerFire\(world, ptw, S\.reticle, T, invW, S\.arcs\)/.test(gameSrc)); // mk2.15: trailing S.arcs added for the tesla chain
+      /possessedTowerFire\(world, ptw, S\.reticle, T, map\.invW, S\.arcs, map\)/.test(gameSrc)); // mk2.15: trailing S.arcs added for the tesla chain; wee-t2b: map.invW + trailing map
     ok("POSSESSION T4(f) source pin: possessAim appears nowhere in DepotGame.jsx",
       !/possessAim/.test(gameSrc));
   }
@@ -1545,10 +1545,10 @@ import fs from "node:fs";
     ok("POSSESSION T4(g) source pin: DepotGame.jsx imports steerReticle/reclampReticle from sight.js",
       /import \{[^}]*steerReticle[^}]*reclampReticle[^}]*\} from "\.\/sight\.js"/.test(gameSrc) ||
       /import \{[^}]*reclampReticle[^}]*steerReticle[^}]*\} from "\.\/sight\.js"/.test(gameSrc));
-    ok("POSSESSION T4(g) source pin: the frame loop steers the OFFSET through steerReticle",
-      /S\.reticleOff = steerReticle\(T\.sight, 1, rc, rR, S\.reticleOff, rv\.vx, rv\.vz, dt, invW\);/.test(gameSrc));
-    ok("POSSESSION T4(g) source pin: the walk-carry runs through reclampReticle and derives the world point",
-      /S\.reticleOff = reclampReticle\(T\.sight, 1, rc, rR, S\.reticleOff, invW\);/.test(gameSrc) &&
+    ok("POSSESSION T4(g) source pin: the frame loop steers the OFFSET through steerReticle (wee-t2b: map.invW)",
+      /S\.reticleOff = steerReticle\(T\.sight, 1, rc, rR, S\.reticleOff, rv\.vx, rv\.vz, dt, map\.invW\);/.test(gameSrc));
+    ok("POSSESSION T4(g) source pin: the walk-carry runs through reclampReticle and derives the world point (wee-t2b: map.invW)",
+      /S\.reticleOff = reclampReticle\(T\.sight, 1, rc, rR, S\.reticleOff, map\.invW\);/.test(gameSrc) &&
       /S\.reticle = \{ x: rc\.x \+ S\.reticleOff\.dx, z: rc\.z \+ S\.reticleOff\.dz \};/.test(gameSrc));
   }
 }
@@ -2072,8 +2072,8 @@ import fs from "node:fs";
     const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     ok("RETICLE mk1.99(g) source pin: a possessed ground tap jumps the reticle through the sight-circle clamp and the seen test",
       /if \(seenAt\(T\.sight, cc0\.u, cc0\.v, 1\)\) \{\s*S\.reticleOff = \{ dx: dx0, dz: dz0 \};/.test(gameSrc));
-    ok("RETICLE mk1.99(g) source pin: the frame loop derives the aim through stickyLock",
-      /const lk9 = stickyLock\(world, S\.reticleLockId, S\.reticle, T, invW\);/.test(gameSrc));
+    ok("RETICLE mk1.99(g) source pin: the frame loop derives the aim through stickyLock (wee-t2b: map.invW)",
+      /const lk9 = stickyLock\(world, S\.reticleLockId, S\.reticle, T, map\.invW\);/.test(gameSrc));
     ok("RETICLE mk1.99(g) source pin: the ring radius reads the live scatterSigma under POSSESS_ACC",
       /scatterSigma\(world, muzzle9, aim9, \{ \.\.\.spec9, acc: spec9\.acc \* POSSESS_ACC \}\)/.test(gameSrc));
   }
@@ -2209,13 +2209,13 @@ import fs from "node:fs";
     const stateSrc = fs.readFileSync(new URL("../../src/depot/state.js", import.meta.url), "utf8");
     const driversSrc = fs.readFileSync(new URL("../../src/depot/drivers.js", import.meta.url), "utf8");
     const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-    ok("TRUE RETICLE mk2.01(i) source pin: the frame loop reads the surface under the reticle",
-      /S\.reticle\.y = surfaceAt\(T\.sight, S\.reticle\.x, S\.reticle\.z, invW\)\.y;/.test(gameSrc));
+    ok("TRUE RETICLE mk2.01(i) source pin: the frame loop reads the surface under the reticle (wee-t2b: map.invW)",
+      /S\.reticle\.y = surfaceAt\(T\.sight, S\.reticle\.x, S\.reticle\.z, map\.invW\)\.y;/.test(gameSrc));
     ok("TRUE RETICLE mk2.01(i) source pin: all five possessed fire paths aim at the surface (aim.y)",
       (stateSrc.match(/aim\.y != null \? aim\.y : world\.field\.heightAt\(aim\.x, aim\.z\)/g) || []).length === 3 &&
       (driversSrc.match(/aim\.y != null \? aim\.y : world\.field\.heightAt\(aim\.x, aim\.z\)/g) || []).length === 2);
-    ok("TRUE RETICLE mk2.01(i) source pin: the ring is the predictor's landing bound",
-      /const pr9 = predictRing\(T\.sight, muzzle9, aim9, spec9, sig9, world\.wind, invW\);/.test(gameSrc));
+    ok("TRUE RETICLE mk2.01(i) source pin: the ring is the predictor's landing bound (wee-t2b: map.invW)",
+      /const pr9 = predictRing\(T\.sight, muzzle9, aim9, spec9, sig9, world\.wind, map\.invW\);/.test(gameSrc));
     const block = String(rendSrc.match(/setReticle\(on, x, z, y, r, hit, pts\) \{[\s\S]*?\n    \},/) || "");
     ok("TRUE RETICLE mk2.01(i) source pin: the crosshair bars ride the ring, fog opted out",
       /PlaneGeometry\(0\.12, 0\.85\)/.test(block) && /fog: false/.test(block), block.length);

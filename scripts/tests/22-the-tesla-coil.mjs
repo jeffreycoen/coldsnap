@@ -8,8 +8,9 @@ import { ok } from "./harness.mjs";
 import { makeField, makeWorld, addBody } from "../../src/engine/core.js";
 import { TOWER_SPECS } from "../../src/depot/specs.js";
 import { TESLA, teslaStrike, stepTesla, teslaWouldCatchFriend } from "../../src/depot/state.js";
-import { PONDS } from "../../src/depot/mapgen.js";
+import { PONDS, pondAt, streamAt } from "../../src/depot/mapgen.js";
 
+const map = { pondAt, streamAt }; // wee-t2b: the shim's own live functions, until T10 deletes it
 const spec = TOWER_SPECS.tesla;
 ok("tesla: the spec is a weapon now", spec.fireRate === 5 && spec.dmg === 35 && spec.range === 16 && spec.cost === 55 && !!spec.tesla);
 ok("tesla: the slow is gone", spec.slow === undefined);
@@ -29,14 +30,14 @@ function rig() {
   return { world, tower, man };
 }
 // walk the world clock without the integrator: stepTesla reads world.t only
-const walk = (world, arcs, s) => { for (let i = 0; i < Math.round(s / 0.05); i++) { world.t += 0.05; stepTesla(world, arcs); } };
+const walk = (world, arcs, s) => { for (let i = 0; i < Math.round(s / 0.05); i++) { world.t += 0.05; stepTesla(world, arcs, map); } };
 
 { // the ladder, the stagger, the one-hit rule
   const { world, tower, man } = rig();
   const a = man(6, 0, 2), b = man(8, 0, 2), c = man(10, 0, 2);
   const arcs = [];
   teslaStrike(world, arcs, tower, a);
-  stepTesla(world, arcs);
+  stepTesla(world, arcs, map);
   ok("tesla: the strike lands 35 at once", a.hp === 65);
   ok("tesla: the hop waits its turn", b.hp === 100);
   walk(world, arcs, TESLA.hopS + 0.001);
@@ -105,10 +106,10 @@ const walk = (world, arcs, s) => { for (let i = 0; i < Math.round(s / 0.05); i++
 { // the hold: a friendly in the would-be chain holds the trigger
   const { world, tower, man } = rig();
   const foe = man(6, 0, 2); man(8, 0, 1);
-  ok("tesla: the hold sees the friend in the spread", teslaWouldCatchFriend(world, tower, foe) === true);
+  ok("tesla: the hold sees the friend in the spread", teslaWouldCatchFriend(world, tower, foe, map) === true);
   const { world: w2, tower: t2, man: m2 } = rig();
   const foe2 = m2(6, 0, 2); m2(22, 0, 1);
-  ok("tesla: a friend clear of the spread holds nothing", teslaWouldCatchFriend(w2, t2, foe2) === false);
+  ok("tesla: a friend clear of the spread holds nothing", teslaWouldCatchFriend(w2, t2, foe2, map) === false);
 }
 { // Amendment 3: the ground strike — always a bolt, chain from the snow
   const field = makeField(41, 2.0, 13);
@@ -117,10 +118,10 @@ const walk = (world, arcs, s) => { for (let i = 0; i < Math.round(s / 0.05); i++
   const near = addBody(world, { kind: "unit", team: 2, mass: 80, hx: 0.28, hy: 1.0, hz: 0.28, x: 3, y: field.heightAt(3, 0) + 1, z: 0, hp: 100 });
   near.smearStyle = "human";
   const arcs = [{ nextAt: 0, hits: 0, dmg: 35, fx: 0, fy: 3, fz: 0, atk: "player", tid: 0, gx: 1, gy: field.heightAt(1, 0), gz: 0, hitIds: [], waters: [] }];
-  world.t = 0.01; stepTesla(world, arcs);
+  world.t = 0.01; stepTesla(world, arcs, map);
   ok("ground strike: the bolt lands with no victim", world.events.some((e) => e.type === "zap" && e.hop === 0));
   ok("ground strike: the snow takes no damage call", near.hp === 100);
-  for (let i = 0; i < 10; i++) { world.t += 0.05; stepTesla(world, arcs); }
+  for (let i = 0; i < 10; i++) { world.t += 0.05; stepTesla(world, arcs, map); }
   ok("ground strike: the chain walks from the snow at full 35", near.hp === 65);
 }
 { // Amendment 4: the possessed snap takes any body — own men included
@@ -136,8 +137,8 @@ const walk = (world, arcs, s) => { for (let i = 0; i < Math.round(s / 0.05); i++
   const own = ab4(world, { kind: "unit", team: 1, mass: 80, hx: 0.28, hy: 1, hz: 0.28, x: 8, y: field.heightAt(8, 0) + 1, z: 0, hp: 100 });
   own.smearStyle = "human";
   const arcs = [];
-  ok("a4: FIRE on an own man fires", ptf4(world, tower, { x: 8, z: 0 }, null, undefined, arcs) === true);
-  for (let i = 0; i < 4; i++) { world.t += 0.05; st4(world, arcs); }
+  ok("a4: FIRE on an own man fires", ptf4(world, tower, { x: 8, z: 0 }, null, undefined, arcs, map) === true);
+  for (let i = 0; i < 4; i++) { world.t += 0.05; st4(world, arcs, map); }
   ok("a4: the own man takes the strike", own.hp === 65);
 }
 { // Amendment 5: the LIVE state literal carries the arcs array — the game

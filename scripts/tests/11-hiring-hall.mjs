@@ -240,17 +240,17 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
   }
   // (d) his hires field through the mirror machinery, draw-free
   {
-    makeMap(93);
+    const map93 = makeMap(93);
     const flatF4 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
     const w = makeWorld({ field: flatF4, seed: 93 });
     const S4 = { foeSquads: [] };
     const depotE4 = TOWN.find((t) => t.depot && t.team === 2);
-    mirrorFieldKey(w, S4, depotE4, {}, flatF4, "sq_rifles", () => 1);
+    mirrorFieldKey(w, S4, depotE4, {}, flatF4, "sq_rifles", () => 1, map93);
     const men = w.bodies.filter((b) => b.kind === "unit" && b.team === 2 && b.garrison && b.alive);
     ok("T4(d): a hired rifle squad fields four garrison men at his depot", men.length === 4, men.length);
-    mirrorFieldKey(w, S4, depotE4, {}, flatF4, "sq_engineers", () => 1);
+    mirrorFieldKey(w, S4, depotE4, {}, flatF4, "sq_engineers", () => 1, map93);
     ok("T4(d2): a hired engineer squad joins his build roster", S4.foeSquads.length === 1 && S4.foeSquads[0].memberIds.length === 2);
-    mirrorFieldKey(w, S4, depotE4, {}, flatF4, "sq_engineers", () => 1);
+    mirrorFieldKey(w, S4, depotE4, {}, flatF4, "sq_engineers", () => 1, map93);
     ok("T4(d2b): a second hired squad's id never collides — derived from the live roster, save-proof",
       S4.foeSquads.length === 2 && S4.foeSquads[0].id !== S4.foeSquads[1].id && S4.foeSquads.every((q) => q.id >= 9501));
     // a REAL mini-grid for the tower branch (the era-10 mkGrid idiom, local)
@@ -262,11 +262,11 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
       gridToWorld: (gx, gz) => ({ x: (gx - (N >> 1)) * 2 + 1, z: (gz - (N >> 1)) * 2 + 1 }) };
     G.cellAt = (x, z) => { const g = G.worldToGrid(x, z); return G.inBounds(g.gx, g.gz) ? cells[G.idx(g.gx, g.gz)] : null; };
     const w2 = makeWorld({ field: flatF4, seed: 94 });
-    mirrorFieldKey(w2, { foeSquads: [] }, { x: 0, z: 0, nx: 12, nz: 9, team: 2, depot: true }, G, flatF4, "gun", () => 1);
+    mirrorFieldKey(w2, { foeSquads: [] }, { x: 0, z: 0, nx: 12, nz: 9, team: 2, depot: true }, G, flatF4, "gun", () => 1, map93);
     const tw = w2.bodies.find((b) => b.kind === "tower" && b.team === 2 && b.alive);
     ok("T4(d3): a hired or built tower stands and fights at his depot", !!tw && tw.towerType === "gun" && tw.discipline === "free");
     ok("T4(d4): a bare fixture (no grid) skips fielding without a throw",
-      (() => { mirrorFieldKey(w2, {}, { x: 0, z: 0 }, null, null, "hero_bison", null); return true; })());
+      (() => { mirrorFieldKey(w2, {}, { x: 0, z: 0 }, null, null, "hero_bison", null, map93); return true; })());
     // (d5) the hemmed ring: every cell blocked but one pocket past the ring
     // scan's reach (~33m out — the ring samples only 12-30m) — the fail-proof
     // backstop still parks the paid tower
@@ -275,15 +275,15 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
     GH.cellAt = (x, z) => { const g = GH.worldToGrid(x, z); return GH.inBounds(g.gx, g.gz) ? cellsH[GH.idx(g.gx, g.gz)] : null; };
     cellsH[GH.idx(38, 22)].blocked = false; // world (33, 1) — ~33m from the depot, inside the 8-34m sweep
     const w4 = makeWorld({ field: flatF4, seed: 95 });
-    mirrorFieldKey(w4, { foeSquads: [] }, { x: 0, z: 0, nx: 12, nz: 9, team: 2, depot: true }, GH, flatF4, "gun", () => 1);
+    mirrorFieldKey(w4, { foeSquads: [] }, { x: 0, z: 0, nx: 12, nz: 9, team: 2, depot: true }, GH, flatF4, "gun", () => 1, map93);
     ok("T4(d5): a hemmed ring still parks the paid tower — the fail-proof backstop (the parkArmor precedent)",
       !!w4.bodies.find((b) => b.kind === "tower" && b.alive));
   }
   // (e) the wiring
   {
     const be = fs.readFileSync("src/depot/bell.js", "utf8");
-    ok("T4(e): the ring fields his hires draw-free and clears the queue",
-      /for \(const k of S\.foe\.hired\) mirrorFieldKey\(world, S, depotH, grid, field, k, ctx\.nextApcSeq\);/.test(be) && /S\.foe\.hired = \[\];/.test(be));
+    ok("T4(e): the ring fields his hires draw-free and clears the queue (wee-t2b: + map)",
+      /for \(const k of S\.foe\.hired\) mirrorFieldKey\(world, S, depotH, grid, field, k, ctx\.nextApcSeq, map\);/.test(be) && /S\.foe\.hired = \[\];/.test(be));
     ok("T4(e2): his hand pays the PLAYER'S price table — one table (owner)",
       /priceP: \(k\) => \(S\._market && S\._market\.player\[k\] != null \? S\._market\.player\[k\] : null\)/.test(be));
     const st = fs.readFileSync("src/depot/state.js", "utf8");
@@ -701,13 +701,13 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
   }
   // (c) the boot: fifteen draws; the player holds seven; its five land
   {
-    makeMap(94);
+    const map94 = makeMap(94);
     const flatF8 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
     const w = makeWorld({ field: flatF8, seed: 131 });
     let draws = 0; const raw = w.rng; w.rng = () => { draws++; return raw(); };
     const S8 = { reg: { heads: 60 }, squads: [], nextSquadId: 1, cmdr: null };
     const G8 = makeGrid(flatF8);
-    musterFreshStart(w, S8, TOWN.find((t) => t.depot && t.team !== 2), G8, flatF8, () => 1);
+    musterFreshStart(w, S8, TOWN.find((t) => t.depot && t.team !== 2), G8, flatF8, () => 1, map94);
     ok("T8v2(c): the boot draws exactly fifteen (commander 1 + seven + seven)", draws === 15, draws);
     ok("T8v2(c2): the player holds seven distinct cards and fields nothing",
       S8.draft.length === 7 && new Set(S8.draft.map((c) => c.k)).size === 7 && !w.bodies.some((b) => b.team === 1 && b.alive));

@@ -208,7 +208,7 @@ import fs from "node:fs";
   const mgSrc15 = fs.readFileSync(new URL("../../src/depot/mapgen.js", import.meta.url), "utf8");
   ok("T15(a): the rim halves grew to 90", /const RIM_HALF_U = 90, RIM_HALF_V = 90;/.test(mgSrc15));
   ok("T15(a2): the grid grew to 90x90 at the same 2m cell", /const GRID_CS = 2\.0, GRID_W = 90, GRID_H = 90;/.test(mgSrc15));
-  ok("T15(a3): the heightfield grew with its apron", /makeField\(181, 2\.0, MAP_SEED\)/.test(dgSrc15));
+  ok("T15(a3): the heightfield grew with its apron (wee-t2b: map.MAP_SEED)", /makeField\(181, 2\.0, map\.MAP_SEED\)/.test(dgSrc15));
   ok("T15(a4): the depot-separation floor scaled", /2 \* m\.depotDepth\) >= 105/.test(mgSrc15));
 
   // (b) 25-seed census: every map accepts, stays connected, and fits its
