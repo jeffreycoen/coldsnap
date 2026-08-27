@@ -947,7 +947,7 @@ export function layDressing(t, put) {
       const off = sgn * (W * p) / 4;
       put({ dx: ridgeX ? 0 : off, dy: topY - hcs + ridgeH / 2 + 0.10, dz: ridgeX ? off : 0,
         hx: ridgeX ? (L * p) / 2 + 0.2 : slope, hy: 0.06, hz: ridgeX ? slope : (L * p) / 2 + 0.2,
-        axis: ridgeX ? "x" : "z", angle: sgn * ang * (ridgeX ? -1 : 1), tint: "roof", mass: 320 });
+        axis: ridgeX ? "x" : "z", angle: sgn * ang * (ridgeX ? 1 : -1), tint: "roof", mass: 320 });
     }
     return ridgeH;
   };
@@ -970,7 +970,7 @@ export function layDressing(t, put) {
     beam(-aw + 0.2, p * 1.15, az, 0.08, p * 1.15, 0.08, null, 0, 70);
     beam(aw - 0.2, p * 1.15, az, 0.08, p * 1.15, 0.08, null, 0, 70);
     beam(0, p * 2.3, az, aw, 0.07, 0.07, null, 0, 90);
-    put({ dx: 0, dy: p * 2.45, dz: az + 0.35, hx: aw, hy: 0.05, hz: 0.95, axis: "x", angle: 0.3, tint: "roof", mass: 140 });
+    put({ dx: 0, dy: p * 2.45, dz: az + 0.35, hx: aw, hy: 0.05, hz: 0.95, axis: "x", angle: -0.3, tint: "roof", mass: 140 });
     return;
   }
   if (f === "inn") {                          // the bracket beam and the hung sign
@@ -991,7 +991,7 @@ export function layDressing(t, put) {
       beam(cx, topY - hcs + ridgeH + 0.02, 0, segL / 2 + 0.1, 0.08, 0.08, null, 0, 140);
       for (const sgn of [-1, 1]) {
         put({ dx: cx, dy: topY - hcs + ridgeH / 2 + 0.10, dz: sgn * (t.nz * p) / 4,
-          hx: segL / 2 + 0.1, hy: 0.06, hz: slope, axis: "x", angle: -sgn * ang, tint: "roof", mass: 300 });
+          hx: segL / 2 + 0.1, hy: 0.06, hz: slope, axis: "x", angle: sgn * ang, tint: "roof", mass: 300 });
       }
     }
     doorway();
@@ -1018,7 +1018,7 @@ export function layDressing(t, put) {
     for (const [ax, sgn] of [["x", 1], ["x", -1], ["z", 1], ["z", -1]]) {
       put({ dx: ax === "z" ? sgn * half * 0.5 : 0, dy: topY + 0.35, dz: ax === "x" ? sgn * half * 0.5 : 0,
         hx: ax === "x" ? half : half * 0.55, hy: 0.05, hz: ax === "z" ? half : half * 0.55,
-        axis: ax, angle: -sgn * 0.7, tint: "roof", mass: 120 });
+        axis: ax, angle: sgn * 0.7, tint: "roof", mass: 120 });
     }
     if (f === "belltower") {
       beam(0, topY - p * 0.6, 0, half - 0.05, 0.07, 0.07, null, 0, 60);   // the yoke
@@ -1032,7 +1032,7 @@ export function layDressing(t, put) {
     beam(0, p * 2.5, 0, (t.nx * p) / 2 - 0.05, 0.06, 0.06, null, 0, 50); // the windlass
     for (const sgn of [-1, 1]) {
       put({ dx: 0, dy: p * 3.1, dz: sgn * (t.nz * p) / 4, hx: (t.nx * p) / 2 + 0.25, hy: 0.05, hz: 0.65,
-        axis: "x", angle: -sgn * 0.6, tint: "roof", mass: 90 });
+        axis: "x", angle: sgn * 0.6, tint: "roof", mass: 90 });
     }
     return;
   }
