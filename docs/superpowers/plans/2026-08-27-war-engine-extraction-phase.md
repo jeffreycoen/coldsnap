@@ -20,7 +20,7 @@ on approval.
 | Task | Mark | Step | What lands | Gates | Status |
 |---|---|---|---|---|---|
 | T0 | mk2.69 | 0 | `src/depot/api.js` — typedefs (incl. `TickInput`), roster contract, map adapter, throwing surface, CLI | depot-test, golden | LANDED — commit 05e4568, gates 2,091/0 + golden 7/7, build green |
-| T1 | mk2.70 | 1 | `depot/sim.js` — the twelve top-level sim functions + `STONE`/`STONE_PITCH`; `src/ui/startview.js` repointed; buildTown pin re-taught | depot-test, golden, smoke | pending — plan unwritten |
+| T1 | mk2.70 | 1 | `depot/sim.js` — the twelve top-level sim functions + `STONE`/`STONE_PITCH`; `src/ui/startview.js` repointed; api.js entry guard made bundler-safe; 16 test files re-taught | depot-test, golden, smoke, depot-lint | LANDED — commit 063a8b0, gates 2,091/0 + 7/7 + 30/0, build green; DepotGame readFileSync count 87→78 |
 | T2a | mk2.71 | 2 | `makeMap` returns `GameMap` (methods included); `assertMap` into mapgen; api.js part 3 deleted; shim intact | depot-test, golden | pending — plan unwritten |
 | T2b | mk2.72 | 2 | every consumer takes `map` as a parameter, module by module | depot-test, golden | pending — plan unwritten |
 | T3 | mk2.73 | 3 | `S` split run / view / input; `serializeRun` filled; byte-equal saves | depot-test, golden, smoke | pending — plan unwritten |
