@@ -200,7 +200,7 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "tesla"]) {
   const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
   const pin = (name, re) => ok(`audit(j) wiring: ${name}`, re.test(src));
   // squad pie
-  pin("DEFEND -> orderSquad", /key: "defend", .*S\.orderSquad\("defend"\)/);
+  pin("DEFEND -> orderSquad", /key: "defend", .*view\.orderSquad\("defend"\)/);
   pin("MOVE -> orderSquad", /key: "move", .*orderSquad\("move"\)/);
   pin("ATTACK -> orderSquad", /key: "attack", .*orderSquad\("attack"\)/);
   pin("PATROL -> orderSquad", /key: "patrol", .*orderSquad\("patrol"\)/);
@@ -209,7 +209,7 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "tesla"]) {
   pin("WALLS -> orderSquad", /key: "build_walls", .*orderSquad\("build_walls"\)/);
   pin("MINES -> orderSquad", /key: "build_mines", .*orderSquad\("build_mines"\)/);
   pin("WIRES -> orderSquad", /key: "build_wires", .*orderSquad\("build_wires"\)/);
-  pin("squad TAKE CONTROL -> takeControl", /key: "possess", .*S\.takeControl\(\)/);
+  pin("squad TAKE CONTROL -> takeControl", /key: "possess", .*view\.takeControl\(\)/);
   // tower pie
   pin("CAREFUL/FREE -> setTowerDiscipline", /key: "discipline",[\s\S]{0,400}?setTowerDiscipline\(tr\.id\)/);
   pin("tower TAKE CONTROL -> takeControlTower", /key: "possess",[\s\S]{0,400}?takeControlTower\(tr\.id\)/);
@@ -224,7 +224,7 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "tesla"]) {
   pin("TRACKS -> toggleTracks", /key: "tracks", .*toggleTracks\(\)/);
   pin("veh TAKE CONTROL -> takeControlVehicle", /key: "possess", .*takeControlVehicle\(\)/);
   // the handlers themselves exist
-  pin("handlers live", /S\.orderSquad = \(kind\)/.test(src) && /S\.orderVehicle = \(kind\)/.test(src) && /S\.takeControl = \(\)/.test(src) ? /./ : /(?!)/);
+  pin("handlers live", /view\.orderSquad = \(kind\)/.test(src) && /view\.orderVehicle = \(kind\)/.test(src) && /view\.takeControl = \(\)/.test(src) ? /./ : /(?!)/);
 }
 
 // ---- P7.1 T3: every fielded man knows his full health (maxHp at spawn)
@@ -372,9 +372,9 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "tesla"]) {
 }
 {
   const src8 = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
-  ok("T8 wiring: the deal opens the first card", /S\.openInfo\(S\._placeQueue\[0\], "deal"\)/.test(src8));
-  ok("T8 wiring: each placement deals the next card", /S\.openInfo\(next, "deal"\)/.test(src8));
-  ok("T8 wiring: a ground tap never places under an open card", /if \(S\.infoKey\) return;/.test(src8));
+  ok("T8 wiring: the deal opens the first card", /view\.openInfo\(view\._placeQueue\[0\], "deal"\)/.test(src8));
+  ok("T8 wiring: each placement deals the next card", /view\.openInfo\(next, "deal"\)/.test(src8));
+  ok("T8 wiring: a ground tap never places under an open card", /if \(view\.infoKey\) return;/.test(src8));
   ok("T8 wiring: the pick grid is gone", !/data-pick=/.test(src8) && !/togglePick/.test(src8));
   ok("T8 A1: the ticker yields while a deal card is up", /hud\.placing && !hud\.info && !fatal/.test(src8));
   const ic8 = fs.readFileSync("src/depot/InfoCard.jsx", "utf8");

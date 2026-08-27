@@ -1120,18 +1120,18 @@ import fs from "node:fs";
     // reads its new home; dsrc9 (DepotGame.jsx) stays live for T9(d11) below,
     // which pins the mount-scope reseed formula (untouched by this task).
     const bellSrc9 = fs.readFileSync(new URL("../../src/depot/bell.js", import.meta.url), "utf8");
-    const ringBellBody9 = (bellSrc9.match(/export function ringBell\(world, grid, field, T, S, ctx, map\) \{[\s\S]*?\n\}/) || [""])[0];
+    const ringBellBody9 = (bellSrc9.match(/export function ringBell\(world, grid, field, T, run, ctx, map\) \{[\s\S]*?\n\}/) || [""])[0];
     ok("T9(d): ringBell extracts (source pin base)", ringBellBody9.length > 0);
     ok("T9(d2): gated on a dead hull, both kinds", /!has\("bison"\)/.test(ringBellBody9) && /!has\("apc"\)/.test(ringBellBody9));
     ok("T9(d3): the bell clamp is DEAD — ownership alone gates, any bell (owner, P7.2 T4)",
-      !/S\.bell >= TIER_BELLS\[3\]/.test(ringBellBody9) && /S\.foe\.unlocked\.indexOf\(tag\) >= 0/.test(ringBellBody9));
-    ok("T9(d4): gated on the enemy's own pick (S.foe.unlocked)", /S\.foe\.unlocked\.indexOf\(tag\) >= 0/.test(ringBellBody9));
+      !/run\.bell >= TIER_BELLS\[3\]/.test(ringBellBody9) && /run\.foe\.unlocked\.indexOf\(tag\) >= 0/.test(ringBellBody9));
+    ok("T9(d4): gated on the enemy's own pick (run.foe.unlocked)", /run\.foe\.unlocked\.indexOf\(tag\) >= 0/.test(ringBellBody9));
     ok("T9(d5): the full gate ANDs dead-hull, tier-open-and-picked and affordability — a poor regiment fails the same chain and buys nothing",
-      /if \(depotE4 && !has\("bison"\) && open\("hero_bison"\) && S\.reg\.scrap >= heroPrice\("hero_bison"\)\)/.test(ringBellBody9));
+      /if \(depotE4 && !has\("bison"\) && open\("hero_bison"\) && run\.reg\.scrap >= heroPrice\("hero_bison"\)\)/.test(ringBellBody9));
     ok("T9(d6): scrap is deducted before the hull parks, draw-free (re-taught mk1.51, P7 T21: parkArmor's ctx.nextApcSeq call; wee-t2b: + map)",
-      /S\.reg\.scrap -= heroPrice\("hero_bison"\); parkArmor\(world, grid, field, depotE4, 2, "bison", ctx\.nextApcSeq, map\)/.test(ringBellBody9));
+      /run\.reg\.scrap -= heroPrice\("hero_bison"\); parkArmor\(world, grid, field, depotE4, 2, "bison", ctx\.nextApcSeq, map\)/.test(ringBellBody9));
     ok("T9(d7): the same table prices the apc replacement (re-taught mk1.51, P7 T21: parkArmor's ctx.nextApcSeq call; wee-t2b: + map)",
-      /S\.reg\.scrap -= heroPrice\("hero_apc"\); parkArmor\(world, grid, field, depotE4, 2, "apc", ctx\.nextApcSeq, map\)/.test(ringBellBody9));
+      /run\.reg\.scrap -= heroPrice\("hero_apc"\); parkArmor\(world, grid, field, depotE4, 2, "apc", ctx\.nextApcSeq, map\)/.test(ringBellBody9));
     ok("T9(d8): Bison goes first — the bison branch is the `if`, the apc branch the `else if`",
       ringBellBody9.indexOf('parkArmor(world, grid, field, depotE4, 2, "bison", ctx.nextApcSeq, map)') <
       ringBellBody9.indexOf('parkArmor(world, grid, field, depotE4, 2, "apc", ctx.nextApcSeq, map)'));

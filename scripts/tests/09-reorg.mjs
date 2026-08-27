@@ -103,7 +103,7 @@ import fs from "node:fs";
     !/const startBuildLine = /.test(dgSrc20) && /from "\.\/buildlines\.js"/.test(dgSrc20));
   ok("T20(a3): the mount wires the driver through the context (wee-t2b: + map)",
     /const layCtx = \{ stampBag, recomputeFlow, objG, setMines: \(m\) => R\.setMines\(m\) \};/.test(dgSrc20) &&
-    /S\.stepBuildLine = \(sq\) => stepBuildLine\(world, grid, field, T, S, sq, layCtx, toast, map\);/.test(dgSrc20));
+    /input\.stepBuildLine = \(sq\) => stepBuildLine\(world, grid, field, T, run, sq, layCtx, toast, map\);/.test(dgSrc20));
   // (b) the machinery, called for real — a wall line on a synthetic world
   // lays through the imported driver end to end.
   {
@@ -172,12 +172,12 @@ import fs from "node:fs";
   const beSrc21 = (() => { try { return fs.readFileSync(new URL("../../src/depot/bell.js", import.meta.url), "utf8"); } catch (e) { return ""; } })();
   const dgSrc21 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   ok("T21(a): bell.js owns the ring (wee-t2b: + map)",
-    /export function ringBell\(world, grid, field, T, S, ctx, map\)/.test(beSrc21) &&
+    /export function ringBell\(world, grid, field, T, run, ctx, map\)/.test(beSrc21) &&
     /ctx\.saveFront\(\);/.test(beSrc21) && /payTown\(ctx\.townUV, T\)/.test(beSrc21));
   ok("T21(a2): DepotGame keeps only the wrapper and the cards (wee-t2b: + map)",
     !/const ringBell = \(\) => \{/.test(dgSrc21) &&
-    /const ringBell = \(\) => ringBellOut\(world, grid, field, T, S, bellCtx, map\);/.test(dgSrc21) &&
-    /S\.pickManifest = /.test(dgSrc21));
+    /const ringBell = \(\) => ringBellOut\(world, grid, field, T, run, bellCtx, map\);/.test(dgSrc21) &&
+    /view\.pickManifest = /.test(dgSrc21));
   // (b) two bells rung through the real ring — structure, not feel
   // re-pinned mk1.72 (P7.1 T8): THE SEED PURGE — the old special-cased seed
   // leaves the suite; the map seed moves to 1001 (its floors/properties
@@ -336,22 +336,22 @@ import fs from "node:fs";
 
     // retargeted mk1.51, P7 T21: ringBell moved to bell.js.
     const dsrc10 = fs.readFileSync(new URL("../../src/depot/bell.js", import.meta.url), "utf8");
-    const ringBellBody10 = (dsrc10.match(/export function ringBell\(world, grid, field, T, S, ctx, map\) \{[\s\S]*?\n\}/) || [""])[0];
+    const ringBellBody10 = (dsrc10.match(/export function ringBell\(world, grid, field, T, run, ctx, map\) \{[\s\S]*?\n\}/) || [""])[0];
     ok("T10(d10): ringBell extracts (source pin base)", ringBellBody10.length > 0);
     ok("T10(d11): TWO unconditional draws every bell (mineRoll, minePlaceRoll — the law)",
       /const mineRoll = world\.rng\(\), minePlaceRoll = world\.rng\(\);/.test(ringBellBody10));
     ok("T10(d12): price3 reads the live market, falling back to the table base",
-      /const price3 = S\._minePrices \? S\._minePrices\.mine \* 3 : MINE_COST \* 3;/.test(ringBellBody10));
-    ok("T10(d13): the bag gate reads the enemy's own current muster (S.ws.mixBag)",
-      /const hasSapper = S\.ws\.mixBag\.indexOf\("sapper"\) >= 0;/.test(ringBellBody10));
+      /const price3 = run\._minePrices \? run\._minePrices\.mine \* 3 : MINE_COST \* 3;/.test(ringBellBody10));
+    ok("T10(d13): the bag gate reads the enemy's own current muster (run.ws.mixBag)",
+      /const hasSapper = run\.ws\.mixBag\.indexOf\("sapper"\) >= 0;/.test(ringBellBody10));
     ok("T10(d14): the roll is gated through mineSeedRoll, unconditionally drawn either way",
-      /if \(mineSeedRoll\(mineRoll, hasSapper, S\.reg\.scrap, price3\)\)/.test(ringBellBody10));
+      /if \(mineSeedRoll\(mineRoll, hasSapper, run\.reg\.scrap, price3\)\)/.test(ringBellBody10));
     ok("T10(d15): the pick is gated through mineSeedPlace",
       /const picks = mineSeedPlace\(cands, minePlaceRoll\);/.test(ringBellBody10));
     ok("T10(d16): scrap is deducted once for the three, before they land",
-      /S\.reg\.scrap -= price3;\s*\n\s*for \(const c3 of picks\) S\.mines\.push/.test(ringBellBody10));
+      /run\.reg\.scrap -= price3;\s*\n\s*for \(const c3 of picks\) run\.mines\.push/.test(ringBellBody10));
     ok("T10(d17): enemy mines land team 2, kind mine, live",
-      /S\.mines\.push\(\{ x: c3\.x, z: c3\.z, team: 2, kind: "mine", live: true \}\);/.test(ringBellBody10));
+      /run\.mines\.push\(\{ x: c3\.x, z: c3\.z, team: 2, kind: "mine", live: true \}\);/.test(ringBellBody10));
     ok("T10(d18): candidates draw from PASSES on the enemy's own half (c.v < 0) plus the territory seam band",
       /if \(c\.v < 0\) cands\.push/.test(ringBellBody10) && /vv > -0\.15 && vv < 0\.15/.test(ringBellBody10));
     ok("T10(d19): sits after the hero-tier block (P7 T9)",
@@ -607,13 +607,13 @@ import fs from "node:fs";
   // object's possess:null is the only initializer, unconditional.
   const dsrc11 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   const start11 = dsrc11.indexOf("const r = RES.run;");
-  const end11 = dsrc11.indexOf("stateRef.current = S;");
+  const end11 = dsrc11.indexOf("stateRef.current = { run, view, input };");
   const resBlock11 = start11 >= 0 && end11 > start11 ? dsrc11.slice(start11, end11) : "";
   ok("T11(11a): the RES restore block source-extracts", resBlock11.length > 0);
-  ok("T11(11b): the RES restore block never assigns S.possess (a mid-possession save resumes to command view)",
-    !/S\.possess\s*=/.test(resBlock11));
-  ok("T11(11c): the base S object initializes possess: null unconditionally (not gated on RES)",
-    /possess: null, possessInput: null, joy: null,/.test(dsrc11));
+  ok("T11(11b): the RES restore block never assigns input.possess (a mid-possession save resumes to command view)",
+    !/input\.possess\s*=/.test(resBlock11));
+  ok("T11(11c): the base input object initializes possess: null unconditionally (not gated on RES)",
+    /possess: null, possessInput: null,/.test(dsrc11));
 }
 // ==== end P7 T11 ==============================================================
 

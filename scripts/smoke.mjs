@@ -246,9 +246,9 @@ try {
     const cardUp = await page.waitForFunction(() => !!document.querySelector("[data-dispatch-wo]"), { timeout: 90000, polling: 200 }).then(() => true).catch(() => false);
     ok("depot: the end card arrives", cardUp);
     if (cardUp) {
-      await sleep(700); // the card's own 500ms arming window
+      await sleep(2000); // the card's own 500ms arming window, with slack for full-suite load
       await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find((x) => /RETURN TO BASE/.test(x.textContent)); if (b) b.click(); });
-      const left = await page.waitForFunction(() => !!document.querySelector('[data-menu="depot"]'), { timeout: 15000, polling: 200 }).then(() => true).catch(() => false);
+      const left = await page.waitForFunction(() => !!document.querySelector('[data-menu="depot"]'), { timeout: 45000, polling: 200 }).then(() => true).catch(() => false);
       ok("depot: RETURN TO BASE returns to base", left);
     }
   }

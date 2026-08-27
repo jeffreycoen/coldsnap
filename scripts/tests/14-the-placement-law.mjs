@@ -52,19 +52,19 @@ import { placeZoneMask } from "../../src/depot/state.js";
   ok("K8: setMode carries no hero special-case",
     !/m === "hero_bison" \|\| m === "hero_apc" \|\| m === "hero_mech"/.test(dgSrc));
   ok("K9: a hero-mode ground tap sets a pending ghost with its footprint",
-    /S\.pending = \{ hero: S\.mode,[^\n]*fp: ghostFp\(S\.mode\)/.test(dgSrc));
+    /view\.pending = \{ hero: run\.mode,[^\n]*fp: ghostFp\(run\.mode\)/.test(dgSrc));
   ok("K10: the ✓ runs placeHero; a refusal leaves the ghost standing",
-    /if \(p\.hero\) \{ if \(placeHero\(p\.hero, p\.wp\)\) S\.pending = null; return; \}/.test(dgSrc));
+    /if \(p\.hero\) \{ if \(placeHero\(p\.hero, p\.wp\)\) view\.pending = null; return; \}/.test(dgSrc));
   ok("K11: placeHero checks the price first and the ground's own laws (the mk1.86 precedent)",
     /const placeHero = \(key, p\) => \{[\s\S]{0,700}toast\("NO SCRAP"\); return false;[\s\S]{0,700}toast\("GROUND NOT HELD"\); return false;/.test(dgSrc));
   ok("K12: the hire and deal ghosts carry their footprints",
-    /S\.pending = \{ hire: S\.hirePlace\.key[^\n]*fp: ghostFp\(S\.hirePlace\.key\)/.test(dgSrc) &&
-    /S\.pending = \{ deal: S\._placeQueue\[0\][^\n]*fp: ghostFp\(S\._placeQueue\[0\]\)/.test(dgSrc));
+    /view\.pending = \{ hire: view\.hirePlace\.key[^\n]*fp: ghostFp\(view\.hirePlace\.key\)/.test(dgSrc) &&
+    /view\.pending = \{ deal: view\._placeQueue\[0\][^\n]*fp: ghostFp\(view\._placeQueue\[0\]\)/.test(dgSrc));
   ok("K13: the zone refreshes on its own wall-time tick (the deal phase has no sim clock)",
     /zoneAcc \+= dt;[\s\S]{0,120}refreshZone\(\);/.test(dgSrc));
   ok("K14: the zone opens for the deal, the hires, the squads, the towers and the heroes",
-    /const dealPhase = !S\.started && S\._placeQueue && S\._placeQueue\.length;/.test(dgSrc) &&
-    /TOWER_SPECS\[S\.mode\] \|\| SQUAD_MODE\[S\.mode\] \|\| HERO_MODE\[S\.mode\]/.test(dgSrc));
+    /const dealPhase = !run\.started && view\._placeQueue && view\._placeQueue\.length;/.test(dgSrc) &&
+    /TOWER_SPECS\[run\.mode\] \|\| SQUAD_MODE\[run\.mode\] \|\| HERO_MODE\[run\.mode\]/.test(dgSrc));
   ok("K15: the bought plan arms the bar for EVERY key — heroes included",
     !/startsWith\("hero_"\)\) setMode/.test(dgSrc));
 

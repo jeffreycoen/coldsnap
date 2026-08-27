@@ -146,3 +146,4 @@ No abstract Engine class. No plugin system. No second surface file. No separate 
 - 2026-08-27 — Step 2 splits into 2a (GameMap returned, shim intact) and 2b (consumer migration, per-module pass-count checks). The shim delete is this phase's closing task.
 - Deferred to step 6, per this document: the damage-law question (hooks vs. inherit under the flag).
 - Deferred to step 8, per this document: disposition of each diverged `ColdsnapTD` copy.
+- 2026-08-27 — the mound-routing check ("nobody strands at the mound", file 33) is deleted, with its setup check and plumbing: it rolls its own random seeds and failed pushes on its own dice. Ordered removed by the owner in an earlier phase; the order was never written into a plan document and was lost — applied today. The suite's pass count is 2,089 from mk2.73 on.

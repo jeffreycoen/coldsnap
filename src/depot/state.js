@@ -1771,7 +1771,7 @@ export function stepBell(S, worldT) {
 // simply joined by the next one, and NO card gates the muster — steps 2 and 4
 // only raise cards; step 5 marches whether or not they are ever read.
 export function fireBell(S, opts = {}) {
-  const { reg = null, snap = null, rng = null, t = null, priceOf = null, priceP = null } = opts;
+  const { reg = null, snap = null, rng = null, t = null, priceOf = null, priceP = null, possessed = false } = opts;
   const ws = S.ws;
   const prevWithdrew = ws.withdrew || 0;
   const nowT = t == null ? 0 : t;
@@ -1818,7 +1818,7 @@ export function fireBell(S, opts = {}) {
     const M = S.manifest;
     M.hand = dealConvoyHand(M.unlocked, HAND_KEYS, rng);
     M.offerBell = S.bell;
-    M.cardUp = M.hand.length > 0 && !S.possess; // mk2.02: THE CONVOY WAITS (owner) — no deal opens over a live possession; release opens it
+    M.cardUp = M.hand.length > 0 && !opts.possessed; // mk2.02: THE CONVOY WAITS (owner) — no deal opens over a live possession; release opens it (the fact rides opts since the T3 split)
     M.armedAt = nowT + PENDING_ARM_S;
   }
 

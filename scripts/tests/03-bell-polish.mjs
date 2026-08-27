@@ -421,8 +421,8 @@ import fs from "node:fs";
       // JSX guard became the radial's `if (sq.engineer) {` slot push.
       && /if \(sq\.engineer\) \{/.test(dsrc));
     ok("mk0.60/6: the two taps are start-then-end, and a re-tap of the armed chip cancels",
-      /if \(!S\.buildPt0\) \{ S\.buildPt0 = \{ x: d\.x, z: d\.z \}/.test(dsrc)
-      && /if \(S\.orderMode === kind\) \{ S\.orderMode = null; S\.buildPt0 = null; return; \}/.test(dsrc));
+      /if \(!view\.buildPt0\) \{ view\.buildPt0 = \{ x: d\.x, z: d\.z \}/.test(dsrc)
+      && /if \(view\.orderMode === kind\) \{ view\.orderMode = null; view\.buildPt0 = null; return; \}/.test(dsrc));
     // re-pinned COMMAND T2 (mk0.84): a second clamp site joined the first —
     // re-placing a picked-up endpoint of a proposed line clamps the same way
     // (tapAt's S.linePending block). Both taps of the ORIGINAL two-point

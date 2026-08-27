@@ -306,7 +306,7 @@ const run = (w, grid, n, opts) => { for (let i = 0; i < n; i++) { stepDrivers(w,
 {
   const src = fs.readFileSync("src/depot/bell.js", "utf8");
   ok("M25: the bell's replacement walk re-parks a dead team-2 mech (source-pinned, the hero-tier block; wee-t2b: + map)",
-    /open\("hero_mech"\) && S\.reg\.scrap >= heroPrice\("hero_mech"\)/.test(src) &&
+    /open\("hero_mech"\) && run\.reg\.scrap >= heroPrice\("hero_mech"\)/.test(src) &&
     /parkMech\(world, grid, field, depotE4, 2, map\)/.test(src) &&
     /k === "hero_mech" \? MECH\.cost/.test(src));
 }
@@ -326,8 +326,8 @@ const run = (w, grid, n, opts) => { for (let i = 0; i < n; i++) { stepDrivers(w,
 {
   const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
   ok("M27: takeControlVehicle on a mech sets possess.kind \"mech\" and release returns it to defend (source-pinned)",
-    /S\.possess = \{ kind: "mech", id: v\.id \};/.test(src) &&
-    /S\.possess\.kind === "mech"\) \{[\s\S]{0,260}pm\.order = "defend";/.test(src));
+    /input\.possess = \{ kind: "mech", id: v\.id \};/.test(src) &&
+    /input\.possess\.kind === "mech"\) \{[\s\S]{0,260}pm\.order = "defend";/.test(src));
 }
 {
   const w = makeWorld({ field: flatF, seed: 160 });

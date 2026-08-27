@@ -17,10 +17,10 @@ ok("sandbox: a reload never resumes into it", !app.match(/RESUME_SCREENS = new S
 ok("sandbox: the menu has the door", start.includes('data-menu="devsandbox"'));
 ok("sandbox: prices are free on the bench", dg.includes("dev ? 0 :"));
 ok("sandbox: the pace gate opens", dg.match(/buyPaced = \(\) => \{\s*\n\s*if \(dev\) return true;/));
-ok("sandbox: the bell never rings", dg.includes("if (!dev && stepBell(S, world.t))"));
+ok("sandbox: the bell never rings", dg.includes("if (!dev && stepBell(run, world.t))"));
 ok("sandbox: the save is never written", dg.match(/const saveFront = \(\) => \{\s*\n\s*if \(dev\) return;/));
 ok("sandbox: the war never ends on the bench", dg.includes("if (!dev) stepDepotCensus"));
-ok("sandbox: everything is unlocked", dg.includes("S.manifest.unlocked = PALETTE.map((p) => p.key)"));
+ok("sandbox: everything is unlocked", dg.includes("run.manifest.unlocked = PALETTE.map((p) => p.key)"));
 ok("sandbox: the reroll button exists", dg.includes("data-dev-reroll"));
 
 { // mk2.25: the enemy rack
@@ -41,7 +41,7 @@ ok("sandbox: the reroll button exists", dg.includes("data-dev-reroll"));
   const dg3 = src("src/depot/DepotGame.jsx");
   const sim3 = src("src/depot/sim.js");
   ok("fight: the switch exists", dg3.includes("data-dev-fight"));
-  ok("fight: dummies skip the enemy drivers", sim3.includes("if (!S.devDummies) stepEnemies"));
+  ok("fight: dummies skip the enemy drivers", sim3.includes("if (!input.devDummies) stepEnemies"));
   ok("fight: standing dummies still upright", sim3.match(/devDummies[\s\S]{0,400}uprightMember/));
   ok("fight: enemy towers read the flag", sim3.includes("world._devDummies && b.team === 2"));
   ok("fight: the flag is stamped each tick", sim3.includes("world._devDummies = "));

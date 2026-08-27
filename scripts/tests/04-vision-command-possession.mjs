@@ -646,7 +646,7 @@ import fs from "node:fs";
   // does, gated on accept — see (b)).
   const cotBody = (dsrc.match(/const consumeOrderTap = \(p\) => \{[\s\S]*?\n      const sellAt = \(gx, gz\) => \{/) || [""])[0];
   ok("COMMAND T2(a): consumeOrderTap's build branch creates S.linePending",
-    /S\.linePending = \{ kind: om === "build_walls" \? "walls" : "bags", sq: osq\.id,/.test(cotBody));
+    /view\.linePending = \{ kind: om === "build_walls" \? "walls" : "bags", sq: osq\.id,/.test(cotBody));
   ok("COMMAND T2(a): consumeOrderTap itself never calls startBuildLine (only acceptLine does)",
     cotBody.length > 0 && !/startBuildLine\(/.test(cotBody));
 
@@ -656,13 +656,13 @@ import fs from "node:fs";
   ok("COMMAND T2(b): acceptLine exists and calls startBuildLine (re-taught mk1.50, P7 T20: startBuildLine's new-arity call)",
     /else startBuildLine\(grid, sq, lp\.kind, lp\.a, lp\.b, toast\);/.test(acceptBody));
   ok("COMMAND T2(b): acceptLine nulls S.selSquadId (full deselect on accept)",
-    /S\.selSquadId = null; S\.orderMode = null; S\.buildPt0 = null;/.test(acceptBody));
+    /view\.selSquadId = null; view\.orderMode = null; view\.buildPt0 = null;/.test(acceptBody));
 
   // (c) __DEPOTORDER__ auto-accepts — staging keeps driving the real order
   // path end to end without a screen to tap the confirm button on.
   const orderBody = (dsrc.match(/window\.__DEPOTORDER__ = \(id, kind, pts\) => \{[\s\S]*?\n      window\.__DEPOTFOCUS__ = \(x, z, zoom\) => \{/) || [""])[0];
   ok("COMMAND T2(c): __DEPOTORDER__ auto-accepts a proposed line (S.acceptLine())",
-    /if \(S\.linePending\) \{ S\.linePending\.armedAt = world\.t; S\.acceptLine\(\); \}/.test(orderBody));
+    /if \(view\.linePending\) \{ view\.linePending\.armedAt = world\.t; view\.acceptLine\(\); \}/.test(orderBody));
   // AUDIT FIX (mk0.85): the mk0.84 auto-accept no-opped — the pending's
   // armedAt was set THIS tick to world.t + PENDING_ARM_S, so acceptLine's
   // own pendingArmed(lp, world.t) gate always failed and silently swallowed
@@ -670,7 +670,7 @@ import fs from "node:fs";
   // backdates the arm before accepting. Pinned directly, not just via (c)'s
   // re-pin above.
   ok("COMMAND T2(c) AUDIT FIX (mk0.85): __DEPOTORDER__ backdates armedAt before accepting a staged line",
-    /S\.linePending\.armedAt = world\.t/.test(orderBody));
+    /view\.linePending\.armedAt = world\.t/.test(orderBody));
 
   // (d) the renderer overlay carries setLinePreview — the game-layer-only
   // furniture the brief said this file may grow (setReach's family).
@@ -1096,15 +1096,15 @@ import fs from "node:fs";
   // instead) as the loop's FIRST line, and a squad whose members all die
   // while possessed releases automatically right after pruneSquads.
   {
-    const stepDepotBody = (dsrc.match(/function stepDepot\(world, grid, onStructureLost, town, onRuin, T, discipline, S, map\) \{[\s\S]*?\n\}/) || [""])[0];
-    const guardIdx = stepDepotBody.indexOf('if (S.possess && S.possess.kind === "squad" && sq.id === S.possess.id) {');
+    const stepDepotBody = (dsrc.match(/function stepDepot\(world, grid, onStructureLost, town, onRuin, T, discipline, run, input, map\) \{[\s\S]*?\n\}/) || [""])[0];
+    const guardIdx = stepDepotBody.indexOf('if (input.possess && input.possess.kind === "squad" && sq.id === input.possess.id) {');
     const engageIdx = stepDepotBody.indexOf("engageCheck(sq);");
     ok("POSSESSION T1(b): stepDepot's squad loop carries a possession guard",
       guardIdx >= 0, stepDepotBody.length);
     ok("POSSESSION T1(b): the guard is the loop's first line — it runs before engageCheck",
       guardIdx >= 0 && engageIdx >= 0 && guardIdx < engageIdx, `guard=${guardIdx} engage=${engageIdx}`);
-    const pruneIdx = stepDepotBody.indexOf("S.squads = pruneSquads(world, S.squads);");
-    const autoRelIdx = stepDepotBody.indexOf('if (S.possess && S.possess.kind === "squad" && !S.squads.some((q) => q.id === S.possess.id)) S.releasePossession();');
+    const pruneIdx = stepDepotBody.indexOf("run.squads = pruneSquads(world, run.squads);");
+    const autoRelIdx = stepDepotBody.indexOf('if (input.possess && input.possess.kind === "squad" && !run.squads.some((q) => q.id === input.possess.id)) input.releasePossession();');
     ok("POSSESSION T1(b): a wiped-out possessed squad auto-releases, wired right after pruneSquads",
       pruneIdx >= 0 && autoRelIdx >= 0 && autoRelIdx > pruneIdx && autoRelIdx - pruneIdx < 200,
       `prune=${pruneIdx} autoRel=${autoRelIdx}`);
@@ -1141,7 +1141,7 @@ import fs from "node:fs";
     // retargeted mk1.51, P7 T21: ringBell moved to bell.js — the body is
     // read off its new home, and the save call re-teaches to ctx.saveFront().
     const bellSrcT1d = fs.readFileSync(new URL("../../src/depot/bell.js", import.meta.url), "utf8");
-    const ringBellBody = (bellSrcT1d.match(/export function ringBell\(world, grid, field, T, S, ctx, map\) \{[\s\S]*?\n\}/) || [""])[0];
+    const ringBellBody = (bellSrcT1d.match(/export function ringBell\(world, grid, field, T, run, ctx, map\) \{[\s\S]*?\n\}/) || [""])[0];
     ok("POSSESSION T1(d): ringBell no longer releases possession — the bell keeps your hands on the unit",
       ringBellBody.length > 0 && !ringBellBody.includes("releasePossession"), ringBellBody.slice(0, 80));
     ok("POSSESSION T1(d): the bell still writes the save",
@@ -1295,13 +1295,13 @@ import fs from "node:fs";
   // S.releasePossession clears it outright (S.reticle = null).
   {
     const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    const takeControlBody = (gameSrc.match(/S\.takeControl = \(\) => \{[\s\S]*?\n      \};/) || [""])[0];
-    const releaseBody = (gameSrc.match(/S\.releasePossession = \(\) => \{[\s\S]*?\n      \};/) || [""])[0];
-    ok("POSSESSION T4 audit item A source pin (re-pinned from T2): S.takeControl clears fireHeld and seeds a fresh offset reticle (wee-t2b: map.invW)",
-      /S\.fireHeld = false;/.test(takeControlBody) && /S\.reticleOff = pc0 \? reclampReticle\(T\.sight, 1, pc0, possessSightR\(\), \{ dx: 0, dz: 4 \}, map\.invW\) : null;/.test(takeControlBody),
+    const takeControlBody = (gameSrc.match(/view\.takeControl = \(\) => \{[\s\S]*?\n      \};/) || [""])[0];
+    const releaseBody = (gameSrc.match(/input\.releasePossession = \(\) => \{[\s\S]*?\n      \};/) || [""])[0];
+    ok("POSSESSION T4 audit item A source pin (re-pinned from T2): view.takeControl clears fireHeld and seeds a fresh offset reticle (wee-t2b: map.invW)",
+      /input\.fireHeld = false;/.test(takeControlBody) && /view\.reticleOff = pc0 \? reclampReticle\(T\.sight, 1, pc0, possessSightR\(\), \{ dx: 0, dz: 4 \}, map\.invW\) : null;/.test(takeControlBody),
       takeControlBody.length);
-    ok("POSSESSION T4 audit item A source pin (re-pinned from T2): S.releasePossession clears reticle/offset/fireHeld",
-      /S\.reticle = null; S\.reticleOff = null; S\.fireHeld = false;/.test(releaseBody), releaseBody.length);
+    ok("POSSESSION T4 audit item A source pin (re-pinned from T2): input.releasePossession clears reticle/offset/fireHeld",
+      /input\.reticle = null; view\.reticleOff = null; input\.fireHeld = false;/.test(releaseBody), releaseBody.length);
   }
 }
 // ==== end POSSESSION T2 =======================================================
@@ -1530,10 +1530,10 @@ import fs from "node:fs";
   // nowhere in DepotGame.jsx — it is fully replaced by the steered reticle.
   {
     const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("POSSESSION T4(f) source pin: the squad volley trigger reads S.reticle (wee-t2b: map.invW)",
-      /possessedVolley\(world, psq, S\.reticle, T, map\.invW\)/.test(gameSrc));
-    ok("POSSESSION T4(f) source pin: the tower fire trigger reads S.reticle",
-      /possessedTowerFire\(world, ptw, S\.reticle, T, map\.invW, S\.arcs, map\)/.test(gameSrc)); // mk2.15: trailing S.arcs added for the tesla chain; wee-t2b: map.invW + trailing map
+    ok("POSSESSION T4(f) source pin: the squad volley trigger reads input.reticle (wee-t2b: map.invW)",
+      /possessedVolley\(world, psq, input\.reticle, T, map\.invW\)/.test(gameSrc));
+    ok("POSSESSION T4(f) source pin: the tower fire trigger reads input.reticle",
+      /possessedTowerFire\(world, ptw, input\.reticle, T, map\.invW, run\.arcs, map\)/.test(gameSrc)); // mk2.15: trailing run.arcs added for the tesla chain; wee-t2b: map.invW + trailing map
     ok("POSSESSION T4(f) source pin: possessAim appears nowhere in DepotGame.jsx",
       !/possessAim/.test(gameSrc));
   }
@@ -1546,10 +1546,10 @@ import fs from "node:fs";
       /import \{[^}]*steerReticle[^}]*reclampReticle[^}]*\} from "\.\/sight\.js"/.test(gameSrc) ||
       /import \{[^}]*reclampReticle[^}]*steerReticle[^}]*\} from "\.\/sight\.js"/.test(gameSrc));
     ok("POSSESSION T4(g) source pin: the frame loop steers the OFFSET through steerReticle (wee-t2b: map.invW)",
-      /S\.reticleOff = steerReticle\(T\.sight, 1, rc, rR, S\.reticleOff, rv\.vx, rv\.vz, dt, map\.invW\);/.test(gameSrc));
+      /view\.reticleOff = steerReticle\(T\.sight, 1, rc, rR, view\.reticleOff, rv\.vx, rv\.vz, dt, map\.invW\);/.test(gameSrc));
     ok("POSSESSION T4(g) source pin: the walk-carry runs through reclampReticle and derives the world point (wee-t2b: map.invW)",
-      /S\.reticleOff = reclampReticle\(T\.sight, 1, rc, rR, S\.reticleOff, map\.invW\);/.test(gameSrc) &&
-      /S\.reticle = \{ x: rc\.x \+ S\.reticleOff\.dx, z: rc\.z \+ S\.reticleOff\.dz \};/.test(gameSrc));
+      /view\.reticleOff = reclampReticle\(T\.sight, 1, rc, rR, view\.reticleOff, map\.invW\);/.test(gameSrc) &&
+      /input\.reticle = \{ x: rc\.x \+ view\.reticleOff\.dx, z: rc\.z \+ view\.reticleOff\.dz \};/.test(gameSrc));
   }
 }
 // ==== end POSSESSION T4 =======================================================
@@ -1566,9 +1566,9 @@ import fs from "node:fs";
   ok("POSSESSION T5(a) source pin (re-taught mk2.01): the renderer owns a setReticle overlay drawn in crimson, solid",
     /setReticle\(on, x, z, y, r, hit, pts\)/.test(rendSrc) && /0xf0143c/.test(String(rendSrc.match(/setReticle\(on, x, z, y, r, hit, pts\) \{[\s\S]*?\n    \},/) || "")));
   ok("possessed frames never paint the build hover (re-pinned mk1.12 — the old pin was a character-distance accident)",
-    /R\.overlay\.setReticle\(/.test(gameSrc) && /if \(!S\.possess && S\.hover\)/.test(gameSrc));
+    /R\.overlay\.setReticle\(/.test(gameSrc) && /if \(!input\.possess && view\.hover\)/.test(gameSrc));
   ok("POSSESSION T5(c) source pin: the build hover never paints while possessed",
-    /!S\.possess && S\.hover/.test(gameSrc));
+    /!input\.possess && view\.hover/.test(gameSrc));
 }
 // ==== end POSSESSION T5 =====================================================
 
@@ -1581,8 +1581,8 @@ import fs from "node:fs";
   // 1); MAP_SEED reads through the map parameter there (map.MAP_SEED).
   const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   const simSrc = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
-  ok("WIND TOGGLE source pin: stepDepot's one wind assignment is gated by S.windOn",
-    /world\.wind = S\.windOn === false \? \{ x: 0, z: 0, mag: 0 \} : windAt\(map\.MAP_SEED, world\.t\);/.test(simSrc));
+  ok("WIND TOGGLE source pin: stepDepot's one wind assignment is gated by input.windOn",
+    /world\.wind = input\.windOn === false \? \{ x: 0, z: 0, mag: 0 \} : windAt\(map\.MAP_SEED, world\.t\);/.test(simSrc));
   ok("WIND TOGGLE source pin: no other stepDepot-path windAt assignment exists",
     (gameSrc.match(/world\.wind = windAt/g) || []).length === 1); // the __DEPOTSETT__ debug hook only
   // mk0.96 (Task 6): OFF must also be QUIET and STILL — the audible bed and
@@ -2071,9 +2071,9 @@ import fs from "node:fs";
   {
     const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     ok("RETICLE mk1.99(g) source pin: a possessed ground tap jumps the reticle through the sight-circle clamp and the seen test",
-      /if \(seenAt\(T\.sight, cc0\.u, cc0\.v, 1\)\) \{\s*S\.reticleOff = \{ dx: dx0, dz: dz0 \};/.test(gameSrc));
+      /if \(seenAt\(T\.sight, cc0\.u, cc0\.v, 1\)\) \{\s*view\.reticleOff = \{ dx: dx0, dz: dz0 \};/.test(gameSrc));
     ok("RETICLE mk1.99(g) source pin: the frame loop derives the aim through stickyLock (wee-t2b: map.invW)",
-      /const lk9 = stickyLock\(world, S\.reticleLockId, S\.reticle, T, map\.invW\);/.test(gameSrc));
+      /const lk9 = stickyLock\(world, view\.reticleLockId, input\.reticle, T, map\.invW\);/.test(gameSrc));
     ok("RETICLE mk1.99(g) source pin: the ring radius reads the live scatterSigma under POSSESS_ACC",
       /scatterSigma\(world, muzzle9, aim9, \{ \.\.\.spec9, acc: spec9\.acc \* POSSESS_ACC \}\)/.test(gameSrc));
   }
@@ -2105,14 +2105,14 @@ import fs from "node:fs";
   {
     const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     ok("RETICLE mk2.00(d) source pin: the squad's TAKE CONTROL closes the build tree",
-      /act: \(\) => \{ closeBuild\(\); const S = stateRef\.current; if \(S\) S\.takeControl\(\); \}/.test(gameSrc));
+      /act: \(\) => \{ closeBuild\(\); const C = stateRef\.current; if \(C\) C\.view\.takeControl\(\); \}/.test(gameSrc));
     ok("RETICLE mk2.00(d) source pin: the tower's TAKE CONTROL closes the build tree",
-      /act: \(\) => \{ closeBuild\(\); const S = stateRef\.current; if \(S\) S\.takeControlTower\(tr\.id\); \},/.test(gameSrc));
+      /act: \(\) => \{ closeBuild\(\); const C = stateRef\.current; if \(C\) C\.view\.takeControlTower\(tr\.id\); \},/.test(gameSrc));
     ok("RETICLE mk2.00(d) source pin: the vehicle's TAKE CONTROL closes the build tree",
-      /act: \(\) => \{ closeBuild\(\); const S = stateRef\.current; if \(S\) S\.takeControlVehicle\(\); \} \},/.test(gameSrc));
+      /act: \(\) => \{ closeBuild\(\); const C = stateRef\.current; if \(C\) C\.view\.takeControlVehicle\(\); \} \},/.test(gameSrc));
     // (e) source pin: the BUILD toggle refuses to open over a live possession.
     ok("RETICLE mk2.00(e) source pin: the BUILD toggle refuses while possessed",
-      /if \(buildOpen\) \{ closeBuild\(\); return; \}[\s\S]{0,240}if \(S && S\.possess\) return;/.test(gameSrc));
+      /if \(buildOpen\) \{ closeBuild\(\); return; \}[\s\S]{0,240}if \(C && C\.input\.possess\) return;/.test(gameSrc));
   }
 }
 // ==== end THE RETICLE, SECOND PASS (mk2.00) =================================
@@ -2210,7 +2210,7 @@ import fs from "node:fs";
     const driversSrc = fs.readFileSync(new URL("../../src/depot/drivers.js", import.meta.url), "utf8");
     const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
     ok("TRUE RETICLE mk2.01(i) source pin: the frame loop reads the surface under the reticle (wee-t2b: map.invW)",
-      /S\.reticle\.y = surfaceAt\(T\.sight, S\.reticle\.x, S\.reticle\.z, map\.invW\)\.y;/.test(gameSrc));
+      /input\.reticle\.y = surfaceAt\(T\.sight, input\.reticle\.x, input\.reticle\.z, map\.invW\)\.y;/.test(gameSrc));
     ok("TRUE RETICLE mk2.01(i) source pin: all five possessed fire paths aim at the surface (aim.y)",
       (stateSrc.match(/aim\.y != null \? aim\.y : world\.field\.heightAt\(aim\.x, aim\.z\)/g) || []).length === 3 &&
       (driversSrc.match(/aim\.y != null \? aim\.y : world\.field\.heightAt\(aim\.x, aim\.z\)/g) || []).length === 2);
@@ -2274,9 +2274,9 @@ import fs from "node:fs";
     const stateSrc = fs.readFileSync(new URL("../../src/depot/state.js", import.meta.url), "utf8");
     const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     ok("TALL ORDER mk2.02(e) source pin: the bell's deal never opens over a live possession",
-      /M\.cardUp = M\.hand\.length > 0 && !S\.possess;/.test(stateSrc));
+      /M\.cardUp = M\.hand\.length > 0 && !opts\.possessed;/.test(stateSrc));
     ok("TALL ORDER mk2.02(e) source pin: release opens the held deal",
-      /if \(S\.manifest && S\.manifest\.hand\.length && !S\.manifest\.cardUp\) \{ S\.manifest\.cardUp = true;/.test(gameSrc));
+      /if \(run\.manifest && run\.manifest\.hand\.length && !run\.manifest\.cardUp\) \{ run\.manifest\.cardUp = true;/.test(gameSrc));
   }
   // (f) ONE BODY: every enemy row IS MAN.rifle's body, and 2m.
   {

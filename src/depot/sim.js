@@ -485,10 +485,10 @@ export function shatterStructure(world, b, opts) {
 // mk1.30), then infantry (units.js) — the mk1.21 order, tanks before men,
 // which is also the rng draw-order contract. DepotGame supplies the flow
 // field and the orientation-aware fwdDir/invW.
-export function stepEnemies(world, grid, T, S, map) {
+export function stepEnemies(world, grid, T, run, input, map) {
   stepDrivers(world, grid, map.fwdDir, T, map.invW, {
-    possessedId: S.possess && (S.possess.kind === "vehicle" || S.possess.kind === "mech") ? S.possess.id : 0,
-    squads: S.squads,
+    possessedId: input.possess && (input.possess.kind === "vehicle" || input.possess.kind === "mech") ? input.possess.id : 0,
+    squads: run.squads,
   });
   stepUnits(world, grid, map.fwdDir, T, map.invW);
 }
@@ -526,24 +526,24 @@ export function uprightMember(u, dt) {
   u.w.x *= 1 - Math.min(1, 6 * dt); u.w.z *= 1 - Math.min(1, 6 * dt);
 }
 
-export function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, S, map) {
+export function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipline, run, input, map) {
   // mk2.26: THE FIGHT SWITCH (sandbox). Dummies = no enemy drivers, no
   // enemy fire; bodies stay real (physics, damage, the chain). The flag
   // rides the world so stepTowers reads it without a signature change;
   // undefined in the live war — every existing caller unchanged.
-  world._devDummies = !!S.devDummies;
-  if (!S.devDummies) stepEnemies(world, grid, T, S, map);
+  world._devDummies = !!input.devDummies;
+  if (!input.devDummies) stepEnemies(world, grid, T, run, input, map);
   else for (const b of world.bodies) if (b.kind === "unit" && b.team === 2 && b.alive) uprightMember(b, world.dt);
   // Squads (Phase 5 Task 3), after enemies, before towers — the brief's
   // loop-order contract: prune dead members -> delete empty squads ->
   // stepSquad (movement) -> squadFire (combat). squadFire threads T + invW
   // so player squads fog-gate on the SAME field towers do (team 1).
-  if (S && S.squads) {
-    S.squads = pruneSquads(world, S.squads);
+  if (run && run.squads) {
+    run.squads = pruneSquads(world, run.squads);
     // POSSESSION (P4 T1, mk0.90): every man in a possessed squad dying frees
     // the stick automatically — nothing left to drive.
-    if (S.possess && S.possess.kind === "squad" && !S.squads.some((q) => q.id === S.possess.id)) S.releasePossession();
-    stepTransports(world, S.squads);   // P7 T4: boarding, riding, the sealed hold
+    if (input.possess && input.possess.kind === "squad" && !run.squads.some((q) => q.id === input.possess.id)) input.releasePossession();
+    stepTransports(world, run.squads);   // P7 T4: boarding, riding, the sealed hold
     // P7 T8: the ferry's turnaround — arrived out: drop the ramp and turn
     // for home; arrived back: the post resumes.
     for (const b of world.bodies) {
@@ -552,12 +552,6 @@ export function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipl
         if (b.ferry === "out") { unloadEnemyRiders(world, b); b.ferry = "back"; b.order = "move"; b.dest = { x: b.homeX != null ? b.homeX : b.pos.x, z: b.homeZ != null ? b.homeZ : b.pos.z }; b._route = null; b._routeDest = null; }
         else b.ferry = null;
       }
-    }
-    if (S.selSquadIds) { S.selSquadIds = S.selSquadIds.filter((id) => S.squads.some((q) => q.id === id)); if (S.selSquadIds.length < 2) S.selSquadIds = null; }
-    if (S.selSquadId != null && !S.squads.some((q) => q.id === S.selSquadId)) {
-      const nextId = S.selSquadIds ? S.selSquadIds.find((id) => id !== S.selSquadId) : null; // the group promotes its next squad
-      if (nextId != null) S.selSquadId = nextId;
-      else { S.selSquadId = null; S.orderMode = null; S.buildPt0 = null; S.selSquadIds = null; }
     }
     // VISION T4 (mk0.74, owner's ruling): an attacking squad that SEES an
     // enemy in weapon reach halts and fights — the halt is the squad's own
@@ -587,16 +581,16 @@ export function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipl
         return;
       }
     };
-    world._holdArea = S.holdArea; // mk2.18: area weapons' hold, read by stepDavyShot below
-    for (const sq of S.squads) {
+    world._holdArea = run.holdArea; // mk2.18: area weapons' hold, read by stepDavyShot below
+    for (const sq of run.squads) {
       if (sq.ridingIn != null || sq.order === "ride") continue; // P7 T4: the hold is sealed — no legs, no eyes, no rifles
-      if (S.possess && S.possess.kind === "squad" && sq.id === S.possess.id) {
+      if (input.possess && input.possess.kind === "squad" && sq.id === input.possess.id) {
         // POSSESSION: the stick owns this squad — no engage check, no order
         // machine, no auto-fire (T2 gives the trigger). Input is the frame's
         // snapshot; the drive runs at the fixed step like all movement.
         const a0 = { x: sq.anchor.x, z: sq.anchor.z };
-        const pi = S.possessInput || { vx: 0, vz: 0 };
-        drivePossessedSquad(world, sq, pi.vx, pi.vz, world.dt, S.reticle);
+        const pi = input.possessInput || { vx: 0, vz: 0 };
+        drivePossessedSquad(world, sq, pi.vx, pi.vz, world.dt, input.reticle);
         const cl = map.clampToRim(sq.anchor.x, sq.anchor.z);
         // MASONRY (T8, mk0.98): a building footprint (or a rock, or a wall
         // line) refuses the anchor the way the rim does — the formation can
@@ -619,10 +613,10 @@ export function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipl
       stepSquad(world, sq, world.dt);
       // P1.5 T4: the two-point build line, driven straight after the squad's
       // own movement so the accumulator reads THIS tick's anchor. It lives in
-      // the game layer (S.stepBuildLine, installed by the mount effect below)
+      // the game layer (input.stepBuildLine, installed by the mount effect below)
       // because it spends scrap and places bodies — both barred from
       // squads.js by that module's law. Squads with no job cost one test.
-      if (sq._build && S.stepBuildLine) S.stepBuildLine(sq);
+      if (sq._build && input.stepBuildLine) input.stepBuildLine(sq);
       // P7.2 T6: the medics make their rounds — after the squad's own step,
       // so a tending man's goal overrides this tick's slot seek.
       if (sq.type === "medics") stepMedicTendSquad(world, sq, world.dt);
@@ -639,13 +633,13 @@ export function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipl
   }
   // P7.1 T7: HIS SQUADS — the enemy's engineer roster, squad-driven like the
   // player's (routing, legs, the build driver), never tappable (squadAtPoint
-  // scans S.squads alone). Engineers fire nothing; no squadFire call.
-  if (!S.devDummies && S.foeSquads && S.foeSquads.length) {
-    S.foeSquads = pruneSquads(world, S.foeSquads);
-    for (const sq of S.foeSquads) {
+  // scans run.squads alone). Engineers fire nothing; no squadFire call.
+  if (!input.devDummies && run.foeSquads && run.foeSquads.length) {
+    run.foeSquads = pruneSquads(world, run.foeSquads);
+    for (const sq of run.foeSquads) {
       stepSquadRouting(grid, sq, world);
       stepSquad(world, sq, world.dt);
-      if (sq._build && S.stepFoeBuildLine) S.stepFoeBuildLine(sq);
+      if (sq._build && input.stepFoeBuildLine) input.stepFoeBuildLine(sq);
       for (const id of sq.memberIds) {
         const u = world.byId.get(id);
         if (u && u.alive) uprightMember(u, world.dt);
@@ -655,24 +649,24 @@ export function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipl
   // POSSESSION (P4 T3, mk0.92): a possessed tower killed out from under the
   // owner frees the trigger automatically — nothing left to fire, same rule
   // T1 gives a wiped-out possessed squad.
-  if (S.possess && S.possess.kind === "tower") {
-    const ptw = world.byId.get(S.possess.id);
-    if (!ptw || !ptw.alive) S.releasePossession();
+  if (input.possess && input.possess.kind === "tower") {
+    const ptw = world.byId.get(input.possess.id);
+    if (!ptw || !ptw.alive) input.releasePossession();
   }
   // POSSESSION (P7 T2): a possessed vehicle killed out from under the owner
   // frees the trigger automatically, same rule as a squad or a tower.
-  if (S.possess && S.possess.kind === "vehicle") {
-    const pv = world.byId.get(S.possess.id);
-    if (!pv || !pv.alive) S.releasePossession();
+  if (input.possess && input.possess.kind === "vehicle") {
+    const pv = world.byId.get(input.possess.id);
+    if (!pv || !pv.alive) input.releasePossession();
   }
-  stepTowers(world, T, discipline, S.possess && S.possess.kind === "tower" ? S.possess.id : undefined, S.arcs, S.holdArea, map);
+  stepTowers(world, T, discipline, input.possess && input.possess.kind === "tower" ? input.possess.id : undefined, run.arcs, run.holdArea, map);
   stepGrenades(world); // mk2.03: the grenade fuses — 2.0s from each release
-  stepTesla(world, S.arcs, map); // mk2.15: the chains walk, 0.15s a hop
+  stepTesla(world, run.arcs, map); // mk2.15: the chains walk, 0.15s a hop
   // WIND TOGGLE (mk0.95, owner's accuracy-tuning request): off = dead calm
   // for BOTH sides' shots and shells (drift and hold-off zero out through
   // the same world.wind every shooter reads). Deterministic either way —
   // windAt is a pure function and the toggle draws nothing.
-  world.wind = S.windOn === false ? { x: 0, z: 0, mag: 0 } : windAt(map.MAP_SEED, world.t);
+  world.wind = input.windOn === false ? { x: 0, z: 0, mag: 0 } : windAt(map.MAP_SEED, world.t);
   stepWorld(world);
   for (let i = world.bodies.length - 1; i >= 0; i--) {
     const b = world.bodies[i];
@@ -700,7 +694,7 @@ export function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipl
     if (m.hull.alive) continue;
     const h = m.hull.pos;
     for (let i = 0; i < 3; i++) explode(world, h.x + (i - 1) * 1.5, h.y + i * 0.8, h.z, { r: 4.5, kv: 12, dmg: 20, crater: 0.8, attacker: m.team === 2 ? "player" : "enemy" });
-    if (S.possess && S.possess.kind === "mech" && S.possess.id === m.hull.id) S.releasePossession();
+    if (input.possess && input.possess.kind === "mech" && input.possess.id === m.hull.id) input.releasePossession();
     for (const L2 of m.links) { L2.mechRef = null; L2.team = 0; }
     world.mechs.splice(mi2, 1);
   }

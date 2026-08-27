@@ -7,6 +7,7 @@
 // assignment in src/ — a mismatch either way is a finding against this file.
 
 import { worldHash } from "../engine/core.js";
+import { serializeFront } from "./save.js";
 
 // ============================================================ part 1: shapes
 // JSDoc only — nothing in this part runs.
@@ -161,6 +162,8 @@ import { worldHash } from "../engine/core.js";
  * @property {World} world @property {Territory} T
  * @property {Array} town          buildTown's bookkeeping rows
  * @property {Run} run
+ * @property {Array} census        the player depot's stone census (censusDepotChunks)
+ * @property {Array} census2       the enemy depot's census
  */
 
 /**
@@ -184,7 +187,7 @@ import { worldHash } from "../engine/core.js";
  * @property {?Object} possess       {kind: "squad"|"tower"|"vehicle"|"mech", id} or null
  * @property {?Object} possessInput  {vx, vz} world-space stick, or null
  * @property {?Object} reticle       {x, z, y?} the derived aim point, or null
- * @property {?number} reticleLockId sticky-lock body id, or null
+ * @property {?number} reticleLockId sticky-lock body id, or null — view-side at the T3 split; the sim never reads it
  * @property {boolean} fireHeld @property {boolean} mgHeld
  * @property {?Object} mechWant      {msl, brg, punt, face} one-shot wants, or null
  * @property {boolean} devDummies    sandbox fight switch
@@ -295,12 +298,24 @@ export function tickWar(war, sdt, input) {
 }
 
 /**
- * Serialize the war's run state — byte-equal to save.js's serializeFront.
- * @param {War} war @returns {string}
+ * Serialize the war's run state — the same context the component's save
+ * built, byte-equal to save.js's serializeFront by construction (this is
+ * a pure argument mapping; serializeFront is untouched).
+ * THE ONE DRAW: exactly one world.rng draw per call, unconditional — the
+ * save law (save.js law 2). The caller saves the returned string or
+ * discards it; the draw happened either way.
+ * @param {War} war @param {Object} [opts] {smears} — the renderer's smear
+ * ledger (R._splat.log); a headless caller has none and passes nothing.
+ * @returns {string}
  */
-export function serializeRun(war) {
-  void war;
-  throw new Error("serializeRun: filled by step 3 of the war-engine-extraction plan");
+export function serializeRun(war, opts = {}) {
+  const rngSeed = Math.floor(war.world.rng() * 4294967296);
+  return serializeFront({
+    S: war.run, world: war.world, T: war.T, town: war.town,
+    census: war.census, census2: war.census2,
+    rocks: war.map.ROCKS, smears: opts.smears || [],
+    mapSeed: war.map.MAP_SEED, rngSeed,
+  });
 }
 
 // defaultTickInput(): the headless caller's no-command tick.

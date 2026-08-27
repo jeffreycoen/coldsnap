@@ -28,12 +28,12 @@ ok("T1: an unknown door falls to CLOSE (the teach door needs no code)",
   const dg = src("src/depot/DepotGame.jsx");
   ok("T3: cards.js stamps the revision (re-taught T4: rev 2, the brief copy)", /export const TEACH_REV = 2;/.test(src("src/depot/cards.js")));
   ok("T3: the seen store has its own key", /const CARDS_KEY = "coldsnap-wf-cards";/.test(dg));
-  ok("T3: a card up freezes the sim (the convoy idiom)", /const teachUp = S\._teachQ\.length > 0;/.test(dg) && /cardUp \|\| convoyUp \|\| teachUp \? 0 :/.test(dg));
+  ok("T3: a card up freezes the sim (the convoy idiom)", /const teachUp = view\._teachQ\.length > 0;/.test(dg) && /cardUp \|\| convoyUp \|\| teachUp \? 0 :/.test(dg));
   ok("T3: firing is sandbox-silent, seen-gated, and honors the silence sentinel",
-    /S\.teachFire = \(key\) => \{\n\s+if \(dev\) return;/.test(dg) && /S\._teachSeen\.has\("\*"\)/.test(dg));
-  ok("T3: closing marks seen and persists the set", /S\._teachSeen\.add\(k\);[\s\S]{0,220}window\.storage\.set\(CARDS_KEY/.test(dg));
+    /view\.teachFire = \(key\) => \{\n\s+if \(dev\) return;/.test(dg) && /view\._teachSeen\.has\("\*"\)/.test(dg));
+  ok("T3: closing marks seen and persists the set", /view\._teachSeen\.add\(k\);[\s\S]{0,220}window\.storage\.set\(CARDS_KEY/.test(dg));
   ok("T3: the phone voice serves on touch", /isTouch && tc\.roleTouch \? tc\.roleTouch : tc\.role/.test(dg));
-  ok("T3/T4: the pie enqueues its whole series", /for \(const k of PIE_CARDS\[kind\]\(thing\)\) S\.teachFire\(k\);/.test(dg));
+  ok("T3/T4: the pie enqueues its whole series", /for \(const k of PIE_CARDS\[kind\]\(thing\)\) view\.teachFire\(k\);/.test(dg));
   ok("T3: the smoke silences the door with the sentinel", /coldsnap-wf-cards/.test(src("scripts/smoke.mjs")));
 }
 
@@ -43,7 +43,7 @@ ok("T1: an unknown door falls to CLOSE (the teach door needs no code)",
   const ic = src("src/depot/InfoCard.jsx");
   ok("T4: the card carries the teach door's paging chrome",
     /door === "teach"/.test(ic) && /data-teach-next/.test(ic) && /data-teach-back/.test(ic) && /data-teach-skip/.test(ic));
-  ok("T4: the queue pages by index", /_teachIdx/.test(dg) && /S\.teachBack = /.test(dg) && /S\.teachSkip = /.test(dg));
+  ok("T4: the queue pages by index", /_teachIdx/.test(dg) && /view\.teachBack = /.test(dg) && /view\.teachSkip = /.test(dg));
   ok("T4: the sentinel survives any revision", /d\.rev === TEACH_REV \|\| d\.seen\.includes\("\*"\)/.test(dg));
   ok("T4: every body is brief", Object.values(TEACH).every((c) => c.role.length <= 180 && (!c.roleTouch || c.roleTouch.length <= 180)));
 }
@@ -110,7 +110,7 @@ ok("T1: an unknown door falls to CLOSE (the teach door needs no code)",
   const WALK_KEYS = ["desktop_keys", "the_hand", "placing", "scrap", "bell", "convoy", "market", "sell", "defend", "move", "attack", "patrol", "engineer_lines", "structures", "select_all", "fog"];
   ok("T10w: the walk list is the ruled sixteen, in order",
     (() => { const m = dg.match(/const WALK = \[([^\]]+)\]/); if (!m) return false; const got = m[1].match(/"[a-z_]+"/g).map((s) => s.slice(1, -1)); return got.length === 16 && got.every((k, i) => k === WALK_KEYS[i]); })());
-  ok("T10w: the walk fills the queue and skips the desktop card on touch", /S\.teachWalk = /.test(dg) && /desktopOnly && isTouch/.test(dg));
+  ok("T10w: the walk fills the queue and skips the desktop card on touch", /view\.teachWalk = /.test(dg) && /desktopOnly && isTouch/.test(dg));
   ok("T10w: the overlay offers the walk", /data-menu="walk"/.test(dg) && /SHOW ME THE FRONT/.test(dg));
   ok("T10w: the card carries the hint line", /data-card-hint/.test(src("src/depot/InfoCard.jsx")));
   ok("T10w: every walked card carries its hint", WALK_KEYS.every((k) => typeof TEACH[k].hint === "string" && TEACH[k].hint.length > 0));

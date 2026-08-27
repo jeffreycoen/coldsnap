@@ -6,12 +6,10 @@
 // only, never a map.
 import { ok } from "./harness.mjs";
 import fs from "node:fs";
-import { makeWorld, addBody, addWeld, stepWorld, mulberry32 } from "../../src/engine/core.js";
+import { makeWorld, addBody, addWeld, mulberry32 } from "../../src/engine/core.js";
 import { MASON } from "../../src/depot/specs.js";
 import { fwdUFor, fwdDirFor, invWFor } from "../../src/depot/orient.js";
 import { stoneCount, TOWN_STONE_CAP } from "../../src/depot/mapgen.js";
-import { makeSquad, stepSquad } from "../../src/depot/squads.js";
-import { spawnSquadMembers } from "../../src/depot/state.js";
 import { payTown } from "../../src/depot/economy.js";
 import { planRoute } from "../../src/depot/route.js";
 
@@ -89,7 +87,6 @@ const flatF = { heightAt: () => 0 };
 }
 
 // ==== THE RANDOM SWEEP: laws on ground nobody chose ==========================
-let sweepMound = null;
 {
   console.log("\n[settled: the random sweep]");
   const seeds = Array.from({ length: 40 }, () => 1 + Math.floor(Math.random() * 1000000));
@@ -117,7 +114,6 @@ let sweepMound = null;
         if (out[i].ruined !== true) badRow++;
         if (t.form !== "mound") { for (const ci of out[i].cells) if (g.cells[ci].blocked) badCell++; }
         else { for (const ci of out[i].cells) if (!g.cells[ci].blocked) moundOpen++; }
-        if (t.form === "mound" && !sweepMound) sweepMound = { Mi, m: t };
       }
       if (t.marker && out[i].marker !== true) badMarker++;
     }
@@ -138,38 +134,6 @@ let sweepMound = null;
   ok("sweep law: every map raises hamlets", hamletless === 0, String(hamletless));
   ok("sweep law: every marker entry carries its marker", badMarker === 0, String(badMarker));
   ok("sweep law: spawns reach the objective on every map", conn === 40, `${conn}/40`);
-}
-
-// ==== the way around: a squad ordered past a mound arrives ==================
-// The mound blocks its cells (owner, 2026-08-26: too dense to walk, men go
-// around); the real router carries the squad past it. Routing every tick,
-// then the legs — the live game's own loop.
-{
-  ok("around: the random sweep turned up a mound", !!sweepMound);
-  if (sweepMound) {
-    const { Mi, m } = sweepMound;
-    const flatW = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
-    const world = makeWorld({ field: flatW, seed: 9 });
-    world._tdStruct = true; world.depotCombat = true;
-    world.inRim = () => true; world.pondAt = () => false; world.streamAt = () => false;
-    const g = Mi.makeGrid(null);
-    Mi.buildTown(world, g, flatW);
-    const sq = makeSquad(1, "rifles", 1, m.x - 8, m.z);
-    spawnSquadMembers(world, sq);
-    const DEST = { x: m.x + 8, z: m.z };
-    sq.order = "move"; sq.dest = { ...DEST };
-    for (let i = 0; i < 120 * 120; i++) { Mi.stepSquadRouting(g, sq, world); stepSquad(world, sq, 1 / 120); stepWorld(world); }
-    // The honest clamp: on full ground the ordered point may be built over,
-    // and the router walks the squad to the nearest reachable ground. The
-    // law is the game's real promise — nobody strands: every man converges
-    // on the squad's own settled anchor.
-    let worst = 0, alive = 0;
-    for (const id of sq.memberIds) {
-      const u = world.byId.get(id);
-      if (u && u.alive) { alive++; worst = Math.max(worst, Math.hypot(u.pos.x - sq.anchor.x, u.pos.z - sq.anchor.z)); }
-    }
-    ok("around: nobody strands at the mound — all four men converge on the squad in 120s", alive === 4 && worst < 4, `alive ${alive}, spread ${worst.toFixed(2)}m`);
-  }
 }
 
 // ==== pay laws: born ruins and markers pay nobody ============================

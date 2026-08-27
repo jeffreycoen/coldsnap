@@ -18,9 +18,9 @@ ok("G1: held ground scales continuously, fractions included",
   Math.abs(groundRate(Math.round(1.5 * INCOME_CELLS)) - 1.5) < 0.01);
 {
   const dg = src("src/depot/DepotGame.jsx");
-  ok("G2: the player's income line reads the ground rate", /S\.resources \+= S\._groundRate1 \* sdt/.test(dg));
-  ok("G2: the regiment accrues on the same clock, the same gate", /S\.reg\.scrap \+= S\._groundRate2 \* sdt/.test(dg));
-  ok("G2: the rates ride the territory tick", /S\._groundRate1 = groundRate\(pc\)/.test(dg) && /S\._groundRate2 = groundRate\(ec\)/.test(dg));
+  ok("G2: the player's income line reads the ground rate", /run\.resources \+= run\._groundRate1 \* sdt/.test(dg));
+  ok("G2: the regiment accrues on the same clock, the same gate", /run\.reg\.scrap \+= run\._groundRate2 \* sdt/.test(dg));
+  ok("G2: the rates ride the territory tick", /run\._groundRate1 = groundRate\(pc\)/.test(dg) && /run\._groundRate2 = groundRate\(ec\)/.test(dg));
   ok("G2: the bell stipend is dead", !/reg\.scrap \+= STIPEND/.test(src("src/depot/state.js")));
   ok("G2: STIPEND stands only as the fixtures' shorthand", STIPEND === 90);
 }

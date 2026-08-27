@@ -50,8 +50,8 @@ const src = (p) => readFileSync(new URL("../../" + p, import.meta.url), "utf8");
 // E4 — the credit sites accrue, source-pinned (the four tills that feed it).
 {
   const dg = src("src/depot/DepotGame.jsx"), bl = src("src/depot/bell.js"), st = src("src/depot/state.js"), ec = src("src/depot/economy.js");
-  ok("E4: ground income accrues to earned", /S\.reg\.earned = \(S\.reg\.earned \|\| 0\) \+ S\._groundRate2 \* sdt;/.test(dg));
-  ok("E4: town pay accrues to earned (zero pay accrues nothing)", /if \(paid\.regiment > 0\) S\.reg\.earned = \(S\.reg\.earned \|\| 0\) \+ paid\.regiment;/.test(bl));
+  ok("E4: ground income accrues to earned", /run\.reg\.earned = \(run\.reg\.earned \|\| 0\) \+ run\._groundRate2 \* sdt;/.test(dg));
+  ok("E4: town pay accrues to earned (zero pay accrues nothing)", /if \(paid\.regiment > 0\) run\.reg\.earned = \(run\.reg\.earned \|\| 0\) \+ paid\.regiment;/.test(bl));
   ok("E4: kill pay accrues to earned", /S\.reg\.earned = \(S\.reg\.earned \|\| 0\) \+ pay;/.test(st));
   ok("E4: assault results accrue to earned (zero credits accrue nothing)", /if \(won > 0\) reg\.earned = \(reg\.earned \|\| 0\) \+ won;/.test(ec));
   ok("E4: the baseline reads the earned till", /const baseline = reg\.earned != null \? reg\.earned : bellBudget\(bell\);/.test(src("src/depot/ai.js")));

@@ -473,7 +473,7 @@ import fs from "node:fs";
   {
     const src = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     ok("mk0.27/c: the canvas-tap pending-clear goes through canvasTapConsumesPending",
-      /canvasTapConsumesPending\(S\.pending, S\.pendingScreen/.test(src));
+      /canvasTapConsumesPending\(view\.pending, view\.pendingScreen/.test(src));
     ok("mk0.27/c: the unarmed ✓ tap toasts instead of vanishing",
       /if \(!pendingArmed\(p, world\.t\)\) \{[^}]*toast\(/.test(src.replace(/\n/g, " ")));
     ok("mk0.27/c: a pending whose anchor leaves the viewport auto-cancels with a toast",
@@ -530,7 +530,7 @@ import fs from "node:fs";
       /useMemo\([^)]*\n?[^;]*makeEndDispatch/.test(src) || /const endDispatch = useMemo/.test(src));
     ok("mk0.29/c: the card mount waits on the delay gate", /hud\.endCard/.test(src));
     ok("mk0.29/c: the sim keeps running until the card is up",
-      /const cardUp = /.test(src) && /S\.paused \|\| !S\.started \|\| cardUp/.test(src));
+      /const cardUp = /.test(src) && /view\.paused \|\| !run\.started \|\| cardUp/.test(src));
     ok("mk0.29/c: orders lock at the verdict", /orderSquad = \(kind\) => \{[^}]*gameOver/.test(src.replace(/\n/g, " ")));
     ok("mk0.29/c: building locks at the verdict", /setMode = \(m\) => \{[^}]*gameOver/.test(src.replace(/\n/g, " ")));
     ok("mk0.29/c: the MENU button arms before it leaves the field",
