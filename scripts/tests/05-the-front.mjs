@@ -51,7 +51,7 @@ import fs from "node:fs";
   const headerT1 = mgSrcT1.slice(mgSrcT1.indexOf("const GRID_CS"), mgSrcT1.indexOf("function genMap")).replace(/^export /gm, "");
   const mapSrcT1 = [
     headerT1,
-    sliceFn2("stoneCount"), sliceFn2("genMap"), sliceFn2("makeMap"), sliceFn2("streamAt"), sliceFn2("pondAt"), sliceFn2("rockAt"),
+    sliceFn2("formOf"), sliceFn2("layDressing"), sliceFn2("stoneCount"), sliceFn2("genMap"), sliceFn2("makeMap"), sliceFn2("streamAt"), sliceFn2("pondAt"), sliceFn2("rockAt"),
     sliceFn2("makeGrid"), sliceFn2("checkConnectivity"), sliceFn2("townFootprint"), sliceFn2("buildTown"),
     `return { makeMap, makeGrid, checkConnectivity, invW,
       state: () => ({ ORIENT, OBJ_POS, SPAWN_POINTS, ROCKS, TOWN, MAP_SEED }) };`,
@@ -121,7 +121,7 @@ import fs from "node:fs";
   const headerT2 = mgSrcT2.slice(mgSrcT2.indexOf("const GRID_CS"), mgSrcT2.indexOf("function genMap")).replace(/^export /gm, "");
   const mapSrcT2 = [
     headerT2,
-    sliceFn3("stoneCount"), sliceFn3("genMap"), sliceFn3("makeMap"), sliceFn3("streamAt"), sliceFn3("pondAt"), sliceFn3("rockAt"),
+    sliceFn3("formOf"), sliceFn3("layDressing"), sliceFn3("stoneCount"), sliceFn3("genMap"), sliceFn3("makeMap"), sliceFn3("streamAt"), sliceFn3("pondAt"), sliceFn3("rockAt"),
     sliceFn3("makeGrid"), sliceFn3("checkConnectivity"), sliceFn3("townFootprint"), sliceFn3("buildTown"),
     `return { makeMap, makeGrid, checkConnectivity, invW,
       state: () => ({ ORIENT, OBJ_POS, SPAWN_POINTS, ROCKS, PONDS, TOWN, ROADS, BANDS, MAP_SEED }) };`,
@@ -192,7 +192,7 @@ import fs from "node:fs";
     if (!/let STREAM = null;/.test(header3)) throw new Error("T3: STREAM state not in header");
     const mapSrc3 = [
       header3,
-      sliceFn3("stoneCount"), sliceFn3("genMap"), sliceFn3("makeMap"), sliceFn3("streamAt"), sliceFn3("pondAt"), sliceFn3("rockAt"),
+      sliceFn3("formOf"), sliceFn3("layDressing"), sliceFn3("stoneCount"), sliceFn3("genMap"), sliceFn3("makeMap"), sliceFn3("streamAt"), sliceFn3("pondAt"), sliceFn3("rockAt"),
       sliceFn3("makeGrid"), sliceFn3("checkConnectivity"), sliceFn3("townFootprint"), sliceFn3("buildTown"),
       sliceFn3("buildDepotTerrain"),
       `return { makeMap, makeGrid, checkConnectivity, buildDepotTerrain, streamAt, invW,
@@ -276,7 +276,7 @@ import fs from "node:fs";
   const header4 = mgSrcT4.slice(mgSrcT4.indexOf("const GRID_CS"), mgSrcT4.indexOf("function genMap")).replace(/^export /gm, "");
   const mapSrc4 = [
     header4,
-    sliceFn4("stoneCount"), sliceFn4("genMap"), sliceFn4("makeMap"), sliceFn4("streamAt"), sliceFn4("pondAt"), sliceFn4("rockAt"),
+    sliceFn4("formOf"), sliceFn4("layDressing"), sliceFn4("stoneCount"), sliceFn4("genMap"), sliceFn4("makeMap"), sliceFn4("streamAt"), sliceFn4("pondAt"), sliceFn4("rockAt"),
     sliceFn4("makeGrid"), sliceFn4("checkConnectivity"), sliceFn4("townFootprint"), sliceFn4("buildTown"),
     `return { makeMap, makeGrid, buildTown, invW, state: () => ({ ORIENT, TOWN, MAP_SEED }) };`,
   ].join("\n");
@@ -424,7 +424,7 @@ import fs from "node:fs";
     if (!/let HILLS = \[\];/.test(header5)) throw new Error("T5: HILLS state not in header");
     const mapSrc5 = [
       header5,
-      sliceFn5("stoneCount"),
+      sliceFn5("formOf"), sliceFn5("layDressing"), sliceFn5("stoneCount"),
       sliceFn5("genMap"), sliceFn5("makeMap"), sliceFn5("streamAt"), sliceFn5("planTrees"),
       sliceFn5("pondAt"), sliceFn5("rockAt"),
       sliceFn5("makeGrid"), sliceFn5("checkConnectivity"), sliceFn5("townFootprint"), sliceFn5("buildTown"),
@@ -535,7 +535,7 @@ import fs from "node:fs";
   const header6 = mgSrc6.slice(mgSrc6.indexOf("const GRID_CS"), mgSrc6.indexOf("function genMap")).replace(/^export /gm, "");
   const mapSrc6 = [
     header6,
-    sliceFn6("stoneCount"),
+    sliceFn6("formOf"), sliceFn6("layDressing"), sliceFn6("stoneCount"),
     sliceFn6("genMap"), sliceFn6("makeMap"), sliceFn6("streamAt"), sliceFn6("planTrees"),
     sliceFn6("pondAt"), sliceFn6("rockAt"),
     sliceFn6("makeGrid"), sliceFn6("checkConnectivity"), sliceFn6("townFootprint"), sliceFn6("buildTown"),

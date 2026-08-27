@@ -39,7 +39,7 @@ import { makeBodyLists, rebuildBodyLists } from "./lists.js";
 import Dispatch from "./Dispatch.jsx";
 import InfoCard from "./InfoCard.jsx";
 import CrateChip, { StockTag } from "./Crate.jsx";
-import { GRID_CS, GRID_W, GRID_H, GRID_OX, GRID_OZ, RIM_HALF_U, RIM_HALF_V, ORIENT, fwdU, fwdDir, invW, clampToRim, OBJ_POS, SPAWN_POINTS, PONDS, ROCKS, TOWN, ROADS, PASSES, BANDS, MAP_SEED, SPAWN_U, STREAM, HILLS, genMap, makeMap, buildDepotTerrain, pondAt, rockAt, makeGrid, streamAt, planTrees, computeFlowField } from "./mapgen.js";
+import { GRID_CS, GRID_W, GRID_H, GRID_OX, GRID_OZ, RIM_HALF_U, RIM_HALF_V, ORIENT, fwdU, fwdDir, invW, clampToRim, OBJ_POS, SPAWN_POINTS, PONDS, ROCKS, TOWN, ROADS, PASSES, BANDS, MAP_SEED, SPAWN_U, STREAM, HILLS, genMap, makeMap, buildDepotTerrain, pondAt, rockAt, makeGrid, streamAt, planTrees, computeFlowField, layDressing } from "./mapgen.js";
 import { armorSpread, armorStable, MECH_SPREAD, musterFreshStart, PICK_POOL } from "./muster.js";
 import { lineCells, pieceHalf, startBuildLine, linePieces, layPieceAt, stepBuildLine } from "./buildlines.js";
 import { ringBell as ringBellOut } from "./bell.js";
@@ -220,6 +220,35 @@ function townFootprint(grid, t) {
 }
 function buildTown(world, grid, field) {
   const { hcs, pitch, mass, breakF } = MASON;
+  // THE CARPENTER (mk2.66): lay every dressing body layDressing walks —
+  // plates and trim, tilted by axis+angle, tinted, welded to the nearest
+  // lattice stones so they fall when the walls do.
+  const qOf = (axis, angle) => {
+    if (!axis || !angle) return undefined;
+    const h = angle / 2, sh = Math.sin(h);
+    return { x: axis === "x" ? sh : 0, y: axis === "y" ? sh : 0, z: axis === "z" ? sh : 0, w: Math.cos(h) };
+  };
+  const layDress = (t, grid3, base) => {
+    let di = 0;
+    layDressing(t, (o) => {
+      const c = addBody(world, { kind: "chunk", team: 0, mass: o.mass || MASON.mass,
+        hx: o.hx, hy: o.hy, hz: o.hz,
+        x: t.x + o.dx, y: base + o.dy, z: t.z + o.dz,
+        friction: 0.65, restitution: 0.02, q: qOf(o.axis, o.angle) });
+      c.sleeping = true; c.town = t.id; c.gpos = [-3, -1 - di++, 0]; // negative: never read as a course-0 stone NOR a roof-course stone by any suite filter
+      if (o.tint) c.tint = o.tint;
+      // welded to the three nearest lattice stones in reach — it falls with the walls
+      const near = [];
+      for (const s of grid3) {
+        if (s.gpos[0] === -3) continue;
+        const dd = Math.hypot(s.pos.x - c.pos.x, s.pos.y - c.pos.y, s.pos.z - c.pos.z);
+        if (dd < 2.2) near.push([dd, s]);
+      }
+      near.sort((a, b2) => a[0] - b2[0]);
+      for (let i = 0; i < Math.min(3, near.length); i++) addWeld(world, c, near[i][1], MASON.breakF);
+      grid3.push(c);
+    });
+  };
   const out = [];
   for (const t of TOWN) {
     const grid3 = [], base = field.heightAt(t.x, t.z) + hcs + 0.02;
@@ -376,7 +405,9 @@ function buildTown(world, grid, field) {
         const part = t.parts && t.parts.indexOf(ix) >= 0;
         const stone0 = t.stones && iy === 0 && !perim && ((ix * 31 + iz * 7) % 100) / 100 < 0.35;
         if (iy < t.ny && !perim && !colAt(ix, iz) && !part && !stone0) continue;
-        if (iy === t.ny && (t.roof === false || t.slab)) continue; // T4: a slab replaces the granular roof below
+        const pitchedForm = /^(croft|shed|house|long|granary|mill|smithy|inn|spring|row|chapel|warehouse|watch)/.test(t.id || "");
+        if (iy === t.ny && (t.roof === false || t.slab || pitchedForm)) continue; // T4/mk2.66: NO STONE LIDS (owner) — a slab or plates on structure, never a layer of cubes
+        if (t.cren && iy === t.ny && (!perim || (ix + iz) % 2)) continue; // mk2.66: the keep's crenellations
         if (ix === t.door && (iz === 1 || iz === 2) && iy <= 2) continue;
         // T4: drive-through — doors carved through BOTH end walls of the long
         // axis, full width bar the corners, every course but the top lintel.
@@ -423,6 +454,7 @@ function buildTown(world, grid, field) {
         grid3.push(slab);
       }
     }
+    if (!t.depot) layDress(t, grid3, field.heightAt(t.x, t.z) + hcs + 0.02); // mk2.66: the carpenter dresses every standing and shell form
     const cells = townFootprint(grid, t);
     if (!t.dead || t.form === "mound") for (const ci of cells) { const c = grid.cells[ci]; c.blocked = true; c.building = t.id; c.bTeam = t.team === 2 ? 2 : (t.depot ? 1 : 0); } // T2: a born ruin blocks no cell — EXCEPT the mound (owner, 2026-08-26): too dense to walk, the router goes around
     if (t.depot) {

@@ -940,6 +940,9 @@ export function makeRenderer(canvas, world0, opts = {}) {
   let chunkStats = { drawn: 0, cap: CHUNK_CAP, total: 0 };
   const chunkMesh = pool(chunkGeo, toon(0xa6b2c0), CHUNK_CAP, true);
   chunkMesh.receiveShadow = true;
+  // mk2.66 (owner): THE TWO TINTS — slate roofs, dark timber. Per-instance
+  // color on the one chunk pool; wall stones stay the material's own gray.
+  const CHUNK_WALL_C = new THREE.Color(0xffffff), CHUNK_ROOF_C = new THREE.Color(0x5a626e), CHUNK_TIMBER_C = new THREE.Color(0x33291f);
   // mech walker links: plain instanced steel boxes (rig art comes later)
   const mechMesh = pool(new THREE.BoxGeometry(1, 1, 1), toon(0xffffff), 96, true);
   mechMesh.receiveShadow = true;
@@ -2203,9 +2206,10 @@ export function makeRenderer(canvas, world0, opts = {}) {
       const bs = b.sandbag ? SEAM_BAG : 0;
       if (b.sandbag) pushBar(b, 1.2, 0.4); // provisional (F5)
       writeInst(chunkMesh, ki, b.pos.x, b.pos.y, b.pos.z, b.q, (b.hx - bs) / 0.6, (b.hy - bs) / 0.6, (b.hz - bs) / 0.6);
+      chunkMesh.setColorAt(ki, b.tint === "roof" ? CHUNK_ROOF_C : b.tint === "timber" ? CHUNK_TIMBER_C : CHUNK_WALL_C);
       ki++;
     }
-    chunkMesh.count = ki; chunkMesh.instanceMatrix.needsUpdate = true;
+    chunkMesh.count = ki; chunkMesh.instanceMatrix.needsUpdate = true; if (chunkMesh.instanceColor) chunkMesh.instanceColor.needsUpdate = true;
     chunkStats = { drawn: ki, cap: CHUNK_CAP, total: world.bodies.reduce((n, b) => n + (b.kind === "chunk" ? 1 : 0), 0) };
     // P7.1 T3: the collected bars — plate first, fill on top, camera-facing,
     // left edge anchored so the fill drains rightward as hp falls.

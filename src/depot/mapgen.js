@@ -173,7 +173,7 @@ export function genMap(seed) {
     yard: { t: "yard", nx: 6, nz: 5, ny: 2, roof: false },
     shed: { t: "shed", nx: 4, nz: 4, ny: 3 },
     chapel: { t: "chapel", nx: 5, nz: 6, ny: 5, cols: true },
-    keep: { t: "keep", nx: 7, nz: 6, ny: 5, cols: true },
+    keep: { t: "keep", nx: 7, nz: 6, ny: 5, cols: true, cren: true },  // mk2.66: crenellated top, no roof course
     row: { t: "row", nx: 9, nz: 4, ny: 3, parts: [3, 6], noswap: true },
     inn: { t: "inn", nx: 6, nz: 5, ny: 4, cols: true, child: "innyard" },
     innyard: { t: "innyard", nx: 6, nz: 5, ny: 2, roof: false, door: -1 },
@@ -649,6 +649,7 @@ export function stoneCount(t) {
       if (iy === H - 1 && ((ix * 31 + iy * 17 + iz * 7) % 100) / 100 < 0.4) continue;
       n++;
     }
+    layDressing(t, () => n++); // mk2.66: the shell's fallen roof and beam count
     return n;
   }
   const colAt = t.cols
@@ -665,7 +666,9 @@ export function stoneCount(t) {
     const part = t.parts && t.parts.indexOf(ix) >= 0;
     const stone0 = t.stones && iy === 0 && !perim && ((ix * 31 + iz * 7) % 100) / 100 < 0.35;
     if (iy < t.ny && !perim && !colAt(ix, iz) && !part && !stone0) continue;
-    if (iy === t.ny && (t.roof === false || t.slab)) continue;
+    const pitchedForm = /^(croft|shed|house|long|granary|mill|smithy|inn|spring|row|chapel|warehouse|watch)/.test(t.id || "");
+    if (iy === t.ny && (t.roof === false || t.slab || pitchedForm)) continue; // mk2.66: NO STONE LIDS (owner) — plates on structure, never a layer of cubes
+    if (t.cren && iy === t.ny && (!perim || (ix + iz) % 2)) continue; // mk2.66: the keep's crenellations
     if (ix === t.door && (iz === 1 || iz === 2) && iy <= 2) continue;
     if (t.drive && iy < t.ny - 1 && (driveZ
       ? (iz === 0 || iz === t.nz - 1) && ix >= 1 && ix <= t.nx - 2
@@ -674,6 +677,7 @@ export function stoneCount(t) {
     n++;
   }
   if (t.slab) n++; // the slab is ONE body, counted like buildTown's grid3 counts it
+  layDressing(t, () => n++); // mk2.66: every beam and plate counts — one walker, no drift
   return n;
 }
 
@@ -894,4 +898,173 @@ export function checkConnectivity(grid, spawns, objGx, objGz) {
     if (!visited[grid.idx(g.gx, g.gz)]) return false;
   }
   return true;
+}
+// THE CARPENTER (mk2.66, owner): every beam, plate, and trim body a form
+// wears, as ONE walker shared by buildTown (which lays real bodies) and
+// stoneCount (which counts them) — plan and lay cannot drift by construction.
+// THE BEAM is the working member: a long narrow box, shrunk or grown — ridge
+// beams, lintels, sail arms, joists, posts, the windlass, the bell's yoke.
+// NO STONE LIDS (owner): no roof is a layer of cubes; every roof is plates
+// on structure. All dials provisional (F5).
+export function formOf(t) { return (t.id || "").replace(/[0-9]+$/, ""); }
+export function layDressing(t, put) {
+  const f = formOf(t);
+  const p = MASON.pitch, hcs = MASON.hcs;
+  const L = Math.max(t.nx, t.nz), W = Math.min(t.nx, t.nz);
+  const ridgeX = t.nx >= t.nz;
+  const topY = t.ny * p;
+  const beam = (dx, dy, dz, hx, hy, hz, axis, angle, mass) =>
+    put({ dx, dy, dz, hx, hy, hz, axis, angle, tint: "timber", mass: mass || 140 });
+  // the doorway: a lintel beam over the opening, and a timber door ajar.
+  const doorway = () => {
+    if (t.door == null || t.door < 0) return;
+    const dxs = (t.door - (t.nx - 1) / 2) * p;
+    const zc = (1.5 - (t.nz - 1) / 2) * p;
+    beam(dxs, p * 2.3, zc, 0.09, 0.08, p * 1.35, null, 0, 90);           // the lintel — inside the opening, clear of the course above
+    put({ dx: dxs, dy: p * 0.9, dz: zc, hx: 0.08, hy: p * 0.95, hz: p * 0.8,
+      axis: "y", angle: 0.5, tint: "timber", mass: 90 });                 // the door, ajar
+  };
+  // the pitched roof: stepped stone gables, a RIDGE BEAM, two tilted plates
+  // welded along it. The beam is the spine — shoot it out and the roof slumps.
+  const pitched = (steep) => {
+    const H = Math.max(1, Math.floor(W / 2));
+    const ridgeH = H * p * (steep ? 1.25 : 0.85);
+    const ang = Math.atan2(ridgeH, (W * p) / 2);
+    for (let end = 0; end < 2; end++) {
+      const e = end === 0 ? -(L - 1) / 2 : (L - 1) / 2;
+      for (let st = 1; st <= H; st++) for (let j = st; j <= W - 1 - st; j++) {
+        const w0 = (j - (W - 1) / 2) * p;
+        put({ dx: ridgeX ? e * p : w0, dy: topY + (st - 1) * p, dz: ridgeX ? w0 : e * p,
+          hx: hcs, hy: hcs, hz: hcs, stone: true });
+      }
+    }
+    const rl = (L * p) / 2 + 0.3;
+    beam(0, topY - hcs + ridgeH + 0.02, 0, ridgeX ? rl : 0.09, 0.09, ridgeX ? 0.09 : rl, null, 0, 160);
+    const slope = Math.hypot((W * p) / 2, ridgeH) / 2 + 0.25;
+    for (const sgn of [-1, 1]) {
+      const off = sgn * (W * p) / 4;
+      put({ dx: ridgeX ? 0 : off, dy: topY - hcs + ridgeH / 2 + 0.10, dz: ridgeX ? off : 0,
+        hx: ridgeX ? (L * p) / 2 + 0.2 : slope, hy: 0.06, hz: ridgeX ? slope : (L * p) / 2 + 0.2,
+        axis: ridgeX ? "x" : "z", angle: sgn * ang * (ridgeX ? -1 : 1), tint: "roof", mass: 320 });
+    }
+    return ridgeH;
+  };
+  if (t.depot) return;
+  if (t.dead) {
+    if (t.form === "shell") {   // the fallen roof, and its fallen ridge beam
+      put({ dx: 0, dy: 1.05, dz: 0, hx: (Math.max(2, L - 2) * p) / 2, hy: 0.06, hz: (Math.max(1.5, W - 2) * p) / 2,
+        axis: ridgeX ? "x" : "z", angle: 0.45, tint: "roof", mass: 320 });
+      beam(ridgeX ? 0 : 0.6, 0.55, ridgeX ? 0.6 : 0, ridgeX ? (L * p) / 3 : 0.08, 0.08, ridgeX ? 0.08 : (L * p) / 3, ridgeX ? "z" : "x", 0.25, 120);
+    }
+    return;
+  }
+  if (f === "croft" || f === "shed" || f === "granary" || f === "spring") { pitched(false); doorway(); return; }
+  if (f === "house" || f === "long") { pitched(false); doorway(); return; }
+  if (f === "chapel") { pitched(true); doorway(); return; }
+  if (f === "keep") { doorway(); return; }   // crenellations lay in the lattice; open ring, no lid
+  if (f === "smithy") {                       // the framed awning: posts, eave beam, plate
+    pitched(false); doorway();
+    const aw = (L * p) / 2 - 0.2, az = -((W * p) / 2 + 0.75);
+    beam(-aw + 0.2, p * 1.15, az, 0.08, p * 1.15, 0.08, null, 0, 70);
+    beam(aw - 0.2, p * 1.15, az, 0.08, p * 1.15, 0.08, null, 0, 70);
+    beam(0, p * 2.3, az, aw, 0.07, 0.07, null, 0, 90);
+    put({ dx: 0, dy: p * 2.45, dz: az + 0.35, hx: aw, hy: 0.05, hz: 0.95, axis: "x", angle: 0.3, tint: "roof", mass: 140 });
+    return;
+  }
+  if (f === "inn") {                          // the bracket beam and the hung sign
+    pitched(false); doorway();
+    beam((t.nx * p) / 2 + 0.45, p * 2.6, 0, 0.45, 0.07, 0.07, null, 0, 60);
+    put({ dx: (t.nx * p) / 2 + 0.75, dy: p * 2.1, dz: 0, hx: 0.30, hy: 0.24, hz: 0.05, tint: "timber", mass: 40 });
+    return;
+  }
+  if (f === "row") {                          // the stepped roofline, a ridge beam per segment
+    const segs = [[0, 2], [3, 5], [6, t.nx - 1]];
+    const H = Math.max(1, Math.floor(t.nz / 2));
+    for (let si = 0; si < segs.length; si++) {
+      const [a, b] = segs[si];
+      const segL = (b - a + 1) * p, cx = ((a + b) / 2 - (t.nx - 1) / 2) * p;
+      const ridgeH = H * p * 0.85 + (si % 2 ? 0.3 : 0);
+      const ang = Math.atan2(ridgeH, (t.nz * p) / 2);
+      const slope = Math.hypot((t.nz * p) / 2, ridgeH) / 2 + 0.2;
+      beam(cx, topY - hcs + ridgeH + 0.02, 0, segL / 2 + 0.1, 0.08, 0.08, null, 0, 140);
+      for (const sgn of [-1, 1]) {
+        put({ dx: cx, dy: topY - hcs + ridgeH / 2 + 0.10, dz: sgn * (t.nz * p) / 4,
+          hx: segL / 2 + 0.1, hy: 0.06, hz: slope, axis: "x", angle: -sgn * ang, tint: "roof", mass: 300 });
+      }
+    }
+    doorway();
+    return;
+  }
+  if (f === "mill") {                         // THE FOUR SAILS: hub stone, four arm beams, four sail plates
+    const rh = pitched(false); doorway();
+    const face = ridgeX ? 1 : 0;              // the sails hang on a short-axis face
+    const fy = topY + rh - 0.1, armL = 2.1;
+    const fx = face ? 0 : (t.nx * p) / 2 + 0.16, fz = face ? (t.nz * p) / 2 + 0.16 : 0;
+    put({ dx: fx, dy: fy, dz: fz, hx: 0.22, hy: 0.22, hz: 0.22, tint: "timber", mass: 120 }); // the hub
+    for (const a of [0.785, 2.356, 3.927, 5.498]) {
+      const ux = face ? Math.sin(a) : 0, uy = Math.cos(a), uz = face ? 0 : Math.sin(a);
+      beam(fx + ux * (armL / 2 + 0.25), fy + uy * (armL / 2 + 0.25), fz + uz * (armL / 2 + 0.25),
+        0.06, armL / 2, 0.06, face ? "z" : "x", face ? -a : a, 70);
+      put({ dx: fx + ux * (armL * 0.72 + 0.25), dy: fy + uy * (armL * 0.72 + 0.25), dz: fz + uz * (armL * 0.72 + 0.25),
+        hx: face ? 0.30 : 0.045, hy: armL * 0.30, hz: face ? 0.045 : 0.30,
+        axis: face ? "z" : "x", angle: face ? -a : a, tint: "timber", mass: 50 });
+    }
+    return;
+  }
+  if (f === "belltower" || f === "watch") {   // the pyramid cap; the tower's own bell on its yoke
+    const half = (t.nx * p) / 2;
+    for (const [ax, sgn] of [["x", 1], ["x", -1], ["z", 1], ["z", -1]]) {
+      put({ dx: ax === "z" ? sgn * half * 0.5 : 0, dy: topY + 0.35, dz: ax === "x" ? sgn * half * 0.5 : 0,
+        hx: ax === "x" ? half : half * 0.55, hy: 0.05, hz: ax === "z" ? half : half * 0.55,
+        axis: ax, angle: -sgn * 0.7, tint: "roof", mass: 120 });
+    }
+    if (f === "belltower") {
+      beam(0, topY - p * 0.6, 0, half - 0.05, 0.07, 0.07, null, 0, 60);   // the yoke
+      put({ dx: 0, dy: topY - p * 1.15, dz: 0, hx: 0.16, hy: 0.20, hz: 0.16, tint: "timber", mass: 80 }); // the bell
+    }
+    return;
+  }
+  if (f === "well") {                         // posts, the windlass crossbar, the little roof
+    beam(-(t.nx * p) / 2 + 0.1, p * 1.6, 0, 0.07, p * 1.6, 0.07, null, 0, 60);
+    beam((t.nx * p) / 2 - 0.1, p * 1.6, 0, 0.07, p * 1.6, 0.07, null, 0, 60);
+    beam(0, p * 2.5, 0, (t.nx * p) / 2 - 0.05, 0.06, 0.06, null, 0, 50); // the windlass
+    for (const sgn of [-1, 1]) {
+      put({ dx: 0, dy: p * 3.1, dz: sgn * (t.nz * p) / 4, hx: (t.nx * p) / 2 + 0.25, hy: 0.05, hz: 0.65,
+        axis: "x", angle: -sgn * 0.6, tint: "roof", mass: 90 });
+    }
+    return;
+  }
+  if (f === "warehouse") {                    // plank roof on joists — the lid is gone
+    const jl = ridgeX ? (W * p) / 2 + 0.2 : (L * p) / 2 + 0.2;
+    for (const e of [-1, 1]) {
+      const off = e * (L * p) / 4;
+      beam(ridgeX ? off : 0, topY - hcs + 0.08, ridgeX ? 0 : off, ridgeX ? 0.09 : jl, 0.09, ridgeX ? jl : 0.09, null, 0, 180);
+    }
+    for (const k of [-1, 0, 1]) {
+      const off = k * (L * p) / 3.2;
+      put({ dx: ridgeX ? off : 0, dy: topY - hcs + 0.26, dz: ridgeX ? 0 : off,
+        hx: ridgeX ? (L * p) / 6.2 : jl, hy: 0.05, hz: ridgeX ? jl : (L * p) / 6.2,
+        axis: ridgeX ? "x" : "z", angle: 0.06, tint: "roof", mass: 260 });
+    }
+    return;
+  }
+  if (f === "hangar") {                       // header beams over the drive openings, doors below
+    const driveZ = t.drive && t.nz >= t.nx;
+    const span = ((driveZ ? t.nx : t.nz) - 2) * p; // the OPENING's width — the leaves live between the jambs, never against them
+    for (const end of [-1, 1]) {
+      const e = end * ((driveZ ? t.nz : t.nx) - 1) / 2 * p;
+      beam(driveZ ? 0 : e, (t.ny - 1) * p - 0.45, driveZ ? e : 0, driveZ ? span / 2 - 0.2 : 0.1, 0.08, driveZ ? 0.1 : span / 2 - 0.2, null, 0, 220);
+      for (const half of [-1, 1]) {
+        const lh = ((t.ny - 1) * p) / 2 - 0.35;
+        put({ dx: driveZ ? half * span / 4 : e, dy: lh + 0.18, dz: driveZ ? e : half * span / 4,
+          hx: driveZ ? span / 4 - 0.1 : 0.07, hy: lh, hz: driveZ ? 0.07 : span / 4 - 0.1,
+          axis: "y", angle: half === end ? 0.7 : 0, tint: "timber", mass: 400 });
+      }
+    }
+    return;
+  }
+  if (f === "gatepost") {                     // each post hangs its gate leaf
+    put({ dx: 0.55, dy: p * 1.4, dz: 0, hx: 0.5, hy: p * 1.3, hz: 0.05, axis: "y", angle: 0.5, tint: "timber", mass: 120 });
+    return;
+  }
 }
