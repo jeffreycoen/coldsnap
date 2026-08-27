@@ -265,6 +265,39 @@ function makeSplat(town, span) {
     cx.strokeRect(uu(-8.6), vv2(19.4), 17.2 * W2U, 17.2 * W2U);
   };
   paintBase();
+  // ---- THE ROAD PAINTED (mk2.67, owner): roads are ground paint, not
+  // bodies — stamped over the base art so fades keep them, under the smear
+  // ledger's replay. fillRect only (the jsdom stub has no paths). A KEPT
+  // road is a solid packed-earth ribbon with a worn center; a BROKEN road
+  // drops out in hash-drawn stretches — the years ate it. Deterministic
+  // from world positions; identical maps paint identical ground.
+  let roadRows = [];
+  const paintRoads = () => {
+    for (const rd of roadRows) {
+      const pts = rd.pts;
+      let s = (Math.imul(Math.round(pts[0][0] * 8) | 0, 374761393) ^ Math.imul(Math.round(pts[0][1] * 8) | 0, 668265263)) | 0;
+      const rnd = () => { s = Math.imul(s ^ (s >>> 15), 2246822519) | 0; return ((s >>> 8) & 0xffff) / 0x10000; };
+      let skipT = 0;
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const ax = pts[i][0], az = pts[i][1], bx = pts[i + 1][0], bz = pts[i + 1][1];
+        const segL = Math.hypot(bx - ax, bz - az), steps = Math.max(1, Math.ceil(segL / 0.7));
+        for (let k = 0; k <= steps; k++) {
+          const wx = ax + (bx - ax) * (k / steps), wz = az + (bz - az) * (k / steps);
+          if (rd.broken) {
+            if (skipT > 0) { skipT--; continue; }
+            if (rnd() < 0.06) { skipT = 5 + Math.floor(rnd() * 14); continue; }
+          }
+          const u = gridPx(wx), v = gridPx(wz);
+          const half = 2.1 * W2Ug + (rnd() - 0.5) * 3;
+          cx.globalAlpha = 1;
+          cx.fillStyle = "rgba(122,104,82,0.88)";                    // packed earth
+          cx.fillRect(Math.round(u - half), Math.round(v - half), Math.round(half * 2), Math.round(half * 2));
+          cx.fillStyle = "rgba(94,78,60,0.55)";                      // the worn center
+          cx.fillRect(Math.round(u - 2), Math.round(v - 2), 4, 4);
+        }
+      }
+    }
+  };
   // ---- kill smears: painted once, then REPLAYED after every fade ----------
   // PERMANENT MEANS PERMANENT (C0 T4): the DEPOT decal-fade re-blends the
   // clean base over the whole canvas every few seconds, which would grey a
@@ -332,6 +365,17 @@ function makeSplat(town, span) {
     // smear() on resume. Nothing here mutates it but smear() and clear().
     log: smearLog,
     clear() { paintBase(); smearLog.length = 0; tex.needsUpdate = true; },
+    // mk2.67: the road rows land once at boot — repaint base, roads, then
+    // the smear ledger back on top; refresh the fade snapshot so a fade
+    // greys toward roads, never over them.
+    setRoads(list) {
+      roadRows = (list || []).map((r2) => ({ pts: r2.pts || r2, broken: !!r2.broken }));
+      paintBase();
+      paintRoads();
+      if (baseCv) { baseCx.drawImage(cv, 0, 0); }
+      for (const m of smearLog) paintSmear(m.u, m.v, m.style, m.wx, m.wz);
+      tex.needsUpdate = true;
+    },
     // called once by callers that want the fade pass; cheap (one extra
     // 1024x1024 canvas), so only DEPOT opts into it.
     armFade() {
@@ -2668,5 +2712,5 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // never calls this and keeps the shipped look exactly
   function setGrade(g) { postMat.uniforms.uGrade.value = Math.max(-1, Math.min(1, g || 0)); }
   const project = (x, y, z) => { const v = new THREE.Vector3(x, y, z); v.project(cam); return { x: v.x, y: v.y }; };
-  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, overlay, setDressing, setMines, setTownFlags, setGrenades, setGreenFog, rotateStep, rotateBy, updateTerritory, setFog, setHealth, getFogDebug, chunkStats: () => chunkStats, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
+  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, overlay, setDressing, setRoads: (list) => splat.setRoads(list), setMines, setTownFlags, setGrenades, setGreenFog, rotateStep, rotateBy, updateTerritory, setFog, setHealth, getFogDebug, chunkStats: () => chunkStats, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
 }

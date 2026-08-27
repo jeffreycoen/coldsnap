@@ -7,7 +7,7 @@
 // handed on is always the map drawn.
 import { makeField, makeWorld, addBody } from "../engine/core.js";
 import { makeRenderer } from "../render/renderer.js";
-import { makeMap, MAP_SEED, TOWN, ROCKS, PONDS, STREAM, RIM_HALF_U, RIM_HALF_V, fwdU, invW, buildDepotTerrain, makeGrid, planTrees } from "../depot/mapgen.js";
+import { makeMap, MAP_SEED, TOWN, ROCKS, PONDS, ROADS, STREAM, RIM_HALF_U, RIM_HALF_V, fwdU, invW, buildDepotTerrain, makeGrid, planTrees } from "../depot/mapgen.js";
 import { buildTown } from "../depot/DepotGame.jsx";
 
 export function captureStartView(target, seed) {
@@ -56,6 +56,7 @@ export function captureStartView(target, seed) {
       flush();
     }
     R.setDressing({ rocks: ROCKS, ponds: PONDS, streams: streamRibs });
+    R.setRoads(ROADS); // the menu's opening view shows the same roads
     // the opening camera: the mount's own focus — the player depot
     const depotT = TOWN.find((t) => t.depot && t.team !== 2) || { x: 0, z: 52 };
     const focus = { x: depotT.x, y: field.heightAt(depotT.x, depotT.z), z: depotT.z };

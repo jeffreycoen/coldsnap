@@ -120,7 +120,9 @@ export function genMap(seed) {
     }
     if (STREAM_ON && !bridged) pts.push([bridgeU, streamV]);
     pts.push([objU, objV]);
-    roads.push(pts);
+    // mk2.67 (owner): a road is KEPT or BROKEN, drawn here — the paint
+    // reads the flag; the flag rides the array (survives the world transform).
+    roads.push(Object.assign(pts, { broken: r() < 0.45 }));
   }
   const roadDist = (x, z) => {
     let best = 1e9;

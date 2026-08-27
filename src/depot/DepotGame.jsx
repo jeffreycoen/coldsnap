@@ -1458,6 +1458,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // rocksLive, not ROCKS: on a resume a ridge the war already breached
       // must not be painted back onto the ground it no longer occupies.
       R.setDressing({ rocks: rocksLive, ponds: PONDS, streams: streamRibs });
+      R.setRoads(ROADS); // mk2.67: the roads painted — kept ribbons and broken ones, before any smear replays
       R.overlay.setObjective(OBJ_POS.x, OBJ_POS.z, field.heightAt(OBJ_POS.x, OBJ_POS.z));
       R.overlay.setBanners(SPAWN_POINTS);
       const AIM_OFF = { x: 0, z: -500 };
