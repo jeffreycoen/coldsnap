@@ -8,8 +8,9 @@
 |---|------|------|-----------|-------|
 | 1 | The stone count | mk2.61 | `2026-08-26-the-settled-ground-task-1-the-stone-count.md` | LANDED (069fb5e) |
 | 2 | Born ruins | mk2.62 | `2026-08-26-the-settled-ground-task-2-born-ruins.md` | LANDED (f47b0fc) |
-| 3 | The settled valley (forms + placement) | mk2.63 | `2026-08-26-the-settled-ground-task-3-the-settled-valley.md` | SERVED |
-| — | Closeout: README re-measured, screenshots re-checked | — | — | after Task 3 |
+| 3 | The settled valley (forms + placement, amendments 1-4) | mk2.63 | `2026-08-26-the-settled-ground-task-3-the-settled-valley.md` | LANDED (5daac70) |
+| 4 | The full valley (fill dials, one ledger) | mk2.64 | `2026-08-26-the-settled-ground-task-4-the-full-valley.md` | LANDED (a0cce91), owner: okay for now |
+| — | Closeout: README re-measured, screenshots re-checked | — | — | on the owner's word |
 
 Every deploy bumps `src/version.js` first, builds after. One agent in the tree at a time; stop after every task.
 
@@ -85,3 +86,14 @@ Gates: depot-test, depot-lint, smoke, golden unmoved. The owner's live check: a 
 - Named copses: mapgen emits tree positions, not copse centers; centers are kept at generation when the owner wants them.
 - Any tuning of the sight law over one or two courses of a shell.
 - Any change to the movement rules; Task 2 measures the crossing and stops if the bound fails.
+
+
+## Closing state (2026-08-27, session end)
+
+Landed and live: mk2.61-mk2.68 plus the README closeout and the retaken valley screenshot (commits through 7562e40). Tasks 6-8 (the carpenter, the road painted, the ridge set right) have their own plan files dated 2026-08-27.
+
+Open on the book, owner-acknowledged "fine for now":
+- **THE PI MEASUREMENT (2026-08-27): the war runs at 20 fps on the Pi 5** at the crowded valley's density (~5,400 stones) — measured on real V3D hardware with a healthy 61 Hz browser loop. The phone runs 60. Every raised cap (6,000 stones / 7,000 pool / 800 trees) is provisional against this. Diagnosis path: the ?perf=1 stopwatch splits sim cost from draw cost per frame.
+- The armor-lane latent (since mk2.64): some maps offer hulls no drivable lane across the valley; foot always connects; enemy armor rams; player hulls stand.
+- The README screenshot shows the settled valley but was captured under software rendering; a 60-fps capture waits on the Pi finding.
+- Polish queue candidates named in the plans: gate-arch lintel pairing, mound look, cluster counts as income dials, turning mill sails.
