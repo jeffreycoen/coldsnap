@@ -216,6 +216,7 @@ export function genMap(seed) {
     { t: "warehouse", nx: 8, nz: 6, ny: 4, cols: true },
   ];
   let bid = 0;
+  let plannedStones = 0; // mk2.64: the one stone ledger — big forms, clusters, fill, walls, all of it
   const nBig = 2 + Math.floor(r() * 3);
   for (let k = 0, placed = 0; k < 120 && placed < nBig; k++) {
     const tpl = BIG[Math.floor(r() * BIG.length)];
@@ -231,9 +232,11 @@ export function genMap(seed) {
     if (roadDist(x, z) < rad + 3) continue;
     if (town.some((q) => Math.hypot(x - q.x, z - q.z) < rad + Math.max(q.nx, q.nz) * MASON.pitch / 2 + 2.5)) continue;
     if (STREAM_ON && Math.abs(z - streamV) < rad + 9) continue;
-    town.push({ id: tpl.t + bid++, x, z, nx, nz, ny: tpl.ny,
+    const eBig = { id: tpl.t + bid++, x, z, nx, nz, ny: tpl.ny,
       door: tpl.drive ? -1 : (r() < 0.5 ? 0 : nx - 1),
-      slab: tpl.slab, drive: tpl.drive, cols: tpl.cols });
+      slab: tpl.slab, drive: tpl.drive, cols: tpl.cols };
+    town.push(eBig);
+    plannedStones += stoneCount(eBig); // mk2.64: EVERYTHING counts against the cap
     placed++;
   }
   // THE SETTLED VALLEY (mk2.63, owner): clusters replace the bench scatter —
@@ -243,7 +246,6 @@ export function genMap(seed) {
   for (let i = 0; i + 1 < bands.length; i++) benches.push([bands[i] + 8, bands[i + 1] - 7]);
   benches.push([bands[bands.length - 1] + 8, depotDepth - 8]);
   const CL = [];
-  let plannedStones = 0;
   // the one vet every placement runs — the standing foul checks, shared.
   const vetAt = (x, z, nx, nz, offRoad) => {
     const rad = Math.max(nx, nz) * MASON.pitch / 2 + 2;
@@ -322,9 +324,9 @@ export function genMap(seed) {
       if (cf.child) putChild(cf.child, center);
       const want = nMin + Math.floor(r() * (nMax - nMin + 1));
       let got = 0;
-      for (let m = 0; m < want * 6 && got < want; m++) {
+      for (let m = 0; m < want * 9 && got < want; m++) {
         const fk = pool[Math.floor(r() * pool.length)];
-        const a = r() * 6.28, d = 9 + r() * 8;
+        const a = r() * 6.28, d = 7 + r() * 9;
         const dd = opts && opts.dead ? { dead: true, form: ["shell", "stump", "mound", "chimney"][Math.floor(r() * 4)] } : { face: center };
         const e = put(fk, cx + Math.sin(a) * d, cz + Math.cos(a) * d, dd);
         if (e) { got++; if (F[fk].child && !dd.dead) putChild(F[fk].child, e); }
@@ -342,13 +344,13 @@ export function genMap(seed) {
   const townCenterFk = centerPick < 0.4 ? "chapel" : centerPick < 0.7 ? "inn" : "chapel";
   const TOWN_POOL = ["row", "house6", "house5", "croft", "long", "shed", "smithy", "cross"];
   let townRow = cluster("town", townCenterFk, TOWN_POOL,
-    4, 7, { x0: -60, z0: midBench[0], x1: 60, z1: Math.max(midBench[0] + 4, midBench[1]) },
+    8, 12, { x0: -60, z0: midBench[0], x1: 60, z1: Math.max(midBench[0] + 4, midBench[1]) },
     roads.length ? { nearRoad: true } : null);
   // a refused middle bench does not leave the valley townless — every bench
   // gets its turn, roads-near first, then anywhere.
   for (let bi = 0; !townRow && bi < benches.length; bi++) {
     townRow = cluster("town", townCenterFk, TOWN_POOL,
-      4, 7, { x0: -70, z0: benches[bi][0], x1: 70, z1: Math.max(benches[bi][0] + 4, benches[bi][1]) }, null);
+      8, 12, { x0: -70, z0: benches[bi][0], x1: 70, z1: Math.max(benches[bi][0] + 4, benches[bi][1]) }, null);
   }
   if (townRow) {
     const ct = town.find((q) => Math.hypot(q.x - townRow.x, q.z - townRow.z) < 4);
@@ -365,7 +367,7 @@ export function genMap(seed) {
   }
   // THE HAMLETS — two or three, off the roads, crofts and sheds about a yard
   // or a well.
-  const nHam = 2 + Math.floor(r() * 2);
+  const nHam = 3 + Math.floor(r() * 2);
   for (let h = 0; h < nHam; h++) {
     const b0 = Math.floor(r() * benches.length);
     const ctr = r() < 0.5 ? "yard" : "well";
@@ -373,7 +375,7 @@ export function genMap(seed) {
     for (let bi = 0; bi < benches.length; bi++) {
       const b = benches[(b0 + bi) % benches.length];
       if (cluster("hamlet", ctr, ["croft", "shed", "croft", "smithy"],
-        2, 4, { x0: -70, z0: b[0], x1: 70, z1: Math.max(b[0] + 4, b[1]) }, null)) break;
+        3, 5, { x0: -70, z0: b[0], x1: 70, z1: Math.max(b[0] + 4, b[1]) }, null)) break;
     }
   }
   // THE DEAD HAMLETS — one or two, born ruins with a mound and a chimney,
@@ -386,7 +388,7 @@ export function genMap(seed) {
       { dead: true, nearHill: hills.length > 0 });
   }
   // THE SINGLES — one to three lone forms on open ground.
-  const nSingle = 1 + Math.floor(r() * 3);
+  const nSingle = 2 + Math.floor(r() * 3);
   const SINGLES = ["mill", "keep", "watch", "granary", "long"];
   for (let i = 0, got = 0; i < 40 && got < nSingle; i++) {
     const bi = Math.floor(r() * benches.length);
@@ -411,6 +413,19 @@ export function genMap(seed) {
       break;
     }
   }
+  // THE FILL (mk2.64, owner: fill the valley with buildings) — after the
+  // clusters, real houses join around the drawn centers until the valley
+  // carries its mass. Markers and ruins are done; this pass lays LIVE forms
+  // only, and stops at the fill line or when the ground refuses.
+  const FILL_TARGET = 2600; // provisional (F5)
+  const FILL_POOL = ["croft", "shed", "house5", "house6", "long", "row"];
+  for (let k = 0; k < 900 && plannedStones < FILL_TARGET && CL.length; k++) {
+    const c = CL[Math.floor(r() * CL.length)];
+    if (c.kind === "dead") continue;
+    const a = r() * 6.28, d = 6 + r() * 26;
+    const e = put(FILL_POOL[Math.floor(r() * FILL_POOL.length)], c.x + Math.sin(a) * d, c.z + Math.cos(a) * d, { face: c });
+    if (e) c.n++;
+  }
   // T4: FIELD WALLS (owner's rulings: they block the grid; axis-aligned) —
   // freestanding masonry screens, 3-8 stones long, 2-4 courses, one stone
   // thick. Town entries like any building: footprint claim, ruin bookkeeping.
@@ -429,7 +444,10 @@ export function genMap(seed) {
     if (roadDist(x, z) < rad + 2.5) continue;
     if (town.some((q) => Math.hypot(x - q.x, z - q.z) < rad + Math.max(q.nx, q.nz) * MASON.pitch / 2 + 2)) continue;
     if (STREAM_ON && Math.abs(z - streamV) < rad + 9) continue;
-    town.push({ id: "fwall" + placed, x, z, nx, nz, ny: H, door: -1, roof: false });
+    const eWall = { id: "fwall" + placed, x, z, nx, nz, ny: H, door: -1, roof: false };
+    if (plannedStones + stoneCount(eWall) > TOWN_STONE_CAP) break; // mk2.64: the walls obey the ledger too
+    plannedStones += stoneCount(eWall);
+    town.push(eWall);
     placed++;
   }
   const T = (o) => { const w = fwdU(o.x, o.z); o.x = w.x; o.z = w.z; return o; };

@@ -308,7 +308,7 @@ import fs from "node:fs";
   ok("T4(a): every seed draws 2-4 big forms", bigLo >= 2 && bigHi <= 4, `${bigLo}-${bigHi}`);
   ok("T4(a): every seed draws 2-5 field walls", wallLo >= 2 && wallHi <= 5, `${wallLo}-${wallHi}`);
   ok("T4(a): both big kinds appear across the sweep", sawHangar >= 5 && sawWarehouse >= 5, `hangar ${sawHangar}/40, warehouse ${sawWarehouse}/40`);
-  ok("T4(a): worst boot stone count stays under the 3000 pool with rubble headroom", worstStones <= 2900, `${worstStones} stones (seed ${worstSeed})`);
+  ok("T4(a): worst boot stone count stays under the 4000 pool with rubble headroom (re-taught mk2.64, the full valley)", worstStones <= 3200, `${worstStones} stones (seed ${worstSeed})`);
 
   // (b) the hangar: one 800kg slab welded to the top two courses, no
   // granular roof, drive doors open at ground level through both end walls.
