@@ -7,12 +7,6 @@
 // assignment in src/ — a mismatch either way is a finding against this file.
 
 import { worldHash } from "../engine/core.js";
-import {
-  GRID_CS, GRID_W, GRID_H, GRID_OX, GRID_OZ, ORIENT, RIM_HALF_U, RIM_HALF_V,
-  OBJ_POS, SPAWN_POINTS, PONDS, ROCKS, TOWN, ROADS, PASSES, BANDS, MAP_SEED,
-  SPAWN_U, STREAM, HILLS, CLUSTERS,
-  fwdU, invW, fwdDir, clampToRim, pondAt, rockAt, streamAt, stoneCount,
-} from "./mapgen.js";
 
 // ============================================================ part 1: shapes
 // JSDoc only — nothing in this part runs.
@@ -98,9 +92,8 @@ import {
  */
 
 /**
- * @typedef {Object} GameMap — the map frame, one object (step 2's makeMap
- * return; until then mapFromGlobals() builds it from mapgen.js's live
- * exports). Keys keep the mapgen.js export names so the step-2 substitution
+ * @typedef {Object} GameMap — the map frame, one object (makeMap's return —
+ * mapgen.js builds and asserts it). Keys keep the mapgen.js export names so the step-2 substitution
  * is a pure prefix (TOWN -> map.TOWN).
  * Constants: GRID_CS, GRID_W, GRID_H, GRID_OX, GRID_OZ, RIM_HALF_U,
  * RIM_HALF_V. Drawn state: ORIENT, OBJ_POS, SPAWN_POINTS, PONDS, ROCKS,
@@ -276,36 +269,6 @@ export function assertSpecs(specs) {
   const problems = checkSpecs(specs);
   if (problems.length) throw new Error("assertSpecs: " + problems.join("; "));
   return specs;
-}
-
-// ===================================================== part 3: map adapter
-// DELETED AT STEP 2 — makeMap(seed) returns the GameMap itself then, and
-// assertMap moves into mapgen.js. Until then this builds the GameMap object
-// from mapgen.js's live exports. The boot sentinel is a non-empty TOWN:
-// before makeMap(seed) runs every live export is empty, 0, or null, and
-// MAP_SEED is 0, so MAP_SEED cannot serve.
-export const GAME_MAP_KEYS = [
-  "GRID_CS", "GRID_W", "GRID_H", "GRID_OX", "GRID_OZ", "ORIENT",
-  "RIM_HALF_U", "RIM_HALF_V", "OBJ_POS", "SPAWN_POINTS", "PONDS", "ROCKS",
-  "TOWN", "ROADS", "PASSES", "BANDS", "MAP_SEED", "SPAWN_U", "STREAM",
-  "HILLS", "CLUSTERS",
-  "fwdU", "invW", "fwdDir", "clampToRim", "pondAt", "rockAt", "streamAt", "stoneCount",
-];
-
-export function assertMap(map) {
-  const missing = GAME_MAP_KEYS.filter((key) => !(key in map));
-  if (missing.length) throw new Error("assertMap: missing " + missing.join(", "));
-  if (!map.TOWN || map.TOWN.length === 0) throw new Error("assertMap: TOWN is empty — makeMap(seed) has not run");
-  return map;
-}
-
-export function mapFromGlobals() {
-  return assertMap({
-    GRID_CS, GRID_W, GRID_H, GRID_OX, GRID_OZ, ORIENT, RIM_HALF_U, RIM_HALF_V,
-    OBJ_POS, SPAWN_POINTS, PONDS, ROCKS, TOWN, ROADS, PASSES, BANDS, MAP_SEED,
-    SPAWN_U, STREAM, HILLS, CLUSTERS,
-    fwdU, invW, fwdDir, clampToRim, pondAt, rockAt, streamAt, stoneCount,
-  });
 }
 
 // ========================================================= part 4: surface

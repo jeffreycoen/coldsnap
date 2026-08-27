@@ -40,7 +40,7 @@ const mapSrc = [
   header,
   "const TOWN_STONE_CAP = " + TOWN_STONE_CAP + ";",
   sliceFn("formOf"), sliceFn("layDressing"), sliceFn("stoneCount"),
-  sliceFn("genMap"), sliceFn("makeMap"), sliceFn("streamAt"), sliceFn("pondAt"), sliceFn("rockAt"),
+  sliceFn("genMap"), "const liveGameMap = () => null; // task-2a harness stub: sliced makeMap's return, unused here", sliceFn("makeMap"), sliceFn("streamAt"), sliceFn("pondAt"), sliceFn("rockAt"),
   sliceFn("makeGrid"), sliceFn("checkConnectivity"), sliceFn("stepSquadRouting"), sliceFn("townFootprint"), sliceFn("buildTown"),
   `  return { makeMap, makeGrid, buildTown: (w, g, f) => buildTown(w, g, f, { TOWN, OBJ_POS, MAP_SEED, GRID_W, GRID_H }), checkConnectivity, stepSquadRouting, state: () => ({ TOWN, MAP_SEED, OBJ_POS, SPAWN_POINTS, CLUSTERS }) };`,
 ].join("\n");

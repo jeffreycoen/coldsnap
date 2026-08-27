@@ -49,7 +49,7 @@ import fs from "node:fs";
   const header = mgSrcF1.slice(headerStart, headerEnd).replace(/^export /gm, "");
   const mapSrc = [
     header,
-    sliceFn("formOf"), sliceFn("layDressing"), sliceFn("stoneCount"), sliceFn("genMap"), sliceFn("makeMap"), sliceFn("streamAt"), sliceFn("pondAt"), sliceFn("rockAt"),
+    sliceFn("formOf"), sliceFn("layDressing"), sliceFn("stoneCount"), sliceFn("genMap"), "const liveGameMap = () => null; // task-2a harness stub: sliced makeMap's return, unused here", sliceFn("makeMap"), sliceFn("streamAt"), sliceFn("pondAt"), sliceFn("rockAt"),
     // townFootprint (P1 T3): buildTown's grid-footprint loop, lifted out so
     // the save's restore path can recompute the same cells without re-laying
     // stone. buildTown calls it, so the extraction must carry it.

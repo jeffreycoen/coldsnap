@@ -237,7 +237,7 @@ import fs from "node:fs";
   const header15 = mgSrc15.slice(mgSrc15.indexOf("const GRID_CS"), mgSrc15.indexOf("function genMap")).replace(/^export /gm, "");
   const mapSrc15 = [
     header15,
-    sliceFn15("formOf"), sliceFn15("layDressing"), sliceFn15("stoneCount"), sliceFn15("genMap"), sliceFn15("makeMap"), sliceFn15("streamAt"), sliceFn15("planTrees"),
+    sliceFn15("formOf"), sliceFn15("layDressing"), sliceFn15("stoneCount"), sliceFn15("genMap"), "const liveGameMap = () => null; // task-2a harness stub: sliced makeMap's return, unused here", sliceFn15("makeMap"), sliceFn15("streamAt"), sliceFn15("planTrees"),
     sliceFn15("pondAt"), sliceFn15("rockAt"),
     sliceFn15("makeGrid"), sliceFn15("checkConnectivity"), sliceFn15("townFootprint"), sliceFn15("buildTown"),
     `    return { genMap, makeMap, makeGrid, checkConnectivity, buildTown: (w, g, f) => buildTown(w, g, f, { TOWN, OBJ_POS, MAP_SEED, GRID_W, GRID_H }), planTrees, invW, fwdU,

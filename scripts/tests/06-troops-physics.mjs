@@ -49,7 +49,7 @@ import fs from "node:fs";
     const headerP = mgSrcP.slice(mgSrcP.indexOf("const GRID_CS"), mgSrcP.indexOf("function genMap")).replace(/^export /gm, "");
     const mapSrcP = [
       headerP,
-      sliceFnP("formOf"), sliceFnP("layDressing"), sliceFnP("stoneCount"), sliceFnP("genMap"), sliceFnP("makeMap"), sliceFnP("streamAt"), sliceFnP("planTrees"),
+      sliceFnP("formOf"), sliceFnP("layDressing"), sliceFnP("stoneCount"), sliceFnP("genMap"), "const liveGameMap = () => null; // task-2a harness stub: sliced makeMap's return, unused here", sliceFnP("makeMap"), sliceFnP("streamAt"), sliceFnP("planTrees"),
       sliceFnP("pondAt"), sliceFnP("rockAt"),
       sliceFnP("makeGrid"), sliceFnP("checkConnectivity"), sliceFnP("stepSquadRouting"),
       sliceFnP("townFootprint"), sliceFnP("buildTown"),

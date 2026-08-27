@@ -9,17 +9,16 @@ import { makeField, makeWorld, addBody } from "../engine/core.js";
 import { makeRenderer } from "../render/renderer.js";
 import { makeMap, MAP_SEED, TOWN, ROCKS, PONDS, ROADS, STREAM, RIM_HALF_U, RIM_HALF_V, fwdU, invW, buildDepotTerrain, makeGrid, planTrees } from "../depot/mapgen.js";
 import { buildTown } from "../depot/sim.js";
-import { mapFromGlobals } from "../depot/api.js";
 
 export function captureStartView(target, seed) {
-  makeMap(seed);
+  const map = makeMap(seed);
   const field = makeField(181, 2.0, MAP_SEED);
   field.carveFloor = -12;
   buildDepotTerrain(field, MAP_SEED);
   const grid = makeGrid(field);
   const world = makeWorld({ field, seed: MAP_SEED });
   world._tdStruct = true;
-  buildTown(world, grid, field, mapFromGlobals());
+  buildTown(world, grid, field, map);
   // rocks and trees exactly as the fresh boot lays them — bodies, so the
   // renderer gives them their real silhouettes and shadows
   for (const k of ROCKS) {

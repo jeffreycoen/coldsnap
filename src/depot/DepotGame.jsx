@@ -42,7 +42,6 @@ import { startBuildLine, linePieces, stepBuildLine } from "./buildlines.js";
 import { ringBell as ringBellOut } from "./bell.js";
 import { buildMech, mechCommand, mechFire, mechMissiles, mechBarrage, mechPunt, mechAboutFace, mechPivot, mechAimDir } from "../engine/mech.js";
 import { stepDepot, buildTown, townFootprint, makeDepotAssaultState, clockStr, spawnEnemy } from "./sim.js";
-import { mapFromGlobals } from "./api.js";
 
 // mk2.28: the quartermaster's quiet flag — the purpose lines speak in the
 // first war only, then go quiet for good once the first bell has rung.
@@ -428,8 +427,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         : Number.isFinite(urlSeed) ? urlSeed
         : menuSeedRef.current != null ? menuSeedRef.current
         : Math.floor(Date.now() % 1000000);
-      makeMap(seed);
-      const map = mapFromGlobals();
+      const map = makeMap(seed);
       const field = makeField(181, 2.0, MAP_SEED);
       // mk2.07 (owner): THE DEEP FLOOR — the atomic crater needs room. Base
       // ground sits near +2; -12 leaves the full 10m pit plus overlap slack.

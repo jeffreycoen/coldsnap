@@ -503,8 +503,42 @@ export function makeMap(seed) {
     if (TOWN.length >= 6 && !m.depotFoul &&
         Math.hypot(m.depotU1 - m.depotU2, 2 * m.depotDepth) >= 105 &&
         checkConnectivity(g, SPAWN_POINTS, og.gx, og.gz) &&
-        checkConnectivity(g, SPAWN_POINTS, dg.gx, dg.gz)) return;
+        checkConnectivity(g, SPAWN_POINTS, dg.gx, dg.gz)) return liveGameMap();
   }
+  return liveGameMap(); // the deepest retry stands — return what was installed
+}
+
+// The GameMap (api.js part 1's typedef): the map frame as ONE object.
+// makeMap returns it; the export-let shim above stays assigned in parallel
+// for this phase (the extraction plan's step 2b migrates consumers; its
+// closing task deletes the shim). assertMap and GAME_MAP_KEYS moved here
+// verbatim from api.js part 3, which this change deletes.
+export const GAME_MAP_KEYS = [
+  "GRID_CS", "GRID_W", "GRID_H", "GRID_OX", "GRID_OZ", "ORIENT",
+  "RIM_HALF_U", "RIM_HALF_V", "OBJ_POS", "SPAWN_POINTS", "PONDS", "ROCKS",
+  "TOWN", "ROADS", "PASSES", "BANDS", "MAP_SEED", "SPAWN_U", "STREAM",
+  "HILLS", "CLUSTERS",
+  "fwdU", "invW", "fwdDir", "clampToRim", "pondAt", "rockAt", "streamAt", "stoneCount",
+];
+
+export function assertMap(map) {
+  const missing = GAME_MAP_KEYS.filter((key) => !(key in map));
+  if (missing.length) throw new Error("assertMap: missing " + missing.join(", "));
+  if (!map.TOWN || map.TOWN.length === 0) throw new Error("assertMap: TOWN is empty — makeMap(seed) has not run");
+  return map;
+}
+
+// liveGameMap: the module's current drawn state as a GameMap. Internal —
+// makeMap's return is the door. The functions are the module's own (they
+// read the live lets), so a map built here stays live with the shim; step
+// 2b's consumers call them as map.<name> with identical behavior.
+function liveGameMap() {
+  return assertMap({
+    GRID_CS, GRID_W, GRID_H, GRID_OX, GRID_OZ, ORIENT, RIM_HALF_U, RIM_HALF_V,
+    OBJ_POS, SPAWN_POINTS, PONDS, ROCKS, TOWN, ROADS, PASSES, BANDS, MAP_SEED,
+    SPAWN_U, STREAM, HILLS, CLUSTERS,
+    fwdU, invW, fwdDir, clampToRim, pondAt, rockAt, streamAt, stoneCount,
+  });
 }
 
 export function buildDepotTerrain(field, seed = 11) {
