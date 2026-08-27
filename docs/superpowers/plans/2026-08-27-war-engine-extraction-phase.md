@@ -22,7 +22,7 @@ on approval.
 | T0 | mk2.69 | 0 | `src/depot/api.js` — typedefs (incl. `TickInput`), roster contract, map adapter, throwing surface, CLI | depot-test, golden | LANDED — commit 05e4568, gates 2,091/0 + golden 7/7, build green |
 | T1 | mk2.70 | 1 | `depot/sim.js` — the twelve top-level sim functions + `STONE`/`STONE_PITCH`; `src/ui/startview.js` repointed; api.js entry guard made bundler-safe; 16 test files re-taught | depot-test, golden, smoke, depot-lint | LANDED — commit 063a8b0, gates 2,091/0 + 7/7 + 30/0, build green; DepotGame readFileSync count 87→78 |
 | T2a | mk2.71 | 2 | `makeMap` returns `GameMap`; `assertMap` into mapgen; api.js part 3 deleted; the two mapFromGlobals call sites migrated; shim intact (6 export lets) | depot-test, golden, smoke, depot-lint | LANDED — commit e2abb96, gates 2,091/0 + 7/7 + 30/0. Open sweep item for T2b: sim.js line-5 header comment still names mapFromGlobals (stale prose, no call site) |
-| T2b | mk2.72 | 2 | every consumer takes `map` as a parameter, module by module | depot-test, golden | pending — plan unwritten |
+| T2b | mk2.72 | 2 | every consumer takes `map` as a parameter — state/muster/bell/buildlines/sim/DepotGame/startview migrated; 14 signatures changed; ~45 test re-teaches across 11 files | depot-test, golden, smoke, depot-lint | LANDED — commit 6e9f316, final gates 2,091/0 + 7/7 + 30/0. Surviving mapgen imports under src are builders only (checkConnectivity, layDressing, makeMap/buildDepotTerrain/makeGrid/planTrees/computeFlowField) |
 | T3 | mk2.73 | 3 | `S` split run / view / input; `serializeRun` filled; byte-equal saves | depot-test, golden, smoke | pending — plan unwritten |
 | T4 | mk2.74 | 4 | `depot/boot.js`; `bootWar` filled; resume-hash proof | depot-test, golden, smoke | pending — plan unwritten |
 | T5 | mk2.75 | 5 | `tickWar(war, sdt, input)`; `TickFlags` finalized from dispatch derivation; `node src/depot/api.js gate` exits 0 | depot-test, golden, smoke | pending — plan unwritten |
@@ -63,6 +63,17 @@ standing keystone for T6–T10.
 - 2026-08-27 — `TickInput` written at T0; `tickWar` takes it as its third argument; the S split is three-way.
 - 2026-08-27 — `TickFlags` gains `dressing`; T5's inventory derives at dispatch.
 - 2026-08-27 — Step 2 split into T2a/T2b; shim delete is T10.
+
+## Open watch items
+
+- **The mound-routing check** (file 33, "nobody strands at the mound") has
+  blinked once at T1's landing and once at T2b's — random sweep seeds by
+  that file's own design, rerun clean both times. A third blink stops being
+  dice: it gets its own diagnosis task, not a rerun.
+- **The sweep-guard regex class** used in T2b's step 4 misses spread syntax
+  (`...ROCKS` reads as dot-prefixed and is skipped) — it shipped a
+  build-green miss that only the smoke gate caught. Any future plan reusing
+  a bare-identifier sweep guard must also match `\.\.\.NAME`.
 
 ## Rulings owed
 
