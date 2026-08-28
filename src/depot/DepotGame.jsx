@@ -29,7 +29,7 @@ import { makeRegiment, payTown, groundRate } from "./economy.js";
 import { makeTerritory, stepTerritory, holderAt, canBuild, fogStateFor, valueAt, EMIT } from "./territory.js";
 import { makeSight, stepSight, seenAt, eyeOf, steerReticle, reclampReticle, surfaceAt } from "./sight.js";
 import { SAVE_KEY, burnFront, restoreBodies, restoreWelds, restoreCensus, restoreSquads } from "./save.js";
-import { serializeRun, makeRenderer, renderPortrait, makeGameAudio } from "./api.js";
+import { serializeRun, makeRenderer, renderPortrait, makeGameAudio, storage } from "./api.js";
 import { makeBodyLists, rebuildBodyLists } from "./lists.js";
 import Dispatch from "./Dispatch.jsx";
 import InfoCard from "./InfoCard.jsx";
@@ -351,7 +351,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
     let live = true;
     (async () => {
       try {
-        const r = await window.storage.get(QM_KEY);
+        const r = await storage.get(QM_KEY);
         if (live && !r) setQmQuiet(false);
       }
       catch (e) {}
@@ -361,7 +361,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
   // mk2.28: the quartermaster's lines go quiet for good once the first bell rings.
   useEffect(() => {
     if (hud.bell >= 1 && !qmQuiet) {
-      try { window.storage.set(QM_KEY, "1"); } catch (e) {}
+      try { storage.set(QM_KEY, "1"); } catch (e) {}
       setQmQuiet(true);
     }
   }, [hud.bell, qmQuiet]);
@@ -390,7 +390,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
   // untouched either way (see the frame loop). The ref is what the loop boots
   // from — the loop effect must not re-key on this, or toggling would restart
   // the run — and the state is only the button's label. Persisted through
-  // window.storage (the artifact/Pages shim), NOT the localStorage the fog
+  // the storage door (the artifact/Pages shim behind it), NOT the localStorage the fog
   // and discipline toggles use, per the settings-restore discipline in
   // platform/autosave.js: the default writes nothing, so a saved choice can
   // never be clobbered before the async restore lands, and only a real toggle
@@ -594,7 +594,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         const k = view._teachQ[view._teachIdx];
         if (k && view._teachSeen) {
           view._teachSeen.add(k);
-          try { window.storage.set(CARDS_KEY, JSON.stringify({ rev: TEACH_REV, seen: [...view._teachSeen] })); } catch (e) {}
+          try { storage.set(CARDS_KEY, JSON.stringify({ rev: TEACH_REV, seen: [...view._teachSeen] })); } catch (e) {}
         }
         view._teachIdx++;
         if (view._teachIdx >= view._teachQ.length) { view._teachQ = []; view._teachIdx = 0; }
@@ -603,7 +603,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       view.teachSkip = () => {
         if (view._teachSeen) {
           for (const k of view._teachQ) view._teachSeen.add(k);
-          try { window.storage.set(CARDS_KEY, JSON.stringify({ rev: TEACH_REV, seen: [...view._teachSeen] })); } catch (e) {}
+          try { storage.set(CARDS_KEY, JSON.stringify({ rev: TEACH_REV, seen: [...view._teachSeen] })); } catch (e) {}
         }
         view._teachQ = []; view._teachIdx = 0;
       };
@@ -639,7 +639,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       (async () => {
         let seen = [];
         try {
-          const r = await window.storage.get(CARDS_KEY);
+          const r = await storage.get(CARDS_KEY);
           const d = JSON.parse(r.value);
           if (d && Array.isArray(d.seen) && (d.rev === TEACH_REV || d.seen.includes("*"))) seen = d.seen;
         } catch (e) {}
@@ -1774,7 +1774,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           // fire-and-forget, but never an unhandled rejection: a store that
           // refuses the write (quota, a runtime that says no) must cost the
           // frame nothing and must not surface as a page error.
-          Promise.resolve(window.storage.set(SAVE_KEY, json)).catch(() => {});
+          Promise.resolve(storage.set(SAVE_KEY, json)).catch(() => {});
         } catch (e) {
           console.warn("COLDSNAP front save failed", e);
           saveStat = { ms: -1, bytes: 0, bell: run.bell, error: String(e && e.message ? e.message : e) };

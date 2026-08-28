@@ -20,3 +20,22 @@ if (typeof window !== "undefined" && !window.storage) {
     },
   };
 }
+
+// The named handle (the storage door, mk2.85): the same store, importable.
+// Delegates to window.storage at CALL time — never captured — so the
+// artifact runtime's own store still wins when it is present; headless
+// callers get safe nulls. The shim above is unchanged.
+export const storage = {
+  async get(key) {
+    if (typeof window === "undefined" || !window.storage) return { key, value: null };
+    return window.storage.get(key);
+  },
+  async set(key, value) {
+    if (typeof window === "undefined" || !window.storage) return { key, value: String(value) };
+    return window.storage.set(key, value);
+  },
+  async delete(key) {
+    if (typeof window === "undefined" || !window.storage) return true;
+    return window.storage.delete(key);
+  },
+};

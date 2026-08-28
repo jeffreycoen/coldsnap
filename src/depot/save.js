@@ -36,6 +36,7 @@
 //     BELL_PERIOD_S. Simpler and kinder than restoring a partial timer.
 import { addBody, addWeld } from "../engine/core.js";
 import { MK } from "../version.js";
+import { storage } from "../platform/storage.js";
 
 export const SAVE_KEY = "coldsnap-front-save";
 
@@ -155,7 +156,7 @@ function readBody(world, s, rocks) {
 // ---------------------------------------------------------------- the write
 // serializeFront(ctx) -> JSON string. SYNCHRONOUS and allocation-cheap by
 // design: the caller runs this inside the bell tick and hands the string to
-// window.storage.set fire-and-forget, so nothing awaits inside a frame.
+// storage.set fire-and-forget, so nothing awaits inside a frame.
 //
 // ctx:
 //   S        the run state (DepotGame's ref-state object)
@@ -321,10 +322,10 @@ export function parseFront(raw) {
   return { ok: true, data: d };
 }
 
-// Both stores, the campaign's own burn discipline: window.storage (the
+// Both stores, the campaign's own burn discipline: the storage door (the
 // artifact runtime) AND localStorage (the Pages shim behind it).
 export async function burnFront() {
-  try { if (window.storage && window.storage.delete) await window.storage.delete(SAVE_KEY); } catch (e) {}
+  try { await storage.delete(SAVE_KEY); } catch (e) {}
   try { window.localStorage.removeItem(SAVE_KEY); } catch (e) {}
 }
 
@@ -333,7 +334,7 @@ export async function burnFront() {
 // cannot honour. Never throws.
 export async function probeFront() {
   let raw = null;
-  try { const r = await window.storage.get(SAVE_KEY); raw = r && r.value; } catch (e) {}
+  try { const r = await storage.get(SAVE_KEY); raw = r && r.value; } catch (e) {}
   if (!raw) return { has: false };
   const p = parseFront(raw);
   if (!p.ok) {

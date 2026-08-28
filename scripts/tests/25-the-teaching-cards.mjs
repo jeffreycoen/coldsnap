@@ -31,7 +31,7 @@ ok("T1: an unknown door falls to CLOSE (the teach door needs no code)",
   ok("T3: a card up freezes the sim (the convoy idiom)", /const teachUp = view\._teachQ\.length > 0;/.test(dg) && /cardUp \|\| convoyUp \|\| teachUp \? 0 :/.test(dg));
   ok("T3: firing is sandbox-silent, seen-gated, and honors the silence sentinel",
     /view\.teachFire = \(key\) => \{\n\s+if \(dev\) return;/.test(dg) && /view\._teachSeen\.has\("\*"\)/.test(dg));
-  ok("T3: closing marks seen and persists the set", /view\._teachSeen\.add\(k\);[\s\S]{0,220}window\.storage\.set\(CARDS_KEY/.test(dg));
+  ok("T3: closing marks seen and persists the set", /view\._teachSeen\.add\(k\);[\s\S]{0,220}storage\.set\(CARDS_KEY/.test(dg));
   ok("T3: the phone voice serves on touch", /isTouch && tc\.roleTouch \? tc\.roleTouch : tc\.role/.test(dg));
   ok("T3/T4: the pie enqueues its whole series", /for \(const k of PIE_CARDS\[kind\]\(thing\)\) view\.teachFire\(k\);/.test(dg));
   ok("T3: the smoke silences the door with the sentinel", /coldsnap-wf-cards/.test(src("scripts/smoke.mjs")));

@@ -26,6 +26,11 @@ export { makeRenderer, renderPortrait };
 import { makeGameAudio } from "../platform/audio.js";
 export { makeGameAudio };
 
+// The storage surface (the storage door, mk2.85): the war game's
+// persistence comes through THIS file. The store itself stays the
+// platform shim (artifact runtime first, localStorage behind it).
+export { storage } from "../platform/storage.js";
+
 // ============================================================ part 1: shapes
 // JSDoc only — nothing in this part runs.
 
