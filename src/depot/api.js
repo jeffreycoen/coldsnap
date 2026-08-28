@@ -20,6 +20,12 @@ import { makeRenderer } from "../graphics/renderer.js";
 import { renderPortrait } from "../graphics/portrait.js";
 export { makeRenderer, renderPortrait };
 
+// The sound surface (the sound door, mk2.83, owner's ruling: door only,
+// no fork): the war game's audio comes through THIS file. The engine
+// itself stays src/platform/audio.js, shared with every other screen.
+import { makeGameAudio } from "../platform/audio.js";
+export { makeGameAudio };
+
 // ============================================================ part 1: shapes
 // JSDoc only — nothing in this part runs.
 

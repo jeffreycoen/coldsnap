@@ -12,7 +12,6 @@ import {
   makeField, makeWorld, addBody, addWeld, stepWorld, fireProjectile,
   applyDamage, mulberry32, heading, explode,
 } from "../engine/core.js";
-import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, MASON, INFANTRY_ARMS, BISON, APC, MECH, BISON_FIRE, BARRELS } from "./specs.js";
 import { cardFor } from "./infocards.js";
 import { TEACH, TEACH_REV } from "./cards.js";
@@ -30,7 +29,7 @@ import { makeRegiment, payTown, groundRate } from "./economy.js";
 import { makeTerritory, stepTerritory, holderAt, canBuild, fogStateFor, valueAt, EMIT } from "./territory.js";
 import { makeSight, stepSight, seenAt, eyeOf, steerReticle, reclampReticle, surfaceAt } from "./sight.js";
 import { SAVE_KEY, burnFront, restoreBodies, restoreWelds, restoreCensus, restoreSquads } from "./save.js";
-import { serializeRun, makeRenderer, renderPortrait } from "./api.js";
+import { serializeRun, makeRenderer, renderPortrait, makeGameAudio } from "./api.js";
 import { makeBodyLists, rebuildBodyLists } from "./lists.js";
 import Dispatch from "./Dispatch.jsx";
 import InfoCard from "./InfoCard.jsx";
