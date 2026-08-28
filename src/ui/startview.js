@@ -6,7 +6,7 @@
 // fouled seed; the installed map.MAP_SEED is returned — the number shown and
 // handed on is always the map drawn.
 import { makeField, makeWorld, addBody } from "../engine/core.js";
-import { makeRenderer } from "../render/renderer.js";
+import { makeRenderer } from "../depot/api.js";
 import { makeMap, buildDepotTerrain, makeGrid, planTrees } from "../depot/mapgen.js";
 import { buildTown } from "../depot/sim.js";
 

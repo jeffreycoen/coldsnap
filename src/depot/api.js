@@ -12,6 +12,14 @@ import { bootWar } from "./boot.js";
 import { tickWar } from "./tick.js";
 export { bootWar, tickWar };
 
+// The graphics surface (graphics-engine T2, mk2.81): the war game's one
+// drawing door. A game imports makeRenderer and renderPortrait from THIS
+// file; src/graphics is the war's own engine (forked from src/render at
+// mk2.75), and src/render belongs to the old screens alone.
+import { makeRenderer } from "../graphics/renderer.js";
+import { renderPortrait } from "../graphics/portrait.js";
+export { makeRenderer, renderPortrait };
+
 // ============================================================ part 1: shapes
 // JSDoc only — nothing in this part runs.
 
@@ -352,7 +360,9 @@ export function runHash(run) {
 const MANIFEST_TRACKED = [
   /engine\/[A-Za-z0-9_-]+\.js$/,
   /render\/renderer\.js$/,
+  /graphics\/[A-Za-z0-9_-]+\.js$/,
   /depot\/api\.js$/,
+  /^\.\/api\.js$/,
 ];
 export function importManifest(source) {
   const out = {};

@@ -12,8 +12,6 @@ import {
   makeField, makeWorld, addBody, addWeld, stepWorld, fireProjectile,
   applyDamage, mulberry32, heading, explode,
 } from "../engine/core.js";
-import { makeRenderer } from "../render/renderer.js";
-import { renderPortrait } from "../render/portrait.js";
 import { makeGameAudio } from "../platform/audio.js";
 import { TOWER_SPECS, TOWER_ORDER, MASON, INFANTRY_ARMS, BISON, APC, MECH, BISON_FIRE, BARRELS } from "./specs.js";
 import { cardFor } from "./infocards.js";
@@ -32,7 +30,7 @@ import { makeRegiment, payTown, groundRate } from "./economy.js";
 import { makeTerritory, stepTerritory, holderAt, canBuild, fogStateFor, valueAt, EMIT } from "./territory.js";
 import { makeSight, stepSight, seenAt, eyeOf, steerReticle, reclampReticle, surfaceAt } from "./sight.js";
 import { SAVE_KEY, burnFront, restoreBodies, restoreWelds, restoreCensus, restoreSquads } from "./save.js";
-import { serializeRun } from "./api.js";
+import { serializeRun, makeRenderer, renderPortrait } from "./api.js";
 import { makeBodyLists, rebuildBodyLists } from "./lists.js";
 import Dispatch from "./Dispatch.jsx";
 import InfoCard from "./InfoCard.jsx";
@@ -659,7 +657,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // comes back stained exactly as it was left. Scorch and tread
       // staining are NOT in the ledger and do not come back — the accepted
       // visual loss, stated in the plan.
-      if (RES && R._splat && R._splat.smear) for (const m of RES.smears || []) R._splat.smear(m.u, m.v, m.s, m.x, m.z);
+      if (RES && R.smear) for (const m of RES.smears || []) R.smear(m.u, m.v, m.s, m.x, m.z);
 
       const toast = (txt) => { view.toasts.push({ txt, t: performance.now() / 1000 }); if (view.toasts.length > 4) view.toasts.shift(); };
       // THE LIVING MARKET (mk1.13): the live price for a bar key, falling
@@ -1439,11 +1437,11 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       };
       const groundPoint = (cx, cy) => {
         const nd = toNdc(cx, cy);
-        const cb = R.camBasis, cam = R._cam;
+        const cb = R.camBasis, cp = R.cameraPos();
         const hw = cb.halfW(), hh = cb.halfH();
-        const ox = cam.position.x + cb.right.x * nd.x * hw + cb.up.x * nd.y * hh;
-        const oy = cam.position.y + cb.right.y * nd.x * hw + cb.up.y * nd.y * hh;
-        const oz = cam.position.z + cb.right.z * nd.x * hw + cb.up.z * nd.y * hh;
+        const ox = cp.x + cb.right.x * nd.x * hw + cb.up.x * nd.y * hh;
+        const oy = cp.y + cb.right.y * nd.x * hw + cb.up.y * nd.y * hh;
+        const oz = cp.z + cb.right.z * nd.x * hw + cb.up.z * nd.y * hh;
         const f = cb.fwd;
         let lo = 0, hi = 400;
         let prev = 0, found = -1;
@@ -1771,7 +1769,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         if (dev) return; // mk2.24: the sandbox never saves — the one rng draw below is never drawn either (no live stream compares against a sandbox run)
         try {
           const t0 = performance.now();
-          const json = serializeRun(war, { smears: R._splat ? R._splat.log : [] });
+          const json = serializeRun(war, { smears: R.smearLog ? R.smearLog() : [] });
           saveStat = { ms: +(performance.now() - t0).toFixed(2), bytes: json.length, bell: run.bell };
           cue("uitick"); // the record was written — the one acknowledgement it gets
           // fire-and-forget, but never an unhandled rejection: a store that

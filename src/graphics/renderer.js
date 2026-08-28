@@ -1,4 +1,6 @@
-// render/renderer.js — the COLDSNAP renderer, extracted VERBATIM from
+// graphics/renderer.js — the WAR GAME's own renderer, forked byte-identical
+// from src/render/renderer.js at mk2.75 (graphics-engine T1). Owned
+// separately from the old file from mk2.8 on. Originally extracted VERBATIM from
 // src/demo/coldsnap-proving-grounds.jsx (lines 2099-2761), with the module
 // imports the single-file version got from its own top-of-file scope.
 import * as THREE from "three";
@@ -2712,5 +2714,5 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // never calls this and keeps the shipped look exactly
   function setGrade(g) { postMat.uniforms.uGrade.value = Math.max(-1, Math.min(1, g || 0)); }
   const project = (x, y, z) => { const v = new THREE.Vector3(x, y, z); v.project(cam); return { x: v.x, y: v.y }; };
-  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, overlay, setDressing, setRoads: (list) => splat.setRoads(list), setMines, setTownFlags, setGrenades, setGreenFog, rotateStep, rotateBy, updateTerritory, setFog, setHealth, getFogDebug, chunkStats: () => chunkStats, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
+  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, overlay, setDressing, setRoads: (list) => splat.setRoads(list), setMines, setTownFlags, setGrenades, setGreenFog, rotateStep, rotateBy, updateTerritory, setFog, setHealth, getFogDebug, chunkStats: () => chunkStats, dispose() { renderer.dispose(); }, project, cameraPos: () => ({ x: cam.position.x, y: cam.position.y, z: cam.position.z }), smearLog: () => splat.log, smear: (u, v, style, wx, wz) => splat.smear(u, v, style, wx, wz), camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
 }
