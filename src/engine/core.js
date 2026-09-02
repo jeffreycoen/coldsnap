@@ -1476,8 +1476,12 @@ function collectContacts(world) {
     if (wl) for (const wd of wl) if (!wd.broken) return true;
     return false;
   };
+  // DIVERGENCE (guarded, mk2.87 — owner): a walking man does not wake a
+  // tree either — under depotCombat a sleeping tree ignores contact-wake
+  // from units, so a leaned-on treeline stays asleep and cheap.
   const wakeExempt = (s, mover) =>
-    world.depotCombat && s.kind === "chunk" && mover.mass < 200 && weldedAsleep(s);
+    world.depotCombat && ((s.kind === "tree" && mover.kind === "unit") ||
+      (s.kind === "chunk" && mover.mass < 200 && weldedAsleep(s)));
   const seen = new Set();
   const merged = _bpMerged;
   for (const c of grid.values()) {
@@ -1558,17 +1562,28 @@ function prepContacts(world) {
   const dt = world.dt;
   for (const c of world.contacts) {
     const a = c.a, b = c.b;
+    // DIVERGENCE (guarded, mk2.87 — owner): A WALKING MAN DOES NOT FELL A
+    // TREE. Under depotCombat a unit↔tree contact is one-sided: the tree's
+    // terms leave the effective-mass sums and applyImpulse never writes its
+    // velocity, so the man is pushed off the trunk at full strength and the
+    // trunk takes nothing. Vehicles, mechs, wrecks, blasts, gunfire and fire
+    // fell trees as before. No tree exists outside depot worlds (golden).
+    c.lockA = world.depotCombat && b && a.kind === "tree" && b.kind === "unit" ? 1 : 0;
+    c.lockB = world.depotCombat && b && b.kind === "tree" && a.kind === "unit" ? 1 : 0;
     if (world.mechs) c.mech = (a.mechRef || (b && b.mechRef)) ? 1 : 0; // DIVERGENCE: mech-owned contacts solve in the fixed-iteration island, not the LOD-tiered pass
     c.rA = v3(); V.sub(c.rA, c.p, a.pos);
     if (b) { c.rB = v3(); V.sub(c.rB, c.p, b.pos); }
     const n = c.n;
     // kn (scratch hoisted — this was the last per-step v3() churn in a hot loop)
-    let kn = a.invM + (b ? b.invM : 0);
-    const raxn = _pcRaxn; V.cross(raxn, c.rA, n);
-    const tmp = _pcTmp; iMulVec(a.invIw, raxn, tmp);
-    const t2v = _pcT2; V.cross(t2v, tmp, c.rA);
-    kn += V.dot(t2v, n);
-    if (b) {
+    let kn = (c.lockA ? 0 : a.invM) + (b && !c.lockB ? b.invM : 0);
+    const raxn = _pcRaxn, tmp = _pcTmp, t2v = _pcT2;
+    if (!c.lockA) {
+      V.cross(raxn, c.rA, n);
+      iMulVec(a.invIw, raxn, tmp);
+      V.cross(t2v, tmp, c.rA);
+      kn += V.dot(t2v, n);
+    }
+    if (b && !c.lockB) {
       const rbxn = v3(); V.cross(rbxn, c.rB, n);
       iMulVec(b.invIw, rbxn, tmp);
       V.cross(t2v, tmp, c.rB);
@@ -1582,9 +1597,9 @@ function prepContacts(world) {
     const tB = v3(); V.cross(tB, n, t1);
     c.t1 = t1; c.t2 = tB;
     const kt = (tv) => {
-      let k = a.invM + (b ? b.invM : 0);
-      V.cross(raxn, c.rA, tv); iMulVec(a.invIw, raxn, tmp); V.cross(t2v, tmp, c.rA); k += V.dot(t2v, tv);
-      if (b) { V.cross(raxn, c.rB, tv); iMulVec(b.invIw, raxn, tmp); V.cross(t2v, tmp, c.rB); k += V.dot(t2v, tv); }
+      let k = (c.lockA ? 0 : a.invM) + (b && !c.lockB ? b.invM : 0);
+      if (!c.lockA) { V.cross(raxn, c.rA, tv); iMulVec(a.invIw, raxn, tmp); V.cross(t2v, tmp, c.rA); k += V.dot(t2v, tv); }
+      if (b && !c.lockB) { V.cross(raxn, c.rB, tv); iMulVec(b.invIw, raxn, tmp); V.cross(t2v, tmp, c.rB); k += V.dot(t2v, tv); }
       return 1 / Math.max(1e-9, k);
     };
     c.invKt1 = kt(t1); c.invKt2 = kt(tB);
@@ -1618,13 +1633,13 @@ function relVelAt(c) {
 }
 function applyImpulse(c, J) {
   const a = c.a, b = c.b;
-  if (!a.sleeping) {
+  if (!a.sleeping && !c.lockA) {
     V.addScaled(a.v, a.v, J, -a.invM);
     const L = v3(); V.cross(L, c.rA, J);
     const dw = v3(); iMulVec(a.invIw, L, dw);
     V.addScaled(a.w, a.w, dw, -1);
   }
-  if (b && !b.sleeping) {
+  if (b && !b.sleeping && !c.lockB) {
     const L = v3(), dw = v3();
     V.addScaled(b.v, b.v, J, b.invM);
     V.cross(L, c.rB, J); iMulVec(b.invIw, L, dw);

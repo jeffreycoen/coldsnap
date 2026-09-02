@@ -47,4 +47,5 @@ await import("./tests/30-the-tightest-arc.mjs");
 await import("./tests/31-the-lit-roof.mjs");
 await import("./tests/32-the-commanders-eye.mjs");
 await import("./tests/33-the-settled-ground.mjs");
+await import("./tests/34-the-standing-tree.mjs");
 finish();
