@@ -942,7 +942,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         const v = selectedVehicle();
         if (!v || world.t < view.selArmedAt) return;
         if (kind === "defend") { v.order = "defend"; v.dest = null; v.goal = null; v._route = null; v._routeDest = null; view.vehOrderMode = null; view.buildPt0 = null; }
-        else if (kind === "move" || kind === "patrol" || kind === "escort" || kind === "load") {
+        else if (kind === "move" || kind === "attack" || kind === "patrol" || kind === "escort" || kind === "load") {
           if (view.vehOrderMode === kind) { view.vehOrderMode = null; view.buildPt0 = null; return; }
           view.vehOrderMode = kind; view.buildPt0 = null;
         }
@@ -1342,6 +1342,11 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         if (map.streamAt(d.x, d.z)) { toast("OPEN WATER — find the crossing"); return true; }
         if (om === "move") {
           v.order = "move"; v.dest = { x: d.x, z: d.z }; v._route = null; v._routeDest = null;
+          view.vehOrderMode = null; view.selVehId = null;
+          return true;
+        }
+        if (om === "attack") {   // mk2.88: MOVE's own tap, the fighting order
+          v.order = "attack"; v.dest = { x: d.x, z: d.z }; v._route = null; v._routeDest = null;
           view.vehOrderMode = null; view.selVehId = null;
           return true;
         }
@@ -3058,7 +3063,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
                 return { id: v.id, x: view.vehScreen.x, y: view.vehScreen.y, order: v.order || "defend", tracks: v.tracks || "careful",
                   kind: v.kind, vtype: v.vtype, seatsFree: v.vtype === "apc" ? APC.seats - apcSeated(world, run.squads, v.apcSeq) : 0,
                   riders: v.vtype === "apc" ? apcSeated(world, run.squads, v.apcSeq) : 0, aimingLoad: view.vehOrderMode === "load",
-                  aimingMove: view.vehOrderMode === "move", aimingPatrol: view.vehOrderMode === "patrol", aimingEscort: view.vehOrderMode === "escort",
+                  aimingMove: view.vehOrderMode === "move", aimingAttack: view.vehOrderMode === "attack", aimingPatrol: view.vehOrderMode === "patrol", aimingEscort: view.vehOrderMode === "escort",
                   patrolStart: !!view.buildPt0, armed: world.t >= view.selArmedAt, showPie: !!view.pieOpen, linePending: !!view.linePending };
               })(),
               // COMMAND T2 (mk0.84): the proposed line's accept/reject pair —
@@ -3874,6 +3879,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         const slots = [
           { key: "defend", icon: "∴", label: "DEFEND", color: "#7dffa8", on: vr.order === "defend", card: "defend", act: () => { const C = stateRef.current; if (C) { C.view.orderVehicle("defend"); C.view.selVehId = null; } } },
           { key: "move", icon: "→", label: "MOVE", color: "#7fd7ff", on: vr.aimingMove || vr.order === "move", card: "move", act: () => stateRef.current && stateRef.current.view.orderVehicle("move") },
+          { key: "attack", icon: "✕", label: "ATTACK", color: "#ff9a7a", on: vr.aimingAttack || vr.order === "attack", card: "attack", act: () => stateRef.current && stateRef.current.view.orderVehicle("attack") },
           { key: "patrol", icon: "⇄", label: "PATROL", color: "#7fd7ff", on: vr.aimingPatrol || vr.order === "patrol", card: "patrol", act: () => stateRef.current && stateRef.current.view.orderVehicle("patrol") },
           { key: "escort", icon: "⛨", label: "ESCORT", color: "#c9a0ff", on: vr.aimingEscort || vr.order === "escort", card: "escort", act: () => stateRef.current && stateRef.current.view.orderVehicle("escort") },
           { key: "tracks", icon: vr.tracks === "free" ? "●" : "◐", label: vr.tracks === "free" ? "TRACKS FREE" : "TRACKS CAREFUL", color: vr.tracks === "free" ? "#ff7a7a" : "#4aff8c", on: true, toggle: vr.tracks !== "free", card: "tracks", act: () => { const C = stateRef.current; if (C) { C.view.toggleTracks(); C.view.selVehId = null; } } },
@@ -3891,6 +3897,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           : vr.aimingPatrol ? (vr.patrolStart ? " — TAP THE FAR END" : " — TAP THE PATROL START")
           : vr.aimingEscort ? " — TAP A SQUAD"
           : vr.aimingLoad ? " — TAP A SQUAD"
+          : vr.aimingAttack ? " — TAP THE TARGET GROUND"
           : vr.aimingMove ? " — TAP GROUND" : "";
         return vr.showPie
           ? <RadialMenu cx={vr.x} cy={vr.y} label={vLabel + status} slots={slots} armed={vr.armed} onChoose={() => { const C = stateRef.current; if (C) C.view.pieOpen = false; }} press={teachPress} showInfo={!isTouch} onCard={(k) => { const C = stateRef.current; if (C && C.view.openInfo) C.view.openInfo(k, "bar"); }} />

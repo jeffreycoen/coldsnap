@@ -128,6 +128,7 @@ const YIELD_M = 3.2, YIELD_S = 2.5, PATIENCE_S = 4;   // provisional (F5)
 const KEEP_RIGHT_D = 14, KEEP_RIGHT_M = 3.0;   // provisional (F5)
 const HUNT_HOLD_S = 12, HUNT_MAX_M = 45;   // provisional (F5) — P7.2 T5, the hunt
 export { HUNT_HOLD_S };
+const ATTACK_HOLD_S = 3.5;   // provisional (F5) — mk2.88: the attack halt outlasts the Bison gun's 2.6s scan cycle, so the hull stands rather than creeps between shells
 // P7 T16: the cone now REPORTS who blocks it — the yield order needs names,
 // not just a verdict. Same reach, same width, same team filter.
 function armorBlockers(world, v) {
@@ -225,6 +226,17 @@ function armorGoal(world, grid, v, dt, fwdDir, opts) {
     // P7 T13: the escort leg ROUTES now (ordered driving goes around
     // masonry) — the trail point is a moving dest on the same machinery.
     v.dest = { x: sq.anchor.x - (dx / d) * ARMOR_ESCORT_BACK, z: sq.anchor.z - (dz / d) * ARMOR_ESCORT_BACK };
+  }
+  // mk2.88 (owner): ATTACK — the move that stops to fight. Same road as
+  // MOVE, but while a live foe stands in the guns' reach (the gun scans
+  // stamp _foeT) the hull halts and lets the guns work; quiet ground rolls
+  // it on. Arrival is MOVE's own: the order becomes "defend". Enemy masonry
+  // on the road still rams exactly as MOVE does — structures never halt.
+  if (order === "attack" && world.t - (v._foeT || 0) < ATTACK_HOLD_S) {
+    v.depotDrive = "manual";
+    v.ctl = { throttle: 0, steer: 0, brake: true };
+    v.goal = null;
+    return;
   }
   if (!v.dest) { v.order = "defend"; v.goal = null; return; }
   // MOVE/PATROL/ESCORT: route legs — stepSquadRouting's shape, on the body.
@@ -399,6 +411,7 @@ function armorGuns(world, v, dt, T, toUV) {
   if (v.gunT <= 0) {
     const gun = BISON_FIRE.gun;
     let tgt = armorScanFoes(world, v, muzzle, gun, false, T, toUV), struct = false;
+    if (tgt) v._foeT = world.t; // mk2.88: a live foe in reach — the attack halt reads this clock
     if (!tgt) { tgt = armorScanStructs(world, v, muzzle, gun, T, toUV); struct = !!tgt; }
     if (tgt) {
       v.gunT = gun.cd;
@@ -411,6 +424,7 @@ function armorGuns(world, v, dt, T, toUV) {
   if (v.mgT <= 0) {
     const mg = BISON_FIRE.mg;
     const tgt = armorScanFoes(world, v, muzzle, mg, true, T, toUV);   // the coax shoots men, not dirt
+    if (tgt) v._foeT = world.t; // mk2.88: the coax counts too
     if (tgt) {
       v.mgT = mg.cd;
       v._aimYaw = Math.atan2(tgt.pos.x - v.pos.x, tgt.pos.z - v.pos.z);
@@ -430,6 +444,7 @@ function apcGuns(world, v, dt, T, toUV) {
   const mg = BISON_FIRE.mg;
   const muzzle = { x: v.pos.x, y: v.pos.y + 1.3, z: v.pos.z };
   const tgt = armorScanFoes(world, v, muzzle, mg, true, T, toUV);
+  if (tgt) v._foeT = world.t; // mk2.88: the attack halt's clock
   if (tgt) {
     v.mgT = mg.cd;
     v._aimYaw = Math.atan2(tgt.pos.x - v.pos.x, tgt.pos.z - v.pos.z);
@@ -481,6 +496,7 @@ function mechGoal(world, grid, b, dt, fwdDir, opts) {
     return;
   }
   const order = b.order || "defend";
+  if (order === "attack" && world.t - (b._foeT || 0) < ATTACK_HOLD_S) { mechCommand(m, { travel: 0, lateral: 0 }); return; } // mk2.88: the halt, in the walker's form
   if (order === "defend" || !b.dest) { mechCommand(m, { travel: 0, lateral: 0 }); return; }
   // MOVE/PATROL/ESCORT route legs — armorGoal's own bookkeeping shape on the hull
   if (order === "escort") {
@@ -520,6 +536,7 @@ function mechGuns(world, b, dt, T, toUV) {
   if (!m || mechFallen(m)) return;
   const muzzle = { x: b.pos.x, y: b.pos.y + 2.0, z: b.pos.z };
   let tgt = armorScanFoes(world, b, muzzle, MECH_GUN, false, T, toUV);
+  if (tgt) b._foeT = world.t; // mk2.88: the attack halt's clock
   let struct = false;
   if (!tgt) { tgt = armorScanStructs(world, b, muzzle, MECH_GUN, T, toUV); struct = !!tgt; }
   if (!tgt) return;

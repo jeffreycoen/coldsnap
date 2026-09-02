@@ -525,3 +525,8 @@
 2026-09-02T19:31:49.028Z depot-test ok 2096 PASS / 0 FAIL — depot-test PASS (190.3s)
 2026-09-02T19:32:40.099Z golden ok 7 PASS / 0 FAIL — GOLDEN GATE: ALL PASS (20.1s)
 2026-09-02T19:35:52.024Z smoke ok 30 PASS / 0 FAIL — BOOT-LOAD SMOKE: ALL PASS (188.1s)
+2026-09-02T23:02:46.068Z depot-test FAIL(1) 2098 PASS / 8 FAIL — 8 FAILURE(S): (a) the attacking hull halts to fight, (a) the order holds through the fight, (a) the gun scan stamps the  (175.5s)
+2026-09-02T23:06:55.050Z depot-test FAIL(1) 2105 PASS / 1 FAIL — 1 FAILURE(S): (a) the gun scan stamps the foe clock (200.7s)
+2026-09-02T23:17:45.298Z depot-test ok 2106 PASS / 0 FAIL — depot-test PASS (206.2s)
+2026-09-02T23:17:49.380Z depot-lint ok 0 PASS / 0 FAIL — depot-lint PASS (0.1s)
+2026-09-02T23:21:06.050Z smoke ok 30 PASS / 0 FAIL — BOOT-LOAD SMOKE: ALL PASS (190.6s)
