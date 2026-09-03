@@ -441,7 +441,7 @@ import fs from "node:fs";
     // re-pinned mk2.25: devSpawnAt (the enemy rack's placer, sandbox only)
     // joined the same clamp shape — a fifth caller, count 3 -> 4.
     ok("mk0.60/6: build points clamp to the rim through the same clamp shape (wee-t2b: map.clampToRim)",
-      /const d = map\.clampToRim\(p\.x, p\.z\);/.test(dsrc) && (dsrc.match(/map\.clampToRim\(p\.x, p\.z\)/g) || []).length === 4);
+      /const d = map\.clampToRim\(p\.x, p\.z\);/.test(dsrc) && (dsrc.match(/map\.clampToRim\(p\.x, p\.z\)/g) || []).length === 5); // mk2.89: the group tap is the fifth site
     ok("mk0.60/6: the cell walk steps ONE axis at a time (consecutive cells share an EDGE) (retargeted mk1.50, P7 T20: lineCells moved to buildlines.js)",
       /const stepX = z === g1\.gz \? true : x === g1\.gx \? false : 2 \* err > -dz;/.test(blSrc60));
     // Jeff, 2026-08-12: ONE rotation for the whole line — the dominant axis of

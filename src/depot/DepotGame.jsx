@@ -546,6 +546,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         // P7 T2: the selected vehicle's own selection/order state — the
         // squad selection fields' exact shape, one Bison at a time.
         selVehId: null, vehOrderMode: null,
+        groupSel: null, groupOrderMode: null, // mk2.89: the screen select — { sqIds, vehIds } and its own MOVE/ATTACK aim
         // POSSESSION T4/T5 (mk0.93/0.94): THE CARRIED RETICLE. reticleOff is
         // the reticle's offset from the possessed unit; joy is the touch
         // stick's own live drag state (DOM handlers below).
@@ -1052,6 +1053,63 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         const ids = squadIdsOfType(world, run.squads, sq.type);
         view.selSquadIds = ids.length > 1 ? ids : null;
       };
+      // mk2.89 (owner): THE SCREEN SELECT — every live player squad and hull
+      // the camera sees at the button's moment joins one group; the group
+      // reticle (three wedges) orders them together. The group does not
+      // re-follow the camera afterward.
+      view.selectScreen = () => {
+        if (run.gameOver || run.victory || input.possess) return;
+        const onScreen = (x, y, z) => {
+          const nd = R.project(x, y, z);
+          return !!nd && Math.abs(nd.x) <= 1 && Math.abs(nd.y) <= 1;
+        };
+        const sqIds = [];
+        for (const sq of run.squads) {
+          for (const id of sq.memberIds) {
+            const u = world.byId.get(id);
+            if (u && u.alive && onScreen(u.pos.x, u.pos.y, u.pos.z)) { sqIds.push(sq.id); break; }
+          }
+        }
+        const vehIds = [];
+        for (const b of world.bodies) {
+          if ((b.kind !== "vehicle" && b.kind !== "mech") || !b.alive || b.team !== 1 || !b.drv) continue;
+          if (onScreen(b.pos.x, b.pos.y, b.pos.z)) vehIds.push(b.id);
+        }
+        if (!sqIds.length && !vehIds.length) { toast("NO ONE ON SCREEN"); return; }
+        view.selSquadId = null; view.selSquadIds = null; view.orderMode = null; view.buildPt0 = null; view.linePending = null;
+        view.selVehId = null; view.vehOrderMode = null; view.inspectId = null;
+        view.groupSel = { sqIds, vehIds }; view.groupOrderMode = null;
+        view.selArmedAt = world.t + PENDING_ARM_S; view.pieOpen = true;
+        R.overlay.setLinePreview(false);
+      };
+      // The group orders: DEFEND lands at once (the squad pie's defend,
+      // fanned, plus the hull's); MOVE and ATTACK arm the one ground tap
+      // that consumeGroupOrderTap finishes.
+      view.orderGroup = (kind) => {
+        if (run.gameOver || run.victory) return;
+        const gs = view.groupSel;
+        if (!gs || world.t < view.selArmedAt) return;
+        if (kind === "defend") {
+          for (const qid of gs.sqIds) {
+            const gsq = run.squads.find((q) => q.id === qid);
+            if (!gsq) continue;
+            let cx = 0, cz = 0, n = 0;
+            for (const id of gsq.memberIds) { const u = world.byId.get(id); if (u && u.alive) { cx += u.pos.x; cz += u.pos.z; n++; } }
+            if (n) gsq.anchor = { x: cx / n, z: cz / n };
+            gsq.order = "defend"; gsq.dest = null; gsq._legTarget = null; gsq._pauseT = 0; gsq._threatSig = undefined;
+            gsq._surveyPending = true;
+            gsq._build = null;
+          }
+          for (const vid of gs.vehIds) {
+            const gv = world.byId.get(vid);
+            if (!gv || !gv.alive) continue;
+            gv.order = "defend"; gv.dest = null; gv.goal = null; gv._route = null; gv._routeDest = null;
+          }
+          view.groupSel = null; view.groupOrderMode = null; view.pieOpen = false;
+        } else if (kind === "move" || kind === "attack") {
+          view.groupOrderMode = view.groupOrderMode === kind ? null : kind;
+        }
+      };
 
       // POSSESSION T4 (mk0.93): the possessed unit's own sight circle: a
       // squad sees with its best living eye (a sniper pair's spotter reaches
@@ -1250,6 +1308,25 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // The order flow's ground taps, in one place. tapAt calls this with the
       // point its ray hit; the debug harness calls it with a world point
       // directly, so both drive the identical code.
+      // mk2.89: the group's ground tap — MOVE or ATTACK lands on every squad
+      // and hull in the sweep at once, then the group is released.
+      const consumeGroupOrderTap = (p) => {
+        const om = view.groupOrderMode;
+        if (!om || !view.groupSel) return false;
+        const d = map.clampToRim(p.x, p.z);
+        if (map.streamAt(d.x, d.z)) { toast("OPEN WATER — find the crossing"); return true; }
+        const gs = view.groupSel;
+        for (const qid of gs.sqIds) {
+          const gsq = run.squads.find((q) => q.id === qid);
+          if (gsq) { gsq.order = om; gsq.dest = { x: d.x, z: d.z }; gsq._legTarget = null; gsq._pauseT = 0; gsq._build = null; }
+        }
+        for (const vid of gs.vehIds) {
+          const gv = world.byId.get(vid);
+          if (gv && gv.alive) { gv.order = om; gv.dest = { x: d.x, z: d.z }; gv._route = null; gv._routeDest = null; }
+        }
+        view.groupSel = null; view.groupOrderMode = null; view.pieOpen = false;
+        return true;
+      };
       const consumeOrderTap = (p) => {
         const om = view.orderMode;
         if (!om) return false;
@@ -1542,6 +1619,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         // destination (flag marker renders at dest until arrival); an armed
         // BUILD consumes TWO — the line's start, then its far end (mk0.60).
         if (consumeOrderTap(p)) return;
+        if (consumeGroupOrderTap(p)) return;
         if (consumeVehOrderTap(p)) return;
         // P7.2 T1: THE TAP CYCLES. Every pickable thing near the tap —
         // squads, hulls, towers (towers only in plain command, so a build
@@ -1576,6 +1654,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           const id = +pick.key.slice(pick.key.indexOf(":") + 1);
           view.selSquadId = null; view.selSquadIds = null; view.selVehId = null; view.inspectId = null;
           view.orderMode = null; view.vehOrderMode = null; view.buildPt0 = null;
+          view.groupSel = null; view.groupOrderMode = null; // mk2.89: a single pick releases the group
           view.selArmedAt = world.t + PENDING_ARM_S; view.pieOpen = true;
           if (pick.key.startsWith("sq:")) view.selSquadId = id;
           else if (pick.key.startsWith("veh:")) view.selVehId = id;
@@ -1585,6 +1664,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           else view.teachPie("tower", world.byId.get(id));
           return;
         }
+        if (view.groupSel) { view.groupSel = null; view.groupOrderMode = null; view.pieOpen = false; return; } // mk2.89
         if (view.selSquadId != null) { view.selSquadId = null; view.selSquadIds = null; view.orderMode = null; view.buildPt0 = null; view.pieOpen = false; return; }
         if (view.selVehId != null) { view.selVehId = null; view.vehOrderMode = null; view.buildPt0 = null; view.pieOpen = false; return; }
         const g = grid.worldToGrid(p.x, p.z);
@@ -2938,6 +3018,24 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
                 view.vehScreen = nd5 ? { x: rect5.left + (nd5.x * 0.5 + 0.5) * rect5.width, y: rect5.top + (-nd5.y * 0.5 + 0.5) * rect5.height } : null;
               } else view.vehScreen = null;
             } else view.vehScreen = null;
+            // mk2.89: the group reticle's anchor — the sweep's centroid of
+            // living members, projected fresh every frame (rotation/pan-proof,
+            // the squad chip anchor's own recipe). All dead = group clears.
+            if (view.groupSel && R.project) {
+              const gsA = view.groupSel;
+              let gx = 0, gz = 0, gn = 0;
+              for (const qid of gsA.sqIds) {
+                const gsq = run.squads.find((q) => q.id === qid);
+                if (!gsq) continue;
+                for (const id of gsq.memberIds) { const u = world.byId.get(id); if (u && u.alive) { gx += u.pos.x; gz += u.pos.z; gn++; } }
+              }
+              for (const vid of gsA.vehIds) { const gv = world.byId.get(vid); if (gv && gv.alive) { gx += gv.pos.x; gz += gv.pos.z; gn++; } }
+              if (gn) {
+                const rect6 = canvas.getBoundingClientRect();
+                const nd6 = R.project(gx / gn, field.heightAt(gx / gn, gz / gn) + 2.2, gz / gn);
+                view.groupScreen = nd6 ? { x: rect6.left + (nd6.x * 0.5 + 0.5) * rect6.width, y: rect6.top + (-nd6.y * 0.5 + 0.5) * rect6.height } : null;
+              } else { view.groupSel = null; view.groupOrderMode = null; view.groupScreen = null; }
+            } else view.groupScreen = null;
             // Tower radial anchor (COMMAND T1, mk0.80): the same screen-space
             // convention as the squad chip anchor above — projected off the
             // tower's top from the live camera every frame, rotation/pan-proof.
@@ -3066,6 +3164,13 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
                   aimingMove: view.vehOrderMode === "move", aimingAttack: view.vehOrderMode === "attack", aimingPatrol: view.vehOrderMode === "patrol", aimingEscort: view.vehOrderMode === "escort",
                   patrolStart: !!view.buildPt0, armed: world.t >= view.selArmedAt, showPie: !!view.pieOpen, linePending: !!view.linePending };
               })(),
+              // mk2.89: the group reticle — three wedges at the sweep's centroid.
+              groupRadial: view.groupSel && view.groupScreen ? {
+                x: view.groupScreen.x, y: view.groupScreen.y,
+                count: view.groupSel.sqIds.length + view.groupSel.vehIds.length,
+                aimingMove: view.groupOrderMode === "move", aimingAttack: view.groupOrderMode === "attack",
+                armed: world.t >= view.selArmedAt, showPie: !!view.pieOpen,
+              } : null,
               // COMMAND T2 (mk0.84): the proposed line's accept/reject pair —
               // survives the end point going off-screen (buttons just hide).
               linePending: view.linePending && view.lineScreen ? {
@@ -3903,6 +4008,18 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           ? <RadialMenu cx={vr.x} cy={vr.y} label={vLabel + status} slots={slots} armed={vr.armed} onChoose={() => { const C = stateRef.current; if (C) C.view.pieOpen = false; }} press={teachPress} showInfo={!isTouch} onCard={(k) => { const C = stateRef.current; if (C && C.view.openInfo) C.view.openInfo(k, "bar"); }} />
           : <div style={{ position: "absolute", left: vr.x, top: vr.y + 26, transform: "translate(-50%,0)", fontSize: 10, letterSpacing: 1, color: "#7dffa8", background: "rgba(14,18,24,0.85)", padding: "1px 6px", borderRadius: 4, zIndex: 7, pointerEvents: "none" }}>{vLabel + status}</div>;
       })()}
+      {hud.groupRadial && (() => {
+        const gr = hud.groupRadial;
+        const slots = [
+          { key: "gdefend", icon: "∴", label: "DEFEND", color: "#7dffa8", on: false, card: "defend", act: () => { const C = stateRef.current; if (C) C.view.orderGroup("defend"); } },
+          { key: "gmove", icon: "→", label: "MOVE", color: "#7fd7ff", on: gr.aimingMove, card: "move", act: () => { const C = stateRef.current; if (C) C.view.orderGroup("move"); } },
+          { key: "gattack", icon: "✕", label: "ATTACK", color: "#ff9a7a", on: gr.aimingAttack, card: "attack", act: () => { const C = stateRef.current; if (C) C.view.orderGroup("attack"); } },
+        ];
+        const status = gr.aimingAttack ? " — TAP THE TARGET GROUND" : gr.aimingMove ? " — TAP GROUND" : "";
+        return gr.showPie
+          ? <RadialMenu cx={gr.x} cy={gr.y} label={"GROUP (" + gr.count + ")" + status} slots={slots} armed={gr.armed} onChoose={() => { const C = stateRef.current; if (C) C.view.pieOpen = false; }} press={teachPress} showInfo={!isTouch} onCard={(k) => { const C = stateRef.current; if (C && C.view.openInfo) C.view.openInfo(k, "bar"); }} />
+          : <div style={{ position: "absolute", left: gr.x, top: gr.y + 26, transform: "translate(-50%,0)", fontSize: 10, letterSpacing: 1, color: "#7dffa8", background: "rgba(14,18,24,0.85)", padding: "1px 6px", borderRadius: 4, zIndex: 7, pointerEvents: "none" }}>{"GROUP (" + gr.count + ")" + status}</div>;
+      })()}
 
       {hud.started && !hud.gameOver && !hud.victory && !hud.possessed && buildOpen && branch && (
         <div data-lattice style={{ position: "absolute", left: 6, right: 6, bottom: "calc(150px + env(safe-area-inset-bottom, 0px))", zIndex: 4, display: "flex", flexDirection: "column-reverse", gap: 2, pointerEvents: packing ? "none" : "auto" }}>
@@ -3936,6 +4053,11 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
 @keyframes cs-packline { to { transform: scaleX(0); } }
 @keyframes cs-packtrunk { to { transform: scaleY(0); } }
 `}</style>
+          <button data-group-select
+            style={{ ...P.slot, minHeight: 44, justifyContent: "center", borderColor: "#2f8f4f", background: "#12331f", color: "#7dffa8", fontWeight: "bold", letterSpacing: 1 }}
+            onClick={() => { const C = stateRef.current; if (C) C.view.selectScreen(); }}>
+            ∷ ALL
+          </button>
           <CrateChip data-build-toggle
             label={buildOpen ? "CLOSE" : "BUILD"} icon="⚒" open={buildOpen} active={buildOpen}
             line={!buildOpen ? (hud.sellMode ? "SELL" : hud.mode ? (PALETTE_LABEL[hud.mode] || "") : "") : ""}

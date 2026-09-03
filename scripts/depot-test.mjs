@@ -49,4 +49,5 @@ await import("./tests/32-the-commanders-eye.mjs");
 await import("./tests/33-the-settled-ground.mjs");
 await import("./tests/34-the-standing-tree.mjs");
 await import("./tests/35-the-armor-attack.mjs");
+await import("./tests/36-the-screen-select.mjs");
 finish();
