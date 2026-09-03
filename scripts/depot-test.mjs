@@ -52,4 +52,5 @@ await import("./tests/35-the-armor-attack.mjs");
 await import("./tests/36-the-screen-select.mjs");
 await import("./tests/37-the-order-chain.mjs");
 await import("./tests/38-the-chain-builder.mjs");
+await import("./tests/39-the-visible-chain.mjs");
 finish();

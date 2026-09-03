@@ -3205,6 +3205,12 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
               })(),
               squadFlag: view.flagScreen ? { x: view.flagScreen.x, y: view.flagScreen.y } : null,
               chainFlags: view.chainScreens, // mk2.91: the queued legs' numbered flags
+              chainList: (() => { // mk2.92: the visible queue of commands
+                const o = view.groupSel == null ? (view.selVehId != null ? world.byId.get(view.selVehId) : (view.selSquadId != null ? run.squads.find((q) => q.id === view.selSquadId) : null)) : null;
+                if (!o || (!view.queueOn && !(o._queue && o._queue.length))) return null;
+                const w = (k) => k === "move" ? "MOVE" : k === "attack" ? "ATTACK" : k === "patrol" ? "PATROL" : k === "build" ? "BUILD" : k === "escort" ? "ESCORT" : "DEFEND";
+                return { active: w(o.order || "defend"), legs: (o._queue || []).map((q) => w(q.kind)) };
+              })(),
               // POSSESSION (P4 T1/T3, mk0.90/mk0.92): the RELEASE button/
               // POSSESSED chip key off this — null the instant the squad or
               // tower is gone. The stick (data-joy) additionally checks
@@ -3982,11 +3988,25 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         // still selected (an aiming order armed) -> the center label chip
         // alone, so the ground stays fully tappable for the follow-up taps.
         return sq.showPie
-          ? <RadialMenu cx={sq.x} cy={sq.y} label={lbl + status} slots={slots} armed={sq.armed} onChoose={() => { const C = stateRef.current; if (C) { if (C.view._keepPie) C.view._keepPie = false; else C.view.pieOpen = false; } }} press={teachPress} showInfo={!isTouch} onCard={(k) => { const C = stateRef.current; if (C && C.view.openInfo) C.view.openInfo(k, "bar"); }} />
+          ? <RadialMenu cx={sq.x} cy={sq.y} label={lbl + status} slots={slots} armed={sq.armed} onChoose={() => { const C = stateRef.current; if (C) { if (C.view._keepPie) C.view._keepPie = false; else if (!C.view.queueOn) C.view.pieOpen = false; } }} press={teachPress} showInfo={!isTouch} onCard={(k) => { const C = stateRef.current; if (C && C.view.openInfo) C.view.openInfo(k, "bar"); }} />
           : <div style={{ position: "absolute", left: sq.x, top: sq.y + 26, transform: "translate(-50%,0)", fontSize: 10, letterSpacing: 1, color: "#7dffa8", background: "rgba(14,18,24,0.85)", padding: "1px 6px", borderRadius: 4, zIndex: 7, pointerEvents: "none" }}>{lbl + status}</div>;
       })()}
       {hud.squadFlag && (
         <div data-squad-flag style={{ position: "absolute", left: hud.squadFlag.x, top: hud.squadFlag.y, transform: "translate(-50%, -100%)", zIndex: 6, pointerEvents: "none", color: "#ff6b5e", fontSize: 18 }}>⚑</div>
+      )}
+      {hud.chainList && (
+        <div data-chain-list style={{ position: "absolute", left: 8, top: "32%", zIndex: 6, display: "flex", flexDirection: "column", gap: 4, background: "rgba(14,18,24,0.88)", border: "1px solid #48515f", borderRadius: 8, padding: "6px 10px", pointerEvents: "auto", fontSize: 11, letterSpacing: 1, minWidth: 96 }}>
+          <div style={{ color: "#ffd27a", fontSize: 10 }}>THE CHAIN</div>
+          <div style={{ color: "#9fb2c8" }}>▶ {hud.chainList.active}</div>
+          {hud.chainList.legs.map((l, i) => (
+            <div key={i} data-chain-row={i} style={{ display: "flex", alignItems: "center", gap: 6, color: "#e6ebf1" }}>
+              <span style={{ color: "#ffd27a" }}>{i + 1}</span>
+              <span style={{ flex: 1 }}>{l}</span>
+              <span style={{ color: "#ff6b5e", cursor: "pointer", padding: "0 4px" }}
+                onClick={() => { const C = stateRef.current; if (C) C.view.deleteLeg(i); }}>✗</span>
+            </div>
+          ))}
+        </div>
       )}
       {hud.chainFlags && hud.chainFlags.map((f) => (
         <div key={f.i} data-chain-flag={f.i} style={{ position: "absolute", left: f.x, top: f.y, transform: "translate(-50%, -100%)", zIndex: 6, pointerEvents: "auto", cursor: "pointer", color: "#ffd27a", fontSize: 14, textAlign: "center", textShadow: "0 1px 2px #000" }}
@@ -4085,7 +4105,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           : vr.aimingAttack ? " — TAP THE TARGET GROUND"
           : vr.aimingMove ? " — TAP GROUND" : "";
         return vr.showPie
-          ? <RadialMenu cx={vr.x} cy={vr.y} label={vLabel + status} slots={slots} armed={vr.armed} onChoose={() => { const C = stateRef.current; if (C) C.view.pieOpen = false; }} press={teachPress} showInfo={!isTouch} onCard={(k) => { const C = stateRef.current; if (C && C.view.openInfo) C.view.openInfo(k, "bar"); }} />
+          ? <RadialMenu cx={vr.x} cy={vr.y} label={vLabel + status} slots={slots} armed={vr.armed} onChoose={() => { const C = stateRef.current; if (C) { if (C.view._keepPie) C.view._keepPie = false; else if (!C.view.queueOn) C.view.pieOpen = false; } }} press={teachPress} showInfo={!isTouch} onCard={(k) => { const C = stateRef.current; if (C && C.view.openInfo) C.view.openInfo(k, "bar"); }} />
           : <div style={{ position: "absolute", left: vr.x, top: vr.y + 26, transform: "translate(-50%,0)", fontSize: 10, letterSpacing: 1, color: "#7dffa8", background: "rgba(14,18,24,0.85)", padding: "1px 6px", borderRadius: 4, zIndex: 7, pointerEvents: "none" }}>{vLabel + status}</div>;
       })()}
       {hud.groupRadial && (() => {
