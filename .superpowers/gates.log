@@ -537,3 +537,7 @@
 2026-09-03T00:08:45.165Z depot-test ok 2114 PASS / 0 FAIL — depot-test PASS (178.5s)
 2026-09-03T00:08:48.588Z depot-lint ok 0 PASS / 0 FAIL — depot-lint PASS (0.1s)
 2026-09-03T00:11:57.324Z smoke ok 30 PASS / 0 FAIL — BOOT-LOAD SMOKE: ALL PASS (185.7s)
+2026-09-03T01:05:49.094Z depot-test FAIL(1) 2114 PASS / 9 FAIL — 9 FAILURE(S): (a) the hull pops the queued patrol on arrival, (a) the chain is consumed, (b) the dry chain digs in at th (190.5s)
+2026-09-03T01:09:40.421Z depot-test ok 2123 PASS / 0 FAIL — depot-test PASS (209.5s)
+2026-09-03T01:09:43.988Z depot-lint ok 0 PASS / 0 FAIL — depot-lint PASS (0.1s)
+2026-09-03T01:12:53.344Z smoke ok 30 PASS / 0 FAIL — BOOT-LOAD SMOKE: ALL PASS (186.3s)

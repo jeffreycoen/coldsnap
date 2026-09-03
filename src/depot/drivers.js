@@ -290,6 +290,14 @@ function armorGoal(world, grid, v, dt, fwdDir, opts) {
       v.dest = goingToB ? { x: v._patA.x, z: v._patA.z } : { x: v._patB.x, z: v._patB.z };
       v._route = null; v._routeDest = null; v._stuckN = 0;
     } else if (v.order === "escort") { v.goal = null; return; }
+    else if (v._queue && v._queue.length) {
+      // mk2.90: THE CHAIN — the hull's arrival takes the next queued order.
+      const q = v._queue.shift();
+      v._route = null; v._routeDest = null; v._stuckN = 0;
+      if (q.kind === "patrol") { v._patA = { x: q.ax, z: q.az }; v._patB = { x: q.bx, z: q.bz }; v.order = "patrol"; v.dest = { x: q.ax, z: q.az }; }
+      else { v.order = q.kind; v.dest = { x: q.x, z: q.z }; }
+      return;
+    }
     else { v.order = "defend"; v.dest = null; v.goal = null; return; }
   }
   // P7 T24, amended (owner, C): ARRIVAL outranks the STAND — a leg that just
@@ -519,6 +527,12 @@ function mechGoal(world, grid, b, dt, fwdDir, opts) {
       const goingToB = Math.hypot(b.dest.x - b._patB.x, b.dest.z - b._patB.z) < 0.5;
       b.dest = goingToB ? { x: b._patA.x, z: b._patA.z } : { x: b._patB.x, z: b._patB.z };
       b._route = null; b._routeDest = null;
+    } else if (b._queue && b._queue.length) {
+      const q = b._queue.shift(); // mk2.90: the chain, in the walker's form
+      b._route = null; b._routeDest = null;
+      if (q.kind === "patrol") { b._patA = { x: q.ax, z: q.az }; b._patB = { x: q.bx, z: q.bz }; b.order = "patrol"; b.dest = { x: q.ax, z: q.az }; }
+      else { b.order = q.kind; b.dest = { x: q.x, z: q.z }; }
+      mechCommand(m, { travel: 0, lateral: 0 }); return;
     } else { b.order = "defend"; b.dest = null; mechCommand(m, { travel: 0, lateral: 0 }); return; }
   }
   const wp = b._route && b._route.length ? b._route[0] : b.dest;

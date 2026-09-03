@@ -651,6 +651,20 @@ export function stepSquad(world, squad, dt) {
       squad._legTarget = null;
       squad._route = null;
       squad._cohesionHoldT = 0;
+    } else if (dToDest <= ARRIVE_TOL && squad._queue && squad._queue.length) {
+      // mk2.90 (owner): THE CHAIN — an arrival with queued orders takes the
+      // next one instead of digging in. move/attack walk on; a queued patrol
+      // lands as acceptLine lands one (both ends set, near end first) and is
+      // terminal. The game layer wipes the queue on any plain order, so this
+      // branch only ever runs a chain the player built.
+      const q = squad._queue.shift();
+      squad._legTarget = null; squad._route = null; squad._pauseT = 0; squad._cohesionHoldT = 0; squad._build = null;
+      if (q.kind === "patrol") {
+        squad._patA = { x: q.ax, z: q.az }; squad._patB = { x: q.bx, z: q.bz };
+        squad.order = "patrol"; squad.dest = { x: q.ax, z: q.az };
+      } else {
+        squad.order = q.kind; squad.dest = { x: q.x, z: q.z };
+      }
     } else if (dToDest <= ARRIVE_TOL) {
       squad.order = "defend";
       squad.anchor = { x: squad.dest.x, z: squad.dest.z };
