@@ -888,6 +888,9 @@ function killBody(world, b, info) {
     ev.team = b.team; ev.tag = b.tag; ev.utype = b.utype;
     ev.vtype = b.vtype; ev.towerType = b.towerType;
     if (b.sandbag) { ev.sandbag = 1; ev.bagSide = b.bagSide || 1; }
+    // mk2.95: the kill names its shooter (the srcId the damage paths carry)
+    // so the game layer can credit the killer's squad or hull.
+    if (info.srcId != null) ev.srcId = info.srcId;
   }
   world.events.push(ev);
   achOnKill(world, ev);

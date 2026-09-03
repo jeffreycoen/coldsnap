@@ -6,7 +6,7 @@ import { addBody } from "../engine/core.js";
 import { mechFire, mechMissiles, mechBarrage, mechPunt, mechAboutFace } from "../engine/mech.js";
 import { possessedArmorFire, possessedArmorMg, mechSighted } from "./drivers.js";
 import { stepDepot, spawnEnemy } from "./sim.js";
-import { stepBell, nextSpawnTag, withdrawDue, executeWithdrawal, checkLoss, stampEnd, stepDepotCensus, depotStandingFraction, possessedVolley, possessedTowerFire, scoreKill } from "./state.js";
+import { stepBell, nextSpawnTag, withdrawDue, executeWithdrawal, checkLoss, stampEnd, stepDepotCensus, depotStandingFraction, possessedVolley, possessedTowerFire, scoreKill, creditKill } from "./state.js";
 import { ringBell as ringBellOut } from "./bell.js";
 import { stepTerritory } from "./territory.js";
 import { stepSight } from "./sight.js";
@@ -118,6 +118,7 @@ function drainEvents(war, flags) {
     if (e.type !== "kill") continue;
     // THE KILL LAW (mk1.93): every attributed death pays and scores here.
     scoreKill(run, e, run._market ? run._market.counts : null);
+    creditKill(world, run.squads, run.foeSquads, e); // mk2.95: the killer's squad or hull takes its one
     // Town buildings are unpriced — their hand-set pay is the named edge
     // outside the law. The branch is preserved as it was, not fixed.
     if (e.attacker === "enemy" && run.ws.results && e.kind === "building") run.ws.results.buildingKills++;

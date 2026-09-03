@@ -55,4 +55,5 @@ await import("./tests/38-the-chain-builder.mjs");
 await import("./tests/39-the-visible-chain.mjs");
 await import("./tests/40-the-escort-link.mjs");
 await import("./tests/41-the-queued-line.mjs");
+await import("./tests/42-the-credit-trail.mjs");
 finish();

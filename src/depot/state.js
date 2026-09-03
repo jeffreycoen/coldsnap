@@ -1700,6 +1700,25 @@ export function makeEndDispatch({ victory, score = null }) {
 // — one wall, one death (the WALL_UPPER_GROUP rule). A sandbag's side is
 // bagSide, never team (spawnSandbag stamps team 1 on every bag).
 // Pure over (S, ev, counts); returns what it did, or null. No rng.
+// mk2.95 (owner): THE CREDIT TRAIL — a kill of an enemy man, vehicle, or
+// mech credits the killer's squad or hull with one. Structures, bags, and
+// trucks are not kills; mines, wires, towers, and falling stone credit
+// nobody on the roster; friendly fire credits nobody. Team-agnostic — the
+// enemy's squads (foeSquads) accrue through the same trail.
+export function creditKill(world, squads, foeSquads, ev) {
+  if (ev.type !== "kill") return;
+  if (ev.kind !== "unit" && ev.kind !== "vehicle" && ev.kind !== "mech") return;
+  const kid = ev.srcId != null ? ev.srcId : ev.killerId;
+  if (!kid) return;
+  const kb = world.byId.get(kid);
+  if (kb && (kb.kind === "vehicle" || kb.kind === "mech")) {
+    if (kb.team !== ev.team) kb.kills = (kb.kills || 0) + 1;
+    return;
+  }
+  if (ev.team !== 1 && squads) for (const sq of squads) if (sq.memberIds.includes(kid)) { sq.kills = (sq.kills || 0) + 1; return; }
+  if (ev.team !== 2 && foeSquads) for (const sq of foeSquads) if (sq.memberIds.includes(kid)) { sq.kills = (sq.kills || 0) + 1; return; }
+}
+
 export function scoreKill(S, ev, counts) {
   if (ev.type !== "kill") return null;
   const att = ev.attacker === "player" ? 1 : ev.attacker === "enemy" ? 2 : 0;
