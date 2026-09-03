@@ -1446,6 +1446,17 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         if (om === "escort") {
           const sq = squadAtPoint(p);
           if (!sq) { toast("TAP A SQUAD TO ESCORT"); return true; }
+          // mk2.93: with QUEUE lit and a moving head, ESCORT appends as the
+          // chain's terminal link and the light goes out — patrol's own law.
+          if (view.queueOn) {
+            if (v.order === "patrol") { toast("THE CHAIN ENDS AT A PATROL"); return true; }
+            if ((v.order === "move" || v.order === "attack") && v.dest) {
+              (v._queue || (v._queue = [])).push({ kind: "escort", escortId: sq.id });
+              view.queueOn = false;
+              view.vehOrderMode = null;
+              return true;
+            }
+          }
           v.order = "escort"; v.escortId = sq.id; v.dest = null; v.goal = null; v._route = null; v._routeDest = null; v._queue = null; // mk2.91
           view.vehOrderMode = null; view.selVehId = null;
           return true;
@@ -3098,6 +3109,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             if (chainOwner && chainOwner._queue && chainOwner._queue.length && R.project) {
               const rect7 = canvas.getBoundingClientRect();
               view.chainScreens = chainOwner._queue.map((q, i) => {
+                if (q.kind === "escort") return null; // mk2.93: no ground point — the panel carries it
                 const qx = q.kind === "patrol" ? q.ax : q.x, qz = q.kind === "patrol" ? q.az : q.z;
                 const nd7 = R.project(qx, field.heightAt(qx, qz) + 1.6, qz);
                 return nd7 ? { x: rect7.left + (nd7.x * 0.5 + 0.5) * rect7.width, y: rect7.top + (-nd7.y * 0.5 + 0.5) * rect7.height, i, pat: q.kind === "patrol" ? 1 : 0 } : null;

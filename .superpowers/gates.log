@@ -554,3 +554,8 @@
 2026-09-03T11:51:42.630Z depot-lint ok 0 PASS / 0 FAIL — depot-lint PASS (0.1s)
 2026-09-03T11:55:20.360Z depot-test ok 2139 PASS / 0 FAIL — depot-test PASS (234.6s)
 2026-09-03T11:55:33.932Z smoke ok 30 PASS / 0 FAIL — BOOT-LOAD SMOKE: ALL PASS (228.0s)
+2026-09-03T12:24:30.069Z depot-test FAIL(1) 2141 PASS / 4 FAIL — 4 FAILURE(S): (a) the arrival pops the queued escort, (c) pins: the mech pops escort too, (c) pins: the escort tap appen (182.5s)
+2026-09-03T12:27:38.266Z depot-test FAIL(1) 2141 PASS / 4 FAIL — 4 FAILURE(S): (a) the arrival pops the queued escort, (c) pins: the mech pops escort too, (c) pins: the escort tap appen (183.8s)
+2026-09-03T12:34:34.846Z depot-test ok 2145 PASS / 0 FAIL — depot-test PASS (179.3s)
+2026-09-03T12:41:43.671Z depot-lint ok 0 PASS / 0 FAIL — depot-lint PASS (0.1s)
+2026-09-03T12:44:55.164Z smoke ok 30 PASS / 0 FAIL — BOOT-LOAD SMOKE: ALL PASS (187.3s)

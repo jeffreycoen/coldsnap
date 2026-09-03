@@ -295,6 +295,7 @@ function armorGoal(world, grid, v, dt, fwdDir, opts) {
       const q = v._queue.shift();
       v._route = null; v._routeDest = null; v._stuckN = 0;
       if (q.kind === "patrol") { v._patA = { x: q.ax, z: q.az }; v._patB = { x: q.bx, z: q.bz }; v.order = "patrol"; v.dest = { x: q.ax, z: q.az }; }
+      else if (q.kind === "escort") { v.order = "escort"; v.escortId = q.escortId; v.dest = null; v.goal = null; } // mk2.93: the terminal escort link
       else { v.order = q.kind; v.dest = { x: q.x, z: q.z }; }
       return;
     }
@@ -531,6 +532,7 @@ function mechGoal(world, grid, b, dt, fwdDir, opts) {
       const q = b._queue.shift(); // mk2.90: the chain, in the walker's form
       b._route = null; b._routeDest = null;
       if (q.kind === "patrol") { b._patA = { x: q.ax, z: q.az }; b._patB = { x: q.bx, z: q.bz }; b.order = "patrol"; b.dest = { x: q.ax, z: q.az }; }
+      else if (q.kind === "escort") { b.order = "escort"; b.escortId = q.escortId; b.dest = null; } // mk2.93
       else { b.order = q.kind; b.dest = { x: q.x, z: q.z }; }
       mechCommand(m, { travel: 0, lateral: 0 }); return;
     } else { b.order = "defend"; b.dest = null; mechCommand(m, { travel: 0, lateral: 0 }); return; }
