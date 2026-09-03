@@ -71,6 +71,8 @@ export const TEACH = {
   attack: { label: "ATTACK", role: "Tap the ground. They fight their way there.", hint: "The same ring.", skills: [] },
   possess_squad: { label: "TAKE CONTROL", role: "WASD walks. Mouse aims; hold left to fire. RELEASE hands them back.", roleTouch: "Left stick walks. Right stick aims; hold FIRE. RELEASE hands them back.", skills: [] },
   select_all: { label: "SELECT ALL", role: "Every squad of this type joins the order.", hint: "The same ring.", skills: [] },
+  queue_chain: { label: "QUEUE", role: "Light it, then aim orders — each lands at the end of the chain. A patrol closes it.", hint: "The chain ends at a patrol.", skills: [] },
+  clear_chain: { label: "CLEAR", role: "Drops every queued leg. The current order keeps running.", hint: "The chain only.", skills: [] },
   patrol: { label: "PATROL", role: "Two taps: start, far end. ✓ and they walk it forever.", hint: "The same ring.", skills: [] },
   structures: { label: "STRUCTURES", role: "On: walls and towers before men.", hint: "The ring, armed squads only.", skills: [] },
   engineer_lines: { label: "THE LINES", role: "Two taps: start, far end. The ghost shows pieces and price. ✓ and they lay.", hint: "The engineers' own ring.", skills: [] },

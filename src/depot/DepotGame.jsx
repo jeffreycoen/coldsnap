@@ -547,6 +547,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         // squad selection fields' exact shape, one Bison at a time.
         selVehId: null, vehOrderMode: null,
         groupSel: null, groupOrderMode: null, // mk2.89: the screen select — { sqIds, vehIds } and its own MOVE/ATTACK aim
+        queueOn: false, chainScreens: null, // mk2.91: the chain builder — the QUEUE light and the legs' projected flags
         // POSSESSION T4/T5 (mk0.93/0.94): THE CARRIED RETICLE. reticleOff is
         // the reticle's offset from the possessed unit; joy is the touch
         // stick's own live drag state (DOM handlers below).
@@ -942,7 +943,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         if (run.gameOver || run.victory) return;
         const v = selectedVehicle();
         if (!v || world.t < view.selArmedAt) return;
-        if (kind === "defend") { v.order = "defend"; v.dest = null; v.goal = null; v._route = null; v._routeDest = null; view.vehOrderMode = null; view.buildPt0 = null; }
+        if (kind === "defend") { v.order = "defend"; v.dest = null; v.goal = null; v._route = null; v._routeDest = null; v._queue = null; view.vehOrderMode = null; view.buildPt0 = null; }
         else if (kind === "move" || kind === "attack" || kind === "patrol" || kind === "escort" || kind === "load") {
           if (view.vehOrderMode === kind) { view.vehOrderMode = null; view.buildPt0 = null; return; }
           view.vehOrderMode = kind; view.buildPt0 = null;
@@ -969,7 +970,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       view.takeControlVehicle = () => {
         const v = selectedVehicle();
         if (!v || world.t < view.selArmedAt) return;
-        v.order = "defend"; v.dest = null; v.goal = null; v._route = null; v._routeDest = null;
+        v.order = "defend"; v.dest = null; v.goal = null; v._route = null; v._routeDest = null; v._queue = null; // mk2.91
         input.fireHeld = false; input.mgHeld = false;
         view.reticleLockId = null;
         if (v.kind === "mech") {
@@ -1002,6 +1003,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             gsq.order = "defend"; gsq.dest = null; gsq._legTarget = null; gsq._pauseT = 0; gsq._threatSig = undefined;
             gsq._surveyPending = true;
             gsq._build = null;
+            gsq._queue = null; // mk2.91: a plain order wipes the chain
           }
           view.orderMode = null; view.buildPt0 = null;
         } else if (kind === "attack" || kind === "move") {
@@ -1077,7 +1079,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         }
         if (!sqIds.length && !vehIds.length) { toast("NO ONE ON SCREEN"); return; }
         view.selSquadId = null; view.selSquadIds = null; view.orderMode = null; view.buildPt0 = null; view.linePending = null;
-        view.selVehId = null; view.vehOrderMode = null; view.inspectId = null;
+        view.selVehId = null; view.vehOrderMode = null; view.inspectId = null; view.queueOn = false;
         view.groupSel = { sqIds, vehIds }; view.groupOrderMode = null;
         view.selArmedAt = world.t + PENDING_ARM_S; view.pieOpen = true;
         R.overlay.setLinePreview(false);
@@ -1099,16 +1101,31 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             gsq.order = "defend"; gsq.dest = null; gsq._legTarget = null; gsq._pauseT = 0; gsq._threatSig = undefined;
             gsq._surveyPending = true;
             gsq._build = null;
+            gsq._queue = null; // mk2.91
           }
           for (const vid of gs.vehIds) {
             const gv = world.byId.get(vid);
             if (!gv || !gv.alive) continue;
-            gv.order = "defend"; gv.dest = null; gv.goal = null; gv._route = null; gv._routeDest = null;
+            gv.order = "defend"; gv.dest = null; gv.goal = null; gv._route = null; gv._routeDest = null; gv._queue = null;
           }
           view.groupSel = null; view.groupOrderMode = null; view.pieOpen = false;
         } else if (kind === "move" || kind === "attack") {
           view.groupOrderMode = view.groupOrderMode === kind ? null : kind;
         }
+      };
+      // mk2.91 (owner): THE CHAIN BUILDER's controls. QUEUE is a light on the
+      // pie: lit, aimed orders append; a chain is one unit's, never a group's.
+      view.toggleQueue = () => {
+        if (view.selSquadIds && view.selSquadIds.length) { toast("ONE SQUAD AT A TIME — A CHAIN IS ONE UNIT'S"); return; }
+        view.queueOn = !view.queueOn;
+      };
+      view.clearChain = () => {
+        const o = view.selVehId != null ? world.byId.get(view.selVehId) : selectedSquad();
+        if (o) o._queue = null;
+      };
+      view.deleteLeg = (i) => {
+        const o = view.selVehId != null ? world.byId.get(view.selVehId) : selectedSquad();
+        if (o && o._queue && i >= 0 && i < o._queue.length) { o._queue.splice(i, 1); if (!o._queue.length) o._queue = null; }
       };
 
       // POSSESSION T4 (mk0.93): the possessed unit's own sight circle: a
@@ -1140,7 +1157,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       view.takeControl = () => {
         const sq = selectedSquad();
         if (!sq || world.t < view.selArmedAt) return;
-        sq.order = "defend"; sq.dest = null; sq._legTarget = null; sq._pauseT = 0; sq._build = null; sq._threatSig = undefined;
+        sq.order = "defend"; sq.dest = null; sq._legTarget = null; sq._pauseT = 0; sq._build = null; sq._threatSig = undefined; sq._queue = null; // mk2.91
         input.possess = { kind: "squad", id: sq.id };
         input.possessInput = { vx: 0, vz: 0 };
         // POSSESSION HYGIENE (mk0.91 audit item A, carried to T4/T5): a
@@ -1262,8 +1279,16 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           view.linePending = null;
           R.overlay.setLinePreview(false);
           if (v && v.alive) {
-            v._patA = { x: lp.a.x, z: lp.a.z }; v._patB = { x: lp.b.x, z: lp.b.z };
-            v.order = "patrol"; v.dest = { x: lp.a.x, z: lp.a.z }; v._route = null; v._routeDest = null;
+            // mk2.91: QUEUE lit with a moving head — the patrol appends as
+            // the terminal leg and the light goes out.
+            if (view.queueOn && (v.order === "move" || v.order === "attack") && v.dest) {
+              (v._queue || (v._queue = [])).push({ kind: "patrol", ax: lp.a.x, az: lp.a.z, bx: lp.b.x, bz: lp.b.z });
+              view.queueOn = false;
+            } else {
+              v._patA = { x: lp.a.x, z: lp.a.z }; v._patB = { x: lp.b.x, z: lp.b.z };
+              v.order = "patrol"; v.dest = { x: lp.a.x, z: lp.a.z }; v._route = null; v._routeDest = null;
+              v._queue = null; // mk2.91: a plain order wipes the chain
+            }
           }
           view.selVehId = null; view.vehOrderMode = null; view.buildPt0 = null;
           return;
@@ -1276,12 +1301,19 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             // COMMAND T3 (mk0.85): accept arms the loop — P7.2 T1: for the
             // whole SELECT ALL group when one proposed the line.
             const group = (lp.sqs && lp.sqs.length ? lp.sqs : [lp.sq]).map((id) => run.squads.find((q) => q.id === id)).filter(Boolean);
-            for (const gsq of group) {
+            // mk2.91: with QUEUE lit and a moving head, the accepted patrol
+            // APPENDS as the chain's terminal leg and puts the light out.
+            const qsq0 = group.length === 1 ? group[0] : null;
+            if (view.queueOn && qsq0 && (qsq0.order === "move" || qsq0.order === "attack" || qsq0.order === "build") && qsq0.dest) {
+              (qsq0._queue || (qsq0._queue = [])).push({ kind: "patrol", ax: lp.a.x, az: lp.a.z, bx: lp.b.x, bz: lp.b.z });
+              view.queueOn = false;
+            } else for (const gsq of group) {
               gsq._patA = { x: lp.a.x, z: lp.a.z };
               gsq._patB = { x: lp.b.x, z: lp.b.z };
               gsq.order = "patrol";
               gsq.dest = { x: lp.a.x, z: lp.a.z };   // walk to the near end first
               gsq._legTarget = null; gsq._pauseT = 0; gsq._cohesionHoldT = 0; gsq._build = null;
+              gsq._queue = null; // mk2.91: a plain order wipes the chain
             }
           }
           else startBuildLine(grid, sq, lp.kind, lp.a, lp.b, toast);
@@ -1318,11 +1350,11 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         const gs = view.groupSel;
         for (const qid of gs.sqIds) {
           const gsq = run.squads.find((q) => q.id === qid);
-          if (gsq) { gsq.order = om; gsq.dest = { x: d.x, z: d.z }; gsq._legTarget = null; gsq._pauseT = 0; gsq._build = null; }
+          if (gsq) { gsq.order = om; gsq.dest = { x: d.x, z: d.z }; gsq._legTarget = null; gsq._pauseT = 0; gsq._build = null; gsq._queue = null; }
         }
         for (const vid of gs.vehIds) {
           const gv = world.byId.get(vid);
-          if (gv && gv.alive) { gv.order = om; gv.dest = { x: d.x, z: d.z }; gv._route = null; gv._routeDest = null; }
+          if (gv && gv.alive) { gv.order = om; gv.dest = { x: d.x, z: d.z }; gv._route = null; gv._routeDest = null; gv._queue = null; }
         }
         view.groupSel = null; view.groupOrderMode = null; view.pieOpen = false;
         return true;
@@ -1339,7 +1371,24 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         // T3: open water takes no orders — the river is ground for nobody.
         if (map.streamAt(d.x, d.z)) { toast("OPEN WATER — find the crossing"); return true; }
         if (om === "attack" || om === "move") {
-          for (const gsq of selectedGroup()) { gsq.order = om; gsq.dest = { x: d.x, z: d.z }; gsq._legTarget = null; gsq._pauseT = 0; gsq._build = null; }
+          // mk2.91 (owner): THE CHAIN BUILDER — with QUEUE lit the tap
+          // APPENDS to the selected squad's chain; the selection and the aim
+          // stay up so taps keep laying legs. A moving head is required: the
+          // first tap on an idle squad becomes the active order. A standing
+          // patrol is terminal — nothing chains after it.
+          if (view.queueOn) {
+            const qsq = selectedSquad();
+            if (qsq) {
+              if (qsq.order === "patrol") { toast("THE CHAIN ENDS AT A PATROL"); return true; }
+              if ((qsq.order === "move" || qsq.order === "attack" || qsq.order === "build") && qsq.dest) {
+                (qsq._queue || (qsq._queue = [])).push({ kind: om, x: d.x, z: d.z });
+                return true;
+              }
+              qsq.order = om; qsq.dest = { x: d.x, z: d.z }; qsq._legTarget = null; qsq._pauseT = 0; qsq._build = null;
+              return true;
+            }
+          }
+          for (const gsq of selectedGroup()) { gsq.order = om; gsq.dest = { x: d.x, z: d.z }; gsq._legTarget = null; gsq._pauseT = 0; gsq._build = null; gsq._queue = null; }
           view.orderMode = null;
           // COMMAND 1b (mk0.82): the order's final ground tap landed — the
           // squad is released (deselected), same as an instant order.
@@ -1397,7 +1446,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         if (om === "escort") {
           const sq = squadAtPoint(p);
           if (!sq) { toast("TAP A SQUAD TO ESCORT"); return true; }
-          v.order = "escort"; v.escortId = sq.id; v.dest = null; v.goal = null; v._route = null; v._routeDest = null;
+          v.order = "escort"; v.escortId = sq.id; v.dest = null; v.goal = null; v._route = null; v._routeDest = null; v._queue = null; // mk2.91
           view.vehOrderMode = null; view.selVehId = null;
           return true;
         }
@@ -1417,13 +1466,18 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         }
         const d = map.clampToRim(p.x, p.z);
         if (map.streamAt(d.x, d.z)) { toast("OPEN WATER — find the crossing"); return true; }
-        if (om === "move") {
-          v.order = "move"; v.dest = { x: d.x, z: d.z }; v._route = null; v._routeDest = null;
-          view.vehOrderMode = null; view.selVehId = null;
-          return true;
-        }
-        if (om === "attack") {   // mk2.88: MOVE's own tap, the fighting order
-          v.order = "attack"; v.dest = { x: d.x, z: d.z }; v._route = null; v._routeDest = null;
+        if (om === "move" || om === "attack") {
+          // mk2.91: the chain builder — QUEUE lit appends; see the squad tap.
+          if (view.queueOn) {
+            if (v.order === "patrol") { toast("THE CHAIN ENDS AT A PATROL"); return true; }
+            if ((v.order === "move" || v.order === "attack") && v.dest) {
+              (v._queue || (v._queue = [])).push({ kind: om, x: d.x, z: d.z });
+              return true;
+            }
+            v.order = om; v.dest = { x: d.x, z: d.z }; v._route = null; v._routeDest = null;
+            return true;
+          }
+          v.order = om; v.dest = { x: d.x, z: d.z }; v._route = null; v._routeDest = null; v._queue = null;
           view.vehOrderMode = null; view.selVehId = null;
           return true;
         }
@@ -1655,6 +1709,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           view.selSquadId = null; view.selSquadIds = null; view.selVehId = null; view.inspectId = null;
           view.orderMode = null; view.vehOrderMode = null; view.buildPt0 = null;
           view.groupSel = null; view.groupOrderMode = null; // mk2.89: a single pick releases the group
+          view.queueOn = false; // mk2.91: a fresh selection starts unlit
           view.selArmedAt = world.t + PENDING_ARM_S; view.pieOpen = true;
           if (pick.key.startsWith("sq:")) view.selSquadId = id;
           else if (pick.key.startsWith("veh:")) view.selVehId = id;
@@ -1665,8 +1720,8 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           return;
         }
         if (view.groupSel) { view.groupSel = null; view.groupOrderMode = null; view.pieOpen = false; return; } // mk2.89
-        if (view.selSquadId != null) { view.selSquadId = null; view.selSquadIds = null; view.orderMode = null; view.buildPt0 = null; view.pieOpen = false; return; }
-        if (view.selVehId != null) { view.selVehId = null; view.vehOrderMode = null; view.buildPt0 = null; view.pieOpen = false; return; }
+        if (view.selSquadId != null) { view.selSquadId = null; view.selSquadIds = null; view.orderMode = null; view.buildPt0 = null; view.pieOpen = false; view.queueOn = false; return; }
+        if (view.selVehId != null) { view.selVehId = null; view.vehOrderMode = null; view.buildPt0 = null; view.pieOpen = false; view.queueOn = false; return; }
         const g = grid.worldToGrid(p.x, p.z);
         if (!grid.inBounds(g.gx, g.gz)) { view.inspectId = null; return; }
         const cell2 = grid.cells[grid.idx(g.gx, g.gz)];
@@ -3036,6 +3091,18 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
                 view.groupScreen = nd6 ? { x: rect6.left + (nd6.x * 0.5 + 0.5) * rect6.width, y: rect6.top + (-nd6.y * 0.5 + 0.5) * rect6.height } : null;
               } else { view.groupSel = null; view.groupOrderMode = null; view.groupScreen = null; }
             } else view.groupScreen = null;
+            // mk2.91: the chain's numbered flags — the selected unit's queued
+            // legs, projected fresh every frame (a patrol leg flags its near
+            // end). Same recipe as every screen anchor above.
+            const chainOwner = view.groupSel == null ? (view.selVehId != null ? world.byId.get(view.selVehId) : selSq) : null;
+            if (chainOwner && chainOwner._queue && chainOwner._queue.length && R.project) {
+              const rect7 = canvas.getBoundingClientRect();
+              view.chainScreens = chainOwner._queue.map((q, i) => {
+                const qx = q.kind === "patrol" ? q.ax : q.x, qz = q.kind === "patrol" ? q.az : q.z;
+                const nd7 = R.project(qx, field.heightAt(qx, qz) + 1.6, qz);
+                return nd7 ? { x: rect7.left + (nd7.x * 0.5 + 0.5) * rect7.width, y: rect7.top + (-nd7.y * 0.5 + 0.5) * rect7.height, i, pat: q.kind === "patrol" ? 1 : 0 } : null;
+              }).filter(Boolean);
+            } else view.chainScreens = null;
             // Tower radial anchor (COMMAND T1, mk0.80): the same screen-space
             // convention as the squad chip anchor above — projected off the
             // tower's top from the live camera every frame, rotation/pan-proof.
@@ -3107,6 +3174,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
                 const sq = view.selSquadId != null ? run.squads.find((q) => q.id === view.selSquadId) : null;
                 if (!sq || !view.squadScreen) return null;
                 return { id: sq.id, label: SQUAD_SPECS[sq.type].label, order: sq.order, count: view.selSquadIds ? view.selSquadIds.length : 1, x: view.squadScreen.x, y: view.squadScreen.y, armed: world.t >= view.selArmedAt, aiming: view.orderMode === "attack", aimingMove: view.orderMode === "move",
+                  queueOn: view.queueOn, chained: (sq._queue && sq._queue.length) || 0, // mk2.91
                   // COMMAND 1b (mk0.82): the pie is up only while view.pieOpen —
                   // a wedge tap closes it but (for aiming orders) keeps the
                   // squad selected, so the status chip renders on its own.
@@ -3136,6 +3204,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
                   linePending: !!view.linePending };
               })(),
               squadFlag: view.flagScreen ? { x: view.flagScreen.x, y: view.flagScreen.y } : null,
+              chainFlags: view.chainScreens, // mk2.91: the queued legs' numbered flags
               // POSSESSION (P4 T1/T3, mk0.90/mk0.92): the RELEASE button/
               // POSSESSED chip key off this — null the instant the squad or
               // tower is gone. The stick (data-joy) additionally checks
@@ -3162,6 +3231,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
                   kind: v.kind, vtype: v.vtype, seatsFree: v.vtype === "apc" ? APC.seats - apcSeated(world, run.squads, v.apcSeq) : 0,
                   riders: v.vtype === "apc" ? apcSeated(world, run.squads, v.apcSeq) : 0, aimingLoad: view.vehOrderMode === "load",
                   aimingMove: view.vehOrderMode === "move", aimingAttack: view.vehOrderMode === "attack", aimingPatrol: view.vehOrderMode === "patrol", aimingEscort: view.vehOrderMode === "escort",
+                  queueOn: view.queueOn, chained: (v._queue && v._queue.length) || 0, // mk2.91
                   patrolStart: !!view.buildPt0, armed: world.t >= view.selArmedAt, showPie: !!view.pieOpen, linePending: !!view.linePending };
               })(),
               // mk2.89: the group reticle — three wedges at the sweep's centroid.
@@ -3859,6 +3929,8 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         const slots = [
           { key: "defend", icon: "∴", label: "DEFEND", color: "#7dffa8", on: sq.order === "defend", card: "defend", act: () => { const C = stateRef.current; if (C) { C.view.orderSquad("defend"); C.view.selSquadId = null; C.view.selSquadIds = null; } } },
           { key: "move", icon: "→", label: "MOVE", color: "#7fd7ff", on: sq.aimingMove || sq.order === "move", card: "move", act: () => stateRef.current && stateRef.current.view.orderSquad("move") },
+          { key: "queue", icon: "⛓", label: "QUEUE", color: "#ffd27a", on: sq.queueOn, card: "queue_chain", act: () => { const C = stateRef.current; if (C) { C.view.toggleQueue(); C.view._keepPie = true; } } },
+          ...(sq.chained ? [{ key: "clearchain", icon: "✂", label: "CLEAR (" + sq.chained + ")", color: "#ff9a7a", on: false, card: "clear_chain", act: () => { const C = stateRef.current; if (C) { C.view.clearChain(); C.view._keepPie = true; } } }] : []),
           { key: "attack", icon: "⚑", label: "ATTACK", color: "#ff6b5e", on: sq.aiming, card: "attack", act: () => stateRef.current && stateRef.current.view.orderSquad("attack") },
           // POSSESSION (P4 T1, mk0.90): TAKE CONTROL — every squad type,
           // instant like DEFEND (deselects on choose; the pie itself closes
@@ -3916,6 +3988,12 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       {hud.squadFlag && (
         <div data-squad-flag style={{ position: "absolute", left: hud.squadFlag.x, top: hud.squadFlag.y, transform: "translate(-50%, -100%)", zIndex: 6, pointerEvents: "none", color: "#ff6b5e", fontSize: 18 }}>⚑</div>
       )}
+      {hud.chainFlags && hud.chainFlags.map((f) => (
+        <div key={f.i} data-chain-flag={f.i} style={{ position: "absolute", left: f.x, top: f.y, transform: "translate(-50%, -100%)", zIndex: 6, pointerEvents: "auto", cursor: "pointer", color: "#ffd27a", fontSize: 14, textAlign: "center", textShadow: "0 1px 2px #000" }}
+          onClick={() => { const C = stateRef.current; if (C) C.view.deleteLeg(f.i); }}>
+          {f.pat ? "⇄" : "⚑"}<div style={{ fontSize: 10, lineHeight: "10px" }}>{f.i + 1}</div>
+        </div>
+      ))}
 
       {hud.inspect && (
         <div style={{ position: "absolute", left: "50%", transform: "translateX(-50%)", bottom: isTouch ? 96 : 104, zIndex: 5 }}>
@@ -3985,6 +4063,8 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           { key: "defend", icon: "∴", label: "DEFEND", color: "#7dffa8", on: vr.order === "defend", card: "defend", act: () => { const C = stateRef.current; if (C) { C.view.orderVehicle("defend"); C.view.selVehId = null; } } },
           { key: "move", icon: "→", label: "MOVE", color: "#7fd7ff", on: vr.aimingMove || vr.order === "move", card: "move", act: () => stateRef.current && stateRef.current.view.orderVehicle("move") },
           { key: "attack", icon: "✕", label: "ATTACK", color: "#ff9a7a", on: vr.aimingAttack || vr.order === "attack", card: "attack", act: () => stateRef.current && stateRef.current.view.orderVehicle("attack") },
+          { key: "queue", icon: "⛓", label: "QUEUE", color: "#ffd27a", on: vr.queueOn, card: "queue_chain", act: () => { const C = stateRef.current; if (C) { C.view.toggleQueue(); C.view._keepPie = true; } } },
+          ...(vr.chained ? [{ key: "clearchain", icon: "✂", label: "CLEAR (" + vr.chained + ")", color: "#ff9a7a", on: false, card: "clear_chain", act: () => { const C = stateRef.current; if (C) { C.view.clearChain(); C.view._keepPie = true; } } }] : []),
           { key: "patrol", icon: "⇄", label: "PATROL", color: "#7fd7ff", on: vr.aimingPatrol || vr.order === "patrol", card: "patrol", act: () => stateRef.current && stateRef.current.view.orderVehicle("patrol") },
           { key: "escort", icon: "⛨", label: "ESCORT", color: "#c9a0ff", on: vr.aimingEscort || vr.order === "escort", card: "escort", act: () => stateRef.current && stateRef.current.view.orderVehicle("escort") },
           { key: "tracks", icon: vr.tracks === "free" ? "●" : "◐", label: vr.tracks === "free" ? "TRACKS FREE" : "TRACKS CAREFUL", color: vr.tracks === "free" ? "#ff7a7a" : "#4aff8c", on: true, toggle: vr.tracks !== "free", card: "tracks", act: () => { const C = stateRef.current; if (C) { C.view.toggleTracks(); C.view.selVehId = null; } } },

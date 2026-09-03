@@ -12,7 +12,7 @@ ok("T1: the registry holds the nineteen market cards", Object.keys(CARDS).length
 ok("T1: the shim serves the identical object", CARDS === CARDS_SHIM && cardFor === cardFor_shim);
 ok("T1: the shim is one re-export and nothing else",
   /^export \{ CARDS, cardFor, TEACH \} from "\.\/cards\.js";\s*$/m.test(src("src/depot/infocards.js").replace(/^\/\/.*$/gm, "").trim()));
-ok("T2: the teaching table holds the twenty-eight", Object.keys(TEACH).length === 28);
+ok("T2: the teaching table holds the thirty", Object.keys(TEACH).length === 30); // mk2.91: queue_chain and clear_chain joined
 ok("T2: every teaching card carries the card contract",
   Object.values(TEACH).every((c) => typeof c.label === "string" && c.label.length > 0 && typeof c.role === "string" && c.role.length > 0 && Array.isArray(c.skills)));
 ok("T2: the phone-voiced cards carry both voices",

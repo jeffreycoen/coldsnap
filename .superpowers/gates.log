@@ -541,3 +541,8 @@
 2026-09-03T01:09:40.421Z depot-test ok 2123 PASS / 0 FAIL — depot-test PASS (209.5s)
 2026-09-03T01:09:43.988Z depot-lint ok 0 PASS / 0 FAIL — depot-lint PASS (0.1s)
 2026-09-03T01:12:53.344Z smoke ok 30 PASS / 0 FAIL — BOOT-LOAD SMOKE: ALL PASS (186.3s)
+2026-09-03T01:34:26.390Z depot-test FAIL(1) 2123 PASS / 12 FAIL — 12 FAILURE(S): pins: the QUEUE wedge stands on both pies, pins: the CLEAR wedge stands on both pies, pins: the toggle re (192.5s)
+2026-09-03T01:39:59.727Z depot-test FAIL(1) 2134 PASS / 1 FAIL — 1 FAILURE(S): T2: the teaching table holds the twenty-eight (205.1s)
+2026-09-03T09:09:38.422Z depot-test ok 2135 PASS / 0 FAIL — depot-test PASS (221.9s)
+2026-09-03T09:09:41.778Z depot-lint ok 0 PASS / 0 FAIL — depot-lint PASS (0.1s)
+2026-09-03T09:12:53.825Z smoke ok 30 PASS / 0 FAIL — BOOT-LOAD SMOKE: ALL PASS (188.7s)
