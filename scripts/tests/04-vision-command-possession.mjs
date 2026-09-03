@@ -654,8 +654,8 @@ import fs from "node:fs";
   // (b) acceptLine: the only path that calls startBuildLine, and it nulls
   // S.selSquadId (the deselect the owner's rule requires on accept).
   const acceptBody = (dsrc.match(/const acceptLine = \(\) => \{[\s\S]*?\n      const rejectLine = \(\) => \{/) || [""])[0];
-  ok("COMMAND T2(b): acceptLine exists and calls startBuildLine (re-taught mk1.50, P7 T20: startBuildLine's new-arity call)",
-    /else startBuildLine\(grid, sq, lp\.kind, lp\.a, lp\.b, toast\);/.test(acceptBody));
+  ok("COMMAND T2(b): acceptLine exists and calls startBuildLine (re-taught mk1.50, P7 T20: startBuildLine's new-arity call; re-taught mk2.94: the braced form, the chain wipe beside it)",
+    /else \{ startBuildLine\(grid, sq, lp\.kind, lp\.a, lp\.b, toast\); sq\._queue = null; \}/.test(acceptBody));
   ok("COMMAND T2(b): acceptLine nulls S.selSquadId (full deselect on accept)",
     /view\.selSquadId = null; view\.orderMode = null; view\.buildPt0 = null;/.test(acceptBody));
 

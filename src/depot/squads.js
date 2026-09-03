@@ -651,7 +651,9 @@ export function stepSquad(world, squad, dt) {
       squad._legTarget = null;
       squad._route = null;
       squad._cohesionHoldT = 0;
-    } else if (dToDest <= ARRIVE_TOL && squad._queue && squad._queue.length) {
+    } else if (dToDest <= ARRIVE_TOL && squad._queue && squad._queue.length && squad._queue[0].kind !== "line") {
+      // mk2.94: a line entry is the game layer's to start (economy and
+      // placement are barred here) — the squad digs in and the hook takes it.
       // mk2.90 (owner): THE CHAIN — an arrival with queued orders takes the
       // next one instead of digging in. move/attack walk on; a queued patrol
       // lands as acceptLine lands one (both ends set, near end first) and is

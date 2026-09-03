@@ -559,3 +559,8 @@
 2026-09-03T12:34:34.846Z depot-test ok 2145 PASS / 0 FAIL — depot-test PASS (179.3s)
 2026-09-03T12:41:43.671Z depot-lint ok 0 PASS / 0 FAIL — depot-lint PASS (0.1s)
 2026-09-03T12:44:55.164Z smoke ok 30 PASS / 0 FAIL — BOOT-LOAD SMOKE: ALL PASS (187.3s)
+2026-09-03T14:04:02.252Z depot-test FAIL(1) 2145 PASS / 9 FAIL — 9 FAILURE(S): (a) the squad digs in at the line's doorstep, (a) the line entry waits for the game layer, (b) pins: the h (175.8s)
+2026-09-03T14:08:05.812Z depot-test FAIL(1) 2153 PASS / 1 FAIL — 1 FAILURE(S): COMMAND T2(b): acceptLine exists and calls startBuildLine (re-taught mk1.50, P7 T20: startBuildLine's new- (218.0s)
+2026-09-03T15:03:51.714Z depot-test ok 2154 PASS / 0 FAIL — depot-test PASS (248.4s)
+2026-09-03T15:03:55.519Z depot-lint ok 0 PASS / 0 FAIL — depot-lint PASS (0.1s)
+2026-09-03T15:07:54.217Z smoke ok 30 PASS / 0 FAIL — BOOT-LOAD SMOKE: ALL PASS (235.5s)

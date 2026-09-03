@@ -571,7 +571,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         mechWant: null,
         devDummies: false, // mk2.26: THEY FIGHT by default; true = dummies (sandbox only)
         windOn, discipline,
-        releasePossession: null, stepBuildLine: null, stepFoeBuildLine: null,
+        releasePossession: null, stepBuildLine: null, stepFoeBuildLine: null, stepChainBuild: null,
         feedMech: (mech, cdt) => feedMechCommands(mech, cdt),
         bellCtx: null,
       };
@@ -1316,7 +1316,12 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
               gsq._queue = null; // mk2.91: a plain order wipes the chain
             }
           }
-          else startBuildLine(grid, sq, lp.kind, lp.a, lp.b, toast);
+          else if (view.queueOn && (sq.order === "move" || sq.order === "attack" || sq.order === "build") && sq.dest) {
+            // mk2.94: the queued line — the chain carries it to the ground;
+            // the light STAYS lit (a line is mid-chain, not terminal).
+            (sq._queue || (sq._queue = [])).push({ kind: "line", line: lp.kind, ax: lp.a.x, az: lp.a.z, bx: lp.b.x, bz: lp.b.z });
+          }
+          else { startBuildLine(grid, sq, lp.kind, lp.a, lp.b, toast); sq._queue = null; } // mk2.94: a plain line wipes the chain
         }
         view.selSquadId = null; view.orderMode = null; view.buildPt0 = null; view.selSquadIds = null;
       };
@@ -1330,6 +1335,26 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // The driver, once per sim tick per squad carrying a job.
       const layCtx = { stampBag, recomputeFlow, objG, setMines: (m) => R.setMines(m) };
       input.stepBuildLine = (sq) => stepBuildLine(world, grid, field, T, run, sq, layCtx, toast, map);
+      // mk2.94 (owner): THE QUEUED LINE — when the chain's next leg is a
+      // line, the squad stands at its arrival point until the scrap covers
+      // the WHOLE line (the pending-preview's own arithmetic), then the
+      // entry shifts and the line starts. Mid-line dryness keeps its own
+      // law ("THE LINE STOPS HERE") — this gate is the start, not the laying.
+      input.stepChainBuild = (sq) => {
+        if (sq._build || sq.order !== "defend" || !sq._queue || !sq._queue.length || sq._queue[0].kind !== "line") return;
+        const q = sq._queue[0];
+        const a = { x: q.ax, z: q.az }, b = { x: q.bx, z: q.bz };
+        const pieces = linePieces(grid, field, T, q.line, a, b, map);
+        const fp = run._market ? fieldPrices(run._market.counts, WALL_FIELD_COST, SANDBAG_FIELD_COST) : { wall: WALL_FIELD_COST, bag: SANDBAG_FIELD_COST };
+        const mp = run._minePrices || { mine: MINE_COST, wire: WIRE_COST };
+        const price = q.line === "walls" ? pieces.length * fp.wall
+                    : q.line === "bags" ? pieces.length * fp.bag
+                    : q.line === "mines" ? pieces.length * mp.mine
+                    : pieces.length * mp.wire;
+        if (run.resources < price) return; // stand and wait — the owner's ruling (2026-09-03)
+        sq._queue.shift(); if (!sq._queue.length) sq._queue = null;
+        startBuildLine(grid, sq, q.line, a, b, toast);
+      };
       // P7.1 T7: the enemy's build driver — same machinery, his books. The
       // façade carries reg.scrap through run-shaped fields and settles after.
       input.stepFoeBuildLine = (sq) => {
@@ -3110,9 +3135,9 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
               const rect7 = canvas.getBoundingClientRect();
               view.chainScreens = chainOwner._queue.map((q, i) => {
                 if (q.kind === "escort") return null; // mk2.93: no ground point — the panel carries it
-                const qx = q.kind === "patrol" ? q.ax : q.x, qz = q.kind === "patrol" ? q.az : q.z;
+                const qx = q.kind === "patrol" || q.kind === "line" ? q.ax : q.x, qz = q.kind === "patrol" || q.kind === "line" ? q.az : q.z;
                 const nd7 = R.project(qx, field.heightAt(qx, qz) + 1.6, qz);
-                return nd7 ? { x: rect7.left + (nd7.x * 0.5 + 0.5) * rect7.width, y: rect7.top + (-nd7.y * 0.5 + 0.5) * rect7.height, i, pat: q.kind === "patrol" ? 1 : 0 } : null;
+                return nd7 ? { x: rect7.left + (nd7.x * 0.5 + 0.5) * rect7.width, y: rect7.top + (-nd7.y * 0.5 + 0.5) * rect7.height, i, pat: q.kind === "patrol" ? 1 : 0, line: q.kind === "line" ? 1 : 0 } : null;
               }).filter(Boolean);
             } else view.chainScreens = null;
             // Tower radial anchor (COMMAND T1, mk0.80): the same screen-space
@@ -3221,7 +3246,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
                 const o = view.groupSel == null ? (view.selVehId != null ? world.byId.get(view.selVehId) : (view.selSquadId != null ? run.squads.find((q) => q.id === view.selSquadId) : null)) : null;
                 if (!o || (!view.queueOn && !(o._queue && o._queue.length))) return null;
                 const w = (k) => k === "move" ? "MOVE" : k === "attack" ? "ATTACK" : k === "patrol" ? "PATROL" : k === "build" ? "BUILD" : k === "escort" ? "ESCORT" : "DEFEND";
-                return { active: w(o.order || "defend"), legs: (o._queue || []).map((q) => w(q.kind)) };
+                return { active: w(o.order || "defend"), legs: (o._queue || []).map((q) => q.kind === "line" ? (q.line === "walls" ? "WALLS" : q.line === "bags" ? "BAGS" : q.line === "mines" ? "MINES" : "WIRE") : w(q.kind)) };
               })(),
               // POSSESSION (P4 T1/T3, mk0.90/mk0.92): the RELEASE button/
               // POSSESSED chip key off this — null the instant the squad or
@@ -4023,7 +4048,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       {hud.chainFlags && hud.chainFlags.map((f) => (
         <div key={f.i} data-chain-flag={f.i} style={{ position: "absolute", left: f.x, top: f.y, transform: "translate(-50%, -100%)", zIndex: 6, pointerEvents: "auto", cursor: "pointer", color: "#ffd27a", fontSize: 14, textAlign: "center", textShadow: "0 1px 2px #000" }}
           onClick={() => { const C = stateRef.current; if (C) C.view.deleteLeg(f.i); }}>
-          {f.pat ? "⇄" : "⚑"}<div style={{ fontSize: 10, lineHeight: "10px" }}>{f.i + 1}</div>
+          {f.line ? "▤" : f.pat ? "⇄" : "⚑"}<div style={{ fontSize: 10, lineHeight: "10px" }}>{f.i + 1}</div>
         </div>
       ))}
 

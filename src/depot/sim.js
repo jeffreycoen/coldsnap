@@ -617,6 +617,9 @@ export function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipl
       // because it spends scrap and places bodies — both barred from
       // squads.js by that module's law. Squads with no job cost one test.
       if (sq._build && input.stepBuildLine) input.stepBuildLine(sq);
+      // mk2.94: the chain's queued line starts game-side — priced, waited
+      // on, and started by the hook DepotGame installs beside the driver.
+      if (!sq._build && input.stepChainBuild) input.stepChainBuild(sq);
       // P7.2 T6: the medics make their rounds — after the squad's own step,
       // so a tending man's goal overrides this tick's slot seek.
       if (sq.type === "medics") stepMedicTendSquad(world, sq, world.dt);
