@@ -570,3 +570,8 @@
 2026-09-03T22:29:05.318Z golden ok 7 PASS / 0 FAIL — GOLDEN GATE: ALL PASS (21.4s)
 2026-09-03T22:29:08.308Z depot-lint ok 0 PASS / 0 FAIL — depot-lint PASS (0.1s)
 2026-09-03T22:32:21.283Z smoke ok 30 PASS / 0 FAIL — BOOT-LOAD SMOKE: ALL PASS (189.8s)
+2026-09-03T23:00:44.439Z depot-test FAIL(1) 2162 PASS / 6 FAIL — 6 FAILURE(S): pins: the button stands beside ALL, pins: the panel lists the living force, pins: the rows carry the kills (237.7s)
+2026-09-03T23:04:36.832Z depot-test FAIL(1) 2162 PASS / 6 FAIL — 6 FAILURE(S): pins: the button stands beside ALL, pins: the panel lists the living force, pins: the rows carry the kills (228.9s)
+2026-09-03T23:08:26.211Z depot-test ok 2168 PASS / 0 FAIL — depot-test PASS (201.1s)
+2026-09-03T23:08:30.492Z depot-lint ok 0 PASS / 0 FAIL — depot-lint PASS (0.1s)
+2026-09-03T23:11:54.102Z smoke ok 30 PASS / 0 FAIL — BOOT-LOAD SMOKE: ALL PASS (200.3s)

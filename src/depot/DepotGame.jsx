@@ -548,6 +548,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         selVehId: null, vehOrderMode: null,
         groupSel: null, groupOrderMode: null, // mk2.89: the screen select — { sqIds, vehIds } and its own MOVE/ATTACK aim
         queueOn: false, chainScreens: null, // mk2.91: the chain builder — the QUEUE light and the legs' projected flags
+        rosterOpen: false, // mk2.96: the roster panel
         // POSSESSION T4/T5 (mk0.93/0.94): THE CARRIED RETICLE. reticleOff is
         // the reticle's offset from the possessed unit; joy is the touch
         // stick's own live drag state (DOM handlers below).
@@ -1126,6 +1127,29 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       view.deleteLeg = (i) => {
         const o = view.selVehId != null ? world.byId.get(view.selVehId) : selectedSquad();
         if (o && o._queue && i >= 0 && i < o._queue.length) { o._queue.splice(i, 1); if (!o._queue.length) o._queue = null; }
+      };
+      // mk2.96 (owner): THE ROSTER's jump — a tapped row centers the camera
+      // on the unit, selects it with the pick branch's own hygiene, and
+      // opens its pie; the panel closes.
+      view.rosterJump = (kindR, idR) => {
+        let x = null, z = null;
+        if (kindR === "sq") {
+          const sq = run.squads.find((q) => q.id === idR);
+          if (!sq) return;
+          x = sq.anchor.x; z = sq.anchor.z;
+          view.selSquadId = idR; view.selVehId = null;
+        } else {
+          const vb = world.byId.get(idR);
+          if (!vb || !vb.alive) return;
+          x = vb.pos.x; z = vb.pos.z;
+          view.selVehId = idR; view.selSquadId = null;
+        }
+        view.selSquadIds = null; view.inspectId = null; view.orderMode = null; view.vehOrderMode = null;
+        view.buildPt0 = null; view.linePending = null; view.groupSel = null; view.groupOrderMode = null; view.queueOn = false;
+        view.selArmedAt = world.t + PENDING_ARM_S; view.pieOpen = true;
+        run.focus.x = x; run.focus.z = z; run.focus.y = field.heightAt(x, z);
+        view.rosterOpen = false;
+        R.overlay.setLinePreview(false);
       };
 
       // POSSESSION T4 (mk0.93): the possessed unit's own sight circle: a
@@ -3248,6 +3272,21 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
                 const w = (k) => k === "move" ? "MOVE" : k === "attack" ? "ATTACK" : k === "patrol" ? "PATROL" : k === "build" ? "BUILD" : k === "escort" ? "ESCORT" : "DEFEND";
                 return { active: w(o.order || "defend"), legs: (o._queue || []).map((q) => q.kind === "line" ? (q.line === "walls" ? "WALLS" : q.line === "bags" ? "BAGS" : q.line === "mines" ? "MINES" : "WIRE") : w(q.kind)) };
               })(),
+              // mk2.96: the roster — the living force and its kills, built
+              // only while the panel is open.
+              roster: view.rosterOpen ? (() => {
+                const rows = [];
+                for (const sqR of run.squads) {
+                  let live = 0;
+                  for (const id of sqR.memberIds) { const u = world.byId.get(id); if (u && u.alive) live++; }
+                  if (live) rows.push({ kind: "sq", id: sqR.id, label: SQUAD_SPECS[sqR.type].label, n: live, kills: sqR.kills || 0 });
+                }
+                for (const vb of world.bodies) {
+                  if ((vb.kind !== "vehicle" && vb.kind !== "mech") || !vb.alive || vb.team !== 1 || !vb.drv) continue;
+                  rows.push({ kind: "veh", id: vb.id, label: vb.kind === "mech" ? "MECH" : vb.vtype === "apc" ? "APC" : "BISON", n: Math.max(1, Math.round(vb.hp)), kills: vb.kills || 0 });
+                }
+                return rows;
+              })() : null,
               // POSSESSION (P4 T1/T3, mk0.90/mk0.92): the RELEASE button/
               // POSSESSED chip key off this — null the instant the squad or
               // tower is gone. The stick (data-joy) additionally checks
@@ -4031,6 +4070,20 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       {hud.squadFlag && (
         <div data-squad-flag style={{ position: "absolute", left: hud.squadFlag.x, top: hud.squadFlag.y, transform: "translate(-50%, -100%)", zIndex: 6, pointerEvents: "none", color: "#ff6b5e", fontSize: 18 }}>⚑</div>
       )}
+      {hud.roster && !hud.possessed && (
+        <div data-roster style={{ position: "absolute", right: 8, top: "20%", zIndex: 6, display: "flex", flexDirection: "column", gap: 4, background: "rgba(14,18,24,0.92)", border: "1px solid #48515f", borderRadius: 8, padding: "6px 10px", pointerEvents: "auto", fontSize: 11, letterSpacing: 1, minWidth: 150, maxHeight: "55vh", overflowY: "auto" }}>
+          <div style={{ color: "#9fdcff", fontSize: 10 }}>THE ROSTER</div>
+          {hud.roster.length === 0 && <div style={{ opacity: 0.7 }}>NO ONE TO COMMAND</div>}
+          {hud.roster.map((r) => (
+            <div key={r.kind + r.id} data-roster-row={r.kind + ":" + r.id} style={{ display: "flex", alignItems: "center", gap: 8, color: "#e6ebf1", cursor: "pointer", padding: "2px 0" }}
+              onClick={() => { const C = stateRef.current; if (C) C.view.rosterJump(r.kind, r.id); }}>
+              <span style={{ flex: 1 }}>{r.label}</span>
+              <span style={{ opacity: 0.7 }}>{r.kind === "sq" ? "×" + r.n : "HP " + r.n}</span>
+              <span style={{ color: "#ffd27a", minWidth: 28, textAlign: "right" }}>✜ {r.kills}</span>
+            </div>
+          ))}
+        </div>
+      )}
       {hud.chainList && (
         <div data-chain-list style={{ position: "absolute", left: 8, top: "32%", zIndex: 6, display: "flex", flexDirection: "column", gap: 4, background: "rgba(14,18,24,0.88)", border: "1px solid #48515f", borderRadius: 8, padding: "6px 10px", pointerEvents: "auto", fontSize: 11, letterSpacing: 1, minWidth: 96 }}>
           <div style={{ color: "#ffd27a", fontSize: 10 }}>THE CHAIN</div>
@@ -4194,6 +4247,11 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             style={{ ...P.slot, minHeight: 44, justifyContent: "center", borderColor: "#2f8f4f", background: "#12331f", color: "#7dffa8", fontWeight: "bold", letterSpacing: 1 }}
             onClick={() => { const C = stateRef.current; if (C) C.view.selectScreen(); }}>
             ∷ ALL
+          </button>
+          <button data-roster-toggle
+            style={{ ...P.slot, minHeight: 44, justifyContent: "center", borderColor: "#3a6f8f", background: "#122433", color: "#9fdcff", fontWeight: "bold", letterSpacing: 1 }}
+            onClick={() => { const C = stateRef.current; if (C) C.view.rosterOpen = !C.view.rosterOpen; }}>
+            ⚏ ROSTER
           </button>
           <CrateChip data-build-toggle
             label={buildOpen ? "CLOSE" : "BUILD"} icon="⚒" open={buildOpen} active={buildOpen}
