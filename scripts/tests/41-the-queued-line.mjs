@@ -10,7 +10,7 @@ import fs from "node:fs";
 // hook itself is interface-side; the pins carry it.
 {
   console.log("\n[mk2.94: the queued line]");
-  const SEED = (Date.now() % 1000000) + 1; // rolled each run — no seed is ever special (owner, 2026-09-04)
+  const SEED = (Date.now() % 1000000) + 1; // rolled each run — no seed is ever special
   console.log("  fixture seed base", SEED);
   const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
 

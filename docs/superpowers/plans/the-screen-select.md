@@ -1,10 +1,10 @@
 # The Screen Select (mk2.89)
 
-Task 2 of 2 for the screen-select feature (owner, 2026-09-02). A green ALL button on the bottom bar sweeps every live player squad and hull the camera can see into one group; a three-wedge reticle — MOVE, DEFEND, ATTACK — opens at the group's centroid and orders them all together. Depends on task 1 (mk2.88): the ATTACK order for hulls is already live.
+Task 2 of 2 for the screen-select feature. A green ALL button on the bottom bar sweeps every live player squad and hull the camera can see into one group; a three-wedge reticle — MOVE, DEFEND, ATTACK — opens at the group's centroid and orders them all together. Depends on task 1 (mk2.88): the ATTACK order for hulls is already live.
 
 Suggested model: Sonnet 5 — one file plus a pin test, every code block carried below verbatim.
 
-Rulings this plan rests on (owner, 2026-09-02): green button; bottom bar; everyone on screen joins, vehicles included, busy or not; reticle at the group's centroid.
+Rulings this plan rests on: green button; bottom bar; everyone on screen joins, vehicles included, busy or not; reticle at the group's centroid.
 
 Design choices, stated:
 - The sweep is the button's moment: what the camera sees when pressed joins; the group does not re-follow the camera afterward.
@@ -87,7 +87,7 @@ with:
 Immediately after `view.selectAllType`'s closing brace (currently line 1054, the `};` after `view.selSquadIds = ids.length > 1 ? ids : null;`), insert:
 
 ```js
-      // mk2.89 (owner): THE SCREEN SELECT — every live player squad and hull
+      // mk2.89: THE SCREEN SELECT — every live player squad and hull
       // the camera sees at the button's moment joins one group; the group
       // reticle (three wedges) orders them together. The group does not
       // re-follow the camera afterward.

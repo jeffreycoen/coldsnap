@@ -1,10 +1,10 @@
 # The Order Chain (mk2.90)
 
-Task 1 of 2 for the command-queue feature (owner, 2026-09-03). Squads and hulls learn to carry a chain of queued orders: on arrival, instead of digging in, the unit takes the next queued order. MOVE and ATTACK chain; PATROL is terminal (it never arrives, so nothing after it ever runs); an empty chain ends in defend exactly as today. This task is the engine and the save ride only — no interface. Task 2 (the QUEUE wedge, numbered flags, leg deletion, CLEAR) is its own plan and builds on this.
+Task 1 of 2 for the command-queue feature. Squads and hulls learn to carry a chain of queued orders: on arrival, instead of digging in, the unit takes the next queued order. MOVE and ATTACK chain; PATROL is terminal (it never arrives, so nothing after it ever runs); an empty chain ends in defend exactly as today. This task is the engine and the save ride only — no interface. Task 2 (the QUEUE wedge, numbered flags, leg deletion, CLEAR) is its own plan and builds on this.
 
 Suggested model: Sonnet 5 — four files, every code block carried below verbatim.
 
-Rulings this plan rests on (owner, 2026-09-03): chains exist; a plain order wipes them (that law lands with task 2's builder — until then nothing in live play can create a chain, only tests); single selections only; build lines stay outside; patrol/defend are terminal.
+Rulings this plan rests on: chains exist; a plain order wipes them (that law lands with task 2's builder — until then nothing in live play can create a chain, only tests); single selections only; build lines stay outside; patrol/defend are terminal.
 
 Design choices, stated:
 - The chain is `_queue` — a plain array on the squad or hull body. Entries: `{ kind: "move"|"attack", x, z }` or the terminal `{ kind: "patrol", ax, az, bx, bz }`. A queued defend is unnecessary (an empty chain already ends in defend) and the builder will never write one.
@@ -151,7 +151,7 @@ with:
 
 ```js
     } else if (dToDest <= ARRIVE_TOL && squad._queue && squad._queue.length) {
-      // mk2.90 (owner): THE CHAIN — an arrival with queued orders takes the
+      // mk2.90: THE CHAIN — an arrival with queued orders takes the
       // next one instead of digging in. move/attack walk on; a queued patrol
       // lands as acceptLine lands one (both ends set, near end first) and is
       // terminal. The game layer wipes the queue on any plain order, so this

@@ -14,7 +14,7 @@ Every `seed: <number>` literal in exactly these files, and nothing else:
 1. In each of the six files, immediately after the file's opening `console.log("\n[mk…]");` line, these two lines are inserted:
 
 ```js
-  const SEED = (Date.now() % 1000000) + 1; // rolled each run — no seed is ever special (owner, 2026-09-04)
+  const SEED = (Date.now() % 1000000) + 1; // rolled each run — no seed is ever special
   console.log("  fixture seed base", SEED);
 ```
 

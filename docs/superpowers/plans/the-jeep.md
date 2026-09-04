@@ -1,10 +1,10 @@
 # The Jeep (mk2.98)
 
-Task 2 of 2 (owner, 2026-09-03/04). The Willys rides mk2.97's springs onto the field: JEEP, 60 scrap, two seats, coax only, the spotter's eye at 46, 14 m/s in 2H and a 4 m/s crawling 4L that climbs what 2H cannot, fording the stream as the Bison does, wheels visibly riding their springs. Symmetric: the enemy spawn path fits jeeps identically.
+Task 2 of 2. The Willys rides mk2.97's springs onto the field: JEEP, 60 scrap, two seats, coax only, the spotter's eye at 46, 14 m/s in 2H and a 4 m/s crawling 4L that climbs what 2H cannot, fording the stream as the Bison does, wheels visibly riding their springs. Symmetric: the enemy spawn path fits jeeps identically.
 
 Suggested model: Sonnet 5 — eleven files, every code block carried below verbatim, every anchor pre-verified (two spawn blocks are byte-identical twins and are replaced BOTH times, called out below).
 
-Rulings this plan records (owner): price 60; seats 2; 2H 14 / 4L 4 m/s (provisional); eye 46; wheels animate; label JEEP; fords like the Bison; 4L is the possessed hand's tool — ordered driving stays 2H on the routed network; ordered driving never auto-shifts.
+Rulings this plan records: price 60; seats 2; 2H 14 / 4L 4 m/s (provisional); eye 46; wheels animate; label JEEP; fords like the Bison; 4L is the possessed hand's tool — ordered driving stays 2H on the routed network; ordered driving never auto-shifts.
 
 Design choices, stated: bounty 15 and the market family cap `heroJeep: 4` are provisional (F5); armor none (a jeep is skin); the gear button lives above RELEASE under possession, phone and desktop both; the CARDS registry count pin re-teaches 19 → 20 (licensed below).
 
@@ -104,7 +104,7 @@ Replace exactly:
 with:
 
 ```js
-        if (b.subT > 0.9 && b.id !== world.bisonId && !b.fords) applyDamage(world, b, 1e6, { cause: CAUSE.DROWN, attacker: b.lastImp && world.t - b.lastImp.t < 4 ? b.lastImp.attacker : "world" }); // the Bison floods but survives — it has to climb out; mk2.98 (owner): a fording body shares its law
+        if (b.subT > 0.9 && b.id !== world.bisonId && !b.fords) applyDamage(world, b, 1e6, { cause: CAUSE.DROWN, attacker: b.lastImp && world.t - b.lastImp.t < 4 ? b.lastImp.attacker : "world" }); // the Bison floods but survives — it has to climb out; mk2.98: a fording body shares its law
 ```
 
 ### Step 3 — the eye (`src/depot/sight.js`)
@@ -132,7 +132,7 @@ export const APC = { mass: 2600, hx: 1.6, hy: 1.0, hz: 3.0, hp: 300, armor: 120,
 insert:
 
 ```js
-// mk2.98 (owner): THE JEEP — the Willys. Coax only, two seats, the spotter's
+// mk2.98: THE JEEP — the Willys. Coax only, two seats, the spotter's
 // eye, springs under it (mk2.97), 2H runs and 4L climbs, and it fords the
 // stream as the Bison does. All dials provisional (F5).
 export const JEEP = { mass: 1100, hx: 0.75, hy: 0.5, hz: 1.1, hp: 90, bounty: 15, seats: 2, cost: 60, eye: 46,
@@ -197,7 +197,7 @@ Then replace the two `APC.seats` reads: `const free = APC.seats - apcSeated(worl
 
 ```js
       const HERO_MODE = { hero_bison: "bison", hero_apc: "apc", hero_jeep: "jeep", hero_mech: "mech" };
-      // mk2.98 (owner): the jeep's fit — springs, gears, the fording flag,
+      // mk2.98: the jeep's fit — springs, gears, the fording flag,
       // the spotter's eye. "2h" is the standing default everywhere; the
       // possessed gear button is the only thing that shifts it.
       const jeepFit = (v) => {
@@ -295,7 +295,7 @@ After the `hero_apc:` card row insert:
 **11a.** Immediately before `export function buildApc(team) {`'s comment block (the line `// P7 T4 (mk1.33): the APC — four seats, one coax. team parameterizes the`), insert:
 
 ```js
-// mk2.98 (owner): THE JEEP — open hull, four sprung wheels. The suspension
+// mk2.98: THE JEEP — open hull, four sprung wheels. The suspension
 // pass writes b._wheelC (per-wheel compression); the sync loop drops each
 // wheel by its spring and rolls it with the hull's speed. Dials provisional (F5).
 export function buildJeep(team) {

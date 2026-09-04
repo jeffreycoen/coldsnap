@@ -994,7 +994,7 @@ function driveHull(world, b, c) {
   if (c.brake) { b.v.x *= Math.exp(-5 * dt); b.v.z *= Math.exp(-5 * dt); }
 }
 
-// DIVERGENCE (guarded, mk2.97 — owner): THE SUSPENSION. A body carrying
+// DIVERGENCE (guarded, mk2.97): THE SUSPENSION. A body carrying
 // b.susp rides four spring-and-damper wheels instead of slamming its box
 // onto terrain contacts: each wheel samples the ground under itself and
 // answers with a vertical force at its point, so the hull pitches, rolls,
@@ -1528,7 +1528,7 @@ function collectContacts(world) {
     if (wl) for (const wd of wl) if (!wd.broken) return true;
     return false;
   };
-  // DIVERGENCE (guarded, mk2.87 — owner): a walking man does not wake a
+  // DIVERGENCE (guarded, mk2.87): a walking man does not wake a
   // tree either — under depotCombat a sleeping tree ignores contact-wake
   // from units, so a leaned-on treeline stays asleep and cheap.
   const wakeExempt = (s, mover) =>
@@ -1614,7 +1614,7 @@ function prepContacts(world) {
   const dt = world.dt;
   for (const c of world.contacts) {
     const a = c.a, b = c.b;
-    // DIVERGENCE (guarded, mk2.87 — owner): A WALKING MAN DOES NOT FELL A
+    // DIVERGENCE (guarded, mk2.87): A WALKING MAN DOES NOT FELL A
     // TREE. Under depotCombat a unit↔tree contact is one-sided: the tree's
     // terms leave the effective-mass sums and applyImpulse never writes its
     // velocity, so the man is pushed off the trunk at full strength and the
@@ -2007,7 +2007,7 @@ function stepStatus(world) {
         b.v.x *= 1 - Math.min(1, 3 * dt); b.v.z *= 1 - Math.min(1, 3 * dt);
         b.v.y *= 1 - Math.min(1, 1.5 * dt);
         if (b.subT === dt) world.events.push({ type: "splash", x: b.pos.x, z: b.pos.z });
-        if (b.subT > 0.9 && b.id !== world.bisonId && !b.fords) applyDamage(world, b, 1e6, { cause: CAUSE.DROWN, attacker: b.lastImp && world.t - b.lastImp.t < 4 ? b.lastImp.attacker : "world" }); // the Bison floods but survives — it has to climb out; mk2.98 (owner): a fording body shares its law
+        if (b.subT > 0.9 && b.id !== world.bisonId && !b.fords) applyDamage(world, b, 1e6, { cause: CAUSE.DROWN, attacker: b.lastImp && world.t - b.lastImp.t < 4 ? b.lastImp.attacker : "world" }); // the Bison floods but survives — it has to climb out; mk2.98: a fording body shares its law
       } else b.subT = 0;
       // arctic water: a man treading at the surface doesn't get to swim it out.
       // Buoyancy holds bobbers just above the full-submersion line forever, so

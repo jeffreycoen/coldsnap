@@ -1,10 +1,10 @@
 # The Suspension (mk2.97)
 
-Task 1 of 2 for the jeep (owner, 2026-09-03). A body carrying `b.susp` rides four spring-and-damper wheels: it settles at spring height and sleeps parked, leans on slopes, pitches on steps, and drives through per-body speed and force numbers — which is what makes 2H stall on a grade 4L climbs. Guarded engine work; no vehicle uses it until task 2 (the jeep, mk2.98).
+Task 1 of 2 for the jeep. A body carrying `b.susp` rides four spring-and-damper wheels: it settles at spring height and sleeps parked, leans on slopes, pitches on steps, and drives through per-body speed and force numbers — which is what makes 2H stall on a grade 4L climbs. Guarded engine work; no vehicle uses it until task 2 (the jeep, mk2.98).
 
 Suggested model: Sonnet 5 — one engine file plus a test, every code block carried below verbatim FROM A RUNNING REFERENCE: the whole implementation was built on an import-free copy of core.js at plan-writing time, and every behavior assert below carries numbers measured on it (settle 1.009 m, slope lean 0.9784, 2H sliding back −36 m while 4L climbs +87 m). A wheel-torque sign defect was found and fixed on the reference before it ever reached this plan.
 
-Rulings this plan rests on (owner, 2026-09-03): real suspension for the jeep; 2H/4L ranges; 2H 14 m/s, 4L 4 m/s (the ranges themselves land in task 2 — this task provides the per-body numbers they set).
+Rulings this plan rests on: real suspension for the jeep; 2H/4L ranges; 2H 14 m/s, 4L 4 m/s (the ranges themselves land in task 2 — this task provides the per-body numbers they set).
 
 Design choices, stated:
 - Springs are world-vertical (the standard simplification): the ground's push is up, grip and thrust stay the drive's own. On a slope a parked hull therefore leans but never slides — acceptable for a game hull, stated plainly.

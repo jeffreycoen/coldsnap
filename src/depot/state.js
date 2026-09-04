@@ -1700,7 +1700,7 @@ export function makeEndDispatch({ victory, score = null }) {
 // — one wall, one death (the WALL_UPPER_GROUP rule). A sandbag's side is
 // bagSide, never team (spawnSandbag stamps team 1 on every bag).
 // Pure over (S, ev, counts); returns what it did, or null. No rng.
-// mk2.95 (owner): THE CREDIT TRAIL — a kill of an enemy man, vehicle, or
+// mk2.95: THE CREDIT TRAIL — a kill of an enemy man, vehicle, or
 // mech credits the killer's squad or hull with one. Structures, bags, and
 // trucks are not kills; mines, wires, towers, and falling stone credit
 // nobody on the roster; friendly fire credits nobody. Team-agnostic — the

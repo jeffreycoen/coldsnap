@@ -608,3 +608,6 @@
 2026-09-04T16:05:30.626Z depot-test FAIL(1) 2202 PASS / 5 FAIL — 5 FAILURE(S): (a) it wears the jeep's own spec, not the Bison's, (a) it rides the springs with the full fit, (b) pins: t (211.1s)
 2026-09-04T16:10:31.508Z depot-test ok 2207 PASS / 0 FAIL — depot-test PASS (251.1s)
 2026-09-04T16:13:53.527Z smoke ok 30 PASS / 0 FAIL — BOOT-LOAD SMOKE: ALL PASS (192.7s)
+2026-09-04T16:38:31.712Z depot-test ok 2207 PASS / 0 FAIL — depot-test PASS (208.4s)
+2026-09-04T16:41:56.525Z smoke ok 30 PASS / 0 FAIL — BOOT-LOAD SMOKE: ALL PASS (197.2s)
+2026-09-04T16:42:20.019Z golden ok 7 PASS / 0 FAIL — GOLDEN GATE: ALL PASS (23.5s)

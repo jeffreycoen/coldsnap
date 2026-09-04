@@ -1066,7 +1066,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         const ids = squadIdsOfType(world, run.squads, sq.type);
         view.selSquadIds = ids.length > 1 ? ids : null;
       };
-      // mk2.89 (owner): THE SCREEN SELECT — every live player squad and hull
+      // mk2.89: THE SCREEN SELECT — every live player squad and hull
       // the camera sees at the button's moment joins one group; the group
       // reticle (three wedges) orders them together. The group does not
       // re-follow the camera afterward.
@@ -1124,7 +1124,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           view.groupOrderMode = view.groupOrderMode === kind ? null : kind;
         }
       };
-      // mk2.91 (owner): THE CHAIN BUILDER's controls. QUEUE is a light on the
+      // mk2.91: THE CHAIN BUILDER's controls. QUEUE is a light on the
       // pie: lit, aimed orders append; a chain is one unit's, never a group's.
       view.toggleQueue = () => {
         if (view.selSquadIds && view.selSquadIds.length) { toast("ONE SQUAD AT A TIME — A CHAIN IS ONE UNIT'S"); return; }
@@ -1138,7 +1138,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         const o = view.selVehId != null ? world.byId.get(view.selVehId) : selectedSquad();
         if (o && o._queue && i >= 0 && i < o._queue.length) { o._queue.splice(i, 1); if (!o._queue.length) o._queue = null; }
       };
-      // mk2.96 (owner): THE ROSTER's jump — a tapped row centers the camera
+      // mk2.96: THE ROSTER's jump — a tapped row centers the camera
       // on the unit, selects it with the pick branch's own hygiene, and
       // opens its pie; the panel closes.
       view.rosterJump = (kindR, idR) => {
@@ -1369,7 +1369,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // The driver, once per sim tick per squad carrying a job.
       const layCtx = { stampBag, recomputeFlow, objG, setMines: (m) => R.setMines(m) };
       input.stepBuildLine = (sq) => stepBuildLine(world, grid, field, T, run, sq, layCtx, toast, map);
-      // mk2.94 (owner): THE QUEUED LINE — when the chain's next leg is a
+      // mk2.94: THE QUEUED LINE — when the chain's next leg is a
       // line, the squad stands at its arrival point until the scrap covers
       // the WHOLE line (the pending-preview's own arithmetic), then the
       // entry shifts and the line starts. Mid-line dryness keeps its own
@@ -1430,7 +1430,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         // T3: open water takes no orders — the river is ground for nobody.
         if (map.streamAt(d.x, d.z)) { toast("OPEN WATER — find the crossing"); return true; }
         if (om === "attack" || om === "move") {
-          // mk2.91 (owner): THE CHAIN BUILDER — with QUEUE lit the tap
+          // mk2.91: THE CHAIN BUILDER — with QUEUE lit the tap
           // APPENDS to the selected squad's chain; the selection and the aim
           // stay up so taps keep laying legs. A moving head is required: the
           // first tap on an idle squad becomes the active order. A standing

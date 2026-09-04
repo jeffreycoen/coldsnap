@@ -1,10 +1,10 @@
 # The Armor Attack Order (mk2.88)
 
-Task 1 of 2 for the screen-select feature (owner, 2026-09-02). Vehicles get an ATTACK order: the hull drives the same road as MOVE, but while a live foe stands in its guns' reach it halts and lets the guns work; quiet ground rolls it on; on arrival it digs in as defend. The order joins the vehicle pie. Task 2 (the green select-all button and the group reticle) is its own plan and depends on this one.
+Task 1 of 2 for the screen-select feature. Vehicles get an ATTACK order: the hull drives the same road as MOVE, but while a live foe stands in its guns' reach it halts and lets the guns work; quiet ground rolls it on; on arrival it digs in as defend. The order joins the vehicle pie. Task 2 (the green select-all button and the group reticle) is its own plan and depends on this one.
 
 Suggested model: Sonnet 5 — three files, every code block carried below verbatim.
 
-Rulings this plan rests on (owner, 2026-09-02): vehicles need an attack order; its meaning is "stop and fight en route."
+Rulings this plan rests on: vehicles need an attack order; its meaning is "stop and fight en route."
 
 Design choices, stated:
 - "In its guns' reach" means a live foe (man, hull, or mech) the gun scans can lawfully hit — the same scan the guns already run. Enemy masonry never halts the drive; the ram law on enemy walls stays MOVE's own.
@@ -162,7 +162,7 @@ const ATTACK_HOLD_S = 3.5;   // provisional (F5) — mk2.88: the attack halt out
 insert:
 
 ```js
-  // mk2.88 (owner): ATTACK — the move that stops to fight. Same road as
+  // mk2.88: ATTACK — the move that stops to fight. Same road as
   // MOVE, but while a live foe stands in the guns' reach (the gun scans
   // stamp _foeT) the hull halts and lets the guns work; quiet ground rolls
   // it on. Arrival is MOVE's own: the order becomes "defend". Enemy masonry

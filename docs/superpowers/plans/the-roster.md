@@ -1,6 +1,6 @@
 # The Roster (mk2.96)
 
-Task 2 of 2 for the roster feature (owner, 2026-09-03). A ⚏ ROSTER button beside ∷ ALL opens a panel listing the living force — every player squad and hull, its strength, and the kills mk2.95 counts. Tapping a row jumps the camera to the unit, selects it, and opens its pie; the panel closes. Dead units drop off with their record; the count shows here and nowhere else.
+Task 2 of 2 for the roster feature. A ⚏ ROSTER button beside ∷ ALL opens a panel listing the living force — every player squad and hull, its strength, and the kills mk2.95 counts. Tapping a row jumps the camera to the unit, selects it, and opens its pie; the panel closes. Dead units drop off with their record; the count shows here and nowhere else.
 
 Suggested model: Sonnet 5 — one file plus a pin test, every code block carried below verbatim.
 
@@ -91,7 +91,7 @@ with:
         const o = view.selVehId != null ? world.byId.get(view.selVehId) : selectedSquad();
         if (o && o._queue && i >= 0 && i < o._queue.length) { o._queue.splice(i, 1); if (!o._queue.length) o._queue = null; }
       };
-      // mk2.96 (owner): THE ROSTER's jump — a tapped row centers the camera
+      // mk2.96: THE ROSTER's jump — a tapped row centers the camera
       // on the unit, selects it with the pick branch's own hygiene, and
       // opens its pie; the panel closes.
       view.rosterJump = (kindR, idR) => {

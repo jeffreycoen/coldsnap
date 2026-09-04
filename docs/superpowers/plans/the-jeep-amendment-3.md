@@ -1,6 +1,6 @@
 # The Jeep — Amendment 3: T19's fixture stops testing the deal
 
-The owner's rulings (2026-09-04): there is an additional unit, so dealing is different now; and no test carries a written-in seed — a test rolls one each run, prints it, and its asserts hold on whatever was rolled. T19(b3) pinned the men one particular deal fielded; it is re-taught to roll its seed and assert the mechanism instead. The draw count (commander 1 + seven + seven = 15) and the books (heads 60) are deal-independent and stand.
+The design: there is an additional unit, so dealing is different now; and no test carries a written-in seed — a test rolls one each run, prints it, and its asserts hold on whatever was rolled. T19(b3) pinned the men one particular deal fielded; it is re-taught to roll its seed and assert the mechanism instead. The draw count (commander 1 + seven + seven = 15) and the books (heads 60) are deal-independent and stand.
 
 In `scripts/tests/09-reorg.mjs`, two replacements.
 
@@ -15,7 +15,7 @@ In `scripts/tests/09-reorg.mjs`, two replacements.
 with:
 
 ```js
-    const seed19 = (Date.now() % 100000) + 1; // rolled each run, printed below — no seed is ever special (owner, 2026-09-04)
+    const seed19 = (Date.now() % 100000) + 1; // rolled each run, printed below — no seed is ever special
     console.log("T19 fixture seed", seed19);
     const map19 = makeMap(seed19);
     const flatF19 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };

@@ -9,7 +9,7 @@ import fs from "node:fs";
 // each run.
 {
   console.log("\n[mk2.98: the jeep]");
-  const SEED = (Date.now() % 1000000) + 1; // rolled each run — no seed is ever special (owner, 2026-09-04)
+  const SEED = (Date.now() % 1000000) + 1; // rolled each run — no seed is ever special
   console.log("  fixture seed base", SEED);
   const flat = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; } };
 

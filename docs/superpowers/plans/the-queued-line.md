@@ -1,6 +1,6 @@
 # The Queued Line (mk2.94)
 
-Task 2 of 2 (owner, 2026-09-03): engineer and sapper build lines join the chain, mid-chain — walk there, lay the line, walk on. On short scrap the squad stands at its arrival point until the whole line's price is covered, then lays (the owner's ruling, 2026-09-03). Hulls have no lines; their side is untouched.
+Task 2 of 2: engineer and sapper build lines join the chain, mid-chain — walk there, lay the line, walk on. On short scrap the squad stands at its arrival point until the whole line's price is covered, then lays (the owner's ruling, 2026-09-03). Hulls have no lines; their side is untouched.
 
 Suggested model: Sonnet 5 — three files plus a test, every code block carried below verbatim.
 
@@ -139,7 +139,7 @@ with:
 
 ```js
       input.stepBuildLine = (sq) => stepBuildLine(world, grid, field, T, run, sq, layCtx, toast, map);
-      // mk2.94 (owner): THE QUEUED LINE — when the chain's next leg is a
+      // mk2.94: THE QUEUED LINE — when the chain's next leg is a
       // line, the squad stands at its arrival point until the scrap covers
       // the WHOLE line (the pending-preview's own arithmetic), then the
       // entry shifts and the line starts. Mid-line dryness keeps its own
@@ -155,7 +155,7 @@ with:
                     : q.line === "bags" ? pieces.length * fp.bag
                     : q.line === "mines" ? pieces.length * mp.mine
                     : pieces.length * mp.wire;
-        if (run.resources < price) return; // stand and wait — the owner's ruling (2026-09-03)
+        if (run.resources < price) return; // stand and wait — The design: 
         sq._queue.shift(); if (!sq._queue.length) sq._queue = null;
         startBuildLine(grid, sq, q.line, a, b, toast);
       };

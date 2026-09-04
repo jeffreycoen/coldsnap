@@ -227,7 +227,7 @@ function armorGoal(world, grid, v, dt, fwdDir, opts) {
     // masonry) — the trail point is a moving dest on the same machinery.
     v.dest = { x: sq.anchor.x - (dx / d) * ARMOR_ESCORT_BACK, z: sq.anchor.z - (dz / d) * ARMOR_ESCORT_BACK };
   }
-  // mk2.88 (owner): ATTACK — the move that stops to fight. Same road as
+  // mk2.88: ATTACK — the move that stops to fight. Same road as
   // MOVE, but while a live foe stands in the guns' reach (the gun scans
   // stamp _foeT) the hull halts and lets the guns work; quiet ground rolls
   // it on. Arrival is MOVE's own: the order becomes "defend". Enemy masonry

@@ -1,10 +1,10 @@
 # The Chain Builder (mk2.91)
 
-Task 2 of 2 for the command-queue feature (owner, 2026-09-03). The interface for mk2.90's chains: a QUEUE wedge on the squad and vehicle pies; with it lit, aimed orders append to the unit's chain instead of replacing; a patrol closes the chain. Queued legs show as numbered flags on the ground — tap one to delete that leg; a CLEAR wedge drops the whole chain. Any plain order wipes the chain. Single selections only; the group reticle is untouched.
+Task 2 of 2 for the command-queue feature. The interface for mk2.90's chains: a QUEUE wedge on the squad and vehicle pies; with it lit, aimed orders append to the unit's chain instead of replacing; a patrol closes the chain. Queued legs show as numbered flags on the ground — tap one to delete that leg; a CLEAR wedge drops the whole chain. Any plain order wipes the chain. Single selections only; the group reticle is untouched.
 
 Suggested model: Sonnet 5 — two files plus a pin test, every code block carried below verbatim.
 
-Rulings this plan rests on (owner, 2026-09-03): plain orders wipe; single selections only; build lines outside; delete-a-leg plus CLEAR.
+Rulings this plan rests on: plain orders wipe; single selections only; build lines outside; delete-a-leg plus CLEAR.
 
 Design choices, stated:
 - With QUEUE lit and no active travel order, the first aimed tap becomes the active order (a chain needs a moving head); taps after it append. Appending onto a standing patrol is refused with a toast — patrol is terminal.
@@ -103,7 +103,7 @@ with:
           view.groupOrderMode = view.groupOrderMode === kind ? null : kind;
         }
       };
-      // mk2.91 (owner): THE CHAIN BUILDER's controls. QUEUE is a light on the
+      // mk2.91: THE CHAIN BUILDER's controls. QUEUE is a light on the
       // pie: lit, aimed orders append; a chain is one unit's, never a group's.
       view.toggleQueue = () => {
         if (view.selSquadIds && view.selSquadIds.length) { toast("ONE SQUAD AT A TIME — A CHAIN IS ONE UNIT'S"); return; }
@@ -138,7 +138,7 @@ with:
 
 ```js
         if (om === "attack" || om === "move") {
-          // mk2.91 (owner): THE CHAIN BUILDER — with QUEUE lit the tap
+          // mk2.91: THE CHAIN BUILDER — with QUEUE lit the tap
           // APPENDS to the selected squad's chain; the selection and the aim
           // stay up so taps keep laying legs. A moving head is required: the
           // first tap on an idle squad becomes the active order. A standing

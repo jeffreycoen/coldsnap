@@ -11,7 +11,7 @@ import fs from "node:fs";
 // the hunt test's own (11-hiring-hall (f)). Seeds rolled each run.
 {
   console.log("\n[mk2.88: the armor attack order]");
-  const SEED = (Date.now() % 1000000) + 1; // rolled each run — no seed is ever special (owner, 2026-09-04)
+  const SEED = (Date.now() % 1000000) + 1; // rolled each run — no seed is ever special
   console.log("  fixture seed base", SEED);
   const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
   const N = 44;

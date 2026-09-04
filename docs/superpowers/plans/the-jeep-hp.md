@@ -19,7 +19,7 @@ with:
 ```js
 export const JEEP = { mass: 1100, hx: 0.85, hy: 0.55, hz: 1.6, hp: 180, bounty: 15, seats: 2, cost: 60, eye: 46,
   spd2h: 14, cap2h: 3.5, spd4l: 4, cap4l: 7,
-  susp: { kx: 0.85, kz: 1.3, rest: 0.48, travel: 0.4, rate: 66000, damp: 6000 } }; // mk2.99: grown to the Willys' real footprint // mk3.00 (owner): hp doubled; stance widened to the hull's edge and ride height dropped against the rollover
+  susp: { kx: 0.85, kz: 1.3, rest: 0.48, travel: 0.4, rate: 66000, damp: 6000 } }; // mk2.99: grown to the Willys' real footprint // mk3.00: hp doubled; stance widened to the hull's edge and ride height dropped against the rollover
 ```
 
 2. Gates, blocking: `node scripts/gate.mjs depot-test`, `node scripts/gate.mjs smoke` — green. No new tests: spec dials with nothing pinning them; the roll behavior is the owner's hands.

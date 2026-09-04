@@ -66,7 +66,7 @@ import fs from "node:fs";
   // seven, then its seven, its five picked and applied (15 draws: commander
   // 1 + 7 + 7), on seed 91.
   {
-    const seed19 = (Date.now() % 100000) + 1; // rolled each run, printed below — no seed is ever special (owner, 2026-09-04)
+    const seed19 = (Date.now() % 100000) + 1; // rolled each run, printed below — no seed is ever special
     console.log("T19 fixture seed", seed19);
     const map19 = makeMap(seed19);
     const flatF19 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };

@@ -94,7 +94,7 @@ export function buildWaveTank(team) {
   const bar = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, 2.8), toon(0x33383d)); bar.position.z = 1.4; bar.castShadow = true; gp.add(bar);
   return g;
 }
-// mk2.98 (owner): THE JEEP — open hull, four sprung wheels. The suspension
+// mk2.98: THE JEEP — open hull, four sprung wheels. The suspension
 // pass writes b._wheelC (per-wheel compression); the sync loop drops each
 // wheel by its spring and rolls it with the hull's speed. Dials provisional (F5).
 export function buildJeep(team) {

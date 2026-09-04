@@ -1,6 +1,6 @@
 # The Escort Link (mk2.93)
 
-Task 1 of 2 (owner, 2026-09-03): ESCORT joins the chain as a terminal link on hulls — queue moves and attacks, close the chain with an escort, and the hull falls in behind its squad when it gets there. Task 2 (build lines in chains, mk2.94) is its own plan.
+Task 1 of 2: ESCORT joins the chain as a terminal link on hulls — queue moves and attacks, close the chain with an escort, and the hull falls in behind its squad when it gets there. Task 2 (build lines in chains, mk2.94) is its own plan.
 
 Suggested model: Sonnet 5 — two files plus a test, every code block carried below verbatim.
 

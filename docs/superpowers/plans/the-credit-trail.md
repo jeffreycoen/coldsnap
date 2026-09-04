@@ -1,10 +1,10 @@
 # The Credit Trail (mk2.95)
 
-Task 1 of 2 for the roster feature (owner, 2026-09-03). Every kill of an enemy man, vehicle, or mech credits the killer's squad or hull with one. The shooter's identity already rides the depot damage paths (`srcId` on blasts and direct hits, `killerId` on crushes); this task carries it onto the kill event and counts it. No interface — task 2 (the roster panel, mk2.96) shows the numbers.
+Task 1 of 2 for the roster feature. Every kill of an enemy man, vehicle, or mech credits the killer's squad or hull with one. The shooter's identity already rides the depot damage paths (`srcId` on blasts and direct hits, `killerId` on crushes); this task carries it onto the kill event and counts it. No interface — task 2 (the roster panel, mk2.96) shows the numbers.
 
 Suggested model: Sonnet 5 — three files plus a test, every code block carried below verbatim.
 
-Rulings this plan rests on (owner, 2026-09-03): a kill is an enemy man, vehicle, or mech, one each; structures and bags stay out; the count shows in the roster only.
+Rulings this plan rests on: a kill is an enemy man, vehicle, or mech, one each; structures and bags stay out; the count shows in the roster only.
 
 Design choices, stated:
 - Mine, wire, and tower kills credit nobody on the roster — no squad or hull fired them. Trucks are convoy logistics, not a combat kill, and are not counted as victims. Falling-masonry kills credit nobody (the killer id is a stone).
@@ -146,7 +146,7 @@ export function scoreKill(S, ev, counts) {
 insert:
 
 ```js
-// mk2.95 (owner): THE CREDIT TRAIL — a kill of an enemy man, vehicle, or
+// mk2.95: THE CREDIT TRAIL — a kill of an enemy man, vehicle, or
 // mech credits the killer's squad or hull with one. Structures, bags, and
 // trucks are not kills; mines, wires, towers, and falling stone credit
 // nobody on the roster; friendly fire credits nobody. Team-agnostic — the
