@@ -641,6 +641,8 @@ import fs from "node:fs";
   // buildlines.js — the (e) pin below retargets there (sweep license,
   // unchanged content).
   const blSrcCmd2 = fs.readFileSync(new URL("../../src/depot/buildlines.js", import.meta.url), "utf8");
+  // debug harness moved to hooks.js (T2: the harness walks out).
+  const hooksSrcCmd2 = fs.readFileSync(new URL("../../src/depot/hooks.js", import.meta.url), "utf8");
 
   // (a) the second tap PROPOSES: consumeOrderTap's build branch creates
   // S.linePending and never calls startBuildLine itself (only acceptLine
@@ -661,7 +663,7 @@ import fs from "node:fs";
 
   // (c) __DEPOTORDER__ auto-accepts — staging keeps driving the real order
   // path end to end without a screen to tap the confirm button on.
-  const orderBody = (dsrc.match(/window\.__DEPOTORDER__ = \(id, kind, pts\) => \{[\s\S]*?\n      window\.__DEPOTFOCUS__ = \(x, z, zoom\) => \{/) || [""])[0];
+  const orderBody = (hooksSrcCmd2.match(/window\.__DEPOTORDER__ = \(id, kind, pts\) => \{[\s\S]*?\n  window\.__DEPOTFOCUS__ = \(x, z, zoom\) => \{/) || [""])[0];
   ok("COMMAND T2(c): __DEPOTORDER__ auto-accepts a proposed line (S.acceptLine())",
     /if \(view\.linePending\) \{ view\.linePending\.armedAt = world\.t; view\.acceptLine\(\); \}/.test(orderBody));
   // AUDIT FIX (mk0.85): the mk0.84 auto-accept no-opped — the pending's
@@ -1583,10 +1585,14 @@ import fs from "node:fs";
   // 1); MAP_SEED reads through the map parameter there (map.MAP_SEED).
   const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   const simSrc = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
+  // debug harness moved to hooks.js (T2: the harness walks out) — the
+  // __DEPOTSETT__ windAt assignment now lives there, none in DepotGame.jsx.
+  const hooksSrcWind = fs.readFileSync(new URL("../../src/depot/hooks.js", import.meta.url), "utf8");
   ok("WIND TOGGLE source pin: stepDepot's one wind assignment is gated by input.windOn",
     /world\.wind = input\.windOn === false \? \{ x: 0, z: 0, mag: 0 \} : windAt\(map\.MAP_SEED, world\.t\);/.test(simSrc));
-  ok("WIND TOGGLE source pin: no other stepDepot-path windAt assignment exists",
-    (gameSrc.match(/world\.wind = windAt/g) || []).length === 1); // the __DEPOTSETT__ debug hook only
+  ok("WIND TOGGLE source pin: no other stepDepot-path windAt assignment exists (0 in DepotGame.jsx, 1 in hooks.js's __DEPOTSETT__ debug hook)",
+    (gameSrc.match(/world\.wind = windAt/g) || []).length === 0 &&
+    (hooksSrcWind.match(/world\.wind = windAt/g) || []).length === 1);
   // mk0.96 (Task 6): OFF must also be QUIET and STILL — the audible bed and
   // the flag cloth follow the same world.wind the mechanics read.
   ok("WIND TOGGLE source pin: the audio wind bed is scaled by the real wind (world.wind.mag)",

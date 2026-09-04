@@ -36,7 +36,7 @@ Added to CLAUDE.md under Frozen laws:
 | DepotGame.jsx lines | 4,383 |
 | Comment-only lines in it | 975 (plus ~80 trailing) |
 | Test files reading DepotGame.jsx by file slice | 27 files, ~85 slice sites (heaviest: 04-vision 16, 11-hiring-hall 11, 09-reorg 7) |
-| depot-test | 2,089 PASS / 0 FAIL (per the mk2.74 landing; re-measured at task 1 dispatch) |
+| depot-test | 2,207 PASS / 0 FAIL (re-measured at the T1 landing) |
 | golden | 7 PASS |
 | smoke | 30 PASS |
 

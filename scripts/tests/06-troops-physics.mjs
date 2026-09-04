@@ -231,7 +231,9 @@ import fs from "node:fs";
     /spawnWallCourses\(world, row\.x/.test(blSrcT3) && /spawnSandbag\(world, row\.x, row\.z, orient, team\)/.test(blSrcT3));
   ok("T3: the seeded depot bags are untouched (retargeted mk1.49, P7 T19: seedBags moved to muster.js)",
     /spawnSandbag\(world, bx, bz,/.test(muSrcT3));
-  ok("T3: the harness door stays (buildAt via __DEPOTBUILD__)", /__DEPOTBUILD__ = \(gx, gz, mode\) => buildAt\(gx, gz, mode \|\| "wall"\)/.test(src));
+  // debug harness moved to hooks.js (T2: the harness walks out).
+  const hooksSrcT3 = fs.readFileSync(new URL("../../src/depot/hooks.js", import.meta.url), "utf8");
+  ok("T3: the harness door stays (buildAt via __DEPOTBUILD__)", /__DEPOTBUILD__ = \(gx, gz, mode\) => buildAt\(gx, gz, mode \|\| "wall"\)/.test(hooksSrcT3));
   ok("T3: the start screen stopped promising the trowel", !/Wall their road/.test(src));
 }
 // ==== end P6 T3 ==============================================================

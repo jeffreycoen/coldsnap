@@ -423,7 +423,9 @@ import fs from "node:fs";
   // (war-engine-extraction task 1).
   ok("T4(g): the drive doors bind to the long axis by live dimensions",
     /const driveZ = t\.drive && t\.nz >= t\.nx;/.test(simSrcT4));
-  ok("T4(g): the town debug hook exists", /__DEPOTTOWN__/.test(src));
+  // debug harness moved to hooks.js (T2: the harness walks out).
+  const hooksSrcT4 = fs.readFileSync(new URL("../../src/depot/hooks.js", import.meta.url), "utf8");
+  ok("T4(g): the town debug hook exists", /__DEPOTTOWN__/.test(hooksSrcT4));
   const rsrc4 = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
   ok("T4(g): the chunk pool is raised to 7000 (re-taught mk2.65, the crowded valley)", /const CHUNK_CAP = 7000;/.test(rsrc4));
 }

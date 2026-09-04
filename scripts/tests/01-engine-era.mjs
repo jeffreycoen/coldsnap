@@ -1837,6 +1837,8 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     const simSrc3 = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
     // buildEmitters moved to boot.js (task 4: the engine leaves the screen).
     const bootSrc1 = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
+    // debug harness moved to hooks.js (T2: the harness walks out).
+    const hooksSrc = fs.readFileSync(new URL("../../src/depot/hooks.js", import.meta.url), "utf8");
     ok("sweep/corpse: DepotGame corpse sweep is kind-gated, team-agnostic",
       simSrc3.includes('b.kind === "unit" && !b.alive && world.t - (b.deadT || 0) > 2.5'));
 
@@ -1864,7 +1866,7 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 
     // (g) __DEPOTTHIN__ (the wave-drain harness) kills team 2 only.
     ok("sweep/thin: __DEPOTTHIN__ kills only team-2 units",
-      /__DEPOTTHIN__[\s\S]{0,400}b\.kind === "unit" && b\.team === 2 && b\.alive/.test(depotSrc3));
+      /__DEPOTTHIN__[\s\S]{0,400}b\.kind === "unit" && b\.team === 2 && b\.alive/.test(hooksSrc));
 
     // (h) fog-render ownership: the renderer's fog gate hides team-2 bodies
     // only — team-1 members always render for their owner.
