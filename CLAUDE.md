@@ -78,3 +78,5 @@ The owner directs design, reviews every plan, and is the sole playtester. His wo
 - Phase closeout re-checks the README's claims and screenshots against the shipped game.
 - Deferred items collect in the polish queue, never folded in opportunistically.
 - Frozen laws: `src/demo/coldsnap-proving-grounds.jsx` is byte-frozen; `core.js`/`renderer.js` changes are guarded additive divergences with `golden.mjs` green; no `Math.random` in `src/depot` (seeded rng, draw-count stability, `depot-lint` gates CI).
+- New interface panels, screens, and self-contained blocks get their own file under `src/depot/`; `DepotGame.jsx` takes only the hookup lines that connect them.
+- Game code reaches the engine, renderer, audio, and storage through `src/depot/api.js` — never directly. The screen's own modules sit behind the component and are not part of that surface.
