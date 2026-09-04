@@ -94,6 +94,29 @@ export function buildWaveTank(team) {
   const bar = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, 2.8), toon(0x33383d)); bar.position.z = 1.4; bar.castShadow = true; gp.add(bar);
   return g;
 }
+// mk2.98 (owner): THE JEEP — open hull, four sprung wheels. The suspension
+// pass writes b._wheelC (per-wheel compression); the sync loop drops each
+// wheel by its spring and rolls it with the hull's speed. Dials provisional (F5).
+export function buildJeep(team) {
+  const g = new THREE.Group();
+  const hullC = team === 2 ? 0x6e3a34 : 0x4a5d3a;
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.55, 2.2), toon(hullC));
+  hull.position.y = 0.1; hull.castShadow = true; g.add(hull);
+  const screen = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.5, 0.08), toon(0x28303a));
+  screen.position.set(0, 0.55, 0.55); screen.rotation.x = -0.2; g.add(screen);
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.35, 0.7), toon(0x2a2f27));
+  seat.position.set(0, 0.35, -0.35); g.add(seat);
+  const coax = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.9, 6), toon(0x33383d));
+  coax.rotation.x = Math.PI / 2; coax.position.set(0.35, 0.75, 0.2); g.add(coax);
+  g.userData.wheels = [];
+  for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+    const wh = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.33, 0.25, 10), toon(0x1b1e22));
+    wh.rotation.z = Math.PI / 2; wh.position.set(sx * 0.72, -0.28, sz * 0.9);
+    wh.castShadow = true; g.add(wh);
+    g.userData.wheels.push(wh);
+  }
+  return g;
+}
 // P7 T4 (mk1.33): the APC — four seats, one coax. team parameterizes the
 // dress exactly as buildBison does.
 export function buildApc(team) {
@@ -1915,7 +1938,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
         // sides) joins the demo-global bisonId path — buildBison/buildApc
         // dress each side; the demo's undefined team is untouched (parity
         // by construction).
-        g = b.vtype === "apc" ? buildApc(b.team) : b.vtype === "tank" ? buildWaveTank(b.team) : (b.vtype === "bison" || b.id === world.bisonId) ? buildBison(b.team) : (b.vtype === "truck" ? buildTruck() : buildScout());
+        g = b.vtype === "apc" ? buildApc(b.team) : b.vtype === "jeep" ? buildJeep(b.team) : b.vtype === "tank" ? buildWaveTank(b.team) : (b.vtype === "bison" || b.id === world.bisonId) ? buildBison(b.team) : (b.vtype === "truck" ? buildTruck() : buildScout());
         vehMap.set(b.id, g); scene.add(g);
       }
       // DEPOT fog (opts.territory, gated by fogOn): unheld enemy vehicles
@@ -1936,6 +1959,15 @@ export function makeRenderer(canvas, world0, opts = {}) {
       if (fogHide) continue;
       g.position.set(b.pos.x, b.pos.y, b.pos.z);
       g.quaternion.set(b.q.x, b.q.y, b.q.z, b.q.w);
+      // mk2.98: the jeep's wheels ride their springs and roll with speed
+      if (g.userData.wheels && b._wheelC) {
+        const spd = Math.hypot(b.v.x, b.v.z) * (b.v.x * b.R[6] + b.v.z * b.R[8] >= 0 ? 1 : -1);
+        for (let wi = 0; wi < 4; wi++) {
+          const wh = g.userData.wheels[wi];
+          wh.position.y = -0.55 + Math.min(0.4, b._wheelC[wi]);
+          wh.rotation.y += spd * 0.05;
+        }
+      }
       if (b.kind === "vehicle") pushBar(b, 2.6, 1.0); // provisional (F5)
       if ((b.kind === "wreck" || (b.kind === "truck" && !b.alive)) && !g.userData.dead) {
         g.userData.dead = true;

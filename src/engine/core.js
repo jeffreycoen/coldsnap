@@ -2007,7 +2007,7 @@ function stepStatus(world) {
         b.v.x *= 1 - Math.min(1, 3 * dt); b.v.z *= 1 - Math.min(1, 3 * dt);
         b.v.y *= 1 - Math.min(1, 1.5 * dt);
         if (b.subT === dt) world.events.push({ type: "splash", x: b.pos.x, z: b.pos.z });
-        if (b.subT > 0.9 && b.id !== world.bisonId) applyDamage(world, b, 1e6, { cause: CAUSE.DROWN, attacker: b.lastImp && world.t - b.lastImp.t < 4 ? b.lastImp.attacker : "world" }); // the Bison floods but survives — it has to climb out
+        if (b.subT > 0.9 && b.id !== world.bisonId && !b.fords) applyDamage(world, b, 1e6, { cause: CAUSE.DROWN, attacker: b.lastImp && world.t - b.lastImp.t < 4 ? b.lastImp.attacker : "world" }); // the Bison floods but survives — it has to climb out; mk2.98 (owner): a fording body shares its law
       } else b.subT = 0;
       // arctic water: a man treading at the surface doesn't get to swim it out.
       // Buoyancy holds bobbers just above the full-submersion line forever, so

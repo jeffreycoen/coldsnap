@@ -120,16 +120,16 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
       && !isUnlocked(M, "wall") && !isUnlocked(M, "sandbag"), M.unlocked.join(","));
     ok("hand: nothing is offered before the first bell", M.hand.length === 0 && M.cardUp === false);
     const p0 = HAND_KEYS.filter((k) => M.unlocked.indexOf(k) < 0);
-    ok("hand: the plans pool ignores the bell entirely — one pool at any hour", p0.length === 19, p0.length);
+    ok("hand: the plans pool ignores the bell entirely — one pool at any hour", p0.length === 20, p0.length);
   }
 
   // (b) the pool: the full list minus what is owned. No tiers, no bells.
   {
     const M = makeManifestState();
     const pool = () => HAND_KEYS.filter((k) => M.unlocked.indexOf(k) < 0);
-    ok("hand: nineteen plans stand at bell one", pool().length === 19);
+    ok("hand: twenty plans stand at bell one", pool().length === 20);
     M.unlocked.push("mg");
-    ok("hand: a bought plan leaves the pool", pool().indexOf("mg") < 0 && pool().length === 18);
+    ok("hand: a bought plan leaves the pool", pool().indexOf("mg") < 0 && pool().length === 19);
     ok("hand: heroes stand in the pool from the start (the gate is dead, owner)",
       pool().includes("hero_bison") && pool().includes("hero_apc"));
     ok("hand: rifles and engineers are plans like everything else now (re-taught P7.2 T3)", pool().includes("sq_rifles") && pool().includes("sq_engineers"));
@@ -160,7 +160,7 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
     ok("hand: 200 seeded deals are all five cards, three plans", badN === 0, `${badN} bad`);
     ok("hand: 200 seeded deals never repeat a plan", dupe === 0, `${dupe} dupes`);
     ok("hand: 200 seeded deals never invent a card", foreign === 0, `${foreign} foreign`);
-    const one = dealConvoyHand(HAND_KEYS.slice(0, 18), HAND_KEYS, mulberry32(3));
+    const one = dealConvoyHand(HAND_KEYS.slice(0, 19), HAND_KEYS, mulberry32(3));
     ok("hand: a one-plan pool deals that plan and the two hires", one.filter((x) => !x.hire).length === 1 && one.length === 3);
     ok("hand: an exhausted plans pool deals hires alone", dealConvoyHand(HAND_KEYS.slice(), HAND_KEYS, mulberry32(3)).length === 2);
     {

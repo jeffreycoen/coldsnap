@@ -274,7 +274,7 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "tesla"]) {
   musterFreshStart(w, S6, TOWN.find((t) => t.depot && t.team !== 2), G6, flatF6, () => 1, map6);
   ok("T6v2: the fresh start draws exactly 15 (commander 1 + seven + seven) (re-taught P7.2 T8: 9 -> 15)", draws === 15, draws);
   ok("T6v2: nothing player-side fields at boot", S6.squads.length === 0 && !w.bodies.some((b) => b.team === 1 && b.alive));
-  ok("T6v2: the pool is nineteen, unique keys", PICK_POOL.length === 19 && new Set(PICK_POOL.map((p) => p.key)).size === 19);
+  ok("T6v2: the pool is twenty, unique keys", PICK_POOL.length === 20 && new Set(PICK_POOL.map((p) => p.key)).size === 20);
   ok("T6v2: his five landed — men afield or plans on his ledgers (re-taught P7.2 T8)",
     w.bodies.some((b) => b.team === 2 && b.alive) || S6.foe.unlocked.length > 0 || S6.foe.towers.length > 0);
   ok("T8: the player's hand is the seven-card draft, seven distinct pool keys (re-taught P7.2 T8)",

@@ -61,7 +61,7 @@ ok("names: the enemy rack follows",
   ok("lattice: the rungs stand as ruled", dg6.includes("const LATTICE = {") &&
     dg6.match(/troops:[\s\S]{0,400}\["sq_rifles", "sq_engineers", "sq_mg", "sq_sappers"\]/) != null &&
     dg6.match(/troops:[\s\S]{0,600}\["sq_davy"\]/) != null &&
-    dg6.match(/vehicles:[\s\S]{0,200}\["hero_apc"\]/) != null &&
+    dg6.match(/vehicles:[\s\S]{0,200}\["hero_apc", "hero_jeep"\]/) != null &&
     dg6.match(/vehicles:[\s\S]{0,300}\["hero_bison", "hero_mech"\]/) != null);
   ok("lattice: the trunk climbs and the pack folds", dg6.includes("cs-climb") && dg6.includes("cs-pack") && dg6.includes("data-lattice"));
   ok("lattice: packing is inert and finishes on the trunk", dg6.match(/pointerEvents: packing/) != null && dg6.match(/onAnimationEnd=\{packing \? finishPack/) != null);

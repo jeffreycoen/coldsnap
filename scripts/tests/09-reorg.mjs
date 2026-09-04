@@ -66,9 +66,11 @@ import fs from "node:fs";
   // seven, then its seven, its five picked and applied (15 draws: commander
   // 1 + 7 + 7), on seed 91.
   {
-    const map19 = makeMap(91);
+    const seed19 = (Date.now() % 100000) + 1; // rolled each run, printed below — no seed is ever special (owner, 2026-09-04)
+    console.log("T19 fixture seed", seed19);
+    const map19 = makeMap(seed19);
     const flatF19 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
-    const w = makeWorld({ field: flatF19, seed: 91 });
+    const w = makeWorld({ field: flatF19, seed: seed19 });
     let draws = 0; const raw = w.rng;
     w.rng = () => { draws++; return raw(); };
     const S19 = { reg: { heads: 60 }, squads: [], nextSquadId: 1, cmdr: null };
@@ -79,7 +81,7 @@ import fs from "node:fs";
       S19.squads.length === 0 && !w.bodies.some((b) => b.team === 1 && b.alive));
     let guard = 0;
     for (const b of w.bodies) if (b.kind === "unit" && b.team === 2 && b.garrison && b.alive) guard++;
-    ok("T19(b3): the mirror's men alone hold their ground (measured on seed 91, no home guard) (re-taught mk1.92: 10 -> 6, the eighteen-key pool)", guard === 6, guard);
+    ok("T19(b3): the muster's fielded men are the mirror's standing force, whatever the deal (re-taught mk2.98, owner: the count belonged to one seed's hand)", w.bodies.filter((b) => b.kind === "unit" && b.alive).every((b) => b.team === 2 && b.garrison === true), guard);
     ok("T19(b4): the commander was drawn", S19.cmdr === "cautious" || S19.cmdr === "bold" || S19.cmdr === "stubborn", S19.cmdr);
     ok("T19(b5): the books stayed honest (re-taught P7.1 T6: the guard's -8 died with the guard, 52 -> 60)", S19.reg.heads === 60, S19.reg.heads);
   }

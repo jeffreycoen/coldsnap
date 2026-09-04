@@ -30,7 +30,7 @@ export function eyeOf(b) {
   if (b.kind === "tower") return { x: b.pos.x, y: b.pos.y + b.hy + 0.45, z: b.pos.z, r: SIGHT.tower };
   if (b.kind === "flag")  return { x: b.pos.x, y: b.pos.y + 4.0, z: b.pos.z, r: SIGHT.flag };
   if (b.kind === "mech") return { x: b.pos.x, y: b.pos.y + 2.6, z: b.pos.z, r: SIGHT.mech };
-  if (b.kind === "vehicle") return { x: b.pos.x, y: b.pos.y + 1.4, z: b.pos.z, r: SIGHT.vehicle };
+  if (b.kind === "vehicle") return { x: b.pos.x, y: b.pos.y + 1.4, z: b.pos.z, r: b.eyeR || SIGHT.vehicle }; // mk2.98: the jeep's spotter eye rides the body
   const r = b.role === "spotter" ? SIGHT.spotter
           : (b.role === "sniper" || b.tag === "sniper") ? SIGHT.sniper : SIGHT.unit;
   return { x: b.pos.x, y: b.pos.y + 0.8, z: b.pos.z, r }; // mk2.02: the 2m man's eye — 1.8m over his feet

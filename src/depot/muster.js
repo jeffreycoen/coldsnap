@@ -255,6 +255,7 @@ export const PICK_POOL = [
   { key: "sq_davy", kind: "squad", type: "davy", tag: "davy", n: 2 },
   { key: "hero_bison", kind: "hull", vtype: "bison" },
   { key: "hero_apc", kind: "hull", vtype: "apc" },
+  { key: "hero_jeep", kind: "hull", vtype: "jeep" },
   { key: "hero_mech", kind: "mech" },
   { key: "mg", kind: "tower" }, { key: "gun", kind: "tower" }, { key: "mortar", kind: "tower" },
   { key: "rocket", kind: "tower" }, { key: "tesla", kind: "tower" },

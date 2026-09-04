@@ -56,8 +56,8 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
 // ---- P7.2 T2 (mk1.81): THE HAND — five cards, three plans + two hires
 {
   // (a) one table: the hand's eighteen are the pick pool's eighteen
-  ok("T2(a): HAND_KEYS is the nineteen, exactly the pick pool's keys",
-    HAND_KEYS.length === 19 && new Set(HAND_KEYS).size === 19 && PICK_POOL.every((p) => HAND_KEYS.includes(p.key)));
+  ok("T2(a): HAND_KEYS is the twenty, exactly the pick pool's keys",
+    HAND_KEYS.length === 20 && new Set(HAND_KEYS).size === 20 && PICK_POOL.every((p) => HAND_KEYS.includes(p.key)));
 
   // (b) the deal's contract — five draws, always, draw-then-clamp
   const count = () => { let n = 0; const r = mulberry32(7); return { rng: () => { n++; return r(); }, n: () => n }; };
@@ -74,7 +74,7 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
   }
   {
     const c = count();
-    const owned = HAND_KEYS.slice(0, 17); // two plans left in the pool
+    const owned = HAND_KEYS.slice(0, 18); // two plans left in the pool
     const hand = dealConvoyHand(owned, HAND_KEYS, c.rng);
     ok("T2(b5): a thin pool still burns five draws and deals what it has",
       c.n() === 5 && hand.filter((x) => !x.hire).length === 2 && hand.filter((x) => x.hire).length === 2);
@@ -149,9 +149,9 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
   // (a) the bare bar
   ok("T3(a): PLAYER_START is empty — the bar starts bare (owner)", PLAYER_START.length === 0);
   ok("T3(a2): the fresh manifest owns nothing", makeManifestState().unlocked.length === 0);
-  ok("T3(a3): the plans pool is the full nineteen",
+  ok("T3(a3): the plans pool is the full twenty",
     dealConvoyHand([], HAND_KEYS, mulberry32(9)).filter((c) => !c.hire).length === 3 &&
-    HAND_KEYS.filter((k) => makeManifestState().unlocked.indexOf(k) < 0).length === 19);
+    HAND_KEYS.filter((k) => makeManifestState().unlocked.indexOf(k) < 0).length === 20);
   // (b) the pause — one gate, source-pinned (the loop is unimportable)
   {
     const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
@@ -191,8 +191,8 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
 {
   // (a) the tag map: squads and heroes map to wave tags; a tower key maps to
   // nothing because it ROUTES to his plans ledger instead — never an exclusion
-  ok("T4(a): HAND_TAGS covers the eleven squads and all three heroes; tower keys route to the ledger",
-    Object.keys(HAND_TAGS).length === 14 && ["mg", "gun", "mortar", "rocket", "tesla"].every((k) => HAND_TAGS[k] === undefined));
+  ok("T4(a): HAND_TAGS covers the eleven squads and all four heroes; tower keys route to the ledger",
+    Object.keys(HAND_TAGS).length === 15 && ["mg", "gun", "mortar", "rocket", "tesla"].every((k) => HAND_TAGS[k] === undefined));
   // (b) his deal: five draws; owned plans of BOTH spaces never re-deal
   {
     let n = 0; const raw = mulberry32(84); const rng = () => { n++; return raw(); };
@@ -454,8 +454,8 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
 // ---- P7.2 T6 (mk1.87): THE MEDIC — the sixteenth key; mercy on both sides
 {
   // (a) the sixteenth key, every table
-  ok("T6(a): the pool is eighteen and sq_medics is in every seat",
-    HAND_KEYS.length === 19 && HAND_KEYS.includes("sq_medics") && PICK_POOL.length === 19 &&
+  ok("T6(a): the pool is nineteen and sq_medics is in every seat",
+    HAND_KEYS.length === 20 && HAND_KEYS.includes("sq_medics") && PICK_POOL.length === 20 &&
     PICK_POOL.some((p) => p.key === "sq_medics" && p.kind === "squad" && p.type === "medics" && p.tag === "medic" && p.n === 2));
   ok("T6(a2): the tag map routes his medic plan to the wave map like any squad", HAND_TAGS.sq_medics === "medic");
   ok("T6(a3): the squad row — two men at 55 // provisional (F5)", SQUAD_SPECS.medics.n === 2 && SQUAD_SPECS.medics.cost === 55);
@@ -559,8 +559,8 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
 // ---- P7.2 T7 (mk1.88): THE MECHANIC — the seventeenth key; the paid wrench
 {
   // (a) the seventeenth key, every table
-  ok("T7v2(a): the pool is eighteen and sq_mechanics is in every seat",
-    HAND_KEYS.length === 19 && HAND_KEYS.includes("sq_mechanics") && PICK_POOL.length === 19 &&
+  ok("T7v2(a): the pool is nineteen and sq_mechanics is in every seat",
+    HAND_KEYS.length === 20 && HAND_KEYS.includes("sq_mechanics") && PICK_POOL.length === 20 &&
     PICK_POOL.some((p) => p.key === "sq_mechanics" && p.kind === "squad" && p.type === "mechanics" && p.tag === "mechanic" && p.n === 2));
   ok("T7v2(a2): the tag map and the squad row — two men at 55, tag mechanic",
     HAND_TAGS.sq_mechanics === "mechanic" && SQUAD_SPECS.mechanics.n === 2 && SQUAD_SPECS.mechanics.cost === 55);

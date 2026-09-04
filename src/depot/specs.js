@@ -130,6 +130,13 @@ export const BARRELS = {
 // P7 T9 (owner): cost — the hero tier's convoy price, same story as BISON.cost above. // provisional (F5)
 export const APC = { mass: 2600, hx: 1.6, hy: 1.0, hz: 3.0, hp: 300, armor: 120, bounty: 45, seats: 4, cost: 140 };
 
+// mk2.98 (owner): THE JEEP — the Willys. Coax only, two seats, the spotter's
+// eye, springs under it (mk2.97), 2H runs and 4L climbs, and it fords the
+// stream as the Bison does. All dials provisional (F5).
+export const JEEP = { mass: 1100, hx: 0.75, hy: 0.5, hz: 1.1, hp: 90, bounty: 15, seats: 2, cost: 60, eye: 46,
+  spd2h: 14, cap2h: 3.5, spd4l: 4, cap4l: 7,
+  susp: { kx: 0.6, kz: 0.9, rest: 0.55, travel: 0.4, rate: 66000, damp: 6000 } };
+
 // THE MECH (owner, 2026-08-20): the crown machine, both sides — the engine
 // walker fielded as a hero. Dear, slow, unanswerable except by another.
 export const MECH = { hp: 900, cost: 400, bounty: 120 }; // provisional (F5)
@@ -210,12 +217,12 @@ export const PLAYER_TIERS = [
 // P7.2 T2 (owner): THE HAND IS UNGATED — the full fifteen, one table, from
 // bell one; price and the market wall do all the refusing. The tier ladders
 // above stop gating offers (they remain as rows and price families).
-export const HAND_KEYS = ["mg", "gun", "mortar", "rocket", "tesla", "sq_sniper", "sq_rifles", "sq_mg", "sq_sappers", "sq_mortars", "sq_engineers", "sq_rockets", "sq_grenadiers", "sq_medics", "sq_mechanics", "sq_davy", "hero_bison", "hero_apc", "hero_mech"];
+export const HAND_KEYS = ["mg", "gun", "mortar", "rocket", "tesla", "sq_sniper", "sq_rifles", "sq_mg", "sq_sappers", "sq_mortars", "sq_engineers", "sq_rockets", "sq_grenadiers", "sq_medics", "sq_mechanics", "sq_davy", "hero_bison", "hero_apc", "hero_jeep", "hero_mech"];
 
 // P7.2 T4: the key -> enemy-tag map for HIS side of the hand. Tower keys
 // are deliberately absent — a tower is not a wave tag: his tower plans
 // ROUTE to S.foe.towers (the plans ledger he builds from), full symmetry.
-export const HAND_TAGS = { sq_rifles: "", sq_rockets: "rocket", sq_grenadiers: "gren", sq_sappers: "sapper", sq_mortars: "mortar", sq_sniper: "sniper", sq_mg: "mg", sq_engineers: "eng", sq_medics: "medic", sq_mechanics: "mechanic", sq_davy: "davy", hero_bison: "hero_bison", hero_apc: "hero_apc", hero_mech: "hero_mech" };
+export const HAND_TAGS = { sq_rifles: "", sq_rockets: "rocket", sq_grenadiers: "gren", sq_sappers: "sapper", sq_mortars: "mortar", sq_sniper: "sniper", sq_mg: "mg", sq_engineers: "eng", sq_medics: "medic", sq_mechanics: "mechanic", sq_davy: "davy", hero_bison: "hero_bison", hero_apc: "hero_apc", hero_jeep: "hero_jeep", hero_mech: "hero_mech" };
 
 export const MASON = { hcs: 0.40, pitch: 0.83, mass: 100, breakF: 8.0e4 };
 

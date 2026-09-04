@@ -461,6 +461,7 @@ function apcGuns(world, v, dt, T, toUV) {
   } else v.mgT = 0.4;
 }
 DRIVERS.apc = { goal: armorGoal, guns: apcGuns };
+DRIVERS.jeep = { goal: armorGoal, guns: apcGuns }; // mk2.98: the jeep — armor's legs, the coax alone
 // (stepDrivers' possessed skip already decays mgT — no change.)
 
 // ---- THE MECH (owner, 2026-08-20): the crown's seat. Goal = the armor's

@@ -7,7 +7,9 @@
 // zero rng; DepotGame wires them.
 import { applyDamage } from "../engine/core.js";
 import { clearSlot } from "./squads.js";
-import { APC } from "./specs.js";
+import { APC, JEEP } from "./specs.js";
+const seatsOf = (v) => v.vtype === "jeep" ? JEEP.seats : APC.seats; // mk2.98: seats come from the spec
+export { seatsOf };
 
 const RIDE_Y = -60;
 const BOARD_R = 2.5;        // m from the rally point — the formation has closed up // provisional (F5)
@@ -82,7 +84,7 @@ export function stepTransports(world, squads) {
         if (d < BOARD_R) near++;
       }
       if (nearest < HATCH_R) v._hatch = 1;
-      const free = APC.seats - apcSeated(world, squads, v.apcSeq);
+      const free = seatsOf(v) - apcSeated(world, squads, v.apcSeq);
       if (live === 0 || live > free) { sq._boarding = null; sq.order = "defend"; sq.dest = null; continue; }
       if (near === live) {
         sq.ridingIn = v.apcSeq; sq._boarding = null;
@@ -110,7 +112,7 @@ export function unloadApc(world, squads, v) {
     for (const id of sq.memberIds) {
       const u = world.byId.get(id);
       if (!u || !u.alive) continue;
-      const a = (i++ / APC.seats) * Math.PI * 2;
+      const a = (i++ / seatsOf(v)) * Math.PI * 2;
       const p = clearSlot(world, v.pos.x + Math.sin(a) * 3.4, v.pos.z + Math.cos(a) * 3.4, (u.hx || 0.28) + 0.35);
       u.riding = false; u.pinned = false; u.sleeping = false;
       u.pos.x = p.x; u.pos.z = p.z; u.pos.y = world.field.heightAt(p.x, p.z) + 0.74;

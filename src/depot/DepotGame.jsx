@@ -12,7 +12,7 @@ import {
   makeField, makeWorld, addBody, addWeld, stepWorld, fireProjectile,
   applyDamage, mulberry32, heading, explode,
 } from "../engine/core.js";
-import { TOWER_SPECS, TOWER_ORDER, MASON, INFANTRY_ARMS, BISON, APC, MECH, BISON_FIRE, BARRELS } from "./specs.js";
+import { TOWER_SPECS, TOWER_ORDER, MASON, INFANTRY_ARMS, BISON, APC, JEEP, MECH, BISON_FIRE, BARRELS } from "./specs.js";
 import { cardFor } from "./infocards.js";
 import { TEACH, TEACH_REV } from "./cards.js";
 import { windAt } from "./wind.js";
@@ -24,7 +24,7 @@ import { SQUAD_SPECS, makeSquad, slotBlockedPublic, roomMaskPublic, clearSlot } 
 import { reachPolygon, arcClears, squadReach, towerReachCached, scatterSigma, predictRing } from "./accuracy.js";
 import { spawnUnit } from "./units.js";
 import { possessedArmorFire, possessedArmorMg, mechSighted, barrelTip } from "./drivers.js";
-import { unloadApc, apcSeated } from "./transports.js";
+import { unloadApc, apcSeated, seatsOf } from "./transports.js";
 import { makeRegiment, payTown, groundRate } from "./economy.js";
 import { makeTerritory, stepTerritory, holderAt, canBuild, fogStateFor, valueAt, EMIT } from "./territory.js";
 import { makeSight, stepSight, seenAt, eyeOf, steerReticle, reclampReticle, surfaceAt } from "./sight.js";
@@ -172,6 +172,7 @@ const PALETTE = [
   // else. mk1.95: hero keys are placement modes under the one law.
   { key: "hero_bison", label: "BISON", icon: "⛨", cost: BISON.cost },
   { key: "hero_apc", label: "APC", icon: "⬒", cost: APC.cost },
+  { key: "hero_jeep", label: "JEEP", icon: "⛟", cost: JEEP.cost },
   { key: "hero_mech", label: "MECH", icon: "✇", cost: MECH.cost },
 ];
 const PALETTE_BY_KEY = Object.fromEntries(PALETTE.map((p) => [p.key, p]));
@@ -279,7 +280,7 @@ const LATTICE = {
     { name: "III", keys: ["rocket"] },
   ],
   vehicles: [
-    { name: "II", keys: ["hero_apc"] },
+    { name: "II", keys: ["hero_apc", "hero_jeep"] },
     { name: "HERO", keys: ["hero_bison", "hero_mech"] },
   ],
   // the bench's rack, by kind — sandbox only
@@ -800,13 +801,29 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // MG TOWER already owns the bare "mg" mode key.
       const SQUAD_MODE = { sq_sniper: "sniper", sq_rifles: "rifles", sq_mg: "mg", sq_sappers: "sappers", sq_mortars: "mortars", sq_engineers: "engineers", sq_rockets: "rockets", sq_grenadiers: "grenadiers", sq_medics: "medics", sq_mechanics: "mechanics", sq_davy: "davy" };
       // mk1.95 (owner): hero keys are placement modes — the one law.
-      const HERO_MODE = { hero_bison: "bison", hero_apc: "apc", hero_mech: "mech" };
+      const HERO_MODE = { hero_bison: "bison", hero_apc: "apc", hero_jeep: "jeep", hero_mech: "mech" };
+      // mk2.98 (owner): the jeep's fit — springs, gears, the fording flag,
+      // the spotter's eye. "2h" is the standing default everywhere; the
+      // possessed gear button is the only thing that shifts it.
+      const jeepFit = (v) => {
+        v.susp = { ...JEEP.susp };
+        v.fords = true; v.eyeR = JEEP.eye; v.gear = "2h";
+        v.spdF = JEEP.spd2h; v.spdR = 3; v.accCap = JEEP.cap2h;
+      };
+      view.toggleGear = () => {
+        const P2 = input.possess;
+        if (!P2 || P2.kind !== "vehicle") return;
+        const v = world.byId.get(P2.id);
+        if (!v || v.vtype !== "jeep") return;
+        v.gear = (v.gear || "2h") === "2h" ? "4l" : "2h";
+        if (v.gear === "4l") { v.spdF = JEEP.spd4l; v.accCap = JEEP.cap4l; } else { v.spdF = JEEP.spd2h; v.accCap = JEEP.cap2h; }
+      };
       // The ghost's true footprint, by key — a hull its hull, the mech its
       // vetted spread, a tower its post, a squad the stand its men take.
       const ghostFp = (key) => {
         const pk = PICK_POOL.find((x) => x.key === key);
         if (!pk) return null;
-        if (pk.kind === "hull") { const s = pk.vtype === "apc" ? APC : BISON; return { x: s.hx * 2, z: s.hz * 2, h: s.hy * 2 }; }
+        if (pk.kind === "hull") { const s = pk.vtype === "apc" ? APC : pk.vtype === "jeep" ? JEEP : BISON; return { x: s.hx * 2, z: s.hz * 2, h: s.hy * 2 }; }
         if (pk.kind === "mech") return { x: MECH_SPREAD.hx * 2, z: MECH_SPREAD.hz * 2, h: 4.2 };
         if (pk.kind === "tower") { const s = TOWER_SPECS[pk.key]; return { x: 1.7, z: 1.7, h: s.hy * 2 }; }
         return { x: 2.2, z: 2.2, h: 1.05 };
@@ -862,7 +879,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           run.squads.push(sq);
         } else if (pk.kind === "hull") {
           if (cell.water || cell.ice || cell.blocked || cell.wallId) { toast("NO GROUND"); return; }
-          const spec = pk.vtype === "apc" ? APC : BISON;
+          const spec = pk.vtype === "apc" ? APC : pk.vtype === "jeep" ? JEEP : BISON;
           if (!armorStable(field, wp.x, wp.z, spec)) { toast("TOO STEEP TO PARK"); return; }
           if (slotBlockedPublic(world, wp.x, wp.z, Math.hypot(spec.hx, spec.hz) + 1.0)) { toast("NO ROOM"); return; }
           const v = addBody(world, { kind: "vehicle", team: 1, mass: spec.mass, hx: spec.hx, hy: spec.hy, hz: spec.hz,
@@ -870,8 +887,9 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             q: heading(null, Math.atan2(-wp.x, -wp.z)) });
           v.armor = spec.armor; v.vtype = pk.vtype; v.maxHp = spec.hp;
           v.homeX = wp.x; v.homeZ = wp.z; v.sleeping = true;
-          if (pk.vtype === "apc") v.apcSeq = nextApcSeq();
-          v.drv = pk.vtype === "apc" ? "apc" : "armor"; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful"; v.driver = "player";
+          if (pk.vtype === "apc" || pk.vtype === "jeep") v.apcSeq = nextApcSeq();
+          v.drv = pk.vtype === "apc" ? "apc" : pk.vtype === "jeep" ? "jeep" : "armor"; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful"; v.driver = "player";
+          if (pk.vtype === "jeep") jeepFit(v);
         } else if (pk.kind === "mech") {
           if (cell.water || cell.ice || cell.blocked || cell.wallId) { toast("NO GROUND"); return; }
           if (!(armorSpread(field, wp.x, wp.z, MECH_SPREAD) < 0.28)) { toast("TOO STEEP TO PARK"); return; }
@@ -1512,13 +1530,13 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         }
         // P7 T4: LOAD — tap a squad, it walks to the ramp and boards.
         if (om === "load") {
-          if (v.vtype !== "apc") { view.vehOrderMode = null; return true; }
+          if (v.vtype !== "apc" && v.vtype !== "jeep") { view.vehOrderMode = null; return true; }
           const sq = squadAtPoint(p);
           if (!sq) { toast("TAP A SQUAD TO LOAD"); return true; }
           if (input.possess && input.possess.kind === "squad" && input.possess.id === sq.id) { toast("RELEASE THEM FIRST"); return true; }
           let live = 0;
           for (const id of sq.memberIds) { const u = world.byId.get(id); if (u && u.alive) live++; }
-          const free = APC.seats - apcSeated(world, run.squads, v.apcSeq);
+          const free = seatsOf(v) - apcSeated(world, run.squads, v.apcSeq);
           if (live > free) { toast("NO ROOM — " + free + (free === 1 ? " SEAT" : " SEATS")); return true; }
           sq._boarding = v.apcSeq; sq._build = null;
           view.vehOrderMode = null; view.selVehId = null;
@@ -2093,7 +2111,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           view.selSquadId = sq.id; view.selSquadIds = null; view.selArmedAt = world.t + PENDING_ARM_S; view.pieOpen = true;
           view.teachPie("squad", sq);
         } else if (pk.kind === "hull") {
-          const spec = pk.vtype === "apc" ? APC : BISON;
+          const spec = pk.vtype === "apc" ? APC : pk.vtype === "jeep" ? JEEP : BISON;
           if (!armorStable(field, wp.x, wp.z, spec)) { toast("TOO STEEP TO PARK"); return; }
           if (slotBlockedPublic(world, wp.x, wp.z, Math.hypot(spec.hx, spec.hz) + 1.0)) { toast("NO ROOM"); return; }
           const v = addBody(world, { kind: "vehicle", team: 1, mass: spec.mass, hx: spec.hx, hy: spec.hy, hz: spec.hz,
@@ -2101,8 +2119,9 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             q: heading(null, Math.atan2(-wp.x, -wp.z)) });
           v.armor = spec.armor; v.vtype = pk.vtype; v.maxHp = spec.hp;
           v.homeX = wp.x; v.homeZ = wp.z; v.sleeping = true;
-          if (pk.vtype === "apc") v.apcSeq = nextApcSeq();
-          v.drv = pk.vtype === "apc" ? "apc" : "armor"; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful"; v.driver = "player";
+          if (pk.vtype === "apc" || pk.vtype === "jeep") v.apcSeq = nextApcSeq();
+          v.drv = pk.vtype === "apc" ? "apc" : pk.vtype === "jeep" ? "jeep" : "armor"; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful"; v.driver = "player";
+          if (pk.vtype === "jeep") jeepFit(v);
         } else if (pk.kind === "mech") {
           if (!(armorSpread(field, wp.x, wp.z, MECH_SPREAD) < 0.28)) { toast("TOO STEEP TO PARK"); return; }
           if (slotBlockedPublic(world, wp.x, wp.z, 4.5)) { toast("NO ROOM"); return; }
@@ -2149,7 +2168,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           cell.blocked = true; cell.wallId = b.id; cell.bTeam = 2;
           recomputeFlow();
         } else if (it.hull) {
-          const spec = it.hull === "apc" ? APC : BISON;
+          const spec = it.hull === "apc" ? APC : it.hull === "jeep" ? JEEP : BISON;
           if (!armorStable(field, d.x, d.z, spec)) { toast("TOO STEEP TO PARK"); return; }
           if (slotBlockedPublic(world, d.x, d.z, Math.hypot(spec.hx, spec.hz) + 1.0)) { toast("NO ROOM"); return; }
           const v = addBody(world, { kind: "vehicle", team: 2, mass: spec.mass, hx: spec.hx, hy: spec.hy, hz: spec.hz,
@@ -2157,8 +2176,9 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             q: heading(null, Math.atan2(-d.x, -d.z)) });
           v.armor = spec.armor; v.vtype = it.hull; v.maxHp = spec.hp; v.bounty = spec.bounty;
           v.homeX = d.x; v.homeZ = d.z; v.sleeping = true;
-          if (it.hull === "apc") v.apcSeq = nextApcSeq();
-          v.drv = it.hull === "apc" ? "apc" : "armor"; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful";
+          if (it.hull === "apc" || it.hull === "jeep") v.apcSeq = nextApcSeq();
+          v.drv = it.hull === "apc" ? "apc" : it.hull === "jeep" ? "jeep" : "armor"; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful";
+          if (it.hull === "jeep") jeepFit(v);
         } else if (it.mech) {
           if (!(armorSpread(field, d.x, d.z, MECH_SPREAD) < 0.28)) { toast("TOO STEEP TO PARK"); return; }
           if (slotBlockedPublic(world, d.x, d.z, 4.5)) { toast("NO ROOM"); return; }
@@ -2194,7 +2214,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           m.hull.drv = "mech"; m.hull.order = "defend"; m.hull.tracks = "careful";
           m.hull.maxHp = MECH.hp; m.hull.homeX = wp.x; m.hull.homeZ = wp.z;
         } else {
-          const spec = pk.vtype === "apc" ? APC : BISON;
+          const spec = pk.vtype === "apc" ? APC : pk.vtype === "jeep" ? JEEP : BISON;
           if (!armorStable(field, wp.x, wp.z, spec)) { toast("TOO STEEP TO PARK"); return false; }
           if (slotBlockedPublic(world, wp.x, wp.z, Math.hypot(spec.hx, spec.hz) + 1.0)) { toast("NO ROOM"); return false; }
           const v = addBody(world, { kind: "vehicle", team: 1, mass: spec.mass, hx: spec.hx, hy: spec.hy, hz: spec.hz,
@@ -2202,8 +2222,9 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             q: heading(null, Math.atan2(-wp.x, -wp.z)) });
           v.armor = spec.armor; v.vtype = pk.vtype; v.maxHp = spec.hp;
           v.homeX = wp.x; v.homeZ = wp.z; v.sleeping = true;
-          if (pk.vtype === "apc") v.apcSeq = nextApcSeq();
-          v.drv = pk.vtype === "apc" ? "apc" : "armor"; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful"; v.driver = "player";
+          if (pk.vtype === "apc" || pk.vtype === "jeep") v.apcSeq = nextApcSeq();
+          v.drv = pk.vtype === "apc" ? "apc" : pk.vtype === "jeep" ? "jeep" : "armor"; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful"; v.driver = "player";
+          if (pk.vtype === "jeep") jeepFit(v);
         }
         run.resources -= price;
         run._buyAt = world.t;
@@ -2234,7 +2255,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         const pk = PICK_POOL.find((x) => x.key === armedKey);
         let vetAt = null, room = null;
         if (pk && pk.kind === "hull") {
-          const spec = pk.vtype === "apc" ? APC : BISON;
+          const spec = pk.vtype === "apc" ? APC : pk.vtype === "jeep" ? JEEP : BISON;
           vetAt = (x, z) => armorStable(field, x, z, spec);
           room = roomMaskPublic(world, grid, Math.hypot(spec.hx, spec.hz) + 1.0);
         } else if (pk && pk.kind === "mech") {
@@ -3283,7 +3304,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
                 }
                 for (const vb of world.bodies) {
                   if ((vb.kind !== "vehicle" && vb.kind !== "mech") || !vb.alive || vb.team !== 1 || !vb.drv) continue;
-                  rows.push({ kind: "veh", id: vb.id, label: vb.kind === "mech" ? "MECH" : vb.vtype === "apc" ? "APC" : "BISON", n: Math.max(1, Math.round(vb.hp)), kills: vb.kills || 0 });
+                  rows.push({ kind: "veh", id: vb.id, label: vb.kind === "mech" ? "MECH" : vb.vtype === "apc" ? "APC" : vb.vtype === "jeep" ? "JEEP" : "BISON", n: Math.max(1, Math.round(vb.hp)), kills: vb.kills || 0 });
                 }
                 return rows;
               })() : null,
@@ -3293,7 +3314,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
               // kind !== "tower" — towers don't walk.
               possessed: !input.possess ? null
                 : input.possess.kind === "squad" ? (() => { const psq = run.squads.find((q) => q.id === input.possess.id); return psq ? { kind: "squad", label: SQUAD_SPECS[psq.type].label } : null; })()
-                : input.possess.kind === "vehicle" ? (() => { const pv = world.byId.get(input.possess.id); return pv && pv.alive ? { kind: "vehicle", vtype: pv.vtype, label: pv.vtype === "apc" ? "APC" : "BISON" } : null; })()
+                : input.possess.kind === "vehicle" ? (() => { const pv = world.byId.get(input.possess.id); return pv && pv.alive ? { kind: "vehicle", vtype: pv.vtype, gear: pv.gear || "2h", label: pv.vtype === "apc" ? "APC" : pv.vtype === "jeep" ? "JEEP" : "BISON" } : null; })()
                 : input.possess.kind === "mech" ? (() => {
                     const pm = world.byId.get(input.possess.id);
                     if (!pm || !pm.alive || !pm.mechRef) return null;
@@ -3310,8 +3331,8 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
                 const v = world.byId.get(view.selVehId);
                 if (!v || !v.alive) return null;
                 return { id: v.id, x: view.vehScreen.x, y: view.vehScreen.y, order: v.order || "defend", tracks: v.tracks || "careful",
-                  kind: v.kind, vtype: v.vtype, seatsFree: v.vtype === "apc" ? APC.seats - apcSeated(world, run.squads, v.apcSeq) : 0,
-                  riders: v.vtype === "apc" ? apcSeated(world, run.squads, v.apcSeq) : 0, aimingLoad: view.vehOrderMode === "load",
+                  kind: v.kind, vtype: v.vtype, seatsFree: v.vtype === "apc" || v.vtype === "jeep" ? seatsOf(v) - apcSeated(world, run.squads, v.apcSeq) : 0,
+                  riders: v.vtype === "apc" || v.vtype === "jeep" ? apcSeated(world, run.squads, v.apcSeq) : 0, aimingLoad: view.vehOrderMode === "load",
                   aimingMove: view.vehOrderMode === "move", aimingAttack: view.vehOrderMode === "attack", aimingPatrol: view.vehOrderMode === "patrol", aimingEscort: view.vehOrderMode === "escort",
                   queueOn: view.queueOn, chained: (v._queue && v._queue.length) || 0, // mk2.91
                   patrolStart: !!view.buildPt0, armed: world.t >= view.selArmedAt, showPie: !!view.pieOpen, linePending: !!view.linePending };
@@ -3702,6 +3723,13 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           style={{ ...P.btnBig, position: "absolute", right: 16, bottom: 16, zIndex: 7, borderColor: "#ffb45e", color: "#ffb45e", fontWeight: "bold" }}
           onClick={() => stateRef.current && stateRef.current.input.releasePossession()}>
           RELEASE
+        </button>
+      )}
+      {hud.possessed && hud.possessed.kind === "vehicle" && hud.possessed.vtype === "jeep" && (
+        <button data-jeep-gear
+          style={{ ...P.btnBig, position: "absolute", right: 16, bottom: 68, zIndex: 7, borderColor: hud.possessed.gear === "4l" ? "#ffd27a" : "#7fd7ff", color: hud.possessed.gear === "4l" ? "#ffd27a" : "#7fd7ff", fontWeight: "bold" }}
+          onClick={() => stateRef.current && stateRef.current.view.toggleGear()}>
+          {hud.possessed.gear === "4l" ? "4L" : "2H"}
         </button>
       )}
       {/* POSSESSION (P4 T2, mk0.91) — FIRE: hold-to-repeat, like the
@@ -4168,7 +4196,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
 
       {hud.vehRadial && (() => {
         const vr = hud.vehRadial;
-        const vLabel = vr.kind === "mech" ? "MECH" : vr.vtype === "apc" ? "APC" : "BISON";   // P7 T4/mk1.92: label by kind, then vtype
+        const vLabel = vr.kind === "mech" ? "MECH" : vr.vtype === "apc" ? "APC" : vr.vtype === "jeep" ? "JEEP" : "BISON";   // P7 T4/mk1.92: label by kind, then vtype
         const slots = [
           { key: "defend", icon: "∴", label: "DEFEND", color: "#7dffa8", on: vr.order === "defend", card: "defend", act: () => { const C = stateRef.current; if (C) { C.view.orderVehicle("defend"); C.view.selVehId = null; } } },
           { key: "move", icon: "→", label: "MOVE", color: "#7fd7ff", on: vr.aimingMove || vr.order === "move", card: "move", act: () => stateRef.current && stateRef.current.view.orderVehicle("move") },
@@ -4182,10 +4210,10 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         ];
         // P7 T4: LOAD/UNLOAD — APC only, offered only when there's a seat to
         // fill or a rider to drop.
-        if (vr.vtype === "apc" && vr.seatsFree > 0) {
+        if ((vr.vtype === "apc" || vr.vtype === "jeep") && vr.seatsFree > 0) {
           slots.push({ key: "load", icon: "⬒", label: "LOAD (" + vr.seatsFree + ")", color: "#ffd27a", on: vr.aimingLoad, card: "load", act: () => stateRef.current && stateRef.current.view.orderVehicle("load") });
         }
-        if (vr.vtype === "apc" && vr.riders > 0) {
+        if ((vr.vtype === "apc" || vr.vtype === "jeep") && vr.riders > 0) {
           slots.push({ key: "unload", icon: "⬓", label: "UNLOAD (" + vr.riders + ")", color: "#ffd27a", on: false, card: "load", act: () => { const C = stateRef.current; if (C) { C.view.unloadVehicle(); C.view.selVehId = null; } } });
         }
         const status = vr.linePending ? " — ACCEPT OR ADJUST THE LINE"

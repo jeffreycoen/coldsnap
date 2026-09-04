@@ -48,7 +48,7 @@ import { placeZoneMask } from "../../src/depot/state.js";
   ok("K6: buyHero, heroArm and HERO_ARM_S are gone from the game layer",
     !/buyHero|heroArm|HERO_ARM_S/.test(dgSrc));
   ok("K7: the hero mode map exists beside the squad map",
-    /const HERO_MODE = \{ hero_bison: "bison", hero_apc: "apc", hero_mech: "mech" \};/.test(dgSrc));
+    /const HERO_MODE = \{ hero_bison: "bison", hero_apc: "apc", hero_jeep: "jeep", hero_mech: "mech" \};/.test(dgSrc));
   ok("K8: setMode carries no hero special-case",
     !/m === "hero_bison" \|\| m === "hero_apc" \|\| m === "hero_mech"/.test(dgSrc));
   ok("K9: a hero-mode ground tap sets a pending ghost with its footprint",

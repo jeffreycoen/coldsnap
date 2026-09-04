@@ -8,7 +8,7 @@ import { CARDS as CARDS_SHIM, cardFor as cardFor_shim } from "../../src/depot/in
 
 const src = (p) => readFileSync(new URL("../../" + p, import.meta.url), "utf8");
 
-ok("T1: the registry holds the nineteen market cards", Object.keys(CARDS).length === 19);
+ok("T1: the registry holds the twenty market cards", Object.keys(CARDS).length === 20);
 ok("T1: the shim serves the identical object", CARDS === CARDS_SHIM && cardFor === cardFor_shim);
 ok("T1: the shim is one re-export and nothing else",
   /^export \{ CARDS, cardFor, TEACH \} from "\.\/cards\.js";\s*$/m.test(src("src/depot/infocards.js").replace(/^\/\/.*$/gm, "").trim()));
