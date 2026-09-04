@@ -8,9 +8,11 @@ import fs from "node:fs";
 // ==== mk2.88: the armor attack order ========================================
 // ATTACK for hulls: drive the road, halt to fight any live foe the guns can
 // reach, roll on when the ground is quiet, defend on arrival. The fixture is
-// the hunt test's own (11-hiring-hall (f)). Seeds 110-113.
+// the hunt test's own (11-hiring-hall (f)). Seeds rolled each run.
 {
   console.log("\n[mk2.88: the armor attack order]");
+  const SEED = (Date.now() % 1000000) + 1; // rolled each run — no seed is ever special (owner, 2026-09-04)
+  console.log("  fixture seed base", SEED);
   const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
   const N = 44;
   const mkGrid = () => {
@@ -29,11 +31,11 @@ import fs from "node:fs";
     v.homeX = x; v.homeZ = z;
     return v;
   };
-  const mkFoe = (w, x, z, hp) => addBody(w, { kind: "unit", team: 2, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x, y: 0.74, z, hp });
+  const mkFoe = (w, x, z, hp) => { const u = addBody(w, { kind: "unit", team: 2, mass: 80, hx: 0.28, hy: 0.72, hz: 0.28, x, y: 0.74, z, hp }); u.pinned = true; return u; }; // pinned: the target stands whatever the dice, so the halt geometry is seed-free
 
   // (a) a live foe in the gun's reach halts the attacking hull where it stands
   {
-    const w = makeWorld({ field: flatF, seed: 110 }); w.depotCombat = true;
+    const w = makeWorld({ field: flatF, seed: SEED + 0 }); w.depotCombat = true;
     const G = mkGrid();
     const v = mkHull(w, "armor", -20, 0);
     mkFoe(w, 0, 0, 50000);
@@ -47,7 +49,7 @@ import fs from "node:fs";
 
   // (b) a quiet road: ATTACK drives through and digs in, exactly MOVE's end
   {
-    const w = makeWorld({ field: flatF, seed: 111 }); w.depotCombat = true;
+    const w = makeWorld({ field: flatF, seed: SEED + 1 }); w.depotCombat = true;
     const G = mkGrid();
     const v = mkHull(w, "armor", -20, 0);
     w.t = 3;
@@ -58,7 +60,7 @@ import fs from "node:fs";
 
   // (c) the foe falls, the ground goes quiet, the hull rolls on
   {
-    const w = makeWorld({ field: flatF, seed: 112 }); w.depotCombat = true;
+    const w = makeWorld({ field: flatF, seed: SEED + 2 }); w.depotCombat = true;
     const G = mkGrid();
     const v = mkHull(w, "armor", -20, 0);
     mkFoe(w, 0, 4, 40);
@@ -71,7 +73,7 @@ import fs from "node:fs";
   // (d) the transport halts too — its coax is a gun; it stops short of the
   // foe (mg reach 18) and stands fighting, never arriving
   {
-    const w = makeWorld({ field: flatF, seed: 113 }); w.depotCombat = true;
+    const w = makeWorld({ field: flatF, seed: SEED + 3 }); w.depotCombat = true;
     const G = mkGrid();
     const v = mkHull(w, "apc", -20, 0);
     mkFoe(w, 0, 0, 50000);

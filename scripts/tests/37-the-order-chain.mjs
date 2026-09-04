@@ -10,9 +10,11 @@ import fs from "node:fs";
 // ==== mk2.90: the order chain ===============================================
 // Queued orders pop at the arrival seam: move/attack chain, patrol is
 // terminal, an empty chain digs in as today. The hull fixture is the armor
-// attack test's own. Seeds 120-123.
+// attack test's own. Seeds rolled each run.
 {
   console.log("\n[mk2.90: the order chain]");
+  const SEED = (Date.now() % 1000000) + 1; // rolled each run — no seed is ever special (owner, 2026-09-04)
+  console.log("  fixture seed base", SEED);
   const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
   const N = 44;
   const mkGrid = () => {
@@ -34,7 +36,7 @@ import fs from "node:fs";
 
   // (a) the hull's chain: move A, then a queued patrol — it ends patrolling
   {
-    const w = makeWorld({ field: flatF, seed: 120 }); w.depotCombat = true;
+    const w = makeWorld({ field: flatF, seed: SEED + 0 }); w.depotCombat = true;
     const G = mkGrid();
     const v = mkHull(w, -20, 0);
     w.t = 3;
@@ -47,7 +49,7 @@ import fs from "node:fs";
 
   // (b) the hull's chain of moves: A then B, defend at B when the chain runs dry
   {
-    const w = makeWorld({ field: flatF, seed: 121 }); w.depotCombat = true;
+    const w = makeWorld({ field: flatF, seed: SEED + 1 }); w.depotCombat = true;
     const G = mkGrid();
     const v = mkHull(w, -20, 0);
     w.t = 3;
@@ -59,7 +61,7 @@ import fs from "node:fs";
 
   // (c) the squad's chain of moves: A then B, defend at B
   {
-    const w = makeWorld({ field: flatF, seed: 122 }); w.depotCombat = true;
+    const w = makeWorld({ field: flatF, seed: SEED + 2 }); w.depotCombat = true;
     const sq = makeSquad(1, "rifles", 1, -12, 0);
     spawnSquadMembers(w, sq);
     sq.order = "move"; sq.dest = { x: 0, z: 0 };
@@ -71,7 +73,7 @@ import fs from "node:fs";
 
   // (d) the squad's queued patrol is terminal — it patrols, both ends set
   {
-    const w = makeWorld({ field: flatF, seed: 123 }); w.depotCombat = true;
+    const w = makeWorld({ field: flatF, seed: SEED + 3 }); w.depotCombat = true;
     const sq = makeSquad(2, "rifles", 1, -12, 0);
     spawnSquadMembers(w, sq);
     sq.order = "move"; sq.dest = { x: 0, z: 0 };

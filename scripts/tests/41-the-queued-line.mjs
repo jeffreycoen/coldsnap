@@ -6,15 +6,17 @@ import fs from "node:fs";
 
 // ==== mk2.94: the queued line ===============================================
 // A line entry never pops in the squad module — the squad digs in on arrival
-// and the entry waits for the game layer's hook. Seed 140. The hook itself
-// is interface-side; the pins carry it.
+// and the entry waits for the game layer's hook. Seed rolled each run. The
+// hook itself is interface-side; the pins carry it.
 {
   console.log("\n[mk2.94: the queued line]");
+  const SEED = (Date.now() % 1000000) + 1; // rolled each run — no seed is ever special (owner, 2026-09-04)
+  console.log("  fixture seed base", SEED);
   const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
 
   // (a) the seam leaves a line entry alone: arrive, dig in, entry kept
   {
-    const w = makeWorld({ field: flatF, seed: 140 }); w.depotCombat = true;
+    const w = makeWorld({ field: flatF, seed: SEED + 0 }); w.depotCombat = true;
     const sq = makeSquad(1, "engineers", 1, -12, 0);
     spawnSquadMembers(w, sq);
     sq.order = "move"; sq.dest = { x: 0, z: 0 };

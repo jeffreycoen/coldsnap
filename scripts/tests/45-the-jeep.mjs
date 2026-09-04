@@ -5,14 +5,17 @@ import * as SP from "../../src/depot/specs.js";
 import fs from "node:fs";
 
 // ==== mk2.98: the jeep ======================================================
-// The fording flag, the per-body eye, and the assembly pins. Seed 160.
+// The fording flag, the per-body eye, and the assembly pins. Seed rolled
+// each run.
 {
   console.log("\n[mk2.98: the jeep]");
+  const SEED = (Date.now() % 1000000) + 1; // rolled each run — no seed is ever special (owner, 2026-09-04)
+  console.log("  fixture seed base", SEED);
   const flat = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; } };
 
   // (a) the fording flag: a flagged hull survives the water that kills its twin
   {
-    const w = makeWorld({ field: flat, seed: 160, water: { x0: -10, x1: 10, z0: -10, z1: 10, level: 2.0 } });
+    const w = makeWorld({ field: flat, seed: SEED + 0, water: { x0: -10, x1: 10, z0: -10, z1: 10, level: 2.0 } });
     w.depotCombat = true;
     const mk = (x) => addBody(w, { kind: "vehicle", team: 1, mass: 1100, hx: 0.75, hy: 0.5, hz: 1.1, x, y: 0.55, z: 0, hp: 90, friction: 0.8 });
     const dry = mk(-3), wet = mk(3);

@@ -8,9 +8,11 @@ import fs from "node:fs";
 // ==== mk2.93: the escort link ===============================================
 // ESCORT closes a hull's chain: the arrival pop hands the hull its squad and
 // the escort machinery takes over. The fixture is the order chain's own.
-// Seeds 130-131.
+// Seeds rolled each run.
 {
   console.log("\n[mk2.93: the escort link]");
+  const SEED = (Date.now() % 1000000) + 1; // rolled each run — no seed is ever special (owner, 2026-09-04)
+  console.log("  fixture seed base", SEED);
   const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
   const N = 44;
   const mkGrid = () => {
@@ -33,7 +35,7 @@ import fs from "node:fs";
 
   // (a) move A, queued escort — the hull arrives and falls in behind its squad
   {
-    const w = makeWorld({ field: flatF, seed: 130 }); w.depotCombat = true;
+    const w = makeWorld({ field: flatF, seed: SEED + 0 }); w.depotCombat = true;
     const G = mkGrid();
     const v = mkHull(w, -20, 0);
     const esq = { id: 7, anchor: { x: 30, z: 0 } };
@@ -48,7 +50,7 @@ import fs from "node:fs";
   // (b) a dead escort target: the pop lands, the escort machinery finds no
   // squad, and the hull digs in — no new code, the existing branch's own end
   {
-    const w = makeWorld({ field: flatF, seed: 131 }); w.depotCombat = true;
+    const w = makeWorld({ field: flatF, seed: SEED + 1 }); w.depotCombat = true;
     const G = mkGrid();
     const v = mkHull(w, -20, 0);
     w.t = 3;
