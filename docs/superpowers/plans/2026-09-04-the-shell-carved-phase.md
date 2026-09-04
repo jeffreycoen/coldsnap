@@ -36,7 +36,7 @@ Added to CLAUDE.md under Frozen laws:
 | DepotGame.jsx lines | 4,383 |
 | Comment-only lines in it | 975 (plus ~80 trailing) |
 | Test files reading DepotGame.jsx by file slice | 27 files, ~85 slice sites (heaviest: 04-vision 16, 11-hiring-hall 11, 09-reorg 7) |
-| depot-test | 2,198 PASS / 0 FAIL (re-measured at the T1 landing; 2,207 → 2,198 at the T3 landing, amendment 1 — nine source-text pins retired) |
+| depot-test | 2,163 PASS / 0 FAIL (re-measured at the T1 landing; 2,207 → 2,198 at the T3 landing, amendment 1 — nine source-text pins retired; 2,198 → 2,163 at the T4 landing, amendment 1 — thirty-five source-text pins retired) |
 | golden | 7 PASS |
 | smoke | 30 PASS |
 
@@ -69,7 +69,7 @@ Added to CLAUDE.md under Frozen laws:
 | T1 | 0.3.10 | The mark's new form in `src/version.js`; the growth rule and the door rule into CLAUDE.md; smoke green on the renamed mark | LANDED, commit 1c4b943, depot-test 2,207 PASS / 0 FAIL, golden 7 PASS / 0 FAIL, smoke 30 PASS / 0 FAIL |
 | T2 | 0.3.11 | The debug harness out: every `window.__DEPOT*__` hook and the unmount cleanup list move to a new `src/depot/hooks.js`, installed with one call over a context bag | LANDED, commit aac65c3, depot-test 2,207 PASS / 0 FAIL, golden 7 PASS / 0 FAIL, smoke 30 PASS / 0 FAIL |
 | T3 | 0.3.12 | The top-of-file pieces out: `RadialMenu`, `DraftScreen`, the styles object, and the palette/rack/lattice tables to their own files beside `Dispatch.jsx` | LANDED, commit 3eac7d1, depot-test 2,198 PASS / 0 FAIL, golden 7 PASS / 0 FAIL, smoke 30 PASS / 0 FAIL |
-| T4 | 0.3.13 | The three pie builders (squad, vehicle, tower) and the group pie as components in their own file — pure presentation, every action a prop, the `InfoCard.jsx` discipline | OPEN |
+| T4 | 0.3.13 | The three pie builders (squad, vehicle, tower) and the group pie as components in their own file — pure presentation, every action a prop, the `InfoCard.jsx` discipline | LANDED, commit e3554e6, depot-test 2,163 PASS / 0 FAIL, golden 7 PASS / 0 FAIL, smoke 30 PASS / 0 FAIL |
 | T5 | 0.3.14 | The placement and build layer out: buildAt, canBuildAt, the pending flow, the hire/deal/hero placers, sellAt, and the sandbox rack placer, to a builder module over `{ war, view, input, R, toast, … }` — the `tick.js` idiom | OPEN |
 | T6 | 0.3.15 | The selection and order layer out: the tap cycle, the order taps, the line flow, possession take/release, and the chain controls, same builder idiom | OPEN |
 | T7 | 0.3.16 | The comment trim, mechanical: every task/phase/mark stamp prefix deleted; comment blocks carrying no constraint deleted; every deletion reported, every broken pin re-pointed | OPEN |
