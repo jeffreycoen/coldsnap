@@ -9,7 +9,7 @@
 // stay 45; the T9(e3)/(f)/(f2) and T19(b) pins prove it. Zero behavior
 // change.
 import { addBody, heading, mulberry32 } from "../engine/core.js";
-import { BISON, APC, MECH, MASON, ENEMY_SPECS, TOWER_SPECS, HAND_TAGS } from "./specs.js";
+import { BISON, APC, JEEP, MECH, MASON, ENEMY_SPECS, TOWER_SPECS, HAND_TAGS, fitJeep } from "./specs.js";
 import { clearSlot, makeSquad, slotBlockedPublic, SQUAD_SPECS } from "./squads.js";
 import { spawnUnit } from "./units.js";
 import { spawnSandbag, spawnSquadMembers, SANDBAG_HX, effRange } from "./state.js";
@@ -47,7 +47,7 @@ export function armorSpread(field, bx, bz, spec) {
 export const armorStable = (field, bx, bz, spec) => armorSpread(field, bx, bz, spec) < 0.28; // AMENDMENT 1 (owner): flat ground, no sliding boots // provisional (F5)
 export function parkArmor(world, grid, field, depotT, team, kind, nextSeq, map) {
   if (!depotT) return;
-  const spec = kind === "apc" ? APC : BISON;
+  const spec = kind === "apc" ? APC : kind === "jeep" ? JEEP : BISON;
   const place = (bx, bz) => {
     const v = addBody(world, { kind: "vehicle", team, mass: spec.mass, hx: spec.hx, hy: spec.hy, hz: spec.hz,
       x: bx, y: field.heightAt(bx, bz) + spec.hy + 0.05, z: bz, hp: spec.hp, friction: 0.85,
@@ -58,11 +58,12 @@ export function parkArmor(world, grid, field, depotT, team, kind, nextSeq, map) 
     // or jitter at boot. Every wake path already exists (the first
     // order, the safety brake, the possession stick).
     v.sleeping = true;
-    if (kind === "apc") v.apcSeq = nextSeq();
+    if (kind === "apc" || kind === "jeep") v.apcSeq = nextSeq();
     // Both kinds, both teams: armed at post (Task 3's shape) — the
     // enemy's parks armed too (coax defends it) but driverless-in-
     // doctrine until Task 6.
-    v.drv = kind === "apc" ? "apc" : "armor"; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful";
+    v.drv = kind === "apc" ? "apc" : kind === "jeep" ? "jeep" : "armor"; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful";
+    if (kind === "jeep") fitJeep(v);
     if (team === 1) v.driver = "player";
     else v.bounty = spec.bounty;
     return v;

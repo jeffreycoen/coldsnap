@@ -137,6 +137,14 @@ export const JEEP = { mass: 1100, hx: 0.85, hy: 0.55, hz: 1.6, hp: 180, bounty: 
   spd2h: 14, cap2h: 3.5, spd4l: 4, cap4l: 7,
   susp: { kx: 0.85, kz: 1.3, rest: 0.48, travel: 0.4, rate: 66000, damp: 6000 } }; // mk2.99: grown to the Willys' real footprint // mk3.00 (owner): hp doubled; stance widened to the hull's edge and ride height dropped against the rollover
 
+// mk3.03: one fit for every spawned jeep, either team — springs, gears,
+// the fording flag, the spotter's eye. "2h" standing.
+export const fitJeep = (v) => {
+  v.susp = { ...JEEP.susp };
+  v.fords = true; v.eyeR = JEEP.eye; v.gear = "2h";
+  v.spdF = JEEP.spd2h; v.spdR = 3; v.accCap = JEEP.cap2h;
+};
+
 // THE MECH (owner, 2026-08-20): the crown machine, both sides — the engine
 // walker fielded as a hero. Dear, slow, unanswerable except by another.
 export const MECH = { hp: 900, cost: 400, bounty: 120 }; // provisional (F5)

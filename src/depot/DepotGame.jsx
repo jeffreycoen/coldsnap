@@ -12,7 +12,7 @@ import {
   makeField, makeWorld, addBody, addWeld, stepWorld, fireProjectile,
   applyDamage, mulberry32, heading, explode,
 } from "../engine/core.js";
-import { TOWER_SPECS, TOWER_ORDER, MASON, INFANTRY_ARMS, BISON, APC, JEEP, MECH, BISON_FIRE, BARRELS } from "./specs.js";
+import { TOWER_SPECS, TOWER_ORDER, MASON, INFANTRY_ARMS, BISON, APC, JEEP, MECH, BISON_FIRE, BARRELS, fitJeep } from "./specs.js";
 import { cardFor } from "./infocards.js";
 import { TEACH, TEACH_REV } from "./cards.js";
 import { windAt } from "./wind.js";
@@ -802,14 +802,6 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       const SQUAD_MODE = { sq_sniper: "sniper", sq_rifles: "rifles", sq_mg: "mg", sq_sappers: "sappers", sq_mortars: "mortars", sq_engineers: "engineers", sq_rockets: "rockets", sq_grenadiers: "grenadiers", sq_medics: "medics", sq_mechanics: "mechanics", sq_davy: "davy" };
       // mk1.95 (owner): hero keys are placement modes — the one law.
       const HERO_MODE = { hero_bison: "bison", hero_apc: "apc", hero_jeep: "jeep", hero_mech: "mech" };
-      // mk2.98 (owner): the jeep's fit — springs, gears, the fording flag,
-      // the spotter's eye. "2h" is the standing default everywhere; the
-      // possessed gear button is the only thing that shifts it.
-      const jeepFit = (v) => {
-        v.susp = { ...JEEP.susp };
-        v.fords = true; v.eyeR = JEEP.eye; v.gear = "2h";
-        v.spdF = JEEP.spd2h; v.spdR = 3; v.accCap = JEEP.cap2h;
-      };
       view.toggleGear = () => {
         const P2 = input.possess;
         if (!P2 || P2.kind !== "vehicle") return;
@@ -889,7 +881,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           v.homeX = wp.x; v.homeZ = wp.z; v.sleeping = true;
           if (pk.vtype === "apc" || pk.vtype === "jeep") v.apcSeq = nextApcSeq();
           v.drv = pk.vtype === "apc" ? "apc" : pk.vtype === "jeep" ? "jeep" : "armor"; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful"; v.driver = "player";
-          if (pk.vtype === "jeep") jeepFit(v);
+          if (pk.vtype === "jeep") fitJeep(v);
         } else if (pk.kind === "mech") {
           if (cell.water || cell.ice || cell.blocked || cell.wallId) { toast("NO GROUND"); return; }
           if (!(armorSpread(field, wp.x, wp.z, MECH_SPREAD) < 0.28)) { toast("TOO STEEP TO PARK"); return; }
@@ -2121,7 +2113,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           v.homeX = wp.x; v.homeZ = wp.z; v.sleeping = true;
           if (pk.vtype === "apc" || pk.vtype === "jeep") v.apcSeq = nextApcSeq();
           v.drv = pk.vtype === "apc" ? "apc" : pk.vtype === "jeep" ? "jeep" : "armor"; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful"; v.driver = "player";
-          if (pk.vtype === "jeep") jeepFit(v);
+          if (pk.vtype === "jeep") fitJeep(v);
         } else if (pk.kind === "mech") {
           if (!(armorSpread(field, wp.x, wp.z, MECH_SPREAD) < 0.28)) { toast("TOO STEEP TO PARK"); return; }
           if (slotBlockedPublic(world, wp.x, wp.z, 4.5)) { toast("NO ROOM"); return; }
@@ -2178,7 +2170,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           v.homeX = d.x; v.homeZ = d.z; v.sleeping = true;
           if (it.hull === "apc" || it.hull === "jeep") v.apcSeq = nextApcSeq();
           v.drv = it.hull === "apc" ? "apc" : it.hull === "jeep" ? "jeep" : "armor"; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful";
-          if (it.hull === "jeep") jeepFit(v);
+          if (it.hull === "jeep") fitJeep(v);
         } else if (it.mech) {
           if (!(armorSpread(field, d.x, d.z, MECH_SPREAD) < 0.28)) { toast("TOO STEEP TO PARK"); return; }
           if (slotBlockedPublic(world, d.x, d.z, 4.5)) { toast("NO ROOM"); return; }
@@ -2224,7 +2216,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           v.homeX = wp.x; v.homeZ = wp.z; v.sleeping = true;
           if (pk.vtype === "apc" || pk.vtype === "jeep") v.apcSeq = nextApcSeq();
           v.drv = pk.vtype === "apc" ? "apc" : pk.vtype === "jeep" ? "jeep" : "armor"; v.depotDrive = "auto"; v.order = "defend"; v.tracks = "careful"; v.driver = "player";
-          if (pk.vtype === "jeep") jeepFit(v);
+          if (pk.vtype === "jeep") fitJeep(v);
         }
         run.resources -= price;
         run._buyAt = world.t;
