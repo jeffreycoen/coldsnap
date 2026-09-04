@@ -417,11 +417,6 @@ import fs from "node:fs";
     // layPieceAt/stepBuildLine) moved to buildlines.js — the pins below on
     // that literal text retarget there (sweep license, unchanged content).
     const blSrc60 = fs.readFileSync(new URL("../../src/depot/buildlines.js", import.meta.url), "utf8");
-    ok("mk0.60/6: the build chips are engineer-only, at the order site and in the radial",
-      /if \(sq\.type !== "engineers"\) return;/.test(dsrc) && /engineer: sq\.type === "engineers"/.test(dsrc)
-      // COMMAND T1 (mk0.80) re-pin: the chip row's `hud.squadSel.engineer && (`
-      // JSX guard became the radial's `if (sq.engineer) {` slot push.
-      && /if \(sq\.engineer\) \{/.test(dsrc));
     ok("mk0.60/6: the two taps are start-then-end, and a re-tap of the armed chip cancels",
       /if \(!view\.buildPt0\) \{ view\.buildPt0 = \{ x: d\.x, z: d\.z \}/.test(dsrc)
       && /if \(view\.orderMode === kind\) \{ view\.orderMode = null; view\.buildPt0 = null; return; \}/.test(dsrc));

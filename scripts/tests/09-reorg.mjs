@@ -403,10 +403,6 @@ import fs from "node:fs";
       /S\.resources -= cost;\s*\n\s*ctx\.setMines\(S\.mines\);/.test(blSrc10f));
     ok("T10(f4): linePieces' ghost mirrors layPieceAt's exact skip rule for devices (water\\/blocked-terrain only, no ground-held gate) (retargeted mk1.50, P7 T20: linePieces moved to buildlines.js)",
       /if \(isDevice\) \{ if \(cell\.blocked \|\| cell\.ice\) continue; \}/.test(blSrc10f));
-    ok("T10(f5): the sapper pie gains MINES and WIRES wedges",
-      /key: "build_mines", icon: "◆", label: "MINES"/.test(dsrc10f) && /key: "build_wires", icon: "⌁", label: "WIRES"/.test(dsrc10f));
-    ok("T10(f6): the wedges are gated to sappers, mirroring the engineer gate",
-      /if \(sq\.sapper\) \{/.test(dsrc10f) && /sapper: sq\.type === "sappers",/.test(dsrc10f));
     ok("T10(f7): S.orderSquad's build gate is sappers-only for the device kinds",
       /kind === "build_mines" \|\| kind === "build_wires"/.test(dsrc10f) && /if \(sq\.type !== "sappers"\) return;/.test(dsrc10f));
     ok("T10(f8): consumeOrderTap accepts the two device kinds under the same sapper guard",

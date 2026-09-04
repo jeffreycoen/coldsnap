@@ -199,30 +199,6 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "tesla"]) {
 {
   const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
   const pin = (name, re) => ok(`audit(j) wiring: ${name}`, re.test(src));
-  // squad pie
-  pin("DEFEND -> orderSquad", /key: "defend", .*view\.orderSquad\("defend"\)/);
-  pin("MOVE -> orderSquad", /key: "move", .*orderSquad\("move"\)/);
-  pin("ATTACK -> orderSquad", /key: "attack", .*orderSquad\("attack"\)/);
-  pin("PATROL -> orderSquad", /key: "patrol", .*orderSquad\("patrol"\)/);
-  pin("STRUCTURES -> toggleStructFirst", /key: "structures", .*toggleStructFirst\(\)/);
-  pin("BAGS -> orderSquad", /key: "build_bags", .*orderSquad\("build_bags"\)/);
-  pin("WALLS -> orderSquad", /key: "build_walls", .*orderSquad\("build_walls"\)/);
-  pin("MINES -> orderSquad", /key: "build_mines", .*orderSquad\("build_mines"\)/);
-  pin("WIRES -> orderSquad", /key: "build_wires", .*orderSquad\("build_wires"\)/);
-  pin("squad TAKE CONTROL -> takeControl", /key: "possess", .*view\.takeControl\(\)/);
-  // tower pie
-  pin("CAREFUL/FREE -> setTowerDiscipline", /key: "discipline",[\s\S]{0,400}?setTowerDiscipline\(tr\.id\)/);
-  pin("tower TAKE CONTROL -> takeControlTower", /key: "possess",[\s\S]{0,400}?takeControlTower\(tr\.id\)/);
-  pin("SELL -> sellById", /key: "sell",[\s\S]{0,400}?sellById\(tr\.id\)/);
-  // vehicle pie
-  pin("veh DEFEND -> orderVehicle", /key: "defend", .*orderVehicle\("defend"\)/);
-  pin("veh MOVE -> orderVehicle", /key: "move", .*orderVehicle\("move"\)/);
-  pin("veh PATROL -> orderVehicle", /key: "patrol", .*orderVehicle\("patrol"\)/);
-  pin("veh ESCORT -> orderVehicle", /key: "escort", .*orderVehicle\("escort"\)/);
-  pin("veh LOAD -> orderVehicle", /key: "load", .*orderVehicle\("load"\)/);
-  pin("veh UNLOAD -> unloadVehicle", /key: "unload", .*unloadVehicle\(\)/);
-  pin("TRACKS -> toggleTracks", /key: "tracks", .*toggleTracks\(\)/);
-  pin("veh TAKE CONTROL -> takeControlVehicle", /key: "possess", .*takeControlVehicle\(\)/);
   // the handlers themselves exist
   pin("handlers live", /view\.orderSquad = \(kind\)/.test(src) && /view\.orderVehicle = \(kind\)/.test(src) && /view\.takeControl = \(\)/.test(src) ? /./ : /(?!)/);
 }

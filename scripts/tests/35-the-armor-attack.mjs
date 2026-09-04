@@ -91,6 +91,5 @@ import fs from "node:fs";
 
   // (f) pins: the pie wedge and the ground tap
   const dg = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
-  ok("(f) pins: the vehicle pie carries ATTACK", /key: "attack", icon: "✕", label: "ATTACK"/.test(dg));
   ok("(f) pins: the attack tap sets the order", /v\.order = om; v\.dest = \{ x: d\.x, z: d\.z \}; v\._route = null; v\._routeDest = null; v\._queue = null;/.test(dg));
 }

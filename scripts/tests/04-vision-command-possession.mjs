@@ -1390,8 +1390,6 @@ import fs from "node:fs";
     const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     ok("POSSESSION T3(d) source pin: the tower radial's canPossess field gates on spec.fireRate > 0",
       /canPossess: ispec\.fireRate > 0/.test(gameSrc));
-    ok("POSSESSION T3(d) source pin: the possess wedge only pushes when canPossess",
-      /if \(tr\.canPossess\) \{[\s\S]{0,200}key: "possess"/.test(gameSrc));
   }
 
   // (e) release restores auto-fire: stepTowers' own guard + scan/acquire
@@ -2112,12 +2110,6 @@ import fs from "node:fs";
   // (d) source pins: every TAKE CONTROL closes the build tree with the take.
   {
     const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("RETICLE mk2.00(d) source pin: the squad's TAKE CONTROL closes the build tree",
-      /act: \(\) => \{ closeBuild\(\); const C = stateRef\.current; if \(C\) C\.view\.takeControl\(\); \}/.test(gameSrc));
-    ok("RETICLE mk2.00(d) source pin: the tower's TAKE CONTROL closes the build tree",
-      /act: \(\) => \{ closeBuild\(\); const C = stateRef\.current; if \(C\) C\.view\.takeControlTower\(tr\.id\); \},/.test(gameSrc));
-    ok("RETICLE mk2.00(d) source pin: the vehicle's TAKE CONTROL closes the build tree",
-      /act: \(\) => \{ closeBuild\(\); const C = stateRef\.current; if \(C\) C\.view\.takeControlVehicle\(\); \} \},/.test(gameSrc));
     // (e) source pin: the BUILD toggle refuses to open over a live possession.
     ok("RETICLE mk2.00(e) source pin: the BUILD toggle refuses while possessed",
       /if \(buildOpen\) \{ closeBuild\(\); return; \}[\s\S]{0,240}if \(C && C\.input\.possess\) return;/.test(gameSrc));

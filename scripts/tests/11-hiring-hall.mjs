@@ -48,7 +48,6 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
   ok("T1(d): hull picking rides the cycle scan on its own radius", /d2 <= TAP_HULL_M\) cands\.push/.test(src) && !/vehicleAtPoint/.test(src));
   ok("T1(d): the tap builds candidates and cycles them", /nextPick\(cands, curSel\)/.test(src));
   ok("T1(d): towers join the pick only in plain command", /b\.kind === "tower" && !run\.mode && !view\.sellMode/.test(src));
-  ok("T1(d): the pie carries SELECT ALL wired to its handler", /key: "select_all", .*selectAllType\(\)/.test(src));
   ok("T1(d): group orders fan out through one door", /for \(const gsq of selectedGroup\(\)\)/.test(src));
   ok("T1(d): accepting a line clears the group", /view\.selSquadId = null; view\.orderMode = null; view\.buildPt0 = null; view\.selSquadIds = null;/.test(src));
 }

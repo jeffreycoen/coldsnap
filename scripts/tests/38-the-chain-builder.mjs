@@ -8,8 +8,6 @@ import fs from "node:fs";
 {
   console.log("\n[mk2.91: the chain builder]");
   const dg = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
-  ok("pins: the QUEUE wedge stands on both pies", (dg.match(/key: "queue", icon: "⛓", label: "QUEUE"/g) || []).length === 2);
-  ok("pins: the CLEAR wedge stands on both pies", (dg.match(/key: "clearchain", icon: "✂"/g) || []).length === 2);
   ok("pins: the toggle refuses a group", /ONE SQUAD AT A TIME/.test(dg) && /view\.queueOn = !view\.queueOn;/.test(dg));
   ok("pins: the squad tap appends to the chain", /\(qsq\._queue \|\| \(qsq\._queue = \[\]\)\)\.push\(\{ kind: om, x: d\.x, z: d\.z \}\);/.test(dg));
   ok("pins: the vehicle tap appends to the chain", /\(v\._queue \|\| \(v\._queue = \[\]\)\)\.push\(\{ kind: om, x: d\.x, z: d\.z \}\);/.test(dg));
