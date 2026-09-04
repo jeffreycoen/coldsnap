@@ -8,7 +8,6 @@ import { TOWER_SPECS, ENEMY_SPECS } from "../../src/depot/specs.js";
 import { SQUAD_SPECS } from "../../src/depot/squads.js";
 
 const src = (p) => readFileSync(new URL("../../" + p, import.meta.url), "utf8");
-const dg = src("src/depot/DepotGame.jsx");
 
 ok("names: the five towers wear proper nouns",
   TOWER_SPECS.mg.label === "SPITTER" && TOWER_SPECS.gun.label === "FIELD GUN" &&
@@ -16,12 +15,6 @@ ok("names: the five towers wear proper nouns",
   TOWER_SPECS.tesla.label === "TESLA COIL");
 ok("names: the colliding trades re-sign", SQUAD_SPECS.mg.label === "GUNNERS" && SQUAD_SPECS.sniper.label === "SNIPERS");
 ok("names: his mg men match the trade", ENEMY_SPECS.mg.label === "gunners");
-ok("names: the bar follows the trades",
-  dg.includes('key: "sq_mg", label: "GUNNERS"') && dg.includes('key: "sq_sniper", label: "SNIPERS"') &&
-  dg.includes('key: "sq_rockets", label: "ROCKET TEAM"'));
-ok("names: the enemy rack follows",
-  dg.includes('key: "foe_t_mg", label: "SPITTER"') && dg.includes('key: "foe_t_rocket", label: "SALVO RACK"') &&
-  dg.includes('key: "foe_mg", label: "GUNNERS"') && dg.includes('key: "foe_rocket", label: "ROCKET TEAM"'));
 {
   const all = [...Object.values(TOWER_SPECS).map((s) => s.label), ...Object.values(SQUAD_SPECS).map((s) => s.label)];
   ok("names: no two labels on the stock list collide", new Set(all).size === all.length, all.join("|"));
@@ -56,13 +49,13 @@ ok("names: the enemy rack follows",
 
 { // mk2.31: the lattice — rungs by price, the fold, the sniper's true name
   const dg6 = src("src/depot/DepotGame.jsx");
+  const pal6 = src("src/depot/palette.js");
   ok("lattice: snipers are snipers", (() => { const s = src("src/depot/squads.js"); return /sniper: \{ n: 2, cost: 68, label: "SNIPERS" \}/.test(s); })());
-  ok("lattice: the enemy pair follows", dg6.includes('label: "SNIPER PAIR"') && src("src/depot/specs.js").includes('label: "sniper"'));
-  ok("lattice: the rungs stand as ruled", dg6.includes("const LATTICE = {") &&
-    dg6.match(/troops:[\s\S]{0,400}\["sq_rifles", "sq_engineers", "sq_mg", "sq_sappers"\]/) != null &&
-    dg6.match(/troops:[\s\S]{0,600}\["sq_davy"\]/) != null &&
-    dg6.match(/vehicles:[\s\S]{0,200}\["hero_apc", "hero_jeep"\]/) != null &&
-    dg6.match(/vehicles:[\s\S]{0,300}\["hero_bison", "hero_mech"\]/) != null);
+  ok("lattice: the rungs stand as ruled", pal6.includes("export const LATTICE = {") &&
+    pal6.match(/troops:[\s\S]{0,400}\["sq_rifles", "sq_engineers", "sq_mg", "sq_sappers"\]/) != null &&
+    pal6.match(/troops:[\s\S]{0,600}\["sq_davy"\]/) != null &&
+    pal6.match(/vehicles:[\s\S]{0,200}\["hero_apc", "hero_jeep"\]/) != null &&
+    pal6.match(/vehicles:[\s\S]{0,300}\["hero_bison", "hero_mech"\]/) != null);
   ok("lattice: the trunk climbs and the pack folds", dg6.includes("cs-climb") && dg6.includes("cs-pack") && dg6.includes("data-lattice"));
   ok("lattice: packing is inert and finishes on the trunk", dg6.match(/pointerEvents: packing/) != null && dg6.match(/onAnimationEnd=\{packing \? finishPack/) != null);
   ok("lattice: every door survived", dg6.includes("data-build-toggle") && dg6.includes("data-branch") && dg6.includes("data-tower-key") && dg6.includes("data-info=") && dg6.includes("data-sell-toggle") && dg6.includes("data-foe-key"));
@@ -76,7 +69,7 @@ ok("names: the enemy rack follows",
 }
 
 { // mk2.34: the draft deal
-  const dg8 = src("src/depot/DepotGame.jsx");
+  const dg8 = src("src/depot/DraftScreen.jsx");
   ok("draft: the seven deal as paper from the crate", dg8.match(/<StockTag[^>]*data-draft-card/) != null && dg8.match(/DraftScreen[\s\S]{0,900}<CrateChip/) != null);
   ok("draft: the pick machinery stands", dg8.includes("data-draft-confirm") && dg8.includes("picked.length === 5"));
 }

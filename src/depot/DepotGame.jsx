@@ -9,13 +9,13 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { MK } from "../version.js";
 import {
-  makeField, makeWorld, addBody, addWeld, stepWorld, fireProjectile,
-  applyDamage, mulberry32, heading, explode,
+  makeField, makeWorld, addBody, addWeld, stepWorld,
+  mulberry32, heading, explode,
 } from "../engine/core.js";
-import { TOWER_SPECS, TOWER_ORDER, MASON, INFANTRY_ARMS, BISON, APC, JEEP, MECH, BISON_FIRE, BARRELS, fitJeep } from "./specs.js";
+import { TOWER_SPECS, MASON, INFANTRY_ARMS, BISON, APC, JEEP, MECH, BISON_FIRE, BARRELS, fitJeep } from "./specs.js";
 import { cardFor } from "./infocards.js";
 import { TEACH, TEACH_REV } from "./cards.js";
-import { HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, ASSAULT_TIMEOUT, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, forgetWelds, makeManifestState, makeFoeState, takeHandCard, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType, scoreKill, placeZoneMask, POSSESS_ACC, stickyLock } from "./state.js";
+import { HUD0, BELL_PERIOD_S, stepBell, fireBell, nextSpawnTag, withdrawDue, executeWithdrawal, checkLoss, makeEndDispatch, towerShot, friendlyFouls, fieldReaches, effRange, validatePlacement, PENDING_ARM_S, pendingArmed, pendingButtonsVisible, canvasTapConsumesPending, END_CARD_DELAY_S, stampEnd, endCardReady, censusDepotChunks, depotStandingFraction, stepDepotCensus, squadFire, possessedVolley, possessedTowerFire, spawnSquadMembers, spawnSandbag, WALL_COST, SANDBAG_FIELD_COST, WALL_FIELD_COST, WALL_HALF, WALL_THIN, spawnWallCourses, wallOrientAt, forgetWelds, makeManifestState, makeFoeState, takeHandCard, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType, scoreKill, placeZoneMask, POSSESS_ACC, stickyLock } from "./state.js";
 import { marketCounts, computePrices, fieldPrices, priced } from "./market.js";
 import { stepMines, minePrices, MINE_COST, WIRE_COST } from "./mines.js";
 import { addFogPatch, stepFog } from "./fog.js";
@@ -33,12 +33,16 @@ import { makeBodyLists, rebuildBodyLists } from "./lists.js";
 import Dispatch from "./Dispatch.jsx";
 import InfoCard from "./InfoCard.jsx";
 import CrateChip, { StockTag } from "./Crate.jsx";
+import { P } from "./styles.js";
+import RadialMenu from "./RadialMenu.jsx";
+import DraftScreen from "./DraftScreen.jsx";
+import { PALETTE, PALETTE_BY_KEY, PALETTE_LABEL, FOE_RACK, FOE_RACK_BY_KEY, TREE_BRANCHES, branchOf, QM_LINES, LATTICE } from "./palette.js";
 import { makeMap, buildDepotTerrain, makeGrid, planTrees, computeFlowField } from "./mapgen.js";
 import { armorSpread, armorStable, MECH_SPREAD, musterFreshStart, PICK_POOL } from "./muster.js";
 import { startBuildLine, linePieces, stepBuildLine } from "./buildlines.js";
 import { ringBell as ringBellOut } from "./bell.js";
 import { buildMech, mechCommand, mechFire, mechMissiles, mechBarrage, mechPunt, mechAboutFace, mechPivot, mechAimDir } from "../engine/mech.js";
-import { stepDepot, buildTown, townFootprint, makeDepotAssaultState, clockStr, spawnEnemy } from "./sim.js";
+import { stepDepot, buildTown, townFootprint, makeDepotAssaultState, clockStr } from "./sim.js";
 import { bootWar, stampBag as bootStampBag } from "./boot.js";
 import { tickWar, buildSnapshotOf } from "./tick.js";
 import { installDepotHooks } from "./hooks.js";
@@ -57,240 +61,6 @@ const CARDS_KEY = "coldsnap-wf-cards";
 function detectTouch() {
   return (typeof window !== "undefined") && ("ontouchstart" in window || (navigator.maxTouchPoints || 0) > 0);
 }
-const P = {
-  root: { position: "fixed", inset: 0, background: "#0e1218", overflow: "hidden", fontFamily: "ui-monospace, Menlo, Consolas, monospace", color: "#e6ebf1", userSelect: "none", WebkitUserSelect: "none", touchAction: "none" },
-  cv: { position: "absolute", inset: 0, width: "100%", height: "100%", display: "block" },
-  top: { position: "absolute", top: 0, left: 0, right: 0, display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: "linear-gradient(rgba(10,13,18,0.88), rgba(10,13,18,0))", zIndex: 4, fontSize: 12, flexWrap: "wrap" },
-  panel: { position: "absolute", background: "rgba(14,18,24,0.88)", border: "1px solid #48515f", borderRadius: 8, padding: 10, fontSize: 12, zIndex: 5 },
-  btn: { background: "#1a212b", border: "1px solid #48515f", color: "#e6ebf1", borderRadius: 6, padding: "4px 10px", fontFamily: "inherit", fontSize: 12, cursor: "pointer" },
-  // mk0.28: the in-world taps (squad order chips, the ✓/✗ confirm pair) are
-  // the ones a thumb has to find mid-game — ~1.5x the chrome button, and at
-  // least the 44px touch target every phone guideline asks for.
-  btnBig: { background: "#1a212b", border: "1px solid #48515f", color: "#e6ebf1", borderRadius: 8, padding: "10px 16px", fontFamily: "inherit", fontSize: 15, lineHeight: "20px", minHeight: 44, minWidth: 44, cursor: "pointer" },
-  stat: { display: "flex", alignItems: "center", gap: 4, padding: "3px 8px", background: "rgba(20,26,34,0.75)", border: "1px solid #303a48", borderRadius: 6 },
-  bar: { position: "absolute", left: 0, right: 0, bottom: 0, display: "flex", gap: 6, padding: "8px 8px calc(8px + env(safe-area-inset-bottom, 0px))", justifyContent: "center", background: "linear-gradient(rgba(10,13,18,0), rgba(10,13,18,0.9))", zIndex: 4, flexWrap: "wrap" },
-  slot: { display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minWidth: 64, minHeight: 52, padding: "8px 10px", background: "#1a212b", border: "1px solid #48515f", borderRadius: 8, fontSize: 12, cursor: "pointer" }, // mk0.28: wider/taller build slots — bottom bar, thumb reach
-  ovl: { position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(10,13,18,0.72)", zIndex: 8, textAlign: "center", padding: 20 },
-  toastWrap: { position: "absolute", top: 54, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, zIndex: 6, pointerEvents: "none" },
-  // The manifest card's parking spot: top-right, under the top bar, mirroring
-  // the intel card's top-left (Dispatch.jsx's `float`). pointerEvents none on
-  // the wrapper — only the card box itself takes taps, so the battle behind it
-  // keeps every pixel it isn't actually covering.
-  cardWrap: { position: "absolute", top: 52, right: 10, zIndex: 6, pointerEvents: "none" },
-  toast: { background: "rgba(14,18,24,0.92)", border: "1px solid #ffb45e", color: "#ffd9a0", borderRadius: 6, padding: "4px 12px", fontSize: 12 },
-};
-
-// COMMAND 1b (mk0.82): THE PIE. One disc of wedges around the selected
-// thing. Equal sectors, twelve o'clock first, hole in the middle so the
-// unit stays visible. Choosing ANY wedge closes the pie (the owner's rule:
-// the screen must be free for the follow-up taps an order needs) — every
-// wedge's onClick runs its action, then onChoose (the call site sets
-// view.pieOpen = false there), one mechanism for every slot rather than
-// repeating a close in each act.
-function RadialMenu({ cx, cy, label, slots, armed, onChoose, press, onCard, showInfo }) {
-  const N = slots.length, R0 = 36, R1 = 104;
-  const wedge = (i) => {
-    const a0 = -Math.PI / 2 + (i - 0.5) * (2 * Math.PI / N);
-    const a1 = a0 + 2 * Math.PI / N;
-    const p = (r, a) => `${cx + Math.cos(a) * r},${cy + Math.sin(a) * r}`;
-    const large = (2 * Math.PI / N) > Math.PI ? 1 : 0;
-    return `M ${p(R0, a0)} A ${R0} ${R0} 0 ${large} 1 ${p(R0, a1)} L ${p(R1, a1)} A ${R1} ${R1} 0 ${large} 0 ${p(R1, a0)} Z`;
-  };
-  return (
-    <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", zIndex: 7, pointerEvents: "none", overflow: "visible" }}>
-      {slots.map((s, i) => {
-        const mid = -Math.PI / 2 + i * (2 * Math.PI / N);
-        const lx = cx + Math.cos(mid) * 72, ly = cy + Math.sin(mid) * 72;
-        return (
-          <g key={s.key} data-radial={s.key} style={{ pointerEvents: "auto", cursor: "pointer" }} onClick={() => { s.act(); onChoose && onChoose(); }} opacity={armed ? 1 : 0.5} {...(s.card && press ? press(s.card) : {})}>
-            {/* mk0.83:
-                the wedge keeps its dark panel fill even when lit — the lit
-                state is the accent BORDER and a faint tint, and every label
-                paints a dark halo under itself (paintOrder stroke) so it
-                reads on any fill, any terrain. */}
-            <path d={wedge(i)} fill="rgba(14,18,24,0.88)" stroke={s.on ? s.color : "#48515f"} strokeWidth={s.on ? 2.5 : 1.5} />
-            {s.on && <path d={wedge(i)} fill={s.color} fillOpacity="0.14" stroke="none" />}
-            <text x={lx} y={ly - 4} textAnchor="middle" fontSize="15" fill={s.color} stroke="#0e1218" strokeWidth="3" paintOrder="stroke" style={{ userSelect: "none" }}>{s.icon || ""}</text>
-            <text x={lx} y={ly + 12} textAnchor="middle" fontSize="10" letterSpacing="1" fill={s.color} stroke="#0e1218" strokeWidth="3" paintOrder="stroke" fontFamily="inherit" style={{ userSelect: "none" }}>{s.label}</text>
-            {s.card && showInfo && (
-              <text data-wedge-info={s.card} x={lx} y={s.toggle != null ? ly - 22 : ly + 26} textAnchor="middle" fontSize="11" fill="#9fdcff" stroke="#0e1218" strokeWidth="3" paintOrder="stroke" style={{ cursor: "pointer" }}
-                onClick={(e) => { e.stopPropagation(); onCard && onCard(s.card); }}>ⓘ</text>
-            )}
-            {/* P7.1 T2: a toggle wedge wears a slider — black at
-                rest, slid over and bright green in use. Only slots that
-                carry s.toggle draw it; every other wedge is untouched. */}
-            {s.toggle != null && (
-              <g>
-                <rect x={lx - 11} y={ly + 17} width={22} height={10} rx={5}
-                  fill={s.toggle ? "rgba(74,255,140,0.28)" : "#0a0d12"}
-                  stroke={s.toggle ? "#4aff8c" : "#48515f"} strokeWidth="1" />
-                <circle cx={s.toggle ? lx + 6 : lx - 6} cy={ly + 22} r={4}
-                  fill={s.toggle ? "#4aff8c" : "#14171a"}
-                  stroke={s.toggle ? "#4aff8c" : "#48515f"} strokeWidth="1" />
-              </g>
-            )}
-          </g>
-        );
-      })}
-      <foreignObject x={cx - 60} y={cy + R1 + 6} width="120" height="40" style={{ pointerEvents: "none", overflow: "visible" }}>
-        <div style={{ textAlign: "center" }}>
-          <span style={{ fontSize: 10, letterSpacing: 1, color: "#7dffa8", background: "rgba(14,18,24,0.85)", padding: "1px 6px", borderRadius: 4 }}>{label}</span>
-        </div>
-      </foreignObject>
-    </svg>
-  );
-}
-
-// The build palette, in bar order — every buildable the match can ever offer.
-// Keys are the mode keys tapAt/setMode dispatch on and, since P1 Task 2, the
-// exact keys specs.js's PLAYER_START/PLAYER_TIERS ladder is written in, so the
-// unlocked filter below is a plain membership test.
-const PALETTE = [
-  ...TOWER_ORDER.map((k) => ({ key: k, label: TOWER_SPECS[k].label, icon: TOWER_SPECS[k].icon, cost: TOWER_SPECS[k].cost })),
-  // Squads (Phase 5 Task 3): mode keys prefixed sq_ — the MG tower owns "mg"
-  { key: "sq_sniper", label: "SNIPERS", icon: "✛", cost: SQUAD_SPECS.sniper.cost },
-  { key: "sq_rifles", label: "RIFLES", icon: "∴", cost: SQUAD_SPECS.rifles.cost },
-  { key: "sq_mg", label: "GUNNERS", icon: "≣", cost: SQUAD_SPECS.mg.cost },
-  // F1 Task 4.5: the demolition team — the only player weapon that moves
-  // reinforced depot masonry (rifles measured at zero).
-  { key: "sq_sappers", label: "SAPPERS", icon: "✸", cost: SQUAD_SPECS.sappers.cost },
-  // F1.5 Task 1: the mortar team — selection shows squadReach's lofted
-  // near-circle fan (accuracy.js handles occl "lofted" already).
-  { key: "sq_mortars", label: "MORTAR TEAM", icon: "◎", cost: SQUAD_SPECS.mortars.cost },
-  // P1.5 T4: the engineer team — in the starting kit, so this slot is on the
-  // bar from the first frame of every match.
-  { key: "sq_engineers", label: "ENGINEERS", icon: "⚒", cost: SQUAD_SPECS.engineers.cost },
-  // mk2.02: the roster surgery — rockets and grenadiers hold the tier-1 seats.
-  { key: "sq_rockets", label: "ROCKET TEAM", icon: "▲", cost: SQUAD_SPECS.rockets.cost },
-  { key: "sq_grenadiers", label: "GRENADIERS", icon: "◎", cost: SQUAD_SPECS.grenadiers.cost },
-  // P7.2 T6: the medic team — mercy on the bar
-  { key: "sq_medics", label: "MEDICS", icon: "✚", cost: SQUAD_SPECS.medics.cost },
-  // P7.2 T7: the mechanic team — the paid wrench
-  { key: "sq_mechanics", label: "MECHANICS", icon: "⚙", cost: SQUAD_SPECS.mechanics.cost },
-  { key: "sq_davy", label: "DAVY CROCKETT", icon: "☢", cost: SQUAD_SPECS.davy.cost },
-  // P7 T9: THE HERO TIER — bar-visible only once unlocked like everything
-  // else. mk1.95: hero keys are placement modes under the one law.
-  { key: "hero_bison", label: "BISON", icon: "⛨", cost: BISON.cost },
-  { key: "hero_apc", label: "APC", icon: "⬒", cost: APC.cost },
-  { key: "hero_jeep", label: "JEEP", icon: "⛟", cost: JEEP.cost },
-  { key: "hero_mech", label: "MECH", icon: "✇", cost: MECH.cost },
-];
-const PALETTE_BY_KEY = Object.fromEntries(PALETTE.map((p) => [p.key, p]));
-const PALETTE_LABEL = Object.fromEntries(PALETTE.map((p) => [p.key, p.label]));
-
-// mk2.25: THE ENEMY RACK (sandbox only). Every kind the enemy can field,
-// placeable by tap on the bench. tag rows spawn through units.js spawnUnit
-// (the marksman pair and the wave tank come out of it whole); hull/mech/
-// tower rows mirror the enemy's own park shapes at the tapped cell. n is
-// men per tap — the same head-count one enemy buy fields.
-const FOE_RACK = [
-  { key: "foe_rifle", label: "CONSCRIPT", icon: "∴", tag: "", n: 1 },
-  { key: "foe_rocket", label: "ROCKET TEAM", icon: "▲", tag: "rocket", n: 2 },
-  { key: "foe_gren", label: "GRENADIERS", icon: "◎", tag: "gren", n: 2 },
-  { key: "foe_sapper", label: "SAPPERS", icon: "✸", tag: "sapper", n: 2 },
-  { key: "foe_mortar", label: "MORTARS", icon: "◎", tag: "mortar", n: 2 },
-  { key: "foe_sniper", label: "SNIPER PAIR", icon: "✛", tag: "sniper", n: 1 },
-  { key: "foe_mg", label: "GUNNERS", icon: "≣", tag: "mg", n: 2 },
-  { key: "foe_eng", label: "ENGINEER", icon: "⚒", tag: "eng", n: 1 },
-  { key: "foe_medic", label: "MEDIC", icon: "✚", tag: "medic", n: 1 },
-  { key: "foe_mechanic", label: "MECHANIC", icon: "⚙", tag: "mechanic", n: 1 },
-  { key: "foe_davy", label: "ATOMIC CREW", icon: "☢", tag: "davy", n: 2 },
-  { key: "foe_tank", label: "WAVE TANK", icon: "⛨", tag: "tank", n: 1 },
-  { key: "foe_bison", label: "BISON", icon: "⛨", hull: "bison" },
-  { key: "foe_apc", label: "APC", icon: "⬒", hull: "apc" },
-  { key: "foe_mech", label: "MECH", icon: "✇", mech: true },
-  { key: "foe_t_mg", label: "SPITTER", icon: "⊞", tower: "mg" },
-  { key: "foe_t_gun", label: "FIELD GUN", icon: "⚑", tower: "gun" },
-  { key: "foe_t_mortar", label: "MORTAR", icon: "◎", tower: "mortar" },
-  { key: "foe_t_rocket", label: "SALVO RACK", icon: "▲", tower: "rocket" },
-  { key: "foe_t_tesla", label: "TESLA COIL", icon: "⚡", tower: "tesla" },
-];
-const FOE_RACK_BY_KEY = Object.fromEntries(FOE_RACK.map((f) => [f.key, f]));
-
-// P7.2 T8: THE DRAFT SCREEN — a NEW pre-start surface, shared DOM
-// phone and desktop. Seven cards up, tap toggles a pick, five max; CONFIRM
-// arms at exactly five. Styled on the pre-start overlay's own P.btn idiom
-// (P.slot's build-bar card, ~44px touch target both platforms).
-function DraftScreen({ cards, onConfirm }) {
-  const [picked, setPicked] = useState([]);
-  const toggle = (k) => {
-    if (picked.includes(k)) { setPicked(picked.filter((x) => x !== k)); return; }
-    if (picked.length >= 5) return;
-    setPicked([...picked, k]);
-  };
-  return (
-    <div style={P.ovl}>
-      <style>{`@keyframes cs-deal { from { opacity: 0; transform: translate(-16px, 12px) rotate(-8deg) scale(0.85); } to { opacity: 1; transform: var(--restT, none); } }`}</style>
-      <div style={{ fontSize: 20, letterSpacing: 3, color: "#9fdcff", marginBottom: 4 }}>THE OPENING DRAFT</div>
-      <CrateChip label="THE CONVOY" icon="⚒" open={true} style={{ marginBottom: 6 }} />
-      <div style={{ fontSize: 12, opacity: 0.85, maxWidth: 460, lineHeight: 1.6, marginBottom: 14 }}>
-        Seven cards dealt — units and plans together. Pick five, free.
-      </div>
-      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 8, maxWidth: 520, marginBottom: 14 }}>
-        {cards.map((c, ci) => {
-          const it = PALETTE_BY_KEY[c.k];
-          const on = picked.includes(c.k);
-          return (
-            <StockTag key={c.k} data-draft-card={c.k} data-draft-kind={c.plan ? "plan" : "unit"}
-              tilt={ci % 2 ? 1.5 : -2} delay={(ci * 0.06) + "s"}
-              onClick={() => toggle(c.k)}
-              style={{ minWidth: 88, minHeight: 56, borderColor: on ? "#2f7a44" : "#8f8768", background: on ? "#d3d6a8" : "#cfc6a5" }}>
-              <div style={{ fontSize: 16 }}>{it ? it.icon : "?"}</div>
-              <div>{it ? it.label : c.k}</div>
-              <div style={{ fontSize: 10, fontWeight: 600, color: c.plan ? "#31556a" : "#7a5a1e" }}>{c.plan ? "PLAN" : "UNIT"}</div>
-            </StockTag>
-          );
-        })}
-      </div>
-      <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 10 }}>PICKED {picked.length} OF 5</div>
-      <button data-draft-confirm disabled={picked.length !== 5}
-        style={{ ...P.btn, fontSize: 15, padding: "10px 26px", minHeight: 44, minWidth: 44, borderColor: picked.length === 5 ? "#4aff8c" : "#48515f", color: picked.length === 5 ? "#4aff8c" : "#e6ebf1", opacity: picked.length === 5 ? 1 : 0.55 }}
-        onClick={() => onConfirm(cards.filter((c) => picked.includes(c.k)))}>
-        FIELD THESE FIVE
-      </button>
-    </div>
-  );
-}
-
-// P7.1 T5: THE BUILD TREE — one BUILD entry, three branches, SELL inside.
-// Pure presentation: run.mode stays the single truth the tap layer reads.
-const TREE_BRANCHES = [
-  { key: "troops", label: "TROOPS", icon: "∴", match: (k) => k.startsWith("sq_") },
-  { key: "buildings", label: "BUILDINGS", icon: "⌂", match: (k) => TOWER_SPECS[k] != null },
-  { key: "vehicles", label: "VEHICLES", icon: "⛨", match: (k) => k.startsWith("hero_") },
-];
-const branchOf = (key) => { const b = TREE_BRANCHES.find((x) => x.match(key)); return b ? b.key : null; };
-// mk2.28: the quartermaster's purpose lines — first war only.
-const QM_LINES = { troops: "men you order", buildings: "iron that stands", vehicles: "iron that moves", foes: "targets for the bench" };
-// mk2.31: THE LATTICE — rungs cut by BASE price (v5 mockup),
-// bottom-up in array order, cheap→dear inside a rung. Presentation only;
-// the price-family rows in specs.js are untouched and a tag never jumps
-// rungs on a live price. DAVY is the hero-tier troop; the APC is rung II
-// iron, not hero.
-const LATTICE = {
-  troops: [
-    { name: "I", keys: ["sq_rifles", "sq_engineers", "sq_mg", "sq_sappers"] },
-    { name: "II", keys: ["sq_grenadiers", "sq_rockets", "sq_mortars"] },
-    { name: "III", keys: ["sq_medics", "sq_mechanics", "sq_sniper"] },
-    { name: "HERO", keys: ["sq_davy"] },
-  ],
-  buildings: [
-    { name: "I", keys: ["mg", "gun"] },
-    { name: "II", keys: ["mortar", "tesla"] },
-    { name: "III", keys: ["rocket"] },
-  ],
-  vehicles: [
-    { name: "II", keys: ["hero_apc", "hero_jeep"] },
-    { name: "HERO", keys: ["hero_bison", "hero_mech"] },
-  ],
-  // the bench's rack, by kind — sandbox only
-  foes: [
-    { name: "MEN", keys: ["foe_rifle", "foe_rocket", "foe_gren", "foe_sapper", "foe_mortar", "foe_sniper", "foe_mg", "foe_eng", "foe_medic", "foe_mechanic", "foe_davy"] },
-    { name: "IRON", keys: ["foe_tank", "foe_bison", "foe_apc", "foe_mech"] },
-    { name: "TOWERS", keys: ["foe_t_mg", "foe_t_gun", "foe_t_mortar", "foe_t_rocket", "foe_t_tesla"] },
-  ],
-};
-
 // `resume` (P1 Task 3): a PARSED save object, or null for a fresh front. The
 // start screen does the async probe and the mark check (save.js's probeFront)
 // and hands the data down already validated, so this mount effect stays

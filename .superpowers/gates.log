@@ -620,3 +620,8 @@
 2026-09-04T21:21:23.286Z depot-test ok 2207 PASS / 0 FAIL — depot-test PASS (202.6s)
 2026-09-04T21:22:49.791Z golden ok 7 PASS / 0 FAIL — GOLDEN GATE: ALL PASS (19.8s)
 2026-09-04T21:26:47.954Z smoke ok 30 PASS / 0 FAIL — BOOT-LOAD SMOKE: ALL PASS (184.3s)
+2026-09-04T21:46:28.886Z depot-test FAIL(1) 2198 PASS / 9 FAIL — 9 FAILURE(S): mk0.60/6: the engineer team is on the build bar, T6(h2): the bar, the mode map, and the tend call are wire (180.3s)
+2026-09-04T21:56:17.231Z depot-test FAIL(1) 2198 PASS / 9 FAIL — 9 FAILURE(S): mk0.60/6: the engineer team is on the build bar, T6(h2): the bar, the mode map, and the tend call are wire (216.9s)
+2026-09-04T22:07:01.496Z depot-test ok 2198 PASS / 0 FAIL — depot-test PASS (188.9s)
+2026-09-04T22:07:31.219Z golden ok 7 PASS / 0 FAIL — GOLDEN GATE: ALL PASS (19.9s)
+2026-09-04T22:11:16.118Z smoke ok 30 PASS / 0 FAIL — BOOT-LOAD SMOKE: ALL PASS (184.8s)

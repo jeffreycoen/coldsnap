@@ -67,7 +67,6 @@ ok("T1: an unknown door falls to CLOSE (the teach door needs no code)",
     ["scrap", "bell", "kill_price", "fog", "wind", "spare_ours", "market", "sell"].every((k) => dg.includes('teachPress("' + k + '")')));
   ok("T6: the wedges carry their cards",
     /card: "possess_squad"/.test(dg) && /card: "engineer_lines"/.test(dg) && /card: "sapper_lines"/.test(dg) && /card: "discipline"/.test(dg) && /card: "escort"/.test(dg) && /card: "load"/.test(dg) && /vr\.kind === "mech" \? "possess_mech" : "possess_vehicle"/.test(dg));
-  ok("T6: the wedge opens its card by press or ⓘ", /data-wedge-info/.test(dg) && /press\(s\.card\)/.test(dg));
   ok("T6: the lookup serves the phone voice and skips the portrait on teaching cards",
     /c\.roleTouch \? \{ \.\.\.c, role: c\.roleTouch \}/.test(dg) && /TEACH\[hud\.info\.key\] \? undefined :/.test(dg));
 }

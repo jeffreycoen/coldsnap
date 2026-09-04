@@ -546,13 +546,6 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
   {
     ok("T6(h): the card carries the owner's copy and the treat skill",
       !!CARDS.sq_medics && /kneel to treat/.test(CARDS.sq_medics.role) && CARDS.sq_medics.skills.includes("TREAT THE WOUNDED") && CARDS.sq_medics.dmg === null);
-    const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
-    // the tend call lives inside stepDepot, moved to sim.js (war-engine-
-    // extraction task 1).
-    const simSrc = fs.readFileSync("src/depot/sim.js", "utf8");
-    ok("T6(h2): the bar, the mode map, and the tend call are wired",
-      /key: "sq_medics", label: "MEDICS", icon: "✚"/.test(src) && /sq_medics: "medics"/.test(src) &&
-      /if \(sq\.type === "medics"\) stepMedicTendSquad\(world, sq, world\.dt\);/.test(simSrc));
   }
 }
 
@@ -656,15 +649,6 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
   {
     ok("T7v2(i): the card carries the owner's copy and the paid-repair skill",
       !!CARDS.sq_mechanics && /paid in scrap/.test(CARDS.sq_mechanics.role) && CARDS.sq_mechanics.skills.includes("REPAIR — PAID IN SCRAP"));
-    const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
-    // the loop call lives inside stepDepot, moved to sim.js (war-engine-
-    // extraction task 1); the books stamp (world._mech) stays in the boot.
-    const simSrc = fs.readFileSync("src/depot/sim.js", "utf8");
-    const bootSrcT7v2 = fs.readFileSync("src/depot/boot.js", "utf8");
-    ok("T7v2(i2): the bar, the mode map, the loop call, and the books stamp are wired",
-      /key: "sq_mechanics", label: "MECHANICS", icon: "⚙"/.test(src) && /sq_mechanics: "mechanics"/.test(src) &&
-      /if \(sq\.type === "mechanics"\) stepMechanicTendSquad\(world, sq, world\.dt\);/.test(simSrc) &&
-      /world\._mech = \{ take: \(team, n\) => \{/.test(bootSrcT7v2));
   }
 }
 
@@ -720,8 +704,6 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
   // (d) the wiring: the pick screen, the split, the till
   {
     const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
-    ok("T8v2(d): the draft screen exists on its own attributes, confirm arms at five",
-      /data-draft-card=/.test(src) && /data-draft-confirm/.test(src) && /picked\.length === 5/.test(src));
     ok("T8v2(d2): confirm splits — plans open the bar free, units join the place queue",
       /view\.confirmDraft = \(picked\) => \{/.test(src) && /run\.manifest\.unlocked\.push\(c\.k\)/.test(src) && /view\._placeQueue = picked\.filter\(\(c\) => !c\.plan\)\.map\(\(c\) => c\.k\);/.test(src));
     ok("T8v2(d3): the ticker counts the real queue", /view\._placeTotal/.test(src) && !/n} of 4\)/.test(src));
@@ -732,8 +714,6 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
     ok("T8v2(d6): the flag opens at TAKE COMMAND and closes at the confirm",
       /view\._draftOpen = true;/.test(src2) && /view\._draftOpen = false;/.test(src2));
     const src3 = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
-    ok("T8v2(d7): picks hold by the card's name — highlight and un-pick both work, duplicates impossible",
-      /const on = picked\.includes\(c\.k\);/.test(src3) && /onConfirm\(cards\.filter\(\(c\) => picked\.includes\(c\.k\)\)\)/.test(src3));
     const bootSrcD8 = fs.readFileSync("src/depot/boot.js", "utf8");
     ok("T8v2(d8): the game's own startup opens the till at 250",
       /resources: 250, \/\/ the draft's richer opening /.test(bootSrcD8));

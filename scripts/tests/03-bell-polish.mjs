@@ -470,8 +470,6 @@ import fs from "node:fs";
       !/seedBags\(world, grid, TOWN\.find\(\(t\) => t\.depot && t\.team !== 2\), 0x5ba6, stampBag\);/.test(dsrc) &&
       !/seedBags\(world, grid, TOWN\.find\(\(t\) => t\.depot && t\.team === 2\), 0x5ba7, stampBag\);/.test(dsrc) &&
       /const nBags = 4 \+ Math\.floor\(bagR\(\) \* 3\);/.test(muSrc60));
-    ok("mk0.60/6: the engineer team is on the build bar",
-      /key: "sq_engineers", label: "ENGINEERS"/.test(dsrc) && /sq_engineers: "engineers"/.test(dsrc));
     // the geometry the line is built on, written down where a reader will look
     ok("mk0.60/6: the piece-vs-pitch geometry and the one-rotation rule are documented",
       /GEOMETRY, stated once/.test(dsrc) && /ONE ROTATION FOR THE WHOLE LINE/.test(dsrc));

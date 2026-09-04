@@ -26,10 +26,11 @@ ok("sandbox: the reroll button exists", dg.includes("data-dev-reroll"));
 
 { // mk2.25: the enemy rack
   const dg2 = src("src/depot/DepotGame.jsx");
-  ok("rack: the foe list exists", dg2.includes("FOE_RACK"));
-  ok("rack: the branch is dev-only", dg2.match(/TREE_BRANCHES[\s\S]{0,400}foes/) || dg2.includes('branch === "foes"'));
+  const pal2 = src("src/depot/palette.js");
+  ok("rack: the foe list exists", pal2.includes("FOE_RACK"));
+  ok("rack: the branch is dev-only", pal2.match(/TREE_BRANCHES[\s\S]{0,400}foes/) || dg2.includes('branch === "foes"'));
   ok("rack: a ground tap spawns", dg2.includes("devSpawnAt"));
-  ok("rack: every infantry tag is racked", ["rocket", "gren", "sapper", "mortar", "sniper", "mg", "eng", "medic", "mechanic", "davy", "tank"].every((t) => dg2.match(new RegExp("FOE_RACK[\\s\\S]{0,2400}tag: \"" + t + "\""))));
+  ok("rack: every infantry tag is racked", ["rocket", "gren", "sapper", "mortar", "sniper", "mg", "eng", "medic", "mechanic", "davy", "tank"].every((t) => pal2.match(new RegExp("FOE_RACK[\\s\\S]{0,2400}tag: \"" + t + "\""))));
 }
 
 { // mk2.26: the fight switch — the one headless seam is stepTowers' world
