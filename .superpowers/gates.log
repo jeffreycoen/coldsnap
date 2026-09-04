@@ -575,3 +575,8 @@
 2026-09-03T23:08:26.211Z depot-test ok 2168 PASS / 0 FAIL — depot-test PASS (201.1s)
 2026-09-03T23:08:30.492Z depot-lint ok 0 PASS / 0 FAIL — depot-lint PASS (0.1s)
 2026-09-03T23:11:54.102Z smoke ok 30 PASS / 0 FAIL — BOOT-LOAD SMOKE: ALL PASS (200.3s)
+2026-09-04T01:30:34.788Z depot-test FAIL(1) 2171 PASS / 9 FAIL — 9 FAILURE(S): (a) the hull settles level at spring height, (b) the slope leans the hull on its springs, (c) the step pit (212.2s)
+2026-09-04T01:33:50.797Z depot-test FAIL(1) 2171 PASS / 9 FAIL — 9 FAILURE(S): (a) the hull settles level at spring height, (b) the slope leans the hull on its springs, (c) the step pit (191.0s)
+2026-09-04T01:37:18.250Z depot-test ok 2180 PASS / 0 FAIL — depot-test PASS (188.6s)
+2026-09-04T01:37:41.608Z golden ok 7 PASS / 0 FAIL — GOLDEN GATE: ALL PASS (19.8s)
+2026-09-04T01:40:54.719Z smoke ok 30 PASS / 0 FAIL — BOOT-LOAD SMOKE: ALL PASS (189.9s)

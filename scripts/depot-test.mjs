@@ -57,4 +57,5 @@ await import("./tests/40-the-escort-link.mjs");
 await import("./tests/41-the-queued-line.mjs");
 await import("./tests/42-the-credit-trail.mjs");
 await import("./tests/43-the-roster.mjs");
+await import("./tests/44-the-suspension.mjs");
 finish();

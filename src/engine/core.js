@@ -974,9 +974,15 @@ function driveHull(world, b, c) {
   const upY = b.R[4];
   const traction = (b.grounded || b.onBody) ? Math.max(0, Math.min(1, (upY - 0.25) / 0.45)) : 0;
   const vA = V.dot(b.v, fwd);
-  const target = c.throttle >= 0 ? c.throttle * 9.5 : c.throttle * 4.5;
+  // mk2.97: per-body drive numbers — the defaults ARE the old constants, so
+  // every body not carrying them is numerically identical (golden). The
+  // grade term applies to suspension bodies only, AFTER the cap: a slope can
+  // beat an engine, which is the transfer case's whole mechanism.
+  const target = c.throttle >= 0 ? c.throttle * (b.spdF || 9.5) : c.throttle * (b.spdR || 4.5);
   let acc = (target - vA) * 2.6;
-  acc = Math.max(-9, Math.min(9, acc));
+  const cap = b.accCap || 9;
+  acc = Math.max(-cap, Math.min(cap, acc));
+  if (b.susp && traction > 0) acc -= world.gravity * fwd.y;
   if (traction > 0) V.addScaled(b.v, b.v, fwd, acc * dt * traction);
   // track grip: kill lateral slide (only as much as the treads can bite)
   const vS = V.dot(b.v, side);
@@ -986,6 +992,49 @@ function driveHull(world, b, c) {
     b.w.y += (wT - b.w.y) * Math.min(1, 9 * dt) * traction;
   }
   if (c.brake) { b.v.x *= Math.exp(-5 * dt); b.v.z *= Math.exp(-5 * dt); }
+}
+
+// DIVERGENCE (guarded, mk2.97 — owner): THE SUSPENSION. A body carrying
+// b.susp rides four spring-and-damper wheels instead of slamming its box
+// onto terrain contacts: each wheel samples the ground under itself and
+// answers with a vertical force at its point, so the hull pitches, rolls,
+// and rocks one wheel at a time. The box's own terrain contacts remain as
+// the bump stop beneath the springs. No demo, TD, or campaign body carries
+// the field — golden proves the frozen path. b.susp = { kx, kz, rest,
+// travel, rate, damp } (flat numbers — it rides the save's generic bag);
+// per-wheel compression lands in b._wheelC for the renderer; _suspGround
+// feeds the grounded commit so the drive has traction on its wheels.
+const _suspWheels = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
+function stepSuspension(world) {
+  const dt = world.dt;
+  for (const b of world.bodies) {
+    const s = b.susp;
+    if (!s || !b.alive || b.sleeping || b.invM === 0) continue;
+    const R = b.R;
+    if (!b._wheelC) b._wheelC = [0, 0, 0, 0];
+    let touching = false;
+    for (let i = 0; i < 4; i++) {
+      const lx = _suspWheels[i][0] * s.kx, ly = -b.hy, lz = _suspWheels[i][1] * s.kz;
+      const rx = R[0] * lx + R[3] * ly + R[6] * lz;
+      const ry = R[1] * lx + R[4] * ly + R[7] * lz;
+      const rz = R[2] * lx + R[5] * ly + R[8] * lz;
+      const px = b.pos.x + rx, py = b.pos.y + ry, pz = b.pos.z + rz;
+      const h = world.field.heightAt(px, pz);
+      let comp = (h + s.rest) - py;
+      if (comp <= 0) { b._wheelC[i] = 0; continue; }
+      if (comp > s.travel) comp = s.travel;
+      b._wheelC[i] = comp;
+      touching = true;
+      const vpy = b.v.y + (b.w.z * rx - b.w.x * rz);
+      let F = s.rate * comp - s.damp * vpy;
+      if (F < 0) F = 0;
+      b.v.y += F * dt * b.invM;
+      const L = v3(-rz * F * dt, 0, rx * F * dt);
+      const dw = v3(); iMulVec(b.invIw, L, dw);
+      b.w.x += dw.x; b.w.y += dw.y; b.w.z += dw.z;
+    }
+    b._suspGround = touching;
+  }
 }
 
 function aiDrive(world, b) {
@@ -1930,7 +1979,7 @@ function stepStatus(world) {
       b.buriedNow = false;
       if (b.buryT > 1.1) applyDamage(world, b, 1e6, { cause: CAUSE.COLLAPSE, attacker: b.lastImp && world.t - b.lastImp.t < 6 ? b.lastImp.attacker : "world", buildingId: b.buriedBy || "" });
     }
-    if (b.groundedNow || b.bodyGroundedNow) { b.airT = 0; b.grounded = true; } else { b.airT += dt; b.grounded = false; }
+    if (b.groundedNow || b.bodyGroundedNow || b._suspGround) { b.airT = 0; b.grounded = true; } else { b.airT += dt; b.grounded = false; }
     b.bodyGroundedLast = b.bodyGroundedNow; // #6c reads this: standing-on-a-body units skip sleep
     b.bodyGroundedNow = false; // DIVERGENCE #6a: pair-contact grounding, consumed per step
     // water
@@ -2036,6 +2085,7 @@ export function stepWorld(world) {
   const dt = world.dt;
   world.t += dt;
   stepDrive(world);
+  stepSuspension(world);
   stepUnits(world);
   // integrate velocities + refresh frames
   for (const b of world.bodies) {
