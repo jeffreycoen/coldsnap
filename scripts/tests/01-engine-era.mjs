@@ -62,7 +62,7 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
     I.reg.scrap <= regBefore, `${I.reg.scrap}`);
 }
 
-// --- tier caps: OWNERSHIP IS THE GATE NOW (P7.2 T4, owner) — the bell
+// --- tier caps: OWNERSHIP IS THE GATE NOW (P7.2 T4) — the bell
 // clamp is dead, enemyTierState is membership-only. Re-taught from the old
 // bell-clamp family: everything bought fields at bell zero; unbought never
 // fields; double-listed buys dedupe (per old tier row); and planWave now
@@ -70,7 +70,7 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
 {
   const allPicked = ENEMY_TIERS.flat();
   ok("conscripts are never gated", enemyTierState(0, allPicked).tags.includes(""));
-  ok("everything bought fields at bell zero — the clamp is dead (owner, P7.2 T4)",
+  ok("everything bought fields at bell zero — the clamp is dead",
     enemyTierState(0, allPicked).tags.length === allPicked.length + 1);
   ok("no picks, no tags: an attacker that has picked nothing marches conscripts", enemyTierState(99, []).tags.length === 1);
   for (let i = 0; i < ENEMY_TIERS.length; i++) {
@@ -115,7 +115,7 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
   // (a) the player starts with START and nothing else; the bell gates are dead.
   {
     const M = makeManifestState();
-    ok("hand: the bar starts bare — nothing is free (owner, re-taught P7.2 T3)",
+    ok("hand: the bar starts bare — nothing is free",
       M.unlocked.length === 0 && !isUnlocked(M, "sq_rifles") && !isUnlocked(M, "sq_engineers")
       && !isUnlocked(M, "wall") && !isUnlocked(M, "sandbag"), M.unlocked.join(","));
     ok("hand: nothing is offered before the first bell", M.hand.length === 0 && M.cardUp === false);
@@ -130,7 +130,7 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
     ok("hand: twenty plans stand at bell one", pool().length === 20);
     M.unlocked.push("mg");
     ok("hand: a bought plan leaves the pool", pool().indexOf("mg") < 0 && pool().length === 19);
-    ok("hand: heroes stand in the pool from the start (the gate is dead, owner)",
+    ok("hand: heroes stand in the pool from the start (the gate is dead)",
       pool().includes("hero_bison") && pool().includes("hero_apc"));
     ok("hand: rifles and engineers are plans like everything else now (re-taught P7.2 T3)", pool().includes("sq_rifles") && pool().includes("sq_engineers"));
     ok("hand: hires ignore ownership — the full seventeen, always",
@@ -170,13 +170,13 @@ ok("the second bell overwrites the spawn queue", S.ws.spawnQueue > 0);
     }
   }
 
-  // (d) taking cards: only what the hand holds, and MORE THAN ONCE (owner).
+  // (d) taking cards: only what the hand holds, and MORE THAN ONCE.
   {
     const M = makeManifestState();
     M.hand = [{ k: "mg", hire: 0 }, { k: "tesla", hire: 0 }, { k: "mg", hire: 1 }]; M.cardUp = true;
     ok("hand: a card the convoy never dealt cannot be taken", takeHandCard(M, "rocket", 0) === false && M.hand.length === 3);
     ok("hand: taking a plan removes that row alone", takeHandCard(M, "tesla", 0) === true && M.hand.length === 2);
-    ok("hand: a SECOND card off the same bell is taken — multi-buy is the law (owner)", takeHandCard(M, "mg", 0) === true && M.hand.length === 1);
+    ok("hand: a SECOND card off the same bell is taken — multi-buy is the law", takeHandCard(M, "mg", 0) === true && M.hand.length === 1);
     ok("hand: the last card leaving closes the window", takeHandCard(M, "mg", 1) === true && M.cardUp === false);
   }
 

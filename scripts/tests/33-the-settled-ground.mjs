@@ -1,6 +1,6 @@
 // COLDSNAP suite file 33 — THE SETTLED GROUND. Re-taught mk2.63 (the settled
 // valley): the sweep draws its maps AT RANDOM every run — no specific seeds,
-// no exact totals (owner, 2026-08-26) — and asserts laws that hold on any
+// no exact totals — and asserts laws that hold on any
 // map. Drawn seeds are logged so a red is traceable. Template pins are pure
 // arithmetic, no map involved. World-rng constants seed physics fixtures
 // only, never a map.
@@ -148,7 +148,7 @@ const flatF = { heightAt: () => 0 };
 // ==== source pins: the seams and the constants ===============================
 {
   const rsrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-  ok("pins: makeMap's stamp loop skips the dead, bar the mound (owner, 2026-08-26)", /if \(t\.dead && t\.form !== "mound"\) continue;/.test(mgSrc));
+  ok("pins: makeMap's stamp loop skips the dead, bar the mound", /if \(t\.dead && t\.form !== "mound"\) continue;/.test(mgSrc));
   ok("pins: the flag rows skip markers", /m\.depot \|\| m\.fwall \|\| m\.marker \|\| b\.ruined/.test(src));
   ok("pins: the pool is 7000 (re-taught mk2.65)", /const CHUNK_CAP = 7000;/.test(rsrc));
   ok("pins: TOWN_STONE_CAP is 6000 (re-taught mk2.65)", TOWN_STONE_CAP === 6000);

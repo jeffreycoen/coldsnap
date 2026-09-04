@@ -89,7 +89,7 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
       const hand = dealConvoyHand(["mg", "gun"], HAND_KEYS, mulberry32(seed));
       if (hand.some((x) => x.k === "hero_bison" || x.k === "hero_apc")) heroHands++;
     }
-    ok("T2(b7): heroes appear from bell one — the tier gates are dead (owner)", heroHands > 0, heroHands);
+    ok("T2(b7): heroes appear from bell one — the tier gates are dead", heroHands > 0, heroHands);
   }
 
   // (c) taking cards — multi-buy is the law
@@ -100,7 +100,7 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
     ok("T2(c): a key not in the hand is refused", takeHandCard(M, "rocket", 0) === false && M.hand.length === 3);
     ok("T2(c2): taking removes exactly the one row — the hire flag tells twins apart",
       takeHandCard(M, "gun", 0) === true && M.hand.length === 2 && M.hand.some((x) => x.k === "gun" && x.hire === 1));
-    ok("T2(c3): a SECOND card can be taken — multi-buy (owner, supersedes one-pick-per-bell)",
+    ok("T2(c3): a SECOND card can be taken — multi-buy",
       takeHandCard(M, "sq_mg", 0) === true && M.hand.length === 1);
     takeHandCard(M, "gun", 1);
     ok("T2(c4): the last card leaving closes the window", M.hand.length === 0 && M.cardUp === false);
@@ -147,7 +147,7 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
 // ---- P7.2 T3 (mk1.82): THE CALM WINDOW
 {
   // (a) the bare bar
-  ok("T3(a): PLAYER_START is empty — the bar starts bare (owner)", PLAYER_START.length === 0);
+  ok("T3(a): PLAYER_START is empty — the bar starts bare", PLAYER_START.length === 0);
   ok("T3(a2): the fresh manifest owns nothing", makeManifestState().unlocked.length === 0);
   ok("T3(a3): the plans pool is the full twenty",
     dealConvoyHand([], HAND_KEYS, mulberry32(9)).filter((c) => !c.hire).length === 3 &&
@@ -286,7 +286,7 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
     const be = fs.readFileSync("src/depot/bell.js", "utf8");
     ok("T4(e): the ring fields his hires draw-free and clears the queue (wee-t2b: + map)",
       /for \(const k of run\.foe\.hired\) mirrorFieldKey\(world, run, depotH, grid, field, k, ctx\.nextApcSeq, map\);/.test(be) && /run\.foe\.hired = \[\];/.test(be));
-    ok("T4(e2): his hand pays the PLAYER'S price table — one table (owner)",
+    ok("T4(e2): his hand pays the PLAYER'S price table — one table",
       /priceP: \(k\) => \(run\._market && run\._market\.player\[k\] != null \? run\._market\.player\[k\] : null\)/.test(be));
     const st = fs.readFileSync("src/depot/state.js", "utf8");
     ok("T4(e3): plans pay half and the floor guards every buy — plan, hire, and the tower build",
@@ -529,7 +529,7 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
       kit1.rifle === 0 && kit1.props[0] && kit1.props[0].role === "gun" &&
       kit1.props[1] && kit1.props[1].role === "acc" && kit1.props[2] && kit1.props[2].role === "acc");
     const kit2 = troopKit({ team: 2, utype: undefined, tag: "medic", role: undefined, alive: true }, true);
-    ok("T6(g2): both sides wear the white — the cross outranks the coat (owner)",
+    ok("T6(g2): both sides wear the white — the cross outranks the coat",
       kit1.pal === "medic" && kit2.pal === "medic" && kit2.rifle === 0);
     const kneeling = troopKit({ team: 1, utype: "medics", kneel: true, alive: true }, true);
     const standing = troopKit({ team: 1, utype: "medics", kneel: false, alive: true }, true);
@@ -684,7 +684,7 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
       }
     }
     ok("T8v2(a2): both kinds deal across 100 seeds, units favored", units > plans && plans > 100);
-    ok("T8v2(a3): heroes deal at plain odds — a lucky war is real (owner)", heroes > 0, heroes);
+    ok("T8v2(a3): heroes deal at plain odds — a lucky war is real", heroes > 0, heroes);
   }
   // (b) its pick: commander-colored, deterministic, zero draws, always five
   {
@@ -736,7 +736,7 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
       /const on = picked\.includes\(c\.k\);/.test(src3) && /onConfirm\(cards\.filter\(\(c\) => picked\.includes\(c\.k\)\)\)/.test(src3));
     const bootSrcD8 = fs.readFileSync("src/depot/boot.js", "utf8");
     ok("T8v2(d8): the game's own startup opens the till at 250",
-      /resources: 250, \/\/ the draft's richer opening \(owner\)/.test(bootSrcD8));
+      /resources: 250, \/\/ the draft's richer opening /.test(bootSrcD8));
     ok("T8v2(d9): the draft is FREE to the last step — the deal placer never touches the till",
       (() => { const m = src3.match(/const placePick = \(p\) => \{[\s\S]*?\n      \};/); return !!m && !/run\.resources/.test(m[0]); })());
   }

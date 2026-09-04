@@ -1,5 +1,5 @@
 // COLDSNAP suite era 32 — THE COMMANDER'S EYE (mk2.58). Possession is the
-// player's own sight (owner, 2026-08-26): a possessed trigger answers at
+// player's own sight: a possessed trigger answers at
 // ANY aim inside its circle — dark ground, far rims, fog — because the
 // player sees the whole field. Under its own control every gun keeps the
 // sight law untouched. Both sides' autonomous gates identical. No seed is

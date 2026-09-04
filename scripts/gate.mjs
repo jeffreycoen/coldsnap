@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// COLDSNAP — gate.mjs: the gate-log wrapper (mk1.98, owner). Runs one named
+// COLDSNAP — gate.mjs: the gate-log wrapper (mk1.98). Runs one named
 // gate unchanged, mirrors its output, and appends one line per run to
 // .superpowers/gates.log so a status check can read which gates ran and what
 // they returned without the agent's scrollback. CI calls the gates directly

@@ -91,7 +91,7 @@ function drainEvents(war, flags) {
       world.bodies.splice(i, 1);
     }
   }
-  // mk2.14 (owner): a davy burst carved the ground — re-lay the rock
+  // mk2.14: a davy burst carved the ground — re-lay the rock
   // dressing so surviving boulders sink to the new surface instead of
   // floating over the crater. Bodies re-seat in the engine; this is
   // their drawn twin.
@@ -202,7 +202,7 @@ export function tickWar(war, sdt, input) {
     }
     // Between bells nothing pauses: build, orders and combat with
     // whatever is still standing all run straight through.
-    run.resources += run._groundRate1 * sdt; // mk2.49 (owner): income is the clock, scaled by held ground — floor 1/second
+    run.resources += run._groundRate1 * sdt; // mk2.49: income is the clock, scaled by held ground — floor 1/second
     if (run.reg) { run.reg.scrap += run._groundRate2 * sdt; run.reg.earned = (run.reg.earned || 0) + run._groundRate2 * sdt; } // one law, one schedule, both sides — and the earned till the muster budgets from (mk2.53)
   }
   war.clock.terrAcc += sdt;
@@ -236,7 +236,7 @@ export function tickWar(war, sdt, input) {
     const b = world.byId.get(c.bagId);
     if (!b || !b.alive) { c.bag = null; c.bagId = null; }
   }
-  // P7 T13 (owner): THE GREEN THREADS — every friendly ordered path,
+  // P7 T13: THE GREEN THREADS — every friendly ordered path,
   // green on the ground, refreshed with the other derived overlays.
   if (terrGuard > 0) flags.orderPaths = true;
   if (terrGuard > 0) flags.territory = true;

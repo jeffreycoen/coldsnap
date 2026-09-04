@@ -1,5 +1,5 @@
 // COLDSNAP suite era 31 — THE LIT ROOF (mk2.57). An occupied cell is seen
-// at its SURFACE (owner, 2026-08-26): the eye tests to the roof the reticle
+// at its SURFACE: the eye tests to the roof the reticle
 // would rest on, not to the ground walled off underneath it — so a roof the
 // owner is looking at is lawful ground for the reticle, the surface law,
 // and every gun. Honest line of sight is kept: ground hidden behind a

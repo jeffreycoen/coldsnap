@@ -67,7 +67,7 @@ import fs from "node:fs";
   ok("P6T1: the map module extracts with planRoute and stepSquadRouting", M1ok);
 
   if (M1ok) {
-    // (a) RETIRED (mk1.94, owner): the stream is switched off — there is no
+    // (a) RETIRED (mk1.94): the stream is switched off — there is no
     // causeway to cross. (b) below still proves routing around masonry.
 
     // (b) around, not through: a route past the biggest building never enters
@@ -433,7 +433,7 @@ import fs from "node:fs";
 
 // ==== P6 T11: the two-pressure wall =========================================
 // mk1.20. Every price carries the type's own count (strong) plus the whole
-// field's living men against the engine ceiling (mild) — the owner's ruling:
+// field's living men against the engine ceiling (mild) — the ruling:
 // "all prices increase with each buy but the prices for the unit purchased
 // go up more substantially." Soft wall, no sell-outs, the 4x cap stands.
 {

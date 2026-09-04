@@ -21,7 +21,7 @@ import { planRoute } from "../../src/depot/route.js";
 import fs from "node:fs";
 
 // ==== P7 T18: THE MAP MOVES OUT ==============================================
-// Reorganization 1 of 5 (owner): the map frame lives in mapgen.js, verbatim.
+// Reorganization 1 of 5: the map frame lives in mapgen.js, verbatim.
 // Zero behavior change — the keystone above is the proof.
 {
   let mgSrc18 = "";
@@ -41,7 +41,7 @@ import fs from "node:fs";
 // ==== end P7 T18 =============================================================
 
 // ==== P7 T19: THE MUSTER MOVES OUT ===========================================
-// Reorganization 2 of 5 (owner): the fresh-war boot block lives in muster.js,
+// Reorganization 2 of 5: the fresh-war boot block lives in muster.js,
 // verbatim bodies with explicit parameters. Boot draws stay 45 by pin; and
 // the boot block gets its FIRST real fixture — the suite calls the actual
 // code instead of reimplementing it (how both boot bugs hid).
@@ -56,7 +56,7 @@ import fs from "node:fs";
     /export function armorSpread\(field, bx, bz, spec\)/.test(muSrc19));
   ok("T19(a2): DepotGame no longer defines what it now imports",
     !/const parkArmor = /.test(dgSrc19) && !/const seedBags = /.test(dgSrc19) &&
-    !/THE HOME GUARD \(owner\)/.test(dgSrc19) && /from "\.\/muster\.js"/.test(dgSrc19));
+    !/THE HOME GUARD /.test(dgSrc19) && /from "\.\/muster\.js"/.test(dgSrc19));
   let bootSrc19 = "";
   try { bootSrc19 = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8"); } catch (e) {}
   ok("T19(a3): the seat counter lives on the war (task 4) with its pinned reseed",
@@ -89,7 +89,7 @@ import fs from "node:fs";
 // ==== end P7 T19 =============================================================
 
 // ==== P7 T20: THE BUILD LINES MOVE OUT =======================================
-// Reorganization 3 of 5 (owner): the two-point lay machinery lives in
+// Reorganization 3 of 5: the two-point lay machinery lives in
 // buildlines.js, verbatim bodies with explicit parameters; the interface
 // glue stays behind and calls in.
 {
@@ -169,7 +169,7 @@ import fs from "node:fs";
 // ==== end P7 T20 =============================================================
 
 // ==== P7 T21: THE BELL MOVES OUT =============================================
-// Reorganization 4 of 5 (owner): the ring lives in bell.js, one verbatim
+// Reorganization 4 of 5: the ring lives in bell.js, one verbatim
 // body with explicit parameters; the cards stay presentation. And the ring
 // gets its first real fixture — two bells rung through the actual code.
 {
@@ -637,7 +637,7 @@ import fs from "node:fs";
 }
 
 // ==== P7 T22: THE SUITE SPLITS ===============================================
-// Reorganization 5 of 5 (owner): per-era files behind a runner that keeps
+// Reorganization 5 of 5: per-era files behind a runner that keeps
 // the gate command. The proof is the baseline: same pass count, same
 // keystone, zero content changes.
 {
@@ -664,7 +664,7 @@ import fs from "node:fs";
   const muSrc24 = fs.readFileSync(new URL("../../src/depot/muster.js", import.meta.url), "utf8");
   ok("T24(a): the pool is born lazily, once, beside the overlay's other lazies",
     /if \(!pathPool\) \{/.test(rSrc24) && /PATH_VERT_CAP/.test(rSrc24) && /lineDistance/.test(rSrc24));
-  // T24(a2), amended (owner): the birth block (`if (!pathPool) { ... }`)
+  // T24(a2), amended: the birth block (`if (!pathPool) { ... }`)
   // necessarily allocates — the assert now slices the HOT PATH after the
   // cursor grabs the born pool (`const P = pathPool;`) through the method's
   // own close, and requires zero `new` in that slice alone.

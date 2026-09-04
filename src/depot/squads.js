@@ -52,17 +52,17 @@ export const SQUAD_SPECS = {           // costs are scrap; members spawn as unit
   // BUILD order (DepotGame.jsx): walk a line and lay bags or walls along it.
   // Every match starts with a team (PLAYER_START, specs.js). // provisional (F5)
   engineers: { n: 2, cost: 30, label: "ENGINEER TEAM" },
-  rockets: { n: 2, cost: 45, label: "ROCKET TEAM" },        // mk2.02 (owner): rocket troops replace runners // provisional (F5)
-  grenadiers: { n: 2, cost: 40, label: "GRENADIER SQUAD" }, // mk2.03 (owner): a pair // provisional (F5)
-  // P7.2 T6 (owner): THE MEDIC TEAM — two medics with a bag; they walk to
+  rockets: { n: 2, cost: 45, label: "ROCKET TEAM" },        // mk2.02: rocket troops replace runners // provisional (F5)
+  grenadiers: { n: 2, cost: 40, label: "GRENADIER SQUAD" }, // mk2.03: a pair // provisional (F5)
+  // P7.2 T6: THE MEDIC TEAM — two medics with a bag; they walk to
   // the wounded and kneel to treat. Tools, not shooters: no INFANTRY_ARMS
   // row, so squadFire skips them by membership. // provisional (F5)
   medics: { n: 2, cost: 55, label: "MEDIC TEAM" },
-  // P7.2 T7 (owner): THE MECHANIC TEAM — two mechanics with a toolbox. Tools,
+  // P7.2 T7: THE MECHANIC TEAM — two mechanics with a toolbox. Tools,
   // not shooters: no INFANTRY_ARMS row, so squadFire skips them by
   // membership. // provisional (F5)
   mechanics: { n: 2, cost: 55, label: "MECHANIC TEAM" },
-  // mk2.08 (owner): THE DAVY CROCKETT — two men and the atomic tube. Tools,
+  // mk2.08: THE DAVY CROCKETT — two men and the atomic tube. Tools,
   // not shooters: no INFANTRY_ARMS row, so squadFire skips them; the one
   // shot lives in state.js's stepDavyShot. The slowest crew on the map.
   davy: { n: 2, cost: 450, speed: 2.0, label: "DAVY CROCKETT" }, // provisional (F5)
@@ -912,7 +912,7 @@ export function stepMedicTendSquad(world, squad, dt) {
 }
 
 // ------------------------------------------------------ the mechanic (P7.2 T7)
-// The medic's tend template with three deltas (owner's rulings): TARGETS are
+// The medic's tend template with three deltas: TARGETS are
 // own-side machines and masonry with an hp ledger (hulls, towers, wall
 // courses, bags — depot stones carry no ledger and are excluded by
 // construction); UNDER FIRE THE WORK PAUSES (a fresh dmgT stands him down

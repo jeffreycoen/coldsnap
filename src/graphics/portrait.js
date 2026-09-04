@@ -75,7 +75,7 @@ export function buildPortraitMan(utype) {
   }
   return g;
 }
-// THE MECH (owner, 2026-08-20): boxes-first miniature — grey toon slabs at
+// THE MECH: boxes-first miniature — grey toon slabs at
 // the walker's own proportions (mech.js RIG, literal numbers — this card
 // never moves, so no rig import is worth the coupling).
 export function buildPortraitMech() {

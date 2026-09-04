@@ -179,7 +179,7 @@ import fs from "node:fs";
 // ==== end FRONT T2 ===========================================================
 
 // ==== FRONT T3: the water, switched off =====================================
-// mk1.02 (The Front, Task 3) drew one stream per map; mk1.94 (owner) switches
+// mk1.02 (The Front, Task 3) drew one stream per map; mk1.94 switches
 // it off — the water made too many impassable places. The generator draws no
 // stream on any seed and the grid carries no water cell. The water machinery
 // (grid blocking, slot refusals, order toasts, ribbons) stays, dormant and
@@ -227,7 +227,7 @@ import fs from "node:fs";
   ok("T3: the map module extracts with streamAt and STREAM state", M3ok);
 
   if (M3ok) {
-    // (a) STREAM OFF (mk1.94, owner): no seed draws a stream; no grid cell
+    // (a) STREAM OFF (mk1.94): no seed draws a stream; no grid cell
     // carries water. Same 20 seeds the old stream sweep rode.
     let drawn = 0, waterCells = 0;
     for (let s = 1; s <= 20; s++) {
@@ -553,7 +553,7 @@ import fs from "node:fs";
 // ==== end FRONT T5 ===========================================================
 
 // ==== FRONT T6: the twin battle ==============================================
-// mk2.63, THE RANDOM GROUND (owner, 2026-08-26): the pinned map-1000
+// mk2.63, THE RANDOM GROUND: the pinned map-1000
 // keystone retires — a pinned map is a chosen map. One RANDOM seed, logged;
 // the same heavy battle fought twice from scratch; identical world hash and
 // draw count is the determinism law. The mk1.05 quiet-books source pins stay.

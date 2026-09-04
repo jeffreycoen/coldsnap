@@ -658,7 +658,7 @@ export function explode(world, x, y, z, spec) {
   if (spec.hitStruct || world._tdStruct) {
     for (const b of world.bodies) {
       if (!b.alive) continue;
-      // DIVERGENCE (guarded, mk1.66 — the owner's ruling): SANDBAGS ARE
+      // DIVERGENCE (guarded, mk1.66): SANDBAGS ARE
       // MORTAL. A bag takes blast damage like the walls beside it — its 60hp
       // was unreachable by any path since the first bag. b.sandbag exists
       // only on depot bodies; every other mode is byte-identical (golden).
@@ -1835,7 +1835,7 @@ function classifyImpacts(world) {
   const best = new Map(); // victimId -> {dmg, info}
   for (const { victim, other, pn } of agg.values()) {
     const dv = pn * victim.invM;
-    // DIVERGENCE (guarded, mk1.11 — the owner's ruling): A SLEEPING STONE IS
+    // DIVERGENCE (guarded, mk1.11): A SLEEPING STONE IS
     // NOT A WEAPON. Under depotCombat, a chunk that is ASLEEP — a standing
     // wall face, settled rubble — can neither slam a living man dead (the
     // depenetration ejection read as lethal IMPACT below) nor count as

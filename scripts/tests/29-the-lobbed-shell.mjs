@@ -2,7 +2,7 @@
 // to 85° at a fitted speed and lands its shell where the reticle stands —
 // straight when a straight shot clears, lobbed when it cannot, both sides.
 // The field gun keeps the 35° law, and the wave tank's scan keeps the flat
-// law (owner, 2026-08-25: Bison only). The wind stays on the shell (owner,
+// law. The wind stays on the shell (owner,
 // 2026-08-25): the ring shows where a lob lands. No seed is special;
 // fixture seeds are named below.
 import { ok } from "./harness.mjs";
@@ -123,7 +123,7 @@ ok("L1: the field gun and the wave tank carry no cap of their own — ELEV_CAP (
 
 // L7 — SYMMETRY: both sides' auto-driven Bisons seek a man behind the
 // building and fire at him with a raised barrel — a man the flat gate
-// refused; the wave tank, its scan on the flat law (owner: Bison only),
+// refused; the wave tank, its scan on the flat law,
 // keeps quiet at the same man. Two mirrored fixtures, one shape. (The
 // raised pitch here is lower than L2's: the tube is lifted 2 m over the
 // flat gate's muzzle and 3 m closer, so a flatter arc already clears — the

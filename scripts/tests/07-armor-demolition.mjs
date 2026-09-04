@@ -404,7 +404,7 @@ import fs from "node:fs";
     };
     ok("T4(i): twin runs agree", twin() === twin());
   }
-  // AMENDMENT 1 (owner, 2026-08-15): ARMOR PARKS STABLE. parkArmor lives
+  // AMENDMENT 1: ARMOR PARKS STABLE. parkArmor lives
   // inside DepotGame.jsx's boot closure (deep local bindings — not a
   // slice-out candidate like genMap), so this fixture reproduces its own
   // clear+stable scan verbatim over a deliberately bumpy field: the chosen
@@ -1060,7 +1060,7 @@ import fs from "node:fs";
       !!ENEMY_TIERS[3] && ENEMY_TIERS[3].indexOf("hero_bison") >= 0 && ENEMY_TIERS[3].indexOf("hero_apc") >= 0, JSON.stringify(ENEMY_TIERS[3]));
     ok("T9(a3): PLAYER_TIERS' 4th row mirrors it",
       !!PLAYER_TIERS[3] && PLAYER_TIERS[3].indexOf("hero_bison") >= 0 && PLAYER_TIERS[3].indexOf("hero_apc") >= 0, JSON.stringify(PLAYER_TIERS[3]));
-    ok("T9(a4): heroes stand in the plans pool at bell ONE — the tier gate is dead (owner, P7.2)", HAND_KEYS.filter((k) => makeManifestState().unlocked.indexOf(k) < 0).includes("hero_bison"));
+    ok("T9(a4): heroes stand in the plans pool at bell ONE — the tier gate is dead", HAND_KEYS.filter((k) => makeManifestState().unlocked.indexOf(k) < 0).includes("hero_bison"));
     ok("T9(a5): ...and at bell ten, same pool — one pool at any hour", HAND_KEYS.includes("hero_apc"));
     ok("T9(a6): heroes map to hero tags; tower keys route through the plans ledger, not the wave map (P7.2 T4)",
       HAND_TAGS.hero_bison === "hero_bison" && HAND_TAGS.hero_apc === "hero_apc" && HAND_TAGS.gun === undefined && HAND_TAGS.sq_mg === "mg");
@@ -1123,7 +1123,7 @@ import fs from "node:fs";
     const ringBellBody9 = (bellSrc9.match(/export function ringBell\(world, grid, field, T, run, ctx, map\) \{[\s\S]*?\n\}/) || [""])[0];
     ok("T9(d): ringBell extracts (source pin base)", ringBellBody9.length > 0);
     ok("T9(d2): gated on a dead hull, both kinds", /!has\("bison"\)/.test(ringBellBody9) && /!has\("apc"\)/.test(ringBellBody9));
-    ok("T9(d3): the bell clamp is DEAD — ownership alone gates, any bell (owner, P7.2 T4)",
+    ok("T9(d3): the bell clamp is DEAD — ownership alone gates, any bell",
       !/run\.bell >= TIER_BELLS\[3\]/.test(ringBellBody9) && /run\.foe\.unlocked\.indexOf\(tag\) >= 0/.test(ringBellBody9));
     ok("T9(d4): gated on the enemy's own pick (run.foe.unlocked)", /run\.foe\.unlocked\.indexOf\(tag\) >= 0/.test(ringBellBody9));
     ok("T9(d5): the full gate ANDs dead-hull, tier-open-and-picked and affordability — a poor regiment fails the same chain and buys nothing",

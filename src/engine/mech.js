@@ -2888,7 +2888,7 @@ export function mechMissiles(world, mech) {
   mech.telem.salvos = (mech.telem.salvos || 0) + 1;
   return true;
 }
-// THE HEAVY SALVO (owner, 2026-08-20): the one added weapon — a saturation
+// THE HEAVY SALVO: the one added weapon — a saturation
 // barrage on a long cooldown. Nine rockets walk a deterministic ring around
 // the aim point; each flies the salvo's own fixed-loft solve. No rng.
 export function mechBarrage(world, mech) {

@@ -103,7 +103,7 @@ function RadialMenu({ cx, cy, label, slots, armed, onChoose, press, onCard, show
         const lx = cx + Math.cos(mid) * 72, ly = cy + Math.sin(mid) * 72;
         return (
           <g key={s.key} data-radial={s.key} style={{ pointerEvents: "auto", cursor: "pointer" }} onClick={() => { s.act(); onChoose && onChoose(); }} opacity={armed ? 1 : 0.5} {...(s.card && press ? press(s.card) : {})}>
-            {/* mk0.83 (owner: "green text on green background is illegible"):
+            {/* mk0.83:
                 the wedge keeps its dark panel fill even when lit — the lit
                 state is the accent BORDER and a faint tint, and every label
                 paints a dark halo under itself (paintOrder stroke) so it
@@ -116,7 +116,7 @@ function RadialMenu({ cx, cy, label, slots, armed, onChoose, press, onCard, show
               <text data-wedge-info={s.card} x={lx} y={s.toggle != null ? ly - 22 : ly + 26} textAnchor="middle" fontSize="11" fill="#9fdcff" stroke="#0e1218" strokeWidth="3" paintOrder="stroke" style={{ cursor: "pointer" }}
                 onClick={(e) => { e.stopPropagation(); onCard && onCard(s.card); }}>ⓘ</text>
             )}
-            {/* P7.1 T2 (owner): a toggle wedge wears a slider — black at
+            {/* P7.1 T2: a toggle wedge wears a slider — black at
                 rest, slid over and bright green in use. Only slots that
                 carry s.toggle draw it; every other wedge is untouched. */}
             {s.toggle != null && (
@@ -160,7 +160,7 @@ const PALETTE = [
   // P1.5 T4: the engineer team — in the starting kit, so this slot is on the
   // bar from the first frame of every match.
   { key: "sq_engineers", label: "ENGINEERS", icon: "⚒", cost: SQUAD_SPECS.engineers.cost },
-  // mk2.02 (owner): the roster surgery — rockets and grenadiers hold the tier-1 seats.
+  // mk2.02: the roster surgery — rockets and grenadiers hold the tier-1 seats.
   { key: "sq_rockets", label: "ROCKET TEAM", icon: "▲", cost: SQUAD_SPECS.rockets.cost },
   { key: "sq_grenadiers", label: "GRENADIERS", icon: "◎", cost: SQUAD_SPECS.grenadiers.cost },
   // P7.2 T6: the medic team — mercy on the bar
@@ -207,7 +207,7 @@ const FOE_RACK = [
 ];
 const FOE_RACK_BY_KEY = Object.fromEntries(FOE_RACK.map((f) => [f.key, f]));
 
-// P7.2 T8 (owner): THE DRAFT SCREEN — a NEW pre-start surface, shared DOM
+// P7.2 T8: THE DRAFT SCREEN — a NEW pre-start surface, shared DOM
 // phone and desktop. Seven cards up, tap toggles a pick, five max; CONFIRM
 // arms at exactly five. Styled on the pre-start overlay's own P.btn idiom
 // (P.slot's build-bar card, ~44px touch target both platforms).
@@ -260,13 +260,13 @@ const TREE_BRANCHES = [
   { key: "vehicles", label: "VEHICLES", icon: "⛨", match: (k) => k.startsWith("hero_") },
 ];
 const branchOf = (key) => { const b = TREE_BRANCHES.find((x) => x.match(key)); return b ? b.key : null; };
-// mk2.28 (owner): the quartermaster's purpose lines — first war only.
+// mk2.28: the quartermaster's purpose lines — first war only.
 const QM_LINES = { troops: "men you order", buildings: "iron that stands", vehicles: "iron that moves", foes: "targets for the bench" };
-// mk2.31 (owner): THE LATTICE — rungs cut by BASE price (v5 mockup),
+// mk2.31: THE LATTICE — rungs cut by BASE price (v5 mockup),
 // bottom-up in array order, cheap→dear inside a rung. Presentation only;
 // the price-family rows in specs.js are untouched and a tag never jumps
 // rungs on a live price. DAVY is the hero-tier troop; the APC is rung II
-// iron, not hero (owner, 2026-08-24).
+// iron, not hero.
 const LATTICE = {
   troops: [
     { name: "I", keys: ["sq_rifles", "sq_engineers", "sq_mg", "sq_sappers"] },
@@ -515,7 +515,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       let windOn = true;
       try { windOn = window.localStorage.getItem("coldsnap-depot-wind") !== "0"; } catch (e) {}
 
-      // P7.1 T3 (owner): HEALTH BARS toggle — visual only, beside FOG.
+      // P7.1 T3: HEALTH BARS toggle — visual only, beside FOG.
       // Same coldsnap-depot-* persistence pattern. Default ON.
       let healthOn = true;
       try { healthOn = window.localStorage.getItem("coldsnap-depot-health") !== "0"; } catch (e) {}
@@ -689,7 +689,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         const cost = spec ? priceNow(mode, spec.cost) : (dev ? 0 : WALL_COST); // walls: no TOWER_SPECS row, state.js owns the price
         if (run.resources < cost) { toast("NO SCRAP"); return; }
         cell.blocked = true;
-        // mk1.96 (owner): the road rule EXPUNGED — a sealed map is the
+        // mk1.96: the road rule EXPUNGED — a sealed map is the
         // attacker's problem; the siege flow marches it onto the wall.
         if (!buyPaced()) { cell.blocked = false; return; }
         const wp = grid.gridToWorld(gx, gz);
@@ -773,9 +773,9 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         }
         view.pending = { gx, gz, mode, wp, y, poly, ringR, color, cost: priceNow(mode, spec.cost), armedAt: world.t + PENDING_ARM_S };
       };
-      // mk2.36 (owner): A PLACEMENT STANDS THE MENU DOWN — success clears
+      // mk2.36: A PLACEMENT STANDS THE MENU DOWN — success clears
       // the armed mode and its ground tint back to plain command. Knowingly
-      // reverses mk1.67's stays-armed-for-repeat ruling (owner, 2026-08-24).
+      // reverses mk1.67's stays-armed-for-repeat ruling.
       // The bench's enemy rack keeps repeat placement; refusals keep the arm.
       const standDown = () => {
         run.mode = null; view.pending = null; view.buildPt0 = null;
@@ -800,7 +800,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // Build-bar mode keys -> squad type. Prefixed (sq_mg vs mg) because the
       // MG TOWER already owns the bare "mg" mode key.
       const SQUAD_MODE = { sq_sniper: "sniper", sq_rifles: "rifles", sq_mg: "mg", sq_sappers: "sappers", sq_mortars: "mortars", sq_engineers: "engineers", sq_rockets: "rockets", sq_grenadiers: "grenadiers", sq_medics: "medics", sq_mechanics: "mechanics", sq_davy: "davy" };
-      // mk1.95 (owner): hero keys are placement modes — the one law.
+      // mk1.95: hero keys are placement modes — the one law.
       const HERO_MODE = { hero_bison: "bison", hero_apc: "apc", hero_jeep: "jeep", hero_mech: "mech" };
       view.toggleGear = () => {
         const P2 = input.possess;
@@ -853,7 +853,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         run._buyAt = world.t;
         standDown();
       };
-      // P7.1 T6 (owner): one picked unit onto the ground — vetted per kind, free
+      // P7.1 T6: one picked unit onto the ground — vetted per kind, free
       // (the starting kit costs nothing), inside the homeland only.
       const placePick = (p) => {
         const key = view._placeQueue[0];
@@ -1058,7 +1058,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         const v = !sq.prefStruct;
         for (const gsq of selectedGroup()) gsq.prefStruct = v;
       };
-      // P7.2 T1 (owner): SELECT ALL OF TYPE — every squad of the selected
+      // P7.2 T1: SELECT ALL OF TYPE — every squad of the selected
       // type joins; one-squad results collapse back to plain selection.
       view.selectAllType = () => {
         const sq = selectedSquad();
@@ -1165,7 +1165,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // POSSESSION T4 (mk0.93): the possessed unit's own sight circle: a
       // squad sees with its best living eye (a sniper pair's spotter reaches
       // 46), a tower with its height. The reticle lives inside THIS circle —
-      // the owner's ruling that closes the far-eyes range question.
+      // the ruling that closes the far-eyes range question.
       const possessCenter = () => {
         const P = input.possess;
         if (!P) return null;
@@ -1247,7 +1247,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         // mid-hold bell release.
         input.reticle = null; view.reticleOff = null; input.fireHeld = false; input.mgHeld = false;
         view.reticleLockId = null;
-        // mk2.02: THE CONVOY WAITS (owner) — a hand dealt during the
+        // mk2.02: THE CONVOY WAITS — a hand dealt during the
         // possession opens the moment the possession ends.
         if (run.manifest && run.manifest.hand.length && !run.manifest.cardUp) { run.manifest.cardUp = true; run.manifest.armedAt = world.t + PENDING_ARM_S; }
         if (sq) {
@@ -1385,7 +1385,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
                     : q.line === "bags" ? pieces.length * fp.bag
                     : q.line === "mines" ? pieces.length * mp.mine
                     : pieces.length * mp.wire;
-        if (run.resources < price) return; // stand and wait — the owner's ruling (2026-09-03)
+        if (run.resources < price) return; // stand and wait — the ruling (2026-09-03)
         sq._queue.shift(); if (!sq._queue.length) sq._queue = null;
         startBuildLine(grid, sq, q.line, a, b, toast);
       };
@@ -1671,7 +1671,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         if (!run.started && view._placeQueue && view._placeQueue.length) {
           if (view.infoKey) return; // P7.1 T8: the card is up — read it first (PLACE IT closes it)
           const p0 = groundPoint(cx, cy);
-          // P7.2 T3 (owner): the tap sets or MOVES a confirm ghost — nothing
+          // P7.2 T3: the tap sets or MOVES a confirm ghost — nothing
           // fields until the ✓. Wall-clock arming: the sim is frozen here.
           if (p0) view.pending = { deal: view._placeQueue[0], wp: { x: p0.x, z: p0.z }, y: field.heightAt(p0.x, p0.z), poly: null, ringR: 0, color: 0x4aff8c, cost: 0, wallArm: true, armedAtWall: performance.now() / 1000 + PENDING_ARM_S, fp: ghostFp(view._placeQueue[0]) };
           return;
@@ -1687,7 +1687,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         // P7.2 T2: THE HIRE'S TAP — an armed placement owns the ground tap.
         if (view.hirePlace) {
           const ph = groundPoint(cx, cy);
-          // P7.2 T3 (owner): the tap sets or MOVES the confirm ghost.
+          // P7.2 T3: the tap sets or MOVES the confirm ghost.
           if (ph) view.pending = { hire: view.hirePlace.key, wp: { x: ph.x, z: ph.z }, y: field.heightAt(ph.x, ph.z), poly: null, ringR: 0, color: 0x7dffa8, cost: priceNow(view.hirePlace.key, (PALETTE_BY_KEY[view.hirePlace.key] || { cost: 10 }).cost), armedAt: world.t + PENDING_ARM_S, fp: ghostFp(view.hirePlace.key) };
           return;
         }
@@ -1826,7 +1826,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         // the left mouse button IS the trigger — held, it volleys like the
         // phone FIRE button; the click never becomes a pan or a tap. The
         // possession release paths already clear fireHeld.
-        // DESKTOP COAX (P7 T2, owner's ruling): while possessing the Bison,
+        // DESKTOP COAX (P7 T2): while possessing the Bison,
         // the right mouse button IS the coax trigger — held, like FIRE/MG.
         // Checked before the left-button main-gun branch so a right-click
         // never falls through to it.
@@ -2034,7 +2034,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         else if (k && door === "hire") view.armHire(k);
         // P7.1 T8: the deal door just closes — the ground tap places next.
       };
-      // P7.2 T8 (owner): the five picks are FREE — the pick is the payment.
+      // P7.2 T8: the five picks are FREE — the pick is the payment.
       // Plans open the bar at once; units join the deal-placement queue.
       view.confirmDraft = (picked) => {
         if (!picked || picked.length !== 5) return;
@@ -2049,7 +2049,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       view.pickManifest = (key) => {
         const M = run.manifest;
         if (!M || performance.now() / 1000 < (M.armedAtWall ?? 0)) { toast("HOLD — ARMING"); return; }
-        // P7.2 T2 (owner): A PLAN COSTS HALF the live price — the ladder
+        // P7.2 T2: A PLAN COSTS HALF the live price — the ladder
         // itself gained a price; each build after pays full. The convoy's
         // window is EXEMPT from the one-buy-per-second law (the hand is
         // one visit): no pacing check, no purchase stamp.
@@ -2061,17 +2061,17 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         run.resources -= price;
         cue("uitick"); // the plan is bought
         toast((PALETTE_LABEL[key] || key) + " — PLANS BOUGHT ◆" + price);
-        // mk1.95 (owner): THE PICK ARMS THE BAR — every key; hero keys are placement modes under the one law now.
+        // mk1.95: THE PICK ARMS THE BAR — every key; hero keys are placement modes under the one law now.
         setMode(key);
       };
-      // P7.2 T2 (owner): A HIRE FIELDS AT ONCE, placed by your own ground
+      // P7.2 T2: A HIRE FIELDS AT ONCE, placed by your own ground
       // tap on held ground. Payment lands only when the unit actually
       // fields — the ✗ cancels, charges nothing, and reopens the hand.
       view.armHire = (key) => {
         const M = run.manifest;
         if (!M || performance.now() / 1000 < (M.armedAtWall ?? 0)) { toast("HOLD — ARMING"); return; }
         if (!M.hand.some((c) => c.k === key && c.hire === 1)) return;
-        // P7.2 HOTFIX mk1.86 (owner): AFFORDABILITY IS CHECKED FIRST — a hire
+        // P7.2 HOTFIX mk1.86: AFFORDABILITY IS CHECKED FIRST — a hire
         // the till can't cover is refused here, before any ceremony: the card
         // stays in the hand, the window stays open, and the toast names the
         // price. Found live: a Bison hire armed at bell one and died at the
@@ -2133,7 +2133,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         takeHandCard(run.manifest, key, 1);
         run.resources -= price;
         view.hirePlace = null;
-        if (run.manifest && run.manifest.hand.length && view.openManifest) view.openManifest(); // P7.2 HF mk1.86 (owner): multi-buy is one visit — the hand returns for the next card (the calm window returns with it, the ruled pause of an open hand)
+        if (run.manifest && run.manifest.hand.length && view.openManifest) view.openManifest(); // P7.2 HF mk1.86: multi-buy is one visit — the hand returns for the next card (the calm window returns with it, the ruled pause of an open hand)
         cue("uitick");
         toast("THE HIRE FIELDS — ◆" + price);
       };
@@ -2182,7 +2182,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           for (let k = 0; k < it.n; k++) spawnUnit(world, { x: d.x, z: d.z }, it.tag);
         }
       };
-      // mk1.95 (owner): THE HERO FIELDS BY THE ONE PLACEMENT LAW — the bar
+      // mk1.95: THE HERO FIELDS BY THE ONE PLACEMENT LAW — the bar
       // arms a mode, the ground tap sets the ghost, the ✓ runs this. The
       // enemy's own heroes keep bell.js's replacement walk at its depot.
       const placeHero = (key, p) => {
@@ -2239,7 +2239,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           ? (x, z) => Math.hypot(x - depotP.x, z - depotP.z) <= HOMELAND_R
           : dev ? () => true
           : (x, z) => { const c = map.invW(x, z); return canBuild(T, c.u, c.v); };
-        // mk1.96 (owner): the zone tells the ARMED unit's own truth — the
+        // mk1.96: the zone tells the ARMED unit's own truth — the
         // ground's permanent laws AND the room standing bodies take right
         // now. Hulls vet their flat parking and their clearance; the mech
         // its spread and its 4.5m; squads and towers place by the shared
@@ -2690,7 +2690,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           // is still six world-seconds away when this runs.
           if (run.gameOver || run.victory) burnSave();
           const cardUp = endCardReady(run, world.t);
-          // P7.2 T3 (owner): THE WAR PAUSES FOR THE CONVOY — the whole sim
+          // P7.2 T3: THE WAR PAUSES FOR THE CONVOY — the whole sim
           // freezes while the hand's window is up; LATER or buying out the
           // hand resumes it. Prices and the bell freeze for free: every
           // accumulator below feeds on sdt.
@@ -2957,7 +2957,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             }
             R.setTownFlags(rows);
           }
-          // P7 T13 (owner): THE GREEN THREADS — every friendly ordered path,
+          // P7 T13: THE GREEN THREADS — every friendly ordered path,
           // green on the ground, refreshed with the other derived overlays.
           if (terrFlagged) {
             const paths = [];
@@ -2973,7 +2973,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             }
             R.overlay.setOrderPaths(paths);
           }
-          // mk2.14 (owner): a davy burst carved the ground, or a rock
+          // mk2.14: a davy burst carved the ground, or a rock
           // breached — re-lay the rock dressing so surviving boulders sink
           // to the new surface instead of floating over the crater.
           if (dressFlagged) { R.setDressing({ rocks: rocksLive, ponds: map.PONDS, streams: streamRibs }); toast("THE RIDGE IS BREACHED"); }
@@ -3438,7 +3438,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
     const C = stateRef.current; if (!C) return;
     if (C.run.gameOver || C.run.victory) return;   // mk0.29: the war is over — nothing left to build
     // mk1.95: hero keys are ordinary placement modes — no special case.
-    // P7 T17 (owner): TAP AGAIN TO PUT IT AWAY — the active build button is
+    // P7 T17: TAP AGAIN TO PUT IT AWAY — the active build button is
     // a toggle; the second tap clears back to plain command.
     if (C.run.mode === m) {
       if (C.view.linePending && C.view.rejectLine) C.view.rejectLine();
@@ -3512,7 +3512,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
   };
   // mk2.18: THE SWITCH — area weapons (tesla chain, davy blast) hold fire
   // with a friendly in the spread. Per side; only side 1 (the player) ever
-  // flips (owner: symmetry is capability, side 2's row stays OFF, untouched).
+  // flips.
   const toggleHoldArea = () => {
     const C = stateRef.current; if (!C || !C.run.holdArea) return;
     C.run.holdArea[1] = !C.run.holdArea[1];
@@ -4037,7 +4037,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           // POSSESSION (P4 T1, mk0.90): TAKE CONTROL — every squad type,
           // instant like DEFEND (deselects on choose; the pie itself closes
           // via RadialMenu's onChoose regardless).
-          // mk2.00 (owner): the build tree closes with the take — all three TAKE CONTROLs.
+          // mk2.00: the build tree closes with the take — all three TAKE CONTROLs.
           { key: "possess", icon: "✥", label: "TAKE CONTROL", color: "#7dffa8", on: false, card: "possess_squad", act: () => { closeBuild(); const C = stateRef.current; if (C) C.view.takeControl(); } },
           { key: "select_all", icon: "∷", label: "SELECT ALL", color: "#9fdcff", on: sq.count > 1, card: "select_all", act: () => { const C = stateRef.current; if (C) { C.view.selectAllType(); C.view._keepPie = true; } } },
         ];
@@ -4280,7 +4280,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             onClick={() => {
               if (buildOpen) { closeBuild(); return; }
               const C = stateRef.current;
-              // mk2.00 (owner): no build tree over a live possession.
+              // mk2.00: no build tree over a live possession.
               if (C && C.input.possess) return;
               const b = C && C.run.mode ? branchOf(C.run.mode) : null;
               if (b) setBranch(b);

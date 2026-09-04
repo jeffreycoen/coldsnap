@@ -13,7 +13,7 @@ import { stepBuildLine } from "../../src/depot/buildlines.js";
 import fs from "node:fs";
 
 // ==== P7 T12: SPAWN GROUND LEARNS VEHICLES ===================================
-// The fielded-start kill (owner, 2026-08-17): slotBlocked vetted static solids
+// The fielded-start kill: slotBlocked vetted static solids
 // only — a parked hull was invisible to every spawn/slot site. The fielded-
 // start squads spawned overlapping the player's parked armor; the engine's
 // shove-apart killed the men at second zero and the empty squads were silently
@@ -500,7 +500,7 @@ import fs from "node:fs";
       /if \(!memberNearRow\(world, sq, row, LAY_REACH\)\) break;/.test(blSrc17));
   }
   // (d) friendly bags turn a hull route; men walk it untouched. P7 T24
-  // re-teach (owner): bag cells inflate one ring for hull lanes now — a
+  // re-teach: bag cells inflate one ring for hull lanes now — a
   // ONE-cell doorway is no lane for a hull (its neighbors are bagged), but
   // a THREE-cell gap still threads. Men never notice bags either way.
   {

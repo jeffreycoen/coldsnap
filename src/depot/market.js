@@ -23,12 +23,12 @@ export const MARKET_K = {
   mgtower: 4, guntower: 4, mortartower: 3, rockettower: 3, teslatower: 4,
   wall: 30, sandbag: 40,
   // P7 T9 set the hero tier at K 1 — one hull doubled, two hit the clamp.
-  // SUPERSEDED KNOWINGLY (owner, 2026-08-21, mk1.95): hero prices behave
+  // SUPERSEDED KNOWINGLY: hero prices behave
   // like every other price, symmetrically — K 3, the tank family's machine
   // precedent. One shared table, both sides' iron, unchanged below.
   heroBison: 3, heroApc: 3, heroJeep: 4,
   heroMech: 3, // provisional (F5)
-  // P7 T10 (owner): mine/wire families — a per-side budget rides the market
+  // P7 T10: mine/wire families — a per-side budget rides the market
   // so a mine war stays under the engine ceiling. Both sides' LIVE devices
   // count together, one shared table (provisional F5).
   mine: 12, wire: 16,
@@ -112,7 +112,7 @@ export function fieldPrices(counts, wallBase, bagBase) {
   return { wall: priced(wallBase, "wall", counts), bag: priced(bagBase, "sandbag", counts) };
 }
 
-// THE KILL PRICE (owner, 2026-08-20): what one death is worth — the victim's
+// THE KILL PRICE: what one death is worth — the victim's
 // live market price at the moment it dies, resolved from the kill event's own
 // identity fields (core.js stamps them under depotCombat). Men price per
 // head: a squad-family price over the men one buy fields (the sniper-pair

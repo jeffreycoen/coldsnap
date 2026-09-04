@@ -130,7 +130,7 @@ import fs from "node:fs";
     ok("VISION T1(f): and the map is not trivially empty", lit1 > 0 && lit2 > 0, `${lit1}/${lit2}`);
   }
 
-  // (h) walls and sandbags are never eyes (owner's rule, 2026-08-12) — they
+  // (h) walls and sandbags are never eyes — they
   // block sight, they never grant it.
   {
     const world = makeWorld({ field: flatField, seed: 3 });
@@ -365,7 +365,7 @@ import fs from "node:fs";
     // the two possessed triggers (main gun, coax) all gate on sight, the same
     // law every other shot obeys. Count moves 1 -> 5, honestly, four new
     // sight-gated call sites, none loosened.
-    // re-pinned mk2.58 (owner): THE COMMANDER'S EYE — the three POSSESSED
+    // re-pinned mk2.58: THE COMMANDER'S EYE — the three POSSESSED
     // gates (main gun, coax, mechSighted) leave; possession is the player's
     // own sight. The three AUTONOMOUS gates (tank struct loop, both armor
     // scans) stand. Count moves 6 -> 3, every remaining one autonomous.
