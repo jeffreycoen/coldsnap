@@ -133,9 +133,9 @@ export const APC = { mass: 2600, hx: 1.6, hy: 1.0, hz: 3.0, hp: 300, armor: 120,
 // mk2.98 (owner): THE JEEP — the Willys. Coax only, two seats, the spotter's
 // eye, springs under it (mk2.97), 2H runs and 4L climbs, and it fords the
 // stream as the Bison does. All dials provisional (F5).
-export const JEEP = { mass: 1100, hx: 0.85, hy: 0.55, hz: 1.6, hp: 90, bounty: 15, seats: 2, cost: 60, eye: 46,
+export const JEEP = { mass: 1100, hx: 0.85, hy: 0.55, hz: 1.6, hp: 180, bounty: 15, seats: 2, cost: 60, eye: 46,
   spd2h: 14, cap2h: 3.5, spd4l: 4, cap4l: 7,
-  susp: { kx: 0.7, kz: 1.3, rest: 0.6, travel: 0.4, rate: 66000, damp: 6000 } }; // mk2.99: grown to the Willys' real footprint
+  susp: { kx: 0.85, kz: 1.3, rest: 0.48, travel: 0.4, rate: 66000, damp: 6000 } }; // mk2.99: grown to the Willys' real footprint // mk3.00 (owner): hp doubled; stance widened to the hull's edge and ride height dropped against the rollover
 
 // THE MECH (owner, 2026-08-20): the crown machine, both sides — the engine
 // walker fielded as a hero. Dear, slow, unanswerable except by another.
