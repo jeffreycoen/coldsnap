@@ -59,4 +59,5 @@ await import("./tests/42-the-credit-trail.mjs");
 await import("./tests/43-the-roster.mjs");
 await import("./tests/44-the-suspension.mjs");
 await import("./tests/45-the-jeep.mjs");
+await import("./tests/46-the-jeep-refit.mjs");
 finish();

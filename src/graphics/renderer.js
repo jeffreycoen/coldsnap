@@ -100,18 +100,22 @@ export function buildWaveTank(team) {
 export function buildJeep(team) {
   const g = new THREE.Group();
   const hullC = team === 2 ? 0x6e3a34 : 0x4a5d3a;
-  const hull = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.55, 2.2), toon(hullC));
-  hull.position.y = 0.1; hull.castShadow = true; g.add(hull);
-  const screen = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.5, 0.08), toon(0x28303a));
-  screen.position.set(0, 0.55, 0.55); screen.rotation.x = -0.2; g.add(screen);
-  const seat = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.35, 0.7), toon(0x2a2f27));
-  seat.position.set(0, 0.35, -0.35); g.add(seat);
-  const coax = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.9, 6), toon(0x33383d));
-  coax.rotation.x = Math.PI / 2; coax.position.set(0.35, 0.75, 0.2); g.add(coax);
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.6, 3.2), toon(hullC));
+  hull.position.y = 0.15; hull.castShadow = true; g.add(hull);
+  const hood = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.25, 1.0), toon(hullC));
+  hood.position.set(0, 0.55, 1.0); g.add(hood);
+  const screen = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.55, 0.08), toon(0x28303a));
+  screen.position.set(0, 0.85, 0.5); screen.rotation.x = -0.15; g.add(screen);
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.4, 1.1), toon(0x2a2f27));
+  seat.position.set(0, 0.5, -0.5); g.add(seat);
+  const pintle = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.5, 6), toon(0x33383d));
+  pintle.position.set(0, 0.95, -0.9); g.add(pintle);
+  const mg = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.7, 6), toon(0x14171a));
+  mg.rotation.x = Math.PI / 2; mg.position.set(0, 1.2, -0.6); g.add(mg);
   g.userData.wheels = [];
   for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
-    const wh = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.33, 0.25, 10), toon(0x1b1e22));
-    wh.rotation.z = Math.PI / 2; wh.position.set(sx * 0.72, -0.28, sz * 0.9);
+    const wh = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.3, 10), toon(0x1b1e22));
+    wh.rotation.z = Math.PI / 2; wh.position.set(sx * 0.88, -0.3, sz * 1.3);
     wh.castShadow = true; g.add(wh);
     g.userData.wheels.push(wh);
   }
@@ -1964,8 +1968,8 @@ export function makeRenderer(canvas, world0, opts = {}) {
         const spd = Math.hypot(b.v.x, b.v.z) * (b.v.x * b.R[6] + b.v.z * b.R[8] >= 0 ? 1 : -1);
         for (let wi = 0; wi < 4; wi++) {
           const wh = g.userData.wheels[wi];
-          wh.position.y = -0.55 + Math.min(0.4, b._wheelC[wi]);
-          wh.rotation.y += spd * 0.05;
+          wh.position.y = -0.7 + Math.min(0.4, b._wheelC[wi]);
+          wh.rotateY(spd * 0.04); // mk2.99: local space — the wheel rolls about its own axle, not a top's spin
         }
       }
       if (b.kind === "vehicle") pushBar(b, 2.6, 1.0); // provisional (F5)

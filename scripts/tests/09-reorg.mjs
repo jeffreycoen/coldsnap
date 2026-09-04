@@ -81,7 +81,7 @@ import fs from "node:fs";
       S19.squads.length === 0 && !w.bodies.some((b) => b.team === 1 && b.alive));
     let guard = 0;
     for (const b of w.bodies) if (b.kind === "unit" && b.team === 2 && b.garrison && b.alive) guard++;
-    ok("T19(b3): the muster's fielded men are the mirror's standing force, whatever the deal (re-taught mk2.98, owner: the count belonged to one seed's hand)", w.bodies.filter((b) => b.kind === "unit" && b.alive).every((b) => b.team === 2 && b.garrison === true), guard);
+    ok("T19(b3): the muster's fielded men are the mirror's — standing force or its mustered squads, whatever the deal (re-taught mk2.99: an engineer pick fields a squad, not garrison men)", w.bodies.filter((b) => b.kind === "unit" && b.alive).every((b) => b.team === 2 && (b.garrison === true || (S19.foeSquads || []).some((q) => q.memberIds.includes(b.id)))), guard);
     ok("T19(b4): the commander was drawn", S19.cmdr === "cautious" || S19.cmdr === "bold" || S19.cmdr === "stubborn", S19.cmdr);
     ok("T19(b5): the books stayed honest (re-taught P7.1 T6: the guard's -8 died with the guard, 52 -> 60)", S19.reg.heads === 60, S19.reg.heads);
   }

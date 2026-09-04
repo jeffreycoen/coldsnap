@@ -589,3 +589,8 @@
 2026-09-04T11:19:20.778Z golden ok 7 PASS / 0 FAIL — GOLDEN GATE: ALL PASS (19.8s)
 2026-09-04T11:19:23.886Z depot-lint ok 0 PASS / 0 FAIL — depot-lint PASS (0.1s)
 2026-09-04T11:22:38.402Z smoke ok 30 PASS / 0 FAIL — BOOT-LOAD SMOKE: ALL PASS (190.4s)
+2026-09-04T12:06:34.757Z depot-test FAIL(1) 2195 PASS / 6 FAIL — 6 FAILURE(S): (a) the boarding lookup finds the jeep, (b) the spec grew to the real footprint, (c) pins: the wheels roll (192.4s)
+2026-09-04T12:10:14.675Z depot-test FAIL(1) 2199 PASS / 2 FAIL — 2 FAILURE(S): T19(b3): the muster's fielded men are the mirror's standing force, whatever the deal (re-taught mk2.98, ow (194.1s)
+2026-09-04T12:20:51.199Z depot-test ok 2201 PASS / 0 FAIL — depot-test PASS (193.2s)
+2026-09-04T12:20:54.646Z depot-lint ok 0 PASS / 0 FAIL — depot-lint PASS (0.0s)
+2026-09-04T12:24:05.954Z smoke ok 30 PASS / 0 FAIL — BOOT-LOAD SMOKE: ALL PASS (187.8s)

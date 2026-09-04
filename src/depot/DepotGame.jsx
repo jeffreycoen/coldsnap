@@ -3746,7 +3746,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       )}
       {/* P7 T2: the Bison's coax — vehicle possession only, beside FIRE.
           P7 T4: not the APC — one gun, FIRE alone. */}
-      {isTouch && hud.possessed && hud.possessed.kind === "vehicle" && hud.possessed.vtype !== "apc" && (
+      {isTouch && hud.possessed && hud.possessed.kind === "vehicle" && hud.possessed.vtype !== "apc" && hud.possessed.vtype !== "jeep" && (
         <button data-possess-mg ref={mgBtnRef}
           style={{ ...P.btnBig, position: "absolute", right: 208, bottom: 16, zIndex: 7, width: 64, height: 64, borderRadius: "50%", borderColor: "#ffd27a", color: "#ffd27a", fontWeight: "bold", background: "#2a2214", touchAction: "none" }}
           onPointerDown={(e) => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); setMgHeld(true); }}

@@ -287,7 +287,7 @@ export function tickWar(war, sdt, input) {
     if (pv) {
       // P7 T4: the APC's only gun is the coax — FIRE streams it (no
       // main gun to fire), and there is no separate MG trigger.
-      if (input.fireHeld) { if (pv.vtype === "apc") possessedArmorMg(world, pv, input.reticle, T, map.invW); else possessedArmorFire(world, pv, input.reticle, T, map.invW); }
+      if (input.fireHeld) { if (pv.vtype === "apc" || pv.vtype === "jeep") possessedArmorMg(world, pv, input.reticle, T, map.invW); else possessedArmorFire(world, pv, input.reticle, T, map.invW); } // mk2.99: coax-only hulls fire the coax — the APC's one-gun law
       if (input.mgHeld && pv.vtype !== "apc") possessedArmorMg(world, pv, input.reticle, T, map.invW);
     }
   }

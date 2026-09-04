@@ -25,7 +25,7 @@ const HATCH_R = 14;         // m — the ramp drops when the boarders close to t
 const STANDOFF = 2.2;
 
 export function apcBySeq(world, seq) {
-  for (const b of world.bodies) if (b.kind === "vehicle" && b.vtype === "apc" && b.apcSeq === seq && b.alive) return b;
+  for (const b of world.bodies) if (b.kind === "vehicle" && (b.vtype === "apc" || b.vtype === "jeep") && b.apcSeq === seq && b.alive) return b; // mk2.99: the jeep boards too
   return null;
 }
 export function apcSeated(world, squads, seq) {
@@ -35,7 +35,7 @@ export function apcSeated(world, squads, seq) {
   return n;
 }
 export function stepTransports(world, squads) {
-  for (const b of world.bodies) if (b.vtype === "apc") b._hatch = (world.t - (b._unloadT || -9) < 1.5) ? 1 : 0;
+  for (const b of world.bodies) if (b.vtype === "apc" || b.vtype === "jeep") b._hatch = (world.t - (b._unloadT || -9) < 1.5) ? 1 : 0;
   // P7 T8: THE FERRY'S HOLD — enemy riders are loose units, seated by
   // u.rideApc (the seat number), not a squad roster. Same stash (y RIDE_Y),
   // same seal, same grave: the hull gone kills every rider it still carries.
