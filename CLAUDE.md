@@ -14,6 +14,7 @@ The owner directs design, reviews every plan, and is the sole playtester. His wo
 - No jargon, no acronyms.
 - Never "waiting on you", "ready when you are", "blocked on owner". State the state; he knows whose move it is.
 - The enemy is "it" or "the enemy", never "he".
+- No attribution stamps. Never write "(owner)", "owner's ruling", "the owner's word", or dated attributions of what the owner said — not in plans, code comments, test names, or commit messages. State the design as plain fact; the document it sits in is the record. The owner does not issue "rulings".
 - Documents are served as the markdown FILE, sent rendered with the file-sending tool — never pasted whole into a reply, never a bare path.
 
 ## Plans
