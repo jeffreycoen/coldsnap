@@ -64,7 +64,7 @@ Added to CLAUDE.md under Frozen laws:
 | Task | Mark | What lands | Status |
 |---|---|---|---|
 | T1 | 0.3.10 | The mark's new form in `src/version.js`; the growth rule and the door rule into CLAUDE.md; smoke green on the renamed mark | LANDED, commit 1c4b943, depot-test 2,207 PASS / 0 FAIL, golden 7 PASS / 0 FAIL, smoke 30 PASS / 0 FAIL |
-| T2 | 0.3.11 | The debug harness out: every `window.__DEPOT*__` hook and the unmount cleanup list move to a new `src/depot/hooks.js`, installed with one call over a context bag | OPEN |
+| T2 | 0.3.11 | The debug harness out: every `window.__DEPOT*__` hook and the unmount cleanup list move to a new `src/depot/hooks.js`, installed with one call over a context bag | LANDED, commit aac65c3, depot-test 2,207 PASS / 0 FAIL, golden 7 PASS / 0 FAIL, smoke 30 PASS / 0 FAIL |
 | T3 | 0.3.12 | The top-of-file pieces out: `RadialMenu`, `DraftScreen`, the styles object, and the palette/rack/lattice tables to their own files beside `Dispatch.jsx` | OPEN |
 | T4 | 0.3.13 | The three pie builders (squad, vehicle, tower) and the group pie as components in their own file — pure presentation, every action a prop, the `InfoCard.jsx` discipline | OPEN |
 | T5 | 0.3.14 | The placement and build layer out: buildAt, canBuildAt, the pending flow, the hire/deal/hero placers, sellAt, and the sandbox rack placer, to a builder module over `{ war, view, input, R, toast, … }` — the `tick.js` idiom | OPEN |
