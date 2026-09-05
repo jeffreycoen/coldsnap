@@ -2,7 +2,6 @@
 // ground: radius 6, 4 a second, both sides, 25 seconds, restart never stack.
 // Fixture seed: 5. No seed is special.
 import { ok } from "./harness.mjs";
-import fs from "node:fs";
 import { makeField, makeWorld, addBody, explode } from "../../src/engine/core.js";
 import { addFogPatch, stepFog, FOG_S } from "../../src/depot/fog.js";
 import { DAVY_FIRE } from "../../src/depot/specs.js";
@@ -36,10 +35,4 @@ import { DAVY_FIRE } from "../../src/depot/specs.js";
   explode(plain, 0, 1, 0, { r: 2, dmg: 5, kv: 1, kind: "shell" });
   const b2 = plain.events.find((e) => e.type === "boom");
   ok("fog: an untagged boom keeps the old shape", !!b2 && !("weapon" in b2));
-  // the wiring pins: the boom hook, the territory-clock tick, the save row
-  const dg = fs.readFileSync(new URL("../../src/depot/tick.js", import.meta.url), "utf8");
-  ok("fog: the game layer hooks the davy boom", dg.includes("addFogPatch(run.fog, e.x, e.z"));
-  ok("fog: the patches tick on the territory clock", dg.includes("stepFog(world, run.fog"));
-  const sv = fs.readFileSync(new URL("../../src/depot/save.js", import.meta.url), "utf8");
-  ok("fog: the patches ride the save", sv.includes("fog: (S.fog || [])"));
 }

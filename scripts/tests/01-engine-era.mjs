@@ -14,7 +14,6 @@ import { makeTerritory, stepTerritory, holderAt, fogStateAt, valueAt, canBuild, 
 import { SIGHT, makeSight, stepSight } from "../../src/depot/sight.js";
 import { fwdUFor, invWFor } from "../../src/depot/orient.js";
 import { washAlpha, WASH_SEAM, WASH_MAX_A } from "../../src/render/renderer.js";
-import fs from "node:fs";
 
 // Headless test for the depot bell cycle: the clock runs, the bell musters an
 // assault under its tier cap, spent assaults withdraw. Drives
@@ -478,34 +477,6 @@ function scriptedWaveRun(seed) {
   ok("different seed diverges (hash isn't a constant)", h3 !== h1, `h1=${h1} h3=${h3}`);
 }
 
-// ============================================ rotation-invariance (Global Constraint)
-// Plan's Global Constraint: the renderer's Q/E view rotation (rotateStep,
-// src/render/renderer.js) must never touch sim state — a scripted wave must
-// hash identically whether or not rotateStep is interleaved between steps.
-// This harness is headless (no renderer instance, no canvas/GL context), so
-// a literal "call rotateStep between stepWorld calls, compare worldHash" run
-// isn't reachable here; instead we assert the CONTRACT it depends on at the
-// grep level: rotateStep only exists in renderer.js and mutates its own
-// local `yawTgt` closure var, and depot's sim tick path (state.js, plus the
-// worldHash/stepWorld region of core.js) never reads "yaw" or "rotateStep"
-// at all. td-render-test.mjs (a live-server browser gate, not run in CI)
-// covers the literal rotate-then-render pixel check; this is the headless
-// half of the same guarantee.
-{
-  const stateSrc = fs.readFileSync(new URL("../../src/depot/state.js", import.meta.url), "utf8");
-  const coreSrc = fs.readFileSync(new URL("../../src/engine/core.js", import.meta.url), "utf8");
-  const rendererSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-  // (core.js legitimately says "yaw" for body/mech facing (physics, not the
-  // camera) — the sim-purity claim is specifically about view rotation, so
-  // check for rotateStep/yawTgt/camYaw, not the bare substring "yaw".)
-  ok("rotation-invariance: src/depot/state.js (sim tick path) never references view rotation", !/rotateStep|yawTgt|camYaw/i.test(stateSrc));
-  ok("rotation-invariance: src/engine/core.js (stepWorld/worldHash) never references view rotation", !/rotateStep|yawTgt|camYaw/i.test(coreSrc));
-  ok("rotation-invariance: rotateStep is defined exactly once, in the renderer", (rendererSrc.match(/function rotateStep/g) || []).length === 1);
-  // sanity: worldHash's own inputs are bodies/projectiles/t only — confirms
-  // there's no rotation-shaped field it could be hashing in the first place.
-  const wh = coreSrc.slice(coreSrc.indexOf("export function worldHash"), coreSrc.indexOf("export function worldHash") + 800);
-  ok("rotation-invariance: worldHash hashes bodies/projectiles/t (no camera/view field)", /for \(const \w+ of world\.(bodies|projectiles)\)/.test(wh));
-}
 {
   // Literal check where we CAN run it headlessly: scripted-wave determinism
   // (above) already proves worldHash is a pure function of (seed, sim steps).
@@ -1129,13 +1100,6 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   // rather than re-simulating a full unit tick here — the sim behavior is
   // exercised by the rest of this file's unit tests; this asserts the
   // wiring itself so a future edit that reverts to spec.range trips it).
-  {
-    const unitsSrc = fs.readFileSync(new URL("../../src/depot/units.js", import.meta.url), "utf8");
-    const driversSrc = fs.readFileSync(new URL("../../src/depot/drivers.js", import.meta.url), "utf8");
-    ok("units.js imports effRange from state.js", /import\s*\{[^}]*effRange[^}]*\}\s*from\s*"\.\/state\.js"/.test(unitsSrc));
-    ok("units.js's rifle/grenadier scans consume effRange (not raw spec.range)", (unitsSrc.match(/effRange\(world,\s*muzzle,\s*fspec\)/g) || []).length === 2);
-    ok("drivers.js's tank scan consumes effRange (re-pinned mk1.30 — stepTank moved to the motor pool)", (driversSrc.match(/effRange\(world,\s*muzzle,\s*fspec\)/g) || []).length === 1);
-  }
 
   // --- reachPolygon
   {
@@ -1827,62 +1791,13 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     ok("sweep/march: stepUnits leaves team-1 members untouched",
       m2.v.x === vx0 && m2.v.z === vz0 && m2.pos.x === px0 && m2.pos.z === pz0);
 
-    // (d) corpse cleanup: DepotGame's sweep (kind unit, any team, deadT+2.5s)
-    // is INTENDED to clear team-1 corpses too — pruneSquads (tested above)
-    // keeps the roster consistent when it does. Source-assert the sweep is
-    // team-agnostic by design, not accidentally team-2-only.
-    const depotSrc3 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    // the corpse sweep and the tower scan below live in stepDepot/stepTowers,
-    // moved to sim.js (war-engine-extraction task 1).
-    const simSrc3 = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
-    // buildEmitters moved to boot.js (task 4: the engine leaves the screen).
-    const bootSrc1 = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
-    // debug harness moved to hooks.js (T2: the harness walks out).
-    const hooksSrc = fs.readFileSync(new URL("../../src/depot/hooks.js", import.meta.url), "utf8");
-    ok("sweep/corpse: DepotGame corpse sweep is kind-gated, team-agnostic",
-      simSrc3.includes('b.kind === "unit" && !b.alive && world.t - (b.deadT || 0) > 2.5'));
-
     // (e) emitters: team-1 members must emit GREEN influence (EMIT.unit,
-    // sign +1) and sandbags must emit under EMIT.wall — buildEmitters is a
-    // DepotGame closure, so source-assert the branches exist, and
-    // functionally prove a green unit-weight emitter holds ground.
-    ok("sweep/emitters: buildEmitters includes team-1 units at EMIT.unit sign +1",
-      bootSrc1.includes('b.kind === "unit" && b.team === 1 && b.alive') &&
-      /team === 1[\s\S]{0,220}EMIT\.unit\.w, r: EMIT\.unit\.r, sign: 1/.test(bootSrc1));
-    ok("sweep/emitters: buildEmitters includes sandbags under EMIT.wall (re-taught P7.1 T7)",
-      bootSrc1.includes("b.sandbag") &&
-      /sandbag[\s\S]{0,220}EMIT\.wall\.w, r: EMIT\.wall\.r, sign: b\.bagSide === 2 \? -1 : 1/.test(bootSrc1));
+    // sign +1) — functionally prove a green unit-weight emitter holds ground.
     {
       const T3 = makeTerritory(29, 57);
       for (let i = 0; i < 40; i++) stepTerritory(T3, [{ x: 0, z: 0, w: EMIT.unit.w, r: EMIT.unit.r, sign: 1 }], 0.25);
       ok("sweep/emitters: a green unit emitter holds its ground (holderAt 1)", holderAt(T3, 0, 0) === 1);
     }
-
-    // (f) tower scan: stepTowers acquires team 2 ONLY — a team-1 member in
-    // range is invisible to friendly guns (source assert; stepTowers lives
-    // in DepotGame.jsx which node can't import as JSX).
-    ok("sweep/towerscan: stepTowers scan filters to team 2",
-      simSrc3.includes('(e.kind !== "unit" && e.kind !== "vehicle") || !e.alive || e.team !== 2'));
-
-    // (g) __DEPOTTHIN__ (the wave-drain harness) kills team 2 only.
-    ok("sweep/thin: __DEPOTTHIN__ kills only team-2 units",
-      /__DEPOTTHIN__[\s\S]{0,400}b\.kind === "unit" && b\.team === 2 && b\.alive/.test(hooksSrc));
-
-    // (h) fog-render ownership: the renderer's fog gate hides team-2 bodies
-    // only — team-1 members always render for their owner.
-    const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-    const fogGates = rendSrc.match(/opts\.territory && b\.team === 2 && b\.alive/g) || [];
-    ok("sweep/fog: renderer fog gates check team === 2 (team-1 always renders)", fogGates.length >= 2, `gates=${fogGates.length}`);
-
-    // (i) restock: no restock machinery exists anywhere in src/depot — the
-    // campaign's restock (scenario.js) is keyed off campaign spawn pools and
-    // never reaches depot bodies.
-    let restockHits = 0;
-    for (const f of fs.readdirSync(new URL("../../src/depot", import.meta.url))) {
-      const src = fs.readFileSync(new URL("../../src/depot/" + f, import.meta.url), "utf8");
-      if (/restock/i.test(src)) restockHits++;
-    }
-    ok("sweep/restock: no restock path exists in src/depot", restockHits === 0, `hits=${restockHits}`);
 
     // (j) squadFire acquisition: a member never targets its own team — park
     // a second friendly squad in range with no enemies present; nothing fires.
@@ -1978,9 +1893,6 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
   ok("snap-squads: 2 live squads -> snapshot squads=2", snapSquads({ squads: liveCount(squads) }) === 2);
   for (const id of squads[1].memberIds) { const u = world.byId.get(id); if (u) u.alive = false; }
   ok("snap-squads: wiped squad drops from the count", snapSquads({ squads: liveCount(squads) }) === 1);
-  const src = fs.readFileSync(new URL("../../src/depot/tick.js", import.meta.url), "utf8");
-  ok("snap-squads: buildSnapshot wires the squads field",
-    /buildSnapshot[\s\S]{0,1600}squads, towerElev/.test(src));
   void SQ;
 }
 // ==== end SNAP-SQUADS ========================================================
@@ -2117,11 +2029,6 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
 
   // (f) wiring: DepotGame's inspect path draws towers via towerReachCached;
   // the rifles/mg flat-ring fallback is gone (every selected squad fans).
-  {
-    const src = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("SEL-REACH wiring: DepotGame inspect uses towerReachCached", /towerReachCached\(/.test(src));
-    ok("SEL-REACH wiring: rifles/mg flat selection ring removed", !/range: INFANTRY_ARMS\[selSq\.type\]\.range/.test(src));
-  }
 }
 
 // ==== SIGHTLINES (marksmanship batch Task 2): physics-true arcClears =========

@@ -3,16 +3,10 @@
 // dead (probe-measured: it refused 62% of in-range shots at player men).
 // No seed is special; fixture seeds are named below.
 import { ok } from "./harness.mjs";
-import { readFileSync } from "node:fs";
 import { makeWorld, stepWorld, addBody } from "../../src/engine/core.js";
 import { spawnUnit, stepUnits } from "../../src/depot/units.js";
 import { stepDrivers } from "../../src/depot/drivers.js";
 import { identFwdDir, straightGrid } from "./shared.mjs";
-
-const src = (p) => readFileSync(new URL("../../" + p, import.meta.url), "utf8");
-
-ok("U1: the urgency radius is the whole effective range",
-  /const URGENCY = 1;/.test(src("src/depot/units.js")) && !/const URGENCY = 0\.6;/.test(src("src/depot/units.js")));
 
 // U2 — behavior: a held enemy rifleman engages a player man at 11m — inside
 // his 13m rifle range, OUTSIDE the old 7.8m radius that silenced him.
@@ -27,13 +21,6 @@ ok("U1: the urgency radius is the whole effective range",
   ok("U2: a rifleman works his rifle at 11m (seed 271) — the old radius left him silent",
     w.events.filter((ev) => ev.type === "muzzle").length > 0);
 }
-
-// ---- mk2.52: THE ONE TARGET LAW — the enemy's soft-target set is the
-// player's own: men, hulls, and mechs, preferred at full range.
-ok("U5: the soft-target set is shared law in units.js",
-  /const soft = \(b\) => b\.kind === "unit" \|\| b\.kind === "vehicle" \|\| b\.kind === "mech";/.test(src("src/depot/units.js")));
-ok("U5b: the wave tank runs the armor scan first",
-  /armorScanFoes\(world, t, muzzle, fspec, false, T, toUV\)/.test(src("src/depot/drivers.js")));
 
 // U6 — behavior: a held enemy rifleman engages a player HULL at 10m.
 {

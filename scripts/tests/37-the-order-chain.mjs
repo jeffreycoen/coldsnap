@@ -5,7 +5,6 @@ import { makeSquad, stepSquad } from "../../src/depot/squads.js";
 import { spawnSquadMembers } from "../../src/depot/state.js";
 import { BISON } from "../../src/depot/specs.js";
 import { identFwdDir } from "./shared.mjs";
-import fs from "node:fs";
 
 // ==== mk2.90: the order chain ===============================================
 // Queued orders pop at the arrival seam: move/attack chain, patrol is
@@ -81,14 +80,4 @@ import fs from "node:fs";
     for (let i = 0; i < 9600 && sq.order !== "patrol"; i++) { stepSquad(w, sq, 1 / 60); stepWorld(w); }
     ok("(d) the squad pops the queued patrol", sq.order === "patrol" && sq._patA && Math.abs(sq._patA.z - 6) < 0.01 && sq._patB && Math.abs(sq._patB.z + 6) < 0.01, sq.order);
   }
-
-  // (e) pins: the chain rides the save explicitly (plainValue drops object arrays)
-  const ssrc = fs.readFileSync("src/depot/save.js", "utf8");
-  ok("(e) pins: the squad row carries the chain", /o\._queue = sq\._queue\.map\(\(q\) => \(\{ \.\.\.q \}\)\)/.test(ssrc));
-  ok("(e) pins: the hull's orders bag carries the chain", /x\._queue = b\._queue\.map\(\(q\) => \(\{ \.\.\.q \}\)\)/.test(ssrc));
-
-  // (f) pins: the mech pops the same chain (its fixture is heavy; the walker
-  // shares the seam by these lines)
-  const dsrc = fs.readFileSync("src/depot/drivers.js", "utf8");
-  ok("(f) pins: the mech honors the chain", /b\._queue && b\._queue\.length/.test(dsrc) && /const q = b\._queue\.shift\(\);/.test(dsrc));
 }

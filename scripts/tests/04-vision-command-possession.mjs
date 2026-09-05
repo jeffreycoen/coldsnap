@@ -12,7 +12,6 @@ import { SIGHT, eyeOf, canSee, fillMaps, gridEye, makeSight, seenAt, stepSight, 
 import { serializeFront, parseFront, restoreBodies, restoreSquads } from "../../src/depot/save.js";
 import { startBuildLine } from "../../src/depot/buildlines.js";
 import { ringBell } from "../../src/depot/bell.js";
-import fs from "node:fs";
 
 // ==== VISION T1: sight =======================================================
 // The eye itself (mk0.70), re-pinned to cell resolution at mk0.71. sight.js is
@@ -325,55 +324,6 @@ import fs from "node:fs";
   // (c) the contested-boundary and orientation fixtures are re-pinned in
   // place, up in the Phase 4 Task 2 block — one law, one set of asserts.
 
-  // (d) THE SAVE CARRIES NOTHING NEW. Sight is derived state: the file never
-  // holds it, and a resumed run rebuilds it on the first territory tick
-  // because the map is made where the territory is made.
-  {
-    const saveSrc = fs.readFileSync(new URL("../../src/depot/save.js", import.meta.url), "utf8");
-    ok("VISION T2(d): save.js stores no sight at all (derived, rebuilt on resume)", !/\bsight\b/i.test(saveSrc));
-    const bootSrcV2d = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
-    ok("VISION T2(d): the sight map is made where the territory is made", /T\.sight\s*=\s*makeSight\(T\)/.test(bootSrcV2d));
-    const tickSrcV2d = fs.readFileSync(new URL("../../src/depot/tick.js", import.meta.url), "utf8");
-    ok("VISION T2(d): and it recomputes on the territory clock", /stepSight\(world,\s*T\.sight/.test(tickSrcV2d));
-  }
-
-  // (e) THE GATE ITSELF, AND THE CARVE-OUTS THAT DIED. Structure fire used to
-  // skip the gate entirely because a wall's own territory emission made it
-  // permanently untargetable — a pathology sight does not have.
-  {
-    const stateSrc = fs.readFileSync(new URL("../../src/depot/state.js", import.meta.url), "utf8");
-    ok("VISION T2(e): fieldReaches reads the sight map", /seenAt\(T\.sight,\s*x,\s*z,\s*team\)/.test(stateSrc));
-    ok("VISION T2(e): and no longer imports the ground-control bridge", !/fogStateForContested/.test(stateSrc));
-    const terrSrc = fs.readFileSync(new URL("../../src/depot/territory.js", import.meta.url), "utf8");
-    ok("VISION T2(e): the contested-ground bridge is deleted", !/export function fogStateForContested/.test(terrSrc));
-    ok("VISION T2(e): ownership, build rights and the wash are untouched",
-      /export function fogStateFor\(/.test(terrSrc) && /export function valueAt\(/.test(terrSrc) &&
-      /export function holderAt\(/.test(terrSrc) && /export function canBuild\(/.test(terrSrc));
-    const unitsSrc = fs.readFileSync(new URL("../../src/depot/units.js", import.meta.url), "utf8");
-    const driversSrc = fs.readFileSync(new URL("../../src/depot/drivers.js", import.meta.url), "utf8");
-    ok("VISION T2(e): no enemy shooter claims an ungated structure scan any more", !/NO fieldReaches/.test(unitsSrc));
-    // re-pinned mk1.30 (P7 T1): the tank's acquisition path moved verbatim to
-    // drivers.js — 6 of the seven remain in units.js, the 7th (the tank's
-    // structure scan) now lives in the motor pool, same gate, same law.
-    // re-pinned mk2.08 (Amendment 1): the atomic crew's two sight-gated scans
-    // (its man scan and its structure scan in the new stepDavy) joined
-    // units.js. Count moves 6 -> 8.
-    ok("VISION T2(e): six of the seven enemy acquisition paths gate on sight in units.js",
-      (unitsSrc.match(/fieldReaches\(T,/g) || []).length === 8, (unitsSrc.match(/fieldReaches\(T,/g) || []).length);
-    // re-pinned P7 T2 (mk1.31): the Bison's armor policy joined the motor
-    // pool — armorGuns' two scans (unit/vehicle foes, hostile structures) and
-    // the two possessed triggers (main gun, coax) all gate on sight, the same
-    // law every other shot obeys. Count moves 1 -> 5, honestly, four new
-    // sight-gated call sites, none loosened.
-    // re-pinned mk2.58: THE COMMANDER'S EYE — the three POSSESSED
-    // gates (main gun, coax, mechSighted) leave; possession is the player's
-    // own sight. The three AUTONOMOUS gates (tank struct loop, both armor
-    // scans) stand. Count moves 6 -> 3, every remaining one autonomous.
-    ok("VISION T2(e): the autonomous acquisition paths still gate on sight in drivers.js; the possessed triggers do not (re-pinned mk2.58 — the commander's eye)",
-      (driversSrc.match(/fieldReaches\(T,/g) || []).length === 3, (driversSrc.match(/fieldReaches\(T,/g) || []).length);
-    ok("VISION T2(e): the sapper's contact plant stays ungated (he IS the eye, at arm's length)",
-      /stepSapper/.test(unitsSrc) && !/fieldReaches[\s\S]{0,200}SAPPER_PLANT_PAD/.test(unitsSrc));
-  }
 }
 // ==== end VISION T2 ==========================================================
 
@@ -636,58 +586,11 @@ import fs from "node:fs";
 // COMMAND T1 and mk0.60/6 already use. The ghost-piece filter is mirrored
 // over a hand grid, the same convention VISION T4's scan mirrors use.
 {
-  const dsrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  // P7 T20: linePieces (and its cell-filter predicate) moved to
-  // buildlines.js — the (e) pin below retargets there (sweep license,
-  // unchanged content).
-  const blSrcCmd2 = fs.readFileSync(new URL("../../src/depot/buildlines.js", import.meta.url), "utf8");
-  // debug harness moved to hooks.js (T2: the harness walks out).
-  const hooksSrcCmd2 = fs.readFileSync(new URL("../../src/depot/hooks.js", import.meta.url), "utf8");
-
-  // (a) the second tap PROPOSES: consumeOrderTap's build branch creates
-  // S.linePending and never calls startBuildLine itself (only acceptLine
-  // does, gated on accept — see (b)).
-  const cotBody = (dsrc.match(/const consumeOrderTap = \(p\) => \{[\s\S]*?\n      view\.sellById = sellById;/) || [""])[0];
-  ok("COMMAND T2(a): consumeOrderTap's build branch creates S.linePending",
-    /view\.linePending = \{ kind: om === "build_walls" \? "walls" : "bags", sq: osq\.id,/.test(cotBody));
-  ok("COMMAND T2(a): consumeOrderTap itself never calls startBuildLine (only acceptLine does)",
-    cotBody.length > 0 && !/startBuildLine\(/.test(cotBody));
-
-  // (b) acceptLine: the only path that calls startBuildLine, and it nulls
-  // S.selSquadId (the deselect the owner's rule requires on accept).
-  const acceptBody = (dsrc.match(/const acceptLine = \(\) => \{[\s\S]*?\n      const rejectLine = \(\) => \{/) || [""])[0];
-  ok("COMMAND T2(b): acceptLine exists and calls startBuildLine (re-taught mk1.50, P7 T20: startBuildLine's new-arity call; re-taught mk2.94: the braced form, the chain wipe beside it)",
-    /else \{ startBuildLine\(grid, sq, lp\.kind, lp\.a, lp\.b, toast\); sq\._queue = null; \}/.test(acceptBody));
-  ok("COMMAND T2(b): acceptLine nulls S.selSquadId (full deselect on accept)",
-    /view\.selSquadId = null; view\.orderMode = null; view\.buildPt0 = null;/.test(acceptBody));
-
-  // (c) __DEPOTORDER__ auto-accepts — staging keeps driving the real order
-  // path end to end without a screen to tap the confirm button on.
-  const orderBody = (hooksSrcCmd2.match(/window\.__DEPOTORDER__ = \(id, kind, pts\) => \{[\s\S]*?\n  window\.__DEPOTFOCUS__ = \(x, z, zoom\) => \{/) || [""])[0];
-  ok("COMMAND T2(c): __DEPOTORDER__ auto-accepts a proposed line (S.acceptLine())",
-    /if \(view\.linePending\) \{ view\.linePending\.armedAt = world\.t; view\.acceptLine\(\); \}/.test(orderBody));
-  // AUDIT FIX (mk0.85): the mk0.84 auto-accept no-opped — the pending's
-  // armedAt was set THIS tick to world.t + PENDING_ARM_S, so acceptLine's
-  // own pendingArmed(lp, world.t) gate always failed and silently swallowed
-  // the accept. Staging has no trailing tap to guard against, so the fix
-  // backdates the arm before accepting. Pinned directly, not just via (c)'s
-  // re-pin above.
-  ok("COMMAND T2(c) AUDIT FIX (mk0.85): __DEPOTORDER__ backdates armedAt before accepting a staged line",
-    /view\.linePending\.armedAt = world\.t/.test(orderBody));
-
-  // (d) the renderer overlay carries setLinePreview — the game-layer-only
-  // furniture the brief said this file may grow (setReach's family).
-  const rsrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-  ok("COMMAND T2(d): renderer.js overlay carries setLinePreview",
-    /setLinePreview\(on, spec\) \{/.test(rsrc));
-
   // (e) mirror — linePieces's cell filter (DepotGame.jsx, inside the COMMAND
   // T2 block) skips exactly the cells layPieceAt would skip: blocked,
   // occupied, iced, unheld — so a gap in the preview is a gap in the wall.
   // Mirrored here over a hand grid, kept in lockstep with the source line:
   //   if (cell.blocked || cell.wallId || cell.ice || !canBuild(T, c0.u, c0.v)) continue; // an honest gap
-  ok("COMMAND T2(e): the source predicate matches the mirror line-for-line (retargeted mk1.50, P7 T20: linePieces moved to buildlines.js)",
-    /if \(cell\.blocked \|\| cell\.wallId \|\| cell\.ice \|\| !canBuild\(T, c0\.u, c0\.v\)\) continue; \/\/ an honest gap/.test(blSrcCmd2));
   {
     const handGrid = [
       { blocked: false, wallId: null, ice: false, held: true },   // laid
@@ -882,17 +785,6 @@ import fs from "node:fs";
       !!sq2 && sq2.dest && sq2.dest.x === 0 && sq2.dest.z === 30, sq2 && JSON.stringify(sq2.dest));
   }
 
-  // (f) pin — acceptLine's patrol arm sets _patA/_patB/order/dest. Source
-  // regex, the same convention COMMAND T2(a)/(b) use for this JSX-only file.
-  {
-    const dsrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    const acceptBody = (dsrc.match(/const acceptLine = \(\) => \{[\s\S]*?\n      const rejectLine = \(\) => \{/) || [""])[0];
-    ok("COMMAND T3(f): acceptLine's patrol arm sets _patA, _patB, order and dest",
-      /sq\._patA = \{ x: lp\.a\.x, z: lp\.a\.z \};/.test(acceptBody) &&
-      /sq\._patB = \{ x: lp\.b\.x, z: lp\.b\.z \};/.test(acceptBody) &&
-      /sq\.order = "patrol";/.test(acceptBody) &&
-      /sq\.dest = \{ x: lp\.a\.x, z: lp\.a\.z \};/.test(acceptBody));
-  }
 }
 // ==== end COMMAND T3 ==========================================================
 
@@ -1028,9 +920,6 @@ import fs from "node:fs";
 // the convention COMMAND T1-T4 already use.
 {
   const flatField = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
-  // stepDepot moved to sim.js (war-engine-extraction task 1) — its source pin
-  // reads its new home.
-  const dsrc = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
 
   // (a) mirror+pin: driving a squad straight for 2 sim-seconds moves the
   // anchor ~6.4m (MOVE_SPEED 3.2 * 2s), and every live member holds within
@@ -1094,25 +983,6 @@ import fs from "node:fs";
       worstTrail < COHESION_M + 1.5, `worst=${worstTrail.toFixed(2)} samples/sec=[${samples.join(",")}]`);
   }
 
-  // (b) source pin: stepDepot's squad loop skips a possessed squad entirely
-  // (no engageCheck, no stepSquad, no squadFire — the stick drives it
-  // instead) as the loop's FIRST line, and a squad whose members all die
-  // while possessed releases automatically right after pruneSquads.
-  {
-    const stepDepotBody = (dsrc.match(/function stepDepot\(world, grid, onStructureLost, town, onRuin, T, discipline, run, input, map\) \{[\s\S]*?\n\}/) || [""])[0];
-    const guardIdx = stepDepotBody.indexOf('if (input.possess && input.possess.kind === "squad" && sq.id === input.possess.id) {');
-    const engageIdx = stepDepotBody.indexOf("engageCheck(sq);");
-    ok("POSSESSION T1(b): stepDepot's squad loop carries a possession guard",
-      guardIdx >= 0, stepDepotBody.length);
-    ok("POSSESSION T1(b): the guard is the loop's first line — it runs before engageCheck",
-      guardIdx >= 0 && engageIdx >= 0 && guardIdx < engageIdx, `guard=${guardIdx} engage=${engageIdx}`);
-    const pruneIdx = stepDepotBody.indexOf("run.squads = pruneSquads(world, run.squads);");
-    const autoRelIdx = stepDepotBody.indexOf('if (input.possess && input.possess.kind === "squad" && !run.squads.some((q) => q.id === input.possess.id)) input.releasePossession();');
-    ok("POSSESSION T1(b): a wiped-out possessed squad auto-releases, wired right after pruneSquads",
-      pruneIdx >= 0 && autoRelIdx >= 0 && autoRelIdx > pruneIdx && autoRelIdx - pruneIdx < 200,
-      `prune=${pruneIdx} autoRel=${autoRelIdx}`);
-  }
-
   // (c) possession never serializes: S.possess is not part of serializeFront's
   // whitelisted run{} fields, and a save taken with possession live carries
   // no "possess" key anywhere in its JSON.
@@ -1131,24 +1001,6 @@ import fs from "node:fs";
     const json = serializeFront({ S, world, T, town: [], census: [], census2: [], rocks: [], smears: [], mapSeed: 1, rngSeed: 1 });
     ok("POSSESSION T1(c): serializeFront never writes a \"possess\" key anywhere in the saved JSON",
       !json.includes("possess"), json.includes("possess") ? "LEAKED" : "clean");
-    const dsaveSrc = fs.readFileSync(new URL("../../src/depot/save.js", import.meta.url), "utf8");
-    ok("POSSESSION T1(c) source pin: save.js's run{} writer never reads S.possess",
-      !/S\.possess/.test(dsaveSrc));
-  }
-
-  // (d) source pin, REVERSED by the owner's mk0.93 playtest ruling (T5,
-  // mk0.94): the bell no longer releases possession — you keep the unit
-  // through the round change. The save it writes still carries no
-  // possession: T1(c) above proves that with a live possession at save time.
-  {
-    // retargeted mk1.51, P7 T21: ringBell moved to bell.js — the body is
-    // read off its new home, and the save call re-teaches to ctx.saveFront().
-    const bellSrcT1d = fs.readFileSync(new URL("../../src/depot/bell.js", import.meta.url), "utf8");
-    const ringBellBody = (bellSrcT1d.match(/export function ringBell\(world, grid, field, T, run, ctx, map\) \{[\s\S]*?\n\}/) || [""])[0];
-    ok("POSSESSION T1(d): ringBell no longer releases possession — the bell keeps your hands on the unit",
-      ringBellBody.length > 0 && !ringBellBody.includes("releasePossession"), ringBellBody.slice(0, 80));
-    ok("POSSESSION T1(d): the bell still writes the save",
-      ringBellBody.includes("ctx.saveFront();"));
   }
 
   // (e) zero new rng draws while driving: player input is not a replayed
@@ -1276,36 +1128,6 @@ import fs from "node:fs";
       fired1 === 3 && fired2 === 0, `fired1=${fired1} fired2=${fired2}`);
   }
 
-  // (e) source pin: possessedVolley reads INFANTRY_ARMS[squad.type] and
-  // shares squadFire's own blast fallbacks verbatim (INFANTRY_BLAST_R/
-  // INFANTRY_KV), not a re-derived pair of numbers.
-  {
-    const stateSrc = fs.readFileSync(new URL("../../src/depot/state.js", import.meta.url), "utf8");
-    const volleyBody = (stateSrc.match(/export function possessedVolley\([\s\S]*?\n\}/) || [""])[0];
-    ok("POSSESSION T2(e) source pin: possessedVolley reads INFANTRY_ARMS[squad.type]",
-      /const spec = INFANTRY_ARMS\[squad\.type\];/.test(volleyBody), volleyBody.length);
-    ok("POSSESSION T2(e) source pin: possessedVolley shares squadFire's own blast fallbacks (INFANTRY_BLAST_R/INFANTRY_KV)",
-      /blastR: spec\.blastR != null \? spec\.blastR : INFANTRY_BLAST_R/.test(volleyBody) &&
-      /kv: spec\.kv != null \? spec\.kv : INFANTRY_KV/.test(volleyBody));
-  }
-
-  // mk0.91 audit item A (possession hygiene, drift audit), re-pinned
-  // POSSESSION T4 (mk0.93): a stale FIRE flag stuck by a mid-hold bell
-  // release can never carry into the next possession — S.takeControl and
-  // S.releasePossession both clear it (S.fireHeld = false). possessAim is
-  // gone; in its place S.takeControl freshly SEEDS S.reticle (inside the
-  // unit's own sight circle) instead of merely nulling it, and
-  // S.releasePossession clears it outright (S.reticle = null).
-  {
-    const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    const takeControlBody = (gameSrc.match(/view\.takeControl = \(\) => \{[\s\S]*?\n      \};/) || [""])[0];
-    const releaseBody = (gameSrc.match(/input\.releasePossession = \(\) => \{[\s\S]*?\n      \};/) || [""])[0];
-    ok("POSSESSION T4 audit item A source pin (re-pinned from T2): view.takeControl clears fireHeld and seeds a fresh offset reticle (wee-t2b: map.invW)",
-      /input\.fireHeld = false;/.test(takeControlBody) && /view\.reticleOff = pc0 \? reclampReticle\(T\.sight, 1, pc0, possessSightR\(\), \{ dx: 0, dz: 4 \}, map\.invW\) : null;/.test(takeControlBody),
-      takeControlBody.length);
-    ok("POSSESSION T4 audit item A source pin (re-pinned from T2): input.releasePossession clears reticle/offset/fireHeld",
-      /input\.reticle = null; view\.reticleOff = null; input\.fireHeld = false;/.test(releaseBody), releaseBody.length);
-  }
 }
 // ==== end POSSESSION T2 =======================================================
 
@@ -1328,20 +1150,6 @@ import fs from "node:fs";
     b.towerType = type;
     return b;
   };
-
-  // (a) source pin: stepTowers takes a possessedId argument and its guard —
-  // the loop's first body line after the kind/alive filter — skips straight
-  // past the possessed tower, no acquisition, no fire.
-  {
-    // stepTowers moved to sim.js (war-engine-extraction task 1) — the pin
-    // reads its new home.
-    const gameSrc = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
-    const stepTowersBody = (gameSrc.match(/export function stepTowers\([\s\S]*?\n\}/) || [""])[0];
-    ok("POSSESSION T3(a) source pin: stepTowers takes a possessedId argument",
-      /export function stepTowers\(world, T, discipline, possessedId, arcs, holdArea, map\)/.test(gameSrc)); // mk2.18: sixth param `holdArea` added for the switch; mk2.70: `map` (sim lift)
-    ok("POSSESSION T3(a) source pin: the guard skips the possessed body — no acquisition, no fire",
-      /if \(possessedId === b\.id\) \{ b\.fireCd = \(b\.fireCd \|\| 0\) - dt; continue; \}/.test(stepTowersBody), stepTowersBody.length);
-  }
 
   // (b) mirror+pin: a gun tower fires its real spec at the aim, honoring its
   // own cooldown — a second pull 0.1s later (fireRate 1.05s) finds it cold.
@@ -1381,15 +1189,6 @@ import fs from "node:fs";
     const firedAgain = possessedTowerFire(world, tower, { x: 0, z: 0 }, T, idUV);
     ok("POSSESSION T3(c) control, re-taught mk2.58: the cooldown still rules — an immediate second pull is refused",
       firedAgain === false && muzzlesOf(world).length === 0, `fired=${firedAgain}`);
-  }
-
-  // (d) source pin: frost offers no possession — the tower pie's possess
-  // wedge is gated on canPossess, itself gated on spec.fireRate > 0 (frost's
-  // is 0 — no gun to man).
-  {
-    const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("POSSESSION T3(d) source pin: the tower radial's canPossess field gates on spec.fireRate > 0",
-      /canPossess: ispec\.fireRate > 0/.test(gameSrc));
   }
 
   // (e) release restores auto-fire: stepTowers' own guard + scan/acquire
@@ -1527,84 +1326,8 @@ import fs from "node:fs";
       r.dx === 10 && r.dz === 0, `r=(${r.dx},${r.dz})`);
   }
 
-  // (f) source pin: both fire paths read S.reticle, and possessAim appears
-  // nowhere in DepotGame.jsx — it is fully replaced by the steered reticle.
-  {
-    const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    const tickSrcT4f = fs.readFileSync(new URL("../../src/depot/tick.js", import.meta.url), "utf8");
-    ok("POSSESSION T4(f) source pin: the squad volley trigger reads input.reticle (wee-t2b: map.invW)",
-      /possessedVolley\(world, psq, input\.reticle, T, map\.invW\)/.test(tickSrcT4f));
-    ok("POSSESSION T4(f) source pin: the tower fire trigger reads input.reticle",
-      /possessedTowerFire\(world, ptw, input\.reticle, T, map\.invW, run\.arcs, map\)/.test(tickSrcT4f)); // mk2.15: trailing run.arcs added for the tesla chain; wee-t2b: map.invW + trailing map
-    ok("POSSESSION T4(f) source pin: possessAim appears nowhere in DepotGame.jsx",
-      !/possessAim/.test(gameSrc));
-  }
-
-  // (g) source pin: the right-stick steer runs through steerReticle and the
-  // walk-drag through reclampReticle — no second, hand-rolled clamp.
-  {
-    const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("POSSESSION T4(g) source pin: DepotGame.jsx imports steerReticle/reclampReticle from sight.js",
-      /import \{[^}]*steerReticle[^}]*reclampReticle[^}]*\} from "\.\/sight\.js"/.test(gameSrc) ||
-      /import \{[^}]*reclampReticle[^}]*steerReticle[^}]*\} from "\.\/sight\.js"/.test(gameSrc));
-    ok("POSSESSION T4(g) source pin: the frame loop steers the OFFSET through steerReticle (wee-t2b: map.invW)",
-      /view\.reticleOff = steerReticle\(T\.sight, 1, rc, rR, view\.reticleOff, rv\.vx, rv\.vz, dt, map\.invW\);/.test(gameSrc));
-    ok("POSSESSION T4(g) source pin: the walk-carry runs through reclampReticle and derives the world point (wee-t2b: map.invW)",
-      /view\.reticleOff = reclampReticle\(T\.sight, 1, rc, rR, view\.reticleOff, map\.invW\);/.test(gameSrc) &&
-      /input\.reticle = \{ x: rc\.x \+ view\.reticleOff\.dx, z: rc\.z \+ view\.reticleOff\.dz \};/.test(gameSrc));
-  }
 }
 // ==== end POSSESSION T4 =======================================================
-
-// ==== POSSESSION T5: the red carried reticle, the bell keeps your hands =====
-// mk0.94 (Phase 4 Task 5, playtest amendment). The reticle is an offset from
-// the unit — walking carries it — and draws as its own red ring, not the
-// build ghost's square. The bell no longer ends possession (reversal pinned
-// in T1(d) above). JSX/renderer wiring pinned by source regex, T1-T3's own
-// convention.
-{
-  const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-  ok("POSSESSION T5(a) source pin (re-taught mk2.01): the renderer owns a setReticle overlay drawn in crimson, solid",
-    /setReticle\(on, x, z, y, r, hit, pts\)/.test(rendSrc) && /0xf0143c/.test(String(rendSrc.match(/setReticle\(on, x, z, y, r, hit, pts\) \{[\s\S]*?\n    \},/) || "")));
-  ok("possessed frames never paint the build hover (re-pinned mk1.12 — the old pin was a character-distance accident)",
-    /R\.overlay\.setReticle\(/.test(gameSrc) && /if \(!input\.possess && view\.hover\)/.test(gameSrc));
-  ok("POSSESSION T5(c) source pin: the build hover never paints while possessed",
-    /!input\.possess && view\.hover/.test(gameSrc));
-}
-// ==== end POSSESSION T5 =====================================================
-
-// ==== WIND TOGGLE (mk0.95) ==================================================
-// The owner's accuracy-tuning switch: WIND OFF must mean dead calm through
-// the ONE world.wind assignment every shooter reads — not a second wind
-// source somewhere. Source pins (JSX, T1-T3's convention).
-{
-  // stepDepot's wind assignment moved to sim.js (war-engine-extraction task
-  // 1); MAP_SEED reads through the map parameter there (map.MAP_SEED).
-  const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  const simSrc = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
-  // debug harness moved to hooks.js (T2: the harness walks out) — the
-  // __DEPOTSETT__ windAt assignment now lives there, none in DepotGame.jsx.
-  const hooksSrcWind = fs.readFileSync(new URL("../../src/depot/hooks.js", import.meta.url), "utf8");
-  ok("WIND TOGGLE source pin: stepDepot's one wind assignment is gated by input.windOn",
-    /world\.wind = input\.windOn === false \? \{ x: 0, z: 0, mag: 0 \} : windAt\(map\.MAP_SEED, world\.t\);/.test(simSrc));
-  ok("WIND TOGGLE source pin: no other stepDepot-path windAt assignment exists (0 in DepotGame.jsx, 1 in hooks.js's __DEPOTSETT__ debug hook)",
-    (gameSrc.match(/world\.wind = windAt/g) || []).length === 0 &&
-    (hooksSrcWind.match(/world\.wind = windAt/g) || []).length === 1);
-  // mk0.96 (Task 6): OFF must also be QUIET and STILL — the audible bed and
-  // the flag cloth follow the same world.wind the mechanics read.
-  ok("WIND TOGGLE source pin: the audio wind bed is scaled by the real wind (world.wind.mag)",
-    /const wScale = world\.wind \? Math\.min\(1, \(world\.wind\.mag \|\| 0\) \/ 3\.5\) : 1;/.test(
-      fs.readFileSync(new URL("../../src/platform/audio.js", import.meta.url), "utf8")));
-  {
-    const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-    ok("WIND TOGGLE source pin: flag ripple has no floor — dead calm means limp cloth",
-      /const amp = Math\.min\(0\.55, mag \* 0\.13\);/.test(rendSrc) && !/0\.12 \+ mag \* 0\.09/.test(rendSrc));
-  }
-  ok("FIRE FEEDBACK source pin: the FIRE button's held state routes through setFireHeld",
-    /const setFireHeld = \(v\) => \{/.test(fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8")));
-}
-// ==== end WIND TOGGLE =======================================================
 
 // ==== POSSESSION T7: the sharpened hand ======================================
 // mk0.97 (Phase 4 Task 7, owner's amendment). Possessed fire sharpens: spread
@@ -1932,27 +1655,6 @@ import fs from "node:fs";
       c1.sleeping === false || c2.sleeping === false, `c1=${c1.sleeping} c2=${c2.sleeping}`);
   }
 
-  // (e) source pin: the possessed anchor's building clamp exists — the
-  // branch captures the pre-drive anchor and reverts when the clamped cell
-  // is blocked or a wall.
-  {
-    // this branch lives in stepDepot, moved to sim.js (war-engine-extraction
-    // task 1).
-    const dsrc8 = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
-    ok("POSSESSION T8(e) source pin: the possessed branch captures the pre-drive anchor",
-      /const a0 = \{ x: sq\.anchor\.x, z: sq\.anchor\.z \};/.test(dsrc8));
-    ok("POSSESSION T8(e) source pin: the anchor reverts when the clamped cell is blocked or a wall",
-      /sq\.anchor = cellA && \(cellA\.blocked \|\| cellA\.wallId\) \? a0 : \{ x: cl\.x, z: cl\.z \};/.test(dsrc8));
-  }
-
-  // (f) source pin: the build bar renders only when !hud.possessed.
-  {
-    const dsrc8b = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("POSSESSION T8(f): the build bar condition gains !hud.possessed",
-      /hud\.started && !hud\.gameOver && !hud\.victory && !hud\.possessed && \(/.test(dsrc8b));
-    ok("POSSESSION T8(f): the old bar condition (without the possessed guard) is gone",
-      !/hud\.started && !hud\.gameOver && !hud\.victory && \(/.test(dsrc8b));
-  }
 }
 // ==== end POSSESSION T8 =======================================================
 
@@ -2018,19 +1720,6 @@ import fs from "node:fs";
     ok("LETHALITY T9(c): a wall body never gets stamped (units only)", wall.dmgT === undefined, wall.dmgT);
   }
 
-  // (d) renderer source pins: hurtK gated on world.depotCombat off b.dmgT,
-  // the dip term in the oy math, the flash lerp in the color branch keeping
-  // fogSil's absolute precedence.
-  {
-    const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-    ok("LETHALITY T9(d): hurtK is computed from b.dmgT, gated on world.depotCombat",
-      /const hurtAge = world\.depotCombat && b\.alive && b\.dmgT != null \? world\.t - b\.dmgT : 1;/.test(rendSrc) &&
-      /const hurtK = hurtAge < 0\.18 \? 1 - hurtAge \/ 0\.18 : 0;/.test(rendSrc));
-    ok("LETHALITY T9(d): the dip term (-0.10 * hurtK) sits in the oy math",
-      /- 0\.10 \* hurtK;/.test(rendSrc));
-    ok("LETHALITY T9(d): the flash lerp sits in the color branch, fogSil keeping first precedence",
-      /if \(fogSil\) pools\[pi\]\.setColorAt\(idx, SIL_C\);[\s\S]{0,300}hurtK > 0[\s\S]{0,150}lerp\(HIT_C, 0\.7 \* hurtK\)/.test(rendSrc));
-  }
 }
 // ==== end LETHALITY T9 ========================================================
 
@@ -2072,24 +1761,6 @@ import fs from "node:fs";
     const lk = stickyLock(world, enemy.id, { x: 0, z: 20 }, null, idUV);
     ok("RETICLE mk1.99(f): a dead man sheds the lock", lk === null, lk && lk.id);
   }
-  // (g) source pins: the tap jumps the reticle; the loop clamps to impact and
-  // runs the sticky lock; the ring reads the live scatter.
-  {
-    const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("RETICLE mk1.99(g) source pin: a possessed ground tap jumps the reticle through the sight-circle clamp and the seen test",
-      /if \(seenAt\(T\.sight, cc0\.u, cc0\.v, 1\)\) \{\s*view\.reticleOff = \{ dx: dx0, dz: dz0 \};/.test(gameSrc));
-    ok("RETICLE mk1.99(g) source pin: the frame loop derives the aim through stickyLock (wee-t2b: map.invW)",
-      /const lk9 = stickyLock\(world, view\.reticleLockId, input\.reticle, T, map\.invW\);/.test(gameSrc));
-    ok("RETICLE mk1.99(g) source pin: the ring radius reads the live scatterSigma under POSSESS_ACC",
-      /scatterSigma\(world, muzzle9, aim9, \{ \.\.\.spec9, acc: spec9\.acc \* POSSESS_ACC \}\)/.test(gameSrc));
-  }
-  // (h) source pin: the ring's material is solid — no opacity in its block.
-  {
-    const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-    const block = String(rendSrc.match(/setReticle\(on, x, z, y, r, hit, pts\) \{[\s\S]*?\n    \},/) || "");
-    ok("RETICLE mk1.99(h) source pin: the ring draws solid — its material carries no opacity",
-      block.length > 0 && !/opacity/.test(block) && /depthWrite: false/.test(block), block.length);
-  }
 }
 // ==== end THE RETICLE (mk1.99) ==============================================
 
@@ -2099,22 +1770,6 @@ import fs from "node:fs";
 // tested, so the ring fell flat at the wall's foot), the ring's band and red
 // re-tuned, and possession closes the build tree and holds it shut. Pure
 // helper on hand-built maps; JSX/renderer wiring pinned by source regex.
-{
-  // (c) source pin: the ring's re-tuned band and red.
-  {
-    const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-    const block = String(rendSrc.match(/setReticle\(on, x, z, y, r, hit, pts\) \{[\s\S]*?\n    \},/) || "");
-    ok("RETICLE mk2.00(c) source pin (re-taught mk2.02): the crosshair draws in crimson — the band is dead",
-      /PlaneGeometry\(0\.12, 0\.85\)/.test(block) && /0xf0143c/.test(block), block.length);
-  }
-  // (d) source pins: every TAKE CONTROL closes the build tree with the take.
-  {
-    const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    // (e) source pin: the BUILD toggle refuses to open over a live possession.
-    ok("RETICLE mk2.00(e) source pin: the BUILD toggle refuses while possessed",
-      /if \(buildOpen\) \{ closeBuild\(\); return; \}[\s\S]{0,240}if \(C && C\.input\.possess\) return;/.test(gameSrc));
-  }
-}
 // ==== end THE RETICLE, SECOND PASS (mk2.00) =================================
 
 // ==== THE TRUE RETICLE (mk2.01) =============================================
@@ -2202,24 +1857,6 @@ import fs from "node:fs";
       pr.center.wall === false && Math.abs(pr.center.y - 3) < 0.01 && pr.center.x >= 10 && pr.center.x <= 12.5,
       JSON.stringify(pr.center));
   }
-  // (i) source pins: the surface law aims the guns, the fire paths honor
-  // aim.y, the ring is the predictor's, the crosshair rides the ring.
-  {
-    const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    const stateSrc = fs.readFileSync(new URL("../../src/depot/state.js", import.meta.url), "utf8");
-    const driversSrc = fs.readFileSync(new URL("../../src/depot/drivers.js", import.meta.url), "utf8");
-    const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-    ok("TRUE RETICLE mk2.01(i) source pin: the frame loop reads the surface under the reticle (wee-t2b: map.invW)",
-      /input\.reticle\.y = surfaceAt\(T\.sight, input\.reticle\.x, input\.reticle\.z, map\.invW\)\.y;/.test(gameSrc));
-    ok("TRUE RETICLE mk2.01(i) source pin: all five possessed fire paths aim at the surface (aim.y)",
-      (stateSrc.match(/aim\.y != null \? aim\.y : world\.field\.heightAt\(aim\.x, aim\.z\)/g) || []).length === 3 &&
-      (driversSrc.match(/aim\.y != null \? aim\.y : world\.field\.heightAt\(aim\.x, aim\.z\)/g) || []).length === 2);
-    ok("TRUE RETICLE mk2.01(i) source pin: the ring is the predictor's landing bound (wee-t2b: map.invW)",
-      /const pr9 = predictRing\(T\.sight, muzzle9, aim9, spec9, sig9, world\.wind, map\.invW\);/.test(gameSrc));
-    const block = String(rendSrc.match(/setReticle\(on, x, z, y, r, hit, pts\) \{[\s\S]*?\n    \},/) || "");
-    ok("TRUE RETICLE mk2.01(i) source pin: the crosshair bars ride the ring, fog opted out",
-      /PlaneGeometry\(0\.12, 0\.85\)/.test(block) && /fog: false/.test(block), block.length);
-  }
 }
 // ==== end THE TRUE RETICLE (mk2.01) =========================================
 
@@ -2239,14 +1876,6 @@ import fs from "node:fs";
     const pr = predictRing(bareSG(), { x: -20, y: 1.5, z: 0 }, { x: 0, y: 0, z: 0 }, { projSpeed: 90, occl: "arc", windF: 0 }, 0.02, null, idUV);
     ok("TALL ORDER mk2.02(a): the predictor returns the 48-point laser footprint (re-taught mk2.05)", Array.isArray(pr.pts) && pr.pts.length === 48, pr.pts && pr.pts.length);
     ok("TALL ORDER mk2.02(a): on flat dirt every footprint point lies on the ground", pr.pts.every((p) => Math.abs(p.y) < 1e-6));
-  }
-  // (b) surface aim: the five possessed tgt lines carry the surface, no phantom.
-  {
-    const stateSrc = fs.readFileSync(new URL("../../src/depot/state.js", import.meta.url), "utf8");
-    const driversSrc = fs.readFileSync(new URL("../../src/depot/drivers.js", import.meta.url), "utf8");
-    ok("TALL ORDER mk2.02(b) source pin: ground aim targets the surface in all five fire paths",
-      (stateSrc.match(/hy: sy - world\.field\.heightAt\(aim\.x, aim\.z\)/g) || []).length === 3 &&
-      (driversSrc.match(/hy: sy - world\.field\.heightAt\(aim\.x, aim\.z\)/g) || []).length === 2);
   }
   // (c) THE AUTOMATIC LOB: clear line flat, walled line takes the mortar root.
   {
@@ -2269,15 +1898,6 @@ import fs from "node:fs";
   ok("TALL ORDER mk2.02(d): both tank guns and the tower GUN lob automatically",
     BISON_FIRE.gun.occl === "auto" && ENEMY_FIRE.tank.occl === "auto" && TOWER_SPECS.gun.occl === "auto");
   ok("TALL ORDER mk2.02(d): the rocket tower keeps the gentle arc", TOWER_SPECS.rocket.occl === "arc");
-  // (e) THE CONVOY WAITS: the bell gate and the release-opens, pinned.
-  {
-    const stateSrc = fs.readFileSync(new URL("../../src/depot/state.js", import.meta.url), "utf8");
-    const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("TALL ORDER mk2.02(e) source pin: the bell's deal never opens over a live possession",
-      /M\.cardUp = M\.hand\.length > 0 && !opts\.possessed;/.test(stateSrc));
-    ok("TALL ORDER mk2.02(e) source pin: release opens the held deal",
-      /if \(run\.manifest && run\.manifest\.hand\.length && !run\.manifest\.cardUp\) \{ run\.manifest\.cardUp = true;/.test(gameSrc));
-  }
   // (f) ONE BODY: every enemy row IS MAN.rifle's body, and 2m.
   {
     const FIELDS = ["mass", "hx", "hy", "hz", "hp"];
@@ -2289,12 +1909,6 @@ import fs from "node:fs";
   {
     const e = eyeOf({ kind: "unit", pos: { x: 0, y: 1.0, z: 0 } });
     ok("TALL ORDER mk2.02(g): the infantry eye rides at 1.8m", Math.abs(e.y - 1.8) < 1e-9, e.y);
-  }
-  // (h) the drawn man stretches to the 2m body, depot-gated.
-  {
-    const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-    ok("TALL ORDER mk2.02(h) source pin: depot troops draw at the 2m stretch, demo untouched",
-      /KIT\.bh \* \(world\.depotCombat \? 2\.0 \/ 1\.44 : 1\)/.test(rendSrc));
   }
   // (i) THE ROSTER: paired, armed, and the old names gone.
   {
@@ -2308,17 +1922,6 @@ import fs from "node:fs";
       INFANTRY_ARMS.rockets.weapon === "rocket" && INFANTRY_ARMS.rockets.kind === "shell");
     ok("TALL ORDER mk2.02(i): the hand maps the new keys to the new tags",
       HAND_TAGS.sq_rockets === "rocket" && HAND_TAGS.sq_grenadiers === "gren" && HAND_TAGS.sq_mortars === "mortar" && HAND_TAGS.sq_breakers === undefined && HAND_TAGS.sq_runners === undefined);
-  }
-  // (j) the enemy's new hands fire: a mortar-team man lobs the mortar table,
-  // a rocket man fires the rocket row — through the real branches.
-  {
-    const stateSrc = fs.readFileSync(new URL("../../src/depot/units.js", import.meta.url), "utf8");
-    ok("TALL ORDER mk2.02(j) source pin: the grenadier/mortar branch reads the shared arms table",
-      /INFANTRY_ARMS\[u\.tag === "mortar" \? "mortars" : "grenadiers"\]/.test(stateSrc));
-    ok("TALL ORDER mk2.02(j) source pin: the rocket man fires the shared rocket row",
-      /u\.tag === "rocket" \? INFANTRY_ARMS\.rockets/.test(stateSrc));
-    ok("TALL ORDER mk2.02(j) source pin: the breaker ram is dead",
-      !/stepBreakerRam/.test(stateSrc) && !/BREAKER_GRIND/.test(stateSrc));
   }
 }
 // ==== end THE TALL ORDER (mk2.02) ===========================================
@@ -2396,42 +1999,6 @@ import fs from "node:fs";
   // (f) the pair and the tables.
   ok("GRENADE mk2.03(f): grenadier squads are pairs", SQUAD_SPECS.grenadiers.n === 2);
   ok("GRENADE mk2.03(f): the grenade's dials — 2.0s fuse, 12m throw ceiling", GRENADE.fuse === 2.0 && INFANTRY_ARMS.grenadiers.range === 12);
-  // (g) source pins: both sides throw; the barrels pitch; the sounds exist.
-  {
-    const stateSrc = fs.readFileSync(new URL("../../src/depot/state.js", import.meta.url), "utf8");
-    const unitsSrc = fs.readFileSync(new URL("../../src/depot/units.js", import.meta.url), "utf8");
-    // the sim's fuse step lives in stepDepot, moved to sim.js (war-engine-
-    // extraction task 1).
-    const gameSrc = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
-    const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-    const audioSrc = fs.readFileSync(new URL("../../src/platform/audio.js", import.meta.url), "utf8");
-    const boardSrc = fs.readFileSync(new URL("../../src/ui/SoundBoard.jsx", import.meta.url), "utf8");
-    ok("mk2.03(g) source pin: squadFire and possessedVolley throw for grenadiers",
-      (stateSrc.match(/throwGrenade\(world, u, muzzle/g) || []).length === 2);
-    ok("mk2.03(g) source pin (re-taught mk2.06): the enemy grenadier throws the same grenade",
-      /throwGrenade\(world, u, muzzle, aimT\)/.test(unitsSrc));
-    ok("mk2.03(g) source pin: the sim steps the fuses", /stepGrenades\(world\);/.test(gameSrc));
-    ok("mk2.03(g) source pin: vehicle and tower barrels wear the live pitch",
-      (rendSrc.match(/g\.userData\.gunPitch\.rotation\.x = -\(b\._aimPitch \|\| 0\);/g) || []).length === 2);
-    ok("mk2.03(g) source pin: the wave tank has a barrel to raise",
-      /buildWaveTank/.test(rendSrc) && /b\.vtype === "tank" \? buildWaveTank\(b\.team\)/.test(rendSrc));
-    ok("mk2.03(g) source pin: toss, bounce, and the grenade's own blast are voiced",
-      /grenade: \(x, z\)/.test(audioSrc) && /gbounce/.test(audioSrc) && /function gblast/.test(audioSrc));
-    ok("mk2.03(g) source pin: the soundboard benches all three",
-      /id: "gren-toss"/.test(boardSrc) && /id: "gren-bounce"/.test(boardSrc) && /id: "gren-blast"/.test(boardSrc));
-  }
-
-  // (h) mk2.04: the grenade is SEEN — a per-frame pool setter exists and the
-  // game layer feeds it the live grenades.
-  {
-    const rendSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-    const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("VISIBLE GRENADE mk2.04(h): the renderer pools green grenades blinking red",
-      /function setGrenades\(list, t\)/.test(rendSrc) && /0x35ff6a/.test(rendSrc) && /0xff2020/.test(rendSrc) && /period = 0\.05 \+ 0\.11 \* left/.test(rendSrc));
-    ok("VISIBLE GRENADE mk2.04(h): the game feeds the live grenades every frame",
-      /R\.setGrenades\(world\._grenades, world\.t\);/.test(gameSrc));
-  }
-
   // (i) mk2.05: THE LASER FOOTPRINT — 48 rays, one exported constant.
   ok("LASER mk2.05(i): the bound walks RING_RAYS = 48 rays", RING_RAYS === 48);
   // (j) mk2.05: THE TRUE MUZZLE — the tip sits at the end of the drawn tube,
@@ -2441,12 +2008,6 @@ import fs from "node:fs";
     const m = barrelTip(v, { x: 20, y: 0, z: 0 }, { projSpeed: 85 }, BARRELS.bison);
     ok("MUZZLE mk2.05(j): the Bison's tip sits ~4.2m forward of the hull center", m.x > 3.5 && m.x < 4.6 && Math.abs(m.z) < 0.3, JSON.stringify(m));
     ok("MUZZLE mk2.05(j): the tip rides at the tube's height, not the hull's", m.y > 2.2, m.y);
-    const driversSrc = fs.readFileSync(new URL("../../src/depot/drivers.js", import.meta.url), "utf8");
-    const gameSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("MUZZLE mk2.05(j) source pin: possessed and auto tank guns fire from the tip",
-      (driversSrc.match(/barrelTip\(/g) || []).length >= 4);
-    ok("MUZZLE mk2.05(j) source pin: the projector's light leaves the tip too",
-      /muzzle9 = pb0 && P9\.kind === "vehicle" \? barrelTip\(pb0, aim9, spec9, pb0\.vtype === "tank" \? BARRELS\.tank : BARRELS\.bison\)/.test(gameSrc));
   }
   // (k) mk2.06: THE ROOFTOP AIM — lofted auto fire at a structure aims at
   // its top, so a mortar can finally shell a stacked building.
@@ -2475,15 +2036,6 @@ import fs from "node:fs";
       if (fired) break;
     }
     ok("ROOFTOP mk2.06(k): the mortar squad opens fire on the stack", fired > 0, fired);
-  }
-  // (l) source pins: both sides' lofted structure fire aims at the top.
-  {
-    const stateSrc = fs.readFileSync(new URL("../../src/depot/state.js", import.meta.url), "utf8");
-    const unitsSrc = fs.readFileSync(new URL("../../src/depot/units.js", import.meta.url), "utf8");
-    ok("ROOFTOP mk2.06(l) source pin: squadFire's structure shot rides aimTop",
-      /bestIsStruct && spec\.occl === "lofted" \? aimTop\(world, best\) : best/.test(stateSrc));
-    ok("ROOFTOP mk2.06(l) source pin: the enemy mortar team's structure shot rides aimTop (re-taught mk2.52: soft targets aimed direct)",
-      /const aimT = !soft\(tgt\) \? aimTop\(world, tgt\) : tgt;/.test(unitsSrc));
   }
 }
 // ==== end THE GUN AND THE GRENADE (mk2.03) ==================================

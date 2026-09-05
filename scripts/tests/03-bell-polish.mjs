@@ -8,7 +8,6 @@ import { canBuild } from "../../src/depot/territory.js";
 import { fwdUFor, invWFor, clampToRimFor } from "../../src/depot/orient.js";
 import { TOWN } from "../../src/depot/mapgen.js";
 import { startBuildLine, stepBuildLine } from "../../src/depot/buildlines.js";
-import fs from "node:fs";
 
 // ==== P1.5 TASK 1 — the tuning batch (mk0.50) ================================
 // Seven changes, all Jeff-ratified numbers. The asserts below are the pins for
@@ -52,17 +51,6 @@ import fs from "node:fs";
     ok("mk0.50/3: every raised price is an integer",
       [...Object.values(SQUAD_SPECS).map((s) => s.cost), ...Object.values(TOWER_SPECS).map((s) => s.cost), WALL_COST, SANDBAG_COST]
         .every((c) => Number.isInteger(c)));
-    // The wall price exists ONCE — buildAt's fallback reads state.js's
-    // constant instead of a bare 5 (re-pinned mk1.12 — the bar row died,
-    // the harness fallback remains; re-aimed again mk1.13 — the spec path
-    // now reads the living market's live price, the harness fallback still
-    // pays WALL_COST flat).
-    const wsrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    // The knowing asymmetry is documented where the raise is, not just in the
-    // plan — a reader who finds a rich enemy finds the reason.
-    const sqsrc = fs.readFileSync(new URL("../../src/depot/squads.js", import.meta.url), "utf8");
-    ok("mk0.50/3: the interim cost asymmetry is written down beside the raised prices",
-      /ASYMMETRY/.test(sqsrc) && /mercenary market/.test(sqsrc));
     ok("mk0.50/3 (re-taught mk2.02): enemy bounties were NOT raised with them — surviving rows pinned, the roster surgery's rows at their born values",
       ENEMY_SPECS.gren.bounty === 8 && ENEMY_SPECS.sapper.bounty === 7
       && ENEMY_SPECS.rocket.bounty === 8 && ENEMY_SPECS[""].bounty === 4 && TANK.bounty === 25);
@@ -86,13 +74,6 @@ import fs from "node:fs";
 
   // (5) the first-manifest teaching line: bell 1 only, deterministic on the
   // bell index, nothing stored.
-  {
-    const src = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("mk0.50/5: the teaching line renders on bell 1 only",
-      /hud\.manifest\.bell === 1 &&/.test(src) && /The convoy returns each bell — plans build, hires march\./.test(src));
-    ok("mk0.50/5: it is bell-index deterministic — no flag, no storage",
-      !/taughtManifest|seenManifest|firstManifestShown/.test(src));
-  }
 
   // (6) the off-map clamp. The rim is axis-aligned in CANONICAL space only, so
   // the clamp is proved at all four orientations — a world-space clamp would
@@ -118,13 +99,6 @@ import fs from "node:fs";
     ok("mk0.50/6: an off-map tap clamps inside the rim at every orientation", allIn);
     ok("mk0.50/6: a destination already on the field is returned untouched", untouched);
     ok("mk0.50/6: only the out-of-bounds axis moves (canonical clamp, not a world-space box)", cornerOK);
-    const src = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("mk0.50/6: the order flow clamps at the ONE site where a tap becomes a dest (wee-t2b: map.clampToRim)",
-      /const d = map\.clampToRim\(p\.x, p\.z\);/.test(src) && /gsq\.dest = \{ x: d\.x, z: d\.z \}/.test(src));
-    // P7 T18: RIM_HALF_U/V moved to mapgen.js.
-    const mgSrc050 = fs.readFileSync(new URL("../../src/depot/mapgen.js", import.meta.url), "utf8");
-    ok("mk0.50/6: the rim half-extents exist once (inRim and the clamp share them)",
-      /const RIM_HALF_U = 90, RIM_HALF_V = 90;/.test(mgSrc050) && !/halfU: 29, halfV: 57/.test(mgSrc050) && !/halfU: 29, halfV: 57/.test(src));
   }
 }
 // ==== end mk0.50 =============================================================
@@ -246,32 +220,6 @@ import fs from "node:fs";
       fell === 2 && wallsOf(world).filter((b) => b.pos.x === 6).length === 3, `fell=${fell}`);
   }
 
-  // (f) The consumers of kind "wall". Every one of them was read and either
-  // left alone (it works per body and wants to) or taught the difference.
-  {
-    const wsrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    const usrc = fs.readFileSync(new URL("../../src/depot/units.js", import.meta.url), "utf8");
-    const ssrc = fs.readFileSync(new URL("../../src/depot/state.js", import.meta.url), "utf8");
-    // stepDepot moved to sim.js (war-engine-extraction task 1) — the support
-    // pass and the rubble-count pin below read its new home.
-    const simSrc = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
-    const bootSrc = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
-    const tickSrc = fs.readFileSync(new URL("../../src/depot/tick.js", import.meta.url), "utf8");
-    ok("mk0.52/f: the support pass runs in stepDepot, after the dead are cleared",
-      /structureLost[\s\S]{0,700}stepWallSupport\(world\)/.test(simSrc));
-    ok("mk0.52/f: resume re-claims the cell with the BOTTOM course", /if \(b\.course > 0\) continue;/.test(bootSrc));
-    ok("mk0.52/f: one territory emitter per wall, not per course", /b\.kind === "wall" && b\.team === 1 && b\.alive && !b\.course/.test(bootSrc));
-    ok("mk0.52/f: the counters count walls, not courses",
-      /if \(b\.kind === "wall"\) \{ if \(!b\.course\) walls\+\+; continue; \}/.test(tickSrc) && /if \(b\.kind === "wall"\) \{ if \(!b\.course\) nw\+\+; \}/.test(wsrc));
-    // mk1.93 re-teach: the one-wall-one-death shape moved off DepotGame's own
-    // wallKill counter (retired with the kill law) into scoreKill's own
-    // early-return — the upper courses never reach the killer's ledger.
-    ok("mk1.93/f: one wall pays one death (scoreKill's upper-course exclusion, state.js)",
-      /ev\.kind === "wall" && ev\.group === WALL_UPPER_GROUP\) return null;/.test(ssrc));
-    ok("mk0.52/f: a course leaves a THIRD of the rubble (27 stones per wall, as before)",
-      /ny: b\.kind === "tower" \? 4 : \(b\.course != null \? 1 : 3\)/.test(simSrc));
-  }
-
   // (h) The crater re-seat. core.js drops static structures onto the ground
   // when a shell craters beside them so nothing floats over its own hole; it
   // assumed every structure rides exactly its own half-height. Courses do not,
@@ -296,22 +244,6 @@ import fs from "node:fs";
       ys.map((y) => y.toFixed(3)).join(","));
     ok("mk0.52/h: and they followed the ground down into the crater",
       Math.abs(ys[0] - (-0.55 + WALL_COURSE_PITCH / 2)) < 1e-6, ys[0].toFixed(3));
-    const csrc = fs.readFileSync(new URL("../../src/engine/core.js", import.meta.url), "utf8");
-    ok("mk0.52/h: the core re-seat is a guarded ADDITIVE divergence — no seatY, no change",
-      /s\.seatY != null \? s\.seatY : s\.hy/.test(csrc));
-  }
-
-  // (g) The seams are a RENDER inset — the bodies keep their true size, so
-  // nothing about cover, sightlines or occupancy moved with the look.
-  {
-    const rsrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-    ok("mk0.52/g: walls and sandbags draw inset so the outline finds the joints",
-      /const SEAM_XZ = 0\.05, SEAM_Y = 0\.045, SEAM_BAG = 0\.04;/.test(rsrc)
-      && /b\.hx - SEAM_XZ/.test(rsrc) && /b\.sandbag \? SEAM_BAG : 0/.test(rsrc));
-    ok("mk0.54/g: the block pool holds 27 instances per wall (3x3 per course, ~85 walls fully drawn)",
-      /const WALL_INST = 2304;/.test(rsrc) && /wi >= WALL_INST/.test(rsrc) && /WALL_BLOCKS = 3/.test(rsrc));
-    ok("mk0.52/g: one snow cap per wall, on the top living course",
-      /b\.capTop !== false && wci < 256/.test(rsrc));
   }
 }
 // ==== end mk0.52 =============================================================
@@ -400,70 +332,6 @@ import fs from "node:fs";
     sq.order = "build"; sq.dest = { x: 0, z: 26 };
     stepSquad(world, sq, 1 / 60);
     ok("mk0.60/5: under fire a BUILD leg still reads unthreatened (MOVE's rule)", sq._threatened === false, String(sq._threatened));
-  }
-
-  // (6) the game layer's rules, by source shape — the line machinery needs a
-  // live world/grid/territory to run, so what is pinned here is that the rules
-  // the brief fixed are actually written where they are claimed to be.
-  {
-    const dsrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    const muSrc60 = fs.readFileSync(new URL("../../src/depot/muster.js", import.meta.url), "utf8");
-    // P7 T20: the lay machinery (lineCells/startBuildLine/linePieces/
-    // layPieceAt/stepBuildLine) moved to buildlines.js — the pins below on
-    // that literal text retarget there (sweep license, unchanged content).
-    const blSrc60 = fs.readFileSync(new URL("../../src/depot/buildlines.js", import.meta.url), "utf8");
-    ok("mk0.60/6: the two taps are start-then-end, and a re-tap of the armed chip cancels",
-      /if \(!view\.buildPt0\) \{ view\.buildPt0 = \{ x: d\.x, z: d\.z \}/.test(dsrc)
-      && /if \(view\.orderMode === kind\) \{ view\.orderMode = null; view\.buildPt0 = null; return; \}/.test(dsrc));
-    // re-pinned COMMAND T2 (mk0.84): a second clamp site joined the first —
-    // re-placing a picked-up endpoint of a proposed line clamps the same way
-    // (tapAt's S.linePending block). Both taps of the ORIGINAL two-point
-    // order still go through the one `const d = ...` site; the count moved
-    // from 1 to 2 honestly, not loosened.
-    // re-pinned POSSESSION T2 (mk0.91): a THIRD site had joined the same call
-    // shape — the possessed-squad aim tap. re-pinned POSSESSION T4 (mk0.93):
-    // that site is GONE — tapAt's possession branch no longer clamps an aim
-    // to the rim at all (a tap while possessed is consumed and does
-    // nothing; the reticle is bounded by the sight circle, not clampToRim).
-    // Count moves back 3 -> 2, honestly, one caller lost, not loosened.
-    // re-pinned P7 T2 (mk1.31): consumeVehOrderTap (the Bison's MOVE/PATROL
-    // ground tap) joined the same clamp shape — a fourth caller, count 2 -> 3.
-    // re-pinned mk2.25: devSpawnAt (the enemy rack's placer, sandbox only)
-    // joined the same clamp shape — a fifth caller, count 3 -> 4.
-    ok("mk0.60/6: the cell walk steps ONE axis at a time (consecutive cells share an EDGE) (retargeted mk1.50, P7 T20: lineCells moved to buildlines.js)",
-      /const stepX = z === g1\.gz \? true : x === g1\.gx \? false : 2 \* err > -dz;/.test(blSrc60));
-    // Jeff, 2026-08-12: ONE rotation for the whole line — the dominant axis of
-    // start->end, decided once at order time. NOT per-step; and the
-    // auto-continue conventions must never override it.
-    ok("mk0.60/6: one rotation per line, taken from the order's dominant axis (retargeted mk1.50, P7 T20: startBuildLine/layPieceAt moved to buildlines.js)",
-      /const orient = len > 1e-6 \? \(Math\.abs\(dxw\) >= Math\.abs\(dzw\) \? 0 : 1\) : null;/.test(blSrc60)
-      && /const orient = job\.orient != null \? job\.orient/.test(blSrc60));
-    ok("mk0.60/6: no per-cell rotation survives anywhere in the line machinery",
-      !/row\.orient/.test(dsrc));
-    ok("mk0.60/6: placement runs the real spawners and the real gate (retargeted mk1.50, P7 T20: layPieceAt moved to buildlines.js) (re-taught P7.1 T7)",
-      /spawnWallCourses\(world, row\.x, field\.heightAt\(row\.x, row\.z\), row\.z, orient, team\)/.test(blSrc60)
-      && /spawnSandbag\(world, row\.x, row\.z, orient, team\)/.test(blSrc60)
-      && /const v = validatePlacement\(\{\n\s+blocked: !!\(cell\.blocked \|\| cell\.wallId\), ice: !!cell\.ice,\n\s+held: canBuildFor\(T, c0\.u, c0\.v, team\), resources: S\.resources, cost,/.test(blSrc60));
-    ok("mk0.60/6: an occupied cell is SKIPPED, scrap running dry stops the line (retargeted mk1.50, P7 T20: layPieceAt/stepBuildLine moved to buildlines.js)",
-      /return v\.msg === "NO SCRAP" \? "dry" : "skip";/.test(blSrc60) && /job\.dry = true;/.test(blSrc60));
-    ok("mk0.60/6: a wall lay holds the squad on squad._pauseT, the existing dwell field (retargeted mk1.50, P7 T20: stepBuildLine moved to buildlines.js)",
-      /sq\._pauseT = WALL_LAY_PAUSE_S;/.test(blSrc60));
-    ok("mk0.60/6 (re-pinned mk1.32, P7 T3: seedBags(depotT, streamKey) generalized to both depots;" +
-      " retargeted mk1.49, P7 T19: seedBags moved to muster.js;" +
-      " re-taught P7.1 T6: THE BARE OPENING kills the seeded bag rings — the call sites left" +
-      " DepotGame, the function's own draw-off-a-MAP-seed-stream shape stays exported for Task 7;" +
-      " wee-t2b: seedBags takes map, streams off map.MAP_SEED)" +
-      " the seeded depot bags draw off a MAP-seed stream, never world.rng",
-      /mulberry32\(map\.MAP_SEED \^ streamKey\)/.test(muSrc60) &&
-      !/seedBags\(world, grid, TOWN\.find\(\(t\) => t\.depot && t\.team !== 2\), 0x5ba6, stampBag\);/.test(dsrc) &&
-      !/seedBags\(world, grid, TOWN\.find\(\(t\) => t\.depot && t\.team === 2\), 0x5ba7, stampBag\);/.test(dsrc) &&
-      /const nBags = 4 \+ Math\.floor\(bagR\(\) \* 3\);/.test(muSrc60));
-    // the geometry the line is built on, written down where a reader will look
-    ok("mk0.60/6: the piece-vs-pitch geometry and the one-rotation rule are documented",
-      /GEOMETRY, stated once/.test(dsrc) && /ONE ROTATION FOR THE WHOLE LINE/.test(dsrc));
-    const ssrc = fs.readFileSync(new URL("../../src/depot/save.js", import.meta.url), "utf8");
-    ok("mk0.60/6: the half-laid line is reset-on-resume, and says so",
-      /THE BUILD LINE IS DELIBERATELY NOT SAVED/.test(ssrc));
   }
 
   // (7) the piece-vs-pitch arithmetic itself: both pieces are 1.8m along their

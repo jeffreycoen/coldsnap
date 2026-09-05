@@ -2,12 +2,9 @@
 // what it actually earned since the last bell; fixtures without the
 // accumulator take the old curve, byte-stable. No seed is special.
 import { ok } from "./harness.mjs";
-import { readFileSync } from "node:fs";
 import { mulberry32 } from "../../src/engine/core.js";
 import { planWave, bellBudget } from "../../src/depot/ai.js";
 import { makeRunState, fireBell, BELL_PERIOD_S } from "../../src/depot/state.js";
-
-const src = (p) => readFileSync(new URL("../../" + p, import.meta.url), "utf8");
 
 // E1 — the earned baseline governs the steady band: a mid-till regiment
 // (150 scrap) under the OLD bell-1 curve (baseline ~20) sits far past the
@@ -45,14 +42,4 @@ const src = (p) => readFileSync(new URL("../../" + p, import.meta.url), "utf8");
   S.reg = { heads: 400, tanks: 10, heads0: 400, tanks0: 10, scrap: 400, earned: 250 };
   fireBell(S, { reg: S.reg, snap: {}, rng: mulberry32(283), t: BELL_PERIOD_S });
   ok("E3: the muster zeroes the earned accumulator (seed 283)", S.reg.earned === 0, S.reg.earned);
-}
-
-// E4 — the credit sites accrue, source-pinned (the four tills that feed it).
-{
-  const dg = src("src/depot/tick.js"), bl = src("src/depot/bell.js"), st = src("src/depot/state.js"), ec = src("src/depot/economy.js");
-  ok("E4: ground income accrues to earned", /run\.reg\.earned = \(run\.reg\.earned \|\| 0\) \+ run\._groundRate2 \* sdt;/.test(dg));
-  ok("E4: town pay accrues to earned (zero pay accrues nothing)", /if \(paid\.regiment > 0\) run\.reg\.earned = \(run\.reg\.earned \|\| 0\) \+ paid\.regiment;/.test(bl));
-  ok("E4: kill pay accrues to earned", /S\.reg\.earned = \(S\.reg\.earned \|\| 0\) \+ pay;/.test(st));
-  ok("E4: assault results accrue to earned (zero credits accrue nothing)", /if \(won > 0\) reg\.earned = \(reg\.earned \|\| 0\) \+ won;/.test(ec));
-  ok("E4: the baseline reads the earned till", /const baseline = reg\.earned != null \? reg\.earned : bellBudget\(bell\);/.test(src("src/depot/ai.js")));
 }

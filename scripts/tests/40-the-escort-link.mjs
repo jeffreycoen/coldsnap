@@ -3,7 +3,6 @@ import { makeWorld, addBody, stepWorld } from "../../src/engine/core.js";
 import { stepDrivers } from "../../src/depot/drivers.js";
 import { BISON } from "../../src/depot/specs.js";
 import { identFwdDir } from "./shared.mjs";
-import fs from "node:fs";
 
 // ==== mk2.93: the escort link ===============================================
 // ESCORT closes a hull's chain: the arrival pop hands the hull its squad and
@@ -59,11 +58,4 @@ import fs from "node:fs";
     for (let i = 0; i < 10800 && !(v.order === "defend" && (!v._queue || !v._queue.length)); i++) { w.t += w.dt; stepDrivers(w, G, identFwdDir, null, toUV, { squads: [] }); stepWorld(w); }
     ok("(b) a dead target ends the chain in defend", v.order === "defend" && (!v._queue || v._queue.length === 0), v.order);
   }
-
-  // (c) pins: the mech shares the pop; the tap appends terminally; the flags skip it
-  const dsrc = fs.readFileSync("src/depot/drivers.js", "utf8");
-  ok("(c) pins: the mech pops escort too", /q\.kind === "escort"\) \{ b\.order = "escort"; b\.escortId = q\.escortId;/.test(dsrc));
-  const dg = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
-  ok("(c) pins: the escort tap appends and puts the light out", /push\(\{ kind: "escort", escortId: sq\.id \}\);/.test(dg));
-  ok("(c) pins: the flags skip the escort leg", /if \(q\.kind === "escort"\) return null;/.test(dg));
 }

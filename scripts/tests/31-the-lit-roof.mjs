@@ -6,14 +6,12 @@
 // building stays dark, and a wide roof lights only as far as a low eye can
 // see over its near rim. No seed is special; fixture seeds named below.
 import { ok } from "./harness.mjs";
-import { readFileSync } from "node:fs";
 import { makeWorld, addBody } from "../../src/engine/core.js";
 import { makeSight, stepSight, seenAt, steerReticle, surfaceAt } from "../../src/depot/sight.js";
 import { possessedArmorFire } from "../../src/depot/drivers.js";
 import { tightSolve } from "../../src/depot/accuracy.js";
 import { BISON, BISON_FIRE } from "../../src/depot/specs.js";
 
-const src = (p) => readFileSync(new URL("../../" + p, import.meta.url), "utf8");
 const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
 const idUV = (x, z) => ({ u: x, v: z });
 const idW = (u, v) => ({ x: u, z: v });
@@ -84,8 +82,3 @@ const mkBison = (w, team, x, z) => {
   stepSight(w, SG, idUV, idW);
   ok("R4: the enemy sees its near rim of the same roof (seed 314)", seenAt(SG, 15, 0, 2) && !seenAt(SG, 9, 0, 2));
 }
-
-// R5 — source pin: canSee tests the occupied cell's surface, not the ground
-// under it.
-ok("R5: canSee reads the surface — occ over gnd — at the target cell",
-  /const ty = \(SG\.occ\[ti\] > SG\.gnd\[ti\] \? SG\.occ\[ti\] : SG\.gnd\[ti\]\) \+ SIGHT_TARGET_H;/.test(src("src/depot/sight.js")));

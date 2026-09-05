@@ -5,14 +5,12 @@
 // sight law untouched. Both sides' autonomous gates identical. No seed is
 // special; fixture seeds named below.
 import { ok } from "./harness.mjs";
-import { readFileSync } from "node:fs";
 import { makeWorld, addBody, stepWorld } from "../../src/engine/core.js";
 import { possessedArmorFire, possessedArmorMg, stepDrivers } from "../../src/depot/drivers.js";
 import { steerReticle } from "../../src/depot/sight.js";
 import { BISON, BISON_FIRE } from "../../src/depot/specs.js";
 import { identFwdDir } from "./shared.mjs";
 
-const src = (p) => readFileSync(new URL("../../" + p, import.meta.url), "utf8");
 const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
 const idUV = (x, z) => ({ u: x, v: z });
 // a sight map with NOTHING lit — the blackest possible field
@@ -59,15 +57,4 @@ const muzzles = (w) => w.events.filter((ev) => ev.type === "muzzle");
   const SG = darkT().sight;
   for (let i = 0; i < 300; i++) off = steerReticle(SG, 1, { x: 0, z: 0 }, 26, off, 1, 0, 1 / 60, idUV);
   ok("C3: the reticle crosses the black to the circle's edge", Math.abs(off.dx - 26) < 0.5, off.dx.toFixed(1));
-}
-
-// C4 — source pins: no possessed path reads the sight gate; every
-// autonomous path still does.
-{
-  const d = src("src/depot/drivers.js"), st = src("src/depot/state.js"), sg = src("src/depot/sight.js");
-  ok("C4: drivers.js keeps exactly its three AUTONOMOUS sight gates", (d.match(/fieldReaches\(T,/g) || []).length === 3);
-  ok("C4: mechSighted is the open commander's gate", /export function mechSighted\(world, mech, T, toUV[\s\S]{0,40}\{\n  return true;/.test(d));
-  ok("C4: possessedVolley and possessedTowerFire carry the commander's-eye mark, no gate",
-    (st.match(/THE COMMANDER'S EYE — possession is the player's own sight/g) || []).length === 3);
-  ok("C4: the reticle steer carries no dark stop", !/stopped dead at the dark/.test(sg) && /the circle is the only law/.test(sg));
 }

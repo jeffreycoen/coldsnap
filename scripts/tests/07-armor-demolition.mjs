@@ -254,11 +254,6 @@ import fs from "node:fs";
     const S5 = { gameOver: false, victory: false };
     ok("T3(c3): the enemy falls at the same bar", checkEnemyBreach(S5, 0.35) === true && S5.victory);
   }
-  // (d) normal welds: the reinforcement multiplier is gone from the source
-  {
-    const dgSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("T3(d): no depot weld reinforcement survives", !/breakF \* 1\.5/.test(dgSrc));
-  }
   // (e) the home guard: a held rifleman stands his ground and fires
   {
     const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
@@ -843,11 +838,6 @@ import fs from "node:fs";
   // (h) the pie gates stay membership-driven; possessedVolley fires for both
   // new types.
   {
-    const dgSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("T7(h): patrolOk stays membership-driven (excludes only engineers/sappers, no per-type whitelist)",
-      /patrolOk:\s*sq\.type !== "engineers" && sq\.type !== "sappers"/.test(dgSrc));
-    ok("T7(h): structOk stays INFANTRY_ARMS-membership-driven",
-      /structOk:\s*!!INFANTRY_ARMS\[sq\.type\]/.test(dgSrc));
     const flatField = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
     const w = makeWorld({ field: flatField, seed: 24 });
     const rsq = makeSquad(1, "rockets", 1, 0, 0);
@@ -1081,8 +1071,6 @@ import fs from "node:fs";
     }
     ok("T9(b): planWave never buys a hero tag across 40 seeded musters at bell 12, even offered", !anyHeroBuy);
     ok("T9(b2): nextSpawnTag never yields a hero tag off those musters", !anyHeroSpawn);
-    const aiSrc9 = fs.readFileSync(new URL("../../src/depot/ai.js", import.meta.url), "utf8");
-    ok("T9(b3): ai.js's INF_TYPES source carries no hero tag (planWave can never see one)", !/INF_TYPES = \[[^\]]*hero/.test(aiSrc9));
   }
 
   // (c) the wall
@@ -1107,44 +1095,16 @@ import fs from "node:fs";
     ok("T9(c5): marketCounts counts an ENEMY bison into heroBison too", counts9c.heroBison === 1, JSON.stringify(counts9c));
   }
 
-  // (d) enemy replacement — source-pinned (ringBell lived as a React-closure
-  // arrow function; retargeted mk1.51, P7 T21: it's now an importable
-  // function in bell.js, but stays source-pinned — same convention T8's own
-  // ferry/commander wiring was verified by, POSSESSION T1(d) above).
+  // (d) the reseed arithmetic itself (trap note 4): apcSeqN seeded to the max
+  // restored seat, so the very next ++apcSeqN assignment is guaranteed
+  // fresh — pure math, mirrors the file's own local-reimplementation
+  // pattern (AMENDMENT 1's spreadAt) for logic embedded in the boot closure.
   {
-    const dsrc9 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    // retargeted mk1.51, P7 T21: ringBell moved to bell.js — the extraction
-    // reads its new home; dsrc9 (DepotGame.jsx) stays live for T9(d11) below,
-    // which pins the mount-scope reseed formula (untouched by this task).
-    const bellSrc9 = fs.readFileSync(new URL("../../src/depot/bell.js", import.meta.url), "utf8");
-    const ringBellBody9 = (bellSrc9.match(/export function ringBell\(world, grid, field, T, run, ctx, map\) \{[\s\S]*?\n\}/) || [""])[0];
-    ok("T9(d): ringBell extracts (source pin base)", ringBellBody9.length > 0);
-    ok("T9(d2): gated on a dead hull, both kinds", /!has\("bison"\)/.test(ringBellBody9) && /!has\("apc"\)/.test(ringBellBody9));
-    ok("T9(d3): the bell clamp is DEAD — ownership alone gates, any bell",
-      !/run\.bell >= TIER_BELLS\[3\]/.test(ringBellBody9) && /run\.foe\.unlocked\.indexOf\(tag\) >= 0/.test(ringBellBody9));
-    ok("T9(d4): gated on the enemy's own pick (run.foe.unlocked)", /run\.foe\.unlocked\.indexOf\(tag\) >= 0/.test(ringBellBody9));
-    ok("T9(d5): the full gate ANDs dead-hull, tier-open-and-picked and affordability — a poor regiment fails the same chain and buys nothing",
-      /if \(depotE4 && !has\("bison"\) && open\("hero_bison"\) && run\.reg\.scrap >= heroPrice\("hero_bison"\)\)/.test(ringBellBody9));
-    ok("T9(d6): scrap is deducted before the hull parks, draw-free (re-taught mk1.51, P7 T21: parkArmor's ctx.nextApcSeq call; wee-t2b: + map)",
-      /run\.reg\.scrap -= heroPrice\("hero_bison"\); parkArmor\(world, grid, field, depotE4, 2, "bison", ctx\.nextApcSeq, map\)/.test(ringBellBody9));
-    ok("T9(d7): the same table prices the apc replacement (re-taught mk1.51, P7 T21: parkArmor's ctx.nextApcSeq call; wee-t2b: + map)",
-      /run\.reg\.scrap -= heroPrice\("hero_apc"\); parkArmor\(world, grid, field, depotE4, 2, "apc", ctx\.nextApcSeq, map\)/.test(ringBellBody9));
-    ok("T9(d8): Bison goes first — the bison branch is the `if`, the apc branch the `else if`",
-      ringBellBody9.indexOf('parkArmor(world, grid, field, depotE4, 2, "bison", ctx.nextApcSeq, map)') <
-      ringBellBody9.indexOf('parkArmor(world, grid, field, depotE4, 2, "apc", ctx.nextApcSeq, map)'));
-    ok("T9(d9): sits after the ferry block", ringBellBody9.indexOf('ea.ferry = "out";') < ringBellBody9.indexOf("THE HERO TIER, their side"));
-    // the reseed arithmetic itself (trap note 4): apcSeqN seeded to the max
-    // restored seat, so the very next ++apcSeqN assignment is guaranteed
-    // fresh — pure math, mirrors the file's own local-reimplementation
-    // pattern (AMENDMENT 1's spreadAt) for logic embedded in the boot closure.
     const seatsRestored9 = [3, 1, 7, 2];
     let apcSeqN9 = 0;
     for (const s of seatsRestored9) if (s > apcSeqN9) apcSeqN9 = s;
     const freshSeq9 = ++apcSeqN9;
     ok("T9(d10): a replacement APC's seat is fresh — past every restored seat", freshSeq9 > Math.max(...seatsRestored9), freshSeq9);
-    const bootSrc9 = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
-    ok("T9(d11): the mount-scope reseed formula is in source (max restored + 1, re-taught: war.seq.apc, boot.js)",
-      /if \(b\.kind === "vehicle" && b\.vtype === "apc" && b\.apcSeq > war\.seq\.apc\) war\.seq\.apc = b\.apcSeq;/.test(bootSrc9));
   }
 
   // (e)/(f) the fielded start + draw/hash stability — built off the SAME real

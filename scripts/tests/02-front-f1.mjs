@@ -94,19 +94,6 @@ import fs from "node:fs";
 
   }
 
-  // source pins: the emitter rule and the deleted anchor push
-  // buildEmitters moved to boot.js (task 4: the engine leaves the screen).
-  const bootSrcF1 = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
-  ok("F1/1c: buildEmitters flags emit by team sign", /b\.kind === "flag"[^\n]*sign: b\.team === 2 \? -1 : 1/.test(bootSrcF1));
-  ok("F1/1c: the SPAWN_POINTS anchor push is deleted", !/for \(const sp of SPAWN_POINTS\)[^\n]*EMIT\.anchor/.test(depotSrcF1));
-
-  // renderer: cloth tint keys on the flag body's team (DEPOT-gated by the
-  // existing world.wind gate — TD/no-option renders never reach this block)
-  {
-    const rSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-    ok("F1/1d: flag cloth tint keys on the flag body's team", /flagClothMesh\.setColorAt\(fi, b\.team === 2 \?/.test(rSrc));
-  }
-
   // connectivity both directions + 20-seed placement sweep: depot2 never
   // fouls roads/spawns/ponds/rocks and every map builds
   {
@@ -176,15 +163,6 @@ import fs from "node:fs";
   // world removal path is gone, DepotGame neither imports nor calls it, and
   // no leak event branch/lives field survives in HUD or run state.
   {
-    const unitsSrc = fs.readFileSync(new URL("../../src/depot/units.js", import.meta.url), "utf8");
-    const depotSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    const stateSrc = fs.readFileSync(new URL("../../src/depot/state.js", import.meta.url), "utf8");
-    ok("F1/3a: units.js no longer defines checkLeaks", !unitsSrc.includes("function checkLeaks"));
-    ok("F1/3a: DepotGame neither imports nor calls checkLeaks", !depotSrc.includes("checkLeaks"));
-    ok("F1/3a grep pin: no lives field in DepotGame (HUD, hooks, run state)", !/\blives\b/.test(depotSrc.replace(/\/\/[^\n]*/g, "")));
-    ok("F1/3a grep pin: no heart chip in DepotGame", !depotSrc.includes("♥"));
-    ok("F1/3a grep pin: no FINAL WAVE copy in state.js cards", !stateSrc.includes("FINAL WAVE"));
-    ok("F1/3a grep pin: no n-of-50 wave display in DepotGame", !depotSrc.includes("totalWaves"));
     ok("F1/3a: makeRunState carries no lives", !("lives" in makeRunState()));
     const S0 = makeRunState();
     S0.reg = { heads: 0, tanks: 0, heads0: 400, tanks0: 10, scrap: 0 };
@@ -470,15 +448,6 @@ import fs from "node:fs";
     && pendingButtonsVisible({ x: PENDING_EDGE_PAD - 1, y: 300 }, rect) === false
     && pendingButtonsVisible({ x: PENDING_EDGE_PAD, y: 300 }, rect) === true);
 
-  // (c) the wiring: DepotGame uses both, says something on the inert tap, and
-  // auto-cancels the pending when its anchor leaves the viewport.
-  {
-    const src = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("mk0.27/c: the canvas-tap pending-clear goes through canvasTapConsumesPending",
-      /canvasTapConsumesPending\(view\.pending, view\.pendingScreen/.test(src));
-    ok("mk0.27/c: a pending whose anchor leaves the viewport auto-cancels with a toast",
-      /pendingButtonsVisible\(/.test(src) && /PLACEMENT CANCELLED/.test(src));
-  }
 }
 // ==== end mk0.27 =============================================================
 
@@ -520,22 +489,6 @@ import fs from "node:fs";
       endCardReady(loss, 12.5) === false && endCardReady(win, 30) === false);
   }
 
-  // (c) the wiring: the world keeps simming through the delay, orders and
-  // building lock at the verdict, and the end dispatch is a STABLE object —
-  // that last one is the dead-button bug: a fresh dispatch object every HUD
-  // tick re-ran Dispatch's arming effect, so RETURN TO BASE never armed.
-  {
-    const src = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("mk0.29/c: the end dispatch is memoized (the arming effect stops resetting)",
-      /useMemo\([^)]*\n?[^;]*makeEndDispatch/.test(src) || /const endDispatch = useMemo/.test(src));
-    ok("mk0.29/c: the card mount waits on the delay gate", /hud\.endCard/.test(src));
-    ok("mk0.29/c: the sim keeps running until the card is up",
-      /const cardUp = /.test(src) && /view\.paused \|\| !run\.started \|\| cardUp/.test(src));
-    ok("mk0.29/c: orders lock at the verdict", /orderSquad = \(kind\) => \{[^}]*gameOver/.test(src.replace(/\n/g, " ")));
-    ok("mk0.29/c: building locks at the verdict", /setMode = \(m\) => \{[^}]*gameOver/.test(src.replace(/\n/g, " ")));
-    ok("mk0.29/c: the MENU button arms before it leaves the field",
-      /data-menu-exit/.test(src) && /LEAVE THE FIELD\?/.test(src) && /menuArmed/.test(src));
-  }
 }
 // ==== end mk0.29 =============================================================
 

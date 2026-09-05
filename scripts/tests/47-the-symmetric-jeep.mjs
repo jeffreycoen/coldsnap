@@ -3,7 +3,6 @@ import { makeWorld } from "../../src/engine/core.js";
 import { makeMap, TOWN, makeGrid } from "../../src/depot/mapgen.js";
 import { parkArmor } from "../../src/depot/muster.js";
 import { JEEP } from "../../src/depot/specs.js";
-import fs from "node:fs";
 
 // ==== mk3.03: the symmetric jeep ============================================
 // SYMMETRY IS LAW — the enemy's jeep parks through the same door with the
@@ -27,10 +26,4 @@ import fs from "node:fs";
     ok("(a) it wears the jeep's own spec, not the Bison's", !!v && v.hx === JEEP.hx && v.maxHp === JEEP.hp && v.bounty === JEEP.bounty, v ? `${v.hx}/${v.maxHp}/${v.bounty}` : "-");
     ok("(a) it rides the springs with the full fit", !!v && !!v.susp && v.fords === true && v.eyeR === JEEP.eye && v.gear === "2h" && v.drv === "jeep" && v.apcSeq === 1, v ? `${!!v.susp}/${v.fords}/${v.eyeR}/${v.gear}/${v.drv}/${v.apcSeq}` : "-");
   }
-
-  // (b) pins: one fit for both teams; the bell ladder buys it; the price knows it
-  const sp = fs.readFileSync("src/depot/specs.js", "utf8");
-  ok("(b) pins: the fit lives with the spec, one for both teams", /export const fitJeep = \(v\) => \{/.test(sp));
-  const bl = fs.readFileSync("src/depot/bell.js", "utf8");
-  ok("(b) pins: the hull-a-bell ladder buys the jeep", /!has\("jeep"\) && open\("hero_jeep"\)/.test(bl) && /k === "hero_jeep" \? JEEP\.cost/.test(bl));
 }

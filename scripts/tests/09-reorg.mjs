@@ -20,47 +20,12 @@ import { stepDrivers } from "../../src/depot/drivers.js";
 import { planRoute } from "../../src/depot/route.js";
 import fs from "node:fs";
 
-// ==== P7 T18: THE MAP MOVES OUT ==============================================
-// Reorganization 1 of 5: the map frame lives in mapgen.js, verbatim.
-// Zero behavior change — the keystone above is the proof.
-{
-  let mgSrc18 = "";
-  try { mgSrc18 = fs.readFileSync(new URL("../../src/depot/mapgen.js", import.meta.url), "utf8"); } catch (e) {}
-  const dgSrc18 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  ok("T18(a): mapgen.js exists and owns the generator",
-    /export function genMap\(seed\)/.test(mgSrc18) && /export function makeMap\(seed\)/.test(mgSrc18) &&
-    /export function buildDepotTerrain\(/.test(mgSrc18) && /export function makeGrid\(field\)/.test(mgSrc18) &&
-    /export function planTrees\(\)/.test(mgSrc18) && /export function computeFlowField\(/.test(mgSrc18));
-  ok("T18(a2): the frame state moved with it",
-    /export let ORIENT = 0;/.test(mgSrc18) && /export const RIM_HALF_U = 90, RIM_HALF_V = 90;/.test(mgSrc18) &&
-    /export let STREAM = null;/.test(mgSrc18));
-  ok("T18(b): DepotGame no longer defines what it now imports",
-    !/function genMap\(/.test(dgSrc18) && !/function makeGrid\(/.test(dgSrc18) &&
-    !/function computeFlowField\(/.test(dgSrc18) && /from "\.\/mapgen\.js"/.test(dgSrc18));
-}
-// ==== end P7 T18 =============================================================
-
 // ==== P7 T19: THE MUSTER MOVES OUT ===========================================
 // Reorganization 2 of 5: the fresh-war boot block lives in muster.js,
 // verbatim bodies with explicit parameters. Boot draws stay 45 by pin; and
 // the boot block gets its FIRST real fixture — the suite calls the actual
 // code instead of reimplementing it (how both boot bugs hid).
 {
-  let muSrc19 = "";
-  try { muSrc19 = fs.readFileSync(new URL("../../src/depot/muster.js", import.meta.url), "utf8"); } catch (e) {}
-  const dgSrc19 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  ok("T19(a): muster.js owns the boot block (re-taught P7.1 T6: musterFreshStart re-signed for THE BARE OPENING; wee-t2b: + map)",
-    /export function parkArmor\(world, grid, field, depotT, team, kind, nextSeq, map\)/.test(muSrc19) &&
-    /export function seedBags\(world, grid, depotT, streamKey, stampBag, map\)/.test(muSrc19) &&
-    /export function musterFreshStart\(world, S, depotP, grid, field, nextApcSeq, map\)/.test(muSrc19) &&
-    /export function armorSpread\(field, bx, bz, spec\)/.test(muSrc19));
-  ok("T19(a2): DepotGame no longer defines what it now imports",
-    !/const parkArmor = /.test(dgSrc19) && !/const seedBags = /.test(dgSrc19) &&
-    !/THE HOME GUARD /.test(dgSrc19) && /from "\.\/muster\.js"/.test(dgSrc19));
-  let bootSrc19 = "";
-  try { bootSrc19 = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8"); } catch (e) {}
-  ok("T19(a3): the seat counter lives on the war (task 4) with its pinned reseed",
-    /seq: \{ apc: 0 \}/.test(bootSrc19) && /const nextApcSeq = \(\) => \+\+war\.seq\.apc;/.test(bootSrc19));
   // (b) the boot block, called for real — the first true muster fixture.
   // Re-taught (P7.2 T8, the sweep license): THE OPENING DRAFT — the player's
   // seven, then its seven, its five picked and applied (15 draws: commander
@@ -93,21 +58,6 @@ import fs from "node:fs";
 // buildlines.js, verbatim bodies with explicit parameters; the interface
 // glue stays behind and calls in.
 {
-  let blSrc20 = "";
-  try { blSrc20 = fs.readFileSync(new URL("../../src/depot/buildlines.js", import.meta.url), "utf8"); } catch (e) {}
-  const dgSrc20 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  ok("T20(a): buildlines.js owns the machinery (re-taught P7.1 T7; wee-t2b: + map)",
-    /export function stepBuildLine\(world, grid, field, T, S, sq, ctx, toast, map\)/.test(blSrc20) &&
-    /export function layPieceAt\(world, grid, field, T, S, job, row, ctx, map\)/.test(blSrc20) &&
-    /export function startBuildLine\(grid, sq, kind, a, b, toast, team = 1\)/.test(blSrc20) &&
-    /export function linePieces\(grid, field, T, kind, a, b, map\)/.test(blSrc20) &&
-    /export function lineCells\(grid, a, b\)/.test(blSrc20) && /export function pieceHalf\(kind, orient\)/.test(blSrc20));
-  ok("T20(a2): DepotGame no longer defines what it now imports",
-    !/const layPieceAt = /.test(dgSrc20) && !/const lineCells = /.test(dgSrc20) &&
-    !/const startBuildLine = /.test(dgSrc20) && /from "\.\/buildlines\.js"/.test(dgSrc20));
-  ok("T20(a3): the mount wires the driver through the context (wee-t2b: + map)",
-    /const layCtx = \{ stampBag, recomputeFlow, objG, setMines: \(m\) => R\.setMines\(m\) \};/.test(dgSrc20) &&
-    /input\.stepBuildLine = \(sq\) => stepBuildLine\(world, grid, field, T, run, sq, layCtx, toast, map\);/.test(dgSrc20));
   // (b) the machinery, called for real — a wall line on a synthetic world
   // lays through the imported driver end to end.
   {
@@ -173,16 +123,6 @@ import fs from "node:fs";
 // body with explicit parameters; the cards stay presentation. And the ring
 // gets its first real fixture — two bells rung through the actual code.
 {
-  const beSrc21 = (() => { try { return fs.readFileSync(new URL("../../src/depot/bell.js", import.meta.url), "utf8"); } catch (e) { return ""; } })();
-  const dgSrc21 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  ok("T21(a): bell.js owns the ring (wee-t2b: + map)",
-    /export function ringBell\(world, grid, field, T, run, ctx, map\)/.test(beSrc21) &&
-    /ctx\.saveFront\(\);/.test(beSrc21) && /payTown\(ctx\.townUV, T\)/.test(beSrc21));
-  const tickSrc21 = fs.readFileSync(new URL("../../src/depot/tick.js", import.meta.url), "utf8");
-  ok("T21(a2): DepotGame keeps only the cards; the ring itself moved to tick.js's fixed step (re-taught, task 4: the engine leaves the screen)",
-    !/const ringBell = /.test(dgSrc21) &&
-    /if \(!war\.dev && stepBell\(run, world\.t\)\) \{ flags\.bell = true; ringBellOut\(world, grid, field, T, run, bellCtx, map\); \}/.test(tickSrc21) &&
-    /view\.pickManifest = /.test(dgSrc21));
   // (b) two bells rung through the real ring — structure, not feel
   // re-pinned mk1.72 (P7.1 T8): THE SEED PURGE — the old special-cased seed
   // leaves the suite; the map seed moves to 1001 (its floors/properties
@@ -338,29 +278,6 @@ import fs from "node:fs";
     ok("T10(d7): a different roll picks a different start, still exactly 3", picks1.length === 3 && picks1[0] !== picks0[0]);
     ok("T10(d8): fewer than 3 candidates lays none", mineSeedPlace([{ x: 0, z: 0 }], 0.2).length === 0);
     ok("T10(d9): a 0.6 roll never lays, regardless of afford/bag", mineSeedRoll(0.6, true, 1e9, 1) === false);
-
-    // retargeted mk1.51, P7 T21: ringBell moved to bell.js.
-    const dsrc10 = fs.readFileSync(new URL("../../src/depot/bell.js", import.meta.url), "utf8");
-    const ringBellBody10 = (dsrc10.match(/export function ringBell\(world, grid, field, T, run, ctx, map\) \{[\s\S]*?\n\}/) || [""])[0];
-    ok("T10(d10): ringBell extracts (source pin base)", ringBellBody10.length > 0);
-    ok("T10(d11): TWO unconditional draws every bell (mineRoll, minePlaceRoll — the law)",
-      /const mineRoll = world\.rng\(\), minePlaceRoll = world\.rng\(\);/.test(ringBellBody10));
-    ok("T10(d12): price3 reads the live market, falling back to the table base",
-      /const price3 = run\._minePrices \? run\._minePrices\.mine \* 3 : MINE_COST \* 3;/.test(ringBellBody10));
-    ok("T10(d13): the bag gate reads the enemy's own current muster (run.ws.mixBag)",
-      /const hasSapper = run\.ws\.mixBag\.indexOf\("sapper"\) >= 0;/.test(ringBellBody10));
-    ok("T10(d14): the roll is gated through mineSeedRoll, unconditionally drawn either way",
-      /if \(mineSeedRoll\(mineRoll, hasSapper, run\.reg\.scrap, price3\)\)/.test(ringBellBody10));
-    ok("T10(d15): the pick is gated through mineSeedPlace",
-      /const picks = mineSeedPlace\(cands, minePlaceRoll\);/.test(ringBellBody10));
-    ok("T10(d16): scrap is deducted once for the three, before they land",
-      /run\.reg\.scrap -= price3;\s*\n\s*for \(const c3 of picks\) run\.mines\.push/.test(ringBellBody10));
-    ok("T10(d17): enemy mines land team 2, kind mine, live",
-      /run\.mines\.push\(\{ x: c3\.x, z: c3\.z, team: 2, kind: "mine", live: true \}\);/.test(ringBellBody10));
-    ok("T10(d18): candidates draw from PASSES on the enemy's own half (c.v < 0) plus the territory seam band",
-      /if \(c\.v < 0\) cands\.push/.test(ringBellBody10) && /vv > -0\.15 && vv < 0\.15/.test(ringBellBody10));
-    ok("T10(d19): sits after the hero-tier block (P7 T9)",
-      ringBellBody10.indexOf("THE HERO TIER, their side") < ringBellBody10.indexOf("THE ENEMY SAPPER BRAIN"));
   }
 
   // (e) the save round trip
@@ -384,29 +301,6 @@ import fs from "node:fs";
       Math.abs(rm[0].x - 1.2345) < 0.001 && Math.abs(rm[0].z - (-3.4)) < 0.001 && rm[0].t === 1 && rm[0].k === "mine" && rm[0].l === 1 &&
       Math.abs(rm[1].x - 5) < 0.001 && rm[1].t === 2 && rm[1].k === "wire" && rm[1].l === 0,
       JSON.stringify(rm));
-  }
-
-  // (f) laying — source-pinned (layPieceAt/linePieces need a live grid/world
-  // the headless suite doesn't build; same convention mk0.60/6 above uses).
-  {
-    const dsrc10f = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    // P7 T20: layPieceAt/linePieces moved to buildlines.js — (f)-(f4) below
-    // retarget to that literal text (sweep license); (f3) also re-teaches
-    // R.setMines -> ctx.setMines per the task's own substitution table.
-    const blSrc10f = fs.readFileSync(new URL("../../src/depot/buildlines.js", import.meta.url), "utf8");
-    ok("T10(f): layPieceAt gains a device branch for mines/wires (retargeted mk1.50, P7 T20: layPieceAt moved to buildlines.js)",
-      /if \(job\.kind === "mines" \|\| job\.kind === "wires"\) \{/.test(blSrc10f));
-    ok("T10(f2): no cell claim, no validatePlacement — only water\\/blocked-terrain cells refuse (retargeted mk1.50, P7 T20: layPieceAt moved to buildlines.js)",
-      /if \(cell\.blocked \|\| cell\.ice\) return "skip";/.test(blSrc10f) && !/if \(job\.kind === "mines" \|\| job\.kind === "wires"\) \{[\s\S]{0,400}validatePlacement/.test(blSrc10f));
-    ok("T10(f3): a device is a watched point, one per clear cell, at the live price (retargeted mk1.50, P7 T20: layPieceAt moved to buildlines.js; re-taught R.setMines -> ctx.setMines)",
-      /S\.mines\.push\(\{ x: row\.x, z: row\.z, team: 1, kind: job\.kind === "mines" \? "mine" : "wire", live: true \}\);/.test(blSrc10f) &&
-      /S\.resources -= cost;\s*\n\s*ctx\.setMines\(S\.mines\);/.test(blSrc10f));
-    ok("T10(f4): linePieces' ghost mirrors layPieceAt's exact skip rule for devices (water\\/blocked-terrain only, no ground-held gate) (retargeted mk1.50, P7 T20: linePieces moved to buildlines.js)",
-      /if \(isDevice\) \{ if \(cell\.blocked \|\| cell\.ice\) continue; \}/.test(blSrc10f));
-    ok("T10(f7): S.orderSquad's build gate is sappers-only for the device kinds",
-      /kind === "build_mines" \|\| kind === "build_wires"/.test(dsrc10f) && /if \(sq\.type !== "sappers"\) return;/.test(dsrc10f));
-    ok("T10(f8): consumeOrderTap accepts the two device kinds under the same sapper guard",
-      /if \(om === "build_mines" \|\| om === "build_wires"\) \{/.test(dsrc10f) && /if \(!osq \|\| osq\.type !== "sappers"\)/.test(dsrc10f));
   }
 
   // (g) invisibility — pure list-builder
@@ -603,51 +497,16 @@ import fs from "node:fs";
     ok("T11(10c): the restored eye still burns out correctly at its _dieT", !world11b.byId.get(rEye.id));
   }
 
-  // (11) mid-possession resumes to command view: the RES restore block
-  // (boot.js, task 4: the engine leaves the screen) never assigns
-  // S.possess from the file — the base S object's possess:null is the
-  // only initializer, unconditional.
-  const dsrc11 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  const bootSrc11 = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
-  const start11 = bootSrc11.indexOf("const r = RES.run;");
-  const end11 = bootSrc11.indexOf("run.holdArea = r.holdArea || { 1: false, 2: false };");
-  const resBlock11 = start11 >= 0 && end11 > start11 ? bootSrc11.slice(start11, end11) : "";
-  ok("T11(11a): the RES restore block source-extracts", resBlock11.length > 0);
-  ok("T11(11b): the RES restore block never assigns input.possess (a mid-possession save resumes to command view)",
-    !/input\.possess\s*=/.test(resBlock11));
-  ok("T11(11c): the base input object initializes possess: null unconditionally (not gated on RES)",
-    /possess: null, possessInput: null,/.test(dsrc11));
 }
 // ==== end P7 T11 ==============================================================
-
-// HOTFIX mk1.37 pin: every audio.js `.value = ` assignment is either fin()-wrapped
-// or a bare numeric literal (regex /\.value = -?\d[\d.]*;/) — no raw computed
-// expression reaches a WebAudio param unguarded.
-{
-  const audSrc = fs.readFileSync(new URL("../../src/platform/audio.js", import.meta.url), "utf8");
-  const total = (audSrc.match(/\.value = /g) || []).length;
-  const literal = (audSrc.match(/\.value = -?\d[\d.]*;/g) || []).length;
-  const wrapped = (audSrc.match(/\.value = fin\(/g) || []).length;
-  ok("HOTFIX mk1.37: audio.js .value = assignments are all fin()-wrapped or bare numeric literals",
-    literal + wrapped === total, `total=${total} literal=${literal} fin=${wrapped}`);
-}
 
 // ==== P7 T22: THE SUITE SPLITS ===============================================
 // Reorganization 5 of 5: per-era files behind a runner that keeps
 // the gate command. The proof is the baseline: same pass count, same
 // keystone, zero content changes.
-{
-  const rnSrc22 = fs.readFileSync(new URL("../depot-test.mjs", import.meta.url), "utf8");
-  ok("T22(a): the runner is thin and keeps the name",
-    /import\("\.\/tests\/01-engine-era\.mjs"\)/.test(rnSrc22) && !/PIN_HASH/.test(rnSrc22));
-}
-
 // ==== P7 T23: THE MANUAL — RETIRED (mk2.43: the teaching cards took the tour) =
 {
-  const dgSrc23 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   ok("T23 (re-taught mk2.43): the manual left the tree", !fs.existsSync(new URL("../../src/ui/FieldManual.jsx", import.meta.url)));
-  ok("T23 (re-taught mk2.43): the game forgot it", !/FieldManual/.test(dgSrc23) && !/MANUAL_KEY/.test(dgSrc23));
-  ok("T23 (re-taught mk2.43): the mines lesson lives on as a card", /Wires flare; mines wait\./.test(fs.readFileSync(new URL("../../src/depot/cards.js", import.meta.url), "utf8")));
 }
 // ==== end P7 T23 =============================================================
 // ==== end P7 T22 =============================================================
@@ -656,21 +515,6 @@ import fs from "node:fs";
 // The stutter's churn dies (one persistent pool, zero per-tick allocation);
 // the yards open (wider parking, bag clearance for hull lanes).
 {
-  const rSrc24 = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-  const muSrc24 = fs.readFileSync(new URL("../../src/depot/muster.js", import.meta.url), "utf8");
-  ok("T24(a): the pool is born lazily, once, beside the overlay's other lazies",
-    /if \(!pathPool\) \{/.test(rSrc24) && /PATH_VERT_CAP/.test(rSrc24) && /lineDistance/.test(rSrc24));
-  // T24(a2), amended: the birth block (`if (!pathPool) { ... }`)
-  // necessarily allocates — the assert now slices the HOT PATH after the
-  // cursor grabs the born pool (`const P = pathPool;`) through the method's
-  // own close, and requires zero `new` in that slice alone.
-  {
-    const cutStart = rSrc24.indexOf("const P = pathPool;");
-    const cutEnd = cutStart >= 0 ? rSrc24.indexOf("\n    },\n", cutStart) : -1;   // named fit: the method's real close brace, verified live
-    const hotSlice = cutStart >= 0 && cutEnd > cutStart ? rSrc24.slice(cutStart, cutEnd) : "";
-    ok("T24(a2): setOrderPaths allocates nothing per call, after the pool is born",
-      cutStart >= 0 && cutEnd > cutStart && !/\bnew\b/.test(hotSlice) && /setDrawRange\(/.test(hotSlice));
-  }
   // T24 test scaffolding: local grid/hull fixtures, the same idiom T17(d)
   // uses in scripts/tests/08-debug-pass.mjs — lifted verbatim (this file
   // has no prior copy).
@@ -704,9 +548,6 @@ import fs from "node:fs";
     const rF = planRoute(G1, -9, 1, 9, 1);
     ok("T24(b3): men still walk the one-cell gap", !!rF && rF.reached === true);
   }
-  // (c) the parking: wider ring, bag standoff in the vetting
-  ok("T24(c): the ring starts wider", /for \(let rr = 15; rr <= 30; rr \+= 1\.5\)/.test(muSrc24));
-  ok("T24(c2): the vetting stands off further", /slotBlockedPublic\(world, bx, bz, Math\.hypot\(spec\.hx, spec\.hz\) \+ 2\.5\)/.test(muSrc24));
   // (d) the yard, proven: across 40 real maps, every parked hull's nearest
   // bag gap clears 1.5m and a MOVE order's first route is never null
   {

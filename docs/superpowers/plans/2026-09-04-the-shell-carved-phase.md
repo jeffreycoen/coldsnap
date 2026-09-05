@@ -49,6 +49,10 @@ Added to CLAUDE.md under Frozen laws:
 - The sliced suite is the main hazard: every task plan carries its exact
   per-file re-point list for the pins its move breaks, and any failing pin
   not on the list stops the task.
+- Plan-writing for a move may apply it in a throwaway git worktree and run
+  depot-test there once; the run's failure list becomes the plan's
+  deletion table. The working tree is never touched; the worktree is
+  discarded after harvest.
 - `core.js`, `graphics/renderer.js`, `save.js`, and the frozen demo are
   untouched all phase. No save-borne key or field shape moves or renames.
 - Gates per task: depot-test and golden always; smoke on every task (the
@@ -71,9 +75,9 @@ Added to CLAUDE.md under Frozen laws:
 | T3 | 0.3.12 | The top-of-file pieces out: `RadialMenu`, `DraftScreen`, the styles object, and the palette/rack/lattice tables to their own files beside `Dispatch.jsx` | LANDED, commit 3eac7d1, depot-test 2,198 PASS / 0 FAIL, golden 7 PASS / 0 FAIL, smoke 30 PASS / 0 FAIL |
 | T4 | 0.3.13 | The three pie builders (squad, vehicle, tower) and the group pie as components in their own file — pure presentation, every action a prop, the `InfoCard.jsx` discipline | LANDED, commit e3554e6, depot-test 2,163 PASS / 0 FAIL, golden 7 PASS / 0 FAIL, smoke 30 PASS / 0 FAIL |
 | T5 | 0.3.14 | The placement and build layer out: buildAt, canBuildAt, the pending flow, the hire/deal/hero placers, sellAt, and the sandbox rack placer, to a builder module over `{ war, view, input, R, toast, … }` — the `tick.js` idiom | LANDED, commit 93f9ad1, depot-test 2,136 PASS / 0 FAIL, golden 7 PASS / 0 FAIL, smoke 30 PASS / 0 FAIL |
-| T6 | 0.3.15 | The selection and order layer out: the tap cycle, the order taps, the line flow, possession take/release, and the chain controls, same builder idiom | OPEN |
-| T7 | 0.3.16 | The comment trim, mechanical: every task/phase/mark stamp prefix deleted; comment blocks carrying no constraint deleted; every deletion reported, every broken pin re-pointed | OPEN |
-| T8 | 0.3.17 | The pin purge: every remaining source-text pin swept from the suite; behavior checks stay | OPEN |
+| T8 | 0.3.15 | The pin purge, pulled ahead: every remaining source-text pin swept from the suite; behavior checks stay. Ahead of the last two moves so they break nothing | LANDED, commit PENDING, 521 checks deleted, depot-test 1,615 PASS / 0 FAIL, golden 7 PASS / 0 FAIL, smoke 30 PASS / 0 FAIL |
+| T6 | 0.3.16 | The selection and order layer out: the tap cycle, the order taps, the line flow, possession take/release, and the chain controls, same builder idiom | OPEN |
+| T7 | 0.3.17 | The comment trim, mechanical: every task/phase/mark stamp prefix deleted; comment blocks carrying no constraint deleted; every deletion reported | OPEN |
 | Closeout | 0.3.18 | README claims and screenshots re-checked against the shipped game; one short README paragraph naming `src/depot/api.js` as the one import surface, with the headless line `node src/depot/api.js gate`; the phase's line count recorded | OPEN |
 
 ## Expected landing

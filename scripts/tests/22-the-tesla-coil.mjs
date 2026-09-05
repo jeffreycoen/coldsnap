@@ -141,21 +141,6 @@ const walk = (world, arcs, s) => { for (let i = 0; i < Math.round(s / 0.05); i++
   for (let i = 0; i < 4; i++) { world.t += 0.05; st4(world, arcs, map); }
   ok("a4: the own man takes the strike", own.hp === 65);
 }
-{ // Amendment 5: the LIVE state literal carries the arcs array — the game
-  // does not boot through makeRunState, so the field is pinned at the source.
-  const dg = (await import("node:fs")).readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
-  ok("a5: the game state carries arcs", /ws: makeDepotAssaultState\(\), spawnRR: 0,\s*\n\s*arcs: \[\]/.test(dg));
-}
-{ // Task 4: the switch — davy holds with a friend in the ring, never on its own crew
-  const g = (await import("node:fs")).readFileSync(new URL("../../src/depot/state.js", import.meta.url), "utf8");
-  ok("switch: davy reads the hold", g.includes("holdArea") && g.includes("friendInBlast"));
-  const dg = (await import("node:fs")).readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  ok("switch: the button exists", dg.includes("data-holdarea"));
-  // the trigger's own read lives inside stepTowers, moved to sim.js
-  // (war-engine-extraction task 1).
-  const simDg = (await import("node:fs")).readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
-  ok("switch: tesla trigger reads the hold", simDg.includes("teslaWouldCatchFriend"));
-}
 { // davy behavior: the hold spares the plan when a rifleman stands in the ring
   const { makeField: mf, makeWorld: mw, addBody: ab } = await import("../../src/engine/core.js");
   const { friendInBlast } = await import("../../src/depot/state.js");

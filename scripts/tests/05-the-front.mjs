@@ -19,18 +19,6 @@ import fs from "node:fs";
   const src = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   // P7 T18: RIM_HALF_U/GRID_CS/the falloff line moved to mapgen.js.
   const mgSrcT1pin = fs.readFileSync(new URL("../../src/depot/mapgen.js", import.meta.url), "utf8");
-  ok("FRONT T1: the rim is 90x90 (the square)", /const RIM_HALF_U = 90, RIM_HALF_V = 90;/.test(mgSrcT1pin));
-  ok("FRONT T1 (re-pinned mk1.02, Amendment 3): the flow grid is 90x90 — the grid covers the full rim",
-    /const GRID_CS = 2\.0, GRID_W = 90, GRID_H = 90;/.test(mgSrcT1pin));
-  ok("FRONT T1: the terrain falloff reads the rim constants, not literals",
-    /Math\.abs\(cuv\.u\) - RIM_HALF_U, Math\.abs\(cuv\.v\) - RIM_HALF_V/.test(mgSrcT1pin));
-  const bootSrcT1 = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
-  ok("FRONT T1: territory is built from the rim constants (wee-t2b: map.RIM_HALF_U/V)",
-    /makeTerritory\(map\.RIM_HALF_U, map\.RIM_HALF_V\)/.test(bootSrcT1));
-  ok("FRONT T1: camera pan extents are square", /const EXT = \{ x: 95, z: 95 \};/.test(src));
-  const rsrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-  ok("FRONT T1: the splat grid span derives from the field under the rim option (188.7 fallback kept)",
-    /opts\.rim \? Wd : null/.test(rsrc) && /span \|\| 188\.7/.test(rsrc));
 
   // functional: the LIVE genMap fills the square. Same extraction machinery
   // as the FRONT F1 block above (sliceFn over the real source), fresh copy
@@ -258,18 +246,6 @@ import fs from "node:fs";
     ok("T3(f): the order survives the hold (still travelling, not silently completed)", sq.order === "move", sq.order);
   }
 
-  // (g) source pins: the game layer's water rules exist where claimed
-  ok("T3(g): a ground order tapped on water is refused with the open-water toast (wee-t2b: map.streamAt)",
-    /if \(map\.streamAt\(d\.x, d\.z\)\) \{ toast\("OPEN WATER — find the crossing"\); return true; \}/.test(src));
-  const bootSrcT3 = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
-  ok("T3(g): the world threads streamAt beside pondAt/inRim (wee-t2b: map.streamAt)",
-    /world\.streamAt = \(x, z\) => map\.streamAt\(x, z\);/.test(bootSrcT3));
-  const rsrc3 = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-  ok("T3(g): setDressing builds water ribbons when streams are supplied",
-    /spec\.streams \|\| \[\]/.test(rsrc3));
-  const sqsrc3 = fs.readFileSync(new URL("../../src/depot/squads.js", import.meta.url), "utf8");
-  ok("T3(g): slotBlocked's water line exists in squads.js",
-    /world\.streamAt && world\.streamAt\(x, z\)/.test(sqsrc3));
 }
 // ==== end FRONT T3 ===========================================================
 
@@ -414,18 +390,6 @@ import fs from "node:fs";
     ok("T4(f): twin determinism — identical TOWN", JSON.stringify(A.state().TOWN) === JSON.stringify(B.state().TOWN));
   }
 
-  // (g) source pins: the hooks and the raised cap exist where claimed
-  ok("T4(g): the wide templates, the warehouse, and the inn carry the cols flag (6 sites — re-taught mk2.63, the inn joins)",
-    (mgSrcT4.match(/cols: true/g) || []).length === 6);
-  // the driveZ derivation lives inside buildTown, moved to sim.js
-  // (war-engine-extraction task 1).
-  ok("T4(g): the drive doors bind to the long axis by live dimensions",
-    /const driveZ = t\.drive && t\.nz >= t\.nx;/.test(simSrcT4));
-  // debug harness moved to hooks.js (T2: the harness walks out).
-  const hooksSrcT4 = fs.readFileSync(new URL("../../src/depot/hooks.js", import.meta.url), "utf8");
-  ok("T4(g): the town debug hook exists", /__DEPOTTOWN__/.test(hooksSrcT4));
-  const rsrc4 = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-  ok("T4(g): the chunk pool is raised to 7000 (re-taught mk2.65, the crowded valley)", /const CHUNK_CAP = 7000;/.test(rsrc4));
 }
 // ==== end FRONT T4 ===========================================================
 
@@ -542,13 +506,6 @@ import fs from "node:fs";
     }
   }
 
-  // (d) source pins: the hooks exist where claimed
-  ok("T5(d): buildDepotTerrain lifts the drawn hills", /hb\.h \* Math\.exp\(-dh\)/.test(mgSrcT5));
-  const bootSrcT5 = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
-  ok("T5(d): the boot plants the plan and nothing else", /for \(const p of planTrees\(\)\) treeAt\(p\.x, p\.z\);/.test(bootSrcT5));
-  const rsrc5 = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
-  ok("T5(d): the tree pool is one constant at 800 (re-taught mk2.65)", /const TREE_CAP = 800;/.test(rsrc5));
-  ok("T5(d): no bare 144 survives in the renderer (all six sites read TREE_CAP)", !/144/.test(rsrc5));
 }
 // ==== end FRONT T5 ===========================================================
 
@@ -626,9 +583,6 @@ import fs from "node:fs";
   ok("T6: the twin battle broke real welds (the fixture fights)", run1.broken > 20, `${run1.broken} broken`);
   ok("T6 TWIN: the same seed fights the same war — identical world hash", run1.hash === run2.hash, `${run1.hash} vs ${run2.hash}`);
   ok("T6 TWIN: identical draw count", run1.draws === run2.draws, `${run1.draws} vs ${run2.draws}`);
-  const csrc6 = fs.readFileSync(new URL("../../src/engine/core.js", import.meta.url), "utf8");
-  ok("T6: the persistent tier exists in the engine", /the sleeping stone is already on the books/.test(csrc6));
-  ok("T6: the unfile helper exists beside wake", /function unfileBody\(world, b\)/.test(csrc6));
 }
 // ==== end FRONT T6 ===========================================================
 

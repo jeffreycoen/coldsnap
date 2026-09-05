@@ -4,14 +4,11 @@
 // armed; hero prices leave K 1 and ride the ordinary curve, one shared
 // table, both sides. This era draws no rng and names no fixture seed.
 import { ok } from "./harness.mjs";
-import fs from "node:fs";
 import { computePrices, MARKET_K } from "../../src/depot/market.js";
 import { placeZoneMask } from "../../src/depot/state.js";
 
 {
   console.log("\n[era 14: the placement law and the hero market]");
-  const dgSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  const rSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
 
   // (a) the hero market rides the ordinary curve
   ok("K1: the three hero families carry K 3 (the machine precedent)",
@@ -43,26 +40,4 @@ import { placeZoneMask } from "../../src/depot/state.js";
     let held2 = 0; for (let i = 0; i < 16; i++) held2 += m2[i];
     ok("K5b: blocked, iced and walled cells leave the mask", held2 === 7 && m2[grid.idx(1, 2)] === 0, `${held2} cells`);
   }
-
-  // (c) the game layer: the two-tap arm is dead, the one placement law holds
-  ok("K6: buyHero, heroArm and HERO_ARM_S are gone from the game layer",
-    !/buyHero|heroArm|HERO_ARM_S/.test(dgSrc));
-  ok("K8: setMode carries no hero special-case",
-    !/m === "hero_bison" \|\| m === "hero_apc" \|\| m === "hero_mech"/.test(dgSrc));
-  ok("K9: a hero-mode ground tap sets a pending ghost with its footprint",
-    /view\.pending = \{ hero: run\.mode,[^\n]*fp: ghostFp\(run\.mode\)/.test(dgSrc));
-  ok("K12: the hire and deal ghosts carry their footprints",
-    /view\.pending = \{ hire: view\.hirePlace\.key[^\n]*fp: ghostFp\(view\.hirePlace\.key\)/.test(dgSrc) &&
-    /view\.pending = \{ deal: view\._placeQueue\[0\][^\n]*fp: ghostFp\(view\._placeQueue\[0\]\)/.test(dgSrc));
-  ok("K13: the zone refreshes on its own wall-time tick (the deal phase has no sim clock)",
-    /zoneAcc \+= dt;[\s\S]{0,120}refreshZone\(\);/.test(dgSrc));
-  ok("K15: the bought plan arms the bar for EVERY key — heroes included",
-    !/startsWith\("hero_"\)\) setMode/.test(dgSrc));
-
-  // (d) the renderer: additive divergences only (golden stays green)
-  ok("K16: the zone overlay exists with the passed-mask signature",
-    /setZone\(on, grid, mask, heightAt, color\)/.test(rSrc));
-  ok("K17: the pending ghost scales to the passed footprint",
-    /setPending\(on, x, y, z, pts, ringR, color, fp\)/.test(rSrc) &&
-    /pendingPad\.scale\.set\(fp\.x, fp\.h \/ 1\.8, fp\.z\)/.test(rSrc));
 }

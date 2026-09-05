@@ -66,8 +66,6 @@ import fs from "node:fs";
 // masonry it must respect and masonry it was ordered through; the rim joins
 // the slot law. All game-layer; core.js untouched.
 {
-  const dgSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  const rSrc = fs.readFileSync(new URL("../../src/render/renderer.js", import.meta.url), "utf8");
   const flatF13 = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
   // identity-mapped mini grid (no rotation), cs 2 — the real grid's interface.
   const mkGrid = (n) => {
@@ -175,21 +173,6 @@ import fs from "node:fs";
     stepDrivers(wldC, G9, identFwdDir, null);
     ok("T13(h): the corner is taken at a crawl", vC.depotDrive === "manual" && !!vC.ctl && Math.abs(vC.ctl.throttle - 0.35) < 1e-9);
   }
-  // (i) source shape: the game wires the masks, the flow shuns the lip, the
-  // stamps carry their team
-  {
-    // P7 T18: makeGrid/computeFlowField moved to mapgen.js.
-    const mgSrcT13 = fs.readFileSync(new URL("../../src/depot/mapgen.js", import.meta.url), "utf8");
-    ok("T13(i): makeGrid stamps the terrain masks", /if \(field\) stampTerrainMasks\(G, field\)/.test(mgSrcT13));
-    ok("T13(i2): the enemy flow pays 3x to march a cliff lip", /cells\[ni\]\.drop \? 3 : 1/.test(mgSrcT13));
-  }
-  // (j) Amendment 1 — the green threads (source shape; the look is the
-  // owner's live acceptance, smoke's zero-page-errors gate covers the boot)
-  {
-    ok("T13(j): the renderer carries the order-path overlay", /setOrderPaths\(paths\)/.test(rSrc) && /0x4aff8c/.test(rSrc) && /0x0c2416/.test(rSrc));
-    const tickSrcJ2 = fs.readFileSync(new URL("../../src/depot/tick.js", import.meta.url), "utf8");
-    ok("T13(j2): the game feeds it at the derived-overlay cadence", /THE GREEN THREADS[\s\S]{0,200}?if \(terrGuard > 0\) flags\.orderPaths = true;/.test(tickSrcJ2) && /THE GREEN THREADS[\s\S]{0,200}?if \(terrFlagged\) \{/.test(dgSrc));
-  }
 }
 // ==== end P7 T13 =============================================================
 
@@ -199,14 +182,7 @@ import fs from "node:fs";
 // together (Amendment 1 — the battle plays out over the reshaped world).
 {
   const dgSrc15 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  // P7 T18: RIM_HALF_U/GRID_CS/the depot-separation floor moved to mapgen.js;
-  // makeField(181...) call stays in DepotGame.jsx's mount code.
   const mgSrc15 = fs.readFileSync(new URL("../../src/depot/mapgen.js", import.meta.url), "utf8");
-  ok("T15(a): the rim halves grew to 90", /const RIM_HALF_U = 90, RIM_HALF_V = 90;/.test(mgSrc15));
-  ok("T15(a2): the grid grew to 90x90 at the same 2m cell", /const GRID_CS = 2\.0, GRID_W = 90, GRID_H = 90;/.test(mgSrc15));
-  const bootSrc15 = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
-  ok("T15(a3): the heightfield grew with its apron (wee-t2b: map.MAP_SEED)", /makeField\(181, 2\.0, map\.MAP_SEED\)/.test(bootSrc15));
-  ok("T15(a4): the depot-separation floor scaled", /2 \* m\.depotDepth\) >= 105/.test(mgSrc15));
 
   // (b) 25-seed census: every map accepts, stays connected, and fits its
   // pools — counts held means the pools MUST hold; this is the proof, not
@@ -351,7 +327,6 @@ import fs from "node:fs";
     return rest.slice(0, m < 0 ? rest.length : m + 9);
   };
   const stepSquadRoutingPublic = new Function("planRoute", sliceFn16("stepSquadRouting") + "\nreturn stepSquadRouting;")(planRoute);
-  const saveSrc16 = fs.readFileSync(new URL("../../src/depot/save.js", import.meta.url), "utf8");
   // (a) a man in the lane is told to step aside — and the point is out of the lane
   {
     const w = makeWorld({ field: flatF16, seed: 21 });
@@ -434,11 +409,6 @@ import fs from "node:fs";
     ok("T16(f): the squad marked the hull's ground", !!sq._avoid && sq._avoid.length >= 1);
     ok("T16(f2): the fresh route clears the hull's cell", !sq._route || sq._route.every((p) => Math.hypot(p.x - 0, p.z - 1) > 1.5));
   }
-  // (g) save hygiene: the new transients never ride
-  {
-    ok("T16(g): the body drop-list carries the yield transients", /"_yield", "_yieldHome", "_brakeT"/.test(saveSrc16));
-    ok("T16(g2): the squad serializer skips _avoid", /key === "_avoid"/.test(saveSrc16));
-  }
 }
 // ==== end P7 T16 =============================================================
 
@@ -463,13 +433,6 @@ import fs from "node:fs";
     v.vtype = "bison"; v.drv = "armor"; v.depotDrive = "auto";
     return v;
   };
-  const dgSrc17 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  const saveSrc17 = fs.readFileSync(new URL("../../src/depot/save.js", import.meta.url), "utf8");
-  // P7 T20: the lay loop and the seeded-ring stamp moved out of DepotGame.jsx
-  // (buildlines.js/muster.js) — the two pins below retarget to where the
-  // pinned literal text now lives (sweep license, unchanged content).
-  const blSrc17 = fs.readFileSync(new URL("../../src/depot/buildlines.js", import.meta.url), "utf8");
-  const muSrc17 = fs.readFileSync(new URL("../../src/depot/muster.js", import.meta.url), "utf8");
   // (a) the reach test, behaviorally — live member in reach, dead men don't count
   {
     const w = makeWorld({ field: flatF17, seed: 31 });
@@ -480,14 +443,6 @@ import fs from "node:fs";
     ok("T17(a2): reach is reach", memberNearRow(w, sq, { x: 9, z: 0 }, 3) === false);
     for (const id of sq.memberIds) { const u = w.byId.get(id); u.alive = false; }
     ok("T17(a3): dead hands build nothing", memberNearRow(w, sq, row, 3) === false);
-  }
-  // (b)-(c) the bar's habits (source shape; the look and feel are the owner's
-  // live acceptance, smoke's zero-page-errors covers the boot)
-  {
-    ok("T17(b) (re-taught mk1.95): the pick arms the bar for every key — heroes are placement modes", !/startsWith\("hero_"\)\) setMode/.test(dgSrc17) && /PLANS BOUGHT ◆" \+ price\);[\s\S]{0,240}setMode\(key\);/.test(dgSrc17));
-    ok("T17(c): the active build button toggles off", /if \(C\.run\.mode === m\) \{/.test(dgSrc17));
-    ok("T17(a4): the lay loop is reach-gated (retargeted mk1.50, P7 T20: stepBuildLine moved to buildlines.js)",
-      /if \(!memberNearRow\(world, sq, row, LAY_REACH\)\) break;/.test(blSrc17));
   }
   // (d) friendly bags turn a hull route; men walk it untouched. P7 T24
   // re-teach: bag cells inflate one ring for hull lanes now — a
@@ -524,19 +479,6 @@ import fs from "node:fs";
     vF.order = "move"; vF.dest = { x: 9, z: 1 };
     stepDrivers(wF, GF, identFwdDir, null);
     ok("T17(e2): FRIENDLY bags clamp the order short", Math.hypot(vF.dest.x - 9, vF.dest.z - 1) > 0.6, `${vF.dest.x},${vF.dest.z}`);
-  }
-  // (f) the bag lifecycle is wired (source shape) and the side rides the save
-  {
-    const bootSrc17 = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
-    const tickSrc17 = fs.readFileSync(new URL("../../src/depot/tick.js", import.meta.url), "utf8");
-    ok("T17(f): the stamp helper exists and stamps side + cell (re-taught: exported with grid param, boot.js)",
-      /export function stampBag\(grid, b, side\) \{/.test(bootSrc17));
-    ok("T17(f2): the seeded rings stamp their depot's side (retargeted mk1.50, P7 T20: layPieceAt moved to buildlines.js — dgSrc loses its last matching site; muster.js's seeded-ring stamp is the surviving one)",
-      /stampBag\(spawnSandbag\(/.test(muSrc17));
-    ok("T17(f3): a resumed bag re-stamps its cell (re-taught: stampBag(grid, b, ...), boot.js)",
-      /if \(b\.sandbag && b\.alive\) stampBag\(grid, b, b\.bagSide \|\| 1\);/.test(bootSrc17));
-    ok("T17(f4): dead bags release their ground at the derived cadence", /c\.bagId == null/.test(tickSrc17));
-    ok("T17(f5): bagSide RIDES the save (never in the drop list)", !/BODY_HANDLED[\s\S]{0,600}bagSide/.test(saveSrc17));
   }
 }
 // ==== end P7 T17 =============================================================

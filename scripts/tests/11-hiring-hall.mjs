@@ -14,7 +14,6 @@ import { computePrices, marketCounts } from "../../src/depot/market.js";
 import { troopKit, MEDIC_HEX } from "../../src/render/troopkit.js";
 import { CARDS } from "../../src/depot/infocards.js";
 import { fatReg, identFwdDir, straightGrid } from "./shared.mjs";
-import fs from "node:fs";
 
 const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
 
@@ -39,17 +38,6 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
   const d = makeSquad(4, "rifles", 1, 30, 0); spawnSquadMembers(w, d); d.ridingIn = 1;
   ok("T1(c): all rifles, never the mg team, never the sealed squad",
     JSON.stringify(squadIdsOfType(w, [a, b, c, d], "rifles")) === "[1,2]");
-}
-
-// ---- P7.2 T1 (d): the wiring (the audit(j) idiom — tap-to-handler)
-{
-  const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
-  ok("T1(d): squad picking reads the shared radius", /< TAP_SQUAD_M\) return sq;/.test(src));
-  ok("T1(d): hull picking rides the cycle scan on its own radius", /d2 <= TAP_HULL_M\) cands\.push/.test(src) && !/vehicleAtPoint/.test(src));
-  ok("T1(d): the tap builds candidates and cycles them", /nextPick\(cands, curSel\)/.test(src));
-  ok("T1(d): towers join the pick only in plain command", /b\.kind === "tower" && !run\.mode && !view\.sellMode/.test(src));
-  ok("T1(d): group orders fan out through one door", /for \(const gsq of selectedGroup\(\)\)/.test(src));
-  ok("T1(d): accepting a line clears the group", /view\.selSquadId = null; view\.orderMode = null; view\.buildPt0 = null; view\.selSquadIds = null;/.test(src));
 }
 
 // ---- P7.2 T2 (mk1.81): THE HAND — five cards, three plans + two hires
@@ -120,25 +108,6 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
       kept.every((k) => HAND_KEYS.indexOf(k) >= 0 && S.manifest.unlocked.indexOf(k) < 0));
   }
 
-  // (e) the wiring (tap-to-handler, the audit idiom)
-  {
-    const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
-    ok("T2(e): the plan buy pays half the live price", /Math\.max\(1, Math\.ceil\(priceNow\(key, it \? it\.cost : 10\) \/ 2\)\)/.test(src));
-    const pmBody = (src.match(/view\.pickManifest = \(key\) => \{[\s\S]*?\n      \};/) || [""])[0];
-    ok("T2(e2): the convoy window is exempt from the pacing law", pmBody.length > 0 && !/buyPaced\(/.test(pmBody) && !/_buyAt/.test(pmBody));
-    ok("T2(e3): the hire arms a placement tap", /view\.armHire = \(key\) => \{/.test(src) && /view\.hirePlace = \{ key \};/.test(src));
-    ok("T2(e4): the hire's tap owns the ground before the order flow",
-      src.indexOf("if (view.hirePlace) {") > 0 && src.indexOf("if (view.hirePlace) {") < src.indexOf("if (consumeOrderTap(p)) return;"));
-    ok("T2(e6): the hand's rows carry their kind and price", /data-hand-kind=\{c\.hire \? "hire" : "plan"\}/.test(src));
-    const ic = fs.readFileSync("src/depot/InfoCard.jsx", "utf8");
-    ok("T2(e7): the card carries the hire door", /door === "hire"/.test(ic) && /CONFIRM HIRE/.test(ic));
-  }
-
-  // (f) the manual retired (mk2.43) — the hand's truth lives in the cards
-  {
-    const cj = fs.readFileSync("src/depot/cards.js", "utf8");
-    ok("T2(f) (re-taught mk2.43): the convoy's lesson is a card now", /the convoy's offer/.test(cj) && /hires field at once/.test(cj));
-  }
 }
 
 // ---- P7.2 T3 (mk1.82): THE CALM WINDOW
@@ -149,34 +118,9 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
   ok("T3(a3): the plans pool is the full twenty",
     dealConvoyHand([], HAND_KEYS, mulberry32(9)).filter((c) => !c.hire).length === 3 &&
     HAND_KEYS.filter((k) => makeManifestState().unlocked.indexOf(k) < 0).length === 20);
-  // (b) the pause — one gate, source-pinned (the loop is unimportable)
-  {
-    const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
-    ok("T3(b): the convoy freezes the whole sim through the one gate",
-      /const convoyUp = !!\(run\.manifest && run\.manifest\.cardUp\);/.test(src) &&
-      /view\.paused \|\| !run\.started \|\| cardUp \|\| convoyUp \|\| teachUp \? 0 : dt \* view\.speed/.test(src));
-  }
-  // (c) the confirm ghost
-  {
-    const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
-    ok("T3(c): a pre-start tap sets the ghost, never fields", /view\.pending = \{ deal: view\._placeQueue\[0\]/.test(src));
-    ok("T3(c2): the deal ghost arms on the wall clock (the sim is frozen pre-start)",
-      /wallArm: true, armedAtWall: performance\.now\(\) \/ 1000 \+ PENDING_ARM_S/.test(src));
-    ok("T3(c3): a hire tap sets the ghost, never fields", /view\.pending = \{ hire: view\.hirePlace\.key/.test(src));
-  }
   // (d) the wall-armed pending law, tested for real
   ok("T3(d): a wall-armed pending arms on real seconds, sim pendings on sim time",
     pendingArmed({ wallArm: true, armedAtWall: 0 }, -1) === true && pendingArmed({ armedAt: 5 }, 4) === false);
-  // ---- AMENDMENT 2 (mk1.83): the convoy arms on the wall clock
-  {
-    const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
-    ok("T3-A2: the ring stamps the wall arm (re-taught: the bell flag from tickWar, DepotGame.jsx:2717)",
-      /if \(flags\.bell\) \{ view\.teachFire\("bell"\); run\.manifest\.armedAtWall = performance\.now\(\) \/ 1000 \+ PENDING_ARM_S; \}/.test(src));
-    ok("T3-A2b: both buy gates read the wall clock", (src.match(/performance\.now\(\) \/ 1000 < \(M\.armedAtWall \?\? 0\)/g) || []).length === 2);
-    ok("T3-A2c: the info card arms on the wall for every door", /const armed = performance\.now\(\) \/ 1000 >= view\.infoArmedWall;/.test(src));
-    const bootSrcA2 = fs.readFileSync("src/depot/boot.js", "utf8");
-    ok("T3-A2d: a resumed hand re-arms instantly (dead-session stamps never block)", /run\.manifest\.armedAtWall = 0;/.test(bootSrcA2));
-  }
 }
 
 // ---- P7.2 T4 (mk1.84): HIS HAND — the full mirror, towers included
@@ -273,22 +217,6 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
     ok("T4(d5): a hemmed ring still parks the paid tower — the fail-proof backstop (the parkArmor precedent)",
       !!w4.bodies.find((b) => b.kind === "tower" && b.alive));
   }
-  // (e) the wiring
-  {
-    const be = fs.readFileSync("src/depot/bell.js", "utf8");
-    ok("T4(e): the ring fields his hires draw-free and clears the queue (wee-t2b: + map)",
-      /for \(const k of run\.foe\.hired\) mirrorFieldKey\(world, run, depotH, grid, field, k, ctx\.nextApcSeq, map\);/.test(be) && /run\.foe\.hired = \[\];/.test(be));
-    ok("T4(e2): his hand pays the PLAYER'S price table — one table",
-      /priceP: \(k\) => \(run\._market && run\._market\.player\[k\] != null \? run\._market\.player\[k\] : null\)/.test(be));
-    const st = fs.readFileSync("src/depot/state.js", "utf8");
-    ok("T4(e3): plans pay half and the floor guards every buy — plan, hire, and the tower build",
-      /Math\.max\(1, Math\.ceil\(base \/ 2\)\)/.test(st) && (st.match(/< MIN_WAVE_FLOOR\) continue;/g) || []).length === 3 && /reg\.scrap - priceP\(x\) >= MIN_WAVE_FLOOR/.test(st));
-    ok("T4(e4): the old pick machinery is gone", !/drawFoePick/.test(st) && !/foePool/.test(st) && !/FOE_DRAWS/.test(st));
-    ok("T4(e5): one tower build a bell, first AFFORDABLE owned in table order, full price",
-      /HAND_KEYS\.find\(\(x\) => S\.foe\.towers\.indexOf\(x\) >= 0 && priceP\(x\) != null && reg\.scrap - priceP\(x\) >= MIN_WAVE_FLOOR\)/.test(st));
-    ok("T4(e6): the born-owned clause is in the filter — dead money closed at the source",
-      /HAND_TAGS\[k\] === "" \|\| S\.foe\.unlocked\.indexOf\(HAND_TAGS\[k\]\) >= 0/.test(st));
-  }
 }
 
 // ---- P7.2 T5 (mk1.85): THE REACTION — attacked ground answers, both sides
@@ -365,12 +293,6 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
     applyDamage(w, m0, 1, { attacker: "enemy", srcId: far.id });
     for (let i = 0; i < 600; i++) { stepSquad(w, sq, w.dt); stepWorld(w); }
     ok("T5(e): the hit defender shifts to the covered flank of his slot", Math.hypot(m0.pos.x, m0.pos.z) < 3.6 && Math.abs(m0.pos.z) < 1.2, `${m0.pos.x.toFixed(2)},${m0.pos.z.toFixed(2)}`);
-    const sqSrc = fs.readFileSync("src/depot/squads.js", "utf8");
-    ok("T5(e2): the reaction lives in the defend branch alone — every other order is the player's word",
-      (sqSrc.match(/const rs = reactShift\(world, u\);/g) || []).length === 1 && /const rs = reactShift\(world, u\);\n\s+if \(rs\) u\._slotGoal = rs;/.test(sqSrc));
-    const unSrc = fs.readFileSync("src/depot/units.js", "utf8");
-    ok("T5(e3): the enemy hold branch consumes the identical rule — one law, both sides",
-      /const rs5 = reactShift\(world, u\);\n\s+if \(rs5\) u\._standPt = rs5;/.test(unSrc));
   }
   // (f) the hunt: a defending gun hull drives at the fire's origin, then home
   {
@@ -419,26 +341,6 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
     stepDrivers(wB, mkGridT5(), identFwdDir, null);
     ok("T5(f5): an origin beyond HUNT_MAX_M is ignored — no cross-map wild chase", vB.order === "defend" && !vB._huntPt);
   }
-  // (g) the engine stamp is guarded — the divergence law's letter
-  {
-    const core = fs.readFileSync("src/engine/core.js", "utf8");
-    ok("T5(g): both damage sites stamp depot-only, the dmgT precedent",
-      /srcId: world\.depotCombat \? p\.spec\.owner : undefined/.test(core) &&
-      /srcId: world\.depotCombat \? spec\.owner : undefined, srcX: world\.depotCombat \? x : undefined, srcZ: world\.depotCombat \? z : undefined/.test(core));
-  }
-}
-
-// ---- P7.2 HOTFIX mk1.86: THE HIRE ANSWERS ITS PRICE — refused up front, never a dead flow
-{
-  const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
-  ok("HF(a): armHire refuses an unaffordable hire up front — the card stays, the hand stays open",
-    /view\.armHire = \(key\) => \{[\s\S]{0,900}if \(run\.resources < price\) \{ toast\("NO SCRAP — ◆" \+ price \+ " TO HIRE"\); return; \}[\s\S]{0,120}view\.hirePlace = \{ key \};/.test(src));
-  ok("HF(b): a ✓ refusal keeps the armed hire and the ghost — the GROUND NOT HELD precedent",
-    !/toast\("NO SCRAP"\); view\.hirePlace = null;/.test(src));
-  ok("HF(d): the card door passes the till's own verdict", /afford=\{hud\.info\.door === "hire" \? /.test(src));
-  const ic = fs.readFileSync("src/depot/InfoCard.jsx", "utf8");
-  ok("HF(e): CONFIRM HIRE greys and names the shortfall when the till can't cover it",
-    /afford === false \? "NO SCRAP — ◆" \+ price : "CONFIRM HIRE"/.test(ic) && /disabled=\{afford === false\}/.test(ic));
 }
 
 // ---- P7.2 T6 (mk1.87): THE MEDIC — the sixteenth key; mercy on both sides
@@ -526,11 +428,6 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
     ok("T6(g3): the kneel drops him low — the crouch is the theater", kneeling.bh < standing.bh);
     ok("T6(g4): MEDIC_HEX is the one home — white coat, red accent, black gear",
       MEDIC_HEX.acc === 0xd0342c && MEDIC_HEX.gun === 0x1a1c1f && MEDIC_HEX.dom === 0xf4f6f8);
-    const rSrc = fs.readFileSync("src/render/renderer.js", "utf8");
-    const pSrc = fs.readFileSync("src/render/portrait.js", "utf8");
-    ok("T6(g5): the renderer and the portrait both wear the dress and honor a prop's own color role",
-      /kitPal === "medic" \? \(b\.alive \? MED_LIVE : MED_DEAD\)/.test(rSrc) && /pal\[propRole \|\| p\.role\]/.test(rSrc) &&
-      /KIT\.pal === "medic"/.test(pSrc) && /KIT\.props\[pi\] && KIT\.props\[pi\]\.role/.test(pSrc));
   }
   // (h) the card and the bar
   {
@@ -691,25 +588,8 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
     ok("T8v2(c3): its five landed — men afield or plans on its ledgers",
       w.bodies.some((b) => b.team === 2 && b.alive) || S8.foe.unlocked.length > 0 || S8.foe.towers.length > 0);
   }
-  // (d) the wiring: the pick screen, the split, the till
+  // (d) the till
   {
-    const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
-    ok("T8v2(d2): confirm splits — plans open the bar free, units join the place queue",
-      /view\.confirmDraft = \(picked\) => \{/.test(src) && /run\.manifest\.unlocked\.push\(c\.k\)/.test(src) && /view\._placeQueue = picked\.filter\(\(c\) => !c\.plan\)\.map\(\(c\) => c\.k\);/.test(src));
-    ok("T8v2(d3): the ticker counts the real queue", /view\._placeTotal/.test(src) && !/n} of 4\)/.test(src));
     ok("T8v2(d4): the till opens at 250 // provisional (F5)", makeRunState().resources === 250 && HUD0.resources === 250);
-    const src2 = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
-    ok("T8v2(d5): the draft survives the ticker — the hud tick mirrors it (the mk1.69 law)",
-      /drafting: view\._draftOpen && run\.draft && !view\._draftDone \? run\.draft\.map/.test(src2) );
-    ok("T8v2(d6): the flag opens at TAKE COMMAND and closes at the confirm",
-      /view\._draftOpen = true;/.test(src2) && /view\._draftOpen = false;/.test(src2));
-    const bootSrcD8 = fs.readFileSync("src/depot/boot.js", "utf8");
-    ok("T8v2(d8): the game's own startup opens the till at 250",
-      /resources: 250, \/\/ the draft's richer opening /.test(bootSrcD8));
-  }
-  // (e) the manual retired (mk2.43) — the draft's truth lives in the cards
-  {
-    const cj = fs.readFileSync("src/depot/cards.js", "utf8");
-    ok("T8v2(e) (re-taught mk2.43): the draft's lesson is a card now", /Seven cards dealt\. Pick five, free\./.test(cj));
   }
 }

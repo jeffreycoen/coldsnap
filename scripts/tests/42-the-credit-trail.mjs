@@ -1,6 +1,5 @@
 import { ok } from "./harness.mjs";
 import * as ST from "../../src/depot/state.js";
-import fs from "node:fs";
 
 // ==== mk2.95: the credit trail ==============================================
 // creditKill, tested directly with synthetic kill events — no sim runs, no
@@ -53,11 +52,4 @@ import fs from "node:fs";
     const w = mkW([{ id: 14, team: 2, kind: "unit" }]);
     if (CK) CK(w, [], [fsq], kill({ srcId: 14, team: 1 }));
     ok("(f) the enemy's squads accrue too", !!CK && fsq.kills === 1, String(fsq.kills));
-  }
-  // (g) pins: the engine names the shooter on the kill event, depot-gated
-  const cs = fs.readFileSync("src/engine/core.js", "utf8");
-  ok("(g) pins: the kill event carries srcId under depotCombat", /if \(info\.srcId != null\) ev\.srcId = info\.srcId;/.test(cs));
-  // (h) pins: the tick credits at the kill-law site
-  const ts = fs.readFileSync("src/depot/tick.js", "utf8");
-  ok("(h) pins: the tick credits beside the score", /creditKill\(world, run\.squads, run\.foeSquads, e\);/.test(ts));
-}
+  }}

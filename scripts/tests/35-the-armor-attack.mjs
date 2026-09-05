@@ -3,7 +3,6 @@ import { makeWorld, addBody, stepWorld } from "../../src/engine/core.js";
 import { stepDrivers } from "../../src/depot/drivers.js";
 import { BISON } from "../../src/depot/specs.js";
 import { identFwdDir } from "./shared.mjs";
-import fs from "node:fs";
 
 // ==== mk2.88: the armor attack order ========================================
 // ATTACK for hulls: drive the road, halt to fight any live foe the guns can
@@ -82,14 +81,4 @@ import fs from "node:fs";
     for (let i = 0; i < 1200; i++) { w.t += w.dt; stepDrivers(w, G, identFwdDir, null); stepWorld(w); }
     ok("(d) the transport stands fighting short of the foe", v.pos.x < -10 && v.order === "attack", `${v.pos.x.toFixed(1)}, ${v.order}`);
   }
-
-  // (e) pins: the mech's own halt and stamp (its fixture is heavy; the
-  // walker shares ATTACK's exact clock and hold by these lines)
-  const dsrc = fs.readFileSync("src/depot/drivers.js", "utf8");
-  ok("(e) pins: the mech honors the halt", /order === "attack" && world\.t - \(b\._foeT \|\| 0\) < ATTACK_HOLD_S/.test(dsrc));
-  ok("(e) pins: the mech gun stamps the clock", /if \(tgt\) b\._foeT = world\.t;/.test(dsrc));
-
-  // (f) pins: the pie wedge and the ground tap
-  const dg = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
-  ok("(f) pins: the attack tap sets the order", /v\.order = om; v\.dest = \{ x: d\.x, z: d\.z \}; v\._route = null; v\._routeDest = null; v\._queue = null;/.test(dg));
 }

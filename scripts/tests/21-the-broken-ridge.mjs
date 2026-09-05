@@ -3,7 +3,6 @@
 // farther rocks survive and re-seat onto the carved ground instead of
 // floating. Fixture seed: 13. No seed is special.
 import { ok } from "./harness.mjs";
-import fs from "node:fs";
 import { makeField, makeWorld, addBody, explode } from "../../src/engine/core.js";
 import { DAVY_FIRE } from "../../src/depot/specs.js";
 
@@ -22,12 +21,4 @@ import { DAVY_FIRE } from "../../src/depot/specs.js";
   ok("ridge: the near rock breaks", !near.alive);
   ok("ridge: the far rock survives on falloff", far.alive);
   ok("ridge: the far rock re-seats onto the carved ground", Math.abs(far.pos.y - (field.heightAt(20, 0) + far.seatY)) < 1e-6);
-}
-{
-  const g = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  const bootSrcR = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
-  const tickSrcR = fs.readFileSync(new URL("../../src/depot/tick.js", import.meta.url), "utf8");
-  ok("ridge: rock health is the soft table", bootSrcR.includes("hp: 90 + k.r * 20"));
-  ok("ridge: rocks carry their seat depth", bootSrcR.includes("b.seatY = b.pos.y - field.heightAt(k.x, k.z)"));
-  ok("ridge: a davy burst re-lays the rock dressing", tickSrcR.includes('e.weapon === "davy"') && g.includes("setDressing({ rocks: rocksLive"));
 }

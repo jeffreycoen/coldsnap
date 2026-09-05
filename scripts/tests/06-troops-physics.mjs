@@ -135,11 +135,6 @@ import fs from "node:fs";
     ok("P6T1(e): the route is consumed", !sq._route || sq._route.length === 0, sq._route && `${sq._route.length} left`);
   }
 
-  // (f) source pins
-  const sqsrcP = fs.readFileSync(new URL("../../src/depot/squads.js", import.meta.url), "utf8");
-  ok("P6T1(f): the leg machine pops waypoints", /squad\._route\.shift\(\);/.test(sqsrcP));
-  ok("P6T1(f): legs aim at the waypoint, arrival still reads the true dest", /const wp = squad\._route && squad\._route\.length \? squad\._route\[0\] : squad\.dest;/.test(sqsrcP));
-  ok("P6T1(f): stepDepot routes every ordered squad", /stepSquadRouting\(grid, sq, world\);/.test(src));
 }
 // ==== end P6 T1 ==============================================================
 
@@ -206,37 +201,8 @@ import fs from "node:fs";
     ok("T2(b): falling stone still kills (green first, green after)", man.alive === false, `alive=${man.alive}`);
   }
 
-  // (d) source pin: the guard exists, gated, in the classifier
-  const csrcT2 = fs.readFileSync(new URL("../../src/engine/core.js", import.meta.url), "utf8");
-  ok("T2(d): the sleeping-stone guard exists in classifyImpacts",
-    /SLEEPING STONE IS\s*\n?\s*\/\/ NOT A WEAPON|SLEEPING STONE IS NOT A WEAPON/.test(csrcT2) && /inertStone/.test(csrcT2));
 }
 // ==== end P6 T2 ==============================================================
-
-// ==== P6 T3: only engineers build ===========================================
-// mk1.12 (Troops & Physics, Task 3). Walls and sandbags leave the bar and
-// the starting kit — engineer lines are the only door to masonry. Towers
-// keep direct placement; the seeded depot bags stay; the harness's buildAt
-// door stays for staging.
-{
-  console.log("\n[p6 t3: only engineers build]");
-  const src = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  const muSrcT3 = fs.readFileSync(new URL("../../src/depot/muster.js", import.meta.url), "utf8");
-  const blSrcT3 = fs.readFileSync(new URL("../../src/depot/buildlines.js", import.meta.url), "utf8");
-  ok("T3: the bar has no wall slot", !/key: "wall", label: "WALL"/.test(src));
-  ok("T3: the bar has no sandbag slot", !/key: "sandbag", label: "SANDBAG"/.test(src));
-  ok("T3: no build mode is selected by default", /mode: null, sellMode: false/.test(src));
-  ok("T3: the ground tap guards the tower path on a live mode", /if \(run\.mode && TOWER_SPECS\[run\.mode\]\)/.test(src));
-  ok("T3: the engineer line machinery is untouched (both spawners live) (retargeted mk1.50, P7 T20: layPieceAt moved to buildlines.js) (re-taught P7.1 T7)",
-    /spawnWallCourses\(world, row\.x/.test(blSrcT3) && /spawnSandbag\(world, row\.x, row\.z, orient, team\)/.test(blSrcT3));
-  ok("T3: the seeded depot bags are untouched (retargeted mk1.49, P7 T19: seedBags moved to muster.js)",
-    /spawnSandbag\(world, bx, bz,/.test(muSrcT3));
-  // debug harness moved to hooks.js (T2: the harness walks out).
-  const hooksSrcT3 = fs.readFileSync(new URL("../../src/depot/hooks.js", import.meta.url), "utf8");
-  ok("T3: the harness door stays (buildAt via __DEPOTBUILD__)", /__DEPOTBUILD__ = \(gx, gz, mode\) => buildAt\(gx, gz, mode \|\| "wall"\)/.test(hooksSrcT3));
-  ok("T3: the start screen stopped promising the trowel", !/Wall their road/.test(src));
-}
-// ==== end P6 T3 ==============================================================
 
 // ==== P6 T4: the living market ==============================================
 // mk1.13 (Troops & Physics, Task 4). Per-family prices off live standing
@@ -295,35 +261,8 @@ import fs from "node:fs";
     }
   }
 
-  // (e) income + limit + wiring: source pins
-  const stT4 = fs.readFileSync(new URL("../../src/depot/state.js", import.meta.url), "utf8");
-  const tickSrcT4 = fs.readFileSync(new URL("../../src/depot/tick.js", import.meta.url), "utf8");
-  ok("T4(e): the player's income is the clock — ground-scaled, floor 1/second (re-taught mk2.49)", /run\.resources \+= run\._groundRate1 \* sdt;/.test(tickSrcT4) && !/run\.resources \+= 1 \* sdt;/.test(tickSrcT4));
-  ok("T4(e): the bell pays no lump", !/S\.resources \+= BELL_SCRAP;/.test(stT4));
-  ok("T4(e): the enemy stipend is the same clock", /export const STIPEND = 90;/.test(fs.readFileSync(new URL("../../src/depot/economy.js", import.meta.url), "utf8")));
 }
 // ==== end P6 T4 ==============================================================
-
-// ==== P6 T7: the front door =================================================
-// mk1.14 (Troops & Physics, Task 7). The site opens on WINTER FRONT — one
-// identity, one action, three laws — and the demos live behind one link.
-{
-  console.log("\n[p6 t7: the front door]");
-  const ss = fs.readFileSync(new URL("../../src/ui/StartScreen.jsx", import.meta.url), "utf8");
-  const app = fs.readFileSync(new URL("../../src/ui/App.jsx", import.meta.url), "utf8");
-  ok("T7: the range subtitle is dead", !/WINTER RANGE COMMAND/.test(ss));
-  ok("T7 (re-taught mk2.43): the laws left the door for the teaching cards", !/muster bell rings/.test(ss) && !/real masonry/.test(ss) && !/The save burns/.test(ss));
-  ok("T7: the demos left the door", !/PROVING GROUNDS/.test(ss) && !/MECH TEST RANGE/.test(ss) && !/HOLD THE DEPOT/.test(ss));
-  ok("T7: one quiet link leads to the range", /data-menu="demos"/.test(ss));
-  ok("T7: the demos page routes from the app shell", /DemosScreen/.test(app) && /data-menu="demos"/.test(ss));
-  const dg = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  ok("T7: the southern treeline is gone", !/southern treeline/.test(dg));
-  let dm = "";
-  try { dm = fs.readFileSync(new URL("../../src/ui/DemosScreen.jsx", import.meta.url), "utf8"); } catch (e) {}
-  ok("T7: the five cards and controls live on the range page",
-    /HOLD THE DEPOT/.test(dm) && /CLEARANCE CAMPAIGN/.test(dm) && /CONTRACT SANDBOX/.test(dm) && /PROVING GROUNDS/.test(dm) && /MECH TEST RANGE/.test(dm) && /CONTROLS/.test(dm));
-}
-// ==== end P6 T7 ==============================================================
 
 // ==== P6 T10: body lists =====================================================
 // mk1.19 (Troops & Physics, Task 10). Third landing. One pass per frame

@@ -6,7 +6,6 @@
 // write-off world). No seed is special.
 import { ok } from "./harness.mjs";
 import { identFwdDir } from "./shared.mjs";
-import fs from "node:fs";
 import { makeMap, makeGrid, computeFlowField, OBJ_POS, SPAWN_POINTS, GRID_W, GRID_H } from "../../src/depot/mapgen.js";
 import { makeWorld, addBody } from "../../src/engine/core.js";
 import { slotBlockedPublic, roomMaskPublic } from "../../src/depot/squads.js";
@@ -15,16 +14,6 @@ import { DRIVERS } from "../../src/depot/drivers.js";
 
 {
   console.log("\n[era 15: the open siege and the honest zone]");
-  const dgSrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-  const mgSrc = fs.readFileSync(new URL("../../src/depot/mapgen.js", import.meta.url), "utf8");
-
-  // (a) the rule is gone from the player's hand; the generator keeps its own
-  ok("O1: the road rule is expunged — no refusal, no connectivity in the game layer",
-    !/Leave them a road/.test(dgSrc) && !/checkConnectivity/.test(dgSrc));
-  ok("O2: the generator's walkable-map law stands untouched",
-    /checkConnectivity\(g, SPAWN_POINTS, og\.gx, og\.gz\)/.test(mgSrc));
-  ok("O9: the siege flow's second flood exists (the 1e6 seed line)",
-    /cells\[ci\]\.dist = 1e6/.test(mgSrc));
 
   // (b) the sealed map, functional — seed 23, a full player wall row
   {

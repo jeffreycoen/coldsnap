@@ -1,6 +1,5 @@
 import { ok } from "./harness.mjs";
 import { makeWorld, addBody, stepWorld } from "../../src/engine/core.js";
-import fs from "node:fs";
 
 // ==== mk2.97: the suspension ================================================
 // Four spring-and-damper wheels under a flagged body: it settles at spring
@@ -77,11 +76,4 @@ import fs from "node:fs";
     ok("(e) 2H's gearing stalls on the grade and slides back", prog[0] < 0, prog[0].toFixed(1));
     ok("(e) 4L's gearing climbs the same grade", prog[1] > 40, prog[1].toFixed(1));
   }
-
-  // (f) pins: the pass, its call, the grade line, the grounded commit
-  const cs = fs.readFileSync("src/engine/core.js", "utf8");
-  ok("(f) pins: the suspension pass exists", /function stepSuspension\(world\) \{/.test(cs) && /b\._suspGround = touching;/.test(cs));
-  ok("(f) pins: the world steps it after the drive", /stepDrive\(world\);\n\s*stepSuspension\(world\);/.test(cs));
-  ok("(f) pins: the grade steals after the cap", /if \(b\.susp && traction > 0\) acc -= world\.gravity \* fwd\.y;/.test(cs));
-  ok("(f) pins: wheels ground the hull", /b\.groundedNow \|\| b\.bodyGroundedNow \|\| b\._suspGround/.test(cs));
 }

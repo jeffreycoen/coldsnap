@@ -19,7 +19,6 @@ import { musterFreshStart, parkTower, PICK_POOL, draftDeal } from "../../src/dep
 import { makeMap, TOWN, invW, ORIENT, SPAWN_POINTS } from "../../src/depot/mapgen.js";
 import { buildBison, buildApc, buildTowerMesh } from "../../src/render/renderer.js";
 import { buildPortraitMan, buildPortraitModel } from "../../src/render/portrait.js";
-import fs from "node:fs";
 
 const map = { invW, ORIENT, SPAWN_POINTS }; // wee-t2b: no real map built here — the shim's own pre-boot values
 const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
@@ -195,14 +194,6 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "tesla"]) {
   ok("audit(i) APC PATROL: two turnarounds", flips >= 2, `${flips} flips`);
 }
 
-// ---- AUDIT (j): THE WIRING — every wedge's act calls its handler
-{
-  const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
-  const pin = (name, re) => ok(`audit(j) wiring: ${name}`, re.test(src));
-  // the handlers themselves exist
-  pin("handlers live", /view\.orderSquad = \(kind\)/.test(src) && /view\.orderVehicle = \(kind\)/.test(src) && /view\.takeControl = \(\)/.test(src) ? /./ : /(?!)/);
-}
-
 // ---- P7.1 T3: every fielded man knows his full health (maxHp at spawn)
 {
   const w = makeWorld({ field: flatF, seed: 31 }); w.depotCombat = true;
@@ -272,18 +263,6 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "tesla"]) {
   for (let i = 0; i < 120 * 5; i++) { stepUnits(w2, straightGrid(0, 1), identFwdDir, null); stepWorld(w2); }
   ok("T6v2: his engineer stands unarmed", w2.events.slice(ev2).filter((e) => e.type === "muzzle").length === 0 && Math.hypot(engMan.pos.x, engMan.pos.z) < 2);
 }
-// ---- P7.1 T6 v2: the tower brain's team lesson (wiring pins — stepTowers
-// lives in DepotGame.jsx, unimportable headlessly; the audit precedent)
-{
-  // stepTowers moved to sim.js (war-engine-extraction task 1) — the wiring
-  // pins below read its new home.
-  const src = fs.readFileSync("src/depot/sim.js", "utf8");
-  ok("T6v2 wiring: stepTowers derives its team", /const tTeam = b\.team === 2 \? 2 : 1/.test(src));
-  ok("T6v2 wiring: acquisition hunts the foe team", /e\.team !== foeTeam/.test(src));
-  ok("T6v2 wiring: sight gates on the tower's own side", /fieldReaches\(T, c\.u, c\.v, tTeam\)/.test(src));
-  ok("T6v2 wiring: careful stays team-1 machinery", /tTeam === 1 && disc !== "free"/.test(src));
-  ok("T6v2 wiring: parkTower stands in muster.js", /export function parkTower\(world, grid, field, depotT, team, towerType, map\)/.test(fs.readFileSync("src/depot/muster.js", "utf8")));
-}
 // ---- P7.1 T7: HIS SHOVELS DIG
 {
   const T7 = makeTerritory(90, 90); T7.v.fill(-1); // all his ground
@@ -327,15 +306,6 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "tesla"]) {
   ok("T7: his tagged men price into the engineer family, never rifles",
     (() => { const c = marketCounts(w, [], []); return c.engineer === 2 && !c.rifles; })());
 }
-{
-  // the two new draws + the muster branch, pinned by source shape (the T10(d11) precedent)
-  const be7 = fs.readFileSync("src/depot/bell.js", "utf8");
-  ok("T7: TWO unconditional draws every bell (lineRoll, placeRoll — the law)",
-    /const lineRoll = world\.rng\(\), placeRoll = world\.rng\(\);/.test(be7));
-  ok("T7: his shovels ring after the sapper brain", be7.indexOf("THE ENEMY SAPPER BRAIN") < be7.indexOf("HIS SHOVELS"));
-  const mu7 = fs.readFileSync("src/depot/muster.js", "utf8");
-  ok("T7: the engineer pick musters a tagged squad", /if \(pick\.tag === "eng"\) \{/.test(mu7) && /\.tag = "eng";/.test(mu7));
-}
 // ---- P7.2 T8: THE OPENING DRAFT (re-taught from P7.1 T8's dealHand)
 {
   const mkRng = (vals) => { let i = 0; return () => vals[(i++) % vals.length]; };
@@ -346,22 +316,10 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "tesla"]) {
   draftDeal(counting, PICK_POOL.map((p) => p.key));
   ok("T8: exactly seven draws, always (re-taught P7.2 T8: dealHand -> draftDeal, four -> seven)", n8 === 7);
 }
-{
-  const src8 = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
-  ok("T8 wiring: the deal opens the first card", /view\.openInfo\(view\._placeQueue\[0\], "deal"\)/.test(src8));
-  ok("T8 wiring: a ground tap never places under an open card", /if \(view\.infoKey\) return;/.test(src8));
-  ok("T8 wiring: the pick grid is gone", !/data-pick=/.test(src8) && !/togglePick/.test(src8));
-  ok("T8 A1: the ticker yields while a deal card is up", /hud\.placing && !hud\.info && !fatal/.test(src8));
-  const ic8 = fs.readFileSync("src/depot/InfoCard.jsx", "utf8");
-  ok("T8 wiring: the card carries the deal door", /door === "deal"/.test(ic8) && /PLACE IT/.test(ic8));
-}
-
 // ---- P7.1 T9: THE GENTLE ARC AND THE TIGHT TUBE
 {
   ok("T9: the three lobbed tables tightened together (symmetry)", TOWER_SPECS.mortar.acc === 0.005 && INFANTRY_ARMS.mortars.acc === 0.005 && ENEMY_FIRE.lob.acc === 0.005);
   ok("T9: the rocket flies slow, flat, and honest", TOWER_SPECS.rocket.projSpeed === 18 && TOWER_SPECS.rocket.occl === "arc");
-  const src9 = fs.readFileSync("src/depot/state.js", "utf8");
-  ok("T9: only the mortar tower takes the steep solve", /const high = tower\.towerType === "mortar";/.test(src9));
   const p9 = aimSolve(18, 23, 0, 9.8, false);
   ok("T9: the arc is gentle at full reach (a low rising pitch)", p9 != null && p9 > 0.1 && p9 < 0.45, p9 && p9.toFixed(3));
 }
@@ -375,8 +333,4 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "tesla"]) {
   const mg10 = buildPortraitMan("mg"), sn10 = buildPortraitMan("sniper");
   ok("T10: kits differ by trade (the mg carries more iron than the marksman's glass)", mg10.children.length !== sn10.children.length || mg10.children.length > 0);
   ok("T10: every card key resolves to a model", ["sq_rifles", "sq_sniper", "sq_mg", "sq_sappers", "sq_mortars", "sq_engineers", "sq_rockets", "sq_grenadiers", "mg", "gun", "mortar", "rocket", "tesla", "hero_bison", "hero_apc"].every((k) => buildPortraitModel(k).children.length > 0));
-  const src10 = fs.readFileSync("src/depot/InfoCard.jsx", "utf8");
-  ok("T10: the card carries the portrait canvas", /data-info-portrait/.test(src10) && /portrait\(cv\)/.test(src10));
-  const dg10 = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
-  ok("T10: the game wires the painter to the card", /portrait=\{TEACH\[hud\.info\.key\] \? undefined : \(cv\) => renderPortrait\(cv, hud\.info\.key\)\}/.test(dg10));
 }

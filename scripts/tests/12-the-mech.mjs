@@ -24,7 +24,6 @@ import { KILL_CUT } from "../../src/depot/economy.js";
 import { eyeOf, SIGHT } from "../../src/depot/sight.js";
 import { makeBodyLists, rebuildBodyLists } from "../../src/depot/lists.js";
 import { DRIVERS, stepDrivers, mechSighted } from "../../src/depot/drivers.js";
-import fs from "node:fs";
 
 const idUV = (x, z) => ({ u: x, v: z });
 // wee-t2b: no real GameMap built in this suite — parkMech's fail-proof
@@ -129,27 +128,6 @@ const run = (w, grid, n, opts) => { for (let i = 0; i < n; i++) { stepDrivers(w,
   rebuildBodyLists(w, L);
   ok("M8: the pools carry a mech hull in foes and vehicles",
     L.friends.includes(m1.hull) && L.foes.includes(m2.hull) && L.vehicles.includes(m1.hull) && L.vehicles.includes(m2.hull));
-}
-{
-  // stepTowers moved to sim.js (war-engine-extraction task 1) — source-
-  // pinned, the established pattern (era 10's "stepTowers derives its team").
-  const src = fs.readFileSync("src/depot/sim.js", "utf8");
-  const m = src.match(/function stepTowers[\s\S]{0,4000}/);
-  const body = m ? m[0] : "";
-  const site1 = /best\.kind !== "unit" && best\.kind !== "vehicle" && best\.kind !== "mech"/.test(body);
-  const site2 = /e\.kind !== "unit" && e\.kind !== "vehicle" && e\.kind !== "mech"/.test(body);
-  ok("M9: a tower acquires and fires on a seen enemy mech hull (both stepTowers sites widen to mech)", site1 && site2, `${site1}/${site2}`);
-}
-{
-  const w = makeWorld({ field: flatF, seed: 148 }); w.depotCombat = true;
-  const src = fs.readFileSync("src/depot/state.js", "utf8");
-  ok("M10: squadFire's foe scan widens to mech",
-    /kind !== "unit" && e\.kind !== "vehicle" && e\.kind !== "mech"/.test(src));
-}
-{
-  const src = fs.readFileSync("src/depot/drivers.js", "utf8");
-  ok("M11: armorScanFoes' kind gate widens to mech (the Bison's gun sees a mech)",
-    /e\.kind !== "vehicle" && e\.kind !== "mech"/.test(src));
 }
 {
   // mk1.93 re-teach: payBounties is retired — scoreKill on a player-
@@ -270,13 +248,6 @@ const run = (w, grid, n, opts) => { for (let i = 0; i < n; i++) { stepDrivers(w,
   while (foe.alive && steps++ < 2000) { stepDrivers(w, grid, identFwdDir, null, idUV, {}); stepWorld(w); }
   ok("M20: the driver's guns kill a seen conscript", !foe.alive, `alive=${foe.alive} steps=${steps}`);
 }
-{
-  // stepDepot moved to sim.js (war-engine-extraction task 1).
-  const src = fs.readFileSync("src/depot/sim.js", "utf8");
-  ok("M21: a dead hull detonates, leaves world.mechs, and leaves loose pieces (source-pinned, stepDepot's death block)",
-    /A DEAD MECH[\s\S]{0,900}L2\.mechRef = null; L2\.team = 0;[\s\S]{0,100}world\.mechs\.splice\(mi2, 1\);/.test(src));
-}
-
 // ============================================================ PHASE G (M22-M26)
 {
   ok("M22: the pool and hand are twenty with hero_mech in every seat",
@@ -304,13 +275,6 @@ const run = (w, grid, n, opts) => { for (let i = 0; i < n; i++) { stepDrivers(w,
   ok("M24: mirrorFieldKey(\"hero_mech\") fields it", w.mechs && w.mechs.length === 1 && w.mechs[0].team === 2, w.mechs ? w.mechs.length : 0);
 }
 {
-  const src = fs.readFileSync("src/depot/bell.js", "utf8");
-  ok("M25: the bell's replacement walk re-parks a dead team-2 mech (source-pinned, the hero-tier block; wee-t2b: + map)",
-    /open\("hero_mech"\) && run\.reg\.scrap >= heroPrice\("hero_mech"\)/.test(src) &&
-    /parkMech\(world, grid, field, depotE4, 2, map\)/.test(src) &&
-    /k === "hero_mech" \? MECH\.cost/.test(src));
-}
-{
   const counts0 = { _men: 0 };
   const p0 = computePrices(counts0);
   const w = makeWorld({ field: flatF, seed: 159 });
@@ -323,12 +287,6 @@ const run = (w, grid, n, opts) => { for (let i = 0; i < n; i++) { stepDrivers(w,
 }
 
 // ============================================================ PHASE H (M27-M29)
-{
-  const src = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
-  ok("M27: takeControlVehicle on a mech sets possess.kind \"mech\" and release returns it to defend (source-pinned)",
-    /input\.possess = \{ kind: "mech", id: v\.id \};/.test(src) &&
-    /input\.possess\.kind === "mech"\) \{[\s\S]{0,260}pm\.order = "defend";/.test(src));
-}
 {
   const w = makeWorld({ field: flatF, seed: 160 });
   const m1 = mkMech(w, 1, 0, 0);

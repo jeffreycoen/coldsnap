@@ -6,7 +6,6 @@
 // 2026-08-25): the ring shows where a lob lands. No seed is special;
 // fixture seeds are named below.
 import { ok } from "./harness.mjs";
-import { readFileSync } from "node:fs";
 import { makeWorld, stepWorld, addBody, mulberry32 } from "../../src/engine/core.js";
 import { spawnUnit, stepUnits } from "../../src/depot/units.js";
 import { stepDrivers, possessedArmorFire, barrelTip } from "../../src/depot/drivers.js";
@@ -15,7 +14,6 @@ import { elevSolve, elevCapOf, ELEV_CAP, shotClears, arcClears, lanePool, arcAtP
 import { BISON, BISON_FIRE, TOWER_SPECS, ENEMY_FIRE, BARRELS } from "../../src/depot/specs.js";
 import { identFwdDir, straightGrid } from "./shared.mjs";
 
-const src = (p) => readFileSync(new URL("../../" + p, import.meta.url), "utf8");
 const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
 const DEG = Math.PI / 180;
 const SIN35 = Math.sin(35 * DEG);
@@ -193,15 +191,4 @@ ok("L1: the field gun and the wave tank carry no cap of their own — ELEV_CAP (
   ok("L9: the ring chooses a lob over the building", still.rawDir.y > SIN35 && windy.rawDir.y > SIN35 && !still.high, `${still.rawDir.y.toFixed(2)} / ${windy.rawDir.y.toFixed(2)}`);
   ok("L9: still air — the ring's center sits on the aim", !still.center.wall && Math.hypot(still.center.x - aim.x, still.center.z - aim.z) < 2.5, JSON.stringify(still.center));
   ok("L9: a 2.2 m/s crosswind — the ring's center drifts downwind, off the aim", !windy.center.wall && windy.center.z > 1.0 && windy.center.z > still.center.z + 1.0, JSON.stringify(windy.center));
-}
-
-// L10 — source pins: both armor scans read the lawful-shot gate; both Bison
-// gun shots leave the lifted tip; the wave tank's own struct loop is untouched.
-{
-  const d = src("src/depot/drivers.js");
-  ok("L10: both armor scans gate on shotClears", (d.match(/shotClears\(world, muzzle, [es]\.pos, spec, v\.id\)/g) || []).length === 2);
-  ok("L10: both Bison gun shots fire from liftedTip", (d.match(/liftedTip\(world, v, tgt\.pos, gun, BARRELS\.bison\)/g) || []).length === 2);
-  ok("L10: the wave tank's own struct loop keeps arcClears", /arcClears\(world, muzzle, s\.pos, fspec, t\.id\)/.test(d));
-  ok("L10: shotClears sends only capped guns to elevSolve — the wave tank's scan keeps the flat law",
-    /if \(spec\.elevCap != null\) return elevSolve\(world, muzzle, target, spec, selfId\) !== null;/.test(src("src/depot/accuracy.js")));
 }

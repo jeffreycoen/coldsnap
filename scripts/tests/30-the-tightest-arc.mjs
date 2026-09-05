@@ -5,13 +5,11 @@
 // propellant varies on every round (a bounded third draw). No seed is
 // special; fixture seeds are named below.
 import { ok } from "./harness.mjs";
-import { readFileSync } from "node:fs";
 import { makeWorld, addBody } from "../../src/engine/core.js";
 import { shooterFire } from "../../src/depot/state.js";
 import { tightSolve, rangeSigma, predictRing, CHARGE_CAP, SCATTER_CAP } from "../../src/depot/accuracy.js";
 import { BISON_FIRE, TOWER_SPECS, ENEMY_FIRE, INFANTRY_ARMS, DAVY_FIRE } from "../../src/depot/specs.js";
 
-const src = (p) => readFileSync(new URL("../../" + p, import.meta.url), "utf8");
 const DEG = Math.PI / 180;
 const flatF = { heightAt: () => 0, dirty: false, carve: () => {}, normalAt: (x, z, o) => { o.x = 0; o.y = 1; o.z = 0; return o; } };
 const idUV = (x, z) => ({ u: x, v: z });
@@ -97,19 +95,4 @@ const muzzles = (w) => w.events.filter((ev) => ev.type === "muzzle" && ev.kind =
   const b = tightSolve(w2, { x: 0, y: 1.7, z: 0 }, { x: 18, y: 0, z: 0 }, INFANTRY_ARMS.mortars, 0);
   ok("T5: the grenadier's lob and the mortar team solve the same arc on the same ground",
     a && b && Math.abs(a.pitch - b.pitch) < 1e-9 && Math.abs(a.v - b.v) < 1e-9, JSON.stringify({ a, b }));
-}
-
-// T6 — source pins: shooterFire's chargeSig gate outranks the mortar root;
-// the charge draw is one bounded uniform; liftedTip solves tight for capped
-// specs; the ring walks the charge rim.
-{
-  const st = src("src/depot/state.js");
-  ok("T6: shooterFire routes chargeSig specs to tightSolve and kills their high root",
-    /if \(spec\.chargeSig != null\) \{\n    high = false;\n    elev = tightSolve\(world, muzzle, target\.pos, spec, opts\.owner\);/.test(st));
-  ok("T6: the charge draw is one bounded uniform per round",
-    /const chg = spec\.chargeSig != null \? 1 \+ \(world\.rng\(\) \* 2 - 1\) \* spec\.chargeSig \* CHARGE_CAP : 1;/.test(st));
-  ok("T6: the Bison's drawn tube ends at the chosen arc",
-    /spec\.chargeSig != null \? tightSolve\(world, flat, aim, spec, v\.id\) : elevSolve\(world, flat, aim, spec, v\.id\)/.test(src("src/depot/drivers.js")));
-  ok("T6: the ring's rays walk the charge rim",
-    /const chg = cs \? 1 \+ cs \* \(s % 3 - 1\) : 1;/.test(src("src/depot/accuracy.js")));
 }

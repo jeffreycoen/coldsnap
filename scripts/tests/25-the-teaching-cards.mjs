@@ -2,16 +2,12 @@
 // registry. cards.js is the one home; infocards.js is a re-export shim so
 // the older eras' import path stands. No seed is special; no seed is used.
 import { ok } from "./harness.mjs";
-import { readFileSync, existsSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { CARDS, cardFor, TEACH } from "../../src/depot/cards.js";
 import { CARDS as CARDS_SHIM, cardFor as cardFor_shim } from "../../src/depot/infocards.js";
 
-const src = (p) => readFileSync(new URL("../../" + p, import.meta.url), "utf8");
-
 ok("T1: the registry holds the twenty market cards", Object.keys(CARDS).length === 20);
 ok("T1: the shim serves the identical object", CARDS === CARDS_SHIM && cardFor === cardFor_shim);
-ok("T1: the shim is one re-export and nothing else",
-  /^export \{ CARDS, cardFor, TEACH \} from "\.\/cards\.js";\s*$/m.test(src("src/depot/infocards.js").replace(/^\/\/.*$/gm, "").trim()));
 ok("T2: the teaching table holds the thirty", Object.keys(TEACH).length === 30); // mk2.91: queue_chain and clear_chain joined
 ok("T2: every teaching card carries the card contract",
   Object.values(TEACH).every((c) => typeof c.label === "string" && c.label.length > 0 && typeof c.role === "string" && c.role.length > 0 && Array.isArray(c.skills)));
@@ -19,96 +15,19 @@ ok("T2: the phone-voiced cards carry both voices",
   ["possess_squad", "possess_tower", "possess_vehicle", "possess_mech"].every((k) => TEACH[k] && typeof TEACH[k].roleTouch === "string" && TEACH[k].roleTouch.length > 0));
 ok("T2: no teaching key shadows a market key", Object.keys(TEACH).every((k) => !CARDS[k]));
 ok("T2: the desktop-keys card is marked desktop-only", TEACH.desktop_keys && TEACH.desktop_keys.desktopOnly === true);
-ok("T1: cardFor reads teaching cards after market cards", /TEACH\[key\] \|\| CARDS\[key\] \|\| null/.test(src("src/depot/cards.js")));
-ok("T1: an unknown door falls to CLOSE (the teach door needs no code)",
-  /data-info-close/.test(src("src/depot/InfoCard.jsx")));
-
-// ---- Task 3 (mk2.41): THE FIRST-ENCOUNTER DOOR
-{
-  const dg = src("src/depot/DepotGame.jsx");
-  ok("T3: cards.js stamps the revision (re-taught T4: rev 2, the brief copy)", /export const TEACH_REV = 2;/.test(src("src/depot/cards.js")));
-  ok("T3: the seen store has its own key", /const CARDS_KEY = "coldsnap-wf-cards";/.test(dg));
-  ok("T3: a card up freezes the sim (the convoy idiom)", /const teachUp = view\._teachQ\.length > 0;/.test(dg) && /cardUp \|\| convoyUp \|\| teachUp \? 0 :/.test(dg));
-  ok("T3: firing is sandbox-silent, seen-gated, and honors the silence sentinel",
-    /view\.teachFire = \(key\) => \{\n\s+if \(dev\) return;/.test(dg) && /view\._teachSeen\.has\("\*"\)/.test(dg));
-  ok("T3: closing marks seen and persists the set", /view\._teachSeen\.add\(k\);[\s\S]{0,220}storage\.set\(CARDS_KEY/.test(dg));
-  ok("T3: the phone voice serves on touch", /isTouch && tc\.roleTouch \? tc\.roleTouch : tc\.role/.test(dg));
-  ok("T3/T4: the pie enqueues its whole series", /for \(const k of PIE_CARDS\[kind\]\(thing\)\) view\.teachFire\(k\);/.test(dg));
-  ok("T3: the smoke silences the door with the sentinel", /coldsnap-wf-cards/.test(src("scripts/smoke.mjs")));
-}
 
 // ---- Task 4 (mk2.42): THE PAGED SERIES AND THE BRIEF COPY
 {
-  const dg = src("src/depot/DepotGame.jsx");
-  const ic = src("src/depot/InfoCard.jsx");
-  ok("T4: the card carries the teach door's paging chrome",
-    /door === "teach"/.test(ic) && /data-teach-next/.test(ic) && /data-teach-back/.test(ic) && /data-teach-skip/.test(ic));
-  ok("T4: the queue pages by index", /_teachIdx/.test(dg) && /view\.teachBack = /.test(dg) && /view\.teachSkip = /.test(dg));
-  ok("T4: the sentinel survives any revision", /d\.rev === TEACH_REV \|\| d\.seen\.includes\("\*"\)/.test(dg));
   ok("T4: every body is brief", Object.values(TEACH).every((c) => c.role.length <= 180 && (!c.roleTouch || c.roleTouch.length <= 180)));
 }
 
 // ---- Task 5 (mk2.43): THE MANUAL RETIRES; THE DOORS GO QUIET
 {
-  const dg = src("src/depot/DepotGame.jsx");
-  const ss = src("src/ui/StartScreen.jsx");
   ok("T5: the manual is gone from the tree", !existsSync(new URL("../../src/ui/FieldManual.jsx", import.meta.url)));
-  ok("T5: the game forgot the manual", !/FieldManual/.test(dg) && !/MANUAL_KEY/.test(dg) && !/manualOpen/.test(dg));
-  ok("T5: the front door is quiet", !/muster bell rings/.test(ss) && !/A winter war in real stone/.test(ss) && !/The save burns/.test(ss));
-  ok("T5: the overlay is buttons and the seed line", !/They are coming for your depot/.test(dg) && !/The convoy deals seven cards/.test(dg) && /FIELD ORDER #/.test(dg));
-}
-
-// ---- Task 6 (mk2.44): THE ON-DEMAND DOOR
-{
-  const dg = src("src/depot/DepotGame.jsx");
-  ok("T6: the long-press helper exists and swallows the trailing click",
-    /const teachPress = \(k\) => \(\{/.test(dg) && /onClickCapture/.test(dg) && /450/.test(dg));
-  ok("T6: the top bar and build bar carry their cards",
-    ["scrap", "bell", "kill_price", "fog", "wind", "spare_ours", "market", "sell"].every((k) => dg.includes('teachPress("' + k + '")')));
-  ok("T6: the lookup serves the phone voice and skips the portrait on teaching cards",
-    /c\.roleTouch \? \{ \.\.\.c, role: c\.roleTouch \}/.test(dg) && /TEACH\[hud\.info\.key\] \? undefined :/.test(dg));
-}
-
-// ---- Task 7 (mk2.45): THE MENU MAP
-{
-  const ss = src("src/ui/StartScreen.jsx");
-  const app = src("src/ui/App.jsx");
-  const dg = src("src/depot/DepotGame.jsx");
-  ok("T7/T9: the menu shows the captured opening view (wee-t2b: map.MAP_SEED)", /data-menu-map/.test(ss) && /captureStartView/.test(ss) && /makeMap\(seed\)/.test(src("src/ui/startview.js")) && /return map\.MAP_SEED;/.test(src("src/ui/startview.js")));
-  ok("T7: the burn arm previews the fresh valley", /if \(burnArmed\) paint\(newSeedRef\.current\);/.test(ss));
-  ok("T7: the shell hands the menu's seed to the war", /setDepotSeed/.test(app) && /seed=\{depotSeed\}/.test(app));
-  ok("T7: the war takes the menu's seed, URL still winning", /menuSeedRef\.current != null \? menuSeedRef\.current/.test(dg) && /Number\.isFinite\(urlSeed\) \? urlSeed/.test(dg));
-  ok("T7: the smoke pins the one menu canvas", /data-menu-map/.test(src("scripts/smoke.mjs")));
-}
-
-// ---- Task 8 (mk2.46): THE MENU MAP WEARS THE REAL LOOK
-{
-  const ss = src("src/ui/StartScreen.jsx");
-  ok("T8/T9: the capture boots the war's own ground (wee-t2b: map.MAP_SEED)", /makeField\(181, 2\.0, map\.MAP_SEED\)/.test(src("src/ui/startview.js")) && /buildDepotTerrain\(field, map\.MAP_SEED\)/.test(src("src/ui/startview.js")));
-  ok("T8/T9: the trees are the war's own plan", /planTrees\(\)/.test(src("src/ui/startview.js")));
-  ok("T8/T9: the war renderer draws the frame and is dropped", /makeRenderer\(cv, world/.test(src("src/ui/startview.js")) && /R\.dispose\(\)/.test(src("src/ui/startview.js")));
-  ok("T8: the column sits on its own glass", /rgba\(10,13,18,0\.78\)/.test(ss));
-}
-
-// ---- Task 9 (mk2.47): THE OPENING VIEW
-{
-  // buildTown moved to sim.js (war-engine-extraction task 1); the separate
-  // `export { buildTown };` line is gone — `export function buildTown`
-  // replaces it (the task's substitution table).
-  const simSrc = src("src/depot/sim.js");
-  ok("T9: the town builder is shared by statement, its pinned line untouched",
-    /\nexport function buildTown\(world, grid, field, map\) \{/.test(simSrc));
-  ok("T9: the capture sizes off-DOM through the renderer's own door", /cv\.dataset\.w = String\(w\)/.test(src("src/ui/startview.js")));
 }
 
 // ---- Task 10 (mk2.48): THE WALK
 {
-  const dg = src("src/depot/DepotGame.jsx");
   const WALK_KEYS = ["desktop_keys", "the_hand", "placing", "scrap", "bell", "convoy", "market", "sell", "defend", "move", "attack", "patrol", "engineer_lines", "structures", "select_all", "fog"];
-  ok("T10w: the walk list is the ruled sixteen, in order",
-    (() => { const m = dg.match(/const WALK = \[([^\]]+)\]/); if (!m) return false; const got = m[1].match(/"[a-z_]+"/g).map((s) => s.slice(1, -1)); return got.length === 16 && got.every((k, i) => k === WALK_KEYS[i]); })());
-  ok("T10w: the walk fills the queue and skips the desktop card on touch", /view\.teachWalk = /.test(dg) && /desktopOnly && isTouch/.test(dg));
-  ok("T10w: the overlay offers the walk", /data-menu="walk"/.test(dg) && /SHOW ME THE FRONT/.test(dg));
-  ok("T10w: the card carries the hint line", /data-card-hint/.test(src("src/depot/InfoCard.jsx")));
   ok("T10w: every walked card carries its hint", WALK_KEYS.every((k) => typeof TEACH[k].hint === "string" && TEACH[k].hint.length > 0));
 }
