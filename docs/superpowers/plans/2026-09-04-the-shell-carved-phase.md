@@ -33,7 +33,7 @@ Added to CLAUDE.md under Frozen laws:
 
 | Measure | Value |
 |---|---|
-| DepotGame.jsx lines | 4,383 |
+| DepotGame.jsx lines | 4,383 → 2,422 (final) |
 | Comment-only lines in it | 975 (plus ~80 trailing) |
 | Test files reading DepotGame.jsx by file slice | 27 files, ~85 slice sites (heaviest: 04-vision 16, 11-hiring-hall 11, 09-reorg 7) |
 | depot-test | 2,136 PASS / 0 FAIL (re-measured at the T1 landing; 2,207 → 2,198 at the T3 landing, amendment 1 — nine source-text pins retired; 2,198 → 2,163 at the T4 landing, amendment 1 — thirty-five source-text pins retired; 2,163 → 2,136 at the T5 landing, amendments 1 and 2 — twenty-seven source-text pins retired) |
@@ -78,7 +78,7 @@ Added to CLAUDE.md under Frozen laws:
 | T8 | 0.3.15 | The pin purge, pulled ahead: every remaining source-text pin swept from the suite; behavior checks stay. Ahead of the last two moves so they break nothing | LANDED, commit 18be931, 521 checks deleted, depot-test 1,615 PASS / 0 FAIL, golden 7 PASS / 0 FAIL, smoke 30 PASS / 0 FAIL |
 | T6 | 0.3.16 | The selection and order layer out: the tap cycle, the order taps, the line flow, possession take/release, and the chain controls, same builder idiom | LANDED, commit 58e194a, depot-test 1,615 PASS / 0 FAIL, golden 7 PASS / 0 FAIL, smoke 30 PASS / 0 FAIL |
 | T7 | 0.3.17 | The comment trim, mechanical: every task/phase/mark stamp prefix deleted; comment blocks carrying no constraint deleted; every deletion reported | LANDED, commit f5aeea9, depot-test 1,615 PASS / 0 FAIL, golden 7 PASS / 0 FAIL, smoke 30 PASS / 0 FAIL. Line counts old→new: DepotGame.jsx 2,427→2,422; hooks.js 345→345; styles.js 22→22; palette.js 107→104; RadialMenu.jsx 62→61; DraftScreen.jsx 49→49; pies.jsx 162→162; placement.js 484→483; orders.js 818→817. |
-| Closeout | 0.3.18 | README claims and screenshots re-checked against the shipped game; one short README paragraph naming `src/depot/api.js` as the one import surface, with the headless line `node src/depot/api.js gate`; the phase's line count recorded | OPEN |
+| Closeout | 0.3.18 | README claims and screenshots re-checked against the shipped game; one short README paragraph naming `src/depot/api.js` as the one import surface, with the headless line `node src/depot/api.js gate`; the phase's line count recorded | LANDED, depot-test 1,615 PASS / 0 FAIL, golden 7 PASS / 0 FAIL, predicate 3 PASS / 0 FAIL, scenario 16 PASS / 0 FAIL, combat 7 PASS / 0 FAIL, accuracy 11 PASS / 0 FAIL, depot-lint PASS, smoke 30 PASS / 0 FAIL, summed CI total 1,660 |
 
 ## Expected landing
 
@@ -90,5 +90,8 @@ task chases lines past its inventory.
 
 ## Status
 
-Phase open. No task plan written. Task plans are written one at a time on
-approval of this document.
+Phase closed. `DepotGame.jsx` fell from 4,383 lines to 2,422. The carved
+files: `hooks.js` 345, `styles.js` 22, `palette.js` 104, `RadialMenu.jsx`
+61, `DraftScreen.jsx` 49, `pies.jsx` 162, `placement.js` 483, `orders.js`
+817. The suite fell from 2,207 to 1,615 behavior-only checks, every
+source-text pin swept. Marks 0.3.10 through 0.3.18.

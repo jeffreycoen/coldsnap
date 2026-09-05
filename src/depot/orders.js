@@ -365,8 +365,8 @@ export function makeOrders(ctx) {
       // both go through the same grid. The pitch is the constraint, not the
       // piece, and closing it would mean re-pitching every buildable in the game.
       //
-      // ONE ROTATION FOR THE WHOLE LINE (Jeff, 2026-08-12 — this supersedes the
-      // per-step "staircase" rotation the brief described). The engine's boxes
+      // ONE ROTATION FOR THE WHOLE LINE — this supersedes the
+      // per-step "staircase" rotation the brief described. The engine's boxes
       // are axis-aligned and there is no rotated collider in this codebase, so
       // a line gets the CLOSEST LOGICAL ROTATION to its overall start->end
       // direction — its dominant axis, computed once at order time — and every
@@ -480,7 +480,7 @@ export function makeOrders(ctx) {
                     : q.line === "bags" ? pieces.length * fp.bag
                     : q.line === "mines" ? pieces.length * mp.mine
                     : pieces.length * mp.wire;
-        if (run.resources < price) return; // stand and wait — the ruling (2026-09-03)
+        if (run.resources < price) return; // stand and wait
         sq._queue.shift(); if (!sq._queue.length) sq._queue = null;
         startBuildLine(grid, sq, q.line, a, b, toast);
       };
