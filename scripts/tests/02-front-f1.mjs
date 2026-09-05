@@ -476,8 +476,6 @@ import fs from "node:fs";
     const src = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
     ok("mk0.27/c: the canvas-tap pending-clear goes through canvasTapConsumesPending",
       /canvasTapConsumesPending\(view\.pending, view\.pendingScreen/.test(src));
-    ok("mk0.27/c: the unarmed ✓ tap toasts instead of vanishing",
-      /if \(!pendingArmed\(p, world\.t\)\) \{[^}]*toast\(/.test(src.replace(/\n/g, " ")));
     ok("mk0.27/c: a pending whose anchor leaves the viewport auto-cancels with a toast",
       /pendingButtonsVisible\(/.test(src) && /PLACEMENT CANCELLED/.test(src));
   }

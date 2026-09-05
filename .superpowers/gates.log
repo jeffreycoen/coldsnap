@@ -629,3 +629,7 @@
 2026-09-04T22:36:25.617Z depot-test ok 2163 PASS / 0 FAIL — depot-test PASS (221.0s)
 2026-09-04T22:36:55.931Z golden ok 7 PASS / 0 FAIL — GOLDEN GATE: ALL PASS (21.5s)
 2026-09-04T22:40:25.566Z smoke ok 30 PASS / 0 FAIL — BOOT-LOAD SMOKE: ALL PASS (197.2s)
+2026-09-04T23:02:27.085Z depot-test FAIL(1) 2136 PASS / 10 FAIL — 10 FAILURE(S): sniper preview: DepotGame builds the squad preview with null territory + INFANTRY_ARMS, mk0.27/c: the una (180.6s)
+2026-09-04T23:35:14.261Z depot-test ok 2136 PASS / 0 FAIL — depot-test PASS (186.4s)
+2026-09-05T02:12:13.604Z golden ok 7 PASS / 0 FAIL — GOLDEN GATE: ALL PASS (20.2s)
+2026-09-05T02:15:59.580Z smoke ok 30 PASS / 0 FAIL — BOOT-LOAD SMOKE: ALL PASS (184.2s)

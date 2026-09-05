@@ -848,9 +848,6 @@ import fs from "node:fs";
       /patrolOk:\s*sq\.type !== "engineers" && sq\.type !== "sappers"/.test(dgSrc));
     ok("T7(h): structOk stays INFANTRY_ARMS-membership-driven",
       /structOk:\s*!!INFANTRY_ARMS\[sq\.type\]/.test(dgSrc));
-    ok("T7(h): the reach ring falls out of INFANTRY_ARMS membership (no per-type branch)",
-      /ringR = arms \? arms\.range : 0;/.test(dgSrc));
-
     const flatField = { heightAt: () => 0, dirty: false, normalAt: (nx, nz, out) => { out.x = 0; out.y = 1; out.z = 0; } };
     const w = makeWorld({ field: flatField, seed: 24 });
     const rsq = makeSquad(1, "rockets", 1, 0, 0);

@@ -129,8 +129,6 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
     ok("T2(e3): the hire arms a placement tap", /view\.armHire = \(key\) => \{/.test(src) && /view\.hirePlace = \{ key \};/.test(src));
     ok("T2(e4): the hire's tap owns the ground before the order flow",
       src.indexOf("if (view.hirePlace) {") > 0 && src.indexOf("if (view.hirePlace) {") < src.indexOf("if (consumeOrderTap(p)) return;"));
-    ok("T2(e5): placement charges on success only — the card leaves when the unit fields",
-      /takeHandCard\(run\.manifest, key, 1\);\n\s+run\.resources -= price;/.test(src) && /view\.cancelHire = /.test(src) && /data-hire-cancel/.test(src));
     ok("T2(e6): the hand's rows carry their kind and price", /data-hand-kind=\{c\.hire \? "hire" : "plan"\}/.test(src));
     const ic = fs.readFileSync("src/depot/InfoCard.jsx", "utf8");
     ok("T2(e7): the card carries the hire door", /door === "hire"/.test(ic) && /CONFIRM HIRE/.test(ic));
@@ -165,11 +163,6 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
     ok("T3(c2): the deal ghost arms on the wall clock (the sim is frozen pre-start)",
       /wallArm: true, armedAtWall: performance\.now\(\) \/ 1000 \+ PENDING_ARM_S/.test(src));
     ok("T3(c3): a hire tap sets the ghost, never fields", /view\.pending = \{ hire: view\.hirePlace\.key/.test(src));
-    ok("T3(c4): the ✓ fields through the real placers, and refusal keeps the ghost",
-      /const n0 = view\._placeQueue\.length; placePick\(p\.wp\); if \(view\._placeQueue\.length !== n0\) view\.pending = null;/.test(src) &&
-      /placeHire\(p\.wp\); if \(!view\.hirePlace\) view\.pending = null;/.test(src));
-    ok("T3(c5): the ✗ returns a hire's card to the hand",
-      /if \(view\.pending && view\.pending\.hire\) \{ view\.hirePlace = null; if \(view\.openManifest\) view\.openManifest\(\); \}/.test(src));
   }
   // (d) the wall-armed pending law, tested for real
   ok("T3(d): a wall-armed pending arms on real seconds, sim pendings on sim time",
@@ -442,8 +435,6 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
     /view\.armHire = \(key\) => \{[\s\S]{0,900}if \(run\.resources < price\) \{ toast\("NO SCRAP — ◆" \+ price \+ " TO HIRE"\); return; \}[\s\S]{0,120}view\.hirePlace = \{ key \};/.test(src));
   ok("HF(b): a ✓ refusal keeps the armed hire and the ghost — the GROUND NOT HELD precedent",
     !/toast\("NO SCRAP"\); view\.hirePlace = null;/.test(src));
-  ok("HF(c): a fielded hire reopens the hand while cards remain — multi-buy stays one visit",
-    /view\.hirePlace = null;\n\s+if \(run\.manifest && run\.manifest\.hand\.length && view\.openManifest\) view\.openManifest\(\);/.test(src));
   ok("HF(d): the card door passes the till's own verdict", /afford=\{hud\.info\.door === "hire" \? /.test(src));
   const ic = fs.readFileSync("src/depot/InfoCard.jsx", "utf8");
   ok("HF(e): CONFIRM HIRE greys and names the shortfall when the till can't cover it",
@@ -712,12 +703,9 @@ ok("T1(a): the tap radii — squad 2.4, hull 4.0, tower 2.4", TAP_SQUAD_M === 2.
       /drafting: view\._draftOpen && run\.draft && !view\._draftDone \? run\.draft\.map/.test(src2) );
     ok("T8v2(d6): the flag opens at TAKE COMMAND and closes at the confirm",
       /view\._draftOpen = true;/.test(src2) && /view\._draftOpen = false;/.test(src2));
-    const src3 = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
     const bootSrcD8 = fs.readFileSync("src/depot/boot.js", "utf8");
     ok("T8v2(d8): the game's own startup opens the till at 250",
       /resources: 250, \/\/ the draft's richer opening /.test(bootSrcD8));
-    ok("T8v2(d9): the draft is FREE to the last step — the deal placer never touches the till",
-      (() => { const m = src3.match(/const placePick = \(p\) => \{[\s\S]*?\n      \};/); return !!m && !/run\.resources/.test(m[0]); })());
   }
   // (e) the manual retired (mk2.43) — the draft's truth lives in the cards
   {

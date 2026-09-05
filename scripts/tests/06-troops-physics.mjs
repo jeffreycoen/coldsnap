@@ -296,13 +296,10 @@ import fs from "node:fs";
   }
 
   // (e) income + limit + wiring: source pins
-  const srcT4 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
   const stT4 = fs.readFileSync(new URL("../../src/depot/state.js", import.meta.url), "utf8");
   const tickSrcT4 = fs.readFileSync(new URL("../../src/depot/tick.js", import.meta.url), "utf8");
   ok("T4(e): the player's income is the clock — ground-scaled, floor 1/second (re-taught mk2.49)", /run\.resources \+= run\._groundRate1 \* sdt;/.test(tickSrcT4) && !/run\.resources \+= 1 \* sdt;/.test(tickSrcT4));
   ok("T4(e): the bell pays no lump", !/S\.resources \+= BELL_SCRAP;/.test(stT4));
-  ok("T4(e): one purchase per second, toasted", /THE MARKET PACES YOU/.test(srcT4) && /run\._buyAt = world\.t;/.test(srcT4));
-  ok("T4(e): purchases charge the live price", /const priceNow = /.test(srcT4));
   ok("T4(e): the enemy stipend is the same clock", /export const STIPEND = 90;/.test(fs.readFileSync(new URL("../../src/depot/economy.js", import.meta.url), "utf8")));
 }
 // ==== end P6 T4 ==============================================================

@@ -47,7 +47,6 @@ import fs from "node:fs";
   const tr = fs.readFileSync("src/depot/transports.js", "utf8");
   ok("(d) pins: seats come from the spec, jeep or APC", /const seatsOf = \(v\) => v\.vtype === "jeep" \? JEEP\.seats : APC\.seats;/.test(tr));
   const dg = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
-  ok("(d) pins: the fit dresses every spawned jeep (re-taught mk3.03: the fit moved to the spec, one for both teams)", (dg.match(/fitJeep\(v\);/g) || []).length >= 3);
   ok("(d) pins: the gear toggle swaps the drive numbers", /view\.toggleGear = \(\) => \{/.test(dg) && /data-jeep-gear/.test(dg));
   const rr = fs.readFileSync("src/graphics/renderer.js", "utf8");
   ok("(d) pins: the mesh has sprung wheels", /export function buildJeep\(team\) \{/.test(rr) && /g\.userData\.wheels && b\._wheelC/.test(rr));

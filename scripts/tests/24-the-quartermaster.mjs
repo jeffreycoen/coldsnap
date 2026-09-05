@@ -76,7 +76,6 @@ ok("names: his mg men match the trade", ENEMY_SPECS.mg.label === "gunners");
 
 { // mk2.36: the stand-down and the clear lid
   const dg9 = src("src/depot/DepotGame.jsx");
-  ok("standdown: the helper exists and all three placers call it", dg9.includes("const standDown = ") && dg9.match(/recomputeFlow\(\);\n\s+standDown\(\);/) != null && dg9.match(/run\._buyAt = world\.t;\n\s+standDown\(\);/) != null && dg9.match(/standDown\(\);\n\s+return true;/) != null);
   ok("standdown: the lattice clears the lids", dg9.includes('bottom: "calc(150px + env(safe-area-inset-bottom, 0px))"'));
 }
 

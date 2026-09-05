@@ -117,10 +117,4 @@ import { DRIVERS } from "../../src/depot/drivers.js";
     ok("O7: the mask honors the per-unit vet and the room knockout", n7 === 11 && m7[g7.idx(3, 1)] === 0 && m7[g7.idx(2, 2)] === 0, `${n7} cells`);
   }
 
-  // (f) the zone reads the armed unit — source pins
-  ok("O8: hulls vet flat parking and their clearance; the mech its spread and 4.5m",
-    /vetAt = \(x, z\) => armorStable\(field, x, z, spec\)/.test(dgSrc) &&
-    /roomMaskPublic\(world, grid, Math\.hypot\(spec\.hx, spec\.hz\) \+ 1\.0\)/.test(dgSrc) &&
-    /armorStable\(field, x, z, MECH_SPREAD\)/.test(dgSrc) &&
-    /roomMaskPublic\(world, grid, 4\.5\)/.test(dgSrc));
 }

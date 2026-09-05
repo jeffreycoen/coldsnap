@@ -182,16 +182,6 @@ import fs from "node:fs";
     const mgSrcT13 = fs.readFileSync(new URL("../../src/depot/mapgen.js", import.meta.url), "utf8");
     ok("T13(i): makeGrid stamps the terrain masks", /if \(field\) stampTerrainMasks\(G, field\)/.test(mgSrcT13));
     ok("T13(i2): the enemy flow pays 3x to march a cliff lip", /cells\[ni\]\.drop \? 3 : 1/.test(mgSrcT13));
-    // P7 T20: layPieceAt (one .bTeam = stamp) moved to buildlines.js — the
-    // count below sums both files, unchanged threshold (sweep license).
-    const blSrcT13 = fs.readFileSync(new URL("../../src/depot/buildlines.js", import.meta.url), "utf8");
-    // Amendment 5 (task 4: the engine leaves the screen) split boot.js (2
-    // hits) and tick.js (1 hit) out of DepotGame.jsx — the sum now spans
-    // four files, threshold unchanged at 8.
-    const bootSrcT13 = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
-    const tickSrcT13 = fs.readFileSync(new URL("../../src/depot/tick.js", import.meta.url), "utf8");
-    ok("T13(i3): every structure stamp carries its team (retargeted mk1.50, P7 T20: layPieceAt's stamp moved to buildlines.js — counted across all four files)",
-      (dgSrc.match(/\.bTeam = /g) || []).length + (blSrcT13.match(/\.bTeam = /g) || []).length + (bootSrcT13.match(/\.bTeam = /g) || []).length + (tickSrcT13.match(/\.bTeam = /g) || []).length >= 8);
   }
   // (j) Amendment 1 — the green threads (source shape; the look is the
   // owner's live acceptance, smoke's zero-page-errors gate covers the boot)

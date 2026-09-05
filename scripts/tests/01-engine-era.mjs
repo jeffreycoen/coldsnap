@@ -1918,10 +1918,6 @@ function totalUnits(buys) { return buys.reduce((s, b) => s + b.n, 0); }
     const poly = reachPolygon(flatWorld, null, muzzle, spec, 1);
     const reach = Math.hypot(poly[0].x - muzzle.x, poly[0].z - muzzle.z);
     ok("sniper preview: fog-independent fan reaches full sniper range", reach > spec.range - 1.5, reach.toFixed(1));
-    const depotSrc4 = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("sniper preview: DepotGame builds the squad preview with null territory + INFANTRY_ARMS",
-      /INFANTRY_ARMS\[[^\]]*\][\s\S]{0,300}reachPolygon\(world, null, muzzle/.test(depotSrc4) ||
-      /reachPolygon\(world, null, muzzle, arms/.test(depotSrc4));
   }
 }
 

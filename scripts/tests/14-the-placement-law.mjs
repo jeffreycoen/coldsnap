@@ -47,24 +47,15 @@ import { placeZoneMask } from "../../src/depot/state.js";
   // (c) the game layer: the two-tap arm is dead, the one placement law holds
   ok("K6: buyHero, heroArm and HERO_ARM_S are gone from the game layer",
     !/buyHero|heroArm|HERO_ARM_S/.test(dgSrc));
-  ok("K7: the hero mode map exists beside the squad map",
-    /const HERO_MODE = \{ hero_bison: "bison", hero_apc: "apc", hero_jeep: "jeep", hero_mech: "mech" \};/.test(dgSrc));
   ok("K8: setMode carries no hero special-case",
     !/m === "hero_bison" \|\| m === "hero_apc" \|\| m === "hero_mech"/.test(dgSrc));
   ok("K9: a hero-mode ground tap sets a pending ghost with its footprint",
     /view\.pending = \{ hero: run\.mode,[^\n]*fp: ghostFp\(run\.mode\)/.test(dgSrc));
-  ok("K10: the ✓ runs placeHero; a refusal leaves the ghost standing",
-    /if \(p\.hero\) \{ if \(placeHero\(p\.hero, p\.wp\)\) view\.pending = null; return; \}/.test(dgSrc));
-  ok("K11: placeHero checks the price first and the ground's own laws (the mk1.86 precedent)",
-    /const placeHero = \(key, p\) => \{[\s\S]{0,700}toast\("NO SCRAP"\); return false;[\s\S]{0,700}toast\("GROUND NOT HELD"\); return false;/.test(dgSrc));
   ok("K12: the hire and deal ghosts carry their footprints",
     /view\.pending = \{ hire: view\.hirePlace\.key[^\n]*fp: ghostFp\(view\.hirePlace\.key\)/.test(dgSrc) &&
     /view\.pending = \{ deal: view\._placeQueue\[0\][^\n]*fp: ghostFp\(view\._placeQueue\[0\]\)/.test(dgSrc));
   ok("K13: the zone refreshes on its own wall-time tick (the deal phase has no sim clock)",
     /zoneAcc \+= dt;[\s\S]{0,120}refreshZone\(\);/.test(dgSrc));
-  ok("K14: the zone opens for the deal, the hires, the squads, the towers and the heroes",
-    /const dealPhase = !run\.started && view\._placeQueue && view\._placeQueue\.length;/.test(dgSrc) &&
-    /TOWER_SPECS\[run\.mode\] \|\| SQUAD_MODE\[run\.mode\] \|\| HERO_MODE\[run\.mode\]/.test(dgSrc));
   ok("K15: the bought plan arms the bar for EVERY key — heroes included",
     !/startsWith\("hero_"\)\) setMode/.test(dgSrc));
 

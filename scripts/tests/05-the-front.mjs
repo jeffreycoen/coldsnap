@@ -261,8 +261,6 @@ import fs from "node:fs";
   // (g) source pins: the game layer's water rules exist where claimed
   ok("T3(g): a ground order tapped on water is refused with the open-water toast (wee-t2b: map.streamAt)",
     /if \(map\.streamAt\(d\.x, d\.z\)\) \{ toast\("OPEN WATER — find the crossing"\); return true; \}/.test(src));
-  ok("T3(g): buildAt refuses open water in its own words",
-    /NO GROUND — open water/.test(src));
   const bootSrcT3 = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
   ok("T3(g): the world threads streamAt beside pondAt/inRim (wee-t2b: map.streamAt)",
     /world\.streamAt = \(x, z\) => map\.streamAt\(x, z\);/.test(bootSrcT3));

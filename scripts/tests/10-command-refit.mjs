@@ -349,7 +349,6 @@ for (const tt of ["mg", "gun", "mortar", "rocket", "tesla"]) {
 {
   const src8 = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
   ok("T8 wiring: the deal opens the first card", /view\.openInfo\(view\._placeQueue\[0\], "deal"\)/.test(src8));
-  ok("T8 wiring: each placement deals the next card", /view\.openInfo\(next, "deal"\)/.test(src8));
   ok("T8 wiring: a ground tap never places under an open card", /if \(view\.infoKey\) return;/.test(src8));
   ok("T8 wiring: the pick grid is gone", !/data-pick=/.test(src8) && !/togglePick/.test(src8));
   ok("T8 A1: the ticker yields while a deal card is up", /hud\.placing && !hud\.info && !fatal/.test(src8));

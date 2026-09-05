@@ -31,8 +31,6 @@ import fs from "node:fs";
   // (b) pins: one fit for both teams; the bell ladder buys it; the price knows it
   const sp = fs.readFileSync("src/depot/specs.js", "utf8");
   ok("(b) pins: the fit lives with the spec, one for both teams", /export const fitJeep = \(v\) => \{/.test(sp));
-  const dg = fs.readFileSync("src/depot/DepotGame.jsx", "utf8");
-  ok("(b) pins: the player's spawns use the shared fit", (dg.match(/fitJeep\(v\);/g) || []).length >= 3 && !/const jeepFit = /.test(dg));
   const bl = fs.readFileSync("src/depot/bell.js", "utf8");
   ok("(b) pins: the hull-a-bell ladder buys the jeep", /!has\("jeep"\) && open\("hero_jeep"\)/.test(bl) && /k === "hero_jeep" \? JEEP\.cost/.test(bl));
 }

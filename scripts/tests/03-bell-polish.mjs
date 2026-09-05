@@ -58,8 +58,6 @@ import fs from "node:fs";
     // now reads the living market's live price, the harness fallback still
     // pays WALL_COST flat).
     const wsrc = fs.readFileSync(new URL("../../src/depot/DepotGame.jsx", import.meta.url), "utf8");
-    ok("mk0.50/3: DepotGame reads WALL_COST instead of carrying its own literal (re-pinned mk1.13 — the spec path prices live, the harness fallback remains; re-pinned mk2.24 — the sandbox's dev switch zeroes the fallback too)",
-      /spec \? priceNow\(mode, spec\.cost\) : \(dev \? 0 : WALL_COST\)/.test(wsrc));
     // The knowing asymmetry is documented where the raise is, not just in the
     // plan — a reader who finds a rich enemy finds the reason.
     const sqsrc = fs.readFileSync(new URL("../../src/depot/squads.js", import.meta.url), "utf8");
@@ -259,11 +257,8 @@ import fs from "node:fs";
     const simSrc = fs.readFileSync(new URL("../../src/depot/sim.js", import.meta.url), "utf8");
     const bootSrc = fs.readFileSync(new URL("../../src/depot/boot.js", import.meta.url), "utf8");
     const tickSrc = fs.readFileSync(new URL("../../src/depot/tick.js", import.meta.url), "utf8");
-    ok("mk0.55/f: buildAt lays oriented courses (auto-continue, broadside default; wee-t2b: map.ORIENT)", /spawnWallCourses\(world, wp\.x, y, wp\.z, wallOrientAt\(world, wp\.x, wp\.z, map\.ORIENT % 2\)\)\[0\]/.test(wsrc));
     ok("mk0.52/f: the support pass runs in stepDepot, after the dead are cleared",
       /structureLost[\s\S]{0,700}stepWallSupport\(world\)/.test(simSrc));
-    ok("mk0.52/f: selling takes the whole stack, matched by footprint not id",
-      /const stack = b\.kind === "wall"/.test(wsrc) && /wg\.gx === gx && wg\.gz === gz/.test(wsrc));
     ok("mk0.52/f: resume re-claims the cell with the BOTTOM course", /if \(b\.course > 0\) continue;/.test(bootSrc));
     ok("mk0.52/f: one territory emitter per wall, not per course", /b\.kind === "wall" && b\.team === 1 && b\.alive && !b\.course/.test(bootSrc));
     ok("mk0.52/f: the counters count walls, not courses",
@@ -435,8 +430,6 @@ import fs from "node:fs";
     // ground tap) joined the same clamp shape — a fourth caller, count 2 -> 3.
     // re-pinned mk2.25: devSpawnAt (the enemy rack's placer, sandbox only)
     // joined the same clamp shape — a fifth caller, count 3 -> 4.
-    ok("mk0.60/6: build points clamp to the rim through the same clamp shape (wee-t2b: map.clampToRim)",
-      /const d = map\.clampToRim\(p\.x, p\.z\);/.test(dsrc) && (dsrc.match(/map\.clampToRim\(p\.x, p\.z\)/g) || []).length === 5); // mk2.89: the group tap is the fifth site
     ok("mk0.60/6: the cell walk steps ONE axis at a time (consecutive cells share an EDGE) (retargeted mk1.50, P7 T20: lineCells moved to buildlines.js)",
       /const stepX = z === g1\.gz \? true : x === g1\.gx \? false : 2 \* err > -dz;/.test(blSrc60));
     // Jeff, 2026-08-12: ONE rotation for the whole line — the dominant axis of

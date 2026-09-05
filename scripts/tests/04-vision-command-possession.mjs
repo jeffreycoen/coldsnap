@@ -647,7 +647,7 @@ import fs from "node:fs";
   // (a) the second tap PROPOSES: consumeOrderTap's build branch creates
   // S.linePending and never calls startBuildLine itself (only acceptLine
   // does, gated on accept — see (b)).
-  const cotBody = (dsrc.match(/const consumeOrderTap = \(p\) => \{[\s\S]*?\n      const sellAt = \(gx, gz\) => \{/) || [""])[0];
+  const cotBody = (dsrc.match(/const consumeOrderTap = \(p\) => \{[\s\S]*?\n      view\.sellById = sellById;/) || [""])[0];
   ok("COMMAND T2(a): consumeOrderTap's build branch creates S.linePending",
     /view\.linePending = \{ kind: om === "build_walls" \? "walls" : "bags", sq: osq\.id,/.test(cotBody));
   ok("COMMAND T2(a): consumeOrderTap itself never calls startBuildLine (only acceptLine does)",
