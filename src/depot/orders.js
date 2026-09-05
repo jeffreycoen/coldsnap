@@ -25,7 +25,7 @@ export function makeOrders(ctx) {
       // Selection: tap within 1.6m of any live member selects his squad.
       const squadAtPoint = (p) => {
         for (const sq of run.squads) {
-          if (sq.ridingIn != null) continue; // P7 T4: a sealed squad is not tappable
+          if (sq.ridingIn != null) continue; // a sealed squad is not tappable
           for (const id of sq.memberIds) {
             const u = world.byId.get(id);
             if (u && u.alive && Math.hypot(u.pos.x - p.x, u.pos.z - p.z) < TAP_SQUAD_M) return sq;
@@ -34,7 +34,7 @@ export function makeOrders(ctx) {
         return null;
       };
       const selectedSquad = () => (view.selSquadId != null ? run.squads.find((q) => q.id === view.selSquadId) || null : null);
-      // P7.2 T1: the order fan-out — the SELECT ALL group when one is up,
+      // The order fan-out — the SELECT ALL group when one is up,
       // else the one selected squad. Primary first; dead ids drop out.
       const selectedGroup = () => {
         if (view.selSquadIds && view.selSquadIds.length) return view.selSquadIds.map((id) => run.squads.find((q) => q.id === id)).filter(Boolean);
@@ -42,7 +42,7 @@ export function makeOrders(ctx) {
         return sq ? [sq] : [];
       };
       const selectedVehicle = () => (view.selVehId != null ? world.byId.get(view.selVehId) || null : null);
-      // P7 T2: the Bison's own radial orders — DEFEND is instant (mirrors
+      // The Bison's own radial orders — DEFEND is instant (mirrors
       // view.orderSquad's defend branch); MOVE/PATROL/ESCORT arm the aiming
       // mode and consumeVehOrderTap's ground/squad tap finishes them.
       view.orderVehicle = (kind) => {
@@ -55,32 +55,32 @@ export function makeOrders(ctx) {
           view.vehOrderMode = kind; view.buildPt0 = null;
         }
       };
-      // P7 T2: THE OVERRUN SAFETY toggle — CAREFUL (default) brakes for the
+      // THE OVERRUN SAFETY toggle — CAREFUL (default) brakes for the
       // Bison's own men; FREE takes the safety off (drivers.js reads v.tracks).
       view.toggleTracks = () => {
         const v = selectedVehicle();
         if (!v || world.t < view.selArmedAt) return;
         v.tracks = (v.tracks || "careful") === "careful" ? "free" : "careful";
       };
-      // P7 T4: UNLOAD — the pie's own button (only shown when the APC
+      // UNLOAD — the pie's own button (only shown when the APC
       // carries riders); unloadApc (transports.js) does the real work.
       view.unloadVehicle = () => {
         const v = selectedVehicle();
         if (!v || world.t < view.selArmedAt) return;
         unloadApc(world, run.squads, v);
       };
-      // POSSESSION (P7 T2): TAKE CONTROL on the Bison — same hygiene as
+      // TAKE CONTROL on the Bison — same hygiene as
       // view.takeControl/view.takeControlTower: digs in (order defend, goal/route
       // cleared), hands the stick over, clears every other selection/order
       // UI state.
       view.takeControlVehicle = () => {
         const v = selectedVehicle();
         if (!v || world.t < view.selArmedAt) return;
-        v.order = "defend"; v.dest = null; v.goal = null; v._route = null; v._routeDest = null; v._queue = null; // mk2.91
+        v.order = "defend"; v.dest = null; v.goal = null; v._route = null; v._routeDest = null; v._queue = null;
         input.fireHeld = false; input.mgHeld = false;
         view.reticleLockId = null;
         if (v.kind === "mech") {
-          // THE MECH (mk1.92): possessed as its own kind — no reticle, the
+          // THE MECH: possessed as its own kind — no reticle, the
           // torso+range convention (mechAimDir/aimRange) owns the aim.
           input.possess = { kind: "mech", id: v.id };
           view.reticleOff = null; input.reticle = null;
@@ -98,7 +98,7 @@ export function makeOrders(ctx) {
       // double-fire a chip. DEFEND digs in where the men stand (anchor =
       // live-member centroid); ATTACK arms the next ground tap as dest.
       view.orderSquad = (kind) => {
-        if (run.gameOver || run.victory) return;   // mk0.29: the war is over — no more orders
+        if (run.gameOver || run.victory) return;   // the war is over — no more orders
         const sq = selectedSquad();
         if (!sq || world.t < view.selArmedAt) return;
         if (kind === "defend") {
@@ -109,15 +109,15 @@ export function makeOrders(ctx) {
             gsq.order = "defend"; gsq.dest = null; gsq._legTarget = null; gsq._pauseT = 0; gsq._threatSig = undefined;
             gsq._surveyPending = true;
             gsq._build = null;
-            gsq._queue = null; // mk2.91: a plain order wipes the chain
+            gsq._queue = null; // a plain order wipes the chain
           }
           view.orderMode = null; view.buildPt0 = null;
         } else if (kind === "attack" || kind === "move") {
-          // mk0.28: both aiming orders arm the same "tap the ground" flow —
+          // Both aiming orders arm the same "tap the ground" flow —
           // the chip only decides whether the men fight their way there.
           view.orderMode = kind; view.buildPt0 = null;
         } else if (kind === "build_bags" || kind === "build_walls") {
-          // mk0.60: engineers only. The chip arms a TWO-tap flow (start, then
+          // Engineers only. The chip arms a TWO-tap flow (start, then
           // end); re-tapping the armed chip before the second point cancels it
           // cleanly, which is the only way out of a half-given order.
           if (sq.type !== "engineers") return;
@@ -125,13 +125,13 @@ export function makeOrders(ctx) {
           if (view.orderMode === kind) { view.orderMode = null; view.buildPt0 = null; return; }
           view.orderMode = kind; view.buildPt0 = null;
         } else if (kind === "build_mines" || kind === "build_wires") {
-          // P7 T10: the sapper build gate — engineers' own two-tap shape, sappers only.
+          // The sapper build gate — engineers' own two-tap shape, sappers only.
           if (sq.type !== "sappers") return;
           view.selSquadIds = null; // a line is one squad's job — the group narrows to the primary
           if (view.orderMode === kind) { view.orderMode = null; view.buildPt0 = null; return; }
           view.orderMode = kind; view.buildPt0 = null;
         } else if (kind === "patrol") {
-          // COMMAND T3 (mk0.85): the same two-tap flow the build orders use —
+          // The same two-tap flow the build orders use —
           // no type restriction here (the pie only offers the wedge to
           // squads that aren't engineers or sappers; consumeOrderTap's
           // patrol branch trusts that, same as 2.4's build branch did with
@@ -140,7 +140,7 @@ export function makeOrders(ctx) {
           view.orderMode = kind; view.buildPt0 = null;
         }
       };
-      // COMMAND T4 (mk0.86): STRUCTURES — an instant toggle, like DEFEND: it
+      // STRUCTURES — an instant toggle, like DEFEND: it
       // flips squad.prefStruct and the wedge's act closes the pie AND
       // deselects (call site does the deselect, same as DEFEND's). Armed
       // types only (an INFANTRY_ARMS row) — engineers and sappers never get
@@ -153,7 +153,7 @@ export function makeOrders(ctx) {
         const v = !sq.prefStruct;
         for (const gsq of selectedGroup()) gsq.prefStruct = v;
       };
-      // P7.2 T1: SELECT ALL OF TYPE — every squad of the selected
+      // SELECT ALL OF TYPE — every squad of the selected
       // type joins; one-squad results collapse back to plain selection.
       view.selectAllType = () => {
         const sq = selectedSquad();
@@ -161,7 +161,7 @@ export function makeOrders(ctx) {
         const ids = squadIdsOfType(world, run.squads, sq.type);
         view.selSquadIds = ids.length > 1 ? ids : null;
       };
-      // mk2.89: THE SCREEN SELECT — every live player squad and hull
+      // THE SCREEN SELECT — every live player squad and hull
       // the camera sees at the button's moment joins one group; the group
       // reticle (three wedges) orders them together. The group does not
       // re-follow the camera afterward.
@@ -207,7 +207,7 @@ export function makeOrders(ctx) {
             gsq.order = "defend"; gsq.dest = null; gsq._legTarget = null; gsq._pauseT = 0; gsq._threatSig = undefined;
             gsq._surveyPending = true;
             gsq._build = null;
-            gsq._queue = null; // mk2.91
+            gsq._queue = null;
           }
           for (const vid of gs.vehIds) {
             const gv = world.byId.get(vid);
@@ -219,7 +219,7 @@ export function makeOrders(ctx) {
           view.groupOrderMode = view.groupOrderMode === kind ? null : kind;
         }
       };
-      // mk2.91: THE CHAIN BUILDER's controls. QUEUE is a light on the
+      // THE CHAIN BUILDER's controls. QUEUE is a light on the
       // pie: lit, aimed orders append; a chain is one unit's, never a group's.
       view.toggleQueue = () => {
         if (view.selSquadIds && view.selSquadIds.length) { toast("ONE SQUAD AT A TIME — A CHAIN IS ONE UNIT'S"); return; }
@@ -233,7 +233,7 @@ export function makeOrders(ctx) {
         const o = view.selVehId != null ? world.byId.get(view.selVehId) : selectedSquad();
         if (o && o._queue && i >= 0 && i < o._queue.length) { o._queue.splice(i, 1); if (!o._queue.length) o._queue = null; }
       };
-      // mk2.96: THE ROSTER's jump — a tapped row centers the camera
+      // THE ROSTER's jump — a tapped row centers the camera
       // on the unit, selects it with the pick branch's own hygiene, and
       // opens its pie; the panel closes.
       view.rosterJump = (kindR, idR) => {
@@ -257,7 +257,7 @@ export function makeOrders(ctx) {
         R.overlay.setLinePreview(false);
       };
 
-      // POSSESSION T4 (mk0.93): the possessed unit's own sight circle: a
+      // The possessed unit's own sight circle: a
       // squad sees with its best living eye (a sniper pair's spotter reaches
       // 46), a tower with its height. The reticle lives inside THIS circle —
       // the ruling that closes the far-eyes range question.
@@ -279,17 +279,17 @@ export function makeOrders(ctx) {
         if (sq) for (const id of sq.memberIds) { const u = world.byId.get(id); if (u && u.alive) r = Math.max(r, eyeOf(u).r); }
         return r;
       };
-      // POSSESSION (P4 T1, mk0.90): TAKE CONTROL — every squad type gets the
+      // TAKE CONTROL — every squad type gets the
       // wedge. Digs the squad in where it stands (defend), hands the stick
       // over, and clears every other selection/order UI state the way
       // DEFEND's own instant action does.
       view.takeControl = () => {
         const sq = selectedSquad();
         if (!sq || world.t < view.selArmedAt) return;
-        sq.order = "defend"; sq.dest = null; sq._legTarget = null; sq._pauseT = 0; sq._build = null; sq._threatSig = undefined; sq._queue = null; // mk2.91
+        sq.order = "defend"; sq.dest = null; sq._legTarget = null; sq._pauseT = 0; sq._build = null; sq._threatSig = undefined; sq._queue = null;
         input.possess = { kind: "squad", id: sq.id };
         input.possessInput = { vx: 0, vz: 0 };
-        // POSSESSION HYGIENE (mk0.91 audit item A, carried to T4/T5): a
+        // POSSESSION HYGIENE: a
         // stale reticle or a FIRE flag stuck by a mid-hold bell release can
         // never carry into the next possession — cleared on every take, same
         // as on release; the offset is then freshly seeded 4m ahead
@@ -302,7 +302,7 @@ export function makeOrders(ctx) {
         view.selSquadId = null; view.selSquadIds = null; view.orderMode = null; view.buildPt0 = null; view.linePending = null;
         R.overlay.setLinePreview(false);
       };
-      // POSSESSION (P4 T3, mk0.92): TAKE CONTROL on a tower — gun towers
+      // TAKE CONTROL on a tower — gun towers
       // only (the tower pie's possess slot is gated on spec.fireRate > 0;
       // frost has none). No stick, no selection to clear beyond inspect.
       view.takeControlTower = (id) => {
@@ -320,14 +320,14 @@ export function makeOrders(ctx) {
         if (!input.possess) return;
         const wasSquad = input.possess.kind === "squad";
         const sq = wasSquad ? run.squads.find((q) => q.id === input.possess.id) : null;
-        // POSSESSION (P7 T2): the Bison released where you left it — back to
+        // The Bison released where you left it — back to
         // auto driving, dug in (order defend), same intrinsic default a
         // released squad gets.
         if (input.possess.kind === "vehicle") {
           const pv = world.byId.get(input.possess.id);
           if (pv && pv.alive) { pv.depotDrive = "auto"; pv.order = "defend"; pv.dest = null; pv.goal = null; }
         }
-        // THE MECH (mk1.92): released back to depotDrive-less auto — the
+        // THE MECH: released back to depotDrive-less auto — the
         // driver's own goal policy (drivers.js DRIVERS.mech) resumes next
         // tick off the hull's order/dest, no ctl channel involved.
         if (input.possess.kind === "mech") {
@@ -336,13 +336,13 @@ export function makeOrders(ctx) {
           R.setTraj(null); // the ballistic preview dies with the possession
         }
         input.possess = null; input.possessInput = null;
-        // POSSESSION HYGIENE (mk0.91 audit item A, carried to T4/T5): the
+        // POSSESSION HYGIENE: the
         // same stale-trigger clear, on every release — the reticle and its
         // offset die with the possession, fireHeld can't stick from a
         // mid-hold bell release.
         input.reticle = null; view.reticleOff = null; input.fireHeld = false; input.mgHeld = false;
         view.reticleLockId = null;
-        // mk2.02: THE CONVOY WAITS — a hand dealt during the
+        // THE CONVOY WAITS — a hand dealt during the
         // possession opens the moment the possession ends.
         if (run.manifest && run.manifest.hand.length && !run.manifest.cardUp) { run.manifest.cardUp = true; run.manifest.armedAt = world.t + PENDING_ARM_S; }
         if (sq) {
@@ -352,7 +352,7 @@ export function makeOrders(ctx) {
         }
       };
 
-      // =================================== THE TWO-POINT BUILD LINE (P1.5 T4)
+      // =================================== THE TWO-POINT BUILD LINE
       // Tap where the line starts, tap where it ends. The squad walks to the
       // start, lays end-to-end along the line, and digs in at the far end.
       //
@@ -376,7 +376,7 @@ export function makeOrders(ctx) {
       // which puts the uniformly-rotated pieces into parallel offset runs where
       // the path sidesteps. That offset is accepted: a line of pieces all facing
       // the same way reads as one work, and alternating them at every sidestep
-      // COMMAND T2 (mk0.84): THE PROPOSED LINE. The second tap of a
+      // THE PROPOSED LINE. The second tap of a
       // two-point order proposes; nothing walks until the owner of the tap
       // accepts. Ghost pieces skip exactly the cells laying would skip
       // (scrap aside — that is walk-time), so the preview never lies.
@@ -387,7 +387,7 @@ export function makeOrders(ctx) {
         const pieces = linePieces(grid, field, T, lp.kind, lp.a, lp.b, map);
         lp.count = pieces.length;
         const fpPrev = run._market ? fieldPrices(run._market.counts, WALL_FIELD_COST, SANDBAG_FIELD_COST) : { wall: WALL_FIELD_COST, bag: SANDBAG_FIELD_COST };
-        const mpPrev = run._minePrices || { mine: MINE_COST, wire: WIRE_COST }; // P7 T10
+        const mpPrev = run._minePrices || { mine: MINE_COST, wire: WIRE_COST };
         lp.cost = lp.kind === "walls" ? pieces.length * fpPrev.wall
                 : lp.kind === "bags" ? pieces.length * fpPrev.bag
                 : lp.kind === "mines" ? pieces.length * mpPrev.mine
@@ -408,7 +408,7 @@ export function makeOrders(ctx) {
           view.linePending = null;
           R.overlay.setLinePreview(false);
           if (v && v.alive) {
-            // mk2.91: QUEUE lit with a moving head — the patrol appends as
+            // QUEUE lit with a moving head — the patrol appends as
             // the terminal leg and the light goes out.
             if (view.queueOn && (v.order === "move" || v.order === "attack") && v.dest) {
               (v._queue || (v._queue = [])).push({ kind: "patrol", ax: lp.a.x, az: lp.a.z, bx: lp.b.x, bz: lp.b.z });
@@ -416,7 +416,7 @@ export function makeOrders(ctx) {
             } else {
               v._patA = { x: lp.a.x, z: lp.a.z }; v._patB = { x: lp.b.x, z: lp.b.z };
               v.order = "patrol"; v.dest = { x: lp.a.x, z: lp.a.z }; v._route = null; v._routeDest = null;
-              v._queue = null; // mk2.91: a plain order wipes the chain
+              v._queue = null; // a plain order wipes the chain
             }
           }
           view.selVehId = null; view.vehOrderMode = null; view.buildPt0 = null;
@@ -427,10 +427,10 @@ export function makeOrders(ctx) {
         R.overlay.setLinePreview(false);
         if (sq) {
           if (lp.kind === "patrol") {
-            // COMMAND T3 (mk0.85): accept arms the loop — P7.2 T1: for the
+            // Accept arms the loop — for the
             // whole SELECT ALL group when one proposed the line.
             const group = (lp.sqs && lp.sqs.length ? lp.sqs : [lp.sq]).map((id) => run.squads.find((q) => q.id === id)).filter(Boolean);
-            // mk2.91: with QUEUE lit and a moving head, the accepted patrol
+            // With QUEUE lit and a moving head, the accepted patrol
             // APPENDS as the chain's terminal leg and puts the light out.
             const qsq0 = group.length === 1 ? group[0] : null;
             if (view.queueOn && qsq0 && (qsq0.order === "move" || qsq0.order === "attack" || qsq0.order === "build") && qsq0.dest) {
@@ -442,15 +442,15 @@ export function makeOrders(ctx) {
               gsq.order = "patrol";
               gsq.dest = { x: lp.a.x, z: lp.a.z };   // walk to the near end first
               gsq._legTarget = null; gsq._pauseT = 0; gsq._cohesionHoldT = 0; gsq._build = null;
-              gsq._queue = null; // mk2.91: a plain order wipes the chain
+              gsq._queue = null; // a plain order wipes the chain
             }
           }
           else if (view.queueOn && (sq.order === "move" || sq.order === "attack" || sq.order === "build") && sq.dest) {
-            // mk2.94: the queued line — the chain carries it to the ground;
+            // The queued line — the chain carries it to the ground;
             // the light STAYS lit (a line is mid-chain, not terminal).
             (sq._queue || (sq._queue = [])).push({ kind: "line", line: lp.kind, ax: lp.a.x, az: lp.a.z, bx: lp.b.x, bz: lp.b.z });
           }
-          else { startBuildLine(grid, sq, lp.kind, lp.a, lp.b, toast); sq._queue = null; } // mk2.94: a plain line wipes the chain
+          else { startBuildLine(grid, sq, lp.kind, lp.a, lp.b, toast); sq._queue = null; } // a plain line wipes the chain
         }
         view.selSquadId = null; view.orderMode = null; view.buildPt0 = null; view.selSquadIds = null;
       };
@@ -464,7 +464,7 @@ export function makeOrders(ctx) {
       // The driver, once per sim tick per squad carrying a job.
       const layCtx = { stampBag, recomputeFlow, objG, setMines: (m) => R.setMines(m) };
       input.stepBuildLine = (sq) => stepBuildLine(world, grid, field, T, run, sq, layCtx, toast, map);
-      // mk2.94: THE QUEUED LINE — when the chain's next leg is a
+      // THE QUEUED LINE — when the chain's next leg is a
       // line, the squad stands at its arrival point until the scrap covers
       // the WHOLE line (the pending-preview's own arithmetic), then the
       // entry shifts and the line starts. Mid-line dryness keeps its own
@@ -484,7 +484,7 @@ export function makeOrders(ctx) {
         sq._queue.shift(); if (!sq._queue.length) sq._queue = null;
         startBuildLine(grid, sq, q.line, a, b, toast);
       };
-      // P7.1 T7: the enemy's build driver — same machinery, his books. The
+      // The enemy's build driver — same machinery, his books. The
       // façade carries reg.scrap through run-shaped fields and settles after.
       input.stepFoeBuildLine = (sq) => {
         const SE = { resources: run.reg.scrap, mines: run.mines, sandbagOrient: 0, _market: run._market, _minePrices: run._minePrices };
@@ -494,7 +494,7 @@ export function makeOrders(ctx) {
       // The order flow's ground taps, in one place. tapAt calls this with the
       // point its ray hit; the debug harness calls it with a world point
       // directly, so both drive the identical code.
-      // mk2.89: the group's ground tap — MOVE or ATTACK lands on every squad
+      // The group's ground tap — MOVE or ATTACK lands on every squad
       // and hull in the sweep at once, then the group is released.
       const consumeGroupOrderTap = (p) => {
         const om = view.groupOrderMode;
@@ -517,15 +517,15 @@ export function makeOrders(ctx) {
         const om = view.orderMode;
         if (!om) return false;
         const osq = selectedSquad();
-        // OFF-MAP CLAMP (mk0.50): the tap ray hits the painted ground well past
+        // OFF-MAP CLAMP: the tap ray hits the painted ground well past
         // the playable rim, and a squad ordered out there walks off the field
         // and never arrives. BOTH points of a build order clamp through here
         // too — this is THE site where a ground tap becomes a destination.
         const d = map.clampToRim(p.x, p.z);
-        // T3: open water takes no orders — the river is ground for nobody.
+        // Open water takes no orders — the river is ground for nobody.
         if (map.streamAt(d.x, d.z)) { toast("OPEN WATER — find the crossing"); return true; }
         if (om === "attack" || om === "move") {
-          // mk2.91: THE CHAIN BUILDER — with QUEUE lit the tap
+          // THE CHAIN BUILDER — with QUEUE lit the tap
           // APPENDS to the selected squad's chain; the selection and the aim
           // stay up so taps keep laying legs. A moving head is required: the
           // first tap on an idle squad becomes the active order. A standing
@@ -544,7 +544,7 @@ export function makeOrders(ctx) {
           }
           for (const gsq of selectedGroup()) { gsq.order = om; gsq.dest = { x: d.x, z: d.z }; gsq._legTarget = null; gsq._pauseT = 0; gsq._build = null; gsq._queue = null; }
           view.orderMode = null;
-          // COMMAND 1b (mk0.82): the order's final ground tap landed — the
+          // The order's final ground tap landed — the
           // squad is released (deselected), same as an instant order.
           view.selSquadId = null; view.selSquadIds = null;
           return true;
@@ -552,7 +552,7 @@ export function makeOrders(ctx) {
         if (om === "build_bags" || om === "build_walls") {
           if (!osq || osq.type !== "engineers") { view.orderMode = null; view.buildPt0 = null; view.selSquadId = null; view.selSquadIds = null; return true; }
           if (!view.buildPt0) { view.buildPt0 = { x: d.x, z: d.z }; toast("LINE START — TAP THE FAR END"); return true; }
-          // COMMAND T2 (mk0.84): the second tap PROPOSES — view.linePending goes
+          // The second tap PROPOSES — view.linePending goes
           // up, the squad stays selected, and nothing walks until acceptLine.
           view.linePending = { kind: om === "build_walls" ? "walls" : "bags", sq: osq.id,
             a: { x: view.buildPt0.x, z: view.buildPt0.z }, b: { x: d.x, z: d.z },
@@ -561,7 +561,7 @@ export function makeOrders(ctx) {
           refreshLinePreview();
           return true;
         }
-        // P7 T10: MINES and WIRES — the identical two-tap shape build_bags/
+        // MINES and WIRES — the identical two-tap shape build_bags/
         // build_walls use, sapper-gated (the type check mirrors the
         // engineer build gate above).
         if (om === "build_mines" || om === "build_wires") {
@@ -575,7 +575,7 @@ export function makeOrders(ctx) {
           return true;
         }
         if (om === "patrol") {
-          // COMMAND T3 (mk0.85): same shape as the build branch above, kind
+          // Same shape as the build branch above, kind
           // "patrol", no engineer guard — every squad type the pie offers
           // this wedge to (not engineers, not sappers) rides it.
           if (!osq) { view.orderMode = null; view.buildPt0 = null; view.selSquadId = null; view.selSquadIds = null; return true; }
@@ -589,7 +589,7 @@ export function makeOrders(ctx) {
         }
         return false;
       };
-      // P7 T2: the Bison's own ground taps — mirrors consumeOrderTap's
+      // The Bison's own ground taps — mirrors consumeOrderTap's
       // shape. ESCORT catches a squad tap here (before squad selection would
       // steal it — tapAt's order matters).
       const consumeVehOrderTap = (p) => {
@@ -600,7 +600,7 @@ export function makeOrders(ctx) {
         if (om === "escort") {
           const sq = squadAtPoint(p);
           if (!sq) { toast("TAP A SQUAD TO ESCORT"); return true; }
-          // mk2.93: with QUEUE lit and a moving head, ESCORT appends as the
+          // With QUEUE lit and a moving head, ESCORT appends as the
           // chain's terminal link and the light goes out — patrol's own law.
           if (view.queueOn) {
             if (v.order === "patrol") { toast("THE CHAIN ENDS AT A PATROL"); return true; }
@@ -611,11 +611,11 @@ export function makeOrders(ctx) {
               return true;
             }
           }
-          v.order = "escort"; v.escortId = sq.id; v.dest = null; v.goal = null; v._route = null; v._routeDest = null; v._queue = null; // mk2.91
+          v.order = "escort"; v.escortId = sq.id; v.dest = null; v.goal = null; v._route = null; v._routeDest = null; v._queue = null;
           view.vehOrderMode = null; view.selVehId = null;
           return true;
         }
-        // P7 T4: LOAD — tap a squad, it walks to the ramp and boards.
+        // LOAD — tap a squad, it walks to the ramp and boards.
         if (om === "load") {
           if (v.vtype !== "apc" && v.vtype !== "jeep") { view.vehOrderMode = null; return true; }
           const sq = squadAtPoint(p);
@@ -632,7 +632,7 @@ export function makeOrders(ctx) {
         const d = map.clampToRim(p.x, p.z);
         if (map.streamAt(d.x, d.z)) { toast("OPEN WATER — find the crossing"); return true; }
         if (om === "move" || om === "attack") {
-          // mk2.91: the chain builder — QUEUE lit appends; see the squad tap.
+          // The chain builder — QUEUE lit appends; see the squad tap.
           if (view.queueOn) {
             if (v.order === "patrol") { toast("THE CHAIN ENDS AT A PATROL"); return true; }
             if ((v.order === "move" || v.order === "attack") && v.dest) {
@@ -655,7 +655,7 @@ export function makeOrders(ctx) {
         }
         return false;
       };
-      // COMMAND T1 (mk0.80): per-tower fire discipline toggle — the tower
+      // Per-tower fire discipline toggle — the tower
       // radial's CAREFUL/FREE slot. Mirrors stepTowers's own fallback chain.
       view.setTowerDiscipline = (id) => {
         const b = world.byId.get(id);
@@ -663,16 +663,16 @@ export function makeOrders(ctx) {
         b.discipline = (b.discipline || input.discipline || "careful") === "careful" ? "free" : "careful";
       };
       const tapAt = (cx, cy) => {
-        // P7.1 T6: PLACE MODE — pre-start ground taps put the picks down.
+        // PLACE MODE — pre-start ground taps put the picks down.
         if (!run.started && view._placeQueue && view._placeQueue.length) {
-          if (view.infoKey) return; // P7.1 T8: the card is up — read it first (PLACE IT closes it)
+          if (view.infoKey) return; // the card is up — read it first (PLACE IT closes it)
           const p0 = groundPoint(cx, cy);
-          // P7.2 T3: the tap sets or MOVES a confirm ghost — nothing
+          // The tap sets or MOVES a confirm ghost — nothing
           // fields until the ✓. Wall-clock arming: the sim is frozen here.
           if (p0) view.pending = { deal: view._placeQueue[0], wp: { x: p0.x, z: p0.z }, y: field.heightAt(p0.x, p0.z), poly: null, ringR: 0, color: 0x4aff8c, cost: 0, wallArm: true, armedAtWall: performance.now() / 1000 + PENDING_ARM_S, fp: ghostFp(view._placeQueue[0]) };
           return;
         }
-        // mk2.25: an armed enemy-rack pick owns every ground tap — repeated
+        // An armed enemy-rack pick owns every ground tap — repeated
         // taps keep placing until the rack button is tapped again.
         if (dev && view.devSpawn) {
           const pd = groundPoint(cx, cy);
@@ -680,10 +680,10 @@ export function makeOrders(ctx) {
           return;
         }
         if (!run.started || run.gameOver || run.victory) return;
-        // P7.2 T2: THE HIRE'S TAP — an armed placement owns the ground tap.
+        // THE HIRE'S TAP — an armed placement owns the ground tap.
         if (view.hirePlace) {
           const ph = groundPoint(cx, cy);
-          // P7.2 T3: the tap sets or MOVES the confirm ghost.
+          // The tap sets or MOVES the confirm ghost.
           if (ph) view.pending = { hire: view.hirePlace.key, wp: { x: ph.x, z: ph.z }, y: field.heightAt(ph.x, ph.z), poly: null, ringR: 0, color: 0x7dffa8, cost: priceNow(view.hirePlace.key, (PALETTE_BY_KEY[view.hirePlace.key] || { cost: 10 }).cost), armedAt: world.t + PENDING_ARM_S, fp: ghostFp(view.hirePlace.key) };
           return;
         }
@@ -691,19 +691,18 @@ export function makeOrders(ctx) {
         // confirm/cancel are the ✓/✗ HTML buttons (separate DOM elements,
         // so their own onClick fires instead of this canvas handler); a tap
         // that reaches here is by definition "elsewhere" and cancels.
-        // mk0.27: only while the ✓/✗ pair is actually ON SCREEN. Panned off
+        // Only while the ✓/✗ pair is actually ON SCREEN. Panned off
         // the viewport, the pending is invisible, and eating the player's
         // next ground tap to "resolve" it is a stolen tap.
         if (canvasTapConsumesPending(view.pending, view.pendingScreen, canvas.getBoundingClientRect())) { clearPending(); return; }
         if (view.pending) clearPending();
         const p = groundPoint(cx, cy);
         if (!p) { view.inspectId = null; return; }
-        // mk1.99: TAP TO AIM — while possessed, a ground tap JUMPS the
+        // TAP TO AIM — while possessed, a ground tap JUMPS the
         // reticle: clamped to the sight circle (steerReticle's own
         // arithmetic), refused on dark ground (the reticle stays put), and
         // the loop's sticky snap lands any nearby lock. Fire stays on the
-        // trigger. Retires the mk0.93 "taps do nothing" ruling (owner,
-        // 2026-08-21). The mech keeps no reticle.
+        // trigger. The mech keeps no reticle.
         if (input.possess) {
           if (input.possess.kind === "mech") return;
           const rc0 = possessCenter();
@@ -719,7 +718,7 @@ export function makeOrders(ctx) {
           }
           return;
         }
-        // COMMAND T2 (mk0.84): while a proposed line is up, ground taps belong
+        // While a proposed line is up, ground taps belong
         // to it — tap an endpoint disc to pick it up, tap ground to re-place a
         // picked-up endpoint. Accept/reject (the buttons) are the only exits;
         // a stray tap can never fire the order or steal the selection.
@@ -737,18 +736,18 @@ export function makeOrders(ctx) {
         }
         // Squad order flow: an armed ATTACK/MOVE consumes this ground tap as the
         // destination (flag marker renders at dest until arrival); an armed
-        // BUILD consumes TWO — the line's start, then its far end (mk0.60).
+        // BUILD consumes TWO — the line's start, then its far end.
         if (consumeOrderTap(p)) return;
         if (consumeGroupOrderTap(p)) return;
         if (consumeVehOrderTap(p)) return;
-        // P7.2 T1: THE TAP CYCLES. Every pickable thing near the tap —
+        // THE TAP CYCLES. Every pickable thing near the tap —
         // squads, hulls, towers (towers only in plain command, so a build
         // tap is never stolen by the tower next door; the exact-cell tower
         // tap below keeps today's behavior in every mode) — nearest first;
         // tapping again hands the pick to the next one around.
         const cands = [];
         for (const sq of run.squads) {
-          if (sq.ridingIn != null) continue; // P7 T4: a sealed squad is not tappable
+          if (sq.ridingIn != null) continue; // a sealed squad is not tappable
           let dBest = Infinity;
           for (const id of sq.memberIds) {
             const u = world.byId.get(id);
@@ -774,8 +773,8 @@ export function makeOrders(ctx) {
           const id = +pick.key.slice(pick.key.indexOf(":") + 1);
           view.selSquadId = null; view.selSquadIds = null; view.selVehId = null; view.inspectId = null;
           view.orderMode = null; view.vehOrderMode = null; view.buildPt0 = null;
-          view.groupSel = null; view.groupOrderMode = null; // mk2.89: a single pick releases the group
-          view.queueOn = false; // mk2.91: a fresh selection starts unlit
+          view.groupSel = null; view.groupOrderMode = null; // a single pick releases the group
+          view.queueOn = false; // a fresh selection starts unlit
           view.selArmedAt = world.t + PENDING_ARM_S; view.pieOpen = true;
           if (pick.key.startsWith("sq:")) view.selSquadId = id;
           else if (pick.key.startsWith("veh:")) view.selVehId = id;
@@ -785,7 +784,7 @@ export function makeOrders(ctx) {
           else view.teachPie("tower", world.byId.get(id));
           return;
         }
-        if (view.groupSel) { view.groupSel = null; view.groupOrderMode = null; view.pieOpen = false; return; } // mk2.89
+        if (view.groupSel) { view.groupSel = null; view.groupOrderMode = null; view.pieOpen = false; return; }
         if (view.selSquadId != null) { view.selSquadId = null; view.selSquadIds = null; view.orderMode = null; view.buildPt0 = null; view.pieOpen = false; view.queueOn = false; return; }
         if (view.selVehId != null) { view.selVehId = null; view.vehOrderMode = null; view.buildPt0 = null; view.pieOpen = false; view.queueOn = false; return; }
         const g = grid.worldToGrid(p.x, p.z);

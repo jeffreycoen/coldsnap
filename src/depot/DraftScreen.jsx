@@ -3,7 +3,7 @@ import { P } from "./styles.js";
 import CrateChip, { StockTag } from "./Crate.jsx";
 import { PALETTE_BY_KEY } from "./palette.js";
 
-// P7.2 T8: THE DRAFT SCREEN — a NEW pre-start surface, shared DOM
+// THE DRAFT SCREEN — a NEW pre-start surface, shared DOM
 // phone and desktop. Seven cards up, tap toggles a pick, five max; CONFIRM
 // arms at exactly five. Styled on the pre-start overlay's own P.btn idiom
 // (P.slot's build-bar card, ~44px touch target both platforms).

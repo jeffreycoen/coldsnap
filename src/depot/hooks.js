@@ -16,7 +16,7 @@ export function installDepotHooks(ctx) {
   const { world, run, view, input, map, grid, field, T, R, canvas, stateRef,
     RES, buildAt, groundPoint, pickHeightAt, consumeOrderTap, getSaveStat, cueN } = ctx;
   window.__DEPOT__ = () => ({ t: world.t, scrap: run.resources, kills: run.score.p.kills, score: { pk: run.score.p.kills, pv: +run.score.p.value.toFixed(1), ek: run.score.e.kills, ev: +run.score.e.value.toFixed(1) }, bell: run.bell, bellT: run.bellT, bodies: world.bodies.length, fps: view.fps, paused: view.paused, speed: view.speed, reg: { ...run.reg }, depotStanding: run.depotStanding != null ? run.depotStanding : 1, breach: !!run.breach, enemyStanding: run.enemyStanding != null ? run.enemyStanding : 1, enemyBreach: !!run.enemyBreach, withdrew: run.ws.withdrew || 0, endedAt: run.endedAt != null ? run.endedAt : null, endCard: endCardReady(run, world.t) });
-  // mk0.27 debug harness: the live pending + its screen anchor (smoke
+  // debug harness: the live pending + its screen anchor (smoke
   // asserts the tap-theft repairs through this).
   window.__DEPOTPENDING__ = () => (view.pending ? { armed: pendingArmed(view.pending, world.t), screen: view.pendingScreen, gx: view.pending.gx, gz: view.pending.gz } : null);
   window.__DEPOTBUILD__ = (gx, gz, mode) => buildAt(gx, gz, mode || "wall");
@@ -30,7 +30,7 @@ export function installDepotHooks(ctx) {
   window.__DEPOTFLAGS__ = () => world.bodies.filter((b) => b.flagPole).map((b) => ({ id: b.id, kind: b.kind, x: +b.pos.x.toFixed(2), y: +b.pos.y.toFixed(2), z: +b.pos.z.toFixed(2) }));
   window.__DEPOTTOWN__ = () => map.TOWN.map((t) => ({ id: t.id, x: +t.x.toFixed(2), z: +t.z.toFixed(2), nx: t.nx, nz: t.nz, ny: t.ny, slab: !!t.slab, cols: !!t.cols }));
   window.__DEPOTTREES__ = () => world.bodies.filter((b) => b.kind === "tree").map((b) => ({ id: b.id, x: +b.pos.x.toFixed(2), z: +b.pos.z.toFixed(2), y: +b.pos.y.toFixed(2), hp: +b.hp.toFixed(1), alive: b.alive, burning: b.burning }));
-  // P1.5 T2 staging harness: the live wall courses, the welds holding them
+  // staging harness: the live wall courses, the welds holding them
   // and the loose rubble — so a save/resume run can prove three courses,
   // two welds and a half-dead wall all came back, and a collapse run can
   // watch the uppers leave the wall set.
@@ -55,7 +55,7 @@ export function installDepotHooks(ctx) {
     // TOWER_SPECS.gun and towerShot's fireProjectile call exactly — the
     // flat +55 point-blank impact bonus only applies to non-noImpact
     // specs, which a live tower never fires). A direct shell hit sets
-    // tree.burning and, at 70hp (Task 5), leaves it alive to burn down
+    // tree.burning and, at 70hp, leaves it alive to burn down
     // ~2hp/s rather than dying in the same tick.
     const from = { x: tx, y: ty, z: tz - 3 };
     fireProjectile(world, from, { x: 0, y: 0, z: 1 }, 90,
@@ -80,11 +80,11 @@ export function installDepotHooks(ctx) {
   window.__DEPOTBELL__ = (inS = 0) => {
     // debug harness: ring the bell now — pulls the next assault forward
     // without waiting out the period. An argument moves the due stamp that
-    // many SIM seconds out instead (P1 T4: reaching the pre-toll window
+    // many SIM seconds out instead (reaching the pre-toll window
     // without waiting two minutes).
     run.bellAt = world.t + Math.max(0, inS);
   };
-  // debug harness (P1 T4): how many of each audio cue this run has raised.
+  // debug harness: how many of each audio cue this run has raised.
   // Audio cannot be asserted headlessly; this at least proves the cues are
   // pushed where the design says they are.
   window.__DEPOTCUES__ = () => ({ ...cueN });
@@ -95,7 +95,7 @@ export function installDepotHooks(ctx) {
     foe: run.foe.unlocked.slice(),
   });
   window.__DEPOTPICK__ = (key) => { view.pickManifest(key); return run.manifest.unlocked.slice(); };
-  // debug harness (P1 T3): what the last bell's save cost and whether this
+  // debug harness: what the last bell's save cost and whether this
   // mount is a resume. Reading it costs nothing; the numbers are recorded
   // by saveFront itself, not measured on demand.
   window.__DEPOTSAVE__ = () => ({ resumed: !!RES, burned: !!run._saveBurned, last: getSaveStat() });
@@ -106,7 +106,7 @@ export function installDepotHooks(ctx) {
     if (victory) { run.victory = true; run.enemyBreach = true; } else { run.gameOver = true; run.breach = true; }
   };
   window.__DEPOTPAIR__ = (x, z) => {
-    // debug harness (6.5 Task 6): field a sniper PAIR at a world point,
+    // debug harness: field a sniper PAIR at a world point,
     // cost-free — smoke asserts the spotter climbs / the sniper settles
     // and frames the screenshot without driving the placement UI.
     const sq = makeSquad(run.nextSquadId++, "sniper", 1, x, z);
@@ -135,7 +135,7 @@ export function installDepotHooks(ctx) {
       blocked: !!(cell.blocked || cell.wallId), ice: !!cell.ice, held: canBuild(T, c0.u, c0.v) };
   };
   window.__DEPOTSQUAD__ = (type, x, z) => {
-    // debug harness (P1.5 T4): field ANY squad type at a world point,
+    // debug harness: field ANY squad type at a world point,
     // cost-free — __DEPOTPAIR__ generalised, so a staging run can put an
     // engineer team on the ground without driving the placement UI.
     if (!SQUAD_SPECS[type]) return null;
@@ -144,7 +144,7 @@ export function installDepotHooks(ctx) {
     run.squads.push(sq);
     return sq.id;
   };
-  // THE PROBE'S INSTRUMENT (Phase A, mk1.92): field a mech for either
+  // THE PROBE'S INSTRUMENT: field a mech for either
   // team at a point, read every mech's state, order one directly — the
   // same debug-harness pattern as every __DEPOT*__ hook, cost-free.
   window.__DEPOTMECH__ = (team, x, z, yaw) => {
@@ -166,7 +166,7 @@ export function installDepotHooks(ctx) {
     return { order: b.order, dest: b.dest };
   };
   window.__DEPOTORDER__ = (id, kind, pts) => {
-    // debug harness (P1.5 T4): give a squad an order through the REAL order
+    // debug harness: give a squad an order through the REAL order
     // path — view.orderSquad arms the chip, consumeOrderTap eats the ground
     // points (one for ATTACK/MOVE, two for a build line). Only the camera
     // raycast is skipped; every clamp, gate and arming rule still applies.
@@ -175,10 +175,10 @@ export function installDepotHooks(ctx) {
     view.selSquadId = id; view.selArmedAt = 0; view.orderMode = null; view.buildPt0 = null;
     view.orderSquad(kind);
     for (const p of (pts || [])) consumeOrderTap(p);
-    // COMMAND T2 (mk0.84): the debug path auto-accepts what a human tap
+    // The debug path auto-accepts what a human tap
     // would still have to confirm — staging keeps driving the real order
     // path end to end without a screen to tap the ✓ on.
-    // AUDIT FIX (mk0.85): acceptLine gates on pendingArmed, and the
+    // acceptLine gates on pendingArmed, and the
     // pending was created THIS tick with armedAt = world.t + PENDING_ARM_S
     // — the old auto-accept always missed its own arming window and
     // silently no-opped. The arming guard protects a human's trailing
@@ -199,7 +199,7 @@ export function installDepotHooks(ctx) {
   // the intended build cell without racing the render loop's tween.
   window.__DEPOTGETFOCUS__ = () => ({ x: run.focus.x, z: run.focus.z });
   window.__DEPOTHOLD__ = (x, z) => { const c = map.invW(x, z); return holderAt(T, c.u, c.v); };
-  // VISION (mk0.72): the sight census — how many cells each side can see
+  // VISION: the sight census — how many cells each side can see
   // right now. Sight is derived and never saved, so this is also the
   // resume check: after a reload the count comes back on the first
   // territory tick, from nothing but the bodies on the field.
@@ -210,23 +210,23 @@ export function installDepotHooks(ctx) {
     return { cells: a.length, lit1, lit2 };
   };
   window.__DEPOTSELREACH__ = () => {
-    // Task 2b: reports whichever fan is live — selected squad first,
+    // Reports whichever fan is live — selected squad first,
     // else the inspected tower's cached fan (kind flags the source).
     const r = view.selReach || (view.inspectReach && view.inspectReach.pts ? view.inspectReach : null);
     if (!r) return null;
     return { id: r.id, kind: r === view.selReach ? "squad" : "tower", n: r.pts.length, cx: +r.cx.toFixed(2), cz: +r.cz.toFixed(2), maxR: +Math.max(...r.pts.map((p) => Math.hypot(p.x - r.cx, p.z - r.cz))).toFixed(2) };
   };
-  // debug harness (Task 2): the nearest buildable+held cell to the depot
+  // debug harness: the nearest buildable+held cell to the depot
   // flag. Build rights now gate placement on holderAt===1 — the depot's
   // own emitter greens ground near itself, but the smoke test's original
   // build-tap point (canvas center at the initial camera focus) sits
   // well outside that radius on the pinned seed. The smoke test polls
   // this until non-null, then points the camera there before tapping.
-  // clearR (optional, Task 3): also require no tower/wall/sandbag body
+  // clearR (optional): also require no tower/wall/sandbag body
   // within clearR meters of the cell — squad members spawn on a 1.2m
   // ring and seek 2.4m formation slots, and a slot inside a static body
   // gets a man ejected/crushed by contact resolution (found live in the
-  // Task 3 smoke: 1 of 4 riflemen died at spawn next to the mg tower).
+  // smoke: 1 of 4 riflemen died at spawn next to the mg tower).
   window.__DEPOTFINDBUILDABLE__ = (clearR) => {
     const flag = world.bodies.find((b) => b.kind === "flag");
     if (!flag) return null;
@@ -244,7 +244,7 @@ export function installDepotHooks(ctx) {
     }
     return best;
   };
-  // Screenshot harness only (Task 3 verification, not a smoke-test dep):
+  // Screenshot harness only (verification, not a smoke-test dep):
   // the highest buildable+held cell within reach of the flag, and the
   // buildable+held cell nearest a live rock — so a ring-on-a-rise and a
   // ring-bitten-by-an-obstacle shot can be composed deterministically
@@ -281,14 +281,14 @@ export function installDepotHooks(ctx) {
     }
     return best;
   };
-  // Task 4 debug hooks: DOM/pixel-cheap fog asserts for smoke.mjs.
+  // Debug hooks: DOM/pixel-cheap fog asserts for smoke.mjs.
   // __DEPOTFOGDBG__ reports the renderer's own per-frame count of
   // team-2-alive bodies vs how many it actually rendered (some hidden
   // by fog when unheld) — no pixel sampling needed. __DEPOTFOGAT__
   // exposes fogStateFor at a world point for direct state checks.
   window.__DEPOTFOGDBG__ = () => R.getFogDebug();
   window.__DEPOTFOGAT__ = (x, z) => { const c = map.invW(x, z); return fogStateFor(T, c.u, c.v, 1); };
-  // Task 3 debug hooks: squad + sandbag state reads for smoke.mjs, plus
+  // Debug hooks: squad + sandbag state reads for smoke.mjs, plus
   // the live center-ray ground point — the camera pivot TWEENS toward
   // run.focus, so a fixed post-focus sleep lands taps meters off under
   // swiftshader; the smoke polls this until it converges instead.
@@ -310,7 +310,7 @@ export function installDepotHooks(ctx) {
     anchor: { x: +sq.anchor.x.toFixed(2), z: +sq.anchor.z.toFixed(2) },
     dest: sq.dest ? { x: +sq.dest.x.toFixed(2), z: +sq.dest.z.toFixed(2) } : null,
     sel: view.selSquadId === sq.id, ordering: view.selSquadId === sq.id && view.orderMode === "attack",
-    // P1.5 T4: the live build job, if any — kind, how far down the cell list
+    // The live build job, if any — kind, how far down the cell list
     // the laying has got, what actually went down and what was skipped.
     build: sq._build ? {
       kind: sq._build.kind, phase: sq._build.phase, cells: sq._build.rows.length,
@@ -324,7 +324,7 @@ export function installDepotHooks(ctx) {
   }));
   window.__DEPOTSANDBAGS__ = () => world.bodies.filter((b) => b.sandbag).map((b) => ({ id: b.id, x: +b.pos.x.toFixed(2), z: +b.pos.z.toFixed(2), hx: b.hx, hz: b.hz, alive: b.alive }));
   window.__DEPOTLOAD__ = () => {
-    // the load ramp's gauge (P6 close): live men and the awake/asleep
+    // the load ramp's gauge: live men and the awake/asleep
     // stone split, counted fresh on each call — read-only, no cadence.
     let men = 0, awake = 0, asleep = 0;
     for (const b of world.bodies) {

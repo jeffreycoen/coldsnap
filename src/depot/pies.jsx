@@ -6,10 +6,10 @@ import React from "react";
 import RadialMenu from "./RadialMenu.jsx";
 
 export function SquadPie({ sq, stateRef, press, closeBuild, isTouch }) {
-  // COMMAND T1 (mk0.80): DEFEND, MOVE, ATTACK — engineers additionally
+  // DEFEND, MOVE, ATTACK — engineers additionally
   // get BAGS and WALLS. Same view.orderSquad actions, same order-state
   // colors the old chip row used.
-  // COMMAND 1b (mk0.82): DEFEND is instant — its act also fully
+  // DEFEND is instant — its act also fully
   // deselects (view.selSquadId = null), the same rule SELL/CAREFUL-FREE
   // follow on the tower pie. MOVE/ATTACK/BAGS/WALLS stay selected —
   // they arm view.orderMode and consumeOrderTap's ground tap(s) finish
@@ -20,20 +20,20 @@ export function SquadPie({ sq, stateRef, press, closeBuild, isTouch }) {
     { key: "queue", icon: "⛓", label: "QUEUE", color: "#ffd27a", on: sq.queueOn, card: "queue_chain", act: () => { const C = stateRef.current; if (C) { C.view.toggleQueue(); C.view._keepPie = true; } } },
     ...(sq.chained ? [{ key: "clearchain", icon: "✂", label: "CLEAR (" + sq.chained + ")", color: "#ff9a7a", on: false, card: "clear_chain", act: () => { const C = stateRef.current; if (C) { C.view.clearChain(); C.view._keepPie = true; } } }] : []),
     { key: "attack", icon: "⚑", label: "ATTACK", color: "#ff6b5e", on: sq.aiming, card: "attack", act: () => stateRef.current && stateRef.current.view.orderSquad("attack") },
-    // POSSESSION (P4 T1, mk0.90): TAKE CONTROL — every squad type,
+    // TAKE CONTROL — every squad type,
     // instant like DEFEND (deselects on choose; the pie itself closes
     // via RadialMenu's onChoose regardless).
-    // mk2.00: the build tree closes with the take — all three TAKE CONTROLs.
+    // The build tree closes with the take — all three TAKE CONTROLs.
     { key: "possess", icon: "✥", label: "TAKE CONTROL", color: "#7dffa8", on: false, card: "possess_squad", act: () => { closeBuild(); const C = stateRef.current; if (C) C.view.takeControl(); } },
     { key: "select_all", icon: "∷", label: "SELECT ALL", color: "#9fdcff", on: sq.count > 1, card: "select_all", act: () => { const C = stateRef.current; if (C) { C.view.selectAllType(); C.view._keepPie = true; } } },
   ];
-  // COMMAND T3 (mk0.85): PATROL — two taps propose a route through the
+  // PATROL — two taps propose a route through the
   // same proposed-line confirm the build orders use; accept and the
   // squad walks it forever. Every type except engineers and sappers.
   if (sq.patrolOk) {
     slots.push({ key: "patrol", icon: "⇄", label: "PATROL", color: "#7fd7ff", on: sq.aimingPatrol || sq.order === "patrol", card: "patrol", act: () => stateRef.current && stateRef.current.view.orderSquad("patrol") });
   }
-  // COMMAND T4 (mk0.86): STRUCTURES — instant toggle, armed types
+  // STRUCTURES — instant toggle, armed types
   // only (an INFANTRY_ARMS row; not engineers, not sappers). Lit when
   // on. Its act also fully deselects, the DEFEND/SELL/CAREFUL-FREE
   // rule for instant pie actions.
@@ -46,7 +46,7 @@ export function SquadPie({ sq, stateRef, press, closeBuild, isTouch }) {
       { key: "build_walls", icon: "▦", label: "WALLS", color: "#ffd27a", on: sq.building === "walls", card: "engineer_lines", act: () => stateRef.current && stateRef.current.view.orderSquad("build_walls") },
     );
   }
-  // P7 T10: MINES and WIRES — the sapper team's own two wedges, the
+  // MINES and WIRES — the sapper team's own two wedges, the
   // identical two-tap build shape the engineer wedges above use.
   if (sq.sapper) {
     slots.push(
@@ -54,19 +54,19 @@ export function SquadPie({ sq, stateRef, press, closeBuild, isTouch }) {
       { key: "build_wires", icon: "⌁", label: "WIRES", color: "#ffb45e", on: sq.building === "wires", card: "sapper_lines", act: () => stateRef.current && stateRef.current.view.orderSquad("build_wires") },
     );
   }
-  // COMMAND T2 (mk0.84): a proposed line up takes over the status —
+  // A proposed line up takes over the status —
   // it outranks the building/aiming lines below since view.orderMode is
   // already null by the time view.linePending goes up.
   const status = sq.linePending ? " — ACCEPT OR ADJUST THE LINE"
     : sq.building
     ? (sq.buildStart ? " — TAP THE FAR END" : " — TAP THE LINE START")
-    // COMMAND T3 (mk0.85): patrol's two-tap status rides the same
+    // Patrol's two-tap status rides the same
     // view.buildPt0 field the build orders' status does.
     : sq.aimingPatrol
     ? (sq.buildStart ? " — TAP THE FAR END" : " — TAP THE PATROL START")
     : sq.aiming || sq.aimingMove ? " — TAP GROUND" : "";
   const lbl = sq.count > 1 ? sq.label + " ×" + sq.count : sq.label;
-  // COMMAND 1b (mk0.82): pie open -> the wedge disc; pie closed but
+  // Pie open -> the wedge disc; pie closed but
   // still selected (an aiming order armed) -> the center label chip
   // alone, so the ground stays fully tappable for the follow-up taps.
   return sq.showPie
@@ -76,7 +76,7 @@ export function SquadPie({ sq, stateRef, press, closeBuild, isTouch }) {
 
 export function TowerPie({ tr, stateRef, press, closeBuild, isTouch }) {
   const slots = [];
-  // COMMAND 1b (mk0.82): both tower actions are instant — each act
+  // Both tower actions are instant — each act
   // also fully deselects (view.inspectId = null). sellById already nulls
   // it internally; the discipline flip does so explicitly here.
   {
@@ -90,7 +90,7 @@ export function TowerPie({ tr, stateRef, press, closeBuild, isTouch }) {
       act: () => { const C = stateRef.current; if (C) { C.view.setTowerDiscipline(tr.id); C.view.inspectId = null; } },
     });
   }
-  // POSSESSION (P4 T3, mk0.92): TAKE CONTROL — same wedge as the squad
+  // TAKE CONTROL — same wedge as the squad
   // pie, gated on canPossess (gun towers only; frost has none).
   if (tr.canPossess) {
     slots.push({
@@ -118,7 +118,7 @@ export function TowerPie({ tr, stateRef, press, closeBuild, isTouch }) {
 }
 
 export function VehiclePie({ vr, stateRef, press, closeBuild, isTouch }) {
-  const vLabel = vr.kind === "mech" ? "MECH" : vr.vtype === "apc" ? "APC" : vr.vtype === "jeep" ? "JEEP" : "BISON";   // P7 T4/mk1.92: label by kind, then vtype
+  const vLabel = vr.kind === "mech" ? "MECH" : vr.vtype === "apc" ? "APC" : vr.vtype === "jeep" ? "JEEP" : "BISON";   // label by kind, then vtype
   const slots = [
     { key: "defend", icon: "∴", label: "DEFEND", color: "#7dffa8", on: vr.order === "defend", card: "defend", act: () => { const C = stateRef.current; if (C) { C.view.orderVehicle("defend"); C.view.selVehId = null; } } },
     { key: "move", icon: "→", label: "MOVE", color: "#7fd7ff", on: vr.aimingMove || vr.order === "move", card: "move", act: () => stateRef.current && stateRef.current.view.orderVehicle("move") },
@@ -130,7 +130,7 @@ export function VehiclePie({ vr, stateRef, press, closeBuild, isTouch }) {
     { key: "tracks", icon: vr.tracks === "free" ? "●" : "◐", label: vr.tracks === "free" ? "TRACKS FREE" : "TRACKS CAREFUL", color: vr.tracks === "free" ? "#ff7a7a" : "#4aff8c", on: true, toggle: vr.tracks !== "free", card: "tracks", act: () => { const C = stateRef.current; if (C) { C.view.toggleTracks(); C.view.selVehId = null; } } },
     { key: "possess", icon: "✥", label: "TAKE CONTROL", color: "#7dffa8", on: false, card: vr.kind === "mech" ? "possess_mech" : "possess_vehicle", act: () => { closeBuild(); const C = stateRef.current; if (C) C.view.takeControlVehicle(); } },
   ];
-  // P7 T4: LOAD/UNLOAD — APC only, offered only when there's a seat to
+  // LOAD/UNLOAD — APC only, offered only when there's a seat to
   // fill or a rider to drop.
   if ((vr.vtype === "apc" || vr.vtype === "jeep") && vr.seatsFree > 0) {
     slots.push({ key: "load", icon: "⬒", label: "LOAD (" + vr.seatsFree + ")", color: "#ffd27a", on: vr.aimingLoad, card: "load", act: () => stateRef.current && stateRef.current.view.orderVehicle("load") });

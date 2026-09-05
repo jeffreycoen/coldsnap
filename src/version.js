@@ -3,4 +3,4 @@
 // phase (a new phase sets the next tenth). The form is 0.<phase>.<task>;
 // the old mk-prefixed form retired at 0.3.10 (The Shell Carved, task 1).
 // A deploy without a bump is a defect.
-export const MK = "0.3.16";
+export const MK = "0.3.17";

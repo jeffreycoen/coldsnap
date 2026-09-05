@@ -12,7 +12,7 @@ import { PALETTE_BY_KEY, FOE_RACK_BY_KEY } from "./palette.js";
 export function makePlacement(ctx) {
   const { world, run, view, input, map, grid, field, T, R, dev,
     toast, cue, setHud, nextApcSeq, depotP, recomputeFlow } = ctx;
-      // THE LIVING MARKET (mk1.13): the live price for a bar key, falling
+      // THE LIVING MARKET: the live price for a bar key, falling
       // back to the base cost whenever the market cache hasn't computed yet
       // (the first second of a run). buyPaced is the once-a-second purchase
       // limiter — towers and squads only (interpretation line 3: engineer
@@ -37,7 +37,7 @@ export function makePlacement(ctx) {
         const cost = spec ? priceNow(mode, spec.cost) : (dev ? 0 : WALL_COST); // walls: no TOWER_SPECS row, state.js owns the price
         if (run.resources < cost) { toast("NO SCRAP"); return; }
         cell.blocked = true;
-        // mk1.96: the road rule EXPUNGED — a sealed map is the
+        // The road rule EXPUNGED — a sealed map is the
         // attacker's problem; the siege flow marches it onto the wall.
         if (!buyPaced()) { cell.blocked = false; return; }
         const wp = grid.gridToWorld(gx, gz);
@@ -47,7 +47,7 @@ export function makePlacement(ctx) {
           b = addBody(world, { kind: "tower", team: 1, mass: 0, hx: 0.8, hy: spec.hy, hz: 0.8, x: wp.x, y: y + spec.hy, z: wp.z, hp: spec.hp });
           b.towerType = mode;
           b.flagPole = true;
-          // effRange cached once (Task 3): towers are static, so the
+          // effRange cached once: towers are static, so the
           // elevation-scaled acquisition range never changes after this.
           // Derived from the LIVE body so it matches towerShot's muzzle
           // (pos.y + hy + 0.45 = turret TOP + 0.45) and can never drift —
@@ -55,11 +55,11 @@ export function makePlacement(ctx) {
           // muzzle and under-computed the elevation bonus.
           b.effRange = effRange(world, { x: b.pos.x, y: b.pos.y + b.hy + 0.45, z: b.pos.z }, spec);
         } else {
-          // P1.5 T2: one wall, three welded courses (state.js owns the
+          // One wall, three welded courses (state.js owns the
           // dimensions, the hp split and the weld). The CELL owns all three;
           // cell.wallId is the BOTTOM course, because its death is what
           // releases the ground and brings the rest down.
-          // mk0.55: walls are thin faces now — default broadside to the
+          // Walls are thin faces now — default broadside to the
           // enemy's advance (canonical v is the advance axis, so the long
           // axis lies along canonical u: world x when map.ORIENT is even, world
           // z when odd), and a wall built next to a wall continues its line.
@@ -73,7 +73,7 @@ export function makePlacement(ctx) {
         recomputeFlow();
         standDown();
       };
-      // Validate-only twin of buildAt's early checks (Task 3): used to gate
+      // Validate-only twin of buildAt's early checks: used to gate
       // entry into the pending-confirm flow WITHOUT mutating anything —
       // cell.blocked stays false, no scrap moves, until confirmPending()
       // below actually calls buildAt. Mirrors buildAt's checks exactly
@@ -91,7 +91,7 @@ export function makePlacement(ctx) {
         });
         return v.ok ? { ok: true, spec, wp } : v;
       };
-      // Pending placement (Task 3): tap a buildable cell in tower mode ->
+      // Pending placement: tap a buildable cell in tower mode ->
       // ghost + reach polygon + ✓/✗, armed after 350ms, no scrap spent until
       // confirmPending. Walls stay exempt (instant, via buildAt directly) —
       // a ring/confirm pair on a 5-scrap wall is meaningless (brief).
@@ -121,9 +121,8 @@ export function makePlacement(ctx) {
         }
         view.pending = { gx, gz, mode, wp, y, poly, ringR, color, cost: priceNow(mode, spec.cost), armedAt: world.t + PENDING_ARM_S };
       };
-      // mk2.36: A PLACEMENT STANDS THE MENU DOWN — success clears
-      // the armed mode and its ground tint back to plain command. Knowingly
-      // reverses mk1.67's stays-armed-for-repeat ruling.
+      // A PLACEMENT STANDS THE MENU DOWN — success clears
+      // the armed mode and its ground tint back to plain command.
       // The bench's enemy rack keeps repeat placement; refusals keep the arm.
       const standDown = () => {
         run.mode = null; view.pending = null; view.buildPt0 = null;
@@ -131,11 +130,11 @@ export function makePlacement(ctx) {
       };
       const confirmPending = () => {
         const p = view.pending;
-        // mk0.27: the arm guard stays (the opening tap must not double-fire
+        // The arm guard stays (the opening tap must not double-fire
         // as the confirm), but an early ✓ tap SAYS so instead of vanishing —
         // and leaves the pending exactly as it was, so the next tap works.
         if (!pendingArmed(p, world.t)) { if (p) toast("HOLD — ARMING"); return; }
-        // P7.2 T3: the confirm ghosts — ✓ runs the REAL placer; a refusal
+        // The confirm ghosts — ✓ runs the REAL placer; a refusal
         // (bad ground, too far, no scrap) leaves the ghost standing.
         if (p.deal) { const n0 = view._placeQueue.length; placePick(p.wp); if (view._placeQueue.length !== n0) view.pending = null; return; }
         if (p.hire) { placeHire(p.wp); if (!view.hirePlace) view.pending = null; return; }
@@ -144,11 +143,11 @@ export function makePlacement(ctx) {
         if (p.squad) { placeSquadAt(p.gx, p.gz, p.squad); return; }
         buildAt(p.gx, p.gz, p.mode);
       };
-      // ---------------------------------------------- squads (Phase 5 Task 3)
+      // ---------------------------------------------- squads
       // Build-bar mode keys -> squad type. Prefixed (sq_mg vs mg) because the
       // MG TOWER already owns the bare "mg" mode key.
       const SQUAD_MODE = { sq_sniper: "sniper", sq_rifles: "rifles", sq_mg: "mg", sq_sappers: "sappers", sq_mortars: "mortars", sq_engineers: "engineers", sq_rockets: "rockets", sq_grenadiers: "grenadiers", sq_medics: "medics", sq_mechanics: "mechanics", sq_davy: "davy" };
-      // mk1.95: hero keys are placement modes — the one law.
+      // Hero keys are placement modes — the one law.
       const HERO_MODE = { hero_bison: "bison", hero_apc: "apc", hero_jeep: "jeep", hero_mech: "mech" };
       // The ghost's true footprint, by key — a hull its hull, the mech its
       // vetted spread, a tower its post, a squad the stand its men take.
@@ -184,7 +183,7 @@ export function makePlacement(ctx) {
         const sq = makeSquad(run.nextSquadId++, type, 1, v.wp.x, v.wp.z);
         spawnSquadMembers(world, sq);
         run.squads.push(sq);
-        // COMMAND T1 (mk0.80): a placed squad comes up already selected with
+        // A placed squad comes up already selected with
         // its radial open — defend-here is already its standing order (the
         // intrinsic default, no tap needed).
         view.selSquadId = sq.id; view.selSquadIds = null; view.selArmedAt = world.t + PENDING_ARM_S; view.pieOpen = true;
@@ -193,7 +192,7 @@ export function makePlacement(ctx) {
         run._buyAt = world.t;
         standDown();
       };
-      // P7.1 T6: one picked unit onto the ground — vetted per kind, free
+      // One picked unit onto the ground — vetted per kind, free
       // (the starting kit costs nothing), inside the homeland only.
       const placePick = (p) => {
         const key = view._placeQueue[0];
@@ -242,7 +241,7 @@ export function makePlacement(ctx) {
         }
         view._placeQueue.shift();
         const next = view._placeQueue[0];
-        if (next && view.openInfo) view.openInfo(next, "deal"); // P7.1 T8: the next card deals before its unit places
+        if (next && view.openInfo) view.openInfo(next, "deal"); // the next card deals before its unit places
         setHud((h) => ({ ...h, placing: next || "done" }));
         toast(next ? "PLACED — NEXT: " + (PALETTE_BY_KEY[next] || {}).label : "ALL PLACED — TAKE COMMAND");
       };
@@ -274,7 +273,7 @@ export function makePlacement(ctx) {
         if (!id || !world.byId.has(id)) { toast("NOTHING HERE"); return; }
         const b = world.byId.get(id);
         const refund = b.kind === "tower" ? Math.floor(TOWER_SPECS[b.towerType].cost * 0.6) : 3;
-        // ONE cell, ONE structure — and since P1.5 T2 a wall is three courses
+        // ONE cell, ONE structure — and a wall is three courses
         // standing on that cell, so selling takes the whole stack. Matched by
         // FOOTPRINT (which cell each body stands on), never by id: ids do not
         // survive a save/resume, a wall never moves, and this is exactly the
@@ -309,7 +308,7 @@ export function makePlacement(ctx) {
         const pk = PICK_POOL.find((x) => x.key === key);
         if (!pk) { view.hirePlace = null; return; }
         const price = priceNow(key, PALETTE_BY_KEY[key].cost);
-        if (run.resources < price) { toast("NO SCRAP"); return; } // P7.2 HF mk1.86: the ghost STANDS (the GROUND NOT HELD precedent) — prices breathe by the second; ✗ still returns the card
+        if (run.resources < price) { toast("NO SCRAP"); return; } // the ghost STANDS (the GROUND NOT HELD precedent) — prices breathe by the second; ✗ still returns the card
         const g = grid.worldToGrid(p.x, p.z);
         if (!grid.inBounds(g.gx, g.gz)) { toast("OFF THE FIELD"); return; }
         const cell = grid.cells[grid.idx(g.gx, g.gz)];
@@ -354,11 +353,11 @@ export function makePlacement(ctx) {
         takeHandCard(run.manifest, key, 1);
         run.resources -= price;
         view.hirePlace = null;
-        if (run.manifest && run.manifest.hand.length && view.openManifest) view.openManifest(); // P7.2 HF mk1.86: multi-buy is one visit — the hand returns for the next card (the calm window returns with it, the ruled pause of an open hand)
+        if (run.manifest && run.manifest.hand.length && view.openManifest) view.openManifest(); // multi-buy is one visit — the hand returns for the next card (the calm window returns with it, the ruled pause of an open hand)
         cue("uitick");
         toast("THE HIRE FIELDS — ◆" + price);
       };
-      // mk2.25: THE ENEMY RACK's placer — sandbox only. Real spawners, real
+      // THE ENEMY RACK's placer — sandbox only. Real spawners, real
       // vets where the kind has one (a hull still refuses a slope), team 2
       // throughout. rng draws are lawful here: the sandbox is its own
       // stream and never saves.
@@ -403,7 +402,7 @@ export function makePlacement(ctx) {
           for (let k = 0; k < it.n; k++) spawnUnit(world, { x: d.x, z: d.z }, it.tag);
         }
       };
-      // mk1.95: THE HERO FIELDS BY THE ONE PLACEMENT LAW — the bar
+      // THE HERO FIELDS BY THE ONE PLACEMENT LAW — the bar
       // arms a mode, the ground tap sets the ghost, the ✓ runs this. The
       // enemy's own heroes keep bell.js's replacement walk at its depot.
       const placeHero = (key, p) => {
@@ -446,7 +445,7 @@ export function makePlacement(ctx) {
         standDown();
         return true;
       };
-      // mk1.95: THE PLACEMENT ZONE — while a confirm placement is armed, the
+      // THE PLACEMENT ZONE — while a confirm placement is armed, the
       // ground it may take is shown: held ground for towers, squads, hires
       // and heroes; the homeland ring for the pre-start deal. ~4Hz, wall time.
       const refreshZone = () => {
@@ -460,7 +459,7 @@ export function makePlacement(ctx) {
           ? (x, z) => Math.hypot(x - depotP.x, z - depotP.z) <= HOMELAND_R
           : dev ? () => true
           : (x, z) => { const c = map.invW(x, z); return canBuild(T, c.u, c.v); };
-        // mk1.96: the zone tells the ARMED unit's own truth — the
+        // The zone tells the ARMED unit's own truth — the
         // ground's permanent laws AND the room standing bodies take right
         // now. Hulls vet their flat parking and their clearance; the mech
         // its spread and its 4.5m; squads and towers place by the shared

@@ -1,6 +1,6 @@
 import React from "react";
 
-// COMMAND 1b (mk0.82): THE PIE. One disc of wedges around the selected
+// THE PIE. One disc of wedges around the selected
 // thing. Equal sectors, twelve o'clock first, hole in the middle so the
 // unit stays visible. Choosing ANY wedge closes the pie (the owner's rule:
 // the screen must be free for the follow-up taps an order needs) — every
@@ -23,8 +23,7 @@ export default function RadialMenu({ cx, cy, label, slots, armed, onChoose, pres
         const lx = cx + Math.cos(mid) * 72, ly = cy + Math.sin(mid) * 72;
         return (
           <g key={s.key} data-radial={s.key} style={{ pointerEvents: "auto", cursor: "pointer" }} onClick={() => { s.act(); onChoose && onChoose(); }} opacity={armed ? 1 : 0.5} {...(s.card && press ? press(s.card) : {})}>
-            {/* mk0.83:
-                the wedge keeps its dark panel fill even when lit — the lit
+            {/* The wedge keeps its dark panel fill even when lit — the lit
                 state is the accent BORDER and a faint tint, and every label
                 paints a dark halo under itself (paintOrder stroke) so it
                 reads on any fill, any terrain. */}
@@ -36,7 +35,7 @@ export default function RadialMenu({ cx, cy, label, slots, armed, onChoose, pres
               <text data-wedge-info={s.card} x={lx} y={s.toggle != null ? ly - 22 : ly + 26} textAnchor="middle" fontSize="11" fill="#9fdcff" stroke="#0e1218" strokeWidth="3" paintOrder="stroke" style={{ cursor: "pointer" }}
                 onClick={(e) => { e.stopPropagation(); onCard && onCard(s.card); }}>ⓘ</text>
             )}
-            {/* P7.1 T2: a toggle wedge wears a slider — black at
+            {/* A toggle wedge wears a slider — black at
                 rest, slid over and bright green in use. Only slots that
                 carry s.toggle draw it; every other wedge is untouched. */}
             {s.toggle != null && (

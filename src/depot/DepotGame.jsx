@@ -47,10 +47,10 @@ import { makePlacement } from "./placement.js";
 import { makeOrders } from "./orders.js";
 import { installDepotHooks } from "./hooks.js";
 
-// mk2.28: the quartermaster's quiet flag — the purpose lines speak in the
+// The quartermaster's quiet flag — the purpose lines speak in the
 // first war only, then go quiet for good once the first bell has rung.
 const QM_KEY = "coldsnap-qm-quiet";
-// Task 3 (mk2.41): the teaching cards' seen store — one key, rev-gated
+// The teaching cards' seen store — one key, rev-gated
 // (the MANUAL_REV law). seen may carry the sentinel "*": every card
 // silenced, the smoke test's scripted wars ride under it.
 const CARDS_KEY = "coldsnap-wf-cards";
@@ -61,7 +61,7 @@ const CARDS_KEY = "coldsnap-wf-cards";
 function detectTouch() {
   return (typeof window !== "undefined") && ("ontouchstart" in window || (navigator.maxTouchPoints || 0) > 0);
 }
-// `resume` (P1 Task 3): a PARSED save object, or null for a fresh front. The
+// `resume`: a PARSED save object, or null for a fresh front. The
 // start screen does the async probe and the mark check (save.js's probeFront)
 // and hands the data down already validated, so this mount effect stays
 // synchronous — a boot that awaited storage mid-construction would be a world
@@ -69,18 +69,18 @@ function detectTouch() {
 export default function DepotGame({ onExit, resume = null, dev = false, seed: menuSeed = null }) {
   const canvasRef = useRef(null);
   const stateRef = useRef(null);
-  // POSSESSION (P4 T1, mk0.90): the knob's screen position is pushed
+  // The knob's screen position is pushed
   // straight to the DOM from the pointer handlers below — not React state —
   // the same discipline ContractSandbox.jsx's own joystick uses, so a drag
   // never queues a re-render.
   const joyKnobRef = useRef(null);
-  // POSSESSION T4 (mk0.93): the right stick's own knob ref — same discipline
+  // The right stick's own knob ref — same discipline
   // as joyKnobRef, a separate DOM element and a separate live drag state.
   const joyRKnobRef = useRef(null);
-  // FIRE FEEDBACK (mk0.96): the FIRE button's own ref — setFireHeld paints
+  // FIRE FEEDBACK: the FIRE button's own ref — setFireHeld paints
   // its held state straight to the DOM.
   const fireBtnRef = useRef(null);
-  // P7 T2: the Bison's coax MG button — same discipline as fireBtnRef.
+  // The Bison's coax MG button — same discipline as fireBtnRef.
   const mgBtnRef = useRef(null);
   // Held in a ref, not read from props inside the effect, for the same reason
   // every other loop input is: the effect must never close over a value React
@@ -92,20 +92,20 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
   const [fatal, setFatal] = useState(null);
   const [runId, setRunId] = useState(0);
   const [rereadDispatch, setRereadDispatch] = useState(false);
-  // mk2.28: the quartermaster's purpose lines — quiet by default; the probe
+  // The quartermaster's purpose lines — quiet by default; the probe
   // opens them only for a first-timer.
   const [qmQuiet, setQmQuiet] = useState(true);
-  // P7.1 T5: the tree's presentation state — never the sim's business.
+  // The tree's presentation state — never the sim's business.
   const [buildOpen, setBuildOpen] = useState(false);
   const [branch, setBranch] = useState("troops");
-  // mk2.31: THE FOLD — packing plays every exit animation, then the trunk's
+  // THE FOLD — packing plays every exit animation, then the trunk's
   // onAnimationEnd unmounts. _packNext carries what stands after the fold:
   // null = all closed; a category key = switch to it. Pure presentation.
   const [packing, setPacking] = useState(false);
   const packNextRef = useRef({ next: null, closeAll: false });
   const beginPack = (next, closeAll) => {
     if (packing) return;
-    // mk2.32: no lattice standing = nothing to fold — close without
+    // No lattice standing = nothing to fold — close without
     // ceremony (the trunk's onAnimationEnd is the only finisher).
     if (!branch) { setBranch(next); if (closeAll) setBuildOpen(false); return; }
     packNextRef.current = { next, closeAll };
@@ -129,7 +129,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
     })();
     return () => { live = false; };
   }, []);
-  // mk2.28: the quartermaster's lines go quiet for good once the first bell rings.
+  // The quartermaster's lines go quiet for good once the first bell rings.
   useEffect(() => {
     if (hud.bell >= 1 && !qmQuiet) {
       try { storage.set(QM_KEY, "1"); } catch (e) {}
@@ -137,7 +137,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
     }
   }, [hud.bell, qmQuiet]);
   const restart = () => { setFatal(null); setHud({ ...HUD0 }); setRunId((r) => r + 1); };
-  // mk0.29 — THE DEAD BUTTON, diagnosed: makeEndDispatch() was called inline
+  // THE DEAD BUTTON, diagnosed: makeEndDispatch() was called inline
   // in the render, so every HUD tick (~8Hz) handed Dispatch a brand-new
   // object. Dispatch's arming effect keys on [dispatch] and re-arms over
   // 500ms, so the timer restarted every 120ms and RETURN TO BASE never armed
@@ -149,7 +149,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
     () => (hud.gameOver || hud.victory ? makeEndDispatch({ victory: hud.victory, score: hud.score }) : null),
     [hud.gameOver, hud.victory, hud.score.pk, hud.score.pv, hud.score.ek, hud.score.ev],
   );
-  // mk0.29 — leaving a live battle is a two-tap decision (the NEW CAMPAIGN
+  // Leaving a live battle is a two-tap decision (the NEW CAMPAIGN
   // pattern): first tap arms, five seconds of silence disarms.
   const [menuArmed, setMenuArmed] = useState(false);
   useEffect(() => {
@@ -157,7 +157,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
     const t = setTimeout(() => setMenuArmed(false), 5000);
     return () => clearTimeout(t);
   }, [menuArmed]);
-  // mk0.34 — DRAW RATE. Touch draws every other frame by default; the sim is
+  // DRAW RATE. Touch draws every other frame by default; the sim is
   // untouched either way (see the frame loop). The ref is what the loop boots
   // from — the loop effect must not re-key on this, or toggling would restart
   // the run — and the state is only the button's label. Persisted through
@@ -166,10 +166,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
   // platform/autosave.js: the default writes nothing, so a saved choice can
   // never be clobbered before the async restore lands, and only a real toggle
   // saves.
-  // The 30fps draw toggle is GONE (Jeff, 2026-08-12, off the mk0.50 evidence
-  // run): drawing is ~5ms flat in every scenario and physics is the whole
-  // cost, so halving draws bought visible stutter for ~1ms. Stale
-  // "coldsnap-depot-fps" storage keys are simply ignored.
+  // Stale "coldsnap-depot-fps" storage keys are simply ignored.
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -200,14 +197,14 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       const townUV = town.map((b) => { const c = map.invW(b.x, b.z); return { id: b.id, x: c.u, z: c.v, marker: b.marker, get ruined() { return b.ruined; } }; });
       const townFlagMeta = new Map(map.TOWN.map((t) => [t.id, { ny: t.ny, depot: !!t.depot, fwall: t.id.startsWith("fwall"), marker: !!t.marker }]));
       if (dev) {
-        // mk2.24: THE SANDBOX OPENING — no draft, no enemy opening, no
+        // THE SANDBOX OPENING — no draft, no enemy opening, no
         // commander (nothing bell-driven ever reads run.cmdr here). The war
         // starts standing, every plan unlocked, and the till is dead weight:
         // priceNow answers 0 on the bench.
         run.started = true;
         run.manifest.unlocked = PALETTE.map((p) => p.key);
       }
-      let zoneAcc = 0.25; // mk1.95: the zone's own wall-time accumulator — starts due
+      let zoneAcc = 0.25; // the zone's own wall-time accumulator — starts due
       R = makeRenderer(canvas, world, {
         town: false, camera: "tactical", fadeDecals: true,
         // playable rim (matches buildDepotTerrain's falloff box, 60x60
@@ -221,7 +218,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         territory: {
           T,
           toWorld: map.fwdU,
-          // VISION (mk0.73): what the screen hides now follows what your side
+          // VISION: what the screen hides now follows what your side
           // SEES, not what it holds. Binary — a spot is seen or it is not, so
           // the renderer's "seam" silhouette branch never fires again.
           sample: (x, z) => { const c = map.invW(x, z); return seenAt(T.sight, c.u, c.v, 1) ? "held" : "unheld"; },
@@ -257,14 +254,14 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // rocksLive, not map.ROCKS: on a resume a ridge the war already breached
       // must not be painted back onto the ground it no longer occupies.
       R.setDressing({ rocks: rocksLive, ponds: map.PONDS, streams: streamRibs });
-      R.setRoads(map.ROADS); // mk2.67: the roads painted — kept ribbons and broken ones, before any smear replays
+      R.setRoads(map.ROADS); // the roads painted — kept ribbons and broken ones, before any smear replays
       R.overlay.setObjective(map.OBJ_POS.x, map.OBJ_POS.z, field.heightAt(map.OBJ_POS.x, map.OBJ_POS.z));
       R.overlay.setBanners(map.SPAWN_POINTS);
       const AIM_OFF = { x: 0, z: -500 };
       // FOG toggle: visuals only (see renderer.js setFog) — default ON,
       // persisted with the same localStorage-key pattern CampaignRunner uses
       // for "coldsnap-camp-deployed". Targeting (fieldReaches in state.js,
-      // a sight read since mk0.72) is untouched by this flag.
+      // a sight read) is untouched by this flag.
       let fogOn = true;
       try { fogOn = window.localStorage.getItem("coldsnap-depot-fog") !== "0"; } catch (e) {}
       R.setFog(fogOn);
@@ -277,15 +274,14 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       let discipline = "careful";
       try { const v = window.localStorage.getItem("coldsnap-depot-discipline"); if (v === "free" || v === "careful") discipline = v; } catch (e) {}
 
-      // WIND toggle (mk0.95, owner's request while tuning possessed-fire
-      // accuracy): OFF = dead calm — every shot's drift and hold-off zero
+      // WIND toggle: OFF = dead calm — every shot's drift and hold-off zero
       // out through the one world.wind read in stepDepot. Both sides feel
       // it equally (aim fully equal, the standing law). Same persistence
       // pattern as FOG/DISCIPLINE above. Default ON.
       let windOn = true;
       try { windOn = window.localStorage.getItem("coldsnap-depot-wind") !== "0"; } catch (e) {}
 
-      // P7.1 T3: HEALTH BARS toggle — visual only, beside FOG.
+      // HEALTH BARS toggle — visual only, beside FOG.
       // Same coldsnap-depot-* persistence pattern. Default ON.
       let healthOn = true;
       try { healthOn = window.localStorage.getItem("coldsnap-depot-health") !== "0"; } catch (e) {}
@@ -300,40 +296,40 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         setHealth: (v) => { healthOn = v; view.healthOn = v; R.setHealth(v); try { window.localStorage.setItem("coldsnap-depot-health", v ? "1" : "0"); } catch (e) {} },
         acc: 0, t: 0, fps: 60, fpsAcc: 0, fpsN: 0,
         hover: null, pointer: null, toasts: [], pending: null,
-        hirePlace: null, // P7.2 T2: the hire's armed placement ({ key } or null)
-        devSpawn: null, // mk2.25: the armed enemy-rack pick (sandbox only)
-        infoKey: null, infoDoor: null, infoArmedAt: 0, // P7.1 T4: the info card's own state
-        _teachQ: [], _teachIdx: 0, _teachSeen: null, // Task 3/4: the door — the queue pages by index; seen null until the load lands
-        // Squads (Phase 5 Task 3): selection/order UI state. selArmedAt
+        hirePlace: null, // the hire's armed placement ({ key } or null)
+        devSpawn: null, // the armed enemy-rack pick (sandbox only)
+        infoKey: null, infoDoor: null, infoArmedAt: 0, // the info card's own state
+        _teachQ: [], _teachIdx: 0, _teachSeen: null, // the door — the queue pages by index; seen null until the load lands
+        // Squads: selection/order UI state. selArmedAt
         // mirrors pending's 350ms trailing-tap guard so the tap that
         // selected a squad can't double-fire an order chip.
-        // buildPt0 (mk0.60): the FIRST of a build order's two taps, held here
+        // buildPt0: the FIRST of a build order's two taps, held here
         // until the second lands. Null whenever no build order is half-given.
-        // pieOpen (COMMAND 1b, mk0.82): true while the wedge disc is on
+        // pieOpen: true while the wedge disc is on
         // screen around the selected squad/tower; a wedge tap closes it
         // (view.pieOpen = false) but an aiming order keeps the squad selected
         // so the ground stays tappable — see consumeOrderTap.
         selSquadId: null, selSquadIds: null, selArmedAt: 0, orderMode: null, buildPt0: null, pieOpen: false,
-        // P7 T2: the selected vehicle's own selection/order state — the
+        // The selected vehicle's own selection/order state — the
         // squad selection fields' exact shape, one Bison at a time.
         selVehId: null, vehOrderMode: null,
-        groupSel: null, groupOrderMode: null, // mk2.89: the screen select — { sqIds, vehIds } and its own MOVE/ATTACK aim
-        queueOn: false, chainScreens: null, // mk2.91: the chain builder — the QUEUE light and the legs' projected flags
-        rosterOpen: false, // mk2.96: the roster panel
-        // POSSESSION T4/T5 (mk0.93/0.94): THE CARRIED RETICLE. reticleOff is
+        groupSel: null, groupOrderMode: null, // the screen select — { sqIds, vehIds } and its own MOVE/ATTACK aim
+        queueOn: false, chainScreens: null, // the chain builder — the QUEUE light and the legs' projected flags
+        rosterOpen: false, // the roster panel
+        // THE CARRIED RETICLE. reticleOff is
         // the reticle's offset from the possessed unit; joy is the touch
         // stick's own live drag state (DOM handlers below).
         reticleOff: null, reticleLockId: null, joy: null, joyR: null,
-        linePending: null, // COMMAND T2 (mk0.84): the proposed line, awaiting accept/reject
+        linePending: null, // the proposed line, awaiting accept/reject
         hudT: 0, keys: {}, sellById: null, audio: A,
-        // P7.1 T1: tap = the 90° snap, hold = continuous — accumulated hold
+        // Tap = the 90° snap, hold = continuous — accumulated hold
         // time per key, read on keyup to decide tap-vs-hold.
         _rotHeld: { q: 0, e: 0 },
       };
       // T3 SPLIT: the per-tick command object (api.js's TickInput) — every
       // field the sim reads each tick that save.js never touches.
       const input = {
-        // POSSESSION (P4 T1, mk0.90): { kind: "squad", id } while live, else
+        // { kind: "squad", id } while live, else
         // null. possessInput is the frame's world-space stick vector.
         possess: null, possessInput: null,
         // The reticle is the derived world point the guns and the red ring
@@ -341,7 +337,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         // FIRE/coax button state — true while held, read once per sim tick.
         reticle: null, fireHeld: false, mgHeld: false,
         mechWant: null,
-        devDummies: false, // mk2.26: THEY FIGHT by default; true = dummies (sandbox only)
+        devDummies: false, // THEY FIGHT by default; true = dummies (sandbox only)
         windOn, discipline,
         releasePossession: null, stepBuildLine: null, stepFoeBuildLine: null, stepChainBuild: null,
         feedMech: (mech, cdt) => feedMechCommands(mech, cdt),
@@ -353,7 +349,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // exists anywhere to derive a bag from (finding, reported at landing).
       view.setDiscipline = (v) => { discipline = v; input.discipline = v; try { window.localStorage.setItem("coldsnap-depot-discipline", v); } catch (e) {} };
       view.setWind = (v) => { windOn = v; input.windOn = v; try { window.localStorage.setItem("coldsnap-depot-wind", v ? "1" : "0"); } catch (e) {} };
-      // Task 3 (mk2.41): THE FIRST-ENCOUNTER DOOR. A card fires once, the
+      // THE FIRST-ENCOUNTER DOOR. A card fires once, the
       // first time its moment comes; the war pauses while it is up (the
       // convoy idiom, in the frame loop's sdt gate). The sandbox never
       // fires one; the "*" sentinel silences the door for scripted runs.
@@ -399,7 +395,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         if (!thing || !view._teachSeen || view._teachSeen.has("*")) return;
         for (const k of PIE_CARDS[kind](thing)) view.teachFire(k);
       };
-      // Task 10 (mk2.48): THE WALK — the ruled taught order. SHOW ME THE
+      // THE WALK — the taught order. SHOW ME THE
       // FRONT fills the queue whole (seen-state deliberately not consulted:
       // the walk replays for whoever asks); the paging chrome does the rest,
       // NEXT marks each seen, SKIP the remainder, and an empty queue lands
@@ -421,7 +417,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       })();
       if (RES) R.setZoom(run.zoom);
       stateRef.current = { run, view, input };
-      // P7 T10: R.setMines is a setDressing-style setter — called once here
+      // R.setMines is a setDressing-style setter — called once here
       // at boot/restore (fresh boot: run.mines is empty, harmless), then again
       // on every lay and every trigger tick.
       R.setMines(run.mines);
@@ -512,16 +508,16 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       let pinchD0 = 0, pinchZ0 = 1, pinchA = 0, dragTotal = 0, downPt = null;
       const onPointerDown = (e) => {
         A.ensure();
-        // DESKTOP FIRE (P6 T12, mk1.21, owner's playtest): while possessed,
+        // DESKTOP FIRE: while possessed,
         // the left mouse button IS the trigger — held, it volleys like the
         // phone FIRE button; the click never becomes a pan or a tap. The
         // possession release paths already clear fireHeld.
-        // DESKTOP COAX (P7 T2): while possessing the Bison,
+        // DESKTOP COAX: while possessing the Bison,
         // the right mouse button IS the coax trigger — held, like FIRE/MG.
         // Checked before the left-button main-gun branch so a right-click
         // never falls through to it.
         if (input.possess && input.possess.kind === "vehicle" && e.pointerType === "mouse" && e.button === 2) {
-          // P7 T4: the APC has no coax-and-main-gun split — one gun, FIRE
+          // The APC has no coax-and-main-gun split — one gun, FIRE
           // alone. A right-click on the APC does nothing (consumed, not
           // captured — never falls through to a pan/tap).
           const pv0 = world.byId.get(input.possess.id);
@@ -543,7 +539,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           const ps = [...pointers.values()];
           pinchD0 = Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y);
           pinchZ0 = run.zoom;
-          pinchA = Math.atan2(ps[1].y - ps[0].y, ps[1].x - ps[0].x); // P7.1 T1: the twist's running angle
+          pinchA = Math.atan2(ps[1].y - ps[0].y, ps[1].x - ps[0].x); // the twist's running angle
           downPt = null;
         }
       };
@@ -570,7 +566,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           const d = Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y);
           run.zoom = Math.max(0.5, Math.min(2.6, pinchZ0 * (d / pinchD0)));
           R.setZoom(run.zoom);
-          // P7.1 T1: TWO-FINGER ROTATION — the twist between the touches
+          // TWO-FINGER ROTATION — the twist between the touches
           // steers the yaw. Incremental with wrap, so fingers crossing the
           // ±π seam never jump the view.
           const a = Math.atan2(ps[1].y - ps[0].y, ps[1].x - ps[0].x);
@@ -594,7 +590,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         run.zoom = Math.max(0.5, Math.min(2.6, run.zoom * (e.deltaY > 0 ? 0.9 : 1.11)));
         R.setZoom(run.zoom);
       };
-      // P7.1 T1: tap = the 90° snap, hold = continuous. The frame loop
+      // Tap = the 90° snap, hold = continuous. The frame loop
       // accumulates hold time and rotates past the window; keyup reads the
       // accumulated time to decide tap-vs-hold.
       const ROT_HOLD_S = 0.22, ROT_SPEED = 1.6; // provisional (F5)
@@ -602,7 +598,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       const kd = (e) => {
         A.ensure();
         if (e.key === "m" || e.key === "M") { A.setMuted(!A.muted); setHud((h) => ({ ...h, muted: A.muted })); }
-        // THE MECH (mk1.92): desktop one-shot triggers, active only while a
+        // THE MECH: desktop one-shot triggers, active only while a
         // mech is possessed — FIRE is the held left-click (already generic
         // to any possession, above); these are edge-triggered here exactly
         // like MechRange's own keydown bindings.
@@ -627,7 +623,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         onKey(e, false);
       };
       const blockTouch = (e) => e.preventDefault();
-      // P7 T2: the right mouse button is the coax trigger while possessing
+      // The right mouse button is the coax trigger while possessing
       // the Bison — the browser's own context menu must never steal it.
       const onCtxMenu = (e) => e.preventDefault();
       canvas.addEventListener("pointerdown", onPointerDown);
@@ -640,7 +636,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       window.addEventListener("keydown", kd);
       window.addEventListener("keyup", ku);
 
-      // --- THE FRONT, KEPT (P1 Task 3) -------------------------------------
+      // --- THE FRONT, KEPT -------------------------------------------------
       // One slot, written at every bell and nowhere else. saveFront draws the
       // resumed run's seed FIRST and unconditionally — that draw is the only
       // rng this feature spends, it happens exactly once per bell whatever
@@ -648,7 +644,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // saving is not optional (see save.js law 2). Serialization is
       // synchronous into a string; the store write is fire-and-forget so the
       // frame never awaits it.
-      // --- THE CUE QUEUE (P1 Task 4) ---------------------------------------
+      // --- THE CUE QUEUE -----------------------------------------------------
       // Audio-only events for the bell cycle. They cannot ride world.events
       // directly: that array is wiped at the top of every frame's sim bracket
       // (see `world.events.length = 0` in the loop) and the bell — like every
@@ -665,7 +661,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
 
       let saveStat = null;
       const saveFront = () => {
-        if (dev) return; // mk2.24: the sandbox never saves — the one rng draw below is never drawn either (no live stream compares against a sandbox run)
+        if (dev) return; // the sandbox never saves — the one rng draw below is never drawn either (no live stream compares against a sandbox run)
         try {
           const t0 = performance.now();
           const json = serializeRun(war, { smears: R.smearLog ? R.smearLog() : [] });
@@ -696,7 +692,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // pays the player, red ground pays the regiment, seam ground nobody.
       const bellCtx = { cue, toast, townUV, buildSnapshot: () => buildSnapshotOf(war), nextApcSeq, saveFront: () => saveFront(), possessed: () => !!input.possess };
       input.bellCtx = bellCtx;
-      // --- the bell's cards (Task 2). Nothing here touches the sim: they are
+      // --- the bell's cards. Nothing here touches the sim: they are
       // presentation state, armed on WORLD time via the same trailing-tap law
       // the ✓/✗ confirm pair lives under (PENDING_ARM_S), and they never gate
       // anything. The manifest chip re-opens a dismissed card until the NEXT
@@ -710,7 +706,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         M.armedAtWall = performance.now() / 1000 + PENDING_ARM_S;
       };
       view.dismissManifest = () => { if (run.manifest) run.manifest.cardUp = false; };
-      // P7.1 T4: THE INFO CARD — two doors, one state. The manifest door's
+      // THE INFO CARD — two doors, one state. The manifest door's
       // CONFIRM runs the real pick (its own arming and stale-offer guards
       // intact); the card adds its own trailing-tap arm on top.
       view.openInfo = (key, door) => { view.infoKey = key; view.infoDoor = door; view.infoArmedAt = world.t + PENDING_ARM_S; view.infoArmedWall = performance.now() / 1000 + PENDING_ARM_S; };
@@ -722,9 +718,9 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         view.closeInfo();
         if (k && door === "manifest") view.pickManifest(k);
         else if (k && door === "hire") view.armHire(k);
-        // P7.1 T8: the deal door just closes — the ground tap places next.
+        // The deal door just closes — the ground tap places next.
       };
-      // P7.2 T8: the five picks are FREE — the pick is the payment.
+      // The five picks are FREE — the pick is the payment.
       // Plans open the bar at once; units join the deal-placement queue.
       view.confirmDraft = (picked) => {
         if (!picked || picked.length !== 5) return;
@@ -739,7 +735,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       view.pickManifest = (key) => {
         const M = run.manifest;
         if (!M || performance.now() / 1000 < (M.armedAtWall ?? 0)) { toast("HOLD — ARMING"); return; }
-        // P7.2 T2: A PLAN COSTS HALF the live price — the ladder
+        // A PLAN COSTS HALF the live price — the ladder
         // itself gained a price; each build after pays full. The convoy's
         // window is EXEMPT from the one-buy-per-second law (the hand is
         // one visit): no pacing check, no purchase stamp.
@@ -751,17 +747,17 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         run.resources -= price;
         cue("uitick"); // the plan is bought
         toast((PALETTE_LABEL[key] || key) + " — PLANS BOUGHT ◆" + price);
-        // mk1.95: THE PICK ARMS THE BAR — every key; hero keys are placement modes under the one law now.
+        // THE PICK ARMS THE BAR — every key; hero keys are placement modes under the one law now.
         setMode(key);
       };
-      // P7.2 T2: A HIRE FIELDS AT ONCE, placed by your own ground
+      // A HIRE FIELDS AT ONCE, placed by your own ground
       // tap on held ground. Payment lands only when the unit actually
       // fields — the ✗ cancels, charges nothing, and reopens the hand.
       view.armHire = (key) => {
         const M = run.manifest;
         if (!M || performance.now() / 1000 < (M.armedAtWall ?? 0)) { toast("HOLD — ARMING"); return; }
         if (!M.hand.some((c) => c.k === key && c.hire === 1)) return;
-        // P7.2 HOTFIX mk1.86: AFFORDABILITY IS CHECKED FIRST — a hire
+        // AFFORDABILITY IS CHECKED FIRST — a hire
         // the till can't cover is refused here, before any ceremony: the card
         // stays in the hand, the window stays open, and the toast names the
         // price. Found live: a Bison hire armed at bell one and died at the
@@ -779,7 +775,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
 
       let last = performance.now();
       const STEP = 1 / 120;
-      // mk0.35 — THE STOPWATCH (?perf=1). A measurement probe, not a feature:
+      // THE STOPWATCH (?perf=1). A measurement probe, not a feature:
       // it brackets the fixed-step sim block and the R.render call and drops
       // the pair into a ring buffer that scripts/diag-perf.mjs reads back.
       // The flag is resolved ONCE, here — with no ?perf=1 in the URL every
@@ -810,7 +806,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         };
         window.__DEPOTPERF__.reset = () => { pI = 0; pN = 0; };
       }
-      // THE MECH (mk1.92): possessed commands, ported from MechRange.jsx's
+      // THE MECH: possessed commands, ported from MechRange.jsx's
       // feedCommands (jets omitted — no jet mode in the war). Fed once per
       // SIM TICK from inside the accumulator loop below — the range's own
       // cadence law: per-frame feeds fall the machine. Left stick/WASD walk
@@ -877,7 +873,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         try {
           view.fpsAcc += dt; view.fpsN++;
           if (view.fpsAcc > 0.5) { view.fps = Math.round(view.fpsN / view.fpsAcc); view.fpsAcc = 0; view.fpsN = 0; }
-          // mk0.29 (savor the fall): the verdict no longer freezes the world.
+          // The verdict no longer freezes the world.
           // It stamps the clock; the collapse plays out for END_CARD_DELAY_S
           // of world time, and only when the card is actually up does the sim
           // stop. Orders and building are locked from the verdict itself.
@@ -886,23 +882,23 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           // is still six world-seconds away when this runs.
           if (run.gameOver || run.victory) burnSave();
           const cardUp = endCardReady(run, world.t);
-          // P7.2 T3: THE WAR PAUSES FOR THE CONVOY — the whole sim
+          // THE WAR PAUSES FOR THE CONVOY — the whole sim
           // freezes while the hand's window is up; LATER or buying out the
           // hand resumes it. Prices and the bell freeze for free: every
           // accumulator below feeds on sdt.
           const convoyUp = !!(run.manifest && run.manifest.cardUp);
-          const teachUp = view._teachQ.length > 0; // Task 3: a teaching card freezes the sim, the convoy's own law
+          const teachUp = view._teachQ.length > 0; // a teaching card freezes the sim, the convoy's own law
           const sdt = view.paused || !run.started || cardUp || convoyUp || teachUp ? 0 : dt * view.speed;
           const pan = 34 * dt / Math.max(0.5, run.zoom);
           // screen-relative like touch drag: W = screen-up whatever the Q/E yaw
           const cb = R.camBasis;
           const ul = Math.hypot(cb.up.x, cb.up.z) || 1, rl = Math.hypot(cb.right.x, cb.right.z) || 1;
           const ux = cb.up.x / ul, uz = cb.up.z / ul, rx = cb.right.x / rl, rz = cb.right.z / rl;
-          // P7.1 T1: held rotation keys — past the tap window the key swings
+          // Held rotation keys — past the tap window the key swings
           // the view continuously; a release inside it snaps 90° (see ku).
           if (view.keys.q) { view._rotHeld.q += dt; if (view._rotHeld.q > ROT_HOLD_S) R.rotateBy(-ROT_SPEED * dt); }
           if (view.keys.e) { view._rotHeld.e += dt; if (view._rotHeld.e > ROT_HOLD_S) R.rotateBy(ROT_SPEED * dt); }
-          // POSSESSION (P4 T1, mk0.90): while possessed, WASD drives the
+          // While possessed, WASD drives the
           // squad, NOT the camera — the pan block is gated off entirely.
           if (!input.possess) {
             if (view.keys.w || view.keys.arrowup) { run.focus.x += ux * pan; run.focus.z += uz * pan; }
@@ -934,7 +930,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             const psq = run.squads.find((q) => q.id === input.possess.id);
             if (psq) { run.focus.x = psq.anchor.x; run.focus.z = psq.anchor.z; run.focus.y = field.heightAt(run.focus.x, run.focus.z); }
           } else if (input.possess && input.possess.kind === "tower") {
-            // POSSESSION (P4 T3, mk0.92): towers don't walk — no stick, no
+            // Towers don't walk — no stick, no
             // possessInput. Camera locks to the tower exactly as it does to
             // a possessed squad.
             const ptw = world.byId.get(input.possess.id);
@@ -967,7 +963,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
               } else { pv.ctl.throttle = 0; pv.ctl.steer = 0; pv.ctl.brake = false; }
             }
           } else if (input.possess && input.possess.kind === "mech") {
-            // THE MECH (mk1.92): camera locks to the hull, exactly as a
+            // THE MECH: camera locks to the hull, exactly as a
             // possessed tower or vehicle — the stick/keys/mouse are read at
             // SIM-TICK cadence inside feedMechCommands below, not here
             // (per-frame feeds fall the machine, the range's own law).
@@ -975,7 +971,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             if (pm) { run.focus.x = pm.pos.x; run.focus.z = pm.pos.z; run.focus.y = field.heightAt(run.focus.x, run.focus.z); }
           }
           if (input.possess) {
-            // POSSESSION T4/T5 (mk0.93/0.94): THE CARRIED RETICLE. The right
+            // THE CARRIED RETICLE. The right
             // stick wins if it's live (steerReticle — deflection is
             // velocity, the OFFSET holds on release, so walking carries the
             // reticle with the unit), same precedence the left stick uses
@@ -1003,19 +999,19 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
               }
               view.reticleOff = reclampReticle(T.sight, 1, rc, rR, view.reticleOff, map.invW);
               input.reticle = { x: rc.x + view.reticleOff.dx, z: rc.z + view.reticleOff.dz };
-              // mk2.01: THE SURFACE LAW — nothing blocks the steer; the
+              // THE SURFACE LAW — nothing blocks the steer; the
               // ground the reticle rests on aims the guns: a solid's top
               // when it sits on one (rooftops, wall tops), the dirt
               // otherwise. Where the shot truly ends is the predictor's
               // ring, never a steering clamp.
               input.reticle.y = surfaceAt(T.sight, input.reticle.x, input.reticle.z, map.invW).y;
-              // mk1.99: THE STICKY SNAP — the RAW offset steers; the lock
+              // THE STICKY SNAP — the RAW offset steers; the lock
               // only bends the derived aim onto the man, so pulling the raw
               // point past the radius is the deliberate escape.
               const lk9 = stickyLock(world, view.reticleLockId, input.reticle, T, map.invW);
               view.reticleLockId = lk9 ? lk9.id : null;
               if (lk9) input.reticle = { x: lk9.pos.x, z: lk9.pos.z };
-              // P7 T2: keep the turret honest while possessed — the hull's
+              // Keep the turret honest while possessed — the hull's
               // own aim yaw follows the live reticle every frame, not just
               // on a shot.
               if (input.possess.kind === "vehicle" && input.reticle) {
@@ -1042,7 +1038,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             else {
               const ispec = ib.kind === "tower" ? TOWER_SPECS[ib.towerType] : null;
               if (ispec && ib.towerType !== "tesla") {
-                // Task 2b: an inspected GUN tower shows its true reach fan
+                // An inspected GUN tower shows its true reach fan
                 // (towerReachCached: real muzzle, fog-independent, computed
                 // once per selection — static body). Frost keeps its aura
                 // ring below (it is not a gun); walls keep no fan.
@@ -1075,7 +1071,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             else { sqCx = selSq.anchor.x; sqCz = selSq.anchor.z; }
           }
           if (selSq) {
-            // Every selected squad shows the TRUE reach fan (Task 2b: the
+            // Every selected squad shows the TRUE reach fan (the
             // sniper's path, generalized to rifles/mg) — squadReach fires
             // from the member's head (pos.y + 0.5, squadFire's own muzzle),
             // elevation-scaled and terrain/solid-clipped, fog-independent
@@ -1092,7 +1088,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           } else view.selReach = null;
           if (run.started && !run.gameOver && !run.victory) {
             if (run.manifest && run.manifest.cardUp) view.teachFire("convoy"); // idempotent — seen/queue gates inside
-            // THE PRE-TOLL (Task 4). The last five seconds are counted out
+            // THE PRE-TOLL. The last five seconds are counted out
             // loud. Edge-triggered on the countdown crossing each whole second
             // — ceiling-rounded exactly as the chip reads it — so it fires once
             // per second at any frame rate, once at 30fps and once at 120, and
@@ -1106,7 +1102,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             }
           }
           view.acc += sdt;
-          // T4 (war-engine-extraction): the bell, spawn/withdrawal, income,
+          // The bell, spawn/withdrawal, income,
           // territory/sight, mines, fog, dead-bag release, the pool rebuild,
           // stepDepot, the possessed triggers, the event drain, the census
           // and the market all moved into tickWar — one call per fixed
@@ -1133,11 +1129,11 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           // territory field itself, not per frame (see renderer.js
           // updateTerritory/retintTerritory/updateFogWash).
           if (terrFlagged && R.updateTerritory) R.updateTerritory();
-          // P7 T10: TRIGGERS — a 4Hz game-layer step, beside the territory
+          // TRIGGERS — a 4Hz game-layer step, beside the territory
           // accumulator (NOT per sim tick). Cheap: setMines only rewrites the
           // two instanced pools when a device actually fired this tick.
           if (terrFlagged) R.setMines(run.mines);
-          // mk2.50: map.TOWN FLAGS — holder-colored, render-only; neutral and
+          // map.TOWN FLAGS — holder-colored, render-only; neutral and
           // contested ground fly nothing, ruined buildings fly nothing
           // (they already pay nothing — economy.js payTown). Territory
           // cadence; derived, never saved.
@@ -1153,7 +1149,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             }
             R.setTownFlags(rows);
           }
-          // P7 T13: THE GREEN THREADS — every friendly ordered path,
+          // THE GREEN THREADS — every friendly ordered path,
           // green on the ground, refreshed with the other derived overlays.
           if (terrFlagged) {
             const paths = [];
@@ -1169,11 +1165,11 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             }
             R.overlay.setOrderPaths(paths);
           }
-          // mk2.14: a davy burst carved the ground, or a rock
+          // A davy burst carved the ground, or a rock
           // breached — re-lay the rock dressing so surviving boulders sink
           // to the new surface instead of floating over the crater.
           if (dressFlagged) { R.setDressing({ rocks: rocksLive, ponds: map.PONDS, streams: streamRibs }); toast("THE RIDGE IS BREACHED"); }
-          // THE MOVED BLOCK (T3 split, step 4.3): selection pruning is view
+          // THE MOVED BLOCK: selection pruning is view
           // work — it left stepDepot and lands here, once per frame instead
           // of once per sim tick (a presentation-only cadence change).
           if (view.selSquadIds) { view.selSquadIds = view.selSquadIds.filter((id) => run.squads.some((q) => q.id === id)); if (view.selSquadIds.length < 2) view.selSquadIds = null; }
@@ -1191,15 +1187,15 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           A.setListener(run.focus.x, run.focus.z, 46 / Math.max(0.6, run.zoom));
           A.consume(evs);
           A.tick(world, dt);
-          // POSSESSION T5 (mk0.94): the reticle draws through its own red
-          // ring, and the build hover never paints while possessed. mk2.01:
+          // The reticle draws through its own red
+          // ring, and the build hover never paints while possessed.
           // THE TRUE RETICLE — the ring is the LANDING BOUND: center at the
           // predicted impact (predictRing — the engine's own flight
           // arithmetic), radius at applyScatter's hard cap. No shot can
           // land outside it. For a squad the bound is drawn from the
           // farthest living shooter — every member's cone lands inside.
-          R.setGrenades(world._grenades, world.t); // mk2.04: the grenade is seen — green, blinking red, quickening
-          R.setGreenFog(run.fog, world.t); // mk2.09: the poison ground, seen
+          R.setGrenades(world._grenades, world.t); // the grenade is seen — green, blinking red, quickening
+          R.setGreenFog(run.fog, world.t); // the poison ground, seen
           let rr9 = 1.2, hit9 = null, ctr9 = null, pts9 = null;
           if (input.possess && input.reticle) {
             const P9 = input.possess;
@@ -1214,7 +1210,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             else { pb0 = world.byId.get(P9.id); if (pb0) spec9 = P9.kind === "tower" ? TOWER_SPECS[pb0.towerType] : P9.kind === "vehicle" ? BISON_FIRE.gun : null; }
             const rc9 = possessCenter();
             if (spec9 && spec9.acc != null && rc9) {
-              const aim9 = { x: input.reticle.x, y: input.reticle.y != null ? input.reticle.y : field.heightAt(input.reticle.x, input.reticle.z), z: input.reticle.z }; // mk2.02: the surface itself — no phantom
+              const aim9 = { x: input.reticle.x, y: input.reticle.y != null ? input.reticle.y : field.heightAt(input.reticle.x, input.reticle.z), z: input.reticle.z }; // the surface itself — no phantom
               const muzzle9 = pb0 && P9.kind === "vehicle" ? barrelTip(pb0, aim9, spec9, pb0.vtype === "tank" ? BARRELS.tank : BARRELS.bison)
                                   : pb0 ? { x: pb0.pos.x, y: pb0.pos.y + (P9.kind === "tower" ? pb0.hy + 0.45 : 0.5), z: pb0.pos.z }
                                   : { x: rc9.x, y: field.heightAt(rc9.x, rc9.z) + 0.5, z: rc9.z };
@@ -1224,7 +1220,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
               rr9 = Math.max(0.4, pr9.r);
               pts9 = pr9.pts;
               hit9 = pr9.center.wall ? { y: pr9.center.y, yaw: Math.atan2(pr9.rawDir.x, pr9.rawDir.z) } : null;
-              // mk2.03: a possessed gun's barrel wears the live pitch.
+              // A possessed gun's barrel wears the live pitch.
               if (pb0) pb0._aimPitch = Math.asin(Math.max(-1, Math.min(1, pr9.rawDir.y)));
             }
           }
@@ -1235,7 +1231,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             R.overlay.setHover(true, view.hover.x, view.hover.z, field.heightAt(view.hover.x, view.hover.z), view.hover.range, view.hover.valid, map.GRID_CS);
           }
           else R.overlay.setHover(false);
-          // mk1.95: THE PLACEMENT ZONE — its own ~4Hz WALL-time tick (the deal
+          // THE PLACEMENT ZONE — its own ~4Hz WALL-time tick (the deal
           // phase runs with the sim frozen, so sdt can never drive it).
           zoneAcc += dt;
           if (zoneAcc >= 0.25) { zoneAcc = 0; refreshZone(); }
@@ -1245,12 +1241,12 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           } else R.overlay.setPending(false);
           if (R.overlay.setReach) {
             // One overlay slot, one look: squad fan wins if a squad is
-            // selected, else the inspected tower's cached fan (Task 2b).
+            // selected, else the inspected tower's cached fan.
             const fan = view.selReach || (view.inspectReach && view.inspectReach.pts ? view.inspectReach : null);
             if (fan) R.overlay.setReach(true, fan.cx, field.heightAt(fan.cx, fan.cz), fan.cz, fan.pts, 0xffd27a);
             else R.overlay.setReach(false);
           }
-          // THE MECH (mk1.92): the trajectory preview, ported from
+          // THE MECH: the trajectory preview, ported from
           // MechRange.jsx :418-441 — a low-passed ballistic arc from muzzle
           // to the commanded range, drawn through the war renderer's own
           // R.setTraj. Render-only; cleared on release (input.releasePossession).
@@ -1283,13 +1279,13 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
               } catch (e) {}
             }
           }
-          // mk0.53: the mk0.34 draw gate is gone — every frame draws (the
+          // The draw gate is gone — every frame draws (the
           // evidence run showed physics, not drawing, owns the frame budget).
           {
             const pRen0 = perf ? performance.now() : 0; // stopwatch: draw bracket
             R.render(dt, run.focus, AIM_OFF, 0);
             if (perf) { pRen = performance.now() - pRen0; pDrew = 1; }
-            // ✓/✗ screen-space anchor (Task 3): rotation-proof because it's
+            // ✓/✗ screen-space anchor: rotation-proof because it's
             // recomputed from the live camera via project() — Q/E view
             // rotation or a pan moves the cell's projected point, and this
             // just follows it, rather than being pinned once at tap time.
@@ -1303,14 +1299,14 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
                 const rect = canvas.getBoundingClientRect();
                 view.pendingScreen = { x: rect.left + (nd.x * 0.5 + 0.5) * rect.width, y: rect.top + (-nd.y * 0.5 + 0.5) * rect.height };
               } else view.pendingScreen = null;
-              // mk0.27: pan/rotate far enough and the ✓/✗ pair leaves the
+              // Pan/rotate far enough and the ✓/✗ pair leaves the
               // viewport — an invisible pending that still eats taps. Cancel
               // it out loud the moment its anchor goes off screen.
               if (!pendingButtonsVisible(view.pendingScreen, canvas.getBoundingClientRect())) {
                 clearPending(); view.pendingScreen = null; toast("PLACEMENT CANCELLED — MOVED OFF SCREEN");
               }
             } else view.pendingScreen = null;
-            // COMMAND T2 (mk0.84): the proposed line's END point only — the
+            // The proposed line's END point only — the
             // buttons live there. Same screen-space recipe as pendingScreen,
             // but going off-screen HIDES the buttons WITHOUT cancelling the
             // pending (the line is big; panning around it is normal work).
@@ -1332,7 +1328,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
               view.squadScreen = toScreen(sqCx, field.heightAt(sqCx, sqCz) + 2.2, sqCz);
               view.flagScreen = selSq.dest ? toScreen(selSq.dest.x, field.heightAt(selSq.dest.x, selSq.dest.z) + 1.6, selSq.dest.z) : null;
             } else { view.squadScreen = null; view.flagScreen = null; }
-            // P7 T2: the Bison's pie anchor — same screen-space recipe,
+            // The Bison's pie anchor — same screen-space recipe,
             // projected off the hull top (the towerScreen recipe).
             if (view.selVehId != null && R.project) {
               const vb = world.byId.get(view.selVehId);
@@ -1342,7 +1338,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
                 view.vehScreen = nd5 ? { x: rect5.left + (nd5.x * 0.5 + 0.5) * rect5.width, y: rect5.top + (-nd5.y * 0.5 + 0.5) * rect5.height } : null;
               } else view.vehScreen = null;
             } else view.vehScreen = null;
-            // mk2.89: the group reticle's anchor — the sweep's centroid of
+            // The group reticle's anchor — the sweep's centroid of
             // living members, projected fresh every frame (rotation/pan-proof,
             // the squad chip anchor's own recipe). All dead = group clears.
             if (view.groupSel && R.project) {
@@ -1360,20 +1356,20 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
                 view.groupScreen = nd6 ? { x: rect6.left + (nd6.x * 0.5 + 0.5) * rect6.width, y: rect6.top + (-nd6.y * 0.5 + 0.5) * rect6.height } : null;
               } else { view.groupSel = null; view.groupOrderMode = null; view.groupScreen = null; }
             } else view.groupScreen = null;
-            // mk2.91: the chain's numbered flags — the selected unit's queued
+            // The chain's numbered flags — the selected unit's queued
             // legs, projected fresh every frame (a patrol leg flags its near
             // end). Same recipe as every screen anchor above.
             const chainOwner = view.groupSel == null ? (view.selVehId != null ? world.byId.get(view.selVehId) : selSq) : null;
             if (chainOwner && chainOwner._queue && chainOwner._queue.length && R.project) {
               const rect7 = canvas.getBoundingClientRect();
               view.chainScreens = chainOwner._queue.map((q, i) => {
-                if (q.kind === "escort") return null; // mk2.93: no ground point — the panel carries it
+                if (q.kind === "escort") return null; // no ground point — the panel carries it
                 const qx = q.kind === "patrol" || q.kind === "line" ? q.ax : q.x, qz = q.kind === "patrol" || q.kind === "line" ? q.az : q.z;
                 const nd7 = R.project(qx, field.heightAt(qx, qz) + 1.6, qz);
                 return nd7 ? { x: rect7.left + (nd7.x * 0.5 + 0.5) * rect7.width, y: rect7.top + (-nd7.y * 0.5 + 0.5) * rect7.height, i, pat: q.kind === "patrol" ? 1 : 0, line: q.kind === "line" ? 1 : 0 } : null;
               }).filter(Boolean);
             } else view.chainScreens = null;
-            // Tower radial anchor (COMMAND T1, mk0.80): the same screen-space
+            // Tower radial anchor: the same screen-space
             // convention as the squad chip anchor above — projected off the
             // tower's top from the live camera every frame, rotation/pan-proof.
             if (view.inspectId && R.project) {
@@ -1391,10 +1387,10 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             let en = 0, nw = 0, nt = 0;
             for (const b of world.bodies) {
               if (b.kind === "unit" && b.alive && b.team === 2) en++;
-              else if (b.kind === "wall") { if (!b.course) nw++; } // the HUD counts WALLS, not courses (P1.5 T2)
+              else if (b.kind === "wall") { if (!b.course) nw++; } // the HUD counts WALLS, not courses
               else if (b.kind === "tower") nt++;
             }
-            // P6 T10 / Task 5 Amendment 1 (mk1.19): the idle gate's flag —
+            // The idle gate's flag —
             // the war is hot (pools worth building) while any enemy or
             // tower stands, or any squad is fielded. Stashed here (already
             // a full body walk) rather than adding a second one.
@@ -1409,7 +1405,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
               resources: Math.floor(run.resources), walls: nw, towers: nt,
               score: { pk: run.score.p.kills, pv: Math.round(run.score.p.value), ek: run.score.e.kills, ev: Math.round(run.score.e.value) },
               lastDispatch: run.lastDispatch,
-              // THE LIVING MARKET (mk1.13): the bar and the manifest read
+              // THE LIVING MARKET: the bar and the manifest read
               // prices off this same cache, out to the render each hud tick.
               prices: run._market ? { ...run._market.player } : null,
               // The manifest's mirror. Both cards arm on WORLD time (the
@@ -1430,9 +1426,9 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
               teach: view._teachQ.length ? { key: view._teachQ[view._teachIdx], i: view._teachIdx, n: view._teachQ.length } : null,
               intel: run.intelUp && run.lastDispatch ? { armed: world.t >= run.intelArmedAt } : null,
               started: run.started, gameOver: run.gameOver, victory: run.victory,
-              placing: view._placeQueue ? (view._placeQueue[0] || "done") : null, // P7.1 T6 A1: place mode must survive the ticker
-              drafting: view._draftOpen && run.draft && !view._draftDone ? run.draft.map((c) => ({ k: c.k, plan: c.plan })) : null, // T8 A2: the draft survives the ticker (the mk1.69 law)
-              endCard: endCardReady(run, world.t),   // mk0.29: the card waits out the collapse
+              placing: view._placeQueue ? (view._placeQueue[0] || "done") : null, // place mode must survive the ticker
+              drafting: view._draftOpen && run.draft && !view._draftDone ? run.draft.map((c) => ({ k: c.k, plan: c.plan })) : null, // the draft survives the ticker
+              endCard: endCardReady(run, world.t),   // the card waits out the collapse
               breach: run.breach, enemyBreach: run.enemyBreach,
               depotStanding: run.depotStanding != null ? run.depotStanding : 1,
               enemyStanding: run.enemyStanding != null ? run.enemyStanding : 1,
@@ -1444,44 +1440,44 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
                 const sq = view.selSquadId != null ? run.squads.find((q) => q.id === view.selSquadId) : null;
                 if (!sq || !view.squadScreen) return null;
                 return { id: sq.id, label: SQUAD_SPECS[sq.type].label, order: sq.order, count: view.selSquadIds ? view.selSquadIds.length : 1, x: view.squadScreen.x, y: view.squadScreen.y, armed: world.t >= view.selArmedAt, aiming: view.orderMode === "attack", aimingMove: view.orderMode === "move",
-                  queueOn: view.queueOn, chained: (sq._queue && sq._queue.length) || 0, // mk2.91
-                  // COMMAND 1b (mk0.82): the pie is up only while view.pieOpen —
+                  queueOn: view.queueOn, chained: (sq._queue && sq._queue.length) || 0,
+                  // The pie is up only while view.pieOpen —
                   // a wedge tap closes it but (for aiming orders) keeps the
                   // squad selected, so the status chip renders on its own.
                   showPie: !!view.pieOpen,
-                  // P1.5 T4: the BUILD chips exist for engineer squads and no
+                  // The BUILD chips exist for engineer squads and no
                   // other type, so the row is per-squad-type by construction.
                   engineer: sq.type === "engineers",
-                  // P7 T10: the sapper build gate — mirrors the engineer flag above.
+                  // The sapper build gate — mirrors the engineer flag above.
                   sapper: sq.type === "sappers",
                   building: view.orderMode === "build_bags" ? "bags" : view.orderMode === "build_walls" ? "walls"
                           : view.orderMode === "build_mines" ? "mines" : view.orderMode === "build_wires" ? "wires" : null,
                   buildStart: !!view.buildPt0,
-                  // COMMAND T3 (mk0.85): PATROL rides every squad type
+                  // PATROL rides every squad type
                   // except engineers and sappers (tools, not shooters — the
                   // wedge would order them to walk a line they never fight
                   // on).
                   patrolOk: sq.type !== "engineers" && sq.type !== "sappers",
                   aimingPatrol: view.orderMode === "patrol",
-                  // COMMAND T4 (mk0.86): STRUCTURES rides every armed squad
+                  // STRUCTURES rides every armed squad
                   // type (an INFANTRY_ARMS row) — not engineers, not sappers,
                   // same population PATROL offers the wedge to. structFirst
                   // is the wedge's lit state.
                   structOk: !!INFANTRY_ARMS[sq.type],
                   structFirst: !!sq.prefStruct,
-                  // COMMAND T2 (mk0.84): the squad stays selected while its
+                  // The squad stays selected while its
                   // line is up for confirmation — the center chip says so.
                   linePending: !!view.linePending };
               })(),
               squadFlag: view.flagScreen ? { x: view.flagScreen.x, y: view.flagScreen.y } : null,
-              chainFlags: view.chainScreens, // mk2.91: the queued legs' numbered flags
-              chainList: (() => { // mk2.92: the visible queue of commands
+              chainFlags: view.chainScreens, // the queued legs' numbered flags
+              chainList: (() => { // the visible queue of commands
                 const o = view.groupSel == null ? (view.selVehId != null ? world.byId.get(view.selVehId) : (view.selSquadId != null ? run.squads.find((q) => q.id === view.selSquadId) : null)) : null;
                 if (!o || (!view.queueOn && !(o._queue && o._queue.length))) return null;
                 const w = (k) => k === "move" ? "MOVE" : k === "attack" ? "ATTACK" : k === "patrol" ? "PATROL" : k === "build" ? "BUILD" : k === "escort" ? "ESCORT" : "DEFEND";
                 return { active: w(o.order || "defend"), legs: (o._queue || []).map((q) => q.kind === "line" ? (q.line === "walls" ? "WALLS" : q.line === "bags" ? "BAGS" : q.line === "mines" ? "MINES" : "WIRE") : w(q.kind)) };
               })(),
-              // mk2.96: the roster — the living force and its kills, built
+              // The roster — the living force and its kills, built
               // only while the panel is open.
               roster: view.rosterOpen ? (() => {
                 const rows = [];
@@ -1496,7 +1492,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
                 }
                 return rows;
               })() : null,
-              // POSSESSION (P4 T1/T3, mk0.90/mk0.92): the RELEASE button/
+              // The RELEASE button/
               // POSSESSED chip key off this — null the instant the squad or
               // tower is gone. The stick (data-joy) additionally checks
               // kind !== "tower" — towers don't walk.
@@ -1512,7 +1508,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
                       aimRange: pm.mechRef.aimRange || 26 };
                   })()
                 : (() => { const ptw = world.byId.get(input.possess.id); return ptw && ptw.kind === "tower" ? { kind: "tower", label: TOWER_SPECS[ptw.towerType].label } : null; })(),
-              // P7 T2: the Bison's own pie, projected off the hull top (the
+              // The Bison's own pie, projected off the hull top (the
               // towerScreen recipe) — null unless a vehicle is selected.
               vehRadial: (() => {
                 if (view.selVehId == null || !view.vehScreen) return null;
@@ -1522,17 +1518,17 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
                   kind: v.kind, vtype: v.vtype, seatsFree: v.vtype === "apc" || v.vtype === "jeep" ? seatsOf(v) - apcSeated(world, run.squads, v.apcSeq) : 0,
                   riders: v.vtype === "apc" || v.vtype === "jeep" ? apcSeated(world, run.squads, v.apcSeq) : 0, aimingLoad: view.vehOrderMode === "load",
                   aimingMove: view.vehOrderMode === "move", aimingAttack: view.vehOrderMode === "attack", aimingPatrol: view.vehOrderMode === "patrol", aimingEscort: view.vehOrderMode === "escort",
-                  queueOn: view.queueOn, chained: (v._queue && v._queue.length) || 0, // mk2.91
+                  queueOn: view.queueOn, chained: (v._queue && v._queue.length) || 0,
                   patrolStart: !!view.buildPt0, armed: world.t >= view.selArmedAt, showPie: !!view.pieOpen, linePending: !!view.linePending };
               })(),
-              // mk2.89: the group reticle — three wedges at the sweep's centroid.
+              // The group reticle — three wedges at the sweep's centroid.
               groupRadial: view.groupSel && view.groupScreen ? {
                 x: view.groupScreen.x, y: view.groupScreen.y,
                 count: view.groupSel.sqIds.length + view.groupSel.vehIds.length,
                 aimingMove: view.groupOrderMode === "move", aimingAttack: view.groupOrderMode === "attack",
                 armed: world.t >= view.selArmedAt, showPie: !!view.pieOpen,
               } : null,
-              // COMMAND T2 (mk0.84): the proposed line's accept/reject pair —
+              // The proposed line's accept/reject pair —
               // survives the end point going off-screen (buttons just hide).
               linePending: view.linePending && view.lineScreen ? {
                 x: view.lineScreen.x, y: view.lineScreen.y,
@@ -1556,7 +1552,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
                   blurb: ispec ? ispec.blurb : "Bends their road.",
                 };
               })(),
-              // COMMAND T1 (mk0.80): the tower radial — CAREFUL/FREE toggle
+              // The tower radial — CAREFUL/FREE toggle
               // (frost towers have no gun, so they skip that slot) and SELL,
               // for the inspected tower only. Walls keep their inspect
               // behavior untouched (no radial).
@@ -1570,10 +1566,10 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
                   label: ispec.label,
                   discipline: b.discipline || discipline || "careful",
                   refund: Math.floor(ispec.cost * 0.6),
-                  // POSSESSION (P4 T3, mk0.92): TAKE CONTROL — gun towers
+                  // TAKE CONTROL — gun towers
                   // only. Frost's fireRate is 0 (no gun to man).
                   canPossess: ispec.fireRate > 0,
-                  showPie: !!view.pieOpen,   // COMMAND 1b (mk0.82)
+                  showPie: !!view.pieOpen,
                 };
               })(),
             });
@@ -1596,7 +1592,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           }
         } catch (err) {
           console.error("COLDSNAP DEPOT frame failed", err);
-          // HOTFIX mk1.37: the overlay names the throwing SITE — "non-finite" alone left the fault anonymous on a phone
+          // The overlay names the throwing SITE — "non-finite" alone left the fault anonymous on a phone
           const top = err && err.stack ? String(err.stack).split("\n").slice(0, 3).join(" ⏎ ") : "";
           setFatal(String(err && err.message ? err.message : err) + (top ? " — " + top : ""));
           disposed = true;
@@ -1623,7 +1619,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       };
     } catch (err) {
       console.error("COLDSNAP DEPOT boot failed", err);
-      // HOTFIX mk1.37: the overlay names the throwing SITE — "non-finite" alone left the fault anonymous on a phone
+      // The overlay names the throwing SITE — "non-finite" alone left the fault anonymous on a phone
       const top = err && err.stack ? String(err.stack).split("\n").slice(0, 3).join(" ⏎ ") : "";
       setFatal(String(err && err.message ? err.message : err) + (top ? " — " + top : ""));
       if (R) R.dispose();
@@ -1632,9 +1628,9 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
 
   const setMode = (m) => {
     const C = stateRef.current; if (!C) return;
-    if (C.run.gameOver || C.run.victory) return;   // mk0.29: the war is over — nothing left to build
-    // mk1.95: hero keys are ordinary placement modes — no special case.
-    // P7 T17: TAP AGAIN TO PUT IT AWAY — the active build button is
+    if (C.run.gameOver || C.run.victory) return;   // the war is over — nothing left to build
+    // Hero keys are ordinary placement modes — no special case.
+    // TAP AGAIN TO PUT IT AWAY — the active build button is
     // a toggle; the second tap clears back to plain command.
     if (C.run.mode === m) {
       if (C.view.linePending && C.view.rejectLine) C.view.rejectLine();
@@ -1642,13 +1638,13 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       setHud((h) => ({ ...h, mode: null, devSpawn: null }));
       return;
     }
-    // COMMAND T2 (mk0.84): switching build-menu mode with a line still up
+    // Switching build-menu mode with a line still up
     // clears it through the same door ✗ uses (rejectLine also disposes the
     // renderer's preview group) — it never lingers behind the new mode.
     if (C.view.linePending && C.view.rejectLine) C.view.rejectLine();
     C.run.mode = m; C.view.sellMode = false; C.view.inspectId = null; C.view.pending = null; C.view.selSquadId = null; C.view.selSquadIds = null; C.view.orderMode = null; C.view.buildPt0 = null; C.view.devSpawn = null;
     setHud((h) => ({ ...h, mode: m, sellMode: false, devSpawn: null }));
-    // P7.1 T5: the pick arms the bar — the tree lands on the armed type's branch.
+    // The pick arms the bar — the tree lands on the armed type's branch.
     const b = branchOf(m);
     if (b) setBranch(b);
   };
@@ -1659,7 +1655,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
     if (C.view.sellMode && C.view.teachFire) C.view.teachFire("sell");
     setHud((h) => ({ ...h, sellMode: C.view.sellMode }));
   };
-  // P7.1 T5: closing the tree clears back to plain command — the ruled
+  // Closing the tree clears back to plain command — the ruled
   // toggle-off, one door for mode, pending, half-given lines, and sell.
   const closeBuild = () => {
     beginPack(null, true);
@@ -1672,13 +1668,13 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
     const C = stateRef.current; if (!C) return;
     if (C.view.audio) C.view.audio.ensure();
     if (C.run.draft && C.run.draft.length && !C.view._draftDone) {
-      // P7.2 T8: THE DRAFT — seven cards up, five picks, all free.
+      // THE DRAFT — seven cards up, five picks, all free.
       C.view._draftOpen = true;
       if (C.view.teachFire) C.view.teachFire("the_hand");
       setHud((h) => ({ ...h, drafting: C.run.draft.map((c) => ({ k: c.k, plan: c.plan })) }));
       return;
     }
-    C.view._placeQueue = null; // P7.1 T6 A2: the war has begun — the ticker must yield nothing
+    C.view._placeQueue = null; // the war has begun — the ticker must yield nothing
     C.run.started = true;
     if (C.view.teachFire) C.view.teachFire("desktop_keys");
     setHud((h) => ({ ...h, started: true, placing: null }));
@@ -1706,7 +1702,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
     C.view.setHealth(!C.view.healthOn);
     setHud((h) => ({ ...h, healthOn: C.view.healthOn }));
   };
-  // mk2.18: THE SWITCH — area weapons (tesla chain, davy blast) hold fire
+  // THE SWITCH — area weapons (tesla chain, davy blast) hold fire
   // with a friendly in the spread. Per side; only side 1 (the player) ever
   // flips.
   const toggleHoldArea = () => {
@@ -1715,13 +1711,13 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
     if (C.view.teachFire) C.view.teachFire("spare_ours");
     setHud((h) => ({ ...h, holdAreaOn: C.run.holdArea[1] }));
   };
-  // mk2.26: THE FIGHT SWITCH — sandbox only, live, any time.
+  // THE FIGHT SWITCH — sandbox only, live, any time.
   const toggleDevFight = () => {
     const C = stateRef.current; if (!C) return;
     C.input.devDummies = !C.input.devDummies;
     setHud((h) => ({ ...h, devDummies: C.input.devDummies }));
   };
-  // FIRE FEEDBACK (mk0.96): the held state, and the LOOK of the held state,
+  // FIRE FEEDBACK: the held state, and the LOOK of the held state,
   // set in one place — direct DOM writes (the joystick knob's discipline, no
   // React state in the hot path). A hold the browser cancels pops the button
   // dark the instant it dies, so a silent drop is visible.
@@ -1732,7 +1728,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       fireBtnRef.current.style.color = v ? "#1a0d0f" : "#ff6b5e";
     }
   };
-  // P7 T2: the coax MG's held state — mirrors setFireHeld with its own ref.
+  // The coax MG's held state — mirrors setFireHeld with its own ref.
   const setMgHeld = (v) => {
     const C = stateRef.current; if (C) C.input.mgHeld = v;
     if (mgBtnRef.current) {
@@ -1742,7 +1738,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
   };
   const sellInspected = () => { const C = stateRef.current; if (C && C.view.inspectId && C.view.sellById) C.view.sellById(C.view.inspectId); };
 
-  // Task 6 (mk2.44): THE ON-DEMAND DOOR — hold a carded control 450ms and
+  // THE ON-DEMAND DOOR — hold a carded control 450ms and
   // its card opens through the market-card door (no pause, nothing marked
   // seen); the release's click is swallowed. Press state rides a ref keyed
   // by card, so the 8Hz interface refresh can't strand a timer.
@@ -1755,7 +1751,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
     onClickCapture: (e) => { const o = lpRef.current[k]; if (o && o.fired) { o.fired = false; e.preventDefault(); e.stopPropagation(); } },
   });
 
-  // POSSESSION (P4 T1, mk0.90): the touch stick. Depot-styled port of the
+  // The touch stick. Depot-styled port of the
   // sandbox's own joystick (ContractSandbox.jsx :365-380, :429-437) — radius
   // 56, deadzone 0.15, knob clamped to the radius and following the finger.
   // Unlike the sandbox's stick (a decorative pair with pointerEvents:none,
@@ -1784,7 +1780,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
     if (C) C.view.joy = { active: false, t: 0, s: 0 };
     if (joyKnobRef.current) { joyKnobRef.current.style.left = "48px"; joyKnobRef.current.style.top = "48px"; }
   };
-  // POSSESSION T4 (mk0.93): the right stick — same math, own knob ref, own
+  // The right stick — same math, own knob ref, own
   // live state (view.joyR), mirrored from moveJoy/releaseJoy above.
   const moveJoyR = (e) => {
     const C = stateRef.current;
@@ -1804,14 +1800,14 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
     if (joyRKnobRef.current) { joyRKnobRef.current.style.left = "48px"; joyRKnobRef.current.style.top = "48px"; }
   };
 
-  // The bar shows the UNLOCKED set and nothing else (P1 Task 2): a locked
+  // The bar shows the UNLOCKED set and nothing else: a locked
   // item does not render at all — no greyed teasers, because the manifest
   // card IS the reveal. PALETTE's own order is preserved, so an item always
   // arrives in the same slot position it will keep for the rest of the match.
   const unlocked = hud.unlocked || [];
   const palette = PALETTE.filter((p) => unlocked.indexOf(p.key) >= 0);
 
-  // mk2.31: THE LATTICE's rung tags — a rack tag (foes) or a palette tag,
+  // THE LATTICE's rung tags — a rack tag (foes) or a palette tag,
   // today's whole bodies carried over verbatim, packing appended on tap.
   const renderLatticeTag = (cat, k, ti, ri) => {
     const entranceDelay = (0.17 + ri * 0.06 + ti * 0.035) + "s";
@@ -1860,13 +1856,12 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
   return (
     <div style={P.root}>
       <canvas key={runId} ref={canvasRef} style={P.cv} />
-      {/* POSSESSION (P4 T1, mk0.90) ------------------------------------- */}
       {hud.possessed && (
         <div data-possessed-chip style={{ position: "absolute", top: 8, left: "50%", transform: "translateX(-50%)", zIndex: 6, background: "rgba(14,18,24,0.88)", border: "1px solid #7dffa8", color: "#7dffa8", borderRadius: 6, padding: "3px 12px", fontSize: 12, letterSpacing: 1, pointerEvents: "none" }}>
           POSSESSED — {hud.possessed.label}
         </div>
       )}
-      {/* POSSESSION (P4 T3, mk0.92): no stick for towers — they don't walk. */}
+      {/* No stick for towers — they don't walk. */}
       {isTouch && hud.possessed && hud.possessed.kind !== "tower" && (
         <div data-joy
           style={{ position: "absolute", left: 92 - 70, bottom: 128 - 70, width: 140, height: 140, zIndex: 7, touchAction: "none" }}
@@ -1885,7 +1880,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           <div ref={joyKnobRef} style={{ position: "absolute", left: 48, top: 48, width: 44, height: 44, borderRadius: "50%", background: "rgba(125,255,168,0.75)", border: "2px solid #7dffa8", pointerEvents: "none" }} />
         </div>
       )}
-      {/* POSSESSION T4 (mk0.93): the right stick — steers the reticle.
+      {/* The right stick — steers the reticle.
           Shown for BOTH possessed kinds (towers have no left stick, so this
           is their whole interface). */}
       {isTouch && hud.possessed && (
@@ -1920,7 +1915,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           {hud.possessed.gear === "4l" ? "4L" : "2H"}
         </button>
       )}
-      {/* POSSESSION (P4 T2, mk0.91) — FIRE: hold-to-repeat, like the
+      {/* FIRE: hold-to-repeat, like the
           sandbox's own trigger. Sets input.fireHeld; the sim bracket (frame loop)
           is what actually attempts a volley, at most once per sim tick. */}
       {isTouch && hud.possessed && (
@@ -1932,8 +1927,8 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           FIRE
         </button>
       )}
-      {/* P7 T2: the Bison's coax — vehicle possession only, beside FIRE.
-          P7 T4: not the APC — one gun, FIRE alone. */}
+      {/* The Bison's coax — vehicle possession only, beside FIRE.
+          Not the APC — one gun, FIRE alone. */}
       {isTouch && hud.possessed && hud.possessed.kind === "vehicle" && hud.possessed.vtype !== "apc" && hud.possessed.vtype !== "jeep" && (
         <button data-possess-mg ref={mgBtnRef}
           style={{ ...P.btnBig, position: "absolute", right: 208, bottom: 16, zIndex: 7, width: 64, height: 64, borderRadius: "50%", borderColor: "#ffd27a", color: "#ffd27a", fontWeight: "bold", background: "#2a2214", touchAction: "none" }}
@@ -1943,7 +1938,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           MG
         </button>
       )}
-      {/* THE MECH (mk1.92): PUNT/MSL/BRG stack above FIRE, cooldown-grey on
+      {/* THE MECH: PUNT/MSL/BRG stack above FIRE, cooldown-grey on
           MSL/BRG; the range slider + trim pair set view.mechAimRange/mechAimHeld,
           consumed by feedMechCommands at sim-tick cadence. */}
       {isTouch && hud.possessed && hud.possessed.kind === "mech" && (
@@ -2119,7 +2114,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             </div>
             <div style={{ fontSize: 11, opacity: 0.8, marginBottom: 10, lineHeight: 1.5 }}>
               Plans build; hires march. Take what your scrap can carry.
-              {/* The teaching line, first truck only (mk0.50). Deterministic on
+              {/* The teaching line, first truck only. Deterministic on
                   the bell index — bell 1 is the first bell of any match, so
                   nothing is stored, nothing is flagged, and a resumed save
                   shows it again only if it resumed to bell 1. */}
@@ -2165,7 +2160,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           onCancel={() => { const C = stateRef.current; if (C && C.view.closeInfo) C.view.closeInfo(); }} />
       )}
 
-      {/* Task 3: the teaching card — head of the fire queue, above every
+      {/* The teaching card — head of the fire queue, above every
           overlay (the draft sits at zIndex 8). The war is frozen while it
           is up; CLOSE marks it seen and resumes. */}
       {hud.teach && !hud.info && (() => {
@@ -2260,7 +2255,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
               <div style={{ color: "#7fd7ff", letterSpacing: 1 }}>{hud.inspect.label}</div>
               <div style={{ fontSize: 10, opacity: 0.8 }}>HP {hud.inspect.hp}/{hud.inspect.maxHp} · {hud.inspect.blurb}</div>
             </div>
-            {/* COMMAND T1 (mk0.80): SELL moved into the tower radial below —
+            {/* SELL moved into the tower radial below —
                 walls keep today's inspect behavior untouched (no radial). */}
             {!hud.towerRadial && (
               <button style={{ ...P.btn, borderColor: "#ffb45e", color: "#ffb45e" }} onClick={sellInspected}>
@@ -2324,7 +2319,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             onClick={() => {
               if (buildOpen) { closeBuild(); return; }
               const C = stateRef.current;
-              // mk2.00: no build tree over a live possession.
+              // No build tree over a live possession.
               if (C && C.input.possess) return;
               const b = C && C.run.mode ? branchOf(C.run.mode) : null;
               if (b) setBranch(b);
