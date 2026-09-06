@@ -71,7 +71,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
   const stateRef = useRef(null);
   // The knob's screen position is pushed
   // straight to the DOM from the pointer handlers below — not React state —
-  // the same discipline ContractSandbox.jsx's own joystick uses, so a drag
+  // the same discipline the sandbox's own joystick uses, so a drag
   // never queues a re-render.
   const joyKnobRef = useRef(null);
   // The right stick's own knob ref — same discipline
@@ -259,9 +259,9 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       R.overlay.setBanners(map.SPAWN_POINTS);
       const AIM_OFF = { x: 0, z: -500 };
       // FOG toggle: visuals only (see renderer.js setFog) — default ON,
-      // persisted with the same localStorage-key pattern CampaignRunner uses
-      // for "coldsnap-camp-deployed". Targeting (fieldReaches in state.js,
-      // a sight read) is untouched by this flag.
+      // persisted with the same localStorage-key pattern the old campaign
+      // used for "coldsnap-camp-deployed". Targeting (fieldReaches in
+      // state.js, a sight read) is untouched by this flag.
       let fogOn = true;
       try { fogOn = window.localStorage.getItem("coldsnap-depot-fog") !== "0"; } catch (e) {}
       R.setFog(fogOn);
@@ -910,8 +910,8 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             run.focus.y = field.heightAt(run.focus.x, run.focus.z);
           }
           if (input.possess && input.possess.kind === "squad") {
-            // The stick, camera-relative (the sandbox's own twin-stick math,
-            // ContractSandbox.jsx :508-513): joystick wins if it's live,
+            // The stick, camera-relative (the sandbox's own twin-stick math):
+            // joystick wins if it's live,
             // WASD/arrows otherwise. The camera locks to the squad — no pan,
             // no drift; a touch drag one finger off the stick still nudges
             // it (pointermove below), but it snaps back here next frame.
@@ -976,8 +976,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             // velocity, the OFFSET holds on release, so walking carries the
             // reticle with the unit), same precedence the left stick uses
             // (view.joy.active above); otherwise the mouse sets the offset, the
-            // sandbox's own convention (ContractSandbox.jsx :413-419/:530) —
-            // positional, not velocity. Either way the offset is bounded to
+            // sandbox's own convention — positional, not velocity. Either way the offset is bounded to
             // the possessed unit's live sight circle every frame
             // (reclampReticle); its ground can go dark and it falls home to
             // the unit's cell. The world point the guns and the red ring
@@ -1752,7 +1751,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
   });
 
   // The touch stick. Depot-styled port of the
-  // sandbox's own joystick (ContractSandbox.jsx :365-380, :429-437) — radius
+  // sandbox's own joystick — radius
   // 56, deadzone 0.15, knob clamped to the radius and following the finger.
   // Unlike the sandbox's stick (a decorative pair with pointerEvents:none,
   // driven by a window-level proximity test) this one is its OWN real DOM

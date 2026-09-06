@@ -1,5 +1,5 @@
 // game/runner/trials.js — campaign trial-table construction and small HUD
-// constants. Moved verbatim from CampaignRunner.jsx in the module split.
+// constants.
 import { CAUSE } from "../../engine/core.js";
 import { matchKill } from "../predicate.js";
 

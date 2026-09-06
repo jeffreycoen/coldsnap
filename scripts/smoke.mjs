@@ -12,7 +12,7 @@
 // SMOKE_ONLY=<section[,section...]> restricts the run to a subset of
 // sections, e.g. SMOKE_ONLY=depot or SMOKE_ONLY=depot,td. Unset runs
 // everything. Sections:
-// start, demo, contracts, campaign, phone, keymap, mech, td, depot.
+// start, demo, phone, keymap, mech, td, depot.
 // Each enabled section seeds its own localStorage/navigation preconditions
 // so any subset is runnable standalone for local iteration.
 import puppeteer from "puppeteer-core";
@@ -21,7 +21,7 @@ import { MK } from "../src/version.js";
 const URL = process.env.SMOKE_URL || "http://localhost:4173/coldsnap/";
 const CHROME = process.env.CHROME_BIN || "/usr/bin/chromium";
 
-const ALL_SECTIONS = ["start", "demo", "contracts", "campaign", "phone", "keymap", "mech", "td", "depot"];
+const ALL_SECTIONS = ["start", "demo", "phone", "keymap", "mech", "td", "depot"];
 const ONLY = process.env.SMOKE_ONLY
   ? process.env.SMOKE_ONLY.split(",").map((s) => s.trim()).filter(Boolean)
   : null;
@@ -99,48 +99,6 @@ try {
     await page.waitForFunction(() => !!document.querySelector('[data-menu="depot"]'));
     await toDemos("demo");
     ok("ESC returns to the start screen", true);
-  }
-
-  // --- contract sandbox: it boots, it builds its whole world, ESC returns.
-  // Self-contained: resets trial progress and parks at the menu first.
-  if (sectionEnabled("contracts")) {
-    await page.evaluate(() => localStorage.removeItem("coldsnap-cs-trial"));
-    await toMenu();
-    await toDemos("contracts");
-    await clickMenu("contracts");
-    await page.waitForSelector("canvas");
-    await page.waitForFunction(() => !!window.__COLDSNAP__);
-    await page.waitForFunction(() => document.body.innerText.includes("WO-01"));
-    body = await text();
-    ok("sandbox boots with work-order titles (WO-01)", body.includes("WO-01 · DIRECT-FIRE ACCEPTANCE"));
-    const csState = await page.evaluate(() => window.__COLDSNAP__.getState());
-    ok("sandbox world builds fully (1030 bodies)", csState.bodies === 1030);
-    await page.keyboard.press("Escape");
-    await page.waitForFunction(() => !!document.querySelector('[data-menu="depot"]'));
-    ok("ESC returns from the sandbox", true);
-  }
-
-  // --- campaign: the order book opens and the first mission deploys.
-  // Self-contained: wipes campaign progress/record and parks at the menu.
-  if (sectionEnabled("campaign")) {
-    await page.evaluate(() => {
-      for (const k of ["coldsnap-camp-progress", "coldsnap-camp-record", "coldsnap-camp-medals"]) localStorage.removeItem(k);
-      localStorage.setItem("coldsnap-screen", "menu");
-    });
-    await page.reload({ waitUntil: "networkidle0" });
-    await toDemos("campaign");
-    await clickMenu("campaign");
-    await page.waitForFunction(() => document.body.innerText.includes("ORDER BOOK"));
-    const book = await text();
-    ok("order book lists all eight orders", book.includes("AC-01") && book.includes("AC-08"));
-    ok("first order deployable, title in clear", book.includes("DEPLOY") && book.includes("ARMOR PLATE ACCEPTANCE"));
-    await page.evaluate(() => document.querySelector('[data-camp="ac01"]').click());
-    await page.waitForSelector("canvas");
-    await page.waitForFunction(() => !!window.__COLDSNAP__ && document.body.innerText.includes("AC-01"));
-    ok("the first mission deploys", true);
-    await page.keyboard.press("Escape");
-    await page.waitForFunction(() => !document.querySelector("canvas"), { timeout: 20000 });
-    ok("ESC leaves the mission", true);
   }
 
   // --- phone viewport: the page comes up on a small touch screen and a mode

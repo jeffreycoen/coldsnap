@@ -1,6 +1,6 @@
 // game/runner/Typed.jsx — bureau transmissions arrive over the wire: text
 // types out. Filed documents (the AAR) stay static — carbon paper does not
-// animate. Moved verbatim from CampaignRunner.jsx in the module split.
+// animate.
 import React, { useEffect, useState } from "react";
 
 export function Typed({ text, cps = 45, style }) {

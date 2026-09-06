@@ -2,7 +2,7 @@
 
 **A full physics war game that fits on a floppy disk.** 💾
 
-The whole thing — the war, the engine, five tech demos, every sound — is one 1.40 MB bundle, about 448 KB over the wire. A 1.44 MB floppy still holds it — with 553 bytes to spare, and not a byte of room for bad ideas.
+The whole thing — the war, the engine, three tech demos, every sound — is one 1.29 MB bundle, about 410 KB over the wire. A 1.44 MB floppy still holds it — with 123,427 bytes to spare.
 
 **PLAY:** https://jeffreycoen.github.io/coldsnap/
 
@@ -43,7 +43,7 @@ The war itself: every 90 seconds the muster bell rings and the convoy deals a fi
 - **Renderers**: the war draws through its own engine (`src/graphics/renderer.js`, reached only via `src/depot/api.js`); the demos and tower defense keep the original (`src/render/renderer.js`). Each is one Three.js scene, instanced pools with fixed caps sized by measurement — 7,000 stones, 800 trees — and a fog pass that draws only what a living eye can see.
 - **The save**: bodies, welds mid-break, craters, squad rosters, minefields, the dice — serialized at each bell into a single JSON string in browser storage.
 - **One import surface**: game code reaches the engine, the renderer, audio, and storage through `src/depot/api.js` — nothing else imports across that line. The whole war boots, runs, and hashes headless through it: `node src/depot/api.js gate`.
-- Winter Front was built on five playable tech demos — driving, contracts, a campaign, a tower defense, and a walking biped mech — all still on the site behind THE PROVING RANGE.
+- Winter Front was built on three playable tech demos — driving, a tower defense, and a walking biped mech — all still on the site behind THE PROVING RANGE.
 
 ## Development
 
