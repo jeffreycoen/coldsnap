@@ -58,6 +58,11 @@ export function makeMechReadout() {
         seen[j.name] = j.stopImp;
       }
     }
+    // the head weld: the machine's one breakable — flash on break, hold
+    // until looked at, stay red after
+    const hb = mech.headWeld && mech.headWeld.broken;
+    if (hb && !seen.head) { spikes.head = { v: 0, t: 1 }; seen.head = 1; }
+    if (!hb) seen.head = 0;
     // silhouette
     g.clearRect(0, 0, W, H);
     g.strokeStyle = "#44505f";
@@ -68,6 +73,10 @@ export function makeMechReadout() {
     g.moveTo(34, 44); g.lineTo(16, 38);    // arms
     g.moveTo(74, 44); g.lineTo(92, 38);
     g.stroke();
+    const spH = spikes.head;
+    if (spH) spH.t = spH.t > 0.5 ? spH.t - 0.04 : 1;
+    g.strokeStyle = hb ? (spH && spH.t > 0.75 ? "#ffffff" : "#e06a5e") : "#44505f";
+    g.strokeRect(46, 4, 16, 10); // the head, red once its weld is broken
     for (const j of mech.joints) {
       const p = P[j.name];
       if (!p) continue;
@@ -97,15 +106,16 @@ export function makeMechReadout() {
     const exi = Math.hypot(cx + vx / om - fmx, cz + vz / om - fmz);
     const D = 180 / Math.PI;
     const pad = (s, n) => String(s).padStart(n);
-    let out = "JOINT         ANG    RATE     TQ  CEIL   STOP\n";
-    out += "            (deg)  (d/s)  (kNm)   (%)  (kNm)\n";
+    let out = "JOINT         ANG    RATE     TQ  CEIL   STOP  SHEAR\n";
+    out += "            (deg)  (d/s)  (kNm)   (%)  (kNm)   (kN)\n";
     for (const j of mech.joints) {
       out += j.name.padEnd(11)
         + pad((j.angle * D).toFixed(1), 7)
         + pad((j.wRel * D).toFixed(0), 7)
         + pad(((j._mAcc || 0) / dtw / 1000).toFixed(1), 7)
         + pad((eff(j) * 100).toFixed(0), 6)
-        + pad((j.stopImp / 1000).toFixed(1), 7) + "\n";
+        + pad((j.stopImp / 1000).toFixed(1), 7)
+        + pad(((j.shearPk || 0) / 1000).toFixed(0), 7) + "\n";
     }
     out += "\nLEG      LOAD(%W)  STATE\n";
     for (const sd of ["L", "R"]) {
@@ -113,14 +123,17 @@ export function makeMechReadout() {
       out += (sd + " foot").padEnd(9) + pad((lg.load / Wt * 100).toFixed(0), 8)
         + "  " + (lg.load > 0.04 * Wt ? "loaded" : "airborne") + "\n";
     }
-    out += "\nNOZZLE   CMD   BURN\n";
+    out += "\nNOZZLE   CMD   BURN   AIM(deg)\n";
     for (let i = 0; i < (mech.thrusters || []).length; i++) {
       const th = mech.thrusters[i];
-      out += ("#" + (i + 1)).padEnd(9) + pad(th.cmd.toFixed(2), 4) + pad(th.cur.toFixed(2), 7) + "\n";
+      const ec = th.eC || th.e;
+      const da = Math.acos(Math.max(-1, Math.min(1, ec.x * th.e.x + ec.y * th.e.y + ec.z * th.e.z))) * D;
+      out += ("#" + (i + 1)).padEnd(9) + pad(th.cmd.toFixed(2), 4) + pad(th.cur.toFixed(2), 7) + pad(da.toFixed(0), 10) + "\n";
     }
     out += "\nFRAME\n";
     out += "mode " + st.mode + (st.phases && st.phases[st.pi] ? " / " + st.phases[st.pi].kind : "") + "\n";
     out += "upright " + hull.R[4].toFixed(3) + "   balance excursion " + exi.toFixed(2) + " m\n";
+    out += "head weld " + (hb ? "BROKEN" : "holding") + "\n";
     out += "heading error " + (wrapPi(st.headingT - st.heading) * D).toFixed(1) + " deg\n";
     out += "stabilizer " + (st._thrA ? "TROUBLE" : "calm") + "   jet heat " + ((mech.jetHeat || 0) * 100).toFixed(0) + "%\n";
     out += "governor " + (st.govF != null ? st.govF.toFixed(2) : "off") + "   cadence " + (st.cadence || 1).toFixed(2) + "\n";

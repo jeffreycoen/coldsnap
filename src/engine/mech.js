@@ -13,6 +13,41 @@ const smoothstep = (s) => { const t = clamp(s, 0, 1); return t * t * (3 - 2 * t)
 // sin^2: zero slope at BOTH ends — lands at zero commanded vertical speed (spec §3)
 export function swingLift(s, h) { const p = Math.sin(Math.PI * s); return p * p * h; }
 
+// rotate unit vector v toward unit vector m, leaving at most `ang` between
+// them (the cone clamp) — and the same math steps a vector by a fixed angle,
+// which is the slew.
+function coneToward(v, m, ang, out) {
+  const d = clamp(v.x * m.x + v.y * m.y + v.z * m.z, -1, 1);
+  const cur = Math.acos(d);
+  if (cur <= ang) { V.set(out, v.x, v.y, v.z); return out; }
+  let px = v.x - m.x * d, py = v.y - m.y * d, pz = v.z - m.z * d;
+  const pl = Math.hypot(px, py, pz);
+  if (pl < 1e-9) { V.set(out, m.x, m.y, m.z); return out; }
+  px /= pl; py /= pl; pz /= pl;
+  const c = Math.cos(ang), s = Math.sin(ang);
+  V.set(out, m.x * c + px * s, m.y * c + py * s, m.z * c + pz * s);
+  return out;
+}
+// aim every nozzle at a world-frame horizontal push demand. The machinery
+// steers the bells, never the pilot. Zero demand homes the bells to their
+// mounts; a fixed-cant machine (the experiment's control) never aims.
+const _aw = v3(), _al = v3();
+function aimNozzles(mech, R5, dx, dz) {
+  const m2 = Math.hypot(dx, dz);
+  for (const th of mech.thrusters) {
+    if (!th.eT) continue;
+    if (m2 < 1e-6 || mech._fixedCant) { V.set(th.eT, th.e.x, th.e.y, th.e.z); continue; }
+    // wanted exhaust = opposite the push, taken into the torso frame
+    V.set(_aw, -dx / m2, 0, -dz / m2);
+    V.set(_al,
+      R5[0] * _aw.x + R5[1] * _aw.y + R5[2] * _aw.z,
+      R5[3] * _aw.x + R5[4] * _aw.y + R5[5] * _aw.z,
+      R5[6] * _aw.x + R5[7] * _aw.y + R5[8] * _aw.z);
+    V.norm(_al, _al);
+    coneToward(_al, th.e, mech.thrustCone, th.eT);
+  }
+}
+
 // ---------------------------------------------------------------- gait math (spec §1, §2)
 export function deriveGait(L, comH, halfStance, foot, g = 9.81) {
   const omega = Math.sqrt(g / comH);
@@ -166,6 +201,14 @@ function angImpulse(a, b, axis, lam) {
   iMulVec(b.invIw, _h1, _h2); V.addScaled(b.w, b.w, _h2, 1);
 }
 function prepHinge(j, dt) {
+  // the shear tap: the linear locks' accumulated impulse from the last
+  // solve, read here before the scratch resets — force the joint carried
+  // sideways and along, peak held for the readout and the harness
+  if (j._shX != null) {
+    j.shear = Math.hypot(j._shX, j._shY, j._shZ) / dt;
+    if (j.shear > (j.shearPk || 0)) j.shearPk = j.shear;
+  }
+  j._shX = 0; j._shY = 0; j._shZ = 0;
   const a = j.a, b = j.b;
   rMulVec(a.R, j.axA, j._a1);
   const a1 = j._a1;
@@ -237,6 +280,7 @@ function iterHinge(j, dt, locksOnly = false) {
     const wk = j.weldK || 1.5; // weld stiffness knob (C4 bake 1.5: stronger welds — smoother and +8k shove)
     const bias = clamp((0.2 * wk / dt) * cAx, -4 * wk, 4 * wk);
     const P = -(vRel + bias) / Math.max(1e-9, k);
+    if (ai === 0) j._shX += P; else if (ai === 1) j._shY += P; else j._shZ += P;
     V.scale(_h3, ax, P);
     V.addScaled(a.v, a.v, _h3, -a.invM);
     V.cross(_h1, j._rAw, _h3); iMulVec(a.invIw, _h1, _h2); V.addScaled(a.w, a.w, _h2, -1);
@@ -607,6 +651,13 @@ export function buildMech(world, opts = {}) {
       { p: v3(2.0 * s, -0.4 * s, 0), e: v3(R2, -R2, 0), cur: 0, cmd: 0 },         // left side   (thrust up+right = anti-left-lean)
       { p: v3(-2.0 * s, -0.4 * s, 0), e: v3(-R2, -R2, 0), cur: 0, cmd: 0 },       // right side
     ];
+    // swivel: each nozzle aims inside a cone about its mount. eT = the
+    // target exhaust direction, eC = the current one (chases eT at the slew
+    // rate, the burn spool's shape). Force follows eC — a bell mid-sweep
+    // pushes where it points now. Numbers are design choices until measured.
+    mech.thrustCone = 0.349; // radians (20 degrees)
+    mech.thrustSlew = 1.0;   // radians per second
+    for (const th of mech.thrusters) { th.eT = v3(th.e.x, th.e.y, th.e.z); th.eC = v3(th.e.x, th.e.y, th.e.z); }
     mech.thrustMax = 30000 * s * s * s; // N per nozzle; the GRIP BUDGET below is the real limiter
     mech.thrustersOn = false; // opt-in: the certified gait is pinned thruster-free in CI; the game enables
   }
@@ -1391,10 +1442,14 @@ function controller(world, mech) {
       // demand: push the capture point back over the feet + damp CoM speed
       const dx5 = -ex5 * 2.2 - _comV.x * 0.9;
       const dz5 = -ez5 * 2.2 - _comV.z * 0.9;
+      aimNozzles(mech, R5, dx5, dz5);
+      const dm5 = Math.hypot(dx5, dz5);
+      mech._thrDemand = dm5 > 1e-6 ? { x: dx5 / dm5, z: dz5 / dm5 } : null;
       for (const th of mech.thrusters) {
         // nozzle thrust direction in world (minus exhaust), horizontal part
-        const tx5 = -(R5[0] * th.e.x + R5[3] * th.e.y + R5[6] * th.e.z);
-        const tz5 = -(R5[2] * th.e.x + R5[5] * th.e.y + R5[8] * th.e.z);
+        const e5 = th.eC || th.e;
+        const tx5 = -(R5[0] * e5.x + R5[3] * e5.y + R5[6] * e5.z);
+        const tz5 = -(R5[2] * e5.x + R5[5] * e5.y + R5[8] * e5.z);
         th.cmd = clamp(dx5 * tx5 + dz5 * tz5, 0, 1);
       }
     } else if (mech.jetCmd && Math.hypot(mech.jetCmd.x, mech.jetCmd.z) > 0.15) {
@@ -1443,9 +1498,12 @@ function controller(world, mech) {
       const gov5 = catching5 ? 0
         : clamp((0.28 - vAl5) / 0.12, 0, 1) * (back5 > 0.3 ? 0.6 : 1) * 0.65 * clamp((1 - (mech.jetHeat || 0)) * 3, 0, 1);
       const scale5 = (quiet5 ? 1 : 0.35 + 0.65 * Math.max(0, jf5)) * gov5; // side puffs only on a QUIET stand — they kicked the STAND-catch transitions mid-strafe (fell 9.4s with walking burns already zeroed)
+      aimNozzles(mech, R5, jx5, jz5);
+      mech._thrDemand = { x: jx5, z: jz5 };
       for (const th of mech.thrusters) {
-        const tx5 = -(R5[0] * th.e.x + R5[3] * th.e.y + R5[6] * th.e.z);
-        const tz5 = -(R5[2] * th.e.x + R5[5] * th.e.y + R5[8] * th.e.z);
+        const e5 = th.eC || th.e;
+        const tx5 = -(R5[0] * e5.x + R5[3] * e5.y + R5[6] * e5.z);
+        const tz5 = -(R5[2] * e5.x + R5[5] * e5.y + R5[8] * e5.z);
         th.cmd = clamp((jx5 * tx5 + jz5 * tz5) * 1.0 * jm * scale5, 0, 1); // PROPORTIONAL: gain 2.4 clipped every burn to max at any deflection — no finesse axis for the pilot (all-direction falls)
       }
       st._thrV = null; // manual burns get an HONEST brake — telling it burn-speed was commanded let catch-marching run away (traced)
@@ -1476,16 +1534,39 @@ function controller(world, mech) {
       // overshoot re-armed the raw Raibert brake mid-sway and the fight
       // cascaded backward at 0.9 m/s (measured)
       st._thrV = st.govDecel || turning5 ? null : wantV;
-      if (turning5) { /* no burns through a turn */ }
-      else if (dv5 > 0.05 && !st.govDecel) { mech.thrusters[2].cmd = mech.thrusters[3].cmd = clamp(dv5 * 2.0, 0, 0.66); }
-      else if (dv5 < -0.08 && dv5 > -0.45) { mech.thrusters[0].cmd = mech.thrusters[1].cmd = clamp(-dv5 * 2.0, 0, 0.66); } // thrust-brake has a REGIME: beyond ~0.45 of overspeed the cascade needs its soles fully weighted (burns at 1.0 through a sprint-cascade unweighted the brake-feet and it ran to 3 m/s, traced)
+      if (turning5) { aimNozzles(mech, R5, 0, 0); mech._thrDemand = null; /* no burns through a turn */ }
+      else if (dv5 > 0.05 && !st.govDecel) {
+        aimNozzles(mech, R5, fwdX, fwdZ);
+        mech._thrDemand = { x: fwdX, z: fwdZ };
+        for (const th of mech.thrusters) {
+          const e5 = th.eC || th.e;
+          const a5 = fwdX * -(R5[0] * e5.x + R5[3] * e5.y + R5[6] * e5.z) + fwdZ * -(R5[2] * e5.x + R5[5] * e5.y + R5[8] * e5.z);
+          th.cmd = clamp(dv5 * 2.0 * Math.max(0, a5), 0, 0.66);
+        }
+      } else if (dv5 < -0.08 && dv5 > -0.45) {
+        aimNozzles(mech, R5, -fwdX, -fwdZ);
+        mech._thrDemand = { x: -fwdX, z: -fwdZ };
+        for (const th of mech.thrusters) {
+          const e5 = th.eC || th.e;
+          const a5 = -fwdX * -(R5[0] * e5.x + R5[3] * e5.y + R5[6] * e5.z) + -fwdZ * -(R5[2] * e5.x + R5[5] * e5.y + R5[8] * e5.z);
+          th.cmd = clamp(-dv5 * 2.0 * Math.max(0, a5), 0, 0.66); // thrust-brake has a REGIME: beyond ~0.45 of overspeed the cascade needs its soles fully weighted (burns at 1.0 through a sprint-cascade unweighted the brake-feet and it ran to 3 m/s, traced)
+        }
+      }
     }
     if (st._thrA) st._thrV = null;
+    if (!st._thrA && !jetsLive5 && !(mech.thrustAssist && ((st.govF != null && st.govF > 0.505) || st.govDecel))) {
+      aimNozzles(mech, R5, 0, 0);
+      mech._thrDemand = null;
+    }
     // GRIP BUDGET: vertical thrust unweights the soles, and sole friction
     // is what the whole gait stands on — cap total lift at 0.30 W
     // (stability) / 0.20 W (speed assist)
     let lift = 0;
-    for (const th of mech.thrusters) lift += th.cmd * mech.thrustMax * Math.SQRT1_2;
+    for (const th of mech.thrusters) {
+      const e5 = th.eC || th.e;
+      const vy5 = -(R5[1] * e5.x + R5[4] * e5.y + R5[7] * e5.z);
+      lift += th.cmd * mech.thrustMax * Math.max(0, vy5);
+    }
     const jetsLive = mech.jetCmd && Math.hypot(mech.jetCmd.x, mech.jetCmd.z) > 0.15;
     const liftCap = (st._thrA ? 0.30 : jetsLive ? 0.32 : gyroOff ? 0.25 : 0.20) * W5;
     if (lift > liftCap) { const sc5 = liftCap / lift; for (const th of mech.thrusters) th.cmd *= sc5; }
@@ -2685,6 +2766,7 @@ function stepMechs(world) {
         const tgt = mech.thrustersOn ? clamp(th.cmd, 0, 1) : 0;
         const spool = mech.gyroOn === false ? 0.06 : 0.12; // continuous duty needs the faster bell
         th.cur += clamp(tgt - th.cur, -dt / spool, dt / spool);
+        if (th.eT && th.eC) coneToward(th.eT, th.eC, (mech.thrustSlew || 1.0) * dt, th.eC);
         if (th.cur > hotSum) hotSum = th.cur;
         if (th.cur < 0.01) continue;
         const F = th.cur * mech.thrustMax;
@@ -2693,9 +2775,10 @@ function stepMechs(world) {
         const px = R[0] * th.p.x + R[3] * th.p.y + R[6] * th.p.z;
         const py = R[1] * th.p.x + R[4] * th.p.y + R[7] * th.p.z;
         const pz = R[2] * th.p.x + R[5] * th.p.y + R[8] * th.p.z;
-        const ex = R[0] * th.e.x + R[3] * th.e.y + R[6] * th.e.z;
-        const ey = R[1] * th.e.x + R[4] * th.e.y + R[7] * th.e.z;
-        const ez = R[2] * th.e.x + R[5] * th.e.y + R[8] * th.e.z;
+        const eU = th.eC || th.e;
+        const ex = R[0] * eU.x + R[3] * eU.y + R[6] * eU.z;
+        const ey = R[1] * eU.x + R[4] * eU.y + R[7] * eU.z;
+        const ez = R[2] * eU.x + R[5] * eU.y + R[8] * eU.z;
         // thrust opposes exhaust
         const fx = -ex * F, fy = -ey * F, fz = -ez * F;
         torso.v.x += fx * torso.invM * dt;

@@ -2341,7 +2341,8 @@ export function makeRenderer(canvas, world0, opts = {}) {
         const th = mch2.thrusters[ti2];
         const mp = new THREE.Vector3(th.p.x, th.p.y, th.p.z).applyQuaternion(tq);
         const mx = torsoB.pos.x + mp.x, my = torsoB.pos.y + mp.y, mz = torsoB.pos.z + mp.z;
-        _plDir.set(th.e.x, th.e.y, th.e.z).applyQuaternion(tq);
+        const eR = th.eC || th.e;
+        _plDir.set(eR.x, eR.y, eR.z).applyQuaternion(tq);
         _plQ.setFromUnitVectors(_plUp, _plDir);
         writeInst(mechMesh, mi, mx, my, mz, _plQ, 0.30, 0.38, 0.30); // bell, aimed along its exhaust
         if (mechMesh.setColorAt) mechMesh.setColorAt(mi, MECH_FOOT_C);
