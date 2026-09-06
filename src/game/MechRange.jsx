@@ -10,6 +10,7 @@ import { detectTouch } from "./runner/trials.js";
 import { BUILDERS } from "./scenario.js";
 import { COLORS, FONT } from "../ui/theme.js";
 import { makeGameAudio } from "../platform/audio.js";
+import { makeMechReadout } from "./mechReadout.js";
 
 export default function MechRange({ onExit }) {
   const canvasRef = useRef(null);
@@ -67,6 +68,7 @@ export default function MechRange({ onExit }) {
     for (const h of hostiles) h._hp0 = h.hp;
     const R = makeRenderer(canvasRef.current, world, { town: false });
     const A = makeGameAudio();
+    const RD = makeMechReadout();
     A.setReflectors([{ x: -10, z: -2, r: 4 }, { x: 9, z: -6, r: 4 }, { x: -1, z: 7, r: 5 }, { x: 16, z: 4, r: 6 }]); // the range buildings
 
     const S = { acc: 0, last: performance.now(), keys: {}, yawT: Math.PI, aimYaw: null, aimRange: 26, aimOff: 0, aiT: 0, orbit: 0, tankFire: [2.5, 5.2], raf: 0, hudT: 0, dead: false, joyId: null, jx: 0, jy: 0, rsId: null, rx: 0, rngId: null, aimHeld: 0, fireHeld: false };
@@ -204,6 +206,7 @@ export default function MechRange({ onExit }) {
       if (e.code === "KeyG") { window.__MECHRANGE__ && window.__MECHRANGE__.gyro(); }
       if (e.code === "KeyH") { window.__MECHRANGE__ && window.__MECHRANGE__.rcs(); }
       if (e.code === "KeyJ") { window.__MECHRANGE__ && window.__MECHRANGE__.jets(); }
+      if (e.code === "KeyB") { RD.toggle(); }
       if (e.code === "KeyR") {
         respawnMech(world, mech, 0, 41, Math.PI);
         S.yawT = Math.PI; S.aimYaw = null; mech.aimYaw = null;
@@ -441,6 +444,7 @@ export default function MechRange({ onExit }) {
       } catch (e) {}
       window.__MECHRANGE__.dbg.hull = { x: h.pos.x, y: h.pos.y, z: h.pos.z };
       try { R.render(dt, focus, { x: h.pos.x, z: h.pos.z }, 0); } catch (e) {}
+      try { RD.update(world, mech, dt); } catch (e) {}
       // bubble gauge: pitch/roll bubble + yaw compass tick + burn ring
       if (bubbleRef.current && gaugeRingRef.current && yawTickRef.current) {
         const Rh = mech.hull.R;
@@ -481,6 +485,7 @@ export default function MechRange({ onExit }) {
       window.removeEventListener("touchcancel", onTE);
       window.removeEventListener("pointercancel", onPU);
       delete window.__MECHRANGE__;
+      RD.dispose();
       A.dispose();
       R.dispose();
     };
@@ -492,7 +497,7 @@ export default function MechRange({ onExit }) {
       <div data-mech-hud style={{ position: "absolute", top: 10, left: 12, color: "#c7d0dc", pointerEvents: "none" }}>
         <p style={{ ...line, color: COLORS.gold, fontSize: 14, letterSpacing: 2 }}>MECH TEST RANGE</p>
         <p style={line}>BIPED FRAME MK1 — GAIT ACCEPTANCE PENDING</p>
-        <p style={line}>{isTouch ? "L stick moves · R stick turns (or JETS) · ◀ ▶ aim · slider range" : "W/S walk · A/D turn · MOUSE aims · CLICK fire · V missiles · C punt · X one-leg · T 180 · G gyro · H rockets · J jets · R reissue"}</p>
+        <p style={line}>{isTouch ? "L stick moves · R stick turns (or JETS) · ◀ ▶ aim · slider range" : "W/S walk · A/D turn · MOUSE aims · CLICK fire · V missiles · C punt · X one-leg · T 180 · G gyro · H rockets · J jets · B readout · R reissue"}</p>
         <p data-mech-status style={line}>
           {hud.mode === "FALLEN" ? "FRAME DOWN — R TO REISSUE" : hud.maneuver ? hud.mode + " · " + hud.maneuver : hud.mode} · steps {hud.steps} · falls {hud.falls} · kills {hud.kills} · shots {hud.shots} · <span style={{ color: hud.mslCd > 0.1 ? "#e0b85e" : "#7fd47f" }}>MSL {hud.mslCd > 0.1 ? Math.ceil(hud.mslCd) + "s" : "READY"}</span> · garrison {hud.alert ? "ALERTED" : "unaware"}
         </p>
