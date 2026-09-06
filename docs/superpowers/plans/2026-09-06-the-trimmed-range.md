@@ -8,6 +8,14 @@ task's plan. The thrust sweep has its own file.
 |---|---|---|---|
 | T1 | 0.4.0 | The campaign and the contract sandbox retired from the shipped game; the mech test range KEPT (the mech workbench stays); bundle drop measured at 122,874 bytes raw JS (1,473,454 → 1,350,580) | LANDED 77c5aab (dist total 1,351,133 bytes / 1.29 MB, gzip wire 419,743 bytes / ~410 KB, floppy margin 123,427 bytes; smoke 30 − 7 = 23, 0 FAIL) |
 | T2 | — (nothing ships) | The thrust sweep: falls-per-steps curve across thruster power, measured headless in a worktree | OPEN |
+| T3 | 0.4.1 | The mech readout: a drawn silhouette with one dot per joint, colored green through red by servo effort, refreshed every frame; tapping it (or B) opens the full numeric table; stop impacts flash their joint and hold the number until looked at | LANDED ea3268d (smoke 23 PASS, 0 FAIL) |
+
+Standing rule for every measurement harness from here on: results stream
+as they land — one line per completed run appended to
+`.superpowers/experiments.log` (the gates.log pattern: timestamp,
+harness name, cell, seed, the run's numbers), so progress is readable
+mid-flight by tailing the file. A harness that reports only at the end
+does not conform.
 
 ---
 
