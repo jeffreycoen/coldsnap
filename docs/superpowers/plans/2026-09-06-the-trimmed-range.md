@@ -6,7 +6,7 @@ task's plan. The thrust sweep has its own file.
 
 | Task | Mark | What lands | Status |
 |---|---|---|---|
-| T1 | 0.4.0 | The campaign and the contract sandbox retired from the shipped game; the mech test range KEPT (the mech workbench stays); bundle drop measured at 122,874 bytes raw JS (1,473,454 → 1,350,580) | LANDED PENDING-HASH (dist total 1,351,133 bytes / 1.29 MB, gzip wire 419,743 bytes / ~410 KB, floppy margin 123,427 bytes; smoke 30 − 7 = 23, 0 FAIL) |
+| T1 | 0.4.0 | The campaign and the contract sandbox retired from the shipped game; the mech test range KEPT (the mech workbench stays); bundle drop measured at 122,874 bytes raw JS (1,473,454 → 1,350,580) | LANDED 77c5aab (dist total 1,351,133 bytes / 1.29 MB, gzip wire 419,743 bytes / ~410 KB, floppy margin 123,427 bytes; smoke 30 − 7 = 23, 0 FAIL) |
 | T2 | — (nothing ships) | The thrust sweep: falls-per-steps curve across thruster power, measured headless in a worktree | OPEN |
 
 ---
