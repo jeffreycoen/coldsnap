@@ -53,6 +53,7 @@ The owner directs design, reviews every plan, and is the sole playtester. His wo
 - Test only what changed; run ONLY the gates the brief lists. No scripted playtesting, ever. The full suite rides CI.
 - The sweep license: a plan may pre-license re-teaching tests that pin literal text the task itself moves or re-signs — asserted content stays identical, every re-teach reported old→new. Any other failure stops the task. The license never covers behavior.
 - No multi-agent review passes; verification is inline (gates + smoke + screenshots).
+- Measurement harnesses roll their seeds fresh at startup and print them first; no seed is ever written into a script or chosen. A rerun passes a drawn seed back explicitly on the command line. Every run streams one line to `.superpowers/experiments.log` as it lands.
 
 ## Look and sound
 
