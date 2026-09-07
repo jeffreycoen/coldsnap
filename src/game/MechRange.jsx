@@ -72,7 +72,8 @@ export default function MechRange({ onExit }) {
     const RD = makeMechReadout();
     A.setReflectors([{ x: -10, z: -2, r: 4 }, { x: 9, z: -6, r: 4 }, { x: -1, z: 7, r: 5 }, { x: 16, z: 4, r: 6 }]); // the range buildings
 
-    const S = { acc: 0, last: performance.now(), keys: {}, yawT: Math.PI, aimYaw: null, aimRange: 26, aimOff: 0, aiT: 0, orbit: 0, tankFire: [2.5, 5.2], raf: 0, hudT: 0, dead: false, joyId: null, jx: 0, jy: 0, rsId: null, rx: 0, rngId: null, aimHeld: 0, fireHeld: false, leapAim: false };
+    const S = { acc: 0, last: performance.now(), keys: {}, yawT: Math.PI, aimYaw: null, aimRange: 26, aimOff: 0, aiT: 0, orbit: 0, tankFire: [2.5, 5.2], raf: 0, hudT: 0, dead: false, joyId: null, jx: 0, jy: 0, rsId: null, rx: 0, rngId: null, aimHeld: 0, fireHeld: false, leapAim: false
+      , camPts: new Map(), pinchD0: 0, pinchA: 0, zoom: 1, zoom0: 1 };
     window.__MECHRANGE__ = {
       world, mech, R, addBody: (o) => addBody(world, o),
       reissue: () => { respawnMech(world, mech, 0, 41, Math.PI); S.yawT = Math.PI; S.aimYaw = null; mech.aimYaw = null; S.aimOff = 0; S.aimHeld = 0; S.rx = 0; mechCommand(mech, { travel: 0, lateral: 0, heading: 0 }); },
@@ -103,6 +104,15 @@ export default function MechRange({ onExit }) {
       const c = joyBase(), a = rsBase();
       if (S.joyId == null && Math.hypot(e.clientX - c.x, e.clientY - c.y) < 110) S.joyId = e.pointerId;
       else if (S.rsId == null && Math.hypot(e.clientX - a.x, e.clientY - a.y) < 110) S.rsId = e.pointerId;
+      else {
+        S.camPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (S.camPts.size === 2) {
+          const ps = [...S.camPts.values()];
+          S.pinchD0 = Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y);
+          S.zoom0 = S.zoom;
+          S.pinchA = Math.atan2(ps[1].y - ps[0].y, ps[1].x - ps[0].x);
+        }
+      }
     };
     const setRange = (r) => {
       S.aimRange = Math.max(6, Math.min(80, r));
@@ -146,6 +156,22 @@ export default function MechRange({ onExit }) {
       } else if (e.pointerId === S.rngId) {
         sliderY(e.clientY);
       }
+      else if (S.camPts.has(e.pointerId)) {
+        S.camPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (S.camPts.size === 2 && S.pinchD0 > 0) {
+          const ps = [...S.camPts.values()];
+          const d = Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y);
+          S.zoom = Math.max(0.5, Math.min(2.6, S.zoom0 * (d / S.pinchD0)));
+          R.setZoom(S.zoom);
+          // two-finger twist steers the yaw, incremental with wrap
+          const a = Math.atan2(ps[1].y - ps[0].y, ps[1].x - ps[0].x);
+          let da = a - S.pinchA;
+          while (da > Math.PI) da -= 2 * Math.PI;
+          while (da < -Math.PI) da += 2 * Math.PI;
+          S.pinchA = a;
+          R.rotateBy(da);
+        }
+      }
     };
     const onPU = (e) => {
       if (e.pointerType === "mouse") { S.fireHeld = false; return; }
@@ -166,6 +192,8 @@ export default function MechRange({ onExit }) {
       } else if (e.pointerId === S.rngId) {
         S.rngId = null; // range HOLDS where you left it
       }
+      S.camPts.delete(e.pointerId);
+      if (S.camPts.size < 2) S.pinchD0 = 0;
     };
     window.addEventListener("pointerdown", onPD);
     window.addEventListener("pointermove", onPM);
@@ -177,6 +205,7 @@ export default function MechRange({ onExit }) {
     // empty, every stick state clears unconditionally; when it shrinks,
     // any grab whose finger no longer exists is released.
     const onTE = (e) => {
+      if (e.touches.length < 2) { S.camPts.clear(); S.pinchD0 = 0; }
       // per-SIDE liveness: a grab whose half of the screen holds no
       // surviving finger is released, whatever pointer id the browser
       // attributed the up-event to
@@ -252,7 +281,13 @@ export default function MechRange({ onExit }) {
         // "up = forward" reads inverted whenever the machine faces the
         // camera — which is the spawn. Screen->world: right = -x, up = +z;
         // frame = the SMOOTH command heading (measured yaw is self-noise).
-        const wxS = -S.jx, wzS = -S.jy;
+        // screen-relative through the CAMERA's live frame: screen right is
+        // the camera's right, screen up is the camera's forward on the
+        // ground — the mapping the fixed camera baked in, now following it
+        const cb9 = R.camBasis;
+        const fh9 = Math.hypot(cb9.fwd.x, cb9.fwd.z) || 1;
+        const wxS = -(cb9.right.x * S.jx) - (cb9.fwd.x / fh9) * S.jy;
+        const wzS = -(cb9.right.z * S.jx) - (cb9.fwd.z / fh9) * S.jy;
         const hS = mech.state.heading;
         const fS = wxS * Math.sin(hS) + wzS * Math.cos(hS);
         const lS = wxS * Math.cos(hS) - wzS * Math.sin(hS);
@@ -261,6 +296,8 @@ export default function MechRange({ onExit }) {
       }
       if (S.keys.KeyA) S.yawT += 0.7 * cdt;
       if (S.keys.KeyD) S.yawT -= 0.7 * cdt;
+      if (S.keys.Digit1) R.rotateBy(1.2 * cdt);
+      if (S.keys.Digit3) R.rotateBy(-1.2 * cdt);
       // desktop held-turn pivots too (advisor): keyboard turning was still
       // grinding at machine rate (2 deg/s) with no pivot path
       S.keyTurnT = (S.keys.KeyA || S.keys.KeyD) ? (S.keyTurnT || 0) + cdt : 0;
@@ -536,7 +573,7 @@ export default function MechRange({ onExit }) {
       <div data-mech-hud style={{ position: "absolute", top: 10, left: 12, color: "#c7d0dc", pointerEvents: "none" }}>
         <p style={{ ...line, color: COLORS.gold, fontSize: 14, letterSpacing: 2 }}>MECH TEST RANGE</p>
         <p style={line}>BIPED FRAME MK1 — GAIT ACCEPTANCE PENDING</p>
-        <p style={line}>{isTouch ? "L stick moves · R stick turns (or JETS) · ◀ ▶ aim · slider range" : "W/S walk · A/D turn · MOUSE aims · CLICK fire · V missiles · C punt · X one-leg · T 180 · G gyro · H rockets · J jets · L leap · B readout · R reissue"}</p>
+        <p style={line}>{isTouch ? "L stick moves · R stick turns (or JETS) · ◀ ▶ aim · slider range" : "W/S walk · A/D turn · MOUSE aims · CLICK fire · V missiles · C punt · X one-leg · T 180 · G gyro · H rockets · J jets · 1/3 camera · L leap · B readout · R reissue"}</p>
         <p data-mech-status style={line}>
           {hud.mode === "FALLEN" ? "FRAME DOWN — R TO REISSUE" : hud.maneuver ? hud.mode + " · " + hud.maneuver : hud.mode} · steps {hud.steps} · falls {hud.falls} · kills {hud.kills} · shots {hud.shots} · <span style={{ color: hud.mslCd > 0.1 ? "#e0b85e" : "#7fd47f" }}>MSL {hud.mslCd > 0.1 ? Math.ceil(hud.mslCd) + "s" : "READY"}</span> · garrison {hud.alert ? "ALERTED" : "unaware"}
         </p>

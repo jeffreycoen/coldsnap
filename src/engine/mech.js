@@ -632,8 +632,19 @@ export function buildMech(world, opts = {}) {
     // head popped on every faceplant at 8e4. Ordnance-scale damage (M4)
     // gets its own budget.
     mech.headWeld = addWeld(world, torso, head, 6.0e5);
+    // THE GAS TANKS (design 2026-09-07): real bodies, real mass, welded to
+    // the torso back like the head is welded to the torso. The balance
+    // carries them; what a burst tank does is a later decision.
+    const tanks = [];
+    for (const sxT of [-0.55, 0.55]) {
+      const tk = B({ kind: "mechlink", group: "mech", mass: 350 * s3b, hx: 0.21 * s, hy: 0.48 * s, hz: 0.21 * s, x: x + sxT * s, y: torsoY + 0.35 * s, z: z - 1.05 * s, hp: 1e9, friction: 0.6, restitution: 0 });
+      tk.visTag = "gastank";
+      addWeld(world, torso, tk, 6.0e5);
+      tanks.push(tk);
+    }
+    mech.tanks = tanks;
     mech.torso = torso; mech.head = head;
-    mech.upper = [torso, arms.L.b, arms.R.b, head];
+    mech.upper = [torso, arms.L.b, arms.R.b, head, tanks[0], tanks[1]];
     // STABILIZATION ROCKETS (design 2026-08-02): six nozzles on the torso
     // slab, exhaust canted 45 deg down-and-outward — thrust is therefore
     // up-and-inward, applied HIGH (the torso rides ~2m above the CoM), so
@@ -767,7 +778,7 @@ export function buildMech(world, opts = {}) {
   // still collide with EACH OTHER — minFootSep keeps them apart in health,
   // physicality is welcome in failure)
   {
-    const up = [hull, mech.torso, mech.head, mech.arms.L.b, mech.arms.R.b];
+    const up = [hull, mech.torso, mech.head, mech.arms.L.b, mech.arms.R.b, mech.tanks[0], mech.tanks[1]];
     for (let i = 0; i < up.length; i++) for (let k2 = i + 1; k2 < up.length; k2++) {
       const a = up[i], b = up[k2];
       world._mechPairs.add(a.id < b.id ? a.id * 100000 + b.id : b.id * 100000 + a.id);
@@ -953,10 +964,11 @@ function controller(world, mech) {
         if (mech.gasJ >= dE && dv > 0) {
           mech.gasJ -= dE;
           mech._gasFlow = dE / dt;
-          for (const b of mech.links) {
-            b.v.x += lp.dx * dv; b.v.y += lp.dy * dv; b.v.z += lp.dz * dv;
-            wake(b);
-          }
+          // the piston pushes the HULL; the joints carry everything else —
+          // launch loads are real through the whole frame
+          const dvH = dv * (mech.mass * hull2.invM);
+          hull2.v.x += lp.dx * dvH; hull2.v.y += lp.dy * dvH; hull2.v.z += lp.dz * dvH;
+          wake(hull2);
           lp.gained += dv;
         }
         if (lp.gained >= lp.v0 - 1e-6 || mech.gasJ <= 0) {
@@ -1083,7 +1095,8 @@ function controller(world, mech) {
         if (dE3 <= mech.gasJ) {
           mech.gasJ -= dE3;
           mech._gasFlow = dE3 / dt;
-          for (const b of mech.links) { b.v.y += aGas * dt; b.v.x += hx3 * aH3 * dt; b.v.z += hz3 * aH3 * dt; }
+          const kH3 = mech.mass * hull2.invM;
+          hull2.v.y += aGas * kH3 * dt; hull2.v.x += hx3 * aH3 * kH3 * dt; hull2.v.z += hz3 * aH3 * kH3 * dt;
         } else mech.gasJ = 0;
       }
       const vhC = Math.hypot(hull2.v.x, hull2.v.z);
@@ -1097,7 +1110,8 @@ function controller(world, mech) {
         if (dES <= mech.gasJ) {
           mech.gasJ -= dES;
           mech._gasFlow = dES / dt;
-          for (const b of mech.links) { b.v.x += hxS * aS * dt; b.v.z += hzS * aS * dt; }
+          const kHS = mech.mass * hull2.invM;
+          hull2.v.x += hxS * aS * kHS * dt; hull2.v.z += hzS * aS * kHS * dt;
         } else mech.gasJ = 0;
       }
       if (legsOn && hull2.R[4] > 0.9 && vhC < 1.2) {

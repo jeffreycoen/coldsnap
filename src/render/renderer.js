@@ -2408,17 +2408,9 @@ export function makeRenderer(canvas, world0, opts = {}) {
         }
       }
     }
-    // gas tanks (T7): two drawn cylinders riding the torso back — the store
     if (torsoB && torsoB.mechRef && torsoB.mechRef.gasJ != null) {
       const mchV = torsoB.mechRef;
       _bq.set(torsoB.q.x, torsoB.q.y, torsoB.q.z, torsoB.q.w);
-      for (const sx9 of [-0.55, 0.55]) {
-        if (mi >= 96) break;
-        const off9 = new THREE.Vector3(sx9, 0.35, -1.05).applyQuaternion(_bq);
-        writeInst(mechMesh, mi, torsoB.pos.x + off9.x, torsoB.pos.y + off9.y, torsoB.pos.z + off9.z, torsoB.q, 0.42, 0.95, 0.42);
-        if (mechMesh.setColorAt) mechMesh.setColorAt(mi, MECH_FOOT_C);
-        mi++;
-      }
       // charge wisp: a filling store breathes frost off the tank tops
       if (!mchV.leap && mchV.gasJ < mchV.gasMax - 1e4 && pli < 18) {
         const t9 = performance.now() * 0.001;
