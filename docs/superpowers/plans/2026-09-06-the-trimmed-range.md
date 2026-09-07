@@ -11,6 +11,7 @@ task's plan. The thrust sweep has its own file.
 | T3 | 0.4.1 | The mech readout: a drawn silhouette with one dot per joint, colored green through red by servo effort, refreshed every frame; tapping it (or B) opens the full numeric table; stop impacts flash their joint and hold the number until looked at | LANDED ea3268d (smoke 23 PASS, 0 FAIL) |
 | T4 | 0.4.2 | Every nozzle gains its own aim inside a modest cone about its mount, sweeping slowly; force follows where the bell points now; the hinge solver gains the shear tap; the readout gains the shear column, the nozzle aim column, and the head weld | LANDED 0d2632c (12-the-mech.mjs 25 PASS, 0 FAIL; smoke 23 PASS, 0 FAIL) |
 | T5 | — (nothing ships) | The swivel experiment: the swiveling machine measured against the fixed-cant control, same tunings, on the shipped harness | LANDED 234ad7b (swivel arm falls 11/12, fixed-cant arm falls 12/12) |
+| T6 | 0.4.3 | The leap, first increment: a pressure store, two-step aiming with a reachable ring and landing mark, and the crouch/drive/fly/brake leap mode landing through the deep-plant bookkeeping — stand-only, bench-only | LANDED d57d5ea (12-the-mech.mjs 25 PASS, 0 FAIL; smoke 23 PASS, 0 FAIL) |
 
 Standing rule for every measurement harness from here on: results stream
 as they land — one line per completed run appended to
