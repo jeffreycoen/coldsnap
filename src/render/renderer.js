@@ -2408,6 +2408,42 @@ export function makeRenderer(canvas, world0, opts = {}) {
         }
       }
     }
+    // gas tanks (T7): two drawn cylinders riding the torso back — the store
+    if (torsoB && torsoB.mechRef && torsoB.mechRef.gasJ != null) {
+      const mchV = torsoB.mechRef;
+      _bq.set(torsoB.q.x, torsoB.q.y, torsoB.q.z, torsoB.q.w);
+      for (const sx9 of [-0.55, 0.55]) {
+        if (mi >= 96) break;
+        const off9 = new THREE.Vector3(sx9, 0.35, -1.05).applyQuaternion(_bq);
+        writeInst(mechMesh, mi, torsoB.pos.x + off9.x, torsoB.pos.y + off9.y, torsoB.pos.z + off9.z, torsoB.q, 0.42, 0.95, 0.42);
+        if (mechMesh.setColorAt) mechMesh.setColorAt(mi, MECH_FOOT_C);
+        mi++;
+      }
+      // charge wisp: a filling store breathes frost off the tank tops
+      if (!mchV.leap && mchV.gasJ < mchV.gasMax - 1e4 && pli < 18) {
+        const t9 = performance.now() * 0.001;
+        const w9 = 0.5 + 0.5 * Math.sin(t9 * 1.3 + (mchV.id || 0));
+        const offW = new THREE.Vector3(0.55, 0.95, -1.05).applyQuaternion(_bq);
+        plumeMesh.setColorAt && plumeMesh.setColorAt(pli, PLUME_SHEATH);
+        writeInst(plumeMesh, pli, torsoB.pos.x + offW.x, torsoB.pos.y + offW.y + 0.3, torsoB.pos.z + offW.z, null, 0.12 + 0.08 * w9, 0.5 + 0.3 * w9, 0.12 + 0.08 * w9);
+        pli++;
+      }
+      // the vent: piston blast, cushion column, skid plume — driven by the
+      // real joule flow the engine reports
+      if ((mchV._gasFlow || 0) > 2e5 && pli < 18) {
+        const hullV = mchV.hull;
+        const flow9 = Math.min(1, mchV._gasFlow / 4e6);
+        const gy9 = world.field.heightAt(hullV.pos.x, hullV.pos.z);
+        plumeMesh.setColorAt && plumeMesh.setColorAt(pli, PLUME_CORE);
+        writeInst(plumeMesh, pli, hullV.pos.x, hullV.pos.y - 1.3 - flow9 * 1.6, hullV.pos.z, null, 0.8 + flow9, 2.6 + flow9 * 3.2, 0.8 + flow9);
+        pli++;
+        if (pli < 18 && hullV.pos.y - gy9 < 7) {
+          plumeMesh.setColorAt && plumeMesh.setColorAt(pli, PLUME_SNOW);
+          writeInst(plumeMesh, pli, hullV.pos.x, gy9 + 0.12, hullV.pos.z, null, 2.2 + flow9 * 3, 0.2, 2.2 + flow9 * 3);
+          pli++;
+        }
+      }
+    }
     }
     snowMesh.count = sni; snowMesh.instanceMatrix.needsUpdate = true;
     plumeMesh.count = pli; plumeMesh.instanceMatrix.needsUpdate = true;

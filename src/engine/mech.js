@@ -661,9 +661,15 @@ export function buildMech(world, opts = {}) {
     // THE LEAP (design 2026-09-06): pressure store + mode state. The store
     // charges through stance and empties into the leap. Numbers are design
     // choices until measured.
-    mech.leapP = 0;      // pressure, 0..1
-    mech.leap = null;    // { phase, t, tgt, d } while a leap runs
-    mech.leapRMax = 28;  // meters at full charge
+    mech.leap = null;      // { phase, t, tgt, d } while a leap runs
+    mech.leapRMax = 28;    // meters, the design ceiling on the ring
+    // THE GAS STORE (design 2026-09-07): real joules. Charges at a fixed
+    // power through loaded stance; the launch and the landing cushion both
+    // draw real work from it. leapP stays as the 0..1 gauge mapping.
+    mech.gasMax = 5.92e6;  // J — exactly a 28 m leap plus its vectored cushion
+    mech.gasJ = 0;
+    mech.gasPwr = 500e3;   // W — full charge in ~12 s
+    Object.defineProperty(mech, "leapP", { get() { return this.gasJ / this.gasMax; }, set(v) { this.gasJ = clamp(v, 0, 1) * this.gasMax; }, configurable: true });
     mech.thrustMax = 30000 * s * s * s; // N per nozzle; the GRIP BUDGET below is the real limiter
     mech.thrustersOn = false; // opt-in: the certified gait is pinned thruster-free in CI; the game enables
   }
@@ -931,18 +937,29 @@ function controller(world, mech) {
         setLegTargets(mech, side2, feetMid2, hipY2, st.heading, { x: p2.x, y: gRef, z: p2.z });
       }
       if (lp.phase === "crouch" && lp.t > 0.55) { lp.phase = "drive"; lp.t = 0; }
-      else if (lp.phase === "drive" && lp.t > 0.15) {
-        // MAGIC LAUNCH (relaxed-physics license): the solved ballistic
-        // velocity is set on every link; the legs posed the leap, the
-        // license buys the impulse honesty can't deliver in one increment.
+      else if (lp.phase === "drive") {
+        // THE PISTON (design 2026-09-07): the store's joules become launch
+        // speed as real acceleration across the 0.6 m stroke — force through
+        // a distance, paid from the store each tick. No velocity writes.
         const TH = 0.96; // 55 degrees
-        const v0 = Math.min(30, Math.sqrt(lp.d * world.gravity / Math.sin(2 * TH)));
-        const vy0 = v0 * Math.sin(TH), vh0 = v0 * Math.cos(TH);
-        for (const b of mech.links) {
-          b.v.x += ux * vh0; b.v.y += vy0; b.v.z += uz * vh0;
-          wake(b);
+        if (lp.v0 == null) {
+          lp.v0 = Math.min(30, Math.sqrt(lp.d * world.gravity / Math.sin(2 * TH)));
+          lp.gained = 0;
+          lp.dx = ux * Math.cos(TH); lp.dy = Math.sin(TH); lp.dz = uz * Math.cos(TH);
         }
-        mech.leapP = Math.max(0, mech.leapP - lp.d / (mech.leapRMax || 55));
+        const aP = lp.v0 * lp.v0 / (2 * 0.6); // stroke 0.6 m
+        const dv = Math.min(aP * dt, lp.v0 - lp.gained);
+        const dE = mech.mass * (lp.gained + dv / 2) * dv; // d(1/2 m v^2)
+        if (mech.gasJ >= dE && dv > 0) {
+          mech.gasJ -= dE;
+          mech._gasFlow = dE / dt;
+          for (const b of mech.links) {
+            b.v.x += lp.dx * dv; b.v.y += lp.dy * dv; b.v.z += lp.dz * dv;
+            wake(b);
+          }
+          lp.gained += dv;
+        }
+        if (lp.gained >= lp.v0 - 1e-6 || mech.gasJ <= 0) {
         lp.phase = "fly"; lp.t = 0;
         // airborne legs: a tucked pose, joint-space (the poise pattern)
         for (const side2 of ["L", "R"]) {
@@ -951,13 +968,17 @@ function controller(world, mech) {
           lg2.anklePitch.target = -0.6; lg2.hipRoll.target = 0; lg2.ankleRoll.target = 0;
           if (lg2.hipYaw) lg2.hipYaw.target = 0;
         }
+        }
       }
       return;
     }
     // fly / brake: nozzles own the air. Simple attitude damping keeps the
     // hull level (the gyro block below is not running in this mode).
     {
-      const tauCapL = 0.6 * W2 * g2.comH;
+      // righting: DIFFERENTIAL BURN first — each nozzle throttles by how
+      // much its real torque helps the demand — with the gyro at one third
+      // authority as the standing machine's accepted backup.
+      const tauCapL = 0.2 * W2 * g2.comH;
       const yawM = Math.atan2(hull2.R[6], hull2.R[8]);
       const blx = Math.cos(yawM), blz = -Math.sin(yawM);
       const bfx = Math.sin(yawM), bfz = Math.cos(yawM);
@@ -972,6 +993,24 @@ function controller(world, mech) {
       hull2.w.x += (hull2.invIw[0] * tx2 + hull2.invIw[2] * tz2) * dt;
       hull2.w.y -= hull2.w.y * Math.min(0.3, 2 * dt);
       hull2.w.z += (hull2.invIw[6] * tx2 + hull2.invIw[8] * tz2) * dt;
+      // the differential share: desired torque realized by real burns
+      const torso9 = mech.waist ? mech.waist.b : hull2;
+      const R9 = torso9.R;
+      lp.rt = { x: (tP2 * blx + tR2 * bfx) * 3, z: (tP2 * blz + tR2 * bfz) * 3 };
+      lp.rcmd = [];
+      for (const th9 of mech.thrusters) {
+        const px9 = R9[0] * th9.p.x + R9[3] * th9.p.y + R9[6] * th9.p.z;
+        const py9 = R9[1] * th9.p.x + R9[4] * th9.p.y + R9[7] * th9.p.z;
+        const pz9 = R9[2] * th9.p.x + R9[5] * th9.p.y + R9[8] * th9.p.z;
+        const e9 = th9.eC || th9.e;
+        const fx9 = -(R9[0] * e9.x + R9[3] * e9.y + R9[6] * e9.z);
+        const fy9 = -(R9[1] * e9.x + R9[4] * e9.y + R9[7] * e9.z);
+        const fz9 = -(R9[2] * e9.x + R9[5] * e9.y + R9[8] * e9.z);
+        const txN = (py9 * fz9 - pz9 * fy9) * mech.thrustMax;
+        const tzN = (px9 * fy9 - py9 * fx9) * mech.thrustMax;
+        const nrm = Math.hypot(txN, tzN);
+        lp.rcmd.push(nrm > 1e3 ? clamp((txN * lp.rt.x + tzN * lp.rt.z) / (nrm * nrm), 0, 0.5) : 0);
+      }
     }
     const R6 = mech.waist ? mech.waist.b.R : hull2.R;
     const wantEx = (exW, eyW, ezW) => { // world exhaust wish -> per-nozzle target
@@ -997,20 +1036,71 @@ function controller(world, mech) {
         wantEx(-ux * 0.45, -0.89, -uz * 0.45);
         for (const th2 of mech.thrusters) th2.cmd = 0.7;
       } else {
+        wantEx(0, -1, 0);
         for (const th2 of mech.thrusters) th2.cmd = 0;
       }
-      if (vy2 < 0 && vy2 * vy2 > 2 * 5.0 * Math.max(0.5, h2 - 1.6)) { lp.phase = "brake"; lp.t = 0; }
+      if (lp.rcmd) for (let i9 = 0; i9 < mech.thrusters.length; i9++) mech.thrusters[i9].cmd = clamp(mech.thrusters[i9].cmd + lp.rcmd[i9], 0, 1);
+      // descent: vent against the travel so the machine arrives at the mark
+      // already slow — desired speed = distance remaining over time left
+      if (vy2 < 0 && mech.gasJ > 0) {
+        const dRem = (lp.tgt.x - hull2.pos.x) * ux + (lp.tgt.z - hull2.pos.z) * uz;
+        const vhF = Math.hypot(hull2.v.x, hull2.v.z);
+        const vhDes = clamp(dRem / Math.max(0.3, tFly), 0, 30);
+        if (vhF > vhDes + 0.4) {
+          const aH4 = Math.min(1.6 * world.gravity, (vhF - vhDes) * 2.0);
+          const dE4 = mech.mass * aH4 * vhF * dt;
+          if (dE4 <= mech.gasJ) {
+            mech.gasJ -= dE4;
+            mech._gasFlow = dE4 / dt;
+            for (const b of mech.links) { b.v.x -= hull2.v.x / vhF * aH4 * dt; b.v.z -= hull2.v.z / vhF * aH4 * dt; }
+          }
+        }
+      }
+      if (vy2 < 0 && vy2 * vy2 > 2 * 2.6 * Math.max(0.5, h2 - 2.2)) { lp.phase = "brake"; lp.t = 0; }
       if (lp.t > 9) { lp.phase = "brake"; lp.t = 0; }
       return;
     }
     if (lp.phase === "brake") {
       // retro-burn: exhaust straight down, full burn; MAGIC BRAKE caps the
       // fall at 6 m/s and bleeds horizontal drift (relaxed-physics license)
+      // THE CUSHION (design 2026-09-07): the reserve vents as real force —
+      // up to 1.35 W of gas surge over the nozzles' full burn, vectored
+      // against the whole arrival — paid from the store as work done. The
+      // store emptying early means arriving hot: the bent legs take what
+      // remains, or the fall is real. No velocity writes.
       wantEx(0, -1, 0);
       for (const th2 of mech.thrusters) th2.cmd = 1;
-      if (hull2.v.y < -3.5) for (const b of mech.links) b.v.y -= (hull2.v.y + 3.5) * Math.min(0.5, 12 * dt);
-      for (const b of mech.links) { b.v.x -= b.v.x * Math.min(0.4, 4 * dt); b.v.z -= b.v.z * Math.min(0.4, 4 * dt); }
-      if (legsOn && hull2.R[4] > 0.9) {
+      const vy3 = hull2.v.y;
+      if (vy3 < -1.7 && mech.gasJ > 0) {
+        const gT3 = world.field.heightAt(hull2.pos.x, hull2.pos.z);
+        const h3 = Math.max(0.3, hull2.pos.y + g2.hipY - gT3);
+        const aNeed = (vy3 * vy3 - 2.9) / (2 * h3) + world.gravity;
+        const aGas = clamp(aNeed - 0.85 * world.gravity, 0, 1.35 * world.gravity);
+        const vh3 = Math.hypot(hull2.v.x, hull2.v.z);
+        const aH3 = vh3 > 0.8 ? Math.min(1.6 * world.gravity, vh3 * 1.4) : 0;
+        const hx3 = vh3 > 1e-6 ? -hull2.v.x / vh3 : 0, hz3 = vh3 > 1e-6 ? -hull2.v.z / vh3 : 0;
+        const dE3 = mech.mass * (aGas * Math.abs(vy3) + aH3 * vh3) * dt;
+        if (dE3 <= mech.gasJ) {
+          mech.gasJ -= dE3;
+          mech._gasFlow = dE3 / dt;
+          for (const b of mech.links) { b.v.y += aGas * dt; b.v.x += hx3 * aH3 * dt; b.v.z += hz3 * aH3 * dt; }
+        } else mech.gasJ = 0;
+      }
+      const vhC = Math.hypot(hull2.v.x, hull2.v.z);
+      if (legsOn && vhC >= 1.2 && mech.gasJ > 0 && hull2.v.y > -1.5) {
+        // THE SKID: grounded but still traveling — the vent keeps firing
+        // against the slide until the speed is walkable, legs bent, plumes
+        // sideways. Real force, real work, real snow.
+        const hxS = -hull2.v.x / vhC, hzS = -hull2.v.z / vhC;
+        const aS = Math.min(1.6 * world.gravity, vhC * 1.8);
+        const dES = mech.mass * aS * vhC * dt;
+        if (dES <= mech.gasJ) {
+          mech.gasJ -= dES;
+          mech._gasFlow = dES / dt;
+          for (const b of mech.links) { b.v.x += hxS * aS * dt; b.v.z += hzS * aS * dt; }
+        } else mech.gasJ = 0;
+      }
+      if (legsOn && hull2.R[4] > 0.9 && vhC < 1.2) {
         // the catch: land through the deep-plant bookkeeping, then STAND
         for (const th2 of mech.thrusters) th2.cmd = 0;
         st.mode = "STAND"; st.stopping = false; st.postStop = 4;
@@ -1510,8 +1600,11 @@ function controller(world, mech) {
   // falls, and on overdrive for speed assist. Hysteresis on the band edge
   // (the poise lesson: two controllers sharing one band fight).
   // leap pressure: charges through loaded stance, spent by the leap
-  if (mech.leapP != null && !mech.leap && legL.load + legR.load > 0.5 * mech.mass * world.gravity)
-    mech.leapP = Math.min(1, mech.leapP + dt / 10);
+  if (mech.gasJ != null) {
+    mech._gasFlow = (mech._gasFlow || 0) * (1 - Math.min(1, 8 * dt));
+    if (!mech.leap && legL.load + legR.load > 0.5 * mech.mass * world.gravity)
+      mech.gasJ = Math.min(mech.gasMax, mech.gasJ + mech.gasPwr * dt);
+  }
   if (mech.thrusters && mech.thrustersOn && st.mode !== "FALLEN") {
     const W5 = mech.mass * world.gravity;
     mechCom(mech, _com, _comV);
@@ -3147,8 +3240,12 @@ export function mechBarrage(world, mech) {
 }
 // THE LEAP: reachable distance at current pressure, and the request.
 // Two-step aiming lives in the game layer; the engine takes the mark.
+// energy arithmetic: launch costs (1/2)mv^2; the cushion's gas share
+// covers the vertical brake and the vectored travel shed. Total
+// ~1.05 mv^2 buys range d = 0.94 v^2 / g. Solved for the store.
 export function mechLeapRange(mech) {
-  return 8 + ((mech.leapRMax || 55) - 8) * (mech.leapP || 0);
+  const v2 = (mech.gasJ || 0) / (1.05 * mech.mass);
+  return Math.min(mech.leapRMax || 28, Math.max(0, 0.94 * v2 / 9.81));
 }
 export function mechLeap(world, mech, tx, tz) {
   const st = mech.state;
