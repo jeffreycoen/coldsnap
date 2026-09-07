@@ -658,6 +658,12 @@ export function buildMech(world, opts = {}) {
     mech.thrustCone = 0.349; // radians (20 degrees)
     mech.thrustSlew = 1.0;   // radians per second
     for (const th of mech.thrusters) { th.eT = v3(th.e.x, th.e.y, th.e.z); th.eC = v3(th.e.x, th.e.y, th.e.z); }
+    // THE LEAP (design 2026-09-06): pressure store + mode state. The store
+    // charges through stance and empties into the leap. Numbers are design
+    // choices until measured.
+    mech.leapP = 0;      // pressure, 0..1
+    mech.leap = null;    // { phase, t, tgt, d } while a leap runs
+    mech.leapRMax = 55;  // meters at full charge
     mech.thrustMax = 30000 * s * s * s; // N per nozzle; the GRIP BUDGET below is the real limiter
     mech.thrustersOn = false; // opt-in: the certified gait is pinned thruster-free in CI; the game enables
   }
@@ -894,6 +900,117 @@ function controller(world, mech) {
   const st = mech.state, k = mech.k, g = mech.geom, dt = world.dt;
   // fallen mechs limp; everything else stays awake for the servos
   if (st.mode === "FALLEN") return;
+  // THE LEAP (design 2026-09-06): its own mode — crouch, drive, fly,
+  // brake, catch. Owns legs and nozzles for the duration; hands the
+  // machine back to STAND through the deep-plant bookkeeping.
+  if (st.mode === "LEAP" && mech.leap) {
+    const lp = mech.leap;
+    lp.t += dt;
+    for (const b of mech.links) { b.sleepT = 0; if (b.sleeping) wake(b); }
+    const hull2 = mech.hull;
+    const g2 = mech.geom;
+    const W2 = mech.mass * world.gravity;
+    const gRef = world.field.heightAt(hull2.pos.x, hull2.pos.z);
+    const dirx = lp.tgt.x - hull2.pos.x, dirz = lp.tgt.z - hull2.pos.z;
+    const dh = Math.hypot(dirx, dirz);
+    const ux = dh > 1e-6 ? dirx / dh : 0, uz = dh > 1e-6 ? dirz / dh : 1;
+    // toppled mid-leap = a fall, the same law as everywhere
+    if (hull2.R[4] < 0.55) { mech.leap = null; onFallMech(mech); return; }
+    const feetMid2 = {
+      x: (mech.legs.L.foot.pos.x + mech.legs.R.foot.pos.x) / 2,
+      z: (mech.legs.L.foot.pos.z + mech.legs.R.foot.pos.z) / 2,
+    };
+    const legsOn = mech.legs.L.load + mech.legs.R.load > 0.3 * W2;
+    if (lp.phase === "crouch" || lp.phase === "drive") {
+      // legs: both soles hold their prints while the hip sinks, then rises
+      const drop = lp.phase === "crouch" ? Math.min(0.6, lp.t * 1.2) : Math.max(0, 0.6 - lp.t * 4.0);
+      lp.drop = drop;
+      const hipY2 = gRef + g2.standHip - drop;
+      for (const side2 of ["L", "R"]) {
+        const p2 = st.prints[side2];
+        setLegTargets(mech, side2, feetMid2, hipY2, st.heading, { x: p2.x, y: gRef, z: p2.z });
+      }
+      if (lp.phase === "crouch" && lp.t > 0.55) { lp.phase = "drive"; lp.t = 0; }
+      else if (lp.phase === "drive" && lp.t > 0.15) {
+        // MAGIC LAUNCH (relaxed-physics license): the solved ballistic
+        // velocity is set on every link; the legs posed the leap, the
+        // license buys the impulse honesty can't deliver in one increment.
+        const TH = 0.96; // 55 degrees
+        const v0 = Math.min(30, Math.sqrt(lp.d * world.gravity / Math.sin(2 * TH)));
+        const vy0 = v0 * Math.sin(TH), vh0 = v0 * Math.cos(TH);
+        for (const b of mech.links) {
+          b.v.x += ux * vh0; b.v.y += vy0; b.v.z += uz * vh0;
+          wake(b);
+        }
+        mech.leapP = Math.max(0, mech.leapP - lp.d / (mech.leapRMax || 55));
+        lp.phase = "fly"; lp.t = 0;
+        // airborne legs: a tucked pose, joint-space (the poise pattern)
+        for (const side2 of ["L", "R"]) {
+          const lg2 = mech.legs[side2];
+          lg2.hipPitch.target = -0.55; lg2.knee.target = 1.2;
+          lg2.anklePitch.target = -0.6; lg2.hipRoll.target = 0; lg2.ankleRoll.target = 0;
+          if (lg2.hipYaw) lg2.hipYaw.target = 0;
+        }
+      }
+      return;
+    }
+    // fly / brake: nozzles own the air. Simple attitude damping keeps the
+    // hull level (the gyro block below is not running in this mode).
+    hull2.w.x -= hull2.w.x * Math.min(0.4, 4 * dt);
+    hull2.w.z -= hull2.w.z * Math.min(0.4, 4 * dt);
+    const R6 = mech.waist ? mech.waist.b.R : hull2.R;
+    const wantEx = (exW, eyW, ezW) => { // world exhaust wish -> per-nozzle target
+      for (const th2 of mech.thrusters) {
+        if (!th2.eT) break;
+        V.set(_aw, exW, eyW, ezW);
+        V.set(_al,
+          R6[0] * _aw.x + R6[1] * _aw.y + R6[2] * _aw.z,
+          R6[3] * _aw.x + R6[4] * _aw.y + R6[5] * _aw.z,
+          R6[6] * _aw.x + R6[7] * _aw.y + R6[8] * _aw.z);
+        V.norm(_al, _al);
+        coneToward(_al, th2.e, mech.thrustCone, th2.eT);
+      }
+    };
+    if (lp.phase === "fly") {
+      if (hull2.v.y > 0) {
+        // the rise: exhaust down-and-back, thrust up-and-forward
+        wantEx(-ux * 0.45, -0.89, -uz * 0.45);
+        for (const th2 of mech.thrusters) th2.cmd = 0.8;
+      } else {
+        for (const th2 of mech.thrusters) th2.cmd = 0;
+        // brake trigger: the fall must be killable before the ground
+        const gT = world.field.heightAt(hull2.pos.x, hull2.pos.z);
+        const h2 = hull2.pos.y + g2.hipY - gT; // hip height above ground
+        if (hull2.v.y * hull2.v.y > 2 * 8.0 * Math.max(0.5, h2 - 1.2)) { lp.phase = "brake"; lp.t = 0; }
+      }
+      if (lp.t > 9) { lp.phase = "brake"; lp.t = 0; } // never fly forever
+      return;
+    }
+    if (lp.phase === "brake") {
+      // retro-burn: exhaust straight down, full burn; MAGIC BRAKE caps the
+      // fall at 6 m/s and bleeds horizontal drift (relaxed-physics license)
+      wantEx(0, -1, 0);
+      for (const th2 of mech.thrusters) th2.cmd = 1;
+      if (hull2.v.y < -6) for (const b of mech.links) b.v.y -= (hull2.v.y + 6) * Math.min(0.5, 10 * dt);
+      for (const b of mech.links) { b.v.x -= b.v.x * Math.min(0.3, 2.5 * dt); b.v.z -= b.v.z * Math.min(0.3, 2.5 * dt); }
+      if (legsOn) {
+        // the catch: land through the deep-plant bookkeeping, then STAND
+        for (const th2 of mech.thrusters) th2.cmd = 0;
+        st.mode = "STAND"; st.stopping = false; st.postStop = 4;
+        st.swing = null; st.kick = null; st.hold = {}; st.holdCop = {};
+        st.settleT = 0; st.settledT = 0;
+        st.recoverT = Math.max(st.recoverT || 0, 1.5);
+        for (const sd8 of ["L", "R"]) {
+          const f8 = mech.legs[sd8].foot;
+          st.prints[sd8] = { x: f8.pos.x, z: f8.pos.z, yaw: Math.atan2(f8.R[6], f8.R[8]) };
+        }
+        st.pelvis = { x: feetMid2.x, z: feetMid2.z };
+        mech.leap = null;
+      }
+      if (lp.t > 6) { mech.leap = null; st.mode = "STAND"; st.recoverT = 2; } // give the machine back regardless
+      return;
+    }
+  }
   for (const b of mech.links) { b.sleepT = 0; if (b.sleeping) wake(b); }
   // attitude check: up.y or pelvis crash = fall (spec §3: fall = limp)
   const hull = mech.hull;
@@ -1374,6 +1491,9 @@ function controller(world, mech) {
   // rockets wake on the BIG/FAST errors that today become catches and
   // falls, and on overdrive for speed assist. Hysteresis on the band edge
   // (the poise lesson: two controllers sharing one band fight).
+  // leap pressure: charges through loaded stance, spent by the leap
+  if (mech.leapP != null && !mech.leap && legL.load + legR.load > 0.5 * mech.mass * world.gravity)
+    mech.leapP = Math.min(1, mech.leapP + dt / 10);
   if (mech.thrusters && mech.thrustersOn && st.mode !== "FALLEN") {
     const W5 = mech.mass * world.gravity;
     mechCom(mech, _com, _comV);
@@ -3005,6 +3125,21 @@ export function mechBarrage(world, mech) {
   }
   wake(torso);
   mech.telem.barrages = (mech.telem.barrages || 0) + 1;
+  return true;
+}
+// THE LEAP: reachable distance at current pressure, and the request.
+// Two-step aiming lives in the game layer; the engine takes the mark.
+export function mechLeapRange(mech) {
+  return 8 + ((mech.leapRMax || 55) - 8) * (mech.leapP || 0);
+}
+export function mechLeap(world, mech, tx, tz) {
+  const st = mech.state;
+  if (st.mode !== "STAND" || !st.spawnDone || st.poise || st.kick || st.aboutFace || mech.leap) return false;
+  const dx = tx - mech.hull.pos.x, dz = tz - mech.hull.pos.z;
+  const d = Math.hypot(dx, dz);
+  if (d < 6 || d > mechLeapRange(mech)) return false;
+  mech.leap = { phase: "crouch", t: 0, tgt: { x: tx, z: tz }, d };
+  st.mode = "LEAP";
   return true;
 }
 // POISE: raise one leg and stand on the other; call again to lower.

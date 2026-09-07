@@ -4,7 +4,7 @@
 // The machine stands, weight-shifts, steps — and still falls; R reissues it.
 import React, { useEffect, useRef, useState } from "react";
 import { makeWorld, makeField, stepWorld, addBody, fireProjectile } from "../engine/core.js";
-import { buildMech, mechCommand, respawnMech, mechFallen, mechFire, mechPunt, mechPoise, mechMissiles, mechAboutFace, mechPivot, mechAimDir } from "../engine/mech.js";
+import { buildMech, mechCommand, respawnMech, mechFallen, mechFire, mechPunt, mechPoise, mechMissiles, mechAboutFace, mechPivot, mechAimDir, mechLeap, mechLeapRange } from "../engine/mech.js";
 import { makeRenderer } from "../render/renderer.js";
 import { detectTouch } from "./runner/trials.js";
 import { BUILDERS } from "./scenario.js";
@@ -21,6 +21,7 @@ export default function MechRange({ onExit }) {
   const isTouch = detectTouch();
   const [hud, setHud] = useState({ mode: "STAND", steps: 0, falls: 0, kills: 0, shots: 0, gyro: true, rcs: true });
   const gaugeRingRef = useRef(null);
+  const pressureRef = useRef(null);
   const bubbleRef = useRef(null);
   const yawTickRef = useRef(null);
   // portrait phones have no room for a 3-wide action row between the stick
@@ -71,7 +72,7 @@ export default function MechRange({ onExit }) {
     const RD = makeMechReadout();
     A.setReflectors([{ x: -10, z: -2, r: 4 }, { x: 9, z: -6, r: 4 }, { x: -1, z: 7, r: 5 }, { x: 16, z: 4, r: 6 }]); // the range buildings
 
-    const S = { acc: 0, last: performance.now(), keys: {}, yawT: Math.PI, aimYaw: null, aimRange: 26, aimOff: 0, aiT: 0, orbit: 0, tankFire: [2.5, 5.2], raf: 0, hudT: 0, dead: false, joyId: null, jx: 0, jy: 0, rsId: null, rx: 0, rngId: null, aimHeld: 0, fireHeld: false };
+    const S = { acc: 0, last: performance.now(), keys: {}, yawT: Math.PI, aimYaw: null, aimRange: 26, aimOff: 0, aiT: 0, orbit: 0, tankFire: [2.5, 5.2], raf: 0, hudT: 0, dead: false, joyId: null, jx: 0, jy: 0, rsId: null, rx: 0, rngId: null, aimHeld: 0, fireHeld: false, leapAim: false };
     window.__MECHRANGE__ = {
       world, mech, R, addBody: (o) => addBody(world, o),
       reissue: () => { respawnMech(world, mech, 0, 41, Math.PI); S.yawT = Math.PI; S.aimYaw = null; mech.aimYaw = null; S.aimOff = 0; S.aimHeld = 0; S.rx = 0; mechCommand(mech, { travel: 0, lateral: 0, heading: 0 }); },
@@ -82,6 +83,12 @@ export default function MechRange({ onExit }) {
       poise: () => mechPoise(world, mech, "L"),
       missiles: () => mechMissiles(world, mech),
       about: () => mechAboutFace(world, mech),
+      leap: () => {
+        if (!S.leapAim) { S.leapAim = true; return; }
+        const yawL = S.aimYaw != null ? S.aimYaw : mech.state.heading + (isTouch ? S.aimOff : 0);
+        const rL = Math.min(S.aimRange, mechLeapRange(mech));
+        if (mechLeap(world, mech, mech.hull.pos.x + Math.sin(yawL) * rL, mech.hull.pos.z + Math.cos(yawL) * rL)) S.leapAim = false;
+      },
       gyro: () => { mech.gyroOn = mech.gyroOn === false; },
       jets: () => { S.jetMode = !S.jetMode; mech.jetCmd = null; },
       rcs: () => { mech.thrustersOn = !mech.thrustersOn; },
@@ -207,6 +214,15 @@ export default function MechRange({ onExit }) {
       if (e.code === "KeyH") { window.__MECHRANGE__ && window.__MECHRANGE__.rcs(); }
       if (e.code === "KeyJ") { window.__MECHRANGE__ && window.__MECHRANGE__.jets(); }
       if (e.code === "KeyB") { RD.toggle(); }
+      if (e.code === "KeyL") {
+        if (!S.leapAim) S.leapAim = true;
+        else {
+          const yawL = S.aimYaw != null ? S.aimYaw : mech.state.heading + (isTouch ? S.aimOff : 0);
+          const rL = Math.min(S.aimRange, mechLeapRange(mech));
+          if (mechLeap(world, mech, mech.hull.pos.x + Math.sin(yawL) * rL, mech.hull.pos.z + Math.cos(yawL) * rL)) S.leapAim = false;
+        }
+      }
+      if (e.code === "Escape") S.leapAim = false;
       if (e.code === "KeyR") {
         respawnMech(world, mech, 0, 41, Math.PI);
         S.yawT = Math.PI; S.aimYaw = null; mech.aimYaw = null;
@@ -418,7 +434,29 @@ export default function MechRange({ onExit }) {
       // and the endpoint wandered FIVE METERS during a march (p2p 5.06m
       // measured) — the LPF'd preview shows the expected volley centre;
       // actual fire ballistics remain live and untouched.
-      try {
+      if (S.leapAim) {
+        const yawL = S.aimYaw != null ? S.aimYaw : mech.state.heading + (isTouch ? S.aimOff : 0);
+        const rMaxL = mechLeapRange(mech);
+        const rL = Math.min(S.aimRange, rMaxL);
+        const mx = mech.hull.pos.x + Math.sin(yawL) * rL, mz2 = mech.hull.pos.z + Math.cos(yawL) * rL;
+        // the arc, sampled: 55-degree ballistic to the mark
+        const TH = 0.96, g9 = 9.81;
+        const v9 = Math.min(30, Math.sqrt(Math.max(6, rL) * g9 / Math.sin(2 * TH)));
+        const vy9 = v9 * Math.sin(TH), vh9 = v9 * Math.cos(TH);
+        const T9 = 2 * vy9 / g9;
+        const pts9 = [];
+        for (let k9 = 0; k9 <= 20; k9++) {
+          const t9 = (k9 / 20) * T9;
+          pts9.push({
+            x: mech.hull.pos.x + Math.sin(yawL) * vh9 * t9,
+            y: mech.hull.pos.y + vy9 * t9 - 0.5 * g9 * t9 * t9,
+            z: mech.hull.pos.z + Math.cos(yawL) * vh9 * t9,
+          });
+        }
+        R.setTraj(pts9, null);
+        R.setLeapRing(mech.hull.pos.x, mech.hull.pos.z, rMaxL, { x: mx, z: mz2 });
+      } else R.setLeapRing(null);
+      if (!S.leapAim) try {
         const raw = mechAimDir(world, mech);
         if (!S.pv) S.pv = { m: { ...raw.muzzle }, d: { ...raw.dir } };
         const k3 = Math.min(1, dt / 0.45);
@@ -458,13 +496,14 @@ export default function MechRange({ onExit }) {
         const burning = mech.thrusters && mech.thrustersOn && mech.thrusters.some((t2) => t2.cur > 0.1);
         gaugeRingRef.current.style.borderColor = burning ? "#c96a3a" : "#5f6e80";
       }
+      if (pressureRef.current) pressureRef.current.style.height = Math.round((mech.leapP || 0) * 100) + "%";
       S.hudT += dt;
       if (S.hudT > 0.25) {
         S.hudT = 0;
         setHud({
           mode: mech.state.mode, steps: mech.telem.steps, falls: mech.telem.falls, kills: world.killCount, shots: mech.telem.shots || 0,
           alert: S.alert, gyro: mech.gyroOn !== false, rcs: !!mech.thrustersOn, jets: !!S.jetMode,
-          maneuver: mech.state.aboutFace ? (mech.state.afLive ? "PIVOT" : "ABOUT-FACE") : mech.state.kick ? "PUNT" : mech.state.puntReq > 0 ? "PUNT PENDING" : null,
+          maneuver: mech.leap ? "LEAP" : mech.state.aboutFace ? (mech.state.afLive ? "PIVOT" : "ABOUT-FACE") : mech.state.kick ? "PUNT" : mech.state.puntReq > 0 ? "PUNT PENDING" : null,
           poise: !!mech.state.poise,
           mslCd: Math.max(0, 6 - (world.t - (mech._lastMsl ?? -99))),
           hot: (mech.jetHeat || 0) > 0.5,
@@ -497,7 +536,7 @@ export default function MechRange({ onExit }) {
       <div data-mech-hud style={{ position: "absolute", top: 10, left: 12, color: "#c7d0dc", pointerEvents: "none" }}>
         <p style={{ ...line, color: COLORS.gold, fontSize: 14, letterSpacing: 2 }}>MECH TEST RANGE</p>
         <p style={line}>BIPED FRAME MK1 — GAIT ACCEPTANCE PENDING</p>
-        <p style={line}>{isTouch ? "L stick moves · R stick turns (or JETS) · ◀ ▶ aim · slider range" : "W/S walk · A/D turn · MOUSE aims · CLICK fire · V missiles · C punt · X one-leg · T 180 · G gyro · H rockets · J jets · B readout · R reissue"}</p>
+        <p style={line}>{isTouch ? "L stick moves · R stick turns (or JETS) · ◀ ▶ aim · slider range" : "W/S walk · A/D turn · MOUSE aims · CLICK fire · V missiles · C punt · X one-leg · T 180 · G gyro · H rockets · J jets · L leap · B readout · R reissue"}</p>
         <p data-mech-status style={line}>
           {hud.mode === "FALLEN" ? "FRAME DOWN — R TO REISSUE" : hud.maneuver ? hud.mode + " · " + hud.maneuver : hud.mode} · steps {hud.steps} · falls {hud.falls} · kills {hud.kills} · shots {hud.shots} · <span style={{ color: hud.mslCd > 0.1 ? "#e0b85e" : "#7fd47f" }}>MSL {hud.mslCd > 0.1 ? Math.ceil(hud.mslCd) + "s" : "READY"}</span> · garrison {hud.alert ? "ALERTED" : "unaware"}
         </p>
@@ -505,6 +544,9 @@ export default function MechRange({ onExit }) {
       <>
         {/* attitude bubble gauge: pitch/roll bubble, yaw compass tick,
             ring ignites while thrusters burn */}
+        <div data-mech-pressure style={{ position: "absolute", left: "calc(50% - 78px)", top: 8, width: 34, height: 60, border: "1px solid #5f6e80", background: "rgba(16,20,26,0.55)", pointerEvents: "none", overflow: "hidden" }}>
+          <div ref={pressureRef} style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: "0%", background: "#b89a5e" }} />
+        </div>
         <div ref={gaugeRingRef} style={{ position: "absolute", left: "calc(50% - 30px)", top: 8, width: 60, height: 60, borderRadius: 32, border: "1px solid #5f6e80", background: "rgba(16,20,26,0.55)", pointerEvents: "none" }}>
           <div style={{ position: "absolute", left: 22, top: 22, width: 16, height: 16, borderRadius: 9, border: "1px solid rgba(95,110,128,0.5)" }} />
           <div ref={yawTickRef} style={{ position: "absolute", left: 28, top: 2, width: 4, height: 8, background: "#e8d9b8", transformOrigin: "2px 28px" }} />
@@ -539,6 +581,10 @@ export default function MechRange({ onExit }) {
           <button data-mech-punt onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.punt(); }}
             style={{ position: "absolute", ...(narrow ? { left: 12, bottom: 304 } : { left: "calc(50% - 191px)", bottom: 90 }), width: 88, height: 48, fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#c7d0dc", background: "rgba(29,37,49,0.9)", border: "1px solid #5f6e80", touchAction: "none" }}>
             PUNT
+          </button>
+          <button data-mech-leap onPointerDown={(e) => { e.stopPropagation(); const m = window.__MECHRANGE__; if (m) m.leap(); }}
+            style={{ position: "absolute", ...(narrow ? { left: 12, bottom: 408 } : { left: "calc(50% - 289px)", bottom: 90 }), width: 88, height: 48, fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#c7d0dc", background: "rgba(29,37,49,0.9)", border: "1px solid #5f6e80", touchAction: "none" }}>
+            LEAP
           </button>
           <button data-mech-reissue onClick={() => window.__MECHRANGE__ && window.__MECHRANGE__.reissue()}
             style={{ position: "absolute", right: 70, top: 90, padding: "12px 16px", fontFamily: FONT, fontSize: 13, letterSpacing: 1, color: "#c7d0dc", background: "#1a212b", border: "1px solid #5f6e80" }}>

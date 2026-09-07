@@ -865,6 +865,24 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const strikeRing = new THREE.Mesh(new THREE.RingGeometry(1.6, 2.1, 24), new THREE.MeshBasicMaterial({ color: 0xffa24a, transparent: true, opacity: 0, depthWrite: false }));
   strikeRing.rotation.x = -Math.PI / 2; strikeRing.layers.set(1); strikeRing.visible = false;
   scene.add(strikeRing);
+  // leap surface: the reachable ring (radius = what pressure can buy) and
+  // the landing mark. Fed by the game layer via setLeapRing; null hides.
+  const leapRing = new THREE.Mesh(new THREE.RingGeometry(0.97, 1.0, 64), new THREE.MeshBasicMaterial({ color: 0x7fd47f, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide }));
+  leapRing.rotation.x = -Math.PI / 2; leapRing.layers.set(1); leapRing.visible = false;
+  scene.add(leapRing);
+  const leapMark = new THREE.Mesh(new THREE.RingGeometry(0.8, 1.15, 24), new THREE.MeshBasicMaterial({ color: 0x7fd47f, transparent: true, opacity: 0.9, depthWrite: false }));
+  leapMark.rotation.x = -Math.PI / 2; leapMark.layers.set(1); leapMark.visible = false;
+  scene.add(leapMark);
+  function setLeapRing(cx, cz, r, mark) {
+    if (cx == null) { leapRing.visible = false; leapMark.visible = false; return; }
+    leapRing.position.set(cx, world.field.heightAt(cx, cz) + 0.2, cz);
+    leapRing.scale.setScalar(Math.max(0.1, r));
+    leapRing.visible = true;
+    if (mark) {
+      leapMark.position.set(mark.x, world.field.heightAt(mark.x, mark.z) + 0.25, mark.z);
+      leapMark.visible = true;
+    } else leapMark.visible = false;
+  }
   // mk2.12: the shockwave ring — born at the davy's burst, out past the
   // blast radius in under a second, gone.
   const davyRing = new THREE.Mesh(new THREE.RingGeometry(0.92, 1.0, 64), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
@@ -2713,5 +2731,5 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // never calls this and keeps the shipped look exactly
   function setGrade(g) { postMat.uniforms.uGrade.value = Math.max(-1, Math.min(1, g || 0)); }
   const project = (x, y, z) => { const v = new THREE.Vector3(x, y, z); v.project(cam); return { x: v.x, y: v.y }; };
-  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, overlay, setDressing, setRoads: (list) => splat.setRoads(list), setMines, setTownFlags, setGrenades, setGreenFog, rotateStep, rotateBy, updateTerritory, setFog, setHealth, getFogDebug, chunkStats: () => chunkStats, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
+  return { render, consume, setGfx, setZoom, setWorld, setTraj, setLeapRing, setGrade, gfx, overlay, setDressing, setRoads: (list) => splat.setRoads(list), setMines, setTownFlags, setGrenades, setGreenFog, rotateStep, rotateBy, updateTerritory, setFog, setHealth, getFogDebug, chunkStats: () => chunkStats, dispose() { renderer.dispose(); }, _cam: cam, project, _splat: splat, _ice: iceMesh, camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
 }
