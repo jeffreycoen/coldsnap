@@ -663,7 +663,7 @@ export function buildMech(world, opts = {}) {
     // choices until measured.
     mech.leapP = 0;      // pressure, 0..1
     mech.leap = null;    // { phase, t, tgt, d } while a leap runs
-    mech.leapRMax = 55;  // meters at full charge
+    mech.leapRMax = 28;  // meters at full charge
     mech.thrustMax = 30000 * s * s * s; // N per nozzle; the GRIP BUDGET below is the real limiter
     mech.thrustersOn = false; // opt-in: the certified gait is pinned thruster-free in CI; the game enables
   }
@@ -956,8 +956,23 @@ function controller(world, mech) {
     }
     // fly / brake: nozzles own the air. Simple attitude damping keeps the
     // hull level (the gyro block below is not running in this mode).
-    hull2.w.x -= hull2.w.x * Math.min(0.4, 4 * dt);
-    hull2.w.z -= hull2.w.z * Math.min(0.4, 4 * dt);
+    {
+      const tauCapL = 0.6 * W2 * g2.comH;
+      const yawM = Math.atan2(hull2.R[6], hull2.R[8]);
+      const blx = Math.cos(yawM), blz = -Math.sin(yawM);
+      const bfx = Math.sin(yawM), bfz = Math.cos(yawM);
+      const wP = hull2.w.x * blx + hull2.w.z * blz;
+      const wR = hull2.w.x * bfx + hull2.w.z * bfz;
+      const exT2 = -Math.asin(clamp(-hull2.R[7], -1, 1));
+      const ezT2 = -Math.asin(clamp(hull2.R[1], -1, 1));
+      const kpL = tauCapL * 2.0, kdL = tauCapL * 0.6;
+      const tP2 = clamp(kpL * exT2 - kdL * wP, -tauCapL, tauCapL);
+      const tR2 = clamp(kpL * ezT2 - kdL * wR, -tauCapL, tauCapL);
+      const tx2 = tP2 * blx + tR2 * bfx, tz2 = tP2 * blz + tR2 * bfz;
+      hull2.w.x += (hull2.invIw[0] * tx2 + hull2.invIw[2] * tz2) * dt;
+      hull2.w.y -= hull2.w.y * Math.min(0.3, 2 * dt);
+      hull2.w.z += (hull2.invIw[6] * tx2 + hull2.invIw[8] * tz2) * dt;
+    }
     const R6 = mech.waist ? mech.waist.b.R : hull2.R;
     const wantEx = (exW, eyW, ezW) => { // world exhaust wish -> per-nozzle target
       for (const th2 of mech.thrusters) {
@@ -972,18 +987,20 @@ function controller(world, mech) {
       }
     };
     if (lp.phase === "fly") {
-      if (hull2.v.y > 0) {
-        // the rise: exhaust down-and-back, thrust up-and-forward
+      const gT = world.field.heightAt(hull2.pos.x, hull2.pos.z);
+      const h2 = hull2.pos.y + g2.hipY - gT;
+      const vy2 = hull2.v.y;
+      const tFly = (vy2 + Math.sqrt(Math.max(0, vy2 * vy2 + 2 * world.gravity * Math.max(0.5, h2)))) / world.gravity;
+      const px2 = hull2.pos.x + hull2.v.x * tFly, pz2 = hull2.pos.z + hull2.v.z * tFly;
+      const shortBy = (lp.tgt.x - px2) * ux + (lp.tgt.z - pz2) * uz;
+      if (vy2 > 0 && shortBy > 1.5) {
         wantEx(-ux * 0.45, -0.89, -uz * 0.45);
-        for (const th2 of mech.thrusters) th2.cmd = 0.8;
+        for (const th2 of mech.thrusters) th2.cmd = 0.7;
       } else {
         for (const th2 of mech.thrusters) th2.cmd = 0;
-        // brake trigger: the fall must be killable before the ground
-        const gT = world.field.heightAt(hull2.pos.x, hull2.pos.z);
-        const h2 = hull2.pos.y + g2.hipY - gT; // hip height above ground
-        if (hull2.v.y * hull2.v.y > 2 * 8.0 * Math.max(0.5, h2 - 1.2)) { lp.phase = "brake"; lp.t = 0; }
       }
-      if (lp.t > 9) { lp.phase = "brake"; lp.t = 0; } // never fly forever
+      if (vy2 < 0 && vy2 * vy2 > 2 * 5.0 * Math.max(0.5, h2 - 1.6)) { lp.phase = "brake"; lp.t = 0; }
+      if (lp.t > 9) { lp.phase = "brake"; lp.t = 0; }
       return;
     }
     if (lp.phase === "brake") {
@@ -991,15 +1008,16 @@ function controller(world, mech) {
       // fall at 6 m/s and bleeds horizontal drift (relaxed-physics license)
       wantEx(0, -1, 0);
       for (const th2 of mech.thrusters) th2.cmd = 1;
-      if (hull2.v.y < -6) for (const b of mech.links) b.v.y -= (hull2.v.y + 6) * Math.min(0.5, 10 * dt);
-      for (const b of mech.links) { b.v.x -= b.v.x * Math.min(0.3, 2.5 * dt); b.v.z -= b.v.z * Math.min(0.3, 2.5 * dt); }
-      if (legsOn) {
+      if (hull2.v.y < -3.5) for (const b of mech.links) b.v.y -= (hull2.v.y + 3.5) * Math.min(0.5, 12 * dt);
+      for (const b of mech.links) { b.v.x -= b.v.x * Math.min(0.4, 4 * dt); b.v.z -= b.v.z * Math.min(0.4, 4 * dt); }
+      if (legsOn && hull2.R[4] > 0.9) {
         // the catch: land through the deep-plant bookkeeping, then STAND
         for (const th2 of mech.thrusters) th2.cmd = 0;
         st.mode = "STAND"; st.stopping = false; st.postStop = 4;
         st.swing = null; st.kick = null; st.hold = {}; st.holdCop = {};
         st.settleT = 0; st.settledT = 0;
         st.recoverT = Math.max(st.recoverT || 0, 1.5);
+        st.hRec = 0.4; // land bent: the touchdown absorb soaks the strike
         for (const sd8 of ["L", "R"]) {
           const f8 = mech.legs[sd8].foot;
           st.prints[sd8] = { x: f8.pos.x, z: f8.pos.z, yaw: Math.atan2(f8.R[6], f8.R[8]) };
