@@ -207,8 +207,17 @@ function prepHinge(j, dt) {
   if (j._shX != null) {
     j.shear = Math.hypot(j._shX, j._shY, j._shZ) / dt;
     if (j.shear > (j.shearPk || 0)) j.shearPk = j.shear;
+    // THE TEAR: measured load past the health-scaled rating severs the
+    // joint — the locks stop solving and the limb is loose bodies
+    if (j.env != null && !j.torn) {
+      if (j.shear > j.env * 1.75 * (j.jHealth != null ? j.jHealth : 1)) {
+        j._ovT = (j._ovT || 0) + 1;
+        if (j._ovT >= 5) j.torn = true; // sustained overload, ~40 ms — never a one-tick solver spike
+      } else j._ovT = 0;
+    }
   }
   j._shX = 0; j._shY = 0; j._shZ = 0;
+  if (j.torn) return;
   const a = j.a, b = j.b;
   rMulVec(a.R, j.axA, j._a1);
   const a1 = j._a1;
@@ -265,6 +274,7 @@ function prepHinge(j, dt) {
   angImpulse(a, b, a1, j._mAcc);
 }
 function iterHinge(j, dt, locksOnly = false) {
+  if (j.torn) return;
   const a = j.a, b = j.b, a1 = j._a1;
   // --- 3 linear locks (weld-style, tight: no slop)
   for (let ai = 0; ai < 3; ai++) {
@@ -715,6 +725,22 @@ export function buildMech(world, opts = {}) {
     if (j.name.includes("hipYaw")) j.kd = Math.min(2 * Math.sqrt(j.kp * j.Ichain), 0.9 * j.Ichain * 120);
     j.kv = 0.02 * j.kd;
   }
+  // JOINT HEALTH (design 2026-09-10): every hinge carries a measured working
+  // envelope (the peak load ordinary life puts through it — walking and
+  // cushioned leaps, catalogued) and a health 0..1. The breaking strength is
+  // env * 1.75 * health: 1.75x the envelope when whole (unreachable by
+  // anything measured), sliding down through the walking band as wounds
+  // spend it, zero when spent. Wounds come from the damage system; tears
+  // are pure measured load. Envelopes in newtons at s=1, scaled by mass.
+  {
+    const ENV = { hipYaw: 634e3, hipRoll: 666e3, hipPitch: 702e3, knee: 571e3, anklePitch: 602e3, ankleRoll: 610e3, waist: 771e3, armSwing: 312e3 };
+    for (const j of mech.joints) {
+      const shortE = j.name.replace(/^[LR]/, "");
+      j.env = (ENV[shortE] || 700e3) * s * s * s;
+      j.jHealth = 1;
+      j.torn = false;
+    }
+  }
   // gait constants from measured geometry
   let cy = 0;
   for (const b of mech.links) cy += b.mass * b.pos.y;
@@ -820,7 +846,7 @@ export function placeMech(world, mech, x, z, yaw) {
     R: { x: mech.legs.R.foot.pos.x, z: mech.legs.R.foot.pos.z, yaw },
   };
   st.hold = {}; st.holdCop = {}; st.stopping = false; st.stopPlan = null;
-  st.settleT = 0; st.settledT = 0; st.spawnDone = false;
+  st.settleT = 0; st.settledT = 0; st.spawnDone = false; st._limped = false;
   if (mech.headWeld && mech.headWeld.broken) { mech.headWeld.broken = false; world._weldPairsDirty = true; }
   // stale actuator state must not survive a reissue: a held CMG torque or
   // fall-time load filter tips the fresh spawn
@@ -829,7 +855,12 @@ export function placeMech(world, mech, x, z, yaw) {
   for (const sd of ["L", "R"]) { mech.legs[sd].load = 0; mech.legs[sd].loadLpf = 0; }
   for (const j of mech.joints) { j.target = 0; j.tauFF = 0; j.stopImp = 0; }
 }
-export function respawnMech(world, mech, x, z, yaw) { placeMech(world, mech, x, z, yaw || 0); }
+export function respawnMech(world, mech, x, z, yaw, opts) {
+  placeMech(world, mech, x, z, yaw || 0);
+  // the bench reissue rebuilds the machine whole; the war's stand-up keeps
+  // its wounds (its own law: hp untouched — wounds keep)
+  if (opts && opts.mend) for (const j of mech.joints) { j.jHealth = 1; j.torn = false; j.shearPk = 0; j.stopImp = 0; }
+}
 
 // ---------------------------------------------------------------- IK (ref-frame)
 // pelvis ref pose (x,z, hipY world, heading, level) + foot sole target (world)
@@ -911,12 +942,23 @@ function onFallMech(mech) {
   }
   mech.state.mode = "FALLEN";
   mech.telem.falls++;
+  // a fallen machine's jets die with its servos (the pinned-burn defect)
+  if (mech.thrusters) for (const th of mech.thrusters) th.cmd = 0;
+  mech.jetCmd = null;
 }
 const _com = v3(), _comV = v3();
 function controller(world, mech) {
   const st = mech.state, k = mech.k, g = mech.geom, dt = world.dt;
   // fallen mechs limp; everything else stays awake for the servos
-  if (st.mode === "FALLEN") return;
+  if (st.mode === "FALLEN") {
+    // however FALLEN was reached, the joints are limp — a stiff-servo
+    // collapse is a meganewton artifact no real fall produces
+    if (!st._limped) {
+      st._limped = true;
+      for (const j of mech.joints) { j.target = j.angle; j.tauFF = 0; }
+    }
+    return;
+  }
   // THE LEAP (design 2026-09-06): its own mode — crouch, drive, fly,
   // brake, catch. Owns legs and nozzles for the duration; hands the
   // machine back to STAND through the deep-plant bookkeeping.
@@ -3064,6 +3106,25 @@ function stepMechs(world) {
       // heat only accrues on MANUAL burns; autos are engine-managed
       const manual = mech.jetCmd && Math.hypot(mech.jetCmd.x, mech.jetCmd.z) > 0.15;
       mech.jetHeat = clamp((mech.jetHeat || 0) + (manual ? hotSum * dt / 2.8 : 0) - dt / 4, 0, 1);
+    }
+    // WOUNDS (design 2026-09-10): the damage system spends joint health —
+    // every burst this tick wounds the joints near it, falling off with
+    // distance. Numbers are design choices until played.
+    if (world.events && world.events.length) {
+      for (const ev of world.events) {
+        if (ev.type !== "boom") continue;
+        if (!ev._jw) ev._jw = {};
+        if (ev._jw[mech.id]) continue;
+        ev._jw[mech.id] = 1; // one wound per burst per machine — the event lingers in the list
+        const rW = (ev.r || 2) + 3;
+        for (const j of mech.joints) {
+          if (j.env == null || j.torn) continue;
+          const jb = j.b;
+          const dW = Math.hypot(jb.pos.x - ev.x, (jb.pos.y - (ev.y != null ? ev.y : jb.pos.y)), jb.pos.z - ev.z);
+          if (dW > rW) continue;
+          j.jHealth = Math.max(0, j.jHealth - 0.22 * (1 - dW / rW));
+        }
+      }
     }
     mechIslandSolve(world, mech);
   }

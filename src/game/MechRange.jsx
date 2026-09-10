@@ -105,7 +105,7 @@ export default function MechRange({ onExit }) {
       , camPts: new Map(), pinchD0: 0, pinchA: 0, zoom: 1, zoom0: 1, leapMark: null, leapPtr: null };
     window.__MECHRANGE__ = {
       world, mech, R, addBody: (o) => addBody(world, o),
-      reissue: () => { respawnMech(world, mech, 0, 41, Math.PI); S.yawT = Math.PI; S.aimYaw = null; mech.aimYaw = null; S.aimOff = 0; S.aimHeld = 0; S.rx = 0; mechCommand(mech, { travel: 0, lateral: 0, heading: 0 }); },
+      reissue: () => { respawnMech(world, mech, 0, 41, Math.PI, { mend: true }); S.yawT = Math.PI; S.aimYaw = null; mech.aimYaw = null; S.aimOff = 0; S.aimHeld = 0; S.rx = 0; mechCommand(mech, { travel: 0, lateral: 0, heading: 0 }); },
       aim: (dir) => { S.aimHeld = dir; },
       fireHeld: (v) => { S.fireHeld = v; },
       fire: () => mechFire(world, mech),
@@ -292,7 +292,7 @@ export default function MechRange({ onExit }) {
       }
       if (e.code === "Escape") S.leapAim = false;
       if (e.code === "KeyR") {
-        respawnMech(world, mech, 0, 41, Math.PI);
+        respawnMech(world, mech, 0, 41, Math.PI, { mend: true });
         S.yawT = Math.PI; S.aimYaw = null; mech.aimYaw = null;
         mechCommand(mech, { travel: 0, lateral: 0, heading: 0 });
       }

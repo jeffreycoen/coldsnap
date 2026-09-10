@@ -83,7 +83,11 @@ export function makeMechReadout() {
       const r = eff(j);
       const sp = spikes[j.name];
       if (sp) sp.t = sp.t > 0.5 ? sp.t - 0.04 : 1; // pulse
-      g.fillStyle = sp && sp.t > 0.75 ? "#ffffff" : "hsl(" + Math.round(120 * (1 - r)) + ",70%,50%)";
+      const hp9 = j.jHealth != null ? j.jHealth : 1;
+      g.fillStyle = j.torn ? "#3a4048"
+        : sp && sp.t > 0.75 ? "#ffffff"
+        : hp9 < 0.7 ? "hsl(" + Math.round(38 * hp9 / 0.7) + ",80%,55%)"
+        : "hsl(" + Math.round(120 * (1 - r)) + ",70%,50%)";
       g.beginPath();
       g.arc(p[0], p[1], sp ? 5 : 3.5, 0, Math.PI * 2);
       g.fill();
@@ -106,7 +110,7 @@ export function makeMechReadout() {
     const exi = Math.hypot(cx + vx / om - fmx, cz + vz / om - fmz);
     const D = 180 / Math.PI;
     const pad = (s, n) => String(s).padStart(n);
-    let out = "JOINT         ANG    RATE     TQ  CEIL   STOP  SHEAR\n";
+    let out = "JOINT         ANG    RATE     TQ  CEIL   STOP  SHEAR     HP\n";
     out += "            (deg)  (d/s)  (kNm)   (%)  (kNm)   (kN)\n";
     for (const j of mech.joints) {
       out += j.name.padEnd(11)
@@ -115,7 +119,8 @@ export function makeMechReadout() {
         + pad(((j._mAcc || 0) / dtw / 1000).toFixed(1), 7)
         + pad((eff(j) * 100).toFixed(0), 6)
         + pad((j.stopImp / 1000).toFixed(1), 7)
-        + pad(((j.shearPk || 0) / 1000).toFixed(0), 7) + "\n";
+        + pad(((j.shearPk || 0) / 1000).toFixed(0), 7)
+        + (j.torn ? "   TORN" : pad(Math.round((j.jHealth != null ? j.jHealth : 1) * 100) + "%", 7)) + "\n";
     }
     out += "\nLEG      LOAD(%W)  STATE\n";
     for (const sd of ["L", "R"]) {
