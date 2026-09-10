@@ -39,13 +39,14 @@ import { PALETTE, PALETTE_BY_KEY, PALETTE_LABEL, FOE_RACK, TREE_BRANCHES, branch
 import { makeMap, buildDepotTerrain, makeGrid, planTrees, computeFlowField } from "./mapgen.js";
 import { musterFreshStart } from "./muster.js";
 import { ringBell as ringBellOut } from "./bell.js";
-import { mechCommand, mechFire, mechMissiles, mechBarrage, mechPunt, mechAboutFace, mechPivot, mechAimDir } from "../engine/mech.js";
+import { mechCommand, mechFire, mechMissiles, mechBarrage, mechPunt, mechAboutFace, mechPivot, mechAimDir, mechLeap, mechLeapSolve, mechLeapRange, mechLeapRho } from "../engine/mech.js";
 import { stepDepot, buildTown, townFootprint, makeDepotAssaultState, clockStr } from "./sim.js";
 import { bootWar, stampBag as bootStampBag } from "./boot.js";
 import { tickWar, buildSnapshotOf } from "./tick.js";
 import { makePlacement } from "./placement.js";
 import { makeOrders } from "./orders.js";
 import { installDepotHooks } from "./hooks.js";
+import { makeMechLeap } from "./mechleap.js";
 
 // The quartermaster's quiet flag — the purpose lines speak in the
 // first war only, then go quiet for good once the first bell has rung.
@@ -532,6 +533,10 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           input.fireHeld = true;
           return;
         }
+        if (view._ML && view._ML.active && possessedMech() && view._ML.grab(e.pointerId)) {
+          view._ML.drag(world, possessedMech(), e.clientX, e.clientY);
+          return;
+        }
         canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
         pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         if (pointers.size === 1) { dragTotal = 0; downPt = { x: e.clientX, y: e.clientY }; }
@@ -544,6 +549,11 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         }
       };
       const onPointerMove = (e) => {
+        if (view._ML && view._ML.owns(e.pointerId)) {
+          const pm9 = possessedMech();
+          if (pm9) view._ML.drag(world, pm9, e.clientX, e.clientY);
+          return;
+        }
         view.pointer = { x: e.clientX, y: e.clientY };
         const pt = pointers.get(e.pointerId);
         if (!pt) return;
@@ -578,6 +588,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         }
       };
       const onPointerUp = (e) => {
+        if (view._ML) view._ML.release(e.pointerId);
         if (e.pointerType === "mouse" && e.button === 2 && input.mgHeld) { input.mgHeld = false; pointers.delete(e.pointerId); return; }
         if (input.fireHeld && e.pointerType === "mouse") { input.fireHeld = false; pointers.delete(e.pointerId); return; }
         pointers.delete(e.pointerId);
@@ -604,12 +615,13 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         // like MechRange's own keydown bindings.
         if (!e.repeat && input.possess && input.possess.kind === "mech") {
           const k = e.key.toLowerCase();
-          if (k === "v" || k === "b" || k === "c" || k === "t") {
+          if (k === "v" || k === "b" || k === "c" || k === "t" || k === "l") {
             const w = input.mechWant || (input.mechWant = {});
             if (k === "v") w.msl = true;
             else if (k === "b") w.brg = true;
             else if (k === "c") w.punt = true;
             else if (k === "t") w.face = true;
+            else if (k === "l") view._leapPress = true;
           }
         }
         onKey(e, true);
@@ -816,6 +828,18 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       // (groundPoint — the same raycast the reticle uses, not a synthetic
       // screen-offset: the camera is hull-locked, so the mouse already
       // points at the world the way it does for every other possession).
+      // THE WAR LEAP: aim state behind its own module; hookup lines only
+      const ML = makeMechLeap({
+        R, groundPoint,
+        surfaceY: (x, z) => surfaceAt(T.sight, x, z, map.invW).y,
+        eng: { mechLeap, mechLeapSolve, mechLeapRange, mechLeapRho },
+      });
+      view._ML = ML;
+      const possessedMech = () => {
+        if (!input.possess || input.possess.kind !== "mech") return null;
+        const pb = world.byId.get(input.possess.id);
+        return pb && pb.mechRef ? pb.mechRef : null;
+      };
       const feedMechCommands = (mech, cdt) => {
         let tf = view.keys.w ? 0.6 : view.keys.s ? -0.42 : 0;
         let tl = 0;
@@ -1252,6 +1276,10 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           if (input.possess && input.possess.kind === "mech") {
             const pmR = world.byId.get(input.possess.id);
             if (pmR && pmR.mechRef) {
+              const mechL = pmR.mechRef;
+              if (view._leapPress) { view._leapPress = false; ML.press(world, mechL); }
+              if (ML.active) ML.feed(world, mechL);
+              else {
               try {
                 const mech = pmR.mechRef;
                 const raw = mechAimDir(world, mech);
@@ -1276,8 +1304,10 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
                 }
                 R.setTraj(pts, hitIdx);
               } catch (e) {}
+              }
             }
           }
+          if (view._ML && view._ML.active && !(input.possess && input.possess.kind === "mech")) view._ML.cancel();
           // The draw gate is gone — every frame draws (the
           // evidence run showed physics, not drawing, owns the frame budget).
           {
@@ -1956,6 +1986,11 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             onPointerDown={(e) => { e.stopPropagation(); const C = stateRef.current; if (C) (C.input.mechWant || (C.input.mechWant = {})).brg = true; }}
             style={{ ...P.btnBig, position: "absolute", right: 132, bottom: 204, zIndex: 7, touchAction: "none", opacity: hud.possessed.brgCd > 0.1 ? 0.5 : 1, color: hud.possessed.brgCd > 0.1 ? "#7a6055" : "#e8c9b8" }}>
             {hud.possessed.brgCd > 0.1 ? "▲▲▲ " + Math.ceil(hud.possessed.brgCd) + "s" : "▲▲▲ BRG"}
+          </button>
+          <button data-mech-leap
+            onPointerDown={(e) => { e.stopPropagation(); const C = stateRef.current; if (C) C.view._leapPress = true; }}
+            style={{ ...P.btnBig, position: "absolute", right: 132, bottom: 256, zIndex: 7, touchAction: "none" }}>
+            LEAP
           </button>
           <div data-mech-rangeslider
             onPointerDown={(e) => {

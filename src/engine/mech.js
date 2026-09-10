@@ -954,7 +954,7 @@ function controller(world, mech) {
         // a distance, paid from the store each tick. No velocity writes.
         const TH = 0.96; // 55 degrees
         if (lp.v0 == null) {
-          lp.v0 = Math.min(30, Math.sqrt(lp.d * world.gravity / Math.sin(2 * TH)));
+          lp.v0 = lp.v0S != null ? lp.v0S : Math.min(30, Math.sqrt(lp.d * world.gravity / Math.sin(2 * TH)));
           lp.gained = 0;
           lp.dx = ux * Math.cos(TH); lp.dy = Math.sin(TH); lp.dz = uz * Math.cos(TH);
         }
@@ -1038,7 +1038,8 @@ function controller(world, mech) {
       }
     };
     if (lp.phase === "fly") {
-      const gT = world.field.heightAt(hull2.pos.x, hull2.pos.z);
+      const nearT = Math.hypot(lp.tgt.x - hull2.pos.x, lp.tgt.z - hull2.pos.z) < 7;
+      const gT = Math.max(world.field.heightAt(hull2.pos.x, hull2.pos.z), nearT && lp.tgtY != null ? lp.tgtY : -1e9);
       const h2 = hull2.pos.y + g2.hipY - gT;
       const vy2 = hull2.v.y;
       const tFly = (vy2 + Math.sqrt(Math.max(0, vy2 * vy2 + 2 * world.gravity * Math.max(0.5, h2)))) / world.gravity;
@@ -1084,7 +1085,8 @@ function controller(world, mech) {
       for (const th2 of mech.thrusters) th2.cmd = 1;
       const vy3 = hull2.v.y;
       if (vy3 < -1.7 && mech.gasJ > 0) {
-        const gT3 = world.field.heightAt(hull2.pos.x, hull2.pos.z);
+        const nearT3 = Math.hypot(lp.tgt.x - hull2.pos.x, lp.tgt.z - hull2.pos.z) < 7;
+        const gT3 = Math.max(world.field.heightAt(hull2.pos.x, hull2.pos.z), nearT3 && lp.tgtY != null ? lp.tgtY : -1e9);
         const h3 = Math.max(0.3, hull2.pos.y + g2.hipY - gT3);
         const aNeed = (vy3 * vy3 - 2.9) / (2 * h3) + world.gravity;
         const aGas = clamp(aNeed - 0.85 * world.gravity, 0, 1.35 * world.gravity);
@@ -1211,7 +1213,7 @@ function controller(world, mech) {
     if (st.cmdT.f > 0.5) {
       st.govDecel = false;
       if (st.govF == null) st.govF = 0.42; // overdrive LAUNCHES at the robust band — 0.5 launches fell 4/6 across settle offsets
-      if (st.walkEstT > 8) st.govF = Math.min(mech._govCap || 0.55, st.govF + 0.03 * dt); // _govCap: campaign experiment hook, identity when unset
+      if (st.walkEstT > 8) st.govF = Math.min(mech._govCap || 0.62, st.govF + 0.03 * dt); // 0.62: the swivel machine's relief-ensemble edge (0.68 fell 8/8 on relief; 0.62 matched baseline falls at +11% speed). _govCap: experiment hook, identity when unset
       effF = Math.min(st.cmdT.f, st.govF);
     } else {
       if (st.govF != null && Math.hypot(hull.v.x, hull.v.z) > 0.55) st.govDecel = true; // leaving overdrive hot
@@ -1773,7 +1775,7 @@ function controller(world, mech) {
       // o0.4 sprint-cascade were BOTH this). With _thrV null the honest
       // brake sheds the overspeed into the certified turn envelope.
       const turning5 = (st.turnLpf || 0) > 0.05;
-      const wantV = st.govDecel ? 0.42 : Math.min(st.cmdT.f, mech._wantVCap || 0.68); // fast-band ceiling 0.68 (advisor sweep: dominates 0.62 — 4/6 vs 3-4/6 at +8% speed; 0.72 is 0/3. Residual mapped: o0.4 sprint-cascade ~30s, decel-tail ~42s)
+      const wantV = st.govDecel ? 0.42 : Math.min(st.cmdT.f, mech._wantVCap || 0.76); // fast-band ceiling 0.76, paired with the 0.62 governor (relief ensemble)
       const dv5 = wantV - vF5;
       // _thrV holds STEADY while assisting — nulling it on transient
       // overshoot re-armed the raw Raibert brake mid-sway and the fight
@@ -3271,14 +3273,33 @@ export function mechLeapRho(mech, worldBearing) {
   const fA = c >= 0 ? 1 : 0.95 / 1.25;
   return Math.hypot(c * fA, sn * (0.55 / 1.25));
 }
-export function mechLeap(world, mech, tx, tz) {
-  const st = mech.state;
-  if (st.mode !== "STAND" || !st.spawnDone || st.poise || st.kick || st.aboutFace || mech.leap) return false;
+// the height-aware solve: launch speed at the fixed 55-degree angle that
+// lands d meters out and dh meters up (down is negative). Refused when the
+// arc cannot reach, when the store cannot pay, or when the bearing's
+// stroke cannot deliver the speed.
+export function mechLeapSolve(world, mech, tx, tz, ty) {
   const dx = tx - mech.hull.pos.x, dz = tz - mech.hull.pos.z;
   const d = Math.hypot(dx, dz);
+  if (d < 4) return { ok: false, d };
+  const y0 = world.field.heightAt(mech.hull.pos.x, mech.hull.pos.z);
+  const tgtY = ty != null ? ty : world.field.heightAt(tx, tz);
+  const dh = tgtY - y0;
+  const TH = 0.96, tn = Math.tan(TH);
+  const den = 2 * (d * tn - dh);
+  if (den < 0.5) return { ok: false, d };
+  const v2 = world.gravity * d * d * (1 + tn * tn) / den;
+  if (v2 > 900) return { ok: false, d };
   const rho = mechLeapRho(mech, Math.atan2(dx, dz));
-  if (d < 4 || d > mechLeapRange(mech) * rho) return false;
-  mech.leap = { phase: "crouch", t: 0, tgt: { x: tx, z: tz }, d, rho };
+  if (v2 > 292 * rho) return { ok: false, d };            // the bearing's stroke
+  if (1.05 * mech.mass * v2 > (mech.gasJ || 0)) return { ok: false, d }; // the store
+  return { ok: true, d, rho, v0: Math.sqrt(v2), tgtY };
+}
+export function mechLeap(world, mech, tx, tz, ty) {
+  const st = mech.state;
+  if (st.mode !== "STAND" || !st.spawnDone || st.poise || st.kick || st.aboutFace || mech.leap) return false;
+  const sv = mechLeapSolve(world, mech, tx, tz, ty);
+  if (!sv.ok) return false;
+  mech.leap = { phase: "crouch", t: 0, tgt: { x: tx, z: tz }, d: sv.d, rho: sv.rho, v0S: sv.v0, tgtY: sv.tgtY };
   st.mode = "LEAP";
   return true;
 }

@@ -890,6 +890,38 @@ export function makeRenderer(canvas, world0, opts = {}) {
       trajHit.position.set(h.x, h.y + 0.15, h.z); trajHit.rotation.x = -Math.PI / 2; trajHit.visible = true;
     } else trajHit.visible = false;
   }
+  // leap surface: a thin lobe of pips tracing the reachable boundary per
+  // bearing, and the landing mark. Fed by the game layer via
+  // setLeapRing(points, mark); null hides.
+  const LOBE_N = 48;
+  const lobeMesh = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(0.22, 0.22, 0.22),
+    new THREE.MeshBasicMaterial({ color: 0x7fd47f, transparent: true, opacity: 0.75, depthWrite: false }),
+    LOBE_N);
+  lobeMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  lobeMesh.count = 0; lobeMesh.layers.set(1); lobeMesh.frustumCulled = false;
+  scene.add(lobeMesh);
+  const _lobeO = new THREE.Object3D();
+  const leapMark = new THREE.Mesh(new THREE.RingGeometry(0.8, 1.15, 24), new THREE.MeshBasicMaterial({ color: 0x7fd47f, transparent: true, opacity: 0.9, depthWrite: false }));
+  leapMark.rotation.x = -Math.PI / 2; leapMark.layers.set(1); leapMark.visible = false;
+  scene.add(leapMark);
+  function setLeapRing(points, mark) {
+    if (!points || !points.length) { lobeMesh.count = 0; leapMark.visible = false; return; }
+    let n = 0;
+    for (const p of points) {
+      if (n >= LOBE_N) break;
+      _lobeO.position.set(p.x, (p.y != null ? p.y : world.field.heightAt(p.x, p.z)) + 0.22, p.z);
+      _lobeO.updateMatrix();
+      lobeMesh.setMatrixAt(n, _lobeO.matrix);
+      n++;
+    }
+    lobeMesh.count = n;
+    lobeMesh.instanceMatrix.needsUpdate = true;
+    if (mark) {
+      leapMark.position.set(mark.x, (mark.y != null ? mark.y : world.field.heightAt(mark.x, mark.z)) + 0.25, mark.z);
+      leapMark.visible = true;
+    } else leapMark.visible = false;
+  }
   // volley strike marker: pulses at the painted point while the rockets fall
   const strikeRing = new THREE.Mesh(new THREE.RingGeometry(1.6, 2.1, 24), new THREE.MeshBasicMaterial({ color: 0xffa24a, transparent: true, opacity: 0, depthWrite: false }));
   strikeRing.rotation.x = -Math.PI / 2; strikeRing.layers.set(1); strikeRing.visible = false;
@@ -2750,5 +2782,5 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // never calls this and keeps the shipped look exactly
   function setGrade(g) { postMat.uniforms.uGrade.value = Math.max(-1, Math.min(1, g || 0)); }
   const project = (x, y, z) => { const v = new THREE.Vector3(x, y, z); v.project(cam); return { x: v.x, y: v.y }; };
-  return { render, consume, setGfx, setZoom, setWorld, setTraj, setGrade, gfx, overlay, setDressing, setRoads: (list) => splat.setRoads(list), setMines, setTownFlags, setGrenades, setGreenFog, rotateStep, rotateBy, updateTerritory, setFog, setHealth, getFogDebug, chunkStats: () => chunkStats, dispose() { renderer.dispose(); }, project, cameraPos: () => ({ x: cam.position.x, y: cam.position.y, z: cam.position.z }), smearLog: () => splat.log, smear: (u, v, style, wx, wz) => splat.smear(u, v, style, wx, wz), camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
+  return { render, consume, setGfx, setZoom, setWorld, setTraj, setLeapRing, setGrade, gfx, overlay, setDressing, setRoads: (list) => splat.setRoads(list), setMines, setTownFlags, setGrenades, setGreenFog, rotateStep, rotateBy, updateTerritory, setFog, setHealth, getFogDebug, chunkStats: () => chunkStats, dispose() { renderer.dispose(); }, project, cameraPos: () => ({ x: cam.position.x, y: cam.position.y, z: cam.position.z }), smearLog: () => splat.log, smear: (u, v, style, wx, wz) => splat.smear(u, v, style, wx, wz), camBasis: { right: camRight, up: camUp, fwd: camFwd, halfW: () => halfW, halfH: () => halfH } };
 }
