@@ -22,6 +22,7 @@ Standing rulings for this phase:
 | T1 | 0.5.0 | GRAVITY'S ARK behind THE PROVING RANGE: the gravity sandbox ported whole as its own module — seeded systems, real orbits, drag-to-burn flight, the 60-level ladder as it stands | LANDED ccd846c00bd9761d5eff73888e01cc8db7d1219f — smoke 23 PASS, 0 FAIL |
 | T2 | 0.5.1 | The ark's physics and seeded generator carved out of the component into their own modules — hashes identical, 7/7 | LANDED e7b1448 — smoke 23 PASS, 0 FAIL |
 | T3 | 0.5.2 | The drawn frame carves out into its own module; the 60-level ladder retires for one grand system — nine planets, a star, two nebulae, four comets, sixty asteroids, three gates, three fuel caches, across a field twice the old length and width | LANDED ecfe6ec964fc775c95e89738b6754f6af40c9847 — smoke 23 PASS, 0 FAIL — generator hashes at seed 12345: n=0 c94dfccbc4b24065, n=1 77d6c9d46acbf70e, n=2 4821351631a50239 |
+| T4 | 0.5.3 | The gate count drops from three to one; the two mid-field waypoints retire, the single gate stays the destination gate at the far end of the field | LANDED b49564d — smoke 23 PASS, 0 FAIL — generator hashes at seed 12345: n=0 83f4020d9011bf74, n=1 4ef7e270c24f35d8, n=2 efae00dd3c323f29 |
 
 ---
 
