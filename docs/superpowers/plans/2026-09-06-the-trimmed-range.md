@@ -15,6 +15,11 @@ task's plan. The thrust sweep has its own file.
 | T7 | 0.4.5 | The leap, whole: the pressure gauge becomes a real gas store in joules, the launch a piston paying force through a distance, the landing a vectored cushion and skid paying real work, righting a differential nozzle burn with the gyro as backup; tanks drawn on the torso back, a charge wisp, the vent plumes and snow, the hiss and the report | LANDED 3994faa (12-the-mech.mjs 25 PASS, 0 FAIL; smoke 23 PASS, 0 FAIL) |
 | T8 | 0.4.6 | The gas tanks become real bodies welded to the torso; the piston, cushion, and skid launch/landing loads route through the hull body instead of body-wide; the bench gains the war's free camera on touch (two-finger twist and pinch) and desktop keys 1/3; the stick's screen-relative mapping follows the camera's live frame | LANDED 941dcbd (12-the-mech.mjs 25 PASS, 0 FAIL; smoke 23 PASS, 0 FAIL) |
 | T9 | 0.4.7 | The reach circle replaced by a thin lobe of pips tracing the true per-bearing reachable boundary — forward drive rides the full hip arc, rear drive the shorter extension arc, side drive the roll arc; the piston's usable stroke scales with the arc; the mark drags free anywhere inside the lobe, one finger on touch, the mouse on desktop | LANDED 88911eb (12-the-mech.mjs 25 PASS, 0 FAIL; smoke 23 PASS, 0 FAIL) |
+| T10 | 0.4.8 | The leap goes to war: the solve turns height-aware, pricing uphill and downhill arcs and refusing unreachable ones, with rooftop marks under the reticle's surface law; the walking-speed ceilings rise to the relief-measured edge (governor 0.55 to 0.62, assist ceiling 0.68 to 0.76); driven from the possessed mech through the bench's own control shape — LEAP button and L key, the lobe, the dragged mark, confirm | LANDED e88e675 (12-the-mech.mjs 25 PASS, 0 FAIL; depot-test 1615 PASS, 0 FAIL; smoke 23 PASS, 0 FAIL) |
+
+Deferred: the enemy commander's leap decision. The enemy's machine
+carries the leap hardware and does not yet use it — the knowing
+asymmetry T10 recorded.
 
 Standing rule for every measurement harness from here on: results stream
 as they land — one line per completed run appended to
