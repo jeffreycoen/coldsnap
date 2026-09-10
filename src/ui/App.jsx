@@ -3,6 +3,7 @@ import ColdsnapProvingGrounds from "../demo/coldsnap-proving-grounds.jsx";
 import StartScreen from "./StartScreen.jsx";
 import DemosScreen from "./DemosScreen.jsx";
 import MechRange from "../game/MechRange.jsx";
+import GravityArk from "../game/GravityArk.jsx";
 import ColdsnapTD from "../game/ColdsnapTD.jsx";
 import DepotGame from "../depot/DepotGame.jsx";
 import Controls from "./Controls.jsx";
@@ -81,6 +82,9 @@ export default function App() {
   if (screen === "towerdef") {
     return <ColdsnapTD />;
   }
+  if (screen === "gravark") {
+    return <GravityArk onExit={() => setScreen("menu")} />;
+  }
   if (screen === "depot") {
     return <DepotGame resume={depotResume} seed={depotSeed} onExit={() => { setDepotResume(null); setScreen("menu"); }} />;
   }
@@ -96,6 +100,7 @@ export default function App() {
     return <DemosScreen
       onPlay={() => setScreen("demo")}
       onControls={() => setScreen("controls")} onMech={() => setScreen("mechrange")} onTowerDef={() => setScreen("towerdef")}
+      onArk={() => setScreen("gravark")}
       onBack={() => setScreen("menu")} />;
   }
   if (GAME_SCREENS.has(screen)) {
