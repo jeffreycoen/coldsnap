@@ -1,0 +1,139 @@
+# Gravity's Ark — the space phase opens
+
+Opened 2026-09-10, following The Trimmed Range (closed at 0.4.13).
+Phase mark 0.5. The long line: a space-faring mode — welded-cube
+ships in the real engine, seeded star systems, planetside wars on
+valley seeds, the machine as cargo. Built small, one drivable
+increment at a time, exactly as the mech line was.
+
+Standing rulings for this phase:
+
+- **The floppy law is SUSPENDED.** The 1.44 megabyte claim stops
+  binding while the ark grows; the README's floppy sentence gets
+  re-ruled at this phase's closeout.
+- The reference works live in the repo under
+  `docs/superpowers/reference/`: the gravity sandbox (the seeded
+  system generator, flight, and art this phase ports first) and the
+  deadweight hangar (the welded-ship economy that informs later
+  phases).
+
+| Task | Mark | What lands | Status |
+|---|---|---|---|
+| T1 | 0.5.0 | GRAVITY'S ARK behind THE PROVING RANGE: the gravity sandbox ported whole as its own module — seeded systems, real orbits, drag-to-burn flight, the 60-level ladder as it stands | LANDED ccd846c00bd9761d5eff73888e01cc8db7d1219f — smoke 23 PASS, 0 FAIL |
+
+---
+
+# T1: the ark docks (0.5.0)
+
+The gravity sandbox becomes GRAVITY'S ARK, a module beside the mech
+range and the tower defense. The port is verbatim: its physics, its
+levels, its look, untouched. COLDSNAP contributes a door, an exit,
+and a home in the repo.
+
+## Required reading
+
+- This plan, whole.
+- The source, whole (901 lines):
+  `/home/batman/.claude/uploads/1a2b6d00-52dd-432b-9b47-2e1c5f734ca9/5c198d70-gravitysandbox.tsx`
+- `src/ui/App.jsx` — whole (the screen switch).
+- `src/ui/DemosScreen.jsx` — whole (the door's home).
+- `src/game/MechRange.jsx` lines 1–20 — the module shape the ark
+  matches (read only).
+
+## Suggested model
+
+Sonnet. A verbatim move with a four-row substitution table.
+
+## Phone and desktop
+
+The source drives by pointer drag and touch drag — both already in
+the file, both named here. The menu button is the one added surface.
+The owner's live drive rules.
+
+## INVENTORY — what moves
+
+One file, whole:
+
+- `/home/batman/.claude/uploads/1a2b6d00-52dd-432b-9b47-2e1c5f734ca9/5c198d70-gravitysandbox.tsx`
+  → `src/game/GravityArk.jsx`, all 901 lines.
+
+Two files copied unchanged into the record:
+
+- the same source → `docs/superpowers/reference/gravity-sandbox.tsx`
+- `/home/batman/.claude/uploads/1a2b6d00-52dd-432b-9b47-2e1c5f734ca9/79debe5b-deadweighthangarhrml.html`
+  → `docs/superpowers/reference/deadweight-hangar.html`
+
+## SUBSTITUTION TABLE — every token allowed to differ
+
+The moved module may differ from its source in exactly four ways; an
+unlisted difference stops the task.
+
+1. The filename: `5c198d70-gravitysandbox.tsx` → `GravityArk.jsx`.
+2. The export line: `export default function App(){` →
+   `export default function GravityArk({ onExit }){`.
+3. One added element — the exit. Immediately BEFORE the line that
+   begins `      {ui.showMap&&<div style={{position:"absolute",bottom:30,`
+   insert:
+
+```jsx
+      {onExit&&<button onClick={onExit} style={{position:"absolute",top:10,left:10,zIndex:40,pointerEvents:"auto",padding:"8px 14px",font:"inherit",fontSize:12,letterSpacing:1,background:"rgba(20,25,33,.85)",color:"#c2c9d6",border:"1px solid rgba(150,160,178,.4)",borderRadius:10,cursor:"pointer"}}>⏏ MENU</button>}
+```
+
+4. Nothing else. Every other byte lands as it left.
+
+## Steps
+
+**1. The record.** Copy both reference files into
+`docs/superpowers/reference/` as the inventory names them, unchanged.
+
+**2. The move.** Copy the source to `src/game/GravityArk.jsx` and
+apply the substitution table's rows 2 and 3. Verify row 4 by diff:
+the only differences between source and module are the export line
+and the inserted button.
+
+**3. The door, `src/ui/App.jsx`.** The import block gains
+`import GravityArk from "../game/GravityArk.jsx";` beside the
+MechRange import. After the `towerdef` screen branch add:
+
+```jsx
+  if (screen === "gravark") {
+    return <GravityArk onExit={() => setScreen("menu")} />;
+  }
+```
+
+And the `DemosScreen` element gains the prop
+`onArk={() => setScreen("gravark")}`.
+
+**4. The button, `src/ui/DemosScreen.jsx`.** The props gain `onArk`
+(destructured beside `onTowerDef`). After the MECH TEST RANGE button
+element add a sibling:
+
+```jsx
+        <button data-menu="gravark" style={option({ borderColor: "#4e5a7a" })} onClick={onArk}>
+          <div style={{ color: "#9fa8d4", fontSize: 15, letterSpacing: 2 }}>▶ GRAVITY'S ARK</div>
+          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>Seeded star systems, real orbits. Plan the burn, thread the wells, make the gate.</div>
+        </button>
+```
+
+**5. Gate.** `node scripts/gate.mjs smoke` — 23 PASS, 0 FAIL (build
+and serve the preview for it, stop after, note as scaffolding).
+Nothing else is touched; nothing else runs.
+
+**6. Version and build.** `MK = "0.5.0"`, then `npm run build`.
+
+**7. Land.** Commit everything named here (plain-words lowercase
+subject, e.g. "gravity's ark docks — the sandbox ports whole behind
+the proving range, phase 0.5 opens"), push. This document's T1 row →
+LANDED with hash and the smoke count; commit, push. The owner's
+drive — phone and desktop, the drag, the burn, the gate — is the
+acceptance.
+
+## Report
+
+- One line of outcome, then bullets.
+- Read-confirmation first.
+- The diff verification of substitution row 4, stated plainly.
+- The smoke count exactly.
+- No fixture seeds ride this task.
+- Both commit hashes.
+- Every deviation its own labeled bullet.
