@@ -10,23 +10,17 @@ export function sysName(n){const s=n*7919+3,r=i=>{let v=Math.sin(s+i*4967)*43758
 export function sysBrief(n){return BRIEFS[n%BRIEFS.length];}
 export function genLevel(n,sessionSeed){
   const seed=n*7919+1+(sessionSeed||0);let ri=0;const rand=()=>{let v=Math.sin(seed+(ri++)*9973)*43758.5453;return v-Math.floor(v);};
-  let numP,numA,baseG,fuelBudget,numGates,numPickups,forceStar=false,forceNeb=false;
-  if(n===0){numP=2;numA=5;baseG=170;fuelBudget=350;numGates=1;numPickups=0;}
-  else if(n===1){numP=1;numA=6;baseG=180;fuelBudget=320;numGates=1;numPickups=0;forceStar=true;}
-  else if(n===2){numP=2;numA=8;baseG=180;fuelBudget=300;numGates=1;numPickups=0;forceNeb=true;}
-  else if(n<5){numP=2;numA=12+n;baseG=190;fuelBudget=260;numGates=1;numPickups=0;}
-  else if(n<8){numP=2;numA=15+n;baseG=200;fuelBudget=220;numGates=2;numPickups=0;}
-  else if(n<12){numP=3;numA=20+Math.floor((n-8)*3);baseG=210;fuelBudget=200;numGates=2;numPickups=0;}
-  else if(n<18){numP=3+Math.floor((n-12)/3);numA=25+Math.floor((n-12)*2);baseG=230+n;fuelBudget=180;numGates=2;numPickups=0;}
-  else if(n<28){numP=Math.min(4+Math.floor((n-18)/5),5);numA=35+Math.floor((n-18)*2);baseG=250+n;fuelBudget=160;numGates=3;numPickups=0;}
-  else{numP=5;numA=Math.min(50+Math.floor((n-28)*2),80);baseG=280+Math.min(n,50);fuelBudget=150;numGates=3;numPickups=0;}
-  numP=Math.min(numP,5);
+  // ONE GRAND SYSTEM (design 2026-09-10): the ladder retires — every seed
+  // is a voyage across a field twice the old length and width, nine
+  // planets, a star, nebulae, comets, and fuel caches for the long haul.
+  // Numbers are design choices until played.
+  const numP=9,numA=60,baseG=210,fuelBudget=520,numGates=3,numPickups=3,forceStar=true,forceNeb=true;
 
   // Ship and gate — opposite sides of the field
   let sx,sz,fx,fz;
-  const minDist=420+Math.min(n*5,100);
-  for(let t=0;t<80;t++){const a=rand()*Math.PI*2,d=210+rand()*60;sx=Math.cos(a)*d;sz=Math.sin(a)*d;
-    const d2=210+rand()*60;fx=Math.cos(a+Math.PI+(.2*rand()-.1))*d2;fz=Math.sin(a+Math.PI+(.2*rand()-.1))*d2;
+  const minDist=840;
+  for(let t=0;t<80;t++){const a=rand()*Math.PI*2,d=420+rand()*120;sx=Math.cos(a)*d;sz=Math.sin(a)*d;
+    const d2=420+rand()*120;fx=Math.cos(a+Math.PI+(.2*rand()-.1))*d2;fz=Math.sin(a+Math.PI+(.2*rand()-.1))*d2;
     // Reject if vertical screen separation is too small (gate would be edge-on)
     const vertSep=Math.abs((sx+sz)-(fx+fz));
     if(Math.sqrt((fx-sx)**2+(fz-sz)**2)>=minDist&&vertSep>minDist*.5)break;}
@@ -41,22 +35,23 @@ export function genLevel(n,sessionSeed){
 
   for(let i=0;i<numP;i++){
     let x,z,placed=false;
-    for(let attempt=0;attempt<40;attempt++){
+    for(let attempt=0;attempt<80;attempt++){
       // Place along the path with slight jitter
       const along=(i+.5)/(numP+1)+(.12*rand()-.06);
       const baseX=sx+pathDx*along,baseZ=sz+pathDz*along;
-      const perpOff=(rand()-.5)*70+(attempt>20?(rand()-.5)*80:0);// widen search after failures
+      const perpOff=(rand()-.5)*140+(attempt>20?(rand()-.5)*160:0);// widen search after failures
       x=baseX+perpNx*perpOff;z=baseZ+perpNz*perpOff;
       // Check spacing from other planets (min distance = sum of radii + 60)
       let tooClose=false;
-      for(const p of planets){if(Math.sqrt((x-p.x)**2+(z-p.z)**2)<p.r+110){tooClose=true;break;}}
-      if(Math.sqrt((x-sx)**2+(z-sz)**2)<120)tooClose=true;
-      if(Math.sqrt((x-fx)**2+(z-fz)**2)<120)tooClose=true;
+      for(const p of planets){if(Math.sqrt((x-p.x)**2+(z-p.z)**2)<p.r+150){tooClose=true;break;}}
+      if(Math.sqrt((x-sx)**2+(z-sz)**2)<160)tooClose=true;
+      if(Math.sqrt((x-fx)**2+(z-fz)**2)<160)tooClose=true;
       if(!tooClose){placed=true;break;}}
     if(!placed){// Fallback: place far from everything, verify distance
-      for(let fb=0;fb<20;fb++){const a=rand()*Math.PI*2,d=180+rand()*100;
+      for(let fb=0;fb<40;fb++){const a=rand()*Math.PI*2,d=360+rand()*200;
         x=(sx+fx)/2+Math.cos(a)*d;z=(sz+fz)/2+Math.sin(a)*d;
-        if(Math.sqrt((x-sx)**2+(z-sz)**2)>=120&&Math.sqrt((x-fx)**2+(z-fz)**2)>=120)break;}}
+        let clash=false;for(const p of planets)if(Math.sqrt((x-p.x)**2+(z-p.z)**2)<p.r+150){clash=true;break;}
+        if(!clash&&Math.sqrt((x-sx)**2+(z-sz)**2)>=160&&Math.sqrt((x-fx)**2+(z-fz)**2)>=160)break;}}
     const mass=3500+rand()*5500,r=Math.max(14,8+Math.sqrt(mass)*.18),col=PCOLS[i%PCOLS.length];
     planets.push({x,z,vx:0,vz:0,mass,r,G:baseG,c:col.c,h:col.h});
   }
@@ -98,7 +93,7 @@ export function genLevel(n,sessionSeed){
     }
     // Fallback: free-drifting debris in open space (away from planet centers)
     for(let attempt=0;attempt<20;attempt++){
-      const angle=rand()*Math.PI*2,dist2=200+rand()*150;
+      const angle=rand()*Math.PI*2,dist2=400+rand()*300;
       const px=Math.cos(angle)*dist2,pz=Math.sin(angle)*dist2;
       let ok=true;for(const p of planets)if(Math.sqrt((px-p.x)**2+(pz-p.z)**2)<p.r+30){ok=false;break;}
       if(ok){asteroids.push({x:px,z:pz,vx:(rand()-.5)*5,vz:(rand()-.5)*5,mass:30+rand()*80,r:1.5+rand()*2,G:baseG,alive:true});break;}}
@@ -110,7 +105,7 @@ export function genLevel(n,sessionSeed){
 
   // Comets — highly eccentric orbits that cross the field
   const comets=[];
-  const numComets=Math.min(Math.floor(n/2)+1,4);// 1 from level 0, up to 4
+  const numComets=4;// 1 from level 0, up to 4
   for(let i=0;i<numComets;i++){
     const parent=planets[Math.floor(rand()*planets.length)];
     const angle=rand()*Math.PI*2;
@@ -128,27 +123,29 @@ export function genLevel(n,sessionSeed){
 
   // Stars — massive bodies with photosphere death zones
   const stars=[];
-  if(forceStar||n>=3){
-    const t2=.3+rand()*.4;
-    let stX=sx+pathDx*t2+perpNx*(rand()-.5)*100;
-    let stZ=sz+pathDz*t2+perpNz*(rand()-.5)*100;
-    let ok=true;for(const p of planets)if(Math.sqrt((stX-p.x)**2+(stZ-p.z)**2)<p.r+60){ok=false;break;}
-    if(!ok){stX=sx+pathDx*(.5+rand()*.3)+perpNx*(60+rand()*80)*(rand()>.5?1:-1);
-      stZ=sz+pathDz*(.5+rand()*.3)+perpNz*(60+rand()*80)*(rand()>.5?1:-1);
-      ok=true;for(const p of planets)if(Math.sqrt((stX-p.x)**2+(stZ-p.z)**2)<p.r+60){ok=false;break;}}
-    if(ok){const stMass=15000+rand()*25000,stR=30+Math.sqrt(stMass)*.08;
-      stars.push({x:stX,z:stZ,vx:0,vz:0,mass:stMass,r:stR,G:baseG,killR:stR*1.5,
-        c:[255,200,80],h:[255,240,180]});}
+  if(forceStar){
+    // the star finds its place or keeps widening until it does
+    for(let tr=0;tr<40&&!stars.length;tr++){
+      const t2=.25+rand()*.5;
+      const off=(60+rand()*80)*(1+tr*.15)*(rand()>.5?1:-1);
+      const stX=sx+pathDx*t2+perpNx*off;
+      const stZ=sz+pathDz*t2+perpNz*off;
+      let ok=true;for(const p of planets)if(Math.sqrt((stX-p.x)**2+(stZ-p.z)**2)<p.r+60){ok=false;break;}
+      if(ok){const stMass=15000+rand()*25000,stR=30+Math.sqrt(stMass)*.08;
+        stars.push({x:stX,z:stZ,vx:0,vz:0,mass:stMass,r:stR,G:baseG,killR:stR*1.5,
+          c:[255,200,80],h:[255,240,180]});}
+    }
   }
+
 
   // Nebulae — drag regions that slow the ship
   const nebulae=[];
-  const numNeb=forceNeb?1:(n>=4?Math.min(Math.floor((n-3)/2),2):0);
+  const numNeb=2;
   for(let i=0;i<numNeb;i++){
     const t2=.2+rand()*.6;
-    const nbX=sx+pathDx*t2+perpNx*(80+rand()*60)*(rand()>.5?1:-1);
-    const nbZ=sz+pathDz*t2+perpNz*(80+rand()*60)*(rand()>.5?1:-1);
-    const nbR=50+rand()*40;// large radius
+    const nbX=sx+pathDx*t2+perpNx*(160+rand()*120)*(rand()>.5?1:-1);
+    const nbZ=sz+pathDz*t2+perpNz*(160+rand()*120)*(rand()>.5?1:-1);
+    const nbR=90+rand()*70;// large radius
     nebulae.push({x:nbX,z:nbZ,r:nbR,drag:.015+rand()*.01,
       color:[120+Math.floor(rand()*60),80+Math.floor(rand()*80),180+Math.floor(rand()*60)]});
   }
