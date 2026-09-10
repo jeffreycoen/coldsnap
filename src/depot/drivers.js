@@ -14,7 +14,7 @@ import { arcClears, shotClears, elevSolve, tightSolve, elevCapOf } from "./accur
 import { ENEMY_FIRE, BISON_FIRE, BARRELS } from "./specs.js";
 import { planRoute } from "./route.js";
 import { clearSlot } from "./squads.js";
-import { buildMech, mechCommand, respawnMech, mechFallen, mechFire, mechMissiles, mechBarrage, mechAimDir } from "../engine/mech.js";
+import { buildMech, mechCommand, respawnMech, mechFallen, mechFire, mechMissiles, mechBarrage, mechAimDir, mechLeap, mechLeapRange, mechLeapRho } from "../engine/mech.js";
 
 // mk2.05: barrelTip — where the drawn tube ends, yaw toward the
 // aim, pitch estimated from the low root capped at the elevation cap. The
@@ -515,6 +515,27 @@ function mechGoal(world, grid, b, dt, fwdDir, opts) {
     const dx = sq.anchor.x - b.pos.x, dz = sq.anchor.z - b.pos.z, d = Math.hypot(dx, dz) || 1;
     if (d <= ARMOR_ESCORT_BACK + 3) { mechCommand(m, { travel: 0, lateral: 0 }); return; }
     b.dest = { x: sq.anchor.x - (dx / d) * ARMOR_ESCORT_BACK, z: sq.anchor.z - (dz / d) * ARMOR_ESCORT_BACK };
+  }
+  // THE COMMANDER'S LEAP (design 2026-09-10): a machine that cannot make
+  // ground leaps over what stops it. Stalled progress with a charged store
+  // brakes the walk, and from the stand the leap fires at the farthest
+  // lawful point along the way to the objective. One driver, both sides.
+  if (m.gasJ != null) {
+    const dGoal = Math.hypot(b.dest.x - b.pos.x, b.dest.z - b.pos.z);
+    if (b._mLastD == null || dGoal < b._mLastD - 1.2) { b._mLastD = dGoal; b._mStallT = 0; }
+    else b._mStallT = (b._mStallT || 0) + dt;
+    if (m.leap) { b._mStallT = 0; b._mLastD = null; return; } // airborne — the driver waits
+    if (b._mStallT > 5 && m.gasJ > 0.85 * m.gasMax && dGoal > 9) {
+      if (m.state.mode !== "STAND") { mechCommand(m, { travel: 0, lateral: 0 }); return; } // brake to the stand the leap needs
+      const aL = Math.atan2(b.dest.x - b.pos.x, b.dest.z - b.pos.z);
+      let dL = Math.min(dGoal - 2, mechLeapRange(m) * mechLeapRho(m, aL) * 0.95);
+      let fired = false;
+      for (let i9 = 0; i9 < 16 && dL >= 6; i9++, dL *= 0.9) {
+        if (mechLeap(world, m, b.pos.x + Math.sin(aL) * dL, b.pos.z + Math.cos(aL) * dL)) { fired = true; break; }
+      }
+      b._mStallT = 0; b._mLastD = null;
+      if (fired) { b._route = null; b._routeDest = null; return; }
+    }
   }
   const destChanged = !b._routeDest || Math.hypot(b._routeDest.x - b.dest.x, b._routeDest.z - b.dest.z) > 0.5;
   if (destChanged || !b._route) {
