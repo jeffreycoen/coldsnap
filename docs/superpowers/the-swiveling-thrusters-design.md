@@ -71,9 +71,8 @@ nearest the need, then throttles as today.
 - Whether swivel changes the lift law's answer on flight — not
   promised; the lift budget is a separate law and stands until ruled
   otherwise.
-- Exact cone and slew numbers — the settled words are "modest" and
-  "slow"; the numbers come from the experiment, marked as design
-  choices until measured.
+- Exact cone and slew numbers — SETTLED in play: 20 degrees and 1.0
+  radians per second stand as shipped.
 
 ## Measurement (T5)
 
