@@ -14,7 +14,7 @@ export function genLevel(n,sessionSeed){
   // is a voyage across a field twice the old length and width, nine
   // planets, a star, nebulae, comets, and fuel caches for the long haul.
   // Numbers are design choices until played.
-  const numP=9,numA=60,baseG=210,fuelBudget=520,numGates=3,numPickups=3,forceStar=true,forceNeb=true;
+  const numP=9,numA=60,baseG=210,fuelBudget=520,numGates=1,numPickups=3,forceStar=true,forceNeb=true;
 
   // Ship and gate — opposite sides of the field
   let sx,sz,fx,fz;
