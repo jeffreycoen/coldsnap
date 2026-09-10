@@ -54,16 +54,16 @@ export function makeDraw({ C30, S30, MAP_NODES, sim, camRef, particles, progress
         ctx.fillStyle=`rgba(0,0,20,${bright})`;ctx.fillRect(sx3,sy3,sz3,sz3);}
 
       // Grid 110x110 with color gradient near wells
-      const tGS=performance.now(),gN=75,gSp=19,halfG=gN*gSp/2; // the grid spans the doubled field, same vertex count
+      const tGS=performance.now(),gN=75,gSp=19,halfG=gN*gSp/2,gcx=Math.round(sh.x/gSp)*gSp,gcz=Math.round(sh.z/gSp)*gSp; // the grid follows the camera, stepped to its own spacing so the lines stay put
       const gxa=new Float32Array((gN+1)**2),gya=new Float32Array((gN+1)**2);
-      for(let ix=0;ix<=gN;ix++)for(let iz=0;iz<=gN;iz++){const sx2=ix*gSp-halfG,sz2=iz*gSp-halfG,d=getD(sx2,sz2),idx=ix*(gN+1)+iz;gxa[idx]=cmx+(sx2-sz2)*C30*sc;gya[idx]=cmy+(sx2+sz2)*S30*sc+d;}
+      for(let ix=0;ix<=gN;ix++)for(let iz=0;iz<=gN;iz++){const sx2=ix*gSp-halfG+gcx,sz2=iz*gSp-halfG+gcz,d=getD(sx2,sz2),idx=ix*(gN+1)+iz;gxa[idx]=cmx+(sx2-sz2)*C30*sc;gya[idx]=cmy+(sx2+sz2)*S30*sc+d;}
       ctx.lineWidth=.7;
-      for(let ix=0;ix<=gN;ix++){const sx2=ix*gSp-halfG,fade=Math.max(0,1-(Math.abs(sx2)/(halfG*.7))**3);let w=0,nearP=0;
+      for(let ix=0;ix<=gN;ix++){const sx2=ix*gSp-halfG+gcx,fade=Math.max(0,1-(Math.abs(sx2-gcx)/(halfG*.7))**3);let w=0,nearP=0;
         for(const p of s.planets){const pd=Math.abs(sx2-p.x);w=Math.max(w,Math.max(0,1-pd/110)*.3);nearP=Math.max(nearP,Math.max(0,1-pd/40));}
         const a=(fade*.2+w)*dim;if(a<.005)continue;ctx.beginPath();const b=ix*(gN+1);ctx.moveTo(gxa[b],gya[b]);for(let iz=1;iz<=gN;iz++)ctx.lineTo(gxa[b+iz],gya[b+iz]);
         const r=Math.floor(40+nearP*60),g=Math.floor(50+nearP*30),bl=Math.floor(70-nearP*30);
         ctx.strokeStyle=`rgba(${r},${g},${bl},${a})`;ctx.stroke();}
-      for(let iz=0;iz<=gN;iz++){const sz2=iz*gSp-halfG,fade=Math.max(0,1-(Math.abs(sz2)/(halfG*.7))**3);let w=0,nearP=0;
+      for(let iz=0;iz<=gN;iz++){const sz2=iz*gSp-halfG+gcz,fade=Math.max(0,1-(Math.abs(sz2-gcz)/(halfG*.7))**3);let w=0,nearP=0;
         for(const p of s.planets){const pd=Math.abs(sz2-p.z);w=Math.max(w,Math.max(0,1-pd/110)*.3);nearP=Math.max(nearP,Math.max(0,1-pd/40));}
         const a=(fade*.2+w)*dim;if(a<.005)continue;ctx.beginPath();ctx.moveTo(gxa[iz],gya[iz]);for(let ix=1;ix<=gN;ix++)ctx.lineTo(gxa[ix*(gN+1)+iz],gya[ix*(gN+1)+iz]);
         const r=Math.floor(40+nearP*60),g=Math.floor(50+nearP*30),bl=Math.floor(70-nearP*30);
@@ -91,11 +91,7 @@ export function makeDraw({ C30, S30, MAP_NODES, sim, camRef, particles, progress
         // Border ring
         ctx.beginPath();ctx.arc(np.x,np.y,nR,0,Math.PI*2);
         ctx.strokeStyle=`rgba(${nr},${ng},${nbl},.12)`;ctx.lineWidth=1;ctx.setLineDash([6,4]);ctx.stroke();ctx.setLineDash([]);
-        // Label
-        ctx.font=`600 ${Math.max(9,10*sc)}px -apple-system,sans-serif`;ctx.fillStyle=`rgba(${nr},${ng},${nbl},.35)`;
-        ctx.textAlign="center";ctx.fillText("NEBULA",np.x,np.y+nR+14*sc);
-        ctx.font=`400 ${Math.max(7,8*sc)}px -apple-system,sans-serif`;ctx.fillStyle=`rgba(${nr},${ng},${nbl},.2)`;
-        ctx.fillText("drag zone",np.x,np.y+nR+25*sc);ctx.textAlign="left";}
+      }
 
       // Stars — massive glowing bodies
       for(const st of (s.stars||[])){const sp=iso(st.x,st.z,0,cmx,cmy,sc),sR=st.r*sc;
@@ -264,9 +260,9 @@ export function makeDraw({ C30, S30, MAP_NODES, sim, camRef, particles, progress
       const tFE=performance.now();pf.totalMs=tFE-tFrameStart;pf.frameTimes.push(pf.totalMs);if(pf.frameTimes.length>300)pf.frameTimes.shift();pf.fps=Math.round(1000/Math.max(pf.totalMs,.1));pf.minFps=Math.round(1000/Math.max(Math.max(...pf.frameTimes.slice(-300)),.1));
       ctx.font="600 9px 'Courier New',monospace";ctx.textAlign="right";ctx.fillStyle="rgba(0,0,0,.35)";
       const bodyCount=gravBodies.length;
-      ctx.fillText(`${pf.fps}fps PHY${pf.physMs.toFixed(1)} GRD${pf.gridMs.toFixed(1)} TRJ${pf.trajMs.toFixed(1)} =${pf.totalMs.toFixed(1)}ms`,W-10,H-60);
-      ctx.fillText(`${pf.gridVerts}v ${pf.particles}p ${bodyCount}bod ${s.asteroids.filter(a=>a.alive).length}ast`,W-10,H-48);
-      if(pf.energy0!==null){ctx.fillStyle=pf.energyDrift<.1?"rgba(40,140,70,.2)":"rgba(200,50,30,.2)";ctx.fillText(`drift ${pf.energyDrift.toFixed(4)}%`,W-10,H-38);}
+      ctx.fillText(`${pf.fps}fps PHY${pf.physMs.toFixed(1)} GRD${pf.gridMs.toFixed(1)} TRJ${pf.trajMs.toFixed(1)} =${pf.totalMs.toFixed(1)}ms`,W-10,H-160);
+      ctx.fillText(`${pf.gridVerts}v ${pf.particles}p ${bodyCount}bod ${s.asteroids.filter(a=>a.alive).length}ast`,W-10,H-148);
+      if(pf.energy0!==null){ctx.fillStyle=pf.energyDrift<.1?"rgba(40,140,70,.2)":"rgba(200,50,30,.2)";ctx.fillText(`drift ${pf.energyDrift.toFixed(4)}%`,W-10,H-136);}
       ctx.textAlign="left";
     // Compass — when the gate is off frame, an edge arrow points to it with the distance
     if(s.phase==="aim"||s.phase==="plan"||s.phase==="fly"){

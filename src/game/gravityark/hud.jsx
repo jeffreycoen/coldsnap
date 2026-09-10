@@ -5,7 +5,7 @@ import { useState } from "react";
 export default function ArkHud({ ui, s, locked, noFuel, showTutorial, setShowTutorial, progress, lock, ffRef, setUi, doLaunch, doPlan, doExec, doCancel, doRetry, doNext, toggleMap, copyLogs, exportFavorites, rateLevel, adjustAngle, adjustPower, onExit }){
   const[bp,setBp]=useState({});
   const Btn=({label,icon,color,onClick,wide,disabled})=>{const k=label||icon;return(<div onMouseDown={()=>!disabled&&setBp(p=>({...p,[k]:true}))} onMouseUp={()=>{setBp(p=>({...p,[k]:false}));!disabled&&onClick();}} onMouseLeave={()=>setBp(p=>({...p,[k]:false}))} onTouchStart={e=>{e.preventDefault();!disabled&&setBp(p=>({...p,[k]:true}));}} onTouchEnd={e=>{e.preventDefault();setBp(p=>({...p,[k]:false}));!disabled&&onClick();}} onTouchCancel={e=>{e.preventDefault();setBp(p=>({...p,[k]:false}));}}
-    style={{height:56,minWidth:wide?140:68,paddingLeft:15,paddingRight:15,borderRadius:15,display:"flex",alignItems:"center",justifyContent:"center",gap:7,background:bp[k]?`rgba(${color},.2)`:`rgba(${color},.07)`,border:`1.5px solid rgba(${color},${bp[k]?.4:.15})`,opacity:disabled?.35:1,backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",transform:bp[k]&&!disabled?"scale(.94)":"scale(1)",transition:"all .08s ease",cursor:disabled?"default":"pointer",userSelect:"none",WebkitUserSelect:"none",touchAction:"none"}}>
+    style={{height:56,minWidth:wide?140:48,paddingLeft:10,paddingRight:10,borderRadius:15,display:"flex",alignItems:"center",justifyContent:"center",gap:7,background:bp[k]?`rgba(${color},.2)`:`rgba(${color},.07)`,border:`1.5px solid rgba(${color},${bp[k]?.4:.15})`,opacity:disabled?.35:1,backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",transform:bp[k]&&!disabled?"scale(.94)":"scale(1)",transition:"all .08s ease",cursor:disabled?"default":"pointer",userSelect:"none",WebkitUserSelect:"none",touchAction:"none"}}>
     {icon&&<span style={{fontSize:16,fontWeight:600,color:`rgba(${color},${bp[k]?.9:.55})`,lineHeight:1}}>{icon}</span>}
     {label&&<span style={{fontSize:11,fontWeight:700,letterSpacing:1.1,color:`rgba(${color},${bp[k]?.9:.55})`,textTransform:"uppercase"}}>{label}</span>}</div>);};
   return(<>
@@ -41,6 +41,7 @@ export default function ArkHud({ ui, s, locked, noFuel, showTutorial, setShowTut
           {ui.gateTotal>1&&<div style={{fontSize:8,fontWeight:600,color:"rgba(40,160,80,.6)",marginTop:6,letterSpacing:1}}>GATE {ui.gateNum+1} / {ui.gateTotal}</div>}
         </div>
         <div style={{position:"absolute",top:14,right:14,display:"flex",gap:6}}>
+          {onExit&&<div onClick={onExit} style={{background:"rgba(245,244,240,.82)",backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",borderRadius:10,padding:"8px 11px",border:"1px solid rgba(0,0,0,.06)",cursor:"pointer",userSelect:"none",touchAction:"none"}}><span style={{fontSize:10,fontWeight:600,color:"rgba(0,0,0,.45)",letterSpacing:1}}>⏏ MENU</span></div>}
           <div onClick={toggleMap} style={{background:"rgba(245,244,240,.82)",backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",borderRadius:10,padding:"8px 11px",border:"1px solid rgba(0,0,0,.06)",cursor:"pointer",userSelect:"none",touchAction:"none"}}><span style={{fontSize:10,fontWeight:600,color:"rgba(0,0,0,.45)",letterSpacing:1}}>◈</span></div>
           <div onClick={copyLogs} style={{background:ui.copied?"rgba(40,140,70,.12)":"rgba(245,244,240,.82)",backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",borderRadius:10,padding:"8px 11px",border:`1px solid ${ui.copied?"rgba(40,140,70,.2)":"rgba(0,0,0,.06)"}`,cursor:"pointer",userSelect:"none",touchAction:"none"}}><span style={{fontSize:10,fontWeight:600,color:ui.copied?"rgba(40,140,70,.6)":"rgba(0,0,0,.3)",letterSpacing:1}}>{ui.copied?"✓":"⊕"}</span></div>
           <div onClick={exportFavorites} style={{background:"rgba(245,244,240,.82)",backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",borderRadius:10,padding:"8px 11px",border:"1px solid rgba(0,0,0,.06)",cursor:"pointer",userSelect:"none",touchAction:"none"}}><span style={{fontSize:10,fontWeight:600,color:"rgba(240,190,50,.5)",letterSpacing:1}}>★</span></div>
@@ -94,7 +95,6 @@ export default function ArkHud({ ui, s, locked, noFuel, showTutorial, setShowTut
           <div style={{fontSize:10,fontWeight:400,color:"rgba(0,0,0,.35)",letterSpacing:2,marginTop:12}}>tap to retry</div>
         </div>}
       </>}
-      {onExit&&<button onClick={onExit} style={{position:"absolute",top:10,left:10,zIndex:40,pointerEvents:"auto",padding:"8px 14px",font:"inherit",fontSize:12,letterSpacing:1,background:"rgba(20,25,33,.85)",color:"#c2c9d6",border:"1px solid rgba(150,160,178,.4)",borderRadius:10,cursor:"pointer"}}>⏏ MENU</button>}
       {ui.showMap&&<div style={{position:"absolute",bottom:30,left:"50%",transform:"translateX(-50%)",pointerEvents:"auto"}}><Btn icon="▸" label="Continue" color="100,180,255" onClick={toggleMap} wide/></div>}
   </>);
 }
