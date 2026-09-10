@@ -2,7 +2,7 @@
 
 **A full physics war game that fits on a floppy disk.** 💾
 
-The whole thing — the war, the engine, three tech demos, every sound — is one 1.29 MB bundle, about 410 KB over the wire. A 1.44 MB floppy still holds it — with 123,427 bytes to spare.
+The whole thing — the war, the engine, three tech demos, every sound — is one 1.31 MB bundle, about 417 KB over the wire. A 1.44 MB floppy still holds it — with 97,378 bytes to spare.
 
 **PLAY:** https://jeffreycoen.github.io/coldsnap/
 
@@ -29,7 +29,7 @@ Destruction here is structural, not scripted. Every building is individual stone
 - **Every sound is synthesized.** Zero audio files: gunfire, the bell, the wind — all procedural, tuned against published acoustics. Distant fire arrives late — sound travels at 343 m/s in-game — and echoes off rock and masonry while the snowfield stays dead.
 - **A whole war saves as one JSON string.** The map is not saved — it regrows from its seed, and the war's scars are laid back over it. Lose your depot and the save burns. No rewinds.
 - **60 fps on a Raspberry Pi.** The game was built, measured, and played on the machine it targets.
-- **A sandbox rides the menu.** A developer's test bench: a fresh random valley on every entry, every weapon free, every enemy kind placed by tap, and a live switch for whether they fight back. Nothing in it is ever saved.
+- **The mech is a machine, not an animation.** Six rocket nozzles that aim inside real cones, a compressed-gas store holding true joules that buys a 28-meter leap and the braked landing after it, joints that wound under fire and tear under load — a battle-worn knee can give out mid-stride — and a fallen machine that burns, rolls, and presses itself back to its feet. Every force is applied, every joule is paid.
 - **The game teaches itself in play.** No manual: thirty one-card lessons fire once each at their first real moment — the first bell, the first radial, the first take-over — pageable and skippable, and holding any control (or its ⓘ) reopens its card. An optional walk tours the essentials before the first war.
 - **The front door is the war itself.** The menu's background is the real opening view — the valley about to be played, rendered by the game's own renderer from the seed shown as FIELD ORDER #. Resuming shows the saved war's own valley.
 

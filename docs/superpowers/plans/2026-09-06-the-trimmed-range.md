@@ -4,6 +4,14 @@ Opened 2026-09-06, following The Shell Carved (closed at 0.3.18). Two
 tasks; this file is both the index and, given the size, the first
 task's plan. The thrust sweep has its own file.
 
+The phase closed at 0.4.13, fourteen landed tasks (T1 through T15 as
+the table stands, T15 the closeout). The re-measured record: dist
+total 1,377,182 bytes (1.31 MB), gzip wire 427,511 bytes (417 KB),
+floppy margin 97,378 bytes; 1,660 headless checks across the seven CI
+gates. Open items carried forward: piloted nozzle aiming, deferred by
+design; the leap landing's own-men check, a playtest item; repair for
+torn joints, deferred.
+
 | Task | Mark | What lands | Status |
 |---|---|---|---|
 | T1 | 0.4.0 | The campaign and the contract sandbox retired from the shipped game; the mech test range KEPT (the mech workbench stays); bundle drop measured at 122,874 bytes raw JS (1,473,454 → 1,350,580) | LANDED 77c5aab (dist total 1,351,133 bytes / 1.29 MB, gzip wire 419,743 bytes / ~410 KB, floppy margin 123,427 bytes; smoke 30 − 7 = 23, 0 FAIL) |
@@ -20,6 +28,7 @@ task's plan. The thrust sweep has its own file.
 | T12 | 0.4.10 | Every hinge gains a health and a breaking strength: wounds spend health through the damage system, tears cash a sustained overload past the health-scaled rating, a torn joint stops solving and its limb goes loose; a fallen machine's jets die with its servos, FALLEN always limps however it was reached, the bench reissue mends while the war's stand-up keeps its wounds, and the readout gains an HP column and amber-below-seventy / dark-when-torn coloring | LANDED 25c5e09 (12-the-mech.mjs 25 PASS, 0 FAIL; depot-test 1615 PASS, 0 FAIL; smoke 23 PASS, 0 FAIL) |
 | T13 | 0.4.11 | The commander's leap: one driver law, both sides — a mech ordered somewhere it cannot reach, stalled five seconds with a charged store, brakes to the stand and leaps at the farthest lawful point along the bearing to its objective | LANDED c1317b8 (12-the-mech.mjs 25 PASS, 0 FAIL; depot-test 1615 PASS, 0 FAIL; smoke 23 PASS, 0 FAIL) |
 | T14 | 0.4.12 | A fallen machine gets itself up: the compressor runs while down, and past 2.5 seconds with 2.4 megajoules banked, differential nozzle burn and a vented tank hoist the hull over its contact edge, the legs tuck, and the spawn machinery stands the machine over a rate-limited press-up; the height law waits on a grace window while it does, teleports clear any righting in flight | LANDED 68a75e2 (12-the-mech.mjs 25 PASS, 0 FAIL; depot-test 1615 PASS, 0 FAIL; smoke 23 PASS, 0 FAIL) |
+| T15 | 0.4.13 | The phase closeout: the record re-measured, the README's claims re-checked against the shipped game, the phase document closed | LANDED (hash recorded below) |
 
 Standing rule for every measurement harness from here on: results stream
 as they land — one line per completed run appended to
