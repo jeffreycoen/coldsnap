@@ -865,19 +865,33 @@ export function makeRenderer(canvas, world0, opts = {}) {
   const strikeRing = new THREE.Mesh(new THREE.RingGeometry(1.6, 2.1, 24), new THREE.MeshBasicMaterial({ color: 0xffa24a, transparent: true, opacity: 0, depthWrite: false }));
   strikeRing.rotation.x = -Math.PI / 2; strikeRing.layers.set(1); strikeRing.visible = false;
   scene.add(strikeRing);
-  // leap surface: the reachable ring (radius = what pressure can buy) and
-  // the landing mark. Fed by the game layer via setLeapRing; null hides.
-  const leapRing = new THREE.Mesh(new THREE.RingGeometry(0.97, 1.0, 64), new THREE.MeshBasicMaterial({ color: 0x7fd47f, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide }));
-  leapRing.rotation.x = -Math.PI / 2; leapRing.layers.set(1); leapRing.visible = false;
-  scene.add(leapRing);
+  // leap surface: a thin lobe of pips tracing the true reachable boundary
+  // per bearing, and the landing mark. Fed by the game layer via
+  // setLeapRing(points, mark); null hides.
+  const LOBE_N = 48;
+  const lobeMesh = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(0.22, 0.22, 0.22),
+    new THREE.MeshBasicMaterial({ color: 0x7fd47f, transparent: true, opacity: 0.75, depthWrite: false }),
+    LOBE_N);
+  lobeMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  lobeMesh.count = 0; lobeMesh.layers.set(1); lobeMesh.frustumCulled = false;
+  scene.add(lobeMesh);
+  const _lobeO = new THREE.Object3D();
   const leapMark = new THREE.Mesh(new THREE.RingGeometry(0.8, 1.15, 24), new THREE.MeshBasicMaterial({ color: 0x7fd47f, transparent: true, opacity: 0.9, depthWrite: false }));
   leapMark.rotation.x = -Math.PI / 2; leapMark.layers.set(1); leapMark.visible = false;
   scene.add(leapMark);
-  function setLeapRing(cx, cz, r, mark) {
-    if (cx == null) { leapRing.visible = false; leapMark.visible = false; return; }
-    leapRing.position.set(cx, world.field.heightAt(cx, cz) + 0.2, cz);
-    leapRing.scale.setScalar(Math.max(0.1, r));
-    leapRing.visible = true;
+  function setLeapRing(points, mark) {
+    if (!points || !points.length) { lobeMesh.count = 0; leapMark.visible = false; return; }
+    let n = 0;
+    for (const p of points) {
+      if (n >= LOBE_N) break;
+      _lobeO.position.set(p.x, world.field.heightAt(p.x, p.z) + 0.22, p.z);
+      _lobeO.updateMatrix();
+      lobeMesh.setMatrixAt(n, _lobeO.matrix);
+      n++;
+    }
+    lobeMesh.count = n;
+    lobeMesh.instanceMatrix.needsUpdate = true;
     if (mark) {
       leapMark.position.set(mark.x, world.field.heightAt(mark.x, mark.z) + 0.25, mark.z);
       leapMark.visible = true;

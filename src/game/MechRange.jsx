@@ -4,7 +4,7 @@
 // The machine stands, weight-shifts, steps — and still falls; R reissues it.
 import React, { useEffect, useRef, useState } from "react";
 import { makeWorld, makeField, stepWorld, addBody, fireProjectile } from "../engine/core.js";
-import { buildMech, mechCommand, respawnMech, mechFallen, mechFire, mechPunt, mechPoise, mechMissiles, mechAboutFace, mechPivot, mechAimDir, mechLeap, mechLeapRange } from "../engine/mech.js";
+import { buildMech, mechCommand, respawnMech, mechFallen, mechFire, mechPunt, mechPoise, mechMissiles, mechAboutFace, mechPivot, mechAimDir, mechLeap, mechLeapRange, mechLeapRho } from "../engine/mech.js";
 import { makeRenderer } from "../render/renderer.js";
 import { detectTouch } from "./runner/trials.js";
 import { BUILDERS } from "./scenario.js";
@@ -70,10 +70,39 @@ export default function MechRange({ onExit }) {
     const R = makeRenderer(canvasRef.current, world, { town: false });
     const A = makeGameAudio();
     const RD = makeMechReadout();
+    // screen point -> the pad at the machine's ground height, through the
+    // live camera (the war's ground raycast, one step for the flat bench)
+    const groundPt = (cx2, cy2) => {
+      const r2 = canvasRef.current.getBoundingClientRect();
+      const nx = ((cx2 - r2.left) / r2.width) * 2 - 1;
+      const ny = -((cy2 - r2.top) / r2.height) * 2 + 1;
+      const cb = R.camBasis, cp = R._cam.position;
+      const ox = cp.x + cb.right.x * nx * cb.halfW() + cb.up.x * ny * cb.halfH();
+      const oy = cp.y + cb.right.y * nx * cb.halfW() + cb.up.y * ny * cb.halfH();
+      const oz = cp.z + cb.right.z * nx * cb.halfW() + cb.up.z * ny * cb.halfH();
+      const f = cb.fwd;
+      const gy = world.field.heightAt(mech.hull.pos.x, mech.hull.pos.z);
+      const t = (gy - oy) / (f.y < -1e-4 ? f.y : -1);
+      return { x: ox + f.x * t, z: oz + f.z * t };
+    };
+    // clamp a wished mark into the leap's reachable lobe
+    const clampMark = (px, pz) => {
+      const dx = px - mech.hull.pos.x, dz = pz - mech.hull.pos.z;
+      const a = Math.atan2(dx, dz);
+      const rmax = mechLeapRange(mech) * mechLeapRho(mech, a) * 0.98;
+      const d = Math.max(4, Math.min(Math.hypot(dx, dz), rmax));
+      return { x: mech.hull.pos.x + Math.sin(a) * d, z: mech.hull.pos.z + Math.cos(a) * d };
+    };
+    const enterLeapAim = () => {
+      S.leapAim = true;
+      const h9 = mech.state.heading;
+      const r9 = Math.max(4, mechLeapRange(mech) * 0.6);
+      S.leapMark = { x: mech.hull.pos.x + Math.sin(h9) * r9, z: mech.hull.pos.z + Math.cos(h9) * r9 };
+    };
     A.setReflectors([{ x: -10, z: -2, r: 4 }, { x: 9, z: -6, r: 4 }, { x: -1, z: 7, r: 5 }, { x: 16, z: 4, r: 6 }]); // the range buildings
 
     const S = { acc: 0, last: performance.now(), keys: {}, yawT: Math.PI, aimYaw: null, aimRange: 26, aimOff: 0, aiT: 0, orbit: 0, tankFire: [2.5, 5.2], raf: 0, hudT: 0, dead: false, joyId: null, jx: 0, jy: 0, rsId: null, rx: 0, rngId: null, aimHeld: 0, fireHeld: false, leapAim: false
-      , camPts: new Map(), pinchD0: 0, pinchA: 0, zoom: 1, zoom0: 1 };
+      , camPts: new Map(), pinchD0: 0, pinchA: 0, zoom: 1, zoom0: 1, leapMark: null, leapPtr: null };
     window.__MECHRANGE__ = {
       world, mech, R, addBody: (o) => addBody(world, o),
       reissue: () => { respawnMech(world, mech, 0, 41, Math.PI); S.yawT = Math.PI; S.aimYaw = null; mech.aimYaw = null; S.aimOff = 0; S.aimHeld = 0; S.rx = 0; mechCommand(mech, { travel: 0, lateral: 0, heading: 0 }); },
@@ -85,10 +114,8 @@ export default function MechRange({ onExit }) {
       missiles: () => mechMissiles(world, mech),
       about: () => mechAboutFace(world, mech),
       leap: () => {
-        if (!S.leapAim) { S.leapAim = true; return; }
-        const yawL = S.aimYaw != null ? S.aimYaw : mech.state.heading + (isTouch ? S.aimOff : 0);
-        const rL = Math.min(S.aimRange, mechLeapRange(mech));
-        if (mechLeap(world, mech, mech.hull.pos.x + Math.sin(yawL) * rL, mech.hull.pos.z + Math.cos(yawL) * rL)) S.leapAim = false;
+        if (!S.leapAim) { enterLeapAim(); return; }
+        if (S.leapMark && mechLeap(world, mech, S.leapMark.x, S.leapMark.z)) S.leapAim = false;
       },
       gyro: () => { mech.gyroOn = mech.gyroOn === false; },
       jets: () => { S.jetMode = !S.jetMode; mech.jetCmd = null; },
@@ -104,6 +131,11 @@ export default function MechRange({ onExit }) {
       const c = joyBase(), a = rsBase();
       if (S.joyId == null && Math.hypot(e.clientX - c.x, e.clientY - c.y) < 110) S.joyId = e.pointerId;
       else if (S.rsId == null && Math.hypot(e.clientX - a.x, e.clientY - a.y) < 110) S.rsId = e.pointerId;
+      else if (S.leapAim && S.leapPtr == null) {
+        S.leapPtr = e.pointerId;
+        const g9 = groundPt(e.clientX, e.clientY);
+        S.leapMark = clampMark(g9.x, g9.z);
+      }
       else {
         S.camPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
         if (S.camPts.size === 2) {
@@ -131,6 +163,11 @@ export default function MechRange({ onExit }) {
     window.__MECHRANGE__.grabRange = (id, y) => { S.rngId = id; sliderY(y); };
     const onPM = (e) => {
       if (e.pointerType === "mouse") {
+        if (S.leapAim) {
+          const g9 = groundPt(e.clientX, e.clientY);
+          S.leapMark = clampMark(g9.x, g9.z);
+          return;
+        }
         // camera yaw is fixed in the range: screen offset from centre maps
         // straight to a world aim heading, and DISTANCE from centre maps to
         // shot range (near the mech = close shots, screen edge = far)
@@ -155,6 +192,10 @@ export default function MechRange({ onExit }) {
         if (rsKnobRef.current) { rsKnobRef.current.style.left = a.x - 20 + S.rx * 34 + "px"; rsKnobRef.current.style.top = a.y - 20 + S.ry * 34 + "px"; }
       } else if (e.pointerId === S.rngId) {
         sliderY(e.clientY);
+      }
+      else if (e.pointerId === S.leapPtr) {
+        const g9 = groundPt(e.clientX, e.clientY);
+        S.leapMark = clampMark(g9.x, g9.z);
       }
       else if (S.camPts.has(e.pointerId)) {
         S.camPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -192,6 +233,7 @@ export default function MechRange({ onExit }) {
       } else if (e.pointerId === S.rngId) {
         S.rngId = null; // range HOLDS where you left it
       }
+      if (e.pointerId === S.leapPtr) S.leapPtr = null;
       S.camPts.delete(e.pointerId);
       if (S.camPts.size < 2) S.pinchD0 = 0;
     };
@@ -206,6 +248,7 @@ export default function MechRange({ onExit }) {
     // any grab whose finger no longer exists is released.
     const onTE = (e) => {
       if (e.touches.length < 2) { S.camPts.clear(); S.pinchD0 = 0; }
+      if (e.touches.length === 0) S.leapPtr = null;
       // per-SIDE liveness: a grab whose half of the screen holds no
       // surviving finger is released, whatever pointer id the browser
       // attributed the up-event to
@@ -244,12 +287,8 @@ export default function MechRange({ onExit }) {
       if (e.code === "KeyJ") { window.__MECHRANGE__ && window.__MECHRANGE__.jets(); }
       if (e.code === "KeyB") { RD.toggle(); }
       if (e.code === "KeyL") {
-        if (!S.leapAim) S.leapAim = true;
-        else {
-          const yawL = S.aimYaw != null ? S.aimYaw : mech.state.heading + (isTouch ? S.aimOff : 0);
-          const rL = Math.min(S.aimRange, mechLeapRange(mech));
-          if (mechLeap(world, mech, mech.hull.pos.x + Math.sin(yawL) * rL, mech.hull.pos.z + Math.cos(yawL) * rL)) S.leapAim = false;
-        }
+        if (!S.leapAim) enterLeapAim();
+        else if (S.leapMark && mechLeap(world, mech, S.leapMark.x, S.leapMark.z)) S.leapAim = false;
       }
       if (e.code === "Escape") S.leapAim = false;
       if (e.code === "KeyR") {
@@ -471,14 +510,13 @@ export default function MechRange({ onExit }) {
       // and the endpoint wandered FIVE METERS during a march (p2p 5.06m
       // measured) — the LPF'd preview shows the expected volley centre;
       // actual fire ballistics remain live and untouched.
-      if (S.leapAim) {
-        const yawL = S.aimYaw != null ? S.aimYaw : mech.state.heading + (isTouch ? S.aimOff : 0);
-        const rMaxL = mechLeapRange(mech);
-        const rL = Math.min(S.aimRange, rMaxL);
-        const mx = mech.hull.pos.x + Math.sin(yawL) * rL, mz2 = mech.hull.pos.z + Math.cos(yawL) * rL;
-        // the arc, sampled: 55-degree ballistic to the mark
+      if (S.leapAim && S.leapMark) {
+        S.leapMark = clampMark(S.leapMark.x, S.leapMark.z); // pressure moves; the mark stays lawful
+        const dxL = S.leapMark.x - mech.hull.pos.x, dzL = S.leapMark.z - mech.hull.pos.z;
+        const rL = Math.hypot(dxL, dzL);
+        const yawL = Math.atan2(dxL, dzL);
         const TH = 0.96, g9 = 9.81;
-        const v9 = Math.min(30, Math.sqrt(Math.max(6, rL) * g9 / Math.sin(2 * TH)));
+        const v9 = Math.min(30, Math.sqrt(Math.max(4, rL) * g9 / Math.sin(2 * TH)));
         const vy9 = v9 * Math.sin(TH), vh9 = v9 * Math.cos(TH);
         const T9 = 2 * vy9 / g9;
         const pts9 = [];
@@ -491,7 +529,14 @@ export default function MechRange({ onExit }) {
           });
         }
         R.setTraj(pts9, null);
-        R.setLeapRing(mech.hull.pos.x, mech.hull.pos.z, rMaxL, { x: mx, z: mz2 });
+        // the lobe: the true reachable boundary, one pip per bearing
+        const lobe9 = [];
+        for (let k9 = 0; k9 < 48; k9++) {
+          const a9 = (k9 / 48) * Math.PI * 2;
+          const r9 = mechLeapRange(mech) * mechLeapRho(mech, a9);
+          lobe9.push({ x: mech.hull.pos.x + Math.sin(a9) * r9, z: mech.hull.pos.z + Math.cos(a9) * r9 });
+        }
+        R.setLeapRing(lobe9, S.leapMark);
       } else R.setLeapRing(null);
       if (!S.leapAim) try {
         const raw = mechAimDir(world, mech);

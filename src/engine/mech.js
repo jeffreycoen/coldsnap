@@ -958,7 +958,7 @@ function controller(world, mech) {
           lp.gained = 0;
           lp.dx = ux * Math.cos(TH); lp.dy = Math.sin(TH); lp.dz = uz * Math.cos(TH);
         }
-        const aP = lp.v0 * lp.v0 / (2 * 0.6); // stroke 0.6 m
+        const aP = lp.v0 * lp.v0 / (2 * 0.6 * (lp.rho || 1)); // stroke 0.6 m scaled by the bearing's arc
         const dv = Math.min(aP * dt, lp.v0 - lp.gained);
         const dE = mech.mass * (lp.gained + dv / 2) * dv; // d(1/2 m v^2)
         if (mech.gasJ >= dE && dv > 0) {
@@ -3261,13 +3261,24 @@ export function mechLeapRange(mech) {
   const v2 = (mech.gasJ || 0) / (1.05 * mech.mass);
   return Math.min(mech.leapRMax || 28, Math.max(0, 0.94 * v2 / 9.81));
 }
+// per-bearing launch authority from the hip stops: the forward drive rides
+// the full hip pitch arc (1.25 rad), the rear drive the shorter extension
+// arc (0.95), the side drive the roll arc (0.55). The piston's usable
+// stroke scales with the arc, and range scales with the stroke.
+export function mechLeapRho(mech, worldBearing) {
+  const rel = worldBearing - mech.state.heading;
+  const c = Math.cos(rel), sn = Math.sin(rel);
+  const fA = c >= 0 ? 1 : 0.95 / 1.25;
+  return Math.hypot(c * fA, sn * (0.55 / 1.25));
+}
 export function mechLeap(world, mech, tx, tz) {
   const st = mech.state;
   if (st.mode !== "STAND" || !st.spawnDone || st.poise || st.kick || st.aboutFace || mech.leap) return false;
   const dx = tx - mech.hull.pos.x, dz = tz - mech.hull.pos.z;
   const d = Math.hypot(dx, dz);
-  if (d < 6 || d > mechLeapRange(mech)) return false;
-  mech.leap = { phase: "crouch", t: 0, tgt: { x: tx, z: tz }, d };
+  const rho = mechLeapRho(mech, Math.atan2(dx, dz));
+  if (d < 4 || d > mechLeapRange(mech) * rho) return false;
+  mech.leap = { phase: "crouch", t: 0, tgt: { x: tx, z: tz }, d, rho };
   st.mode = "LEAP";
   return true;
 }
