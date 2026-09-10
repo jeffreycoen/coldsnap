@@ -945,7 +945,7 @@ function controller(world, mech) {
       const hipY2 = gRef + g2.standHip - drop;
       for (const side2 of ["L", "R"]) {
         const p2 = st.prints[side2];
-        setLegTargets(mech, side2, feetMid2, hipY2, st.heading, { x: p2.x, y: gRef, z: p2.z });
+        setLegTargets(mech, side2, feetMid2, hipY2, st.heading, { x: p2.x, y: world.field.heightAt(p2.x, p2.z), z: p2.z });
       }
       if (lp.phase === "crouch" && lp.t > 0.55) { lp.phase = "drive"; lp.t = 0; }
       else if (lp.phase === "drive") {
@@ -1129,6 +1129,7 @@ function controller(world, mech) {
           st.prints[sd8] = { x: f8.pos.x, z: f8.pos.z, yaw: Math.atan2(f8.R[6], f8.R[8]) };
         }
         st.pelvis = { x: feetMid2.x, z: feetMid2.z };
+        st._leapSquare = 3.0; // the stand watches the stance's SHAPE until the frame is quiet
         mech.leap = null;
       }
       if (lp.t > 6) { mech.leap = null; st.mode = "STAND"; st.recoverT = 2; } // give the machine back regardless
@@ -1145,7 +1146,7 @@ function controller(world, mech) {
   // Terrain-height fallback while airborne.
   let groundRef;
   const ldL0 = legL.load > 0.04 * mech.mass * world.gravity, ldR0 = legR.load > 0.04 * mech.mass * world.gravity;
-  if (ldL0 && ldR0) groundRef = Math.min(soleY(legL), soleY(legR));
+  if (ldL0 && ldR0) groundRef = (soleY(legL) + soleY(legR)) / 2; // MEAN, not min: on a side slope the pelvis levels between the footholds and each leg solves its own ground
   else if (ldL0) groundRef = soleY(legL);
   else if (ldR0) groundRef = soleY(legR);
   else groundRef = st._lastGround != null ? st._lastGround : world.field.heightAt(hull.pos.x, hull.pos.z);
@@ -2179,6 +2180,25 @@ function controller(world, mech) {
     const tiltCatch = st.tiltT > 0.6 && (st.standT || 0) > 3;
     if (!st.poise && (Math.abs(eF) > k.copLimitX || Math.abs(eL) > k.copLimitZ + k.halfStance || tiltCatch))
       catchSide = eL > 0 ? "L" : "R";
+    // LEAP SQUARE-UP: for a short window after a landing, the stance's
+    // SHAPE is watched — crossed, pinched, or badly twisted resteps to
+    // square while the recovery rockets still carry authority. A clean
+    // landing stays as it fell.
+    if (st._leapSquare != null) {
+      st._leapSquare -= dt;
+      if (st._leapSquare <= 0) st._leapSquare = null;
+      else if (!catchSide && legL.load > 0.2 * totalW && legR.load > 0.2 * totalW && hull.R[4] > 0.98 && Math.hypot(_comV.x, _comV.z) < 0.45) {
+        const sepL = (legL.foot.pos.x - legR.foot.pos.x) * axes.left.x + (legL.foot.pos.z - legR.foot.pos.z) * axes.left.z;
+        const twL = Math.abs(wrapPi(Math.atan2(legL.foot.R[6], legL.foot.R[8]) - st.heading));
+        const twR = Math.abs(wrapPi(Math.atan2(legR.foot.R[6], legR.foot.R[8]) - st.heading));
+        if (sepL < k.minFootSep * 0.75 || twL > 0.5 || twR > 0.5) {
+          catchSide = sepL < 0 ? "L" : "R"; // crossed or pinched: step the wrong-side foot out
+          st._squareUp = true;
+          st._leapSquare = null;
+          st.recoverT = Math.max(st.recoverT || 0, 1.2);
+        }
+      }
+    }
     // launch gate: walk entry is chaotically sensitive to the residual
     // spawn/crouch sway phase (measured: 7 ticks of settle difference
     // flipped a 46s march into a 6s fall). Hold the launch until xi sits
@@ -2202,7 +2222,7 @@ function controller(world, mech) {
     if (wantGo && !quiet) st.launchWait = (st.launchWait || 0) + dt;
     else if (!wantGo) st.launchWait = 0;
     const launchOk = quiet || (st.launchWait || 0) > 1.6;
-    if (st.spawnDone && ((catchSide && st.settleT > 1.6) || (wantGo && launchOk))) {
+    if (st.spawnDone && ((catchSide && (st.settleT > 1.6 || st._squareUp)) || (wantGo && launchOk))) {
       st.launchWait = 0;
       st.mode = "WALK"; st.ramp = 1.35; st.stopping = false;
       st.postStop = 0; // the post-stop lateral skyhook TOPPLES launches (own measurement) — a relaunch inside its 4s window was sortie1's death
@@ -2212,6 +2232,7 @@ function controller(world, mech) {
       const lf8 = mech._launchF || 0.5;
       st.cmd.f *= lf8; st.cmd.l *= lf8;
 
+      st._squareUp = false;
       if (catchSide) {
         st.lastSwing = catchSide === "L" ? "R" : "L"; mech.telem.catches++;
         // bleed the wound trim — each catch resets the slow-runaway clock
@@ -2497,17 +2518,18 @@ function controller(world, mech) {
       dx += 0.18 * (anchorX - (stanceP.x + dx));
       dz += 0.18 * (anchorZ - (stanceP.z + dz));
     }
-    let ty = groundRef + swingLift(s2, k.stepHeight);
+    const gSw = world.field.heightAt(stanceP.x + dx, stanceP.z + dz); // the landing's own ground
+    let ty = gSw + swingLift(s2, k.stepHeight);
     // EMERGENCY PLANT: if the hull attitude collapses mid-SS (stance foot
     // edge-rolled — R4 0.98 -> 0.83 in 0.2s measured), the swing must slam
     // down NOW: a second support point is the only thing that arrests the
     // pitch, and the leisurely arc never arrives in time.
     const emergPlant = hull.R[4] < 0.94;
-    if (emergPlant) ty = groundRef;
+    if (emergPlant) ty = gSw;
     // descent limit: slam guard near the ground only. A flat 0.35 m/s cap
     // couldn't get the foot down from apex inside the SS window — "touchdown"
     // latched with the foot 0.4m up and the DS ran on one real leg.
-    const dLim = emergPlant ? 3.5 : ty < groundRef + 0.25 * k.stepHeight ? 0.6 : 2.5;
+    const dLim = emergPlant ? 3.5 : ty < gSw + 0.25 * k.stepHeight ? 0.6 : 2.5;
     if (st.lastSwingY != null && ty < st.lastSwingY) ty = Math.max(ty, st.lastSwingY - dLim * dt);
     st.lastSwingY = ty;
     st.swingTgt = { x: stanceP.x + dx, y: ty, z: stanceP.z + dz };
@@ -2716,7 +2738,7 @@ function controller(world, mech) {
       // side (measured: xi driven backward through every DS).
       // no leg-length press: the plan's DS ZMP ramp through the ankle CoP is
       // the whole weight-shift mechanism (reference)
-      setLegTargets(mech, side, pelvisRef, hipYEff, st.heading, { x: p.x, y: groundRef, z: p.z });
+      setLegTargets(mech, side, pelvisRef, hipYEff, st.heading, { x: p.x, y: world.field.heightAt(p.x, p.z), z: p.z }); // each foot on ITS OWN ground: the uphill knee bends deeper, the pelvis stays level
     }
   }
   // waist ring (spec §5c): servo to aim - bodyYaw, slew-limited; aim
