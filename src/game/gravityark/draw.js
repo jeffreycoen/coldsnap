@@ -268,6 +268,20 @@ export function makeDraw({ C30, S30, MAP_NODES, sim, camRef, particles, progress
       ctx.fillText(`${pf.gridVerts}v ${pf.particles}p ${bodyCount}bod ${s.asteroids.filter(a=>a.alive).length}ast`,W-10,H-48);
       if(pf.energy0!==null){ctx.fillStyle=pf.energyDrift<.1?"rgba(40,140,70,.2)":"rgba(200,50,30,.2)";ctx.fillText(`drift ${pf.energyDrift.toFixed(4)}%`,W-10,H-38);}
       ctx.textAlign="left";
+    // Compass — when the gate is off frame, an edge arrow points to it with the distance
+    if(s.phase==="aim"||s.phase==="plan"||s.phase==="fly"){
+      const gp=iso(s.gate.x,s.gate.z,0,cmx,cmy,sc);
+      if(gp.x<-10||gp.x>W+10||gp.y<-10||gp.y>H+10){
+        const dx=gp.x-W/2,dy=gp.y-H/2,dl=Math.sqrt(dx*dx+dy*dy)||1,nx=dx/dl,ny=dy/dl;
+        const m=46,t=Math.min((W/2-m)/Math.max(Math.abs(nx),1e-6),(H/2-m)/Math.max(Math.abs(ny),1e-6));
+        const ax=W/2+nx*t,ay=H/2+ny*t,ca2=Math.atan2(ny,nx);
+        const gd3=Math.floor(Math.sqrt((s.gate.x-sh.x)**2+(s.gate.z-sh.z)**2));
+        ctx.save();ctx.translate(ax,ay);ctx.rotate(ca2);
+        ctx.beginPath();ctx.moveTo(12,0);ctx.lineTo(-7,-8);ctx.lineTo(-3,0);ctx.lineTo(-7,8);ctx.closePath();
+        ctx.fillStyle="rgba(60,200,100,.7)";ctx.fill();ctx.rotate(-ca2);
+        ctx.font="600 10px -apple-system,sans-serif";ctx.textAlign="center";
+        ctx.fillStyle="rgba(60,200,100,.65)";ctx.fillText(gd3+"u",0,ny<-.3?26:-18);
+        ctx.textAlign="left";ctx.restore();}}
     return false;
   };
   return { iso, drawShip, drawGate, drawFrame };
