@@ -25,6 +25,7 @@ Standing rulings for this phase:
 | T4 | 0.5.3 | The gate count drops from three to one; the two mid-field waypoints retire, the single gate stays the destination gate at the far end of the field | LANDED b49564d — smoke 23 PASS, 0 FAIL — generator hashes at seed 12345: n=0 83f4020d9011bf74, n=1 4ef7e270c24f35d8, n=2 efae00dd3c323f29 |
 | T5 | 0.5.4 | The interface carves out into `hud.jsx`; the camera comes near and rests on the ship; a compass arrow points to the gate when it is off frame | LANDED cbf0762 — smoke 23 PASS, 0 FAIL — generator hashes at seed 12345: n=0 83f4020d9011bf74, n=1 4ef7e270c24f35d8, n=2 efae00dd3c323f29 |
 | T6 | 0.5.5 | The start screen's quiet text gets bigger and brighter: the mark, the field order number, the button briefs, the stale-save note, the footer hint | LANDED efbbb4e5c9d62efc183f3e14eb558af01312f02e — smoke 23 PASS, 0 FAIL |
+| T7 | 0.5.6 | MENU joins the top-right chip row; the debug readout moves above the control rows; the grid follows the camera; the nebula labels go; the aim controls fit a phone width | LANDED 24a273d27e5991817e00ccad65bc94d976c9c732 — smoke 23 PASS, 0 FAIL — generator hashes at seed 12345: n=0 83f4020d9011bf74, n=1 4ef7e270c24f35d8, n=2 efae00dd3c323f29 |
 
 ---
 
