@@ -847,6 +847,7 @@ export function placeMech(world, mech, x, z, yaw) {
   };
   st.hold = {}; st.holdCop = {}; st.stopping = false; st.stopPlan = null;
   st.settleT = 0; st.settledT = 0; st.spawnDone = false; st._limped = false;
+  mech.right = null; st._downT2 = 0; st._riseT = 0; st.crouchX = 0; // a reissue or stand-up teleport clears any righting in flight
   if (mech.headWeld && mech.headWeld.broken) { mech.headWeld.broken = false; world._weldPairsDirty = true; }
   // stale actuator state must not survive a reissue: a held CMG torque or
   // fall-time load filter tips the fresh spawn
@@ -956,6 +957,104 @@ function controller(world, mech) {
     if (!st._limped) {
       st._limped = true;
       for (const j of mech.joints) { j.target = j.angle; j.tauFF = 0; }
+    }
+    // SELF-RIGHTING (design 2026-09-10): the compressor runs while down,
+    // and a charged store buys the recovery — differential nozzle burn
+    // rolls the hull over its contact edge, the legs tuck, and the spawn
+    // machinery stands the machine. A fall costs time down and gas.
+    if (mech.gasJ != null && mech.thrustersOn) {
+      mech.gasJ = Math.min(mech.gasMax, mech.gasJ + mech.gasPwr * dt);
+      st._downT2 = (st._downT2 || 0) + dt;
+      if (!mech.right && st._downT2 > 2.5 && mech.gasJ > 2.4e6 && mech.hull.R[4] < 0.7) mech.right = { phase: "roll", t: 0 };
+      if (mech.right) {
+        const rp = mech.right;
+        rp.t += dt;
+        for (const b of mech.links) { b.sleepT = 0; if (b.sleeping) wake(b); }
+        if (rp.phase === "roll") {
+          // the demand: torque that carries body-up back to world-up,
+          // realized by the nozzles whose real levers serve it
+          const torsoR = mech.waist ? mech.waist.b : mech.hull;
+          const R9 = torsoR.R;
+          const ux9 = mech.hull.R[3], uy9 = mech.hull.R[4], uz9 = mech.hull.R[5]; // body up, world frame
+          const tdx = -uz9, tdz = ux9; // up x worldUp, horizontal roll axis
+          const tm9 = Math.hypot(tdx, tdz);
+          if (tm9 > 1e-6) {
+            const W9 = mech.mass * world.gravity;
+            const tCap = 2.2 * W9 * 2.0;
+            // spring toward upright, damped on the roll rate — the roll
+            // arrives instead of flinging through
+            const kd9 = tCap * 0.9 * clamp(uy9, 0.3, 1); // light damping while deep, full near upright
+            const tX = tdx / tm9 * tCap * clamp(1.4 * (1 - uy9), 0.15, 1) - mech.hull.w.x * kd9;
+            const tZ = tdz / tm9 * tCap * clamp(1.4 * (1 - uy9), 0.15, 1) - mech.hull.w.z * kd9;
+            for (const th9 of mech.thrusters) {
+              if (!th9.eT) break;
+              V.set(_aw, 0, -1, 0);
+              V.set(_al, R9[0] * _aw.x + R9[1] * _aw.y + R9[2] * _aw.z, R9[3] * _aw.x + R9[4] * _aw.y + R9[5] * _aw.z, R9[6] * _aw.x + R9[7] * _aw.y + R9[8] * _aw.z);
+              V.norm(_al, _al);
+              coneToward(_al, th9.e, mech.thrustCone, th9.eT);
+              const px9 = R9[0] * th9.p.x + R9[3] * th9.p.y + R9[6] * th9.p.z;
+              const py9 = R9[1] * th9.p.x + R9[4] * th9.p.y + R9[7] * th9.p.z;
+              const pz9 = R9[2] * th9.p.x + R9[5] * th9.p.y + R9[8] * th9.p.z;
+              const e9 = th9.eC || th9.e;
+              const fx9 = -(R9[0] * e9.x + R9[3] * e9.y + R9[6] * e9.z);
+              const fy9 = -(R9[1] * e9.x + R9[4] * e9.y + R9[7] * e9.z);
+              const fz9 = -(R9[2] * e9.x + R9[5] * e9.y + R9[8] * e9.z);
+              const txN = (py9 * fz9 - pz9 * fy9) * mech.thrustMax;
+              const tzN = (px9 * fy9 - py9 * fx9) * mech.thrustMax;
+              const nrm = Math.hypot(txN, tzN);
+              th9.cmd = nrm > 1e3 ? clamp((txN * tX + tzN * tZ) / (nrm * nrm), 0, 1) : 0;
+              if (tm9 < 1e-6) th9.cmd = 0;
+            }
+            // THE SHOVE: the tanks vent downward and the reaction hoists the
+            // torso — real force at the body that must rise, real work from
+            // the store, and it is what carries the roll past the lever's
+            // worst point where the nozzles alone stall
+            const FV9 = uy9 < 0.78 && torsoR.v.y < 1.6 ? 1.15 * W9 : 0; // the shove hoists whenever short of the crest, speed-capped
+            torsoR.v.y += FV9 * torsoR.invM * dt;
+            wake(torsoR);
+            mech.gasJ = Math.max(0, mech.gasJ - 1.1e6 * dt); // vent + burn, net drain past the compressor
+            mech._gasFlow = 1.1e6;
+            // limbs gather during the roll — smaller inertia, and the legs
+            // push where they touch
+            for (const sd9 of ["L", "R"]) {
+              const lg9 = mech.legs[sd9];
+              lg9.hipPitch.target = -0.9; lg9.knee.target = 1.9;
+              lg9.anklePitch.target = -1.0; lg9.hipRoll.target = 0; lg9.ankleRoll.target = 0;
+              if (lg9.hipYaw) lg9.hipYaw.target = 0;
+            }
+          }
+          if (uy9 > 0.85 && Math.hypot(mech.hull.w.x, mech.hull.w.z) < 0.8) { rp.phase = "tuck"; rp.t = 0; for (const th9 of mech.thrusters) th9.cmd = 0; }
+          else if (rp.t > 6 || mech.gasJ <= 0) { mech.right = null; st._downT2 = 0; for (const th9 of mech.thrusters) th9.cmd = 0; } // spent — wait and recharge
+        } else if (rp.phase === "tuck") {
+          // legs joint-space under the body, the poise pattern
+          for (const sd9 of ["L", "R"]) {
+            const lg9 = mech.legs[sd9];
+            lg9.hipPitch.target = -0.9; lg9.knee.target = 1.9;
+            lg9.anklePitch.target = -1.0; lg9.hipRoll.target = 0; lg9.ankleRoll.target = 0;
+            if (lg9.hipYaw) lg9.hipYaw.target = 0;
+          }
+          if (rp.t > 0.9) {
+            // the rise: hand the machine to the spawn machinery, which
+            // raises a crouched frame under full servo law
+            mech.right = null;
+            st._downT2 = 0;
+            st._limped = false;
+            st.mode = "STAND";
+            st.spawnDone = false; st.settleT = 0; st.settledT = 0;
+            st.heading = Math.atan2(mech.hull.R[6], mech.hull.R[8]); st.headingT = st.heading;
+            st.pelvis = { x: mech.hull.pos.x, z: mech.hull.pos.z };
+            for (const sd9 of ["L", "R"]) {
+              const f9 = mech.legs[sd9].foot;
+              st.prints[sd9] = { x: f9.pos.x, z: f9.pos.z, yaw: st.heading };
+            }
+            st.hold = {}; st.holdCop = {}; st.recoverT = 1.5;
+            // rise SLOWLY: the poise extra-crouch starts at the kneel depth
+            // and its rate-limited release stands the machine over seconds
+            st.crouchX = Math.min(2.4, Math.max(0, (g.standHip || mech.geom.standHip) - (mech.hull.pos.y + mech.geom.hipY - world.field.heightAt(mech.hull.pos.x, mech.hull.pos.z))));
+            st._riseT = world.t + 9; // the press-up window: the height law waits
+          }
+        }
+      }
     }
     return;
   }
@@ -1194,7 +1293,7 @@ function controller(world, mech) {
   else groundRef = st._lastGround != null ? st._lastGround : world.field.heightAt(hull.pos.x, hull.pos.z);
   st._lastGround = groundRef;
   const hipYnow = hull.pos.y + g.hipY; // hull local hip offset is -|hipY|... hipY negative of hull? hipY = R.hipY*s is negative
-  if (hull.R[4] < 0.6 || (hipYnow - groundRef) < 0.62 * g.standHip) { onFallMech(mech); return; }
+  if (hull.R[4] < 0.6 || ((hipYnow - groundRef) < 0.62 * g.standHip && !(st._riseT > world.t))) { onFallMech(mech); return; } // _riseT: the stand-up grace — a righting machine is LOW while its legs press it up
   // command slew (spec: every channel slewed)
   // launchRate (reference chassis.js): half slew for the first 2 steps
   const trRate = k.travelRate * ((st.sinceRest || 0) < 2 && st.mode === "WALK" ? 0.5 : 1);
