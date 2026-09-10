@@ -20,6 +20,7 @@ The owner directs design, reviews every plan, and is the sole playtester. His wo
 ## Plans
 
 - The phase document holds skeleton, status, and index; each task's full plan is its own file, served ALONE for review, written once for one reader, plainly.
+- No hard line wrapping in documents: each paragraph is one source line, and the reader's screen does the wrapping. Wrapped lines render as broken fragments on the owner's phone.
 - Atomic steps carrying the actual code and exact file/line anchors, in execution order, failing asserts first, a plain sentence above each. Agents execute plans; they never design.
 - Every task plan carries its required-reading list and a suggested model (Sonnet or Fable, one-line reason); the owner rules on it at approval.
 - Verbatim-move tasks carry an INVENTORY of what moves, a SUBSTITUTION TABLE of every token allowed to differ (an unlisted difference stops the agent), and an ARITHMETIC acceptance — keystone hash and draw count, or the suite's exact pass count. Numbers ratify moves, never judgment.
