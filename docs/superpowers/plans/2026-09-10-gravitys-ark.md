@@ -20,6 +20,7 @@ Standing rulings for this phase:
 | Task | Mark | What lands | Status |
 |---|---|---|---|
 | T1 | 0.5.0 | GRAVITY'S ARK behind THE PROVING RANGE: the gravity sandbox ported whole as its own module — seeded systems, real orbits, drag-to-burn flight, the 60-level ladder as it stands | LANDED ccd846c00bd9761d5eff73888e01cc8db7d1219f — smoke 23 PASS, 0 FAIL |
+| T2 | 0.5.1 | The ark's physics and seeded generator carved out of the component into their own modules — hashes identical, 7/7 | LANDED e7b1448 — smoke 23 PASS, 0 FAIL |
 
 ---
 
