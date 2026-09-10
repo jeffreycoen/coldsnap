@@ -89,15 +89,15 @@ export default function StartScreen({ onDepot, onDepotResume, onDemos, onDevSand
         <div style={{ textAlign: "center", marginBottom: 8 }}>
           <div style={{ fontSize: 34, color: COLORS.red, letterSpacing: 8 }}>COLDSNAP</div>
           <div style={{ fontSize: 13, letterSpacing: 8, color: COLORS.gold, marginTop: 2 }}>WINTER FRONT</div>
-          <div data-mk style={{ opacity: 0.5, letterSpacing: 2, fontSize: 10, marginTop: 4 }}>{MK}</div>
-          <div data-field-order style={{ fontSize: 10, opacity: 0.6, letterSpacing: 2, marginTop: 6 }}>FIELD ORDER #{ord ?? "—"}</div>
+          <div data-mk style={{ opacity: 0.85, letterSpacing: 2, fontSize: 12, marginTop: 4 }}>{MK}</div>
+          <div data-field-order style={{ fontSize: 12, opacity: 0.85, letterSpacing: 2, marginTop: 6 }}>FIELD ORDER #{ord ?? "—"}</div>
         </div>
 
         {hasFront && (
           <button data-menu="depot-resume" style={option({ borderColor: "#c9a04e", background: "rgba(201,160,78,0.10)" })}
             onClick={() => onDepotResume && onDepotResume(front.data)}>
             <div style={{ color: COLORS.gold, fontSize: 15, letterSpacing: 2 }}>▶ RESUME FRONT</div>
-            <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>
+            <div style={{ fontSize: 12, opacity: 0.92, marginTop: 4 }}>
               The front as you left it, at bell {front.bell}. Same ground, same craters, same men.
             </div>
           </button>
@@ -110,7 +110,7 @@ export default function StartScreen({ onDepot, onDepotResume, onDemos, onDevSand
           <div style={{ color: burnArmed ? "#ff6b5e" : "#9fd4e4", fontSize: 15, letterSpacing: 2 }}>
             {burnArmed ? "THE FRONT BURNS — CONFIRM" : "▶ NEW FRONT — TAKE COMMAND"}
           </div>
-          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>
+          <div style={{ fontSize: 12, opacity: 0.92, marginTop: 4 }}>
             {burnArmed
               ? "Tap again and the saved front is gone for good."
               : hasFront
@@ -120,24 +120,24 @@ export default function StartScreen({ onDepot, onDepotResume, onDemos, onDevSand
         </button>
 
         {front && front.stale && (
-          <div data-front-stale style={{ fontSize: 11, opacity: 0.6, marginTop: 8, letterSpacing: 1 }}>
+          <div data-front-stale style={{ fontSize: 12, opacity: 0.85, marginTop: 8, letterSpacing: 1 }}>
             THE FRONT HAS MOVED ON — a save from an older mark was discarded.
           </div>
         )}
 
-        <button data-menu="demos" style={{ ...option(), marginTop: 22, opacity: 0.7, fontSize: 12 }} onClick={onDemos}>
+        <button data-menu="demos" style={{ ...option(), marginTop: 22, opacity: 0.92, fontSize: 13 }} onClick={onDemos}>
           THE PROVING RANGE — tech demos this war was built on →
         </button>
 
-        <button data-menu="controls" style={{ ...option(), marginTop: 8, opacity: 0.7, fontSize: 12 }} onClick={onControls}>
+        <button data-menu="controls" style={{ ...option(), marginTop: 8, opacity: 0.92, fontSize: 13 }} onClick={onControls}>
           CONTROLS — keys and remapping →
         </button>
 
-        <button data-menu="devsandbox" style={{ ...option(), marginTop: 8, opacity: 0.7, fontSize: 12 }} onClick={onDevSandbox}>
+        <button data-menu="devsandbox" style={{ ...option(), marginTop: 8, opacity: 0.92, fontSize: 13 }} onClick={onDevSandbox}>
           SANDBOX — test any weapon on a fresh valley →
         </button>
 
-        <div style={{ textAlign: "center", marginTop: 18, fontSize: 11, opacity: 0.55 }}>
+        <div style={{ textAlign: "center", marginTop: 18, fontSize: 12, opacity: 0.8 }}>
           {isTouch ? "left stick drives · right stick or tap aims · ⏏ MENU returns here" : "ESC in-game returns to this menu"}
         </div>
       </div>
