@@ -43,6 +43,7 @@ const MU = 0.6;            // friction coefficient — the war engine's default
 const REWELD_V = 0.3;      // fuse when the NORMAL relative velocity is calmer than this — co-rotating neighbors carry omega-times-spacing tangentially with zero normal motion, so the fuse test must read the normal alone (the raw test never fired in a spinner)
 const REWELD_T = 30;       // dwell frames before the fuse takes — hysteresis against weld-break flicker
 const REWELD_STR = 0.6;    // a formed weld's strength against a born weld's — accretion is weaker than bedrock
+const RIGID_N = 10;        // an awake weld-island this big promotes to a rigid body — one mass, one spin
 const NEAR_F = 6;          // far-field near radius, in largest-block units
 
 const WELD_STRENGTH_BY_SIZE = { 1: 30, 2: 160, 5: 185 };
@@ -118,6 +119,43 @@ function neighborsOf(world, b, out) {
 }
 
 const _nb = [];
+
+// apply a normal impulse (velocity units) to a contact's two sides — free
+// blocks directly, rigid members through their body's mass and inertia
+function applyN(world, wb, cnt, bi, bj, dPn) {
+  applyJ(world, cnt, bi, bj, cnt.nx * dPn, cnt.ny * dPn, cnt.nz * dPn);
+}
+// a general impulse (velocity units) on a contact's two sides
+function applyJ(world, cnt, bi, bj, Jx, Jy, Jz) {
+  if (cnt.Ra) {
+    const R = cnt.Ra, m = cnt.ma;
+    R.vx -= Jx * m / R.M; R.vy -= Jy * m / R.M; R.vz -= Jz * m / R.M;
+    R.om -= ((bi.x - R.x) * Jz - (bi.z - R.z) * Jx) * m / R.Iy;
+    R.dirty = true;
+  } else { bi.vx -= Jx; bi.vy -= Jy; bi.vz -= Jz; }
+  if (cnt.Rb) {
+    const R = cnt.Rb, m = cnt.mb;
+    R.vx += Jx * m / R.M; R.vy += Jy * m / R.M; R.vz += Jz * m / R.M;
+    R.om += ((bj.x - R.x) * Jz - (bj.z - R.z) * Jx) * m / R.Iy;
+    R.dirty = true;
+  } else { bj.vx += Jx; bj.vy += Jy; bj.vz += Jz; }
+}
+// the velocity of a block's material point — rigid members move with their body
+function ptVel(world, i, b, out) {
+  const ri = world.rigidOf ? world.rigidOf[i] : -1;
+  if (ri >= 0) { const R = world.rigids[ri]; out[0] = R.vx - R.om * (b.z - R.z); out[1] = R.vy; out[2] = R.vz + R.om * (b.x - R.x); }
+  else { out[0] = b.vx; out[1] = b.vy; out[2] = b.vz; }
+}
+const _va = [0, 0, 0], _vb = [0, 0, 0];
+
+// after impulses, every member of a dirty rigid conforms to the body again
+function conformRigids(world, wb) {
+  for (const R of world.rigids) {
+    if (!R.dirty) continue; R.dirty = false;
+    for (const i2 of R.ids) { const b = wb[i2]; const rx = b.x - R.x, rz = b.z - R.z;
+      b.vx = R.vx - R.om * rz; b.vy = R.vy; b.vz = R.vz + R.om * rx; }
+  }
+}
 
 function stepWorld(world, k) {
   const wb = world.blocks, welds = world.welds;
@@ -208,6 +246,44 @@ function stepWorld(world, k) {
       if (world.hole) srcs.push(world.hole);
       if (world.star) srcs.push(world.star);
 
+      // --- RIGID PROMOTION: an awake weld-island moves as one body (the owner's
+      // grouping rule, 2026-09-11). Islands are weld-connected components among
+      // awake blocks; a promoted island carries one velocity and one vertical
+      // spin, contacts against it resolve as impulses with rotational response,
+      // and its internal welds cost nothing. Cold welding keeps fusing islands,
+      // so a merged world converges to ONE island — exactly rigid, which is
+      // what the spin-aware sleep test needs. Internal fracture is deferred:
+      // a rigid island breaks only at its seams (cross-island welds), marked.
+      world.rigidOf = new Array(wb.length).fill(-1);
+      world.rigids = [];
+      if (k.welds) {
+        const rpar = wb.map((_, i2) => i2);
+        const rfind = (i2) => { while (rpar[i2] !== i2) { rpar[i2] = rpar[rpar[i2]]; i2 = rpar[i2]; } return i2; };
+        for (const w of welds) {
+          if (!w.alive) continue;
+          const a = wb[w.a], b = wb[w.b];
+          if (!a.alive || !b.alive || a.sleeping || b.sleeping) continue;
+          const ra = rfind(w.a), rb = rfind(w.b); if (ra !== rb) rpar[rb] = ra;
+        }
+        const isl = new Map();
+        for (const i2 of awakeIdx) { const r = rfind(i2); if (!isl.has(r)) isl.set(r, []); isl.get(r).push(i2); }
+        for (const [root, ids] of isl) {
+          if (ids.length < RIGID_N) continue;
+          let M = 0, cx2 = 0, cy2 = 0, cz2 = 0, vx2 = 0, vy2 = 0, vz2 = 0;
+          for (const i2 of ids) { const b = wb[i2]; M += b.m; cx2 += b.x * b.m; cy2 += b.y * b.m; cz2 += b.z * b.m; vx2 += b.vx * b.m; vy2 += b.vy * b.m; vz2 += b.vz * b.m; }
+          cx2 /= M; cy2 /= M; cz2 /= M; vx2 /= M; vy2 /= M; vz2 /= M;
+          let Lz = 0, Iy = 0;
+          for (const i2 of ids) { const b = wb[i2]; const rx = b.x - cx2, rz = b.z - cz2;
+            Lz += b.m * (rx * (b.vz - vz2) - rz * (b.vx - vx2)); Iy += b.m * (rx * rx + rz * rz); }
+          const R = { ids, M, x: cx2, y: cy2, z: cz2, vx: vx2, vy: vy2, vz: vz2, om: Iy > 1e-9 ? Lz / Iy : 0, Iy: Math.max(Iy, 1e-9) };
+          const ri = world.rigids.length; world.rigids.push(R);
+          for (const i2 of ids) world.rigidOf[i2] = ri;
+          // the members conform exactly to the body NOW — rigidity is enforced, not hoped for
+          for (const i2 of ids) { const b = wb[i2]; const rx = b.x - R.x, rz = b.z - R.z;
+            b.vx = R.vx - R.om * rz; b.vy = R.vy; b.vz = R.vz + R.om * rx; }
+        }
+      }
+
       // --- AWAKE CLUMPS for the far-field: group the awake blocks live ---
       const awakeClumps = new Map();
       for (const i of awakeIdx) {
@@ -220,10 +296,13 @@ function stepWorld(world, k) {
       for (const [root, g] of awakeClumps) for (const i of g.ids) { const b = wb[i]; const r = Math.hypot(b.x - g.mx, b.y - g.my, b.z - g.mz); if (r > g.rad) g.rad = r; }
       const NEAR = NEAR_F * (world.cell || BS * 1.45);
 
-      // --- GRAVITY KICK on awake blocks: exact near, clump points far ---
+      // --- GRAVITY KICK on awake blocks: exact near, clump points far.
+      // Rigid members contribute their pull to the BODY as force and torque;
+      // free blocks kick as before ---
       const out = [0, 0, 0];
       for (const i of awakeIdx) {
         const b = wb[i];
+        const rIdx = world.rigidOf ? world.rigidOf[i] : -1;
         out[0] = 0; out[1] = 0; out[2] = 0;
         for (const [root, g] of awakeClumps) {
           const w = world.weak && root !== b.clump ? 0.01 : 1;
@@ -235,8 +314,12 @@ function stepWorld(world, k) {
         for (const a of world.aggs) { const w = world.weak && a.clump !== b.clump ? 0.01 : 1; pull(b, a.x, a.y, a.z, a.m, w, out); }
         if (world.hole) pull(b, world.hole.x, 0, world.hole.z, world.hole.m, 1, out);
         if (world.star) pull(b, world.star.x, 0, world.star.z, world.star.m, 1, out);
-        b.vx += out[0] * DT; b.vy += out[1] * DT; b.vz += out[2] * DT;
+        if (rIdx >= 0) { const R = world.rigids[rIdx];
+          R.vx += out[0] * b.m / R.M * DT; R.vy += out[1] * b.m / R.M * DT; R.vz += out[2] * b.m / R.M * DT;
+          R.om += ((b.x - R.x) * out[2] - (b.z - R.z) * out[0]) * b.m / R.Iy * DT; R.dirty = true;
+        } else { b.vx += out[0] * DT; b.vy += out[1] * DT; b.vz += out[2] * DT; }
       }
+      conformRigids(world, wb);
       // --- AGGREGATES integrate as single bodies; members ride as offsets ---
       for (let n = 0; n < world.aggs.length; n++) {
         const a = world.aggs[n];
@@ -294,6 +377,14 @@ function stepWorld(world, k) {
           if (bj.sleeping) { const cl = bj.clump; for (const b2 of wb) if (b2.clump === cl) b2.sleeping = false; world.aggs = world.aggs.filter(a => !a.ids.includes(j)); }
           const d = Math.sqrt(d2);
           const cnt = { i, j, nx: dx / d, ny: dy / d, nz: dz / d, depth: cd - d, pn: world.warm.get(key) || 0, key, ptx: 0, pty: 0, ptz: 0 };
+          // effective inverse-mass factors, in the solver's velocity units: a free
+          // block answers an impulse fully; a rigid member answers through its
+          // body's mass and inertia at the contact arm
+          const rig = (bidx, bb) => { const ri = world.rigidOf[bidx]; if (ri < 0) return null; return world.rigids[ri]; };
+          const Ra = rig(i, bi), Rb = rig(j, bj);
+          const arm = (R, b) => { const rx = b.x - R.x, rz = b.z - R.z; const t = rx * cnt.nz - rz * cnt.nx; return b.m * (1 / R.M + (t * t) / R.Iy); };
+          cnt.fa = Ra ? arm(Ra, bi) : 1; cnt.fb = Rb ? arm(Rb, bj) : 1;
+          cnt.Ra = Ra; cnt.Rb = Rb; cnt.ma = bi.m; cnt.mb = bj.m;
           cnt.bias = Math.min(BETA / DT * Math.max(0, cnt.depth - SLOP), BIAS_CAP);
           if (cnt.pn) { bi.vx -= cnt.nx * cnt.pn; bi.vy -= cnt.ny * cnt.pn; bi.vz -= cnt.nz * cnt.pn; bj.vx += cnt.nx * cnt.pn; bj.vy += cnt.ny * cnt.pn; bj.vz += cnt.nz * cnt.pn; }
           contacts.push(cnt);
@@ -311,6 +402,8 @@ function stepWorld(world, k) {
           const a = wb[w.a], b = wb[w.b];
           if (!a.alive || !b.alive) { w.alive = false; continue; }
           if (a.sleeping && b.sleeping) continue;
+          const ra = world.rigidOf[w.a], rb = world.rigidOf[w.b];
+          if (ra >= 0 && ra === rb) continue; // inside a rigid island the weld carries no solver work
           const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, d = Math.hypot(dx, dy, dz) || 1;
           if (d > w.rest * WELD_BREAK) { w.alive = false; continue; }
           const nx = dx / d, ny = dy / d, nz = dz / d;
@@ -323,12 +416,17 @@ function stepWorld(world, k) {
         for (const cnt of contacts) {
           const bi = wb[cnt.i], bj = wb[cnt.j];
           const vn = (bj.vx - bi.vx) * cnt.nx + (bj.vy - bi.vy) * cnt.ny + (bj.vz - bi.vz) * cnt.nz;
-          let dPn = -(vn - cnt.bias) * 0.5;
+          let dPn = -(vn - cnt.bias) / (cnt.fa + cnt.fb);
           const pn0 = cnt.pn; cnt.pn = Math.max(0, cnt.pn + dPn); dPn = cnt.pn - pn0;
-          bi.vx -= cnt.nx * dPn; bi.vy -= cnt.ny * dPn; bi.vz -= cnt.nz * dPn; bj.vx += cnt.nx * dPn; bj.vy += cnt.ny * dPn; bj.vz += cnt.nz * dPn;
+          applyN(world, wb, cnt, bi, bj, dPn);
           if (k.friction && cnt.pn > 0) {
-            // tangential clamp against mu times the normal impulse — the engine's rule
-            const rvx = bj.vx - bi.vx, rvy = bj.vy - bi.vy, rvz = bj.vz - bi.vz;
+            // tangential clamp against mu times the normal impulse — the engine's
+            // rule, and for rigid members the slip is measured at the MATERIAL
+            // POINT (body velocity plus spin at the arm): interface friction is
+            // what couples two spinning bodies, syncs them, and lets the cold
+            // welds finally take — without it they ride a frictionless bearing
+            ptVel(world, cnt.i, bi, _va); ptVel(world, cnt.j, bj, _vb);
+            const rvx = _vb[0] - _va[0], rvy = _vb[1] - _va[1], rvz = _vb[2] - _va[2];
             const rn2 = rvx * cnt.nx + rvy * cnt.ny + rvz * cnt.nz;
             let tx = rvx - rn2 * cnt.nx, ty = rvy - rn2 * cnt.ny, tz = rvz - rn2 * cnt.nz;
             const dtx = -tx * 0.5, dty = -ty * 0.5, dtz = -tz * 0.5;
@@ -337,9 +435,11 @@ function stepWorld(world, k) {
             if (pl > cap) { const f = cap / pl; npx *= f; npy *= f; npz *= f; }
             const ax2 = npx - cnt.ptx, ay2 = npy - cnt.pty, az2 = npz - cnt.ptz;
             cnt.ptx = npx; cnt.pty = npy; cnt.ptz = npz;
-            bi.vx -= ax2; bi.vy -= ay2; bi.vz -= az2; bj.vx += ax2; bj.vy += ay2; bj.vz += az2;
+            const sc2 = 1 / (cnt.fa + cnt.fb); // through the same effective masses as the normal
+            applyJ(world, cnt, bi, bj, ax2 * sc2, ay2 * sc2, az2 * sc2);
           }
         }
+        conformRigids(world, wb);
       }
       // COLD WELDING: contact that holds still becomes structure — an unwelded
       // touching pair calmer than REWELD_V for REWELD_T frames fuses at its
