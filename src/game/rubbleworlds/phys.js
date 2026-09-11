@@ -386,7 +386,7 @@ function stepWorld(world, k) {
           cnt.fa = Ra ? arm(Ra, bi) : 1; cnt.fb = Rb ? arm(Rb, bj) : 1;
           cnt.Ra = Ra; cnt.Rb = Rb; cnt.ma = bi.m; cnt.mb = bj.m;
           cnt.bias = Math.min(BETA / DT * Math.max(0, cnt.depth - SLOP), BIAS_CAP);
-          if (cnt.pn) { bi.vx -= cnt.nx * cnt.pn; bi.vy -= cnt.ny * cnt.pn; bi.vz -= cnt.nz * cnt.pn; bj.vx += cnt.nx * cnt.pn; bj.vy += cnt.ny * cnt.pn; bj.vz += cnt.nz * cnt.pn; }
+          if (cnt.pn) applyN(world, wb, cnt, bi, bj, cnt.pn); // warm start through the SAME routing as the solver — never directly to a rigid member
           contacts.push(cnt);
         }
       }
@@ -407,7 +407,8 @@ function stepWorld(world, k) {
           const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, d = Math.hypot(dx, dy, dz) || 1;
           if (d > w.rest * WELD_BREAK) { w.alive = false; continue; }
           const nx = dx / d, ny = dy / d, nz = dz / d;
-          const vn = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny + (b.vz - a.vz) * nz;
+          ptVel(world, w.a, a, _va); ptVel(world, w.b, b, _vb);
+          const vn = (_vb[0] - _va[0]) * nx + (_vb[1] - _va[1]) * ny + (_vb[2] - _va[2]) * nz;
           const bias = Math.max(-6, Math.min(6, (WELD_BIAS / DT) * (d - w.rest)));
           const P = -(vn + bias) * 0.5;
           w.acc += Math.abs(P);
@@ -415,7 +416,14 @@ function stepWorld(world, k) {
         }
         for (const cnt of contacts) {
           const bi = wb[cnt.i], bj = wb[cnt.j];
-          const vn = (bj.vx - bi.vx) * cnt.nx + (bj.vy - bi.vy) * cnt.ny + (bj.vz - bi.vz) * cnt.nz;
+          // contact-point velocities come from the BODY state, not the member
+          // blocks — members only re-conform at sweep's end, so reading them
+          // let every interface contact apply a full correction against the
+          // same stale velocities: a fifty-fold overshoot per sweep and the
+          // seed-24199 detonation (2026-09-11). Through ptVel the sweep is
+          // truly sequential over bodies, the war engine's own discipline.
+          ptVel(world, cnt.i, bi, _va); ptVel(world, cnt.j, bj, _vb);
+          const vn = (_vb[0] - _va[0]) * cnt.nx + (_vb[1] - _va[1]) * cnt.ny + (_vb[2] - _va[2]) * cnt.nz;
           let dPn = -(vn - cnt.bias) / (cnt.fa + cnt.fb);
           const pn0 = cnt.pn; cnt.pn = Math.max(0, cnt.pn + dPn); dPn = cnt.pn - pn0;
           applyN(world, wb, cnt, bi, bj, dPn);
