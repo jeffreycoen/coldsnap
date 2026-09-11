@@ -40,6 +40,9 @@ const WELD_BIAS = 0.35;    // weld positional bias — stiff enough that welds c
 const SLEEP_V = 2.2;       // a clump sleeps under this relative speed
 const WAKE_TIDE = 0.35;    // aggregate wakes when tidal spread exceeds this fraction of its own hold
 const MU = 0.6;            // friction coefficient — the war engine's default
+const REWELD_V = 0.3;      // fuse when the NORMAL relative velocity is calmer than this — co-rotating neighbors carry omega-times-spacing tangentially with zero normal motion, so the fuse test must read the normal alone (the raw test never fired in a spinner)
+const REWELD_T = 30;       // dwell frames before the fuse takes — hysteresis against weld-break flicker
+const REWELD_STR = 0.6;    // a formed weld's strength against a born weld's — accretion is weaker than bedrock
 const NEAR_F = 6;          // far-field near radius, in largest-block units
 
 const WELD_STRENGTH_BY_SIZE = { 1: 30, 2: 160, 5: 185 };
@@ -149,9 +152,21 @@ function stepWorld(world, k) {
           let mx = 0, my = 0, mz = 0, mvx = 0, mvy = 0, mvz = 0, M = 0;
           for (const i of ids) { const b = wb[i]; M += b.m; mx += b.x * b.m; my += b.y * b.m; mz += b.z * b.m; mvx += b.vx * b.m; mvy += b.vy * b.m; mvz += b.vz * b.m; }
           mx /= M; my /= M; mz /= M; mvx /= M; mvy /= M; mvz /= M;
+          // THE SPINNING SLEEPER: a merged world keeps its orbital angular momentum
+          // and a rigid spin reads as internal motion to a translation-only calm
+          // test — so no merged spinner could ever sleep (the owner's red log,
+          // 2026-09-11). Fit the clump's rigid rotation about the vertical axis
+          // (the orbital plane's normal) and measure calm as deviation from
+          // rotation plus translation; the aggregate then carries the spin.
+          let Lz = 0, Iy = 0;
+          for (const i of ids) { const b = wb[i]; const rx = b.x - mx, rz = b.z - mz;
+            Lz += b.m * (rx * (b.vz - mvz) - rz * (b.vx - mvx)); Iy += b.m * (rx * rx + rz * rz); }
+          const om = Iy > 1e-9 ? Lz / Iy : 0;
           let rel = 0, rad = 0;
-          for (const i of ids) { const b = wb[i]; rel = Math.max(rel, Math.hypot(b.vx - mvx, b.vy - mvy, b.vz - mvz)); rad = Math.max(rad, Math.hypot(b.x - mx, b.y - my, b.z - mz)); }
-          gInfo.push({ root, ids, mx, my, mz, mvx, mvy, mvz, M, rel, rad });
+          for (const i of ids) { const b = wb[i]; const rx = b.x - mx, rz = b.z - mz;
+            rel = Math.max(rel, Math.hypot(b.vx - mvx + om * rz, b.vy - mvy, b.vz - mvz - om * rx));
+            rad = Math.max(rad, Math.hypot(b.x - mx, b.y - my, b.z - mz)); }
+          gInfo.push({ root, ids, mx, my, mz, mvx, mvy, mvz, M, rel, rad, om });
         }
         world.aggs = [];
         for (const g of gInfo) {
@@ -160,7 +175,7 @@ function stepWorld(world, k) {
           if (world.star && Math.hypot(g.mx - world.star.x, g.my, g.mz - world.star.z) < g.rad + world.star.r + BS * 6) near = true;
           for (const o of gInfo) if (o !== g && Math.hypot(g.mx - o.mx, g.my - o.my, g.mz - o.mz) < g.rad + o.rad + BS * 6) near = true;
           if (!k.sleep || g.ids.length < 10 || near || g.rel >= SLEEP_V) { for (const i of g.ids) wb[i].sleeping = false; continue; }
-          const agg = { x: g.mx, y: g.my, z: g.mz, vx: g.mvx, vy: g.mvy, vz: g.mvz, m: g.M, rad: g.rad, ids: g.ids, clump: g.root, offs: g.ids.map(i => [wb[i].x - g.mx, wb[i].y - g.my, wb[i].z - g.mz]) };
+          const agg = { x: g.mx, y: g.my, z: g.mz, vx: g.mvx, vy: g.mvy, vz: g.mvz, m: g.M, rad: g.rad, ids: g.ids, clump: g.root, om: g.om, offs: g.ids.map(i => [wb[i].x - g.mx, wb[i].y - g.my, wb[i].z - g.mz]) };
           for (const i of g.ids) wb[i].sleeping = true;
           world.aggs.push(agg);
         }
@@ -227,7 +242,15 @@ function stepWorld(world, k) {
         const a = world.aggs[n];
         const [ax, ay, az] = accel(a.x, a.y, a.z, srcs, aggBase + n, world.weak, a.clump);
         a.vx += ax * DT; a.vy += ay * DT; a.vz += az * DT; a.x += a.vx * DT; a.y += a.vy * DT; a.z += a.vz * DT;
-        for (let q = 0; q < a.ids.length; q++) { const b = wb[a.ids[q]]; b.x = a.x + a.offs[q][0]; b.y = a.y + a.offs[q][1]; b.z = a.z + a.offs[q][2]; b.vx = a.vx; b.vy = a.vy; b.vz = a.vz; }
+        // a sleeping top keeps turning: rotate the member offsets by the spin
+        const co = Math.cos(a.om * DT), si = Math.sin(a.om * DT);
+        for (let q = 0; q < a.ids.length; q++) {
+          const o = a.offs[q], ox = o[0], oz = o[2];
+          o[0] = ox * co - oz * si; o[2] = ox * si + oz * co;
+          const b = wb[a.ids[q]];
+          b.x = a.x + o[0]; b.y = a.y + o[1]; b.z = a.z + o[2];
+          b.vx = a.vx - a.om * o[2]; b.vy = a.vy; b.vz = a.vz + a.om * o[0];
+        }
         // proximity wake: an aggregate must be awake BEFORE anything can touch it —
         // sleeping bodies run no contact, and a point-mass flyby is the ship's move, not a planet's
         let near = false;
@@ -318,12 +341,38 @@ function stepWorld(world, k) {
           }
         }
       }
+      // COLD WELDING: contact that holds still becomes structure — an unwelded
+      // touching pair calmer than REWELD_V for REWELD_T frames fuses at its
+      // current spacing, entering the same force-break law at REWELD_STR strength
+      if (k.welds) {
+        if (!world.dwell) world.dwell = new Map();
+        const seen = new Set();
+        for (const cnt of contacts) {
+          const bi = wb[cnt.i], bj = wb[cnt.j];
+          const dv = Math.abs((bj.vx - bi.vx) * cnt.nx + (bj.vy - bi.vy) * cnt.ny + (bj.vz - bi.vz) * cnt.nz);
+          if (dv < REWELD_V) {
+            seen.add(cnt.key);
+            const n = (world.dwell.get(cnt.key) || 0) + 1;
+            if (n >= REWELD_T) {
+              const wq = world.weldOf.get(cnt.key);
+              if (!wq || !wq.alive) {
+                const d = Math.hypot(bj.x - bi.x, bj.y - bi.y, bj.z - bi.z);
+                const nw = { a: cnt.i, b: cnt.j, rest: d, alive: true, acc: 0, gen: 2 };
+                welds.push(nw); world.weldOf.set(cnt.key, nw);
+              }
+              world.dwell.delete(cnt.key);
+            } else world.dwell.set(cnt.key, n);
+          }
+        }
+        for (const key of world.dwell.keys()) if (!seen.has(key)) world.dwell.delete(key);
+      }
       // force break, the war engine's rule: a weld that carried more than its
       // strength this frame tears — stretch alone never fires, because the
       // constraint is what prevents stretch (the unbreakable-weld flyby, 2026-09-11)
       if (k.welds) for (const w of welds) {
         if (!w.alive) continue;
-        if (w.acc > (WELD_STRENGTH_BY_SIZE[world.size] || 30)) w.alive = false; else weldsAlive++;
+        const cap = (WELD_STRENGTH_BY_SIZE[world.size] || 30) * (w.gen === 2 ? REWELD_STR : 1);
+        if (w.acc > cap) w.alive = false; else weldsAlive++;
         w.acc = 0;
       }
       world.warm.clear();

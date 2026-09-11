@@ -94,7 +94,7 @@ function makeScenario(kind, seed, size = 1) {
     // three light moons on circular speed, spaced wide so their mutual tug stays
     // small — measured headless: a lone moon holds a 97-101 band for three minutes
     world.blocks = world_mk(0, 0, 0, 0, 0, BS * 2.85, PMASS);
-    for (const r of [60, 105, 160]) {
+    for (const r of [70, 105, 160]) { // inner moon out to 70: at 60 it wandered inside the planet's no-sleep margin and forbade it to sleep (measured on 0.5.19)
       const rS = r * size, mS = PMASS * size ** 3;
       const v = Math.sqrt(G * mS * rS / Math.pow(rS * rS + SF * SF, 1.15));
       world.blocks.push(...makePlanet(rS, 0, 0, v, 1, rand, BS * 0.9, 80 * size ** 3));
