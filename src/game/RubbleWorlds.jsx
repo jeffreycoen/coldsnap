@@ -54,14 +54,17 @@ export default function RubbleWorlds({ onExit }) {
         e.preventDefault(); return;
       }
       const dx = p.clientX - panDrag.x, dy = p.clientY - panDrag.y;
-      panDrag = { x: p.clientX, y: p.clientY };
+      panDrag = { x: p.clientX, y: p.clientY, moved: (panDrag.moved || 0) + Math.abs(dx) + Math.abs(dy) };
       const sc = world._sc || 1;
       const sx = dx / (2 * C30 * sc), sy = dy / (2 * S30 * sc);
       const cur = world.pan || world._center || { x: 0, z: 0 };
       world.pan = { x: cur.x - (sx + sy), z: cur.z - (sy - sx) };
       e.preventDefault();
     };
-    const pUp = () => { panDrag = null; };
+    const pUp = () => {
+      if (panDrag && world && world.ship && world.shipPhase === "fly" && (panDrag.moved || 0) < 10) world.shipPaused = !world.shipPaused;
+      panDrag = null;
+    };
     c.addEventListener("mousedown", pDown); window.addEventListener("mousemove", pMove); window.addEventListener("mouseup", pUp);
     c.addEventListener("touchstart", pDown, { passive: false }); c.addEventListener("touchmove", pMove, { passive: false });
     c.addEventListener("touchend", pUp); c.addEventListener("touchcancel", pUp);
@@ -71,7 +74,17 @@ export default function RubbleWorlds({ onExit }) {
     burnRef.current = (what) => {
       if (!world || !world.ship) return;
       const aim = world.shipAim;
-      if (what === "plan") { world.shipPhase = "plan"; world.shipAim = { on: false, vx: 0, vz: 0 }; return; }
+      if (what === "plan") { world.shipPhase = "plan"; world.shipPaused = false; world.shipAim = { on: false, vx: 0, vz: 0 }; return; }
+      if (what === "turnL" || what === "turnR" || what === "less" || what === "more") {
+        if (!aim || !aim.on) return;
+        let ang = Math.atan2(aim.vz, aim.vx), mag = Math.hypot(aim.vx, aim.vz);
+        if (what === "turnL") ang -= 0.03; if (what === "turnR") ang += 0.03;
+        if (what === "less") mag = Math.max(2, mag - 3); if (what === "more") mag += 3;
+        const cap = world.shipPhase === "plan" ? Math.min(65, world.ship.fuel) : Math.min(110, world.ship.fuel);
+        mag = Math.min(mag, cap);
+        world.shipAim = { on: true, vx: Math.cos(ang) * mag, vz: Math.sin(ang) * mag };
+        return;
+      }
       if (what === "cancel") { world.shipPhase = "fly"; world.shipAim = { on: false, vx: 0, vz: 0 }; return; }
       if (!aim || !aim.on) return;
       const cost = Math.hypot(aim.vx, aim.vz);
@@ -104,7 +117,7 @@ export default function RubbleWorlds({ onExit }) {
         for (const tk of world.tracks || []) { for (const i2 of [0]) {} }
         for (const tk of world.tracks || []) { const b0 = world.blocks.find(b2 => b2.ship && b2.alive); if (b0 && tk.clump === b0.clump) { world.shipTrack = tk; break; } }
       }
-      const planFrozen = world.ship && world.shipPhase === "plan";
+      const planFrozen = world.ship && (world.shipPhase === "plan" || (world.shipPaused && world.shipPhase === "fly"));
       const tPhys = performance.now();
       for (let rep = 0; rep < (planFrozen ? 0 : reps); rep++) weldsAlive = stepWorld(world, k);
       if (reps > 0) world.stepMs = +((performance.now() - tPhys) / reps).toFixed(2);
@@ -149,11 +162,11 @@ export default function RubbleWorlds({ onExit }) {
       </div>
       {onExit && <div onClick={onExit} style={{ position: "absolute", top: 14, right: 14, background: "rgba(245,244,240,.85)", borderRadius: 10, padding: "8px 12px", border: "1px solid rgba(0,0,0,.06)", cursor: "pointer", userSelect: "none", touchAction: "none", fontSize: 10, fontWeight: 600, letterSpacing: 1, color: "rgba(0,0,0,.45)" }}>⏏ MENU</div>}
       <div style={{ position: "absolute", bottom: 20, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "0 12px" }}>
-        <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
+        {!(ui.phase === "aim" || ui.phase === "plan") && <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
           {SCENES.map(sn => chip(SCENE_LABEL[sn], ui.kind === sn, () => set(k => { k.kind = sn; })))}
-        </div>
+        </div>}
         <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
-          {[1, 2, 5].map(sz => chip("SIZE " + sz + "x", ctl.current.size === sz, () => set(k => { k.size = sz; })))}
+          {!(ui.phase === "aim" || ui.phase === "plan") && [1, 2, 5].map(sz => chip("SIZE " + sz + "x", ctl.current.size === sz, () => set(k => { k.size = sz; })))}
           {[0.5, 1, 2, 5].map(tm => chip(tm === 0.5 ? "×½" : "×" + tm, ctl.current.time === tm, () => setLive(k => { k.time = tm; })))}
           {chip(`WELDS ${ctl.current.welds ? "ON" : "OFF"}`, ctl.current.welds, () => setLive(k => { k.welds = !k.welds; }))}
           {chip(`SLEEP ${ctl.current.sleep ? "ON" : "OFF"}`, ctl.current.sleep, () => setLive(k => { k.sleep = !k.sleep; }))}
@@ -161,7 +174,11 @@ export default function RubbleWorlds({ onExit }) {
           {chip(`FRICTION ${ctl.current.friction ? "ON" : "OFF"}`, ctl.current.friction, () => setLive(k => { k.friction = !k.friction; }))}
           {chip(ui.copied ? "COPIED" : "⊕ LOG", ui.copied, copyLog)}
           {chip("RESET", false, () => set(() => {}))}
-          {ui.phase === "aim" && chip("LAUNCH", true, () => { const w2 = worldRef.current && worldRef.current(); fireBurn("launch"); })}
+          {(ui.phase === "aim" || ui.phase === "plan") && chip("\u25c0", false, () => fireBurn("turnL"))}
+          {(ui.phase === "aim" || ui.phase === "plan") && chip("\u2212", false, () => fireBurn("less"))}
+          {(ui.phase === "aim" || ui.phase === "plan") && chip("+", false, () => fireBurn("more"))}
+          {(ui.phase === "aim" || ui.phase === "plan") && chip("\u25b6", false, () => fireBurn("turnR"))}
+          {ui.phase === "aim" && chip("LAUNCH", true, () => fireBurn("launch"))}
           {ui.phase === "fly" && chip("PLAN BURN", false, () => fireBurn("plan"))}
           {ui.phase === "plan" && chip("EXECUTE", true, () => fireBurn("exec"))}
           {ui.phase === "plan" && chip("CANCEL", false, () => fireBurn("cancel"))}

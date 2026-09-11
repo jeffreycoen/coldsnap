@@ -30,7 +30,7 @@ function drawFrame(env) {
       if (world.hole) { ctrX += world.hole.x * world.hole.m; ctrZ += world.hole.z * world.hole.m; ctrM += world.hole.m; }
       if (world.star) { ctrX += world.star.x * world.star.m; ctrZ += world.star.z * world.star.m; ctrM += world.star.m; }
       world._center = ctrM ? { x: ctrX / ctrM, z: ctrZ / ctrM } : { x: 0, z: 0 };
-      const look = world.pan || world._center;
+      const look = world.pan || (world.ship && world.shipTrack ? { x: world.shipTrack.x, z: world.shipTrack.z } : world._center); // the ark's follow: the camera rides the ship; a drag takes the wheel, double-tap hands it back
       const cx = W / 2 - (look.x - look.z) * C30 * sc, cy = H / 2 - (look.x + look.z) * S30 * sc;
       const iso = (x, z, y) => ({ x: cx + (x - z) * C30 * sc, y: cy + (x + z) * S30 * sc - (y || 0) * 0.9 * sc });
       const lookX = look.x, lookZ = look.z;
@@ -98,6 +98,17 @@ function drawFrame(env) {
           ctx.strokeStyle = i2 >= redFrom ? `rgba(220,55,35,${fade * 0.95})` : `rgba(40,170,90,${fade * 0.85})`;
           ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
         }
+      }
+      if (world.ship && world.shipPhase === "plan") {
+        ctx.font = "600 11px -apple-system,sans-serif"; ctx.fillStyle = "rgba(60,130,220,.55)"; ctx.textAlign = "center";
+        ctx.fillText("TIME FROZEN \u2014 DRAG TO AIM BURN", W / 2, 24); ctx.textAlign = "left";
+      }
+      if (world.ship && world.shipPaused && world.shipPhase === "fly") {
+        ctx.fillStyle = "rgba(245,244,240,.45)"; ctx.fillRect(0, 0, W, H);
+        ctx.font = "200 22px -apple-system,sans-serif"; ctx.fillStyle = "rgba(0,0,0,.35)"; ctx.textAlign = "center";
+        ctx.fillText("PAUSED", W / 2, H / 2);
+        ctx.font = "400 10px -apple-system,sans-serif"; ctx.fillStyle = "rgba(0,0,0,.2)";
+        ctx.fillText("tap to resume", W / 2, H / 2 + 20); ctx.textAlign = "left";
       }
       // the ship's aim arrow, the ark's own gesture
       if (world.shipAim && world.shipAim.on && world.shipTrack) {
