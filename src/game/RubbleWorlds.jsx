@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { MK } from "../version.js";
 import { stepWorld, predictShip, shipConn, C30, S30 } from "./rubbleworlds/phys.js";
-import { makeScenario, SCENES, SCENE_LABEL } from "./rubbleworlds/gen.js";
+import { makeScenario, SCENES, SCENE_LABEL, HULL_LIST, HULL_LABEL } from "./rubbleworlds/gen.js";
 import { drawFrame } from "./rubbleworlds/draw.js";
 
 // RUBBLE WORLDS — block planets under real gravity, a proving-range demo.
@@ -11,7 +11,7 @@ export default function RubbleWorlds({ onExit }) {
   const cvs = useRef(null);
   const worldRef = useRef(null);
   const [ui, setUi] = useState({ kind: "binary", welds: true, sleep: true, seed: 0, fps: 0, awake: 0, asleep: 0, eaten: 0, weldsAlive: 0, copied: false });
-  const ctl = useRef({ kind: "binary", welds: true, sleep: true, hash: false, friction: false, time: 1, size: 1, reset: 1 });
+  const ctl = useRef({ kind: "binary", welds: true, sleep: true, hash: false, friction: false, time: 1, size: 1, hull: "longrange", reset: 1 });
   const copyLog = () => {
     const data = worldRef.current && worldRef.current();
     if (!data) return;
@@ -89,7 +89,7 @@ export default function RubbleWorlds({ onExit }) {
     c.addEventListener("touchstart", pDown, { passive: false }); c.addEventListener("touchmove", pMove, { passive: false });
     c.addEventListener("touchend", pUp); c.addEventListener("touchcancel", pUp);
     let world = null, seed = 0, lastReset = 0, anim, frame = 0, renderF = 0, tPrev = performance.now();
-    worldRef.current = () => world && { seed, kind: ctl.current.kind, size: ctl.current.size, welds: ctl.current.welds, sleep: ctl.current.sleep, mk: MK, log: world.log };
+    worldRef.current = () => world && { seed, kind: ctl.current.kind, size: ctl.current.size, hull: ctl.current.hull, welds: ctl.current.welds, sleep: ctl.current.sleep, mk: MK, log: world.log };
     // the ark's two-mode burns, landing on the rigid hull as uniform delta-v
     burnRef.current = (what) => {
       if (!world || !world.ship) return;
@@ -124,7 +124,7 @@ export default function RubbleWorlds({ onExit }) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       if (k.reset !== lastReset) {
         lastReset = k.reset; seed = Math.floor(Math.random() * 100000);
-        world = makeScenario(k.kind, seed, k.size);
+        world = makeScenario(k.kind, seed, k.size, k.hull);
         if (world.ship) {
           stepWorld(world, k); // one priming step: tracks and orbit lines exist before the aim freeze — the t26 intent, landed now
           const b0 = world.blocks.find(b2 => b2.ship && b2.alive);
@@ -157,6 +157,12 @@ export default function RubbleWorlds({ onExit }) {
       if (world.ship && !world.shipDead) {
         const cab2 = world.blocks.find(b2 => b2.ship && b2.cab);
         if (cab2 && !cab2.alive) { world.shipDead = true; world.deadAt = world.t; } // the wreck keeps drifting; only the flight ends
+      }
+      if (world.ship) { // the tanks hold the fuel: a tank lost or torn off spills its share on the spot
+        const c3 = shipConn(world);
+        let tk = 0; if (c3) for (const b3 of c3.set) if (b3.tank) tk++;
+        const cap = 100 + 210 * tk;
+        if (world.ship.fuel > cap) world.ship.fuel = cap;
       }
 
       drawFrame({ ctx, W, H, world, frame: world.frame });
@@ -208,6 +214,9 @@ export default function RubbleWorlds({ onExit }) {
       <div style={{ position: "absolute", bottom: 20, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "0 12px" }}>
         {!(ui.phase === "aim" || ui.phase === "plan") && <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
           {SCENES.map(sn => chip(SCENE_LABEL[sn], ui.kind === sn, () => set(k => { k.kind = sn; })))}
+        </div>}
+        {ui.phase === "aim" && <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
+          {HULL_LIST.map(hn => chip(HULL_LABEL[hn], ctl.current.hull === hn, () => set(k => { k.hull = hn; })))}
         </div>}
         <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
           {!(ui.phase === "aim" || ui.phase === "plan") && [1, 2, 5].map(sz => chip("SIZE " + sz + "x", ctl.current.size === sz, () => set(k => { k.size = sz; })))}

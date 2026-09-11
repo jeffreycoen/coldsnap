@@ -136,8 +136,8 @@ function drawFrame(env) {
       // cone, shock diamonds, white-hot core — anchored on the aft module,
       // pointed against the burn, thrust-scaled, decaying over the burn's moment
       if (world.flame && world.frame - world.flame.f0 < world.flame.dur) {
-        const eng = wb.find(b2 => b2.ship && b2.eng && b2.alive);
-        if (eng) {
+        for (const eng of wb) {
+          if (!(eng.ship && eng.eng && eng.alive)) continue;
           const fl = world.flame, age = (world.frame - fl.f0) / fl.dur;
           const th = (1 - age) * Math.min(1, fl.mag / 65);
           const f = (0.85 + 0.15 * Math.sin(world.frame * 0.57)) * Math.max(th, 0.001);

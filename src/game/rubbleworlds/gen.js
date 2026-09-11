@@ -27,10 +27,26 @@ function buildWelds(blocks) {
   return welds;
 }
 
+// THE HULLS: the deadweight hangar's eight blueprints, cell for cell from
+// docs/superpowers/reference/deadweight-hangar.html. The bridge is the cabin,
+// engines and tanks work; every other part rides as a plain hull block —
+// weight that can be wounded and torn, its machinery left to later phases.
+const HULLS = {
+  starter: [["bridge", 0, 0], ["engine", -1, 0], ["pod", 1, 0]],
+  courier: [["bridge", 0, 0], ["pod", 1, 0], ["engine", 0, -1], ["engine", 0, 1]],
+  longrange: [["bridge", 0, 0], ["engine", -1, 0], ["pod", 1, 0], ["tank", 0, 1], ["tank", 0, -1]],
+  hauler: [["bridge", 0, 0], ["engine", -1, 0], ["pod", 1, 0], ["pod", 2, 0], ["pod", 1, -1], ["pod", 1, 1], ["rcs", 2, 1]],
+  wingturner: [["bridge", 0, 0], ["engine", -1, 0], ["pod", 1, 0], ["strut", 1, 1], ["strut", 1, 2], ["rcs", 1, 3]],
+  gunboat: [["bridge", 0, 0], ["engine", -1, 0], ["pod", 1, 0], ["pod", 1, 1], ["pod", 1, -1], ["mount", 2, 0], ["rack", 2, 1], ["shield", 2, -1]],
+  catamaran: [["bridge", 0, 0], ["strut", 0, -1], ["pod", 0, -2], ["engine", -1, -2], ["pod", 1, -2], ["rcs", 2, -2], ["strut", 0, 1], ["pod", 0, 2], ["engine", -1, 2], ["pod", 1, 2], ["rcs", 2, 2]],
+  grappler: [["bridge", 0, 0], ["engine", 0, -1], ["engine", 0, 1], ["tank", -1, 0], ["pod", 1, 0], ["pod", 2, 0], ["grapple", 3, 0], ["rcs", 1, 1], ["rcs", 1, -1]],
+};
+const HULL_LIST = ["starter", "courier", "longrange", "hauler", "wingturner", "gunboat", "catamaran", "grappler"];
+const HULL_LABEL = { starter: "STARTER", courier: "COURIER", longrange: "LONG-RANGE", hauler: "HAULER", wingturner: "WING TURNER", gunboat: "GUNBOAT", catamaran: "CATAMARAN", grappler: "GRAPPLER" };
 const SCENES = ["ship", "binary", "duet", "moons", "trio", "system", "hole"];
 const SCENE_LABEL = { ship: "SHIP", binary: "TWINS", duet: "DUET", moons: "MOONS", trio: "TRIO", system: "SYSTEM", hole: "HOLE" };
 // weld strength per planet size — measured calm loads 17/90/105, same 1.76x margin each
-function makeScenario(kind, seed, size = 1) {
+function makeScenario(kind, seed, size = 1, hull = "longrange") {
   const rand = makeRand(seed);
   const world = { kind, size, blocks: [], welds: [], hole: null, eaten: 0, aggs: [], wells: [], warm: new Map(), t: 0, frame: 0, log: [] };
   // SIZE arm: every planet's radius scales by `size`, its mass by size cubed,
@@ -43,17 +59,21 @@ function makeScenario(kind, seed, size = 1) {
   // mixed-pitch configurations measured 2026-09-11, none stable at the seams.
   const world_mk = (cx, cz, vx, vz, tint, R1, m1) => makePlanet(cx * size, cz * size, vx, vz, tint, rand, R1 * size, m1 * size ** 3, BS * size);
   if (kind === "ship") {
-    // THE SHIP: a five-module cross — cabin center, engine aft, a tank each
-    // side, nose fore — welded, rigid at any size, and its welds NEVER reform:
-    // damage stays damage. It flies the ark's way: aim a burn, spend fuel.
+    // THE SHIP: a deadweight blueprint, welded, rigid at any size, and its
+    // welds NEVER reform: damage stays damage. It flies the ark's way: aim a
+    // burn, spend fuel. Fuel lives in the cabin's reserve of 100 plus 210 in
+    // each tank — the long-range cross keeps its 520.
     world.blocks = makePlanet(0, 0, 0, 0, 0, rand);
     const mr = 105 * size, mv = Math.sqrt(G * PMASS * size ** 3 * mr / Math.pow(mr * mr + SF * SF, 1.15));
     world.blocks.push(...makePlanet(mr, 0, 0, mv, 1, rand, BS * 0.9, 80 * size ** 3));
     const sx = -200 * size, sz = 80 * size;
-    for (const [ox, oz] of [[0, 0], [-BS, 0], [BS, 0], [0, -BS], [0, BS]]) {
-      world.blocks.push({ x: sx + ox, y: 0, z: sz + oz, vx: 0, vy: 0, vz: 0, tint: 2, ship: true, eng: ox === -BS && oz === 0, cab: ox === 0 && oz === 0, hp: 100, alive: true, sleeping: false, clump: -1, s: BS, cr: BS * 0.55, m: 120 });
+    const bp = HULLS[hull] || HULLS.longrange;
+    let tanks = 0;
+    for (const [pt, gx, gy] of bp) {
+      if (pt === "tank") tanks++;
+      world.blocks.push({ x: sx + gx * BS, y: 0, z: sz + gy * BS, vx: 0, vy: 0, vz: 0, tint: 2, ship: true, eng: pt === "engine", cab: pt === "bridge", tank: pt === "tank", hp: 100, alive: true, sleeping: false, clump: -1, s: BS, cr: BS * 0.55, m: 120 });
     }
-    world.ship = { fuel: 520, max: 520, burns: 0 };
+    world.ship = { fuel: 100 + 210 * tanks, max: 100 + 210 * tanks, burns: 0 };
     world.shipPhase = "aim";
     world.gate = { x: 210 * size, z: -90 * size, r: 36, reached: false }; // the ark's ring, absolute radius
     world.span = 260 * size;
@@ -135,4 +155,4 @@ function makeScenario(kind, seed, size = 1) {
 // gravity of every source on (x,y,z), skipping index `self`. Under the
 // mission law (weak=true) two different clumps pull at 1% — the ark's own
 // planet-to-planet rule; the star and the hole always pull at full strength.
-export { makeRand, makePlanet, buildWelds, makeScenario, SCENES, SCENE_LABEL };
+export { makeRand, makePlanet, buildWelds, makeScenario, SCENES, SCENE_LABEL, HULLS, HULL_LIST, HULL_LABEL };
