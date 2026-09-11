@@ -1,25 +1,33 @@
 import React, { useEffect, useRef, useState } from "react";
 
 // RUBBLE WORLDS — block planets under real gravity, a proving-range demo.
-// The cross of both games: coldsnap's cubes, the ark's sky. Planets are true
-// spheres built from cube blocks in a 3D lattice, physics runs in all three
-// axes under the ark's 1/r^2.3 softened law, and the ark's gravity-well grid
-// bends under every clump. Two scenarios: BINARY (two block spheres in a
-// decaying mutual orbit that meet and merge) and BLACK HOLE (a sphere
-// streaming past an event horizon in pieces, the hole growing as it eats).
-// Soft repulsion keeps blocks apart and bleeds orbital energy in pileups.
-// WELDS and SLEEP are live test arms: welds are neighbor springs that tear
-// past a stretch limit; sleep collapses calm clumps into aggregate bodies
-// woken by tide or touch. Every tuning number is a design choice until
-// watched. The seed is rolled fresh at mount and shown on the panel.
+// The cross of both games: coldsnap's cubes and coldsnap's SOLVER under the
+// ark's sky. Contact is not a force here — it is a constraint, solved the
+// way the war engine solves it: sequential impulses, accumulated and clamped,
+// a capped positional bias, warm-started between frames. Springs lost to
+// self-gravity and detonated or collapsed; constraints hold any load, which
+// is why coldsnap stacks stand and real rubble keeps its shape. Welds are
+// distance constraints in the same iteration loop, breaking past a stretch
+// ratio — a welded planet meets the tide as one body, a rubble pile sheds.
+// Planets are true spheres of cubes in a 3D lattice, lit by their outward
+// face from the clump center. The gravity-well grid re-reads every clump
+// every frame. Two scenarios: BINARY (a decaying mutual orbit, met and
+// merged into one bound, spinning world — measured headless: contact near
+// 14.5 seconds, bound inside radius ~40 after a minute) and BLACK HOLE
+// (53% of circular sits just inside the capture threshold — streaming from
+// 4 seconds, roughly two thirds eaten across two minutes). SLEEP collapses
+// calm clumps into aggregates that wake by proximity or tide before anything
+// can touch them. Every tuning number is a design choice until watched.
+// The seed is rolled fresh at mount and shown on the panel.
 const DT = 1 / 60, SF = 8, G = 210, C30 = Math.cos(Math.PI / 6), S30 = 0.5;
 const BS = 6;              // block edge in sim units
 const BR = BS * 0.55;      // contact radius
 const PMASS = 6000;        // one planet's whole mass — parity with the ark's planets
-const KSOFT = 150;         // soft-repulsion stiffness — 900 was unstable at the 1/60 step and detonated every contact; 150 measured bound
-const CDAMP = 10;          // contact normal damping — the energy bleed
-const WELD_K = 260;        // weld spring stiffness
-const WELD_BREAK = 1.9;    // weld tears past this stretch ratio
+const ITERS = 8;           // solver sweeps per frame — the war engine tiers 4-12
+const SLOP = 0.05;         // penetration allowance before the bias pushes
+const BETA = 0.18;         // Baumgarte factor, the engine's own number
+const BIAS_CAP = 5;        // bias ceiling, the engine's own number
+const WELD_BREAK = 1.35;   // weld tears past this stretch ratio
 const SLEEP_V = 2.2;       // a clump sleeps under this relative speed
 const WAKE_TIDE = 0.35;    // aggregate wakes when tidal spread exceeds this fraction of its own hold
 
@@ -50,12 +58,12 @@ function buildWelds(blocks) {
 
 function makeScenario(kind, seed) {
   const rand = makeRand(seed);
-  const world = { kind, blocks: [], welds: [], hole: null, eaten: 0, aggs: [], wells: [], t: 0 };
+  const world = { kind, blocks: [], welds: [], hole: null, eaten: 0, aggs: [], wells: [], warm: new Map(), t: 0 };
   if (kind === "binary") {
     const d = 190;
-    // half the circular speed for this law — measured headless in 3D with the
-    // stable contact: first contact near 14.5 seconds, merged by 19, and the
-    // pile stays bound — every block inside radius 200 a minute after the meeting
+    // half the circular speed for this law — measured headless with the
+    // constraint solver: first contact near 14.5 seconds, and the merged
+    // world stays bound inside radius ~40 a minute after the meeting
     const vOrb = Math.sqrt(G * PMASS * d / Math.pow(2 * d, 2.3)) * 0.5;
     world.blocks = [
       ...makePlanet(-d, 0, 0, -vOrb, 0, rand),
@@ -64,9 +72,9 @@ function makeScenario(kind, seed) {
   } else {
     world.hole = { x: 0, z: 0, m: 42000, killR: 26 };
     const px = 240;
-    // 53% of circular sits just inside the capture threshold — measured headless
-    // in 3D with the stable contact: streaming from 4 seconds, 86 of 93 eaten
-    // across two minutes, a thin tail of survivors
+    // 53% of circular sits just inside the capture threshold — measured
+    // headless with the constraint solver: streaming from 4 seconds,
+    // 66 of 93 eaten weldless across two minutes, 51 welded
     const v = Math.sqrt(G * world.hole.m / Math.pow(px, 1.3)) * 0.53;
     world.blocks = makePlanet(px, 0, 0, v, 0, rand);
   }
@@ -86,7 +94,7 @@ function accel(x, y, z, srcs, self) {
   return [ax, ay, az];
 }
 
-// the ark's well depth, read from the coarse wells (clump centers + the hole)
+// the ark's well depth, read from the live wells (clump centers + the hole)
 function wellPot(x, z, wells) {
   let p = 0;
   for (const w of wells) { const r2 = (w.x - x) ** 2 + (w.z - z) ** 2 + SF * SF; p -= G * w.m / (1.3 * Math.pow(r2, 0.65)); }
@@ -124,16 +132,13 @@ export default function RubbleWorlds({ onExit }) {
           if (dx * dx + dy * dy + dz * dz < (BS * 1.35) ** 2) { const a = find(i), b = find(j); if (a !== b) par[b] = a; } } }
         const groups = new Map();
         for (let i = 0; i < wb.length; i++) { if (!wb[i].alive) continue; const r = find(i); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(i); wb[i].clump = r; }
-        // the grid's wells: every clump's center and mass, plus the hole below
-        world.wells = [];
+        world.groups = groups;
         world.aggs = [];
         for (const [root, ids] of groups) {
-          let mx = 0, mz = 0, my = 0, mvx = 0, mvy = 0, mvz = 0, M = 0;
+          if (!k.sleep || ids.length < 10) { for (const i of ids) wb[i].sleeping = false; continue; }
+          let mx = 0, my = 0, mz = 0, mvx = 0, mvy = 0, mvz = 0, M = 0;
           for (const i of ids) { const b = wb[i]; M += b.m; mx += b.x * b.m; my += b.y * b.m; mz += b.z * b.m; mvx += b.vx * b.m; mvy += b.vy * b.m; mvz += b.vz * b.m; }
           mx /= M; my /= M; mz /= M; mvx /= M; mvy /= M; mvz /= M;
-          world.wells.push({ x: mx, z: mz, m: M });
-          // sleep pass: a big, calm clump becomes an aggregate
-          if (!k.sleep || ids.length < 10) { for (const i of ids) wb[i].sleeping = false; continue; }
           let rel = 0, rad = 0;
           for (const i of ids) { const b = wb[i]; rel = Math.max(rel, Math.hypot(b.vx - mvx, b.vy - mvy, b.vz - mvz)); rad = Math.max(rad, Math.hypot(b.x - mx, b.y - my, b.z - mz)); }
           if (rel < SLEEP_V) {
@@ -142,8 +147,20 @@ export default function RubbleWorlds({ onExit }) {
             world.aggs.push(agg);
           } else for (const i of ids) wb[i].sleeping = false;
         }
-        if (world.hole) world.wells.push({ x: world.hole.x, z: world.hole.z, m: world.hole.m });
       }
+
+      // --- LIVE WELLS every frame: the grid must not lag the mass ---
+      world.wells = [];
+      world.clumpCenter = new Map();
+      if (world.groups) for (const [root, ids] of world.groups) {
+        let mx = 0, my = 0, mz = 0, M = 0, n = 0;
+        for (const i of ids) { const b = wb[i]; if (!b.alive) continue; M += b.m; mx += b.x * b.m; my += b.y * b.m; mz += b.z * b.m; n++; }
+        if (!n) continue;
+        mx /= M; my /= M; mz /= M;
+        world.wells.push({ x: mx, z: mz, m: M });
+        world.clumpCenter.set(root, [mx, my, mz]);
+      }
+      if (world.hole) world.wells.push({ x: world.hole.x, z: world.hole.z, m: world.hole.m });
 
       // --- SOURCES: awake blocks + aggregates + the hole ---
       const srcs = [];
@@ -153,61 +170,77 @@ export default function RubbleWorlds({ onExit }) {
       for (const a of world.aggs) srcs.push(a);
       if (world.hole) srcs.push(world.hole);
 
-      // --- INTEGRATE awake blocks (kick-drift) ---
+      // --- GRAVITY KICK on awake blocks ---
       for (let n = 0; n < awakeIdx.length; n++) {
         const b = wb[awakeIdx[n]];
         const [ax, ay, az] = accel(b.x, b.y, b.z, srcs, n);
-        b.vx += ax * DT; b.vy += ay * DT; b.vz += az * DT; b.x += b.vx * DT; b.y += b.vy * DT; b.z += b.vz * DT;
+        b.vx += ax * DT; b.vy += ay * DT; b.vz += az * DT;
       }
-      // --- INTEGRATE aggregates as single bodies; members ride as offsets ---
+      // --- AGGREGATES integrate as single bodies; members ride as offsets ---
       for (let n = 0; n < world.aggs.length; n++) {
         const a = world.aggs[n];
         const [ax, ay, az] = accel(a.x, a.y, a.z, srcs, aggBase + n);
         a.vx += ax * DT; a.vy += ay * DT; a.vz += az * DT; a.x += a.vx * DT; a.y += a.vy * DT; a.z += a.vz * DT;
         for (let q = 0; q < a.ids.length; q++) { const b = wb[a.ids[q]]; b.x = a.x + a.offs[q][0]; b.y = a.y + a.offs[q][1]; b.z = a.z + a.offs[q][2]; b.vx = a.vx; b.vy = a.vy; b.vz = a.vz; }
-        // wake by tide: gravity spread across the clump against its own hold
-        let ext = 0;
-        if (world.hole) { const d = Math.hypot(a.x - world.hole.x, a.y, a.z - world.hole.z); ext = Math.max(ext, G * world.hole.m * (Math.pow(Math.max(d - a.rad, SF), -2.3) - Math.pow(d + a.rad, -2.3))); }
-        for (const o of world.aggs) if (o !== a) { const d = Math.hypot(a.x - o.x, a.y - o.y, a.z - o.z); ext = Math.max(ext, G * o.m * (Math.pow(Math.max(d - a.rad, SF), -2.3) - Math.pow(d + a.rad, -2.3))); }
-        const hold = G * a.m / Math.pow(Math.max(a.rad, SF), 2.3);
         // proximity wake: an aggregate must be awake BEFORE anything can touch it —
         // sleeping bodies run no contact, and a point-mass flyby is the ship's move, not a planet's
         let near = false;
         if (world.hole && Math.hypot(a.x - world.hole.x, a.y, a.z - world.hole.z) < a.rad + world.hole.killR + BS * 6) near = true;
         for (const o of world.aggs) if (o !== a && !o.dead && Math.hypot(a.x - o.x, a.y - o.y, a.z - o.z) < a.rad + o.rad + BS * 4) near = true;
+        let ext = 0;
+        if (world.hole) { const d = Math.hypot(a.x - world.hole.x, a.y, a.z - world.hole.z); ext = Math.max(ext, G * world.hole.m * (Math.pow(Math.max(d - a.rad, SF), -2.3) - Math.pow(d + a.rad, -2.3))); }
+        for (const o of world.aggs) if (o !== a) { const d = Math.hypot(a.x - o.x, a.y - o.y, a.z - o.z); ext = Math.max(ext, G * o.m * (Math.pow(Math.max(d - a.rad, SF), -2.3) - Math.pow(d + a.rad, -2.3))); }
+        const hold = G * a.m / Math.pow(Math.max(a.rad, SF), 2.3);
         if (near || ext > hold * WAKE_TIDE) { for (const i of a.ids) wb[i].sleeping = false; a.dead = true; }
       }
       world.aggs = world.aggs.filter(a => !a.dead);
 
-      // --- CONTACT: soft repulsion with normal damping; sleeping blocks wake on touch ---
+      // --- CONTACTS: collect, warm-start, then solve with the welds ---
+      const contacts = []; const cd2 = (BR * 2) ** 2;
       for (let p = 0; p < awakeIdx.length; p++) {
         const i = awakeIdx[p], bi = wb[i];
         for (let j = 0; j < wb.length; j++) {
           if (j <= i || !wb[j].alive) continue;
           const bj = wb[j];
-          const dx = bj.x - bi.x, dy = bj.y - bi.y, dz = bj.z - bi.z, d2 = dx * dx + dy * dy + dz * dz, cd = BR * 2;
-          if (d2 > cd * cd || d2 === 0) continue;
+          const dx = bj.x - bi.x, dy = bj.y - bi.y, dz = bj.z - bi.z, d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 > cd2 || d2 === 0) continue;
           if (bj.sleeping) { const cl = bj.clump; for (const b2 of wb) if (b2.clump === cl) b2.sleeping = false; world.aggs = world.aggs.filter(a => !a.ids.includes(j)); }
-          const d = Math.sqrt(d2), nx = dx / d, ny = dy / d, nz = dz / d, ov = cd - d;
-          const rv = (bj.vx - bi.vx) * nx + (bj.vy - bi.vy) * ny + (bj.vz - bi.vz) * nz;
-          const f = (KSOFT * ov - CDAMP * rv * Math.min(ov, BR)) * DT * 0.5;
-          bi.vx -= nx * f; bi.vy -= ny * f; bi.vz -= nz * f; bj.vx += nx * f; bj.vy += ny * f; bj.vz += nz * f;
+          const d = Math.sqrt(d2);
+          const cnt = { i, j, nx: dx / d, ny: dy / d, nz: dz / d, depth: BR * 2 - d, pn: world.warm.get(i * 100000 + j) || 0 };
+          cnt.bias = Math.min(BETA / DT * Math.max(0, cnt.depth - SLOP), BIAS_CAP);
+          if (cnt.pn) { bi.vx -= cnt.nx * cnt.pn; bi.vy -= cnt.ny * cnt.pn; bi.vz -= cnt.nz * cnt.pn; bj.vx += cnt.nx * cnt.pn; bj.vy += cnt.ny * cnt.pn; bj.vz += cnt.nz * cnt.pn; }
+          contacts.push(cnt);
         }
       }
-
-      // --- WELDS: springs that tear ---
       let weldsAlive = 0;
-      if (k.welds) for (const w of welds) {
-        if (!w.alive) continue;
-        const a = wb[w.a], b = wb[w.b];
-        if (!a.alive || !b.alive) { w.alive = false; continue; }
-        if (a.sleeping && b.sleeping) { weldsAlive++; continue; }
-        const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
-        if (d > w.rest * WELD_BREAK) { w.alive = false; continue; }
-        weldsAlive++;
-        const f = WELD_K * (d - w.rest) / d * DT;
-        a.vx += dx * f; a.vy += dy * f; a.vz += dz * f; b.vx -= dx * f; b.vy -= dy * f; b.vz -= dz * f;
+      for (let it = 0; it < ITERS; it++) {
+        if (k.welds) for (const w of welds) {
+          if (!w.alive) continue;
+          const a = wb[w.a], b = wb[w.b];
+          if (!a.alive || !b.alive) { w.alive = false; continue; }
+          if (a.sleeping && b.sleeping) continue;
+          const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, d = Math.hypot(dx, dy, dz) || 1;
+          if (d > w.rest * WELD_BREAK) { w.alive = false; continue; }
+          const nx = dx / d, ny = dy / d, nz = dz / d;
+          const vn = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny + (b.vz - a.vz) * nz;
+          const bias = Math.max(-3, Math.min(3, (0.12 / DT) * (d - w.rest)));
+          const P = -(vn + bias) * 0.5;
+          a.vx -= nx * P; a.vy -= ny * P; a.vz -= nz * P; b.vx += nx * P; b.vy += ny * P; b.vz += nz * P;
+        }
+        for (const cnt of contacts) {
+          const bi = wb[cnt.i], bj = wb[cnt.j];
+          const vn = (bj.vx - bi.vx) * cnt.nx + (bj.vy - bi.vy) * cnt.ny + (bj.vz - bi.vz) * cnt.nz;
+          let dPn = -(vn - cnt.bias) * 0.5;
+          const pn0 = cnt.pn; cnt.pn = Math.max(0, cnt.pn + dPn); dPn = cnt.pn - pn0;
+          bi.vx -= cnt.nx * dPn; bi.vy -= cnt.ny * dPn; bi.vz -= cnt.nz * dPn; bj.vx += cnt.nx * dPn; bj.vy += cnt.ny * dPn; bj.vz += cnt.nz * dPn;
+        }
       }
+      if (k.welds) for (const w of welds) if (w.alive) weldsAlive++;
+      world.warm.clear();
+      for (const cnt of contacts) world.warm.set(cnt.i * 100000 + cnt.j, cnt.pn);
+
+      // --- DRIFT awake blocks ---
+      for (const i of awakeIdx) { const b = wb[i]; b.x += b.vx * DT; b.y += b.vy * DT; b.z += b.vz * DT; }
 
       // --- THE HOLE EATS at the event horizon ---
       if (world.hole) for (const b of wb) {
@@ -218,7 +251,6 @@ export default function RubbleWorlds({ onExit }) {
 
       // --- DRAW ---
       ctx.fillStyle = "#f5f4f0"; ctx.fillRect(0, 0, W, H);
-      // faint starfield, the ark's sky
       for (let i = 0; i < 60; i++) { const sx3 = ((i * 7919 + 37) * 3.7) % W, sy3 = ((i * 4967 + 13) * 2.3) % H; ctx.fillStyle = `rgba(0,0,20,${i % 5 === 0 ? 0.06 : 0.03})`; ctx.fillRect(sx3, sy3, i % 7 === 0 ? 1.5 : 1, i % 7 === 0 ? 1.5 : 1); }
       let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
       const pts = [...wb.filter(b => b.alive), ...(world.hole ? [world.hole] : [])];
@@ -226,7 +258,6 @@ export default function RubbleWorlds({ onExit }) {
       const sc = Math.min(W * 0.82 / Math.max(maxX - minX + 80, 120), H * 0.62 / Math.max(maxY - minY + 80, 120), 2.2);
       const cx = W / 2 - (minX + maxX) / 2 * sc, cy = H / 2 - (minY + maxY) / 2 * sc;
       const iso = (x, z, y) => ({ x: cx + (x - z) * C30 * sc, y: cy + (x + z) * S30 * sc - (y || 0) * 0.9 * sc });
-      // the ark's gravity grid, bent by the wells, following the scene center
       const lookX = ((minX + maxX) / 2) / (2 * C30) + ((minY + maxY) / 2) / (2 * S30);
       const lookZ = ((minY + maxY) / 2) / (2 * S30) - ((minX + maxX) / 2) / (2 * C30);
       const gN = 56, gSp = 16, halfG = gN * gSp / 2;
@@ -245,7 +276,6 @@ export default function RubbleWorlds({ onExit }) {
         const a = fade * 0.18 + w * 0.5; if (a < 0.005) continue;
         ctx.beginPath(); ctx.moveTo(gxa[iz], gya[iz]); for (let ix = 1; ix <= gN; ix++) ctx.lineTo(gxa[ix * (gN + 1) + iz], gya[ix * (gN + 1) + iz]);
         ctx.strokeStyle = `rgba(45,55,75,${a})`; ctx.stroke(); }
-      // the hole: photon rim, black body, dashed event horizon on the grid
       if (world.hole) {
         const hp = iso(world.hole.x, world.hole.z, 0), hr = Math.max(world.hole.killR * sc, 6);
         const g2 = ctx.createRadialGradient(hp.x, hp.y, hr * 0.6, hp.x, hp.y, hr * 2.6);
@@ -257,22 +287,26 @@ export default function RubbleWorlds({ onExit }) {
         ctx.beginPath(); ctx.arc(hp.x, hp.y, hr * 1.5, 0, Math.PI * 2);
         ctx.strokeStyle = "rgba(120,80,180,.3)"; ctx.lineWidth = 1; ctx.setLineDash([4, 5]); ctx.stroke(); ctx.setLineDash([]);
       }
-      // blocks as coldsnap cubes: top face and two sides, far-to-near
-      const tints = [
-        { top: "#8fa3cc", left: "#5a6c94", right: "#3e4c6e", sTop: "#6a7a9c", sLeft: "#485674", sRight: "#343e58" },
-        { top: "#cc9a72", left: "#96684a", right: "#6e4834", sTop: "#9c7a5e", sLeft: "#745442", sRight: "#583c2e" },
-      ];
+      // blocks as coldsnap cubes lit by their outward face — the sun sits up-left
+      const tints = [[126, 148, 196], [188, 134, 92]];
+      const LX = -0.55, LY = 0.72, LZ = -0.42; // unit-ish light direction, toward the sun
       const order = [];
       for (const b of wb) if (b.alive) order.push(b);
       order.sort((a, b) => (a.x + a.z) - (b.x + b.z) || a.y - b.y);
       const hw = Math.max(BS * sc * C30 * 0.5, 1.2), hh = Math.max(BS * sc * S30 * 0.5, 0.7), vh = Math.max(BS * sc * 0.9, 1.6);
+      const shade = (rgb, f) => `rgb(${Math.round(rgb[0] * f)},${Math.round(rgb[1] * f)},${Math.round(rgb[2] * f)})`;
       for (const b of order) {
-        const p = iso(b.x, b.z, b.y), t = tints[b.tint], s = b.sleeping;
-        ctx.fillStyle = s ? t.sLeft : t.left;
+        const cc = world.clumpCenter && world.clumpCenter.get(b.clump);
+        let lam = 0.55;
+        if (cc) { const ox = b.x - cc[0], oy = b.y - cc[1], oz = b.z - cc[2], ol = Math.hypot(ox, oy, oz) || 1;
+          lam = 0.45 + 0.55 * Math.max(0, (ox / ol) * LX + (oy / ol) * LY + (oz / ol) * LZ); }
+        if (b.sleeping) lam *= 0.82;
+        const p = iso(b.x, b.z, b.y), rgb = tints[b.tint];
+        ctx.fillStyle = shade(rgb, lam * 0.72);
         ctx.beginPath(); ctx.moveTo(p.x - hw, p.y - hh); ctx.lineTo(p.x, p.y); ctx.lineTo(p.x, p.y + vh); ctx.lineTo(p.x - hw, p.y + vh - hh); ctx.closePath(); ctx.fill();
-        ctx.fillStyle = s ? t.sRight : t.right;
+        ctx.fillStyle = shade(rgb, lam * 0.5);
         ctx.beginPath(); ctx.moveTo(p.x + hw, p.y - hh); ctx.lineTo(p.x, p.y); ctx.lineTo(p.x, p.y + vh); ctx.lineTo(p.x + hw, p.y + vh - hh); ctx.closePath(); ctx.fill();
-        ctx.fillStyle = s ? t.sTop : t.top;
+        ctx.fillStyle = shade(rgb, Math.min(lam * 1.25, 1.05));
         ctx.beginPath(); ctx.moveTo(p.x, p.y - hh * 2); ctx.lineTo(p.x + hw, p.y - hh); ctx.lineTo(p.x, p.y); ctx.lineTo(p.x - hw, p.y - hh); ctx.closePath(); ctx.fill();
       }
       const tNow = performance.now(); const fps = Math.round(1000 / Math.max(tNow - tPrev, 1)); tPrev = tNow;
