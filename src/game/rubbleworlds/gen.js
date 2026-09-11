@@ -55,6 +55,7 @@ function makeScenario(kind, seed, size = 1) {
     }
     world.ship = { fuel: 520, max: 520, burns: 0 };
     world.shipPhase = "aim";
+    world.gate = { x: 210 * size, z: -90 * size, r: 36, reached: false }; // the ark's ring, absolute radius
     world.span = 260 * size;
   } else if (kind === "binary") {
     const d = 190;

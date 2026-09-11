@@ -320,6 +320,7 @@ function stepWorld(world, k) {
         for (const a of world.aggs) { const w = world.weak && a.clump !== b.clump ? 0.01 : 1; pull(b, a.x, a.y, a.z, a.m, w, out); }
         if (world.hole) pull(b, world.hole.x, 0, world.hole.z, world.hole.m, 1, out);
         if (world.star) pull(b, world.star.x, 0, world.star.z, world.star.m, 1, out);
+        if (world.gate && b.ship) pull(b, world.gate.x, 0, world.gate.z, 2500, 1, out); // the gate pulls the ship alone, the ark's rule
         if (rIdx >= 0) { const R = world.rigids[rIdx];
           R.vx += out[0] * b.m / R.M * DT; R.vy += out[1] * b.m / R.M * DT; R.vz += out[2] * b.m / R.M * DT;
           R.om += ((b.x - R.x) * out[2] - (b.z - R.z) * out[0]) * b.m / R.Iy * DT; R.dirty = true;
@@ -512,4 +513,53 @@ function stepWorld(world, k) {
       world.t += DT; world.frame++;
   return weldsAlive;
 }
-export { DT, SF, G, BS, BR, PMASS, ITERS, SLOP, BETA, BIAS_CAP, WELD_BREAK, WELD_BIAS, SLEEP_V, WAKE_TIDE, WELD_STRENGTH_BY_SIZE, C30, S30, stepWorld };
+// the ark's own predictor, carved to the rubble sky: the same symplectic
+// coefficients, the same DT*2 step, run over the clump tracks as point
+// masses under the live law — weak cross-clump pull only where the world
+// itself is weak. The ship is a point; the gate pulls and is the target.
+// The orbit ledger sums the angle swept around the heaviest other track:
+// a full turn without contact is a closed orbit, and the snap may take it.
+const _cbrt2 = Math.cbrt(2), _W1 = 1 / (2 - _cbrt2), _W0 = -_cbrt2 / (2 - _cbrt2);
+const _YC = [_W1 / 2, (_W0 + _W1) / 2, (_W0 + _W1) / 2, _W1 / 2], _YD = [_W1, _W0, _W1];
+function gaT(x, z, bodies) { let ax = 0, az = 0; for (const b of bodies) { const dx = b.x - x, dz = b.z - z, r2 = dx * dx + dz * dz + SF * SF, rn = Math.pow(r2, 1.65); ax += G * b.m * dx / rn; az += G * b.m * dz / rn; } return [ax, az]; }
+function ystepT(x, z, vx, vz, bodies, dt) {
+  x += _YC[0] * vx * dt; z += _YC[0] * vz * dt; let [ax, az] = gaT(x, z, bodies); vx += _YD[0] * ax * dt; vz += _YD[0] * az * dt;
+  x += _YC[1] * vx * dt; z += _YC[1] * vz * dt; [ax, az] = gaT(x, z, bodies); vx += _YD[1] * ax * dt; vz += _YD[1] * az * dt;
+  x += _YC[2] * vx * dt; z += _YC[2] * vz * dt; [ax, az] = gaT(x, z, bodies); vx += _YD[2] * ax * dt; vz += _YD[2] * az * dt;
+  x += _YC[3] * vx * dt; z += _YC[3] * vz * dt; return [x, z, vx, vz];
+}
+function predictShip(world, vx0, vz0, n) {
+  const st = world.shipTrack; if (!st) return null;
+  const simP = (world.tracks || []).filter(tk => tk.m >= 500 && tk.clump !== st.clump).slice(0, 14)
+    .map(tk => ({ x: tk.x, z: tk.z, vx: tk.vx, vz: tk.vz, m: tk.m, rad: tk.rad }));
+  const statics = [];
+  if (world.hole) statics.push({ x: world.hole.x, z: world.hole.z, m: world.hole.m, rad: world.hole.killR });
+  if (world.star) statics.push({ x: world.star.x, z: world.star.z, m: world.star.m, rad: world.star.r });
+  const gate = world.gate;
+  const gateGrav = gate ? [{ x: gate.x, z: gate.z, m: 2500, rad: 0 }] : [];
+  let x = st.x, z = st.z, vx = vx0, vz = vz0;
+  const pts = []; let minGate = Infinity, minGateIdx = 0;
+  let anchor = null; for (const p of simP) if (!anchor || p.m > anchor.m) anchor = p;
+  let swept = 0, prevAng = anchor ? Math.atan2(z - anchor.z, x - anchor.x) : 0;
+  for (let i = 0; i < n; i++) {
+    for (const p of simP) {
+      const others = [];
+      for (const q of simP) if (q !== p) others.push({ x: q.x, z: q.z, m: q.m * (world.weak ? 0.01 : 1) });
+      for (const o of statics) others.push(o);
+      [p.x, p.z, p.vx, p.vz] = ystepT(p.x, p.z, p.vx, p.vz, others, DT * 2);
+    }
+    const bodies = [...simP, ...statics, ...gateGrav];
+    [x, z, vx, vz] = ystepT(x, z, vx, vz, bodies, DT * 2);
+    let danger = 0, hit = false;
+    for (const p of simP) { const d = Math.hypot(x - p.x, z - p.z); if (d < p.rad * 2.5) danger = Math.max(danger, 1 - (d - p.rad) / (p.rad * 1.5)); if (d < p.rad + BS) hit = true; }
+    for (const o of statics) { const d = Math.hypot(x - o.x, z - o.z); if (d < o.rad + BS) hit = true; }
+    let hg = false;
+    if (gate) { const gd = Math.hypot(x - gate.x, z - gate.z); if (gd < minGate) { minGate = gd; minGateIdx = pts.length; } hg = gd < gate.r; }
+    if (anchor) { const a2 = Math.atan2(z - anchor.z, x - anchor.x); let da = a2 - prevAng; if (da > Math.PI) da -= 2 * Math.PI; if (da < -Math.PI) da += 2 * Math.PI; swept += da; prevAng = a2; }
+    if (hit) { pts.push({ x, z, hit: true, danger, hitsGate: hg }); break; }
+    pts.push({ x, z, danger, hitsGate: hg });
+    if (hg) break;
+  }
+  return { pts, minGate, minGateIdx, orbit: Math.abs(swept) >= Math.PI * 2 };
+}
+export { DT, SF, G, BS, BR, PMASS, ITERS, SLOP, BETA, BIAS_CAP, WELD_BREAK, WELD_BIAS, SLEEP_V, WAKE_TIDE, WELD_STRENGTH_BY_SIZE, C30, S30, stepWorld, predictShip };

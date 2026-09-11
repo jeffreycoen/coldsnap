@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { MK } from "../version.js";
-import { stepWorld, C30, S30 } from "./rubbleworlds/phys.js";
+import { stepWorld, predictShip, C30, S30 } from "./rubbleworlds/phys.js";
 import { makeScenario, SCENES, SCENE_LABEL } from "./rubbleworlds/gen.js";
 import { drawFrame } from "./rubbleworlds/draw.js";
 
@@ -63,6 +63,26 @@ export default function RubbleWorlds({ onExit }) {
     };
     const pUp = () => {
       if (panDrag && world && world.ship && world.shipPhase === "fly" && (panDrag.moved || 0) < 10) world.shipPaused = !world.shipPaused;
+      // the ark's release: a near-miss bends toward the gate; away from the gate, toward a closed orbit
+      if (panDrag && panDrag.aim && world && world.shipAim && world.shipAim.on && world.shipTrack) {
+        const st = world.shipTrack, aim = world.shipAim, vel = Math.hypot(aim.vx, aim.vz);
+        const test = vel > 1 ? predictShip(world, st.vx + aim.vx, st.vz + aim.vz, 400) : null;
+        if (test && !test.pts.some(p => p.hitsGate)) {
+          const wantGate = world.gate && !world.gate.reached && test.minGate < 80;
+          const ang0 = Math.atan2(aim.vz, aim.vx);
+          let bestAng = ang0, bestDist = test.minGate, found = false;
+          for (let da = -0.12; da <= 0.12; da += 0.03) {
+            const ta = ang0 + da;
+            const t2 = predictShip(world, st.vx + Math.cos(ta) * vel, st.vz + Math.sin(ta) * vel, 400);
+            if (!t2) break;
+            if (wantGate) {
+              if (t2.minGate < bestDist) { bestDist = t2.minGate; bestAng = ta; }
+              if (t2.pts.some(p => p.hitsGate)) { bestAng = ta; found = true; break; }
+            } else if (t2.orbit && !t2.pts.some(p => p.hit)) { bestAng = ta; found = true; break; }
+          }
+          if ((wantGate || found) && bestAng !== ang0) world.shipAim = { on: true, vx: Math.cos(bestAng) * vel, vz: Math.sin(bestAng) * vel };
+        }
+      }
       panDrag = null;
     };
     c.addEventListener("mousedown", pDown); window.addEventListener("mousemove", pMove); window.addEventListener("mouseup", pUp);
@@ -121,6 +141,8 @@ export default function RubbleWorlds({ onExit }) {
       const tPhys = performance.now();
       for (let rep = 0; rep < (planFrozen ? 0 : reps); rep++) weldsAlive = stepWorld(world, k);
       if (reps > 0) world.stepMs = +((performance.now() - tPhys) / reps).toFixed(2);
+      if (world.gate && !world.gate.reached && world.shipTrack && !planFrozen &&
+          Math.hypot(world.shipTrack.x - world.gate.x, world.shipTrack.z - world.gate.z) < world.gate.r) world.gate.reached = true;
 
       drawFrame({ ctx, W, H, world, frame: world.frame });
       const wb = world.blocks, welds = world.welds;
@@ -136,7 +158,7 @@ export default function RubbleWorlds({ onExit }) {
       if (renderF % 15 === 0) {
         let awake = 0, asleep = 0;
         for (const b of wb) { if (!b.alive) continue; if (b.sleeping) asleep++; else awake++; }
-        setUi(u => ({ ...u, fps, stepMs: world.stepMs || 0, awake, asleep, eaten: world.eaten, weldsAlive, fuel: world.ship ? Math.round(world.ship.fuel) : null, phase: world.shipPhase || null }));
+        setUi(u => ({ ...u, fps, stepMs: world.stepMs || 0, awake, asleep, eaten: world.eaten, weldsAlive, fuel: world.ship ? Math.round(world.ship.fuel) : null, phase: world.shipPhase || null, aimOn: !!(world.shipAim && world.shipAim.on) }));
       }
       anim = requestAnimationFrame(loop);
     };
@@ -178,9 +200,9 @@ export default function RubbleWorlds({ onExit }) {
           {(ui.phase === "aim" || ui.phase === "plan") && chip("\u2212", false, () => fireBurn("less"))}
           {(ui.phase === "aim" || ui.phase === "plan") && chip("+", false, () => fireBurn("more"))}
           {(ui.phase === "aim" || ui.phase === "plan") && chip("\u25b6", false, () => fireBurn("turnR"))}
-          {ui.phase === "aim" && chip("LAUNCH", true, () => fireBurn("launch"))}
+          {ui.phase === "aim" && chip("LAUNCH", ui.aimOn === true, () => ui.aimOn && fireBurn("launch"))}
           {ui.phase === "fly" && chip("PLAN BURN", false, () => fireBurn("plan"))}
-          {ui.phase === "plan" && chip("EXECUTE", true, () => fireBurn("exec"))}
+          {ui.phase === "plan" && chip("EXECUTE", ui.aimOn === true, () => ui.aimOn && fireBurn("exec"))}
           {ui.phase === "plan" && chip("CANCEL", false, () => fireBurn("cancel"))}
         </div>
       </div>

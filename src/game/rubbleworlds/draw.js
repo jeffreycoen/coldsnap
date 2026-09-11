@@ -2,7 +2,7 @@
 // component: the ark sky, the bent grid, the horizon, the cubes and their
 // light, the projected orbits. drawFrame paints exactly what the loop
 // painted; the loop keeps physics and hands over an env each frame.
-import { SF, G, BS, C30, S30 } from "./phys.js";
+import { SF, G, BS, C30, S30, predictShip } from "./phys.js";
 function wellDepth(x, z, wells, sc) {
   let pP = 0, pD = 0;
   for (const w of wells) {
@@ -58,11 +58,6 @@ function drawFrame(env) {
       if (frame % 3 === 0 || !world.pred) {
         const bodies = (world.tracks || []).filter(tk => tk.m >= 500).slice(0, 14)
           .map(tk => ({ x: tk.x, z: tk.z, vx: tk.vx, vz: tk.vz, m: tk.m, rad: tk.rad, clump: tk.clump, pts: [], hit: -1 }));
-        // the aimed burn flies as a ghost: the ship's track plus the locked delta-v
-        if (world.shipAim && world.shipAim.on && world.shipTrack) {
-          const st = world.shipTrack;
-          bodies.push({ x: st.x, z: st.z, vx: st.vx + world.shipAim.vx, vz: st.vz + world.shipAim.vz, m: st.m, rad: st.rad, clump: st.clump, pts: [], hit: -1, ghost: true });
-        }
         const statics = [];
         if (world.hole) statics.push({ x: world.hole.x, z: world.hole.z, m: world.hole.m, rad: world.hole.killR });
         if (world.star) statics.push({ x: world.star.x, z: world.star.z, m: world.star.m, rad: world.star.r });
@@ -97,6 +92,33 @@ function drawFrame(env) {
           const fade = Math.max(0.25, 1 - i2 / pts.length);
           ctx.strokeStyle = i2 >= redFrom ? `rgba(220,55,35,${fade * 0.95})` : `rgba(40,170,90,${fade * 0.85})`;
           ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
+        }
+      }
+      // the gate ring — teal pulse until reached, then green, the ark's ring
+      if (world.gate) {
+        const g = world.gate;
+        ctx.beginPath();
+        for (let a = 0; a <= 32; a++) { const th = a / 32 * Math.PI * 2; const p = iso(g.x + Math.cos(th) * g.r, g.z + Math.sin(th) * g.r, 0); if (a === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); }
+        const pulse = 0.45 + 0.25 * Math.sin(frame * 0.08);
+        ctx.strokeStyle = g.reached ? "rgba(40,170,90,.8)" : `rgba(40,150,170,${pulse})`;
+        ctx.lineWidth = 2.5; ctx.stroke();
+      }
+      // the aimed burn's TRUTHFUL ghost: the ark's own predictor, blue while
+      // clear, red through danger, a green dot where it threads the gate
+      if (world.ship && world.shipAim && world.shipAim.on && world.shipTrack) {
+        const st = world.shipTrack;
+        const pr = predictShip(world, st.vx + world.shipAim.vx, st.vz + world.shipAim.vz, 400);
+        if (pr && pr.pts.length > 3) {
+          ctx.lineWidth = 2.2;
+          for (let i2 = 3; i2 < pr.pts.length; i2 += 3) {
+            const q = pr.pts[i2], q0 = pr.pts[i2 - 3];
+            const p0 = iso(q0.x, q0.z, 0), p1 = iso(q.x, q.z, 0);
+            const fade = Math.max(0.25, 1 - i2 / pr.pts.length);
+            ctx.strokeStyle = q.danger > 0.3 ? `rgba(220,55,35,${fade})` : `rgba(60,130,220,${fade * 0.9})`;
+            ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
+          }
+          const last = pr.pts[pr.pts.length - 1];
+          if (last.hitsGate) { const p = iso(last.x, last.z, 0); ctx.fillStyle = "rgba(40,170,90,.9)"; ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, Math.PI * 2); ctx.fill(); }
         }
       }
       if (world.ship && world.shipPhase === "plan") {
