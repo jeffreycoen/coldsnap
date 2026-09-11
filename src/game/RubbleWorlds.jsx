@@ -107,11 +107,13 @@ export default function RubbleWorlds({ onExit }) {
       }
       if (what === "cancel") { world.shipPhase = "fly"; world.shipAim = { on: false, vx: 0, vz: 0 }; return; }
       if (!aim || !aim.on) return;
+      if (!world.blocks.some(b2 => b2.ship && b2.eng && b2.alive)) return; // no engine, no burn — thrust belongs to the engine module
       const cost = Math.hypot(aim.vx, aim.vz);
       if (cost > world.ship.fuel) return;
       world.ship.fuel -= cost;
       if (what === "exec") world.ship.burns++;
       for (const b of world.blocks) if (b.ship && b.alive) { b.vx += aim.vx; b.vz += aim.vz; }
+      world.flame = { f0: world.frame, dur: 36, dx: -aim.vx / cost, dz: -aim.vz / cost, mag: cost }; // the engine fires against the burn
       world.shipAim = { on: false, vx: 0, vz: 0 };
       world.shipPhase = "fly";
     };
@@ -122,6 +124,14 @@ export default function RubbleWorlds({ onExit }) {
       if (k.reset !== lastReset) {
         lastReset = k.reset; seed = Math.floor(Math.random() * 100000);
         world = makeScenario(k.kind, seed, k.size);
+        if (world.ship) {
+          stepWorld(world, k); // one priming step: tracks and orbit lines exist before the aim freeze — the t26 intent, landed now
+          const b0 = world.blocks.find(b2 => b2.ship && b2.alive);
+          if (b0 && world.gate) { // the ark's default trajectory: toward the gate at 50
+            const dx = world.gate.x - b0.x, dz = world.gate.z - b0.z, dd = Math.hypot(dx, dz) || 1;
+            world.shipAim = { on: true, vx: dx / dd * 50, vz: dz / dd * 50 };
+          }
+        }
         setUi(u => ({ ...u, kind: k.kind, seed, eaten: 0 }));
       }
       let weldsAlive = 0;
@@ -158,7 +168,7 @@ export default function RubbleWorlds({ onExit }) {
       if (renderF % 15 === 0) {
         let awake = 0, asleep = 0;
         for (const b of wb) { if (!b.alive) continue; if (b.sleeping) asleep++; else awake++; }
-        setUi(u => ({ ...u, fps, stepMs: world.stepMs || 0, awake, asleep, eaten: world.eaten, weldsAlive, fuel: world.ship ? Math.round(world.ship.fuel) : null, phase: world.shipPhase || null, aimOn: !!(world.shipAim && world.shipAim.on) }));
+        setUi(u => ({ ...u, fps, stepMs: world.stepMs || 0, awake, asleep, eaten: world.eaten, weldsAlive, fuel: world.ship ? Math.round(world.ship.fuel) : null, phase: world.shipPhase || null, aimOn: !!(world.shipAim && world.shipAim.on), engOn: !world.ship || world.blocks.some(b2 => b2.ship && b2.eng && b2.alive) }));
       }
       anim = requestAnimationFrame(loop);
     };
@@ -200,9 +210,9 @@ export default function RubbleWorlds({ onExit }) {
           {(ui.phase === "aim" || ui.phase === "plan") && chip("\u2212", false, () => fireBurn("less"))}
           {(ui.phase === "aim" || ui.phase === "plan") && chip("+", false, () => fireBurn("more"))}
           {(ui.phase === "aim" || ui.phase === "plan") && chip("\u25b6", false, () => fireBurn("turnR"))}
-          {ui.phase === "aim" && chip("LAUNCH", ui.aimOn === true, () => ui.aimOn && fireBurn("launch"))}
+          {ui.phase === "aim" && chip("LAUNCH", ui.aimOn === true && ui.engOn === true, () => ui.aimOn && ui.engOn && fireBurn("launch"))}
           {ui.phase === "fly" && chip("PLAN BURN", false, () => fireBurn("plan"))}
-          {ui.phase === "plan" && chip("EXECUTE", ui.aimOn === true, () => ui.aimOn && fireBurn("exec"))}
+          {ui.phase === "plan" && chip("EXECUTE", ui.aimOn === true && ui.engOn === true, () => ui.aimOn && ui.engOn && fireBurn("exec"))}
           {ui.phase === "plan" && chip("CANCEL", false, () => fireBurn("cancel"))}
         </div>
       </div>

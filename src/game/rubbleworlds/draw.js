@@ -132,6 +132,32 @@ function drawFrame(env) {
         ctx.font = "400 10px -apple-system,sans-serif"; ctx.fillStyle = "rgba(0,0,0,.2)";
         ctx.fillText("tap to resume", W / 2, H / 2 + 20); ctx.textAlign = "left";
       }
+      // the engine fires: the deadweight hangar's plume — radial glow, gradient
+      // cone, shock diamonds, white-hot core — anchored on the aft module,
+      // pointed against the burn, thrust-scaled, decaying over the burn's moment
+      if (world.flame && world.frame - world.flame.f0 < world.flame.dur) {
+        const eng = wb.find(b2 => b2.ship && b2.eng && b2.alive);
+        if (eng) {
+          const fl = world.flame, age = (world.frame - fl.f0) / fl.dur;
+          const th = (1 - age) * Math.min(1, fl.mag / 65);
+          const f = (0.85 + 0.15 * Math.sin(world.frame * 0.57)) * Math.max(th, 0.001);
+          const ep = iso(eng.x + fl.dx * BS * 0.6, eng.z + fl.dz * BS * 0.6, eng.y);
+          const tp = iso(eng.x + fl.dx * (BS * 0.6 + 26 * f), eng.z + fl.dz * (BS * 0.6 + 26 * f), eng.y);
+          const dx2 = tp.x - ep.x, dy2 = tp.y - ep.y, L = Math.hypot(dx2, dy2) || 1;
+          let pg = ctx.createRadialGradient(ep.x, ep.y, 0, ep.x + dx2 * 0.4, ep.y + dy2 * 0.4, 22 * f + 1);
+          pg.addColorStop(0, "rgba(90,140,235,.5)"); pg.addColorStop(1, "rgba(58,98,196,0)");
+          ctx.fillStyle = pg; ctx.beginPath(); ctx.arc(ep.x + dx2 * 0.3, ep.y + dy2 * 0.3, 20 * f + 1, 0, Math.PI * 2); ctx.fill();
+          ctx.save(); ctx.translate(ep.x, ep.y); ctx.rotate(Math.atan2(dy2, dx2));
+          let cg = ctx.createLinearGradient(0, 0, L, 0);
+          cg.addColorStop(0, "rgba(220,236,255,.95)"); cg.addColorStop(0.35, "rgba(120,166,240,.7)"); cg.addColorStop(1, "rgba(58,98,196,0)");
+          ctx.fillStyle = cg; ctx.beginPath(); ctx.moveTo(0, -3.4 * f); ctx.lineTo(L * 0.75, -1.1 * f); ctx.lineTo(L, 0); ctx.lineTo(L * 0.75, 1.1 * f); ctx.lineTo(0, 3.4 * f); ctx.closePath(); ctx.fill();
+          ctx.fillStyle = "rgba(235,245,255,.85)";
+          for (const q of [0.22, 0.45, 0.68]) { ctx.beginPath(); ctx.ellipse(L * q, 0, 2.6 * f * (1 - q * 0.7), 1.3 * f * (1 - q * 0.7), 0, 0, Math.PI * 2); ctx.fill(); }
+          ctx.restore();
+          ctx.save(); ctx.shadowColor = "rgba(200,225,255,.95)"; ctx.shadowBlur = 14;
+          ctx.fillStyle = "#f2f8ff"; ctx.beginPath(); ctx.arc(ep.x, ep.y, 2.6 * f + 0.6, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+        }
+      }
       // the ship's aim arrow, the ark's own gesture
       if (world.shipAim && world.shipAim.on && world.shipTrack) {
         const st = world.shipTrack, sp2 = iso(st.x, st.z, 0);
