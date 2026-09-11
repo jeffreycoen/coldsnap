@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { MK } from "../version.js";
-import { stepWorld } from "./rubbleworlds/phys.js";
+import { stepWorld, C30, S30 } from "./rubbleworlds/phys.js";
 import { makeScenario, SCENES, SCENE_LABEL } from "./rubbleworlds/gen.js";
 import { drawFrame } from "./rubbleworlds/draw.js";
 
@@ -26,6 +26,30 @@ export default function RubbleWorlds({ onExit }) {
     const dpr = window.devicePixelRatio || 1;
     const resize = () => { c.width = window.innerWidth * dpr; c.height = window.innerHeight * dpr; c.style.width = window.innerWidth + "px"; c.style.height = window.innerHeight + "px"; };
     resize(); window.addEventListener("resize", resize);
+    // drag pans the large playfield; a quick second tap recenters on the mass
+    let panDrag = null, lastTap = 0;
+    const pDown = (e) => {
+      const p = e.touches ? e.touches[0] : e;
+      const now = performance.now();
+      if (now - lastTap < 300) { if (world) world.pan = null; lastTap = 0; panDrag = null; return; }
+      lastTap = now;
+      panDrag = { x: p.clientX, y: p.clientY };
+    };
+    const pMove = (e) => {
+      if (!panDrag || !world) return;
+      const p = e.touches ? e.touches[0] : e;
+      const dx = p.clientX - panDrag.x, dy = p.clientY - panDrag.y;
+      panDrag = { x: p.clientX, y: p.clientY };
+      const sc = world._sc || 1;
+      const sx = dx / (2 * C30 * sc), sy = dy / (2 * S30 * sc);
+      const cur = world.pan || world._center || { x: 0, z: 0 };
+      world.pan = { x: cur.x - (sx + sy), z: cur.z - (sy - sx) };
+      e.preventDefault();
+    };
+    const pUp = () => { panDrag = null; };
+    c.addEventListener("mousedown", pDown); window.addEventListener("mousemove", pMove); window.addEventListener("mouseup", pUp);
+    c.addEventListener("touchstart", pDown, { passive: false }); c.addEventListener("touchmove", pMove, { passive: false });
+    c.addEventListener("touchend", pUp); c.addEventListener("touchcancel", pUp);
     let world = null, seed = 0, lastReset = 0, anim, frame = 0, renderF = 0, tPrev = performance.now();
     worldRef.current = () => world && { seed, kind: ctl.current.kind, size: ctl.current.size, welds: ctl.current.welds, sleep: ctl.current.sleep, mk: MK, log: world.log };
 

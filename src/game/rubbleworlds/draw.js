@@ -19,15 +19,22 @@ function drawFrame(env) {
       // --- DRAW ---
       ctx.fillStyle = "#f5f4f0"; ctx.fillRect(0, 0, W, H);
       for (let i = 0; i < 60; i++) { const sx3 = ((i * 7919 + 37) * 3.7) % W, sy3 = ((i * 4967 + 13) * 2.3) % H; ctx.fillStyle = `rgba(0,0,20,${i % 5 === 0 ? 0.06 : 0.03})`; ctx.fillRect(sx3, sy3, i % 7 === 0 ? 1.5 : 1, i % 7 === 0 ? 1.5 : 1); }
-      // the camera is FIXED per scene: centered on the origin (the hole, the pair's
-      // center, the planet) at a scale set by the scene's span — debris may leave
-      // the frame; the world never swims and the hole never appears to move
-      const span = world.span || 260;
-      const sc = Math.min(W * 0.82 / (span * 2 * C30), H * 0.62 / (span * 2 * S30), 2.2);
-      const cx = W / 2, cy = H / 2;
+      // THE LARGE PLAYFIELD: one absolute world scale for every scene and every
+      // size — a 1x planet reads small, a 5x world overflows the frame. The view
+      // rests on the scene's mass center and a drag owns it (world.pan); a
+      // double-tap hands it back. Debris may leave the frame; nothing refits.
+      const sc = Math.min(W * 0.82 / (500 * C30), H * 0.62 / (500 * S30), 2.2);
+      world._sc = sc;
+      let ctrX = 0, ctrZ = 0, ctrM = 0;
+      for (const tk of world.tracks || []) { ctrX += tk.x * tk.m; ctrZ += tk.z * tk.m; ctrM += tk.m; }
+      if (world.hole) { ctrX += world.hole.x * world.hole.m; ctrZ += world.hole.z * world.hole.m; ctrM += world.hole.m; }
+      if (world.star) { ctrX += world.star.x * world.star.m; ctrZ += world.star.z * world.star.m; ctrM += world.star.m; }
+      world._center = ctrM ? { x: ctrX / ctrM, z: ctrZ / ctrM } : { x: 0, z: 0 };
+      const look = world.pan || world._center;
+      const cx = W / 2 - (look.x - look.z) * C30 * sc, cy = H / 2 - (look.x + look.z) * S30 * sc;
       const iso = (x, z, y) => ({ x: cx + (x - z) * C30 * sc, y: cy + (x + z) * S30 * sc - (y || 0) * 0.9 * sc });
-      const lookX = 0, lookZ = 0;
-      const gN = 56, gSp = 16, halfG = gN * gSp / 2;
+      const lookX = look.x, lookZ = look.z;
+      const gN = 56, gSp = 16, halfG = gN * gSp / 2; // fixed weave: the net follows the camera like the ark's, and the weave itself is the absolute ruler
       const gcx = Math.round(lookX / gSp) * gSp, gcz = Math.round(lookZ / gSp) * gSp;
       const getD = (sx2, sz2) => wellDepth(sx2, sz2, world.wells, sc);
       const gxa = new Float32Array((gN + 1) ** 2), gya = new Float32Array((gN + 1) ** 2);
