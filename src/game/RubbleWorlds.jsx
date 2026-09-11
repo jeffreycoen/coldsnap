@@ -27,21 +27,22 @@ const ITERS = 8;           // solver sweeps per frame — the war engine tiers 4
 const SLOP = 0.05;         // penetration allowance before the bias pushes
 const BETA = 0.18;         // Baumgarte factor, the engine's own number
 const BIAS_CAP = 5;        // bias ceiling, the engine's own number
-const WELD_BREAK = 1.35;   // weld tears past this stretch ratio
+const WELD_BREAK = 2.2;    // weld tears past this stretch ratio — measured: the welded planet passes the tide as chunks, 11 eaten against 66 weldless
+const WELD_BIAS = 0.35;    // weld positional bias — stiff enough that welds carry load before breaking
 const SLEEP_V = 2.2;       // a clump sleeps under this relative speed
 const WAKE_TIDE = 0.35;    // aggregate wakes when tidal spread exceeds this fraction of its own hold
 
 function makeRand(seed) { let ri = 0; return () => { const v = Math.sin(seed + (ri++) * 9973) * 43758.5453; return v - Math.floor(v); }; }
 
-// a true sphere of cubes: every lattice cell within 2.85 blocks of center — 93 blocks
-function makePlanet(cx, cz, vx, vz, tint, rand) {
-  const blocks = []; const R = BS * 2.85;
-  for (let ix = -3; ix <= 3; ix++) for (let iy = -3; iy <= 3; iy++) for (let iz = -3; iz <= 3; iz++) {
+// a true sphere of cubes: every lattice cell within R of center (R 2.85 blocks = 93)
+function makePlanet(cx, cz, vx, vz, tint, rand, R = BS * 2.85, mass = PMASS) {
+  const blocks = []; const n = Math.ceil(R / BS);
+  for (let ix = -n; ix <= n; ix++) for (let iy = -n; iy <= n; iy++) for (let iz = -n; iz <= n; iz++) {
     const px = ix * BS, py = iy * BS, pz = iz * BS;
     if (Math.sqrt(px * px + py * py + pz * pz) > R) continue;
     blocks.push({ x: cx + px + (rand() - 0.5), y: py + (rand() - 0.5), z: cz + pz + (rand() - 0.5), vx, vy: 0, vz, tint, alive: true, sleeping: false, clump: -1 });
   }
-  for (const b of blocks) b.m = PMASS / blocks.length;
+  for (const b of blocks) b.m = mass / blocks.length;
   return blocks;
 }
 
@@ -56,6 +57,8 @@ function buildWelds(blocks) {
   return welds;
 }
 
+const SCENES = ["binary", "duet", "moons", "hole"];
+const SCENE_LABEL = { binary: "TWIN COLLISION", duet: "HEAVY AND LIGHT", moons: "MOONS", hole: "BLACK HOLE" };
 function makeScenario(kind, seed) {
   const rand = makeRand(seed);
   const world = { kind, blocks: [], welds: [], hole: null, eaten: 0, aggs: [], wells: [], warm: new Map(), t: 0 };
@@ -69,6 +72,28 @@ function makeScenario(kind, seed) {
       ...makePlanet(-d, 0, 0, -vOrb, 0, rand),
       ...makePlanet(d, 0, 0, vOrb, 1, rand),
     ];
+    world.span = 250;
+  } else if (kind === "duet") {
+    // a heavy and a light world on the law's own circular speeds around their
+    // shared center — measured headless: separation holds 199-201 for three minutes
+    const M1 = PMASS, M2 = 1500, R = 200;
+    const d1 = R * M2 / (M1 + M2), d2 = R * M1 / (M1 + M2);
+    const v1 = Math.sqrt(G * M2 * d1 / Math.pow(R * R + SF * SF, 1.15));
+    const v2 = Math.sqrt(G * M1 * d2 / Math.pow(R * R + SF * SF, 1.15));
+    world.blocks = [
+      ...makePlanet(-d1, 0, 0, -v1, 0, rand),
+      ...makePlanet(d2, 0, 0, v2, 1, rand, BS * 1.8, M2),
+    ];
+    world.span = 260;
+  } else if (kind === "moons") {
+    // three light moons on circular speed, spaced wide so their mutual tug stays
+    // small — measured headless: a lone moon holds a 97-101 band for three minutes
+    world.blocks = makePlanet(0, 0, 0, 0, 0, rand);
+    for (const r of [60, 105, 160]) {
+      const v = Math.sqrt(G * PMASS * r / Math.pow(r * r + SF * SF, 1.15));
+      world.blocks.push(...makePlanet(r, 0, 0, v, 1, rand, BS * 0.9, 80));
+    }
+    world.span = 200;
   } else {
     world.hole = { x: 0, z: 0, m: 42000, killR: 26 };
     const px = 240;
@@ -77,6 +102,7 @@ function makeScenario(kind, seed) {
     // 66 of 93 eaten weldless across two minutes, 51 welded
     const v = Math.sqrt(G * world.hole.m / Math.pow(px, 1.3)) * 0.53;
     world.blocks = makePlanet(px, 0, 0, v, 0, rand);
+    world.span = 300;
   }
   world.welds = buildWelds(world.blocks);
   return world;
@@ -223,7 +249,7 @@ export default function RubbleWorlds({ onExit }) {
           if (d > w.rest * WELD_BREAK) { w.alive = false; continue; }
           const nx = dx / d, ny = dy / d, nz = dz / d;
           const vn = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny + (b.vz - a.vz) * nz;
-          const bias = Math.max(-3, Math.min(3, (0.12 / DT) * (d - w.rest)));
+          const bias = Math.max(-6, Math.min(6, (WELD_BIAS / DT) * (d - w.rest)));
           const P = -(vn + bias) * 0.5;
           a.vx -= nx * P; a.vy -= ny * P; a.vz -= nz * P; b.vx += nx * P; b.vy += ny * P; b.vz += nz * P;
         }
@@ -252,14 +278,14 @@ export default function RubbleWorlds({ onExit }) {
       // --- DRAW ---
       ctx.fillStyle = "#f5f4f0"; ctx.fillRect(0, 0, W, H);
       for (let i = 0; i < 60; i++) { const sx3 = ((i * 7919 + 37) * 3.7) % W, sy3 = ((i * 4967 + 13) * 2.3) % H; ctx.fillStyle = `rgba(0,0,20,${i % 5 === 0 ? 0.06 : 0.03})`; ctx.fillRect(sx3, sy3, i % 7 === 0 ? 1.5 : 1, i % 7 === 0 ? 1.5 : 1); }
-      let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
-      const pts = [...wb.filter(b => b.alive), ...(world.hole ? [world.hole] : [])];
-      for (const p of pts) { const sx = (p.x - p.z) * C30, sy = (p.x + p.z) * S30; minX = Math.min(minX, sx); maxX = Math.max(maxX, sx); minY = Math.min(minY, sy); maxY = Math.max(maxY, sy); }
-      const sc = Math.min(W * 0.82 / Math.max(maxX - minX + 80, 120), H * 0.62 / Math.max(maxY - minY + 80, 120), 2.2);
-      const cx = W / 2 - (minX + maxX) / 2 * sc, cy = H / 2 - (minY + maxY) / 2 * sc;
+      // the camera is FIXED per scene: centered on the origin (the hole, the pair's
+      // center, the planet) at a scale set by the scene's span — debris may leave
+      // the frame; the world never swims and the hole never appears to move
+      const span = world.span || 260;
+      const sc = Math.min(W * 0.82 / (span * 2 * C30), H * 0.62 / (span * 2 * S30), 2.2);
+      const cx = W / 2, cy = H / 2;
       const iso = (x, z, y) => ({ x: cx + (x - z) * C30 * sc, y: cy + (x + z) * S30 * sc - (y || 0) * 0.9 * sc });
-      const lookX = ((minX + maxX) / 2) / (2 * C30) + ((minY + maxY) / 2) / (2 * S30);
-      const lookZ = ((minY + maxY) / 2) / (2 * S30) - ((minX + maxX) / 2) / (2 * C30);
+      const lookX = 0, lookZ = 0;
       const gN = 56, gSp = 16, halfG = gN * gSp / 2;
       const gcx = Math.round(lookX / gSp) * gSp, gcz = Math.round(lookZ / gSp) * gSp;
       const getD = (sx2, sz2) => Math.min(Math.sqrt(Math.abs(wellPot(sx2, sz2, world.wells))) * 0.38 * sc, 150 * sc);
@@ -293,7 +319,8 @@ export default function RubbleWorlds({ onExit }) {
       const order = [];
       for (const b of wb) if (b.alive) order.push(b);
       order.sort((a, b) => (a.x + a.z) - (b.x + b.z) || a.y - b.y);
-      const hw = Math.max(BS * sc * C30 * 0.5, 1.2), hh = Math.max(BS * sc * S30 * 0.5, 0.7), vh = Math.max(BS * sc * 0.9, 1.6);
+      // cubes at FULL lattice pitch — faces touch, the ball reads solid
+      const hw = Math.max(BS * sc * C30, 1.6), hh = Math.max(BS * sc * S30, 0.9), vh = Math.max(BS * sc * 0.9, 1.6);
       const shade = (rgb, f) => `rgb(${Math.round(rgb[0] * f)},${Math.round(rgb[1] * f)},${Math.round(rgb[2] * f)})`;
       for (const b of order) {
         const cc = world.clumpCenter && world.clumpCenter.get(b.clump);
@@ -337,7 +364,7 @@ export default function RubbleWorlds({ onExit }) {
       </div>
       {onExit && <div onClick={onExit} style={{ position: "absolute", top: 14, right: 14, background: "rgba(245,244,240,.85)", borderRadius: 10, padding: "8px 12px", border: "1px solid rgba(0,0,0,.06)", cursor: "pointer", userSelect: "none", touchAction: "none", fontSize: 10, fontWeight: 600, letterSpacing: 1, color: "rgba(0,0,0,.45)" }}>⏏ MENU</div>}
       <div style={{ position: "absolute", bottom: 24, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap", padding: "0 12px" }}>
-        {chip(ui.kind === "binary" ? "SCENE: BINARY" : "SCENE: BLACK HOLE", true, () => set(k => { k.kind = k.kind === "binary" ? "hole" : "binary"; }))}
+        {chip("SCENE: " + (SCENE_LABEL[ui.kind] || ui.kind), true, () => set(k => { k.kind = SCENES[(SCENES.indexOf(k.kind) + 1) % SCENES.length]; }))}
         {chip(`WELDS ${ctl.current.welds ? "ON" : "OFF"}`, ctl.current.welds, () => setLive(k => { k.welds = !k.welds; }))}
         {chip(`SLEEP ${ctl.current.sleep ? "ON" : "OFF"}`, ctl.current.sleep, () => setLive(k => { k.sleep = !k.sleep; }))}
         {chip("RESET", false, () => set(() => {}))}
