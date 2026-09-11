@@ -70,9 +70,11 @@ function makeScenario(kind, seed, size = 1) {
   // and every orbit distance by `size`. The block pitch comes from a budget —
   // more cells for roundness where the scene can pay, bigger cubes where it
   // cannot: a scene carries about 1700 blocks at most, split across planets.
-  const nPlanets = kind === "trio" ? 3 : kind === "system" ? 9 : kind === "binary" || kind === "duet" ? 2 : 1;
-  const pitchFor = (R) => Math.max(BS, R / Math.cbrt((1700 / nPlanets) / 4.19));
-  const world_mk = (cx, cz, vx, vz, tint, R1, m1) => makePlanet(cx * size, cz * size, vx, vz, tint, rand, R1 * size, m1 * size ** 3, pitchFor(R1 * size));
+  // SIZE scales the BLOCKS, not the count: pitch grows with the world, so a 5x
+  // planet is the same 93 blocks at 5x the cube — performance identical at every
+  // size. Finer big-world surfaces wait on the layered-shell experiment: eight
+  // mixed-pitch configurations measured 2026-09-11, none stable at the seams.
+  const world_mk = (cx, cz, vx, vz, tint, R1, m1) => makePlanet(cx * size, cz * size, vx, vz, tint, rand, R1 * size, m1 * size ** 3, BS * size);
   if (kind === "binary") {
     const d = 190;
     // half the circular speed for this law — measured headless with the
@@ -195,7 +197,7 @@ export default function RubbleWorlds({ onExit }) {
     const dpr = window.devicePixelRatio || 1;
     const resize = () => { c.width = window.innerWidth * dpr; c.height = window.innerHeight * dpr; c.style.width = window.innerWidth + "px"; c.style.height = window.innerHeight + "px"; };
     resize(); window.addEventListener("resize", resize);
-    let world = null, seed = 0, lastReset = 0, anim, frame = 0, tPrev = performance.now();
+    let world = null, seed = 0, lastReset = 0, anim, frame = 0, renderF = 0, tPrev = performance.now();
     worldRef.current = () => world && { seed, kind: ctl.current.kind, size: ctl.current.size, welds: ctl.current.welds, sleep: ctl.current.sleep, mk: MK, log: world.log };
 
     const loop = () => {
@@ -210,7 +212,10 @@ export default function RubbleWorlds({ onExit }) {
       let weldsAlive = 0;
       // time chips: 2x and 5x run the physics that many steps per rendered frame;
       // half speed steps every other frame — the render never changes cadence
-      const reps = k.time >= 1 ? k.time : (frame % 2 === 0 ? 1 : 0);
+      // the half-speed gate counts RENDERED frames — the old gate counted physics
+      // steps, so the first skipped frame froze the counter and time stopped dead
+      const reps = k.time >= 1 ? k.time : (renderF % 2 === 0 ? 1 : 0);
+      renderF++;
       for (let rep = 0; rep < reps; rep++) {
 
       // --- CLUMP SCAN every 20 frames: union-find over touch distance ---
