@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { MK } from "../version.js";
 
 // RUBBLE WORLDS — block planets under real gravity, a proving-range demo.
 // The cross of both games: coldsnap's cubes and coldsnap's SOLVER under the
@@ -57,8 +58,8 @@ function buildWelds(blocks) {
   return welds;
 }
 
-const SCENES = ["binary", "duet", "moons", "hole"];
-const SCENE_LABEL = { binary: "TWIN COLLISION", duet: "HEAVY AND LIGHT", moons: "MOONS", hole: "BLACK HOLE" };
+const SCENES = ["binary", "duet", "moons", "trio", "system", "hole"];
+const SCENE_LABEL = { binary: "TWINS", duet: "DUET", moons: "MOONS", trio: "TRIO", system: "SYSTEM", hole: "HOLE" };
 function makeScenario(kind, seed) {
   const rand = makeRand(seed);
   const world = { kind, blocks: [], welds: [], hole: null, eaten: 0, aggs: [], wells: [], warm: new Map(), t: 0 };
@@ -85,6 +86,30 @@ function makeScenario(kind, seed) {
       ...makePlanet(d2, 0, 0, v2, 1, rand, BS * 1.8, M2),
     ];
     world.span = 260;
+  } else if (kind === "trio") {
+    // three equal worlds on a rotating equilateral triangle — the relative
+    // equilibrium measured headless (radius band 161-162 for three minutes as
+    // points); the blocks' own unevenness is what eventually breaks it
+    const L = 280, R2 = L / Math.sqrt(3);
+    const aC = 2 * G * PMASS * Math.cos(Math.PI / 6) / Math.pow(L * L + SF * SF, 1.15);
+    const vT = Math.sqrt(aC * R2);
+    for (let i = 0; i < 3; i++) {
+      const th = i * 2 * Math.PI / 3;
+      world.blocks.push(...makePlanet(Math.cos(th) * R2, Math.sin(th) * R2, -Math.sin(th) * vT, Math.cos(th) * vT, i % 2, rand));
+    }
+    world.span = 300;
+  } else if (kind === "system") {
+    // the mission's own sky: a pinned star, nine light planets on rings, and
+    // planet-to-planet gravity at 1% — the ark's law, measured headless:
+    // every ring held for three minutes, worst excursion 36%
+    world.star = { x: 0, z: 0, m: 40000, r: 34 };
+    world.weak = true;
+    for (const r of [110, 150, 190, 235, 280, 325, 370, 415, 460]) {
+      const th = rand() * Math.PI * 2;
+      const v = Math.sqrt(G * world.star.m * r / Math.pow(r * r + SF * SF, 1.15));
+      world.blocks.push(...makePlanet(Math.cos(th) * r, Math.sin(th) * r, -Math.sin(th) * v, Math.cos(th) * v, world.blocks.length % 2 === 0 ? 0 : 1, rand, BS * 1.6, 1200));
+    }
+    world.span = 500;
   } else if (kind === "moons") {
     // three light moons on circular speed, spaced wide so their mutual tug stays
     // small — measured headless: a lone moon holds a 97-101 band for three minutes
@@ -105,32 +130,53 @@ function makeScenario(kind, seed) {
     world.span = 300;
   }
   world.welds = buildWelds(world.blocks);
+  world.weldOf = new Map();
+  for (const w of world.welds) world.weldOf.set(w.a * 100000 + w.b, w);
+  world.log = [];
   return world;
 }
 
-// gravity of every source on (x,y,z), skipping index `self` in the flat source list
-function accel(x, y, z, srcs, self) {
+// gravity of every source on (x,y,z), skipping index `self`. Under the
+// mission law (weak=true) two different clumps pull at 1% — the ark's own
+// planet-to-planet rule; the star and the hole always pull at full strength.
+function accel(x, y, z, srcs, self, weak, myClump) {
   let ax = 0, ay = 0, az = 0;
   for (let i = 0; i < srcs.length; i++) {
     if (i === self) continue;
     const s = srcs[i], dx = s.x - x, dy = (s.y || 0) - y, dz = s.z - z;
     const r2 = dx * dx + dy * dy + dz * dz + SF * SF, rn = Math.pow(r2, 1.65);
-    ax += G * s.m * dx / rn; ay += G * s.m * dy / rn; az += G * s.m * dz / rn;
+    const w = weak && s.clump != null && myClump != null && s.clump !== myClump ? 0.01 : 1;
+    ax += w * G * s.m * dx / rn; ay += w * G * s.m * dy / rn; az += w * G * s.m * dz / rn;
   }
   return [ax, ay, az];
 }
 
-// the ark's well depth, read from the live wells (clump centers + the hole)
-function wellPot(x, z, wells) {
-  let p = 0;
-  for (const w of wells) { const r2 = (w.x - x) ** 2 + (w.z - z) ** 2 + SF * SF; p -= G * w.m / (1.3 * Math.pow(r2, 0.65)); }
-  return p;
+// the ark's well depth, read from the live wells. Clump wells keep the ark's
+// gentle dish; a deep well (the hole, the star) gets its own throat — a far
+// higher ceiling and a steeper scale, so the horizon sits in a plunge.
+function wellDepth(x, z, wells, sc) {
+  let pP = 0, pD = 0;
+  for (const w of wells) {
+    const r2 = (w.x - x) ** 2 + (w.z - z) ** 2 + SF * SF;
+    const p = G * w.m / (1.3 * Math.pow(r2, 0.65));
+    if (w.deep) pD += p; else pP += p;
+  }
+  return Math.min(Math.sqrt(pP) * 0.38, 150) * sc + Math.min(Math.sqrt(pD) * 1.15, 560) * sc;
 }
 
 export default function RubbleWorlds({ onExit }) {
   const cvs = useRef(null);
-  const [ui, setUi] = useState({ kind: "binary", welds: true, sleep: true, seed: 0, fps: 0, awake: 0, asleep: 0, eaten: 0, weldsAlive: 0 });
+  const worldRef = useRef(null);
+  const [ui, setUi] = useState({ kind: "binary", welds: true, sleep: true, seed: 0, fps: 0, awake: 0, asleep: 0, eaten: 0, weldsAlive: 0, copied: false });
   const ctl = useRef({ kind: "binary", welds: true, sleep: true, reset: 1 });
+  const copyLog = () => {
+    const data = worldRef.current && worldRef.current();
+    if (!data) return;
+    const text = JSON.stringify(data);
+    const done = () => { setUi(u => ({ ...u, copied: true })); setTimeout(() => setUi(u => ({ ...u, copied: false })), 2000); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(() => {});
+    else { const ta = document.createElement("textarea"); ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); done(); }
+  };
 
   useEffect(() => {
     const c = cvs.current, ctx = c.getContext("2d");
@@ -138,6 +184,7 @@ export default function RubbleWorlds({ onExit }) {
     const resize = () => { c.width = window.innerWidth * dpr; c.height = window.innerHeight * dpr; c.style.width = window.innerWidth + "px"; c.style.height = window.innerHeight + "px"; };
     resize(); window.addEventListener("resize", resize);
     let world = null, seed = 0, lastReset = 0, anim, frame = 0, tPrev = performance.now();
+    worldRef.current = () => world && { seed, kind: ctl.current.kind, welds: ctl.current.welds, sleep: ctl.current.sleep, mk: MK, log: world.log };
 
     const loop = () => {
       const W = c.width / dpr, H = c.height / dpr, k = ctl.current;
@@ -168,7 +215,7 @@ export default function RubbleWorlds({ onExit }) {
           let rel = 0, rad = 0;
           for (const i of ids) { const b = wb[i]; rel = Math.max(rel, Math.hypot(b.vx - mvx, b.vy - mvy, b.vz - mvz)); rad = Math.max(rad, Math.hypot(b.x - mx, b.y - my, b.z - mz)); }
           if (rel < SLEEP_V) {
-            const agg = { x: mx, y: my, z: mz, vx: mvx, vy: mvy, vz: mvz, m: M, rad, ids, offs: ids.map(i => [wb[i].x - mx, wb[i].y - my, wb[i].z - mz]) };
+            const agg = { x: mx, y: my, z: mz, vx: mvx, vy: mvy, vz: mvz, m: M, rad, ids, clump: root, offs: ids.map(i => [wb[i].x - mx, wb[i].y - my, wb[i].z - mz]) };
             for (const i of ids) wb[i].sleeping = true;
             world.aggs.push(agg);
           } else for (const i of ids) wb[i].sleeping = false;
@@ -186,7 +233,8 @@ export default function RubbleWorlds({ onExit }) {
         world.wells.push({ x: mx, z: mz, m: M });
         world.clumpCenter.set(root, [mx, my, mz]);
       }
-      if (world.hole) world.wells.push({ x: world.hole.x, z: world.hole.z, m: world.hole.m });
+      if (world.hole) world.wells.push({ x: world.hole.x, z: world.hole.z, m: world.hole.m, deep: true });
+      if (world.star) world.wells.push({ x: world.star.x, z: world.star.z, m: world.star.m, deep: true });
 
       // --- SOURCES: awake blocks + aggregates + the hole ---
       const srcs = [];
@@ -195,17 +243,18 @@ export default function RubbleWorlds({ onExit }) {
       const aggBase = srcs.length;
       for (const a of world.aggs) srcs.push(a);
       if (world.hole) srcs.push(world.hole);
+      if (world.star) srcs.push(world.star);
 
       // --- GRAVITY KICK on awake blocks ---
       for (let n = 0; n < awakeIdx.length; n++) {
         const b = wb[awakeIdx[n]];
-        const [ax, ay, az] = accel(b.x, b.y, b.z, srcs, n);
+        const [ax, ay, az] = accel(b.x, b.y, b.z, srcs, n, world.weak, b.clump);
         b.vx += ax * DT; b.vy += ay * DT; b.vz += az * DT;
       }
       // --- AGGREGATES integrate as single bodies; members ride as offsets ---
       for (let n = 0; n < world.aggs.length; n++) {
         const a = world.aggs[n];
-        const [ax, ay, az] = accel(a.x, a.y, a.z, srcs, aggBase + n);
+        const [ax, ay, az] = accel(a.x, a.y, a.z, srcs, aggBase + n, world.weak, a.clump);
         a.vx += ax * DT; a.vy += ay * DT; a.vz += az * DT; a.x += a.vx * DT; a.y += a.vy * DT; a.z += a.vz * DT;
         for (let q = 0; q < a.ids.length; q++) { const b = wb[a.ids[q]]; b.x = a.x + a.offs[q][0]; b.y = a.y + a.offs[q][1]; b.z = a.z + a.offs[q][2]; b.vx = a.vx; b.vy = a.vy; b.vz = a.vz; }
         // proximity wake: an aggregate must be awake BEFORE anything can touch it —
@@ -230,6 +279,9 @@ export default function RubbleWorlds({ onExit }) {
           const bj = wb[j];
           const dx = bj.x - bi.x, dy = bj.y - bi.y, dz = bj.z - bi.z, d2 = dx * dx + dy * dy + dz * dz;
           if (d2 > cd2 || d2 === 0) continue;
+          // a welded pair is the weld's alone — contact fighting a weld over the
+          // same pair pumps energy and detonates the body (measured, 2026-09-11)
+          if (k.welds) { const wq = world.weldOf.get(i * 100000 + j); if (wq && wq.alive) continue; }
           if (bj.sleeping) { const cl = bj.clump; for (const b2 of wb) if (b2.clump === cl) b2.sleeping = false; world.aggs = world.aggs.filter(a => !a.ids.includes(j)); }
           const d = Math.sqrt(d2);
           const cnt = { i, j, nx: dx / d, ny: dy / d, nz: dz / d, depth: BR * 2 - d, pn: world.warm.get(i * 100000 + j) || 0 };
@@ -288,7 +340,7 @@ export default function RubbleWorlds({ onExit }) {
       const lookX = 0, lookZ = 0;
       const gN = 56, gSp = 16, halfG = gN * gSp / 2;
       const gcx = Math.round(lookX / gSp) * gSp, gcz = Math.round(lookZ / gSp) * gSp;
-      const getD = (sx2, sz2) => Math.min(Math.sqrt(Math.abs(wellPot(sx2, sz2, world.wells))) * 0.38 * sc, 150 * sc);
+      const getD = (sx2, sz2) => wellDepth(sx2, sz2, world.wells, sc);
       const gxa = new Float32Array((gN + 1) ** 2), gya = new Float32Array((gN + 1) ** 2);
       for (let ix = 0; ix <= gN; ix++) for (let iz = 0; iz <= gN; iz++) { const sx2 = ix * gSp - halfG + gcx, sz2 = iz * gSp - halfG + gcz, d = getD(sx2, sz2), idx = ix * (gN + 1) + iz; gxa[idx] = cx + (sx2 - sz2) * C30 * sc; gya[idx] = cy + (sx2 + sz2) * S30 * sc + d; }
       ctx.lineWidth = 0.7;
@@ -302,6 +354,18 @@ export default function RubbleWorlds({ onExit }) {
         const a = fade * 0.18 + w * 0.5; if (a < 0.005) continue;
         ctx.beginPath(); ctx.moveTo(gxa[iz], gya[iz]); for (let ix = 1; ix <= gN; ix++) ctx.lineTo(gxa[ix * (gN + 1) + iz], gya[ix * (gN + 1) + iz]);
         ctx.strokeStyle = `rgba(45,55,75,${a})`; ctx.stroke(); }
+      if (world.star) {
+        const sp = iso(world.star.x, world.star.z, 0), sR = Math.max(world.star.r * sc, 8);
+        ctx.save();
+        const cg = ctx.createRadialGradient(sp.x, sp.y, sR * 0.5, sp.x, sp.y, sR * 3);
+        cg.addColorStop(0, "rgba(255,220,100,.25)"); cg.addColorStop(0.3, "rgba(255,180,60,.08)"); cg.addColorStop(1, "rgba(255,140,30,0)");
+        ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(sp.x, sp.y, sR * 3, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowColor = "rgba(255,200,80,.8)"; ctx.shadowBlur = 30;
+        const sg = ctx.createRadialGradient(sp.x - sR * 0.2, sp.y - sR * 0.2, sR * 0.1, sp.x, sp.y, sR);
+        sg.addColorStop(0, "rgba(255,255,230,1)"); sg.addColorStop(0.4, "rgba(255,220,120,1)"); sg.addColorStop(1, "rgba(255,160,40,1)");
+        ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(sp.x, sp.y, sR, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
       if (world.hole) {
         const hp = iso(world.hole.x, world.hole.z, 0), hr = Math.max(world.hole.killR * sc, 6);
         const g2 = ctx.createRadialGradient(hp.x, hp.y, hr * 0.6, hp.x, hp.y, hr * 2.6);
@@ -336,6 +400,14 @@ export default function RubbleWorlds({ onExit }) {
         ctx.fillStyle = shade(rgb, Math.min(lam * 1.25, 1.05));
         ctx.beginPath(); ctx.moveTo(p.x, p.y - hh * 2); ctx.lineTo(p.x + hw, p.y - hh); ctx.lineTo(p.x, p.y); ctx.lineTo(p.x - hw, p.y - hh); ctx.closePath(); ctx.fill();
       }
+      if (frame % 60 === 0) {
+        let awakeN = 0, asleepN = 0, weldsN = 0;
+        for (const b of wb) { if (!b.alive) continue; if (b.sleeping) asleepN++; else awakeN++; }
+        for (const w of welds) if (w.alive) weldsN++;
+        world.log.push({ t: +world.t.toFixed(1), awake: awakeN, asleep: asleepN, welds: weldsN, eaten: world.eaten,
+          clumps: world.wells.filter(w => !w.deep).map(w => [Math.round(w.x), Math.round(w.z), Math.round(w.m)]) });
+        if (world.log.length > 300) world.log.shift();
+      }
       const tNow = performance.now(); const fps = Math.round(1000 / Math.max(tNow - tPrev, 1)); tPrev = tNow;
       if (frame % 15 === 0) {
         let awake = 0, asleep = 0;
@@ -349,7 +421,7 @@ export default function RubbleWorlds({ onExit }) {
   }, []);
 
   const chip = (label, on, click) => (
-    <div onClick={click} style={{ padding: "10px 14px", borderRadius: 12, background: on ? "rgba(60,90,160,.16)" : "rgba(245,244,240,.85)", border: `1.5px solid ${on ? "rgba(60,90,160,.4)" : "rgba(0,0,0,.08)"}`, cursor: "pointer", userSelect: "none", WebkitUserSelect: "none", touchAction: "none", fontSize: 11, fontWeight: 700, letterSpacing: 1.2, color: on ? "rgba(40,60,120,.85)" : "rgba(0,0,0,.45)" }}>{label}</div>
+    <div key={label} onClick={click} style={{ padding: "10px 14px", borderRadius: 12, background: on ? "rgba(60,90,160,.16)" : "rgba(245,244,240,.85)", border: `1.5px solid ${on ? "rgba(60,90,160,.4)" : "rgba(0,0,0,.08)"}`, cursor: "pointer", userSelect: "none", WebkitUserSelect: "none", touchAction: "none", fontSize: 11, fontWeight: 700, letterSpacing: 1.2, color: on ? "rgba(40,60,120,.85)" : "rgba(0,0,0,.45)" }}>{label}</div>
   );
   const set = (fn) => { fn(ctl.current); ctl.current.reset++; setUi(u => ({ ...u })); };
   const setLive = (fn) => { fn(ctl.current); setUi(u => ({ ...u })); };
@@ -363,10 +435,13 @@ export default function RubbleWorlds({ onExit }) {
         <div style={{ fontSize: 8, fontWeight: 500, color: "rgba(0,0,0,.35)", marginTop: 2 }}>{ui.awake} awake · {ui.asleep} asleep · welds {ui.weldsAlive}{ui.kind === "hole" ? ` · eaten ${ui.eaten}` : ""}</div>
       </div>
       {onExit && <div onClick={onExit} style={{ position: "absolute", top: 14, right: 14, background: "rgba(245,244,240,.85)", borderRadius: 10, padding: "8px 12px", border: "1px solid rgba(0,0,0,.06)", cursor: "pointer", userSelect: "none", touchAction: "none", fontSize: 10, fontWeight: 600, letterSpacing: 1, color: "rgba(0,0,0,.45)" }}>⏏ MENU</div>}
+      <div style={{ position: "absolute", bottom: 78, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap", padding: "0 12px" }}>
+        {SCENES.map(sn => chip(SCENE_LABEL[sn], ui.kind === sn, () => set(k => { k.kind = sn; })))}
+      </div>
       <div style={{ position: "absolute", bottom: 24, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap", padding: "0 12px" }}>
-        {chip("SCENE: " + (SCENE_LABEL[ui.kind] || ui.kind), true, () => set(k => { k.kind = SCENES[(SCENES.indexOf(k.kind) + 1) % SCENES.length]; }))}
         {chip(`WELDS ${ctl.current.welds ? "ON" : "OFF"}`, ctl.current.welds, () => setLive(k => { k.welds = !k.welds; }))}
         {chip(`SLEEP ${ctl.current.sleep ? "ON" : "OFF"}`, ctl.current.sleep, () => setLive(k => { k.sleep = !k.sleep; }))}
+        {chip(ui.copied ? "COPIED" : "⊕ LOG", ui.copied, copyLog)}
         {chip("RESET", false, () => set(() => {}))}
       </div>
     </div>
