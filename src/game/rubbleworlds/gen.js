@@ -51,7 +51,7 @@ function makeScenario(kind, seed, size = 1) {
     world.blocks.push(...makePlanet(mr, 0, 0, mv, 1, rand, BS * 0.9, 80 * size ** 3));
     const sx = -200 * size, sz = 80 * size;
     for (const [ox, oz] of [[0, 0], [-BS, 0], [BS, 0], [0, -BS], [0, BS]]) {
-      world.blocks.push({ x: sx + ox, y: 0, z: sz + oz, vx: 0, vy: 0, vz: 0, tint: 2, ship: true, eng: ox === -BS && oz === 0, alive: true, sleeping: false, clump: -1, s: BS, cr: BS * 0.55, m: 120 });
+      world.blocks.push({ x: sx + ox, y: 0, z: sz + oz, vx: 0, vy: 0, vz: 0, tint: 2, ship: true, eng: ox === -BS && oz === 0, cab: ox === 0 && oz === 0, hp: 100, alive: true, sleeping: false, clump: -1, s: BS, cr: BS * 0.55, m: 120 });
     }
     world.ship = { fuel: 520, max: 520, burns: 0 };
     world.shipPhase = "aim";

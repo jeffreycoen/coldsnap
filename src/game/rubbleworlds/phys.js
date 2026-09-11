@@ -383,7 +383,7 @@ function stepWorld(world, k) {
           if (k.welds) { const wq = world.weldOf.get(key); if (wq && wq.alive) continue; }
           if (bj.sleeping) { const cl = bj.clump; for (const b2 of wb) if (b2.clump === cl) b2.sleeping = false; world.aggs = world.aggs.filter(a => !a.ids.includes(j)); }
           const d = Math.sqrt(d2);
-          const cnt = { i, j, nx: dx / d, ny: dy / d, nz: dz / d, depth: cd - d, pn: world.warm.get(key) || 0, key, ptx: 0, pty: 0, ptz: 0 };
+          const cnt = { i, j, nx: dx / d, ny: dy / d, nz: dz / d, depth: cd - d, pn: world.warm.get(key) || 0, fresh: !world.warm.has(key), cl0: Math.max(0, -((bj.vx - bi.vx) * (dx / d) + (bj.vy - bi.vy) * (dy / d) + (bj.vz - bi.vz) * (dz / d))), key, ptx: 0, pty: 0, ptz: 0 };
           // effective inverse-mass factors, in the solver's velocity units: a free
           // block answers an impulse fully; a rigid member answers through its
           // body's mass and inertia at the contact arm
@@ -501,6 +501,30 @@ function stepWorld(world, k) {
       for (const b of wb) if (b.loose > 0) b.loose--;
       world.warm.clear();
       for (const cnt of contacts) world.warm.set(cnt.key, cnt.pn);
+      // MODULE HEALTH, the deadweight rule read on this sky: a strike wounds
+      // once, at first touch, by its closing speed past the graze, capped per
+      // module per frame, with a 30-frame cooldown so a tumble cannot grind a
+      // hull to dust. The graze sits at 40 — measured: this well's own fall
+      // arrives near 40, so a braked approach bruises and a hard one wounds.
+      // Hull-on-hull pairs carry the weld's law, not a wound. A module at
+      // zero is gone for good; the surrounding cross shields the cabin.
+      if (world.ship) {
+        const SHIP_GRAZE = 40, SHIP_DMG = 1.0, SHIP_CAP = 55;
+        for (const cnt of contacts) {
+          const bi = wb[cnt.i], bj = wb[cnt.j];
+          if (!cnt.fresh || bi.ship === bj.ship) continue;
+          const dmg = Math.min(SHIP_CAP, Math.max(0, cnt.cl0 - SHIP_GRAZE) * SHIP_DMG);
+          if (dmg <= 0) continue;
+          const s2 = bi.ship ? bi : bj;
+          s2.dmgF = (s2.dmgF || 0) + dmg;
+        }
+        for (const b of wb) {
+          if (b.dmgCd > 0) b.dmgCd--;
+          if (!b.ship || !b.dmgF) continue;
+          if (!b.dmgCd) { b.hp -= Math.min(SHIP_CAP, b.dmgF); b.dmgCd = 30; if (b.hp <= 0) b.alive = false; }
+          b.dmgF = 0;
+        }
+      }
 
       // --- DRIFT awake blocks ---
       for (const i of awakeIdx) { const b = wb[i]; b.x += b.vx * DT; b.y += b.vy * DT; b.z += b.vz * DT; }
@@ -562,4 +586,26 @@ function predictShip(world, vx0, vz0, n) {
   }
   return { pts, minGate, minGateIdx, orbit: Math.abs(swept) >= Math.PI * 2 };
 }
-export { DT, SF, G, BS, BR, PMASS, ITERS, SLOP, BETA, BIAS_CAP, WELD_BREAK, WELD_BIAS, SLEEP_V, WAKE_TIDE, WELD_STRENGTH_BY_SIZE, C30, S30, stepWorld, predictShip };
+// the hull that still answers the helm: ship blocks weld-connected to the
+// cabin, walked over living welds. Null with the cabin dead. The engine
+// flag says whether a working engine sits inside that connected hull.
+function shipConn(world) {
+  const wb = world.blocks;
+  const cab = wb.find(b => b.ship && b.cab && b.alive);
+  if (!cab) return null;
+  const set = new Set([cab]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const w of world.welds) {
+      if (!w.alive) continue;
+      const a = wb[w.a], b = wb[w.b];
+      if (!a.ship || !b.ship || !a.alive || !b.alive) continue;
+      if (set.has(a) && !set.has(b)) { set.add(b); grew = true; }
+      else if (set.has(b) && !set.has(a)) { set.add(a); grew = true; }
+    }
+  }
+  let eng = false; for (const b of set) if (b.eng) eng = true;
+  return { set: [...set], eng, cab };
+}
+export { DT, SF, G, BS, BR, PMASS, ITERS, SLOP, BETA, BIAS_CAP, WELD_BREAK, WELD_BIAS, SLEEP_V, WAKE_TIDE, WELD_STRENGTH_BY_SIZE, C30, S30, stepWorld, predictShip, shipConn };

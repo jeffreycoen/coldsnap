@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { MK } from "../version.js";
-import { stepWorld, predictShip, C30, S30 } from "./rubbleworlds/phys.js";
+import { stepWorld, predictShip, shipConn, C30, S30 } from "./rubbleworlds/phys.js";
 import { makeScenario, SCENES, SCENE_LABEL } from "./rubbleworlds/gen.js";
 import { drawFrame } from "./rubbleworlds/draw.js";
 
@@ -107,12 +107,13 @@ export default function RubbleWorlds({ onExit }) {
       }
       if (what === "cancel") { world.shipPhase = "fly"; world.shipAim = { on: false, vx: 0, vz: 0 }; return; }
       if (!aim || !aim.on) return;
-      if (!world.blocks.some(b2 => b2.ship && b2.eng && b2.alive)) return; // no engine, no burn — thrust belongs to the engine module
+      const conn = shipConn(world); // the hull that answers: cabin-connected, engine aboard — connected, not merely alive
+      if (!conn || !conn.eng) return;
       const cost = Math.hypot(aim.vx, aim.vz);
       if (cost > world.ship.fuel) return;
       world.ship.fuel -= cost;
       if (what === "exec") world.ship.burns++;
-      for (const b of world.blocks) if (b.ship && b.alive) { b.vx += aim.vx; b.vz += aim.vz; }
+      for (const b of conn.set) { b.vx += aim.vx; b.vz += aim.vz; }
       world.flame = { f0: world.frame, dur: 36, dx: -aim.vx / cost, dz: -aim.vz / cost, mag: cost }; // the engine fires against the burn
       world.shipAim = { on: false, vx: 0, vz: 0 };
       world.shipPhase = "fly";
@@ -153,6 +154,10 @@ export default function RubbleWorlds({ onExit }) {
       if (reps > 0) world.stepMs = +((performance.now() - tPhys) / reps).toFixed(2);
       if (world.gate && !world.gate.reached && world.shipTrack && !planFrozen &&
           Math.hypot(world.shipTrack.x - world.gate.x, world.shipTrack.z - world.gate.z) < world.gate.r) world.gate.reached = true;
+      if (world.ship && !world.shipDead) {
+        const cab2 = world.blocks.find(b2 => b2.ship && b2.cab);
+        if (cab2 && !cab2.alive) { world.shipDead = true; world.deadAt = world.t; } // the wreck keeps drifting; only the flight ends
+      }
 
       drawFrame({ ctx, W, H, world, frame: world.frame });
       const wb = world.blocks, welds = world.welds;
@@ -168,7 +173,7 @@ export default function RubbleWorlds({ onExit }) {
       if (renderF % 15 === 0) {
         let awake = 0, asleep = 0;
         for (const b of wb) { if (!b.alive) continue; if (b.sleeping) asleep++; else awake++; }
-        setUi(u => ({ ...u, fps, stepMs: world.stepMs || 0, awake, asleep, eaten: world.eaten, weldsAlive, fuel: world.ship ? Math.round(world.ship.fuel) : null, phase: world.shipPhase || null, aimOn: !!(world.shipAim && world.shipAim.on), engOn: !world.ship || world.blocks.some(b2 => b2.ship && b2.eng && b2.alive) }));
+        setUi(u => ({ ...u, fps, stepMs: world.stepMs || 0, awake, asleep, eaten: world.eaten, weldsAlive, fuel: world.ship ? Math.round(world.ship.fuel) : null, phase: world.shipPhase || null, aimOn: !!(world.shipAim && world.shipAim.on), engOn: !world.ship || (() => { const c2 = shipConn(world); return !!(c2 && c2.eng); })(), dead: !!world.shipDead, burns: world.ship ? world.ship.burns : 0, deadT: world.shipDead ? Math.round(world.deadAt) : null }));
       }
       anim = requestAnimationFrame(loop);
     };
@@ -193,6 +198,13 @@ export default function RubbleWorlds({ onExit }) {
         <div style={{ fontSize: 11, fontWeight: 500, color: "rgba(0,0,0,.45)", marginTop: 2 }}>{ui.awake} awake · {ui.asleep} asleep · welds {ui.weldsAlive}{ui.kind === "hole" ? ` · eaten ${ui.eaten}` : ""}</div>
       </div>
       {onExit && <div onClick={onExit} style={{ position: "absolute", top: 14, right: 14, background: "rgba(245,244,240,.85)", borderRadius: 10, padding: "8px 12px", border: "1px solid rgba(0,0,0,.06)", cursor: "pointer", userSelect: "none", touchAction: "none", fontSize: 10, fontWeight: 600, letterSpacing: 1, color: "rgba(0,0,0,.45)" }}>⏏ MENU</div>}
+      {ui.dead && <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+        <div style={{ background: "rgba(245,244,240,.95)", borderRadius: 16, padding: "22px 28px", border: "1px solid rgba(0,0,0,.08)", textAlign: "center", pointerEvents: "auto" }}>
+          <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: 2, color: "rgba(160,40,30,.8)" }}>SHIP LOST</div>
+          <div style={{ fontSize: 11, color: "rgba(0,0,0,.5)", marginTop: 8 }}>cabin destroyed · {ui.burns} burn{ui.burns !== 1 ? "s" : ""} · fuel {ui.fuel} · {ui.deadT}s</div>
+          <div style={{ marginTop: 14, display: "flex", justifyContent: "center" }}>{chip("RESET", true, () => set(() => {}))}</div>
+        </div>
+      </div>}
       <div style={{ position: "absolute", bottom: 20, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "0 12px" }}>
         {!(ui.phase === "aim" || ui.phase === "plan") && <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
           {SCENES.map(sn => chip(SCENE_LABEL[sn], ui.kind === sn, () => set(k => { k.kind = sn; })))}
@@ -211,7 +223,7 @@ export default function RubbleWorlds({ onExit }) {
           {(ui.phase === "aim" || ui.phase === "plan") && chip("+", false, () => fireBurn("more"))}
           {(ui.phase === "aim" || ui.phase === "plan") && chip("\u25b6", false, () => fireBurn("turnR"))}
           {ui.phase === "aim" && chip("LAUNCH", ui.aimOn === true && ui.engOn === true, () => ui.aimOn && ui.engOn && fireBurn("launch"))}
-          {ui.phase === "fly" && chip("PLAN BURN", false, () => fireBurn("plan"))}
+          {ui.phase === "fly" && !ui.dead && chip("PLAN BURN", false, () => fireBurn("plan"))}
           {ui.phase === "plan" && chip("EXECUTE", ui.aimOn === true && ui.engOn === true, () => ui.aimOn && ui.engOn && fireBurn("exec"))}
           {ui.phase === "plan" && chip("CANCEL", false, () => fireBurn("cancel"))}
         </div>
