@@ -28,6 +28,7 @@ const ITERS = 8;           // solver sweeps per frame — the war engine tiers 4
 const SLOP = 0.05;         // penetration allowance before the bias pushes
 const BETA = 0.18;         // Baumgarte factor, the engine's own number
 const BIAS_CAP = 5;        // bias ceiling, the engine's own number
+const WELD_STRENGTH = 30;  // impulse a weld can carry per frame before it tears — measured: calm load peaks ~17, the hole's tide ~71
 const WELD_BREAK = 2.2;    // weld tears past this stretch ratio — measured: the welded planet passes the tide as chunks, 11 eaten against 66 weldless
 const WELD_BIAS = 0.35;    // weld positional bias — stiff enough that welds carry load before breaking
 const SLEEP_V = 2.2;       // a clump sleeps under this relative speed
@@ -53,7 +54,7 @@ function buildWelds(blocks) {
     if (blocks[i].tint !== blocks[j].tint) continue;
     const dx = blocks[j].x - blocks[i].x, dy = blocks[j].y - blocks[i].y, dz = blocks[j].z - blocks[i].z;
     const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    if (d < BS * 1.45) welds.push({ a: i, b: j, rest: d, alive: true });
+    if (d < BS * 1.45) welds.push({ a: i, b: j, rest: d, alive: true, acc: 0 });
   }
   return welds;
 }
@@ -206,19 +207,28 @@ export default function RubbleWorlds({ onExit }) {
         const groups = new Map();
         for (let i = 0; i < wb.length; i++) { if (!wb[i].alive) continue; const r = find(i); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(i); wb[i].clump = r; }
         world.groups = groups;
-        world.aggs = [];
+        // group stats first, sleep decisions second — a clump near another body may
+        // NOT sleep: sleeping aggregates run no contact, and a re-slept clump on an
+        // approach passed clean through the other planet (the trio detonation, 2026-09-11)
+        const gInfo = [];
         for (const [root, ids] of groups) {
-          if (!k.sleep || ids.length < 10) { for (const i of ids) wb[i].sleeping = false; continue; }
           let mx = 0, my = 0, mz = 0, mvx = 0, mvy = 0, mvz = 0, M = 0;
           for (const i of ids) { const b = wb[i]; M += b.m; mx += b.x * b.m; my += b.y * b.m; mz += b.z * b.m; mvx += b.vx * b.m; mvy += b.vy * b.m; mvz += b.vz * b.m; }
           mx /= M; my /= M; mz /= M; mvx /= M; mvy /= M; mvz /= M;
           let rel = 0, rad = 0;
           for (const i of ids) { const b = wb[i]; rel = Math.max(rel, Math.hypot(b.vx - mvx, b.vy - mvy, b.vz - mvz)); rad = Math.max(rad, Math.hypot(b.x - mx, b.y - my, b.z - mz)); }
-          if (rel < SLEEP_V) {
-            const agg = { x: mx, y: my, z: mz, vx: mvx, vy: mvy, vz: mvz, m: M, rad, ids, clump: root, offs: ids.map(i => [wb[i].x - mx, wb[i].y - my, wb[i].z - mz]) };
-            for (const i of ids) wb[i].sleeping = true;
-            world.aggs.push(agg);
-          } else for (const i of ids) wb[i].sleeping = false;
+          gInfo.push({ root, ids, mx, my, mz, mvx, mvy, mvz, M, rel, rad });
+        }
+        world.aggs = [];
+        for (const g of gInfo) {
+          let near = false;
+          if (world.hole && Math.hypot(g.mx - world.hole.x, g.my, g.mz - world.hole.z) < g.rad + world.hole.killR + BS * 6) near = true;
+          if (world.star && Math.hypot(g.mx - world.star.x, g.my, g.mz - world.star.z) < g.rad + world.star.r + BS * 6) near = true;
+          for (const o of gInfo) if (o !== g && Math.hypot(g.mx - o.mx, g.my - o.my, g.mz - o.mz) < g.rad + o.rad + BS * 6) near = true;
+          if (!k.sleep || g.ids.length < 10 || near || g.rel >= SLEEP_V) { for (const i of g.ids) wb[i].sleeping = false; continue; }
+          const agg = { x: g.mx, y: g.my, z: g.mz, vx: g.mvx, vy: g.mvy, vz: g.mvz, m: g.M, rad: g.rad, ids: g.ids, clump: g.root, offs: g.ids.map(i => [wb[i].x - g.mx, wb[i].y - g.my, wb[i].z - g.mz]) };
+          for (const i of g.ids) wb[i].sleeping = true;
+          world.aggs.push(agg);
         }
       }
 
@@ -275,16 +285,21 @@ export default function RubbleWorlds({ onExit }) {
       for (let p = 0; p < awakeIdx.length; p++) {
         const i = awakeIdx[p], bi = wb[i];
         for (let j = 0; j < wb.length; j++) {
-          if (j <= i || !wb[j].alive) continue;
+          if (j === i || !wb[j].alive) continue;
           const bj = wb[j];
+          // an awake block checks EVERY alive block: awake pairs once (j > i), and
+          // sleeping blocks from either side — the old j > i walk left half the
+          // sleeping blocks untouchable (the trio detonation, 2026-09-11)
+          if (!bj.sleeping && j < i) continue;
           const dx = bj.x - bi.x, dy = bj.y - bi.y, dz = bj.z - bi.z, d2 = dx * dx + dy * dy + dz * dz;
           if (d2 > cd2 || d2 === 0) continue;
+          const key = Math.min(i, j) * 100000 + Math.max(i, j);
           // a welded pair is the weld's alone — contact fighting a weld over the
           // same pair pumps energy and detonates the body (measured, 2026-09-11)
-          if (k.welds) { const wq = world.weldOf.get(i * 100000 + j); if (wq && wq.alive) continue; }
+          if (k.welds) { const wq = world.weldOf.get(key); if (wq && wq.alive) continue; }
           if (bj.sleeping) { const cl = bj.clump; for (const b2 of wb) if (b2.clump === cl) b2.sleeping = false; world.aggs = world.aggs.filter(a => !a.ids.includes(j)); }
           const d = Math.sqrt(d2);
-          const cnt = { i, j, nx: dx / d, ny: dy / d, nz: dz / d, depth: BR * 2 - d, pn: world.warm.get(i * 100000 + j) || 0 };
+          const cnt = { i, j, nx: dx / d, ny: dy / d, nz: dz / d, depth: BR * 2 - d, pn: world.warm.get(key) || 0, key };
           cnt.bias = Math.min(BETA / DT * Math.max(0, cnt.depth - SLOP), BIAS_CAP);
           if (cnt.pn) { bi.vx -= cnt.nx * cnt.pn; bi.vy -= cnt.ny * cnt.pn; bi.vz -= cnt.nz * cnt.pn; bj.vx += cnt.nx * cnt.pn; bj.vy += cnt.ny * cnt.pn; bj.vz += cnt.nz * cnt.pn; }
           contacts.push(cnt);
@@ -303,6 +318,7 @@ export default function RubbleWorlds({ onExit }) {
           const vn = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny + (b.vz - a.vz) * nz;
           const bias = Math.max(-6, Math.min(6, (WELD_BIAS / DT) * (d - w.rest)));
           const P = -(vn + bias) * 0.5;
+          w.acc += Math.abs(P);
           a.vx -= nx * P; a.vy -= ny * P; a.vz -= nz * P; b.vx += nx * P; b.vy += ny * P; b.vz += nz * P;
         }
         for (const cnt of contacts) {
@@ -313,9 +329,16 @@ export default function RubbleWorlds({ onExit }) {
           bi.vx -= cnt.nx * dPn; bi.vy -= cnt.ny * dPn; bi.vz -= cnt.nz * dPn; bj.vx += cnt.nx * dPn; bj.vy += cnt.ny * dPn; bj.vz += cnt.nz * dPn;
         }
       }
-      if (k.welds) for (const w of welds) if (w.alive) weldsAlive++;
+      // force break, the war engine's rule: a weld that carried more than its
+      // strength this frame tears — stretch alone never fires, because the
+      // constraint is what prevents stretch (the unbreakable-weld flyby, 2026-09-11)
+      if (k.welds) for (const w of welds) {
+        if (!w.alive) continue;
+        if (w.acc > WELD_STRENGTH) w.alive = false; else weldsAlive++;
+        w.acc = 0;
+      }
       world.warm.clear();
-      for (const cnt of contacts) world.warm.set(cnt.i * 100000 + cnt.j, cnt.pn);
+      for (const cnt of contacts) world.warm.set(cnt.key, cnt.pn);
 
       // --- DRIFT awake blocks ---
       for (const i of awakeIdx) { const b = wb[i]; b.x += b.vx * DT; b.y += b.vy * DT; b.z += b.vz * DT; }
