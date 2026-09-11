@@ -133,7 +133,8 @@ function drawFrame(env) {
         if (cc) { const ox = b.x - cc[0], oy = b.y - cc[1], oz = b.z - cc[2], ol = Math.hypot(ox, oy, oz) || 1;
           lam = 0.45 + 0.55 * Math.max(0, (ox / ol) * LX + (oy / ol) * LY + (oz / ol) * LZ); }
         if (b.sleeping) lam *= 0.82;
-        const p = iso(b.x, b.z, b.y), rgb = tints[b.tint];
+        // an awake block burns red — the owner's own gauge of what sleep is doing
+        const p = iso(b.x, b.z, b.y), rgb = b.sleeping ? tints[b.tint] : [214, 74, 52];
         ctx.fillStyle = shade(rgb, lam * 0.72);
         ctx.beginPath(); ctx.moveTo(p.x - hw, p.y - hh); ctx.lineTo(p.x, p.y); ctx.lineTo(p.x, p.y + vh); ctx.lineTo(p.x - hw, p.y + vh - hh); ctx.closePath(); ctx.fill();
         ctx.fillStyle = shade(rgb, lam * 0.5);

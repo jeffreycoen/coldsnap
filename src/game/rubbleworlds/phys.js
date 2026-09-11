@@ -1,13 +1,37 @@
-// rubbleworlds/phys.js — the demo's whole physics, carved from the component:
-// the war engine's sequential-impulse solver, welds that tear by carried
-// force, the clump scan, sleep and aggregates, the hole's horizon. Pure
-// math; no screen in it. stepWorld advances one fixed step and returns the
-// count of living welds. The spatial hash and solver tiers land here.
+// rubbleworlds/phys.js — the demo's whole physics: the war engine's
+// sequential-impulse solver, welds that tear by carried force, the clump
+// scan, sleep and aggregates, the hole's horizon. Pure math; no screen.
+//
+// THE BROADPHASE (the HASH chip, an A/B arm — measured slower at every count
+// this demo reaches today because the grid is XZ-flat under 3D balls and
+// gravity dominates regardless; kept switchable so the owner's own drive can
+// judge it, and so it stands ready when block counts rise): the war engine's
+// own two-tier grid, mirrored
+// from collectContacts — sleeping blocks file into cells ONCE and stay on
+// the books until they wake or die; moving blocks re-file each step,
+// epoch-stamped. Contact candidates and the clump scan both read the grid.
+// Contact pairs are re-sorted into the exact order the old brute walk
+// emitted, so a becalmed scene is numerically identical to 0.5.18 — the
+// pinned evolution hash proves it.
+//
+// GRAVITY FAR-FIELD: an awake block takes every other AWAKE clump as a
+// point mass at its center unless that clump is near (inside its radius
+// plus NEAR) — near clumps are summed exactly, block by block. Sleeping
+// aggregates were already points; the hole and the star always pull exact.
+//
+// SOLVER TIERS: the war engine's LOD — sweeps drop from 8 only under
+// constraint loads that calm scenes never reach, so quiet physics is
+// untouched and collisions pay less exactly when they cost most.
+//
+// FRICTION (the chip): translational tangential clamping against the
+// engine's own mu of 0.6 — accumulated per contact, capped by mu times the
+// normal impulse. Off by default; welded pairs never feel it (the weld owns
+// the pair). Blocks do not rotate, so this is friction's translational half.
 const DT = 1 / 60, SF = 8, G = 210, C30 = Math.cos(Math.PI / 6), S30 = 0.5;
 const BS = 6;              // block edge in sim units
 const BR = BS * 0.55;      // contact radius
 const PMASS = 6000;        // one planet's whole mass — parity with the ark's planets
-const ITERS = 8;           // solver sweeps per frame — the war engine tiers 4-12
+const ITERS = 8;           // resting sweep count — tiers drop it only under load
 const SLOP = 0.05;         // penetration allowance before the bias pushes
 const BETA = 0.18;         // Baumgarte factor, the engine's own number
 const BIAS_CAP = 5;        // bias ceiling, the engine's own number
@@ -15,8 +39,11 @@ const WELD_BREAK = 2.2;    // weld tears past this stretch ratio — measured: t
 const WELD_BIAS = 0.35;    // weld positional bias — stiff enough that welds carry load before breaking
 const SLEEP_V = 2.2;       // a clump sleeps under this relative speed
 const WAKE_TIDE = 0.35;    // aggregate wakes when tidal spread exceeds this fraction of its own hold
+const MU = 0.6;            // friction coefficient — the war engine's default
+const NEAR_F = 6;          // far-field near radius, in largest-block units
 
 const WELD_STRENGTH_BY_SIZE = { 1: 30, 2: 160, 5: 185 };
+
 function accel(x, y, z, srcs, self, weak, myClump) {
   let ax = 0, ay = 0, az = 0;
   for (let i = 0; i < srcs.length; i++) {
@@ -29,20 +56,88 @@ function accel(x, y, z, srcs, self, weak, myClump) {
   return [ax, ay, az];
 }
 
-// the ark's well depth, read from the live wells. Clump wells keep the ark's
-// gentle dish; a deep well (the hole, the star) gets its own throat — a far
-// higher ceiling and a steeper scale, so the horizon sits in a plunge.
+// one source's pull, softened, with the mission weight already applied
+function pull(b, sx, sy, sz, m, w, out) {
+  const dx = sx - b.x, dy = sy - b.y, dz = sz - b.z;
+  const r2 = dx * dx + dy * dy + dz * dz + SF * SF, rn = Math.pow(r2, 1.65);
+  out[0] += w * G * m * dx / rn; out[1] += w * G * m * dy / rn; out[2] += w * G * m * dz / rn;
+}
+
+const cellKey = (gx, gz) => gx * 73856093 ^ gz * 19349663;
+
+function fileBlocks(world) {
+  const wb = world.blocks;
+  if (!world._bp) { world._bp = new Map(); world._bpEpoch = 0; }
+  // cells carry a drift budget: sleeping blocks RIDE their orbiting aggregates
+  // (unlike the war's stationary stone), so a filed position goes stale — the
+  // cell is wide enough that a block may drift world.thr before its books lie,
+  // and a sleeping block re-files itself past that budget
+  if (!world.cell) { let mx = BS; for (const b of wb) if (b.s > mx) mx = b.s; world.cell = mx * 2.9; world.thr = mx * 1.4; }
+  const grid = world._bp, cell = world.cell, epoch = ++world._bpEpoch;
+  for (let i = 0; i < wb.length; i++) {
+    const b = wb[i]; b.idx = i;
+    const still = b.alive && b.sleeping;
+    const stale = still && b._filed && (Math.abs(b.x - b._fx) > world.thr || Math.abs(b.z - b._fz) > world.thr);
+    if ((!still || !b.alive || stale) && b._filed) { // woke, died, or drifted past the budget
+      for (const key of b._cells) { const c = grid.get(key); if (c) { const at = c.stat.indexOf(b); if (at >= 0) c.stat.splice(at, 1); } }
+      b._filed = false; b._cells = null;
+    }
+    if (!b.alive) continue;
+    if (still && b._filed) continue; // the sleeping stone is already on the books
+    const gx = Math.floor(b.x / cell), gz = Math.floor(b.z / cell);
+    const key = cellKey(gx, gz);
+    let c = grid.get(key);
+    if (!c) { c = { stat: [], dyn: [], epoch: 0 }; grid.set(key, c); }
+    if (still) {
+      let at = c.stat.length; // sorted insert by index — the walk replays block order
+      while (at > 0 && c.stat[at - 1].idx > i) at--;
+      c.stat.splice(at, 0, b);
+      b._cells = [key]; b._filed = true; b._fx = b.x; b._fz = b.z;
+    } else {
+      if (c.epoch !== epoch) { c.dyn.length = 0; c.epoch = epoch; }
+      c.dyn.push(b);
+    }
+  }
+}
+
+// every alive block within `dist` of block b (XZ cells, exact 3D filter by caller)
+function neighborsOf(world, b, out) {
+  const grid = world._bp, cell = world.cell, epoch = world._bpEpoch;
+  const gx = Math.floor(b.x / cell), gz = Math.floor(b.z / cell);
+  out.length = 0;
+  for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+    const c = grid.get(cellKey(gx + dx, gz + dz));
+    if (!c) continue;
+    for (const o of c.stat) out.push(o);
+    if (c.epoch === epoch) for (const o of c.dyn) out.push(o);
+  }
+  return out;
+}
+
+const _nb = [];
+
 function stepWorld(world, k) {
   const wb = world.blocks, welds = world.welds;
   let weldsAlive = 0;
+      // --- THE BOOKS: file every block into the two-tier grid (hash arm only) ---
+      if (k.hash) fileBlocks(world);
       // --- CLUMP SCAN every 20 frames: union-find over touch distance ---
       if (world.frame % 20 === 0) {
         const par = wb.map((_, i) => i);
         const find = (i) => { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; };
-        for (let i = 0; i < wb.length; i++) { if (!wb[i].alive) continue; for (let j = i + 1; j < wb.length; j++) { if (!wb[j].alive) continue;
-          const dx = wb[j].x - wb[i].x, dy = wb[j].y - wb[i].y, dz = wb[j].z - wb[i].z;
-          const link = Math.max(wb[i].s, wb[j].s) * 1.35;
-          if (dx * dx + dy * dy + dz * dz < link * link) { const a = find(i), b = find(j); if (a !== b) par[b] = a; } } }
+        if (k.hash) {
+          for (let i = 0; i < wb.length; i++) { if (!wb[i].alive) continue;
+            neighborsOf(world, wb[i], _nb);
+            for (const o of _nb) { const j = o.idx; if (j <= i || !o.alive) continue;
+              const dx = o.x - wb[i].x, dy = o.y - wb[i].y, dz = o.z - wb[i].z;
+              const link = Math.max(wb[i].s, o.s) * 1.35;
+              if (dx * dx + dy * dy + dz * dz < link * link) { const a = find(i), b = find(j); if (a !== b) par[b] = a; } } }
+        } else {
+          for (let i = 0; i < wb.length; i++) { if (!wb[i].alive) continue; for (let j = i + 1; j < wb.length; j++) { if (!wb[j].alive) continue;
+            const dx = wb[j].x - wb[i].x, dy = wb[j].y - wb[i].y, dz = wb[j].z - wb[i].z;
+            const link = Math.max(wb[i].s, wb[j].s) * 1.35;
+            if (dx * dx + dy * dy + dz * dz < link * link) { const a = find(i), b = find(j); if (a !== b) par[b] = a; } } }
+        }
         const groups = new Map();
         for (let i = 0; i < wb.length; i++) { if (!wb[i].alive) continue; const r = find(i); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(i); wb[i].clump = r; }
         world.groups = groups;
@@ -89,7 +184,7 @@ function stepWorld(world, k) {
       if (world.hole) world.wells.push({ x: world.hole.x, z: world.hole.z, m: world.hole.m, deep: true });
       if (world.star) world.wells.push({ x: world.star.x, z: world.star.z, m: world.star.m, deep: true });
 
-      // --- SOURCES: awake blocks + aggregates + the hole ---
+      // --- SOURCES for aggregate integration (unchanged shape) ---
       const srcs = [];
       const awakeIdx = [];
       for (let i = 0; i < wb.length; i++) if (wb[i].alive && !wb[i].sleeping) { awakeIdx.push(i); srcs.push(wb[i]); }
@@ -98,11 +193,34 @@ function stepWorld(world, k) {
       if (world.hole) srcs.push(world.hole);
       if (world.star) srcs.push(world.star);
 
-      // --- GRAVITY KICK on awake blocks ---
-      for (let n = 0; n < awakeIdx.length; n++) {
-        const b = wb[awakeIdx[n]];
-        const [ax, ay, az] = accel(b.x, b.y, b.z, srcs, n, world.weak, b.clump);
-        b.vx += ax * DT; b.vy += ay * DT; b.vz += az * DT;
+      // --- AWAKE CLUMPS for the far-field: group the awake blocks live ---
+      const awakeClumps = new Map();
+      for (const i of awakeIdx) {
+        const b = wb[i];
+        let g = awakeClumps.get(b.clump);
+        if (!g) { g = { ids: [], mx: 0, my: 0, mz: 0, M: 0, rad: 0 }; awakeClumps.set(b.clump, g); }
+        g.ids.push(i); g.mx += b.x * b.m; g.my += b.y * b.m; g.mz += b.z * b.m; g.M += b.m;
+      }
+      for (const g of awakeClumps.values()) { g.mx /= g.M; g.my /= g.M; g.mz /= g.M; }
+      for (const [root, g] of awakeClumps) for (const i of g.ids) { const b = wb[i]; const r = Math.hypot(b.x - g.mx, b.y - g.my, b.z - g.mz); if (r > g.rad) g.rad = r; }
+      const NEAR = NEAR_F * (world.cell || BS * 1.45);
+
+      // --- GRAVITY KICK on awake blocks: exact near, clump points far ---
+      const out = [0, 0, 0];
+      for (const i of awakeIdx) {
+        const b = wb[i];
+        out[0] = 0; out[1] = 0; out[2] = 0;
+        for (const [root, g] of awakeClumps) {
+          const w = world.weak && root !== b.clump ? 0.01 : 1;
+          const d = Math.hypot(g.mx - b.x, g.my - b.y, g.mz - b.z);
+          if (root === b.clump || d < g.rad + NEAR) {
+            for (const j of g.ids) { if (j === i) continue; const o = wb[j]; pull(b, o.x, o.y, o.z, o.m, w, out); }
+          } else pull(b, g.mx, g.my, g.mz, g.M, w, out);
+        }
+        for (const a of world.aggs) { const w = world.weak && a.clump !== b.clump ? 0.01 : 1; pull(b, a.x, a.y, a.z, a.m, w, out); }
+        if (world.hole) pull(b, world.hole.x, 0, world.hole.z, world.hole.m, 1, out);
+        if (world.star) pull(b, world.star.x, 0, world.star.z, world.star.m, 1, out);
+        b.vx += out[0] * DT; b.vy += out[1] * DT; b.vz += out[2] * DT;
       }
       // --- AGGREGATES integrate as single bodies; members ride as offsets ---
       for (let n = 0; n < world.aggs.length; n++) {
@@ -123,17 +241,26 @@ function stepWorld(world, k) {
       }
       world.aggs = world.aggs.filter(a => !a.dead);
 
-      // --- CONTACTS: collect, warm-start, then solve with the welds ---
+      // --- CONTACTS: candidates from the grid, replayed in the brute walk's order ---
       const contacts = [];
       for (let p = 0; p < awakeIdx.length; p++) {
         const i = awakeIdx[p], bi = wb[i];
-        for (let j = 0; j < wb.length; j++) {
-          if (j === i || !wb[j].alive) continue;
+        let cand;
+        if (k.hash) {
+          neighborsOf(world, bi, _nb);
+          cand = [];
+          for (const o of _nb) { const j = o.idx; if (j === i || !o.alive) continue;
+            if (!o.sleeping && j < i) continue; // both awake: the lower index owns the pair
+            cand.push(j); }
+          cand.sort((a2, b2) => a2 - b2); // the exact order the brute walk emits
+        } else {
+          cand = null;
+        }
+        const jMax = cand ? cand.length : wb.length;
+        for (let q = 0; q < jMax; q++) {
+          const j = cand ? cand[q] : q;
+          if (!cand) { if (j === i || !wb[j].alive) continue; if (!wb[j].sleeping && j < i) continue; }
           const bj = wb[j];
-          // an awake block checks EVERY alive block: awake pairs once (j > i), and
-          // sleeping blocks from either side — the old j > i walk left half the
-          // sleeping blocks untouchable (the trio detonation, 2026-09-11)
-          if (!bj.sleeping && j < i) continue;
           const dx = bj.x - bi.x, dy = bj.y - bi.y, dz = bj.z - bi.z, d2 = dx * dx + dy * dy + dz * dz;
           const cd = bi.cr + bj.cr;
           if (d2 > cd * cd || d2 === 0) continue;
@@ -143,14 +270,19 @@ function stepWorld(world, k) {
           if (k.welds) { const wq = world.weldOf.get(key); if (wq && wq.alive) continue; }
           if (bj.sleeping) { const cl = bj.clump; for (const b2 of wb) if (b2.clump === cl) b2.sleeping = false; world.aggs = world.aggs.filter(a => !a.ids.includes(j)); }
           const d = Math.sqrt(d2);
-          const cnt = { i, j, nx: dx / d, ny: dy / d, nz: dz / d, depth: cd - d, pn: world.warm.get(key) || 0, key };
+          const cnt = { i, j, nx: dx / d, ny: dy / d, nz: dz / d, depth: cd - d, pn: world.warm.get(key) || 0, key, ptx: 0, pty: 0, ptz: 0 };
           cnt.bias = Math.min(BETA / DT * Math.max(0, cnt.depth - SLOP), BIAS_CAP);
           if (cnt.pn) { bi.vx -= cnt.nx * cnt.pn; bi.vy -= cnt.ny * cnt.pn; bi.vz -= cnt.nz * cnt.pn; bj.vx += cnt.nx * cnt.pn; bj.vy += cnt.ny * cnt.pn; bj.vz += cnt.nz * cnt.pn; }
           contacts.push(cnt);
         }
       }
+      // --- SOLVER TIERS: the war engine's LOD — calm scenes never leave 8 sweeps ---
+      let activeWelds = 0;
+      if (k.welds) for (const w of welds) if (w.alive && wb[w.a].alive && wb[w.b].alive && !(wb[w.a].sleeping && wb[w.b].sleeping)) activeWelds++;
+      const load = contacts.length + activeWelds;
+      const itn = load > 1200 ? 4 : load > 600 ? 6 : ITERS;
       weldsAlive = 0;
-      for (let it = 0; it < ITERS; it++) {
+      for (let it = 0; it < itn; it++) {
         if (k.welds) for (const w of welds) {
           if (!w.alive) continue;
           const a = wb[w.a], b = wb[w.b];
@@ -171,6 +303,19 @@ function stepWorld(world, k) {
           let dPn = -(vn - cnt.bias) * 0.5;
           const pn0 = cnt.pn; cnt.pn = Math.max(0, cnt.pn + dPn); dPn = cnt.pn - pn0;
           bi.vx -= cnt.nx * dPn; bi.vy -= cnt.ny * dPn; bi.vz -= cnt.nz * dPn; bj.vx += cnt.nx * dPn; bj.vy += cnt.ny * dPn; bj.vz += cnt.nz * dPn;
+          if (k.friction && cnt.pn > 0) {
+            // tangential clamp against mu times the normal impulse — the engine's rule
+            const rvx = bj.vx - bi.vx, rvy = bj.vy - bi.vy, rvz = bj.vz - bi.vz;
+            const rn2 = rvx * cnt.nx + rvy * cnt.ny + rvz * cnt.nz;
+            let tx = rvx - rn2 * cnt.nx, ty = rvy - rn2 * cnt.ny, tz = rvz - rn2 * cnt.nz;
+            const dtx = -tx * 0.5, dty = -ty * 0.5, dtz = -tz * 0.5;
+            let npx = cnt.ptx + dtx, npy = cnt.pty + dty, npz = cnt.ptz + dtz;
+            const pl = Math.hypot(npx, npy, npz), cap = MU * cnt.pn;
+            if (pl > cap) { const f = cap / pl; npx *= f; npy *= f; npz *= f; }
+            const ax2 = npx - cnt.ptx, ay2 = npy - cnt.pty, az2 = npz - cnt.ptz;
+            cnt.ptx = npx; cnt.pty = npy; cnt.ptz = npz;
+            bi.vx -= ax2; bi.vy -= ay2; bi.vz -= az2; bj.vx += ax2; bj.vy += ay2; bj.vz += az2;
+          }
         }
       }
       // force break, the war engine's rule: a weld that carried more than its

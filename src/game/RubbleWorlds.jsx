@@ -11,7 +11,7 @@ export default function RubbleWorlds({ onExit }) {
   const cvs = useRef(null);
   const worldRef = useRef(null);
   const [ui, setUi] = useState({ kind: "binary", welds: true, sleep: true, seed: 0, fps: 0, awake: 0, asleep: 0, eaten: 0, weldsAlive: 0, copied: false });
-  const ctl = useRef({ kind: "binary", welds: true, sleep: true, time: 1, size: 1, reset: 1 });
+  const ctl = useRef({ kind: "binary", welds: true, sleep: true, hash: false, friction: false, time: 1, size: 1, reset: 1 });
   const copyLog = () => {
     const data = worldRef.current && worldRef.current();
     if (!data) return;
@@ -68,7 +68,9 @@ export default function RubbleWorlds({ onExit }) {
       // steps, so the first skipped frame froze the counter and time stopped dead
       const reps = k.time >= 1 ? k.time : (renderF % 2 === 0 ? 1 : 0);
       renderF++;
+      const tPhys = performance.now();
       for (let rep = 0; rep < reps; rep++) weldsAlive = stepWorld(world, k);
+      if (reps > 0) world.stepMs = +((performance.now() - tPhys) / reps).toFixed(2);
 
       drawFrame({ ctx, W, H, world, frame: world.frame });
       const wb = world.blocks, welds = world.welds;
@@ -76,7 +78,7 @@ export default function RubbleWorlds({ onExit }) {
         let awakeN = 0, asleepN = 0, weldsN = 0;
         for (const b of wb) { if (!b.alive) continue; if (b.sleeping) asleepN++; else awakeN++; }
         for (const w of welds) if (w.alive) weldsN++;
-        world.log.push({ t: +world.t.toFixed(1), awake: awakeN, asleep: asleepN, welds: weldsN, eaten: world.eaten,
+        world.log.push({ t: +world.t.toFixed(1), stepMs: world.stepMs || 0, hash: k.hash, friction: k.friction, awake: awakeN, asleep: asleepN, welds: weldsN, eaten: world.eaten,
           clumps: world.wells.filter(w => !w.deep).map(w => [Math.round(w.x), Math.round(w.z), Math.round(w.m)]) });
         if (world.log.length > 300) world.log.shift();
       }
@@ -84,7 +86,7 @@ export default function RubbleWorlds({ onExit }) {
       if (renderF % 15 === 0) {
         let awake = 0, asleep = 0;
         for (const b of wb) { if (!b.alive) continue; if (b.sleeping) asleep++; else awake++; }
-        setUi(u => ({ ...u, fps, awake, asleep, eaten: world.eaten, weldsAlive }));
+        setUi(u => ({ ...u, fps, stepMs: world.stepMs || 0, awake, asleep, eaten: world.eaten, weldsAlive }));
       }
       anim = requestAnimationFrame(loop);
     };
@@ -103,7 +105,7 @@ export default function RubbleWorlds({ onExit }) {
       <canvas ref={cvs} style={{ display: "block", touchAction: "none" }} />
       <div style={{ position: "absolute", top: 14, left: 14, background: "rgba(245,244,240,.85)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderRadius: 14, padding: "10px 16px", border: "1px solid rgba(0,0,0,.06)" }}>
         <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.8, color: "rgba(0,0,0,.5)" }}>RUBBLE WORLDS</div>
-        <div style={{ fontSize: 11, fontWeight: 500, color: "rgba(0,0,0,.45)", marginTop: 4 }}>seed {ui.seed} · {ui.fps}fps</div>
+        <div style={{ fontSize: 11, fontWeight: 500, color: "rgba(0,0,0,.45)", marginTop: 4 }}>seed {ui.seed} · {ui.fps}fps · {ui.stepMs || 0}ms/step</div>
         <div style={{ fontSize: 11, fontWeight: 500, color: "rgba(0,0,0,.45)", marginTop: 2 }}>{ui.awake} awake · {ui.asleep} asleep · welds {ui.weldsAlive}{ui.kind === "hole" ? ` · eaten ${ui.eaten}` : ""}</div>
       </div>
       {onExit && <div onClick={onExit} style={{ position: "absolute", top: 14, right: 14, background: "rgba(245,244,240,.85)", borderRadius: 10, padding: "8px 12px", border: "1px solid rgba(0,0,0,.06)", cursor: "pointer", userSelect: "none", touchAction: "none", fontSize: 10, fontWeight: 600, letterSpacing: 1, color: "rgba(0,0,0,.45)" }}>⏏ MENU</div>}
@@ -116,6 +118,8 @@ export default function RubbleWorlds({ onExit }) {
           {[0.5, 1, 2, 5].map(tm => chip(tm === 0.5 ? "×½" : "×" + tm, ctl.current.time === tm, () => setLive(k => { k.time = tm; })))}
           {chip(`WELDS ${ctl.current.welds ? "ON" : "OFF"}`, ctl.current.welds, () => setLive(k => { k.welds = !k.welds; }))}
           {chip(`SLEEP ${ctl.current.sleep ? "ON" : "OFF"}`, ctl.current.sleep, () => setLive(k => { k.sleep = !k.sleep; }))}
+          {chip(`HASH ${ctl.current.hash ? "ON" : "OFF"}`, ctl.current.hash, () => setLive(k => { k.hash = !k.hash; }))}
+          {chip(`FRICTION ${ctl.current.friction ? "ON" : "OFF"}`, ctl.current.friction, () => setLive(k => { k.friction = !k.friction; }))}
           {chip(ui.copied ? "COPIED" : "⊕ LOG", ui.copied, copyLog)}
           {chip("RESET", false, () => set(() => {}))}
         </div>
