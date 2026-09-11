@@ -216,7 +216,7 @@ function stepWorld(world, k) {
           if (world.hole && Math.hypot(g.mx - world.hole.x, g.my, g.mz - world.hole.z) < g.rad + world.hole.killR + BS * 6) near = true;
           if (world.star && Math.hypot(g.mx - world.star.x, g.my, g.mz - world.star.z) < g.rad + world.star.r + BS * 6) near = true;
           for (const o of gInfo) if (o !== g && Math.hypot(g.mx - o.mx, g.my - o.my, g.mz - o.mz) < g.rad + o.rad + BS * 6) near = true;
-          if (!k.sleep || g.ids.length < 10 || near || g.rel >= SLEEP_V) { for (const i of g.ids) wb[i].sleeping = false; continue; }
+          if (!k.sleep || g.ids.length < 10 || near || g.rel >= SLEEP_V || g.ids.some(i => wb[i].ship)) { for (const i of g.ids) wb[i].sleeping = false; continue; } // A SHIP NEVER SLEEPS: the eleven-block catamaran crossed the ten-block sleep line and froze into a stone that ignored its burns (measured, 2026-09-11)
           const agg = { x: g.mx, y: g.my, z: g.mz, vx: g.mvx, vy: g.mvy, vz: g.mvz, m: g.M, rad: g.rad, ids: g.ids, clump: g.root, om: g.om, offs: g.ids.map(i => [wb[i].x - g.mx, wb[i].y - g.my, wb[i].z - g.mz]) };
           for (const i of g.ids) wb[i].sleeping = true;
           world.aggs.push(agg);

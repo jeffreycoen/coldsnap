@@ -148,6 +148,29 @@ export default function RubbleWorlds({ onExit }) {
         for (const tk of world.tracks || []) { for (const i2 of [0]) {} }
         for (const tk of world.tracks || []) { const b0 = world.blocks.find(b2 => b2.ship && b2.alive); if (b0 && tk.clump === b0.clump) { world.shipTrack = tk; break; } }
       }
+      // the hull turns with the trajectory line: while time is frozen the
+      // connected hull rotates rigidly about its own center to face the aim.
+      // Positions turn; velocities do not — facing is the pilot's statement,
+      // the ark's way, and costs nothing until the burn fires.
+      if (world.ship && world.shipAim && world.shipAim.on && (world.shipPhase === "aim" || world.shipPhase === "plan")) {
+        const tgt = Math.atan2(world.shipAim.vz, world.shipAim.vx);
+        let dAng = tgt - (world.shipAng || 0);
+        if (dAng > Math.PI) dAng -= 2 * Math.PI; if (dAng < -Math.PI) dAng += 2 * Math.PI;
+        if (Math.abs(dAng) > 0.0005) {
+          const c4 = shipConn(world);
+          if (c4) {
+            let mx = 0, mz = 0, M = 0;
+            for (const b of c4.set) { mx += b.x * b.m; mz += b.z * b.m; M += b.m; }
+            mx /= M; mz /= M;
+            const co = Math.cos(dAng), si = Math.sin(dAng);
+            for (const b of c4.set) {
+              const rx = b.x - mx, rz = b.z - mz;
+              b.x = mx + rx * co - rz * si; b.z = mz + rx * si + rz * co;
+            }
+            world.shipAng = tgt;
+          }
+        }
+      }
       const planFrozen = world.ship && (world.shipPhase === "aim" || world.shipPhase === "plan" || (world.shipPaused && world.shipPhase === "fly")); // the ark holds the sky while you aim — time starts at LAUNCH
       const tPhys = performance.now();
       for (let rep = 0; rep < (planFrozen ? 0 : reps); rep++) weldsAlive = stepWorld(world, k);
