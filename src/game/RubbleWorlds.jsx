@@ -11,7 +11,7 @@ export default function RubbleWorlds({ onExit }) {
   const cvs = useRef(null);
   const worldRef = useRef(null);
   const [ui, setUi] = useState({ kind: "binary", welds: true, sleep: true, seed: 0, fps: 0, awake: 0, asleep: 0, eaten: 0, weldsAlive: 0, copied: false });
-  const ctl = useRef({ kind: "binary", welds: true, sleep: true, hash: false, friction: false, time: 1, size: 1, hull: "longrange", reset: 1 });
+  const ctl = useRef({ kind: "binary", welds: true, sleep: true, hash: false, friction: false, time: 1, size: 1, hull: "longrange", shipOn: false, reset: 1 });
   const copyLog = () => {
     const data = worldRef.current && worldRef.current();
     if (!data) return;
@@ -89,7 +89,7 @@ export default function RubbleWorlds({ onExit }) {
     c.addEventListener("touchstart", pDown, { passive: false }); c.addEventListener("touchmove", pMove, { passive: false });
     c.addEventListener("touchend", pUp); c.addEventListener("touchcancel", pUp);
     let world = null, seed = 0, lastReset = 0, anim, frame = 0, renderF = 0, tPrev = performance.now();
-    worldRef.current = () => world && { seed, kind: ctl.current.kind, size: ctl.current.size, hull: ctl.current.hull, welds: ctl.current.welds, sleep: ctl.current.sleep, mk: MK, log: world.log };
+    worldRef.current = () => world && { seed, kind: ctl.current.kind, size: ctl.current.size, hull: ctl.current.hull, shipOn: ctl.current.shipOn, welds: ctl.current.welds, sleep: ctl.current.sleep, mk: MK, log: world.log };
     // the ark's two-mode burns, landing on the rigid hull as uniform delta-v
     burnRef.current = (what) => {
       if (!world || !world.ship) return;
@@ -124,12 +124,13 @@ export default function RubbleWorlds({ onExit }) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       if (k.reset !== lastReset) {
         lastReset = k.reset; seed = Math.floor(Math.random() * 100000);
-        world = makeScenario(k.kind, seed, k.size, k.hull);
+        world = makeScenario(k.kind, seed, k.size, k.hull, k.shipOn);
         if (world.ship) {
           stepWorld(world, k); // one priming step: tracks and orbit lines exist before the aim freeze — the t26 intent, landed now
           const b0 = world.blocks.find(b2 => b2.ship && b2.alive);
-          if (b0 && world.gate) { // the ark's default trajectory: toward the gate at 50
-            const dx = world.gate.x - b0.x, dz = world.gate.z - b0.z, dd = Math.hypot(dx, dz) || 1;
+          if (b0) { // the ark's default trajectory: toward the gate at 50, or away from the mass where no gate stands
+            const dx = world.gate ? world.gate.x - b0.x : b0.x, dz = world.gate ? world.gate.z - b0.z : b0.z;
+            const dd = Math.hypot(dx, dz) || 1;
             world.shipAim = { on: true, vx: dx / dd * 50, vz: dz / dd * 50 };
           }
         }
@@ -237,6 +238,7 @@ export default function RubbleWorlds({ onExit }) {
       <div style={{ position: "absolute", bottom: 20, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "0 12px" }}>
         {!(ui.phase === "aim" || ui.phase === "plan") && <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
           {SCENES.map(sn => chip(SCENE_LABEL[sn], ui.kind === sn, () => set(k => { k.kind = sn; })))}
+          {ui.kind !== "ship" && chip(`FLY ${ctl.current.shipOn ? "ON" : "OFF"}`, ctl.current.shipOn, () => set(k => { k.shipOn = !k.shipOn; }))}
         </div>}
         {ui.phase === "aim" && <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
           {HULL_LIST.map(hn => chip(HULL_LABEL[hn], ctl.current.hull === hn, () => set(k => { k.hull = hn; })))}

@@ -45,8 +45,21 @@ const HULL_LIST = ["starter", "courier", "longrange", "hauler", "wingturner", "g
 const HULL_LABEL = { starter: "STARTER", courier: "COURIER", longrange: "LONG-RANGE", hauler: "HAULER", wingturner: "WING TURNER", gunboat: "GUNBOAT", catamaran: "CATAMARAN", grappler: "GRAPPLER" };
 const SCENES = ["ship", "binary", "duet", "moons", "trio", "system", "hole"];
 const SCENE_LABEL = { ship: "SHIP", binary: "TWINS", duet: "DUET", moons: "MOONS", trio: "TRIO", system: "SYSTEM", hole: "HOLE" };
+// the flyable ship, appended to any scene: the chosen hull at (sx, sz),
+// fuel in the cabin's reserve of 100 plus 210 per tank, aiming from birth.
+// Hull blocks stay one block wide at every world size, as they always have.
+function addShip(world, hull, sx, sz) {
+  const bp = HULLS[hull] || HULLS.longrange;
+  let tanks = 0;
+  for (const [pt, gx, gy] of bp) {
+    if (pt === "tank") tanks++;
+    world.blocks.push({ x: sx + gx * BS, y: 0, z: sz + gy * BS, vx: 0, vy: 0, vz: 0, tint: 2, ship: true, eng: pt === "engine", cab: pt === "bridge", tank: pt === "tank", hp: 100, alive: true, sleeping: false, clump: -1, s: BS, cr: BS * 0.55, m: 120 });
+  }
+  world.ship = { fuel: 100 + 210 * tanks, max: 100 + 210 * tanks, burns: 0 };
+  world.shipPhase = "aim";
+}
 // weld strength per planet size — measured calm loads 17/90/105, same 1.76x margin each
-function makeScenario(kind, seed, size = 1, hull = "longrange") {
+function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) {
   const rand = makeRand(seed);
   const world = { kind, size, blocks: [], welds: [], hole: null, eaten: 0, aggs: [], wells: [], warm: new Map(), t: 0, frame: 0, log: [] };
   // SIZE arm: every planet's radius scales by `size`, its mass by size cubed,
@@ -66,15 +79,7 @@ function makeScenario(kind, seed, size = 1, hull = "longrange") {
     world.blocks = makePlanet(0, 0, 0, 0, 0, rand);
     const mr = 105 * size, mv = Math.sqrt(G * PMASS * size ** 3 * mr / Math.pow(mr * mr + SF * SF, 1.15));
     world.blocks.push(...makePlanet(mr, 0, 0, mv, 1, rand, BS * 0.9, 80 * size ** 3));
-    const sx = -200 * size, sz = 80 * size;
-    const bp = HULLS[hull] || HULLS.longrange;
-    let tanks = 0;
-    for (const [pt, gx, gy] of bp) {
-      if (pt === "tank") tanks++;
-      world.blocks.push({ x: sx + gx * BS, y: 0, z: sz + gy * BS, vx: 0, vy: 0, vz: 0, tint: 2, ship: true, eng: pt === "engine", cab: pt === "bridge", tank: pt === "tank", hp: 100, alive: true, sleeping: false, clump: -1, s: BS, cr: BS * 0.55, m: 120 });
-    }
-    world.ship = { fuel: 100 + 210 * tanks, max: 100 + 210 * tanks, burns: 0 };
-    world.shipPhase = "aim";
+    addShip(world, hull, -200 * size, 80 * size);
     world.gate = { x: 210 * size, z: -90 * size, r: 36, reached: false }; // the ark's ring, absolute radius
     world.span = 260 * size;
   } else if (kind === "binary") {
@@ -145,6 +150,7 @@ function makeScenario(kind, seed, size = 1, hull = "longrange") {
     world.blocks = world_mk(px / size, 0, 0, v, 0, BS * 2.85, PMASS);
     world.span = 300 * size;
   }
+  if (shipOn && kind !== "ship") addShip(world, hull, -world.span * 0.77, world.span * 0.31);
   world.welds = buildWelds(world.blocks);
   world.weldOf = new Map();
   for (const w of world.welds) world.weldOf.set(w.a * 100000 + w.b, w);
