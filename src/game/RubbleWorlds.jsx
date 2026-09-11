@@ -16,8 +16,8 @@ const DT = 1 / 60, SF = 8, G = 210, C30 = Math.cos(Math.PI / 6), S30 = 0.5;
 const BS = 6;              // block edge in sim units
 const BR = BS * 0.55;      // contact radius
 const PMASS = 6000;        // one planet's whole mass — parity with the ark's planets
-const KSOFT = 900;         // soft-repulsion stiffness
-const CDAMP = 4;           // contact normal damping — the energy bleed
+const KSOFT = 150;         // soft-repulsion stiffness — 900 was unstable at the 1/60 step and detonated every contact; 150 measured bound
+const CDAMP = 10;          // contact normal damping — the energy bleed
 const WELD_K = 260;        // weld spring stiffness
 const WELD_BREAK = 1.9;    // weld tears past this stretch ratio
 const SLEEP_V = 2.2;       // a clump sleeps under this relative speed
@@ -53,8 +53,9 @@ function makeScenario(kind, seed) {
   const world = { kind, blocks: [], welds: [], hole: null, eaten: 0, aggs: [], wells: [], t: 0 };
   if (kind === "binary") {
     const d = 190;
-    // half the circular speed for this law — measured headless in 3D:
-    // first contact near 14.5 seconds, merged by 19
+    // half the circular speed for this law — measured headless in 3D with the
+    // stable contact: first contact near 14.5 seconds, merged by 19, and the
+    // pile stays bound — every block inside radius 200 a minute after the meeting
     const vOrb = Math.sqrt(G * PMASS * d / Math.pow(2 * d, 2.3)) * 0.5;
     world.blocks = [
       ...makePlanet(-d, 0, 0, -vOrb, 0, rand),
@@ -63,9 +64,10 @@ function makeScenario(kind, seed) {
   } else {
     world.hole = { x: 0, z: 0, m: 42000, killR: 26 };
     const px = 240;
-    // 60% of circular: the ellipse dips into the tide — measured headless in 3D:
-    // streaming from 4 seconds, more than half the blocks eaten by 90
-    const v = Math.sqrt(G * world.hole.m / Math.pow(px, 1.3)) * 0.6;
+    // 53% of circular sits just inside the capture threshold — measured headless
+    // in 3D with the stable contact: streaming from 4 seconds, 86 of 93 eaten
+    // across two minutes, a thin tail of survivors
+    const v = Math.sqrt(G * world.hole.m / Math.pow(px, 1.3)) * 0.53;
     world.blocks = makePlanet(px, 0, 0, v, 0, rand);
   }
   world.welds = buildWelds(world.blocks);
@@ -168,7 +170,12 @@ export default function RubbleWorlds({ onExit }) {
         if (world.hole) { const d = Math.hypot(a.x - world.hole.x, a.y, a.z - world.hole.z); ext = Math.max(ext, G * world.hole.m * (Math.pow(Math.max(d - a.rad, SF), -2.3) - Math.pow(d + a.rad, -2.3))); }
         for (const o of world.aggs) if (o !== a) { const d = Math.hypot(a.x - o.x, a.y - o.y, a.z - o.z); ext = Math.max(ext, G * o.m * (Math.pow(Math.max(d - a.rad, SF), -2.3) - Math.pow(d + a.rad, -2.3))); }
         const hold = G * a.m / Math.pow(Math.max(a.rad, SF), 2.3);
-        if (ext > hold * WAKE_TIDE) { for (const i of a.ids) wb[i].sleeping = false; a.dead = true; }
+        // proximity wake: an aggregate must be awake BEFORE anything can touch it —
+        // sleeping bodies run no contact, and a point-mass flyby is the ship's move, not a planet's
+        let near = false;
+        if (world.hole && Math.hypot(a.x - world.hole.x, a.y, a.z - world.hole.z) < a.rad + world.hole.killR + BS * 6) near = true;
+        for (const o of world.aggs) if (o !== a && !o.dead && Math.hypot(a.x - o.x, a.y - o.y, a.z - o.z) < a.rad + o.rad + BS * 4) near = true;
+        if (near || ext > hold * WAKE_TIDE) { for (const i of a.ids) wb[i].sleeping = false; a.dead = true; }
       }
       world.aggs = world.aggs.filter(a => !a.dead);
 
