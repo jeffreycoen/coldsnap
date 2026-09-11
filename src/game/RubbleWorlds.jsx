@@ -117,7 +117,7 @@ export default function RubbleWorlds({ onExit }) {
         for (const tk of world.tracks || []) { for (const i2 of [0]) {} }
         for (const tk of world.tracks || []) { const b0 = world.blocks.find(b2 => b2.ship && b2.alive); if (b0 && tk.clump === b0.clump) { world.shipTrack = tk; break; } }
       }
-      const planFrozen = world.ship && (world.shipPhase === "plan" || (world.shipPaused && world.shipPhase === "fly"));
+      const planFrozen = world.ship && (world.shipPhase === "aim" || world.shipPhase === "plan" || (world.shipPaused && world.shipPhase === "fly")); // the ark holds the sky while you aim — time starts at LAUNCH
       const tPhys = performance.now();
       for (let rep = 0; rep < (planFrozen ? 0 : reps); rep++) weldsAlive = stepWorld(world, k);
       if (reps > 0) world.stepMs = +((performance.now() - tPhys) / reps).toFixed(2);
