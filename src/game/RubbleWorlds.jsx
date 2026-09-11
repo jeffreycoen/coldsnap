@@ -28,7 +28,6 @@ const ITERS = 8;           // solver sweeps per frame — the war engine tiers 4
 const SLOP = 0.05;         // penetration allowance before the bias pushes
 const BETA = 0.18;         // Baumgarte factor, the engine's own number
 const BIAS_CAP = 5;        // bias ceiling, the engine's own number
-const WELD_STRENGTH = 30;  // impulse a weld can carry per frame before it tears — measured: calm load peaks ~17, the hole's tide ~71
 const WELD_BREAK = 2.2;    // weld tears past this stretch ratio — measured: the welded planet passes the tide as chunks, 11 eaten against 66 weldless
 const WELD_BIAS = 0.35;    // weld positional bias — stiff enough that welds carry load before breaking
 const SLEEP_V = 2.2;       // a clump sleeps under this relative speed
@@ -60,94 +59,87 @@ function buildWelds(blocks) {
   return welds;
 }
 
-const SCENES = ["binary", "duet", "moons", "trio", "system", "hole", "giant", "titan"];
-const SCENE_LABEL = { binary: "TWINS", duet: "DUET", moons: "MOONS", trio: "TRIO", system: "SYSTEM", hole: "HOLE", giant: "GIANT", titan: "TITAN" };
-function makeScenario(kind, seed) {
+const SCENES = ["binary", "duet", "moons", "trio", "system", "hole"];
+const SCENE_LABEL = { binary: "TWINS", duet: "DUET", moons: "MOONS", trio: "TRIO", system: "SYSTEM", hole: "HOLE" };
+// weld strength per planet size — measured calm loads 17/90/105, same 1.76x margin each
+const WELD_STRENGTH_BY_SIZE = { 1: 30, 2: 160, 5: 185 };
+function makeScenario(kind, seed, size = 1) {
   const rand = makeRand(seed);
-  const world = { kind, blocks: [], welds: [], hole: null, eaten: 0, aggs: [], wells: [], warm: new Map(), t: 0 };
+  const world = { kind, size, blocks: [], welds: [], hole: null, eaten: 0, aggs: [], wells: [], warm: new Map(), t: 0 };
+  // SIZE arm: every planet's radius scales by `size`, its mass by size cubed,
+  // and every orbit distance by `size`. The block pitch comes from a budget —
+  // more cells for roundness where the scene can pay, bigger cubes where it
+  // cannot: a scene carries about 1700 blocks at most, split across planets.
+  const nPlanets = kind === "trio" ? 3 : kind === "system" ? 9 : kind === "binary" || kind === "duet" ? 2 : 1;
+  const pitchFor = (R) => Math.max(BS, R / Math.cbrt((1700 / nPlanets) / 4.19));
+  const world_mk = (cx, cz, vx, vz, tint, R1, m1) => makePlanet(cx * size, cz * size, vx, vz, tint, rand, R1 * size, m1 * size ** 3, pitchFor(R1 * size));
   if (kind === "binary") {
     const d = 190;
     // half the circular speed for this law — measured headless with the
     // constraint solver: first contact near 14.5 seconds, and the merged
     // world stays bound inside radius ~40 a minute after the meeting
-    const vOrb = Math.sqrt(G * PMASS * d / Math.pow(2 * d, 2.3)) * 0.5;
+    const dS = d * size, mS = PMASS * size ** 3;
+    const vOrb = Math.sqrt(G * mS * dS / Math.pow(2 * dS, 2.3)) * 0.5;
     world.blocks = [
-      ...makePlanet(-d, 0, 0, -vOrb, 0, rand),
-      ...makePlanet(d, 0, 0, vOrb, 1, rand),
+      ...world_mk(-d, 0, 0, -vOrb, 0, BS * 2.85, PMASS),
+      ...world_mk(d, 0, 0, vOrb, 1, BS * 2.85, PMASS),
     ];
-    world.span = 250;
+    world.span = 250 * size;
   } else if (kind === "duet") {
     // a heavy and a light world on the law's own circular speeds around their
     // shared center — measured headless: separation holds 199-201 for three minutes
-    const M1 = PMASS, M2 = 1500, R = 200;
+    const M1 = PMASS * size ** 3, M2 = 1500 * size ** 3, R = 200 * size;
     const d1 = R * M2 / (M1 + M2), d2 = R * M1 / (M1 + M2);
     const v1 = Math.sqrt(G * M2 * d1 / Math.pow(R * R + SF * SF, 1.15));
     const v2 = Math.sqrt(G * M1 * d2 / Math.pow(R * R + SF * SF, 1.15));
     world.blocks = [
-      ...makePlanet(-d1, 0, 0, -v1, 0, rand),
-      ...makePlanet(d2, 0, 0, v2, 1, rand, BS * 1.8, M2),
+      ...world_mk(-d1 / size, 0, 0, -v1, 0, BS * 2.85, PMASS),
+      ...world_mk(d2 / size, 0, 0, v2, 1, BS * 1.8, 1500),
     ];
-    world.span = 260;
+    world.span = 260 * size;
   } else if (kind === "trio") {
     // three equal worlds on a rotating equilateral triangle — the relative
     // equilibrium measured headless (radius band 161-162 for three minutes as
     // points); the blocks' own unevenness is what eventually breaks it
-    const L = 280, R2 = L / Math.sqrt(3);
-    const aC = 2 * G * PMASS * Math.cos(Math.PI / 6) / Math.pow(L * L + SF * SF, 1.15);
+    const L = 280 * size, R2 = L / Math.sqrt(3), mS = PMASS * size ** 3;
+    const aC = 2 * G * mS * Math.cos(Math.PI / 6) / Math.pow(L * L + SF * SF, 1.15);
     const vT = Math.sqrt(aC * R2);
     for (let i = 0; i < 3; i++) {
       const th = i * 2 * Math.PI / 3;
-      world.blocks.push(...makePlanet(Math.cos(th) * R2, Math.sin(th) * R2, -Math.sin(th) * vT, Math.cos(th) * vT, i % 2, rand));
+      world.blocks.push(...world_mk(Math.cos(th) * R2 / size, Math.sin(th) * R2 / size, -Math.sin(th) * vT, Math.cos(th) * vT, i % 2, BS * 2.85, PMASS));
     }
-    world.span = 300;
+    world.span = 300 * size;
   } else if (kind === "system") {
     // the mission's own sky: a pinned star, nine light planets on rings, and
     // planet-to-planet gravity at 1% — the ark's law, measured headless:
     // every ring held for three minutes, worst excursion 36%
-    world.star = { x: 0, z: 0, m: 40000, r: 34 };
+    world.star = { x: 0, z: 0, m: 40000 * size ** 3, r: 34 * size };
     world.weak = true;
     for (const r of [110, 150, 190, 235, 280, 325, 370, 415, 460]) {
-      const th = rand() * Math.PI * 2;
-      const v = Math.sqrt(G * world.star.m * r / Math.pow(r * r + SF * SF, 1.15));
-      world.blocks.push(...makePlanet(Math.cos(th) * r, Math.sin(th) * r, -Math.sin(th) * v, Math.cos(th) * v, world.blocks.length % 2 === 0 ? 0 : 1, rand, BS * 1.6, 1200));
+      const rS = r * size, th = rand() * Math.PI * 2;
+      const v = Math.sqrt(G * world.star.m * rS / Math.pow(rS * rS + SF * SF, 1.15));
+      world.blocks.push(...world_mk(Math.cos(th) * r, Math.sin(th) * r, -Math.sin(th) * v, Math.cos(th) * v, world.blocks.length % 2 === 0 ? 0 : 1, BS * 1.6, 1200));
     }
-    world.span = 500;
-  } else if (kind === "giant") {
-    // a 2x world: 751 blocks at the standard pitch, 13 cells across — measured
-    // headless: holds its built radius 34.6 exactly; a moon at 120 rides 117-123
-    world.blocks = makePlanet(0, 0, 0, 0, 0, rand, BS * 5.7, 48000);
-    for (const r of [120, 170]) {
-      const v = Math.sqrt(G * 48000 * r / Math.pow(r * r + SF * SF, 1.15));
-      world.blocks.push(...makePlanet(r, 0, 0, v, 1, rand, BS * 0.9, 300));
-    }
-    world.span = 220;
-  } else if (kind === "titan") {
-    // a 5x world: bigger blocks (pitch 15) keep it at 751, 13 cells across —
-    // measured headless: settles from 86.7 to 91.6 and holds, a knowing 6% relax
-    world.blocks = makePlanet(0, 0, 0, 0, 0, rand, BS * 14.25, 750000, 15);
-    for (const r of [250, 350]) {
-      const v = Math.sqrt(G * 750000 * r / Math.pow(r * r + SF * SF, 1.15));
-      world.blocks.push(...makePlanet(r, 0, 0, v, 1, rand, BS * 0.9, 2000));
-    }
-    world.span = 430;
+    world.span = 500 * size;
   } else if (kind === "moons") {
     // three light moons on circular speed, spaced wide so their mutual tug stays
     // small — measured headless: a lone moon holds a 97-101 band for three minutes
-    world.blocks = makePlanet(0, 0, 0, 0, 0, rand);
+    world.blocks = world_mk(0, 0, 0, 0, 0, BS * 2.85, PMASS);
     for (const r of [60, 105, 160]) {
-      const v = Math.sqrt(G * PMASS * r / Math.pow(r * r + SF * SF, 1.15));
-      world.blocks.push(...makePlanet(r, 0, 0, v, 1, rand, BS * 0.9, 80));
+      const rS = r * size, mS = PMASS * size ** 3;
+      const v = Math.sqrt(G * mS * rS / Math.pow(rS * rS + SF * SF, 1.15));
+      world.blocks.push(...makePlanet(rS, 0, 0, v, 1, rand, BS * 0.9, 80 * size ** 3));
     }
-    world.span = 200;
+    world.span = 200 * size;
   } else {
-    world.hole = { x: 0, z: 0, m: 42000, killR: 26 };
-    const px = 240;
+    world.hole = { x: 0, z: 0, m: 42000 * size ** 3, killR: 26 * size };
+    const px = 240 * size;
     // 53% of circular sits just inside the capture threshold — measured
     // headless with the constraint solver: streaming from 4 seconds,
     // 66 of 93 eaten weldless across two minutes, 51 welded
     const v = Math.sqrt(G * world.hole.m / Math.pow(px, 1.3)) * 0.53;
-    world.blocks = makePlanet(px, 0, 0, v, 0, rand);
-    world.span = 300;
+    world.blocks = world_mk(px / size, 0, 0, v, 0, BS * 2.85, PMASS);
+    world.span = 300 * size;
   }
   world.welds = buildWelds(world.blocks);
   world.weldOf = new Map();
@@ -188,7 +180,7 @@ export default function RubbleWorlds({ onExit }) {
   const cvs = useRef(null);
   const worldRef = useRef(null);
   const [ui, setUi] = useState({ kind: "binary", welds: true, sleep: true, seed: 0, fps: 0, awake: 0, asleep: 0, eaten: 0, weldsAlive: 0, copied: false });
-  const ctl = useRef({ kind: "binary", welds: true, sleep: true, time: 1, reset: 1 });
+  const ctl = useRef({ kind: "binary", welds: true, sleep: true, time: 1, size: 1, reset: 1 });
   const copyLog = () => {
     const data = worldRef.current && worldRef.current();
     if (!data) return;
@@ -204,14 +196,14 @@ export default function RubbleWorlds({ onExit }) {
     const resize = () => { c.width = window.innerWidth * dpr; c.height = window.innerHeight * dpr; c.style.width = window.innerWidth + "px"; c.style.height = window.innerHeight + "px"; };
     resize(); window.addEventListener("resize", resize);
     let world = null, seed = 0, lastReset = 0, anim, frame = 0, tPrev = performance.now();
-    worldRef.current = () => world && { seed, kind: ctl.current.kind, welds: ctl.current.welds, sleep: ctl.current.sleep, mk: MK, log: world.log };
+    worldRef.current = () => world && { seed, kind: ctl.current.kind, size: ctl.current.size, welds: ctl.current.welds, sleep: ctl.current.sleep, mk: MK, log: world.log };
 
     const loop = () => {
       const W = c.width / dpr, H = c.height / dpr, k = ctl.current;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       if (k.reset !== lastReset) {
         lastReset = k.reset; seed = Math.floor(Math.random() * 100000);
-        world = makeScenario(k.kind, seed);
+        world = makeScenario(k.kind, seed, k.size);
         setUi(u => ({ ...u, kind: k.kind, seed, eaten: 0 }));
       }
       const wb = world.blocks, welds = world.welds;
@@ -364,7 +356,7 @@ export default function RubbleWorlds({ onExit }) {
       // constraint is what prevents stretch (the unbreakable-weld flyby, 2026-09-11)
       if (k.welds) for (const w of welds) {
         if (!w.alive) continue;
-        if (w.acc > WELD_STRENGTH) w.alive = false; else weldsAlive++;
+        if (w.acc > (WELD_STRENGTH_BY_SIZE[world.size] || 30)) w.alive = false; else weldsAlive++;
         w.acc = 0;
       }
       world.warm.clear();
@@ -444,11 +436,11 @@ export default function RubbleWorlds({ onExit }) {
       for (const b of world.pred || []) {
         const pts = b.pts; if (pts.length < 4) continue;
         const redFrom = b.hit >= 0 ? Math.max(0, b.hit - 30) : pts.length + 1;
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 2.2;
         for (let i2 = 3; i2 < pts.length; i2 += 3) {
           const p0 = iso(pts[i2 - 3][0], pts[i2 - 3][1], 0), p1 = iso(pts[i2][0], pts[i2][1], 0);
-          const fade = Math.max(0.1, 1 - i2 / pts.length);
-          ctx.strokeStyle = i2 >= redFrom ? `rgba(220,55,35,${fade * 0.6})` : `rgba(60,200,100,${fade * 0.45})`;
+          const fade = Math.max(0.25, 1 - i2 / pts.length);
+          ctx.strokeStyle = i2 >= redFrom ? `rgba(220,55,35,${fade * 0.95})` : `rgba(40,170,90,${fade * 0.85})`;
           ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
         }
       }
@@ -530,19 +522,22 @@ export default function RubbleWorlds({ onExit }) {
       <canvas ref={cvs} style={{ display: "block", touchAction: "none" }} />
       <div style={{ position: "absolute", top: 14, left: 14, background: "rgba(245,244,240,.85)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderRadius: 14, padding: "10px 16px", border: "1px solid rgba(0,0,0,.06)" }}>
         <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.8, color: "rgba(0,0,0,.5)" }}>RUBBLE WORLDS</div>
-        <div style={{ fontSize: 8, fontWeight: 500, color: "rgba(0,0,0,.35)", marginTop: 3 }}>seed {ui.seed} · {ui.fps}fps</div>
-        <div style={{ fontSize: 8, fontWeight: 500, color: "rgba(0,0,0,.35)", marginTop: 2 }}>{ui.awake} awake · {ui.asleep} asleep · welds {ui.weldsAlive}{ui.kind === "hole" ? ` · eaten ${ui.eaten}` : ""}</div>
+        <div style={{ fontSize: 11, fontWeight: 500, color: "rgba(0,0,0,.45)", marginTop: 4 }}>seed {ui.seed} · {ui.fps}fps</div>
+        <div style={{ fontSize: 11, fontWeight: 500, color: "rgba(0,0,0,.45)", marginTop: 2 }}>{ui.awake} awake · {ui.asleep} asleep · welds {ui.weldsAlive}{ui.kind === "hole" ? ` · eaten ${ui.eaten}` : ""}</div>
       </div>
       {onExit && <div onClick={onExit} style={{ position: "absolute", top: 14, right: 14, background: "rgba(245,244,240,.85)", borderRadius: 10, padding: "8px 12px", border: "1px solid rgba(0,0,0,.06)", cursor: "pointer", userSelect: "none", touchAction: "none", fontSize: 10, fontWeight: 600, letterSpacing: 1, color: "rgba(0,0,0,.45)" }}>⏏ MENU</div>}
-      <div style={{ position: "absolute", bottom: 78, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap", padding: "0 12px" }}>
-        {SCENES.map(sn => chip(SCENE_LABEL[sn], ui.kind === sn, () => set(k => { k.kind = sn; })))}
-      </div>
-      <div style={{ position: "absolute", bottom: 24, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap", padding: "0 12px" }}>
-        {[0.5, 1, 2, 5].map(tm => chip(tm === 0.5 ? "×½" : "×" + tm, ctl.current.time === tm, () => setLive(k => { k.time = tm; })))}
-        {chip(`WELDS ${ctl.current.welds ? "ON" : "OFF"}`, ctl.current.welds, () => setLive(k => { k.welds = !k.welds; }))}
-        {chip(`SLEEP ${ctl.current.sleep ? "ON" : "OFF"}`, ctl.current.sleep, () => setLive(k => { k.sleep = !k.sleep; }))}
-        {chip(ui.copied ? "COPIED" : "⊕ LOG", ui.copied, copyLog)}
-        {chip("RESET", false, () => set(() => {}))}
+      <div style={{ position: "absolute", bottom: 20, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "0 12px" }}>
+        <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
+          {SCENES.map(sn => chip(SCENE_LABEL[sn], ui.kind === sn, () => set(k => { k.kind = sn; })))}
+        </div>
+        <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
+          {[1, 2, 5].map(sz => chip("SIZE " + sz + "x", ctl.current.size === sz, () => set(k => { k.size = sz; })))}
+          {[0.5, 1, 2, 5].map(tm => chip(tm === 0.5 ? "×½" : "×" + tm, ctl.current.time === tm, () => setLive(k => { k.time = tm; })))}
+          {chip(`WELDS ${ctl.current.welds ? "ON" : "OFF"}`, ctl.current.welds, () => setLive(k => { k.welds = !k.welds; }))}
+          {chip(`SLEEP ${ctl.current.sleep ? "ON" : "OFF"}`, ctl.current.sleep, () => setLive(k => { k.sleep = !k.sleep; }))}
+          {chip(ui.copied ? "COPIED" : "⊕ LOG", ui.copied, copyLog)}
+          {chip("RESET", false, () => set(() => {}))}
+        </div>
       </div>
     </div>
   );
