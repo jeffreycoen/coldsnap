@@ -30,7 +30,7 @@ export default function ArkHud({ ui, s, locked, noFuel, showTutorial, setShowTut
         <div style={{marginTop:40,fontSize:11,fontWeight:600,color:"rgba(0,0,0,.3)",letterSpacing:1.5}}>TAP ANYWHERE TO BEGIN</div>
       </div>}
       {!ui.showMap&&<>
-        <div style={{position:"absolute",top:14,left:14,background:"rgba(245,244,240,.82)",backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",borderRadius:14,padding:"10px 16px",border:"1px solid rgba(0,0,0,.06)",maxWidth:210}}>
+        <div style={{position:"absolute",top:14,left:14,background:"rgba(245,244,240,.82)",backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",borderRadius:14,padding:"10px 16px",border:"1px solid rgba(0,0,0,.06)",maxWidth:210,userSelect:"none",WebkitUserSelect:"none"}}>
           <div style={{fontSize:9,fontWeight:700,letterSpacing:1.8,color:"rgba(0,0,0,.4)",marginBottom:2}}>{ui.sysName}</div>
           <div style={{fontSize:8,fontWeight:500,color:"rgba(0,0,0,.3)",marginBottom:6,lineHeight:1.3}}>{ui.brief}</div>
           <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
@@ -52,7 +52,7 @@ export default function ArkHud({ ui, s, locked, noFuel, showTutorial, setShowTut
             <div style={{display:"flex",gap:8,pointerEvents:"auto",alignItems:"center"}}>
               <Btn icon="◀" color="60,80,140" onClick={()=>adjustAngle(-.03)}/>
               <Btn icon="−" color="60,80,140" onClick={()=>adjustPower(-3)}/>
-              <div style={{padding:"4px 12px",borderRadius:10,background:"rgba(0,0,0,.04)",minWidth:50,textAlign:"center"}}>
+              <div style={{padding:"4px 12px",borderRadius:10,background:"rgba(0,0,0,.04)",minWidth:50,textAlign:"center",userSelect:"none",WebkitUserSelect:"none"}}>
                 <span style={{fontSize:14,fontWeight:300,color:"rgba(0,0,0,.7)",fontVariantNumeric:"tabular-nums"}}>{Math.sqrt(lock.current.vx**2+lock.current.vz**2).toFixed(0)}</span>
                 <span style={{fontSize:8,fontWeight:600,color:"rgba(0,0,0,.25)",marginLeft:3}}>Δv</span>
               </div>

@@ -11,7 +11,7 @@ const medalColor = (m) =>
 // THE PROVING RANGE (P6 T7, mk1.14). The five tech demos this war was built
 // on, moved whole off the front door behind one quiet link. Same cards, same
 // data-menu attributes, same medal rows — only their home changed.
-export default function DemosScreen({ onPlay, onControls, onMech, onTowerDef, onArk, onBack }) {
+export default function DemosScreen({ onPlay, onControls, onMech, onTowerDef, onArk, onRubble, onBack }) {
   const [medals, setMedals] = useState(null);
   const [isTouch] = useState(detectTouch);
 
@@ -73,6 +73,11 @@ export default function DemosScreen({ onPlay, onControls, onMech, onTowerDef, on
         <button data-menu="gravark" style={option({ borderColor: "#4e5a7a" })} onClick={onArk}>
           <div style={{ color: "#9fa8d4", fontSize: 15, letterSpacing: 2 }}>▶ GRAVITY'S ARK</div>
           <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>Seeded star systems, real orbits. Plan the burn, thread the wells, make the gate.</div>
+        </button>
+
+        <button data-menu="rubble" style={option({ borderColor: "#6a5a7a" })} onClick={onRubble}>
+          <div style={{ color: "#b49fd4", fontSize: 15, letterSpacing: 2 }}>▶ RUBBLE WORLDS</div>
+          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>Block planets under real gravity. Two worlds collide; a third streams into a black hole.</div>
         </button>
 
         <button data-menu="controls" style={option()} onClick={onControls}>
