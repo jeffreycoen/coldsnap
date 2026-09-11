@@ -36,13 +36,14 @@ const WAKE_TIDE = 0.35;    // aggregate wakes when tidal spread exceeds this fra
 
 function makeRand(seed) { let ri = 0; return () => { const v = Math.sin(seed + (ri++) * 9973) * 43758.5453; return v - Math.floor(v); }; }
 
-// a true sphere of cubes: every lattice cell within R of center (R 2.85 blocks = 93)
-function makePlanet(cx, cz, vx, vz, tint, rand, R = BS * 2.85, mass = PMASS) {
-  const blocks = []; const n = Math.ceil(R / BS);
+// a true sphere of cubes: every lattice cell within R of center. `pitch` is the
+// block edge — big worlds use bigger blocks so the count stays payable.
+function makePlanet(cx, cz, vx, vz, tint, rand, R = BS * 2.85, mass = PMASS, pitch = BS) {
+  const blocks = []; const n = Math.ceil(R / pitch);
   for (let ix = -n; ix <= n; ix++) for (let iy = -n; iy <= n; iy++) for (let iz = -n; iz <= n; iz++) {
-    const px = ix * BS, py = iy * BS, pz = iz * BS;
+    const px = ix * pitch, py = iy * pitch, pz = iz * pitch;
     if (Math.sqrt(px * px + py * py + pz * pz) > R) continue;
-    blocks.push({ x: cx + px + (rand() - 0.5), y: py + (rand() - 0.5), z: cz + pz + (rand() - 0.5), vx, vy: 0, vz, tint, alive: true, sleeping: false, clump: -1 });
+    blocks.push({ x: cx + px + (rand() - 0.5), y: py + (rand() - 0.5), z: cz + pz + (rand() - 0.5), vx, vy: 0, vz, tint, alive: true, sleeping: false, clump: -1, s: pitch, cr: pitch * 0.55 });
   }
   for (const b of blocks) b.m = mass / blocks.length;
   return blocks;
@@ -54,13 +55,13 @@ function buildWelds(blocks) {
     if (blocks[i].tint !== blocks[j].tint) continue;
     const dx = blocks[j].x - blocks[i].x, dy = blocks[j].y - blocks[i].y, dz = blocks[j].z - blocks[i].z;
     const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    if (d < BS * 1.45) welds.push({ a: i, b: j, rest: d, alive: true, acc: 0 });
+    if (d < Math.max(blocks[i].s, blocks[j].s) * 1.45) welds.push({ a: i, b: j, rest: d, alive: true, acc: 0 });
   }
   return welds;
 }
 
-const SCENES = ["binary", "duet", "moons", "trio", "system", "hole"];
-const SCENE_LABEL = { binary: "TWINS", duet: "DUET", moons: "MOONS", trio: "TRIO", system: "SYSTEM", hole: "HOLE" };
+const SCENES = ["binary", "duet", "moons", "trio", "system", "hole", "giant", "titan"];
+const SCENE_LABEL = { binary: "TWINS", duet: "DUET", moons: "MOONS", trio: "TRIO", system: "SYSTEM", hole: "HOLE", giant: "GIANT", titan: "TITAN" };
 function makeScenario(kind, seed) {
   const rand = makeRand(seed);
   const world = { kind, blocks: [], welds: [], hole: null, eaten: 0, aggs: [], wells: [], warm: new Map(), t: 0 };
@@ -111,6 +112,24 @@ function makeScenario(kind, seed) {
       world.blocks.push(...makePlanet(Math.cos(th) * r, Math.sin(th) * r, -Math.sin(th) * v, Math.cos(th) * v, world.blocks.length % 2 === 0 ? 0 : 1, rand, BS * 1.6, 1200));
     }
     world.span = 500;
+  } else if (kind === "giant") {
+    // a 2x world: 751 blocks at the standard pitch, 13 cells across — measured
+    // headless: holds its built radius 34.6 exactly; a moon at 120 rides 117-123
+    world.blocks = makePlanet(0, 0, 0, 0, 0, rand, BS * 5.7, 48000);
+    for (const r of [120, 170]) {
+      const v = Math.sqrt(G * 48000 * r / Math.pow(r * r + SF * SF, 1.15));
+      world.blocks.push(...makePlanet(r, 0, 0, v, 1, rand, BS * 0.9, 300));
+    }
+    world.span = 220;
+  } else if (kind === "titan") {
+    // a 5x world: bigger blocks (pitch 15) keep it at 751, 13 cells across —
+    // measured headless: settles from 86.7 to 91.6 and holds, a knowing 6% relax
+    world.blocks = makePlanet(0, 0, 0, 0, 0, rand, BS * 14.25, 750000, 15);
+    for (const r of [250, 350]) {
+      const v = Math.sqrt(G * 750000 * r / Math.pow(r * r + SF * SF, 1.15));
+      world.blocks.push(...makePlanet(r, 0, 0, v, 1, rand, BS * 0.9, 2000));
+    }
+    world.span = 430;
   } else if (kind === "moons") {
     // three light moons on circular speed, spaced wide so their mutual tug stays
     // small — measured headless: a lone moon holds a 97-101 band for three minutes
@@ -169,7 +188,7 @@ export default function RubbleWorlds({ onExit }) {
   const cvs = useRef(null);
   const worldRef = useRef(null);
   const [ui, setUi] = useState({ kind: "binary", welds: true, sleep: true, seed: 0, fps: 0, awake: 0, asleep: 0, eaten: 0, weldsAlive: 0, copied: false });
-  const ctl = useRef({ kind: "binary", welds: true, sleep: true, reset: 1 });
+  const ctl = useRef({ kind: "binary", welds: true, sleep: true, time: 1, reset: 1 });
   const copyLog = () => {
     const data = worldRef.current && worldRef.current();
     if (!data) return;
@@ -196,6 +215,11 @@ export default function RubbleWorlds({ onExit }) {
         setUi(u => ({ ...u, kind: k.kind, seed, eaten: 0 }));
       }
       const wb = world.blocks, welds = world.welds;
+      let weldsAlive = 0;
+      // time chips: 2x and 5x run the physics that many steps per rendered frame;
+      // half speed steps every other frame — the render never changes cadence
+      const reps = k.time >= 1 ? k.time : (frame % 2 === 0 ? 1 : 0);
+      for (let rep = 0; rep < reps; rep++) {
 
       // --- CLUMP SCAN every 20 frames: union-find over touch distance ---
       if (frame % 20 === 0) {
@@ -203,7 +227,8 @@ export default function RubbleWorlds({ onExit }) {
         const find = (i) => { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; };
         for (let i = 0; i < wb.length; i++) { if (!wb[i].alive) continue; for (let j = i + 1; j < wb.length; j++) { if (!wb[j].alive) continue;
           const dx = wb[j].x - wb[i].x, dy = wb[j].y - wb[i].y, dz = wb[j].z - wb[i].z;
-          if (dx * dx + dy * dy + dz * dz < (BS * 1.35) ** 2) { const a = find(i), b = find(j); if (a !== b) par[b] = a; } } }
+          const link = Math.max(wb[i].s, wb[j].s) * 1.35;
+          if (dx * dx + dy * dy + dz * dz < link * link) { const a = find(i), b = find(j); if (a !== b) par[b] = a; } } }
         const groups = new Map();
         for (let i = 0; i < wb.length; i++) { if (!wb[i].alive) continue; const r = find(i); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(i); wb[i].clump = r; }
         world.groups = groups;
@@ -234,13 +259,17 @@ export default function RubbleWorlds({ onExit }) {
 
       // --- LIVE WELLS every frame: the grid must not lag the mass ---
       world.wells = [];
+      world.tracks = [];
       world.clumpCenter = new Map();
       if (world.groups) for (const [root, ids] of world.groups) {
-        let mx = 0, my = 0, mz = 0, M = 0, n = 0;
-        for (const i of ids) { const b = wb[i]; if (!b.alive) continue; M += b.m; mx += b.x * b.m; my += b.y * b.m; mz += b.z * b.m; n++; }
+        let mx = 0, my = 0, mz = 0, mvx = 0, mvz = 0, M = 0, n = 0;
+        for (const i of ids) { const b = wb[i]; if (!b.alive) continue; M += b.m; mx += b.x * b.m; my += b.y * b.m; mz += b.z * b.m; mvx += b.vx * b.m; mvz += b.vz * b.m; n++; }
         if (!n) continue;
-        mx /= M; my /= M; mz /= M;
+        mx /= M; my /= M; mz /= M; mvx /= M; mvz /= M;
+        let rad = 0;
+        for (const i of ids) { const b = wb[i]; if (!b.alive) continue; rad = Math.max(rad, Math.hypot(b.x - mx, b.z - mz)); }
         world.wells.push({ x: mx, z: mz, m: M });
+        world.tracks.push({ x: mx, z: mz, vx: mvx, vz: mvz, m: M, rad, clump: root });
         world.clumpCenter.set(root, [mx, my, mz]);
       }
       if (world.hole) world.wells.push({ x: world.hole.x, z: world.hole.z, m: world.hole.m, deep: true });
@@ -281,7 +310,7 @@ export default function RubbleWorlds({ onExit }) {
       world.aggs = world.aggs.filter(a => !a.dead);
 
       // --- CONTACTS: collect, warm-start, then solve with the welds ---
-      const contacts = []; const cd2 = (BR * 2) ** 2;
+      const contacts = [];
       for (let p = 0; p < awakeIdx.length; p++) {
         const i = awakeIdx[p], bi = wb[i];
         for (let j = 0; j < wb.length; j++) {
@@ -292,20 +321,21 @@ export default function RubbleWorlds({ onExit }) {
           // sleeping blocks untouchable (the trio detonation, 2026-09-11)
           if (!bj.sleeping && j < i) continue;
           const dx = bj.x - bi.x, dy = bj.y - bi.y, dz = bj.z - bi.z, d2 = dx * dx + dy * dy + dz * dz;
-          if (d2 > cd2 || d2 === 0) continue;
+          const cd = bi.cr + bj.cr;
+          if (d2 > cd * cd || d2 === 0) continue;
           const key = Math.min(i, j) * 100000 + Math.max(i, j);
           // a welded pair is the weld's alone — contact fighting a weld over the
           // same pair pumps energy and detonates the body (measured, 2026-09-11)
           if (k.welds) { const wq = world.weldOf.get(key); if (wq && wq.alive) continue; }
           if (bj.sleeping) { const cl = bj.clump; for (const b2 of wb) if (b2.clump === cl) b2.sleeping = false; world.aggs = world.aggs.filter(a => !a.ids.includes(j)); }
           const d = Math.sqrt(d2);
-          const cnt = { i, j, nx: dx / d, ny: dy / d, nz: dz / d, depth: BR * 2 - d, pn: world.warm.get(key) || 0, key };
+          const cnt = { i, j, nx: dx / d, ny: dy / d, nz: dz / d, depth: cd - d, pn: world.warm.get(key) || 0, key };
           cnt.bias = Math.min(BETA / DT * Math.max(0, cnt.depth - SLOP), BIAS_CAP);
           if (cnt.pn) { bi.vx -= cnt.nx * cnt.pn; bi.vy -= cnt.ny * cnt.pn; bi.vz -= cnt.nz * cnt.pn; bj.vx += cnt.nx * cnt.pn; bj.vy += cnt.ny * cnt.pn; bj.vz += cnt.nz * cnt.pn; }
           contacts.push(cnt);
         }
       }
-      let weldsAlive = 0;
+      weldsAlive = 0;
       for (let it = 0; it < ITERS; it++) {
         if (k.welds) for (const w of welds) {
           if (!w.alive) continue;
@@ -349,6 +379,7 @@ export default function RubbleWorlds({ onExit }) {
         if (Math.hypot(b.x - world.hole.x, b.y, b.z - world.hole.z) < world.hole.killR) { b.alive = false; world.hole.m += b.m; world.eaten++; }
       }
       world.t += DT; frame++;
+      }
 
       // --- DRAW ---
       ctx.fillStyle = "#f5f4f0"; ctx.fillRect(0, 0, W, H);
@@ -377,6 +408,50 @@ export default function RubbleWorlds({ onExit }) {
         const a = fade * 0.18 + w * 0.5; if (a < 0.005) continue;
         ctx.beginPath(); ctx.moveTo(gxa[iz], gya[iz]); for (let ix = 1; ix <= gN; ix++) ctx.lineTo(gxa[ix * (gN + 1) + iz], gya[ix * (gN + 1) + iz]);
         ctx.strokeStyle = `rgba(45,55,75,${a})`; ctx.stroke(); }
+      // --- PROJECTED ORBITS: each clump's future as a line, green while clear,
+      // turning red through the last two seconds before a predicted contact and
+      // ending at the impact — past first contact the future is unknowable.
+      // A 20-second look: minutes would be honest for the stable orbits, but
+      // chaos (the trio, anything post-collision) owns everything longer.
+      if (frame % 3 === 0 || !world.pred) {
+        const bodies = (world.tracks || []).filter(tk => tk.m >= 500).slice(0, 14)
+          .map(tk => ({ x: tk.x, z: tk.z, vx: tk.vx, vz: tk.vz, m: tk.m, rad: tk.rad, clump: tk.clump, pts: [], hit: -1 }));
+        const statics = [];
+        if (world.hole) statics.push({ x: world.hole.x, z: world.hole.z, m: world.hole.m, rad: world.hole.killR });
+        if (world.star) statics.push({ x: world.star.x, z: world.star.z, m: world.star.m, rad: world.star.r });
+        const dtP = 1 / 15, NPRED = 300;
+        for (let sIdx = 0; sIdx < NPRED; sIdx++) {
+          for (const b of bodies) {
+            if (b.hit >= 0) continue;
+            let ax = 0, az = 0;
+            for (const o of bodies) { if (o === b || o.hit >= 0) continue;
+              const w = world.weak && o.clump !== b.clump ? 0.01 : 1;
+              const dx = o.x - b.x, dz = o.z - b.z, r2 = dx * dx + dz * dz + SF * SF, rn = Math.pow(r2, 1.65);
+              ax += w * G * o.m * dx / rn; az += w * G * o.m * dz / rn; }
+            for (const o of statics) { const dx = o.x - b.x, dz = o.z - b.z, r2 = dx * dx + dz * dz + SF * SF, rn = Math.pow(r2, 1.65);
+              ax += G * o.m * dx / rn; az += G * o.m * dz / rn; }
+            b.vx += ax * dtP; b.vz += az * dtP;
+          }
+          for (const b of bodies) { if (b.hit >= 0) continue; b.x += b.vx * dtP; b.z += b.vz * dtP; b.pts.push([b.x, b.z]); }
+          for (let a2 = 0; a2 < bodies.length; a2++) for (let b2 = a2 + 1; b2 < bodies.length; b2++) {
+            const A = bodies[a2], B2 = bodies[b2]; if (A.hit >= 0 || B2.hit >= 0) continue;
+            if (Math.hypot(A.x - B2.x, A.z - B2.z) < A.rad + B2.rad) { A.hit = A.pts.length; B2.hit = B2.pts.length; } }
+          for (const b of bodies) { if (b.hit >= 0) continue;
+            for (const o of statics) if (Math.hypot(b.x - o.x, b.z - o.z) < b.rad + o.rad) b.hit = b.pts.length; }
+        }
+        world.pred = bodies;
+      }
+      for (const b of world.pred || []) {
+        const pts = b.pts; if (pts.length < 4) continue;
+        const redFrom = b.hit >= 0 ? Math.max(0, b.hit - 30) : pts.length + 1;
+        ctx.lineWidth = 1.5;
+        for (let i2 = 3; i2 < pts.length; i2 += 3) {
+          const p0 = iso(pts[i2 - 3][0], pts[i2 - 3][1], 0), p1 = iso(pts[i2][0], pts[i2][1], 0);
+          const fade = Math.max(0.1, 1 - i2 / pts.length);
+          ctx.strokeStyle = i2 >= redFrom ? `rgba(220,55,35,${fade * 0.6})` : `rgba(60,200,100,${fade * 0.45})`;
+          ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
+        }
+      }
       if (world.star) {
         const sp = iso(world.star.x, world.star.z, 0), sR = Math.max(world.star.r * sc, 8);
         ctx.save();
@@ -406,10 +481,11 @@ export default function RubbleWorlds({ onExit }) {
       const order = [];
       for (const b of wb) if (b.alive) order.push(b);
       order.sort((a, b) => (a.x + a.z) - (b.x + b.z) || a.y - b.y);
-      // cubes at FULL lattice pitch — faces touch, the ball reads solid
-      const hw = Math.max(BS * sc * C30, 1.6), hh = Math.max(BS * sc * S30, 0.9), vh = Math.max(BS * sc * 0.9, 1.6);
+      // cubes at FULL lattice pitch — faces touch, the ball reads solid; each
+      // block carries its own pitch, so big worlds draw big cubes
       const shade = (rgb, f) => `rgb(${Math.round(rgb[0] * f)},${Math.round(rgb[1] * f)},${Math.round(rgb[2] * f)})`;
       for (const b of order) {
+        const hw = Math.max(b.s * sc * C30, 1.6), hh = Math.max(b.s * sc * S30, 0.9), vh = Math.max(b.s * sc * 0.9, 1.6);
         const cc = world.clumpCenter && world.clumpCenter.get(b.clump);
         let lam = 0.55;
         if (cc) { const ox = b.x - cc[0], oy = b.y - cc[1], oz = b.z - cc[2], ol = Math.hypot(ox, oy, oz) || 1;
@@ -462,6 +538,7 @@ export default function RubbleWorlds({ onExit }) {
         {SCENES.map(sn => chip(SCENE_LABEL[sn], ui.kind === sn, () => set(k => { k.kind = sn; })))}
       </div>
       <div style={{ position: "absolute", bottom: 24, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap", padding: "0 12px" }}>
+        {[0.5, 1, 2, 5].map(tm => chip(tm === 0.5 ? "×½" : "×" + tm, ctl.current.time === tm, () => setLive(k => { k.time = tm; })))}
         {chip(`WELDS ${ctl.current.welds ? "ON" : "OFF"}`, ctl.current.welds, () => setLive(k => { k.welds = !k.welds; }))}
         {chip(`SLEEP ${ctl.current.sleep ? "ON" : "OFF"}`, ctl.current.sleep, () => setLive(k => { k.sleep = !k.sleep; }))}
         {chip(ui.copied ? "COPIED" : "⊕ LOG", ui.copied, copyLog)}
