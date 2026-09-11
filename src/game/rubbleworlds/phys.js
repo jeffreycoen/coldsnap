@@ -44,6 +44,10 @@ const REWELD_V = 0.3;      // fuse when the NORMAL relative velocity is calmer t
 const REWELD_T = 30;       // dwell frames before the fuse takes — hysteresis against weld-break flicker
 const REWELD_STR = 0.6;    // a formed weld's strength against a born weld's — accretion is weaker than bedrock
 const RIGID_N = 10;        // an awake weld-island this big promotes to a rigid body — one mass, one spin
+const SHATTER = 12;        // an island whose velocity the solver jerks harder than this in one frame (speed plus spin-at-rim) demotes for LOOSE_T frames — resting contact only cancels gravity and reads near zero
+const LOOSE_T = 20;
+const SHIP_WELD = 4;       // hull welds are engineering, not accretion — four times born strength, so a landing survives and a crash still shears
+// ship modules: never cold-weld (damage stays damage) and their island promotes at any size
 const NEAR_F = 6;          // far-field near radius, in largest-block units
 
 const WELD_STRENGTH_BY_SIZE = { 1: 30, 2: 160, 5: 185 };
@@ -268,7 +272,8 @@ function stepWorld(world, k) {
         const isl = new Map();
         for (const i2 of awakeIdx) { const r = rfind(i2); if (!isl.has(r)) isl.set(r, []); isl.get(r).push(i2); }
         for (const [root, ids] of isl) {
-          if (ids.length < RIGID_N) continue;
+          if (ids.length < RIGID_N && !ids.some(i2 => wb[i2].ship)) continue;
+          if (ids.some(i2 => wb[i2].loose > 0)) continue; // knocked loose: the welds face the solver until the dust settles
           let M = 0, cx2 = 0, cy2 = 0, cz2 = 0, vx2 = 0, vy2 = 0, vz2 = 0;
           for (const i2 of ids) { const b = wb[i2]; M += b.m; cx2 += b.x * b.m; cy2 += b.y * b.m; cz2 += b.z * b.m; vx2 += b.vx * b.m; vy2 += b.vy * b.m; vz2 += b.vz * b.m; }
           cx2 /= M; cy2 /= M; cz2 /= M; vx2 /= M; vy2 /= M; vz2 /= M;
@@ -276,6 +281,7 @@ function stepWorld(world, k) {
           for (const i2 of ids) { const b = wb[i2]; const rx = b.x - cx2, rz = b.z - cz2;
             Lz += b.m * (rx * (b.vz - vz2) - rz * (b.vx - vx2)); Iy += b.m * (rx * rx + rz * rz); }
           const R = { ids, M, x: cx2, y: cy2, z: cz2, vx: vx2, vy: vy2, vz: vz2, om: Iy > 1e-9 ? Lz / Iy : 0, Iy: Math.max(Iy, 1e-9) };
+          R.rad = 0; for (const i2 of ids) { const b = wb[i2]; const r = Math.hypot(b.x - R.x, b.z - R.z); if (r > R.rad) R.rad = r; }
           const ri = world.rigids.length; world.rigids.push(R);
           for (const i2 of ids) world.rigidOf[i2] = ri;
           // the members conform exactly to the body NOW — rigidity is enforced, not hoped for
@@ -390,6 +396,7 @@ function stepWorld(world, k) {
           contacts.push(cnt);
         }
       }
+      for (const R of world.rigids) { R.v0x = R.vx; R.v0y = R.vy; R.v0z = R.vz; R.om0 = R.om; }
       // --- SOLVER TIERS: the war engine's LOD — calm scenes never leave 8 sweeps ---
       let activeWelds = 0;
       if (k.welds) for (const w of welds) if (w.alive && wb[w.a].alive && wb[w.b].alive && !(wb[w.a].sleeping && wb[w.b].sleeping)) activeWelds++;
@@ -463,7 +470,7 @@ function stepWorld(world, k) {
             const n = (world.dwell.get(cnt.key) || 0) + 1;
             if (n >= REWELD_T) {
               const wq = world.weldOf.get(cnt.key);
-              if (!wq || !wq.alive) {
+              if ((!wq || !wq.alive) && !bi.ship && !bj.ship) {
                 const d = Math.hypot(bj.x - bi.x, bj.y - bi.y, bj.z - bi.z);
                 const nw = { a: cnt.i, b: cnt.j, rest: d, alive: true, acc: 0, gen: 2 };
                 welds.push(nw); world.weldOf.set(cnt.key, nw);
@@ -479,10 +486,18 @@ function stepWorld(world, k) {
       // constraint is what prevents stretch (the unbreakable-weld flyby, 2026-09-11)
       if (k.welds) for (const w of welds) {
         if (!w.alive) continue;
-        const cap = (WELD_STRENGTH_BY_SIZE[world.size] || 30) * (w.gen === 2 ? REWELD_STR : 1);
+        const cap = (WELD_STRENGTH_BY_SIZE[world.size] || 30) * (w.gen === 2 ? REWELD_STR : 1) * (wb[w.a].ship && wb[w.b].ship ? SHIP_WELD : 1);
         if (w.acc > cap) w.alive = false; else weldsAlive++;
         w.acc = 0;
       }
+      // THE SHATTER RULE: an island the solver jerked harder than SHATTER this
+      // frame demotes — its blocks go loose, its welds re-enter the solver and
+      // break or hold under the true forces, survivors re-promote after the dust
+      for (const R of world.rigids) {
+        const jerk = Math.hypot(R.vx - R.v0x, R.vy - R.v0y, R.vz - R.v0z) + Math.abs(R.om - R.om0) * R.rad;
+        if (jerk > SHATTER) for (const i2 of R.ids) wb[i2].loose = LOOSE_T;
+      }
+      for (const b of wb) if (b.loose > 0) b.loose--;
       world.warm.clear();
       for (const cnt of contacts) world.warm.set(cnt.key, cnt.pn);
 

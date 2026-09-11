@@ -58,6 +58,11 @@ function drawFrame(env) {
       if (frame % 3 === 0 || !world.pred) {
         const bodies = (world.tracks || []).filter(tk => tk.m >= 500).slice(0, 14)
           .map(tk => ({ x: tk.x, z: tk.z, vx: tk.vx, vz: tk.vz, m: tk.m, rad: tk.rad, clump: tk.clump, pts: [], hit: -1 }));
+        // the aimed burn flies as a ghost: the ship's track plus the locked delta-v
+        if (world.shipAim && world.shipAim.on && world.shipTrack) {
+          const st = world.shipTrack;
+          bodies.push({ x: st.x, z: st.z, vx: st.vx + world.shipAim.vx, vz: st.vz + world.shipAim.vz, m: st.m, rad: st.rad, clump: st.clump, pts: [], hit: -1, ghost: true });
+        }
         const statics = [];
         if (world.hole) statics.push({ x: world.hole.x, z: world.hole.z, m: world.hole.m, rad: world.hole.killR });
         if (world.star) statics.push({ x: world.star.x, z: world.star.z, m: world.star.m, rad: world.star.r });
@@ -94,6 +99,17 @@ function drawFrame(env) {
           ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
         }
       }
+      // the ship's aim arrow, the ark's own gesture
+      if (world.shipAim && world.shipAim.on && world.shipTrack) {
+        const st = world.shipTrack, sp2 = iso(st.x, st.z, 0);
+        const adx = (world.shipAim.vx - world.shipAim.vz) * C30 * sc * 1.2, ady = (world.shipAim.vx + world.shipAim.vz) * S30 * sc * 1.2;
+        ctx.save(); ctx.strokeStyle = "rgba(240,165,30,.8)"; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(sp2.x, sp2.y); ctx.lineTo(sp2.x + adx, sp2.y + ady); ctx.stroke();
+        ctx.fillStyle = "rgba(240,165,30,.8)"; ctx.beginPath(); ctx.arc(sp2.x + adx, sp2.y + ady, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.font = "700 12px -apple-system,sans-serif";
+        ctx.fillText("\u0394v " + Math.round(Math.hypot(world.shipAim.vx, world.shipAim.vz)), sp2.x + adx + 10, sp2.y + ady - 8);
+        ctx.restore();
+      }
       if (world.star) {
         const sp = iso(world.star.x, world.star.z, 0), sR = Math.max(world.star.r * sc, 8);
         ctx.save();
@@ -118,7 +134,7 @@ function drawFrame(env) {
         ctx.strokeStyle = "rgba(120,80,180,.3)"; ctx.lineWidth = 1; ctx.setLineDash([4, 5]); ctx.stroke(); ctx.setLineDash([]);
       }
       // blocks as coldsnap cubes lit by their outward face — the sun sits up-left
-      const tints = [[126, 148, 196], [188, 134, 92]];
+      const tints = [[126, 148, 196], [188, 134, 92], [232, 196, 110]]; // the third is the ship — gold, and never painted red
       const LX = -0.55, LY = 0.72, LZ = -0.42; // unit-ish light direction, toward the sun
       const order = [];
       for (const b of wb) if (b.alive) order.push(b);
@@ -134,7 +150,7 @@ function drawFrame(env) {
           lam = 0.45 + 0.55 * Math.max(0, (ox / ol) * LX + (oy / ol) * LY + (oz / ol) * LZ); }
         if (b.sleeping) lam *= 0.82;
         // an awake block burns red — the owner's own gauge of what sleep is doing
-        const p = iso(b.x, b.z, b.y), rgb = b.sleeping ? tints[b.tint] : [214, 74, 52];
+        const p = iso(b.x, b.z, b.y), rgb = b.sleeping || b.ship ? tints[b.tint] : [214, 74, 52];
         ctx.fillStyle = shade(rgb, lam * 0.72);
         ctx.beginPath(); ctx.moveTo(p.x - hw, p.y - hh); ctx.lineTo(p.x, p.y); ctx.lineTo(p.x, p.y + vh); ctx.lineTo(p.x - hw, p.y + vh - hh); ctx.closePath(); ctx.fill();
         ctx.fillStyle = shade(rgb, lam * 0.5);

@@ -33,11 +33,26 @@ export default function RubbleWorlds({ onExit }) {
       const now = performance.now();
       if (now - lastTap < 300) { if (world) world.pan = null; lastTap = 0; panDrag = null; return; }
       lastTap = now;
+      // in the ship scene, a drag AIMS while aiming or planning — the ark's gesture owns the touch
+      if (world && world.ship && (world.shipPhase === "aim" || world.shipPhase === "plan")) {
+        panDrag = { x: p.clientX, y: p.clientY, aim: true };
+        return;
+      }
       panDrag = { x: p.clientX, y: p.clientY };
     };
     const pMove = (e) => {
       if (!panDrag || !world) return;
       const p = e.touches ? e.touches[0] : e;
+      if (panDrag.aim) {
+        const dx = p.clientX - panDrag.x, dy = p.clientY - panDrag.y;
+        const sc = world._sc || 1;
+        const sdx = 0.5 * (dx / (0.866 * sc) + dy / (0.5 * sc)), sdz = 0.5 * (dy / (0.5 * sc) - dx / (0.866 * sc));
+        const mag = Math.hypot(sdx, sdz) || 1;
+        const cap = world.shipPhase === "plan" ? Math.min(65, world.ship.fuel) : Math.min(110, world.ship.fuel);
+        const vel = Math.min(mag * 0.28, cap);
+        world.shipAim = { on: vel > 1, vx: sdx / mag * vel, vz: sdz / mag * vel };
+        e.preventDefault(); return;
+      }
       const dx = p.clientX - panDrag.x, dy = p.clientY - panDrag.y;
       panDrag = { x: p.clientX, y: p.clientY };
       const sc = world._sc || 1;
@@ -52,6 +67,21 @@ export default function RubbleWorlds({ onExit }) {
     c.addEventListener("touchend", pUp); c.addEventListener("touchcancel", pUp);
     let world = null, seed = 0, lastReset = 0, anim, frame = 0, renderF = 0, tPrev = performance.now();
     worldRef.current = () => world && { seed, kind: ctl.current.kind, size: ctl.current.size, welds: ctl.current.welds, sleep: ctl.current.sleep, mk: MK, log: world.log };
+    // the ark's two-mode burns, landing on the rigid hull as uniform delta-v
+    burnRef.current = (what) => {
+      if (!world || !world.ship) return;
+      const aim = world.shipAim;
+      if (what === "plan") { world.shipPhase = "plan"; world.shipAim = { on: false, vx: 0, vz: 0 }; return; }
+      if (what === "cancel") { world.shipPhase = "fly"; world.shipAim = { on: false, vx: 0, vz: 0 }; return; }
+      if (!aim || !aim.on) return;
+      const cost = Math.hypot(aim.vx, aim.vz);
+      if (cost > world.ship.fuel) return;
+      world.ship.fuel -= cost;
+      if (what === "exec") world.ship.burns++;
+      for (const b of world.blocks) if (b.ship && b.alive) { b.vx += aim.vx; b.vz += aim.vz; }
+      world.shipAim = { on: false, vx: 0, vz: 0 };
+      world.shipPhase = "fly";
+    };
 
     const loop = () => {
       const W = c.width / dpr, H = c.height / dpr, k = ctl.current;
@@ -68,8 +98,15 @@ export default function RubbleWorlds({ onExit }) {
       // steps, so the first skipped frame froze the counter and time stopped dead
       const reps = k.time >= 1 ? k.time : (renderF % 2 === 0 ? 1 : 0);
       renderF++;
+      // the ship's live track (its clump row) and the ark's plan-freeze
+      if (world.ship) {
+        world.shipTrack = null;
+        for (const tk of world.tracks || []) { for (const i2 of [0]) {} }
+        for (const tk of world.tracks || []) { const b0 = world.blocks.find(b2 => b2.ship && b2.alive); if (b0 && tk.clump === b0.clump) { world.shipTrack = tk; break; } }
+      }
+      const planFrozen = world.ship && world.shipPhase === "plan";
       const tPhys = performance.now();
-      for (let rep = 0; rep < reps; rep++) weldsAlive = stepWorld(world, k);
+      for (let rep = 0; rep < (planFrozen ? 0 : reps); rep++) weldsAlive = stepWorld(world, k);
       if (reps > 0) world.stepMs = +((performance.now() - tPhys) / reps).toFixed(2);
 
       drawFrame({ ctx, W, H, world, frame: world.frame });
@@ -86,7 +123,7 @@ export default function RubbleWorlds({ onExit }) {
       if (renderF % 15 === 0) {
         let awake = 0, asleep = 0;
         for (const b of wb) { if (!b.alive) continue; if (b.sleeping) asleep++; else awake++; }
-        setUi(u => ({ ...u, fps, stepMs: world.stepMs || 0, awake, asleep, eaten: world.eaten, weldsAlive }));
+        setUi(u => ({ ...u, fps, stepMs: world.stepMs || 0, awake, asleep, eaten: world.eaten, weldsAlive, fuel: world.ship ? Math.round(world.ship.fuel) : null, phase: world.shipPhase || null }));
       }
       anim = requestAnimationFrame(loop);
     };
@@ -98,6 +135,8 @@ export default function RubbleWorlds({ onExit }) {
     <div key={label} onClick={click} style={{ padding: "10px 14px", borderRadius: 12, background: on ? "rgba(60,90,160,.16)" : "rgba(245,244,240,.85)", border: `1.5px solid ${on ? "rgba(60,90,160,.4)" : "rgba(0,0,0,.08)"}`, cursor: "pointer", userSelect: "none", WebkitUserSelect: "none", touchAction: "none", fontSize: 11, fontWeight: 700, letterSpacing: 1.2, color: on ? "rgba(40,60,120,.85)" : "rgba(0,0,0,.45)" }}>{label}</div>
   );
   const set = (fn) => { fn(ctl.current); ctl.current.reset++; setUi(u => ({ ...u })); };
+  const burnRef = useRef(null);
+  const fireBurn = (what) => { if (burnRef.current) burnRef.current(what); };
   const setLive = (fn) => { fn(ctl.current); setUi(u => ({ ...u })); };
 
   return (
@@ -105,7 +144,7 @@ export default function RubbleWorlds({ onExit }) {
       <canvas ref={cvs} style={{ display: "block", touchAction: "none" }} />
       <div style={{ position: "absolute", top: 14, left: 14, background: "rgba(245,244,240,.85)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderRadius: 14, padding: "10px 16px", border: "1px solid rgba(0,0,0,.06)" }}>
         <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.8, color: "rgba(0,0,0,.5)" }}>RUBBLE WORLDS</div>
-        <div style={{ fontSize: 11, fontWeight: 500, color: "rgba(0,0,0,.45)", marginTop: 4 }}>seed {ui.seed} · {ui.fps}fps · {ui.stepMs || 0}ms/step</div>
+        <div style={{ fontSize: 11, fontWeight: 500, color: "rgba(0,0,0,.45)", marginTop: 4 }}>seed {ui.seed} · {ui.fps}fps · {ui.stepMs || 0}ms/step{ui.fuel != null ? ` · fuel ${ui.fuel}` : ""}</div>
         <div style={{ fontSize: 11, fontWeight: 500, color: "rgba(0,0,0,.45)", marginTop: 2 }}>{ui.awake} awake · {ui.asleep} asleep · welds {ui.weldsAlive}{ui.kind === "hole" ? ` · eaten ${ui.eaten}` : ""}</div>
       </div>
       {onExit && <div onClick={onExit} style={{ position: "absolute", top: 14, right: 14, background: "rgba(245,244,240,.85)", borderRadius: 10, padding: "8px 12px", border: "1px solid rgba(0,0,0,.06)", cursor: "pointer", userSelect: "none", touchAction: "none", fontSize: 10, fontWeight: 600, letterSpacing: 1, color: "rgba(0,0,0,.45)" }}>⏏ MENU</div>}
@@ -122,6 +161,10 @@ export default function RubbleWorlds({ onExit }) {
           {chip(`FRICTION ${ctl.current.friction ? "ON" : "OFF"}`, ctl.current.friction, () => setLive(k => { k.friction = !k.friction; }))}
           {chip(ui.copied ? "COPIED" : "⊕ LOG", ui.copied, copyLog)}
           {chip("RESET", false, () => set(() => {}))}
+          {ui.phase === "aim" && chip("LAUNCH", true, () => { const w2 = worldRef.current && worldRef.current(); fireBurn("launch"); })}
+          {ui.phase === "fly" && chip("PLAN BURN", false, () => fireBurn("plan"))}
+          {ui.phase === "plan" && chip("EXECUTE", true, () => fireBurn("exec"))}
+          {ui.phase === "plan" && chip("CANCEL", false, () => fireBurn("cancel"))}
         </div>
       </div>
     </div>

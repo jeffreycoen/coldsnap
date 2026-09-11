@@ -27,8 +27,8 @@ function buildWelds(blocks) {
   return welds;
 }
 
-const SCENES = ["binary", "duet", "moons", "trio", "system", "hole"];
-const SCENE_LABEL = { binary: "TWINS", duet: "DUET", moons: "MOONS", trio: "TRIO", system: "SYSTEM", hole: "HOLE" };
+const SCENES = ["ship", "binary", "duet", "moons", "trio", "system", "hole"];
+const SCENE_LABEL = { ship: "SHIP", binary: "TWINS", duet: "DUET", moons: "MOONS", trio: "TRIO", system: "SYSTEM", hole: "HOLE" };
 // weld strength per planet size — measured calm loads 17/90/105, same 1.76x margin each
 function makeScenario(kind, seed, size = 1) {
   const rand = makeRand(seed);
@@ -42,7 +42,21 @@ function makeScenario(kind, seed, size = 1) {
   // size. Finer big-world surfaces wait on the layered-shell experiment: eight
   // mixed-pitch configurations measured 2026-09-11, none stable at the seams.
   const world_mk = (cx, cz, vx, vz, tint, R1, m1) => makePlanet(cx * size, cz * size, vx, vz, tint, rand, R1 * size, m1 * size ** 3, BS * size);
-  if (kind === "binary") {
+  if (kind === "ship") {
+    // THE SHIP: a five-module cross — cabin center, engine aft, a tank each
+    // side, nose fore — welded, rigid at any size, and its welds NEVER reform:
+    // damage stays damage. It flies the ark's way: aim a burn, spend fuel.
+    world.blocks = makePlanet(0, 0, 0, 0, 0, rand);
+    const mr = 105 * size, mv = Math.sqrt(G * PMASS * size ** 3 * mr / Math.pow(mr * mr + SF * SF, 1.15));
+    world.blocks.push(...makePlanet(mr, 0, 0, mv, 1, rand, BS * 0.9, 80 * size ** 3));
+    const sx = -200 * size, sz = 80 * size;
+    for (const [ox, oz] of [[0, 0], [-BS, 0], [BS, 0], [0, -BS], [0, BS]]) {
+      world.blocks.push({ x: sx + ox, y: 0, z: sz + oz, vx: 0, vy: 0, vz: 0, tint: 2, ship: true, alive: true, sleeping: false, clump: -1, s: BS, cr: BS * 0.55, m: 120 });
+    }
+    world.ship = { fuel: 520, max: 520, burns: 0 };
+    world.shipPhase = "aim";
+    world.span = 260 * size;
+  } else if (kind === "binary") {
     const d = 190;
     // half the circular speed for this law — measured headless with the
     // constraint solver: first contact near 14.5 seconds, and the merged
