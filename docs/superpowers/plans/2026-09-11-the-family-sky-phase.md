@@ -29,6 +29,7 @@ A large seeded map: a built star system that the seed sets faintly astir, so eve
 | T39 | 0.5.38 | Slower by half: a ×1/32 chip, ×1 leaves the row, every scene opens at ×½, the other bodies' lines fixed at two real seconds at any chip | LANDED — mark 0.5.38, all numbers unchanged, smoke 23/23 |
 | T40 | 0.5.39 | Bodies on the net: every drawn point sinks by the well depth the net uses at that spot, one dip per body, so bodies rest in their bowls instead of hovering | LANDED — mark 0.5.39, all numbers unchanged, smoke 23/23 |
 | T41 | 0.5.40 | One plane: every body draws on the flat plane again and the net sags a tenth of its former depth, so the sky sits at one height with mass read as a shallow dish | LANDED — mark 0.5.40, all numbers unchanged, smoke 23/23 |
-| T42 | — | The moving-star look: the stars' art in flight, the map's camera reach — the owner's eyes the acceptance | PLANNED |
+| T42 | 0.5.41 | The slow sky and the fast ship: every scene opens at ×1/16, the map's ship at scale four with the plume to match, the ghost predicting three times as far; the stars stay — the eightfold version burned the map down in ten simulated seconds on the bench | LANDED — mark 0.5.41, all numbers unchanged, smoke 23/23 |
+| T43 | — | The moving-star look: the stars' art in flight, the map's camera reach — the owner's eyes the acceptance | PLANNED |
 
 The map's purpose changed after T33 flew: longevity of orbits is not wanted; the chaos of a packed sky is the story. T34 packs it; T35 slows time and packs it again — slower time is cheaper time, so the same machine carries a denser brawl. T36 is deferred polish: the look and feel of the moving sky, checked live, written on the owner's word after T35 lands.
