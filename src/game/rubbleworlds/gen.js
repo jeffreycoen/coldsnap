@@ -152,8 +152,16 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     // from the first seconds by design — chaos is the content. The seed's 3% stir
     // and random phase make each map its own. An end gate stands on the far rim.
     const vCirc = (M, r) => Math.sqrt(G * M * r / Math.pow(r * r + SF * SF, 1.15));
-    const nud = () => 1 + (rand() - 0.5) * 2 * 0.03;
-    const ang = () => rand() * Math.PI * 2;
+    // FIXED OPENING (temporary, until the layout is right and randomizing
+    // returns): no stir, and every body takes a set phase. The phases lay the
+    // whole family down the corridor from the great star to the gate on the
+    // far rim — nothing behind the ship, nothing off to the far side. Drawn in
+    // order: lesser star 1, lesser star 2, the four great rings, the four
+    // lesser-star planets, the three moons. Degrees, zero toward +x.
+    const PHASES = [20, -35, -45, 5, -30, 12, 0, 180, 0, 180, 60, 200, -20];
+    let phaseAt = 0;
+    const nud = () => 1;
+    const ang = () => (PHASES[phaseAt++] || 0) * Math.PI / 180;
     const MG = 120000;
     world.span = 500;
     // PLACED BY CONSTRUCTION: phases re-roll until every body clears every
@@ -182,7 +190,7 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
         planets.push([famN, st.x + Math.cos(a) * r, st.z + Math.sin(a) * r, st.vx - Math.sin(a) * v, st.vz + Math.cos(a) * v, 3000]);
         world.fam[famN] = st.fam; famN++;
       }
-      moonHosts = []; while (moonHosts.length < 3) { const p = 4 + Math.floor(rand() * 3); if (!moonHosts.includes(p)) moonHosts.push(p); }
+      moonHosts = [4, 5, 6];
       moons = [];
       for (const hostFam of moonHosts) {
         const host = planets.find(p => p[0] === hostFam);
@@ -225,7 +233,7 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     world.span = 300 * size;
   }
   if (shipOn && kind !== "ship" && kind !== "map") addShip(world, hull, -world.span * 0.77, world.span * 0.31);
-  if (kind === "map") { addShip(world, hull, -world.span * 0.95, world.span * 0.3, 4); world.gate = { x: world.span * 0.95, z: -world.span * 0.3, r: 36, reached: false }; }
+  if (kind === "map") { addShip(world, hull, -130, 40, 4); world.gate = { x: world.span * 0.95, z: -world.span * 0.3, r: 36, reached: false }; }
   world.welds = buildWelds(world.blocks);
   world.weldOf = new Map();
   for (const w of world.welds) world.weldOf.set(w.a * 100000 + w.b, w);
