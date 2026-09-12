@@ -21,6 +21,7 @@ A large seeded map: a built star system that the seed sets faintly astir, so eve
 | Task | Mark | What lands | Status |
 |---|---|---|---|
 | T33 | 0.5.32 | The family sky: family-tree gravity, moving stars, the map generator, the MAP chip, the ship aboard | LANDED — mark 0.5.32, existing numbers unchanged, map number b21af822f4ebe4a4 newly pinned, smoke 23/23 |
-| T34 | — | The moving-star look: the net under moving wells, the stars' art in flight, the map's camera reach — the owner's eyes the acceptance | PLANNED |
+| T34 | 0.5.33 | The packed sky and the compass: distances cut to a third so the brawl starts in seconds, an end gate on the far rim, an edge-arrow compass with the distance | LANDED — mark 0.5.33, existing numbers unchanged, map number b21af822f4ebe4a4 → acace0dbe7852764, smoke 23/23 |
+| T35 | — | The moving-star look: the net under moving wells, the stars' art in flight, the map's camera reach — the owner's eyes the acceptance | PLANNED |
 
-T34 is deferred polish: the look and feel of the moving sky, checked live. It is written on the owner's word after T33 lands.
+The map's purpose changed after T33 flew: longevity of orbits is not wanted; the chaos of a packed sky is the story. T34 packs it. T35 is deferred polish: the look and feel of the moving sky, checked live, written on the owner's word after T34 lands.
