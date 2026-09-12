@@ -48,14 +48,15 @@ const SCENE_LABEL = { ship: "SHIP", binary: "TWINS", duet: "DUET", moons: "MOONS
 // the flyable ship, appended to any scene: the chosen hull at (sx, sz),
 // fuel in the cabin's reserve of 100 plus 210 per tank, aiming from birth.
 // Hull blocks stay one block wide at every world size, as they always have.
-function addShip(world, hull, sx, sz) {
+function addShip(world, hull, sx, sz, scale = 1) {
   const bp = HULLS[hull] || HULLS.longrange;
   let tanks = 0;
   for (const [pt, gx, gy] of bp) {
     if (pt === "tank") tanks++;
     world.blocks.push({ x: sx + gx * BS, y: 0, z: sz + gy * BS, vx: 0, vy: 0, vz: 0, tint: 2, ship: true, eng: pt === "engine", cab: pt === "bridge", tank: pt === "tank", hp: 100, alive: true, sleeping: false, clump: -1, s: BS, cr: BS * 0.55, m: 120 });
   }
-  world.ship = { fuel: 100 + 210 * tanks, max: 100 + 210 * tanks, burns: 0 };
+  world.ship = { fuel: (100 + 210 * tanks) * scale, max: (100 + 210 * tanks) * scale, burns: 0 };
+  world.shipScale = scale; // the map runs at half time, so its ship carries double caps and double fuel: same voyage in real seconds, same share of the tank per burn
   world.shipPhase = "aim";
 }
 // weld strength per planet size — measured calm loads 17/90/105, same 1.76x margin each
@@ -147,40 +148,60 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     // reads the family: a child feels its parent line at full strength, all
     // else at one percent — subsystems travel whole and the sky decays instead
     // of detonating. Every body low-density, so siblings barely tug. Set points
-    // PACKED to a third of the distances that held stable: the sky is a brawl
+    // PACKED to a sixth of the distances that held stable: the sky is a brawl
     // from the first seconds by design — chaos is the content. The seed's 3% stir
     // and random phase make each map its own. An end gate stands on the far rim.
     const vCirc = (M, r) => Math.sqrt(G * M * r / Math.pow(r * r + SF * SF, 1.15));
     const nud = () => 1 + (rand() - 0.5) * 2 * 0.03;
     const ang = () => rand() * Math.PI * 2;
     const MG = 120000;
-    world.starBodies = [{ x: 0, z: 0, vx: 0, vz: 0, m: MG, r: 40, fam: 0, pin: true }];
-    world.fam = { 0: -1 };
-    const lessers = [];
-    [[633, 60000, 1], [933, 60000, 2]].forEach(([r0, m, fam]) => {
-      const r = r0 * nud(), a = ang(), v = vCirc(MG, r) * nud();
-      const st = { x: Math.cos(a) * r, z: Math.sin(a) * r, vx: -Math.sin(a) * v, vz: Math.cos(a) * v, m, r: 24, fam, pin: false };
-      world.starBodies.push(st); world.fam[fam] = 0; lessers.push(st);
-    });
-    const planets = [];
-    [[3, 233], [4, 400], [5, 600], [6, 867]].forEach(([f2, r0]) => {
-      const r = r0 * nud(), a = ang(), v = vCirc(MG, r) * nud();
-      planets.push([f2, Math.cos(a) * r, Math.sin(a) * r, -Math.sin(a) * v, Math.cos(a) * v, 2400]);
-      world.fam[f2] = 0;
-    });
-    let famN = 7;
-    for (const st of lessers) for (const lr0 of [70, 125]) {
-      const r = lr0 * nud(), a = ang(), v = vCirc(st.m, r) * nud();
-      planets.push([famN, st.x + Math.cos(a) * r, st.z + Math.sin(a) * r, st.vx - Math.sin(a) * v, st.vz + Math.cos(a) * v, 3000]);
-      world.fam[famN] = st.fam; famN++;
-    }
-    const moonHosts = []; while (moonHosts.length < 3) { const p = 4 + Math.floor(rand() * 3); if (!moonHosts.includes(p)) moonHosts.push(p); }
-    const moons = [];
-    for (const hostFam of moonHosts) {
-      const host = planets.find(p => p[0] === hostFam);
-      const r = 45 * nud(), a = ang(), v = vCirc(host[5], r) * nud();
-      moons.push([famN, host[1] + Math.cos(a) * r, host[2] + Math.sin(a) * r, host[3] - Math.sin(a) * v, host[4] + Math.cos(a) * v, 150]);
-      world.fam[famN] = hostFam; famN++;
+    world.span = 500;
+    // PLACED BY CONSTRUCTION: phases re-roll until every body clears every
+    // other at birth by at least 6 — a body born inside another is a
+    // detonation, not chaos. Deterministic per seed; the stir stays 3%.
+    let lessers, planets, moons, moonHosts, famN;
+    const PR = BS * 3.3 + 3, MR = BS * 1.6 + 3, SHIPR = 15;
+    for (let attempt = 0; attempt < 60; attempt++) {
+      world.starBodies = [{ x: 0, z: 0, vx: 0, vz: 0, m: MG, r: 40, fam: 0, pin: true }];
+      world.fam = { 0: -1 };
+      lessers = [];
+      [[317, 60000, 1], [467, 60000, 2]].forEach(([r0, m, fam]) => {
+        const r = r0 * nud(), a = ang(), v = vCirc(MG, r) * nud();
+        const st = { x: Math.cos(a) * r, z: Math.sin(a) * r, vx: -Math.sin(a) * v, vz: Math.cos(a) * v, m, r: 24, fam, pin: false };
+        world.starBodies.push(st); world.fam[fam] = 0; lessers.push(st);
+      });
+      planets = [];
+      [[3, 117], [4, 200], [5, 300], [6, 433]].forEach(([f2, r0]) => {
+        const r = r0 * nud(), a = ang(), v = vCirc(MG, r) * nud();
+        planets.push([f2, Math.cos(a) * r, Math.sin(a) * r, -Math.sin(a) * v, Math.cos(a) * v, 2400]);
+        world.fam[f2] = 0;
+      });
+      famN = 7;
+      for (const st of lessers) for (const lr0 of [70, 125]) {
+        const r = lr0 * nud(), a = ang(), v = vCirc(st.m, r) * nud();
+        planets.push([famN, st.x + Math.cos(a) * r, st.z + Math.sin(a) * r, st.vx - Math.sin(a) * v, st.vz + Math.cos(a) * v, 3000]);
+        world.fam[famN] = st.fam; famN++;
+      }
+      moonHosts = []; while (moonHosts.length < 3) { const p = 4 + Math.floor(rand() * 3); if (!moonHosts.includes(p)) moonHosts.push(p); }
+      moons = [];
+      for (const hostFam of moonHosts) {
+        const host = planets.find(p => p[0] === hostFam);
+        const r = 45 * nud(), a = ang(), v = vCirc(host[5], r) * nud();
+        moons.push([famN, host[1] + Math.cos(a) * r, host[2] + Math.sin(a) * r, host[3] - Math.sin(a) * v, host[4] + Math.cos(a) * v, 150]);
+        world.fam[famN] = hostFam; famN++;
+      }
+      const bodies = [];
+      for (const p of planets) bodies.push([p[1], p[2], PR]);
+      for (const mn of moons) bodies.push([mn[1], mn[2], MR]);
+      for (const st of world.starBodies) bodies.push([st.x, st.z, st.r]);
+      bodies.push([-world.span * 0.95, world.span * 0.3, SHIPR]);
+      let minGap = 1e9;
+      for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++) {
+        const gap = Math.hypot(bodies[i][0] - bodies[j][0], bodies[i][1] - bodies[j][1]) - bodies[i][2] - bodies[j][2];
+        if (gap < minGap) minGap = gap;
+      }
+      world.placeTries = attempt + 1;
+      if (minGap >= 6) break;
     }
     for (const [f2, cx, cz, vx, vz, m] of planets) {
       const blocks = makePlanet(cx, cz, vx, vz, f2 % 2, rand, BS * 3.3, m);
@@ -193,7 +214,6 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
       world.blocks.push(...blocks);
     }
     world.moonHosts = moonHosts;
-    world.span = 1000;
   } else {
     world.hole = { x: 0, z: 0, m: 42000 * size ** 3, killR: 26 * size };
     const px = 240 * size;
@@ -205,7 +225,7 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     world.span = 300 * size;
   }
   if (shipOn && kind !== "ship" && kind !== "map") addShip(world, hull, -world.span * 0.77, world.span * 0.31);
-  if (kind === "map") { addShip(world, hull, -world.span * 0.95, world.span * 0.3); world.gate = { x: world.span * 0.95, z: -world.span * 0.3, r: 36, reached: false }; }
+  if (kind === "map") { addShip(world, hull, -world.span * 0.95, world.span * 0.3, 2); world.gate = { x: world.span * 0.95, z: -world.span * 0.3, r: 36, reached: false }; }
   world.welds = buildWelds(world.blocks);
   world.weldOf = new Map();
   for (const w of world.welds) world.weldOf.set(w.a * 100000 + w.b, w);

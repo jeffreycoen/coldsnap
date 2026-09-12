@@ -48,8 +48,9 @@ export default function RubbleWorlds({ onExit }) {
         const sc = world._sc || 1;
         const sdx = 0.5 * (dx / (0.866 * sc) + dy / (0.5 * sc)), sdz = 0.5 * (dy / (0.5 * sc) - dx / (0.866 * sc));
         const mag = Math.hypot(sdx, sdz) || 1;
-        const cap = world.shipPhase === "plan" ? Math.min(65, world.ship.fuel) : Math.min(110, world.ship.fuel);
-        const vel = Math.min(mag * 0.28, cap);
+        const sc2 = world.shipScale || 1;
+        const cap = world.shipPhase === "plan" ? Math.min(65 * sc2, world.ship.fuel) : Math.min(110 * sc2, world.ship.fuel);
+        const vel = Math.min(mag * 0.28 * sc2, cap);
         world.shipAim = { on: vel > 1, vx: sdx / mag * vel, vz: sdz / mag * vel };
         e.preventDefault(); return;
       }
@@ -100,7 +101,8 @@ export default function RubbleWorlds({ onExit }) {
         let ang = Math.atan2(aim.vz, aim.vx), mag = Math.hypot(aim.vx, aim.vz);
         if (what === "turnL") ang -= 0.03; if (what === "turnR") ang += 0.03;
         if (what === "less") mag = Math.max(2, mag - 3); if (what === "more") mag += 3;
-        const cap = world.shipPhase === "plan" ? Math.min(65, world.ship.fuel) : Math.min(110, world.ship.fuel);
+        const sc3 = world.shipScale || 1;
+        const cap = world.shipPhase === "plan" ? Math.min(65 * sc3, world.ship.fuel) : Math.min(110 * sc3, world.ship.fuel);
         mag = Math.min(mag, cap);
         world.shipAim = { on: true, vx: Math.cos(ang) * mag, vz: Math.sin(ang) * mag };
         return;
@@ -131,7 +133,7 @@ export default function RubbleWorlds({ onExit }) {
           if (b0) { // the ark's default trajectory: toward the gate at 50, or away from the mass where no gate stands
             const dx = world.gate ? world.gate.x - b0.x : b0.x, dz = world.gate ? world.gate.z - b0.z : b0.z;
             const dd = Math.hypot(dx, dz) || 1;
-            world.shipAim = { on: true, vx: dx / dd * 50, vz: dz / dd * 50 };
+            world.shipAim = { on: true, vx: dx / dd * 50 * (world.shipScale || 1), vz: dz / dd * 50 * (world.shipScale || 1) };
           }
         }
         setUi(u => ({ ...u, kind: k.kind, seed, eaten: 0 }));
@@ -141,7 +143,7 @@ export default function RubbleWorlds({ onExit }) {
       // half speed steps every other frame — the render never changes cadence
       // the half-speed gate counts RENDERED frames — the old gate counted physics
       // steps, so the first skipped frame froze the counter and time stopped dead
-      const reps = k.time >= 1 ? k.time : (renderF % 2 === 0 ? 1 : 0);
+      const reps = k.time >= 1 ? k.time : (renderF % Math.round(1 / k.time) === 0 ? 1 : 0); // half steps every other drawn frame, quarter every fourth
       renderF++;
       // the ship's live track (its clump row) and the ark's plan-freeze
       if (world.ship) {
@@ -237,7 +239,7 @@ export default function RubbleWorlds({ onExit }) {
       </div>}
       <div style={{ position: "absolute", bottom: 20, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "0 12px" }}>
         {!(ui.phase === "aim" || ui.phase === "plan") && <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
-          {SCENES.map(sn => chip(SCENE_LABEL[sn], ui.kind === sn, () => set(k => { k.kind = sn; })))}
+          {SCENES.map(sn => chip(SCENE_LABEL[sn], ui.kind === sn, () => set(k => { k.kind = sn; k.time = sn === "map" ? 0.5 : 1; })))}
           {ui.kind !== "ship" && chip(`FLY ${ctl.current.shipOn ? "ON" : "OFF"}`, ctl.current.shipOn, () => set(k => { k.shipOn = !k.shipOn; }))}
         </div>}
         {ui.phase === "aim" && <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
@@ -245,7 +247,7 @@ export default function RubbleWorlds({ onExit }) {
         </div>}
         <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
           {!(ui.phase === "aim" || ui.phase === "plan") && [1, 2, 5].map(sz => chip("SIZE " + sz + "x", ctl.current.size === sz, () => set(k => { k.size = sz; })))}
-          {[0.5, 1, 2, 5].map(tm => chip(tm === 0.5 ? "×½" : "×" + tm, ctl.current.time === tm, () => setLive(k => { k.time = tm; })))}
+          {[0.25, 0.5, 1, 2, 5].map(tm => chip(tm === 0.25 ? "×¼" : tm === 0.5 ? "×½" : "×" + tm, ctl.current.time === tm, () => setLive(k => { k.time = tm; })))}
           {chip(`WELDS ${ctl.current.welds ? "ON" : "OFF"}`, ctl.current.welds, () => setLive(k => { k.welds = !k.welds; }))}
           {chip(`SLEEP ${ctl.current.sleep ? "ON" : "OFF"}`, ctl.current.sleep, () => setLive(k => { k.sleep = !k.sleep; }))}
           {chip(`HASH ${ctl.current.hash ? "ON" : "OFF"}`, ctl.current.hash, () => setLive(k => { k.hash = !k.hash; }))}
