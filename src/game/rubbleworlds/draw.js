@@ -39,11 +39,20 @@ function drawFrame(env) {
       world._center = ctrM ? { x: ctrX / ctrM, z: ctrZ / ctrM } : { x: 0, z: 0 };
       const look = world.pan || (world.ship && world.shipTrack ? shipAt() : world._center); // the ark's follow: the camera rides the ship; a drag takes the wheel, double-tap hands it back
       const cx = W / 2 - (look.x - look.z) * C30 * sc, cy = H / 2 - (look.x + look.z) * S30 * sc;
-      const iso = (x, z, y) => ({ x: cx + (x - z) * C30 * sc, y: cy + (x + z) * S30 * sc - (y || 0) * 0.9 * sc });
+      // BODIES SIT ON THE NET: the net is pushed down the screen by the local
+      // well depth, and until now everything else was drawn on the flat plane —
+      // so every body hovered above its own dip by the dip's full depth, three
+      // times its height on the map under three stars. Now every projected
+      // point sinks by the same depth the net uses at that spot.
+      const getD = (sx2, sz2) => wellDepth(sx2, sz2, world.wells, sc);
+      const isoRaw = (x, z, y) => ({ x: cx + (x - z) * C30 * sc, y: cy + (x + z) * S30 * sc - (y || 0) * 0.9 * sc });
+      const iso = (x, z, y) => { const p = isoRaw(x, z, y); p.y += getD(x, z); return p; };
+      // one dip per body: a clump's blocks all sink by the depth at the clump's center, so a body stays rigid and the lookup is paid once per body, not once per cube
+      const dipOf = new Map();
+      const dipAt = (b) => { const c = world.clumpCenter && world.clumpCenter.get(b.clump); if (!c) return getD(b.x, b.z); let d = dipOf.get(b.clump); if (d == null) { d = getD(c[0], c[2]); dipOf.set(b.clump, d); } return d; };
       const lookX = look.x, lookZ = look.z;
       const gN = 56, gSp = 16, halfG = gN * gSp / 2; // fixed weave: the net follows the camera like the ark's, and the weave itself is the absolute ruler
       const gcx = Math.round(lookX / gSp) * gSp, gcz = Math.round(lookZ / gSp) * gSp;
-      const getD = (sx2, sz2) => wellDepth(sx2, sz2, world.wells, sc);
       const gxa = new Float32Array((gN + 1) ** 2), gya = new Float32Array((gN + 1) ** 2);
       for (let ix = 0; ix <= gN; ix++) for (let iz = 0; iz <= gN; iz++) { const sx2 = ix * gSp - halfG + gcx, sz2 = iz * gSp - halfG + gcz, d = getD(sx2, sz2), idx = ix * (gN + 1) + iz; gxa[idx] = cx + (sx2 - sz2) * C30 * sc; gya[idx] = cy + (sx2 + sz2) * S30 * sc + d; }
       ctx.lineWidth = 0.7;
@@ -243,7 +252,8 @@ function drawFrame(env) {
           lam = 0.45 + 0.55 * Math.max(0, (ox / ol) * LX + (oy / ol) * LY + (oz / ol) * LZ); }
         if (b.sleeping) lam *= 0.82;
         // an awake block burns red — the owner's own gauge of what sleep is doing
-        const p = iso(lx(b), lz(b), ly(b)), rgb = b.sleeping || b.ship ? tints[b.tint] : [214, 74, 52];
+        const p = isoRaw(lx(b), lz(b), ly(b)), rgb = b.sleeping || b.ship ? tints[b.tint] : [214, 74, 52];
+        p.y += dipAt(b);
         ctx.fillStyle = shade(rgb, lam * 0.72);
         ctx.beginPath(); ctx.moveTo(p.x - hw, p.y - hh); ctx.lineTo(p.x, p.y); ctx.lineTo(p.x, p.y + vh); ctx.lineTo(p.x - hw, p.y + vh - hh); ctx.closePath(); ctx.fill();
         ctx.fillStyle = shade(rgb, lam * 0.5);
