@@ -52,7 +52,28 @@ const NEAR_F = 6;          // far-field near radius, in largest-block units
 
 const WELD_STRENGTH_BY_SIZE = { 1: 30, 2: 160, 5: 185 };
 
-function accel(x, y, z, srcs, self, weak, myClump) {
+function famW(world, fa, fb) {
+  if (fa == null || fb == null) return 1;
+  if (fa === fb) return 1;
+  let f = fa; while (f != null && f >= 0) { if (f === fb) return 1; f = world.fam[f]; }
+  f = fb; while (f != null && f >= 0) { if (f === fa) return 1; f = world.fam[f]; }
+  return 0.01;
+}
+function accel(x, y, z, srcs, self, weak, myClump, world, myFam) {
+  if (world && world.fam) {
+    let ax = 0, ay = 0, az = 0;
+    for (let i = 0; i < srcs.length; i++) {
+      if (i === self) continue;
+      const s = srcs[i], dx = s.x - x, dy = (s.y || 0) - y, dz = s.z - z;
+      const r2 = dx * dx + dy * dy + dz * dz + SF * SF, rn = Math.pow(r2, 1.65);
+      const w = famW(world, myFam, s.fam);
+      ax += w * G * s.m * dx / rn; ay += w * G * s.m * dy / rn; az += w * G * s.m * dz / rn;
+    }
+    return [ax, ay, az];
+  }
+  return accelOld(x, y, z, srcs, self, weak, myClump);
+}
+function accelOld(x, y, z, srcs, self, weak, myClump) {
   let ax = 0, ay = 0, az = 0;
   for (let i = 0; i < srcs.length; i++) {
     if (i === self) continue;
@@ -163,6 +184,17 @@ function conformRigids(world, wb) {
 
 function stepWorld(world, k) {
   const wb = world.blocks, welds = world.welds;
+  if (world.starBodies) {
+    for (const st of world.starBodies) {
+      if (st.pin) continue;
+      let ax = 0, az = 0;
+      for (const o of world.starBodies) { if (o === st) continue;
+        const dx = o.x - st.x, dz = o.z - st.z, r2 = dx * dx + dz * dz + SF * SF, rn = Math.pow(r2, 1.65);
+        const wSt = famW(world, st.fam, o.fam);
+        ax += wSt * G * o.m * dx / rn; az += wSt * G * o.m * dz / rn; }
+      st.vx += ax * DT; st.vz += az * DT; st.x += st.vx * DT; st.z += st.vz * DT;
+    }
+  }
   let weldsAlive = 0;
       // --- THE BOOKS: file every block into the two-tier grid (hash arm only) ---
       if (k.hash) fileBlocks(world);
@@ -215,9 +247,9 @@ function stepWorld(world, k) {
           let near = false;
           if (world.hole && Math.hypot(g.mx - world.hole.x, g.my, g.mz - world.hole.z) < g.rad + world.hole.killR + BS * 6) near = true;
           if (world.star && Math.hypot(g.mx - world.star.x, g.my, g.mz - world.star.z) < g.rad + world.star.r + BS * 6) near = true;
-          for (const o of gInfo) if (o !== g && Math.hypot(g.mx - o.mx, g.my - o.my, g.mz - o.mz) < g.rad + o.rad + BS * 6) near = true;
+          for (const o of gInfo) if (o !== g) { const kin = world.fam && famW(world, wb[g.ids[0]].fam, wb[o.ids[0]].fam) === 1; if (Math.hypot(g.mx - o.mx, g.my - o.my, g.mz - o.mz) < g.rad + o.rad + BS * (kin ? 2 : 6)) near = true; }
           if (!k.sleep || g.ids.length < 10 || near || g.rel >= SLEEP_V || g.ids.some(i => wb[i].ship)) { for (const i of g.ids) wb[i].sleeping = false; continue; } // A SHIP NEVER SLEEPS: the eleven-block catamaran crossed the ten-block sleep line and froze into a stone that ignored its burns (measured, 2026-09-11)
-          const agg = { x: g.mx, y: g.my, z: g.mz, vx: g.mvx, vy: g.mvy, vz: g.mvz, m: g.M, rad: g.rad, ids: g.ids, clump: g.root, om: g.om, offs: g.ids.map(i => [wb[i].x - g.mx, wb[i].y - g.my, wb[i].z - g.mz]) };
+          const agg = { x: g.mx, y: g.my, z: g.mz, vx: g.mvx, vy: g.mvy, vz: g.mvz, m: g.M, rad: g.rad, ids: g.ids, clump: g.root, fam: wb[g.ids[0]].fam, om: g.om, offs: g.ids.map(i => [wb[i].x - g.mx, wb[i].y - g.my, wb[i].z - g.mz]) };
           for (const i of g.ids) wb[i].sleeping = true;
           world.aggs.push(agg);
         }
@@ -240,6 +272,7 @@ function stepWorld(world, k) {
       }
       if (world.hole) world.wells.push({ x: world.hole.x, z: world.hole.z, m: world.hole.m, deep: true });
       if (world.star) world.wells.push({ x: world.star.x, z: world.star.z, m: world.star.m, deep: true });
+      if (world.starBodies) for (const st of world.starBodies) world.wells.push({ x: st.x, z: st.z, m: st.m, deep: true });
 
       // --- SOURCES for aggregate integration (unchanged shape) ---
       const srcs = [];
@@ -249,6 +282,7 @@ function stepWorld(world, k) {
       for (const a of world.aggs) srcs.push(a);
       if (world.hole) srcs.push(world.hole);
       if (world.star) srcs.push(world.star);
+      if (world.starBodies) for (const st of world.starBodies) srcs.push(st);
 
       // --- RIGID PROMOTION: an awake weld-island moves as one body (the owner's
       // grouping rule, 2026-09-11). Islands are weld-connected components among
@@ -311,15 +345,16 @@ function stepWorld(world, k) {
         const rIdx = world.rigidOf ? world.rigidOf[i] : -1;
         out[0] = 0; out[1] = 0; out[2] = 0;
         for (const [root, g] of awakeClumps) {
-          const w = world.weak && root !== b.clump ? 0.01 : 1;
+          const w = world.fam ? famW(world, b.fam, wb[g.ids[0]].fam) : (world.weak && root !== b.clump ? 0.01 : 1);
           const d = Math.hypot(g.mx - b.x, g.my - b.y, g.mz - b.z);
           if (root === b.clump || d < g.rad + NEAR) {
             for (const j of g.ids) { if (j === i) continue; const o = wb[j]; pull(b, o.x, o.y, o.z, o.m, w, out); }
           } else pull(b, g.mx, g.my, g.mz, g.M, w, out);
         }
-        for (const a of world.aggs) { const w = world.weak && a.clump !== b.clump ? 0.01 : 1; pull(b, a.x, a.y, a.z, a.m, w, out); }
+        for (const a of world.aggs) { const w = world.fam ? famW(world, b.fam, a.fam) : (world.weak && a.clump !== b.clump ? 0.01 : 1); pull(b, a.x, a.y, a.z, a.m, w, out); }
         if (world.hole) pull(b, world.hole.x, 0, world.hole.z, world.hole.m, 1, out);
         if (world.star) pull(b, world.star.x, 0, world.star.z, world.star.m, 1, out);
+        if (world.starBodies) for (const st of world.starBodies) pull(b, st.x, 0, st.z, st.m, famW(world, b.fam, st.fam), out);
         if (world.gate && b.ship) pull(b, world.gate.x, 0, world.gate.z, 2500, 1, out); // the gate pulls the ship alone, the ark's rule
         if (rIdx >= 0) { const R = world.rigids[rIdx];
           R.vx += out[0] * b.m / R.M * DT; R.vy += out[1] * b.m / R.M * DT; R.vz += out[2] * b.m / R.M * DT;
@@ -330,7 +365,7 @@ function stepWorld(world, k) {
       // --- AGGREGATES integrate as single bodies; members ride as offsets ---
       for (let n = 0; n < world.aggs.length; n++) {
         const a = world.aggs[n];
-        const [ax, ay, az] = accel(a.x, a.y, a.z, srcs, aggBase + n, world.weak, a.clump);
+        const [ax, ay, az] = accel(a.x, a.y, a.z, srcs, aggBase + n, world.weak, a.clump, world, a.fam);
         a.vx += ax * DT; a.vy += ay * DT; a.vz += az * DT; a.x += a.vx * DT; a.y += a.vy * DT; a.z += a.vz * DT;
         // a sleeping top keeps turning: rotate the member offsets by the spin
         const co = Math.cos(a.om * DT), si = Math.sin(a.om * DT);
@@ -345,7 +380,7 @@ function stepWorld(world, k) {
         // sleeping bodies run no contact, and a point-mass flyby is the ship's move, not a planet's
         let near = false;
         if (world.hole && Math.hypot(a.x - world.hole.x, a.y, a.z - world.hole.z) < a.rad + world.hole.killR + BS * 6) near = true;
-        for (const o of world.aggs) if (o !== a && !o.dead && Math.hypot(a.x - o.x, a.y - o.y, a.z - o.z) < a.rad + o.rad + BS * 4) near = true;
+        for (const o of world.aggs) if (o !== a && !o.dead) { const kin = world.fam && famW(world, a.fam, o.fam) === 1; if (Math.hypot(a.x - o.x, a.y - o.y, a.z - o.z) < a.rad + o.rad + BS * (kin ? 2 : 4)) near = true; }
         let ext = 0;
         if (world.hole) { const d = Math.hypot(a.x - world.hole.x, a.y, a.z - world.hole.z); ext = Math.max(ext, G * world.hole.m * (Math.pow(Math.max(d - a.rad, SF), -2.3) - Math.pow(d + a.rad, -2.3))); }
         for (const o of world.aggs) if (o !== a) { const d = Math.hypot(a.x - o.x, a.y - o.y, a.z - o.z); ext = Math.max(ext, G * o.m * (Math.pow(Math.max(d - a.rad, SF), -2.3) - Math.pow(d + a.rad, -2.3))); }
@@ -529,6 +564,10 @@ function stepWorld(world, k) {
       // --- DRIFT awake blocks ---
       for (const i of awakeIdx) { const b = wb[i]; b.x += b.vx * DT; b.y += b.vy * DT; b.z += b.vz * DT; }
 
+      if (world.starBodies) for (const st of world.starBodies) for (const b of wb) {
+        if (!b.alive) continue;
+        if (Math.hypot(b.x - st.x, b.y, b.z - st.z) < st.r) { b.alive = false; st.m += b.m; world.eaten++; }
+      }
       // --- THE HOLE EATS at the event horizon ---
       if (world.hole) for (const b of wb) {
         if (!b.alive) continue;

@@ -28,6 +28,7 @@ function drawFrame(env) {
       let ctrX = 0, ctrZ = 0, ctrM = 0;
       for (const tk of world.tracks || []) { ctrX += tk.x * tk.m; ctrZ += tk.z * tk.m; ctrM += tk.m; }
       if (world.hole) { ctrX += world.hole.x * world.hole.m; ctrZ += world.hole.z * world.hole.m; ctrM += world.hole.m; }
+      if (world.starBodies) for (const st of world.starBodies) { ctrX += st.x * st.m; ctrZ += st.z * st.m; ctrM += st.m; }
       if (world.star) { ctrX += world.star.x * world.star.m; ctrZ += world.star.z * world.star.m; ctrM += world.star.m; }
       world._center = ctrM ? { x: ctrX / ctrM, z: ctrZ / ctrM } : { x: 0, z: 0 };
       const look = world.pan || (world.ship && world.shipTrack ? { x: world.shipTrack.x, z: world.shipTrack.z } : world._center); // the ark's follow: the camera rides the ship; a drag takes the wheel, double-tap hands it back
@@ -61,6 +62,7 @@ function drawFrame(env) {
         const statics = [];
         if (world.hole) statics.push({ x: world.hole.x, z: world.hole.z, m: world.hole.m, rad: world.hole.killR });
         if (world.star) statics.push({ x: world.star.x, z: world.star.z, m: world.star.m, rad: world.star.r });
+        if (world.starBodies) for (const st of world.starBodies) statics.push({ x: st.x, z: st.z, m: st.m, rad: st.r });
         const dtP = 1 / 15, NPRED = 300;
         for (let sIdx = 0; sIdx < NPRED; sIdx++) {
           for (const b of bodies) {
@@ -169,8 +171,8 @@ function drawFrame(env) {
         ctx.fillText("\u0394v " + Math.round(Math.hypot(world.shipAim.vx, world.shipAim.vz)), sp2.x + adx + 10, sp2.y + ady - 8);
         ctx.restore();
       }
-      if (world.star) {
-        const sp = iso(world.star.x, world.star.z, 0), sR = Math.max(world.star.r * sc, 8);
+      const drawStar = (wx, wz, wr) => {
+        const sp = iso(wx, wz, 0), sR = Math.max(wr * sc, 8);
         ctx.save();
         const cg = ctx.createRadialGradient(sp.x, sp.y, sR * 0.5, sp.x, sp.y, sR * 3);
         cg.addColorStop(0, "rgba(255,220,100,.25)"); cg.addColorStop(0.3, "rgba(255,180,60,.08)"); cg.addColorStop(1, "rgba(255,140,30,0)");
@@ -180,7 +182,9 @@ function drawFrame(env) {
         sg.addColorStop(0, "rgba(255,255,230,1)"); sg.addColorStop(0.4, "rgba(255,220,120,1)"); sg.addColorStop(1, "rgba(255,160,40,1)");
         ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(sp.x, sp.y, sR, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
-      }
+      };
+      if (world.star) drawStar(world.star.x, world.star.z, world.star.r);
+      if (world.starBodies) for (const st of world.starBodies) drawStar(st.x, st.z, st.r);
       if (world.hole) {
         const hp = iso(world.hole.x, world.hole.z, 0), hr = Math.max(world.hole.killR * sc, 6);
         const g2 = ctx.createRadialGradient(hp.x, hp.y, hr * 0.6, hp.x, hp.y, hr * 2.6);
