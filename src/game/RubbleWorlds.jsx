@@ -139,7 +139,7 @@ export default function RubbleWorlds({ onExit }) {
         setUi(u => ({ ...u, kind: k.kind, seed, eaten: 0 }));
       }
       let weldsAlive = 0;
-      // time chips: 2x and 5x run the physics that many steps per rendered frame;
+      // time chips: fractions step the physics once every 1/time drawn frames (×1/16 every sixteenth);
       // half speed steps every other frame — the render never changes cadence
       // the half-speed gate counts RENDERED frames — the old gate counted physics
       // steps, so the first skipped frame froze the counter and time stopped dead
@@ -247,7 +247,7 @@ export default function RubbleWorlds({ onExit }) {
         </div>}
         <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
           {!(ui.phase === "aim" || ui.phase === "plan") && [1, 2, 5].map(sz => chip("SIZE " + sz + "x", ctl.current.size === sz, () => set(k => { k.size = sz; })))}
-          {[0.25, 0.5, 1, 2, 5].map(tm => chip(tm === 0.25 ? "×¼" : tm === 0.5 ? "×½" : "×" + tm, ctl.current.time === tm, () => setLive(k => { k.time = tm; })))}
+          {[0.0625, 0.125, 0.25, 0.5, 1].map(tm => chip(tm === 0.0625 ? "×1/16" : tm === 0.125 ? "×⅛" : tm === 0.25 ? "×¼" : tm === 0.5 ? "×½" : "×" + tm, ctl.current.time === tm, () => setLive(k => { k.time = tm; })))}
           {chip(`WELDS ${ctl.current.welds ? "ON" : "OFF"}`, ctl.current.welds, () => setLive(k => { k.welds = !k.welds; }))}
           {chip(`SLEEP ${ctl.current.sleep ? "ON" : "OFF"}`, ctl.current.sleep, () => setLive(k => { k.sleep = !k.sleep; }))}
           {chip(`HASH ${ctl.current.hash ? "ON" : "OFF"}`, ctl.current.hash, () => setLive(k => { k.hash = !k.hash; }))}
