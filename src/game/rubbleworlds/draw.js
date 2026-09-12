@@ -60,16 +60,20 @@ function drawFrame(env) {
       // --- PROJECTED ORBITS: each clump's future as a line, green while clear,
       // turning red through the last two seconds before a predicted contact and
       // ending at the impact — past first contact the future is unknowable.
-      // A 20-second look: minutes would be honest for the stable orbits, but
-      // chaos (the trio, anything post-collision) owns everything longer.
-      if (frame % 3 === 0 || !world.pred) {
+      // A one-second look, rebuilt EVERY drawn frame and rooted where the body
+      // is drawn — its blended position between physics steps — so the line
+      // rides the body instead of hanging at its last true spot and jumping.
+      // Short lines make the every-frame rebuild cheap: fourteen bodies by
+      // fifteen steps.
+      {
+        const rootOff = (tk) => { const gi = world.groups && world.groups.get(tk.clump); if (!gi) return [0, 0]; const i0 = gi.find(i => wb[i].alive); if (i0 == null) return [0, 0]; const b0 = wb[i0]; return [lx(b0) - b0.x, lz(b0) - b0.z]; };
         const bodies = (world.tracks || []).filter(tk => tk.m >= 500).slice(0, 14)
-          .map(tk => ({ x: tk.x, z: tk.z, vx: tk.vx, vz: tk.vz, m: tk.m, rad: tk.rad, clump: tk.clump, pts: [], hit: -1 }));
+          .map(tk => { const [ox, oz] = rootOff(tk); return { x: tk.x + ox, z: tk.z + oz, vx: tk.vx, vz: tk.vz, m: tk.m, rad: tk.rad, clump: tk.clump, pts: [], hit: -1 }; });
         const statics = [];
         if (world.hole) statics.push({ x: world.hole.x, z: world.hole.z, m: world.hole.m, rad: world.hole.killR });
         if (world.star) statics.push({ x: world.star.x, z: world.star.z, m: world.star.m, rad: world.star.r });
-        if (world.starBodies) for (const st of world.starBodies) statics.push({ x: st.x, z: st.z, m: st.m, rad: st.r });
-        const dtP = 1 / 15, NPRED = 30; // two seconds ahead — motion cues, not spaghetti; the ship's own ghost keeps its full length
+        if (world.starBodies) for (const st of world.starBodies) statics.push({ x: st.px == null ? st.x : st.px + (st.x - st.px) * L, z: st.pz == null ? st.z : st.pz + (st.z - st.pz) * L, m: st.m, rad: st.r });
+        const dtP = 1 / 15, NPRED = 15; // one simulated second ahead — two real seconds at the map's half-time default; the ship's own ghost keeps its full length
         for (let sIdx = 0; sIdx < NPRED; sIdx++) {
           for (const b of bodies) {
             if (b.hit >= 0) continue;
@@ -93,7 +97,7 @@ function drawFrame(env) {
       }
       for (const b of world.pred || []) {
         const pts = b.pts; if (pts.length < 4) continue;
-        const redFrom = b.hit >= 0 ? Math.max(0, b.hit - 30) : pts.length + 1;
+        const redFrom = b.hit >= 0 ? Math.max(0, b.hit - 15) : pts.length + 1;
         ctx.lineWidth = 2.2;
         for (let i2 = 3; i2 < pts.length; i2 += 3) {
           const p0 = iso(pts[i2 - 3][0], pts[i2 - 3][1], 0), p1 = iso(pts[i2][0], pts[i2][1], 0);
