@@ -14,7 +14,7 @@ function wellDepth(x, z, wells, sc) {
 }
 
 function drawFrame(env) {
-  const { ctx, W, H, world, frame } = env;
+  const { ctx, W, H, world, frame, time } = env;
   const wb = world.blocks;
   // between physics steps, draw each body partway from where it stood to where it is
   const L = world.lerp == null ? 1 : world.lerp;
@@ -73,7 +73,7 @@ function drawFrame(env) {
         if (world.hole) statics.push({ x: world.hole.x, z: world.hole.z, m: world.hole.m, rad: world.hole.killR });
         if (world.star) statics.push({ x: world.star.x, z: world.star.z, m: world.star.m, rad: world.star.r });
         if (world.starBodies) for (const st of world.starBodies) statics.push({ x: st.px == null ? st.x : st.px + (st.x - st.px) * L, z: st.pz == null ? st.z : st.pz + (st.z - st.pz) * L, m: st.m, rad: st.r });
-        const dtP = 1 / 15, NPRED = 15; // one simulated second ahead — two real seconds at the map's half-time default; the ship's own ghost keeps its full length
+        const dtP = 1 / 15, NPRED = Math.max(2, Math.round(30 * (time || 0.5))); // TWO REAL SECONDS at any chip: fifteen steps at ×½ down to two at ×1/32 (a line needs two points) — a direction tick at the slowest speeds; the ship's own ghost keeps its full length
         for (let sIdx = 0; sIdx < NPRED; sIdx++) {
           for (const b of bodies) {
             if (b.hit >= 0) continue;
@@ -96,11 +96,12 @@ function drawFrame(env) {
         world.pred = bodies;
       }
       for (const b of world.pred || []) {
-        const pts = b.pts; if (pts.length < 4) continue;
-        const redFrom = b.hit >= 0 ? Math.max(0, b.hit - 15) : pts.length + 1;
+        const pts = b.pts; if (pts.length < 2) continue;
+        const stride = pts.length >= 9 ? 3 : 1; // short lines draw every point
+        const redFrom = b.hit >= 0 ? 0 : pts.length + 1; // any predicted contact inside two real seconds paints the whole short line red
         ctx.lineWidth = 2.2;
-        for (let i2 = 3; i2 < pts.length; i2 += 3) {
-          const p0 = iso(pts[i2 - 3][0], pts[i2 - 3][1], 0), p1 = iso(pts[i2][0], pts[i2][1], 0);
+        for (let i2 = stride; i2 < pts.length; i2 += stride) {
+          const p0 = iso(pts[i2 - stride][0], pts[i2 - stride][1], 0), p1 = iso(pts[i2][0], pts[i2][1], 0);
           const fade = Math.max(0.25, 1 - i2 / pts.length);
           ctx.strokeStyle = i2 >= redFrom ? `rgba(220,55,35,${fade * 0.95})` : `rgba(40,170,90,${fade * 0.85})`;
           ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
