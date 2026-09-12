@@ -16,6 +16,12 @@ function wellDepth(x, z, wells, sc) {
 function drawFrame(env) {
   const { ctx, W, H, world, frame } = env;
   const wb = world.blocks;
+  // between physics steps, draw each body partway from where it stood to where it is
+  const L = world.lerp == null ? 1 : world.lerp;
+  const lx = (b) => b.px == null ? b.x : b.px + (b.x - b.px) * L;
+  const ly = (b) => b.py == null ? b.y : b.py + (b.y - b.py) * L;
+  const lz = (b) => b.pz == null ? b.z : b.pz + (b.z - b.pz) * L;
+  const shipAt = () => { const st = world.shipTrack, pv = world.shipPrev; if (!st) return null; if (!pv) return { x: st.x, z: st.z }; return { x: pv.x + (st.x - pv.x) * L, z: pv.z + (st.z - pv.z) * L }; };
       // --- DRAW ---
       ctx.fillStyle = "#f5f4f0"; ctx.fillRect(0, 0, W, H);
       for (let i = 0; i < 60; i++) { const sx3 = ((i * 7919 + 37) * 3.7) % W, sy3 = ((i * 4967 + 13) * 2.3) % H; ctx.fillStyle = `rgba(0,0,20,${i % 5 === 0 ? 0.06 : 0.03})`; ctx.fillRect(sx3, sy3, i % 7 === 0 ? 1.5 : 1, i % 7 === 0 ? 1.5 : 1); }
@@ -31,7 +37,7 @@ function drawFrame(env) {
       if (world.starBodies) for (const st of world.starBodies) { ctrX += st.x * st.m; ctrZ += st.z * st.m; ctrM += st.m; }
       if (world.star) { ctrX += world.star.x * world.star.m; ctrZ += world.star.z * world.star.m; ctrM += world.star.m; }
       world._center = ctrM ? { x: ctrX / ctrM, z: ctrZ / ctrM } : { x: 0, z: 0 };
-      const look = world.pan || (world.ship && world.shipTrack ? { x: world.shipTrack.x, z: world.shipTrack.z } : world._center); // the ark's follow: the camera rides the ship; a drag takes the wheel, double-tap hands it back
+      const look = world.pan || (world.ship && world.shipTrack ? shipAt() : world._center); // the ark's follow: the camera rides the ship; a drag takes the wheel, double-tap hands it back
       const cx = W / 2 - (look.x - look.z) * C30 * sc, cy = H / 2 - (look.x + look.z) * S30 * sc;
       const iso = (x, z, y) => ({ x: cx + (x - z) * C30 * sc, y: cy + (x + z) * S30 * sc - (y || 0) * 0.9 * sc });
       const lookX = look.x, lookZ = look.z;
@@ -63,7 +69,7 @@ function drawFrame(env) {
         if (world.hole) statics.push({ x: world.hole.x, z: world.hole.z, m: world.hole.m, rad: world.hole.killR });
         if (world.star) statics.push({ x: world.star.x, z: world.star.z, m: world.star.m, rad: world.star.r });
         if (world.starBodies) for (const st of world.starBodies) statics.push({ x: st.x, z: st.z, m: st.m, rad: st.r });
-        const dtP = 1 / 15, NPRED = 300;
+        const dtP = 1 / 15, NPRED = 30; // two seconds ahead — motion cues, not spaghetti; the ship's own ghost keeps its full length
         for (let sIdx = 0; sIdx < NPRED; sIdx++) {
           for (const b of bodies) {
             if (b.hit >= 0) continue;
@@ -181,7 +187,7 @@ function drawFrame(env) {
       }
       // the ship's aim arrow, the ark's own gesture
       if (world.shipAim && world.shipAim.on && world.shipTrack) {
-        const st = world.shipTrack, sp2 = iso(st.x, st.z, 0);
+        const st = world.shipTrack, sa = shipAt(), sp2 = iso(sa.x, sa.z, 0);
         const adx = (world.shipAim.vx - world.shipAim.vz) * C30 * sc * 1.2, ady = (world.shipAim.vx + world.shipAim.vz) * S30 * sc * 1.2;
         ctx.save(); ctx.strokeStyle = "rgba(240,165,30,.8)"; ctx.lineWidth = 3;
         ctx.beginPath(); ctx.moveTo(sp2.x, sp2.y); ctx.lineTo(sp2.x + adx, sp2.y + ady); ctx.stroke();
@@ -203,7 +209,7 @@ function drawFrame(env) {
         ctx.restore();
       };
       if (world.star) drawStar(world.star.x, world.star.z, world.star.r);
-      if (world.starBodies) for (const st of world.starBodies) drawStar(st.x, st.z, st.r);
+      if (world.starBodies) for (const st of world.starBodies) drawStar(st.px == null ? st.x : st.px + (st.x - st.px) * L, st.pz == null ? st.z : st.pz + (st.z - st.pz) * L, st.r);
       if (world.hole) {
         const hp = iso(world.hole.x, world.hole.z, 0), hr = Math.max(world.hole.killR * sc, 6);
         const g2 = ctx.createRadialGradient(hp.x, hp.y, hr * 0.6, hp.x, hp.y, hr * 2.6);
@@ -232,7 +238,7 @@ function drawFrame(env) {
           lam = 0.45 + 0.55 * Math.max(0, (ox / ol) * LX + (oy / ol) * LY + (oz / ol) * LZ); }
         if (b.sleeping) lam *= 0.82;
         // an awake block burns red — the owner's own gauge of what sleep is doing
-        const p = iso(b.x, b.z, b.y), rgb = b.sleeping || b.ship ? tints[b.tint] : [214, 74, 52];
+        const p = iso(lx(b), lz(b), ly(b)), rgb = b.sleeping || b.ship ? tints[b.tint] : [214, 74, 52];
         ctx.fillStyle = shade(rgb, lam * 0.72);
         ctx.beginPath(); ctx.moveTo(p.x - hw, p.y - hh); ctx.lineTo(p.x, p.y); ctx.lineTo(p.x, p.y + vh); ctx.lineTo(p.x - hw, p.y + vh - hh); ctx.closePath(); ctx.fill();
         ctx.fillStyle = shade(rgb, lam * 0.5);

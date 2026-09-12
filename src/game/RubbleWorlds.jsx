@@ -176,6 +176,18 @@ export default function RubbleWorlds({ onExit }) {
       }
       const planFrozen = world.ship && (world.shipPhase === "aim" || world.shipPhase === "plan" || (world.shipPaused && world.shipPhase === "fly")); // the ark holds the sky while you aim — time starts at LAUNCH
       const tPhys = performance.now();
+      // FILLING IN THE FRAMES: a slow chip steps the physics once every N drawn
+      // frames. Before each step every block and star remembers where it stood;
+      // the drawing then places it partway from there to here by how many frames
+      // have passed, so bodies glide across the gap instead of hopping. Drawing
+      // only — the physics and every pinned number are untouched.
+      const stepN = k.time >= 1 ? 1 : Math.round(1 / k.time);
+      if (!planFrozen && reps > 0) {
+        for (const b of world.blocks) { b.px = b.x; b.py = b.y; b.pz = b.z; }
+        if (world.starBodies) for (const st of world.starBodies) { st.px = st.x; st.pz = st.z; }
+        world.shipPrev = world.shipTrack ? { x: world.shipTrack.x, z: world.shipTrack.z } : null;
+      }
+      world.lerp = (planFrozen || stepN === 1) ? 1 : (((renderF - 1) % stepN) + 1) / stepN;
       for (let rep = 0; rep < (planFrozen ? 0 : reps); rep++) weldsAlive = stepWorld(world, k);
       if (reps > 0) world.stepMs = +((performance.now() - tPhys) / reps).toFixed(2);
       if (world.gate && !world.gate.reached && world.shipTrack && !planFrozen &&
