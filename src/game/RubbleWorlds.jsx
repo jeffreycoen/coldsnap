@@ -11,7 +11,7 @@ export default function RubbleWorlds({ onExit }) {
   const cvs = useRef(null);
   const worldRef = useRef(null);
   const [ui, setUi] = useState({ kind: "binary", welds: true, sleep: true, seed: 0, fps: 0, awake: 0, asleep: 0, eaten: 0, weldsAlive: 0, copied: false });
-  const ctl = useRef({ kind: "binary", welds: true, sleep: true, hash: false, friction: false, time: 0.5, size: 1, hull: "longrange", shipOn: false, reset: 1 });
+  const ctl = useRef({ kind: "binary", welds: true, sleep: true, hash: false, friction: false, time: 0.0625, size: 1, hull: "longrange", shipOn: false, reset: 1 });
   const copyLog = () => {
     const data = worldRef.current && worldRef.current();
     if (!data) return;
@@ -67,14 +67,14 @@ export default function RubbleWorlds({ onExit }) {
       // the ark's release: a near-miss bends toward the gate; away from the gate, toward a closed orbit
       if (panDrag && panDrag.aim && world && world.shipAim && world.shipAim.on && world.shipTrack) {
         const st = world.shipTrack, aim = world.shipAim, vel = Math.hypot(aim.vx, aim.vz);
-        const test = vel > 1 ? predictShip(world, st.vx + aim.vx, st.vz + aim.vz, 400) : null;
+        const test = vel > 1 ? predictShip(world, st.vx + aim.vx, st.vz + aim.vz, 1200) : null;
         if (test && !test.pts.some(p => p.hitsGate)) {
           const wantGate = world.gate && !world.gate.reached && test.minGate < 80;
           const ang0 = Math.atan2(aim.vz, aim.vx);
           let bestAng = ang0, bestDist = test.minGate, found = false;
           for (let da = -0.12; da <= 0.12; da += 0.03) {
             const ta = ang0 + da;
-            const t2 = predictShip(world, st.vx + Math.cos(ta) * vel, st.vz + Math.sin(ta) * vel, 400);
+            const t2 = predictShip(world, st.vx + Math.cos(ta) * vel, st.vz + Math.sin(ta) * vel, 1200);
             if (!t2) break;
             if (wantGate) {
               if (t2.minGate < bestDist) { bestDist = t2.minGate; bestAng = ta; }
@@ -251,7 +251,7 @@ export default function RubbleWorlds({ onExit }) {
       </div>}
       <div style={{ position: "absolute", bottom: 20, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "0 12px" }}>
         {!(ui.phase === "aim" || ui.phase === "plan") && <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
-          {SCENES.map(sn => chip(SCENE_LABEL[sn], ui.kind === sn, () => set(k => { k.kind = sn; k.time = 0.5; })))}
+          {SCENES.map(sn => chip(SCENE_LABEL[sn], ui.kind === sn, () => set(k => { k.kind = sn; k.time = 0.0625; })))}
           {ui.kind !== "ship" && chip(`FLY ${ctl.current.shipOn ? "ON" : "OFF"}`, ctl.current.shipOn, () => set(k => { k.shipOn = !k.shipOn; }))}
         </div>}
         {ui.phase === "aim" && <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>

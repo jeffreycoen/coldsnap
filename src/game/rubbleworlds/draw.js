@@ -142,7 +142,7 @@ function drawFrame(env) {
       // clear, red through danger, a green dot where it threads the gate
       if (world.ship && world.shipAim && world.shipAim.on && world.shipTrack) {
         const st = world.shipTrack;
-        const pr = predictShip(world, st.vx + world.shipAim.vx, st.vz + world.shipAim.vz, 400);
+        const pr = predictShip(world, st.vx + world.shipAim.vx, st.vz + world.shipAim.vz, 1200); // three times the old reach — about forty simulated seconds of path
         if (pr && pr.pts.length > 3) {
           ctx.lineWidth = 2.2;
           for (let i2 = 3; i2 < pr.pts.length; i2 += 3) {
@@ -174,7 +174,7 @@ function drawFrame(env) {
         for (const eng of wb) {
           if (!(eng.ship && eng.eng && eng.alive)) continue;
           const fl = world.flame, age = (world.frame - fl.f0) / fl.dur;
-          const th = (1 - age) * Math.min(1, fl.mag / 65);
+          const th = (1 - age) * Math.min(1, fl.mag / (65 * (world.shipScale || 1)));
           const f = (0.85 + 0.15 * Math.sin(world.frame * 0.57)) * Math.max(th, 0.001);
           const ep = iso(eng.x + fl.dx * BS * 0.6, eng.z + fl.dz * BS * 0.6, eng.y);
           const tp = iso(eng.x + fl.dx * (BS * 0.6 + 26 * f), eng.z + fl.dz * (BS * 0.6 + 26 * f), eng.y);
