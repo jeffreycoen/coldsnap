@@ -105,6 +105,25 @@ function drawFrame(env) {
         ctx.strokeStyle = g.reached ? "rgba(40,170,90,.8)" : `rgba(40,150,170,${pulse})`;
         ctx.lineWidth = 2.5; ctx.stroke();
       }
+      // THE COMPASS: when the gate ring is off screen, an arrow at the screen's
+      // edge on the line to it, the distance from the ship printed beside it;
+      // it folds away the moment the ring itself is in view
+      if (world.gate && !world.gate.reached && world.shipTrack) {
+        const gp = iso(world.gate.x, world.gate.z, 0), pad = 24;
+        if (gp.x < -pad || gp.x > W + pad || gp.y < -pad || gp.y > H + pad) {
+          const cx2 = W / 2, cy2 = H / 2, dx = gp.x - cx2, dy = gp.y - cy2;
+          const inset = 44, hw = W / 2 - inset, hh = H / 2 - inset;
+          const t = Math.min(hw / Math.max(Math.abs(dx), 1e-6), hh / Math.max(Math.abs(dy), 1e-6));
+          const ax = cx2 + dx * t, ay = cy2 + dy * t, ang = Math.atan2(dy, dx);
+          const dist = Math.round(Math.hypot(world.gate.x - world.shipTrack.x, world.gate.z - world.shipTrack.z));
+          ctx.save(); ctx.translate(ax, ay); ctx.rotate(ang);
+          ctx.fillStyle = "rgba(40,150,170,.9)";
+          ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(-8, -9); ctx.lineTo(-4, 0); ctx.lineTo(-8, 9); ctx.closePath(); ctx.fill();
+          ctx.restore();
+          ctx.font = "700 11px -apple-system,sans-serif"; ctx.fillStyle = "rgba(40,150,170,.9)"; ctx.textAlign = "center";
+          ctx.fillText("GATE " + dist, ax - Math.cos(ang) * 30, ay - Math.sin(ang) * 30 + 4); ctx.textAlign = "left";
+        }
+      }
       // the aimed burn's TRUTHFUL ghost: the ark's own predictor, blue while
       // clear, red through danger, a green dot where it threads the gate
       if (world.ship && world.shipAim && world.shipAim.on && world.shipTrack) {
