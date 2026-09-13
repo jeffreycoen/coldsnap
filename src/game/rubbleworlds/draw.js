@@ -70,7 +70,8 @@ function drawFrame(env) {
       // fifteen steps.
       {
         const rootOff = (tk) => { const gi = world.groups && world.groups.get(tk.clump); if (!gi) return [0, 0]; const i0 = gi.find(i => wb[i].alive); if (i0 == null) return [0, 0]; const b0 = wb[i0]; return [lx(b0) - b0.x, lz(b0) - b0.z]; };
-        const bodies = (world.tracks || []).filter(tk => tk.m >= 500).slice(0, 14)
+        const shipClump = world.ship && world.shipPhase === "fly" && world.shipTrack ? world.shipTrack.clump : null; // the flight ghost owns the flying ship's line
+        const bodies = (world.tracks || []).filter(tk => tk.m >= 500 && tk.clump !== shipClump).slice(0, 14)
           .map(tk => { const [ox, oz] = rootOff(tk); return { x: tk.x + ox, z: tk.z + oz, vx: tk.vx, vz: tk.vz, m: tk.m, rad: tk.rad, clump: tk.clump, pts: [], hit: -1 }; });
         const statics = [];
         if (world.hole) statics.push({ x: world.hole.x, z: world.hole.z, m: world.hole.m, rad: world.hole.killR });
@@ -156,6 +157,25 @@ function drawFrame(env) {
       if (world.ship && world.shipAim && world.shipAim.on && world.shipTrack) {
         const st = world.shipTrack;
         const pr = predictShip(world, st.vx + world.shipAim.vx, st.vz + world.shipAim.vz, 2400); // forty simulated seconds at the physics step
+        if (pr && pr.pts.length > 3) {
+          ctx.lineWidth = 2.2;
+          for (let i2 = 3; i2 < pr.pts.length; i2 += 3) {
+            const q = pr.pts[i2], q0 = pr.pts[i2 - 3];
+            const p0 = iso(q0.x, q0.z, 0), p1 = iso(q.x, q.z, 0);
+            const fade = Math.max(0.25, 1 - i2 / pr.pts.length);
+            ctx.strokeStyle = q.danger > 0.3 ? `rgba(220,55,35,${fade})` : `rgba(60,130,220,${fade * 0.9})`;
+            ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
+          }
+          const last = pr.pts[pr.pts.length - 1];
+          if (last.hitsGate) { const p = iso(last.x, last.z, 0); ctx.fillStyle = "rgba(40,170,90,.9)"; ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, Math.PI * 2); ctx.fill(); }
+        }
+      }
+      // the flight ghost: the same forty-second predictor on the ship's own
+      // velocity, no burn added, so the flown path reads as far as the aimed
+      // one. It replaces the two-second clump tick for the flying ship.
+      if (world.ship && world.shipPhase === "fly" && !world.shipDead && world.shipTrack && !(world.shipAim && world.shipAim.on)) {
+        const st = world.shipTrack;
+        const pr = predictShip(world, st.vx, st.vz, 2400);
         if (pr && pr.pts.length > 3) {
           ctx.lineWidth = 2.2;
           for (let i2 = 3; i2 < pr.pts.length; i2 += 3) {

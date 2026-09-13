@@ -255,7 +255,7 @@ export default function RubbleWorlds({ onExit }) {
       </div>}
       <div style={{ position: "absolute", bottom: 20, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "0 12px" }}>
         {!(ui.phase === "aim" || ui.phase === "plan") && <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
-          {SCENES.map(sn => chip(SCENE_LABEL[sn], ui.kind === sn, () => set(k => { k.kind = sn; k.time = 0.5; })))}
+          {SCENES.map(sn => chip(SCENE_LABEL[sn], ui.kind === sn, () => set(k => { k.kind = sn; k.time = sn === "map" ? 0.0625 : 0.5; if (sn === "map") { k.hash = true; k.friction = true; } })))}
           {ui.kind !== "ship" && chip(`FLY ${ctl.current.shipOn ? "ON" : "OFF"}`, ctl.current.shipOn, () => set(k => { k.shipOn = !k.shipOn; }))}
         </div>}
         {ui.phase === "aim" && <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
