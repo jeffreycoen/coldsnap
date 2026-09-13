@@ -153,19 +153,18 @@ function applyN(world, wb, cnt, bi, bj, dPn) {
 }
 // a general impulse (velocity units) on a contact's two sides
 function applyJ(world, cnt, bi, bj, Jx, Jy, Jz) {
-  const Px = Jx / cnt.mScale, Py = Jy / cnt.mScale, Pz = Jz / cnt.mScale; // impulse in momentum units; with equal masses this is J times the block mass, exactly the old arithmetic
   if (cnt.Ra) {
     const R = cnt.Ra;
-    R.vx -= Px / R.M; R.vy -= Py / R.M; R.vz -= Pz / R.M;
-    R.om -= ((bi.x - R.x) * Pz - (bi.z - R.z) * Px) / R.Iy;
+    R.vx -= Jx / R.M; R.vy -= Jy / R.M; R.vz -= Jz / R.M;
+    R.om -= ((bi.x - R.x) * Jz - (bi.z - R.z) * Jx) / R.Iy;
     R.dirty = true;
-  } else { bi.vx -= Px / cnt.ma; bi.vy -= Py / cnt.ma; bi.vz -= Pz / cnt.ma; }
+  } else { bi.vx -= Jx / cnt.ma; bi.vy -= Jy / cnt.ma; bi.vz -= Jz / cnt.ma; }
   if (cnt.Rb) {
     const R = cnt.Rb;
-    R.vx += Px / R.M; R.vy += Py / R.M; R.vz += Pz / R.M;
-    R.om += ((bj.x - R.x) * Pz - (bj.z - R.z) * Px) / R.Iy;
+    R.vx += Jx / R.M; R.vy += Jy / R.M; R.vz += Jz / R.M;
+    R.om += ((bj.x - R.x) * Jz - (bj.z - R.z) * Jx) / R.Iy;
     R.dirty = true;
-  } else { bj.vx += Px / cnt.mb; bj.vy += Py / cnt.mb; bj.vz += Pz / cnt.mb; }
+  } else { bj.vx += Jx / cnt.mb; bj.vy += Jy / cnt.mb; bj.vz += Jz / cnt.mb; }
 }
 // the velocity of a block's material point — rigid members move with their body
 function ptVel(world, i, b, out) {
@@ -433,7 +432,6 @@ function stepWorld(world, k) {
           // momentum into every unequal pair and rocketed hosts (measured).
           const arm = (R, b) => { const rx = b.x - R.x, rz = b.z - R.z; const t = rx * cnt.nz - rz * cnt.nx; return 1 / R.M + (t * t) / R.Iy; };
           cnt.fa = Ra ? arm(Ra, bi) : 1 / bi.m; cnt.fb = Rb ? arm(Rb, bj) : 1 / bj.m;
-          cnt.mScale = 2 / (bi.m + bj.m); // rescale so uniform-mass behavior is bit-identical: with equal masses fa+fb doubles against the old units and this halves it back
           cnt.Ra = Ra; cnt.Rb = Rb; cnt.ma = bi.m; cnt.mb = bj.m;
           cnt.bias = Math.min(BETA / DT * Math.max(0, cnt.depth - SLOP), BIAS_CAP);
           if (cnt.pn) applyN(world, wb, cnt, bi, bj, cnt.pn); // warm start through the SAME routing as the solver — never directly to a rigid member
@@ -476,7 +474,7 @@ function stepWorld(world, k) {
           // truly sequential over bodies, the war engine's own discipline.
           ptVel(world, cnt.i, bi, _va); ptVel(world, cnt.j, bj, _vb);
           const vn = (_vb[0] - _va[0]) * cnt.nx + (_vb[1] - _va[1]) * cnt.ny + (_vb[2] - _va[2]) * cnt.nz;
-          let dPn = -(vn - cnt.bias) / ((cnt.fa + cnt.fb) / cnt.mScale) / cnt.mScale; // algebraically -(vn-bias)/(fa+fb); written so the uniform-mass path multiplies and divides by the same number and stays bit-stable
+          let dPn = -(vn - cnt.bias) / (cnt.fa + cnt.fb); // impulse in momentum units; equal masses reproduce the old velocity-unit arithmetic exactly, at any mass
           const pn0 = cnt.pn; cnt.pn = Math.max(0, cnt.pn + dPn); dPn = cnt.pn - pn0;
           // THE CONSUMING STRIKE: a contact whose stored impulse climbs past any
           // honest collision is a body grinding inside a body — the corrector
