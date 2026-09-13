@@ -55,7 +55,7 @@ function addShip(world, hull, sx, sz, scale = 1) {
     if (pt === "tank") tanks++;
     world.blocks.push({ x: sx + gx * BS, y: 0, z: sz + gy * BS, vx: 0, vy: 0, vz: 0, tint: 2, ship: true, eng: pt === "engine", cab: pt === "bridge", tank: pt === "tank", hp: 100, alive: true, sleeping: false, clump: -1, s: BS, cr: BS * 0.55, m: 120 });
   }
-  world.ship = { fuel: (100 + 210 * tanks) * scale, max: (100 + 210 * tanks) * scale, burns: 0 };
+  world.ship = { fuel: (200 + 420 * tanks) * scale, max: (200 + 420 * tanks) * scale, burns: 0 }; // doubled fuel
   world.shipScale = scale; // the map runs at half time, so its ship carries double caps and double fuel: same voyage in real seconds, same share of the tank per burn
   world.shipPhase = "aim";
 }
@@ -162,11 +162,11 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     // identical at double scale; eight times would trap the ship outright. Only the ship keeps its
     // old size, so the whole world reads twice as large around it.
     const MG = 98500;
-    world.span = 1500;
+    world.span = 750; // the map's length and width stay the former size, like the ship; only the bodies are doubled
     world.starBodies = [{ x: 0, z: 0, vx: 0, vz: 0, m: MG, r: 80, fam: 0, pin: true }];
     world.fam = { 0: -1 };
     world.hazardFam = 0;
-    { const r = 950, a = 25 * Math.PI / 180, v = vCirc(MG, r);
+    { const r = 475, a = -58 * Math.PI / 180, v = vCirc(MG, r);
       world.starBodies.push({ x: Math.cos(a) * r, z: Math.sin(a) * r, vx: -Math.sin(a) * v, vz: Math.cos(a) * v, m: 36900, r: 48, fam: 1, pin: false }); world.fam[1] = 0; }
     // [ring, angle degrees, vertex radius, m1, m2, m3, hue degrees, spin]
     // spin +1 turns WITH the ring ride, -1 against it. A prograde spin
@@ -175,13 +175,13 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     // retrograde held), so prograde goes only to the four outer
     // heavyweights, whose grip affords it.
     const TRIS = [
-      [350, 40, 80, 40000, 20000, 7200, 18, -1], [350, -75, 26, 3200, 1200, 640, 250, -1],
-      [480, -15, 38, 3200, 1200, 640, 205, -1], [480, 75, 52, 7200, 3200, 1200, 330, -1],
-      [600, -30, 96, 40000, 7200, 3200, 32, -1], [600, 55, 68, 5600, 5600, 1200, 95, -1],
-      [730, 80, 68, 7200, 5600, 3200, 275, -1], [730, -70, 76, 12800, 3200, 3200, 160, -1],
-      [900, 12, 104, 40000, 40000, 3200, 0, 1], [900, -55, 64, 5600, 1200, 640, 220, -1],
-      [1100, -40, 72, 12800, 7200, 1200, 145, 1], [1100, 25, 80, 20000, 5600, 3200, 300, -1],
-      [1300, 0, 112, 40000, 12800, 12800, 48, 1], [1440, -22, 64, 5600, 3200, 3200, 190, 1],
+      [175, -50, 80, 40000, 20000, 7200, 18, -1], [175, -64, 26, 3200, 1200, 640, 250, -1],
+      [240, -48, 38, 3200, 1200, 640, 205, -1], [240, -70, 52, 7200, 3200, 1200, 330, -1],
+      [300, -55, 96, 40000, 7200, 3200, 32, -1], [300, -74, 68, 5600, 5600, 1200, 95, -1],
+      [365, -48, 68, 7200, 5600, 3200, 275, -1], [365, -62, 76, 12800, 3200, 3200, 160, -1],
+      [450, -52, 104, 40000, 40000, 3200, 0, 1], [450, -70, 64, 5600, 1200, 640, 220, -1],
+      [550, -48, 72, 12800, 7200, 1200, 145, 1], [550, -60, 80, 20000, 5600, 3200, 300, -1],
+      [650, -55, 112, 40000, 12800, 12800, 48, 1], [720, -63, 64, 5600, 3200, 3200, 190, 1],
     ];
     const hsl = (h, sPct, lPct) => { const sat = sPct / 100, li = lPct / 100;
       const f = (n) => { const k = (n + h / 30) % 12; const c = sat * Math.min(li, 1 - li); return Math.round(255 * (li - c * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); };
@@ -207,7 +207,7 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
         world.blocks.push(...blocks);
       }
     }
-    world.pickups = [{ x: 300, z: -380, fuel: 300, alive: true }, { x: 840, z: -240, fuel: 300, alive: true }, { x: 1200, z: -500, fuel: 300, alive: true }];
+    world.pickups = [{ x: 150, z: -300, fuel: 300, alive: true }, { x: 200, z: -350, fuel: 300, alive: true }, { x: 380, z: -430, fuel: 300, alive: true }];
   } else {
     world.hole = { x: 0, z: 0, m: 42000 * size ** 3, killR: 26 * size };
     const px = 240 * size;
@@ -219,7 +219,7 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     world.span = 300 * size;
   }
   if (shipOn && kind !== "ship" && kind !== "map") addShip(world, hull, -world.span * 0.77, world.span * 0.31);
-  if (kind === "map") { addShip(world, hull, -220, 70, 2); world.birthAim = 80 * world.shipScale; world.birthDir = [0.3011, 0.9535]; world.gate = { x: world.span * 0.95, z: -world.span * 0.3, r: 72, reached: false }; } // born behind the great star at double distance; the star mass is scaled so the same tangent at 160 flies the same swing, twice as large
+  if (kind === "map") { addShip(world, hull, -72, 90, 2); world.birthAim = 130 * world.shipScale; world.birthDir = [0.781, 0.625]; world.gate = { x: 450, z: -560, r: 36, reached: false }; } // born below-left of the great star, the only body there; the tangent at 260 rounds the star at 115 and passes within 253 of the gate at 7.7 simulated seconds
   world.welds = buildWelds(world.blocks);
   world.weldOf = new Map();
   for (const w of world.welds) world.weldOf.set(w.a * 100000 + w.b, w);

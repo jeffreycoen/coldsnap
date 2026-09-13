@@ -49,7 +49,7 @@ export default function GravityDebris({ onExit }) {
         const sdx = 0.5 * (dx / (0.866 * sc) + dy / (0.5 * sc)), sdz = 0.5 * (dy / (0.5 * sc) - dx / (0.866 * sc));
         const mag = Math.hypot(sdx, sdz) || 1;
         const sc2 = world.shipScale || 1;
-        const cap = world.shipPhase === "plan" ? Math.min(65 * sc2, world.ship.fuel) : Math.min(110 * sc2, world.ship.fuel);
+        const cap = world.shipPhase === "plan" ? Math.min(130 * sc2, world.ship.fuel) : Math.min(220 * sc2, world.ship.fuel); // doubled thrust
         const vel = Math.min(mag * 0.28 * sc2, cap);
         world.shipAim = { on: vel > 1, vx: sdx / mag * vel, vz: sdz / mag * vel };
         e.preventDefault(); return;
@@ -102,7 +102,7 @@ export default function GravityDebris({ onExit }) {
         if (what === "turnL") ang -= 0.03; if (what === "turnR") ang += 0.03;
         if (what === "less") mag = Math.max(2, mag - 3); if (what === "more") mag += 3;
         const sc3 = world.shipScale || 1;
-        const cap = world.shipPhase === "plan" ? Math.min(65 * sc3, world.ship.fuel) : Math.min(110 * sc3, world.ship.fuel);
+        const cap = world.shipPhase === "plan" ? Math.min(130 * sc3, world.ship.fuel) : Math.min(220 * sc3, world.ship.fuel); // doubled thrust
         mag = Math.min(mag, cap);
         world.shipAim = { on: true, vx: Math.cos(ang) * mag, vz: Math.sin(ang) * mag };
         return;
@@ -203,7 +203,7 @@ export default function GravityDebris({ onExit }) {
       if (world.ship) { // the tanks hold the fuel: a tank lost or torn off spills its share on the spot
         const c3 = shipConn(world);
         let tk = 0; if (c3) for (const b3 of c3.set) if (b3.tank) tk++;
-        const cap = 100 + 210 * tk;
+        const cap = 200 + 420 * tk; // doubled fuel
         if (world.ship.fuel > cap) world.ship.fuel = cap;
       }
 
