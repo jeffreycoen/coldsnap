@@ -110,6 +110,19 @@ function drawFrame(env) {
           ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
         }
       }
+      // the small sky's marks: a comet trails forty frames of its path; a fuel cache is the ark's diamond with its number
+      if (!world._tails) world._tails = new Map();
+      for (let bi = 0; bi < wb.length; bi++) { const b = wb[bi]; if (!b.comet || !b.alive) continue;
+        let tr = world._tails.get(bi); if (!tr) { tr = []; world._tails.set(bi, tr); }
+        tr.push([lx(b), lz(b)]); if (tr.length > 40) tr.shift();
+        if (tr.length > 3) { ctx.beginPath(); const t0 = iso(tr[0][0], tr[0][1], 0); ctx.moveTo(t0.x, t0.y); for (let ti = 1; ti < tr.length; ti++) { const tp = iso(tr[ti][0], tr[ti][1], 0); ctx.lineTo(tp.x, tp.y); }
+          ctx.strokeStyle = "rgba(100,160,255,.10)"; ctx.lineWidth = 7; ctx.stroke(); ctx.strokeStyle = "rgba(200,220,255,.35)"; ctx.lineWidth = 1.5; ctx.stroke(); }
+      }
+      if (world.pickups) for (const pk of world.pickups) { if (!pk.alive) continue; const pp = iso(pk.x, pk.z, 0), pr2 = 8, bob = Math.sin(frame * 0.05 + pk.x) * 0.5;
+        ctx.save(); ctx.shadowColor = "rgba(50,220,220,.4)"; ctx.shadowBlur = 12;
+        ctx.beginPath(); ctx.moveTo(pp.x, pp.y - pr2 + bob); ctx.lineTo(pp.x + pr2 * 0.6, pp.y + bob); ctx.lineTo(pp.x, pp.y + pr2 + bob); ctx.lineTo(pp.x - pr2 * 0.6, pp.y + bob); ctx.closePath();
+        ctx.fillStyle = "rgba(50,220,220,.3)"; ctx.fill(); ctx.strokeStyle = "rgba(50,220,220,.6)"; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.font = "600 8px -apple-system,sans-serif"; ctx.fillStyle = "rgba(50,220,220,.5)"; ctx.textAlign = "center"; ctx.fillText("+" + pk.fuel, pp.x, pp.y + pr2 + 10); ctx.textAlign = "left"; ctx.restore(); }
       // the gate ring — teal pulse until reached, then green, the ark's ring
       if (world.gate) {
         const g = world.gate;

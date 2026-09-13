@@ -193,6 +193,9 @@ export default function RubbleWorlds({ onExit }) {
       if (reps > 0) world.stepMs = +((performance.now() - tPhys) / reps).toFixed(2);
       if (world.gate && !world.gate.reached && world.shipTrack && !planFrozen &&
           Math.hypot(world.shipTrack.x - world.gate.x, world.shipTrack.z - world.gate.z) < world.gate.r) world.gate.reached = true;
+      if (world.ship && world.pickups && world.shipTrack && !planFrozen) for (const pk of world.pickups) { // a fuel cache refuels on touch, up to the tank
+        if (pk.alive && Math.hypot(world.shipTrack.x - pk.x, world.shipTrack.z - pk.z) < 18) { pk.alive = false; world.ship.fuel = Math.min(world.ship.max, world.ship.fuel + pk.fuel); }
+      }
       if (world.ship && !world.shipDead) {
         const cab2 = world.blocks.find(b2 => b2.ship && b2.cab);
         if (cab2 && !cab2.alive) { world.shipDead = true; world.deadAt = world.t; } // the wreck keeps drifting; only the flight ends

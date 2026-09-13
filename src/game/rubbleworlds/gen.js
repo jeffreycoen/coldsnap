@@ -202,6 +202,7 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
       const bodies = [];
       for (const p of planets) bodies.push([p[1], p[2], PR]);
       for (const mn of moons) bodies.push([mn[1], mn[2], MR]);
+      for (const pk of [[150, -190], [420, -120], [600, -250]]) bodies.push([pk[0], pk[1], 18]);
       for (const st of world.starBodies) bodies.push([st.x, st.z, st.r]);
       bodies.push([-world.span * 0.95, world.span * 0.3, SHIPR]);
       let minGap = 1e9;
@@ -231,6 +232,71 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     for (const [f2, cx, cz, vx, vz, m] of moons) {
       const blocks = makePlanet(cx, cz, vx, vz, 1, rand, BS * 1.6, m);
       for (const b of blocks) b.fam = f2;
+      world.blocks.push(...blocks);
+    }
+    // THE SMALL SKY: forty asteroids, four comets, two three-body triads, three
+    // fuel caches — the ark's clutter as block bodies, so they are destruction.
+    // Every small body is under ten blocks and therefore never sleeps; the
+    // cost is measured in the plan. The ghost does not see them: it reads
+    // bodies of 500 mass and up, and these are lighter — a known gap.
+    const small = [];   // [fam, cx, cz, vx, vz, mass, R, kind]
+    // PLACED CLEAR BY CONSTRUCTION: every small body tries fixed candidate spots in order and takes the first that clears everything already placed by at least 6
+    const placed = [];
+    for (const p of planets) placed.push([p[1], p[2], PR]);
+    for (const mn of moons) placed.push([mn[1], mn[2], MR]);
+    for (const st of world.starBodies) placed.push([st.x, st.z, st.r]);
+    placed.push([-100, -120, SHIPR]);
+    for (const pk of [[150, -190], [420, -120], [600, -250]]) placed.push([pk[0], pk[1], 18]);
+    const clearAt = (x, z, r) => placed.every(q => Math.hypot(q[0] - x, q[1] - z) - q[2] - r >= 6);
+    const drifters = planets.filter(p => p[0] >= 3 && p[0] <= 6);
+    let smFam = famN;
+    for (let i = 0; i < 40; i++) {
+      const host = drifters[i % drifters.length];
+      const free = i % 5 === 4;                      // every fifth asteroid drifts free between the planets
+      const mass = 40 + (i * 37 % 120), R = BS * (0.5 + (i * 13 % 7) / 10), rr = R + 3;
+      let done = false;
+      for (let t = 0; t < 36 && !done; t++) {
+        if (!free) {
+          const orbR = 42 + (i * 31 % 44) + (t >> 3) * 6, a = ((i * 97 + t * 10) % 360) * Math.PI / 180;
+          const x = host[1] + Math.cos(a) * orbR, z = host[2] + Math.sin(a) * orbR;
+          if (!clearAt(x, z, rr)) continue;
+          const v = vCirc(host[5], orbR) * (0.95 + (i % 3) * 0.05);
+          small.push([smFam, x, z, host[3] - Math.sin(a) * v, host[4] + Math.cos(a) * v, mass, R, "asteroid"]); world.fam[smFam] = host[0];
+        } else {
+          const x = 60 + ((i * 53 + t * 41) % 560), z = -300 + ((i * 71 + t * 29) % 540);
+          if (!clearAt(x, z, rr)) continue;
+          small.push([smFam, x, z, (i % 2 ? 3 : -3), (i % 3 ? -2 : 2), mass, R, "asteroid"]); world.fam[smFam] = -1;
+        }
+        placed.push([small[small.length - 1][1], small[small.length - 1][2], rr]); done = true;
+      }
+      if (done) smFam++;
+    }
+    // comets: single bright blocks flung from a close pass of a planet at 1.6 times circular — stretched orbits crossing the corridor
+    for (let i = 0; i < 4; i++) {
+      const host = drifters[(i + 1) % drifters.length];
+      for (let t = 0; t < 36; t++) {
+        const periR = 70 + i * 12, a = (200 + i * 97 + t * 10) * Math.PI / 180, v = vCirc(host[5], periR) * 1.6, dir = i % 2 ? 1 : -1;
+        const x = host[1] + Math.cos(a) * periR, z = host[2] + Math.sin(a) * periR;
+        if (!clearAt(x, z, BS * 0.5 + 3)) continue;
+        small.push([smFam, x, z, host[3] - Math.sin(a) * v * dir, host[4] + Math.cos(a) * v * dir, 30, BS * 0.5, "comet"]); world.fam[smFam] = host[0]; smFam++;
+        placed.push([x, z, BS * 0.5 + 3]); break;
+      }
+    }
+    // triads: two rotating equilateral triangles of small bodies, each its own family, holding for a while under their own law and then breaking
+    let triadsPlaced = 0;
+    for (const [tcx, tcz] of [[160, -330], [560, -40], [480, 80], [80, 200], [600, -330], [300, 330], [680, 250], [40, -420]]) {
+      if (triadsPlaced >= 2) break;
+      const R2 = 48, L = R2 * Math.sqrt(3), mT = 400;
+      if (!clearAt(tcx, tcz, R2 + BS * 1.1 + 3)) continue;
+      const aC = 2 * G * mT * Math.cos(Math.PI / 6) / Math.pow(L * L + SF * SF, 1.15), vT = Math.sqrt(aC * R2);
+      const tf = smFam++; world.fam[tf] = -1;
+      for (let i = 0; i < 3; i++) { const th = i * 2 * Math.PI / 3; small.push([tf, tcx + Math.cos(th) * R2, tcz + Math.sin(th) * R2, -Math.sin(th) * vT, Math.cos(th) * vT, mT, BS * 1.1, "triad"]); }
+      placed.push([tcx, tcz, R2 + BS * 1.1 + 3]); triadsPlaced++;
+    }
+    world.pickups = [{ x: 150, z: -190, fuel: 300, alive: true }, { x: 420, z: -120, fuel: 300, alive: true }, { x: 600, z: -250, fuel: 300, alive: true }];
+    for (const [f2, cx, cz, vx, vz, m, R, kind] of small) {
+      const blocks = makePlanet(cx, cz, vx, vz, kind === "comet" ? 2 : 1, rand, R, m);
+      for (const b of blocks) { b.fam = f2; if (kind === "comet") b.comet = true; }
       world.blocks.push(...blocks);
     }
     world.moonHosts = moonHosts;
