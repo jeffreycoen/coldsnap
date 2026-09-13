@@ -153,13 +153,21 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     // three shades within it; block size follows the cube root of mass. The
     // opening is fixed: the table below is the whole sky.
     const vCirc = (M, r) => Math.sqrt(G * M * r / Math.pow(r * r + SF * SF, 1.15));
-    const MG = 40000;
-    world.span = 750;
-    world.starBodies = [{ x: 0, z: 0, vx: 0, vz: 0, m: MG, r: 40, fam: 0, pin: true }];
+    // THE DOUBLED SKY: every length twice what it was — rings, triangle widths,
+    // the span, the gate, the caches, the ship's birth point, the stars' kill
+    // reach — and every body's mass eight times, because density rides with
+    // size: twice the radius is eight times the blocks. The stars instead take
+    // 2.46 times their mass — two to the 1.3, the exact factor under this
+    // pull law that keeps every speed, the birth burn, and the swing's shape
+    // identical at double scale; eight times would trap the ship outright. Only the ship keeps its
+    // old size, so the whole world reads twice as large around it.
+    const MG = 98500;
+    world.span = 1500;
+    world.starBodies = [{ x: 0, z: 0, vx: 0, vz: 0, m: MG, r: 80, fam: 0, pin: true }];
     world.fam = { 0: -1 };
     world.hazardFam = 0;
-    { const r = 475, a = 25 * Math.PI / 180, v = vCirc(MG, r);
-      world.starBodies.push({ x: Math.cos(a) * r, z: Math.sin(a) * r, vx: -Math.sin(a) * v, vz: Math.cos(a) * v, m: 15000, r: 24, fam: 1, pin: false }); world.fam[1] = 0; }
+    { const r = 950, a = 25 * Math.PI / 180, v = vCirc(MG, r);
+      world.starBodies.push({ x: Math.cos(a) * r, z: Math.sin(a) * r, vx: -Math.sin(a) * v, vz: Math.cos(a) * v, m: 36900, r: 48, fam: 1, pin: false }); world.fam[1] = 0; }
     // [ring, angle degrees, vertex radius, m1, m2, m3, hue degrees, spin]
     // spin +1 turns WITH the ring ride, -1 against it. A prograde spin
     // resonates with the orbit and tears wide or light triangles apart
@@ -167,13 +175,13 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     // retrograde held), so prograde goes only to the four outer
     // heavyweights, whose grip affords it.
     const TRIS = [
-      [175, 40, 32, 5000, 2500, 900, 18, -1], [175, -75, 13, 400, 150, 80, 250, -1],
-      [240, -15, 19, 400, 150, 80, 205, -1], [240, 75, 26, 900, 400, 150, 330, -1],
-      [300, -30, 48, 5000, 900, 400, 32, -1], [300, 55, 34, 700, 700, 150, 95, -1],
-      [365, 80, 34, 900, 700, 400, 275, -1], [365, -70, 38, 1600, 400, 400, 160, -1],
-      [450, 12, 52, 5000, 5000, 400, 0, 1], [450, -55, 32, 700, 150, 80, 220, -1],
-      [550, -40, 36, 1600, 900, 150, 145, 1], [550, 25, 40, 2500, 700, 400, 300, -1],
-      [650, 0, 56, 5000, 1600, 1600, 48, 1], [720, -22, 32, 700, 400, 400, 190, 1],
+      [350, 40, 80, 40000, 20000, 7200, 18, -1], [350, -75, 26, 3200, 1200, 640, 250, -1],
+      [480, -15, 38, 3200, 1200, 640, 205, -1], [480, 75, 52, 7200, 3200, 1200, 330, -1],
+      [600, -30, 96, 40000, 7200, 3200, 32, -1], [600, 55, 68, 5600, 5600, 1200, 95, -1],
+      [730, 80, 68, 7200, 5600, 3200, 275, -1], [730, -70, 76, 12800, 3200, 3200, 160, -1],
+      [900, 12, 104, 40000, 40000, 3200, 0, 1], [900, -55, 64, 5600, 1200, 640, 220, -1],
+      [1100, -40, 72, 12800, 7200, 1200, 145, 1], [1100, 25, 80, 20000, 5600, 3200, 300, -1],
+      [1300, 0, 112, 40000, 12800, 12800, 48, 1], [1440, -22, 64, 5600, 3200, 3200, 190, 1],
     ];
     const hsl = (h, sPct, lPct) => { const sat = sPct / 100, li = lPct / 100;
       const f = (n) => { const k = (n + h / 30) % 12; const c = sat * Math.min(li, 1 - li); return Math.round(255 * (li - c * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); };
@@ -193,13 +201,13 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
       for (let i = 0; i < 3; i++) {
         const px = bx + raw[i][0] - ox, pz = bz + raw[i][1] - oz;
         const vx = rvx - (pz - bz) * om, vz = rvz + (px - bx) * om; // ring ride plus the spin about the weight-center
-        const blocks = makePlanet(px, pz, vx, vz, ti % 2, rand, BS * 1.1 * Math.cbrt(trip[i] / 400), trip[i]);
+        const blocks = makePlanet(px, pz, vx, vz, ti % 2, rand, BS * 2.2 * Math.cbrt(trip[i] / 3200), trip[i]);
         const rgb = hsl(hue, 38 + i * 9, [62, 48, 38][i]);
         for (const b of blocks) { b.fam = tf; b.rgb = rgb; }
         world.blocks.push(...blocks);
       }
     }
-    world.pickups = [{ x: 150, z: -190, fuel: 300, alive: true }, { x: 420, z: -120, fuel: 300, alive: true }, { x: 600, z: -250, fuel: 300, alive: true }];
+    world.pickups = [{ x: 300, z: -380, fuel: 300, alive: true }, { x: 840, z: -240, fuel: 300, alive: true }, { x: 1200, z: -500, fuel: 300, alive: true }];
   } else {
     world.hole = { x: 0, z: 0, m: 42000 * size ** 3, killR: 26 * size };
     const px = 240 * size;
@@ -211,7 +219,7 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     world.span = 300 * size;
   }
   if (shipOn && kind !== "ship" && kind !== "map") addShip(world, hull, -world.span * 0.77, world.span * 0.31);
-  if (kind === "map") { addShip(world, hull, -110, 35, 2); world.birthAim = 80 * world.shipScale; world.birthDir = [0.3011, 0.9535]; world.gate = { x: world.span * 0.95, z: -world.span * 0.3, r: 36, reached: false }; } // born behind the great star; the birth burn fires along the tangent at 160 — the measured swing passes within 45 of the gate at 14.6 simulated seconds
+  if (kind === "map") { addShip(world, hull, -220, 70, 2); world.birthAim = 80 * world.shipScale; world.birthDir = [0.3011, 0.9535]; world.gate = { x: world.span * 0.95, z: -world.span * 0.3, r: 72, reached: false }; } // born behind the great star at double distance; the star mass is scaled so the same tangent at 160 flies the same swing, twice as large
   world.welds = buildWelds(world.blocks);
   world.weldOf = new Map();
   for (const w of world.welds) world.weldOf.set(w.a * 100000 + w.b, w);
