@@ -5,6 +5,7 @@ import DemosScreen from "./DemosScreen.jsx";
 import MechRange from "../game/MechRange.jsx";
 import GravityArk from "../game/GravityArk.jsx";
 import RubbleWorlds from "../game/RubbleWorlds.jsx";
+import GravityDebris from "../game/GravityDebris.jsx";
 import ColdsnapTD from "../game/ColdsnapTD.jsx";
 import DepotGame from "../depot/DepotGame.jsx";
 import Controls from "./Controls.jsx";
@@ -89,6 +90,9 @@ export default function App() {
   if (screen === "rubble") {
     return <RubbleWorlds onExit={() => setScreen("demos")} />;
   }
+  if (screen === "debris") {
+    return <GravityDebris onExit={() => setScreen("demos")} />;
+  }
   if (screen === "depot") {
     return <DepotGame resume={depotResume} seed={depotSeed} onExit={() => { setDepotResume(null); setScreen("menu"); }} />;
   }
@@ -104,7 +108,7 @@ export default function App() {
     return <DemosScreen
       onPlay={() => setScreen("demo")}
       onControls={() => setScreen("controls")} onMech={() => setScreen("mechrange")} onTowerDef={() => setScreen("towerdef")}
-      onArk={() => setScreen("gravark")} onRubble={() => setScreen("rubble")}
+      onArk={() => setScreen("gravark")} onRubble={() => setScreen("rubble")} onDebris={() => setScreen("debris")}
       onBack={() => setScreen("menu")} />;
   }
   if (GAME_SCREENS.has(screen)) {
