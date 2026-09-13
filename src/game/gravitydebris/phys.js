@@ -434,6 +434,7 @@ function stepWorld(world, k) {
           cnt.fa = Ra ? arm(Ra, bi) : 1 / bi.m; cnt.fb = Rb ? arm(Rb, bj) : 1 / bj.m;
           cnt.Ra = Ra; cnt.Rb = Rb; cnt.ma = bi.m; cnt.mb = bj.m;
           cnt.bias = Math.min(BETA / DT * Math.max(0, cnt.depth - SLOP), BIAS_CAP);
+          if (cnt.cl0 > 8) { bi.hitF = world.frame; bj.hitF = world.frame; } // a hard strike stamps both blocks; the frame paints the stamp red for a moment
           if (cnt.pn) applyN(world, wb, cnt, bi, bj, cnt.pn); // warm start through the SAME routing as the solver — never directly to a rigid member
           contacts.push(cnt);
         }

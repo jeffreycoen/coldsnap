@@ -130,8 +130,8 @@ export default function GravityDebris({ onExit }) {
         if (world.ship) {
           stepWorld(world, k); // one priming step: tracks and orbit lines exist before the aim freeze — the t26 intent, landed now
           const b0 = world.blocks.find(b2 => b2.ship && b2.alive);
-          if (b0) { // the ark's default trajectory: toward the gate at 50, or away from the mass where no gate stands
-            const dx = world.gate ? world.gate.x - b0.x : b0.x, dz = world.gate ? world.gate.z - b0.z : b0.z;
+          if (b0) { // the default trajectory: the sky's named tangent where one stands, else toward the gate
+            const dx = world.birthDir ? world.birthDir[0] : (world.gate ? world.gate.x - b0.x : b0.x), dz = world.birthDir ? world.birthDir[1] : (world.gate ? world.gate.z - b0.z : b0.z);
             const dd = Math.hypot(dx, dz) || 1;
             const birth = world.birthAim || 50 * (world.shipScale || 1); // the map launches at its full cap to break the great star's grip; every other scene keeps the ark's 50
             world.shipAim = { on: true, vx: dx / dd * birth, vz: dz / dd * birth };

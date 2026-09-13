@@ -142,175 +142,64 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     }
     world.span = 200 * size;
   } else if (kind === "map") {
-    // THE MAP: a built family sky the seed sets faintly astir. A pinned great
-    // star holds two lesser stars and four planets; each lesser star holds two
-    // planets; three light moons ride the outer great-ring planets. Gravity
-    // reads the family: a child feels its parent line at full strength, all
-    // else at one percent — subsystems travel whole and the sky decays instead
-    // of detonating. Every body low-density, so siblings barely tug. Set points
-    // PACKED to a sixth of the distances that held stable: the sky is a brawl
-    // from the first seconds by design — chaos is the content. The seed's 3% stir
-    // and random phase make each map its own. An end gate stands on the far rim.
+    // THE TRIAD SKY: everything but the two stars rides a rotating triangle.
+    // Fourteen triangles on rings around the pinned great star, every one east
+    // of it — only the ship is born west, behind the star on the gate line, so
+    // the opening move is a slingshot. With all three separations equal, the
+    // pull sum points every member exactly at the triple's weight-center with
+    // one shared turn rate, whatever the masses — exact under the softened law
+    // — so each triangle holds while it rides its ring. Triangle self-spins
+    // alternate; every ring ride turns the same way. One hue per triangle,
+    // three shades within it; block size follows the cube root of mass. The
+    // opening is fixed: the table below is the whole sky.
     const vCirc = (M, r) => Math.sqrt(G * M * r / Math.pow(r * r + SF * SF, 1.15));
-    // FIXED OPENING (temporary, until the layout is right and randomizing
-    // returns): no stir, and every body takes a set phase. The phases lay the
-    // whole family down the corridor from the great star to the gate on the
-    // far rim — nothing behind the ship, nothing off to the far side. Drawn in
-    // order: lesser star 1, lesser star 2, the four great rings, the four
-    // lesser-star planets, the three moons. Degrees, zero toward +x.
-    const PHASES = [20, 25, 40, -30, 12, 0, 180, 60, 200, -20]; // the two inner planets sit above the birth line: the first burn departs clean; the slalom is the pilot's second thought
-    let phaseAt = 0;
-    const nud = () => 1;
-    const ang = () => (PHASES[phaseAt++] || 0) * Math.PI / 180;
-    const MG = 40000; // the ark's star range: planets pull the ship as the ark's do
-    world.span = 750; // one and a half times: encounters instead of a pile-up, room for the small sky between
-    // PLACED BY CONSTRUCTION: phases re-roll until every body clears every
-    // other at birth by at least 6 — a body born inside another is a
-    // detonation, not chaos. Deterministic per seed; the stir stays 3%.
-    let lessers, planets, moons, moonHosts, famN;
-    const PR = BS * 3.3 + 3, MR = BS * 1.6 + 3, SHIPR = 15;
-    for (let attempt = 0; attempt < 60; attempt++) {
-      world.starBodies = [{ x: 0, z: 0, vx: 0, vz: 0, m: MG, r: 40, fam: 0, pin: true }];
-      world.fam = { 0: -1 };
-      world.hazardFam = 0; // the great star pulls only its own line and the ship — the drifting planets never feel it, the ark's rule
-      lessers = [];
-      [[475, 15000, 1]].forEach(([r0, m, fam]) => { // one lesser star; the second and its two planets leave
-        const r = r0 * nud(), a = ang(), v = vCirc(MG, r) * nud();
-        const st = { x: Math.cos(a) * r, z: Math.sin(a) * r, vx: -Math.sin(a) * v, vz: Math.cos(a) * v, m, r: 24, fam, pin: false };
-        world.starBodies.push(st); world.fam[fam] = 0; lessers.push(st);
-      });
-      planets = [];
-      [[3, 175], [4, 300], [5, 450], [6, 650]].forEach(([f2, r0]) => {
-        const r = r0 * nud(), a = ang(), v = vCirc(MG, r) * nud();
-        planets.push([f2, Math.cos(a) * r, Math.sin(a) * r, -Math.sin(a) * v, Math.cos(a) * v, 5000]);
-        world.fam[f2] = 0; // children of the great star: each rides a true ring around the pinned center, siblings at one percent — the sky holds
-      });
-      famN = 7;
-      for (const st of lessers) for (const lr0 of [70, 125]) {
-        const r = lr0 * nud(), a = ang(), v = vCirc(st.m, r) * nud();
-        planets.push([famN, st.x + Math.cos(a) * r, st.z + Math.sin(a) * r, st.vx - Math.sin(a) * v, st.vz + Math.cos(a) * v, 5000]);
-        world.fam[famN] = st.fam; famN++;
-      }
-      moonHosts = [4, 5, 6];
-      moons = [];
-      for (const hostFam of moonHosts) {
-        const host = planets.find(p => p[0] === hostFam);
-        const r = 45 * nud(), a = ang(), v = vCirc(host[5], r) * nud();
-        moons.push([famN, host[1] + Math.cos(a) * r, host[2] + Math.sin(a) * r, host[3] - Math.sin(a) * v, host[4] + Math.cos(a) * v, 150]);
-        world.fam[famN] = hostFam; famN++;
-      }
-      const bodies = [];
-      for (const p of planets) bodies.push([p[1], p[2], PR]);
-      for (const mn of moons) bodies.push([mn[1], mn[2], MR]);
-      for (const pk of [[150, -190], [420, -120], [600, -250]]) bodies.push([pk[0], pk[1], 18]);
-      for (const st of world.starBodies) bodies.push([st.x, st.z, st.r]);
-      bodies.push([-world.span * 0.95, world.span * 0.3, SHIPR]);
-      let minGap = 1e9;
-      for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++) {
-        const gap = Math.hypot(bodies[i][0] - bodies[j][0], bodies[i][1] - bodies[j][1]) - bodies[i][2] - bodies[j][2];
-        if (gap < minGap) minGap = gap;
-      }
-      world.placeTries = attempt + 1;
-      if (minGap >= 6) break;
-    }
-    // THE STABLE SKY: the four great-ring planets keep the circular speeds
-    // they were born with around the pinned great star; as its children they
-    // feel it at full strength and each other at one percent, so every ring
-    // holds. The ark's drift is replaced by this.
-    for (const [f2, cx, cz, vx, vz, m] of planets) {
-      const blocks = makePlanet(cx, cz, vx, vz, f2 % 2, rand, BS * 3.3, m);
-      for (const b of blocks) b.fam = f2;
-      world.blocks.push(...blocks);
-    }
-    for (const [f2, cx, cz, vx, vz, m] of moons) {
-      const blocks = makePlanet(cx, cz, vx, vz, 1, rand, BS * 1.6, m);
-      for (const b of blocks) b.fam = f2;
-      world.blocks.push(...blocks);
-    }
-    // THE SMALL SKY: forty asteroids, four comets, two three-body triads, three
-    // fuel caches — the ark's clutter as block bodies, so they are destruction.
-    // Every small body is under ten blocks and therefore never sleeps; the
-    // cost is measured in the plan. The ghost does not see them: it reads
-    // bodies of 500 mass and up, and these are lighter — a known gap.
-    const small = [];   // [fam, cx, cz, vx, vz, mass, R, kind]
-    // PLACED CLEAR BY CONSTRUCTION: every small body tries fixed candidate spots in order and takes the first that clears everything already placed by at least 6
-    const placed = [];
-    for (const p of planets) placed.push([p[1], p[2], PR]);
-    for (const mn of moons) placed.push([mn[1], mn[2], MR]);
-    for (const st of world.starBodies) placed.push([st.x, st.z, st.r]);
-    placed.push([-100, -120, SHIPR]);
-    for (const pk of [[150, -190], [420, -120], [600, -250]]) placed.push([pk[0], pk[1], 18]);
-    const clearAt = (x, z, r) => placed.every(q => Math.hypot(q[0] - x, q[1] - z) - q[2] - r >= 6);
-    const drifters = planets.filter(p => p[0] >= 3 && p[0] <= 6);
-    let smFam = famN;
-    const kidBy = drifters.map(() => 0); // children per host, for the paired birth
-    for (let i = 0; i < 20; i++) {
-      const host = drifters[i % drifters.length];
-      const free = i % 5 === 4;                      // every fifth asteroid drifts free between the planets
-      const mass = 40 + (i * 37 % 120), R = BS * (0.5 + (i * 13 % 7) / 10), rr = R + 3;
-      let done = false;
-      for (let t = 0; t < 36 && !done; t++) {
-        if (!free) {
-          const kid = kidBy[i % drifters.length]; // paired birth: opposite twins share a radius and a speed factor, so their tugs on the host cancel
-          const orbR = 55 + (kid >> 1) * 18 + (t >> 3) * 6, a = ((kid * 180 + (kid >> 1) * 67 + t * 10) % 360) * Math.PI / 180;
-          const x = host[1] + Math.cos(a) * orbR, z = host[2] + Math.sin(a) * orbR;
-          if (!clearAt(x, z, rr)) continue;
-          const v = vCirc(host[5], orbR) * (0.95 + ((kid >> 1) % 3) * 0.05);
-          small.push([smFam, x, z, host[3] - Math.sin(a) * v, host[4] + Math.cos(a) * v, mass, R, "asteroid"]); world.fam[smFam] = host[0];
-        } else {
-          const x = 60 + ((i * 53 + t * 41) % 560), z = -300 + ((i * 71 + t * 29) % 540);
-          if (!clearAt(x, z, rr)) continue;
-          small.push([smFam, x, z, (i % 2 ? 3 : -3), (i % 3 ? -2 : 2), mass, R, "asteroid"]); world.fam[smFam] = -1;
-        }
-        placed.push([small[small.length - 1][1], small[small.length - 1][2], rr]); done = true;
-        if (!free) kidBy[i % drifters.length]++;
-      }
-      if (done) smFam++;
-    }
-    // comets: single bright blocks flung from a close pass of a planet at 1.6 times circular — stretched orbits crossing the corridor
-    for (let i = 0; i < 4; i++) {
-      const host = drifters[(i + 1) % drifters.length];
-      for (let t = 0; t < 36; t++) {
-        const periR = 70 + i * 12, a = (200 + i * 97 + t * 10) * Math.PI / 180, v = vCirc(host[5], periR) * 1.6, dir = i % 2 ? 1 : -1;
-        const x = host[1] + Math.cos(a) * periR, z = host[2] + Math.sin(a) * periR;
-        if (!clearAt(x, z, BS * 0.5 + 3)) continue;
-        small.push([smFam, x, z, host[3] - Math.sin(a) * v * dir, host[4] + Math.cos(a) * v * dir, 30, BS * 0.5, "comet"]); world.fam[smFam] = host[0]; smFam++;
-        placed.push([x, z, BS * 0.5 + 3]); break;
-      }
-    }
-    // triads: six rotating equilateral triangles, each its own family, masses
-    // mixed 400 to 2500 with block size to match. With all three separations
-    // equal, the pull sum points every body exactly at the triple's
-    // weight-center with one shared turn rate, whatever the masses — exact
-    // under the softened law — so each body rides its own circle about the
-    // weight-center and heavier triples turn slower.
-    const TRIPLES = [[400, 900, 2500], [700, 1600, 1000], [400, 400, 1600], [2500, 2500, 400], [900, 1600, 2500], [400, 700, 900]];
-    let triadsPlaced = 0;
-    // centers sit in the bands BETWEEN the orbital rings (175/300/450/475/650, each ±60), so no ring planet plows through a triangle inside its first laps
-    for (const [tcx, tcz] of [[360, 0], [720, 0], [510, 45], [225, -75], [585, -75], [705, -150], [0, -240], [0, 240]]) {
-      if (triadsPlaced >= 6) break;
-      const R2 = 48, L = R2 * Math.sqrt(3);
-      const trip = TRIPLES[triadsPlaced % TRIPLES.length], MT = trip[0] + trip[1] + trip[2];
-      const maxR = BS * 1.1 * Math.cbrt(Math.max(...trip) / 400);
-      if (!clearAt(tcx, tcz, R2 + maxR + 3)) continue;
-      const om = Math.sqrt(G * MT / Math.pow(L * L + SF * SF, 1.65)); // the shared turn rate
-      let bx = 0, bz = 0; // the triple's weight-center inside the vertex circle
-      const vtx = [0, 1, 2].map(i => { const th = i * 2 * Math.PI / 3; return [tcx + Math.cos(th) * R2, tcz + Math.sin(th) * R2]; });
-      for (let i = 0; i < 3; i++) { bx += vtx[i][0] * trip[i] / MT; bz += vtx[i][1] * trip[i] / MT; }
-      const tf = smFam++; world.fam[tf] = -1;
+    const MG = 40000;
+    world.span = 750;
+    world.starBodies = [{ x: 0, z: 0, vx: 0, vz: 0, m: MG, r: 40, fam: 0, pin: true }];
+    world.fam = { 0: -1 };
+    world.hazardFam = 0;
+    { const r = 475, a = 25 * Math.PI / 180, v = vCirc(MG, r);
+      world.starBodies.push({ x: Math.cos(a) * r, z: Math.sin(a) * r, vx: -Math.sin(a) * v, vz: Math.cos(a) * v, m: 15000, r: 24, fam: 1, pin: false }); world.fam[1] = 0; }
+    // [ring, angle degrees, vertex radius, m1, m2, m3, hue degrees, spin]
+    // spin +1 turns WITH the ring ride, -1 against it. A prograde spin
+    // resonates with the orbit and tears wide or light triangles apart
+    // (measured: every breaker in the first cut was prograde, every
+    // retrograde held), so prograde goes only to the four outer
+    // heavyweights, whose grip affords it.
+    const TRIS = [
+      [175, 40, 32, 5000, 2500, 900, 18, -1], [175, -75, 13, 400, 150, 80, 250, -1],
+      [240, -15, 19, 400, 150, 80, 205, -1], [240, 75, 26, 900, 400, 150, 330, -1],
+      [300, -30, 48, 5000, 900, 400, 32, -1], [300, 55, 34, 700, 700, 150, 95, -1],
+      [365, 80, 34, 900, 700, 400, 275, -1], [365, -70, 38, 1600, 400, 400, 160, -1],
+      [450, 12, 52, 5000, 5000, 400, 0, 1], [450, -55, 32, 700, 150, 80, 220, -1],
+      [550, -40, 36, 1600, 900, 150, 145, 1], [550, 25, 40, 2500, 700, 400, 300, -1],
+      [650, 0, 56, 5000, 1600, 1600, 48, 1], [720, -22, 32, 700, 400, 400, 190, 1],
+    ];
+    const hsl = (h, sPct, lPct) => { const sat = sPct / 100, li = lPct / 100;
+      const f = (n) => { const k = (n + h / 30) % 12; const c = sat * Math.min(li, 1 - li); return Math.round(255 * (li - c * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); };
+      return [f(0), f(8), f(4)]; };
+    let famN = 2;
+    for (let ti = 0; ti < TRIS.length; ti++) {
+      const [ring, angD, R2, m1, m2, m3, hue, spin] = TRIS[ti];
+      const trip = [m1, m2, m3], M = m1 + m2 + m3, a = angD * Math.PI / 180;
+      const bx = Math.cos(a) * ring, bz = Math.sin(a) * ring; // the weight-center rides the ring
+      const vR = vCirc(MG, ring), rvx = -Math.sin(a) * vR, rvz = Math.cos(a) * vR; // every ring ride turns the same way
+      const L = R2 * Math.sqrt(3);
+      const om = Math.sqrt(G * M / Math.pow(L * L + SF * SF, 1.65)) * spin; // the table's spin: mixed, prograde only where the grip affords it
+      // vertices on a circle about a geometric center shifted so the mass-weighted mean lands exactly on the ring point
+      const raw = [0, 1, 2].map(i => { const th = i * 2 * Math.PI / 3 + ring + angD; return [Math.cos(th) * R2, Math.sin(th) * R2]; });
+      let ox = 0, oz = 0; for (let i = 0; i < 3; i++) { ox += raw[i][0] * trip[i] / M; oz += raw[i][1] * trip[i] / M; }
+      const tf = famN++; world.fam[tf] = 0;
       for (let i = 0; i < 3; i++) {
-        const rx = vtx[i][0] - bx, rz = vtx[i][1] - bz;
-        small.push([tf, vtx[i][0], vtx[i][1], -rz * om, rx * om, trip[i], BS * 1.1 * Math.cbrt(trip[i] / 400), "triad"]);
+        const px = bx + raw[i][0] - ox, pz = bz + raw[i][1] - oz;
+        const vx = rvx - (pz - bz) * om, vz = rvz + (px - bx) * om; // ring ride plus the spin about the weight-center
+        const blocks = makePlanet(px, pz, vx, vz, ti % 2, rand, BS * 1.1 * Math.cbrt(trip[i] / 400), trip[i]);
+        const rgb = hsl(hue, 38 + i * 9, [62, 48, 38][i]);
+        for (const b of blocks) { b.fam = tf; b.rgb = rgb; }
+        world.blocks.push(...blocks);
       }
-      placed.push([tcx, tcz, R2 + maxR + 3]); triadsPlaced++;
     }
     world.pickups = [{ x: 150, z: -190, fuel: 300, alive: true }, { x: 420, z: -120, fuel: 300, alive: true }, { x: 600, z: -250, fuel: 300, alive: true }];
-    for (const [f2, cx, cz, vx, vz, m, R, kind] of small) {
-      const blocks = makePlanet(cx, cz, vx, vz, kind === "comet" ? 2 : 1, rand, R, m);
-      for (const b of blocks) { b.fam = f2; if (kind === "comet") b.comet = true; }
-      world.blocks.push(...blocks);
-    }
-    world.moonHosts = moonHosts;
   } else {
     world.hole = { x: 0, z: 0, m: 42000 * size ** 3, killR: 26 * size };
     const px = 240 * size;
@@ -322,7 +211,7 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     world.span = 300 * size;
   }
   if (shipOn && kind !== "ship" && kind !== "map") addShip(world, hull, -world.span * 0.77, world.span * 0.31);
-  if (kind === "map") { addShip(world, hull, -100, -120, 2); world.birthAim = 110 * world.shipScale; world.gate = { x: world.span * 0.95, z: -world.span * 0.3, r: 36, reached: false }; }
+  if (kind === "map") { addShip(world, hull, -110, 35, 2); world.birthAim = 80 * world.shipScale; world.birthDir = [0.3011, 0.9535]; world.gate = { x: world.span * 0.95, z: -world.span * 0.3, r: 36, reached: false }; } // born behind the great star; the birth burn fires along the tangent at 160 — the measured swing passes within 45 of the gate at 14.6 simulated seconds
   world.welds = buildWelds(world.blocks);
   world.weldOf = new Map();
   for (const w of world.welds) world.weldOf.set(w.a * 100000 + w.b, w);
