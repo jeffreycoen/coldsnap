@@ -177,10 +177,8 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     // up the screen, four triads of three HUGE planets stacked between them,
     // six small moons interspersed. Only the ship sits below the star.
     const TRIS = [
-      [325, -135, 60, 40000, 40000, 40000, 18, -1],
-      [510, -152, 75, 40000, 40000, 40000, 205, -1],
-      [665, -118, 85, 40000, 40000, 40000, 145, 1],
-      [835, -137, 95, 40000, 40000, 40000, 300, 1],
+      [400, -135, 60, 40000, 40000, 40000, 18, -1],
+      [730, -135, 75, 40000, 40000, 40000, 205, -1],
     ];
     const hsl = (h, sPct, lPct) => { const sat = sPct / 100, li = lPct / 100;
       const f = (n) => { const k = (n + h / 30) % 12; const c = sat * Math.min(li, 1 - li); return Math.round(255 * (li - c * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); };
@@ -226,7 +224,7 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     world.span = 300 * size;
   }
   if (shipOn && kind !== "ship" && kind !== "map") addShip(world, hull, -world.span * 0.77, world.span * 0.31);
-  if (kind === "map") { addShip(world, hull, 75, 75, 2); world.birthAim = 130 * world.shipScale; world.birthDir = [0.707, -0.707]; world.gate = { x: -775, z: -775, r: 36, reached: false }; } // born below the great star, the only body there; the birth tangent rounds the star and heads up the stretched climb
+  if (kind === "map") { addShip(world, hull, 160, 160, 2); world.birthAim = 130 * world.shipScale; world.birthDir = [0.707, -0.707]; world.gate = { x: -775, z: -775, r: 36, reached: false }; } // born below the great star, the only body there; the birth tangent rounds the star and heads up the stretched climb
   world.welds = buildWelds(world.blocks);
   world.weldOf = new Map();
   for (const w of world.welds) world.weldOf.set(w.a * 100000 + w.b, w);
