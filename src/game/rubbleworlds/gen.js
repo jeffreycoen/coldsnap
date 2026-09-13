@@ -172,6 +172,7 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     for (let attempt = 0; attempt < 60; attempt++) {
       world.starBodies = [{ x: 0, z: 0, vx: 0, vz: 0, m: MG, r: 40, fam: 0, pin: true }];
       world.fam = { 0: -1 };
+      world.hazardFam = 0; // the great star pulls only its own line and the ship — the drifting planets never feel it, the ark's rule
       lessers = [];
       [[317, 15000, 1]].forEach(([r0, m, fam]) => { // one lesser star; the second and its two planets leave
         const r = r0 * nud(), a = ang(), v = vCirc(MG, r) * nud();
@@ -182,7 +183,7 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
       [[3, 117], [4, 200], [5, 300], [6, 433]].forEach(([f2, r0]) => {
         const r = r0 * nud(), a = ang(), v = vCirc(MG, r) * nud();
         planets.push([f2, Math.cos(a) * r, Math.sin(a) * r, -Math.sin(a) * v, Math.cos(a) * v, 5000]);
-        world.fam[f2] = 0;
+        world.fam[f2] = -1; // no parent: these planets drift like the ark's, under one percent of each other
       });
       famN = 7;
       for (const st of lessers) for (const lr0 of [70, 125]) {
@@ -211,6 +212,17 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
       world.placeTries = attempt + 1;
       if (minGap >= 6) break;
     }
+    // THE ARK'S DRIFT: the four great-ring planets circle their own shared
+    // center under one percent of each other's pull — periods near eighty
+    // seconds, the ark's own pace. Their ring speeds are replaced here.
+    const drift = planets.filter(p => p[0] >= 3 && p[0] <= 6);
+    const dM = drift.reduce((s2, p) => s2 + p[5], 0);
+    const comX = drift.reduce((s2, p) => s2 + p[1] * p[5], 0) / dM, comZ = drift.reduce((s2, p) => s2 + p[2] * p[5], 0) / dM;
+    for (const p of drift) {
+      const ddx = p[1] - comX, ddz = p[2] - comZ, dist = Math.hypot(ddx, ddz) || 1;
+      const vD = Math.sqrt(G * 0.01 * (dM - p[5]) / Math.pow(dist, 1.3));
+      p[3] = -ddz / dist * vD; p[4] = ddx / dist * vD;
+    }
     for (const [f2, cx, cz, vx, vz, m] of planets) {
       const blocks = makePlanet(cx, cz, vx, vz, f2 % 2, rand, BS * 3.3, m);
       for (const b of blocks) b.fam = f2;
@@ -233,7 +245,7 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     world.span = 300 * size;
   }
   if (shipOn && kind !== "ship" && kind !== "map") addShip(world, hull, -world.span * 0.77, world.span * 0.31);
-  if (kind === "map") { addShip(world, hull, -130, 40, 2); world.gate = { x: world.span * 0.95, z: -world.span * 0.3, r: 36, reached: false }; }
+  if (kind === "map") { addShip(world, hull, -100, -120, 2); world.gate = { x: world.span * 0.95, z: -world.span * 0.3, r: 36, reached: false }; }
   world.welds = buildWelds(world.blocks);
   world.weldOf = new Map();
   for (const w of world.welds) world.weldOf.set(w.a * 100000 + w.b, w);

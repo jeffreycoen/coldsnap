@@ -142,7 +142,7 @@ function drawFrame(env) {
       // clear, red through danger, a green dot where it threads the gate
       if (world.ship && world.shipAim && world.shipAim.on && world.shipTrack) {
         const st = world.shipTrack;
-        const pr = predictShip(world, st.vx + world.shipAim.vx, st.vz + world.shipAim.vz, 1200); // three times the old reach — about forty simulated seconds of path
+        const pr = predictShip(world, st.vx + world.shipAim.vx, st.vz + world.shipAim.vz, 2400); // forty simulated seconds at the physics step
         if (pr && pr.pts.length > 3) {
           ctx.lineWidth = 2.2;
           for (let i2 = 3; i2 < pr.pts.length; i2 += 3) {

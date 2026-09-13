@@ -67,14 +67,14 @@ export default function RubbleWorlds({ onExit }) {
       // the ark's release: a near-miss bends toward the gate; away from the gate, toward a closed orbit
       if (panDrag && panDrag.aim && world && world.shipAim && world.shipAim.on && world.shipTrack) {
         const st = world.shipTrack, aim = world.shipAim, vel = Math.hypot(aim.vx, aim.vz);
-        const test = vel > 1 ? predictShip(world, st.vx + aim.vx, st.vz + aim.vz, 1200) : null;
+        const test = vel > 1 ? predictShip(world, st.vx + aim.vx, st.vz + aim.vz, 2400) : null;
         if (test && !test.pts.some(p => p.hitsGate)) {
           const wantGate = world.gate && !world.gate.reached && test.minGate < 80;
           const ang0 = Math.atan2(aim.vz, aim.vx);
           let bestAng = ang0, bestDist = test.minGate, found = false;
           for (let da = -0.12; da <= 0.12; da += 0.03) {
             const ta = ang0 + da;
-            const t2 = predictShip(world, st.vx + Math.cos(ta) * vel, st.vz + Math.sin(ta) * vel, 1200);
+            const t2 = predictShip(world, st.vx + Math.cos(ta) * vel, st.vz + Math.sin(ta) * vel, 2400);
             if (!t2) break;
             if (wantGate) {
               if (t2.minGate < bestDist) { bestDist = t2.minGate; bestAng = ta; }

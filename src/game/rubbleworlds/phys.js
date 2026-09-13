@@ -57,6 +57,7 @@ function famW(world, fa, fb) {
   if (fa === fb) return 1;
   let f = fa; while (f != null && f >= 0) { if (f === fb) return 1; f = world.fam[f]; }
   f = fb; while (f != null && f >= 0) { if (f === fa) return 1; f = world.fam[f]; }
+  if (world.hazardFam != null && (fa === world.hazardFam || fb === world.hazardFam)) return 0; // the hazard star and an unrelated body: no pull either way
   return 0.01;
 }
 function accel(x, y, z, srcs, self, weak, myClump, world, myFam) {
@@ -267,7 +268,7 @@ function stepWorld(world, k) {
         let rad = 0;
         for (const i of ids) { const b = wb[i]; if (!b.alive) continue; rad = Math.max(rad, Math.hypot(b.x - mx, b.z - mz)); }
         world.wells.push({ x: mx, z: mz, m: M });
-        world.tracks.push({ x: mx, z: mz, vx: mvx, vz: mvz, m: M, rad, clump: root });
+        world.tracks.push({ x: mx, z: mz, vx: mvx, vz: mvz, m: M, rad, clump: root, fam: wb[ids[0]].fam });
         world.clumpCenter.set(root, [mx, my, mz]);
       }
       if (world.hole) world.wells.push({ x: world.hole.x, z: world.hole.z, m: world.hole.m, deep: true });
@@ -594,10 +595,11 @@ function ystepT(x, z, vx, vz, bodies, dt) {
 function predictShip(world, vx0, vz0, n) {
   const st = world.shipTrack; if (!st) return null;
   const simP = (world.tracks || []).filter(tk => tk.m >= 500 && tk.clump !== st.clump).slice(0, 14)
-    .map(tk => ({ x: tk.x, z: tk.z, vx: tk.vx, vz: tk.vz, m: tk.m, rad: tk.rad }));
+    .map(tk => ({ x: tk.x, z: tk.z, vx: tk.vx, vz: tk.vz, m: tk.m, rad: tk.rad, fam: tk.fam }));
   const statics = [];
   if (world.hole) statics.push({ x: world.hole.x, z: world.hole.z, m: world.hole.m, rad: world.hole.killR });
   if (world.star) statics.push({ x: world.star.x, z: world.star.z, m: world.star.m, rad: world.star.r });
+  if (world.starBodies) for (const sb of world.starBodies) statics.push({ x: sb.x, z: sb.z, m: sb.m, rad: sb.r, fam: sb.fam });
   const gate = world.gate;
   const gateGrav = gate ? [{ x: gate.x, z: gate.z, m: 2500, rad: 0 }] : [];
   let x = st.x, z = st.z, vx = vx0, vz = vz0;
@@ -607,12 +609,12 @@ function predictShip(world, vx0, vz0, n) {
   for (let i = 0; i < n; i++) {
     for (const p of simP) {
       const others = [];
-      for (const q of simP) if (q !== p) others.push({ x: q.x, z: q.z, m: q.m * (world.weak ? 0.01 : 1) });
-      for (const o of statics) others.push(o);
-      [p.x, p.z, p.vx, p.vz] = ystepT(p.x, p.z, p.vx, p.vz, others, DT * 2);
+      for (const q of simP) if (q !== p) others.push({ x: q.x, z: q.z, m: q.m * (world.fam ? famW(world, p.fam, q.fam) : (world.weak ? 0.01 : 1)) });
+      for (const o of statics) others.push(world.fam ? { x: o.x, z: o.z, m: o.m * famW(world, p.fam, o.fam) } : o);
+      [p.x, p.z, p.vx, p.vz] = ystepT(p.x, p.z, p.vx, p.vz, others, DT); // the physics step: honest everywhere
     }
     const bodies = [...simP, ...statics, ...gateGrav];
-    [x, z, vx, vz] = ystepT(x, z, vx, vz, bodies, DT * 2);
+    [x, z, vx, vz] = ystepT(x, z, vx, vz, bodies, DT); // the ship is nobody's child: every body pulls it in full, as live
     let danger = 0, hit = false;
     for (const p of simP) { const d = Math.hypot(x - p.x, z - p.z); if (d < p.rad * 2.5) danger = Math.max(danger, 1 - (d - p.rad) / (p.rad * 1.5)); if (d < p.rad + BS) hit = true; }
     for (const o of statics) { const d = Math.hypot(x - o.x, z - o.z); if (d < o.rad + BS) hit = true; }
