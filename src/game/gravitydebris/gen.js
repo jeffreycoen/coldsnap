@@ -181,13 +181,13 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     // no orbit, no fall. Each carries a few units of sideways creep and leans
     // on its neighbors at one percent: a monument that drifts.
     const DRIFTERS = [
-      [150, 3, 18], [300, -3, 205], [450, 3, 145], [600, -3, 300], [750, 3, 48], [900, -3, 275],
+      [306, 3, 18], [613, -3, 205],
     ];
     const hsl = (h, sPct, lPct) => { const sat = sPct / 100, li = lPct / 100;
       const f = (n) => { const k = (n + h / 30) % 12; const c = sat * Math.min(li, 1 - li); return Math.round(255 * (li - c * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); };
       return [f(0), f(8), f(4)]; };
     let famN = 2;
-    const lineA = -135 * Math.PI / 180, lux = Math.cos(lineA), luz = Math.sin(lineA); // the star-to-gate line
+    const lineA = -45 * Math.PI / 180, lux = Math.cos(lineA), luz = Math.sin(lineA); // the star-to-gate line, left to right across the view's wide diagonal
     for (let ti = 0; ti < DRIFTERS.length; ti++) {
       const [ring, creep, hue] = DRIFTERS[ti];
       const px = lux * ring, pz = luz * ring;
@@ -199,14 +199,14 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
       world.blocks.push(...blocks);
     }
     // six small moons interspersed on their own rings, children of the star
-    for (const [mr, ma] of [[425, -122], [425, -152], [587, -136], [757, -155], [765, -118], [944, -128]]) {
+    for (const [mr, ma] of [[425, -32], [425, -58], [587, -37], [757, -60], [765, -30], [900, -52]]) {
       const a2 = ma * Math.PI / 180, v2 = vCirc(MG, mr);
       const blocks = makePlanet(Math.cos(a2) * mr, Math.sin(a2) * mr, -Math.sin(a2) * v2, Math.cos(a2) * v2, 1, rand, BS * 1.6, 1200);
       const tf2 = famN++; world.fam[tf2] = 0;
       for (const b of blocks) { b.fam = tf2; b.rgb = hsl(210, 12, 58); }
       world.blocks.push(...blocks);
     }
-    world.pickups = [{ x: -255, z: -340, fuel: 300, alive: true }, { x: -488, z: -342, fuel: 300, alive: true }, { x: -612, z: -729, fuel: 300, alive: true }];
+    world.pickups = [{ x: 180, z: -140, fuel: 300, alive: true }, { x: 330, z: -290, fuel: 300, alive: true }, { x: 500, z: -420, fuel: 300, alive: true }];
   } else {
     world.hole = { x: 0, z: 0, m: 42000 * size ** 3, killR: 26 * size };
     const px = 240 * size;
@@ -218,7 +218,7 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     world.span = 300 * size;
   }
   if (shipOn && kind !== "ship" && kind !== "map") addShip(world, hull, -world.span * 0.77, world.span * 0.31);
-  if (kind === "map") { addShip(world, hull, 160, 160, 2); world.birthAim = 130 * world.shipScale; world.birthDir = [0.707, -0.707]; world.gate = { x: -775, z: -775, r: 36, reached: false }; } // born below the great star, the only body there; the birth tangent rounds the star and heads up the stretched climb
+  if (kind === "map") { addShip(world, hull, -230, 230, 2); world.birthAim = 130 * world.shipScale; world.birthDir = [0.707, 0.707]; world.gate = { x: 650, z: -650, r: 36, reached: false }; } // born far out on the far side of the star from the gate, the only body there; the birth tangent rounds the star and heads down the line
   world.welds = buildWelds(world.blocks);
   world.weldOf = new Map();
   for (const w of world.welds) world.weldOf.set(w.a * 100000 + w.b, w);
