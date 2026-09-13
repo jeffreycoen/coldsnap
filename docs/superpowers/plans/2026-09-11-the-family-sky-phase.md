@@ -49,5 +49,6 @@ A large seeded map: a built star system that the seed sets faintly astir, so eve
 | T59 | 0.5.54 | The vertical climb: the star at the bottom and the gate at the top, twelve huge planets in four triads with six moons between, only the ship below the star | LANDED — mark 0.5.54, debris map number be765eb2bee66d6d → 0042bbc97d9feedd, smoke 23/23 |
 | T60 | 0.5.55 | The stretched climb: every distance up the corridor times 1.7 against the view's vertical squeeze | LANDED — mark 0.5.55, debris map number 0042bbc97d9feedd → c79e3f86d3eaea2b, smoke 23/23 |
 | T61 | 0.5.56 | The two guardians: two triads directly on the star-to-gate line, the ship born farther back | LANDED — mark 0.5.56, debris map number c79e3f86d3eaea2b → 65a3a809d257447e, smoke 23/23 |
+| T62 | 0.5.57 | The six drifters: six huge planets evenly spaced on the star-to-gate line, unparented from the star, creeping sideways at three units | LANDED — mark 0.5.57, debris map number 65a3a809d257447e → 3cad8d6acbaa479a, smoke 23/23 |
 
 The map's purpose changed after T33 flew: longevity of orbits is not wanted; the chaos of a packed sky is the story. T34 packs it; T35 slows time and packs it again — slower time is cheaper time, so the same machine carries a denser brawl. T36 is deferred polish: the look and feel of the moving sky, checked live, written on the owner's word after T35 lands.
