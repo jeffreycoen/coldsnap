@@ -599,7 +599,7 @@ function predictShip(world, vx0, vz0, n) {
   const statics = [];
   if (world.hole) statics.push({ x: world.hole.x, z: world.hole.z, m: world.hole.m, rad: world.hole.killR });
   if (world.star) statics.push({ x: world.star.x, z: world.star.z, m: world.star.m, rad: world.star.r });
-  if (world.starBodies) for (const sb of world.starBodies) statics.push({ x: sb.x, z: sb.z, m: sb.m, rad: sb.r, fam: sb.fam });
+  if (world.starBodies) for (const sb of world.starBodies) statics.push({ x: sb.x, z: sb.z, vx: sb.vx, vz: sb.vz, m: sb.m, rad: sb.r, fam: sb.fam, pin: sb.pin });
   const gate = world.gate;
   const gateGrav = gate ? [{ x: gate.x, z: gate.z, m: 2500, rad: 0 }] : [];
   let x = st.x, z = st.z, vx = vx0, vz = vz0;
@@ -607,14 +607,21 @@ function predictShip(world, vx0, vz0, n) {
   let anchor = null; for (const p of simP) if (!anchor || p.m > anchor.m) anchor = p;
   let swept = 0, prevAng = anchor ? Math.atan2(z - anchor.z, x - anchor.x) : 0;
   for (let i = 0; i < n; i++) {
+    // the moving stars advance exactly as the sky advances them: under each other by the family law, the pinned one still
+    for (const sa of statics) {
+      if (sa.pin !== false) continue;
+      let ax = 0, az = 0;
+      for (const o of statics) { if (o === sa) continue; const dx = o.x - sa.x, dz = o.z - sa.z, r2 = dx * dx + dz * dz + SF * SF, rn = Math.pow(r2, 1.65); const wSt = famW(world, sa.fam, o.fam); ax += wSt * G * o.m * dx / rn; az += wSt * G * o.m * dz / rn; }
+      sa.vx += ax * DT; sa.vz += az * DT; sa.x += sa.vx * DT; sa.z += sa.vz * DT;
+    }
     for (const p of simP) {
       const others = [];
       for (const q of simP) if (q !== p) others.push({ x: q.x, z: q.z, m: q.m * (world.fam ? famW(world, p.fam, q.fam) : (world.weak ? 0.01 : 1)) });
       for (const o of statics) others.push(world.fam ? { x: o.x, z: o.z, m: o.m * famW(world, p.fam, o.fam) } : o);
-      [p.x, p.z, p.vx, p.vz] = ystepT(p.x, p.z, p.vx, p.vz, others, DT); // the physics step: honest everywhere
+      { const [ax, az] = gaT(p.x, p.z, others); p.vx += ax * DT; p.vz += az * DT; p.x += p.vx * DT; p.z += p.vz * DT; } // kick then drift, exactly as the sky steps its bodies
     }
     const bodies = [...simP, ...statics, ...gateGrav];
-    [x, z, vx, vz] = ystepT(x, z, vx, vz, bodies, DT); // the ship is nobody's child: every body pulls it in full, as live
+    { const [ax, az] = gaT(x, z, bodies); vx += ax * DT; vz += az * DT; x += vx * DT; z += vz * DT; } // the ship is nobody's child: every body pulls it in full, and it steps as the live hull steps — kick then drift
     let danger = 0, hit = false;
     for (const p of simP) { const d = Math.hypot(x - p.x, z - p.z); if (d < p.rad * 2.5) danger = Math.max(danger, 1 - (d - p.rad) / (p.rad * 1.5)); if (d < p.rad + BS) hit = true; }
     for (const o of statics) { const d = Math.hypot(x - o.x, z - o.z); if (d < o.rad + BS) hit = true; }

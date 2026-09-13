@@ -133,7 +133,8 @@ export default function RubbleWorlds({ onExit }) {
           if (b0) { // the ark's default trajectory: toward the gate at 50, or away from the mass where no gate stands
             const dx = world.gate ? world.gate.x - b0.x : b0.x, dz = world.gate ? world.gate.z - b0.z : b0.z;
             const dd = Math.hypot(dx, dz) || 1;
-            world.shipAim = { on: true, vx: dx / dd * 50 * (world.shipScale || 1), vz: dz / dd * 50 * (world.shipScale || 1) };
+            const birth = world.birthAim || 50 * (world.shipScale || 1); // the map launches at its full cap to break the great star's grip; every other scene keeps the ark's 50
+            world.shipAim = { on: true, vx: dx / dd * birth, vz: dz / dd * birth };
           }
         }
         setUi(u => ({ ...u, kind: k.kind, seed, eaten: 0 }));
