@@ -67,7 +67,7 @@ function accel(x, y, z, srcs, self, weak, myClump, world, myFam) {
       if (i === self) continue;
       const s = srcs[i], dx = s.x - x, dy = (s.y || 0) - y, dz = s.z - z;
       const r2 = dx * dx + dy * dy + dz * dz + SF * SF, rn = Math.pow(r2, 1.65);
-      const w = (s.lite && s.fam !== myFam ? 0 : 1) * famW(world, myFam, s.fam); // one-way: a light source pulls nothing outside its own family
+      const w = famW(world, myFam, s.fam);
       ax += w * G * s.m * dx / rn; ay += w * G * s.m * dy / rn; az += w * G * s.m * dz / rn;
     }
     return [ax, ay, az];
@@ -250,7 +250,7 @@ function stepWorld(world, k) {
           if (world.star && Math.hypot(g.mx - world.star.x, g.my, g.mz - world.star.z) < g.rad + world.star.r + BS * 6) near = true;
           for (const o of gInfo) if (o !== g) { const kin = world.fam && famW(world, wb[g.ids[0]].fam, wb[o.ids[0]].fam) === 1; if (Math.hypot(g.mx - o.mx, g.my - o.my, g.mz - o.mz) < g.rad + o.rad + BS * (kin ? 2 : 6)) near = true; }
           if (!k.sleep || near || g.rel >= SLEEP_V || g.ids.some(i => wb[i].ship)) { for (const i of g.ids) wb[i].sleeping = false; continue; } // A SHIP NEVER SLEEPS: the eleven-block catamaran crossed the ten-block sleep line and froze into a stone that ignored its burns (measured, 2026-09-11)
-          const agg = { x: g.mx, y: g.my, z: g.mz, vx: g.mvx, vy: g.mvy, vz: g.mvz, m: g.M, rad: g.rad, ids: g.ids, clump: g.root, fam: wb[g.ids[0]].fam, lite: wb[g.ids[0]].lite, om: g.om, offs: g.ids.map(i => [wb[i].x - g.mx, wb[i].y - g.my, wb[i].z - g.mz]) };
+          const agg = { x: g.mx, y: g.my, z: g.mz, vx: g.mvx, vy: g.mvy, vz: g.mvz, m: g.M, rad: g.rad, ids: g.ids, clump: g.root, fam: wb[g.ids[0]].fam, om: g.om, offs: g.ids.map(i => [wb[i].x - g.mx, wb[i].y - g.my, wb[i].z - g.mz]) };
           for (const i of g.ids) wb[i].sleeping = true;
           world.aggs.push(agg);
         }
@@ -346,13 +346,13 @@ function stepWorld(world, k) {
         const rIdx = world.rigidOf ? world.rigidOf[i] : -1;
         out[0] = 0; out[1] = 0; out[2] = 0;
         for (const [root, g] of awakeClumps) {
-          const w = (wb[g.ids[0]].lite && wb[g.ids[0]].fam !== b.fam ? 0 : 1) * (world.fam ? famW(world, b.fam, wb[g.ids[0]].fam) : (world.weak && root !== b.clump ? 0.01 : 1)); // one-way: light bodies feel the sky and pull nothing outside their family
+          const w = world.fam ? famW(world, b.fam, wb[g.ids[0]].fam) : (world.weak && root !== b.clump ? 0.01 : 1);
           const d = Math.hypot(g.mx - b.x, g.my - b.y, g.mz - b.z);
           if (root === b.clump || d < g.rad + NEAR) {
             for (const j of g.ids) { if (j === i) continue; const o = wb[j]; pull(b, o.x, o.y, o.z, o.m, w, out); }
           } else pull(b, g.mx, g.my, g.mz, g.M, w, out);
         }
-        for (const a of world.aggs) { const w = (a.lite && a.fam !== b.fam ? 0 : 1) * (world.fam ? famW(world, b.fam, a.fam) : (world.weak && a.clump !== b.clump ? 0.01 : 1)); pull(b, a.x, a.y, a.z, a.m, w, out); }
+        for (const a of world.aggs) { const w = world.fam ? famW(world, b.fam, a.fam) : (world.weak && a.clump !== b.clump ? 0.01 : 1); pull(b, a.x, a.y, a.z, a.m, w, out); }
         if (world.hole) pull(b, world.hole.x, 0, world.hole.z, world.hole.m, 1, out);
         if (world.star) pull(b, world.star.x, 0, world.star.z, world.star.m, 1, out);
         if (world.starBodies) for (const st of world.starBodies) pull(b, st.x, 0, st.z, st.m, famW(world, b.fam, st.fam), out);

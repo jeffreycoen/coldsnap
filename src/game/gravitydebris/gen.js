@@ -224,7 +224,7 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     }
     for (const [f2, cx, cz, vx, vz, m] of moons) {
       const blocks = makePlanet(cx, cz, vx, vz, 1, rand, BS * 1.6, m);
-      for (const b of blocks) { b.fam = f2; b.lite = true; } // light: born under 500 mass, pulls nothing outside its own family
+      for (const b of blocks) b.fam = f2;
       world.blocks.push(...blocks);
     }
     // THE SMALL SKY: forty asteroids, four comets, two three-body triads, three
@@ -243,17 +243,19 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     const clearAt = (x, z, r) => placed.every(q => Math.hypot(q[0] - x, q[1] - z) - q[2] - r >= 6);
     const drifters = planets.filter(p => p[0] >= 3 && p[0] <= 6);
     let smFam = famN;
-    for (let i = 0; i < 40; i++) {
+    const kidBy = drifters.map(() => 0); // children per host, for the paired birth
+    for (let i = 0; i < 20; i++) {
       const host = drifters[i % drifters.length];
       const free = i % 5 === 4;                      // every fifth asteroid drifts free between the planets
       const mass = 40 + (i * 37 % 120), R = BS * (0.5 + (i * 13 % 7) / 10), rr = R + 3;
       let done = false;
       for (let t = 0; t < 36 && !done; t++) {
         if (!free) {
-          const orbR = 55 + (i * 31 % 55) + (t >> 3) * 6, a = ((i * 97 + t * 10) % 360) * Math.PI / 180;
+          const kid = kidBy[i % drifters.length]; // paired birth: opposite twins share a radius and a speed factor, so their tugs on the host cancel
+          const orbR = 55 + (kid >> 1) * 18 + (t >> 3) * 6, a = ((kid * 180 + (kid >> 1) * 67 + t * 10) % 360) * Math.PI / 180;
           const x = host[1] + Math.cos(a) * orbR, z = host[2] + Math.sin(a) * orbR;
           if (!clearAt(x, z, rr)) continue;
-          const v = vCirc(host[5], orbR) * (0.95 + (i % 3) * 0.05);
+          const v = vCirc(host[5], orbR) * (0.95 + ((kid >> 1) % 3) * 0.05);
           small.push([smFam, x, z, host[3] - Math.sin(a) * v, host[4] + Math.cos(a) * v, mass, R, "asteroid"]); world.fam[smFam] = host[0];
         } else {
           const x = 60 + ((i * 53 + t * 41) % 560), z = -300 + ((i * 71 + t * 29) % 540);
@@ -261,6 +263,7 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
           small.push([smFam, x, z, (i % 2 ? 3 : -3), (i % 3 ? -2 : 2), mass, R, "asteroid"]); world.fam[smFam] = -1;
         }
         placed.push([small[small.length - 1][1], small[small.length - 1][2], rr]); done = true;
+        if (!free) kidBy[i % drifters.length]++;
       }
       if (done) smFam++;
     }
@@ -275,21 +278,36 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
         placed.push([x, z, BS * 0.5 + 3]); break;
       }
     }
-    // triads: two rotating equilateral triangles of small bodies, each its own family, holding for a while under their own law and then breaking
+    // triads: six rotating equilateral triangles, each its own family, masses
+    // mixed 400 to 2500 with block size to match. With all three separations
+    // equal, the pull sum points every body exactly at the triple's
+    // weight-center with one shared turn rate, whatever the masses — exact
+    // under the softened law — so each body rides its own circle about the
+    // weight-center and heavier triples turn slower.
+    const TRIPLES = [[400, 900, 2500], [700, 1600, 1000], [400, 400, 1600], [2500, 2500, 400], [900, 1600, 2500], [400, 700, 900]];
     let triadsPlaced = 0;
-    for (const [tcx, tcz] of [[160, -330], [560, -40], [480, 80], [80, 200], [600, -330], [300, 330], [680, 250], [40, -420]]) {
-      if (triadsPlaced >= 2) break;
-      const R2 = 48, L = R2 * Math.sqrt(3), mT = 400;
-      if (!clearAt(tcx, tcz, R2 + BS * 1.1 + 3)) continue;
-      const aC = 2 * G * mT * Math.cos(Math.PI / 6) / Math.pow(L * L + SF * SF, 1.15), vT = Math.sqrt(aC * R2);
+    // centers sit in the bands BETWEEN the orbital rings (175/300/450/475/650, each ±60), so no ring planet plows through a triangle inside its first laps
+    for (const [tcx, tcz] of [[360, 0], [720, 0], [510, 45], [225, -75], [585, -75], [705, -150], [0, -240], [0, 240]]) {
+      if (triadsPlaced >= 6) break;
+      const R2 = 48, L = R2 * Math.sqrt(3);
+      const trip = TRIPLES[triadsPlaced % TRIPLES.length], MT = trip[0] + trip[1] + trip[2];
+      const maxR = BS * 1.1 * Math.cbrt(Math.max(...trip) / 400);
+      if (!clearAt(tcx, tcz, R2 + maxR + 3)) continue;
+      const om = Math.sqrt(G * MT / Math.pow(L * L + SF * SF, 1.65)); // the shared turn rate
+      let bx = 0, bz = 0; // the triple's weight-center inside the vertex circle
+      const vtx = [0, 1, 2].map(i => { const th = i * 2 * Math.PI / 3; return [tcx + Math.cos(th) * R2, tcz + Math.sin(th) * R2]; });
+      for (let i = 0; i < 3; i++) { bx += vtx[i][0] * trip[i] / MT; bz += vtx[i][1] * trip[i] / MT; }
       const tf = smFam++; world.fam[tf] = -1;
-      for (let i = 0; i < 3; i++) { const th = i * 2 * Math.PI / 3; small.push([tf, tcx + Math.cos(th) * R2, tcz + Math.sin(th) * R2, -Math.sin(th) * vT, Math.cos(th) * vT, mT, BS * 1.1, "triad"]); }
-      placed.push([tcx, tcz, R2 + BS * 1.1 + 3]); triadsPlaced++;
+      for (let i = 0; i < 3; i++) {
+        const rx = vtx[i][0] - bx, rz = vtx[i][1] - bz;
+        small.push([tf, vtx[i][0], vtx[i][1], -rz * om, rx * om, trip[i], BS * 1.1 * Math.cbrt(trip[i] / 400), "triad"]);
+      }
+      placed.push([tcx, tcz, R2 + maxR + 3]); triadsPlaced++;
     }
     world.pickups = [{ x: 150, z: -190, fuel: 300, alive: true }, { x: 420, z: -120, fuel: 300, alive: true }, { x: 600, z: -250, fuel: 300, alive: true }];
     for (const [f2, cx, cz, vx, vz, m, R, kind] of small) {
       const blocks = makePlanet(cx, cz, vx, vz, kind === "comet" ? 2 : 1, rand, R, m);
-      for (const b of blocks) { b.fam = f2; b.lite = true; if (kind === "comet") b.comet = true; } // light: born under 500 mass, pulls nothing outside its own family
+      for (const b of blocks) { b.fam = f2; if (kind === "comet") b.comet = true; }
       world.blocks.push(...blocks);
     }
     world.moonHosts = moonHosts;
