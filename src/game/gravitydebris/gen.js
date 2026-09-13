@@ -180,8 +180,9 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     // line, outside the star's family line, so the star does not pull them —
     // no orbit, no fall. Each carries a few units of sideways creep and leans
     // on its neighbors at one percent: a monument that drifts.
-    const DRIFTERS = [
-      [306, 3, 18], [613, -3, 205],
+    const DRIFTERS = [ // [ring along the line, sideways creep, hue, mass] — a negative ring stands on the ship's side of the star
+      [306, 3, 18, 40000], [613, -3, 205, 40000],
+      [-163, -3, 145, 10000], [155, 3, 300, 10000], [460, -3, 48, 10000],
     ];
     const hsl = (h, sPct, lPct) => { const sat = sPct / 100, li = lPct / 100;
       const f = (n) => { const k = (n + h / 30) % 12; const c = sat * Math.min(li, 1 - li); return Math.round(255 * (li - c * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); };
@@ -189,10 +190,10 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     let famN = 2;
     const lineA = -45 * Math.PI / 180, lux = Math.cos(lineA), luz = Math.sin(lineA); // the star-to-gate line, left to right across the view's wide diagonal
     for (let ti = 0; ti < DRIFTERS.length; ti++) {
-      const [ring, creep, hue] = DRIFTERS[ti];
+      const [ring, creep, hue, pm] = DRIFTERS[ti];
       const px = lux * ring, pz = luz * ring;
       const vx = -luz * creep, vz = lux * creep; // sideways to the line, a few units, alternating
-      const blocks = makePlanet(px, pz, vx, vz, ti % 2, rand, BS * 2.2 * Math.cbrt(40000 / 3200), 40000);
+      const blocks = makePlanet(px, pz, vx, vz, ti % 2, rand, BS * 2.2 * Math.cbrt(pm / 3200), pm);
       const tf = famN++; world.fam[tf] = -1; // outside the star's family line: the star does not pull it
       const rgb = hsl(hue, 42, 50);
       for (const b of blocks) { b.fam = tf; b.rgb = rgb; }
