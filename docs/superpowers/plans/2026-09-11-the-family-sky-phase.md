@@ -33,10 +33,11 @@ A large seeded map: a built star system that the seed sets faintly astir, so eve
 | T43 | 0.5.42 | The fixed opening (temporary): no stir, set phases, the ship beside the great star, the whole family laid down the corridor to the gate — the same sky every launch until the layout is right and randomizing returns | LANDED — mark 0.5.42, existing numbers unchanged, map number 9c735648f4cb3502 → 61396c4fe573ab49, smoke 23/23 |
 | T44 | 0.5.43 | Speed and pull (gap analysis task one): the map opens at ×½ with the ship at scale two; the great star at 40000, one lesser star at 15000, planets near 5000 — the ark's ratios, the destruction kept | LANDED — mark 0.5.43, existing numbers unchanged, map number 61396c4fe573ab49 → e5605a8115f64c22, smoke 23/23 |
 | T45 | 0.5.44 | The ark's drift and the honest ghost: the great-ring planets drift around their shared center under one percent mutual pull, the great star a hazard that pulls only the ship and its own line; the ghost steps at the physics step and moves its tracks by the family law; the spawn moves off the birth line | LANDED — mark 0.5.44, existing numbers unchanged, map number e5605a8115f64c22 → b52d5dbaaca4c5af, smoke 23/23 |
-| T46 | — | The flight picture (gap analysis task two): ghost in flight, body snapshots with labels, miss label and cross, the in-flight readout line | PLANNED |
-| T47 | — | The cinematic layer (gap analysis task three): near-body slowdown, zoom-follow, shake, danger vignette, flashes, exhaust and debris, the ship trail | PLANNED |
-| T48 | — | The gate and the win (gap analysis task four): portal art, the win card, reset | PLANNED |
-| T49 | — | The small sky (gap analysis task five): asteroids and comets as block bodies, fuel caches; nebula drag last | PLANNED |
-| T50 | — | The moving-star look: the stars' art in flight, the map's camera reach — the owner's eyes the acceptance | PLANNED |
+| T46 | 0.5.45 | The departure and the honest star: the corridor at one and a half times, the two inner planets above the birth line, the birth burn at the full cap, the ghost moving the stars and stepping exactly as the sky does | LANDED — mark 0.5.45, existing numbers unchanged, map number b52d5dbaaca4c5af → 04ed592988ec8c41, smoke 23/23 |
+| T47 | — | The small sky: about forty asteroids, four comets, two three-body triads, three fuel caches, all wounding by the strike rule | PLANNED |
+| T48 | — | The flight picture (gap analysis task two): ghost in flight, body snapshots with labels, miss label and cross, the in-flight readout line | PLANNED |
+| T49 | — | The cinematic layer (gap analysis task three): near-body slowdown, zoom-follow, shake, danger vignette, flashes, exhaust and debris, the ship trail | PLANNED |
+| T50 | — | The gate and the win (gap analysis task four): portal art, the win card, reset | PLANNED |
+| T51 | — | The moving-star look: the stars' art in flight, the map's camera reach — the owner's eyes the acceptance | PLANNED |
 
 The map's purpose changed after T33 flew: longevity of orbits is not wanted; the chaos of a packed sky is the story. T34 packs it; T35 slows time and packs it again — slower time is cheaper time, so the same machine carries a denser brawl. T36 is deferred polish: the look and feel of the moving sky, checked live, written on the owner's word after T35 lands.
