@@ -162,7 +162,7 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     // identical at double scale; eight times would trap the ship outright. Only the ship keeps its
     // old size, so the whole world reads twice as large around it.
     const MG = 98500;
-    world.span = 750; // the map's length and width stay the former size, like the ship; only the bodies are doubled
+    world.span = 1100; // the climb stretched by 1.7 against the view's vertical squeeze
     world.starBodies = [{ x: 0, z: 0, vx: 0, vz: 0, m: MG, r: 80, fam: 0, pin: true }];
     world.fam = { 0: -1 };
     world.hazardFam = 0;
@@ -177,10 +177,10 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     // up the screen, four triads of three HUGE planets stacked between them,
     // six small moons interspersed. Only the ship sits below the star.
     const TRIS = [
-      [190, -135, 60, 40000, 40000, 40000, 18, -1],
-      [300, -152, 75, 40000, 40000, 40000, 205, -1],
-      [390, -118, 85, 40000, 40000, 40000, 145, 1],
-      [490, -137, 95, 40000, 40000, 40000, 300, 1],
+      [325, -135, 60, 40000, 40000, 40000, 18, -1],
+      [510, -152, 75, 40000, 40000, 40000, 205, -1],
+      [665, -118, 85, 40000, 40000, 40000, 145, 1],
+      [835, -137, 95, 40000, 40000, 40000, 300, 1],
     ];
     const hsl = (h, sPct, lPct) => { const sat = sPct / 100, li = lPct / 100;
       const f = (n) => { const k = (n + h / 30) % 12; const c = sat * Math.min(li, 1 - li); return Math.round(255 * (li - c * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); };
@@ -207,14 +207,14 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
       }
     }
     // six small moons interspersed on their own rings, children of the star
-    for (const [mr, ma] of [[250, -122], [250, -152], [345, -136], [445, -155], [450, -118], [555, -128]]) {
+    for (const [mr, ma] of [[425, -122], [425, -152], [587, -136], [757, -155], [765, -118], [944, -128]]) {
       const a2 = ma * Math.PI / 180, v2 = vCirc(MG, mr);
       const blocks = makePlanet(Math.cos(a2) * mr, Math.sin(a2) * mr, -Math.sin(a2) * v2, Math.cos(a2) * v2, 1, rand, BS * 1.6, 1200);
       const tf2 = famN++; world.fam[tf2] = 0;
       for (const b of blocks) { b.fam = tf2; b.rgb = hsl(210, 12, 58); }
       world.blocks.push(...blocks);
     }
-    world.pickups = [{ x: -150, z: -200, fuel: 300, alive: true }, { x: -287, z: -201, fuel: 300, alive: true }, { x: -360, z: -429, fuel: 300, alive: true }];
+    world.pickups = [{ x: -255, z: -340, fuel: 300, alive: true }, { x: -488, z: -342, fuel: 300, alive: true }, { x: -612, z: -729, fuel: 300, alive: true }];
   } else {
     world.hole = { x: 0, z: 0, m: 42000 * size ** 3, killR: 26 * size };
     const px = 240 * size;
@@ -226,7 +226,7 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     world.span = 300 * size;
   }
   if (shipOn && kind !== "ship" && kind !== "map") addShip(world, hull, -world.span * 0.77, world.span * 0.31);
-  if (kind === "map") { addShip(world, hull, 75, 75, 2); world.birthAim = 130 * world.shipScale; world.birthDir = [0.707, -0.707]; world.gate = { x: -455, z: -455, r: 36, reached: false }; } // born below the great star, the only body there; the tangent at 260 rounds the star at 106 and passes within 169 of the gate at 6.4 simulated seconds
+  if (kind === "map") { addShip(world, hull, 75, 75, 2); world.birthAim = 130 * world.shipScale; world.birthDir = [0.707, -0.707]; world.gate = { x: -775, z: -775, r: 36, reached: false }; } // born below the great star, the only body there; the birth tangent rounds the star and heads up the stretched climb
   world.welds = buildWelds(world.blocks);
   world.weldOf = new Map();
   for (const w of world.welds) world.weldOf.set(w.a * 100000 + w.b, w);
