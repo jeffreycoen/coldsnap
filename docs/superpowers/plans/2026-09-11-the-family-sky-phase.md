@@ -41,5 +41,6 @@ A large seeded map: a built star system that the seed sets faintly astir, so eve
 | T51 | — | The moving-star look: the stars' art in flight, the map's camera reach — the owner's eyes the acceptance | PLANNED |
 | T52 | — | The rest of the flight picture: body snapshots with labels, the miss label and cross, the in-flight readout line | PLANNED |
 | T53 | 0.5.48 | Gravity's debris: the map alone as its own module on the momentum-honest physics fork; the proving range untouched | LANDED — mark 0.5.48, all rubbleworlds numbers unchanged, debris map number 3edfd39c2bb1df1f, smoke 23/23 |
+| T54 | 0.5.49 | The honest impulse: the debris fork's contact rescale deleted; impulses in plain momentum units; light fragments no longer detonate | LANDED — mark 0.5.49, debris map number unchanged 3edfd39c2bb1df1f, both battery seeds clean, smoke 23/23 |
 
 The map's purpose changed after T33 flew: longevity of orbits is not wanted; the chaos of a packed sky is the story. T34 packs it; T35 slows time and packs it again — slower time is cheaper time, so the same machine carries a denser brawl. T36 is deferred polish: the look and feel of the moving sky, checked live, written on the owner's word after T35 lands.
