@@ -158,11 +158,11 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     // far rim — nothing behind the ship, nothing off to the far side. Drawn in
     // order: lesser star 1, lesser star 2, the four great rings, the four
     // lesser-star planets, the three moons. Degrees, zero toward +x.
-    const PHASES = [20, -35, -45, 5, -30, 12, 0, 180, 0, 180, 60, 200, -20];
+    const PHASES = [20, -45, 5, -30, 12, 0, 180, 60, 200, -20];
     let phaseAt = 0;
     const nud = () => 1;
     const ang = () => (PHASES[phaseAt++] || 0) * Math.PI / 180;
-    const MG = 120000;
+    const MG = 40000; // the ark's star range: planets pull the ship as the ark's do
     world.span = 500;
     // PLACED BY CONSTRUCTION: phases re-roll until every body clears every
     // other at birth by at least 6 — a body born inside another is a
@@ -173,7 +173,7 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
       world.starBodies = [{ x: 0, z: 0, vx: 0, vz: 0, m: MG, r: 40, fam: 0, pin: true }];
       world.fam = { 0: -1 };
       lessers = [];
-      [[317, 60000, 1], [467, 60000, 2]].forEach(([r0, m, fam]) => {
+      [[317, 15000, 1]].forEach(([r0, m, fam]) => { // one lesser star; the second and its two planets leave
         const r = r0 * nud(), a = ang(), v = vCirc(MG, r) * nud();
         const st = { x: Math.cos(a) * r, z: Math.sin(a) * r, vx: -Math.sin(a) * v, vz: Math.cos(a) * v, m, r: 24, fam, pin: false };
         world.starBodies.push(st); world.fam[fam] = 0; lessers.push(st);
@@ -181,13 +181,13 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
       planets = [];
       [[3, 117], [4, 200], [5, 300], [6, 433]].forEach(([f2, r0]) => {
         const r = r0 * nud(), a = ang(), v = vCirc(MG, r) * nud();
-        planets.push([f2, Math.cos(a) * r, Math.sin(a) * r, -Math.sin(a) * v, Math.cos(a) * v, 2400]);
+        planets.push([f2, Math.cos(a) * r, Math.sin(a) * r, -Math.sin(a) * v, Math.cos(a) * v, 5000]);
         world.fam[f2] = 0;
       });
       famN = 7;
       for (const st of lessers) for (const lr0 of [70, 125]) {
         const r = lr0 * nud(), a = ang(), v = vCirc(st.m, r) * nud();
-        planets.push([famN, st.x + Math.cos(a) * r, st.z + Math.sin(a) * r, st.vx - Math.sin(a) * v, st.vz + Math.cos(a) * v, 3000]);
+        planets.push([famN, st.x + Math.cos(a) * r, st.z + Math.sin(a) * r, st.vx - Math.sin(a) * v, st.vz + Math.cos(a) * v, 5000]);
         world.fam[famN] = st.fam; famN++;
       }
       moonHosts = [4, 5, 6];
@@ -233,7 +233,7 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     world.span = 300 * size;
   }
   if (shipOn && kind !== "ship" && kind !== "map") addShip(world, hull, -world.span * 0.77, world.span * 0.31);
-  if (kind === "map") { addShip(world, hull, -130, 40, 4); world.gate = { x: world.span * 0.95, z: -world.span * 0.3, r: 36, reached: false }; }
+  if (kind === "map") { addShip(world, hull, -130, 40, 2); world.gate = { x: world.span * 0.95, z: -world.span * 0.3, r: 36, reached: false }; }
   world.welds = buildWelds(world.blocks);
   world.weldOf = new Map();
   for (const w of world.welds) world.weldOf.set(w.a * 100000 + w.b, w);
