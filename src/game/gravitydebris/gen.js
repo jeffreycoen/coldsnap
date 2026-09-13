@@ -176,33 +176,27 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     // THE VERTICAL CLIMB: the star at the bottom of the view, the gate straight
     // up the screen, four triads of three HUGE planets stacked between them,
     // six small moons interspersed. Only the ship sits below the star.
-    const TRIS = [
-      [400, -135, 60, 40000, 40000, 40000, 18, -1],
-      [730, -135, 75, 40000, 40000, 40000, 205, -1],
+    // THE SIX DRIFTERS: six huge planets evenly spaced on the star-to-gate
+    // line, outside the star's family line, so the star does not pull them —
+    // no orbit, no fall. Each carries a few units of sideways creep and leans
+    // on its neighbors at one percent: a monument that drifts.
+    const DRIFTERS = [
+      [150, 3, 18], [300, -3, 205], [450, 3, 145], [600, -3, 300], [750, 3, 48], [900, -3, 275],
     ];
     const hsl = (h, sPct, lPct) => { const sat = sPct / 100, li = lPct / 100;
       const f = (n) => { const k = (n + h / 30) % 12; const c = sat * Math.min(li, 1 - li); return Math.round(255 * (li - c * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); };
       return [f(0), f(8), f(4)]; };
     let famN = 2;
-    for (let ti = 0; ti < TRIS.length; ti++) {
-      const [ring, angD, R2, m1, m2, m3, hue, spin] = TRIS[ti];
-      const trip = [m1, m2, m3], M = m1 + m2 + m3, a = angD * Math.PI / 180;
-      const bx = Math.cos(a) * ring, bz = Math.sin(a) * ring; // the weight-center rides the ring
-      const vR = vCirc(MG, ring), rvx = -Math.sin(a) * vR, rvz = Math.cos(a) * vR; // every ring ride turns the same way
-      const L = R2 * Math.sqrt(3);
-      const om = Math.sqrt(G * M / Math.pow(L * L + SF * SF, 1.65)) * spin; // the table's spin: mixed, prograde only where the grip affords it
-      // vertices on a circle about a geometric center shifted so the mass-weighted mean lands exactly on the ring point
-      const raw = [0, 1, 2].map(i => { const th = i * 2 * Math.PI / 3 + ring + angD; return [Math.cos(th) * R2, Math.sin(th) * R2]; });
-      let ox = 0, oz = 0; for (let i = 0; i < 3; i++) { ox += raw[i][0] * trip[i] / M; oz += raw[i][1] * trip[i] / M; }
-      const tf = famN++; world.fam[tf] = 0;
-      for (let i = 0; i < 3; i++) {
-        const px = bx + raw[i][0] - ox, pz = bz + raw[i][1] - oz;
-        const vx = rvx - (pz - bz) * om, vz = rvz + (px - bx) * om; // ring ride plus the spin about the weight-center
-        const blocks = makePlanet(px, pz, vx, vz, ti % 2, rand, BS * 2.2 * Math.cbrt(trip[i] / 3200), trip[i]);
-        const rgb = hsl(hue, 38 + i * 9, [62, 48, 38][i]);
-        for (const b of blocks) { b.fam = tf; b.rgb = rgb; }
-        world.blocks.push(...blocks);
-      }
+    const lineA = -135 * Math.PI / 180, lux = Math.cos(lineA), luz = Math.sin(lineA); // the star-to-gate line
+    for (let ti = 0; ti < DRIFTERS.length; ti++) {
+      const [ring, creep, hue] = DRIFTERS[ti];
+      const px = lux * ring, pz = luz * ring;
+      const vx = -luz * creep, vz = lux * creep; // sideways to the line, a few units, alternating
+      const blocks = makePlanet(px, pz, vx, vz, ti % 2, rand, BS * 2.2 * Math.cbrt(40000 / 3200), 40000);
+      const tf = famN++; world.fam[tf] = -1; // outside the star's family line: the star does not pull it
+      const rgb = hsl(hue, 42, 50);
+      for (const b of blocks) { b.fam = tf; b.rgb = rgb; }
+      world.blocks.push(...blocks);
     }
     // six small moons interspersed on their own rings, children of the star
     for (const [mr, ma] of [[425, -122], [425, -152], [587, -136], [757, -155], [765, -118], [944, -128]]) {
