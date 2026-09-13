@@ -76,6 +76,8 @@ The owner directs design, reviews every plan, and is the sole playtester. His wo
 ## Process
 
 - No momentum: stop and check before each next step.
+- **No exploratory measurement campaigns.** The only pre-serve verification is the plan check itself: anchors grepped, syntax passed, the plan's own acceptance battery run once on a fresh copy. Between the owner's word and the plan there is no bench study, no parameter sweep, no candidate ladder.
+- The owner's numbers are built as spoken. A plan-writer who believes a given number breaks the game says so to the owner and waits — it never ships a different number inside a plan, however well argued.
 - Saves are never migrated (owner, 2026-08-22). Old saves ride as they are: internal keys and field shapes that live in saves stay stable, and a plan that would need a save migration finds another way or asks.
 - Phase closeout re-checks the README's claims and screenshots against the shipped game.
 - Deferred items collect in the polish queue, never folded in opportunistically.
