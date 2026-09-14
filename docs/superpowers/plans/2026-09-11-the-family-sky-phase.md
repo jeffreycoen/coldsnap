@@ -54,5 +54,6 @@ A large seeded map: a built star system that the seed sets faintly astir, so eve
 | T64 | 0.5.59 | The three middleweights: one medium planet between ship and star, two interleaved between star and gate on the wide line | LANDED — mark 0.5.59, debris map number 00f9bc42e6f412f1 → c4cd47b1bf33296d, smoke 23/23 |
 | T65 | 0.5.60 | The turning worlds: every planet on the line spins about its own center at its own rate, directions mixed | LANDED — mark 0.5.60, debris map number c4cd47b1bf33296d → df36ab3abc2baf63, smoke 23/23 |
 | T66 | 0.5.61 | The tilted line: each planet at its own altitude off the flight plane, spacing along the line unchanged | LANDED — mark 0.5.61, debris map number df36ab3abc2baf63 → a556a3a78dda5475, smoke 23/23 |
+| T67 | 0.5.62 | The marked worlds: mottled shades of each planet's own hue and one darker landmark country, so the turning reads | LANDED — mark 0.5.62, debris map number a556a3a78dda5475 → 8786ec4da0bc7de8, smoke 23/23 |
 
 The map's purpose changed after T33 flew: longevity of orbits is not wanted; the chaos of a packed sky is the story. T34 packs it; T35 slows time and packs it again — slower time is cheaper time, so the same machine carries a denser brawl. T36 is deferred polish: the look and feel of the moving sky, checked live, written on the owner's word after T35 lands.
