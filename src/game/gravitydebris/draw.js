@@ -10,7 +10,7 @@ function wellDepth(x, z, wells, sc) {
     const p = G * w.m / (1.3 * Math.pow(r2, 0.65));
     if (w.deep) pD += p; else pP += p;
   }
-  return Math.min(Math.sqrt(pP) * 0.38, 150) * sc + Math.min(Math.sqrt(pD) * 1.15, 560) * sc;
+  return Math.min(Math.sqrt(pP) * 0.7, 260) * sc + Math.min(Math.sqrt(pD) * 1.15, 560) * sc;
 }
 
 function drawFrame(env) {
@@ -39,10 +39,9 @@ function drawFrame(env) {
       world._center = ctrM ? { x: ctrX / ctrM, z: ctrZ / ctrM } : { x: 0, z: 0 };
       const look = world.pan || (world.ship && world.shipTrack ? shipAt() : world._center); // the ark's follow: the camera rides the ship; a drag takes the wheel, double-tap hands it back
       const cx = W / 2 - (look.x - look.z) * C30 * sc, cy = H / 2 - (look.x + look.z) * S30 * sc;
-      // ONE PLANE: every body draws on the flat plane, and the net beneath sags
-      // only faintly — a tenth of the depth it once had — so mass still reads in
-      // the weave while no body ever hangs above a hole or sinks into one.
-      const getD = (sx2, sz2) => wellDepth(sx2, sz2, world.wells, sc) * 0.1;
+      // THE DRAMATIC NET: the weave sags at a quarter depth and every body
+      // rides it — sunk by a share of the well under it, the ark's own look.
+      const getD = (sx2, sz2) => wellDepth(sx2, sz2, world.wells, sc) * 0.25;
       const iso = (x, z, y) => ({ x: cx + (x - z) * C30 * sc, y: cy + (x + z) * S30 * sc - (y || 0) * 0.9 * sc });
       const lookX = look.x, lookZ = look.z;
       const gN = 56, gSp = 16, halfG = gN * gSp / 2; // fixed weave: the net follows the camera like the ark's, and the weave itself is the absolute ruler
@@ -52,12 +51,12 @@ function drawFrame(env) {
       ctx.lineWidth = 0.7;
       for (let ix = 0; ix <= gN; ix++) { const sx2 = ix * gSp - halfG + gcx, fade = Math.max(0, 1 - (Math.abs(sx2 - gcx) / (halfG * 0.7)) ** 3);
         let w = 0; for (const wl of world.wells) { const pd = Math.abs(sx2 - wl.x); w = Math.max(w, Math.max(0, 1 - pd / 110) * 0.3); }
-        const a = fade * 0.18 + w * 0.5; if (a < 0.005) continue;
+        const a = fade * 0.18 + w * 0.8; if (a < 0.005) continue;
         ctx.beginPath(); const b = ix * (gN + 1); ctx.moveTo(gxa[b], gya[b]); for (let iz = 1; iz <= gN; iz++) ctx.lineTo(gxa[b + iz], gya[b + iz]);
         ctx.strokeStyle = `rgba(45,55,75,${a})`; ctx.stroke(); }
       for (let iz = 0; iz <= gN; iz++) { const sz2 = iz * gSp - halfG + gcz, fade = Math.max(0, 1 - (Math.abs(sz2 - gcz) / (halfG * 0.7)) ** 3);
         let w = 0; for (const wl of world.wells) { const pd = Math.abs(sz2 - wl.z); w = Math.max(w, Math.max(0, 1 - pd / 110) * 0.3); }
-        const a = fade * 0.18 + w * 0.5; if (a < 0.005) continue;
+        const a = fade * 0.18 + w * 0.8; if (a < 0.005) continue;
         ctx.beginPath(); ctx.moveTo(gxa[iz], gya[iz]); for (let ix = 1; ix <= gN; ix++) ctx.lineTo(gxa[ix * (gN + 1) + iz], gya[ix * (gN + 1) + iz]);
         ctx.strokeStyle = `rgba(45,55,75,${a})`; ctx.stroke(); }
       // --- PROJECTED ORBITS: each clump's future as a line, green while clear,
@@ -106,6 +105,7 @@ function drawFrame(env) {
         ctx.lineWidth = 2.2;
         for (let i2 = stride; i2 < pts.length; i2 += stride) {
           const p0 = iso(pts[i2 - stride][0], pts[i2 - stride][1], 0), p1 = iso(pts[i2][0], pts[i2][1], 0);
+          p0.y += getD(pts[i2 - stride][0], pts[i2 - stride][1]) * 0.4; p1.y += getD(pts[i2][0], pts[i2][1]) * 0.4;
           const fade = Math.max(0.25, 1 - i2 / pts.length);
           ctx.strokeStyle = i2 >= redFrom ? `rgba(220,55,35,${fade * 0.95})` : `rgba(40,170,90,${fade * 0.85})`;
           ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
@@ -162,6 +162,7 @@ function drawFrame(env) {
           for (let i2 = 3; i2 < pr.pts.length; i2 += 3) {
             const q = pr.pts[i2], q0 = pr.pts[i2 - 3];
             const p0 = iso(q0.x, q0.z, 0), p1 = iso(q.x, q.z, 0);
+            p0.y += getD(q0.x, q0.z) * 0.4; p1.y += getD(q.x, q.z) * 0.4; // the line hugs the surface the ship rides
             const fade = Math.max(0.25, 1 - i2 / pr.pts.length);
             ctx.strokeStyle = q.danger > 0.3 ? `rgba(220,55,35,${fade})` : `rgba(60,130,220,${fade * 0.9})`;
             ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
@@ -181,6 +182,7 @@ function drawFrame(env) {
           for (let i2 = 3; i2 < pr.pts.length; i2 += 3) {
             const q = pr.pts[i2], q0 = pr.pts[i2 - 3];
             const p0 = iso(q0.x, q0.z, 0), p1 = iso(q.x, q.z, 0);
+            p0.y += getD(q0.x, q0.z) * 0.4; p1.y += getD(q.x, q.z) * 0.4; // the line hugs the surface the ship rides
             const fade = Math.max(0.25, 1 - i2 / pr.pts.length);
             ctx.strokeStyle = q.danger > 0.3 ? `rgba(220,55,35,${fade})` : `rgba(60,130,220,${fade * 0.9})`;
             ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
@@ -281,6 +283,7 @@ function drawFrame(env) {
         // a block wears its own color and flashes red only when struck; the ship stays gold and is never painted red
         const struck = b.hitF != null && world.frame - b.hitF < 20;
         const p = iso(lx(b), lz(b), ly(b)), rgb = b.ship ? tints[b.tint] : struck ? [214, 74, 52] : (b.rgb || tints[b.tint]);
+        p.y += getD(lx(b), lz(b)) * 0.4; // the body rides the net, the ark's way
         ctx.fillStyle = shade(rgb, lam * 0.72);
         ctx.beginPath(); ctx.moveTo(p.x - hw, p.y - hh); ctx.lineTo(p.x, p.y); ctx.lineTo(p.x, p.y + vh); ctx.lineTo(p.x - hw, p.y + vh - hh); ctx.closePath(); ctx.fill();
         ctx.fillStyle = shade(rgb, lam * 0.5);
