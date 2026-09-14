@@ -195,8 +195,14 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
       const vx = -luz * creep, vz = lux * creep; // sideways to the line, a few units, alternating
       const blocks = makePlanet(px, pz, vx, vz, ti % 2, rand, BS * 2.2 * Math.cbrt(pm / 3200), pm);
       const tf = famN++; world.fam[tf] = -1; // outside the star's family line: the star does not pull it
-      const rgb = hsl(hue, 42, 50);
-      for (const b of blocks) { b.fam = tf; b.rgb = rgb; b.vx += -(b.z - pz) * spin; b.vz += (b.x - px) * spin; b.y += lift; } // the body's own turn, and its own altitude off the flight plane
+      const capA = (hue * 0.7 + ti) % (2 * Math.PI), capX = Math.cos(capA), capZ = Math.sin(capA); // the landmark's bearing, born of the planet's own hue
+      for (const b of blocks) {
+        b.fam = tf;
+        const ox = b.x - px, oz = b.z - pz, ol = Math.hypot(ox, oz) || 1;
+        const mark = (ox * capX + oz * capZ) / ol > 0.6; // the landmark cap: a darker country in the same tone
+        b.rgb = mark ? hsl(hue, 52, 32) : hsl(hue, 42, 43 + Math.floor(rand() * 15)); // mottled shades of the planet's own hue
+        b.vx += -(b.z - pz) * spin; b.vz += (b.x - px) * spin; b.y += lift; // the body's own turn, and its own altitude off the flight plane
+      }
       world.blocks.push(...blocks);
     }
     // six small moons interspersed on their own rings, children of the star
