@@ -105,7 +105,7 @@ function drawFrame(env) {
         ctx.lineWidth = 2.2;
         for (let i2 = stride; i2 < pts.length; i2 += stride) {
           const p0 = iso(pts[i2 - stride][0], pts[i2 - stride][1], 0), p1 = iso(pts[i2][0], pts[i2][1], 0);
-          p0.y += getD(pts[i2 - stride][0], pts[i2 - stride][1]) * 0.4; p1.y += getD(pts[i2][0], pts[i2][1]) * 0.4;
+          p0.y += getD(pts[i2 - stride][0], pts[i2 - stride][1]); p1.y += getD(pts[i2][0], pts[i2][1]);
           const fade = Math.max(0.25, 1 - i2 / pts.length);
           ctx.strokeStyle = i2 >= redFrom ? `rgba(220,55,35,${fade * 0.95})` : `rgba(40,170,90,${fade * 0.85})`;
           ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
@@ -162,7 +162,7 @@ function drawFrame(env) {
           for (let i2 = 3; i2 < pr.pts.length; i2 += 3) {
             const q = pr.pts[i2], q0 = pr.pts[i2 - 3];
             const p0 = iso(q0.x, q0.z, 0), p1 = iso(q.x, q.z, 0);
-            p0.y += getD(q0.x, q0.z) * 0.4; p1.y += getD(q.x, q.z) * 0.4; // the line hugs the surface the ship rides
+            p0.y += getD(q0.x, q0.z); p1.y += getD(q.x, q.z); // the line hugs the surface the ship rides
             const fade = Math.max(0.25, 1 - i2 / pr.pts.length);
             ctx.strokeStyle = q.danger > 0.3 ? `rgba(220,55,35,${fade})` : `rgba(60,130,220,${fade * 0.9})`;
             ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
@@ -182,7 +182,7 @@ function drawFrame(env) {
           for (let i2 = 3; i2 < pr.pts.length; i2 += 3) {
             const q = pr.pts[i2], q0 = pr.pts[i2 - 3];
             const p0 = iso(q0.x, q0.z, 0), p1 = iso(q.x, q.z, 0);
-            p0.y += getD(q0.x, q0.z) * 0.4; p1.y += getD(q.x, q.z) * 0.4; // the line hugs the surface the ship rides
+            p0.y += getD(q0.x, q0.z); p1.y += getD(q.x, q.z); // the line hugs the surface the ship rides
             const fade = Math.max(0.25, 1 - i2 / pr.pts.length);
             ctx.strokeStyle = q.danger > 0.3 ? `rgba(220,55,35,${fade})` : `rgba(60,130,220,${fade * 0.9})`;
             ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
@@ -283,7 +283,7 @@ function drawFrame(env) {
         // a block wears its own color and flashes red only when struck; the ship stays gold and is never painted red
         const struck = b.hitF != null && world.frame - b.hitF < 20;
         const p = iso(lx(b), lz(b), ly(b)), rgb = b.ship ? tints[b.tint] : struck ? [214, 74, 52] : (b.rgb || tints[b.tint]);
-        p.y += getD(lx(b), lz(b)) * 0.4; // the body rides the net, the ark's way
+        p.y += getD(lx(b), lz(b)); // the body sits ON the net: the full depth, a planet resting in the bottom of its own dent
         ctx.fillStyle = shade(rgb, lam * 0.72);
         ctx.beginPath(); ctx.moveTo(p.x - hw, p.y - hh); ctx.lineTo(p.x, p.y); ctx.lineTo(p.x, p.y + vh); ctx.lineTo(p.x - hw, p.y + vh - hh); ctx.closePath(); ctx.fill();
         ctx.fillStyle = shade(rgb, lam * 0.5);
