@@ -47,7 +47,13 @@ function drawFrame(env) {
       const gN = 56, gSp = 16, halfG = gN * gSp / 2; // fixed weave: the net follows the camera like the ark's, and the weave itself is the absolute ruler
       const gcx = Math.round(lookX / gSp) * gSp, gcz = Math.round(lookZ / gSp) * gSp;
       const gxa = new Float32Array((gN + 1) ** 2), gya = new Float32Array((gN + 1) ** 2);
-      for (let ix = 0; ix <= gN; ix++) for (let iz = 0; iz <= gN; iz++) { const sx2 = ix * gSp - halfG + gcx, sz2 = iz * gSp - halfG + gcz, d = getD(sx2, sz2), idx = ix * (gN + 1) + iz; gxa[idx] = cx + (sx2 - sz2) * C30 * sc; gya[idx] = cy + (sx2 + sz2) * S30 * sc + d; }
+      let nd = world._netD; // the cached depth sheet: reused while the camera grid holds and the sheet is younger than ten frames
+      if (!nd || nd.gcx !== gcx || nd.gcz !== gcz || frame - nd.f0 >= 10) {
+        nd = { gcx, gcz, f0: frame, d: new Float32Array((gN + 1) ** 2) };
+        for (let ix = 0; ix <= gN; ix++) for (let iz = 0; iz <= gN; iz++) nd.d[ix * (gN + 1) + iz] = getD(ix * gSp - halfG + gcx, iz * gSp - halfG + gcz);
+        world._netD = nd;
+      }
+      for (let ix = 0; ix <= gN; ix++) for (let iz = 0; iz <= gN; iz++) { const sx2 = ix * gSp - halfG + gcx, sz2 = iz * gSp - halfG + gcz, idx = ix * (gN + 1) + iz; gxa[idx] = cx + (sx2 - sz2) * C30 * sc; gya[idx] = cy + (sx2 + sz2) * S30 * sc + nd.d[idx]; }
       ctx.lineWidth = 0.7;
       for (let ix = 0; ix <= gN; ix++) { const sx2 = ix * gSp - halfG + gcx, fade = Math.max(0, 1 - (Math.abs(sx2 - gcx) / (halfG * 0.7)) ** 3);
         let w = 0; for (const wl of world.wells) { const pd = Math.abs(sx2 - wl.x); w = Math.max(w, Math.max(0, 1 - pd / 110) * 0.3); }
