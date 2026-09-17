@@ -64,5 +64,6 @@ A large seeded map: a built star system that the seed sets faintly astir, so eve
 | T74 | 0.5.69 | The frame split: the step runs in four chunks across the window's frames; the screen glides one completed step behind and the spike evens out | LANDED — mark 0.5.69, battery identical to T73's numbers, smoke 23/23 |
 | T75 | 0.5.70 | The layered cores: every planet hollows to core, middle, and skin — same sphere and mass at forty percent fewer blocks | LANDED — mark 0.5.70, debris map number f75a59862872fd01 → 335395ae939b0832, smoke 23/23 |
 | T76 | 0.5.71 | The fine split: up to eleven chunks — the gravity pass halved, every solver sweep its own chunk; the opening's worst frame near a tenth of the step | LANDED — mark 0.5.71, battery identical to T75's numbers, smoke 23/23 |
+| T77 | 0.5.72 | Two triads: the middle standing triad leaves; the inner creeper and the orbiting one stay | LANDED — mark 0.5.72, debris map number 335395ae939b0832 → 48f7043b2d4f20b7, smoke 23/23 |
 
 The map's purpose changed after T33 flew: longevity of orbits is not wanted; the chaos of a packed sky is the story. T34 packs it; T35 slows time and packs it again — slower time is cheaper time, so the same machine carries a denser brawl. T36 is deferred polish: the look and feel of the moving sky, checked live, written on the owner's word after T35 lands.
