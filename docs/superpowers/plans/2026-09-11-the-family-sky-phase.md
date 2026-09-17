@@ -58,5 +58,6 @@ A large seeded map: a built star system that the seed sets faintly astir, so eve
 | T68 | 0.5.63 | The dramatic net: the sag at a quarter, every planet printing its own well, the mesh blackening, and every body riding the surface | LANDED — mark 0.5.63, debris map number unchanged 8786ec4da0bc7de8, smoke 23/23 |
 | T69 | 0.5.64 | Seated in the dent: bodies and lines ride the net at full depth; the floating gap closes | LANDED — mark 0.5.64, debris map number unchanged 8786ec4da0bc7de8, smoke 23/23 |
 | T70 | 0.5.65 | The cached sheet: the net's depth sheet reused between frames, recomputed every tenth or on a camera snap | LANDED — mark 0.5.65, debris map number unchanged 8786ec4da0bc7de8, smoke 23/23 |
+| T71 | 0.5.66 | The three giants: three giant triads on the line, two standing and creeping, one orbiting the star; chaos is the design | LANDED — mark 0.5.66, debris map number 8786ec4da0bc7de8 → f75a59862872fd01, smoke 23/23 |
 
 The map's purpose changed after T33 flew: longevity of orbits is not wanted; the chaos of a packed sky is the story. T34 packs it; T35 slows time and packs it again — slower time is cheaper time, so the same machine carries a denser brawl. T36 is deferred polish: the look and feel of the moving sky, checked live, written on the owner's word after T35 lands.
