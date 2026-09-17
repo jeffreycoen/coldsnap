@@ -18,10 +18,10 @@ function drawFrame(env) {
   const wb = world.blocks;
   // between physics steps, draw each body partway from where it stood to where it is
   const L = world.lerp == null ? 1 : world.lerp;
-  const lx = (b) => b.px == null ? b.x : b.px + (b.x - b.px) * L;
-  const ly = (b) => b.py == null ? b.y : b.py + (b.y - b.py) * L;
-  const lz = (b) => b.pz == null ? b.z : b.pz + (b.z - b.pz) * L;
-  const shipAt = () => { const st = world.shipTrack, pv = world.shipPrev; if (!st) return null; if (!pv) return { x: st.x, z: st.z }; return { x: pv.x + (st.x - pv.x) * L, z: pv.z + (st.z - pv.z) * L }; };
+  const lx = (b) => b.px == null ? b.x : b.px + ((b.qx == null ? b.x : b.qx) - b.px) * L; // the glide runs between the last two completed steps, never toward live half-computed positions
+  const ly = (b) => b.py == null ? b.y : b.py + ((b.qy == null ? b.y : b.qy) - b.py) * L;
+  const lz = (b) => b.pz == null ? b.z : b.pz + ((b.qz == null ? b.z : b.qz) - b.pz) * L;
+  const shipAt = () => { const st = world.shipTrack, pv = world.shipPrev, q = world.shipQ; if (!st) return null; if (!pv || !q) return { x: st.x, z: st.z }; return { x: pv.x + (q.x - pv.x) * L, z: pv.z + (q.z - pv.z) * L }; };
       // --- DRAW ---
       ctx.fillStyle = "#f5f4f0"; ctx.fillRect(0, 0, W, H);
       for (let i = 0; i < 60; i++) { const sx3 = ((i * 7919 + 37) * 3.7) % W, sy3 = ((i * 4967 + 13) * 2.3) % H; ctx.fillStyle = `rgba(0,0,20,${i % 5 === 0 ? 0.06 : 0.03})`; ctx.fillRect(sx3, sy3, i % 7 === 0 ? 1.5 : 1, i % 7 === 0 ? 1.5 : 1); }
@@ -81,7 +81,7 @@ function drawFrame(env) {
         const statics = [];
         if (world.hole) statics.push({ x: world.hole.x, z: world.hole.z, m: world.hole.m, rad: world.hole.killR });
         if (world.star) statics.push({ x: world.star.x, z: world.star.z, m: world.star.m, rad: world.star.r });
-        if (world.starBodies) for (const st of world.starBodies) statics.push({ x: st.px == null ? st.x : st.px + (st.x - st.px) * L, z: st.pz == null ? st.z : st.pz + (st.z - st.pz) * L, m: st.m, rad: st.r });
+        if (world.starBodies) for (const st of world.starBodies) statics.push({ x: st.px == null ? st.x : st.px + ((st.qx == null ? st.x : st.qx) - st.px) * L, z: st.pz == null ? st.z : st.pz + ((st.qz == null ? st.z : st.qz) - st.pz) * L, m: st.m, rad: st.r });
         const dtP = 1 / 15, NPRED = Math.max(2, Math.round(30 * (time || 0.5))); // TWO REAL SECONDS at any chip: fifteen steps at ×½ down to two at ×1/32 (a line needs two points) — a direction tick at the slowest speeds; the ship's own ghost keeps its full length
         for (let sIdx = 0; sIdx < NPRED; sIdx++) {
           for (const b of bodies) {
@@ -263,7 +263,7 @@ function drawFrame(env) {
         ctx.restore();
       };
       if (world.star) drawStar(world.star.x, world.star.z, world.star.r);
-      if (world.starBodies) for (const st of world.starBodies) drawStar(st.px == null ? st.x : st.px + (st.x - st.px) * L, st.pz == null ? st.z : st.pz + (st.z - st.pz) * L, st.r);
+      if (world.starBodies) for (const st of world.starBodies) drawStar(st.px == null ? st.x : st.px + ((st.qx == null ? st.x : st.qx) - st.px) * L, st.pz == null ? st.z : st.pz + ((st.qz == null ? st.z : st.qz) - st.pz) * L, st.r);
       if (world.hole) {
         const hp = iso(world.hole.x, world.hole.z, 0), hr = Math.max(world.hole.killR * sc, 6);
         const g2 = ctx.createRadialGradient(hp.x, hp.y, hr * 0.6, hp.x, hp.y, hr * 2.6);

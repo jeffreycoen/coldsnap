@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { MK } from "../version.js";
-import { stepWorld, predictShip, shipConn, C30, S30 } from "./gravitydebris/phys.js";
+import { stepWorld, stepSlice, predictShip, shipConn, C30, S30 } from "./gravitydebris/phys.js";
 import { makeScenario, HULL_LIST, HULL_LABEL } from "./gravitydebris/gen.js";
 import { drawFrame } from "./gravitydebris/draw.js";
 
@@ -183,14 +183,33 @@ export default function GravityDebris({ onExit }) {
       // have passed, so bodies glide across the gap instead of hopping. Drawing
       // only — the physics and every pinned number are untouched.
       const stepN = k.time >= 1 ? 1 : Math.round(1 / k.time);
-      if (!planFrozen && reps > 0) {
-        for (const b of world.blocks) { b.px = b.x; b.py = b.y; b.pz = b.z; }
-        if (world.starBodies) for (const st of world.starBodies) { st.px = st.x; st.pz = st.z; }
-        world.shipPrev = world.shipTrack ? { x: world.shipTrack.x, z: world.shipTrack.z } : null;
+      // THE FRAME SPLIT: the step runs in four chunks spread across the window's
+      // frames. The screen glides between the last two COMPLETED steps, one step
+      // behind the arithmetic; the display pair shifts only when a new window
+      // opens, so each glide finishes to its exact end before the next begins.
+      if (!planFrozen) {
+        if (world._chunks == null) world._chunks = 4;
+        const fIn = (renderF - 1) % stepN;
+        if (fIn === 0 && world._chunks >= 4) {
+          if (world._shiftPending) {
+            for (const b of world.blocks) { b.px = b.qx; b.py = b.qy; b.pz = b.qz; b.qx = b.x; b.qy = b.y; b.qz = b.z; }
+            if (world.starBodies) for (const st of world.starBodies) { st.px = st.qx; st.pz = st.qz; st.qx = st.x; st.qz = st.z; }
+            const sb0 = world.blocks.find(b2 => b2.ship && b2.alive);
+            world.shipPrev = world.shipQ; world.shipQ = sb0 ? { x: sb0.x, z: sb0.z } : null;
+            world._shiftPending = false;
+          }
+          world._chunks = 0; world._stepAcc = 0;
+        }
+        if (world._chunks < 4) {
+          const want = Math.min(4, Math.ceil((fIn + 1) * 4 / stepN));
+          while (world._chunks < want) {
+            const done = stepSlice(world, k); world._chunks++;
+            if (done) { world._chunks = 4; world._shiftPending = true; weldsAlive = world._weldsAlive || 0; world.stepMs = +((world._stepAcc + performance.now() - tPhys)).toFixed(2); }
+          }
+          if (world._chunks < 4) world._stepAcc += performance.now() - tPhys;
+        }
       }
       world.lerp = (planFrozen || stepN === 1) ? 1 : (((renderF - 1) % stepN) + 1) / stepN;
-      for (let rep = 0; rep < (planFrozen ? 0 : reps); rep++) weldsAlive = stepWorld(world, k);
-      if (reps > 0) world.stepMs = +((performance.now() - tPhys) / reps).toFixed(2);
       if (world.gate && !world.gate.reached && world.shipTrack && !planFrozen &&
           Math.hypot(world.shipTrack.x - world.gate.x, world.shipTrack.z - world.gate.z) < world.gate.r) world.gate.reached = true;
       if (world.ship && world.pickups && world.shipTrack && !planFrozen) for (const pk of world.pickups) { // a fuel cache refuels on touch, up to the tank

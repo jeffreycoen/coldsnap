@@ -202,7 +202,14 @@ function conformRigids(world, wb) {
   }
 }
 
-function stepWorld(world, k) {
+function stepWorld(world, k) { while (!stepSlice(world, k)) ; return world._weldsAlive; } // one call still runs the whole step
+function stepSlice(world, k) { // one chunk of the step; true when the step completed
+  if (!world._it) world._it = stepStages(world, k);
+  const r = world._it.next();
+  if (r.done) { world._it = null; return true; }
+  return false;
+}
+function* stepStages(world, k) {
   const wb = world.blocks, welds = world.welds;
   if (world.starBodies) {
     for (const st of world.starBodies) {
@@ -408,6 +415,7 @@ function stepWorld(world, k) {
         if (near || ext > hold * WAKE_TIDE) { for (const i of a.ids) wb[i].sleeping = false; a.dead = true; }
       }
       world.aggs = world.aggs.filter(a => !a.dead);
+      yield; // the first cut: the sky's forces are in; the contacts come next chunk
 
       // --- CONTACTS: candidates from the grid, replayed in the brute walk's order ---
       const contacts = [];
@@ -466,6 +474,7 @@ function stepWorld(world, k) {
       const itn = load > 1200 ? 4 : load > 600 ? 6 : ITERS;
       weldsAlive = 0;
       for (let it = 0; it < itn; it++) {
+        if (it > 0 && it === Math.ceil(itn / 2)) yield; // the second cut: half the solver sweeps on each side
         if (k.welds) for (const w of welds) {
           if (!w.alive) continue;
           const a = wb[w.a], b = wb[w.b];
@@ -531,6 +540,7 @@ function stepWorld(world, k) {
         }
         conformRigids(world, wb);
       }
+      yield; // the third cut: the tail — welds, wounds, drift, the eaters
       // COLD WELDING: contact that holds still becomes structure — an unwelded
       // touching pair calmer than REWELD_V for REWELD_T frames fuses at its
       // current spacing, entering the same force-break law at REWELD_STR strength
@@ -613,7 +623,7 @@ function stepWorld(world, k) {
         if (Math.hypot(b.x - world.hole.x, b.y, b.z - world.hole.z) < world.hole.killR) { b.alive = false; world.hole.m += b.m; world.eaten++; }
       }
       world.t += DT; world.frame++;
-  return weldsAlive;
+  world._weldsAlive = weldsAlive;
 }
 // the ark's own predictor, carved to the rubble sky: the same symplectic
 // coefficients, the same DT*2 step, run over the clump tracks as point
@@ -694,4 +704,4 @@ function shipConn(world) {
   let eng = false; for (const b of set) if (b.eng) eng = true;
   return { set: [...set], eng, cab };
 }
-export { DT, SF, G, BS, BR, PMASS, ITERS, SLOP, BETA, BIAS_CAP, WELD_BREAK, WELD_BIAS, SLEEP_V, WAKE_TIDE, WELD_STRENGTH_BY_SIZE, C30, S30, stepWorld, predictShip, shipConn };
+export { DT, SF, G, BS, BR, PMASS, ITERS, SLOP, BETA, BIAS_CAP, WELD_BREAK, WELD_BIAS, SLEEP_V, WAKE_TIDE, WELD_STRENGTH_BY_SIZE, C30, S30, stepWorld, stepSlice, predictShip, shipConn };
