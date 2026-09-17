@@ -61,5 +61,6 @@ A large seeded map: a built star system that the seed sets faintly astir, so eve
 | T71 | 0.5.66 | The three giants: three giant triads on the line, two standing and creeping, one orbiting the star; chaos is the design | LANDED — mark 0.5.66, debris map number 8786ec4da0bc7de8 → f75a59862872fd01, smoke 23/23 |
 | T72 | 0.5.67 | The remembered flight and the stamped blocks: the ghosts re-simulate only when the aim moves; cubes stamp from stored images | LANDED — mark 0.5.67, debris map number unchanged f75a59862872fd01, smoke 23/23 |
 | T73 | 0.5.68 | The two tables: the family walk memorized exactly; the power law read from an interpolated table in the live step | LANDED — mark 0.5.68, debris map number unchanged f75a59862872fd01, smoke 23/23 |
+| T74 | 0.5.69 | The frame split: the step runs in four chunks across the window's frames; the screen glides one completed step behind and the spike evens out | LANDED — mark 0.5.69, battery identical to T73's numbers, smoke 23/23 |
 
 The map's purpose changed after T33 flew: longevity of orbits is not wanted; the chaos of a packed sky is the story. T34 packs it; T35 slows time and packs it again — slower time is cheaper time, so the same machine carries a denser brawl. T36 is deferred polish: the look and feel of the moving sky, checked live, written on the owner's word after T35 lands.
