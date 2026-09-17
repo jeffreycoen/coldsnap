@@ -241,7 +241,6 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     // [distance along the line, vertex radius, hue, spin sign, orbits the star, sideways creep]
     const TRIADS = [
       [230, 100, 275, 1, 0, 3],
-      [530, 110, 95, -1, 0, -3],
       [750, 120, 330, 1, 1, 0],
     ];
     for (let qi = 0; qi < TRIADS.length; qi++) {
