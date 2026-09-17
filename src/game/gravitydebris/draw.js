@@ -162,7 +162,10 @@ function drawFrame(env) {
       // clear, red through danger, a green dot where it threads the gate
       if (world.ship && world.shipAim && world.shipAim.on && world.shipTrack) {
         const st = world.shipTrack;
-        const pr = predictShip(world, st.vx + world.shipAim.vx, st.vz + world.shipAim.vz, 2400); // forty simulated seconds at the physics step
+        const kx = st.vx + world.shipAim.vx, kz = st.vz + world.shipAim.vz;
+        let pr; const gA = world._ghostA; // the remembered aim ghost
+        if (gA && frame - gA.f0 < 6 && Math.abs(gA.kx - kx) < 0.01 && Math.abs(gA.kz - kz) < 0.01) pr = gA.pr;
+        else { pr = predictShip(world, kx, kz, 2400); world._ghostA = { f0: frame, kx, kz, pr }; } // forty simulated seconds, re-simulated only when the aim moves or the memory ages six frames
         if (pr && pr.pts.length > 3) {
           ctx.lineWidth = 2.2;
           for (let i2 = 3; i2 < pr.pts.length; i2 += 3) {
@@ -182,7 +185,9 @@ function drawFrame(env) {
       // one. It replaces the two-second clump tick for the flying ship.
       if (world.ship && world.shipPhase === "fly" && !world.shipDead && world.shipTrack && !(world.shipAim && world.shipAim.on)) {
         const st = world.shipTrack;
-        const pr = predictShip(world, st.vx, st.vz, 2400);
+        let pr; const gF = world._ghostF; // the remembered flight ghost: between physics steps the velocity holds still, so the memory serves every frame of the gap
+        if (gF && frame - gF.f0 < 6 && Math.abs(gF.kx - st.vx) < 0.01 && Math.abs(gF.kz - st.vz) < 0.01) pr = gF.pr;
+        else { pr = predictShip(world, st.vx, st.vz, 2400); world._ghostF = { f0: frame, kx: st.vx, kz: st.vz, pr }; }
         if (pr && pr.pts.length > 3) {
           ctx.lineWidth = 2.2;
           for (let i2 = 3; i2 < pr.pts.length; i2 += 3) {
@@ -290,12 +295,27 @@ function drawFrame(env) {
         const struck = b.hitF != null && world.frame - b.hitF < 20;
         const p = iso(lx(b), lz(b), ly(b)), rgb = b.ship ? tints[b.tint] : struck ? [214, 74, 52] : (b.rgb || tints[b.tint]);
         p.y += getD(lx(b), lz(b)); // the body sits ON the net: the full depth, a planet resting in the bottom of its own dent
-        ctx.fillStyle = shade(rgb, lam * 0.72);
-        ctx.beginPath(); ctx.moveTo(p.x - hw, p.y - hh); ctx.lineTo(p.x, p.y); ctx.lineTo(p.x, p.y + vh); ctx.lineTo(p.x - hw, p.y + vh - hh); ctx.closePath(); ctx.fill();
-        ctx.fillStyle = shade(rgb, lam * 0.5);
-        ctx.beginPath(); ctx.moveTo(p.x + hw, p.y - hh); ctx.lineTo(p.x, p.y); ctx.lineTo(p.x, p.y + vh); ctx.lineTo(p.x + hw, p.y + vh - hh); ctx.closePath(); ctx.fill();
-        ctx.fillStyle = shade(rgb, Math.min(lam * 1.25, 1.05));
-        ctx.beginPath(); ctx.moveTo(p.x, p.y - hh * 2); ctx.lineTo(p.x + hw, p.y - hh); ctx.lineTo(p.x, p.y); ctx.lineTo(p.x - hw, p.y - hh); ctx.closePath(); ctx.fill();
+        // THE STAMPED BLOCKS: the cube's three faces draw once into a stored
+        // image per color, size, and light step; every block after is one stamp.
+        const hwq = Math.max(2, Math.round(hw * 2) / 2), lamq = Math.round(Math.min(Math.max(lam, 0.3), 1.1) * 8);
+        const sk = (rgb[0] << 16 | rgb[1] << 8 | rgb[2]) + ':' + hwq + ':' + lamq;
+        if (!world._spr) world._spr = new Map();
+        let sp = world._spr.get(sk);
+        if (!sp) {
+          const lq = lamq / 8, hhq = hwq * (S30 / C30), vhq = hwq * (0.9 / C30);
+          sp = document.createElement('canvas'); sp.width = Math.ceil(hwq * 2 + 2); sp.height = Math.ceil(hhq * 2 + vhq + 2);
+          const sx = ctx2 => { const ox = hwq + 1, oy = hhq * 2 + 1;
+            ctx2.fillStyle = shade(rgb, lq * 0.72);
+            ctx2.beginPath(); ctx2.moveTo(ox - hwq, oy - hhq); ctx2.lineTo(ox, oy); ctx2.lineTo(ox, oy + vhq); ctx2.lineTo(ox - hwq, oy + vhq - hhq); ctx2.closePath(); ctx2.fill();
+            ctx2.fillStyle = shade(rgb, lq * 0.5);
+            ctx2.beginPath(); ctx2.moveTo(ox + hwq, oy - hhq); ctx2.lineTo(ox, oy); ctx2.lineTo(ox, oy + vhq); ctx2.lineTo(ox + hwq, oy + vhq - hhq); ctx2.closePath(); ctx2.fill();
+            ctx2.fillStyle = shade(rgb, Math.min(lq * 1.25, 1.05));
+            ctx2.beginPath(); ctx2.moveTo(ox, oy - hhq * 2); ctx2.lineTo(ox + hwq, oy - hhq); ctx2.lineTo(ox, oy); ctx2.lineTo(ox - hwq, oy - hhq); ctx2.closePath(); ctx2.fill(); };
+          sx(sp.getContext('2d'));
+          if (world._spr.size > 4000) world._spr.clear();
+          world._spr.set(sk, sp);
+        }
+        ctx.drawImage(sp, p.x - hwq - 1, p.y - hwq * (S30 / C30) * 2 - 1);
       }
 }
 export { wellDepth, drawFrame };
