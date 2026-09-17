@@ -52,7 +52,26 @@ const NEAR_F = 6;          // far-field near radius, in largest-block units
 
 const WELD_STRENGTH_BY_SIZE = { 1: 30, 2: 160, 5: 185 };
 
+const POW_N = 8192, POW_L0 = Math.log2(SF * SF), POW_L1 = 24, POW_S = (POW_L1 - POW_L0) / POW_N;
+const POW_T = new Float64Array(POW_N + 2);
+for (let i = 0; i <= POW_N + 1; i++) POW_T[i] = Math.pow(2, (POW_L0 + i * POW_S) * 1.65);
+const pow165 = (r2) => { // distance^1.65 from the table; beyond its range, the real arithmetic
+  const l = Math.log2(r2); if (l >= POW_L1) return Math.pow(r2, 1.65);
+  const f = (l - POW_L0) / POW_S, i = f | 0, t = f - i;
+  return POW_T[i] * (1 - t) + POW_T[i + 1] * t;
+};
+// THE FAMILY TABLE: who is kin to whom never changes after birth, so the
+// ancestor walk answers once per pair and the answer lives in memory.
 function famW(world, fa, fb) {
+  if (fa == null || fb == null) return 1;
+  if (fa === fb) return 1;
+  const memo = world._famW || (world._famW = new Map());
+  const key = (fa + 2) * 4096 + (fb + 2);
+  const hit = memo.get(key); if (hit !== undefined) return hit;
+  const w = famWalk(world, fa, fb);
+  memo.set(key, w); return w;
+}
+function famWalk(world, fa, fb) {
   if (fa == null || fb == null) return 1;
   if (fa === fb) return 1;
   let f = fa; while (f != null && f >= 0) { if (f === fb) return 1; f = world.fam[f]; }
@@ -66,7 +85,7 @@ function accel(x, y, z, srcs, self, weak, myClump, world, myFam) {
     for (let i = 0; i < srcs.length; i++) {
       if (i === self) continue;
       const s = srcs[i], dx = s.x - x, dy = (s.y || 0) - y, dz = s.z - z;
-      const r2 = dx * dx + dy * dy + dz * dz + SF * SF, rn = Math.pow(r2, 1.65);
+      const r2 = dx * dx + dy * dy + dz * dz + SF * SF, rn = pow165(r2);
       const w = famW(world, myFam, s.fam);
       ax += w * G * s.m * dx / rn; ay += w * G * s.m * dy / rn; az += w * G * s.m * dz / rn;
     }
@@ -79,7 +98,7 @@ function accelOld(x, y, z, srcs, self, weak, myClump) {
   for (let i = 0; i < srcs.length; i++) {
     if (i === self) continue;
     const s = srcs[i], dx = s.x - x, dy = (s.y || 0) - y, dz = s.z - z;
-    const r2 = dx * dx + dy * dy + dz * dz + SF * SF, rn = Math.pow(r2, 1.65);
+    const r2 = dx * dx + dy * dy + dz * dz + SF * SF, rn = pow165(r2);
     const w = weak && s.clump != null && myClump != null && s.clump !== myClump ? 0.01 : 1;
     ax += w * G * s.m * dx / rn; ay += w * G * s.m * dy / rn; az += w * G * s.m * dz / rn;
   }
@@ -89,7 +108,7 @@ function accelOld(x, y, z, srcs, self, weak, myClump) {
 // one source's pull, softened, with the mission weight already applied
 function pull(b, sx, sy, sz, m, w, out) {
   const dx = sx - b.x, dy = sy - b.y, dz = sz - b.z;
-  const r2 = dx * dx + dy * dy + dz * dz + SF * SF, rn = Math.pow(r2, 1.65);
+  const r2 = dx * dx + dy * dy + dz * dz + SF * SF, rn = pow165(r2);
   out[0] += w * G * m * dx / rn; out[1] += w * G * m * dy / rn; out[2] += w * G * m * dz / rn;
 }
 
@@ -190,7 +209,7 @@ function stepWorld(world, k) {
       if (st.pin) continue;
       let ax = 0, az = 0;
       for (const o of world.starBodies) { if (o === st) continue;
-        const dx = o.x - st.x, dz = o.z - st.z, r2 = dx * dx + dz * dz + SF * SF, rn = Math.pow(r2, 1.65);
+        const dx = o.x - st.x, dz = o.z - st.z, r2 = dx * dx + dz * dz + SF * SF, rn = pow165(r2);
         const wSt = famW(world, st.fam, o.fam);
         ax += wSt * G * o.m * dx / rn; az += wSt * G * o.m * dz / rn; }
       st.vx += ax * DT; st.vz += az * DT; st.x += st.vx * DT; st.z += st.vz * DT;
