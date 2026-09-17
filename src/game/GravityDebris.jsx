@@ -188,9 +188,9 @@ export default function GravityDebris({ onExit }) {
       // behind the arithmetic; the display pair shifts only when a new window
       // opens, so each glide finishes to its exact end before the next begins.
       if (!planFrozen) {
-        if (world._chunks == null) world._chunks = 4;
+        if (world._chunks == null) world._chunks = 11;
         const fIn = (renderF - 1) % stepN;
-        if (fIn === 0 && world._chunks >= 4) {
+        if (fIn === 0 && world._chunks >= 11) {
           if (world._shiftPending) {
             for (const b of world.blocks) { b.px = b.qx; b.py = b.qy; b.pz = b.qz; b.qx = b.x; b.qy = b.y; b.qz = b.z; }
             if (world.starBodies) for (const st of world.starBodies) { st.px = st.qx; st.pz = st.qz; st.qx = st.x; st.qz = st.z; }
@@ -200,13 +200,13 @@ export default function GravityDebris({ onExit }) {
           }
           world._chunks = 0; world._stepAcc = 0;
         }
-        if (world._chunks < 4) {
-          const want = Math.min(4, Math.ceil((fIn + 1) * 4 / stepN));
+        if (world._chunks < 11) {
+          const want = Math.min(11, Math.ceil((fIn + 1) * 11 / stepN));
           while (world._chunks < want) {
             const done = stepSlice(world, k); world._chunks++;
-            if (done) { world._chunks = 4; world._shiftPending = true; weldsAlive = world._weldsAlive || 0; world.stepMs = +((world._stepAcc + performance.now() - tPhys)).toFixed(2); }
+            if (done) { world._chunks = 11; world._shiftPending = true; weldsAlive = world._weldsAlive || 0; world.stepMs = +((world._stepAcc + performance.now() - tPhys)).toFixed(2); }
           }
-          if (world._chunks < 4) world._stepAcc += performance.now() - tPhys;
+          if (world._chunks < 11) world._stepAcc += performance.now() - tPhys;
         }
       }
       world.lerp = (planFrozen || stepN === 1) ? 1 : (((renderF - 1) % stepN) + 1) / stepN;

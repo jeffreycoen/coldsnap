@@ -367,7 +367,9 @@ function* stepStages(world, k) {
       // Rigid members contribute their pull to the BODY as force and torque;
       // free blocks kick as before ---
       const out = [0, 0, 0];
+      let _gk = 0; const _gkHalf = awakeIdx.length >> 1;
       for (const i of awakeIdx) {
+        if (_gk++ === _gkHalf && _gkHalf > 0) yield; // the gravity pass cut in two
         const b = wb[i];
         const rIdx = world.rigidOf ? world.rigidOf[i] : -1;
         out[0] = 0; out[1] = 0; out[2] = 0;
@@ -474,7 +476,7 @@ function* stepStages(world, k) {
       const itn = load > 1200 ? 4 : load > 600 ? 6 : ITERS;
       weldsAlive = 0;
       for (let it = 0; it < itn; it++) {
-        if (it > 0 && it === Math.ceil(itn / 2)) yield; // the second cut: half the solver sweeps on each side
+        if (it > 0) yield; // every sweep its own chunk
         if (k.welds) for (const w of welds) {
           if (!w.alive) continue;
           const a = wb[w.a], b = wb[w.b];
