@@ -187,13 +187,41 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
     const hsl = (h, sPct, lPct) => { const sat = sPct / 100, li = lPct / 100;
       const f = (n) => { const k = (n + h / 30) % 12; const c = sat * Math.min(li, 1 - li); return Math.round(255 * (li - c * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); };
       return [f(0), f(8), f(4)]; };
+    const makeLayered = (cx, cz, vx, vz, tint, R, mass) => {
+      // THE LAYERED CORE: one big core block, a middle of double-width blocks,
+      // and a skin of single blocks — the same sphere and the same mass at
+      // roughly half the blocks. Everything visible or strikeable is the same
+      // single-block skin as before; the savings are all interior.
+      const blocks = [];
+      const put = (px, py, pz, pitch) => blocks.push({ x: cx + px + (rand() - 0.5), y: py + (rand() - 0.5), z: cz + pz + (rand() - 0.5), vx, vy: 0, vz, tint, alive: true, sleeping: false, clump: -1, s: pitch, cr: pitch * 0.55 });
+      let half = BS * Math.floor((R - BS * 1.2) / (Math.sqrt(3) * BS)); if (half < BS) half = 0; // the largest whole-block cube whose corners stay inside the skin
+      if (half > BS * 2) half = BS * 2; // capped at the ruled four-wide core
+      if (half > 0) put(0, 0, 0, half * 2);
+      const n2 = Math.ceil(R / (BS * 2));
+      for (let ix = -n2; ix <= n2; ix++) for (let iy = -n2; iy <= n2; iy++) for (let iz = -n2; iz <= n2; iz++) {
+        const px = ix * BS * 2, py = iy * BS * 2, pz = iz * BS * 2;
+        if (Math.max(Math.abs(px), Math.abs(py), Math.abs(pz)) < half + BS) continue; // the core's ground
+        if (Math.sqrt(px * px + py * py + pz * pz) > R - BS * 1.2) continue; // the skin's zone stays single
+        put(px, py, pz, BS * 2);
+      }
+      const n1 = Math.ceil(R / BS);
+      for (let ix = -n1; ix <= n1; ix++) for (let iy = -n1; iy <= n1; iy++) for (let iz = -n1; iz <= n1; iz++) {
+        const px = ix * BS, py = iy * BS, pz = iz * BS;
+        const r = Math.sqrt(px * px + py * py + pz * pz);
+        if (r > R || r <= R - BS * 1.2) continue;
+        put(px, py, pz, BS);
+      }
+      let cells = 0; for (const b of blocks) cells += (b.s / BS) ** 3;
+      for (const b of blocks) b.m = mass * ((b.s / BS) ** 3) / cells; // mass by the volume each block replaces
+      return blocks;
+    };
     let famN = 2;
     const lineA = -45 * Math.PI / 180, lux = Math.cos(lineA), luz = Math.sin(lineA); // the star-to-gate line, left to right across the view's wide diagonal
     for (let ti = 0; ti < DRIFTERS.length; ti++) {
       const [ring, creep, hue, pm, spin, lift] = DRIFTERS[ti];
       const px = lux * ring, pz = luz * ring;
       const vx = -luz * creep, vz = lux * creep; // sideways to the line, a few units, alternating
-      const blocks = makePlanet(px, pz, vx, vz, ti % 2, rand, BS * 2.2 * Math.cbrt(pm / 3200), pm);
+      const blocks = makeLayered(px, pz, vx, vz, ti % 2, BS * 2.2 * Math.cbrt(pm / 3200), pm);
       const tf = famN++; world.fam[tf] = -1; // outside the star's family line: the star does not pull it
       const capA = (hue * 0.7 + ti) % (2 * Math.PI), capX = Math.cos(capA), capZ = Math.sin(capA); // the landmark's bearing, born of the planet's own hue
       for (const b of blocks) {
@@ -228,7 +256,7 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
         const th = i * 2 * Math.PI / 3 + dist;
         const px = cxT + Math.cos(th) * R2, pz = czT + Math.sin(th) * R2;
         const vx = bvx - (pz - czT) * om, vz = bvz + (px - cxT) * om;
-        const blocks = makePlanet(px, pz, vx, vz, (qi + i) % 2, rand, BS * 2.2 * Math.cbrt(40000 / 3200), 40000);
+        const blocks = makeLayered(px, pz, vx, vz, (qi + i) % 2, BS * 2.2 * Math.cbrt(40000 / 3200), 40000);
         const capA = (hue * 0.7 + i) % (2 * Math.PI), capX = Math.cos(capA), capZ = Math.sin(capA);
         for (const b of blocks) {
           b.fam = tf;
