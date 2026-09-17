@@ -205,6 +205,39 @@ function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) 
       }
       world.blocks.push(...blocks);
     }
+    // THREE GIANT TRIADS on the line: rotating triangles of three 40,000-mass
+    // planets each. With equal members the pull sum points every member at the
+    // triangle's center with one shared turn rate — exact under the softened
+    // law. Two triads stand on the line and creep like the drifters; the third
+    // rides a ring around the star as its child. Chaos is the design.
+    // [distance along the line, vertex radius, hue, spin sign, orbits the star, sideways creep]
+    const TRIADS = [
+      [230, 100, 275, 1, 0, 3],
+      [530, 110, 95, -1, 0, -3],
+      [750, 120, 330, 1, 1, 0],
+    ];
+    for (let qi = 0; qi < TRIADS.length; qi++) {
+      const [dist, R2, hue, sgn, orbits, creep] = TRIADS[qi];
+      const cxT = lux * dist, czT = luz * dist, MT = 120000, L = R2 * Math.sqrt(3);
+      const om = Math.sqrt(G * MT / Math.pow(L * L + SF * SF, 1.65)) * sgn;
+      let bvx, bvz;
+      if (orbits) { const v = vCirc(MG, dist); bvx = -luz * v; bvz = lux * v; } // the child rides its ring
+      else { bvx = -luz * creep; bvz = lux * creep; }                          // the standing pair creeps like the drifters
+      const tf = famN++; world.fam[tf] = orbits ? 0 : -1;
+      for (let i = 0; i < 3; i++) {
+        const th = i * 2 * Math.PI / 3 + dist;
+        const px = cxT + Math.cos(th) * R2, pz = czT + Math.sin(th) * R2;
+        const vx = bvx - (pz - czT) * om, vz = bvz + (px - cxT) * om;
+        const blocks = makePlanet(px, pz, vx, vz, (qi + i) % 2, rand, BS * 2.2 * Math.cbrt(40000 / 3200), 40000);
+        const capA = (hue * 0.7 + i) % (2 * Math.PI), capX = Math.cos(capA), capZ = Math.sin(capA);
+        for (const b of blocks) {
+          b.fam = tf;
+          const ox = b.x - px, oz = b.z - pz, ol = Math.hypot(ox, oz) || 1;
+          b.rgb = (ox * capX + oz * capZ) / ol > 0.6 ? hsl(hue, 52, 32) : hsl(hue, 42, 43 + Math.floor(rand() * 15));
+        }
+        world.blocks.push(...blocks);
+      }
+    }
     // six small moons interspersed on their own rings, children of the star
     for (const [mr, ma] of [[425, -32], [425, -58], [587, -37], [757, -60], [765, -30], [900, -52]]) {
       const a2 = ma * Math.PI / 180, v2 = vCirc(MG, mr);
