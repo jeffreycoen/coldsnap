@@ -66,22 +66,22 @@ function drawFrame(env) {
         ctx.beginPath(); ctx.moveTo(gxa[iz], gya[iz]); for (let ix = 1; ix <= gN; ix++) ctx.lineTo(gxa[ix * (gN + 1) + iz], gya[ix * (gN + 1) + iz]);
         ctx.strokeStyle = `rgba(45,55,75,${a})`; ctx.stroke(); }
       // --- SLINGSHOT ZONES: a filled translucent green disk under every star
-      // and planet — its edge sits where the body's pull falls to the zone
-      // strength, so heavy bodies carry wide disks and light ones narrow,
-      // straight from mass. The zone strength 30 is a design choice, not a
-      // measured number. The ship's own clump carries no disk. Each edge
+      // and planet — its edge sits where a dive to a close pass has already
+      // paid nine tenths of the body's whole kick, so the disk covers only
+      // the ground where real speed is gained. The nine tenths is a design
+      // choice, not a measured number. The ship's own clump carries no disk. Each edge
       // point rides the net at its own depth, so the disk lies in the dent
       // its body made.
       {
-        const A_ZONE = 30;
+        const KZ = Math.pow(1 - 0.9 * 0.9, -1 / 0.65); // the well shape's own exponent turns the nine-tenths promise into a radius
         const zoneOff = (tk) => { const gi = world.groups && world.groups.get(tk.clump); if (!gi) return [0, 0]; const i0 = gi.find(i => wb[i].alive); if (i0 == null) return [0, 0]; const b0 = wb[i0]; return [lx(b0) - b0.x, lz(b0) - b0.z]; };
         const zones = [];
         const shipCl = world.ship && world.shipTrack ? world.shipTrack.clump : null;
-        for (const tk of world.tracks || []) { if (tk.m < 500 || tk.clump === shipCl) continue; const [ox, oz] = zoneOff(tk); zones.push([tk.x + ox, tk.z + oz, tk.m]); }
-        if (world.star) zones.push([world.star.x, world.star.z, world.star.m]);
-        if (world.starBodies) for (const st of world.starBodies) zones.push([st.px == null ? st.x : st.px + ((st.qx == null ? st.x : st.qx) - st.px) * L, st.pz == null ? st.z : st.pz + ((st.qz == null ? st.z : st.qz) - st.pz) * L, st.m]);
-        for (const [zx, zz, zm] of zones) {
-          const zr = Math.pow(G * zm / A_ZONE, 1 / 2.3);
+        for (const tk of world.tracks || []) { if (tk.m < 500 || tk.clump === shipCl) continue; const [ox, oz] = zoneOff(tk); zones.push([tk.x + ox, tk.z + oz, tk.rad]); }
+        if (world.star) zones.push([world.star.x, world.star.z, world.star.r]);
+        if (world.starBodies) for (const st of world.starBodies) zones.push([st.px == null ? st.x : st.px + ((st.qx == null ? st.x : st.qx) - st.px) * L, st.pz == null ? st.z : st.pz + ((st.qz == null ? st.z : st.qz) - st.pz) * L, st.r]);
+        for (const [zx, zz, zrad] of zones) {
+          const zr = Math.sqrt((zrad * zrad + SF * SF) * KZ - SF * SF);
           ctx.beginPath();
           for (let a = 0; a <= 40; a++) { const th = a / 40 * Math.PI * 2; const ex = zx + Math.cos(th) * zr, ez = zz + Math.sin(th) * zr; const p = iso(ex, ez, 0); p.y += getD(ex, ez); if (a === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); }
           ctx.closePath();
