@@ -65,6 +65,30 @@ function drawFrame(env) {
         const a = fade * 0.18 + w * 0.8; if (a < 0.005) continue;
         ctx.beginPath(); ctx.moveTo(gxa[iz], gya[iz]); for (let ix = 1; ix <= gN; ix++) ctx.lineTo(gxa[ix * (gN + 1) + iz], gya[ix * (gN + 1) + iz]);
         ctx.strokeStyle = `rgba(45,55,75,${a})`; ctx.stroke(); }
+      // --- SLINGSHOT ZONES: a filled translucent green disk under every star
+      // and planet — its edge sits where the body's pull falls to the zone
+      // strength, so heavy bodies carry wide disks and light ones narrow,
+      // straight from mass. The zone strength 30 is a design choice, not a
+      // measured number. The ship's own clump carries no disk. Each edge
+      // point rides the net at its own depth, so the disk lies in the dent
+      // its body made.
+      {
+        const A_ZONE = 30;
+        const zoneOff = (tk) => { const gi = world.groups && world.groups.get(tk.clump); if (!gi) return [0, 0]; const i0 = gi.find(i => wb[i].alive); if (i0 == null) return [0, 0]; const b0 = wb[i0]; return [lx(b0) - b0.x, lz(b0) - b0.z]; };
+        const zones = [];
+        const shipCl = world.ship && world.shipTrack ? world.shipTrack.clump : null;
+        for (const tk of world.tracks || []) { if (tk.m < 500 || tk.clump === shipCl) continue; const [ox, oz] = zoneOff(tk); zones.push([tk.x + ox, tk.z + oz, tk.m]); }
+        if (world.star) zones.push([world.star.x, world.star.z, world.star.m]);
+        if (world.starBodies) for (const st of world.starBodies) zones.push([st.px == null ? st.x : st.px + ((st.qx == null ? st.x : st.qx) - st.px) * L, st.pz == null ? st.z : st.pz + ((st.qz == null ? st.z : st.qz) - st.pz) * L, st.m]);
+        for (const [zx, zz, zm] of zones) {
+          const zr = Math.pow(G * zm / A_ZONE, 1 / 2.3);
+          ctx.beginPath();
+          for (let a = 0; a <= 40; a++) { const th = a / 40 * Math.PI * 2; const ex = zx + Math.cos(th) * zr, ez = zz + Math.sin(th) * zr; const p = iso(ex, ez, 0); p.y += getD(ex, ez); if (a === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); }
+          ctx.closePath();
+          ctx.fillStyle = "rgba(40,170,90,.06)"; ctx.fill();
+          ctx.strokeStyle = "rgba(40,170,90,.18)"; ctx.lineWidth = 1.2; ctx.stroke();
+        }
+      }
       // --- PROJECTED ORBITS: each clump's future as a line, green while clear,
       // turning red through the last two seconds before a predicted contact and
       // ending at the impact — past first contact the future is unknowable.
