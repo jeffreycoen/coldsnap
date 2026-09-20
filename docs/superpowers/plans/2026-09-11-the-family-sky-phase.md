@@ -68,5 +68,6 @@ A large seeded map: a built star system that the seed sets faintly astir, so eve
 | T78 | 0.5.73 | The lone triad: the standing creeper leaves; the star-orbiting triangle stays alone | LANDED — mark 0.5.73, debris map number 48f7043b2d4f20b7 → f36d2b880371b41c, smoke 23/23 |
 | T79 | 0.5.74 | The slingshot disks: a green disk under every star and planet, edge at the zone strength | LANDED — mark 0.5.74, evolution hashes unchanged (582386c0cb544735 system, 798818739f481d1d map), smoke 23/23 |
 | T80 | 0.5.75 | The debris slingshot disks: the T79 green disks on the debris screen, seated in the net’s dents | LANDED — mark 0.5.75, evolution hashes unchanged (f36d2b880371b41c birth, 30a0941f931b2e0c at 5s), smoke 23/23 |
+| T81 | 0.5.76 | The earned-kick disks: both screens' disks tighten to where nine tenths of the kick is earned | LANDED — mark 0.5.76, evolution hashes unchanged (582386c0cb544735 rubble, 30a0941f931b2e0c debris), smoke 23/23 |
 
 The map's purpose changed after T33 flew: longevity of orbits is not wanted; the chaos of a packed sky is the story. T34 packs it; T35 slows time and packs it again — slower time is cheaper time, so the same machine carries a denser brawl. T36 is deferred polish: the look and feel of the moving sky, checked live, written on the owner's word after T35 lands.
