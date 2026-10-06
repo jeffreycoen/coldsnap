@@ -14,7 +14,7 @@ function wellDepth(x, z, wells, sc) {
 }
 
 function drawFrame(env) {
-  const { ctx, W, H, world, frame, time } = env;
+  const { ctx, W, H, world, frame, time, dark } = env;
   const wb = world.blocks;
   // between physics steps, draw each body partway from where it stood to where it is
   const L = world.lerp == null ? 1 : world.lerp;
@@ -23,8 +23,9 @@ function drawFrame(env) {
   const lz = (b) => b.pz == null ? b.z : b.pz + ((b.qz == null ? b.z : b.qz) - b.pz) * L;
   const shipAt = () => { const st = world.shipTrack, pv = world.shipPrev, q = world.shipQ; if (!st) return null; if (!pv || !q) return { x: st.x, z: st.z }; return { x: pv.x + (q.x - pv.x) * L, z: pv.z + (q.z - pv.z) * L }; };
       // --- DRAW ---
-      ctx.fillStyle = "#f5f4f0"; ctx.fillRect(0, 0, W, H);
-      for (let i = 0; i < 60; i++) { const sx3 = ((i * 7919 + 37) * 3.7) % W, sy3 = ((i * 4967 + 13) * 2.3) % H; ctx.fillStyle = `rgba(0,0,20,${i % 5 === 0 ? 0.06 : 0.03})`; ctx.fillRect(sx3, sy3, i % 7 === 0 ? 1.5 : 1, i % 7 === 0 ? 1.5 : 1); }
+      // DARK MODE (the chip): black space, white netting, pale dust, a dark pause wash; every other mark keeps its own color on either ground
+      ctx.fillStyle = dark ? "#000" : "#f5f4f0"; ctx.fillRect(0, 0, W, H);
+      for (let i = 0; i < 60; i++) { const sx3 = ((i * 7919 + 37) * 3.7) % W, sy3 = ((i * 4967 + 13) * 2.3) % H; ctx.fillStyle = dark ? `rgba(235,240,255,${i % 5 === 0 ? 0.4 : 0.2})` : `rgba(0,0,20,${i % 5 === 0 ? 0.06 : 0.03})`; ctx.fillRect(sx3, sy3, i % 7 === 0 ? 1.5 : 1, i % 7 === 0 ? 1.5 : 1); }
       // THE LARGE PLAYFIELD: one absolute world scale for every scene and every
       // size — a 1x planet reads small, a 5x world overflows the frame. The view
       // rests on the scene's mass center and a drag owns it (world.pan); a
@@ -59,12 +60,12 @@ function drawFrame(env) {
         let w = 0; for (const wl of world.wells) { const pd = Math.abs(sx2 - wl.x); w = Math.max(w, Math.max(0, 1 - pd / 110) * 0.3); }
         const a = fade * 0.18 + w * 0.8; if (a < 0.005) continue;
         ctx.beginPath(); const b = ix * (gN + 1); ctx.moveTo(gxa[b], gya[b]); for (let iz = 1; iz <= gN; iz++) ctx.lineTo(gxa[b + iz], gya[b + iz]);
-        ctx.strokeStyle = `rgba(45,55,75,${a})`; ctx.stroke(); }
+        ctx.strokeStyle = dark ? `rgba(255,255,255,${a})` : `rgba(45,55,75,${a})`; ctx.stroke(); }
       for (let iz = 0; iz <= gN; iz++) { const sz2 = iz * gSp - halfG + gcz, fade = Math.max(0, 1 - (Math.abs(sz2 - gcz) / (halfG * 0.7)) ** 3);
         let w = 0; for (const wl of world.wells) { const pd = Math.abs(sz2 - wl.z); w = Math.max(w, Math.max(0, 1 - pd / 110) * 0.3); }
         const a = fade * 0.18 + w * 0.8; if (a < 0.005) continue;
         ctx.beginPath(); ctx.moveTo(gxa[iz], gya[iz]); for (let ix = 1; ix <= gN; ix++) ctx.lineTo(gxa[ix * (gN + 1) + iz], gya[ix * (gN + 1) + iz]);
-        ctx.strokeStyle = `rgba(45,55,75,${a})`; ctx.stroke(); }
+        ctx.strokeStyle = dark ? `rgba(255,255,255,${a})` : `rgba(45,55,75,${a})`; ctx.stroke(); }
       // --- SLINGSHOT ZONES: a green disk under every star and planet — its
       // edge sits where a dive to a close pass has already paid nine tenths of
       // the body's whole kick. Inside, the green deepens in steps with the pull
@@ -242,10 +243,10 @@ function drawFrame(env) {
         ctx.fillText("TIME FROZEN \u2014 DRAG TO AIM BURN", W / 2, 24); ctx.textAlign = "left";
       }
       if (world.ship && world.shipPaused && world.shipPhase === "fly") {
-        ctx.fillStyle = "rgba(245,244,240,.45)"; ctx.fillRect(0, 0, W, H);
-        ctx.font = "200 22px -apple-system,sans-serif"; ctx.fillStyle = "rgba(0,0,0,.35)"; ctx.textAlign = "center";
+        ctx.fillStyle = dark ? "rgba(0,0,0,.45)" : "rgba(245,244,240,.45)"; ctx.fillRect(0, 0, W, H);
+        ctx.font = "200 22px -apple-system,sans-serif"; ctx.fillStyle = dark ? "rgba(255,255,255,.4)" : "rgba(0,0,0,.35)"; ctx.textAlign = "center";
         ctx.fillText("PAUSED", W / 2, H / 2);
-        ctx.font = "400 10px -apple-system,sans-serif"; ctx.fillStyle = "rgba(0,0,0,.2)";
+        ctx.font = "400 10px -apple-system,sans-serif"; ctx.fillStyle = dark ? "rgba(255,255,255,.25)" : "rgba(0,0,0,.2)";
         ctx.fillText("tap to resume", W / 2, H / 2 + 20); ctx.textAlign = "left";
       }
       // the engine fires: the deadweight hangar's plume — radial glow, gradient

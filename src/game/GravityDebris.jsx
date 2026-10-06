@@ -11,7 +11,7 @@ export default function GravityDebris({ onExit }) {
   const cvs = useRef(null);
   const worldRef = useRef(null);
   const [ui, setUi] = useState({ kind: "map", welds: true, sleep: true, seed: 0, fps: 0, awake: 0, asleep: 0, eaten: 0, weldsAlive: 0, copied: false });
-  const ctl = useRef({ kind: "map", welds: true, sleep: true, hash: true, friction: true, time: 0.0625, size: 1, hull: "longrange", shipOn: false, reset: 1 });
+  const ctl = useRef({ kind: "map", welds: true, sleep: true, hash: true, friction: true, dark: false, time: 0.0625, size: 1, hull: "longrange", shipOn: false, reset: 1 });
   const copyLog = () => {
     const data = worldRef.current && worldRef.current();
     if (!data) return;
@@ -226,7 +226,7 @@ export default function GravityDebris({ onExit }) {
         if (world.ship.fuel > cap) world.ship.fuel = cap;
       }
 
-      drawFrame({ ctx, W, H, world, frame: world.frame, time: k.time });
+      drawFrame({ ctx, W, H, world, frame: world.frame, time: k.time, dark: k.dark });
       const wb = world.blocks, welds = world.welds;
       if (world.frame - (world._logF || 0) >= 60 || world._logF == null) { world._logF = world.frame;
         let awakeN = 0, asleepN = 0, weldsN = 0;
@@ -282,6 +282,7 @@ export default function GravityDebris({ onExit }) {
           {chip(`SLEEP ${ctl.current.sleep ? "ON" : "OFF"}`, ctl.current.sleep, () => setLive(k => { k.sleep = !k.sleep; }))}
           {chip(`HASH ${ctl.current.hash ? "ON" : "OFF"}`, ctl.current.hash, () => setLive(k => { k.hash = !k.hash; }))}
           {chip(`FRICTION ${ctl.current.friction ? "ON" : "OFF"}`, ctl.current.friction, () => setLive(k => { k.friction = !k.friction; }))}
+          {chip(`DARK ${ctl.current.dark ? "ON" : "OFF"}`, ctl.current.dark, () => setLive(k => { k.dark = !k.dark; }))}
           {chip(ui.copied ? "COPIED" : "⊕ LOG", ui.copied, copyLog)}
           {chip("RESET", false, () => set(() => {}))}
           {(ui.phase === "aim" || ui.phase === "plan") && chip("\u25c0", false, () => fireBurn("turnL"))}
