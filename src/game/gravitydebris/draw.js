@@ -329,7 +329,7 @@ function drawFrame(env) {
         if (b.sleeping) lam *= 0.82;
         // a block wears its own color and flashes red only when struck; the ship stays gold and is never painted red
         const struck = b.hitF != null && world.frame - b.hitF < 20;
-        const p = iso(lx(b), lz(b), ly(b)), rgb = b.ship ? tints[b.tint] : struck ? [214, 74, 52] : (b.rgb || tints[b.tint]);
+        const p = iso(lx(b), lz(b), ly(b)), rgb = b.shieldCell ? [130, 200, 255] : b.ship ? tints[b.tint] : struck ? [214, 74, 52] : (b.rgb || tints[b.tint]);
         p.y += getD(lx(b), lz(b)); // the body sits ON the net: the full depth, a planet resting in the bottom of its own dent
         // THE STAMPED BLOCKS: the cube's three faces draw once into a stored
         // image per color, size, and light step; every block after is one stamp.
@@ -351,7 +351,9 @@ function drawFrame(env) {
           if (world._spr.size > 4000) world._spr.clear();
           world._spr.set(sk, sp);
         }
+        if (b.shieldCell) ctx.globalAlpha = b.hp >= 50 ? 0.33 : 0.18; // the shield reads translucent; a wounded cell fainter
         ctx.drawImage(sp, p.x - hwq - 1, p.y - hwq * (S30 / C30) * 2 - 1);
+        if (b.shieldCell) ctx.globalAlpha = 1;
       }
 }
 export { wellDepth, drawFrame };

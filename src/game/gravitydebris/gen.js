@@ -1,6 +1,7 @@
 // rubbleworlds/gen.js — the demo's seeded builders and its six scenes,
 // carved whole. Pure and hashable: same seed and size in, same world out.
 import { DT, SF, G, BS, PMASS } from "./phys.js";
+import { initShields } from "./shields.js";
 function makeRand(seed) { let ri = 0; return () => { const v = Math.sin(seed + (ri++) * 9973) * 43758.5453; return v - Math.floor(v); }; }
 
 // a true sphere of cubes: every lattice cell within R of center. `pitch` is the
@@ -53,11 +54,12 @@ function addShip(world, hull, sx, sz, scale = 1) {
   let tanks = 0;
   for (const [pt, gx, gy] of bp) {
     if (pt === "tank") tanks++;
-    world.blocks.push({ x: sx + gx * BS, y: 0, z: sz + gy * BS, vx: 0, vy: 0, vz: 0, tint: 2, ship: true, eng: pt === "engine", cab: pt === "bridge", tank: pt === "tank", hp: 100, alive: true, sleeping: false, clump: -1, s: BS, cr: BS * 0.55, m: 120 });
+    world.blocks.push({ x: sx + gx * BS, y: 0, z: sz + gy * BS, vx: 0, vy: 0, vz: 0, tint: 2, slx: gx * BS, slz: gy * BS, ship: true, eng: pt === "engine", cab: pt === "bridge", tank: pt === "tank", hp: 100, alive: true, sleeping: false, clump: -1, s: BS, cr: BS * 0.55, m: 120 });
   }
   world.ship = { fuel: (200 + 420 * tanks) * scale, max: (200 + 420 * tanks) * scale, burns: 0 }; // doubled fuel
   world.shipScale = scale; // the map runs at half time, so its ship carries double caps and double fuel: same voyage in real seconds, same share of the tank per burn
   world.shipPhase = "aim";
+  initShields(world); // the shield walls stand from birth, standard on every hull
 }
 // weld strength per planet size — measured calm loads 17/90/105, same 1.76x margin each
 function makeScenario(kind, seed, size = 1, hull = "longrange", shipOn = false) {

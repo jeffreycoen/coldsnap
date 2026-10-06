@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { MK } from "../version.js";
 import { stepWorld, stepSlice, predictShip, shipConn, C30, S30 } from "./gravitydebris/phys.js";
 import { makeScenario, HULL_LIST, HULL_LABEL } from "./gravitydebris/gen.js";
+import { stepShields, cycleShieldPreset } from "./gravitydebris/shields.js";
 import { drawFrame } from "./gravitydebris/draw.js";
 
 // GRAVITY'S DEBRIS — the map alone: the family sky, the small sky, the ark's
@@ -91,6 +92,7 @@ export default function GravityDebris({ onExit }) {
     c.addEventListener("touchend", pUp); c.addEventListener("touchcancel", pUp);
     let world = null, seed = 0, lastReset = 0, anim, frame = 0, renderF = 0, tPrev = performance.now();
     worldRef.current = () => world && { seed, kind: ctl.current.kind, size: ctl.current.size, hull: ctl.current.hull, shipOn: ctl.current.shipOn, welds: ctl.current.welds, sleep: ctl.current.sleep, mk: MK, log: world.log };
+    shieldRef.current = () => { if (!world || !world.ship) return; cycleShieldPreset(world); setUi(u => ({ ...u, shieldPreset: world.shieldPreset })); };
     // the ark's two-mode burns, landing on the rigid hull as uniform delta-v
     burnRef.current = (what) => {
       if (!world || !world.ship) return;
@@ -215,6 +217,7 @@ export default function GravityDebris({ onExit }) {
       if (world.ship && world.pickups && world.shipTrack && !planFrozen) for (const pk of world.pickups) { // a fuel cache refuels on touch, up to the tank
         if (pk.alive && Math.hypot(world.shipTrack.x - pk.x, world.shipTrack.z - pk.z) < 18) { pk.alive = false; world.ship.fuel = Math.min(world.ship.max, world.ship.fuel + pk.fuel); }
       }
+      if (world.ship && !planFrozen) stepShields(world, performance.now()); // the walls heal on the wall clock, frozen with the sky
       if (world.ship && !world.shipDead) {
         const cab2 = world.blocks.find(b2 => b2.ship && b2.cab);
         if (cab2 && !cab2.alive) { world.shipDead = true; world.deadAt = world.t; } // the wreck keeps drifting; only the flight ends
@@ -240,7 +243,7 @@ export default function GravityDebris({ onExit }) {
       if (renderF % 15 === 0) {
         let awake = 0, asleep = 0;
         for (const b of wb) { if (!b.alive) continue; if (b.sleeping) asleep++; else awake++; }
-        setUi(u => ({ ...u, fps, stepMs: world.stepMs || 0, awake, asleep, eaten: world.eaten, weldsAlive, fuel: world.ship ? Math.round(world.ship.fuel) : null, phase: world.shipPhase || null, aimOn: !!(world.shipAim && world.shipAim.on), engOn: !world.ship || (() => { const c2 = shipConn(world); return !!(c2 && c2.eng); })(), dead: !!world.shipDead, burns: world.ship ? world.ship.burns : 0, deadT: world.shipDead ? Math.round(world.deadAt) : null }));
+        setUi(u => ({ ...u, fps, stepMs: world.stepMs || 0, awake, asleep, eaten: world.eaten, weldsAlive, fuel: world.ship ? Math.round(world.ship.fuel) : null, phase: world.shipPhase || null, aimOn: !!(world.shipAim && world.shipAim.on), engOn: !world.ship || (() => { const c2 = shipConn(world); return !!(c2 && c2.eng); })(), shieldPreset: world.shieldPreset || null, dead: !!world.shipDead, burns: world.ship ? world.ship.burns : 0, deadT: world.shipDead ? Math.round(world.deadAt) : null }));
       }
       anim = requestAnimationFrame(loop);
     };
@@ -253,6 +256,8 @@ export default function GravityDebris({ onExit }) {
   );
   const set = (fn) => { fn(ctl.current); ctl.current.reset++; setUi(u => ({ ...u })); };
   const burnRef = useRef(null);
+  const shieldRef = useRef(null);
+  const fireShield = () => { if (shieldRef.current) shieldRef.current(); };
   const fireBurn = (what) => { if (burnRef.current) burnRef.current(what); };
   const setLive = (fn) => { fn(ctl.current); setUi(u => ({ ...u })); };
 
@@ -283,6 +288,7 @@ export default function GravityDebris({ onExit }) {
           {chip(`HASH ${ctl.current.hash ? "ON" : "OFF"}`, ctl.current.hash, () => setLive(k => { k.hash = !k.hash; }))}
           {chip(`FRICTION ${ctl.current.friction ? "ON" : "OFF"}`, ctl.current.friction, () => setLive(k => { k.friction = !k.friction; }))}
           {chip(`DARK ${ctl.current.dark ? "ON" : "OFF"}`, ctl.current.dark, () => setLive(k => { k.dark = !k.dark; }))}
+          {ui.shieldPreset && chip(`SHIELDS ${ui.shieldPreset}`, false, fireShield)}
           {chip(ui.copied ? "COPIED" : "⊕ LOG", ui.copied, copyLog)}
           {chip("RESET", false, () => set(() => {}))}
           {(ui.phase === "aim" || ui.phase === "plan") && chip("\u25c0", false, () => fireBurn("turnL"))}
