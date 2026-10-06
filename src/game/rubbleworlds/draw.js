@@ -60,26 +60,37 @@ function drawFrame(env) {
         const a = fade * 0.18 + w * 0.5; if (a < 0.005) continue;
         ctx.beginPath(); ctx.moveTo(gxa[iz], gya[iz]); for (let ix = 1; ix <= gN; ix++) ctx.lineTo(gxa[ix * (gN + 1) + iz], gya[ix * (gN + 1) + iz]);
         ctx.strokeStyle = `rgba(45,55,75,${a})`; ctx.stroke(); }
-      // --- SLINGSHOT ZONES: a filled translucent green disk under every star
-      // and planet — its edge sits where a dive to a close pass has already
-      // paid nine tenths of the body's whole kick, so the disk covers only
-      // the ground where real speed is gained. The nine tenths is a design
-      // choice, not a measured number. The ship's own clump carries no disk.
+      // --- SLINGSHOT ZONES: a green disk under every star and planet — its
+      // edge sits where a dive to a close pass has already paid nine tenths of
+      // the body's whole kick. Inside, the green deepens in steps with the pull
+      // felt on that ground: each inner ring's edge sits where the body's own
+      // pull reaches a third, two thirds, then all of the full-green strength,
+      // so the same pull reads as the same green on every map. The nine tenths,
+      // the full-green strength, and the step alphas are design choices, not
+      // measured numbers. The ship's own clump carries no disk.
       {
         const KZ = Math.pow(1 - 0.9 * 0.9, -1 / 0.65); // the well shape's own exponent turns the nine-tenths promise into a radius
+        const P_FULL = 400, NSTEP = 3; // full green at pull 400, reached in three steps — design choices, not measured numbers
         const zoneOff = (tk) => { const gi = world.groups && world.groups.get(tk.clump); if (!gi) return [0, 0]; const i0 = gi.find(i => wb[i].alive); if (i0 == null) return [0, 0]; const b0 = wb[i0]; return [lx(b0) - b0.x, lz(b0) - b0.z]; };
         const zones = [];
         const shipCl = world.ship && world.shipTrack ? world.shipTrack.clump : null;
-        for (const tk of world.tracks || []) { if (tk.m < 500 || tk.clump === shipCl) continue; const [ox, oz] = zoneOff(tk); zones.push([tk.x + ox, tk.z + oz, tk.rad]); }
-        if (world.star) zones.push([world.star.x, world.star.z, world.star.r]);
-        if (world.starBodies) for (const st of world.starBodies) zones.push([st.px == null ? st.x : st.px + (st.x - st.px) * L, st.pz == null ? st.z : st.pz + (st.z - st.pz) * L, st.r]);
-        for (const [zx, zz, zrad] of zones) {
+        for (const tk of world.tracks || []) { if (tk.m < 500 || tk.clump === shipCl) continue; const [ox, oz] = zoneOff(tk); zones.push([tk.x + ox, tk.z + oz, tk.rad, tk.m]); }
+        if (world.star) zones.push([world.star.x, world.star.z, world.star.r, world.star.m]);
+        if (world.starBodies) for (const st of world.starBodies) zones.push([st.px == null ? st.x : st.px + (st.x - st.px) * L, st.pz == null ? st.z : st.pz + (st.z - st.pz) * L, st.r, st.m]);
+        for (const [zx, zz, zrad, zm] of zones) {
           const zr = Math.sqrt((zrad * zrad + SF * SF) * KZ - SF * SF);
-          ctx.beginPath();
-          for (let a = 0; a <= 40; a++) { const th = a / 40 * Math.PI * 2; const p = iso(zx + Math.cos(th) * zr, zz + Math.sin(th) * zr, 0); if (a === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); }
-          ctx.closePath();
-          ctx.fillStyle = "rgba(40,170,90,.06)"; ctx.fill();
+          const ring = (rr, fa) => {
+            ctx.beginPath();
+            for (let a = 0; a <= 40; a++) { const th = a / 40 * Math.PI * 2; const p = iso(zx + Math.cos(th) * rr, zz + Math.sin(th) * rr, 0); if (a === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); }
+            ctx.closePath(); ctx.fillStyle = `rgba(40,170,90,${fa})`; ctx.fill();
+          };
+          ring(zr, 0.03);
           ctx.strokeStyle = "rgba(40,170,90,.18)"; ctx.lineWidth = 1.2; ctx.stroke();
+          for (let k = 1; k <= NSTEP; k++) {
+            const rk2 = Math.pow(G * zm / (P_FULL * k / NSTEP), 1 / 1.15) - SF * SF;
+            if (rk2 <= 0) break;
+            ring(Math.min(Math.sqrt(rk2), zr), 0.06);
+          }
         }
       }
       // --- PROJECTED ORBITS: each clump's future as a line, green while clear,
