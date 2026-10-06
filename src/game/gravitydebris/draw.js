@@ -82,22 +82,34 @@ function drawFrame(env) {
         const zoneOff = (tk) => { const gi = world.groups && world.groups.get(tk.clump); if (!gi) return [0, 0]; const i0 = gi.find(i => wb[i].alive); if (i0 == null) return [0, 0]; const b0 = wb[i0]; return [lx(b0) - b0.x, lz(b0) - b0.z]; };
         const zones = [];
         const shipCl = world.ship && world.shipTrack ? world.shipTrack.clump : null;
-        for (const tk of world.tracks || []) { if (tk.m < 500 || tk.clump === shipCl) continue; const [ox, oz] = zoneOff(tk); zones.push([tk.x + ox, tk.z + oz, tk.rad, tk.m]); }
-        if (world.star) zones.push([world.star.x, world.star.z, world.star.r, world.star.m]);
-        if (world.starBodies) for (const st of world.starBodies) zones.push([st.px == null ? st.x : st.px + ((st.qx == null ? st.x : st.qx) - st.px) * L, st.pz == null ? st.z : st.pz + ((st.qz == null ? st.z : st.qz) - st.pz) * L, st.r, st.m]);
-        for (const [zx, zz, zrad, zm] of zones) {
+        for (const tk of world.tracks || []) { if (tk.m < 500 || tk.clump === shipCl) continue; const [ox, oz] = zoneOff(tk); zones.push([tk.x + ox, tk.z + oz, tk.rad, tk.m, tk.rad * 1.4]); }
+        if (world.star) zones.push([world.star.x, world.star.z, world.star.r, world.star.m, world.star.r]);
+        if (world.starBodies) for (const st of world.starBodies) zones.push([st.px == null ? st.x : st.px + ((st.qx == null ? st.x : st.qx) - st.px) * L, st.pz == null ? st.z : st.pz + ((st.qz == null ? st.z : st.qz) - st.pz) * L, st.r, st.m, st.r]);
+        for (const [zx, zz, zrad, zm, zd] of zones) {
           const zr = Math.sqrt((zrad * zrad + SF * SF) * KZ - SF * SF);
-          const ring = (rr, fa) => {
+          const ring = (rr, fa, rgb) => {
             ctx.beginPath();
             for (let a = 0; a <= 40; a++) { const th = a / 40 * Math.PI * 2; const ex = zx + Math.cos(th) * rr, ez = zz + Math.sin(th) * rr; const p = iso(ex, ez, 0); p.y += getD(ex, ez); if (a === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); }
-            ctx.closePath(); ctx.fillStyle = `rgba(40,170,90,${fa})`; ctx.fill();
+            ctx.closePath(); ctx.fillStyle = `rgba(${rgb || "40,170,90"},${fa})`; ctx.fill();
           };
           ring(zr, 0.06);
           ctx.strokeStyle = "rgba(40,170,90,.18)"; ctx.lineWidth = 1.2; ctx.stroke();
+          let rg = zr;
           for (let k = 1; k <= NSTEP; k++) {
             const rk2 = Math.pow(G * zm / (P_FULL * k / NSTEP), 1 / 1.15) - SF * SF;
             if (rk2 <= 0) break;
-            ring(Math.min(Math.sqrt(rk2), zr), 0.25);
+            rg = Math.min(Math.sqrt(rk2), zr);
+            ring(rg, 0.25);
+          }
+          // THE DEATH HEART: the ground that kills — the star's eating radius,
+          // a planet's rock with a hot-arrival margin — blended green through
+          // red over the last approach. The margin 1.4 and the blend alphas
+          // are design choices, not measured numbers.
+          const rd = Math.min(zd, zr);
+          if (rd > 0) {
+            const lerp = (t) => Math.round(40 + 180 * t) + "," + Math.round(170 - 115 * t) + "," + Math.round(90 - 55 * t);
+            if (rg > rd) { ring(rd + (rg - rd) * 0.67, 0.25, lerp(0.33)); ring(rd + (rg - rd) * 0.33, 0.3, lerp(0.67)); }
+            ring(rd, 0.5, "220,55,35");
           }
         }
       }
