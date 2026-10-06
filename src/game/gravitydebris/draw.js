@@ -92,12 +92,12 @@ function drawFrame(env) {
             for (let a = 0; a <= 40; a++) { const th = a / 40 * Math.PI * 2; const ex = zx + Math.cos(th) * rr, ez = zz + Math.sin(th) * rr; const p = iso(ex, ez, 0); p.y += getD(ex, ez); if (a === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); }
             ctx.closePath(); ctx.fillStyle = `rgba(40,170,90,${fa})`; ctx.fill();
           };
-          ring(zr, 0.03);
+          ring(zr, 0.06);
           ctx.strokeStyle = "rgba(40,170,90,.18)"; ctx.lineWidth = 1.2; ctx.stroke();
           for (let k = 1; k <= NSTEP; k++) {
             const rk2 = Math.pow(G * zm / (P_FULL * k / NSTEP), 1 / 1.15) - SF * SF;
             if (rk2 <= 0) break;
-            ring(Math.min(Math.sqrt(rk2), zr), 0.06);
+            ring(Math.min(Math.sqrt(rk2), zr), 0.25);
           }
         }
       }
