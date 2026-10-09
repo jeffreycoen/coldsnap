@@ -3,11 +3,18 @@
 // light, the projected orbits. drawFrame paints exactly what the loop
 // painted; the loop keeps physics and hands over an env each frame.
 import { SF, G, BS, C30, S30, predictShip, predictShipStart, predictShipStep } from "./phys.js";
+
+// the well shape's own power from a table, the physics table's twin at 0.65 —
+// beyond its range or beneath it, the real arithmetic
+const _P65N = 4096, _P65L0 = Math.log2(64), _P65L1 = 24, _P65S = (_P65L1 - _P65L0) / _P65N;
+const _P65 = new Float64Array(_P65N + 2);
+for (let i = 0; i <= _P65N + 1; i++) _P65[i] = Math.pow(2, (_P65L0 + i * _P65S) * 0.65);
+const pow65 = (r2) => { const l = Math.log2(r2); if (l >= _P65L1 || l < _P65L0) return Math.pow(r2, 0.65); const f = (l - _P65L0) / _P65S, i = f | 0, t = f - i; return _P65[i] * (1 - t) + _P65[i + 1] * t; };
 function wellDepth(x, z, wells, sc) {
   let pP = 0, pD = 0;
   for (const w of wells) {
     const r2 = (w.x - x) ** 2 + (w.z - z) ** 2 + SF * SF;
-    const p = G * w.m / (1.3 * Math.pow(r2, 0.65));
+    const p = G * w.m / (1.3 * pow65(r2));
     if (w.deep) pD += p; else pP += p;
   }
   return Math.min(Math.sqrt(pP) * 0.7, 260) * sc + Math.min(Math.sqrt(pD) * 1.15, 560) * sc;

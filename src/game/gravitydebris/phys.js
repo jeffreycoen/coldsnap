@@ -112,6 +112,9 @@ function pull(b, sx, sy, sz, m, w, out) {
   out[0] += w * G * m * dx / rn; out[1] += w * G * m * dy / rn; out[2] += w * G * m * dz / rn;
 }
 
+// the overflow-safe square root costs more than these distances ever need — the plain root, two or three parts
+const hyp = (a, b, c) => c === undefined ? Math.sqrt(a * a + b * b) : Math.sqrt(a * a + b * b + c * c);
+
 const cellKey = (gx, gz) => gx * 73856093 ^ gz * 19349663;
 
 function fileBlocks(world) {
@@ -269,16 +272,16 @@ function* stepStages(world, k) {
           const om = Iy > 1e-9 ? Lz / Iy : 0;
           let rel = 0, rad = 0;
           for (const i of ids) { const b = wb[i]; const rx = b.x - mx, rz = b.z - mz;
-            rel = Math.max(rel, Math.hypot(b.vx - mvx + om * rz, b.vy - mvy, b.vz - mvz - om * rx));
-            rad = Math.max(rad, Math.hypot(b.x - mx, b.y - my, b.z - mz)); }
+            rel = Math.max(rel, hyp(b.vx - mvx + om * rz, b.vy - mvy, b.vz - mvz - om * rx));
+            rad = Math.max(rad, hyp(b.x - mx, b.y - my, b.z - mz)); }
           gInfo.push({ root, ids, mx, my, mz, mvx, mvy, mvz, M, rel, rad, om });
         }
         world.aggs = [];
         for (const g of gInfo) {
           let near = false;
-          if (world.hole && Math.hypot(g.mx - world.hole.x, g.my, g.mz - world.hole.z) < g.rad + world.hole.killR + BS * 6) near = true;
-          if (world.star && Math.hypot(g.mx - world.star.x, g.my, g.mz - world.star.z) < g.rad + world.star.r + BS * 6) near = true;
-          for (const o of gInfo) if (o !== g) { const kin = world.fam && famW(world, wb[g.ids[0]].fam, wb[o.ids[0]].fam) === 1; if (Math.hypot(g.mx - o.mx, g.my - o.my, g.mz - o.mz) < g.rad + o.rad + BS * (kin ? 2 : 6)) near = true; }
+          if (world.hole && hyp(g.mx - world.hole.x, g.my, g.mz - world.hole.z) < g.rad + world.hole.killR + BS * 6) near = true;
+          if (world.star && hyp(g.mx - world.star.x, g.my, g.mz - world.star.z) < g.rad + world.star.r + BS * 6) near = true;
+          for (const o of gInfo) if (o !== g) { const kin = world.fam && famW(world, wb[g.ids[0]].fam, wb[o.ids[0]].fam) === 1; if (hyp(g.mx - o.mx, g.my - o.my, g.mz - o.mz) < g.rad + o.rad + BS * (kin ? 2 : 6)) near = true; }
           if (!k.sleep || near || g.rel >= SLEEP_V || g.ids.some(i => wb[i].ship)) { for (const i of g.ids) wb[i].sleeping = false; continue; } // A SHIP NEVER SLEEPS: the eleven-block catamaran crossed the ten-block sleep line and froze into a stone that ignored its burns (measured, 2026-09-11)
           const agg = { x: g.mx, y: g.my, z: g.mz, vx: g.mvx, vy: g.mvy, vz: g.mvz, m: g.M, rad: g.rad, ids: g.ids, clump: g.root, fam: wb[g.ids[0]].fam, om: g.om, offs: g.ids.map(i => [wb[i].x - g.mx, wb[i].y - g.my, wb[i].z - g.mz]) };
           for (const i of g.ids) wb[i].sleeping = true;
@@ -296,7 +299,7 @@ function* stepStages(world, k) {
         if (!n) continue;
         mx /= M; my /= M; mz /= M; mvx /= M; mvz /= M;
         let rad = 0;
-        for (const i of ids) { const b = wb[i]; if (!b.alive) continue; rad = Math.max(rad, Math.hypot(b.x - mx, b.z - mz)); }
+        for (const i of ids) { const b = wb[i]; if (!b.alive) continue; rad = Math.max(rad, hyp(b.x - mx, b.z - mz)); }
         world.wells.push({ x: mx, z: mz, m: M });
         world.tracks.push({ x: mx, z: mz, vx: mvx, vz: mvz, m: M, rad, clump: root, fam: wb[ids[0]].fam });
         world.clumpCenter.set(root, [mx, my, mz]);
@@ -346,7 +349,7 @@ function* stepStages(world, k) {
           for (const i2 of ids) { const b = wb[i2]; const rx = b.x - cx2, rz = b.z - cz2;
             Lz += b.m * (rx * (b.vz - vz2) - rz * (b.vx - vx2)); Iy += b.m * (rx * rx + rz * rz); }
           const R = { ids, M, x: cx2, y: cy2, z: cz2, vx: vx2, vy: vy2, vz: vz2, om: Iy > 1e-9 ? Lz / Iy : 0, Iy: Math.max(Iy, 1e-9) };
-          R.rad = 0; for (const i2 of ids) { const b = wb[i2]; const r = Math.hypot(b.x - R.x, b.z - R.z); if (r > R.rad) R.rad = r; }
+          R.rad = 0; for (const i2 of ids) { const b = wb[i2]; const r = hyp(b.x - R.x, b.z - R.z); if (r > R.rad) R.rad = r; }
           const ri = world.rigids.length; world.rigids.push(R);
           for (const i2 of ids) world.rigidOf[i2] = ri;
           // the members conform exactly to the body NOW — rigidity is enforced, not hoped for
@@ -364,7 +367,7 @@ function* stepStages(world, k) {
         g.ids.push(i); g.mx += b.x * b.m; g.my += b.y * b.m; g.mz += b.z * b.m; g.M += b.m;
       }
       for (const g of awakeClumps.values()) { g.mx /= g.M; g.my /= g.M; g.mz /= g.M; }
-      for (const [root, g] of awakeClumps) for (const i of g.ids) { const b = wb[i]; const r = Math.hypot(b.x - g.mx, b.y - g.my, b.z - g.mz); if (r > g.rad) g.rad = r; }
+      for (const [root, g] of awakeClumps) for (const i of g.ids) { const b = wb[i]; const r = hyp(b.x - g.mx, b.y - g.my, b.z - g.mz); if (r > g.rad) g.rad = r; }
       const NEAR = NEAR_F * (world.cell || BS * 1.45);
 
       // --- GRAVITY KICK on awake blocks: exact near, clump points far.
@@ -379,7 +382,7 @@ function* stepStages(world, k) {
         out[0] = 0; out[1] = 0; out[2] = 0;
         for (const [root, g] of awakeClumps) {
           const w = world.fam ? famW(world, b.fam, wb[g.ids[0]].fam) : (world.weak && root !== b.clump ? 0.01 : 1);
-          const d = Math.hypot(g.mx - b.x, g.my - b.y, g.mz - b.z);
+          const d = hyp(g.mx - b.x, g.my - b.y, g.mz - b.z);
           if (root === b.clump || d < g.rad + NEAR) {
             for (const j of g.ids) { if (j === i) continue; const o = wb[j]; pull(b, o.x, o.y, o.z, o.m, w, out); }
           } else pull(b, g.mx, g.my, g.mz, g.M, w, out);
@@ -412,11 +415,11 @@ function* stepStages(world, k) {
         // proximity wake: an aggregate must be awake BEFORE anything can touch it —
         // sleeping bodies run no contact, and a point-mass flyby is the ship's move, not a planet's
         let near = false;
-        if (world.hole && Math.hypot(a.x - world.hole.x, a.y, a.z - world.hole.z) < a.rad + world.hole.killR + BS * 6) near = true;
-        for (const o of world.aggs) if (o !== a && !o.dead) { const kin = world.fam && famW(world, a.fam, o.fam) === 1; if (Math.hypot(a.x - o.x, a.y - o.y, a.z - o.z) < a.rad + o.rad + BS * (kin ? 2 : 4)) near = true; }
+        if (world.hole && hyp(a.x - world.hole.x, a.y, a.z - world.hole.z) < a.rad + world.hole.killR + BS * 6) near = true;
+        for (const o of world.aggs) if (o !== a && !o.dead) { const kin = world.fam && famW(world, a.fam, o.fam) === 1; if (hyp(a.x - o.x, a.y - o.y, a.z - o.z) < a.rad + o.rad + BS * (kin ? 2 : 4)) near = true; }
         let ext = 0;
-        if (world.hole) { const d = Math.hypot(a.x - world.hole.x, a.y, a.z - world.hole.z); ext = Math.max(ext, G * world.hole.m * (Math.pow(Math.max(d - a.rad, SF), -2.3) - Math.pow(d + a.rad, -2.3))); }
-        for (const o of world.aggs) if (o !== a && !(world.fam && famW(world, a.fam, o.fam) === 1)) { const d = Math.hypot(a.x - o.x, a.y - o.y, a.z - o.z); ext = Math.max(ext, G * o.m * (Math.pow(Math.max(d - a.rad, SF), -2.3) - Math.pow(d + a.rad, -2.3))); } // kin tide never wakes: a child asleep in its parent's field rides it as a point — only a stranger's tide is news
+        if (world.hole) { const d = hyp(a.x - world.hole.x, a.y, a.z - world.hole.z); ext = Math.max(ext, G * world.hole.m * (Math.pow(Math.max(d - a.rad, SF), -2.3) - Math.pow(d + a.rad, -2.3))); }
+        for (const o of world.aggs) if (o !== a && !(world.fam && famW(world, a.fam, o.fam) === 1)) { const d = hyp(a.x - o.x, a.y - o.y, a.z - o.z); ext = Math.max(ext, G * o.m * (Math.pow(Math.max(d - a.rad, SF), -2.3) - Math.pow(d + a.rad, -2.3))); } // kin tide never wakes: a child asleep in its parent's field rides it as a point — only a stranger's tide is news
         const hold = G * a.m / Math.pow(Math.max(a.rad, SF), 2.3);
         if (near || ext > hold * WAKE_TIDE) { for (const i of a.ids) wb[i].sleeping = false; a.dead = true; }
       }
@@ -488,7 +491,7 @@ function* stepStages(world, k) {
           if (a.sleeping && b.sleeping) continue;
           const ra = world.rigidOf[w.a], rb = world.rigidOf[w.b];
           if (ra >= 0 && ra === rb) continue; // inside a rigid island the weld carries no solver work
-          const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, d = Math.hypot(dx, dy, dz) || 1;
+          const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, d = hyp(dx, dy, dz) || 1;
           if (d > w.rest * WELD_BREAK) { w.alive = false; continue; }
           const nx = dx / d, ny = dy / d, nz = dz / d;
           ptVel(world, w.a, a, _va); ptVel(world, w.b, b, _vb);
@@ -536,7 +539,7 @@ function* stepStages(world, k) {
             let tx = rvx - rn2 * cnt.nx, ty = rvy - rn2 * cnt.ny, tz = rvz - rn2 * cnt.nz;
             const dtx = -tx * 0.5, dty = -ty * 0.5, dtz = -tz * 0.5;
             let npx = cnt.ptx + dtx, npy = cnt.pty + dty, npz = cnt.ptz + dtz;
-            const pl = Math.hypot(npx, npy, npz), cap = MU * cnt.pn;
+            const pl = hyp(npx, npy, npz), cap = MU * cnt.pn;
             if (pl > cap) { const f = cap / pl; npx *= f; npy *= f; npz *= f; }
             const ax2 = npx - cnt.ptx, ay2 = npy - cnt.pty, az2 = npz - cnt.ptz;
             cnt.ptx = npx; cnt.pty = npy; cnt.ptz = npz;
@@ -562,7 +565,7 @@ function* stepStages(world, k) {
             if (n >= REWELD_T) {
               const wq = world.weldOf.get(cnt.key);
               if ((!wq || !wq.alive) && !bi.ship && !bj.ship) {
-                const d = Math.hypot(bj.x - bi.x, bj.y - bi.y, bj.z - bi.z);
+                const d = hyp(bj.x - bi.x, bj.y - bi.y, bj.z - bi.z);
                 const nw = { a: cnt.i, b: cnt.j, rest: d, alive: true, acc: 0, gen: 2 };
                 welds.push(nw); world.weldOf.set(cnt.key, nw);
               }
@@ -585,7 +588,7 @@ function* stepStages(world, k) {
       // frame demotes — its blocks go loose, its welds re-enter the solver and
       // break or hold under the true forces, survivors re-promote after the dust
       for (const R of world.rigids) {
-        const jerk = Math.hypot(R.vx - R.v0x, R.vy - R.v0y, R.vz - R.v0z) + Math.abs(R.om - R.om0) * R.rad;
+        const jerk = hyp(R.vx - R.v0x, R.vy - R.v0y, R.vz - R.v0z) + Math.abs(R.om - R.om0) * R.rad;
         if (jerk > SHATTER) for (const i2 of R.ids) wb[i2].loose = LOOSE_T;
       }
       for (const b of wb) if (b.loose > 0) b.loose--;
@@ -621,12 +624,12 @@ function* stepStages(world, k) {
 
       if (world.starBodies) for (const st of world.starBodies) for (const b of wb) {
         if (!b.alive) continue;
-        if (Math.hypot(b.x - st.x, b.y, b.z - st.z) < st.r) { b.alive = false; st.m += b.m; world.eaten++; }
+        if (hyp(b.x - st.x, b.y, b.z - st.z) < st.r) { b.alive = false; st.m += b.m; world.eaten++; }
       }
       // --- THE HOLE EATS at the event horizon ---
       if (world.hole) for (const b of wb) {
         if (!b.alive) continue;
-        if (Math.hypot(b.x - world.hole.x, b.y, b.z - world.hole.z) < world.hole.killR) { b.alive = false; world.hole.m += b.m; world.eaten++; }
+        if (hyp(b.x - world.hole.x, b.y, b.z - world.hole.z) < world.hole.killR) { b.alive = false; world.hole.m += b.m; world.eaten++; }
       }
       world.t += DT; world.frame++;
   world._weldsAlive = weldsAlive;
@@ -639,7 +642,7 @@ function* stepStages(world, k) {
 // a full turn without contact is a closed orbit, and the snap may take it.
 const _cbrt2 = Math.cbrt(2), _W1 = 1 / (2 - _cbrt2), _W0 = -_cbrt2 / (2 - _cbrt2);
 const _YC = [_W1 / 2, (_W0 + _W1) / 2, (_W0 + _W1) / 2, _W1 / 2], _YD = [_W1, _W0, _W1];
-function gaT(x, z, bodies) { let ax = 0, az = 0; for (const b of bodies) { const dx = b.x - x, dz = b.z - z, r2 = dx * dx + dz * dz + SF * SF, rn = Math.pow(r2, 1.65); ax += G * b.m * dx / rn; az += G * b.m * dz / rn; } return [ax, az]; }
+function gaT(x, z, bodies) { let ax = 0, az = 0; for (const b of bodies) { const dx = b.x - x, dz = b.z - z, r2 = dx * dx + dz * dz + SF * SF, rn = pow165(r2); ax += G * b.m * dx / rn; az += G * b.m * dz / rn; } return [ax, az]; }
 function ystepT(x, z, vx, vz, bodies, dt) {
   x += _YC[0] * vx * dt; z += _YC[0] * vz * dt; let [ax, az] = gaT(x, z, bodies); vx += _YD[0] * ax * dt; vz += _YD[0] * az * dt;
   x += _YC[1] * vx * dt; z += _YC[1] * vz * dt; [ax, az] = gaT(x, z, bodies); vx += _YD[1] * ax * dt; vz += _YD[1] * az * dt;
@@ -673,7 +676,7 @@ function predictShipStep(S, budget, nMax) {
     for (const sa of statics) {
       if (sa.pin !== false) continue;
       let ax = 0, az = 0;
-      for (const o of statics) { if (o === sa) continue; const dx = o.x - sa.x, dz = o.z - sa.z, r2 = dx * dx + dz * dz + SF * SF, rn = Math.pow(r2, 1.65); const wSt = famW(world, sa.fam, o.fam); ax += wSt * G * o.m * dx / rn; az += wSt * G * o.m * dz / rn; }
+      for (const o of statics) { if (o === sa) continue; const dx = o.x - sa.x, dz = o.z - sa.z, r2 = dx * dx + dz * dz + SF * SF, rn = pow165(r2); const wSt = famW(world, sa.fam, o.fam); ax += wSt * G * o.m * dx / rn; az += wSt * G * o.m * dz / rn; }
       sa.vx += ax * DT; sa.vz += az * DT; sa.x += sa.vx * DT; sa.z += sa.vz * DT;
     }
     for (const p of simP) {
@@ -685,10 +688,10 @@ function predictShipStep(S, budget, nMax) {
     const bodies = [...simP, ...statics, ...gateGrav];
     { const [ax, az] = gaT(x, z, bodies); vx += ax * DT; vz += az * DT; x += vx * DT; z += vz * DT; } // the ship is nobody's child: every body pulls it in full, and it steps as the live hull steps — kick then drift
     let danger = 0, hit = false;
-    for (const p of simP) { const d = Math.hypot(x - p.x, z - p.z); if (d < p.rad * 2.5) danger = Math.max(danger, 1 - (d - p.rad) / (p.rad * 1.5)); if (d < p.rad + BS) hit = true; }
-    for (const o of statics) { const d = Math.hypot(x - o.x, z - o.z); if (d < o.rad + BS) hit = true; }
+    for (const p of simP) { const d = hyp(x - p.x, z - p.z); if (d < p.rad * 2.5) danger = Math.max(danger, 1 - (d - p.rad) / (p.rad * 1.5)); if (d < p.rad + BS) hit = true; }
+    for (const o of statics) { const d = hyp(x - o.x, z - o.z); if (d < o.rad + BS) hit = true; }
     let hg = false;
-    if (gate) { const gd = Math.hypot(x - gate.x, z - gate.z); if (gd < minGate) { minGate = gd; minGateIdx = pts.length; } hg = gd < gate.r; }
+    if (gate) { const gd = hyp(x - gate.x, z - gate.z); if (gd < minGate) { minGate = gd; minGateIdx = pts.length; } hg = gd < gate.r; }
     if (anchor) { const a2 = Math.atan2(z - anchor.z, x - anchor.x); let da = a2 - prevAng; if (da > Math.PI) da -= 2 * Math.PI; if (da < -Math.PI) da += 2 * Math.PI; swept += da; prevAng = a2; }
     if (hit) { pts.push({ x, z, hit: true, danger, hitsGate: hg }); S.done = true; break; }
     pts.push({ x, z, danger, hitsGate: hg });
