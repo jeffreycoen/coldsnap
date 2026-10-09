@@ -230,7 +230,9 @@ function* stepStages(world, k) {
         const par = wb.map((_, i) => i);
         const find = (i) => { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; };
         if (k.hash) {
+          let _sc = 0;
           for (let i = 0; i < wb.length; i++) { if (!wb[i].alive) continue;
+            if (++_sc % 800 === 0) yield; // THE SPREAD SCAN: the walk rests between frames — par is local, the sky stands still, the answers are byte-identical
             neighborsOf(world, wb[i], _nb);
             for (const o of _nb) { const j = o.idx; if (j <= i || !o.alive) continue;
               const dx = o.x - wb[i].x, dy = o.y - wb[i].y, dz = o.z - wb[i].z;
