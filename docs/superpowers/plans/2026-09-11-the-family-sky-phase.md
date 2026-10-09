@@ -74,5 +74,6 @@ A large seeded map: a built star system that the seed sets faintly astir, so eve
 | T84 | 0.5.79 | The shield walls: translucent cells wall the hull, holes punch and heal rim inward, five presets on one chip | LANDED — mark 0.5.79, rubble evolution hash unchanged (582386c0cb544735), debris hash moves by design to 389f479192501c35 (72 ship-rider cells), smoke 23/23 |
 | T85 | 0.5.80 | The deep fade: the disk steps rise to read .06/.30/.47/.60 | LANDED — mark 0.5.80, evolution hashes unchanged (582386c0cb544735 rubble, 389f479192501c35 debris), smoke 23/23 |
 | T86 | 0.5.81 | The death heart: the disks blend green through red to a full-red heart at the line that kills | LANDED — mark 0.5.81, evolution hashes unchanged (582386c0cb544735 rubble, 389f479192501c35 debris), smoke 23/23 |
+| T87 | 0.5.82 | The frame ledger: every log row carries average and median frame rate | LANDED — mark 0.5.82, evolution hashes unchanged (582386c0cb544735 rubble, 389f479192501c35 debris), smoke 23/23 |
 
 The map's purpose changed after T33 flew: longevity of orbits is not wanted; the chaos of a packed sky is the story. T34 packs it; T35 slows time and packs it again — slower time is cheaper time, so the same machine carries a denser brawl. T36 is deferred polish: the look and feel of the moving sky, checked live, written on the owner's word after T35 lands.
