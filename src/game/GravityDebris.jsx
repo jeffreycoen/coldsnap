@@ -128,7 +128,7 @@ export default function GravityDebris({ onExit }) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       if (k.reset !== lastReset) {
         lastReset = k.reset; seed = Math.floor(Math.random() * 100000);
-        world = makeScenario(k.kind, seed, k.size, k.hull, k.shipOn);
+        world = makeScenario(k.kind, seed, k.size, k.hull, k.shipOn); world._born = performance.now();
         if (world.ship) {
           stepWorld(world, k); // one priming step: tracks and orbit lines exist before the aim freeze — the t26 intent, landed now
           const b0 = world.blocks.find(b2 => b2.ship && b2.alive);
@@ -184,6 +184,7 @@ export default function GravityDebris({ onExit }) {
       // the drawing then places it partway from there to here by how many frames
       // have passed, so bodies glide across the gap instead of hopping. Drawing
       // only — the physics and every pinned number are untouched.
+      let _chF = 0, _physF = 0, _drawF = 0; const _frame0 = world.frame, _tP0 = performance.now(); // the frame witness measures this frame alone
       const stepN = k.time >= 1 ? 1 : Math.round(1 / k.time);
       // THE FRAME SPLIT: the step runs in four chunks spread across the window's
       // frames. The screen glides between the last two COMPLETED steps, one step
@@ -205,12 +206,13 @@ export default function GravityDebris({ onExit }) {
         if (world._chunks < 11) {
           const want = Math.min(11, Math.ceil((fIn + 1) * 11 / stepN));
           while (world._chunks < want) {
-            const done = stepSlice(world, k); world._chunks++;
+            const done = stepSlice(world, k); world._chunks++; _chF++;
             if (done) { world._chunks = 11; world._shiftPending = true; weldsAlive = world._weldsAlive || 0; world.stepMs = +((world._stepAcc + performance.now() - tPhys)).toFixed(2); }
           }
           if (world._chunks < 11) world._stepAcc += performance.now() - tPhys;
         }
       }
+      _physF = performance.now() - _tP0;
       world.lerp = (planFrozen || stepN === 1) ? 1 : (((renderF - 1) % stepN) + 1) / stepN;
       if (world.gate && !world.gate.reached && world.shipTrack && !planFrozen &&
           Math.hypot(world.shipTrack.x - world.gate.x, world.shipTrack.z - world.gate.z) < world.gate.r) world.gate.reached = true;
@@ -229,20 +231,29 @@ export default function GravityDebris({ onExit }) {
         if (world.ship.fuel > cap) world.ship.fuel = cap;
       }
 
+      const _tD0 = performance.now();
       drawFrame({ ctx, W, H, world, frame: world.frame, time: k.time, dark: k.dark });
+      _drawF = performance.now() - _tD0;
       const wb = world.blocks, welds = world.welds;
       if (world.frame - (world._logF || 0) >= 60 || world._logF == null) { world._logF = world.frame;
         let awakeN = 0, asleepN = 0, weldsN = 0;
         for (const b of wb) { if (!b.alive) continue; if (b.sleeping) asleepN++; else awakeN++; }
         for (const w of welds) if (w.alive) weldsN++;
-        // the frame ledger: average and median drawn-frame rate since the last row
-        let fpsAvg = 0, fpsMed = 0;
-        if (ftBuf.length) { let sum = 0; for (const d of ftBuf) sum += d; const srt = [...ftBuf].sort((a, b) => a - b); fpsAvg = Math.round(1000 / Math.max(sum / ftBuf.length, 0.001)); fpsMed = Math.round(1000 / Math.max(srt[srt.length >> 1], 0.001)); ftBuf.length = 0; }
-        world.log.push({ t: +world.t.toFixed(1), stepMs: world.stepMs || 0, fpsAvg, fpsMed, hash: k.hash, friction: k.friction, awake: awakeN, asleep: asleepN, welds: weldsN, eaten: world.eaten,
-          clumps: world.wells.filter(w => !w.deep).map(w => [Math.round(w.x), Math.round(w.z), Math.round(w.m)]) });
+        // the frame ledger: average, median, worst, and best drawn-frame rate since the last row, the worst and best frames carrying what the engine was doing inside them
+        let fpsAvg = 0, fpsMed = 0, fpsMin = 0, fpsMax = 0;
+        if (ftBuf.length) { let sum = 0; for (const d of ftBuf) sum += d; const srt = [...ftBuf].sort((a, b) => a - b); fpsAvg = Math.round(1000 / Math.max(sum / ftBuf.length, 0.001)); fpsMed = Math.round(1000 / Math.max(srt[srt.length >> 1], 0.001)); fpsMin = Math.round(1000 / Math.max(srt[srt.length - 1], 0.001)); fpsMax = Math.round(1000 / Math.max(srt[0], 0.001)); ftBuf.length = 0; }
+        world.log.push({ sim: +world.t.toFixed(1), real: +(((performance.now() - (world._born || 0)) / 1000).toFixed(1)), stepMs: world.stepMs || 0, fpsAvg, fpsMed, fpsMin, fpsMax, worst: world._worstF || null, best: world._bestF || null, hash: k.hash, friction: k.friction, awake: awakeN, asleep: asleepN, welds: weldsN, eaten: world.eaten,
+          bodies: world.wells.filter(w => !w.deep).map(w => [Math.round(w.x), Math.round(w.z), Math.round(w.m)]) });
+        world._worstF = null; world._bestF = null;
         if (world.log.length > 300) world.log.shift();
       }
       const tNow = performance.now(), ftDt = tNow - tPrev; const fps = Math.round(1000 / Math.max(ftDt, 1)); tPrev = tNow; ftBuf.push(ftDt); if (ftBuf.length > 2000) ftBuf.shift(); // every drawn frame files its time; the row empties the ledger
+      { // the frame witness: the worst and best frame since the last row carry what the engine was doing inside them
+        const _gh = !!((world._ghostA && world._ghostA.f0 === world.frame) || (world._ghostF && world._ghostF.f0 === world.frame));
+        const snap = { ms: +ftDt.toFixed(1), draw: +_drawF.toFixed(1), phys: +_physF.toFixed(1), chunks: _chF, scan: _chF > 0 && _frame0 % 20 === 0, ghost: _gh, sim: +world.t.toFixed(1), real: +(((tNow - (world._born || 0)) / 1000).toFixed(1)) };
+        if (!world._worstF || snap.ms > world._worstF.ms) world._worstF = snap;
+        if (!world._bestF || snap.ms < world._bestF.ms) world._bestF = snap;
+      }
       if (renderF % 15 === 0) {
         let awake = 0, asleep = 0;
         for (const b of wb) { if (!b.alive) continue; if (b.sleeping) asleep++; else awake++; }
