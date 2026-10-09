@@ -90,7 +90,7 @@ export default function GravityDebris({ onExit }) {
     c.addEventListener("mousedown", pDown); window.addEventListener("mousemove", pMove); window.addEventListener("mouseup", pUp);
     c.addEventListener("touchstart", pDown, { passive: false }); c.addEventListener("touchmove", pMove, { passive: false });
     c.addEventListener("touchend", pUp); c.addEventListener("touchcancel", pUp);
-    let world = null, seed = 0, lastReset = 0, anim, frame = 0, renderF = 0, tPrev = performance.now();
+    let world = null, seed = 0, lastReset = 0, anim, frame = 0, renderF = 0, tPrev = performance.now(), ftBuf = [];
     worldRef.current = () => world && { seed, kind: ctl.current.kind, size: ctl.current.size, hull: ctl.current.hull, shipOn: ctl.current.shipOn, welds: ctl.current.welds, sleep: ctl.current.sleep, mk: MK, log: world.log };
     shieldRef.current = () => { if (!world || !world.ship) return; cycleShieldPreset(world); setUi(u => ({ ...u, shieldPreset: world.shieldPreset })); };
     // the ark's two-mode burns, landing on the rigid hull as uniform delta-v
@@ -235,11 +235,14 @@ export default function GravityDebris({ onExit }) {
         let awakeN = 0, asleepN = 0, weldsN = 0;
         for (const b of wb) { if (!b.alive) continue; if (b.sleeping) asleepN++; else awakeN++; }
         for (const w of welds) if (w.alive) weldsN++;
-        world.log.push({ t: +world.t.toFixed(1), stepMs: world.stepMs || 0, hash: k.hash, friction: k.friction, awake: awakeN, asleep: asleepN, welds: weldsN, eaten: world.eaten,
+        // the frame ledger: average and median drawn-frame rate since the last row
+        let fpsAvg = 0, fpsMed = 0;
+        if (ftBuf.length) { let sum = 0; for (const d of ftBuf) sum += d; const srt = [...ftBuf].sort((a, b) => a - b); fpsAvg = Math.round(1000 / Math.max(sum / ftBuf.length, 0.001)); fpsMed = Math.round(1000 / Math.max(srt[srt.length >> 1], 0.001)); ftBuf.length = 0; }
+        world.log.push({ t: +world.t.toFixed(1), stepMs: world.stepMs || 0, fpsAvg, fpsMed, hash: k.hash, friction: k.friction, awake: awakeN, asleep: asleepN, welds: weldsN, eaten: world.eaten,
           clumps: world.wells.filter(w => !w.deep).map(w => [Math.round(w.x), Math.round(w.z), Math.round(w.m)]) });
         if (world.log.length > 300) world.log.shift();
       }
-      const tNow = performance.now(); const fps = Math.round(1000 / Math.max(tNow - tPrev, 1)); tPrev = tNow;
+      const tNow = performance.now(), ftDt = tNow - tPrev; const fps = Math.round(1000 / Math.max(ftDt, 1)); tPrev = tNow; ftBuf.push(ftDt); if (ftBuf.length > 2000) ftBuf.shift(); // every drawn frame files its time; the row empties the ledger
       if (renderF % 15 === 0) {
         let awake = 0, asleep = 0;
         for (const b of wb) { if (!b.alive) continue; if (b.sleeping) asleep++; else awake++; }
