@@ -251,7 +251,9 @@ function* stepStages(world, k) {
         // NOT sleep: sleeping aggregates run no contact, and a re-slept clump on an
         // approach passed clean through the other planet (the trio detonation, 2026-09-11)
         const gInfo = [];
+        let _st = 0;
         for (const [root, ids] of groups) {
+          _st += ids.length; if (_st >= 800) { _st = 0; yield; } // THE SPREAD TAIL: the group bookkeeping rests between frames too — gInfo is local and the sky stands still
           let mx = 0, my = 0, mz = 0, mvx = 0, mvy = 0, mvz = 0, M = 0;
           for (const i of ids) { const b = wb[i]; M += b.m; mx += b.x * b.m; my += b.y * b.m; mz += b.z * b.m; mvx += b.vx * b.m; mvy += b.vy * b.m; mvz += b.vz * b.m; }
           mx /= M; my /= M; mz /= M; mvx /= M; mvy /= M; mvz /= M;
@@ -644,7 +646,10 @@ function ystepT(x, z, vx, vz, bodies, dt) {
   x += _YC[2] * vx * dt; z += _YC[2] * vz * dt; [ax, az] = gaT(x, z, bodies); vx += _YD[2] * ax * dt; vz += _YD[2] * az * dt;
   x += _YC[3] * vx * dt; z += _YC[3] * vz * dt; return [x, z, vx, vz];
 }
-function predictShip(world, vx0, vz0, n) {
+// the predictor, carved in two: Start snapshots the sky and the ship, Step
+// advances up to a budget of iterations and may be called across frames —
+// the whole-run wrapper below answers byte for byte as the old predictShip.
+function predictShipStart(world, vx0, vz0) {
   const st = world.shipTrack; if (!st) return null;
   const simP = (world.tracks || []).filter(tk => tk.m >= 500 && tk.clump !== st.clump).slice(0, 14)
     .map(tk => ({ x: tk.x, z: tk.z, vx: tk.vx, vz: tk.vz, m: tk.m, rad: tk.rad, fam: tk.fam }));
@@ -654,11 +659,16 @@ function predictShip(world, vx0, vz0, n) {
   if (world.starBodies) for (const sb of world.starBodies) statics.push({ x: sb.x, z: sb.z, vx: sb.vx, vz: sb.vz, m: sb.m, rad: sb.r, fam: sb.fam, pin: sb.pin });
   const gate = world.gate;
   const gateGrav = gate ? [{ x: gate.x, z: gate.z, m: 2500, rad: 0 }] : [];
-  let x = st.x, z = st.z, vx = vx0, vz = vz0;
-  const pts = []; let minGate = Infinity, minGateIdx = 0;
   let anchor = null; for (const p of simP) if (!anchor || p.m > anchor.m) anchor = p;
-  let swept = 0, prevAng = anchor ? Math.atan2(z - anchor.z, x - anchor.x) : 0;
-  for (let i = 0; i < n; i++) {
+  return { world, simP, statics, gate, gateGrav, anchor, x: st.x, z: st.z, vx: vx0, vz: vz0,
+    pts: [], minGate: Infinity, minGateIdx: 0, swept: 0,
+    prevAng: anchor ? Math.atan2(st.z - anchor.z, st.x - anchor.x) : 0, done: false };
+}
+function predictShipStep(S, budget, nMax) {
+  if (!S || S.done) return true;
+  const world = S.world, simP = S.simP, statics = S.statics, gate = S.gate, gateGrav = S.gateGrav, anchor = S.anchor, pts = S.pts;
+  let x = S.x, z = S.z, vx = S.vx, vz = S.vz, minGate = S.minGate, minGateIdx = S.minGateIdx, swept = S.swept, prevAng = S.prevAng;
+  for (let b = 0; b < budget && pts.length < nMax; b++) {
     // the moving stars advance exactly as the sky advances them: under each other by the family law, the pinned one still
     for (const sa of statics) {
       if (sa.pin !== false) continue;
@@ -680,11 +690,18 @@ function predictShip(world, vx0, vz0, n) {
     let hg = false;
     if (gate) { const gd = Math.hypot(x - gate.x, z - gate.z); if (gd < minGate) { minGate = gd; minGateIdx = pts.length; } hg = gd < gate.r; }
     if (anchor) { const a2 = Math.atan2(z - anchor.z, x - anchor.x); let da = a2 - prevAng; if (da > Math.PI) da -= 2 * Math.PI; if (da < -Math.PI) da += 2 * Math.PI; swept += da; prevAng = a2; }
-    if (hit) { pts.push({ x, z, hit: true, danger, hitsGate: hg }); break; }
+    if (hit) { pts.push({ x, z, hit: true, danger, hitsGate: hg }); S.done = true; break; }
     pts.push({ x, z, danger, hitsGate: hg });
-    if (hg) break;
+    if (hg) { S.done = true; break; }
   }
-  return { pts, minGate, minGateIdx, orbit: Math.abs(swept) >= Math.PI * 2 };
+  if (pts.length >= nMax) S.done = true;
+  S.x = x; S.z = z; S.vx = vx; S.vz = vz; S.minGate = minGate; S.minGateIdx = minGateIdx; S.swept = swept; S.prevAng = prevAng;
+  return S.done;
+}
+function predictShip(world, vx0, vz0, n) {
+  const S = predictShipStart(world, vx0, vz0); if (!S) return null;
+  predictShipStep(S, n, n);
+  return { pts: S.pts, minGate: S.minGate, minGateIdx: S.minGateIdx, orbit: Math.abs(S.swept) >= Math.PI * 2 };
 }
 // the hull that still answers the helm: ship blocks weld-connected to the
 // cabin, walked over living welds. Null with the cabin dead. The engine
@@ -708,4 +725,4 @@ function shipConn(world) {
   let eng = false; for (const b of set) if (b.eng) eng = true;
   return { set: [...set], eng, cab };
 }
-export { DT, SF, G, BS, BR, PMASS, ITERS, SLOP, BETA, BIAS_CAP, WELD_BREAK, WELD_BIAS, SLEEP_V, WAKE_TIDE, WELD_STRENGTH_BY_SIZE, C30, S30, stepWorld, stepSlice, predictShip, shipConn };
+export { DT, SF, G, BS, BR, PMASS, ITERS, SLOP, BETA, BIAS_CAP, WELD_BREAK, WELD_BIAS, SLEEP_V, WAKE_TIDE, WELD_STRENGTH_BY_SIZE, C30, S30, stepWorld, stepSlice, predictShip, predictShipStart, predictShipStep, shipConn };

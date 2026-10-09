@@ -2,7 +2,7 @@
 // component: the ark sky, the bent grid, the horizon, the cubes and their
 // light, the projected orbits. drawFrame paints exactly what the loop
 // painted; the loop keeps physics and hands over an env each frame.
-import { SF, G, BS, C30, S30, predictShip } from "./phys.js";
+import { SF, G, BS, C30, S30, predictShip, predictShipStart, predictShipStep } from "./phys.js";
 function wellDepth(x, z, wells, sc) {
   let pP = 0, pD = 0;
   for (const w of wells) {
@@ -206,49 +206,68 @@ function drawFrame(env) {
           ctx.fillText("GATE " + dist, ax - Math.cos(ang) * 30, ay - Math.sin(ang) * 30 + 4); ctx.textAlign = "left";
         }
       }
-      // the aimed burn's TRUTHFUL ghost: the ark's own predictor, blue while
-      // clear, red through danger, a green dot where it threads the gate
+      // THE CERTAIN LINE AND THE CONE: three predictions ride together — the
+      // aim's own path and two brackets tilted a hair either side. While the
+      // brackets hug, the path draws as the known line; where they first
+      // spread past the cut, certainty ends and the fan between them draws as
+      // the cone — short and wide near chaos, long and narrow over calm
+      // ground. All three build on a budget of steps per frame, so no frame
+      // stalls; the picture fills in and refreshes about twice a second.
+      // Tilt .015, cut 24, budget 300 steps per path per frame, refresh 30
+      // frames — design choices, not measured numbers.
+      const ghostRun = (slot, kx, kz) => {
+        let g = world[slot];
+        if (!g || Math.abs(g.kx - kx) > 0.01 || Math.abs(g.kz - kz) > 0.01 || (g.done && frame - g.f0 > 30)) {
+          const co2 = Math.cos(0.015), si2 = Math.sin(0.015);
+          g = { kx, kz, f0: frame, done: false,
+            C: predictShipStart(world, kx, kz),
+            L: predictShipStart(world, kx * co2 - kz * si2, kx * si2 + kz * co2),
+            R: predictShipStart(world, kx * co2 + kz * si2, -kx * si2 + kz * co2) };
+          world[slot] = g;
+        }
+        if (g.C && !g.done) {
+          const dC = predictShipStep(g.C, 300, 2400), dL = predictShipStep(g.L, 300, 2400), dR = predictShipStep(g.R, 300, 2400);
+          if (dC && dL && dR) { g.done = true; g.f0 = frame; }
+        }
+        return g.C ? g : null;
+      };
+      const ghostDraw = (g) => {
+        const pts = g.C.pts; if (pts.length < 4) return;
+        const bl = Math.min(pts.length, g.L.pts.length, g.R.pts.length);
+        let kCut = bl; // certainty ends where the brackets first spread past the cut
+        for (let i2 = 0; i2 < bl; i2++) { const lp = g.L.pts[i2], rp = g.R.pts[i2]; const dx2 = lp.x - rp.x, dz2 = lp.z - rp.z; if (dx2 * dx2 + dz2 * dz2 > 24 * 24) { kCut = i2; break; } }
+        ctx.lineWidth = 2.2;
+        for (let i2 = 3; i2 < Math.min(kCut + 3, pts.length); i2 += 3) {
+          const q = pts[i2], q0 = pts[i2 - 3];
+          const p0 = iso(q0.x, q0.z, 0), p1 = iso(q.x, q.z, 0);
+          p0.y += getD(q0.x, q0.z); p1.y += getD(q.x, q.z); // the line hugs the surface the ship rides
+          const fade = Math.max(0.25, 1 - i2 / pts.length);
+          ctx.strokeStyle = q.danger > 0.3 ? `rgba(220,55,35,${fade})` : `rgba(60,130,220,${fade * 0.9})`;
+          ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
+        }
+        if (kCut < bl - 3) {
+          ctx.beginPath();
+          let started = false;
+          for (let i2 = kCut; i2 < g.L.pts.length; i2 += 3) { const q = g.L.pts[i2]; const p = iso(q.x, q.z, 0); p.y += getD(q.x, q.z); if (!started) { ctx.moveTo(p.x, p.y); started = true; } else ctx.lineTo(p.x, p.y); }
+          for (let i2 = g.R.pts.length - 1; i2 >= kCut; i2 -= 3) { const q = g.R.pts[i2]; const p = iso(q.x, q.z, 0); p.y += getD(q.x, q.z); ctx.lineTo(p.x, p.y); }
+          ctx.closePath();
+          ctx.fillStyle = "rgba(60,130,220,.10)"; ctx.fill();
+          ctx.strokeStyle = "rgba(60,130,220,.3)"; ctx.lineWidth = 1; ctx.stroke();
+        }
+        const last = pts[pts.length - 1];
+        if (last.hitsGate) { const p = iso(last.x, last.z, 0); ctx.fillStyle = "rgba(40,170,90,.9)"; ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, Math.PI * 2); ctx.fill(); }
+      };
+      // the aimed burn's ghost: the certain line and the cone on the aim's velocity
       if (world.ship && world.shipAim && world.shipAim.on && world.shipTrack) {
         const st = world.shipTrack;
-        const kx = st.vx + world.shipAim.vx, kz = st.vz + world.shipAim.vz;
-        let pr; const gA = world._ghostA; // the remembered aim ghost
-        if (gA && frame - gA.f0 < 6 && Math.abs(gA.kx - kx) < 0.01 && Math.abs(gA.kz - kz) < 0.01) pr = gA.pr;
-        else { pr = predictShip(world, kx, kz, 2400); world._ghostA = { f0: frame, kx, kz, pr }; } // forty simulated seconds, re-simulated only when the aim moves or the memory ages six frames
-        if (pr && pr.pts.length > 3) {
-          ctx.lineWidth = 2.2;
-          for (let i2 = 3; i2 < pr.pts.length; i2 += 3) {
-            const q = pr.pts[i2], q0 = pr.pts[i2 - 3];
-            const p0 = iso(q0.x, q0.z, 0), p1 = iso(q.x, q.z, 0);
-            p0.y += getD(q0.x, q0.z); p1.y += getD(q.x, q.z); // the line hugs the surface the ship rides
-            const fade = Math.max(0.25, 1 - i2 / pr.pts.length);
-            ctx.strokeStyle = q.danger > 0.3 ? `rgba(220,55,35,${fade})` : `rgba(60,130,220,${fade * 0.9})`;
-            ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
-          }
-          const last = pr.pts[pr.pts.length - 1];
-          if (last.hitsGate) { const p = iso(last.x, last.z, 0); ctx.fillStyle = "rgba(40,170,90,.9)"; ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, Math.PI * 2); ctx.fill(); }
-        }
+        const g = ghostRun("_ghostA", st.vx + world.shipAim.vx, st.vz + world.shipAim.vz);
+        if (g) ghostDraw(g);
       }
-      // the flight ghost: the same forty-second predictor on the ship's own
-      // velocity, no burn added, so the flown path reads as far as the aimed
-      // one. It replaces the two-second clump tick for the flying ship.
+      // the flight ghost: the same machinery on the ship's own velocity, no burn added
       if (world.ship && world.shipPhase === "fly" && !world.shipDead && world.shipTrack && !(world.shipAim && world.shipAim.on)) {
         const st = world.shipTrack;
-        let pr; const gF = world._ghostF; // the remembered flight ghost: between physics steps the velocity holds still, so the memory serves every frame of the gap
-        if (gF && frame - gF.f0 < 6 && Math.abs(gF.kx - st.vx) < 0.01 && Math.abs(gF.kz - st.vz) < 0.01) pr = gF.pr;
-        else { pr = predictShip(world, st.vx, st.vz, 2400); world._ghostF = { f0: frame, kx: st.vx, kz: st.vz, pr }; }
-        if (pr && pr.pts.length > 3) {
-          ctx.lineWidth = 2.2;
-          for (let i2 = 3; i2 < pr.pts.length; i2 += 3) {
-            const q = pr.pts[i2], q0 = pr.pts[i2 - 3];
-            const p0 = iso(q0.x, q0.z, 0), p1 = iso(q.x, q.z, 0);
-            p0.y += getD(q0.x, q0.z); p1.y += getD(q.x, q.z); // the line hugs the surface the ship rides
-            const fade = Math.max(0.25, 1 - i2 / pr.pts.length);
-            ctx.strokeStyle = q.danger > 0.3 ? `rgba(220,55,35,${fade})` : `rgba(60,130,220,${fade * 0.9})`;
-            ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
-          }
-          const last = pr.pts[pr.pts.length - 1];
-          if (last.hitsGate) { const p = iso(last.x, last.z, 0); ctx.fillStyle = "rgba(40,170,90,.9)"; ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, Math.PI * 2); ctx.fill(); }
-        }
+        const g = ghostRun("_ghostF", st.vx, st.vz);
+        if (g) ghostDraw(g);
       }
       if (world.ship && world.shipPhase === "plan") {
         ctx.font = "600 11px -apple-system,sans-serif"; ctx.fillStyle = "rgba(60,130,220,.55)"; ctx.textAlign = "center";
