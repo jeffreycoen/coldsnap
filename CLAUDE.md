@@ -40,7 +40,7 @@ The owner directs design, reviews every plan, and is the sole playtester. His wo
 
 ## Dispatch
 
-- Implementation agents are Sonnet 5. Fable only on the owner's approval. Never Opus, any version.
+- Implementation agents are Sonnet 5.5. Fable only on the owner's approval. Never Opus, any version.
 - One agent in the working tree at a time; parallel work needs worktree isolation.
 - Stop after every task: report the landing, then the owner's word rules the next dispatch. A landing includes the deploy — gates green → commit → push, without asking; the owner's live check is the acceptance.
 - "Status" on a running agent means CHECK IT: real elapsed time, what the tree shows changed, which gates have run. Facts only; NO completion estimates ever; no vague times. Unknowable state is said plainly, with the real elapsed time anyway.
