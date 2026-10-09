@@ -232,7 +232,7 @@ function* stepStages(world, k) {
         if (k.hash) {
           let _sc = 0;
           for (let i = 0; i < wb.length; i++) { if (!wb[i].alive) continue;
-            if (++_sc % 800 === 0) yield; // THE SPREAD SCAN: the walk rests between frames — par is local, the sky stands still, the answers are byte-identical
+            if (++_sc % 1000 === 0) yield; // THE SPREAD SCAN: the walk rests between frames — par is local, the sky stands still, the answers are byte-identical
             neighborsOf(world, wb[i], _nb);
             for (const o of _nb) { const j = o.idx; if (j <= i || !o.alive) continue;
               const dx = o.x - wb[i].x, dy = o.y - wb[i].y, dz = o.z - wb[i].z;
@@ -253,7 +253,7 @@ function* stepStages(world, k) {
         const gInfo = [];
         let _st = 0;
         for (const [root, ids] of groups) {
-          _st += ids.length; if (_st >= 800) { _st = 0; yield; } // THE SPREAD TAIL: the group bookkeeping rests between frames too — gInfo is local and the sky stands still
+          _st += ids.length; if (_st >= 1000) { _st = 0; yield; } // THE SPREAD TAIL: the group bookkeeping rests between frames too — gInfo is local and the sky stands still
           let mx = 0, my = 0, mz = 0, mvx = 0, mvy = 0, mvz = 0, M = 0;
           for (const i of ids) { const b = wb[i]; M += b.m; mx += b.x * b.m; my += b.y * b.m; mz += b.z * b.m; mvx += b.vx * b.m; mvy += b.vy * b.m; mvz += b.vz * b.m; }
           mx /= M; my /= M; mz /= M; mvx /= M; mvy /= M; mvz /= M;
