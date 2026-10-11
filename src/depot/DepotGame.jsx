@@ -760,8 +760,8 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         run.resources -= price;
         cue("uitick"); // the plan is bought
         toast((PALETTE_LABEL[key] || key) + " — PLANS BOUGHT ◆" + price);
-        // THE PICK ARMS THE BAR — every key; hero keys are placement modes under the one law now.
-        setMode(key);
+        // 0.6.3: a bought plan opens the bar and nothing more — the hand
+        // stays up for the next card; a HIRE is what goes on to placement.
       };
       // A HIRE FIELDS AT ONCE, placed by your own ground
       // tap on held ground. Payment lands only when the unit actually

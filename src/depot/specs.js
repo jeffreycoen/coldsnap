@@ -323,7 +323,8 @@ export const DAVY_FIRE = { projSpeed: 28, kind: "shell", weapon: "davy", dmg: 20
 // bite, the turn, and every scan that asks who is hostile. The man's body,
 // twice his points, twice his pace.
 export const DEAD_TEAM = 3;
-export const DEAD = { ...MAN.rifle, tag: "dead", hp: 116, speed: 6.4, sense: 24, bite: 15, biteCd: 1, turnS: 10, reachPad: 0.35 };
+export const DEAD = { ...MAN.rifle, tag: "dead", hp: 116, speed: 6.4, sense: 24, bite: 15, biteCd: 1, turnS: 10, reachPad: 0.35,
+  soundGun: 40, soundBlast: 80, arriveM: 1.5, claw: 2, clawPad: 0.3 }; // 0.6.3: the senses — a shot carries 40 m, a burst or a collapse 80; the claw takes two points a second
 
 // THE PEOPLE (0.6.2): the valley's own, team 0, nobody's soldiers. A man's
 // body and points; a man's pace when they run; fear of the dead at 24 m and

@@ -76,6 +76,47 @@ export function biteBody(world, u, v) {
 // prey: a living man of any other side, not sealed in a hold.
 const prey = (b) => b.kind === "unit" && b.alive && b.team !== DEAD_TEAM && !b.riding && !b.pinned;
 
+// 0.6.3: THE SOUNDS — this tick's shots, bursts, and collapses as points
+// with a reach. stepDepot gathers them at the end of its tick into
+// run._sounds; the dead read them on the next. Never saved (a one-tick
+// echo); zero draws.
+export function gatherSounds(world) {
+  const out = [];
+  for (const e of world.events) {
+    if (e.type === "muzzle") out.push({ x: e.x, z: e.z, r: DEAD.soundGun });
+    else if (e.type === "boom" || e.type === "collapse") out.push({ x: e.x, z: e.z, r: DEAD.soundBlast });
+  }
+  return out;
+}
+
+// clawable: what the dead wear down when it stands in their way — wall
+// courses, sandbags, towers, hulls, the mech's hull.
+const clawable = (b) => b.alive && (b.kind === "wall" || b.kind === "tower" || b.kind === "vehicle" || b.kind === "mech" || (b.kind === "chunk" && b.sandbag));
+
+// pressedAgainst: the body's box, grown by the dead's own half-width and
+// the pad, holds the dead's feet.
+function pressedAgainst(u, b) {
+  return Math.abs(u.pos.x - b.pos.x) <= b.hx + u.hx + DEAD.clawPad && Math.abs(u.pos.z - b.pos.z) <= b.hz + u.hx + DEAD.clawPad;
+}
+
+// THE CLAW: with somewhere to go, every tick pressed against a clawable
+// body takes DEAD.claw points a second off it. Cause BLAST so the hull's
+// armor law does not blunt it (two points a second, armor or not);
+// attacker "dead" pays and scores nobody. The pressed body is re-found on
+// a quarter-second cadence and re-checked every tick.
+function stepClaw(world, u, dt) {
+  u._clawCd = (u._clawCd || 0) - dt;
+  let b = u._clawId ? world.byId.get(u._clawId) : null;
+  if (b && (!clawable(b) || !pressedAgainst(u, b))) b = null;
+  if (!b && u._clawCd <= 0) {
+    u._clawCd = 0.25;
+    const pool = world.bodies;
+    for (const c of pool) { if (clawable(c) && pressedAgainst(u, c)) { b = c; break; } }
+  }
+  u._clawId = b ? b.id : null;
+  if (b) applyDamage(world, b, DEAD.claw * dt, { cause: "BLAST", attacker: "dead", srcId: u.id, srcX: u.pos.x, srcZ: u.pos.z });
+}
+
 // stepDead: once per sim tick, every one of the dead. A held target is kept
 // to 1.25x the sense; a fresh scan runs on a seq-staggered cadence. At arm's
 // reach (both half-widths plus the pad) the body stops and bites on its
@@ -83,6 +124,7 @@ const prey = (b) => b.kind === "unit" && b.alive && b.team !== DEAD_TEAM && !b.r
 // at DEAD.speed. Nothing in reach: it damps to a stand.
 export function stepDead(world, dt, run = null) {
   const R2 = DEAD.sense * DEAD.sense, keep2 = R2 * 1.5625;
+  const sounds = run && run._sounds ? run._sounds : null;
   for (const u of world.bodies) {
     if (u.kind !== "unit" || u.team !== DEAD_TEAM || !u.alive) continue;
     u._biteCd = (u._biteCd || 0) - dt;
@@ -112,7 +154,28 @@ export function stepDead(world, dt, run = null) {
       }
     }
     u.tgtId = tgt ? tgt.id : null;
-    if (!tgt) { u.v.x *= 1 - Math.min(1, 6 * dt); u.v.z *= 1 - Math.min(1, 6 * dt); continue; }
+    // 0.6.3: THE SOUNDS — with nothing living in reach, the nearest sound of
+    // the last tick inside its own reach becomes the destination; a nearer
+    // one later replaces it; arrival drops it. Prey always outranks it.
+    if (tgt) u._soundGoal = null;
+    else if (sounds && sounds.length) {
+      let best = null, bd = Infinity;
+      for (const s of sounds) {
+        const dx = s.x - u.pos.x, dz = s.z - u.pos.z, d2 = dx * dx + dz * dz;
+        if (d2 <= s.r * s.r && d2 < bd) { bd = d2; best = s; }
+      }
+      if (best && (!u._soundGoal || bd < (u._soundGoal.x - u.pos.x) ** 2 + (u._soundGoal.z - u.pos.z) ** 2)) u._soundGoal = { x: best.x, z: best.z };
+    }
+    if (!tgt && u._soundGoal && Math.hypot(u._soundGoal.x - u.pos.x, u._soundGoal.z - u.pos.z) <= DEAD.arriveM) u._soundGoal = null;
+    if (!tgt && !u._soundGoal) { u._clawId = null; u.v.x *= 1 - Math.min(1, 6 * dt); u.v.z *= 1 - Math.min(1, 6 * dt); continue; }
+    // somewhere to go: the claw works on whatever the body is pressed against
+    stepClaw(world, u, dt);
+    if (!tgt) {
+      u.goal = { x: u._soundGoal.x, z: u._soundGoal.z };
+      seekGoal(world, u, dt, DEAD.speed);
+      faceTravel(u, dt);
+      continue;
+    }
     const dx = tgt.pos.x - u.pos.x, dz = tgt.pos.z - u.pos.z, d = Math.hypot(dx, dz);
     const reach = u.hx + tgt.hx + DEAD.reachPad;
     if (d <= reach) {

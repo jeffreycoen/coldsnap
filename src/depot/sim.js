@@ -20,7 +20,7 @@ import { stepTransports, unloadEnemyRiders } from "./transports.js";
 import { planRoute } from "./route.js";
 import { windAt } from "./wind.js";
 import { layDressing } from "./mapgen.js";
-import { stepDead, stepSick } from "./dead.js";
+import { stepDead, stepSick, gatherSounds } from "./dead.js";
 import { stepPeople } from "./people.js";
 
 // P6 T1: route bookkeeping, one squad, once per sim tick (stepDepot calls
@@ -735,5 +735,9 @@ export function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipl
     }
   }
   if (town) stepTown(world, grid, town, onRuin);
+  // 0.6.3: THE SOUNDS — this tick's shots, bursts, and collapses, gathered
+  // after everything that makes them (the guns above, the blasts in
+  // stepWorld, the collapses just now); the dead read them next tick.
+  if (run && run.outbreak) run._sounds = gatherSounds(world);
   // FRONT F1: no leak check — an enemy at the depot stays and chews masonry.
 }
