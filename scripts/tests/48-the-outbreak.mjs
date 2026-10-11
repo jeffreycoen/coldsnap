@@ -123,13 +123,14 @@ import { makeMap } from "../../src/depot/mapgen.js";
     for (let i = 0; i < 240; i++) tickWar(ob, 1 / 120, input);
     const m = ob.world.bodies.find((b) => b.kind === "unit" && b.team === 2 && b.alive); if (m) m.sickAt = ob.world.t;
     const n0 = ob.world.bodies.filter((b) => b.kind === "unit" && b.team === DEAD_TEAM && b.alive).length;
+    const sick0 = ob.world.bodies.filter((b) => b.sickAt != null).length; // 0.6.2: the people stand inside the ring and may be bitten by now — count what is stamped, then expect it back
     const p = parseFront(serializeRun(ob));
     ok("(k) the outbreak serializes through the war's own save", p.ok);
     const back = bootWar({ seed: p.data.map.seed, resume: p.data, outbreak: true });
     const n1 = back.world.bodies.filter((b) => b.kind === "unit" && b.team === DEAD_TEAM && b.alive).length;
     ok("(k) the dead come back, every one", n1 === n0 && n0 > 0, `${n0}->${n1}`);
     const sick = back.world.bodies.filter((b) => b.sickAt != null).length;
-    ok("(k) the sickness stamp rides the save", !m || sick === 1, `${sick}`);
+    ok("(k) the sickness stamp rides the save", sick === sick0 && sick0 >= 1, `${sick0}->${sick}`);
     ok("(k) the resumed run is an outbreak", back.run.outbreak === true);
   }
 }

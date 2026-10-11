@@ -5,7 +5,7 @@
 // imports the single-file version got from its own top-of-file scope.
 import * as THREE from "three";
 import { POOL, INFANTRY, BAYER4, snapCam, ICE_CREEP, ICE_CREEP_T } from "../engine/core.js";
-import { troopKit, RIFLE_PREROT, MEDIC_HEX, DAVY_HEX, DEAD_HEX } from "./troopkit.js";
+import { troopKit, RIFLE_PREROT, MEDIC_HEX, DAVY_HEX, DEAD_HEX, PERSON_HEX } from "./troopkit.js";
 
 // ==================================================================== render
 const PAL = { bisonBlue: 0x33619c, scoutRed: 0x8a4a44, snow: 0xe9edf2, uiRed: 0xd8433a }; // player is blue steel; the enemy wears the red now
@@ -1008,6 +1008,9 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // 0.6.1: the dead's palette — living coat, and the winter-kill grey of it
   const DEAD_LIVE = mkPal({ ...INFANTRY.pal.con, ...DEAD_HEX });
   const DEAD_DEAD = mkPal({ ...INFANTRY.dead.con, dom: 0x3c4438, sec: 0x262c24, acc: 0x4a5444, gun: 0x101214 });
+  // 0.6.2: the people's palette — living coat, and the winter-kill grey of it
+  const PERSON_LIVE = mkPal({ ...INFANTRY.pal.con, ...PERSON_HEX });
+  const PERSON_DEAD = mkPal({ ...INFANTRY.dead.con, dom: 0x4a3c2e, sec: 0x241e18, acc: 0x5a4a34, gun: 0x101214 });
   // DIVERGENCE (guarded, mk0.99): HIT FEEDBACK palette — a struck man flashes
   // toward this red for 0.18s (see hurtK below).
   const HIT_C = new THREE.Color(0xff5230), _hitC = new THREE.Color();
@@ -2198,7 +2201,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
       // information earned, a soldier standing there is not. In the seam,
       // render but force the flat silhouette palette below (no dress read).
       let fogSil = false;
-      if (opts.territory && (b.team === 2 || b.team === 3) && b.alive) { // 0.6.1: the dead hide in the fog as the enemy does
+      if (opts.territory && (b.team === 2 || b.team === 3 || b.tag === "person") && b.alive) { // 0.6.1: the dead hide in the fog as the enemy does; 0.6.2: so do the people
         fogDbgTotal++;
         if (fogOn) {
           const st = opts.territory.sample(b.pos.x, b.pos.z);
@@ -2233,6 +2236,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
       const hurtAge = world.depotCombat && b.alive && b.dmgT != null ? world.t - b.dmgT : 1;
       const hurtK = hurtAge < 0.18 ? 1 - hurtAge / 0.18 : 0;
       const stoop = world.depotCombat && b.team === 3 && b.alive ? 0.10 : 0; // 0.6.1: the dead walk stooped — the hurt dip, held
+      const sickK = world.depotCombat && b.alive && b.team !== 3 && b.sickAt != null ? Math.min(1, (world.t - b.sickAt) / 10) : 0; // 0.6.2: the sick tint — the coat drifts to the dead's over the ten seconds
       // mk2.02: TWO-METER MEN — depot bodies are 2m (hy 1.0); the
       // drawn man stretches to match. Demo modes render byte-identical.
       const bw = KIT.bw, bh = KIT.bh * (world.depotCombat ? 2.0 / 1.44 : 1);
@@ -2250,6 +2254,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
           tilt = pr.tilt || null; aim = pr.aim || null;
           propRole = pr.role || null; // P7.2 T6: a prop may name its own color role
         } else if (p.key === "rifle") { ksx = ksy = ksz = KIT.rifle; }
+        else if (p.key === "cap" && KIT.cap === 0) { ksx = ksy = ksz = 0; } // 0.6.2: a bare head is a cap at zero scale
         // bulk scales the RIG (offsets + body part scale). Props keep their
         // own literal scale: an aim:"barrel" prop must stay UNIFORMLY scaled
         // or the baked rotation shears it — and no bulked unit carries one.
@@ -2291,9 +2296,15 @@ export function makeRenderer(canvas, world0, opts = {}) {
         if (pools[pi].setColorAt) {
           if (fogSil) pools[pi].setColorAt(idx, SIL_C);
           else {
-            const pal = b.dress === "android" ? (b.alive ? AND_LIVE : AND_DEAD) : kitPal === "dead" ? (b.alive ? DEAD_LIVE : DEAD_DEAD) : kitPal === "medic" ? (b.alive ? MED_LIVE : MED_DEAD) : kitPal === "davy" ? (b.alive ? DAVY_LIVE : DAVY_DEAD) : (b.alive ? INF_LIVE : INF_DEAD)[kitPal];
-            if (hurtK > 0) { _hitC.copy(pal[propRole || p.role]).lerp(HIT_C, 0.7 * hurtK); pools[pi].setColorAt(idx, _hitC); }
-            else pools[pi].setColorAt(idx, pal[propRole || p.role]);
+            const pal = b.dress === "android" ? (b.alive ? AND_LIVE : AND_DEAD) : kitPal === "dead" ? (b.alive ? DEAD_LIVE : DEAD_DEAD) : kitPal === "person" ? (b.alive ? PERSON_LIVE : PERSON_DEAD) : kitPal === "medic" ? (b.alive ? MED_LIVE : MED_DEAD) : kitPal === "davy" ? (b.alive ? DAVY_LIVE : DAVY_DEAD) : (b.alive ? INF_LIVE : INF_DEAD)[kitPal];
+            const role9 = propRole || p.role;
+            if (hurtK > 0 || (sickK > 0 && role9 === "dom")) {
+              _hitC.copy(pal[role9]);
+              if (sickK > 0 && role9 === "dom") _hitC.lerp(DEAD_LIVE.dom, sickK); // 0.6.2: the sick tint on the coat
+              if (hurtK > 0) _hitC.lerp(HIT_C, 0.7 * hurtK);
+              pools[pi].setColorAt(idx, _hitC);
+            }
+            else pools[pi].setColorAt(idx, pal[role9]);
           }
         }
       }

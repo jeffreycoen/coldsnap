@@ -324,3 +324,8 @@ export const DAVY_FIRE = { projSpeed: 28, kind: "shell", weapon: "davy", dmg: 20
 // twice his points, twice his pace.
 export const DEAD_TEAM = 3;
 export const DEAD = { ...MAN.rifle, tag: "dead", hp: 116, speed: 6.4, sense: 24, bite: 15, biteCd: 1, turnS: 10, reachPad: 0.35 };
+
+// THE PEOPLE (0.6.2): the valley's own, team 0, nobody's soldiers. A man's
+// body and points; a man's pace when they run; fear of the dead at 24 m and
+// of gunfire at 40 m; thirty quiet seconds before they walk home.
+export const PERSON = { ...MAN.rifle, tag: "person", speed: 3.2, fear: 24, gunFear: 40, homeS: 30, fleeStep: 8 };

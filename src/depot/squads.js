@@ -894,6 +894,7 @@ export function stepMedicTend(world, u, ax, az, dt) {
   u.settled = true;
   u.v.x *= 1 - Math.min(1, 8 * dt); u.v.z *= 1 - Math.min(1, 8 * dt);
   best.hp = Math.min(best.maxHp, best.hp + MEDIC_RATE * dt);
+  if (best.sickAt != null) best.sickAt = null; // 0.6.2: the medic's cure — the kneel clears the sickness, both armies' medics alike
   return true;
 }
 // The squad wrapper: DEFEND only — orders outrank mercy on the march. A1: a

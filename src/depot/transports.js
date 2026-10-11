@@ -7,7 +7,7 @@
 // zero rng; DepotGame wires them.
 import { applyDamage } from "../engine/core.js";
 import { clearSlot } from "./squads.js";
-import { APC, JEEP } from "./specs.js";
+import { APC, JEEP, DEAD_TEAM } from "./specs.js";
 const seatsOf = (v) => v.vtype === "jeep" ? JEEP.seats : APC.seats; // mk2.98: seats come from the spec
 export { seatsOf };
 
@@ -47,7 +47,7 @@ export function stepTransports(world, squads) {
   // u.rideApc (the seat number), not a squad roster. Same stash (y RIDE_Y),
   // same seal, same grave: the hull gone kills every rider it still carries.
   for (const b of world.bodies) {
-    if (b.kind !== "unit" || b.team !== 2 || b.rideApc == null || !b.alive) continue;
+    if (b.kind !== "unit" || (b.team !== 2 && b.team !== DEAD_TEAM) || b.rideApc == null || !b.alive) continue; // 0.6.2: a rider who turned keeps his seat the ferry way
     const v = apcBySeq(world, b.rideApc);
     if (!v) { b.pinned = false; b.riding = false; b.rideApc = null; applyDamage(world, b, 1e6, { cause: "CRUSH", attacker: "world" }); continue; }
     b.riding = true; b.pinned = true; b.pos.x = v.pos.x; b.pos.y = RIDE_Y; b.pos.z = v.pos.z;
@@ -127,6 +127,7 @@ export function unloadApc(world, squads, v) {
       u.v.x = 0; u.v.y = 0; u.v.z = 0;
     }
   }
+  unloadEnemyRiders(world, v); // 0.6.2: the dead sealed in the hold come out with the living — the ferry's own ring
   v._unloadT = world.t;
 }
 

@@ -8,7 +8,7 @@ import { planWave, MIN_WAVE_FLOOR, spawnDelayFor } from "./ai.js";
 import { payResults, combatIneffective, bookValue, KILL_CUT } from "./economy.js";
 import { killPrice } from "./market.js";
 import { composeIntel, openingIntel } from "./intel.js";
-import { TOWER_SPECS, ENEMY_SPECS, TANK, INFANTRY_ARMS, MASON, PLAYER_START, PLAYER_TIERS, HAND_KEYS, HAND_TAGS, MAN, GRENADE, DAVY_FIRE, DEAD_TEAM } from "./specs.js";
+import { TOWER_SPECS, ENEMY_SPECS, TANK, INFANTRY_ARMS, MASON, PLAYER_START, PLAYER_TIERS, HAND_KEYS, HAND_TAGS, MAN, GRENADE, DAVY_FIRE, DEAD_TEAM, PERSON } from "./specs.js";
 import { seenAt } from "./sight.js";
 
 // Targeting gate, symmetric, VISION era (mk0.72): a shooter of `team` (1 =
@@ -1263,6 +1263,15 @@ function friendlyBlocksPoint(world, x, y, z, selfId) {
         Math.abs(y - b.pos.y) <= b.hy + FRIENDLY_MARGIN &&
         Math.abs(z - b.pos.z) <= b.hz + FRIENDLY_MARGIN) return true;
   }
+  // 0.6.2: CAREFUL holds for a living person in the flight path — the
+  // people's own pool (lists.js), the same box and margin.
+  const ppool = world._L ? world._L.people : world.bodies;
+  for (const b of ppool) {
+    if (!b.alive || b.kind !== "unit" || b.tag !== PERSON.tag) continue;
+    if (Math.abs(x - b.pos.x) <= b.hx + FRIENDLY_MARGIN &&
+        Math.abs(y - b.pos.y) <= b.hy + FRIENDLY_MARGIN &&
+        Math.abs(z - b.pos.z) <= b.hz + FRIENDLY_MARGIN) return true;
+  }
   return false;
 }
 
@@ -1715,7 +1724,7 @@ export function makeEndDispatch({ victory, score = null }) {
 export function creditKill(world, squads, foeSquads, ev) {
   if (ev.type !== "kill") return;
   if (ev.kind !== "unit" && ev.kind !== "vehicle" && ev.kind !== "mech") return;
-  if (ev.team === DEAD_TEAM) return; // 0.6.1: a dead kill credits nobody
+  if (ev.team === DEAD_TEAM || ev.tag === PERSON.tag) return; // 0.6.1: a dead kill credits nobody; 0.6.2: nor does a person's death
   const kid = ev.srcId != null ? ev.srcId : ev.killerId;
   if (!kid) return;
   const kb = world.byId.get(kid);
@@ -1731,6 +1740,13 @@ export function scoreKill(S, ev, counts) {
   if (ev.type !== "kill") return null;
   const att = ev.attacker === "player" ? 1 : ev.attacker === "enemy" ? 2 : 0;
   if (!att) return null;
+  // 0.6.2: a person killed by an army scores ONE for the other army and
+  // pays nobody — the kill integer only, no value, no cut. The dead's kills
+  // never reach here (attacker "dead" is not a side).
+  if (ev.kind === "unit" && ev.tag === PERSON.tag) {
+    (att === 1 ? S.score.e : S.score.p).kills++;
+    return { side: att, price: 0, pay: 0, counted: true, person: true };
+  }
   const victim = ev.sandbag ? ev.bagSide : ev.team;
   if (victim !== 1 && victim !== 2) return null;
   if (att === victim) return null; // friendly fire pays nobody

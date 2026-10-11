@@ -14,6 +14,7 @@ import { makeSight } from "./sight.js";
 import { makeRegiment } from "./economy.js";
 import { musterFreshStart } from "./muster.js";
 import { spawnOutbreak } from "./dead.js";
+import { spawnPeople } from "./people.js";
 
 // P7 T17: HULLS RESPECT FRIENDLY SANDBAGS — a bag claims its
 // cell for HULL routing only (men still fight over bags; foot routing,
@@ -390,7 +391,7 @@ export function bootWar(opts = {}) {
   // the middle town on a fresh boot, draw-free; a resume brings them back
   // as bodies off the file.
   if (opts.outbreak) run.outbreak = true;
-  if (!RES && opts.outbreak) spawnOutbreak(world, map);
+  if (!RES && opts.outbreak) { spawnOutbreak(world, map); spawnPeople(world, map); } // 0.6.2: the people at their doors, draw-free
   // Step 5. The run state itself, straight off the file. The bell is the
   // ONE deliberate exception: the countdown restarts at a full period
   // rather than resuming a half-elapsed one (ratified — simpler, and

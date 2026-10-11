@@ -1414,10 +1414,11 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           view.hudT += dt;
           if (view.hudT > 0.12) {
             view.hudT = 0;
-            let en = 0, nw = 0, nt = 0, dd = 0;
+            let en = 0, nw = 0, nt = 0, dd = 0, pp = 0;
             for (const b of world.bodies) {
               if (b.kind === "unit" && b.alive && b.team === 2) en++;
               else if (b.kind === "unit" && b.alive && b.team === 3) dd++; // 0.6.1: the dead, counted apart
+              else if (b.kind === "unit" && b.alive && b.tag === "person") pp++; // 0.6.2: the living people
               else if (b.kind === "wall") { if (!b.course) nw++; } // the HUD counts WALLS, not courses
               else if (b.kind === "tower") nt++;
             }
@@ -1431,7 +1432,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             setHud({
               // The bell being counted down TO — run.bell is the one that last
               // rang, so the top bar names the next one.
-              fps: view.fps, bell: run.bell + 1, bellT: run.bellT, enemies: en, dead: dd,
+              fps: view.fps, bell: run.bell + 1, bellT: run.bellT, enemies: en, dead: dd, people: pp,
               stones: R.chunkStats ? `${R.chunkStats().drawn}/${R.chunkStats().cap}` : "",
               resources: Math.floor(run.resources), walls: nw, towers: nt,
               score: { pk: run.score.p.kills, pv: Math.round(run.score.p.value), ek: run.score.e.kills, ev: Math.round(run.score.e.value) },
@@ -2041,6 +2042,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         )}
         <div style={P.stat}>☠ {hud.enemies}</div>
         {outbreak && <div data-dead style={P.stat} title="the dead standing">☣ {hud.dead || 0}</div>}
+        {outbreak && <div data-people style={P.stat} title="the living people">☺ {hud.people || 0}</div>}
         <div data-score style={P.stat} title="the match score — kills and value destroyed, yours then the enemy's" {...teachPress("kill_price")}>
           <span style={{ color: "#7dffa8" }}>⚔ {hud.score.pk} ◆{hud.score.pv}</span>
           <span style={{ opacity: 0.5 }}>·</span>

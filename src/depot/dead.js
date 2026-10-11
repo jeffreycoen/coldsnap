@@ -64,7 +64,11 @@ export function turnDead(world, b) {
 // to death and turns at once — no kill event, no corpse, no stain.
 export function biteBody(world, u, v) {
   if (!v.alive) return;
-  if (v.hp <= DEAD.bite) { turnDead(world, v); return; }
+  if (v.hp <= DEAD.bite) {
+    if (v.riding && v.rideApc == null && u.rideApc != null) v.rideApc = u.rideApc; // 0.6.2: bitten to death in a hold — he keeps the seat
+    turnDead(world, v);
+    return;
+  }
   applyDamage(world, v, DEAD.bite, { cause: "BITE", attacker: "dead", srcId: u.id, srcX: u.pos.x, srcZ: u.pos.z });
   if (v.sickAt == null) v.sickAt = world.t;
 }
@@ -77,11 +81,24 @@ const prey = (b) => b.kind === "unit" && b.alive && b.team !== DEAD_TEAM && !b.r
 // reach (both half-widths plus the pad) the body stops and bites on its
 // cooldown; otherwise it seeks the target through squads.js's steer-around
 // at DEAD.speed. Nothing in reach: it damps to a stand.
-export function stepDead(world, dt) {
+export function stepDead(world, dt, run = null) {
   const R2 = DEAD.sense * DEAD.sense, keep2 = R2 * 1.5625;
   for (const u of world.bodies) {
     if (u.kind !== "unit" || u.team !== DEAD_TEAM || !u.alive) continue;
     u._biteCd = (u._biteCd || 0) - dt;
+    // 0.6.2: THE HOLD — one of the dead sealed in a hull bites every rider
+    // with it on the bite cadence: the ferry's loose riders by their seat,
+    // a squad's riders by its roster. It never walks; the hull drives on.
+    if (u.rideApc != null) {
+      if (u._biteCd > 0) continue;
+      u._biteCd = DEAD.biteCd;
+      for (const b of world.bodies) if (b.kind === "unit" && b.alive && b.team !== DEAD_TEAM && b.riding && b.rideApc === u.rideApc) biteBody(world, u, b);
+      if (run) for (const sq of [...(run.squads || []), ...(run.foeSquads || [])]) {
+        if (sq.ridingIn !== u.rideApc) continue;
+        for (const id of sq.memberIds) { const b = world.byId.get(id); if (b && b.alive && b.team !== DEAD_TEAM && b.riding) biteBody(world, u, b); }
+      }
+      continue;
+    }
     u.scanCd = (u.scanCd || 0) - dt;
     let tgt = u.tgtId ? world.byId.get(u.tgtId) : null;
     if (tgt) { const dx = tgt.pos.x - u.pos.x, dz = tgt.pos.z - u.pos.z; if (!prey(tgt) || dx * dx + dz * dz > keep2) tgt = null; }
@@ -110,9 +127,16 @@ export function stepDead(world, dt) {
 }
 
 // stepSick: every stamped living man whose ten seconds are up turns.
-export function stepSick(world) {
+export function stepSick(world, run = null) {
   for (const b of world.bodies) {
     if (b.kind !== "unit" || !b.alive || b.team === DEAD_TEAM || b.sickAt == null) continue;
-    if (world.t - b.sickAt >= DEAD.turnS) turnDead(world, b);
+    if (world.t - b.sickAt < DEAD.turnS) continue;
+    // 0.6.2: a rider turns INSIDE the hold — his squad's seat number becomes
+    // his own (the ferry's rideApc), so the hold keeps him and the unload
+    // puts him out. The loose-rider loop in transports.js pins him there.
+    if (b.riding && b.rideApc == null && run) {
+      for (const sq of [...(run.squads || []), ...(run.foeSquads || [])]) if (sq.ridingIn != null && sq.memberIds.includes(b.id)) { b.rideApc = sq.ridingIn; break; }
+    }
+    turnDead(world, b);
   }
 }

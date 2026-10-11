@@ -57,7 +57,7 @@ export function marketCounts(world, squads, mines) {
   }
   for (const b of world.bodies) {
     if (!b.alive) continue;
-    if (b.kind === "unit" && b.team !== DEAD_TEAM) c._men = (c._men || 0) + 1; // both armies — squad men are unit bodies too; the dead are not men on the market (0.6.1)
+    if (b.kind === "unit" && b.team !== DEAD_TEAM && b.team !== 0) c._men = (c._men || 0) + 1; // both armies — squad men are unit bodies too; the dead (0.6.1) and the people (0.6.2) are not men on the market
     if (b.kind === "unit" && b.team === 2) add(FAMILY_OF_TAG[b.tag || ""], 1);
     else if (b.kind === "vehicle" && b.team === 2 && b.tag === "tank") add("tank", 1); // P7 T2: only wave armor prices the tank family
     // P7 T9: THE HERO TIER — one shared market, BOTH teams' standing hulls

@@ -6,7 +6,7 @@
 // the source of `map`, never these signatures. Moved code keeps its names
 // and comments; only the task's substitution table's tokens differ.
 import { addBody, addWeld, stepWorld, explode } from "../engine/core.js";
-import { TOWER_SPECS, MASON, INFANTRY_ARMS, DEAD_TEAM } from "./specs.js";
+import { TOWER_SPECS, MASON, INFANTRY_ARMS, DEAD_TEAM, PERSON } from "./specs.js";
 import {
   makeAssaultState, towerShot, fieldReaches, friendlyFouls, teslaStrike,
   teslaWouldCatchFriend, stepGrenades, stepTesla, stepDavyShot, squadFire,
@@ -21,6 +21,7 @@ import { planRoute } from "./route.js";
 import { windAt } from "./wind.js";
 import { layDressing } from "./mapgen.js";
 import { stepDead, stepSick } from "./dead.js";
+import { stepPeople } from "./people.js";
 
 // P6 T1: route bookkeeping, one squad, once per sim tick (stepDepot calls
 // it before stepSquad). Draws a route when the destination is new, rewrites
@@ -539,8 +540,8 @@ export function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipl
   // squads, so a turned man is off his roster by this tick's prune. Only an
   // outbreak carries run.outbreak; the war never enters here.
   if (run && run.outbreak) {
-    stepDead(world, world.dt);
-    stepSick(world);
+    stepDead(world, world.dt, run);
+    stepSick(world, run);
     for (const b of world.bodies) if (b.kind === "unit" && b.team === DEAD_TEAM && b.alive) uprightMember(b, world.dt);
   }
   // Squads (Phase 5 Task 3), after enemies, before towers — the brief's
@@ -672,6 +673,12 @@ export function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipl
     if (!pv || !pv.alive) input.releasePossession();
   }
   stepTowers(world, T, discipline, input.possess && input.possess.kind === "tower" ? input.possess.id : undefined, run.arcs, run.holdArea, map);
+  // THE PEOPLE (0.6.2): after the guns, so this tick's muzzle events are on
+  // world.events for the gunfire fear; before stepWorld like every driver.
+  if (run && run.outbreak) {
+    stepPeople(world, map, world.dt);
+    for (const b of world.bodies) if (b.kind === "unit" && b.tag === PERSON.tag && b.alive) uprightMember(b, world.dt);
+  }
   stepGrenades(world); // mk2.03: the grenade fuses — 2.0s from each release
   stepTesla(world, run.arcs, map); // mk2.15: the chains walk, 0.15s a hop
   // WIND TOGGLE (mk0.95, owner's accuracy-tuning request): off = dead calm

@@ -1,6 +1,6 @@
 import { fireProjectile, applyDamage } from "../engine/core.js";
 import { buildMech } from "../engine/mech.js";
-import { MECH, DEAD_TEAM } from "./specs.js";
+import { MECH, DEAD_TEAM, PERSON } from "./specs.js";
 import { windAt } from "./wind.js";
 import { spawnEnemy } from "./sim.js";
 import { SQUAD_SPECS, makeSquad } from "./squads.js";
@@ -15,7 +15,7 @@ import { endCardReady, pendingArmed, spawnSquadMembers, ASSAULT_TIMEOUT } from "
 export function installDepotHooks(ctx) {
   const { world, run, view, input, map, grid, field, T, R, canvas, stateRef,
     RES, buildAt, groundPoint, pickHeightAt, consumeOrderTap, getSaveStat, cueN } = ctx;
-  window.__DEPOT__ = () => ({ t: world.t, scrap: run.resources, kills: run.score.p.kills, score: { pk: run.score.p.kills, pv: +run.score.p.value.toFixed(1), ek: run.score.e.kills, ev: +run.score.e.value.toFixed(1) }, bell: run.bell, bellT: run.bellT, bodies: world.bodies.length, fps: view.fps, paused: view.paused, speed: view.speed, reg: { ...run.reg }, depotStanding: run.depotStanding != null ? run.depotStanding : 1, breach: !!run.breach, enemyStanding: run.enemyStanding != null ? run.enemyStanding : 1, enemyBreach: !!run.enemyBreach, withdrew: run.ws.withdrew || 0, endedAt: run.endedAt != null ? run.endedAt : null, endCard: endCardReady(run, world.t), dead: world.bodies.reduce((n, b) => n + (b.kind === "unit" && b.team === DEAD_TEAM && b.alive ? 1 : 0), 0) });
+  window.__DEPOT__ = () => ({ t: world.t, scrap: run.resources, kills: run.score.p.kills, score: { pk: run.score.p.kills, pv: +run.score.p.value.toFixed(1), ek: run.score.e.kills, ev: +run.score.e.value.toFixed(1) }, bell: run.bell, bellT: run.bellT, bodies: world.bodies.length, fps: view.fps, paused: view.paused, speed: view.speed, reg: { ...run.reg }, depotStanding: run.depotStanding != null ? run.depotStanding : 1, breach: !!run.breach, enemyStanding: run.enemyStanding != null ? run.enemyStanding : 1, enemyBreach: !!run.enemyBreach, withdrew: run.ws.withdrew || 0, endedAt: run.endedAt != null ? run.endedAt : null, endCard: endCardReady(run, world.t), dead: world.bodies.reduce((n, b) => n + (b.kind === "unit" && b.team === DEAD_TEAM && b.alive ? 1 : 0), 0), people: world.bodies.reduce((n, b) => n + (b.kind === "unit" && b.tag === PERSON.tag && b.alive ? 1 : 0), 0) });
   // debug harness: the live pending + its screen anchor (smoke
   // asserts the tap-theft repairs through this).
   window.__DEPOTPENDING__ = () => (view.pending ? { armed: pendingArmed(view.pending, world.t), screen: view.pendingScreen, gx: view.pending.gx, gz: view.pending.gz } : null);

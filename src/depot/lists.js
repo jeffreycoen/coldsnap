@@ -11,11 +11,11 @@
 // dropped course's rubble) joins the pools on the next tick — an accepted
 // one-tick (8ms) delta, stated in the phase plan. No rng. Fixtures that never
 // build lists fall back to world.bodies at every consumer (world._L absent).
-import { DEAD_TEAM } from "./specs.js";
+import { DEAD_TEAM, PERSON } from "./specs.js";
 const SOLID_KINDS = new Set(["rock", "wall", "tower", "tree", "chunk"]);
 
 export function makeBodyLists() {
-  return { solids: [], statics: [], friends: [], foes: [], structsFor1: [], structsFor2: [], friendly: [], vehicles: [] };
+  return { solids: [], statics: [], friends: [], foes: [], structsFor1: [], structsFor2: [], friendly: [], vehicles: [], people: [] };
 }
 
 // structsFor1/structsFor2: hostileStructure(b, team)'s candidate sets — what
@@ -25,7 +25,7 @@ export function makeBodyLists() {
 export function rebuildBodyLists(world, L) {
   L.solids.length = 0; L.statics.length = 0;
   L.friends.length = 0; L.foes.length = 0; L.vehicles.length = 0;
-  L.structsFor1.length = 0; L.structsFor2.length = 0; L.friendly.length = 0;
+  L.structsFor1.length = 0; L.structsFor2.length = 0; L.friendly.length = 0; L.people.length = 0;
   for (const b of world.bodies) {
     if (!b.alive) continue;
     const k = b.kind;
@@ -37,6 +37,7 @@ export function rebuildBodyLists(world, L) {
       // in the pool it already reads; the consumers' own predicates decide.
       if (b.team === 1 || b.team === DEAD_TEAM) L.friends.push(b);
       if (b.team === 2 || b.team === DEAD_TEAM) L.foes.push(b);
+      if (b.tag === PERSON.tag) L.people.push(b); // 0.6.2: CAREFUL's people check reads this
       continue;
     }
     if (!SOLID_KINDS.has(k)) continue;

@@ -223,6 +223,8 @@ try {
     await page.waitForFunction(() => typeof window.__DEPOT__ === "function", { timeout: 20000 });
     const dead = await page.evaluate(() => window.__DEPOT__().dead);
     ok(`outbreak: six dead stand at the opening [${dead}]`, dead === 6);
+    const people = await page.evaluate(() => window.__DEPOT__().people);
+    ok(`outbreak: the people stand at their doors [${people}]`, people > 0);
     await page.keyboard.press("Escape");
     await page.waitForFunction(() => document.querySelector('[data-menu="outbreak"]'), { timeout: 10000 });
     ok("outbreak: ESC returns to menu", true);
