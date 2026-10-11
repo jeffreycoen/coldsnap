@@ -64,4 +64,5 @@ await import("./tests/47-the-symmetric-jeep.mjs");
 await import("./tests/48-the-outbreak.mjs");
 await import("./tests/49-the-people.mjs");
 await import("./tests/50-the-senses.mjs");
+await import("./tests/51-the-people-indoors.mjs");
 finish();

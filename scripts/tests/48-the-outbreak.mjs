@@ -49,10 +49,10 @@ import { makeMap } from "../../src/depot/mapgen.js";
   {
     const w = makeWorld({ field: flat, seed: SEED }); w.depotCombat = true;
     const m = man(w, 2, 0, 0); m.sickAt = 100;
-    w.t = 109.9; stepSick(w);
-    ok("(d) at 9.9 seconds he still stands as a man", m.team === 2);
-    w.t = 110; stepSick(w);
-    ok("(d) at ten seconds he turns", m.team === DEAD_TEAM && m.tag === DEAD.tag && m.hp === 116);
+    w.t = 129.9; stepSick(w);
+    ok("(d) at 29.9 seconds he still stands as a man", m.team === 2);
+    w.t = 130; stepSick(w);
+    ok("(d) at thirty seconds he turns", m.team === DEAD_TEAM && m.tag === DEAD.tag && m.hp === 116);
   }
 
   // (e) the hunt: 12 meters closed and a bite landed inside four seconds; 30 meters is not sensed

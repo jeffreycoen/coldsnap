@@ -27,7 +27,7 @@ import { parseFront } from "../../src/depot/save.js";
   {
     const w = makeWorld({ field: flat, seed: SEED }); w.depotCombat = true;
     const p = spawnPerson(w, 3, 4);
-    ok("(a) a person: a unit on team 0, the tag, a man's points, a door to stand at", p.kind === "unit" && p.team === 0 && p.tag === PERSON.tag && p.hp === MAN.rifle.hp && p.maxHp === MAN.rifle.hp && p.pdoor && Math.abs(p.pdoor.x - 3) < 5 && Math.abs(p.pdoor.z - 4) < 5, `${p.team}/${p.tag}/${p.hp}`);
+    ok("(a) a person: a unit on team 0, the tag, a man's points, a door to stand at", p.kind === "unit" && p.team === 0 && p.tag === PERSON.tag && p.hp === MAN.rifle.hp && p.maxHp === MAN.rifle.hp && p.pIn && Math.abs(p.pIn.x - 3) < 5 && Math.abs(p.pIn.z - 4) < 5, `${p.team}/${p.tag}/${p.hp}`);
   }
 
   // (b) the boot: people by the rule, none in the war, the boot draws untouched
@@ -73,12 +73,12 @@ import { parseFront } from "../../src/depot/save.js";
     const p = spawnPerson(w, 0, 0); const d = spawnDead(w, 10, 0);
     for (let i = 0; i < 120; i++) { stepPeople(w, flatMap, 1 / 120); integrate(w, p, 1 / 120); w.t += 1 / 120; }
     d.alive = false;
-    const far = Math.hypot(p.pos.x - p.pdoor.x, p.pos.z - p.pdoor.z);
+    const far = Math.hypot(p.pos.x - p.pIn.x, p.pos.z - p.pIn.z);
     for (let i = 0; i < 120 * 29; i++) { stepPeople(w, flatMap, 1 / 120); integrate(w, p, 1 / 120); w.t += 1 / 120; }
-    const still = Math.hypot(p.pos.x - p.pdoor.x, p.pos.z - p.pdoor.z);
+    const still = Math.hypot(p.pos.x - p.pIn.x, p.pos.z - p.pIn.z);
     ok("(e) inside thirty seconds she stays where she stopped", far > 2 && Math.abs(still - far) < 1.0, `${far.toFixed(1)}/${still.toFixed(1)}`);
     for (let i = 0; i < 120 * 8; i++) { stepPeople(w, flatMap, 1 / 120); integrate(w, p, 1 / 120); w.t += 1 / 120; }
-    ok("(e) after thirty quiet seconds she is home", Math.hypot(p.pos.x - p.pdoor.x, p.pos.z - p.pdoor.z) < 1.0, Math.hypot(p.pos.x - p.pdoor.x, p.pos.z - p.pdoor.z).toFixed(2));
+    ok("(e) after thirty quiet seconds she is home", Math.hypot(p.pos.x - p.pIn.x, p.pos.z - p.pIn.z) < 1.0, Math.hypot(p.pos.x - p.pIn.x, p.pos.z - p.pIn.z).toFixed(2));
   }
 
   // (f) the ledger: a person killed by an army scores one for the other army and pays nobody; the dead's kill scores nothing
@@ -131,7 +131,7 @@ import { parseFront } from "../../src/depot/save.js";
     const a = man(w, 1, 0, 0), b = man(w, 1, 0, 0);
     for (const u of [a, b]) { u.riding = true; u.pinned = true; u.pos.y = -60; }
     const run = { squads: [{ id: 1, type: "rifles", team: 1, order: "ride", dest: null, memberIds: [a.id, b.id], anchor: { x: 0, z: 0 }, ridingIn: 1 }], foeSquads: [] };
-    a.sickAt = 20;
+    a.sickAt = 0; // 0.6.4: thirty seconds to the turn — stamped at 0, checked at 30
     stepSick(w, run);
     ok("(k) the bitten rider turns inside the hold and keeps his seat", a.team === DEAD_TEAM && a.rideApc === 1 && a.riding === true, `${a.team}/${a.rideApc}/${a.riding}`);
     stepDead(w, 1 / 120, run);
@@ -153,6 +153,6 @@ import { parseFront } from "../../src/depot/save.js";
     const p = parseFront(serializeRun(ob));
     const back = bootWar({ seed: p.data.map.seed, resume: p.data, outbreak: true });
     const n1 = peopleOf(back.world).length;
-    ok("(l) the people come back, every one, with their doors", n1 === n0 && n0 > 0 && peopleOf(back.world).every((b) => b.pdoor && Number.isFinite(b.pdoor.x)), `${n0}->${n1}`);
+    ok("(l) the people come back, every one, with their doors", n1 === n0 && n0 > 0 && peopleOf(back.world).every((b) => b.pIn && Number.isFinite(b.pIn.x)), `${n0}->${n1}`);
   }
 }

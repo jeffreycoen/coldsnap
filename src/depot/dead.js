@@ -183,7 +183,17 @@ export function stepDead(world, dt, run = null) {
       if (u._biteCd <= 0) { u._biteCd = DEAD.biteCd; biteBody(world, u, tgt); }
       continue;
     }
-    u.goal = { x: tgt.pos.x, z: tgt.pos.z };
+    // 0.6.4: a person indoors is reached by the door — her outside spot
+    // first, while the dead is itself outside and not yet there; then in.
+    let gx = tgt.pos.x, gz = tgt.pos.z;
+    if (tgt.pIn && tgt.pOut) {
+      const doorLen = Math.hypot(tgt.pOut.x - tgt.pIn.x, tgt.pOut.z - tgt.pIn.z) + 0.3;
+      const herIn = Math.hypot(tgt.pIn.x - tgt.pos.x, tgt.pIn.z - tgt.pos.z) < doorLen;
+      const meOut = Math.hypot(tgt.pIn.x - u.pos.x, tgt.pIn.z - u.pos.z) >= doorLen;
+      const atDoor = Math.hypot(tgt.pOut.x - u.pos.x, tgt.pOut.z - u.pos.z) <= 1.2;
+      if (herIn && meOut && !atDoor) { gx = tgt.pOut.x; gz = tgt.pOut.z; }
+    }
+    u.goal = { x: gx, z: gz };
     seekGoal(world, u, dt, DEAD.speed);
     faceTravel(u, dt);
   }
