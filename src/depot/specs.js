@@ -318,3 +318,9 @@ export const GRENADE = { v: 11, fuse: 2.0, r: 2.0, dmg: 16, kv: 5, crater: 0.3, 
 // mk2.12: the trigger no longer kills — the blast alone rules, and
 // a surviving crew reloads reloadS seconds, both sides. // provisional (F5)
 export const DAVY_FIRE = { projSpeed: 28, kind: "shell", weapon: "davy", dmg: 200, blastR: 25, kv: 40, crater: 10, range: 20, acc: 0.005, occl: "lofted", windF: 0.04, windComp: 0.6, reloadS: 30 };
+
+// THE DEAD (0.6.1): the third side. One row, read by the dead's driver, the
+// bite, the turn, and every scan that asks who is hostile. The man's body,
+// twice his points, twice his pace.
+export const DEAD_TEAM = 3;
+export const DEAD = { ...MAN.rifle, tag: "dead", hp: 116, speed: 6.4, sense: 24, bite: 15, biteCd: 1, turnS: 10, reachPad: 0.35 };

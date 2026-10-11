@@ -11,6 +11,13 @@ import { APC, JEEP } from "./specs.js";
 const seatsOf = (v) => v.vtype === "jeep" ? JEEP.seats : APC.seats; // mk2.98: seats come from the spec
 export { seatsOf };
 
+// 0.6.1: a bitten man cannot board — the hold is sealed and he would turn in
+// it. One rule, read by the LOAD tap and by the boarding step.
+export function squadCanBoard(world, sq) {
+  for (const id of sq.memberIds) { const u = world.byId.get(id); if (u && u.alive && u.sickAt != null) return false; }
+  return true;
+}
+
 const RIDE_Y = -60;
 const BOARD_R = 2.5;        // m from the rally point — the formation has closed up // provisional (F5)
 const HATCH_R = 14;         // m — the ramp drops when the boarders close to this // provisional (F5)
@@ -66,6 +73,7 @@ export function stepTransports(world, squads) {
     if (sq._boarding != null) {
       const v = apcBySeq(world, sq._boarding);
       if (!v) { sq._boarding = null; sq.order = "defend"; sq.dest = null; continue; }
+      if (!squadCanBoard(world, sq)) { sq._boarding = null; sq.order = "defend"; sq.dest = null; continue; } // 0.6.1: a man bitten on the walk to the ramp stands the squad down
       // the rally point — outside the hull, on the squad's own approach
       // bearing (see STANDOFF above); the door still tracks the hull as it
       // parks or drives, since this is recomputed every tick.

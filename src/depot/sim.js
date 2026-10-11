@@ -6,11 +6,11 @@
 // the source of `map`, never these signatures. Moved code keeps its names
 // and comments; only the task's substitution table's tokens differ.
 import { addBody, addWeld, stepWorld, explode } from "../engine/core.js";
-import { TOWER_SPECS, MASON, INFANTRY_ARMS } from "./specs.js";
+import { TOWER_SPECS, MASON, INFANTRY_ARMS, DEAD_TEAM } from "./specs.js";
 import {
   makeAssaultState, towerShot, fieldReaches, friendlyFouls, teslaStrike,
   teslaWouldCatchFriend, stepGrenades, stepTesla, stepDavyShot, squadFire,
-  pruneSquads, stepWallSupport, forgetWelds,
+  pruneSquads, stepWallSupport, forgetWelds, hostileUnit,
 } from "./state.js";
 import { arcClears } from "./accuracy.js";
 import { drivePossessedSquad, stepSquad, stepMedicTendSquad, stepMechanicTendSquad } from "./squads.js";
@@ -20,6 +20,7 @@ import { stepTransports, unloadEnemyRiders } from "./transports.js";
 import { planRoute } from "./route.js";
 import { windAt } from "./wind.js";
 import { layDressing } from "./mapgen.js";
+import { stepDead, stepSick } from "./dead.js";
 
 // P6 T1: route bookkeeping, one squad, once per sim tick (stepDepot calls
 // it before stepSquad). Draws a route when the destination is new, rewrites
@@ -113,7 +114,7 @@ export function stepTowers(world, T, discipline, possessedId, arcs, holdArea, ma
     const eR = b.effRange != null ? b.effRange : spec.range;
     const muzzle = { x: b.pos.x, y: b.pos.y + b.hy + 0.45, z: b.pos.z };
     let best = b.targetId ? world.byId.get(b.targetId) : null;
-    if (best && (!best.alive || best.team !== foeTeam || (best.kind !== "unit" && best.kind !== "vehicle" && best.kind !== "mech"))) best = null;
+    if (best && (!best.alive || !hostileUnit(best, tTeam) || (best.kind !== "unit" && best.kind !== "vehicle" && best.kind !== "mech"))) best = null;
     if (best) {
       const dx = best.pos.x - b.pos.x, dz = best.pos.z - b.pos.z;
       if (dx * dx + dz * dz > eR * eR) best = null;
@@ -135,7 +136,7 @@ export function stepTowers(world, T, discipline, possessedId, arcs, holdArea, ma
       const pool = world._L ? (foeTeam === 2 ? world._L.foes : world._L.friends) : world.bodies; // T10
       let bd = eR * eR;
       for (const e of pool) {
-        if ((e.kind !== "unit" && e.kind !== "vehicle" && e.kind !== "mech") || !e.alive || e.team !== foeTeam) continue;
+        if ((e.kind !== "unit" && e.kind !== "vehicle" && e.kind !== "mech") || !e.alive || !hostileUnit(e, tTeam)) continue;
         const c = map.invW(e.pos.x, e.pos.z);
         if (!fieldReaches(T, c.u, c.v, tTeam)) continue;
         const dx = e.pos.x - b.pos.x, dz = e.pos.z - b.pos.z;
@@ -534,6 +535,14 @@ export function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipl
   world._devDummies = !!input.devDummies;
   if (!input.devDummies) stepEnemies(world, grid, T, run, input, map);
   else for (const b of world.bodies) if (b.kind === "unit" && b.team === 2 && b.alive) uprightMember(b, world.dt);
+  // THE DEAD (0.6.1): the third side walks after the armies and before the
+  // squads, so a turned man is off his roster by this tick's prune. Only an
+  // outbreak carries run.outbreak; the war never enters here.
+  if (run && run.outbreak) {
+    stepDead(world, world.dt);
+    stepSick(world);
+    for (const b of world.bodies) if (b.kind === "unit" && b.team === DEAD_TEAM && b.alive) uprightMember(b, world.dt);
+  }
   // Squads (Phase 5 Task 3), after enemies, before towers — the brief's
   // loop-order contract: prune dead members -> delete empty squads ->
   // stepSquad (movement) -> squadFire (combat). squadFire threads T + invW
@@ -572,7 +581,7 @@ export function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipl
       const R2 = arms.range * arms.range;
       const pool = world._L ? world._L.foes : world.bodies; // T10
       for (const e of pool) {
-        if ((e.kind !== "unit" && e.kind !== "vehicle") || !e.alive || e.team !== 2) continue;
+        if ((e.kind !== "unit" && e.kind !== "vehicle") || !e.alive || !hostileUnit(e, 1)) continue;
         const dx = e.pos.x - sq.anchor.x, dz = e.pos.z - sq.anchor.z;
         if (dx * dx + dz * dz > R2) continue;
         const c = map.invW(e.pos.x, e.pos.z);

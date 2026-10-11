@@ -10,7 +10,7 @@
 // is world.rng() (mulberry32, seeded); an unseeded Math dot random() call is
 // forbidden in src/depot (scripts/depot-lint.mjs).
 import { addBody, applyDamage, explode } from "../engine/core.js";
-import { shooterFire, fieldReaches, effRange, hostileStructure, standingStructure, throwGrenade, aimTop } from "./state.js";
+import { shooterFire, fieldReaches, effRange, hostileStructure, standingStructure, throwGrenade, aimTop, hostileUnit } from "./state.js";
 import { arcClears } from "./accuracy.js";
 // exposureAt + the pair's shared survey/direction solvers (6.5 Task 6: ONE
 // behavior module, both signs). squads.js now imports accuracy/state for the
@@ -87,7 +87,7 @@ function spawnTank(world, sp) {
 // helper (rotates by the map's ORIENT, one of DEPOT's 4 assault
 // orientations) — passed in rather than reimplemented here so units.js
 // can't drift from the module-local ORIENT state it depends on.
-function faceTravel(u, dt) {
+export function faceTravel(u, dt) {
   const sp = Math.hypot(u.v.x, u.v.z);
   u.wph = (u.wph || 0) + sp * dt * 3.6;
   if (sp > 0.5) {
@@ -112,7 +112,7 @@ function nearestPlayerUnit(world, u, muzzle, fspec, R2, urgency, T, toUV) {
   const pool = world._L ? world._L.friends : world.bodies;  // T10
   let best = null, bd = R2 * urgency * urgency; // (urgency*R)^2
   for (const s of pool) {
-    if (!soft(s) || !s.alive || s.team !== 1) continue;
+    if (!soft(s) || !s.alive || !hostileUnit(s, 2)) continue;
     const c = toUV(s.pos.x, s.pos.z);
     if (!fieldReaches(T, c.u, c.v, 2)) continue; // attacker-sign fog gate
     const dx = s.pos.x - u.pos.x, dz = s.pos.z - u.pos.z, d2 = dx * dx + dz * dz;
@@ -125,7 +125,7 @@ function nearestPlayerUnit(world, u, muzzle, fspec, R2, urgency, T, toUV) {
 // in range, still SEEN by our side (revalidated every tick — structures now
 // revalidate the same way, VISION mk0.72), LOS clear.
 function unitTargetValid(world, u, muzzle, tgt, fspec, R2, T, toUV) {
-  if (!tgt || !tgt.alive || !soft(tgt) || tgt.team !== 1) return false;
+  if (!tgt || !tgt.alive || !soft(tgt) || !hostileUnit(tgt, 2)) return false;
   const dx = tgt.pos.x - u.pos.x, dz = tgt.pos.z - u.pos.z;
   if (dx * dx + dz * dz > R2) return false;
   const c = toUV(tgt.pos.x, tgt.pos.z);
@@ -465,7 +465,7 @@ function stepDavy(world, u, dt, T, toUV) {
   const eR = effRange(world, muzzle, spec);
   let best = null, bd = eR * eR;
   for (const e of world.bodies) {
-    if ((e.kind !== "unit" && e.kind !== "vehicle" && e.kind !== "mech") || !e.alive || e.team !== 1) continue;
+    if ((e.kind !== "unit" && e.kind !== "vehicle" && e.kind !== "mech") || !e.alive || !hostileUnit(e, 2)) continue;
     const c = toUV(e.pos.x, e.pos.z);
     if (!fieldReaches(T, c.u, c.v, 2)) continue;
     const dx = e.pos.x - u.pos.x, dz = e.pos.z - u.pos.z, d2 = dx * dx + dz * dz;
@@ -526,7 +526,7 @@ export function stepUnits(world, grid, fwdDir, T, toUV = (x, z) => ({ u: x, v: z
     // different tool. Bounty stays his own 15.
     if (u.role === "spotter") {
       const sn2 = u.pairId != null ? world.byId.get(u.pairId) : null;
-      if (!sn2 || !sn2.alive) {
+      if (!sn2 || !sn2.alive || sn2.team !== 2) { // 0.6.1: a turned sniper is no sniper of his
         u.role = undefined; u.tag = ""; u.pairId = null;
         u._standPt = null; u.hold = false; u.settled = false;
         continue; // next tick he marches and fights as an ordinary rifleman

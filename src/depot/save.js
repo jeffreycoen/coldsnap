@@ -39,6 +39,7 @@ import { MK } from "../version.js";
 import { storage } from "../platform/storage.js";
 
 export const SAVE_KEY = "coldsnap-front-save";
+export const OUTBREAK_SAVE_KEY = "coldsnap-outbreak-save"; // 0.6.1: the outbreak's own slot, the same file shape
 
 // Rounding: the file is JSON and full float precision triples its size for
 // nothing a player could ever see. Positions/heights to the millimetre,
@@ -326,21 +327,22 @@ export function parseFront(raw) {
 
 // Both stores, the campaign's own burn discipline: the storage door (the
 // artifact runtime) AND localStorage (the Pages shim behind it).
-export async function burnFront() {
-  try { await storage.delete(SAVE_KEY); } catch (e) {}
-  try { window.localStorage.removeItem(SAVE_KEY); } catch (e) {}
+export async function burnFront(key = SAVE_KEY) {
+  try { await storage.delete(key); } catch (e) {}
+  try { window.localStorage.removeItem(key); } catch (e) {}
 }
 
 // probeFront(): the start screen's async existence check. A stale-mark save is
 // burned here and reported as gone, so the menu never offers a resume it
-// cannot honour. Never throws.
-export async function probeFront() {
+// cannot honour. Never throws. key (0.6.1): the war's slot by default, the
+// outbreak's when asked.
+export async function probeFront(key = SAVE_KEY) {
   let raw = null;
-  try { const r = await storage.get(SAVE_KEY); raw = r && r.value; } catch (e) {}
+  try { const r = await storage.get(key); raw = r && r.value; } catch (e) {}
   if (!raw) return { has: false };
   const p = parseFront(raw);
   if (!p.ok) {
-    await burnFront();
+    await burnFront(key);
     return { has: false, stale: p.reason === "mark" || p.reason === "corrupt" };
   }
   return { has: true, data: p.data, bell: p.data.run.bell };

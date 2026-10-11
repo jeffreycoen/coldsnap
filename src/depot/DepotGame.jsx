@@ -26,7 +26,7 @@ import { apcSeated, seatsOf } from "./transports.js";
 import { makeRegiment, payTown, groundRate } from "./economy.js";
 import { makeTerritory, stepTerritory, holderAt, fogStateFor, valueAt, EMIT } from "./territory.js";
 import { makeSight, stepSight, seenAt, steerReticle, reclampReticle, surfaceAt } from "./sight.js";
-import { SAVE_KEY, burnFront, restoreBodies, restoreWelds, restoreCensus, restoreSquads } from "./save.js";
+import { SAVE_KEY, OUTBREAK_SAVE_KEY, burnFront, restoreBodies, restoreWelds, restoreCensus, restoreSquads } from "./save.js";
 import { serializeRun, makeRenderer, renderPortrait, makeGameAudio, storage } from "./api.js";
 import { makeBodyLists, rebuildBodyLists } from "./lists.js";
 import Dispatch from "./Dispatch.jsx";
@@ -67,7 +67,7 @@ function detectTouch() {
 // and hands the data down already validated, so this mount effect stays
 // synchronous — a boot that awaited storage mid-construction would be a world
 // half-built for however long the read took.
-export default function DepotGame({ onExit, resume = null, dev = false, seed: menuSeed = null }) {
+export default function DepotGame({ onExit, resume = null, dev = false, seed: menuSeed = null, outbreak = false }) {
   const canvasRef = useRef(null);
   const stateRef = useRef(null);
   // The knob's screen position is pushed
@@ -187,7 +187,8 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         : Number.isFinite(urlSeed) ? urlSeed
         : menuSeedRef.current != null ? menuSeedRef.current
         : Math.floor(Date.now() % 1000000);
-      const war = bootWar({ seed, resume: RES, dev });
+      const war = bootWar({ seed, resume: RES, dev, outbreak });
+      const saveKey = outbreak ? OUTBREAK_SAVE_KEY : SAVE_KEY; // 0.6.1: the outbreak's own slot
       const { map, field, grid, world, T, town, run } = war;
       const depotCensus = war.census, depotCensus2 = war.census2;
       const rocksLive = war.rocksLive;
@@ -682,7 +683,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           // fire-and-forget, but never an unhandled rejection: a store that
           // refuses the write (quota, a runtime that says no) must cost the
           // frame nothing and must not surface as a page error.
-          Promise.resolve(storage.set(SAVE_KEY, json)).catch(() => {});
+          Promise.resolve(storage.set(saveKey, json)).catch(() => {});
         } catch (e) {
           console.warn("COLDSNAP front save failed", e);
           saveStat = { ms: -1, bytes: 0, bell: run.bell, error: String(e && e.message ? e.message : e) };
@@ -696,7 +697,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         if (dev) return; // the sandbox owns no slot to burn — a real front's save must survive a sandbox session untouched
         if (run._saveBurned) return;
         run._saveBurned = true;
-        burnFront();
+        burnFront(saveKey);
       };
 
       // THE BELL rings here and nowhere else. Town pay closes the cycle
@@ -1413,9 +1414,10 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           view.hudT += dt;
           if (view.hudT > 0.12) {
             view.hudT = 0;
-            let en = 0, nw = 0, nt = 0;
+            let en = 0, nw = 0, nt = 0, dd = 0;
             for (const b of world.bodies) {
               if (b.kind === "unit" && b.alive && b.team === 2) en++;
+              else if (b.kind === "unit" && b.alive && b.team === 3) dd++; // 0.6.1: the dead, counted apart
               else if (b.kind === "wall") { if (!b.course) nw++; } // the HUD counts WALLS, not courses
               else if (b.kind === "tower") nt++;
             }
@@ -1423,13 +1425,13 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             // the war is hot (pools worth building) while any enemy or
             // tower stands, or any squad is fielded. Stashed here (already
             // a full body walk) rather than adding a second one.
-            run._hot = en > 0 || nt > 0 || run.squads.length > 0;
+            run._hot = en > 0 || nt > 0 || dd > 0 || run.squads.length > 0;
             const nowS = performance.now() / 1000;
             view.toasts = view.toasts.filter((t) => nowS - t.t < 2.2);
             setHud({
               // The bell being counted down TO — run.bell is the one that last
               // rang, so the top bar names the next one.
-              fps: view.fps, bell: run.bell + 1, bellT: run.bellT, enemies: en,
+              fps: view.fps, bell: run.bell + 1, bellT: run.bellT, enemies: en, dead: dd,
               stones: R.chunkStats ? `${R.chunkStats().drawn}/${R.chunkStats().cap}` : "",
               resources: Math.floor(run.resources), walls: nw, towers: nt,
               score: { pk: run.score.p.kills, pv: Math.round(run.score.p.value), ek: run.score.e.kills, ev: Math.round(run.score.e.value) },
@@ -2038,6 +2040,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           </div>
         )}
         <div style={P.stat}>☠ {hud.enemies}</div>
+        {outbreak && <div data-dead style={P.stat} title="the dead standing">☣ {hud.dead || 0}</div>}
         <div data-score style={P.stat} title="the match score — kills and value destroyed, yours then the enemy's" {...teachPress("kill_price")}>
           <span style={{ color: "#7dffa8" }}>⚔ {hud.score.pk} ◆{hud.score.pv}</span>
           <span style={{ opacity: 0.5 }}>·</span>

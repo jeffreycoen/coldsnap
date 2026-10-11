@@ -25,6 +25,7 @@ export default function App() {
   // that has already been left.
   const [depotResume, setDepotResume] = useState(null);
   const [depotSeed, setDepotSeed] = useState(null);
+  const [outbreakResume, setOutbreakResume] = useState(null); // 0.6.1: THE OUTBREAK's parsed save, or null
   const mapRef = useRef(DEFAULTS);
   const remapRef = useRef(null);
   const dirtyRef = useRef(false); // a user rebind outranks the async load
@@ -70,7 +71,7 @@ export default function App() {
   // ESC leaves a game for the menu. Registered in bubble phase so the
   // remapper (capture) runs first — Escape is unbindable, so it always lands.
   useEffect(() => {
-    if (!GAME_SCREENS.has(screen) && screen !== "mechrange" && screen !== "towerdef" && screen !== "depot" && screen !== "devsandbox") return; // the mech range exits on ESC too (range stays out of GAME_SCREENS: it reads raw key codes, no remap)
+    if (!GAME_SCREENS.has(screen) && screen !== "mechrange" && screen !== "towerdef" && screen !== "depot" && screen !== "outbreak" && screen !== "devsandbox") return; // the mech range exits on ESC too (range stays out of GAME_SCREENS: it reads raw key codes, no remap)
     const onEsc = (e) => { if (e.key === "Escape") setScreen("menu"); };
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
@@ -95,6 +96,10 @@ export default function App() {
   }
   if (screen === "depot") {
     return <DepotGame resume={depotResume} seed={depotSeed} onExit={() => { setDepotResume(null); setScreen("menu"); }} />;
+  }
+  if (screen === "outbreak") {
+    // 0.6.1: THE OUTBREAK — the war screen under its mode flag.
+    return <DepotGame outbreak resume={outbreakResume} seed={depotSeed} onExit={() => { setOutbreakResume(null); setScreen("menu"); }} />;
   }
   if (screen === "devsandbox") {
     // the developer sandbox (mk2.24): the war screen under its dev switch —
@@ -127,6 +132,8 @@ export default function App() {
   return <StartScreen
     onDepot={(s) => { setDepotResume(null); setDepotSeed(s != null ? s : null); setScreen("depot"); }}
     onDepotResume={(data) => { setDepotResume(data); setScreen("depot"); }}
+    onOutbreak={(s) => { setOutbreakResume(null); setDepotSeed(s != null ? s : null); setScreen("outbreak"); }}
+    onOutbreakResume={(data) => { setOutbreakResume(data); setScreen("outbreak"); }}
     onDemos={() => setScreen("demos")}
     onDevSandbox={() => setScreen("devsandbox")}
     onControls={() => setScreen("controls")} />;

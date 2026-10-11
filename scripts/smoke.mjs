@@ -12,7 +12,7 @@
 // SMOKE_ONLY=<section[,section...]> restricts the run to a subset of
 // sections, e.g. SMOKE_ONLY=depot or SMOKE_ONLY=depot,td. Unset runs
 // everything. Sections:
-// start, demo, phone, keymap, mech, td, depot.
+// start, demo, phone, keymap, mech, td, depot, outbreak.
 // Each enabled section seeds its own localStorage/navigation preconditions
 // so any subset is runnable standalone for local iteration.
 import puppeteer from "puppeteer-core";
@@ -21,7 +21,7 @@ import { MK } from "../src/version.js";
 const URL = process.env.SMOKE_URL || "http://localhost:4173/coldsnap/";
 const CHROME = process.env.CHROME_BIN || "/usr/bin/chromium";
 
-const ALL_SECTIONS = ["start", "demo", "phone", "keymap", "mech", "td", "depot"];
+const ALL_SECTIONS = ["start", "demo", "phone", "keymap", "mech", "td", "depot", "outbreak"];
 const ONLY = process.env.SMOKE_ONLY
   ? process.env.SMOKE_ONLY.split(",").map((s) => s.trim()).filter(Boolean)
   : null;
@@ -209,6 +209,23 @@ try {
       const left = await page.waitForFunction(() => !!document.querySelector('[data-menu="depot"]'), { timeout: 45000, polling: 200 }).then(() => true).catch(() => false);
       ok("depot: RETURN TO BASE returns to base", left);
     }
+  }
+
+  // --- THE OUTBREAK (0.6.1): it mounts from its own door, six dead stand at
+  // the opening, ESC returns.
+  if (sectionEnabled("outbreak")) {
+    const obURL = URL + (URL.includes("?") ? "&" : "?") + "seed=11";
+    await page.evaluate(() => { localStorage.removeItem("coldsnap-outbreak-save"); localStorage.setItem("coldsnap-wf-cards", JSON.stringify({ rev: 1, seen: ["*"] })); localStorage.setItem("coldsnap-screen", "menu"); });
+    await page.goto(obURL, { waitUntil: "networkidle0" });
+    body = await text();
+    ok("outbreak: the front door offers THE OUTBREAK", body.includes("THE OUTBREAK — TAKE COMMAND"));
+    await clickMenu("outbreak");
+    await page.waitForFunction(() => typeof window.__DEPOT__ === "function", { timeout: 20000 });
+    const dead = await page.evaluate(() => window.__DEPOT__().dead);
+    ok(`outbreak: six dead stand at the opening [${dead}]`, dead === 6);
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => document.querySelector('[data-menu="outbreak"]'), { timeout: 10000 });
+    ok("outbreak: ESC returns to menu", true);
   }
 
   ok("no page errors during the run", pageErrors.length === 0);

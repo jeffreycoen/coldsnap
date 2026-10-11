@@ -80,7 +80,7 @@ export const squadSpeed = (type) => (SQUAD_SPECS[type] && SQUAD_SPECS[type].spee
 // accuracy.js): no side calls the other's export at module top level, only
 // from inside function bodies invoked long after evaluation.
 import { arcClears } from "./accuracy.js";
-import { effRange, hostileStructure, standingStructure, hitOrigin } from "./state.js";
+import { effRange, hostileStructure, standingStructure, hitOrigin, hostileUnit } from "./state.js";
 import { INFANTRY_ARMS, SATCHEL, SAPPER_PLANT_PAD, MAN } from "./specs.js";
 // FRONT F1 (Task 4.5): the player sapper's satchel — same core explode/
 // applyDamage the enemy sapper uses (units.js stepSapper), sign-flipped.
@@ -416,7 +416,7 @@ export const COHESION_M = 6; // m — max live-member-to-anchor distance before 
 // a member wedged in terrain (the concave-pocket detour oscillation) trails
 // forever and would otherwise deadlock the whole squad's advance permanently.
 export const COHESION_CAP_S = 4; // s — accumulated cohesion hold per leg before the anchor advances regardless
-function seekGoal(world, u, dt) {
+export function seekGoal(world, u, dt, sp0) {
   if (!u.goal) return;
   const dx = u.goal.x - u.pos.x, dz = u.goal.z - u.pos.z;
   const d = Math.hypot(dx, dz);
@@ -467,7 +467,7 @@ function seekGoal(world, u, dt) {
   // P7 T7: per-type speed — members carry utype (spawnSquadMembers), so a
   // man's own march rate reads off his squad type, falling back to the flat
   // MOVE_SPEED for every existing type (no `speed` field).
-  const sp = squadSpeed(u.utype);
+  const sp = sp0 != null ? sp0 : squadSpeed(u.utype); // 0.6.1: a caller may name the pace (the dead)
   // Wake-on-seek (diag-squadlag root cause): a paused body goes to SLEEP
   // (core.js skips integration and re-zeros v below the wake threshold — a
   // gentle accel-from-rest never escapes it, so a slept marcher stalls
@@ -527,7 +527,7 @@ export function squadThreatened(world, squad, members) {
   if (hit) return true;
   const pool = world._L ? world._L.foes : world.bodies;     // T10
   for (const b of pool) {
-    if (!b.alive || b.team !== 2) continue;
+    if (!b.alive || !hostileUnit(b, squad.team || 1)) continue; // 0.6.1: the dead threaten a squad as the enemy does
     if (b.kind !== "unit" && b.kind !== "vehicle" && b.kind !== "mech") continue;
     if (Math.hypot(b.pos.x - squad.anchor.x, b.pos.z - squad.anchor.z) <= THREAT_RADIUS) return true;
   }

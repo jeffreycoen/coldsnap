@@ -89,6 +89,9 @@ const TOOLBOX = { off: [0.17, 0.0, 0.05], s: [1.6, 1.2, 1.0], role: "gun" }; // 
 // cannot draw lobes; the owner's eye rules the placard live). The tube is
 // the mortar's carried-prop idiom, fatter. // provisional (F5), every hex
 export const DAVY_HEX = { dom: 0xe8791e, sec: 0xb45510, acc: 0xf5d020, gun: 0x141414 };
+// 0.6.1: THE DEAD's dress — a grey-green coat, the same man shape, nothing
+// in hand. The hexes are a starting choice; the owner's eye rules them live.
+export const DEAD_HEX = { dom: 0x5f6b55, sec: 0x3a4236, acc: 0x7c8a6e, skin: 0xb9c2a6, gun: 0x14171a };
 const DAVY_TUBE = { off: [0.26, 0.28, 0.06], s: [2.2, 12, 2.2], tilt: [0, 0.42] };
 const DAVY_PLATE = { off: [0, 0.28, 0.17], s: [1.8, 1.8, 0.5], role: "acc" };
 const DAVY_MARK = { off: [0, 0.28, 0.21], s: [0.9, 0.9, 0.3], role: "gun" };
@@ -145,7 +148,8 @@ export function troopKit(b, depot, sil = false) {
   // COAT = SIDE (DEPOT only): the player's infantry keep the warm rust coat,
   // the enemy's wear the cold slate one. The enemy grenadier already wore
   // slate, so he is unchanged; androids ignore both and keep their silver.
-  const pal = (b.utype === "medics" || b.tag === "medic") ? "medic"
+  const pal = b.team === 3 ? "dead" // 0.6.1: the third side's coat outranks every other
+    : (b.utype === "medics" || b.tag === "medic") ? "medic"
     : (b.utype === "davy" || b.tag === "davy") ? "davy" // mk2.12: the orange outranks the coat — both sides' atomic crews
     : gren || b.team === 2 ? "gren" : "con"; // P7.2 T6: the cross outranks the coat — both sides' medics wear the white
   const bulk = BULK[b.tag] || null;
@@ -154,6 +158,7 @@ export function troopKit(b, depot, sil = false) {
   // working. One flag, read here only; render-only theater.
   if (b.kneel && (b.utype === "medics" || b.tag === "medic" || b.utype === "mechanics" || b.tag === "mechanic")) bh *= 0.72;
   if (sil) return { pal, bw, bh, rifle: 1, props: KIT_PLAIN.props }; // fog: bulk only
+  if (b.team === 3) return { pal, bw, bh, rifle: 0, props: KIT_NONE.props }; // 0.6.1: the dead carry nothing
   let k = KIT_PLAIN;
   if (gren) k = KIT_PLAIN;                                    // grenadier: own table, own tube
   else if (b.role === "spotter") k = KIT_PLAIN;               // spotter: the pair look owns him

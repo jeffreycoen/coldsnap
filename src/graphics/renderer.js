@@ -5,7 +5,7 @@
 // imports the single-file version got from its own top-of-file scope.
 import * as THREE from "three";
 import { POOL, INFANTRY, BAYER4, snapCam, ICE_CREEP, ICE_CREEP_T } from "../engine/core.js";
-import { troopKit, RIFLE_PREROT, MEDIC_HEX, DAVY_HEX } from "./troopkit.js";
+import { troopKit, RIFLE_PREROT, MEDIC_HEX, DAVY_HEX, DEAD_HEX } from "./troopkit.js";
 
 // ==================================================================== render
 const PAL = { bisonBlue: 0x33619c, scoutRed: 0x8a4a44, snow: 0xe9edf2, uiRed: 0xd8433a }; // player is blue steel; the enemy wears the red now
@@ -985,7 +985,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
     if (p.key === "coat" || p.key === "chest") m.receiveShadow = true;
     return m;
   });
-  const conPools = buildInfPools(INFANTRY.con, 96, INFANTRY.pal.con);
+  const conPools = buildInfPools(INFANTRY.con, 256, INFANTRY.pal.con); // 0.6.1: 96 -> 256 — the dead and the people join the soldiers
   const grenPools = buildInfPools(INFANTRY.gren, 24, INFANTRY.pal.gren);
   const INF_LIVE = { con: {}, gren: {} }, INF_DEAD = { con: {}, gren: {} };
   for (const t of ["con", "gren"]) for (const k in INFANTRY.pal[t]) { INF_LIVE[t][k] = new THREE.Color(INFANTRY.pal[t][k]); INF_DEAD[t][k] = new THREE.Color(INFANTRY.dead[t][k]); }
@@ -1005,6 +1005,9 @@ export function makeRenderer(canvas, world0, opts = {}) {
   // scorched grey-orange for the dead.
   const DAVY_LIVE = mkPal({ ...INFANTRY.pal.con, ...DAVY_HEX });
   const DAVY_DEAD = mkPal({ ...INFANTRY.dead.con, dom: 0x7a4a20, sec: 0x5c3816, acc: 0x8a7430, gun: 0x101214 });
+  // 0.6.1: the dead's palette — living coat, and the winter-kill grey of it
+  const DEAD_LIVE = mkPal({ ...INFANTRY.pal.con, ...DEAD_HEX });
+  const DEAD_DEAD = mkPal({ ...INFANTRY.dead.con, dom: 0x3c4438, sec: 0x262c24, acc: 0x4a5444, gun: 0x101214 });
   // DIVERGENCE (guarded, mk0.99): HIT FEEDBACK palette — a struck man flashes
   // toward this red for 0.18s (see hurtK below).
   const HIT_C = new THREE.Color(0xff5230), _hitC = new THREE.Color();
@@ -2189,13 +2192,13 @@ export function makeRenderer(canvas, world0, opts = {}) {
       if (b.riding) continue; // P7 T4: the hold is sealed — a rider draws nowhere
       const R = b.R;
       const isG = b.utype === "gren";
-      if (isG ? gi >= 24 : ci >= 96) continue;
+      if (isG ? gi >= 24 : ci >= 256) continue;
       // DEPOT fog (opts.territory, gated by fogOn): an enemy standing in
       // unheld ground is not rendered at all — a shell from the fog is
       // information earned, a soldier standing there is not. In the seam,
       // render but force the flat silhouette palette below (no dress read).
       let fogSil = false;
-      if (opts.territory && b.team === 2 && b.alive) {
+      if (opts.territory && (b.team === 2 || b.team === 3) && b.alive) { // 0.6.1: the dead hide in the fog as the enemy does
         fogDbgTotal++;
         if (fogOn) {
           const st = opts.territory.sample(b.pos.x, b.pos.z);
@@ -2229,6 +2232,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
       // (core.js applyDamage); every other mode renders byte-identical.
       const hurtAge = world.depotCombat && b.alive && b.dmgT != null ? world.t - b.dmgT : 1;
       const hurtK = hurtAge < 0.18 ? 1 - hurtAge / 0.18 : 0;
+      const stoop = world.depotCombat && b.team === 3 && b.alive ? 0.10 : 0; // 0.6.1: the dead walk stooped — the hurt dip, held
       // mk2.02: TWO-METER MEN — depot bodies are 2m (hy 1.0); the
       // drawn man stretches to match. Demo modes render byte-identical.
       const bw = KIT.bw, bh = KIT.bh * (world.depotCombat ? 2.0 / 1.44 : 1);
@@ -2251,7 +2255,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
         // or the baked rotation shears it — and no bulked unit carries one.
         const bpx = propI !== undefined ? 1 : bw, bpy = propI !== undefined ? 1 : bh;
         const ox = o[0] * (propI !== undefined ? 1 : bw), oz = o[2] * (propI !== undefined ? 1 : bw);
-        const oy = o[1] * (propI !== undefined ? 1 : bh) * crouch - (crouch < 1 ? 0.06 : 0) - 0.10 * hurtK;
+        const oy = o[1] * (propI !== undefined ? 1 : bh) * crouch - (crouch < 1 ? 0.06 : 0) - 0.10 * hurtK - stoop;
         const px = b.pos.x + R[0] * ox + R[3] * oy + R[6] * oz;
         const py = b.pos.y + R[1] * ox + R[4] * oy + R[7] * oz;
         const pz = b.pos.z + R[2] * ox + R[5] * oy + R[8] * oz;
@@ -2287,7 +2291,7 @@ export function makeRenderer(canvas, world0, opts = {}) {
         if (pools[pi].setColorAt) {
           if (fogSil) pools[pi].setColorAt(idx, SIL_C);
           else {
-            const pal = b.dress === "android" ? (b.alive ? AND_LIVE : AND_DEAD) : kitPal === "medic" ? (b.alive ? MED_LIVE : MED_DEAD) : kitPal === "davy" ? (b.alive ? DAVY_LIVE : DAVY_DEAD) : (b.alive ? INF_LIVE : INF_DEAD)[kitPal];
+            const pal = b.dress === "android" ? (b.alive ? AND_LIVE : AND_DEAD) : kitPal === "dead" ? (b.alive ? DEAD_LIVE : DEAD_DEAD) : kitPal === "medic" ? (b.alive ? MED_LIVE : MED_DEAD) : kitPal === "davy" ? (b.alive ? DAVY_LIVE : DAVY_DEAD) : (b.alive ? INF_LIVE : INF_DEAD)[kitPal];
             if (hurtK > 0) { _hitC.copy(pal[propRole || p.role]).lerp(HIT_C, 0.7 * hurtK); pools[pi].setColorAt(idx, _hitC); }
             else pools[pi].setColorAt(idx, pal[propRole || p.role]);
           }

@@ -8,7 +8,7 @@ import { planWave, MIN_WAVE_FLOOR, spawnDelayFor } from "./ai.js";
 import { payResults, combatIneffective, bookValue, KILL_CUT } from "./economy.js";
 import { killPrice } from "./market.js";
 import { composeIntel, openingIntel } from "./intel.js";
-import { TOWER_SPECS, ENEMY_SPECS, TANK, INFANTRY_ARMS, MASON, PLAYER_START, PLAYER_TIERS, HAND_KEYS, HAND_TAGS, MAN, GRENADE, DAVY_FIRE } from "./specs.js";
+import { TOWER_SPECS, ENEMY_SPECS, TANK, INFANTRY_ARMS, MASON, PLAYER_START, PLAYER_TIERS, HAND_KEYS, HAND_TAGS, MAN, GRENADE, DAVY_FIRE, DEAD_TEAM } from "./specs.js";
 import { seenAt } from "./sight.js";
 
 // Targeting gate, symmetric, VISION era (mk0.72): a shooter of `team` (1 =
@@ -30,6 +30,13 @@ import { seenAt } from "./sight.js";
 export function fieldReaches(T, x, z, team) {
   if (!T || !T.sight) return true;
   return seenAt(T.sight, x, z, team);
+}
+
+// THE THIRD SIDE (0.6.1): a body is hostile to `team` when it belongs to the
+// other army or to the dead. Every scan that picks a man, hull, or mech to
+// shoot asks this; the dead ask nothing — they fire nothing.
+export function hostileUnit(b, team) {
+  return b.team === DEAD_TEAM || b.team === (team === 1 ? 2 : 1);
 }
 
 // Elevation-scaled acquisition range — the single symmetric rule both towers
@@ -612,7 +619,7 @@ export function squadFire(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z })
       const pool = world._L ? (enemyTeam === 2 ? world._L.foes : world._L.friends) : world.bodies; // T10
       let best = null, bd = eR * eR;
       for (const e of pool) {
-        if ((e.kind !== "unit" && e.kind !== "vehicle" && e.kind !== "mech") || !e.alive || e.team !== enemyTeam) continue;
+        if ((e.kind !== "unit" && e.kind !== "vehicle" && e.kind !== "mech") || !e.alive || !hostileUnit(e, squad.team)) continue;
         const dx = e.pos.x - u.pos.x, dz = e.pos.z - u.pos.z;
         const d2 = dx * dx + dz * dz;
         if (d2 >= bd) continue;
@@ -709,7 +716,7 @@ export function stepDavyShot(world, squad, dt, T, toUV = (x, z) => ({ u: x, v: z
   const enemyTeam = squad.team === 1 ? 2 : 1;
   let best = null, bd = eR * eR;
   for (const e of world.bodies) {
-    if ((e.kind !== "unit" && e.kind !== "vehicle" && e.kind !== "mech") || !e.alive || e.team !== enemyTeam) continue;
+    if ((e.kind !== "unit" && e.kind !== "vehicle" && e.kind !== "mech") || !e.alive || !hostileUnit(e, squad.team)) continue;
     const dx = e.pos.x - shooter.pos.x, dz = e.pos.z - shooter.pos.z, d2 = dx * dx + dz * dz;
     if (d2 >= bd) continue;
     const c = toUV(e.pos.x, e.pos.z);
@@ -746,7 +753,7 @@ export function snapTargetNear(world, aim, T, toUV, r = POSSESS_SNAP_R) {
   const pool = world._L ? world._L.foes : world.bodies;     // T10
   let best = null, bd = r * r;
   for (const b of pool) {
-    if ((b.kind !== "unit" && b.kind !== "vehicle" && b.kind !== "mech") || !b.alive || b.team !== 2) continue;
+    if ((b.kind !== "unit" && b.kind !== "vehicle" && b.kind !== "mech") || !b.alive || !hostileUnit(b, 1)) continue;
     const dx = b.pos.x - aim.x, dz = b.pos.z - aim.z, d2 = dx * dx + dz * dz;
     if (d2 >= bd) continue;
     const c = toUV(b.pos.x, b.pos.z);
@@ -763,7 +770,7 @@ export function snapTargetNear(world, aim, T, toUV, r = POSSESS_SNAP_R) {
 export function stickyLock(world, lockId, aim, T, toUV, r = POSSESS_SNAP_R) {
   if (lockId) {
     const b = world.byId.get(lockId);
-    if (b && b.alive && (b.kind === "unit" || b.kind === "vehicle" || b.kind === "mech") && b.team === 2) {
+    if (b && b.alive && (b.kind === "unit" || b.kind === "vehicle" || b.kind === "mech") && hostileUnit(b, 1)) {
       const c = toUV(b.pos.x, b.pos.z);
       if (fieldReaches(T, c.u, c.v, 1) && Math.hypot(b.pos.x - aim.x, b.pos.z - aim.z) < r) return b;
     }
@@ -1196,7 +1203,7 @@ export function pruneSquads(world, squads) {
   for (const sq of squads) {
     sq.memberIds = sq.memberIds.filter((id) => {
       const u = world.byId.get(id);
-      return !!u && u.alive;
+      return !!u && u.alive && u.team === (sq.team || 1); // 0.6.1: a turned man leaves the roster
     });
     // The pair's degradation (6.5 Task 6): sniper dies -> the spotter
     // converts to a lone rifleman — utype/spec swap to rifles, squad
@@ -1708,6 +1715,7 @@ export function makeEndDispatch({ victory, score = null }) {
 export function creditKill(world, squads, foeSquads, ev) {
   if (ev.type !== "kill") return;
   if (ev.kind !== "unit" && ev.kind !== "vehicle" && ev.kind !== "mech") return;
+  if (ev.team === DEAD_TEAM) return; // 0.6.1: a dead kill credits nobody
   const kid = ev.srcId != null ? ev.srcId : ev.killerId;
   if (!kid) return;
   const kb = world.byId.get(kid);

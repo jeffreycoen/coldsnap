@@ -7,6 +7,7 @@
 // assignment in src/ — a mismatch either way is a finding against this file.
 
 import { worldHash } from "../engine/core.js";
+import { DEAD_TEAM } from "./specs.js";
 import { serializeFront } from "./save.js";
 import { bootWar } from "./boot.js";
 import { tickWar } from "./tick.js";
@@ -403,7 +404,7 @@ export function importManifest(source) {
 
 function usage() {
   console.error(
-    "usage: node src/depot/api.js gate [seed=1] [seconds=90]\n" +
+    "usage: node src/depot/api.js gate [seed=1] [seconds=90] [outbreak]\n" +
     "       node src/depot/api.js manifest [--write out.json] <file...>");
 }
 
@@ -415,16 +416,19 @@ async function main() {
     const STEP = 1 / 120, steps = Math.round(seconds * 120);
     let war;
     try {
-      war = bootWar({ seed });
+      war = bootWar({ seed, outbreak: rest[2] === "outbreak" });
     } catch (error) {
       console.error(String(error && error.message ? error.message : error));
       process.exit(1);
     }
     const input = defaultTickInput();
     for (let i = 0; i < steps; i++) tickWar(war, STEP, input);
+    let dead = 0;
+    for (const b of war.world.bodies) if (b.kind === "unit" && b.team === DEAD_TEAM && b.alive) dead++;
     console.log(
       "seed " + seed + "  seconds " + seconds + " (" + steps + " steps)" +
-      "  worldHash " + worldHash(war.world) + "  runHash " + runHash(war.run));
+      "  worldHash " + worldHash(war.world) + "  runHash " + runHash(war.run) +
+      (war.run.outbreak ? "  dead " + dead : ""));
     return;
   }
   if (command === "manifest") {

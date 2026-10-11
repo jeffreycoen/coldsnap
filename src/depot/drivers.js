@@ -9,7 +9,7 @@
 // world.bodies order — deterministic. Future vehicles (the depot Bison,
 // the APC, heroes) add a DRIVERS row, never a second loop.
 import { applyDamage, aimSolve } from "../engine/core.js";
-import { shooterFire, fieldReaches, effRange, hostileStructure, snapTargetNear, POSSESS_ACC, hitOrigin } from "./state.js";
+import { shooterFire, fieldReaches, effRange, hostileStructure, snapTargetNear, POSSESS_ACC, hitOrigin, hostileUnit } from "./state.js";
 import { arcClears, shotClears, elevSolve, tightSolve, elevCapOf } from "./accuracy.js";
 import { ENEMY_FIRE, BISON_FIRE, BARRELS } from "./specs.js";
 import { planRoute } from "./route.js";
@@ -388,7 +388,7 @@ function armorScanFoes(world, v, muzzle, spec, unitsOnly, T, toUV) {
   const pool = world._L ? (enemyTeam === 2 ? world._L.foes : world._L.friends) : world.bodies;
   let best = null, bd = eR * eR;
   for (const e of pool) {
-    if ((e.kind !== "unit" && (unitsOnly || (e.kind !== "vehicle" && e.kind !== "mech"))) || !e.alive || e.team !== enemyTeam) continue;
+    if ((e.kind !== "unit" && (unitsOnly || (e.kind !== "vehicle" && e.kind !== "mech"))) || !e.alive || !hostileUnit(e, v.team)) continue;
     const dx = e.pos.x - v.pos.x, dz = e.pos.z - v.pos.z, d2 = dx * dx + dz * dz;
     if (d2 >= bd) continue;
     const c = toUV(e.pos.x, e.pos.z);

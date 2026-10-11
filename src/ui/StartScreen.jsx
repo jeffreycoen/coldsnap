@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { COLORS, FONT, btn, detectTouch } from "./theme.js";
 import { MK } from "../version.js";
-import { probeFront, burnFront } from "../depot/save.js";
+import { probeFront, burnFront, OUTBREAK_SAVE_KEY } from "../depot/save.js";
 import { captureStartView } from "./startview.js";
 
 // THE FRONT DOOR (P6 T7, mk1.14). The site opens on WINTER FRONT — one
@@ -13,7 +13,7 @@ import { captureStartView } from "./startview.js";
 // beyond the rim. makeMap bumps a fouled seed; the number returned — shown
 // and handed on — is ALWAYS the installed MAP_SEED. Every hue here is a
 // design choice (provisional); the owner's live look is the acceptance.
-export default function StartScreen({ onDepot, onDepotResume, onDemos, onDevSandbox, onControls }) {
+export default function StartScreen({ onDepot, onDepotResume, onOutbreak, onOutbreakResume, onDemos, onDevSandbox, onControls }) {
   const [isTouch] = useState(detectTouch);
   // THE SAVED FRONT (P1 Task 3). null until the async probe lands — the menu
   // renders its normal self meanwhile and RESUME FRONT simply appears when
@@ -28,6 +28,22 @@ export default function StartScreen({ onDepot, onDepotResume, onDemos, onDevSand
     const t = setTimeout(() => setBurnArmed(false), 5000);
     return () => clearTimeout(t);
   }, [burnArmed]);
+
+  // THE OUTBREAK's saved run (0.6.1): its own key, its own probe, its own
+  // two-tap burn — the front's shape, one key over. The menu map is the
+  // front's; the outbreak paints nothing of its own.
+  const [ob, setOb] = useState(null);
+  const [obArmed, setObArmed] = useState(false);
+  useEffect(() => {
+    if (!obArmed) return;
+    const t = setTimeout(() => setObArmed(false), 5000);
+    return () => clearTimeout(t);
+  }, [obArmed]);
+  useEffect(() => {
+    let live = true;
+    (async () => { const f = await probeFront(OUTBREAK_SAVE_KEY); if (live) setOb(f); })();
+    return () => { live = false; };
+  }, []);
 
   // THE MENU MAP's state: the canvas, the rolled seed (installed value),
   // and the FIELD ORDER # on display. Resume shows the SAVE's map; arming
@@ -70,6 +86,15 @@ export default function StartScreen({ onDepot, onDepotResume, onDemos, onDevSand
     burnFront();
     setFront({ has: false });
     onDepot(newSeedRef.current);
+  };
+  const hasOb = !!(ob && ob.has);
+  const startNewOutbreak = () => {
+    if (!hasOb) { onOutbreak(newSeedRef.current); return; }
+    if (!obArmed) { setObArmed(true); return; }
+    setObArmed(false);
+    burnFront(OUTBREAK_SAVE_KEY);
+    setOb({ has: false });
+    onOutbreak(newSeedRef.current);
   };
 
   const option = (extra) => ({
@@ -116,6 +141,25 @@ export default function StartScreen({ onDepot, onDepotResume, onDemos, onDevSand
               : hasFront
                 ? "A fresh valley. The saved front is burned when you start one."
                 : "Two depots, one frozen valley, a river with one crossing. Break theirs before they break yours."}
+          </div>
+        </button>
+
+        {hasOb && (
+          <button data-menu="outbreak-resume" style={option({ borderColor: "#c9a04e", background: "rgba(201,160,78,0.10)" })}
+            onClick={() => onOutbreakResume && onOutbreakResume(ob.data)}>
+            <div style={{ color: COLORS.gold, fontSize: 15, letterSpacing: 2 }}>▶ RESUME THE OUTBREAK</div>
+            <div style={{ fontSize: 12, opacity: 0.92, marginTop: 4 }}>
+              The outbreak as you left it, at bell {ob.bell}.
+            </div>
+          </button>
+        )}
+
+        <button data-menu="outbreak" style={option({ borderColor: obArmed ? "#a63c3c" : "#7a9a6a", background: obArmed ? "rgba(92,33,27,0.85)" : COLORS.btnBg })} onClick={startNewOutbreak}>
+          <div style={{ color: obArmed ? "#ff6b5e" : "#b9d49f", fontSize: 15, letterSpacing: 2 }}>
+            {obArmed ? "THE OUTBREAK BURNS — CONFIRM" : "▶ THE OUTBREAK — TAKE COMMAND"}
+          </div>
+          <div style={{ fontSize: 12, opacity: 0.92, marginTop: 4 }}>
+            {obArmed ? "Tap again and the saved outbreak is gone for good." : "Both armies, one valley, and the dead loose in the towns."}
           </div>
         </button>
 

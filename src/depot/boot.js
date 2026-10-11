@@ -13,6 +13,7 @@ import { makeTerritory, EMIT } from "./territory.js";
 import { makeSight } from "./sight.js";
 import { makeRegiment } from "./economy.js";
 import { musterFreshStart } from "./muster.js";
+import { spawnOutbreak } from "./dead.js";
 
 // P7 T17: HULLS RESPECT FRIENDLY SANDBAGS — a bag claims its
 // cell for HULL routing only (men still fight over bags; foot routing,
@@ -384,6 +385,12 @@ export function bootWar(opts = {}) {
   if (!RES && !opts.dev) {
     musterFreshStart(world, run, depotP, grid, field, nextApcSeq, map);
   }
+  // THE OUTBREAK (0.6.1): the mode flag rides the run only when set — the
+  // war's run carries no key at all, so its hash is untouched. Six dead at
+  // the middle town on a fresh boot, draw-free; a resume brings them back
+  // as bodies off the file.
+  if (opts.outbreak) run.outbreak = true;
+  if (!RES && opts.outbreak) spawnOutbreak(world, map);
   // Step 5. The run state itself, straight off the file. The bell is the
   // ONE deliberate exception: the countdown restarts at a full period
   // rather than resuming a half-elapsed one (ratified — simpler, and

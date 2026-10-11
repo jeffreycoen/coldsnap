@@ -11,6 +11,7 @@
 // dropped course's rubble) joins the pools on the next tick — an accepted
 // one-tick (8ms) delta, stated in the phase plan. No rng. Fixtures that never
 // build lists fall back to world.bodies at every consumer (world._L absent).
+import { DEAD_TEAM } from "./specs.js";
 const SOLID_KINDS = new Set(["rock", "wall", "tower", "tree", "chunk"]);
 
 export function makeBodyLists() {
@@ -32,8 +33,10 @@ export function rebuildBodyLists(world, L) {
       // P7 T12: hulls get their own small pool — slotBlocked's hull test
       // (squads.js) reads it; the statics pool can never carry one (dynamic).
       if (k === "vehicle" || k === "mech") L.vehicles.push(b);
-      if (b.team === 1) L.friends.push(b);
-      else if (b.team === 2) L.foes.push(b);
+      // 0.6.1: the dead ride BOTH side pools — each army's scans find them
+      // in the pool it already reads; the consumers' own predicates decide.
+      if (b.team === 1 || b.team === DEAD_TEAM) L.friends.push(b);
+      if (b.team === 2 || b.team === DEAD_TEAM) L.foes.push(b);
       continue;
     }
     if (!SOLID_KINDS.has(k)) continue;

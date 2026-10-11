@@ -1,7 +1,7 @@
 import { PENDING_ARM_S, pendingArmed, canvasTapConsumesPending, TAP_SQUAD_M, TAP_HULL_M, TAP_TOWER_M, nextPick, squadIdsOfType, WALL_FIELD_COST, SANDBAG_FIELD_COST } from "./state.js";
 import { reclampReticle, seenAt, eyeOf } from "./sight.js";
 import { JEEP, INFANTRY_ARMS, TOWER_SPECS } from "./specs.js";
-import { unloadApc, apcSeated, seatsOf } from "./transports.js";
+import { unloadApc, apcSeated, seatsOf, squadCanBoard } from "./transports.js";
 import { startBuildLine, linePieces, stepBuildLine } from "./buildlines.js";
 import { fieldPrices } from "./market.js";
 import { MINE_COST, WIRE_COST } from "./mines.js";
@@ -620,6 +620,7 @@ export function makeOrders(ctx) {
           if (v.vtype !== "apc" && v.vtype !== "jeep") { view.vehOrderMode = null; return true; }
           const sq = squadAtPoint(p);
           if (!sq) { toast("TAP A SQUAD TO LOAD"); return true; }
+          if (!squadCanBoard(world, sq)) { toast("A BITTEN MAN CANNOT BOARD"); return true; }
           if (input.possess && input.possess.kind === "squad" && input.possess.id === sq.id) { toast("RELEASE THEM FIRST"); return true; }
           let live = 0;
           for (const id of sq.memberIds) { const u = world.byId.get(id); if (u && u.alive) live++; }

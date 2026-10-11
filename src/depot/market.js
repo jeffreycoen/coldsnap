@@ -3,7 +3,7 @@
 // cost times min(4, 1 + standing/K) — both armies' standing stock counted
 // together, one shared table both sides pay. Pure counting and arithmetic:
 // no rng, no world mutation, recomputed each second by the game layer.
-import { TOWER_SPECS, ENEMY_SPECS, TANK, BISON, APC, JEEP, MECH } from "./specs.js";
+import { TOWER_SPECS, ENEMY_SPECS, TANK, BISON, APC, JEEP, MECH, DEAD_TEAM } from "./specs.js";
 import { SQUAD_SPECS } from "./squads.js";
 
 // THE TWO WALLS (mk1.20, owner's rulings): both pressures are the same
@@ -57,7 +57,7 @@ export function marketCounts(world, squads, mines) {
   }
   for (const b of world.bodies) {
     if (!b.alive) continue;
-    if (b.kind === "unit") c._men = (c._men || 0) + 1; // both armies — squad men are unit bodies too
+    if (b.kind === "unit" && b.team !== DEAD_TEAM) c._men = (c._men || 0) + 1; // both armies — squad men are unit bodies too; the dead are not men on the market (0.6.1)
     if (b.kind === "unit" && b.team === 2) add(FAMILY_OF_TAG[b.tag || ""], 1);
     else if (b.kind === "vehicle" && b.team === 2 && b.tag === "tank") add("tank", 1); // P7 T2: only wave armor prices the tank family
     // P7 T9: THE HERO TIER — one shared market, BOTH teams' standing hulls
