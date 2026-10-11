@@ -1,5 +1,7 @@
 # The Family Sky — phase skeleton
 
+*HISTORY (stamped 2026-10-11): this document is a record of shipped work, not authority. Design truth lives in CLAUDE.md and the ACTIVE phase's plan documents; where this file disagrees with them, it is wrong.*
+
 A large seeded map: a built star system that the seed sets faintly astir, so every map starts orderly and comes apart in its own way. A pinned great star holds two lesser stars and four planets; each lesser star holds two planets; three light moons ride the outer great-ring planets. About 6000 across. The ship flies it from the first landing.
 
 ## The design, settled by measurement
