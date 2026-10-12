@@ -16,7 +16,7 @@ import { bootWar } from "../../src/depot/boot.js";
   const integrate = (w, u, dt) => { u.pos.x += u.v.x * dt; u.pos.z += u.v.z * dt; };
 
   // (a) the numbers
-  ok("(a) the dead walk at 4.8 meters a second and the turn is thirty seconds", DEAD.speed === 4.8 && DEAD.turnS === 30, `${DEAD.speed}/${DEAD.turnS}`);
+  ok("(a) the turn is thirty seconds", DEAD.turnS === 30, String(DEAD.turnS)); // 0.6.6: the pace moved to 6.4 and is pinned in the 0.6.6 era
 
   // (b) the home: a person spawned with a door has an inside spot and an outside spot
   {
@@ -70,6 +70,6 @@ import { bootWar } from "../../src/depot/boot.js";
     const m = addBody(w, { kind: "unit", team: 1, mass: MAN.rifle.mass, hx: MAN.rifle.hx, hy: MAN.rifle.hy, hz: MAN.rifle.hz, x: 12, z: 0, y: MAN.rifle.hy + 0.02, hp: MAN.rifle.hp, friction: 0.5 }); m.maxHp = MAN.rifle.hp;
     let bitAt = null;
     for (let i = 0; i < 480 && bitAt == null; i++) { stepDead(w, 1 / 120); w.t += 1 / 120; integrate(w, d, 1 / 120); if (m.hp < MAN.rifle.hp) bitAt = w.t; }
-    ok("(f) at 4.8 the dead still close 12 meters and bite inside four seconds", bitAt != null && bitAt < 4 && bitAt > 2, bitAt == null ? "no bite" : bitAt.toFixed(2) + "s");
+    ok("(f) at 6.4 the dead close 12 meters and bite inside three seconds", bitAt != null && bitAt < 3 && bitAt > 1, bitAt == null ? "no bite" : bitAt.toFixed(2) + "s"); // 0.6.6: the bounds follow the pace
   }
 }

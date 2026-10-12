@@ -61,6 +61,7 @@ export const FOE_RACK = [
   { key: "foe_t_mortar", label: "MORTAR", icon: "◎", tower: "mortar" },
   { key: "foe_t_rocket", label: "SALVO RACK", icon: "▲", tower: "rocket" },
   { key: "foe_t_tesla", label: "TESLA COIL", icon: "⚡", tower: "tesla" },
+  { key: "foe_dead", label: "THE DEAD", icon: "☣", dead: true }, // 0.6.6: one of the dead at the tap
 ];
 export const FOE_RACK_BY_KEY = Object.fromEntries(FOE_RACK.map((f) => [f.key, f]));
 

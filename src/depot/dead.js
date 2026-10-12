@@ -10,6 +10,7 @@ import { addBody, applyDamage } from "../engine/core.js";
 import { DEAD, DEAD_TEAM } from "./specs.js";
 import { clearSlot, seekGoal } from "./squads.js";
 import { faceTravel } from "./units.js";
+import { spawnPeople } from "./people.js";
 
 export function spawnDead(world, x, z) {
   const p = clearSlot(world, x, z, DEAD.hx + 0.35);
@@ -44,6 +45,17 @@ export function spawnOutbreak(world, map) {
     out.push(spawnDead(world, c.x + Math.sin(a) * OUTBREAK_R, c.z + Math.cos(a) * OUTBREAK_R));
   }
   return out;
+}
+
+// 0.6.6: THE BENCH SWITCH — the sandbox turns the dead on and off. The first
+// turn-on fields the ring and the people; after that the switch only runs or
+// halts their step, and the bodies stay. Returns the new state. Draw-free;
+// the sandbox never saves.
+export function toggleBenchDead(world, map, run) {
+  if (run.outbreak) { run.outbreak = false; return false; }
+  run.outbreak = true;
+  if (!run._benchDead) { run._benchDead = true; spawnOutbreak(world, map); spawnPeople(world, map); }
+  return true;
 }
 
 // THE TURN: the same body, the third side. The gun goes (no utype, no

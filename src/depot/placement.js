@@ -5,6 +5,7 @@ import { SQUAD_SPECS, makeSquad, slotBlockedPublic, roomMaskPublic } from "./squ
 import { effRange, validatePlacement, PENDING_ARM_S, pendingArmed, spawnSquadMembers, spawnWallCourses, wallOrientAt, forgetWelds, takeHandCard, placeZoneMask, WALL_COST } from "./state.js";
 import { reachPolygon } from "./accuracy.js";
 import { spawnUnit } from "./units.js";
+import { spawnDead } from "./dead.js"; // 0.6.6: the rack's THE DEAD tag
 import { armorSpread, armorStable, MECH_SPREAD, PICK_POOL } from "./muster.js";
 import { canBuild } from "./territory.js";
 import { PALETTE_BY_KEY, FOE_RACK_BY_KEY } from "./palette.js";
@@ -398,6 +399,8 @@ export function makePlacement(ctx) {
           m.thrustersOn = true; m.thrustAssist = true;
           m.hull.drv = "mech"; m.hull.order = "defend"; m.hull.tracks = "careful";
           m.hull.maxHp = MECH.hp; m.hull.homeX = d.x; m.hull.homeZ = d.z; m.hull.bounty = MECH.bounty;
+        } else if (it.dead) {
+          spawnDead(world, d.x, d.z); // 0.6.6: one of the dead, where the tap landed
         } else {
           for (let k = 0; k < it.n; k++) spawnUnit(world, { x: d.x, z: d.z }, it.tag);
         }

@@ -26,6 +26,8 @@ import { apcSeated, seatsOf } from "./transports.js";
 import { makeRegiment, payTown, groundRate } from "./economy.js";
 import { makeTerritory, stepTerritory, holderAt, fogStateFor, valueAt, EMIT } from "./territory.js";
 import { makeSight, stepSight, seenAt, steerReticle, reclampReticle, surfaceAt } from "./sight.js";
+import { makeSickClock } from "./sickclock.js"; // 0.6.6: the red seconds over the sick
+import { toggleBenchDead } from "./dead.js";   // 0.6.6: the sandbox's dead switch
 import { SAVE_KEY, OUTBREAK_SAVE_KEY, burnFront, restoreBodies, restoreWelds, restoreCensus, restoreSquads } from "./save.js";
 import { serializeRun, makeRenderer, renderPortrait, makeGameAudio, storage } from "./api.js";
 import { makeBodyLists, rebuildBodyLists } from "./lists.js";
@@ -69,6 +71,7 @@ function detectTouch() {
 // half-built for however long the read took.
 export default function DepotGame({ onExit, resume = null, dev = false, seed: menuSeed = null, outbreak = false }) {
   const canvasRef = useRef(null);
+  const clockRef = useRef(null); // 0.6.6: the sick clock's own layer
   const stateRef = useRef(null);
   // The knob's screen position is pushed
   // straight to the DOM from the pointer handlers below — not React state —
@@ -206,6 +209,10 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         run.started = true;
         run.manifest.unlocked = PALETTE.map((p) => p.key);
       }
+      // 0.6.6: THE SICK CLOCK's layer and its fog rule — your own men always
+      // show; anyone else shows where your side sees, exactly as the renderer draws him.
+      const clock = makeSickClock(clockRef.current);
+      const fogShows = (b) => { if (b.team === 1 || !view.fogOn) return true; const c = map.invW(b.pos.x, b.pos.z); return seenAt(T.sight, c.u, c.v, 1); };
       let zoneAcc = 0.25; // the zone's own wall-time accumulator — starts due
       R = makeRenderer(canvas, world, {
         town: false, camera: "tactical", fadeDecals: true,
@@ -296,6 +303,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         paused: false, speed: 1, fogOn, healthOn,
         setFog: (v) => { fogOn = v; view.fogOn = v; R.setFog(v); try { window.localStorage.setItem("coldsnap-depot-fog", v ? "1" : "0"); } catch (e) {} },
         setHealth: (v) => { healthOn = v; view.healthOn = v; R.setHealth(v); try { window.localStorage.setItem("coldsnap-depot-health", v ? "1" : "0"); } catch (e) {} },
+        toggleBenchDead: () => toggleBenchDead(world, map, run), // 0.6.6: the sandbox's dead switch
         acc: 0, t: 0, fps: 60, fpsAcc: 0, fpsN: 0,
         hover: null, pointer: null, toasts: [], pending: null,
         hirePlace: null, // the hire's armed placement ({ key } or null)
@@ -1315,6 +1323,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             const pRen0 = perf ? performance.now() : 0; // stopwatch: draw bracket
             R.render(dt, run.focus, AIM_OFF, 0);
             if (perf) { pRen = performance.now() - pRen0; pDrew = 1; }
+            if (run.outbreak) clock.draw(world, R.project, fogShows); else clock.clear(); // 0.6.6: the sick clock rides every drawn frame
             // ✓/✗ screen-space anchor: rotation-proof because it's
             // recomputed from the live camera via project() — Q/E view
             // rotation or a pan moves the cell's projected point, and this
@@ -1464,7 +1473,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
               breach: run.breach, enemyBreach: run.enemyBreach,
               depotStanding: run.depotStanding != null ? run.depotStanding : 1,
               enemyStanding: run.enemyStanding != null ? run.enemyStanding : 1,
-              mode: run.mode, sellMode: view.sellMode, sandbagOrient: run.sandbagOrient || 0, devSpawn: view.devSpawn, devDummies: input.devDummies,
+              mode: run.mode, sellMode: view.sellMode, sandbagOrient: run.sandbagOrient || 0, devSpawn: view.devSpawn, devDummies: input.devDummies, outbreakOn: !!run.outbreak,
               paused: view.paused, speed: view.speed,
               muted: A.muted, fogOn: view.fogOn, windOn: input.windOn, healthOn: view.healthOn, holdAreaOn: !!(run.holdArea && run.holdArea[1]), discipline: input.discipline, seed: map.MAP_SEED,
               toasts: view.toasts.map((t) => t.txt),
@@ -1743,6 +1752,12 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
     if (C.view.teachFire) C.view.teachFire("spare_ours");
     setHud((h) => ({ ...h, holdAreaOn: C.run.holdArea[1] }));
   };
+  // 0.6.6: THE DEAD SWITCH — sandbox only, live, any time.
+  const toggleDevDead = () => {
+    const C = stateRef.current; if (!C || !C.view.toggleBenchDead) return;
+    const on = C.view.toggleBenchDead();
+    setHud((h) => ({ ...h, outbreakOn: on }));
+  };
   // THE FIGHT SWITCH — sandbox only, live, any time.
   const toggleDevFight = () => {
     const C = stateRef.current; if (!C) return;
@@ -1861,7 +1876,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           }}>
           <div style={{ fontSize: 15 }}>{f.icon}</div>
           <div>{f.label}</div>
-          <div style={{ color: "#8a2f2f", fontSize: 10, fontWeight: 600 }}>ENEMY</div>
+          <div style={{ color: "#8a2f2f", fontSize: 10, fontWeight: 600 }}>{f.dead ? "THE THIRD SIDE" : "ENEMY"}</div>
         </StockTag>
       );
     }
@@ -1888,6 +1903,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
   return (
     <div style={P.root}>
       <canvas key={runId} ref={canvasRef} style={P.cv} />
+      <canvas key={"clock" + runId} ref={clockRef} data-sick-clock style={{ ...P.cv, pointerEvents: "none", zIndex: 3 }} />
       {hud.possessed && (
         <div data-possessed-chip style={{ position: "absolute", top: 8, left: "50%", transform: "translateX(-50%)", zIndex: 6, background: "rgba(14,18,24,0.88)", border: "1px solid #7dffa8", color: "#7dffa8", borderRadius: 6, padding: "3px 12px", fontSize: 12, letterSpacing: 1, pointerEvents: "none" }}>
           POSSESSED — {hud.possessed.label}
@@ -2041,8 +2057,8 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           </div>
         )}
         <div style={P.stat}>☠ {hud.enemies}</div>
-        {outbreak && <div data-dead style={P.stat} title="the dead standing">☣ {hud.dead || 0}</div>}
-        {outbreak && <div data-people style={P.stat} title="the living people">☺ {hud.people || 0}</div>}
+        {(outbreak || hud.outbreakOn) && <div data-dead style={P.stat} title="the dead standing">☣ {hud.dead || 0}</div>}
+        {(outbreak || hud.outbreakOn) && <div data-people style={P.stat} title="the living people">☺ {hud.people || 0}</div>}
         <div data-score style={P.stat} title="the match score — kills and value destroyed, yours then the enemy's" {...teachPress("kill_price")}>
           <span style={{ color: "#7dffa8" }}>⚔ {hud.score.pk} ◆{hud.score.pv}</span>
           <span style={{ opacity: 0.5 }}>·</span>
@@ -2077,6 +2093,11 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         {dev && (
           <button data-dev-fight style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.devDummies ? "#48515f" : "#ff6b5e", color: hud.devDummies ? "#e6ebf1" : "#ff6b5e" }} title="whether placed enemies fight back — flips live" onClick={toggleDevFight}>
             {hud.devDummies ? "THEY STAND" : "THEY FIGHT"}
+          </button>
+        )}
+        {dev && (
+          <button data-dev-dead style={{ ...P.btn, padding: isTouch ? "5px 10px" : "4px 10px", borderColor: hud.outbreakOn ? "#a63c3c" : "#48515f", color: hud.outbreakOn ? "#ff6b5e" : "#e6ebf1" }} title="the dead and the people on the bench — the first turn-on fields them at the middle town; off halts them where they stand" onClick={toggleDevDead}>
+            {hud.outbreakOn ? "THE DEAD WALK" : "THE DEAD"}
           </button>
         )}
         <button style={{ ...P.btn, marginLeft: dev ? undefined : "auto", padding: isTouch ? "5px 10px" : "4px 10px" }} title="rotate view (Q/E)"
