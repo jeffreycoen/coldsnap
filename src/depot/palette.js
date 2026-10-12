@@ -101,5 +101,6 @@ export const LATTICE = {
     { name: "MEN", keys: ["foe_rifle", "foe_rocket", "foe_gren", "foe_sapper", "foe_mortar", "foe_sniper", "foe_mg", "foe_eng", "foe_medic", "foe_mechanic", "foe_davy"] },
     { name: "IRON", keys: ["foe_tank", "foe_bison", "foe_apc", "foe_mech"] },
     { name: "TOWERS", keys: ["foe_t_mg", "foe_t_gun", "foe_t_mortar", "foe_t_rocket", "foe_t_tesla"] },
+    { name: "THE DEAD", keys: ["foe_dead"] }, // 0.6.7: the third side's one tag
   ],
 };

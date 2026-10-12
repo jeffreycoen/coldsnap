@@ -3,7 +3,7 @@ import { makeWorld, addBody } from "../../src/engine/core.js";
 import { DEAD, DEAD_TEAM, MAN } from "../../src/depot/specs.js";
 import { spawnDead, toggleBenchDead } from "../../src/depot/dead.js";
 import { sickSeconds } from "../../src/depot/sickclock.js";
-import { FOE_RACK_BY_KEY } from "../../src/depot/palette.js";
+import { FOE_RACK_BY_KEY, LATTICE } from "../../src/depot/palette.js";
 import { peopleOf } from "../../src/depot/people.js";
 import { bootWar } from "../../src/depot/boot.js";
 
@@ -34,6 +34,7 @@ import { bootWar } from "../../src/depot/boot.js";
 
   // (c) the rack
   ok("(c) the enemy rack carries THE DEAD", FOE_RACK_BY_KEY.foe_dead && FOE_RACK_BY_KEY.foe_dead.dead === true && FOE_RACK_BY_KEY.foe_dead.label === "THE DEAD");
+  ok("(c) the rack's rungs show the tag", LATTICE.foes.some((r) => r.keys.includes("foe_dead"))); // 0.6.7: the rungs are what the screen draws
 
   // (d) the bench switch: the first turn-on fields the ring and the people; off halts; on again fields nothing new
   {
