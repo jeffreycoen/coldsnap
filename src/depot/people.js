@@ -41,6 +41,7 @@ export function spawnPerson(world, xIn, zIn, xOut, zOut) {
 // The hangar has no door but a drive-through on its long axis; its people
 // live just inside one end of it.
 const IN_1 = 1.1, IN_2 = 2.0, OUT = 1.3;
+const SHOT_KEEP_S = 0.3; // 0.6.5: a shot stays on the books this long — past every person's search cadence (0.2 to 0.284 s)
 function doorSpots(world, t) {
   const p = MASON.pitch;
   let wall, axis, side, cross;
@@ -94,21 +95,25 @@ export function indoorsOf(u) {
 // the door. The run continues until a scan finds nothing; homeS quiet
 // seconds later she walks to the door and in.
 export function stepPeople(world, map, dt) {
-  let shots = null;
-  for (const e of world.events) if (e.type === "muzzle") (shots || (shots = [])).push(e);
+  // 0.6.5: THE REMEMBERED SHOTS — this tick's shots join a list on the world
+  // and stay SHOT_KEEP_S, so every person's next search hears them; the
+  // every-tick search under fire is gone. Never saved; zero draws.
+  const shots = world._shots || (world._shots = []);
+  for (const e of world.events) if (e.type === "muzzle") shots.push({ x: e.x, z: e.z, t: world.t });
+  while (shots.length && world.t - shots[0].t > SHOT_KEEP_S) shots.shift();
   const F2 = PERSON.fear * PERSON.fear, G2 = PERSON.gunFear * PERSON.gunFear;
   for (const u of world.bodies) {
     if (u.kind !== "unit" || u.tag !== PERSON.tag || !u.alive || u.riding) continue;
     u.scanCd = (u.scanCd || 0) - dt;
-    if (u.scanCd <= 0 || shots) {
-      if (u.scanCd <= 0) u.scanCd = 0.2 + (u.seq % 8) * 0.012;
+    if (u.scanCd <= 0) {
+      u.scanCd = 0.2 + (u.seq % 8) * 0.012;
       let tx = null, tz = null, bd = F2;
-      for (const b of world.bodies) {
+      for (const b of (world._L ? world._L.units : world.bodies)) { // 0.6.5: the short list, world order, the same predicate
         if (b.kind !== "unit" || b.team !== DEAD_TEAM || !b.alive || b.riding) continue;
         const dx = b.pos.x - u.pos.x, dz = b.pos.z - u.pos.z, d2 = dx * dx + dz * dz;
         if (d2 < bd) { bd = d2; tx = b.pos.x; tz = b.pos.z; }
       }
-      if (tx == null && shots) {
+      if (tx == null && shots.length) {
         let gd = G2;
         for (const e of shots) { const dx = e.x - u.pos.x, dz = e.z - u.pos.z, d2 = dx * dx + dz * dz; if (d2 < gd) { gd = d2; tx = e.x; tz = e.z; } }
       }

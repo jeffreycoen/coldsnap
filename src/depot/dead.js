@@ -110,8 +110,15 @@ function stepClaw(world, u, dt) {
   if (b && (!clawable(b) || !pressedAgainst(u, b))) b = null;
   if (!b && u._clawCd <= 0) {
     u._clawCd = 0.25;
-    const pool = world.bodies;
-    for (const c of pool) { if (clawable(c) && pressedAgainst(u, c)) { b = c; break; } }
+    // 0.6.5: the short lists — courses, bags, and towers sit in statics, the
+    // hulls in vehicles; the first hit of each, the earlier-born wins, so the
+    // pick is the whole walk's pick. No lists: the whole walk.
+    if (world._L) {
+      let s = null, h = null;
+      for (const c of world._L.statics) { if (clawable(c) && pressedAgainst(u, c)) { s = c; break; } }
+      for (const c of world._L.vehicles) { if (clawable(c) && pressedAgainst(u, c)) { h = c; break; } }
+      b = s && h ? (s.seq < h.seq ? s : h) : (s || h);
+    } else for (const c of world.bodies) { if (clawable(c) && pressedAgainst(u, c)) { b = c; break; } }
   }
   u._clawId = b ? b.id : null;
   if (b) applyDamage(world, b, DEAD.claw * dt, { cause: "BLAST", attacker: "dead", srcId: u.id, srcX: u.pos.x, srcZ: u.pos.z });
@@ -134,7 +141,7 @@ export function stepDead(world, dt, run = null) {
     if (u.rideApc != null) {
       if (u._biteCd > 0) continue;
       u._biteCd = DEAD.biteCd;
-      for (const b of world.bodies) if (b.kind === "unit" && b.alive && b.team !== DEAD_TEAM && b.riding && b.rideApc === u.rideApc) biteBody(world, u, b);
+      for (const b of (world._L ? world._L.units : world.bodies)) if (b.kind === "unit" && b.alive && b.team !== DEAD_TEAM && b.riding && b.rideApc === u.rideApc) biteBody(world, u, b); // 0.6.5: the short list
       if (run) for (const sq of [...(run.squads || []), ...(run.foeSquads || [])]) {
         if (sq.ridingIn !== u.rideApc) continue;
         for (const id of sq.memberIds) { const b = world.byId.get(id); if (b && b.alive && b.team !== DEAD_TEAM && b.riding) biteBody(world, u, b); }
@@ -147,7 +154,7 @@ export function stepDead(world, dt, run = null) {
     if (!tgt && u.scanCd <= 0) {
       u.scanCd = 0.2 + (u.seq % 8) * 0.012;
       let bd = R2;
-      for (const b of world.bodies) {
+      for (const b of (world._L ? world._L.units : world.bodies)) { // 0.6.5: the short list, world order, the same predicate
         if (!prey(b)) continue;
         const dx = b.pos.x - u.pos.x, dz = b.pos.z - u.pos.z, d2 = dx * dx + dz * dz;
         if (d2 < bd) { bd = d2; tgt = b; }

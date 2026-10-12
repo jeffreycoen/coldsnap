@@ -63,7 +63,7 @@ import { parseFront } from "../../src/depot/save.js";
     stepPeople(w, flatMap, 1 / 120);
     ok("(d) a shot 50 m off is not heard", !p._fleeing);
     w.events.length = 0; w.events.push({ type: "muzzle", x: 20, y: 1, z: 0 });
-    stepPeople(w, flatMap, 1 / 120);
+    for (let i = 0; i < 30; i++) { stepPeople(w, flatMap, 1 / 120); w.t += 1 / 120; w.events.length = 0; } // 0.6.5: the shot is remembered; her next search, inside a quarter second, hears it
     ok("(d) a shot 20 m off sends her running, away from it", !!p._fleeing && p.goal && p.goal.x < 0, p.goal ? p.goal.x.toFixed(1) : "-");
   }
 

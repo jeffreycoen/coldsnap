@@ -15,7 +15,7 @@ import { DEAD_TEAM, PERSON } from "./specs.js";
 const SOLID_KINDS = new Set(["rock", "wall", "tower", "tree", "chunk"]);
 
 export function makeBodyLists() {
-  return { solids: [], statics: [], friends: [], foes: [], structsFor1: [], structsFor2: [], friendly: [], vehicles: [], people: [] };
+  return { solids: [], statics: [], friends: [], foes: [], structsFor1: [], structsFor2: [], friendly: [], vehicles: [], people: [], units: [] };
 }
 
 // structsFor1/structsFor2: hostileStructure(b, team)'s candidate sets — what
@@ -25,7 +25,7 @@ export function makeBodyLists() {
 export function rebuildBodyLists(world, L) {
   L.solids.length = 0; L.statics.length = 0;
   L.friends.length = 0; L.foes.length = 0; L.vehicles.length = 0;
-  L.structsFor1.length = 0; L.structsFor2.length = 0; L.friendly.length = 0; L.people.length = 0;
+  L.structsFor1.length = 0; L.structsFor2.length = 0; L.friendly.length = 0; L.people.length = 0; L.units.length = 0;
   for (const b of world.bodies) {
     if (!b.alive) continue;
     const k = b.kind;
@@ -33,6 +33,7 @@ export function rebuildBodyLists(world, L) {
       // P7 T12: hulls get their own small pool — slotBlocked's hull test
       // (squads.js) reads it; the statics pool can never carry one (dynamic).
       if (k === "vehicle" || k === "mech") L.vehicles.push(b);
+      if (k === "unit") L.units.push(b); // 0.6.5: every living unit, world order — the dead's searches and the people's read this
       // 0.6.1: the dead ride BOTH side pools — each army's scans find them
       // in the pool it already reads; the consumers' own predicates decide.
       if (b.team === 1 || b.team === DEAD_TEAM) L.friends.push(b);

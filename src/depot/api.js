@@ -422,6 +422,7 @@ async function main() {
       process.exit(1);
     }
     const input = defaultTickInput();
+    if (war.run.outbreak) war.run._hot = true; // 0.6.5: the dead stand from the first tick, so the live game builds its lists throughout; the gate runs that same path
     for (let i = 0; i < steps; i++) tickWar(war, STEP, input);
     let dead = 0;
     for (const b of war.world.bodies) if (b.kind === "unit" && b.team === DEAD_TEAM && b.alive) dead++;
