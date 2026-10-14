@@ -48,6 +48,7 @@ import { tickWar, buildSnapshotOf } from "./tick.js";
 import { makePlacement } from "./placement.js";
 import { makeOrders } from "./orders.js";
 import { installDepotHooks } from "./hooks.js";
+import { countAwake } from "./witness.js";
 import { makeMechLeap } from "./mechleap.js";
 
 // The quartermaster's quiet flag — the purpose lines speak in the
@@ -186,7 +187,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       const RES = resumeRef.current;
       const urlSeed = parseInt(new URLSearchParams(window.location.search).get("seed"), 10);
       const seed = RES ? RES.map.seed
-        : dev ? Math.floor(Date.now() % 1000000)
+        : dev && !Number.isFinite(urlSeed) ? Math.floor(Date.now() % 1000000) // 0.6.8: the sandbox honours ?seed= so a measured bench can be rebuilt
         : Number.isFinite(urlSeed) ? urlSeed
         : menuSeedRef.current != null ? menuSeedRef.current
         : Math.floor(Date.now() % 1000000);
@@ -808,16 +809,18 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       const perf = new URLSearchParams(window.location.search).get("perf") === "1";
       const PCAP = 4096; // ~68s at 60fps, ~136s at 30 — a 60s window always fits
       let pT = null, pSimA = null, pRenA = null, pFrmA = null, pDrewA = null;
+      let pStepsA = null, pAwakeA = null, pChunkA = null, pContA = null, pBoomA = null, pHeapA = null; // 0.6.8: the witness — steps run, awake bodies, awake chunks, contacts, bursts, heap bytes per frame
       let pI = 0, pN = 0, pSampT = 0, pBodies = 0, pChunksDrawn = 0, pChunksTotal = 0;
       if (perf) {
         pT = new Float64Array(PCAP); pSimA = new Float64Array(PCAP);
         pRenA = new Float64Array(PCAP); pFrmA = new Float64Array(PCAP);
         pDrewA = new Uint8Array(PCAP);
+        pStepsA = new Uint8Array(PCAP); pAwakeA = new Uint32Array(PCAP); pChunkA = new Uint32Array(PCAP); pContA = new Uint32Array(PCAP); pBoomA = new Uint8Array(PCAP); pHeapA = new Float64Array(PCAP);
         window.__DEPOTPERF__ = () => {
           const n = Math.min(pN, PCAP), out = [];
           for (let k = 0; k < n; k++) {
             const j = (pI - n + k + PCAP) % PCAP; // oldest-first
-            out.push({ t: pT[j], sim: pSimA[j], render: pRenA[j], frame: pFrmA[j], drew: !!pDrewA[j] });
+            out.push({ t: pT[j], sim: pSimA[j], render: pRenA[j], frame: pFrmA[j], drew: !!pDrewA[j], steps: pStepsA[j], awake: pAwakeA[j], chunks: pChunkA[j], contacts: pContA[j], booms: pBoomA[j], heap: pHeapA[j] });
           }
           return {
             n, cap: PCAP, overflowed: pN > PCAP,
@@ -1629,6 +1632,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             }
             pT[pI] = pNow; pSimA[pI] = pSim; pRenA[pI] = pRen;
             pFrmA[pI] = pNow - pFrame0; pDrewA[pI] = pDrew;
+            { const aw = countAwake(world); let booms = 0; for (const e of frameEvents) if (e.type === "boom") booms++; pStepsA[pI] = Math.min(guard, 6); pAwakeA[pI] = aw.awake; pChunkA[pI] = aw.chunks; pContA[pI] = world.contacts.length; pBoomA[pI] = booms; pHeapA[pI] = performance.memory ? performance.memory.usedJSHeapSize : 0; } // 0.6.8: the witness
             pI = (pI + 1) % PCAP; pN++;
           }
         } catch (err) {

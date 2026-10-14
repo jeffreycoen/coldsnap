@@ -6,6 +6,7 @@ import { spawnEnemy } from "./sim.js";
 import { SQUAD_SPECS, makeSquad } from "./squads.js";
 import { holderAt, canBuild, fogStateFor } from "./territory.js";
 import { endCardReady, pendingArmed, spawnSquadMembers, ASSAULT_TIMEOUT } from "./state.js";
+import { fireDavyDown } from "./witness.js";
 
 // COLDSNAP DEPOT — hooks.js: the debug harness. Every window.__DEPOT*__
 // hook the tests and staging scripts drive, installed by the component at
@@ -61,6 +62,7 @@ export function installDepotHooks(ctx) {
     fireProjectile(world, from, { x: 0, y: 0, z: 1 }, 90,
       { kind: "shell", r: 2.3, kv: 8, dmg: 25, crater: 0.55, noImpact: true, attacker: "player" });
   };
+  window.__DEPOTDAVY__ = (tx, tz) => fireDavyDown(world, field, tx, tz); // 0.6.8: the davy bench — one atomic round, straight down onto the point
   window.__DEPOTTHIN__ = () => {
     // debug harness: instantly clear the field — zero the spawn queue and
     // kill every live enemy — so tests can empty an assault without

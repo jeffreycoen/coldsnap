@@ -67,4 +67,5 @@ await import("./tests/50-the-senses.mjs");
 await import("./tests/51-the-people-indoors.mjs");
 await import("./tests/52-the-short-lists.mjs");
 await import("./tests/53-the-fast-dead-and-the-sick-clock.mjs");
+await import("./tests/54-the-davy-bench.mjs");
 finish();
