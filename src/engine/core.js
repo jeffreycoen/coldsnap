@@ -186,7 +186,37 @@ export function makeBody(o) {
   return b;
 }
 function bodySpeed2(b) { return V.len2(b.v); }
-function wake(b) { if (b.sleeping) { b.sleeping = false; } b.sleepT = 0; }
+// T10 (mk0.6.10): THE LIVE LISTS. Every pass that walked all bodies to skip
+// the sleeping ones, and every pass that walked all welds to skip the ones
+// between sleeping stones, walks a short list instead — rebuilt once per step
+// and again whenever a body wakes mid-step. WAKES moves on every
+// sleeping→awake transition; a list whose stamp is behind it rebuilds before
+// it is read. Each loop keeps its own full predicate, so it skips exactly what
+// it always skipped, in the order it always ran; golden and the keystone prove
+// the trajectory byte-identical.
+let WAKES = 0;
+function wake(b) { if (b.sleeping) { b.sleeping = false; WAKES++; } b.sleepT = 0; }
+// the body lists, all in world.bodies order:
+//   _awake        massive and awake — the integrators, the terrain pass, the suspension, the sleep pass
+//   _file         what the broadphase's filing walk visits: every body not already on the books asleep
+//   _status       the status pass: every massive body except the sleeping chunks and trees
+//   _sleepInert   the sleeping chunks and trees, for the status pass's own two lines that touch them
+//   _units, _vehicles, _trees   by kind, for the passes that read one kind
+function bodyLists(world) {
+  if (world._blT === world.t && world._blW === WAKES) return;
+  world._blT = world.t; world._blW = WAKES;
+  const awake = world._awake || (world._awake = []), file = world._file || (world._file = []);
+  const status = world._status || (world._status = []), sleepInert = world._sleepInert || (world._sleepInert = []);
+  const units = world._units || (world._units = []), vehicles = world._vehicles || (world._vehicles = []), trees = world._trees || (world._trees = []);
+  awake.length = 0; file.length = 0; status.length = 0; sleepInert.length = 0; units.length = 0; vehicles.length = 0; trees.length = 0;
+  for (const b of world.bodies) {
+    const k = b.kind;
+    if (k === "unit") units.push(b); else if (k === "vehicle") vehicles.push(b); else if (k === "tree") trees.push(b);
+    if (b.invM === 0) { if (!b._filed) file.push(b); continue; }
+    if (b.sleeping) { if (!b._filed) file.push(b); if (k === "chunk" || k === "tree") sleepInert.push(b); else status.push(b); }
+    else { awake.push(b); file.push(b); status.push(b); }
+  }
+}
 // T6 (mk1.05): pull a body off the persistent broadphase books (see
 // collectContacts). Called by the filing pass when a filed body has woken,
 // and by the engine's own corpse removal. Game-layer removals have no hook —
@@ -412,7 +442,7 @@ export function addWeld(world, a, b, breakF = 4.0e4) {
   V.add(mid, a.pos, b.pos); V.scale(mid, mid, 0.5);
   const la = v3(); V.sub(la, mid, a.pos); rTMulVec(a.R, la, rA);
   const lb = v3(); V.sub(lb, mid, b.pos); rTMulVec(b.R, lb, rB);
-  const w = { a, b, rA, rB, breakF, broken: false, stress: 0, acc: [0, 0, 0], born: world.t };
+  const w = { a, b, rA, rB, breakF, broken: false, stress: 0, acc: [0, 0, 0], born: world.t, ice: a.kind === "ice" || b.kind === "ice" };
   // per-body adjacency: explode's shock check reads a chunk's own handful of
   // welds instead of scanning all ~1600 (the boom-frame spike's biggest term)
   if (!world.weldsOf) world.weldsOf = new Map();
@@ -1007,7 +1037,8 @@ function driveHull(world, b, c) {
 const _suspWheels = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
 function stepSuspension(world) {
   const dt = world.dt;
-  for (const b of world.bodies) {
+  bodyLists(world);
+  for (const b of world._awake) {
     const s = b.susp;
     if (!s || !b.alive || b.sleeping || b.invM === 0) continue;
     const R = b.R;
@@ -1056,7 +1087,8 @@ function aiDrive(world, b) {
 }
 
 function stepDrive(world) {
-  for (const b of world.bodies) {
+  bodyLists(world);
+  for (const b of world._vehicles) {
     if (b.kind !== "vehicle" || !b.alive) continue;
     if (b.id === world.bisonId) {
       if (!b.ctl) b.ctl = { throttle: 0, steer: 0, brake: false };
@@ -1100,7 +1132,8 @@ export function stepUnits(world) {
   const dt = world.dt, tNow = world.t;
   const b = world.byId.get(world.bisonId);
   const sc = world.scare, th = world.threat;
-  for (const u of world.bodies) {
+  bodyLists(world);
+  for (const u of world._units) {
     if (u.kind !== "unit" || !u.alive) continue;
     // stay on your feet: living, grounded infantry holds upright kinematically
     // (no torque through the solver, so no friction-reaction anchoring them in place).
@@ -1470,7 +1503,7 @@ export function recoverBison(world) {
 const _scratchOut = new Array(8);
 const _bpMerged = [];
 function collectContacts(world) {
-  const bodies = world.bodies, contacts = world.contacts;
+  const contacts = world.contacts;
   contacts.length = 0;
   // broadphase: uniform grid over XZ, TWO TIERS (T6, mk1.05). Sleeping and
   // zero-mass bodies file ONCE (stat, sorted by birth order) and stay on the
@@ -1481,8 +1514,10 @@ function collectContacts(world) {
   const cell = 6.0;
   if (!world._bp) { world._bp = new Map(); world._bpEpoch = 0; }
   const grid = world._bp, epoch = ++world._bpEpoch;
-  for (let i = 0; i < bodies.length; i++) {
-    const b = bodies[i];
+  bodyLists(world);
+  const walk = world._file;
+  for (let i = 0; i < walk.length; i++) {
+    const b = walk[i];
     if (b.pinned) continue;
     if (b.kind === "unit" && !b.alive && world.t - (b.deadT || 0) > 4) continue;
     const still = b.sleeping || b.invM === 0;
@@ -1599,7 +1634,8 @@ function collectContacts(world) {
     }
   }
   // terrain
-  for (const b of bodies) {
+  bodyLists(world);
+  for (const b of world._awake) {
     if (b.invM === 0 || b.sleeping) continue;
     if (b.kind === "unit" && !b.alive && world.t - (b.deadT || 0) > 4) continue;
     b.groundedNow = false;
@@ -1778,12 +1814,31 @@ function solveWelds(world, active) {
     }
   }
 }
+// T10 (mk0.6.10): the live joints — every intact weld with an awake end, plus
+// every ice weld (its creep clock and grind mark tick while both plates
+// sleep), in world.welds order. A weld between two sleeping stones with no
+// ice carries exactly zero accumulated force at every break pass: the solver
+// loads only active welds, and a blast loads a stone's welds only after it
+// has woken the stone. So every pass below is a no-op on it. Rebuilt once per
+// step (world.t) and again after any mid-step wake (WAKES).
+function liveWelds(world) {
+  if (world._lwT !== world.t || world._lwW !== WAKES) {
+    world._lwT = world.t; world._lwW = WAKES;
+    const live = world._liveWelds || (world._liveWelds = []);
+    live.length = 0;
+    for (const wd of world.welds) if (!wd.broken && (wd.ice || !(wd.a.sleeping && wd.b.sleeping))) live.push(wd);
+  }
+  return world._liveWelds;
+}
 export function weldStressDecay(world) {
-  for (const w of world.welds) w.stress = 0;
+  // the previous step's list still holds every weld a break pass loaded since
+  // the last decay; an intact weld outside it already reads zero, and a
+  // broken one keeps its last reading, which nothing reads
+  for (const w of world._liveWelds || world.welds) w.stress = 0;
 }
 function weldBreakPass(world) {
   const dt = world.dt;
-  for (const w of world.welds) {
+  for (const w of liveWelds(world)) {
     if (w.broken) continue;
     if (world.t - w.born < 0.5) { w.acc[0] = 0; w.acc[1] = 0; w.acc[2] = 0; continue; }
     const f = Math.hypot(w.acc[0], w.acc[1], w.acc[2]) / dt;
@@ -1900,15 +1955,16 @@ function stepStatus(world) {
   // shell/rocket hit, see stepProjectiles) loses 2 hp/s off world dt/t, never
   // wall clock. burnt-out (hp<=0) fells it through the normal kill path;
   // renderer reads b.burning for flame/char progression, b.alive for felled.
+  bodyLists(world);
   if (world.depotCombat) {
-    for (const b of world.bodies) {
+    for (const b of world._trees) {
       if (b.kind !== "tree" || !b.alive || b.burning == null) continue;
       applyDamage(world, b, 2 * dt, { cause: CAUSE.BLAST, attacker: "world" });
     }
   }
   // vehicles bearing on bodies (an ice raft, a rubble pile, the fallen) still give
   // the treads something to bite — terrain isn't the only thing worth driving on.
-  for (const b of world.bodies) if (b.kind === "vehicle") b.onBody = false;
+  for (const b of world._vehicles) if (b.kind === "vehicle") b.onBody = false;
   for (const c of world.contacts) {
     if (!c.b || c.pn <= 0) continue;
     const up = c.a.pos.y > c.b.pos.y;
@@ -1931,7 +1987,7 @@ function stepStatus(world) {
   // masonry wake front: a moving stone rouses its welded neighbors one hop per step,
   // so a collapse ripples (and pays) across frames instead of one island-wake cliff —
   // and a severed sleeper wakes before a falling partner could hang on it.
-  for (const wd of world.welds) {
+  for (const wd of liveWelds(world)) {
     if (wd.broken) continue;
     const asl = wd.a.sleeping, bsl = wd.b.sleeping;
     if (asl === bsl) continue;
@@ -1944,7 +2000,8 @@ function stepStatus(world) {
     // which is exactly how pre-slept buildings already hang.
     if (live.kind === "chunk" && (live.v.x * live.v.x + live.v.y * live.v.y + live.v.z * live.v.z) > 0.09) wake(dead);
   }
-  for (const b of world.bodies) {
+  bodyLists(world);
+  for (const b of world._status) {
     if (b.invM === 0) continue;
     // suspension keeps the hull flat against crowd-plowing chaos: only real
     // ordnance (a fresh blast impulse) may roll the bison. Gentle self-righting
@@ -2026,10 +2083,21 @@ function stepStatus(world) {
     }
     // chunks settle
     if (b.kind === "chunk" && b.fallingSince > 0 && b.sleeping) b.fallingSince = -1;
+    if (b.sleeping) b.vy0 = b.v.y; // the velocity loop refreshes vy0 on the awake only; a sleeper's is refreshed here (classifyImpacts reads it for a body meeting the ground, never a sleeper)
+  }
+  // the sleeping chunks' and trees' share of the pass above: of its branches
+  // only the ground clock and the settle line touch them (neither is ever the
+  // player's hull, a unit, a vehicle, or ice; their vy0 is never read)
+  for (const b of world._sleepInert) {
+    if (b.groundedNow || b.bodyGroundedNow || b._suspGround) { b.airT = 0; b.grounded = true; } else { b.airT += dt; b.grounded = false; }
+    b.bodyGroundedLast = b.bodyGroundedNow;
+    b.bodyGroundedNow = false;
+    if (b.kind === "chunk" && b.fallingSince > 0 && b.sleeping) b.fallingSince = -1;
   }
   // remove stale corpses
-  for (let i = world.bodies.length - 1; i >= 0; i--) {
-    const b = world.bodies[i];
+  const units = world._units;
+  for (let k = units.length - 1; k >= 0; k--) {
+    const b = units[k];
     if (b.kind === "unit" && !b.alive && world.t - (b.deadT || 0) > 4) {
       // a culled corpse takes its support with it: wake anything sleeping on
       // top, or it hovers on the memory of the body (the floating-tank ghost)
@@ -2040,13 +2108,15 @@ function stepStatus(world) {
         wake(o);
       }
       unfileBody(world, b); // T6: the engine's own removals leave the books clean
-      world.byId.delete(b.id); world.bodies.splice(i, 1);
+      world.byId.delete(b.id); world.bodies.splice(world.bodies.indexOf(b), 1);
+      world._blT = -1; // a body left the array: the lists rebuild before their next read
     }
   }
 }
 function stepSleep(world) {
   const dt = world.dt;
-  for (const b of world.bodies) {
+  bodyLists(world);
+  for (const b of world._awake) {
     if (b.invM === 0 || b.sleeping) continue;
     // a living man face-down keeps struggling — sleep must not outrace the
     // getup torque (wedged under the frozen sheet's rim, it did exactly that)
@@ -2062,7 +2132,7 @@ function stepSleep(world) {
       if (b.sleepT > 0.55 && !(b.kind === "unit" && b.alive && world.ice && b.bodyGroundedLast)) { b.sleeping = true; V.set(b.v, 0, 0, 0); V.set(b.w, 0, 0, 0); }
     } else b.sleepT = 0;
   }
-  for (const wd of world.welds) {
+  for (const wd of liveWelds(world)) {
     if (wd.broken) continue;
     if (wd.a.sleeping !== wd.b.sleeping) {
       // the wake-front ripples on MOTION, not on mere wakefulness: a still awake
@@ -2072,7 +2142,7 @@ function stepSleep(world) {
       const l = wd.a.sleeping ? wd.b : wd.a;
       if (V.len2(l.v) > 0.09 || V.len2(l.w) > 0.12) {
         const s = wd.a.sleeping ? wd.a : wd.b;
-        s.sleeping = false; s.sleepT = 0;
+        s.sleeping = false; s.sleepT = 0; WAKES++;
       }
     }
   }
@@ -2088,7 +2158,8 @@ export function stepWorld(world) {
   stepSuspension(world);
   stepUnits(world);
   // integrate velocities + refresh frames
-  for (const b of world.bodies) {
+  bodyLists(world);
+  for (const b of world._awake) {
     if (b.invM === 0) continue;
     b.vy0 = b.v.y;
     if (b.pinned) { b.v.x = 0; b.v.y = 0; b.v.z = 0; b.w.x = 0; b.w.y = 0; b.w.z = 0; continue; }
@@ -2105,7 +2176,7 @@ export function stepWorld(world) {
   // full 1600-weld scan x12), and iteration count tiers by live constraint
   // load — a 200-stone pancake takes 4 sweeps of chaos instead of 12 of polish
   const activeWelds = [];
-  for (const wd of world.welds) if (!wd.broken && !(wd.a.sleeping && wd.b.sleeping)) activeWelds.push(wd);
+  for (const wd of liveWelds(world)) if (!wd.broken && !(wd.a.sleeping && wd.b.sleeping)) activeWelds.push(wd);
   const solverLoad = activeWelds.length + world.contacts.length;
   const itn = solverLoad > 900 ? 4 : solverLoad > 450 ? 7 : 12;
   for (let it = 0; it < itn; it++) { solveWelds(world, activeWelds); solveContacts(world); }
@@ -2118,7 +2189,8 @@ export function stepWorld(world) {
   world.warm.clear();
   for (const c of world.contacts) world.warm.set(c.key, { pn: c.pn, pt1: c.pt1, pt2: c.pt2 });
   // integrate positions
-  for (const b of world.bodies) {
+  bodyLists(world);
+  for (const b of world._awake) {
     if (b.invM === 0 || b.sleeping) continue;
     V.addScaled(b.pos, b.pos, b.v, dt);
     qIntegrate(b.q, b.w, dt);
@@ -2596,3 +2668,5 @@ export { heading, applyDamage };
 // DIVERGENCE from the frozen demo: internal math handed to the mech module
 // (src/engine/mech.js). Additive export only — nothing on the demo path reads it.
 export const __mech__ = { V, v3, qIdent, qNorm, qFromAxis, qMul, qToR, rMulVec, rTMulVec, invInertiaWorld, iMulVec, wake };
+// T10 (mk0.6.10): the live lists, for the suite's own checks of them
+export const __lists__ = { bodyLists, liveWelds, wakes: () => WAKES };
