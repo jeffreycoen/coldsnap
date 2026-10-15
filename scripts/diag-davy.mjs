@@ -11,8 +11,12 @@
 // line ticks.
 //
 //   node scripts/diag-davy.mjs [--seed N] [--mode sandbox|war] [--target town|walls|depot]
-//        [--settle S] [--after S] [--second S] [--hot] [--label NAME] [--out DIR] [--alloc]
+//        [--settle S] [--after S] [--second S] [--hot] [--loft S] [--label NAME] [--out DIR] [--alloc]
 //
+// --loft S (0.6.11) fires the round straight up instead of down, so it is
+// aloft about S seconds before it bursts on the same point: the aloft watch's
+// run. The flight's steps are recorded (flight mean, p95, worst) and the
+// record lands in its own file and page group (-loftS).
 // --hot sets run._hot as the live war does once anything stands on the field,
 // so the body lists are rebuilt every step and the hot scans read them.
 // --second S fires a second round onto the same point S seconds after the
@@ -26,7 +30,7 @@ import { performance } from "node:perf_hooks";
 import { Session } from "node:inspector";
 import { bootWar, tickWar, defaultTickInput, runHash } from "../src/depot/api.js";
 import { worldHash } from "../src/engine/core.js";
-import { fireDavyDown, countAwake, activeWeldCount, ringOfWalls } from "../src/depot/witness.js";
+import { fireDavyDown, fireDavyUp, countAwake, activeWeldCount, ringOfWalls } from "../src/depot/witness.js";
 import { MK } from "../src/version.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -42,9 +46,10 @@ const label = arg("label", "base");
 const outDir = arg("out", path.join(ROOT, "docs/superpowers/perf/davy"));
 const alloc = process.argv.includes("--alloc");
 const hot = process.argv.includes("--hot");
+const loftS = +arg("loft", 0);
 const STEP = 1 / 120;
 if (secondS && secondS < afterS) { console.error("--second must be at least --after"); process.exit(2); }
-console.log(`diag-davy ${MK} seed ${seed} mode ${mode} target ${target} settle ${settleS}s after ${afterS}s${secondS ? " second " + secondS + "s" : ""}${hot ? " hot" : ""} label ${label}${alloc ? " alloc" : ""}`);
+console.log(`diag-davy ${MK} seed ${seed} mode ${mode} target ${target} settle ${settleS}s after ${afterS}s${secondS ? " second " + secondS + "s" : ""}${hot ? " hot" : ""}${loftS ? " loft " + loftS + "s" : ""} label ${label}${alloc ? " alloc" : ""}`);
 
 // ---- the profiler: a window is started and stopped around a run of steps;
 // self time is summed per function; the bench's own helpers and the
@@ -87,6 +92,7 @@ function summarize(profile) {
   return { totalMs: +(total / 1000).toFixed(2), rows, lines };
 }
 const share = (p, re) => +p.rows.filter((r) => re.test(r.name)).reduce((s, r) => s + r.pct, 0).toFixed(1);
+const SHADOW = /^(occOf|segBoxHit|shadowState|shadowOf|shadowAlong|shadowFile|occluderInDisc)@/; // the shadow test's functions, old and new (0.6.11)
 const topOf = (p, n) => p.rows.slice(0, n);
 function allocTop(head) {
   const self = new Map();
@@ -143,12 +149,14 @@ const quietProfile = summarize((await post("Profiler.stop")).profile);
 const quietRows = rows.slice(settleN - quietN, settleN);
 const last = rows[rows.length - 1];
 console.log(`settled ${settleS}s in ${(rows.reduce((s, r) => s + r.ms, 0) / 1000).toFixed(1)}s wall — quiet step ${mean(quietRows.map((r) => r.ms)).toFixed(2)} ms over the last ${quietN} steps; awake ${last.awake}, chunks awake ${last.chunks}, bodies ${last.bodies}, rounds ${last.rounds}`);
-// the burst window: fire, then step until the boom lands (ten steps at most)
-const muzzleY = fireDavyDown(world, war.field, tx, tz);
+// the burst window: fire, then step until the boom lands (ten steps at most
+// for the drop; the flight plus two seconds for a lofted round)
+const muzzleY = loftS ? fireDavyUp(world, war.field, tx, tz, loftS) : fireDavyDown(world, war.field, tx, tz);
+const burstMax = loftS ? Math.round(loftS * 120) + 240 : 10;
 await post("Profiler.start");
-for (let k = 0; k < 10 && burstStep < 0; k++, i++) step(i);
+for (let k = 0; k < burstMax && burstStep < 0; k++, i++) step(i);
 const burstProfile = summarize((await post("Profiler.stop")).profile);
-if (burstStep < 0) { console.error("no burst landed within ten steps"); process.exit(1); }
+if (burstStep < 0) { console.error(`no burst landed within ${burstMax} steps`); process.exit(1); }
 // the after window
 if (alloc) { await post("HeapProfiler.enable"); await post("HeapProfiler.startSampling", { samplingInterval: 8192, includeObjectsCollectedByMajorGC: true, includeObjectsCollectedByMinorGC: true }); }
 await post("Profiler.start");
@@ -168,7 +176,7 @@ if (secondS) {
   if (burst2Step < 0) { console.error("no second burst landed within a second"); process.exit(1); }
   for (let k = 0; k < 120; k++, i++) step(i);
   const w2 = rows.slice(fire2Step, burst2Step + 1);
-  second = { fireStep: fire2Step, step: burst2Step, ms: rows[burst2Step].ms, windowMs: +w2.reduce((s, r) => s + r.ms, 0).toFixed(3), nextMs: rows[burst2Step + 1].ms, breaks: rows[burst2Step].breaks, afterSecondMeanMs: +mean(rows.slice(burst2Step + 1, burst2Step + 121).map((r) => r.ms)).toFixed(3), shadow: share(p2, /^(occOf|segBoxHit)@/), explode: share(p2, /^explode@/), flow: share(p2, /^computeFlowField@/), profile: { totalMs: p2.totalMs, top: topOf(p2, 40), lines: p2.lines } };
+  second = { fireStep: fire2Step, step: burst2Step, ms: rows[burst2Step].ms, windowMs: +w2.reduce((s, r) => s + r.ms, 0).toFixed(3), nextMs: rows[burst2Step + 1].ms, breaks: rows[burst2Step].breaks, afterSecondMeanMs: +mean(rows.slice(burst2Step + 1, burst2Step + 121).map((r) => r.ms)).toFixed(3), shadow: share(p2, SHADOW), explode: share(p2, /^explode@/), flow: share(p2, /^computeFlowField@/), profile: { totalMs: p2.totalMs, top: topOf(p2, 40), lines: p2.lines } };
 }
 session.disconnect();
 
@@ -180,28 +188,30 @@ const quiet = after.findIndex((r) => r.chunks < Math.max(20, peakAwake * 0.1));
 const heavySteps = quiet < 0 ? after.length : quiet;
 const over7 = after.filter((r) => r.ms > 7).length;
 const burstWindow = rows.slice(settleN, burstStep + 1);
+const flightRows = rows.slice(settleN, burstStep);
+const flight = loftS ? { steps: flightRows.length, meanMs: +mean(flightRows.map((r) => r.ms)).toFixed(3), p95Ms: +p95of(flightRows.map((r) => r.ms)).toFixed(3), worstMs: +Math.max(...flightRows.map((r) => r.ms)).toFixed(3) } : null;
 const out = {
   tool: "diag-davy", mk: MK, node: process.version, startedAt: new Date().toISOString(),
-  seed, mode, target, targetName: tname, tx: +tx.toFixed(2), tz: +tz.toFixed(2), stonesNear, wallCourses: walls.length, settleS, afterS, secondS, hot, label, muzzleY: +muzzleY.toFixed(2),
+  seed, mode, target, targetName: tname, tx: +tx.toFixed(2), tz: +tz.toFixed(2), stonesNear, wallCourses: walls.length, settleS, afterS, secondS, hot, loft: loftS, flight, label, muzzleY: +muzzleY.toFixed(2),
   bodies0: rows[0].bodies, welds0: world.welds.length, burstStep, fireStep: settleN,
   quiet: { steps: quietN, meanMs: +mean(quietRows.map((r) => r.ms)).toFixed(3), p95Ms: +p95of(quietRows.map((r) => r.ms)).toFixed(3), awake: Math.round(mean(quietRows.map((r) => r.awake))), rounds: Math.round(mean(quietRows.map((r) => r.rounds))), profile: { totalMs: quietProfile.totalMs, top: topOf(quietProfile, 40), lines: quietProfile.lines } },
   burst: { ms: burstRow.ms, windowMs: +burstWindow.reduce((s, r) => s + r.ms, 0).toFixed(3), nextMs: rows[burstStep + 1].ms, breaks: burstRow.breaks, lost: burstWindow.reduce((s, r) => s + r.lost, 0) + (after[0] ? after[0].lost : 0), profile: { totalMs: burstProfile.totalMs, top: topOf(burstProfile, 40), lines: burstProfile.lines } },
   after: { meanMs: +mean(after.map((r) => r.ms)).toFixed(3), p95Ms: +p95of(after.map((r) => r.ms)).toFixed(3), worstMs: +Math.max(...after.map((r) => r.ms)).toFixed(3), sumMs: +after.reduce((s, r) => s + r.ms, 0).toFixed(1), peakAwake, peakContacts: Math.max(...after.map((r) => r.contacts)), heavySteps, over7, profile: { totalMs: afterProfile.totalMs, top: topOf(afterProfile, 40), lines: afterProfile.lines } },
   second,
   shares: {
-    shadow: share(burstProfile, /^(occOf|segBoxHit)@/), explode: share(burstProfile, /^explode@/), flow: share(burstProfile, /^computeFlowField@/), burstSweeper: share(burstProfile, /garbage collector/),
+    shadow: share(burstProfile, SHADOW), explode: share(burstProfile, /^explode@/), flow: share(burstProfile, /^computeFlowField@/), burstSweeper: share(burstProfile, /garbage collector/),
     solve: share(afterProfile, /^(solveContacts|relVelAt|applyImpulse|prepContacts)@/), pairs: share(afterProfile, /^(collectContacts|satBoxBox|unfileBody)@/), welds: share(afterProfile, /^(solveWelds|weldBreakPass|weldStressDecay)@/), sweeper: share(afterProfile, /garbage collector/), rest: share(afterProfile, /^(stepStatus|stepSleep|classifyImpacts|stepProjectiles|segBoxHit)@/),
   },
   identity: { worldHash: worldHash(world), runHash: runHash(war.run), draws, breaksTotal: rows.reduce((s, r) => s + r.breaks, 0), lostTotal: rows.reduce((s, r) => s + r.lost, 0), bodiesEnd: world.bodies.length, burst2Step },
   allocTop: allocRows, rows,
 };
 fs.mkdirSync(outDir, { recursive: true });
-const file = path.join(outDir, `${label}-${mode}-${target}.json`);
+const file = path.join(outDir, `${label}-${mode}-${target}${loftS ? "-loft" + loftS : ""}.json`);
 fs.writeFileSync(file, JSON.stringify(out));
 const S = out.shares;
 const q = out.quiet;
 const qTop = topOf(quietProfile, 4).map((r) => r.name.replace(/@.*$/, "") + ":" + r.pct).join(",");
-const line = `${out.startedAt} diag-davy ${label} seed ${seed} mode ${mode} target ${target}${hot ? " hot" : ""} stones ${stonesNear} quietMs ${q.meanMs} quietTop ${qTop} burstMs ${burstRow.ms} nextMs ${out.burst.nextMs} shadow% ${S.shadow} explode% ${S.explode} flow% ${S.flow} lost ${out.burst.lost} afterMean ${out.after.meanMs} afterP95 ${out.after.p95Ms} afterWorst ${out.after.worstMs} peakAwake ${peakAwake} peakContacts ${out.after.peakContacts} heavySteps ${heavySteps} over7 ${over7} solve% ${S.solve} pairs% ${S.pairs} welds% ${S.welds} sweeper% ${S.sweeper}` + (second ? ` burst2Ms ${second.ms} next2Ms ${second.nextMs} shadow2% ${second.shadow} explode2% ${second.explode} flow2% ${second.flow}` : "") + ` hash ${out.identity.worldHash}/${out.identity.runHash} draws ${draws}` + (allocRows ? ` alloc ${allocRows.slice(0, 3).map((r) => r.name + ":" + r.mb + "MB").join(",")}` : "");
+const line = `${out.startedAt} diag-davy ${label} seed ${seed} mode ${mode} target ${target}${hot ? " hot" : ""}${loftS ? " loft " + loftS + " flightSteps " + flight.steps + " flightMean " + flight.meanMs + " flightP95 " + flight.p95Ms + " flightWorst " + flight.worstMs : ""} stones ${stonesNear} quietMs ${q.meanMs} quietTop ${qTop} burstMs ${burstRow.ms} nextMs ${out.burst.nextMs} shadow% ${S.shadow} explode% ${S.explode} flow% ${S.flow} lost ${out.burst.lost} afterMean ${out.after.meanMs} afterP95 ${out.after.p95Ms} afterWorst ${out.after.worstMs} peakAwake ${peakAwake} peakContacts ${out.after.peakContacts} heavySteps ${heavySteps} over7 ${over7} solve% ${S.solve} pairs% ${S.pairs} welds% ${S.welds} sweeper% ${S.sweeper}` + (second ? ` burst2Ms ${second.ms} next2Ms ${second.nextMs} shadow2% ${second.shadow} explode2% ${second.explode} flow2% ${second.flow}` : "") + ` hash ${out.identity.worldHash}/${out.identity.runHash} draws ${draws}` + (allocRows ? ` alloc ${allocRows.slice(0, 3).map((r) => r.name + ":" + r.mb + "MB").join(",")}` : "");
 console.log(line);
 const show = (title, p) => { console.log(title); for (const r of topOf(p, 8)) console.log(`  ${r.pct.toFixed(1).padStart(5)}%  ${r.ms.toFixed(1).padStart(8)} ms  ${r.name}`); };
 show("quiet window, top eight:", quietProfile);
