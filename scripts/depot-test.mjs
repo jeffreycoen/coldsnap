@@ -70,4 +70,5 @@ await import("./tests/53-the-fast-dead-and-the-sick-clock.mjs");
 await import("./tests/54-the-davy-bench.mjs");
 await import("./tests/55-the-live-lists.mjs");
 await import("./tests/56-the-bang.mjs");
+await import("./tests/57-the-frame-slice.mjs");
 finish();

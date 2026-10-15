@@ -49,6 +49,7 @@ import { makePlacement } from "./placement.js";
 import { makeOrders } from "./orders.js";
 import { installDepotHooks } from "./hooks.js";
 import { countAwake } from "./witness.js";
+import { makeSlice, sliceFrame, sliceRest } from "./slice.js"; // 0.6.12: the frame slice — the loop's law, in its own file
 import { makeMechLeap } from "./mechleap.js";
 
 // The quartermaster's quiet flag — the purpose lines speak in the
@@ -305,7 +306,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         setFog: (v) => { fogOn = v; view.fogOn = v; R.setFog(v); try { window.localStorage.setItem("coldsnap-depot-fog", v ? "1" : "0"); } catch (e) {} },
         setHealth: (v) => { healthOn = v; view.healthOn = v; R.setHealth(v); try { window.localStorage.setItem("coldsnap-depot-health", v ? "1" : "0"); } catch (e) {} },
         toggleBenchDead: () => toggleBenchDead(world, map, run), // 0.6.6: the sandbox's dead switch
-        acc: 0, t: 0, fps: 60, fpsAcc: 0, fpsN: 0,
+        slice: makeSlice(), t: 0, fps: 60, fpsAcc: 0, fpsN: 0, // 0.6.12: the slice holds the step accumulator
         hover: null, pointer: null, toasts: [], pending: null,
         hirePlace: null, // the hire's armed placement ({ key } or null)
         devSpawn: null, // the armed enemy-rack pick (sandbox only)
@@ -797,6 +798,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
 
       let last = performance.now();
       const STEP = 1 / 120;
+      const sliceNow = () => performance.now(); // 0.6.12: the frame slice's clock
       // THE STOPWATCH (?perf=1). A measurement probe, not a feature:
       // it brackets the fixed-step sim block and the R.render call and drops
       // the pair into a ring buffer that scripts/diag-perf.mjs reads back.
@@ -904,7 +906,8 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
         raf = requestAnimationFrame(frame);
         let dt = Math.min(0.05, (now - last) / 1000);
         last = now;
-        const pFrame0 = perf ? performance.now() : 0;
+        const sliceF0 = performance.now(); // 0.6.12: the frame slice measures every frame, stopwatch or not
+        const pFrame0 = perf ? sliceF0 : 0;
         let pSim = 0, pRen = 0, pDrew = 0;
         try {
           view.fpsAcc += dt; view.fpsN++;
@@ -1136,7 +1139,6 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
               preTollSec = bellSec;
             }
           }
-          view.acc += sdt;
           // The bell, spawn/withdrawal, income,
           // territory/sight, mines, fog, dead-bag release, the pool rebuild,
           // stepDepot, the possessed triggers, the event drain, the census
@@ -1146,9 +1148,12 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
           let terrFlagged = false, dressFlagged = false;
           const frameEvents = [];
           const pSim0 = perf ? performance.now() : 0; // stopwatch: sim bracket opens
-          let guard = 0;
-          while (view.acc >= STEP && guard++ < 6) {
-            view.acc -= STEP;
+          // THE FRAME SLICE (0.6.12): the steps owed this frame run through
+          // slice.js — as many as fit beside the frame's other work inside the
+          // floor of thirty frames a second, never more than six, the first
+          // always; the time the frame cannot afford is dropped, never caught
+          // up. The step's own body is unchanged inside the call.
+          const guard = sliceFrame(view.slice, sdt, STEP, () => {
             const { events, flags } = tickWar(war, STEP, input);
             frameEvents.push(...events);
             if (flags.bell) { view.teachFire("bell"); run.manifest.armedAtWall = performance.now() / 1000 + PENDING_ARM_S; }
@@ -1157,9 +1162,8 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             if (flags.withdrew) toast("THEY BREAK CONTACT");
             if (flags.teslaFired) view._teslaFired = (view._teslaFired || 0) + 1;
             for (const e of events) if (e.type === "kill") view.teachFire("kill_price");
-          }
+          }, sliceNow);
           if (perf) pSim = performance.now() - pSim0; // ...and closes
-          if (view.acc > STEP * 6) view.acc = 0;
           // grid-line retint + terrain fog wash: same 4Hz cadence as the
           // territory field itself, not per frame (see renderer.js
           // updateTerritory/retintTerritory/updateFogWash).
@@ -1635,6 +1639,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
             { const aw = countAwake(world); let booms = 0; for (const e of frameEvents) if (e.type === "boom") booms++; pStepsA[pI] = Math.min(guard, 6); pAwakeA[pI] = aw.awake; pChunkA[pI] = aw.chunks; pContA[pI] = world.contacts.length; pBoomA[pI] = booms; pHeapA[pI] = performance.memory ? performance.memory.usedJSHeapSize : 0; } // 0.6.8: the witness
             pI = (pI + 1) % PCAP; pN++;
           }
+          sliceRest(view.slice, performance.now() - sliceF0); // 0.6.12: the frame's cost outside its steps, for the next frame's slice
         } catch (err) {
           console.error("COLDSNAP DEPOT frame failed", err);
           // The overlay names the throwing SITE — "non-finite" alone left the fault anonymous on a phone
