@@ -149,8 +149,10 @@ export function makeField(n, cs, seed = 7) {
         h[j * n + i] = Math.max(F.carveFloor, h[j * n + i] - depth * k);
       }
       F.dirty = true;
+      F.edits++;
     },
     dirty: false,
+    edits: 0, // 0.6.11: every carve counts here, and the game's own ground edits (tick.js); the aloft watch reads it
   };
   return F;
 }
@@ -195,7 +197,10 @@ function bodySpeed2(b) { return V.len2(b.v); }
 // it always skipped, in the order it always ran; golden and the keystone prove
 // the trajectory byte-identical.
 let WAKES = 0;
-function wake(b) { if (b.sleeping) { b.sleeping = false; WAKES++; } b.sleepT = 0; }
+// 0.6.11: the aloft watch's frozen set (stepAloft) and the count of its
+// members woken since it was taken; one such wake voids the watch
+let FZ_SET = null, FZ_WOKE = 0;
+function wake(b) { if (b.sleeping) { b.sleeping = false; WAKES++; if (FZ_SET !== null && FZ_SET.has(b)) FZ_WOKE++; } b.sleepT = 0; }
 // the body lists, all in world.bodies order:
 //   _awake        massive and awake — the integrators, the terrain pass, the suspension, the sleep pass
 //   _file         what the broadphase's filing walk visits: every body not already on the books asleep
@@ -522,6 +527,289 @@ function segBoxHit(p0, p1, b, outAxis) {
   if (outAxis) outAxis.i = tminAxis;
   return tmin;
 }
+
+// ------------------------------------------------------------ the shadow grid
+// 0.6.11: THE BANG. A burst's shadow test (explode's occOf) walked every
+// occluder in the disc for every target, three rays each. Now the occluders
+// are filed on a grid of two-meter cells over the ground, each body in every
+// cell its padded bounding circle touches, and a ray's test walks only the
+// cells its ground track crosses. The pad (0.26 for the test's 0.15 m box
+// fattening on three axes, 0.22 for the lateral rays' offset from the center
+// ray, whose track is the one walked) makes the cells' bodies a superset of
+// the three rays' hits; a shadow is a count of hits capped at three, blind to
+// the order they are found in; so the result is the full scan's to the bit.
+const SH_CELL = 2, SH_PAD = 0.5;
+const shKey = (gx, gz) => (gx + 32768) * 65536 + (gz + 32768);
+function shadowFile(grid, b, i) {
+  const r = Math.sqrt(b.hx * b.hx + b.hy * b.hy + b.hz * b.hz) + SH_PAD;
+  const x0 = Math.floor((b.pos.x - r) / SH_CELL), x1 = Math.floor((b.pos.x + r) / SH_CELL);
+  const z0 = Math.floor((b.pos.z - r) / SH_CELL), z1 = Math.floor((b.pos.z + r) / SH_CELL);
+  for (let gx = x0; gx <= x1; gx++) for (let gz = z0; gz <= z1; gz++) {
+    const k = shKey(gx, gz), c = grid.get(k);
+    if (c) c.push(i); else grid.set(k, [i]);
+  }
+}
+// the bodies filed in the cells a ground track crosses, each once (stamped),
+// appended to out. The track is cut column by column (row by row when it
+// runs more north-south than east-west); each cut's span is widened by a
+// hair so no rounding at a cell line can skip the cell a point lies in.
+function shadowAlong(grid, stamp, s, ax, az, bx, bz, out) {
+  const cs = SH_CELL, eps = 1e-6;
+  const byX = Math.abs(bx - ax) >= Math.abs(bz - az);
+  const a0 = byX ? ax : az, b0 = byX ? bx : bz, a1 = byX ? az : ax, b1 = byX ? bz : bx;
+  const lo = Math.min(a0, b0), hi = Math.max(a0, b0), d0 = b0 - a0, m = d0 === 0 ? 0 : (b1 - a1) / d0;
+  const g0 = Math.floor((lo - eps) / cs), g1 = Math.floor((hi + eps) / cs);
+  for (let g = g0; g <= g1; g++) {
+    const pl = Math.max(g * cs, lo), ph = Math.min((g + 1) * cs, hi);
+    let ql, qh;
+    if (d0 === 0) { ql = Math.min(a1, b1); qh = Math.max(a1, b1); }
+    else { const q1 = a1 + (pl - a0) * m, q2 = a1 + (ph - a0) * m; ql = Math.min(q1, q2); qh = Math.max(q1, q2); }
+    for (let h = Math.floor((ql - eps) / cs), he = Math.floor((qh + eps) / cs); h <= he; h++) {
+      const c = grid.get(byX ? shKey(g, h) : shKey(h, g));
+      if (!c) continue;
+      for (let k = 0; k < c.length; k++) { const i = c[k]; if (stamp[i] !== s) { stamp[i] = s; out.push(i); } }
+    }
+  }
+}
+// the disc's own filter on a frozen candidate (the live list passed it on the walk)
+const occluderInDisc = (o, x, z, oR) => {
+  if (!o.alive && o.kind !== "wreck") return false;
+  if (Math.max(o.hx, o.hy, o.hz) < 0.25) return false;
+  const dox = o.pos.x - x, doz = o.pos.z - z;
+  return !(dox * dox + doz * doz > oR * oR);
+};
+const _shCand = [];
+// the shadow state of one burst: the targets in reach in body order, the live
+// occluders filed on their own grid, and the watched round's frozen grid and
+// precounted hits when this is its burst and nothing frozen has changed
+function shadowState(world, x, y, z, spec) {
+  const oR = spec.r + 8;
+  const ep = aloftEpochFor(world, spec, x, y, z);
+  const frozen = ep !== null ? ep.set : null, nF = ep !== null ? ep.list.length : 0;
+  const targets = [], live = [], liveGrid = new Map();
+  for (const o of world.bodies) {
+    const dox = o.pos.x - x, doz = o.pos.z - z, d2 = dox * dox + doz * doz;
+    const ext = Math.max(o.hx, o.hy, o.hz);
+    // a target: explode's loop keeps its full test; a body whose ground
+    // distance alone is past its reach is one that test skips
+    if (o.invM !== 0 && (o.alive || o.kind !== "unit") && !(Math.sqrt(d2) > spec.r + ext)) targets.push(o);
+    if (o.kind === "unit") continue;
+    if (!o.alive && o.kind !== "wreck") continue;
+    if (ext < 0.25) continue;
+    if (d2 > oR * oR) continue;
+    if (frozen !== null && frozen.has(o)) continue; // on the watch's grid already
+    shadowFile(liveGrid, o, nF + live.length);
+    live.push(o);
+  }
+  // the disc's filter on the frozen bodies, read once here as the old walk
+  // read it: a tree the loop kills still shades the targets after it
+  let fz = null;
+  if (ep !== null) { fz = new Uint8Array(nF); for (let i = 0; i < nF; i++) fz[i] = occluderInDisc(ep.list[i], x, z, oR) ? 1 : 0; }
+  return { c: v3(x, y, z), x, y, z, oR, ep, nF, fz, targets, live, liveGrid, stamp: new Uint32Array(nF + live.length), s: 0 };
+}
+// the shadow on one target: the three-ray test over the bodies the grids
+// list along the center ray's track; the frozen bodies' hits come from the
+// watch when it counted them aloft
+function shadowOf(world, S, b, dist) {
+  if (dist < 1.1) return 1; // point-blank: you are the surface
+  const x = S.x, y = S.y, z = S.z, ep = S.ep;
+  // three rays (center and two lateral offsets), averaged: a mortar seam between two
+  // stones shouldn't fry the man behind the wall, and a sliver shouldn't blank a blast.
+  const px = -(b.pos.z - z), pz = (b.pos.x - x);
+  const pl = Math.hypot(px, pz) || 1;
+  const off = 0.22 * Math.min(1, dist / 2);
+  const pre = ep !== null ? ep.hits.get(b) : undefined;
+  const cand = _shCand; cand.length = 0; S.s++;
+  shadowAlong(S.liveGrid, S.stamp, S.s, x, z, b.pos.x, b.pos.z, cand);
+  if (ep !== null && pre === undefined) shadowAlong(ep.grid, S.stamp, S.s, x, z, b.pos.x, b.pos.z, cand);
+  let sum = 0;
+  for (let ray = -1; ray <= 1; ray++) {
+    const tx = b.pos.x + (px / pl) * off * ray, tz = b.pos.z + (pz / pl) * off * ray;
+    const tgt = v3(tx, b.pos.y, tz);
+    let hits = pre === undefined ? 0 : (pre >> ((ray + 1) * 2)) & 3;
+    for (let k = 0; k < cand.length && hits < 3; k++) {
+      const i = cand[k], o = i < S.nF ? ep.list[i] : S.live[i - S.nF];
+      if (i < S.nF && S.fz[i] === 0) continue;
+      if (o === b) continue;
+      if (b.kind === "ice" && o.kind === "ice") continue;
+      const t = segBoxHit(S.c, tgt, o);
+      if (t > 0.03 && t < 0.97) hits++;
+    }
+    let occ = 1;
+    for (let k = 0; k < hits; k++) { occ *= 0.35; if (occ < 0.09) { occ = 0.09; break; } }
+    let above = pre !== undefined && ((pre >> (7 + ray)) & 1) === 1;
+    if (pre === undefined) for (let k = 2; k <= 4; k++) {
+      const t = k / 5;
+      // chord test, mid-to-far samples with a fat margin: the burst's own ground and
+      // rolling terrain never shade; a real rim or pit lip between the two does
+      if (world.field.heightAt(x + (tx - x) * t, z + (tz - z) * t) > y + (b.pos.y - y) * t + 0.4) { above = true; break; }
+    }
+    if (above) occ *= 0.3;
+    sum += occ;
+  }
+  return sum / 3;
+}
+
+// ------------------------------------------------------------- the aloft watch
+// 0.6.11: while a davy round flies, the engine takes the still bodies as
+// frozen (asleep or massless; never a man, never a mech's link — the game
+// moves those by hand), files them on a shadow grid of the whole ground,
+// flies a ghost of the round ahead on the wind the game layer lends it
+// (world._windAt, world._windOn), and once the ghost has landed, precounts
+// each frozen body's shadow hits against that burst point, a few bodies a
+// step. At the burst the counts serve only if the round burst exactly where
+// the ghost did, no frozen body woke, died or left, and the ground was not
+// carved; otherwise the burst tests everything itself. Nothing here moves a
+// body, draws from the rng, or writes anything a hash or a save reads; a
+// step with no davy aloft pays one look at the projectile list.
+const AL_FILE = 600, AL_GHOST = 60, AL_COUNT = 8, AL_STILL = { x: 0, z: 0 };
+let AL_SERVED = 0; // bursts whose counts served (the suite reads it)
+// the watch is taken over several steps: the bodies are read off a copy of
+// the list a few hundred a step, and the ghost flies once the last is filed.
+// The set is live from the first step, so a filed body that wakes before the
+// filing is done counts against the watch like any later wake.
+function aloftStart(world, p) {
+  const set = new Set();
+  FZ_SET = set;
+  world._aloft = {
+    p, spec: p.spec, scan: world.bodies.slice(), cursor: 0, list: [], set, grid: new Map(), alive: [], stamp: null, s: 0,
+    woke: FZ_WOKE, edits: world.field.edits, ghost: null,
+    landed: false, gone: false, bx: 0, by: 0, bz: 0, c: null, hits: new Map(), targets: null, next: 0,
+  };
+}
+function aloftFile(world, ep) {
+  const scan = ep.scan;
+  for (let n = 0; n < AL_FILE && ep.cursor < scan.length; n++) {
+    const b = scan[ep.cursor++];
+    if (world.byId.get(b.id) !== b) continue; // gone since the copy was taken
+    if (b.kind === "unit" || b.mechRef || b.kind === "mech" || b.kind === "mechlink" || b.kind === "mechfoot") continue;
+    if (!(b.sleeping || b.invM === 0)) continue; // moving: the burst tests it live
+    shadowFile(ep.grid, b, ep.list.length);
+    ep.set.add(b); ep.list.push(b); ep.alive.push(b.alive ? 1 : 0);
+  }
+  if (ep.cursor >= scan.length) {
+    const p = ep.p;
+    ep.scan = null;
+    ep.stamp = new Uint32Array(ep.list.length);
+    ep.ghost = { x: p.pos.x, y: p.pos.y, z: p.pos.z, vx: p.v.x, vy: p.v.y, vz: p.v.z, life: p.life, t: world.t };
+  }
+}
+// the ghost's flight: the round's own step (stepProjectiles), the frozen
+// bodies standing in for the world, the wind read for each future step
+function aloftFly(world, ep) {
+  const g = ep.ghost, dt = world.dt, F = world.field, cand = _shCand;
+  for (let n = 0; n < AL_GHOST && !ep.landed && !ep.gone; n++) {
+    const w = world._windOn ? world._windAt(g.t) : AL_STILL;
+    g.t += dt;
+    g.life += dt;
+    const p0x = g.x, p0y = g.y, p0z = g.z;
+    g.vy -= world.gravity * dt;
+    if (world.depotCombat && ep.spec.windF) {
+      g.vx += (w.x - g.vx * 0.02) * ep.spec.windF * dt;
+      g.vz += (w.z - g.vz * 0.02) * ep.spec.windF * dt;
+    }
+    g.x = g.x + g.vx * dt; g.y = g.y + g.vy * dt; g.z = g.z + g.vz * dt;
+    let hitT = -1;
+    const h1 = F.heightAt(g.x, g.z);
+    if (g.y <= h1) {
+      let a = 0, b = 1;
+      for (let k = 0; k < 5; k++) {
+        const m = (a + b) / 2;
+        const mx = p0x + (g.x - p0x) * m, my = p0y + (g.y - p0y) * m, mz = p0z + (g.z - p0z) * m;
+        if (my <= F.heightAt(mx, mz)) b = m; else a = m;
+      }
+      hitT = b;
+    }
+    let bestT = hitT < 0 ? 1.01 : hitT, hit = hitT >= 0;
+    const p0 = v3(p0x, p0y, p0z), p1 = v3(g.x, g.y, g.z);
+    cand.length = 0; ep.s++;
+    shadowAlong(ep.grid, ep.stamp, ep.s, p0x, p0z, g.x, g.z, cand);
+    for (let k = 0; k < cand.length; k++) {
+      const b = ep.list[cand[k]];
+      const isStruct = b.kind === "tower" || b.kind === "wall" || b.kind === "rock";
+      if (b.invM === 0 && b.kind !== "chunk" && !isStruct) continue;
+      if (isStruct && !b.alive) continue;
+      const t = segBoxHit(p0, p1, b, null);
+      if (t >= 0 && t < bestT) { bestT = t; hit = true; }
+    }
+    if (hit) { ep.landed = true; ep.bx = p0x + (g.x - p0x) * bestT; ep.by = p0y + (g.y - p0y) * bestT; ep.bz = p0z + (g.z - p0z) * bestT; ep.c = v3(ep.bx, ep.by, ep.bz); }
+    else if (g.life > 8) ep.gone = true;
+  }
+}
+// the precount: a few frozen targets a step, each ray's frozen hits (capped
+// at three) and chord flag packed into one small number
+function aloftCount(world, ep) {
+  const x = ep.bx, y = ep.by, z = ep.bz, spec = ep.spec, oR = spec.r + 8, F = world.field, cand = _shCand;
+  if (ep.targets === null) {
+    const list = [];
+    for (let i = 0; i < ep.list.length; i++) {
+      const o = ep.list[i];
+      if (o.invM === 0) continue;
+      const dox = o.pos.x - x, doz = o.pos.z - z;
+      if (Math.sqrt(dox * dox + doz * doz) > spec.r + Math.max(o.hx, o.hy, o.hz)) continue;
+      list.push(o);
+    }
+    ep.targets = list;
+  }
+  for (let n = 0; n < AL_COUNT && ep.next < ep.targets.length; n++) {
+    const b = ep.targets[ep.next++];
+    const d = v3(); V.sub(d, b.pos, ep.c);
+    const dist = Math.max(0.4, V.len(d));
+    if (dist < 1.1) continue; // point-blank needs no count
+    const px = -(b.pos.z - z), pz = (b.pos.x - x);
+    const pl = Math.hypot(px, pz) || 1;
+    const off = 0.22 * Math.min(1, dist / 2);
+    cand.length = 0; ep.s++;
+    shadowAlong(ep.grid, ep.stamp, ep.s, x, z, b.pos.x, b.pos.z, cand);
+    let packed = 0;
+    for (let ray = -1; ray <= 1; ray++) {
+      const tx = b.pos.x + (px / pl) * off * ray, tz = b.pos.z + (pz / pl) * off * ray;
+      const tgt = v3(tx, b.pos.y, tz);
+      let hits = 0;
+      for (let k = 0; k < cand.length && hits < 3; k++) {
+        const o = ep.list[cand[k]];
+        if (!occluderInDisc(o, x, z, oR)) continue;
+        if (o === b) continue;
+        if (b.kind === "ice" && o.kind === "ice") continue;
+        const t = segBoxHit(ep.c, tgt, o);
+        if (t > 0.03 && t < 0.97) hits++;
+      }
+      let above = 0;
+      for (let k = 2; k <= 4; k++) {
+        const t = k / 5;
+        if (F.heightAt(x + (tx - x) * t, z + (tz - z) * t) > y + (b.pos.y - y) * t + 0.4) { above = 1; break; }
+      }
+      packed |= (hits << ((ray + 1) * 2)) | (above << (7 + ray));
+    }
+    ep.hits.set(b, packed);
+  }
+}
+// the watched round's burst: the watch ends here either way, and its counts
+// serve only when everything they rest on is as it was
+function aloftEpochFor(world, spec, x, y, z) {
+  const ep = world._aloft;
+  if (!ep || ep.spec !== spec) return null;
+  world._aloft = null; FZ_SET = null;
+  if (!ep.landed || ep.bx !== x || ep.by !== y || ep.bz !== z) return null;
+  if (FZ_WOKE !== ep.woke || world.field.edits !== ep.edits) return null;
+  for (let i = 0; i < ep.list.length; i++) { const b = ep.list[i]; if (world.byId.get(b.id) !== b || (b.alive ? 1 : 0) !== ep.alive[i]) return null; }
+  AL_SERVED++;
+  return ep;
+}
+function stepAloft(world) {
+  const ep = world._aloft;
+  if (!ep) {
+    if (!world._windAt || world.projectiles.length === 0) return;
+    for (const p of world.projectiles) if (p.spec.weapon === "davy" && p.spec.hitStruct && !p.spec.hitOnly && !(p.spec.delay > 0)) { aloftStart(world, p); return; }
+    return;
+  }
+  if (world.projectiles.indexOf(ep.p) < 0) { world._aloft = null; FZ_SET = null; return; } // gone without its burst
+  if (ep.gone) return;
+  if (ep.scan !== null) aloftFile(world, ep);
+  else if (!ep.landed) aloftFly(world, ep);
+  else if (ep.targets === null || ep.next < ep.targets.length) aloftCount(world, ep);
+}
+
 export function explode(world, x, y, z, spec) {
   const bev = { type: "boom", x, y, z, r: spec.r, kind: spec.kind || "shell" };
   // DIVERGENCE (guarded, additive, mk2.09): the boom names WHICH GUN burst
@@ -535,50 +823,14 @@ export function explode(world, x, y, z, spec) {
   // blast occlusion: solids and terrain between the burst and a body cast a shadow.
   // Damage is shadowed hard (cover is life); impulse wraps at 40% (shock bends around);
   // infantry never counts as cover, and coplanar ice never shades its own sheet.
-  // occluder pre-filter: spec.r + 8 covers every body any center->target
-  // segment can touch (target reach + both extents) — an exact superset of the
-  // old full-bodies scan, at ~1/10 the candidates
-  const occluders = [];
-  {
-    const oR = spec.r + 8;
-    for (const o of world.bodies) {
-      if (o.kind === "unit") continue;
-      if (!o.alive && o.kind !== "wreck") continue;
-      if (Math.max(o.hx, o.hy, o.hz) < 0.25) continue;
-      const dox = o.pos.x - x, doz = o.pos.z - z;
-      if (dox * dox + doz * doz > oR * oR) continue;
-      occluders.push(o);
-    }
-  }
-  const occOf = (b, dist) => {
-    if (dist < 1.1) return 1; // point-blank: you are the surface
-    // three rays (center and two lateral offsets), averaged: a mortar seam between two
-    // stones shouldn't fry the man behind the wall, and a sliver shouldn't blank a blast.
-    const px = -(b.pos.z - z), pz = (b.pos.x - x);
-    const pl = Math.hypot(px, pz) || 1;
-    const off = 0.22 * Math.min(1, dist / 2);
-    let sum = 0;
-    for (let ray = -1; ray <= 1; ray++) {
-      const tx = b.pos.x + (px / pl) * off * ray, tz = b.pos.z + (pz / pl) * off * ray;
-      const tgt = v3(tx, b.pos.y, tz);
-      let occ = 1;
-      for (const o of occluders) {
-        if (o === b) continue;
-        if (b.kind === "ice" && o.kind === "ice") continue;
-        const t = segBoxHit(c, tgt, o);
-        if (t > 0.03 && t < 0.97) { occ *= 0.35; if (occ < 0.09) { occ = 0.09; break; } }
-      }
-      for (let k = 2; k <= 4; k++) {
-        const t = k / 5;
-        // chord test, mid-to-far samples with a fat margin: the burst's own ground and
-        // rolling terrain never shade; a real rim or pit lip between the two does
-        if (world.field.heightAt(x + (tx - x) * t, z + (tz - z) * t) > y + (b.pos.y - y) * t + 0.4) { occ *= 0.3; break; }
-      }
-      sum += occ;
-    }
-    return sum / 3;
-  };
-  for (const b of world.bodies) {
+  // 0.6.11: one walk of the bodies finds the targets and files the occluders
+  // on the shadow grid (shadowState); each target's shadow walks only the
+  // cells its ray crosses (shadowOf). The occluder disc is the old one:
+  // spec.r + 8 covers every body any center->target segment can touch
+  // (target reach + both extents) — an exact superset of the old full scan.
+  const S = shadowState(world, x, y, z, spec);
+  const occOf = (b, dist) => shadowOf(world, S, b, dist);
+  for (const b of S.targets) {
     if (b.invM === 0) continue;
     if (!b.alive && b.kind === "unit") continue;
     const d = v3(); V.sub(d, b.pos, c);
@@ -2142,7 +2394,7 @@ function stepSleep(world) {
       const l = wd.a.sleeping ? wd.b : wd.a;
       if (V.len2(l.v) > 0.09 || V.len2(l.w) > 0.12) {
         const s = wd.a.sleeping ? wd.a : wd.b;
-        s.sleeping = false; s.sleepT = 0; WAKES++;
+        s.sleeping = false; s.sleepT = 0; WAKES++; if (FZ_SET !== null && FZ_SET.has(s)) FZ_WOKE++;
       }
     }
   }
@@ -2200,6 +2452,7 @@ export function stepWorld(world) {
   classifyImpacts(world);
   stepStatus(world);
   stepSleep(world);
+  stepAloft(world);
 }
 export function worldHash(world) {
   let h = 7;
@@ -2670,3 +2923,5 @@ export { heading, applyDamage };
 export const __mech__ = { V, v3, qIdent, qNorm, qFromAxis, qMul, qToR, rMulVec, rTMulVec, invInertiaWorld, iMulVec, wake };
 // T10 (mk0.6.10): the live lists, for the suite's own checks of them
 export const __lists__ = { bodyLists, liveWelds, wakes: () => WAKES };
+// T11 (mk0.6.11): the bang's pieces, for the suite's own checks of them
+export const __bang__ = { shadowState, shadowOf, shadowFile, shadowAlong, segBoxHit, occluderInDisc, aloft: (world) => world._aloft || null, frozenWoke: () => FZ_WOKE, served: () => AL_SERVED };

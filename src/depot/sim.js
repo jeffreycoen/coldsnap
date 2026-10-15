@@ -686,6 +686,7 @@ export function stepDepot(world, grid, onStructureLost, town, onRuin, T, discipl
   // the same world.wind every shooter reads). Deterministic either way —
   // windAt is a pure function and the toggle draws nothing.
   world.wind = input.windOn === false ? { x: 0, z: 0, mag: 0 } : windAt(map.MAP_SEED, world.t);
+  world._windOn = input.windOn !== false; // 0.6.11: the aloft watch's wind switch
   stepWorld(world);
   for (let i = world.bodies.length - 1; i >= 0; i--) {
     const b = world.bodies[i];

@@ -3,6 +3,7 @@
 // run bag — no renderer, no audio, no storage, no window reads. See
 // api.js's War typedef and CLAUDE.md's standing orders for the contract.
 import { makeField, makeWorld, addBody, mulberry32 } from "../engine/core.js";
+import { windAt } from "./wind.js";
 import { buildMech } from "../engine/mech.js";
 import { MECH, TOWER_SPECS } from "./specs.js";
 import { makeMap, buildDepotTerrain, makeGrid, planTrees, computeFlowField } from "./mapgen.js";
@@ -128,6 +129,7 @@ export function bootWar(opts = {}) {
   }
   world._tdStruct = true;
   world.depotCombat = true; // Phase 0 combat hooks: glancing, armor, tree fire/shredding
+  world._windAt = (t) => windAt(map.MAP_SEED, t); // 0.6.11: the wind the aloft watch flies its ghost on; sim.js sets world._windOn each tick
   // The pair's survey vets (6.5 Task 6): thread the mode's pond test and
   // playable rim onto the world so squads.js's surveyHighGround /
   // bestStandPoint can reject ice and off-rim candidates without
@@ -431,7 +433,7 @@ export function bootWar(opts = {}) {
   }
   war.map = map; war.field = field; war.grid = grid; war.world = world; war.T = T;
   war.town = town; war.census = depotCensus; war.census2 = depotCensus2; war.run = run;
-  war.clock = { terrAcc: 0, _structHp: new Map() };
+  war.clock = { terrAcc: 0, _structHp: new Map(), _flowDirty: false }; // 0.6.11: the road map's redraw flag (tick.js)
   war.rocksLive = rocksLive;
   war.dev = !!opts.dev;
   return war;

@@ -25,13 +25,20 @@ function warCallbacks(war) {
   if (war.clock._cbs) return war.clock._cbs;
   const { grid, map } = war;
   const objG = grid.worldToGrid(map.OBJ_POS.x, map.OBJ_POS.z);
-  const recomputeFlow = () => computeFlowField(grid, objG.gx, objG.gz);
+  // 0.6.11: THE ROAD MAP, ONCE A TICK. Every call to redraw it only raises
+  // the flag; the one redraw runs at the next tick's start, before the enemy
+  // reads the map (stepEnemies, the first thing stepDepot does). Nothing
+  // reads the map between a raise and that redraw, and nothing changes the
+  // grid between the last raise and it, so every reader sees the map the
+  // separate redraws gave it — one redraw instead of one per fallen course.
+  const recomputeFlow = () => { war.clock._flowDirty = true; };
+  const flushFlow = () => { if (war.clock._flowDirty) { war.clock._flowDirty = false; computeFlowField(grid, objG.gx, objG.gz); } };
   const onStructureLost = (b) => {
     for (const c of grid.cells) if (c.wallId === b.id) { c.wallId = null; c.blocked = false; c.bTeam = 0; }
     recomputeFlow();
   };
   const onRuin = () => recomputeFlow();
-  war.clock._cbs = { recomputeFlow, onStructureLost, onRuin };
+  war.clock._cbs = { recomputeFlow, flushFlow, onStructureLost, onRuin };
   return war.clock._cbs;
 }
 
@@ -61,6 +68,7 @@ function breachRock(war, b, flags) {
     if (d < 1.6) h[j * n + i] -= k.h * Math.exp(-d * d * 2.1);
   }
   field.dirty = true;
+  field.edits++; // 0.6.11: a ground edit the aloft watch must see
   for (let gz = 0; gz < map.GRID_H; gz++) for (let gx = 0; gx < map.GRID_W; gx++) {
     const wp = grid.gridToWorld(gx, gz);
     if (Math.hypot(wp.x - k.x, wp.z - k.z) < k.r * 0.78 + 0.9) {
@@ -263,6 +271,7 @@ export function tickWar(war, sdt, input) {
     const pm0 = world.byId.get(input.possess.id);
     if (pm0 && pm0.mechRef && input.feedMech) input.feedMech(pm0.mechRef, sdt);
   }
+  cbs.flushFlow(); // 0.6.11: the road map's one redraw, before the enemy reads it
   stepDepot(world, grid, cbs.onStructureLost, town, cbs.onRuin, T, input.discipline, run, input, map);
   // POSSESSION (P4 T2, mk0.91): THE TRIGGER. At most one volley
   // attempt per sim tick — cooldowns (possessedVolley's own

@@ -440,7 +440,7 @@ export default function DepotGame({ onExit, resume = null, dev = false, seed: me
       if (RES && R.smear) for (const m of RES.smears || []) R.smear(m.u, m.v, m.s, m.x, m.z);
 
       const toast = (txt) => { view.toasts.push({ txt, t: performance.now() / 1000 }); if (view.toasts.length > 4) view.toasts.shift(); };
-      const recomputeFlow = () => computeFlowField(grid, objG.gx, objG.gz);
+      const recomputeFlow = () => { war.clock._flowDirty = true; }; // 0.6.11: the road map is redrawn once, at the next tick's start (tick.js)
       const { priceNow, buyPaced, buildAt, canBuildAt, clearPending, startPending, standDown, confirmPending, SQUAD_MODE, HERO_MODE, ghostFp, canPlaceInfantryAt, placeSquadAt, startPendingSquad, sellAt, sellById, placeHire, devSpawnAt, placeHero, refreshZone } = makePlacement({
         world, run, view, input, map, grid, field, T, R, dev,
         toast, cue: (t) => cue(t), setHud, nextApcSeq, depotP, recomputeFlow,
